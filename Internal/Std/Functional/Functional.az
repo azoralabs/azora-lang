@@ -1,0 +1,309 @@
+/*
+ * Copyright 2026 AzoraTech
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+@file:experimental
+
+package std.functional
+
+/**
+ * @file Functional
+ *
+ * Higher-order function utilities.
+ *
+ * Provides common functional programming patterns including
+ * array transformations, reductions, and predicate operations.
+ *
+ * @since 0.0.1
+ */
+
+expose scope std {
+    /**
+     * Returns the identity value (passes through unchanged).
+     *
+     * @param x The value.
+     * @return The same value.
+     * @since 0.0.1
+     */
+    func identity<T>(x: T): T = x
+
+    /**
+     * Applies a transformation to each element of an array.
+     *
+     * @param arr The source array.
+     * @param f The transformation function.
+     * @return A new array with transformed elements.
+     * @since 0.0.1
+     */
+    func map<T>(arr: [T], f: (T) -> T): [T] {
+        var result: [T] = [].fill<T>(arr.length)
+        var i = 0
+        while i < arr.length {
+            result[i] = f(arr[i])
+            i += 1
+        }
+        return result
+    }
+
+    /**
+     * Returns a new array containing only elements that satisfy the predicate.
+     *
+     * @param arr The source array.
+     * @param pred The predicate function.
+     * @return A filtered array.
+     * @since 0.0.1
+     */
+    func filter<T>(arr: [T], pred: (T) -> Bool): [T] {
+        var tmp: [T] = [].fill<T>(arr.length)
+        var count = 0
+        var i = 0
+        while i < arr.length {
+            if pred(arr[i]) {
+                tmp[count] = arr[i]
+                count += 1
+            }
+            i += 1
+        }
+        var result: [T] = [].fill<T>(count)
+        var j = 0
+        while j < count {
+            result[j] = tmp[j]
+            j += 1
+        }
+        return result
+    }
+
+    /**
+     * Reduces an array to a single value using an accumulator function.
+     *
+     * @param arr The source array (must be non-empty).
+     * @param initial The initial accumulator value.
+     * @param f The accumulator function taking (accumulator, element).
+     * @return The final accumulated value.
+     * @since 0.0.1
+     */
+    func reduce<T>(arr: [T], initial: T, f: (T, T) -> T): T {
+        var acc = initial
+        var i = 0
+        while i < arr.length {
+            acc = f(acc, arr[i])
+            i += 1
+        }
+        return acc
+    }
+
+    /**
+     * Applies an action to each element of an array.
+     *
+     * @param arr The source array.
+     * @param action The function to apply.
+     * @since 0.0.1
+     */
+    func forEach<T>(arr: [T], action: (T) -> Unit) {
+        var i = 0
+        while i < arr.length {
+            action(arr[i])
+            i += 1
+        }
+    }
+
+    /**
+     * Returns true if any element satisfies the predicate.
+     *
+     * @param arr The source array.
+     * @param pred The predicate function.
+     * @return true if at least one element matches.
+     * @since 0.0.1
+     */
+    func any<T>(arr: [T], pred: (T) -> Bool): Bool {
+        var i = 0
+        while i < arr.length {
+            if pred(arr[i]) { return true }
+            i += 1
+        }
+        return false
+    }
+
+    /**
+     * Returns true if all elements satisfy the predicate.
+     *
+     * @param arr The source array.
+     * @param pred The predicate function.
+     * @return true if every element matches.
+     * @since 0.0.1
+     */
+    func all<T>(arr: [T], pred: (T) -> Bool): Bool {
+        var i = 0
+        while i < arr.length {
+            if !pred(arr[i]) { return false }
+            i += 1
+        }
+        return true
+    }
+
+    /**
+     * Returns true if no elements satisfy the predicate.
+     *
+     * @param arr The source array.
+     * @param pred The predicate function.
+     * @return true if no element matches.
+     * @since 0.0.1
+     */
+    func none<T>(arr: [T], pred: (T) -> Bool): Bool {
+        var i = 0
+        while i < arr.length {
+            if pred(arr[i]) { return false }
+            i += 1
+        }
+        return true
+    }
+
+    /**
+     * Returns the first N elements of an array.
+     *
+     * @param arr The source array.
+     * @param n The number of elements to take.
+     * @return A new array with at most n elements.
+     * @since 0.0.1
+     */
+    func take<T>(arr: [T], n: Int): [T]
+    in { assert n >= 0 { "take count must be non-negative" } }
+    scope {
+        fin len = if n < arr.length { n } else { arr.length }
+        var result: [T] = [].fill<T>(len)
+        var i = 0
+        while i < len {
+            result[i] = arr[i]
+            i += 1
+        }
+        return result
+    }
+
+    /**
+     * Skips the first N elements and returns the rest.
+     *
+     * @param arr The source array.
+     * @param n The number of elements to skip.
+     * @return A new array without the first n elements.
+     * @since 0.0.1
+     */
+    func drop<T>(arr: [T], n: Int): [T]
+    in { assert n >= 0 { "drop count must be non-negative" } }
+    scope {
+        fin start = if n < arr.length { n } else { arr.length }
+        var result: [T] = [].fill<T>(arr.length - start)
+        var i = start
+        var j = 0
+        while i < arr.length {
+            result[j] = arr[i]
+            i += 1
+            j += 1
+        }
+        return result
+    }
+
+    /**
+     * Zips two arrays into an array of pairs (2-element arrays).
+     *
+     * @param a The first array.
+     * @param b The second array.
+     * @return An array of [a[i], b[i]] pairs, up to the shorter length.
+     * @since 0.0.1
+     */
+    func zip<T>(a: [T], b: [T]): [[T]] {
+        fin len = if a.length < b.length { a.length } else { b.length }
+        var result: [[T]] = [].fill<[T]>(len)
+        var i = 0
+        while i < len {
+            result[i] = [a[i], b[i]]
+            i += 1
+        }
+        return result
+    }
+
+    /**
+     * Creates an array filled with a given value.
+     *
+     * @param value The fill value.
+     * @param count The number of elements.
+     * @return A new array of count elements, all set to value.
+     * @since 0.0.1
+     */
+    func fill<T>(value: T, count: Int): [T]
+    in { assert count >= 0 { "fill count must be non-negative" } }
+    scope {
+        var result: [T] = [].fill<T>(count)
+        var i = 0
+        while i < count {
+            result[i] = value
+            i += 1
+        }
+        return result
+    }
+
+    /**
+     * Generates an array by applying a function to each index.
+     *
+     * @param count The number of elements.
+     * @param f The generator function taking the index.
+     * @return A new array of generated elements.
+     * @since 0.0.1
+     */
+    func generate<T>(count: T, f: (T) -> T): [T] {
+        var result: [T] = [].fill<T>(count)
+        var i = 0
+        while i < count {
+            result[i] = f(i)
+            i += 1
+        }
+        return result
+    }
+
+    /**
+     * Counts elements that satisfy a predicate.
+     *
+     * @param arr The source array.
+     * @param pred The predicate function.
+     * @return The count of matching elements.
+     * @since 0.0.1
+     */
+    func countWhere<T>(arr: [T], pred: (T) -> Bool): Int {
+        var c = 0
+        var i = 0
+        while i < arr.length {
+            if pred(arr[i]) { c += 1 }
+            i += 1
+        }
+        return c
+    }
+
+    /**
+     * Finds the first element satisfying a predicate, or returns the default.
+     *
+     * @param arr The source array.
+     * @param pred The predicate function.
+     * @param default The default value if no match.
+     * @return The first matching element or default.
+     * @since 0.0.1
+     */
+    func findOr<T>(arr: [T], pred: (T) -> Bool, default: T): T {
+        var i = 0
+        while i < arr.length {
+            if pred(arr[i]) { return arr[i] }
+            i += 1
+        }
+        return default
+    }
+}

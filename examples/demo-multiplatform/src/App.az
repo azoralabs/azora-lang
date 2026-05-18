@@ -1,0 +1,118 @@
+package demo_multiplatform
+
+use std.ui
+use scope std
+
+// Counter App - A single-file app that compiles to every UI target.
+// Uses Compose-compatible modifier names so output is identical on all targets.
+
+view App() {
+    rem count: Int = 0
+
+    Column(
+        modifier: Modifier()
+            .fillMaxSize()
+            .padding(48)
+            .widthIn(400),
+        horizontalAlignment: "center",
+        verticalArrangement: "spacedBy(24)"
+    ) {
+        // Title
+        Text(
+            "Counter",
+            modifier: Modifier()
+                .fontSize(32)
+                .bold()
+                .color("#0f172a")
+        )
+
+        // Count display
+        Column(
+            modifier: Modifier()
+                .fillMaxWidth()
+                .padding(32)
+                .background("#f8fafc")
+                .borderRadius(16)
+                .border(1, "#e2e8f0"),
+            horizontalAlignment: "center",
+            verticalArrangement: "spacedBy(8)"
+        ) {
+            Text(
+                toString(count),
+                modifier: Modifier()
+                    .fontSize(64)
+                    .bold()
+                    .color("#3b82f6")
+            )
+            Text(
+                "taps",
+                modifier: Modifier()
+                    .fontSize(14)
+                    .color("#94a3b8")
+            )
+        }
+
+        // Buttons
+        Row(
+            modifier: Modifier()
+                .fillMaxWidth(),
+            horizontalArrangement: "center",
+            verticalAlignment: "center"
+        ) {
+            Button(
+                onClick: { count = count - 1 },
+                modifier: Modifier()
+                    .padding(14, 28)
+                    .background("#ef4444")
+                    .color("#fff")
+                    .borderRadius(10)
+                    .fontSize(18)
+                    .bold()
+            ) {
+                Text("-")
+            }
+
+            Spacer(width: 12)
+
+            Button(
+                onClick: { count = 0 },
+                modifier: Modifier()
+                    .padding(14, 28)
+                    .background("#f1f5f9")
+                    .color("#334155")
+                    .borderRadius(10)
+                    .fontSize(14)
+            ) {
+                Text("Reset")
+            }
+
+            Spacer(width: 12)
+
+            Button(
+                onClick: { count = count + 1 },
+                modifier: Modifier()
+                    .padding(14, 28)
+                    .background("#3b82f6")
+                    .color("#fff")
+                    .borderRadius(10)
+                    .fontSize(18)
+                    .bold()
+            ) {
+                Text("+")
+            }
+        }
+
+        // Footer
+        Spacer(height: 16)
+        Text(
+            "One file. Every platform.",
+            modifier: Modifier()
+                .fontSize(13)
+                .color("#94a3b8")
+        )
+    }
+}
+
+func main() {
+    render(App)
+}

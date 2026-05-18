@@ -1,0 +1,89 @@
+/*
+ * Copyright 2026 AzoraTech
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package testing
+
+fail MathError {
+    DivisionByZero
+    Overflow
+}
+
+fail FileError {
+    NotFound
+    PermissionDenied
+}
+
+func safeDivide(a: Int, b: Int): Int!MathError {
+    if b == 0 { return fail .DivisionByZero }
+    return a / b
+}
+
+func tryDivide(a: Int, b: Int): Int!MathError {
+    fin result = try safeDivide(a, b)
+    return result
+}
+
+test "fail set returns error" {
+    fin result = safeDivide(10, 0) catch -1
+    assert result == -1 { "division by zero should catch to -1" }
+}
+
+test "successful call unwraps" {
+    fin result = safeDivide(10, 2) catch -1
+    assert result == 5 { "10/2 should be 5" }
+}
+
+test "try propagates error" {
+    fin result = tryDivide(10, 0) catch -1
+    assert result == -1 { "try should propagate error" }
+}
+
+test "try unwraps success" {
+    fin result = tryDivide(10, 5) catch -1
+    assert result == 2 { "try should unwrap success" }
+}
+
+test "catch with default value" {
+    fin x = safeDivide(1, 0) catch 0
+    assert x == 0 { "catch should provide default" }
+}
+
+func doWorkDefer(): [Int]!MathError {
+    var log: [Int] = [0]
+    defer { log[0] = 42 }
+    return log
+}
+
+test "defer runs on success" {
+    fin r = doWorkDefer()
+    fin log = try r
+    assert log[0] == 42 { "defer should have run" }
+}
+
+// --- Section 3: multiple catch chain ---
+
+func alwaysFails(): Int!FileError {
+    return fail .NotFound
+}
+
+test "multiple catch chain" {
+    fin a = safeDivide(1, 0) catch -1
+    fin b = alwaysFails() catch -2
+    fin c = safeDivide(10, 2) catch -3
+    assert a == -1 { "first catch should produce -1" }
+    assert b == -2 { "second catch should produce -2" }
+    assert c == 5 { "third should succeed with 5" }
+}

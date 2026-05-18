@@ -1,0 +1,83 @@
+/*
+ * Copyright 2026 AzoraTech
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package testing
+
+use scope std
+
+// --- intToString ---
+
+test "intToString" {
+    assert intToString(42) == "42" { "intToString(42) should be 42" }
+    assert intToString(0) == "0" { "intToString(0) should be 0" }
+    assert intToString(-5) == "-5" { "intToString(-5) should be -5" }
+}
+
+// --- realToString ---
+
+test "realToString" {
+    fin s = realToString(3.14)
+    assert s == "3.14" || s == "3.1400000000000001" { "realToString should produce valid output" }
+}
+
+// --- boolToString ---
+
+test "boolToString" {
+    assert boolToString(true) == "true" { "boolToString(true) should be true" }
+    assert boolToString(false) == "false" { "boolToString(false) should be false" }
+}
+
+// --- padLeft ---
+
+test "padLeft" {
+    assert padLeft("5", 2, "0") == "005" { "padLeft should prepend 2 chars" }
+    assert padLeft("hi", 0, "x") == "hi" { "padLeft with 0 count" }
+    assert padLeft("", 3, "x") == "xxx" { "padLeft empty string" }
+}
+
+// --- padRight ---
+
+test "padRight" {
+    assert padRight("5", 2, "0") == "500" { "padRight should append 2 chars" }
+    assert padRight("hi", 0, "x") == "hi" { "padRight with 0 count" }
+    assert padRight("", 3, "x") == "xxx" { "padRight empty string" }
+}
+
+// --- repeatString ---
+
+test "repeatString" {
+    assert repeatString("ab", 3) == "ababab" { "repeat ab 3 times" }
+    assert repeatString("x", 1) == "x" { "repeat x once" }
+    assert repeatString("hi", 0) == "" { "repeat 0 times should be empty" }
+}
+
+// --- joinArray ---
+
+test "joinArray" {
+    var arr: [String] = ["a", "b", "c"]
+    assert joinArray<String>(arr, ", ") == "a, b, c" { "join with comma space" }
+    assert joinArray<String>(arr, "-") == "a-b-c" { "join with dash" }
+}
+
+test "joinArray single" {
+    var arr: [String] = ["hello"]
+    assert joinArray<String>(arr, ", ") == "hello" { "join single should be just the element" }
+}
+
+test "joinArray empty" {
+    var arr: [String] = [].fill<String>(0)
+    assert joinArray<String>(arr, ", ") == "" { "join empty should be empty string" }
+}

@@ -1,0 +1,568 @@
+/*
+ * Copyright 2026 AzoraTech
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package testing
+
+// --- Error Set ---
+
+fail AllocError {
+    OutOfMemory,
+    PoolExhausted
+}
+
+// --- Arena Allocator ---
+
+pack Arena {
+    var capacity: Int = 0
+    var offset: Int = 0
+    var allocCount: Int = 0
+    var peakUsage: Int = 0
+    var totalAllocated: Int = 0
+}
+
+impl Arena {
+    prop remaining: Int = capacity - offset
+    prop used: Int = offset
+    prop size: Int = capacity
+    prop count: Int = allocCount
+    prop peak: Int = peakUsage
+    prop isEmpty: Bool = offset == 0
+
+    func setup(cap: Int) {
+        self.capacity = cap
+        self.offset = 0
+        self.allocCount = 0
+        self.peakUsage = 0
+        self.totalAllocated = 0
+    }
+
+    func allocate(sz: Int): Int!AllocError {
+        if sz <= 0 { return 0 }
+        if offset + sz > capacity {
+            return fail .OutOfMemory
+        }
+        fin position = offset
+        fin newOffset = offset + sz
+        self.offset = newOffset
+        self.allocCount = allocCount + 1
+        self.totalAllocated = totalAllocated + sz
+        if newOffset > peakUsage {
+            self.peakUsage = newOffset
+        }
+        return position
+    }
+
+    func allocateAligned(sz: Int, alignment: Int): Int!AllocError {
+        fin remainder = offset % alignment
+        fin padding = if remainder == 0 { 0 } else { alignment - remainder }
+        fin aligned = offset + padding
+        if aligned + sz > capacity {
+            return fail .OutOfMemory
+        }
+        fin newOffset = aligned + sz
+        self.offset = newOffset
+        self.allocCount = allocCount + 1
+        self.totalAllocated = totalAllocated + sz + padding
+        if newOffset > peakUsage {
+            self.peakUsage = newOffset
+        }
+        return aligned
+    }
+
+    func canAllocate(sz: Int): Bool = offset + sz <= capacity
+
+    func reset() {
+        self.offset = 0
+        self.allocCount = 0
+    }
+
+    func resetAll() {
+        self.offset = 0
+        self.allocCount = 0
+        self.peakUsage = 0
+        self.totalAllocated = 0
+    }
+}
+
+// --- Pool Allocator ---
+
+pack Pool {
+    var slotSize: Int = 0
+    var slotCount: Int = 0
+    var nextFreeIdx: Int = 0
+    var acquiredCount: Int = 0
+    var peakAcquired: Int = 0
+    var releasedIdx: Int = -1
+}
+
+impl Pool {
+    prop capacity: Int = slotCount
+    prop available: Int = slotCount - acquiredCount
+    prop inUse: Int = acquiredCount
+    prop peak: Int = peakAcquired
+    prop isFull: Bool = acquiredCount == slotCount
+    prop isEmpty: Bool = acquiredCount == 0
+
+    func setup(slotSz: Int, count: Int) {
+        self.slotSize = slotSz
+        self.slotCount = count
+        self.nextFreeIdx = 0
+        self.acquiredCount = 0
+        self.peakAcquired = 0
+        self.releasedIdx = -1
+    }
+
+    func acquire(): Int!AllocError {
+        if releasedIdx >= 0 {
+            fin idx = releasedIdx
+            self.releasedIdx = -1
+            fin newAcq = acquiredCount + 1
+            self.acquiredCount = newAcq
+            if newAcq > peakAcquired {
+                self.peakAcquired = newAcq
+            }
+            return idx
+        }
+        if nextFreeIdx >= slotCount {
+            return fail .PoolExhausted
+        }
+        fin idx = nextFreeIdx
+        self.nextFreeIdx = nextFreeIdx + 1
+        fin newAcq = acquiredCount + 1
+        self.acquiredCount = newAcq
+        if newAcq > peakAcquired {
+            self.peakAcquired = newAcq
+        }
+        return idx
+    }
+
+    func release(slotIdx: Int) {
+        self.releasedIdx = slotIdx
+        self.acquiredCount = acquiredCount - 1
+    }
+
+    func canAcquire(): Bool = acquiredCount < slotCount
+
+    func poolReset() {
+        self.nextFreeIdx = 0
+        self.acquiredCount = 0
+        self.releasedIdx = -1
+    }
+}
+
+// --- Stack Allocator ---
+
+pack StackAlloc {
+    var capacity: Int = 0
+    var offset: Int = 0
+    var allocCount: Int = 0
+    var peakUsage: Int = 0
+}
+
+impl StackAlloc {
+    prop remaining: Int = capacity - offset
+    prop used: Int = offset
+    prop size: Int = capacity
+    prop count: Int = allocCount
+    prop peak: Int = peakUsage
+    prop isEmpty: Bool = offset == 0
+
+    func setup(cap: Int) {
+        self.capacity = cap
+        self.offset = 0
+        self.allocCount = 0
+        self.peakUsage = 0
+    }
+
+    func allocate(sz: Int): Int!AllocError {
+        if sz <= 0 { return 0 }
+        if offset + sz > capacity {
+            return fail .OutOfMemory
+        }
+        fin position = offset
+        fin newOffset = offset + sz
+        self.offset = newOffset
+        self.allocCount = allocCount + 1
+        if newOffset > peakUsage {
+            self.peakUsage = newOffset
+        }
+        return position
+    }
+
+    func free(sz: Int) {
+        self.offset = offset - sz
+        self.allocCount = allocCount - 1
+    }
+
+    func canAllocate(sz: Int): Bool = offset + sz <= capacity
+
+    func reset() {
+        self.offset = 0
+        self.allocCount = 0
+    }
+
+    func resetAll() {
+        self.offset = 0
+        self.allocCount = 0
+        self.peakUsage = 0
+    }
+}
+
+// =========================================================================
+// Arena Tests
+// =========================================================================
+
+test "Arena construction" {
+    var arena = Arena()
+    arena.setup(1024)
+    assert arena.size == 1024 { "capacity should be 1024" }
+    assert arena.used == 0 { "used should be 0" }
+    assert arena.remaining == 1024 { "remaining should equal capacity" }
+    assert arena.count == 0 { "alloc count should be 0" }
+    assert arena.isEmpty { "arena should be empty" }
+}
+
+test "Arena allocate success" {
+    var arena = Arena()
+    arena.setup(256)
+    fin pos = arena.allocate(64) catch -1
+    assert pos == 0 { "first alloc should be at offset 0" }
+    assert arena.used == 64 { "used should be 64" }
+    assert arena.remaining == 192 { "remaining should be 192" }
+    assert arena.count == 1 { "alloc count should be 1" }
+    assert !arena.isEmpty { "arena should not be empty" }
+}
+
+test "Arena multiple allocs" {
+    var arena = Arena()
+    arena.setup(256)
+    fin p1 = arena.allocate(32) catch -1
+    fin p2 = arena.allocate(64) catch -1
+    fin p3 = arena.allocate(16) catch -1
+    assert p1 == 0 { "first alloc at 0" }
+    assert p2 == 32 { "second alloc at 32" }
+    assert p3 == 96 { "third alloc at 96" }
+    assert arena.used == 112 { "total used 112" }
+    assert arena.count == 3 { "3 allocations" }
+}
+
+test "Arena allocate OutOfMemory" {
+    var arena = Arena()
+    arena.setup(64)
+    fin ok = arena.allocate(32) catch -1
+    assert ok == 0 { "first alloc should succeed" }
+    fin bad = arena.allocate(64) catch -1
+    assert bad == -1 { "alloc exceeding capacity should fail" }
+    assert arena.used == 32 { "used unchanged after failed alloc" }
+    assert arena.count == 1 { "count unchanged after failed alloc" }
+}
+
+test "Arena allocate exact fit" {
+    var arena = Arena()
+    arena.setup(100)
+    fin p1 = arena.allocate(100) catch -1
+    assert p1 == 0 { "exact fit should succeed" }
+    assert arena.remaining == 0 { "no remaining after exact fit" }
+    fin p2 = arena.allocate(1) catch -1
+    assert p2 == -1 { "no space left" }
+}
+
+test "Arena canAllocate" {
+    var arena = Arena()
+    arena.setup(128)
+    assert arena.canAllocate(128) { "can alloc exact capacity" }
+    assert arena.canAllocate(64) { "can alloc less than capacity" }
+    assert !arena.canAllocate(129) { "cannot alloc more than capacity" }
+    fin p = arena.allocate(100) catch -1
+    assert arena.canAllocate(28) { "can alloc remaining" }
+    assert !arena.canAllocate(29) { "cannot alloc more than remaining" }
+}
+
+test "Arena peak tracking" {
+    var arena = Arena()
+    arena.setup(256)
+    fin p1 = arena.allocate(64) catch -1
+    assert arena.peak == 64 { "peak after first alloc" }
+    fin p2 = arena.allocate(64) catch -1
+    assert arena.peak == 128 { "peak after second alloc" }
+    arena.reset()
+    assert arena.peak == 128 { "peak preserved after reset" }
+    assert arena.used == 0 { "used zero after reset" }
+}
+
+test "Arena reset" {
+    var arena = Arena()
+    arena.setup(256)
+    fin p1 = arena.allocate(100) catch -1
+    fin p2 = arena.allocate(50) catch -1
+    arena.reset()
+    assert arena.used == 0 { "used should be 0 after reset" }
+    assert arena.remaining == 256 { "remaining should be full capacity" }
+    assert arena.count == 0 { "count should be 0 after reset" }
+    assert arena.isEmpty { "should be empty after reset" }
+    fin p3 = arena.allocate(200) catch -1
+    assert p3 == 0 { "can reuse space after reset" }
+}
+
+test "Arena resetAll" {
+    var arena = Arena()
+    arena.setup(256)
+    fin p = arena.allocate(128) catch -1
+    arena.resetAll()
+    assert arena.used == 0 { "used zero" }
+    assert arena.count == 0 { "count zero" }
+    assert arena.peak == 0 { "peak zero after resetAll" }
+}
+
+test "Arena allocateAligned" {
+    var arena = Arena()
+    arena.setup(256)
+    fin p1 = arena.allocate(3) catch -1
+    assert p1 == 0 { "first alloc at 0" }
+    fin p2 = arena.allocateAligned(16, 8) catch -1
+    assert p2 == 8 { "aligned to 8 should be at offset 8" }
+    assert arena.used == 24 { "used should be 3 + 5 padding + 16" }
+}
+
+test "Arena allocateAligned already aligned" {
+    var arena = Arena()
+    arena.setup(256)
+    fin p1 = arena.allocate(16) catch -1
+    fin p2 = arena.allocateAligned(8, 8) catch -1
+    assert p2 == 16 { "already aligned, no padding needed" }
+    assert arena.used == 24 { "16 + 8 = 24" }
+}
+
+test "Arena allocateAligned OutOfMemory" {
+    var arena = Arena()
+    arena.setup(32)
+    fin p1 = arena.allocate(25) catch -1
+    fin p2 = arena.allocateAligned(8, 8) catch -1
+    assert p2 == -1 { "not enough space after alignment padding" }
+}
+
+// =========================================================================
+// Pool Tests
+// =========================================================================
+
+test "Pool construction" {
+    var pool = Pool()
+    pool.setup(32, 10)
+    assert pool.capacity == 10 { "capacity should be 10" }
+    assert pool.available == 10 { "all slots available" }
+    assert pool.inUse == 0 { "none in use" }
+    assert pool.isEmpty { "pool should be empty" }
+    assert !pool.isFull { "pool should not be full" }
+}
+
+test "Pool acquire success" {
+    var pool = Pool()
+    pool.setup(16, 5)
+    fin idx = pool.acquire() catch -1
+    assert idx >= 0 { "acquired slot should be valid" }
+    assert pool.available == 4 { "4 slots remaining" }
+    assert pool.inUse == 1 { "1 slot in use" }
+    assert !pool.isEmpty { "pool not empty after acquire" }
+}
+
+test "Pool acquire multiple" {
+    var pool = Pool()
+    pool.setup(8, 3)
+    fin s1 = pool.acquire() catch -1
+    fin s2 = pool.acquire() catch -1
+    fin s3 = pool.acquire() catch -1
+    assert pool.available == 0 { "no slots available" }
+    assert pool.inUse == 3 { "all 3 in use" }
+    assert pool.isFull { "pool should be full" }
+}
+
+test "Pool acquire PoolExhausted" {
+    var pool = Pool()
+    pool.setup(8, 2)
+    fin s1 = pool.acquire() catch -1
+    fin s2 = pool.acquire() catch -1
+    fin s3 = pool.acquire() catch -1
+    assert s3 == -1 { "third acquire should fail" }
+    assert pool.inUse == 2 { "still 2 in use" }
+}
+
+test "Pool release and reuse" {
+    var pool = Pool()
+    pool.setup(16, 3)
+    fin s1 = pool.acquire() catch -1
+    fin s2 = pool.acquire() catch -1
+    assert pool.available == 1 { "1 available before release" }
+    pool.release(s1)
+    assert pool.available == 2 { "2 available after release" }
+    assert pool.inUse == 1 { "1 in use after release" }
+    fin s3 = pool.acquire() catch -1
+    assert s3 == s1 { "reacquired slot should be same as released" }
+}
+
+test "Pool peak tracking" {
+    var pool = Pool()
+    pool.setup(8, 5)
+    fin s1 = pool.acquire() catch -1
+    fin s2 = pool.acquire() catch -1
+    fin s3 = pool.acquire() catch -1
+    assert pool.peak == 3 { "peak should be 3" }
+    pool.release(s3)
+    pool.release(s2)
+    assert pool.peak == 3 { "peak unchanged after releases" }
+    assert pool.inUse == 1 { "only 1 in use" }
+}
+
+test "Pool canAcquire" {
+    var pool = Pool()
+    pool.setup(8, 2)
+    assert pool.canAcquire() { "can acquire from full pool" }
+    fin s1 = pool.acquire() catch -1
+    assert pool.canAcquire() { "can acquire with 1 remaining" }
+    fin s2 = pool.acquire() catch -1
+    assert !pool.canAcquire() { "cannot acquire from exhausted pool" }
+    pool.release(s1)
+    assert pool.canAcquire() { "can acquire after release" }
+}
+
+test "Pool reset" {
+    var pool = Pool()
+    pool.setup(8, 5)
+    fin s1 = pool.acquire() catch -1
+    fin s2 = pool.acquire() catch -1
+    fin s3 = pool.acquire() catch -1
+    pool.poolReset()
+    assert pool.available == 5 { "all slots free after reset" }
+    assert pool.inUse == 0 { "none in use after reset" }
+    fin s4 = pool.acquire() catch -1
+    assert s4 >= 0 { "can acquire after reset" }
+}
+
+// =========================================================================
+// StackAllocator Tests
+// =========================================================================
+
+test "StackAllocator construction" {
+    var stack = StackAlloc()
+    stack.setup(512)
+    assert stack.size == 512 { "capacity should be 512" }
+    assert stack.used == 0 { "used should be 0" }
+    assert stack.remaining == 512 { "remaining should equal capacity" }
+    assert stack.count == 0 { "alloc count should be 0" }
+    assert stack.isEmpty { "stack should be empty" }
+}
+
+test "StackAllocator allocate success" {
+    var stack = StackAlloc()
+    stack.setup(256)
+    fin pos = stack.allocate(32) catch -1
+    assert pos == 0 { "first alloc at offset 0" }
+    assert stack.used == 32 { "used should be 32" }
+    assert stack.remaining == 224 { "remaining 224" }
+    assert stack.count == 1 { "1 allocation" }
+}
+
+test "StackAllocator multiple allocs" {
+    var stack = StackAlloc()
+    stack.setup(256)
+    fin p1 = stack.allocate(16) catch -1
+    fin p2 = stack.allocate(32) catch -1
+    fin p3 = stack.allocate(64) catch -1
+    assert p1 == 0 { "first at 0" }
+    assert p2 == 16 { "second at 16" }
+    assert p3 == 48 { "third at 48" }
+    assert stack.used == 112 { "total 112" }
+    assert stack.count == 3 { "3 allocs" }
+}
+
+test "StackAllocator allocate OutOfMemory" {
+    var stack = StackAlloc()
+    stack.setup(64)
+    fin p1 = stack.allocate(48) catch -1
+    assert p1 == 0 { "first alloc ok" }
+    fin p2 = stack.allocate(32) catch -1
+    assert p2 == -1 { "exceeding capacity should fail" }
+    assert stack.used == 48 { "used unchanged" }
+}
+
+test "StackAllocator free LIFO" {
+    var stack = StackAlloc()
+    stack.setup(256)
+    fin p1 = stack.allocate(32) catch -1
+    fin p2 = stack.allocate(64) catch -1
+    assert stack.used == 96 { "used 96 before free" }
+    stack.free(64)
+    assert stack.used == 32 { "used 32 after freeing 64" }
+    assert stack.count == 1 { "1 alloc remaining" }
+    stack.free(32)
+    assert stack.used == 0 { "used 0 after freeing all" }
+    assert stack.count == 0 { "0 allocs remaining" }
+    assert stack.isEmpty { "stack empty after LIFO free" }
+}
+
+test "StackAllocator free and realloc" {
+    var stack = StackAlloc()
+    stack.setup(128)
+    fin p1 = stack.allocate(64) catch -1
+    fin p2 = stack.allocate(32) catch -1
+    stack.free(32)
+    fin p3 = stack.allocate(48) catch -1
+    assert p3 == 64 { "realloc after free at same offset" }
+    assert stack.used == 112 { "total used 64 + 48" }
+}
+
+test "StackAllocator peak tracking" {
+    var stack = StackAlloc()
+    stack.setup(256)
+    fin p1 = stack.allocate(64) catch -1
+    fin p2 = stack.allocate(64) catch -1
+    assert stack.peak == 128 { "peak 128" }
+    stack.free(64)
+    assert stack.peak == 128 { "peak preserved after free" }
+    assert stack.used == 64 { "used 64 after free" }
+}
+
+test "StackAllocator canAllocate" {
+    var stack = StackAlloc()
+    stack.setup(100)
+    assert stack.canAllocate(100) { "can alloc full capacity" }
+    assert !stack.canAllocate(101) { "cannot exceed capacity" }
+    fin p = stack.allocate(80) catch -1
+    assert stack.canAllocate(20) { "can alloc remaining 20" }
+    assert !stack.canAllocate(21) { "cannot exceed remaining" }
+}
+
+test "StackAllocator reset" {
+    var stack = StackAlloc()
+    stack.setup(256)
+    fin p1 = stack.allocate(100) catch -1
+    fin p2 = stack.allocate(50) catch -1
+    stack.reset()
+    assert stack.used == 0 { "used 0 after reset" }
+    assert stack.count == 0 { "count 0 after reset" }
+    assert stack.isEmpty { "empty after reset" }
+    fin p3 = stack.allocate(200) catch -1
+    assert p3 == 0 { "reuse space after reset" }
+}
+
+test "StackAllocator resetAll" {
+    var stack = StackAlloc()
+    stack.setup(256)
+    fin p = stack.allocate(128) catch -1
+    stack.resetAll()
+    assert stack.used == 0 { "used 0" }
+    assert stack.peak == 0 { "peak 0 after resetAll" }
+    assert stack.count == 0 { "count 0" }
+}

@@ -1,0 +1,76 @@
+/*
+ * Copyright 2026 AzoraTech
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package testing
+
+// --- Basic alloc/deref/drop ---
+
+pack Node {
+    var value: Int = 0
+    var label: String = ""
+}
+
+test "alloc and deref" {
+    var p = alloc Node(value: 42, label: "hello")
+    assert *p == Node(value: 42, label: "hello") { "deref should return the node" }
+}
+
+test "alloc deref field access" {
+    var p = alloc Node(value: 99, label: "test")
+    assert p.value == 99 { "auto-deref field access" }
+    assert p.label == "test" { "auto-deref string field" }
+}
+
+test "drop pointer" {
+    var p = alloc Node(value: 10)
+    drop p
+}
+
+test "deref assignment" {
+    var p = alloc Int(5)
+    *p = 10
+    assert *p == 10 { "deref assign" }
+}
+
+// --- Multi-level pointers ---
+
+test "pointer to pointer" {
+    var inner = alloc Int(7)
+    var outer = alloc Int(0)
+    *outer = *inner
+    assert *outer == 7 { "copied value" }
+}
+
+// --- Alloc with pack methods ---
+
+impl Node {
+    func describe(): String { ref self ->
+        "Node(${self.value})"
+    }
+}
+
+test "alloc pack with methods" {
+    var p = alloc Node(value: 42)
+    assert p.describe() == "Node(42)" { "method via auto-deref" }
+}
+
+// --- Mutation through pointer ---
+
+test "mutate through pointer" {
+    var p = alloc Node(value: 1)
+    p.value = 100
+    assert p.value == 100 { "mutated through auto-deref" }
+}

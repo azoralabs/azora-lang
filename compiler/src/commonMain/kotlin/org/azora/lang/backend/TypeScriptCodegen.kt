@@ -1,0 +1,237 @@
+/*
+ * Copyright 2026 AzoraTech
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.azora.lang.backend
+
+import org.azora.lang.ir.IrBinaryOp
+import org.azora.lang.ir.IrExpr
+import org.azora.lang.ir.IrFunction
+import org.azora.lang.ir.IrProgram
+import org.azora.lang.ir.IrStmt
+import org.azora.lang.ir.IrTopLevel
+import org.azora.lang.ir.IrType
+import org.azora.lang.ir.IrUnaryOp
+
+/**
+ * Backend — lowers [IrProgram] to TypeScript source code.
+ *
+ * Type mapping:
+ *   Int    → number
+ *   Real   → number
+ *   String → string
+ *   Bool   → boolean
+ *   Unit   → void
+ *
+ * `println` maps to `console.log`.
+ * `fin`/`let` map to `const`, `var` maps to `let`.
+ * String * Int maps to `.repeat(n)`.
+ */
+class TypeScriptCodegen {
+
+    private val out = StringBuilder()
+    private var indent = 0
+
+    /**
+     * Generates TypeScript source code from the given IR program.
+     *
+     * If a `main` function is present, an entry-point call (`main()`) is
+     * appended at the end of the output.
+     *
+     * @param program the optimized IR program to lower to TypeScript
+     * @return the generated TypeScript source code as a string
+     */
+    fun generate(program: IrProgram): String {
+        out.clear()
+        indent = 0
+
+        if (program.packageName != null) {
+            line("// package: ${program.packageName}")
+            line("")
+        }
+
+        for ((i, item) in program.items.withIndex()) {
+            when (item) {
+                is IrTopLevel.Global -> emitStmt(item.stmt)
+                is IrTopLevel.Func -> {
+                    emitFunction(item.function)
+                    if (i < program.items.lastIndex) line("")
+                }
+                is IrTopLevel.Test -> {
+                    emitTest(item)
+                    if (i < program.items.lastIndex) line("")
+                }
+            }
+        }
+
+        // Entry point
+        if (program.functions.any { it.name == "main" }) {
+            line("")
+            line("main()")
+        }
+
+        return out.toString().trimEnd()
+    }
+
+    private fun emitTest(test: IrTopLevel.Test) {
+        line("test(\"${escapeString(test.name)}\", () => {")
+        indent++
+        for (stmt in test.body) emitStmt(stmt)
+        indent--
+        line("});")
+    }
+
+    private fun emitFunction(func: IrFunction) {
+        val params = func.params.joinToString(", ") { (name, type) ->
+            "$name: ${mapType(type)}"
+        }
+        val retType = mapType(func.returnType)
+        line("function ${func.name}($params): $retType {")
+        indent++
+        for (stmt in func.body) {
+            emitStmt(stmt)
+        }
+        indent--
+        line("}")
+    }
+
+    private fun emitStmt(stmt: IrStmt) {
+        when (stmt) {
+            is IrStmt.VarDecl -> line("let ${stmt.name}: ${mapType(stmt.type)} = ${emitExpr(stmt.initializer)};")
+            is IrStmt.FinDecl -> line("const ${stmt.name}: ${mapType(stmt.type)} = ${emitExpr(stmt.initializer)};")
+            is IrStmt.LetDecl -> line("const ${stmt.name}: ${mapType(stmt.type)} = ${emitExpr(stmt.initializer)};")
+            is IrStmt.Assignment -> line("${stmt.name} = ${emitExpr(stmt.value)};")
+            is IrStmt.Return -> {
+                if (stmt.value != null) line("return ${emitExpr(stmt.value)};")
+                else line("return;")
+            }
+            is IrStmt.ExprStmt -> line("${emitExpr(stmt.expr)};")
+            is IrStmt.Assert -> {
+                line("if (!(${emitExpr(stmt.condition)})) { throw new Error(${emitExpr(stmt.message)}); }")
+            }
+            is IrStmt.Trace -> {
+                line("console.log(\"[TRACE]\", ${emitExpr(stmt.message)});")
+            }
+            is IrStmt.Zone -> {
+                line("{")
+                indent++
+                for (s in stmt.body) emitStmt(s)
+                indent--
+                line("}")
+            }
+            is IrStmt.If -> {
+                line("if (${emitExpr(stmt.condition)}) {")
+                indent++
+                for (s in stmt.thenBranch) emitStmt(s)
+                indent--
+                if (stmt.elseBranch != null) {
+                    if (stmt.elseBranch.size == 1 && stmt.elseBranch[0] is IrStmt.If) {
+                        val elseIf = stmt.elseBranch[0] as IrStmt.If
+                        line("} else if (${emitExpr(elseIf.condition)}) {")
+                        indent++
+                        for (s in elseIf.thenBranch) emitStmt(s)
+                        indent--
+                        if (elseIf.elseBranch != null) {
+                            line("} else {")
+                            indent++
+                            for (s in elseIf.elseBranch) emitStmt(s)
+                            indent--
+                        }
+                        line("}")
+                    } else {
+                        line("} else {")
+                        indent++
+                        for (s in stmt.elseBranch) emitStmt(s)
+                        indent--
+                        line("}")
+                    }
+                } else {
+                    line("}")
+                }
+            }
+        }
+    }
+
+    private fun emitExpr(expr: IrExpr): String = when (expr) {
+        is IrExpr.IntLiteral -> when (expr.type) {
+            IrType.Long, IrType.ULong, IrType.Cent, IrType.UCent -> "${expr.value}n"
+            else -> "${expr.value}"
+        }
+        is IrExpr.RealLiteral -> "${expr.value}"
+        is IrExpr.StringLiteral -> "\"${escapeString(expr.value)}\""
+        is IrExpr.BoolLiteral -> "${expr.value}"
+        is IrExpr.CharLiteral -> "\"${escapeString(expr.value.toString())}\""
+        is IrExpr.Var -> expr.name
+        is IrExpr.Unary -> {
+            val op = when (expr.op) {
+                IrUnaryOp.NEG -> "-"
+                IrUnaryOp.NOT -> "!"
+            }
+            "($op${emitExpr(expr.operand)})"
+        }
+        is IrExpr.Binary -> {
+            if (expr.op == IrBinaryOp.MUL && expr.left.type == IrType.String && expr.right.type == IrType.Int) {
+                "${emitExpr(expr.left)}.repeat(${emitExpr(expr.right)})"
+            } else if (expr.op == IrBinaryOp.MUL && expr.left.type == IrType.Int && expr.right.type == IrType.String) {
+                "${emitExpr(expr.right)}.repeat(${emitExpr(expr.left)})"
+            } else {
+                val op = when (expr.op) {
+                    IrBinaryOp.ADD -> "+"
+                    IrBinaryOp.SUB -> "-"
+                    IrBinaryOp.MUL -> "*"
+                    IrBinaryOp.DIV -> "/"
+                    IrBinaryOp.MOD -> "%"
+                    IrBinaryOp.EQ -> "==="
+                    IrBinaryOp.NEQ -> "!=="
+                    IrBinaryOp.LT -> "<"
+                    IrBinaryOp.LTE -> "<="
+                    IrBinaryOp.GT -> ">"
+                    IrBinaryOp.GTE -> ">="
+                    IrBinaryOp.AND -> "&&"
+                    IrBinaryOp.OR -> "||"
+                }
+                "(${emitExpr(expr.left)} $op ${emitExpr(expr.right)})"
+            }
+        }
+        is IrExpr.Call -> {
+            val name = if (expr.name == "println") "console.log" else expr.name
+            "$name(${expr.args.joinToString(", ") { emitExpr(it) }})"
+        }
+    }
+
+    private fun mapType(type: IrType): String = when (type) {
+        IrType.Int -> "number"
+        IrType.UInt -> "number"
+        IrType.Real -> "number"
+        IrType.String -> "string"
+        IrType.Bool -> "boolean"
+        IrType.Unit -> "void"
+        IrType.Char -> "string"
+        IrType.Byte, IrType.UByte -> "number"
+        IrType.Short, IrType.UShort -> "number"
+        IrType.Float -> "number"
+        IrType.Decimal -> "number"
+        IrType.Long, IrType.ULong -> "bigint"
+        IrType.Cent, IrType.UCent -> "bigint"
+    }
+
+    private fun escapeString(s: String): String =
+        s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\t", "\\t")
+
+    private fun line(text: String) {
+        repeat(indent) { out.append("    ") }
+        out.appendLine(text)
+    }
+}

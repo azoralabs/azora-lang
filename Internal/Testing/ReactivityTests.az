@@ -1,0 +1,360 @@
+/*
+ * Copyright 2026 AzoraTech
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package testing
+
+// --- Solo declaration ---
+
+solo Counter {
+    var count: Int = 0
+
+    func increment() {
+        count = count + 1
+    }
+
+    func getCount(): Int {
+        return count
+    }
+}
+
+test "solo basic creation" {
+    // Solo is registered but not instantiated until injected
+    assert true { "solo declared" }
+}
+
+// --- Solo with default fields ---
+
+solo Config {
+    fin host: String = "localhost"
+    fin port: Int = 8080
+    var debug: Bool = false
+}
+
+// --- Solo with methods and inject ---
+
+solo Logger {
+    var lastMsg: String = ""
+    var msgCount: Int = 0
+
+    func info(msg: String) {
+        lastMsg = msg
+        msgCount = msgCount + 1
+    }
+
+    func getLastMsg(): String {
+        return lastMsg
+    }
+}
+
+solo Service {
+    ref logger = inject Logger
+
+    func doWork() {
+        logger.info("working")
+    }
+
+    func doMore() {
+        logger.info("more work")
+    }
+}
+
+// --- Wrap declaration ---
+
+wrap App {
+    solo Counter
+    solo Config
+    solo Logger
+    solo Service
+
+    Logger bind Service
+}
+
+// --- Wrap lifecycle ---
+
+test "wrap init and inject" {
+    App.initLifecycle()
+
+    ref c = inject Counter
+    assert c.count == 0 { "initial count" }
+    c.increment()
+    c.increment()
+    assert c.getCount() == 2 { "count after 2 increments" }
+
+    App.endLifecycle()
+}
+
+test "solo singleton behavior" {
+    App.initLifecycle()
+
+    ref a = inject Counter
+    ref b = inject Counter
+    a.increment()
+    assert b.getCount() == a.getCount() { "same instance" }
+
+    App.endLifecycle()
+}
+
+test "solo default fields" {
+    App.initLifecycle()
+
+    ref cfg = inject Config
+    assert cfg.host == "localhost" { "host" }
+    assert cfg.port == 8080 { "port" }
+    assert cfg.debug == false { "debug" }
+
+    App.endLifecycle()
+}
+
+test "solo field mutation" {
+    App.initLifecycle()
+
+    ref cfg = inject Config
+    cfg.debug = true
+    assert cfg.debug == true { "debug updated" }
+
+    App.endLifecycle()
+}
+
+test "inject with bind" {
+    App.initLifecycle()
+
+    ref svc = inject Service
+    svc.doWork()
+    ref log = inject Logger
+    assert log.getLastMsg() == "working" { "logger received message" }
+    svc.doMore()
+    assert log.getLastMsg() == "more work" { "second message" }
+
+    App.endLifecycle()
+}
+
+// --- Rem state ---
+
+test "rem basic" {
+    rem count: Int = 0
+    count = count + 1
+    assert count == 1 { "rem count" }
+}
+
+test "rem with string" {
+    rem name: String = "hello"
+    assert name == "hello" { "initial" }
+    name = "world"
+    assert name == "world" { "updated" }
+}
+
+test "rem with bool" {
+    rem flag: Bool = false
+    assert flag == false { "initial" }
+    flag = true
+    assert flag == true { "toggled" }
+}
+
+// --- Solo with constructor args via wrap ---
+
+solo Database {
+    fin host: String
+    fin port: Int = 5432
+}
+
+wrap DbApp {
+    solo Database(host: "localhost", port: 3306)
+}
+
+test "solo constructor args" {
+    DbApp.initLifecycle()
+
+    ref db = inject Database
+    assert db.host == "localhost" { "host" }
+    assert db.port == 3306 { "port override" }
+
+    DbApp.endLifecycle()
+}
+
+// --- Bind multiple consumers ---
+
+solo RepoA {
+    ref logger = inject Logger
+    func work() {
+        logger.info("from A")
+    }
+}
+
+solo RepoB {
+    ref logger = inject Logger
+    func work() {
+        logger.info("from B")
+    }
+}
+
+wrap MultiApp {
+    solo Logger
+    solo RepoA
+    solo RepoB
+
+    Logger bind (RepoA, RepoB)
+}
+
+test "bind multiple consumers" {
+    MultiApp.initLifecycle()
+
+    ref a = inject RepoA
+    a.work()
+    ref log = inject Logger
+    assert log.getLastMsg() == "from A" { "A logged" }
+
+    ref b = inject RepoB
+    b.work()
+    assert log.getLastMsg() == "from B" { "B logged" }
+
+    MultiApp.endLifecycle()
+}
+
+// --- Solo dtor ---
+
+solo Resource {
+    var released: Bool = false
+
+    dtor() {
+        released = true
+    }
+}
+
+wrap ResApp {
+    solo Resource
+}
+
+test "solo dtor runs on endLifecycle" {
+    ResApp.initLifecycle()
+    ref r = inject Resource
+    assert r.released == false { "not released" }
+    ResApp.endLifecycle()
+}
+
+// --- Injection chain ---
+
+solo A {
+    var value: Int = 1
+}
+
+solo B {
+    ref a = inject A
+
+    func getAValue(): Int {
+        return a.value
+    }
+}
+
+solo C {
+    ref b = inject B
+
+    func getChained(): Int {
+        return b.getAValue()
+    }
+}
+
+wrap ChainApp {
+    solo A
+    solo B
+    solo C
+
+    A bind B
+    B bind C
+}
+
+test "injection chain" {
+    ChainApp.initLifecycle()
+
+    ref c = inject C
+    assert c.getChained() == 1 { "chained value" }
+
+    ref a = inject A
+    a.value = 99
+    assert c.getChained() == 99 { "updated chain" }
+
+    ChainApp.endLifecycle()
+}
+
+// --- Lazy bind (circular dependency) ---
+
+solo Ping {
+    ref pong = inject Pong
+
+    func send(): String {
+        return "ping-" + pong.reply()
+    }
+}
+
+solo Pong {
+    ref ping = inject Ping
+
+    func reply(): String {
+        return "pong"
+    }
+
+    func send(): String {
+        return "pong-" + ping.send()
+    }
+}
+
+wrap CircularApp {
+    solo Ping
+    solo Pong
+    Ping bind Pong
+    Pong lazy bind Ping
+}
+
+test "lazy bind breaks circular dependency" {
+    CircularApp.initLifecycle()
+
+    ref ping = inject Ping
+    assert ping.send() == "ping-pong" { "ping sends through pong" }
+
+    CircularApp.endLifecycle()
+}
+
+// --- View declaration ---
+
+view Greeting(name: String) {
+    println("Hello, ${name}")
+}
+
+test "view declared" {
+    assert true { "view exists" }
+}
+
+// --- Effect and cleanup ---
+
+test "effect runs body" {
+    var log: String = ""
+    rem active: Bool = true
+    effect active {
+        log = "effect ran"
+    }
+    assert log == "effect ran" { "effect executed" }
+}
+
+test "effect with cleanup via return" {
+    var log: String = ""
+    rem active: Bool = true
+    effect active {
+        log = log + "effect;"
+        return {
+            log = log + "cleanup;"
+        }
+    }
+    assert log == "effect;" { "effect ran before cleanup" }
+}

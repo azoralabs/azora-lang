@@ -1,0 +1,205 @@
+/*
+ * Copyright 2026 AzoraTech
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package testing
+
+use scope std
+
+// =========================================================================
+// FunctionalExtra tests
+// =========================================================================
+
+test "flatMap basic" {
+    var arr: [Int] = [1, 2, 3]
+    var result: [Int] = flatMap<Int>(arr, { x -> [x, x * 10] })
+    assert result.length == 6 { "flatMap length" }
+    assert result[0] == 1 { "flatMap[0]" }
+    assert result[1] == 10 { "flatMap[1]" }
+    assert result[2] == 2 { "flatMap[2]" }
+    assert result[3] == 20 { "flatMap[3]" }
+}
+
+test "fold sum" {
+    var arr: [Int] = [1, 2, 3, 4, 5]
+    var total: Int = fold<Int>(arr, 0, { acc, x -> acc + x })
+    assert total == 15 { "fold sum" }
+}
+
+test "scan running sum" {
+    var arr: [Int] = [1, 2, 3]
+    var result: [Int] = scan<Int>(arr, 0, { acc, x -> acc + x })
+    assert result[0] == 0 { "scan[0] initial" }
+    assert result[1] == 1 { "scan[1]" }
+    assert result[2] == 3 { "scan[2]" }
+    assert result[3] == 6 { "scan[3]" }
+}
+
+test "partition evens and odds" {
+    var arr: [Int] = [1, 2, 3, 4, 5, 6]
+    var parts: [[Int]] = partition<Int>(arr, { x -> x % 2 == 0 })
+    assert parts[0].length == 3 { "evens count" }
+    assert parts[1].length == 3 { "odds count" }
+}
+
+test "distinct removes duplicates" {
+    var arr: [Int] = [1, 2, 2, 3, 1, 4, 3]
+    var result: [Int] = distinct<Int>(arr)
+    assert result.length == 4 { "distinct length" }
+    assert result[0] == 1 { "distinct[0]" }
+    assert result[1] == 2 { "distinct[1]" }
+    assert result[2] == 3 { "distinct[2]" }
+    assert result[3] == 4 { "distinct[3]" }
+}
+
+test "chunk splits array" {
+    var arr: [Int] = [1, 2, 3, 4, 5]
+    var chunks: [[Int]] = chunk<Int>(arr, 2)
+    assert chunks.length == 3 { "chunk count" }
+    assert chunks[0].length == 2 { "chunk[0] size" }
+    assert chunks[2].length == 1 { "last chunk size" }
+}
+
+test "firstWhere finds element" {
+    var arr: [Int] = [1, 5, 3, 8, 2]
+    var found: Int = firstWhere<Int>(arr, { x -> x > 4 }, -1)
+    assert found == 5 { "firstWhere found" }
+}
+
+test "firstWhere returns default" {
+    var arr: [Int] = [1, 2, 3]
+    var found: Int = firstWhere<Int>(arr, { x -> x > 10 }, -1)
+    assert found == -1 { "firstWhere default" }
+}
+
+test "slice extracts range" {
+    var arr: [Int] = [10, 20, 30, 40, 50]
+    var result: [Int] = slice<Int>(arr, 1, 4)
+    assert result.length == 3 { "slice length" }
+    assert result[0] == 20 { "slice[0]" }
+    assert result[2] == 40 { "slice[2]" }
+}
+
+test "flatten nested arrays" {
+    var arr: [[Int]] = [[1, 2], [3], [4, 5, 6]]
+    var result: [Int] = flatten<Int>(arr)
+    assert result.length == 6 { "flatten length" }
+    assert result[0] == 1 { "flatten[0]" }
+    assert result[5] == 6 { "flatten[5]" }
+}
+
+// =========================================================================
+// AlgorithmExtra tests
+// =========================================================================
+
+test "mergeSort ascending" {
+    var arr: [Int] = [5, 3, 8, 1, 9, 2]
+    var sorted: [Int] = mergeSort<Int>(arr)
+    assert sorted[0] == 1 { "mergeSort[0]" }
+    assert sorted[1] == 2 { "mergeSort[1]" }
+    assert sorted[2] == 3 { "mergeSort[2]" }
+    assert sorted[3] == 5 { "mergeSort[3]" }
+    assert sorted[4] == 8 { "mergeSort[4]" }
+    assert sorted[5] == 9 { "mergeSort[5]" }
+}
+
+test "mergeSort already sorted" {
+    var arr: [Int] = [1, 2, 3, 4, 5]
+    var sorted: [Int] = mergeSort<Int>(arr)
+    assert sorted[0] == 1 { "already sorted[0]" }
+    assert sorted[4] == 5 { "already sorted[4]" }
+}
+
+test "mergeSort single element" {
+    var arr: [Int] = [42]
+    var sorted: [Int] = mergeSort<Int>(arr)
+    assert sorted[0] == 42 { "single element" }
+}
+
+test "mergeSort empty array" {
+    var arr: [Int] = [].fill<Int>(0)
+    var sorted: [Int] = mergeSort<Int>(arr)
+    assert sorted.length == 0 { "empty mergeSort" }
+}
+
+test "interleave arrays" {
+    var a: [Int] = [1, 3, 5]
+    var b: [Int] = [2, 4, 6]
+    var result: [Int] = interleave<Int>(a, b)
+    assert result.length == 6 { "interleave length" }
+    assert result[0] == 1 { "interleave[0]" }
+    assert result[1] == 2 { "interleave[1]" }
+    assert result[2] == 3 { "interleave[2]" }
+    assert result[3] == 4 { "interleave[3]" }
+}
+
+test "evens extracts even indices" {
+    var arr: [Int] = [10, 20, 30, 40, 50]
+    var result: [Int] = evens<Int>(arr)
+    assert result.length == 3 { "evens length" }
+    assert result[0] == 10 { "evens[0]" }
+    assert result[1] == 30 { "evens[1]" }
+    assert result[2] == 50 { "evens[2]" }
+}
+
+test "odds extracts odd indices" {
+    var arr: [Int] = [10, 20, 30, 40, 50]
+    var result: [Int] = odds<Int>(arr)
+    assert result.length == 2 { "odds length" }
+    assert result[0] == 20 { "odds[0]" }
+    assert result[1] == 40 { "odds[1]" }
+}
+
+// =========================================================================
+// Random tests
+// =========================================================================
+
+test "Random nextInt range" {
+    var rng = Random(seed: 42)
+    var val1: Int = rng.nextInt(100)
+    assert val1 >= 0 { "nextInt >= 0" }
+    assert val1 < 100 { "nextInt < 100" }
+    var val2: Int = rng.nextInt(100)
+    assert val2 >= 0 { "nextInt2 >= 0" }
+    assert val2 < 100 { "nextInt2 < 100" }
+}
+
+test "Random nextRange" {
+    var rng = Random(seed: 123)
+    var val1: Int = rng.nextRange(10, 20)
+    assert val1 >= 10 { "nextRange >= min" }
+    assert val1 <= 20 { "nextRange <= max" }
+}
+
+test "Random deterministic with same seed" {
+    var rng1 = Random(seed: 999)
+    var rng2 = Random(seed: 999)
+    assert rng1.next() == rng2.next() { "same seed same result" }
+}
+
+test "shuffle preserves elements" {
+    var arr: [Int] = [1, 2, 3, 4, 5]
+    var rng = Random(seed: 42)
+    var shuffled: [Int] = shuffle<Int>(arr, rng)
+    assert shuffled.length == 5 { "shuffle same length" }
+    // Verify all elements present (sort both and compare)
+    var sortedOrig: [Int] = sort<Int>(arr)
+    var sortedShuf: [Int] = sort<Int>(shuffled)
+    var i = 0
+    while i < 5 {
+        assert sortedOrig[i] == sortedShuf[i] { "shuffle preserves elements" }
+        i += 1
+    }
+}

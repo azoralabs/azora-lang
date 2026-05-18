@@ -1,0 +1,26 @@
+package demo_multiplatform.tests
+
+use scope std
+
+test "initial count" {
+    fin count = 0
+    assert count == 0 { "counter starts at zero" }
+}
+
+test "increment" {
+    var count = 0
+    count = count + 1
+    assert count == 1 { "increment works" }
+}
+
+test "decrement" {
+    var count = 0
+    count = count - 1
+    assert count == -1 { "decrement works" }
+}
+
+test "reset" {
+    var count = 42
+    count = 0
+    assert count == 0 { "reset works" }
+}

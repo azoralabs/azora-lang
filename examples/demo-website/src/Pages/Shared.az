@@ -1,0 +1,59 @@
+package demo_website.pages
+
+use std.ui
+use scope std
+
+// Shared components used across pages.
+
+view BackButton(
+    onClick: () -> Unit
+) {
+    Button(
+        onClick: onClick,
+        modifier: Modifier()
+            .padding(10, 20)
+            .backgroundColor("#f1f5f9")
+            .color("#334155")
+            .borderRadius(8)
+            .fontSize(14)
+            .hoverBrightness(0.92)
+    ) {
+        Row(
+            modifier: Modifier()
+                .gap(6)
+                .align("center")
+        ) {
+            Svg(width: 16, height: 16, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor") {
+                SvgPath(d: "M19 12H5")
+                SvgPath(d: "M12 19l-7-7 7-7")
+            }
+            Text("Back")
+        }
+    }
+}
+
+view PageTitle(
+    text: String
+) {
+    Text(
+        text,
+        modifier: Modifier()
+            .fontSize(36)
+            .bold()
+            .color("#0f172a")
+            .letterSpacing(-0.5)
+    )
+}
+
+view PageLayout(
+    children: () -> Unit
+) {
+    Column(
+        modifier: Modifier()
+            .padding(64, 48)
+            .maxWidth(720)
+            .center()
+    ) {
+        children()
+    }
+}

@@ -1,0 +1,28 @@
+[project]
+name = "demo-multiplatform"
+version = "0.1.0"
+targets = ["web-js", "web-wasm", "kmp", "kotlin-jvm", "csharp", "python", "swift"]
+entry = "App.az"
+src = "src"
+
+[web-js]
+title = "Counter App"
+port = 8080
+
+[web-wasm]
+title = "Counter App"
+port = 8081
+
+[kmp]
+platforms = ["desktop", "android", "ios"]
+compose = true
+
+[kotlin-jvm]
+jvmTarget = "21"
+
+[csharp]
+framework = "net8.0"
+type = "console"
+
+[test]
+src = "tests"

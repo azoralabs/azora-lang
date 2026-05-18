@@ -1,0 +1,13 @@
+[project]
+name = "demo-website"
+version = "0.1.0"
+target = "web-js"
+entry = "App.az"
+src = "src"
+
+[web-js]
+title = "PawTrack - Pet Tracker"
+port = 8080
+
+[test]
+src = "tests"

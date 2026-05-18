@@ -1,0 +1,260 @@
+/*
+ * Copyright 2026 AzoraTech
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package testing
+
+// --- Char literals ---
+
+test "char literal basic" {
+    fin c = 'a'
+    assert c == 'a' { "char literal should be 'a'" }
+}
+
+test "char literal digit" {
+    fin c = '0'
+    assert c == '0' { "char literal should be '0'" }
+}
+
+test "char literal escape newline" {
+    fin c = '\n'
+    fin code = ord(c)
+    assert code == 10 { "newline should have code 10" }
+}
+
+test "char literal escape tab" {
+    fin c = '\t'
+    fin code = ord(c)
+    assert code == 9 { "tab should have code 9" }
+}
+
+test "char literal escape backslash" {
+    fin c = '\\'
+    fin code = ord(c)
+    assert code == 92 { "backslash should have code 92" }
+}
+
+test "char literal escape single quote" {
+    fin c = '\''
+    fin code = ord(c)
+    assert code == 39 { "single quote should have code 39" }
+}
+
+// --- Char type checks ---
+
+test "char is Char type" {
+    fin c = 'x'
+    assert c is Char { "should be Char type" }
+}
+
+test "char typename" {
+    fin c = 'z'
+    assert c.typename == "Char" { "typename should be Char" }
+}
+
+// --- Char arithmetic ---
+
+test "char plus int" {
+    fin c = 'a'
+    fin d = c + 1
+    assert d == 'b' { "a + 1 should be b" }
+}
+
+test "char minus int" {
+    fin c = 'z'
+    fin d = c - 1
+    assert d == 'y' { "z - 1 should be y" }
+}
+
+test "char minus char" {
+    fin a = 'z'
+    fin b = 'a'
+    fin diff = a - b
+    assert diff == 25 { "z - a should be 25" }
+}
+
+// --- Char comparison ---
+
+test "char equality" {
+    assert 'a' == 'a' { "same chars should be equal" }
+    assert 'a' != 'b' { "different chars should not be equal" }
+}
+
+test "char ordering" {
+    assert 'a' < 'b' { "a < b" }
+    assert 'z' > 'a' { "z > a" }
+    assert 'a' <= 'a' { "a <= a" }
+    assert 'b' >= 'a' { "b >= a" }
+}
+
+// --- Char built-in functions ---
+
+test "ord and chr" {
+    fin c = 'A'
+    fin code = ord(c)
+    assert code == 65 { "A should have code 65" }
+    fin back = chr(65)
+    assert back == 'A' { "chr(65) should be A" }
+}
+
+test "ord and chr roundtrip" {
+    fin c = 'Z'
+    assert chr(ord(c)) == 'Z' { "roundtrip should preserve char" }
+}
+
+test "isDigit" {
+    assert isDigit('5') == true { "5 is a digit" }
+    assert isDigit('a') == false { "a is not a digit" }
+    assert isDigit('0') == true { "0 is a digit" }
+    assert isDigit('9') == true { "9 is a digit" }
+}
+
+test "isAlpha" {
+    assert isAlpha('a') == true { "a is alpha" }
+    assert isAlpha('Z') == true { "Z is alpha" }
+    assert isAlpha('5') == false { "5 is not alpha" }
+}
+
+test "isUpper and isLower" {
+    assert isUpper('A') == true { "A is upper" }
+    assert isUpper('a') == false { "a is not upper" }
+    assert isLower('a') == true { "a is lower" }
+    assert isLower('A') == false { "A is not lower" }
+}
+
+test "isWhitespace" {
+    assert isWhitespace(' ') == true { "space is whitespace" }
+    assert isWhitespace('a') == false { "a is not whitespace" }
+}
+
+test "isAlphanumeric" {
+    assert isAlphanumeric('a') == true { "a is alphanumeric" }
+    assert isAlphanumeric('5') == true { "5 is alphanumeric" }
+    assert isAlphanumeric(' ') == false { "space is not alphanumeric" }
+}
+
+test "toUpper and toLower char" {
+    assert toUpper('a') == 'A' { "toUpper a should be A" }
+    assert toLower('Z') == 'z' { "toLower Z should be z" }
+}
+
+test "toChar conversion" {
+    fin c = toChar(65)
+    assert c == 'A' { "toChar(65) should be A" }
+}
+
+test "charAt" {
+    fin c = charAt("hello", 0)
+    assert c == 'h' { "charAt 0 of hello should be h" }
+    fin d = charAt("hello", 4)
+    assert d == 'o' { "charAt 4 of hello should be o" }
+}
+
+test "toChars and fromChars" {
+    fin chars = toChars("abc")
+    assert chars.length == 3 { "abc has 3 chars" }
+    assert chars[0] == 'a' { "first char is a" }
+    assert chars[1] == 'b' { "second char is b" }
+    assert chars[2] == 'c' { "third char is c" }
+    fin s = fromChars(chars)
+    assert s == "abc" { "fromChars should reconstruct abc" }
+}
+
+// --- Char concatenation ---
+
+test "char plus char makes string" {
+    fin a = 'h'
+    fin b = 'i'
+    fin s = a + b
+    assert s == "hi" { "char + char should produce string" }
+}
+
+test "char plus string" {
+    fin c = 'h'
+    fin s = c + "ello"
+    assert s == "hello" { "char + string should produce string" }
+}
+
+// --- Char casting ---
+
+test "int to char cast" {
+    fin c = 97 as Char
+    assert c == 'a' { "97 as Char should be a" }
+}
+
+test "char to string" {
+    fin c = 'x'
+    fin s = toString(c)
+    assert s == "x" { "toString of char should be the character as string" }
+}
+
+// --- Char in collections ---
+
+test "char array" {
+    var arr: [Char] = ['a', 'b', 'c']
+    assert arr.length == 3 { "char array should have 3 elements" }
+    assert arr[0] == 'a' { "first element" }
+    assert arr[2] == 'c' { "last element" }
+}
+
+// --- String built-in functions ---
+
+test "stringLength" {
+    assert stringLength("hello") == 5 { "hello has 5 chars" }
+    assert stringLength("") == 0 { "empty string has 0 chars" }
+}
+
+test "substring" {
+    assert substring("hello", 1, 4) == "ell" { "substring(1,4) of hello" }
+    assert substring("hello", 0, 5) == "hello" { "full substring" }
+}
+
+test "startsWith and endsWith" {
+    assert startsWith("hello", "hel") == true { "hello starts with hel" }
+    assert startsWith("hello", "xyz") == false { "hello does not start with xyz" }
+    assert endsWith("hello", "llo") == true { "hello ends with llo" }
+    assert endsWith("hello", "xyz") == false { "hello does not end with xyz" }
+}
+
+test "contains string" {
+    assert contains("hello world", "world") == true { "contains world" }
+    assert contains("hello world", "xyz") == false { "does not contain xyz" }
+}
+
+test "indexOf string" {
+    assert indexOf("hello", "ll") == 2 { "indexOf ll in hello is 2" }
+    assert indexOf("hello", "xyz") == -1 { "indexOf xyz not found" }
+}
+
+test "trim" {
+    assert trim("  hello  ") == "hello" { "trim whitespace" }
+}
+
+test "replace" {
+    assert replace("hello world", "world", "azora") == "hello azora" { "replace world with azora" }
+}
+
+test "split" {
+    fin parts = split("a,b,c", ",")
+    assert parts.length == 3 { "split should produce 3 parts" }
+    assert parts[0] == "a" { "first part" }
+    assert parts[1] == "b" { "second part" }
+    assert parts[2] == "c" { "third part" }
+}
+
+test "toUpper and toLower string" {
+    assert toUpper("hello") == "HELLO" { "toUpper string" }
+    assert toLower("HELLO") == "hello" { "toLower string" }
+}

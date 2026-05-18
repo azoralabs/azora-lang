@@ -1,0 +1,18 @@
+package demo_website.tests
+
+use scope std
+
+test "page count" {
+    fin pages = 4
+    assert pages == 4 { "app has 4 pages" }
+}
+
+test "pet count" {
+    fin pets = 3
+    assert pets == 3 { "3 pets registered" }
+}
+
+test "health entries" {
+    fin entries = 5
+    assert entries > 0 { "health log has entries" }
+}

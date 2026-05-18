@@ -1,0 +1,148 @@
+package demo_website.pages
+
+use std.ui
+use scope std
+
+view HealthEntry(
+    pet: String,
+    date: String,
+    kind: String,
+    note: String,
+    color: String,
+    icon: String
+) {
+    Row(
+        modifier: Modifier()
+            .gap(16)
+            .padding(18)
+            .backgroundColor("#fff")
+            .borderRadius(12)
+            .border(1, "#e2e8f0")
+            .align("center")
+            .hoverLift(2)
+    ) {
+        // Type icon
+        Svg(width: 22, height: 22, viewBox: "0 0 24 24", fill: "none", stroke: color) {
+            SvgPath(d: icon)
+        }
+
+        // Details
+        Column(
+            modifier: Modifier()
+                .gap(4)
+        ) {
+            Row(
+                modifier: Modifier()
+                    .gap(8)
+                    .align("center")
+            ) {
+                Text(
+                    pet,
+                    modifier: Modifier()
+                        .fontSize(16)
+                        .bold()
+                        .color("#0f172a")
+                )
+                Text(
+                    kind,
+                    modifier: Modifier()
+                        .fontSize(11)
+                        .backgroundColor(color)
+                        .color("#fff")
+                        .padding(2, 8)
+                        .borderRadius(4)
+                        .bold()
+                )
+            }
+            Text(
+                note,
+                modifier: Modifier()
+                    .fontSize(14)
+                    .color("#64748b")
+                    .lineHeight(1.5)
+            )
+        }
+
+        Spacer()
+
+        // Date
+        Text(
+            date,
+            modifier: Modifier()
+                .fontSize(13)
+                .color("#94a3b8")
+        )
+    }
+}
+
+view HealthPage(
+    onBack: () -> Unit
+) {
+    Column(
+        modifier: Modifier()
+            .padding(64, 48)
+            .enterAnimation("azFadeIn", 400)
+            .maxWidth(720)
+            .center()
+    ) {
+        BackButton(onClick: onBack)
+
+        Spacer(height: 40)
+        PageTitle(text: "Health Log")
+        Spacer(height: 8)
+        Text(
+            "Recent vet visits, vaccinations, and notes.",
+            modifier: Modifier()
+                .fontSize(15)
+                .color("#64748b")
+        )
+
+        Spacer(height: 24)
+
+        Column(
+            modifier: Modifier()
+                .gap(12)
+        ) {
+            HealthEntry(
+                pet: "Luna",
+                date: "Mar 20",
+                kind: "vaccine",
+                note: "Annual rabies booster. Next due March 2027.",
+                color: "#10b981",
+                icon: "M22 12h-4l-3 9L9 3l-3 9H2"
+            )
+            HealthEntry(
+                pet: "Milo",
+                date: "Mar 15",
+                kind: "checkup",
+                note: "Routine checkup. Weight stable at 5.2 kg. Teeth cleaned.",
+                color: "#3b82f6",
+                icon: "M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+            )
+            HealthEntry(
+                pet: "Luna",
+                date: "Feb 28",
+                kind: "medication",
+                note: "Started flea/tick prevention. Nexgard chewable, monthly.",
+                color: "#8b5cf6",
+                icon: "M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"
+            )
+            HealthEntry(
+                pet: "Coco",
+                date: "Feb 10",
+                kind: "checkup",
+                note: "First vet visit. All clear. Recommended timothy hay diet.",
+                color: "#3b82f6",
+                icon: "M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+            )
+            HealthEntry(
+                pet: "Milo",
+                date: "Jan 22",
+                kind: "vaccine",
+                note: "FVRCP booster. Mild lethargy for 24h, resolved.",
+                color: "#10b981",
+                icon: "M22 12h-4l-3 9L9 3l-3 9H2"
+            )
+        }
+    }
+}

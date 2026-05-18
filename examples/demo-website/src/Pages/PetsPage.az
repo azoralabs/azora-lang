@@ -1,0 +1,158 @@
+package demo_website.pages
+
+use std.ui
+use scope std
+
+view PetCard(
+    name: String,
+    breed: String,
+    age: String,
+    weight: String,
+    color: String,
+    emoji: String
+) {
+    Row(
+        modifier: Modifier()
+            .gap(16)
+            .padding(20)
+            .backgroundColor("#fff")
+            .borderRadius(12)
+            .border(1, "#e2e8f0")
+            .align("center")
+            .hoverLift(2)
+    ) {
+        // Pet avatar
+        Column(
+            modifier: Modifier()
+                .width(52)
+                .height(52)
+                .backgroundColor(color)
+                .borderRadius(26)
+                .align("center")
+                .justify("center")
+        ) {
+            Text(
+                emoji,
+                modifier: Modifier()
+                    .fontSize(24)
+            )
+        }
+
+        // Pet info
+        Column(
+            modifier: Modifier()
+                .gap(4)
+        ) {
+            Text(
+                name,
+                modifier: Modifier()
+                    .fontSize(18)
+                    .bold()
+                    .color("#0f172a")
+            )
+            Text(
+                breed,
+                modifier: Modifier()
+                    .fontSize(14)
+                    .color("#64748b")
+            )
+        }
+
+        Spacer()
+
+        // Stats
+        Column(
+            modifier: Modifier()
+                .gap(4)
+                .align("flex-end")
+        ) {
+            Row(
+                modifier: Modifier()
+                    .gap(4)
+                    .align("center")
+            ) {
+                Svg(width: 14, height: 14, viewBox: "0 0 24 24", fill: "none", stroke: "#94a3b8") {
+                    SvgCircle(cx: 12, cy: 12, r: 10)
+                    SvgPolyline(points: "12 6 12 12 16 14")
+                }
+                Text(
+                    age,
+                    modifier: Modifier()
+                        .fontSize(13)
+                        .color("#94a3b8")
+                )
+            }
+            Row(
+                modifier: Modifier()
+                    .gap(4)
+                    .align("center")
+            ) {
+                Svg(width: 14, height: 14, viewBox: "0 0 24 24", fill: "none", stroke: "#94a3b8") {
+                    SvgPath(d: "M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5")
+                }
+                Text(
+                    weight,
+                    modifier: Modifier()
+                        .fontSize(13)
+                        .color("#94a3b8")
+                )
+            }
+        }
+    }
+}
+
+view PetsPage(
+    onBack: () -> Unit
+) {
+    Column(
+        modifier: Modifier()
+            .padding(64, 48)
+            .maxWidth(720)
+            .center()
+            .enterAnimation("azFadeIn", 400)
+    ) {
+        BackButton(onClick: onBack)
+
+        Spacer(height: 40)
+        PageTitle(text: "My Pets")
+        Spacer(height: 8)
+        Text(
+            "3 pets registered",
+            modifier: Modifier()
+                .fontSize(15)
+                .color("#94a3b8")
+        )
+
+        Spacer(height: 24)
+
+        Column(
+            modifier: Modifier()
+                .gap(12)
+        ) {
+            PetCard(
+                name: "Luna",
+                breed: "Golden Retriever",
+                age: "3 years",
+                weight: "29 kg",
+                color: "#fef3c7",
+                emoji: "🐕"
+            )
+            PetCard(
+                name: "Milo",
+                breed: "British Shorthair",
+                age: "5 years",
+                weight: "5.2 kg",
+                color: "#e0e7ff",
+                emoji: "🐈"
+            )
+            PetCard(
+                name: "Coco",
+                breed: "Mini Lop Rabbit",
+                age: "1 year",
+                weight: "1.8 kg",
+                color: "#fce7f3",
+                emoji: "🐇"
+            )
+        }
+    }
+}

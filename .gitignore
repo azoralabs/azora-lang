@@ -1,0 +1,50 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+.fleet/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local config
+local.properties
+
+# Kotlin
+*.class
+.kotlin/
+kotlin-js-store/
+
+# Node (docs site)
+node_modules/
+
+# Claude
+.claude/
+.clauderc
+.claude.json
+CLAUDE.md
+CLAUDE.local.md
+.claude-api-key
+.claudeignore
+
+# Binary artifacts
+*.so
+*.dylib
+*.dll
+*.exe
+*.kexe
+*.node
+*.dSYM/
+
+# Temporary files
+*.tmp
+*.swp
+*.swo
+*~

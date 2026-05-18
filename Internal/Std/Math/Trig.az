@@ -1,0 +1,166 @@
+/*
+ * Copyright 2026 AzoraTech
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+@file:experimental
+
+package std.math
+
+/**
+ * @file Trig
+ *
+ * Trigonometric, logarithmic, and exponential functions.
+ * Bridge declarations map to platform math libraries.
+ *
+ * Uses "func foreignName as azName(...)" syntax where foreignName is
+ * the real function name in the target language and azName is the
+ * Azora-facing name used in Azora source code.
+ *
+ * @since 0.0.1
+ */
+
+@target(.Native)
+bridge .C {
+    func sin as az_sin(x: Real): Real
+    func cos as az_cos(x: Real): Real
+    func tan as az_tan(x: Real): Real
+    func asin as az_asin(x: Real): Real
+    func acos as az_acos(x: Real): Real
+    func atan as az_atan(x: Real): Real
+    func atan2 as az_atan2(y: Real, x: Real): Real
+    func sqrt as az_sqrt(x: Real): Real
+    func cbrt as az_cbrt(x: Real): Real
+    func log as az_log(x: Real): Real
+    func log2 as az_log2(x: Real): Real
+    func log10 as az_log10(x: Real): Real
+    func exp as az_exp(x: Real): Real
+    func exp2 as az_exp2(x: Real): Real
+    func hypot as az_hypot(x: Real, y: Real): Real
+}
+
+@target(.WebJs, .WebWasm)
+bridge .JS {
+    func Math.sin as az_sin(x: Real): Real
+    func Math.cos as az_cos(x: Real): Real
+    func Math.tan as az_tan(x: Real): Real
+    func Math.asin as az_asin(x: Real): Real
+    func Math.acos as az_acos(x: Real): Real
+    func Math.atan as az_atan(x: Real): Real
+    func Math.atan2 as az_atan2(y: Real, x: Real): Real
+    func Math.sqrt as az_sqrt(x: Real): Real
+    func Math.cbrt as az_cbrt(x: Real): Real
+    func Math.log as az_log(x: Real): Real
+    func Math.log2 as az_log2(x: Real): Real
+    func Math.log10 as az_log10(x: Real): Real
+    func Math.exp as az_exp(x: Real): Real
+    func Math.pow as az_exp2(x: Real, y: Real): Real
+    func Math.hypot as az_hypot(x: Real, y: Real): Real
+}
+
+@target(.KotlinJvm, .Kmp)
+bridge .JVM {
+    func kotlin.math.sin as az_sin(x: Real): Real
+    func kotlin.math.cos as az_cos(x: Real): Real
+    func kotlin.math.tan as az_tan(x: Real): Real
+    func kotlin.math.asin as az_asin(x: Real): Real
+    func kotlin.math.acos as az_acos(x: Real): Real
+    func kotlin.math.atan as az_atan(x: Real): Real
+    func kotlin.math.atan2 as az_atan2(y: Real, x: Real): Real
+    func kotlin.math.sqrt as az_sqrt(x: Real): Real
+    func kotlin.math.cbrt as az_cbrt(x: Real): Real
+    func kotlin.math.ln as az_log(x: Real): Real
+    func kotlin.math.log2 as az_log2(x: Real): Real
+    func kotlin.math.log10 as az_log10(x: Real): Real
+    func kotlin.math.exp as az_exp(x: Real): Real
+    func kotlin.math.exp as az_exp2(x: Real): Real
+    func kotlin.math.hypot as az_hypot(x: Real, y: Real): Real
+}
+
+@target(.Csharp)
+bridge .CS {
+    func Math.Sin as az_sin(x: Real): Real
+    func Math.Cos as az_cos(x: Real): Real
+    func Math.Tan as az_tan(x: Real): Real
+    func Math.Asin as az_asin(x: Real): Real
+    func Math.Acos as az_acos(x: Real): Real
+    func Math.Atan as az_atan(x: Real): Real
+    func Math.Atan2 as az_atan2(y: Real, x: Real): Real
+    func Math.Sqrt as az_sqrt(x: Real): Real
+    func Math.Cbrt as az_cbrt(x: Real): Real
+    func Math.Log as az_log(x: Real): Real
+    func Math.Log2 as az_log2(x: Real): Real
+    func Math.Log10 as az_log10(x: Real): Real
+    func Math.Exp as az_exp(x: Real): Real
+    func Math.Pow as az_exp2(x: Real, y: Real): Real
+    func Math.Sqrt as az_hypot(x: Real, y: Real): Real
+}
+
+@target(.Swift)
+bridge .SWIFT {
+    func Foundation.sin as az_sin(x: Real): Real
+    func Foundation.cos as az_cos(x: Real): Real
+    func Foundation.tan as az_tan(x: Real): Real
+    func Foundation.asin as az_asin(x: Real): Real
+    func Foundation.acos as az_acos(x: Real): Real
+    func Foundation.atan as az_atan(x: Real): Real
+    func Foundation.atan2 as az_atan2(y: Real, x: Real): Real
+    func Foundation.sqrt as az_sqrt(x: Real): Real
+    func Foundation.cbrt as az_cbrt(x: Real): Real
+    func Foundation.log as az_log(x: Real): Real
+    func Foundation.log2 as az_log2(x: Real): Real
+    func Foundation.log10 as az_log10(x: Real): Real
+    func Foundation.exp as az_exp(x: Real): Real
+    func Foundation.exp2 as az_exp2(x: Real): Real
+    func Foundation.hypot as az_hypot(x: Real, y: Real): Real
+}
+
+@target(.Python)
+bridge .PY {
+    func math.sin as az_sin(x: Real): Real
+    func math.cos as az_cos(x: Real): Real
+    func math.tan as az_tan(x: Real): Real
+    func math.asin as az_asin(x: Real): Real
+    func math.acos as az_acos(x: Real): Real
+    func math.atan as az_atan(x: Real): Real
+    func math.atan2 as az_atan2(y: Real, x: Real): Real
+    func math.sqrt as az_sqrt(x: Real): Real
+    func math.pow as az_cbrt(x: Real, y: Real): Real
+    func math.log as az_log(x: Real): Real
+    func math.log2 as az_log2(x: Real): Real
+    func math.log10 as az_log10(x: Real): Real
+    func math.exp as az_exp(x: Real): Real
+    func math.exp2 as az_exp2(x: Real): Real
+    func math.hypot as az_hypot(x: Real, y: Real): Real
+}
+
+expose scope std {
+    scope math {
+        func sin(x: Real): Real { return az_sin(x) }
+        func cos(x: Real): Real { return az_cos(x) }
+        func tan(x: Real): Real { return az_tan(x) }
+        func asin(x: Real): Real { return az_asin(x) }
+        func acos(x: Real): Real { return az_acos(x) }
+        func atan(x: Real): Real { return az_atan(x) }
+        func atan2(y: Real, x: Real): Real { return az_atan2(y, x) }
+        func sqrt(x: Real): Real { return az_sqrt(x) }
+        func cbrt(x: Real): Real { return az_cbrt(x) }
+        func log(x: Real): Real { return az_log(x) }
+        func log2(x: Real): Real { return az_log2(x) }
+        func log10(x: Real): Real { return az_log10(x) }
+        func exp(x: Real): Real { return az_exp(x) }
+        func exp2(x: Real): Real { return az_exp2(x) }
+        func hypot(x: Real, y: Real): Real { return az_hypot(x, y) }
+    }
+}

@@ -1,0 +1,303 @@
+/*
+ * Copyright 2026 AzoraTech
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+@file:experimental
+
+package std.string
+
+/**
+ * @file String
+ *
+ * String manipulation utilities.
+ *
+ * Provides functions for string searching, slicing, transformation,
+ * and conversion between String and Char arrays.
+ * String is a stack-allocated immutable text value.
+ * [Char]* is a heap-allocated mutable character buffer.
+ *
+ * @since 0.0.1
+ */
+
+fail StringError {
+    IndexOutOfBounds
+    EmptyString
+    InvalidFormat
+}
+
+expose scope std {
+    /**
+     * Returns the length of a string.
+     *
+     * @param s The string to measure.
+     * @return The number of characters.
+     * @since 0.0.1
+     */
+    func strLength(s: String): Int {
+        return stringLength(s)
+    }
+
+    /**
+     * Returns the character at the given index.
+     *
+     * @param s The source string.
+     * @param index The zero-based index.
+     * @return The character at position index.
+     * @since 0.0.1
+     */
+    func strCharAt(s: String, index: Int): Char!StringError
+    in { assert index >= 0 { "Index must be non-negative" } }
+    scope {
+        if index >= stringLength(s) { return fail .IndexOutOfBounds }
+        return charAt(s, index)
+    }
+
+    /**
+     * Extracts a substring from start (inclusive) to end (exclusive).
+     *
+     * @param s The source string.
+     * @param start The start index (inclusive).
+     * @param end The end index (exclusive).
+     * @return The extracted substring.
+     * @since 0.0.1
+     */
+    func strSlice(s: String, start: Int, end: Int): String
+    in {
+        assert start >= 0 { "Start must be non-negative" }
+        assert end >= start { "End must be >= start" }
+    }
+    scope {
+        return substring(s, start, end)
+    }
+
+    /**
+     * Checks if a string starts with the given prefix.
+     *
+     * @param s The string to check.
+     * @param prefix The prefix to look for.
+     * @return true if s starts with prefix.
+     * @since 0.0.1
+     */
+    func strStartsWith(s: String, prefix: String): Bool {
+        return startsWith(s, prefix)
+    }
+
+    /**
+     * Checks if a string ends with the given suffix.
+     *
+     * @param s The string to check.
+     * @param suffix The suffix to look for.
+     * @return true if s ends with suffix.
+     * @since 0.0.1
+     */
+    func strEndsWith(s: String, suffix: String): Bool {
+        return endsWith(s, suffix)
+    }
+
+    /**
+     * Checks if a string contains the given substring.
+     *
+     * @param s The string to search in.
+     * @param sub The substring to find.
+     * @return true if s contains sub.
+     * @since 0.0.1
+     */
+    func strContains(s: String, sub: String): Bool {
+        return contains(s, sub)
+    }
+
+    /**
+     * Finds the first occurrence of a substring.
+     *
+     * @param s The string to search in.
+     * @param sub The substring to find.
+     * @return The index of the first occurrence, or -1 if not found.
+     * @since 0.0.1
+     */
+    func strIndexOf(s: String, sub: String): Int {
+        return indexOf(s, sub)
+    }
+
+    /**
+     * Removes whitespace from both ends of a string.
+     *
+     * @param s The string to trim.
+     * @return The trimmed string.
+     * @since 0.0.1
+     */
+    func strTrim(s: String): String {
+        return trim(s)
+    }
+
+    /**
+     * Converts a string to uppercase.
+     *
+     * @param s The string to convert.
+     * @return The uppercase string.
+     * @since 0.0.1
+     */
+    func strToUpper(s: String): String {
+        return toUpper(s)
+    }
+
+    /**
+     * Converts a string to lowercase.
+     *
+     * @param s The string to convert.
+     * @return The lowercase string.
+     * @since 0.0.1
+     */
+    func strToLower(s: String): String {
+        return toLower(s)
+    }
+
+    /**
+     * Replaces all occurrences of a substring.
+     *
+     * @param s The source string.
+     * @param old The substring to find.
+     * @param new The replacement string.
+     * @return The string with replacements applied.
+     * @since 0.0.1
+     */
+    func strReplace(s: String, old: String, new: String): String {
+        return replace(s, old, new)
+    }
+
+    /**
+     * Splits a string by a delimiter.
+     *
+     * @param s The string to split.
+     * @param delim The delimiter string.
+     * @return An array of substrings.
+     * @since 0.0.1
+     */
+    func strSplit(s: String, delim: String): [String] {
+        return split(s, delim)
+    }
+
+    /**
+     * Converts a string to an array of characters.
+     *
+     * @param s The string to convert.
+     * @return An array of Char values.
+     * @since 0.0.1
+     */
+    func strToChars(s: String): [Char] {
+        return toChars(s)
+    }
+
+    /**
+     * Builds a string from an array of characters.
+     *
+     * @param chars The character array.
+     * @return The concatenated string.
+     * @since 0.0.1
+     */
+    func charsToString(chars: [Char]): String {
+        return fromChars(chars)
+    }
+
+    /**
+     * Checks if a string is empty.
+     *
+     * @param s The string to check.
+     * @return true if the string has zero length.
+     * @since 0.0.1
+     */
+    func strIsEmpty(s: String): Bool {
+        return stringLength(s) == 0
+    }
+
+    /**
+     * Checks if a string is not empty.
+     *
+     * @param s The string to check.
+     * @return true if the string has non-zero length.
+     * @since 0.0.1
+     */
+    func strIsNotEmpty(s: String): Bool {
+        return stringLength(s) > 0
+    }
+
+    /**
+     * Reverses a string.
+     *
+     * @param s The string to reverse.
+     * @return The reversed string.
+     * @since 0.0.1
+     */
+    func strReverse(s: String): String {
+        fin chars = toChars(s)
+        fin len = chars.length
+        var reversed: [Char] = [].fill<Char>(len)
+        var i = 0
+        while i < len {
+            reversed[i] = chars[len - 1 - i]
+            i += 1
+        }
+        return fromChars(reversed)
+    }
+
+    /**
+     * Repeats a string the given number of times.
+     *
+     * @param s The string to repeat.
+     * @param n The number of repetitions.
+     * @return The repeated string.
+     * @since 0.0.1
+     */
+    func strRepeat(s: String, n: Int): String
+    in { assert n >= 0 { "Repetition count must be non-negative" } }
+    scope {
+        return s * n
+    }
+
+    /**
+     * Checks if a string contains only digits.
+     *
+     * @param s The string to check.
+     * @return true if every character is a digit.
+     * @since 0.0.1
+     */
+    func strIsNumeric(s: String): Bool {
+        if stringLength(s) == 0 { return false }
+        fin chars = toChars(s)
+        var i = 0
+        while i < chars.length {
+            if !isDigit(chars[i]) { return false }
+            i += 1
+        }
+        return true
+    }
+
+    /**
+     * Checks if a string contains only alphabetic characters.
+     *
+     * @param s The string to check.
+     * @return true if every character is a letter.
+     * @since 0.0.1
+     */
+    func strIsAlpha(s: String): Bool {
+        if stringLength(s) == 0 { return false }
+        fin chars = toChars(s)
+        var i = 0
+        while i < chars.length {
+            if !isAlpha(chars[i]) { return false }
+            i += 1
+        }
+        return true
+    }
+}

@@ -1,0 +1,109 @@
+/*
+ * Copyright 2026 AzoraTech
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package testing
+
+// --- Mutex ---
+
+test "mutex lock unlock" {
+    var m = Mutex(0)
+    m.lock()
+    assert m.inner == 0 { "mutex initial value" }
+    m.unlock()
+}
+
+test "mutex withLock" {
+    var m = Mutex(10)
+    m.withLock({ value ->
+        assert value == 10 { "withLock value" }
+    })
+}
+
+// --- Atomic ---
+
+test "atomic load store" {
+    var a = Atomic(0)
+    assert a.load() == 0 { "atomic initial" }
+    a.store(42)
+    assert a.load() == 42 { "atomic after store" }
+}
+
+test "atomic add sub" {
+    var a = Atomic(10)
+    a.add(5)
+    assert a.load() == 15 { "atomic after add" }
+    a.sub(3)
+    assert a.load() == 12 { "atomic after sub" }
+}
+
+test "atomic cas" {
+    var a = Atomic(10)
+    var ok = a.cas(10, 20)
+    assert ok == true { "cas success" }
+    assert a.load() == 20 { "cas new value" }
+    var failed = a.cas(10, 30)
+    assert failed == false { "cas fail" }
+    assert a.load() == 20 { "cas unchanged" }
+}
+
+test "atomic exchange" {
+    var a = Atomic(5)
+    var old = a.exchange(99)
+    assert old == 5 { "exchange returned old" }
+    assert a.load() == 99 { "exchange new value" }
+}
+
+// --- Barrier ---
+
+test "barrier construction" {
+    var b = Barrier(3)
+    assert b.count == 3 { "barrier count" }
+}
+
+// --- Once ---
+
+test "once runs once" {
+    var counter = 0
+    var o = Once()
+    o.run({ counter += 1 })
+    o.run({ counter += 1 })
+    assert counter == 1 { "once only ran once" }
+}
+
+// --- ThreadPool ---
+
+test "threadpool construction" {
+    var pool = ThreadPool(4)
+    assert pool.workers == 4 { "pool workers" }
+}
+
+// --- Isolated ---
+
+test "isolated with" {
+    var iso = isolated(42)
+    iso.with({ mut value ->
+        assert value == 42 { "isolated value" }
+    })
+}
+
+// --- threadlocal ---
+
+threadlocal var tlCounter: Int = 0
+
+test "threadlocal var" {
+    tlCounter = 5
+    assert tlCounter == 5 { "threadlocal set" }
+}

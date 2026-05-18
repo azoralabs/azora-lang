@@ -1,0 +1,164 @@
+/*
+ * Copyright 2026 AzoraTech
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package testing
+
+// --- Precondition contracts ---
+
+func safeDivideContract(a: Int, b: Int): Int
+in { assert b != 0 { "divisor must be non-zero" } }
+scope {
+    return a / b
+}
+
+test "contract precondition passes" {
+    fin result = safeDivideContract(10, 2)
+    assert result == 5 { "10 / 2 should be 5" }
+}
+
+func positiveOnly(n: Int): Int
+in { assert n > 0 { "n must be positive" } }
+scope {
+    return n * 2
+}
+
+test "contract precondition positive" {
+    fin result = positiveOnly(5)
+    assert result == 10 { "5 * 2 should be 10" }
+}
+
+// --- Postcondition contracts ---
+
+func absContract(x: Int): Int
+out { r -> assert r >= 0 { "result must be non-negative" } }
+scope {
+    return if x < 0 { -x } else { x }
+}
+
+test "contract postcondition abs positive" {
+    assert absContract(5) == 5 { "abs of positive" }
+}
+
+test "contract postcondition abs negative" {
+    assert absContract(-5) == 5 { "abs of negative" }
+}
+
+test "contract postcondition abs zero" {
+    assert absContract(0) == 0 { "abs of zero" }
+}
+
+// --- Combined pre and post ---
+
+func clampContract(x: Int, lo: Int, hi: Int): Int
+in {
+    assert lo <= hi { "lo must be <= hi" }
+}
+out { r ->
+    assert r >= lo { "result must be >= lo" }
+    assert r <= hi { "result must be <= hi" }
+}
+scope {
+    if x < lo { return lo }
+    if x > hi { return hi }
+    return x
+}
+
+test "contract combined clamp within range" {
+    assert clampContract(5, 0, 10) == 5 { "5 in range" }
+}
+
+test "contract combined clamp below" {
+    assert clampContract(-5, 0, 10) == 0 { "clamped to lo" }
+}
+
+test "contract combined clamp above" {
+    assert clampContract(15, 0, 10) == 10 { "clamped to hi" }
+}
+
+// --- Contracts with complex logic ---
+
+func arraySumContract(arr: [Int]): Int
+in { assert arr.length > 0 { "array must not be empty" } }
+out { r -> assert r >= arr[0] || r <= arr[0] { "result is a number" } }
+scope {
+    var total = 0
+    var i = 0
+    while i < arr.length {
+        total += arr[i]
+        i += 1
+    }
+    return total
+}
+
+test "contract array sum" {
+    assert arraySumContract([1, 2, 3, 4, 5]) == 15 { "sum of 1..5" }
+}
+
+test "contract array sum single" {
+    assert arraySumContract([42]) == 42 { "sum of single element" }
+}
+
+// --- Contracts in recursive functions ---
+
+func factContract(n: Int): Int
+in { assert n >= 0 { "factorial requires non-negative" } }
+out { r -> assert r >= 1 { "factorial result must be >= 1" } }
+scope {
+    if n <= 1 { return 1 }
+    return n * factContract(n - 1)
+}
+
+test "contract factorial 0" {
+    assert factContract(0) == 1 { "0! = 1" }
+}
+
+test "contract factorial 5" {
+    assert factContract(5) == 120 { "5! = 120" }
+}
+
+test "contract factorial 10" {
+    assert factContract(10) == 3628800 { "10! = 3628800" }
+}
+
+// --- Contracts with fail ---
+
+fail ValidationError {
+    NegativeInput
+    Overflow
+}
+
+func validateAndSquare(n: Int): Int!ValidationError
+in { assert n >= -1000 { "input too small" } }
+scope {
+    if n < 0 { return fail .NegativeInput }
+    if n > 46340 { return fail .Overflow }
+    return n * n
+}
+
+test "contract with fail success" {
+    fin result = validateAndSquare(5) catch -1
+    assert result == 25 { "5^2 should be 25" }
+}
+
+test "contract with fail negative" {
+    fin result = validateAndSquare(-1) catch -1
+    assert result == -1 { "negative should fail" }
+}
+
+test "contract with fail overflow" {
+    fin result = validateAndSquare(50000) catch -1
+    assert result == -1 { "overflow should fail" }
+}

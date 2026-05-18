@@ -1,0 +1,671 @@
+/*
+ * Copyright 2026 AzoraTech
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+@file:experimental
+
+package std.ui
+
+/**
+ * @file Ui
+ *
+ * Declarative UI standard library inspired by Jetpack Compose.
+ *
+ * Provides a component-based UI model with a chainable Modifier system
+ * for styling, a set of primitive UI elements (Text, Button, Input, etc.),
+ * and layout containers (Column, Row, Box, etc.).
+ *
+ * The module is designed for cross-platform rendering. Function signatures
+ * define the component API, while actual rendering is delegated to
+ * platform-specific code generators (e.g., React/HTML for the JS target).
+ *
+ * Usage:
+ *   use scope std
+ *
+ *   fin m = Modifier()
+ *       .padding(16)
+ *       .background("#ffffff")
+ *       .borderRadius(8)
+ *
+ *   Column(m, {
+ *       Text("Hello, Azora!", Modifier().fontSize(24).bold())
+ *       Button("Click me", { println("clicked") }, Modifier())
+ *   })
+ *
+ * @since 0.0.1
+ */
+
+expose scope std {
+
+    // -----------------------------------------------------------------------
+    // Modifier
+    // -----------------------------------------------------------------------
+
+    /**
+     * A chainable style descriptor for UI elements.
+     *
+     * Modifier accumulates styling properties that are applied to a
+     * UI element at render time. Each setter method returns a new Modifier
+     * with the updated property, enabling a fluent builder pattern.
+     *
+     * Properties default to sentinel values (0, "", false) indicating
+     * "not set". Code generators inspect these values to emit only the
+     * styles that were explicitly configured.
+     *
+     * @since 0.0.1
+     */
+    pack Modifier {
+        var padTop: Int = 0
+        var padRight: Int = 0
+        var padBottom: Int = 0
+        var padLeft: Int = 0
+        var mrgTop: Int = 0
+        var mrgRight: Int = 0
+        var mrgBottom: Int = 0
+        var mrgLeft: Int = 0
+        var w: Int = 0
+        var h: Int = 0
+        var maxW: Bool = false
+        var maxH: Bool = false
+        var bg: String = ""
+        var fg: String = ""
+        var fSize: Int = 0
+        var fWeight: String = ""
+        var isBold: Bool = false
+        var isItalic: Bool = false
+        var bRadius: Int = 0
+        var bWidth: Int = 0
+        var bColor: String = ""
+        var gapSize: Int = 0
+        var alignValue: String = ""
+        var justifyValue: String = ""
+        var onClick: () -> Unit = { }
+        var isClickable: Bool = false
+        var shadowElevation: Int = 0
+        var opacityValue: Real = 1.0
+    }
+
+    impl ctor for Modifier
+
+    impl Modifier {
+
+        // --- Padding ---
+
+        /**
+         * Sets equal padding on all four sides.
+         *
+         * @param all The padding value in pixels.
+         * @return A new Modifier with the padding applied.
+         * @since 0.0.1
+         */
+        func padding(all: Int): Modifier {
+            self.padTop = all
+            self.padRight = all
+            self.padBottom = all
+            self.padLeft = all
+            return self
+        }
+
+        /**
+         * Sets horizontal (left and right) padding.
+         *
+         * @param horizontal The padding value in pixels.
+         * @return A new Modifier with horizontal padding applied.
+         * @since 0.0.1
+         */
+        func paddingH(horizontal: Int): Modifier {
+            self.padLeft = horizontal
+            self.padRight = horizontal
+            return self
+        }
+
+        /**
+         * Sets vertical (top and bottom) padding.
+         *
+         * @param vertical The padding value in pixels.
+         * @return A new Modifier with vertical padding applied.
+         * @since 0.0.1
+         */
+        func paddingV(vertical: Int): Modifier {
+            self.padTop = vertical
+            self.padBottom = vertical
+            return self
+        }
+
+        // --- Margin ---
+
+        /**
+         * Sets equal margin on all four sides.
+         *
+         * @param all The margin value in pixels.
+         * @return A new Modifier with the margin applied.
+         * @since 0.0.1
+         */
+        func margin(all: Int): Modifier {
+            self.mrgTop = all
+            self.mrgRight = all
+            self.mrgBottom = all
+            self.mrgLeft = all
+            return self
+        }
+
+        /**
+         * Sets horizontal (left and right) margin.
+         *
+         * @param horizontal The margin value in pixels.
+         * @return A new Modifier with horizontal margin applied.
+         * @since 0.0.1
+         */
+        func marginH(horizontal: Int): Modifier {
+            self.mrgLeft = horizontal
+            self.mrgRight = horizontal
+            return self
+        }
+
+        /**
+         * Sets vertical (top and bottom) margin.
+         *
+         * @param vertical The margin value in pixels.
+         * @return A new Modifier with vertical margin applied.
+         * @since 0.0.1
+         */
+        func marginV(vertical: Int): Modifier {
+            self.mrgTop = vertical
+            self.mrgBottom = vertical
+            return self
+        }
+
+        // --- Sizing ---
+
+        /**
+         * Sets the element width in pixels.
+         *
+         * @param px The width in pixels.
+         * @return A new Modifier with the width set.
+         * @since 0.0.1
+         */
+        func width(px: Int): Modifier {
+            self.w = px
+            return self
+        }
+
+        /**
+         * Sets the element height in pixels.
+         *
+         * @param px The height in pixels.
+         * @return A new Modifier with the height set.
+         * @since 0.0.1
+         */
+        func height(px: Int): Modifier {
+            self.h = px
+            return self
+        }
+
+        /**
+         * Makes the element stretch to fill available width.
+         *
+         * @return A new Modifier with fill-max-width enabled.
+         * @since 0.0.1
+         */
+        func fillMaxWidth(): Modifier {
+            self.maxW = true
+            return self
+        }
+
+        /**
+         * Makes the element stretch to fill available height.
+         *
+         * @return A new Modifier with fill-max-height enabled.
+         * @since 0.0.1
+         */
+        func fillMaxHeight(): Modifier {
+            self.maxH = true
+            return self
+        }
+
+        // --- Colors ---
+
+        /**
+         * Sets the background color.
+         *
+         * Accepts any CSS-compatible color string (hex, rgb, named, etc.).
+         *
+         * @param color The background color value.
+         * @return A new Modifier with the background color set.
+         * @since 0.0.1
+         */
+        func background(color: String): Modifier {
+            self.bg = color
+            return self
+        }
+
+        /**
+         * Sets the foreground (text) color.
+         *
+         * Accepts any CSS-compatible color string.
+         *
+         * @param c The foreground color value.
+         * @return A new Modifier with the text color set.
+         * @since 0.0.1
+         */
+        func color(c: String): Modifier {
+            self.fg = c
+            return self
+        }
+
+        // --- Typography ---
+
+        /**
+         * Sets the font size in pixels.
+         *
+         * @param size The font size in pixels.
+         * @return A new Modifier with the font size set.
+         * @since 0.0.1
+         */
+        func fontSize(size: Int): Modifier {
+            self.fSize = size
+            return self
+        }
+
+        /**
+         * Sets the font weight as a string value.
+         *
+         * Common values: "normal", "bold", "100" through "900".
+         *
+         * @param w The font weight value.
+         * @return A new Modifier with the font weight set.
+         * @since 0.0.1
+         */
+        func fontWeight(w: String): Modifier {
+            self.fWeight = w
+            return self
+        }
+
+        /**
+         * Shorthand for setting the font weight to bold.
+         *
+         * @return A new Modifier with bold font weight.
+         * @since 0.0.1
+         */
+        func bold(): Modifier {
+            self.isBold = true
+            self.fWeight = "bold"
+            return self
+        }
+
+        /**
+         * Shorthand for setting the font style to italic.
+         *
+         * @return A new Modifier with italic font style.
+         * @since 0.0.1
+         */
+        func italic(): Modifier {
+            self.isItalic = true
+            return self
+        }
+
+        // --- Border ---
+
+        /**
+         * Sets the border radius for rounded corners.
+         *
+         * @param r The border radius in pixels.
+         * @return A new Modifier with the border radius set.
+         * @since 0.0.1
+         */
+        func borderRadius(r: Int): Modifier {
+            self.bRadius = r
+            return self
+        }
+
+        /**
+         * Sets a border with the given width and color.
+         *
+         * @param width The border width in pixels.
+         * @param color The border color as a CSS-compatible string.
+         * @return A new Modifier with the border applied.
+         * @since 0.0.1
+         */
+        func border(width: Int, color: String): Modifier {
+            self.bWidth = width
+            self.bColor = color
+            return self
+        }
+
+        // --- Layout ---
+
+        /**
+         * Sets the gap (spacing) between child elements.
+         *
+         * Applies to layout containers (Column, Row, etc.).
+         *
+         * @param g The gap size in pixels.
+         * @return A new Modifier with the gap set.
+         * @since 0.0.1
+         */
+        func gap(g: Int): Modifier {
+            self.gapSize = g
+            return self
+        }
+
+        /**
+         * Sets the cross-axis alignment for a layout container.
+         *
+         * Common values: "start", "center", "end", "stretch".
+         *
+         * @param a The alignment value.
+         * @return A new Modifier with the alignment set.
+         * @since 0.0.1
+         */
+        func align(a: String): Modifier {
+            self.alignValue = a
+            return self
+        }
+
+        /**
+         * Sets the main-axis justification for a layout container.
+         *
+         * Common values: "start", "center", "end", "spaceBetween", "spaceAround".
+         *
+         * @param j The justification value.
+         * @return A new Modifier with the justification set.
+         * @since 0.0.1
+         */
+        func justify(j: String): Modifier {
+            self.justifyValue = j
+            return self
+        }
+
+        // --- Interaction ---
+
+        /**
+         * Makes the element clickable and attaches a click handler.
+         *
+         * @param handler The function to call when the element is clicked.
+         * @return A new Modifier with the click handler attached.
+         * @since 0.0.1
+         */
+        func clickable(handler: () -> Unit): Modifier {
+            self.onClick = handler
+            self.isClickable = true
+            return self
+        }
+
+        // --- Visual Effects ---
+
+        /**
+         * Applies a box shadow with the given elevation.
+         *
+         * Higher elevation values produce more pronounced shadows.
+         * The code generator maps elevation to platform-appropriate
+         * shadow styles.
+         *
+         * @param elevation The shadow elevation in pixels.
+         * @return A new Modifier with the shadow applied.
+         * @since 0.0.1
+         */
+        func shadow(elevation: Int): Modifier {
+            self.shadowElevation = elevation
+            return self
+        }
+
+        /**
+         * Sets the element opacity.
+         *
+         * @param o The opacity value from 0.0 (transparent) to 1.0 (opaque).
+         * @return A new Modifier with the opacity set.
+         * @since 0.0.1
+         */
+        func opacity(o: Real): Modifier {
+            self.opacityValue = o
+            return self
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // UI Elements
+    // -----------------------------------------------------------------------
+
+    /**
+     * Displays a text string.
+     *
+     * Renders the given content as a text node with optional styling
+     * via the modifier parameter.
+     *
+     * @param content The text string to display.
+     * @param modifier The Modifier controlling style and layout.
+     * @since 0.0.1
+     */
+    view Text(content: String, modifier: Modifier) {
+    }
+
+    /**
+     * Displays a clickable button.
+     *
+     * Renders a button element with the given label. The onClick
+     * callback is invoked when the user presses the button.
+     *
+     * @param label The text displayed on the button.
+     * @param onClick The callback invoked on click.
+     * @param modifier The Modifier controlling style and layout.
+     * @since 0.0.1
+     */
+    view Button(label: String, onClick: () -> Unit, modifier: Modifier) {
+    }
+
+    /**
+     * Displays a text input field.
+     *
+     * Renders an editable text field. The onInput callback is called
+     * with the current input value whenever the user types.
+     *
+     * @param value The current text value of the input.
+     * @param onInput The callback receiving the updated input string.
+     * @param modifier The Modifier controlling style and layout.
+     * @since 0.0.1
+     */
+    view Input(value: String, onInput: (String) -> Unit, modifier: Modifier) {
+    }
+
+    /**
+     * Displays an image.
+     *
+     * Renders an image from the given source URL or asset path.
+     * The alt text is used for accessibility.
+     *
+     * @param src The image source URL or asset path.
+     * @param alt The alternative text for accessibility.
+     * @param modifier The Modifier controlling style and layout.
+     * @since 0.0.1
+     */
+    view Image(src: String, alt: String, modifier: Modifier) {
+    }
+
+    /**
+     * Displays a hyperlink.
+     *
+     * Renders a clickable link that navigates to the given URL.
+     *
+     * @param href The target URL.
+     * @param label The visible link text.
+     * @param modifier The Modifier controlling style and layout.
+     * @since 0.0.1
+     */
+    view Link(href: String, label: String, modifier: Modifier) {
+    }
+
+    /**
+     * Inserts empty space.
+     *
+     * Renders an invisible spacer element whose size is controlled
+     * by the modifier (typically via width/height).
+     *
+     * @param modifier The Modifier controlling the spacer dimensions.
+     * @since 0.0.1
+     */
+    view Spacer(modifier: Modifier) {
+    }
+
+    /**
+     * Displays a horizontal divider line.
+     *
+     * Renders a visual separator between content sections.
+     *
+     * @param modifier The Modifier controlling style and layout.
+     * @since 0.0.1
+     */
+    view Divider(modifier: Modifier) {
+    }
+
+    /**
+     * Displays an icon by name.
+     *
+     * Renders an icon from the platform icon set. The name maps to
+     * the icon library used by the target (e.g., Material Icons for
+     * web targets).
+     *
+     * @param name The icon identifier (e.g., "home", "settings", "search").
+     * @param modifier The Modifier controlling style and layout.
+     * @since 0.0.1
+     */
+    view Icon(name: String, modifier: Modifier) {
+    }
+
+    // -----------------------------------------------------------------------
+    // Layout Containers
+    // -----------------------------------------------------------------------
+
+    /**
+     * Arranges children in a vertical stack.
+     *
+     * Column lays out its children from top to bottom. Spacing between
+     * children can be controlled via the modifier's gap() method.
+     * Cross-axis alignment is set via align(), and main-axis distribution
+     * via justify().
+     *
+     * @param modifier The Modifier controlling style and layout.
+     * @param children The content block containing child elements.
+     * @since 0.0.1
+     */
+    view Column(modifier: Modifier, children: () -> Unit) {
+        children()
+    }
+
+    /**
+     * Arranges children in a horizontal row.
+     *
+     * Row lays out its children from left to right. Spacing between
+     * children can be controlled via the modifier's gap() method.
+     * Cross-axis alignment is set via align(), and main-axis distribution
+     * via justify().
+     *
+     * @param modifier The Modifier controlling style and layout.
+     * @param children The content block containing child elements.
+     * @since 0.0.1
+     */
+    view Row(modifier: Modifier, children: () -> Unit) {
+        children()
+    }
+
+    /**
+     * Stacks children on top of each other.
+     *
+     * Box layers its children in z-order, with the first child at the
+     * bottom and subsequent children rendered on top. Useful for
+     * overlays, backgrounds, and positioned content.
+     *
+     * @param modifier The Modifier controlling style and layout.
+     * @param children The content block containing child elements.
+     * @since 0.0.1
+     */
+    view Box(modifier: Modifier, children: () -> Unit) {
+        children()
+    }
+
+    /**
+     * Displays children inside an elevated card surface.
+     *
+     * Card renders a visually distinct container with a default shadow
+     * and rounded corners. The elevation and appearance can be
+     * customized via the modifier.
+     *
+     * @param modifier The Modifier controlling style and layout.
+     * @param children The content block containing child elements.
+     * @since 0.0.1
+     */
+    view Card(modifier: Modifier, children: () -> Unit) {
+        children()
+    }
+
+    /**
+     * Wraps children in a scrollable viewport.
+     *
+     * ScrollView enables vertical scrolling when the content exceeds
+     * the container's height. The scroll direction and behavior
+     * depend on the target platform.
+     *
+     * @param modifier The Modifier controlling style and layout.
+     * @param children The content block containing child elements.
+     * @since 0.0.1
+     */
+    view ScrollView(modifier: Modifier, children: () -> Unit) {
+        children()
+    }
+
+    /**
+     * Centers its children both horizontally and vertically.
+     *
+     * Center is a convenience layout that positions all children at
+     * the center of the available space.
+     *
+     * @param modifier The Modifier controlling style and layout.
+     * @param children The content block containing child elements.
+     * @since 0.0.1
+     */
+    view Center(modifier: Modifier, children: () -> Unit) {
+        children()
+    }
+
+    // ====================================================================
+    // Navigation - Navigation3-inspired route-based navigation
+    // ====================================================================
+
+    /**
+     * A navigation host that renders only the child matching the current route index.
+     *
+     * Inspired by Android Navigation3's NavDisplay pattern.
+     * Children are indexed 0..N; only the child at position `route` is rendered.
+     * Other children are not mounted (no opacity hacks - true conditional rendering).
+     *
+     * Usage:
+     *   rem page: Int = 0
+     *
+     *   NavHost(page) {
+     *       LandingPage(onNext: { page = 1 })
+     *       TeamPage(onBack: { page = 0 })
+     *       DetailPage(onBack: { page = 1 })
+     *   }
+     *
+     * On the JS target, NavHost compiles to `[child0, child1, ...][route]`,
+     * rendering exactly one child with zero overhead for inactive routes.
+     *
+     * @param route The active route index (0-based).
+     * @param children The child views, one per route.
+     * @since 0.0.1
+     */
+    view NavHost(route: Int, routes: [String], children: () -> Unit) {
+        children()
+    }
+}

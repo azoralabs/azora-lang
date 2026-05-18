@@ -1,0 +1,227 @@
+package demo_website.pages
+
+use std.ui
+use scope std
+
+view AddPetPage(
+    onBack: () -> Unit
+) {
+    rem petKind: String = ""
+    rem petName: String = ""
+    rem petBreed: String = ""
+    rem petAge: String = ""
+    rem petWeight: String = ""
+
+    Column(
+        modifier: Modifier()
+            .padding(64, 48)
+            .maxWidth(720)
+            .center()
+            .enterAnimation("azFadeIn", 400)
+    ) {
+        BackButton(onClick: onBack)
+
+        Spacer(height: 40)
+        PageTitle(text: "Add a Pet")
+        Spacer(height: 8)
+        Text(
+            "Register a new furry friend.",
+            modifier: Modifier()
+                .fontSize(15)
+                .color("#64748b")
+        )
+
+        Spacer(height: 32)
+
+        // Form
+        Column(
+            modifier: Modifier()
+                .gap(20)
+                .padding(28)
+                .backgroundColor("#f8fafc")
+                .borderRadius(12)
+                .border(1, "#e2e8f0")
+        ) {
+            // Pet type selector
+            Text(
+                "What kind of pet?",
+                modifier: Modifier()
+                    .fontSize(15)
+                    .bold()
+                    .color("#0f172a")
+            )
+            Row(
+                modifier: Modifier()
+                    .gap(10)
+            ) {
+                PetTypeOption(emoji: "🐕", label: "Dog", selected: petKind, onClick: { petKind = "Dog" })
+                PetTypeOption(emoji: "🐈", label: "Cat", selected: petKind, onClick: { petKind = "Cat" })
+                PetTypeOption(emoji: "🐇", label: "Rabbit", selected: petKind, onClick: { petKind = "Rabbit" })
+                PetTypeOption(emoji: "🐦", label: "Bird", selected: petKind, onClick: { petKind = "Bird" })
+                PetTypeOption(emoji: "🐠", label: "Fish", selected: petKind, onClick: { petKind = "Fish" })
+            }
+
+            Divider()
+
+            // Name
+            Column(
+                modifier: Modifier()
+                    .gap(6)
+            ) {
+                Text(
+                    "Name",
+                    modifier: Modifier()
+                        .fontSize(13)
+                        .bold()
+                        .color("#334155")
+                )
+                Input(
+                    value: petName,
+                    onInput: { v -> petName = v },
+                    placeholder: "e.g. Luna",
+                    modifier: Modifier()
+                        .padding(12, 16)
+                        .borderRadius(8)
+                        .border(1, "#e2e8f0")
+                        .fontSize(15)
+                )
+            }
+
+            // Breed
+            Column(
+                modifier: Modifier()
+                    .gap(6)
+            ) {
+                Text(
+                    "Breed",
+                    modifier: Modifier()
+                        .fontSize(13)
+                        .bold()
+                        .color("#334155")
+                )
+                Input(
+                    value: petBreed,
+                    onInput: { v -> petBreed = v },
+                    placeholder: "e.g. Golden Retriever",
+                    modifier: Modifier()
+                        .padding(12, 16)
+                        .borderRadius(8)
+                        .border(1, "#e2e8f0")
+                        .fontSize(15)
+                )
+            }
+
+            // Age + Weight
+            Row(
+                modifier: Modifier()
+                    .gap(16)
+            ) {
+                Column(
+                    modifier: Modifier()
+                        .gap(6)
+                ) {
+                    Text(
+                        "Age (years)",
+                        modifier: Modifier()
+                            .fontSize(13)
+                            .bold()
+                            .color("#334155")
+                    )
+                    Input(
+                        value: petAge,
+                        onInput: { v -> petAge = v },
+                        inputType: "number",
+                        placeholder: "e.g. 3",
+                        modifier: Modifier()
+                            .padding(12, 16)
+                            .borderRadius(8)
+                            .border(1, "#e2e8f0")
+                            .fontSize(15)
+                    )
+                }
+                Column(
+                    modifier: Modifier()
+                        .gap(6)
+                ) {
+                    Text(
+                        "Weight (kg)",
+                        modifier: Modifier()
+                            .fontSize(13)
+                            .bold()
+                            .color("#334155")
+                    )
+                    Input(
+                        value: petWeight,
+                        onInput: { v -> petWeight = v },
+                        inputType: "number",
+                        placeholder: "e.g. 29",
+                        modifier: Modifier()
+                            .padding(12, 16)
+                            .borderRadius(8)
+                            .border(1, "#e2e8f0")
+                            .fontSize(15)
+                    )
+                }
+            }
+
+            Spacer(height: 4)
+
+            Button(
+                modifier: Modifier()
+                    .padding(14, 28)
+                    .backgroundColor("#f97316")
+                    .color("#fff")
+                    .borderRadius(10)
+                    .fontSize(15)
+                    .bold()
+            ) {
+                Row(
+                    modifier: Modifier()
+                        .gap(8)
+                        .align("center")
+                ) {
+                    Svg(width: 18, height: 18, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor") {
+                        SvgPath(d: "M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z")
+                    }
+                    Text("Save Pet")
+                }
+            }
+        }
+    }
+}
+
+view PetTypeOption(
+    emoji: String,
+    label: String,
+    selected: String,
+    onClick: () -> Unit
+) {
+    Button(
+        onClick: onClick,
+        modifier: Modifier()
+            .padding(12, 16)
+            .backgroundColor(if selected == label { "#fff7ed" } else { "#fff" })
+            .borderRadius(10)
+            .border(if selected == label { 2 } else { 1 }, if selected == label { "#f97316" } else { "#e2e8f0" })
+            .hoverScale(1.05)
+    ) {
+        Column(
+            modifier: Modifier()
+                .align("center")
+                .gap(4)
+        ) {
+            Text(
+                emoji,
+                modifier: Modifier()
+                    .fontSize(24)
+            )
+            Text(
+                label,
+                modifier: Modifier()
+                    .fontSize(12)
+                    .color(if selected == label { "#f97316" } else { "#64748b" })
+                    .bold()
+            )
+        }
+    }
+}

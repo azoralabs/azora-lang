@@ -1,0 +1,59 @@
+/*
+ * Copyright 2026 AzoraTech
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package testing
+
+use scope std
+
+// --- timeout ---
+
+test "timeout completes" {
+    fin result = timeout(200, { var x = 1 + 1 })
+    assert result { "fast action should complete within timeout" }
+}
+
+test "timeout expires" {
+    fin result = timeout<Int>(10, { suspend 500 })
+    assert !result { "slow action should not complete within timeout" }
+}
+
+// --- retry ---
+
+test "retry succeeds first try" {
+    fin result = retry(3, 10, { return true })
+    assert result { "retry should succeed on first try" }
+}
+
+test "retry succeeds after failures" {
+    var attempt = 0
+    fin result = retry<Int>(3, 10, { attempt += 1; return attempt >= 2 })
+    assert result { "retry should succeed on second attempt" }
+}
+
+test "retry all fail" {
+    fin result = retry(3, 10, { return false })
+    assert !result { "retry should return false when all attempts fail" }
+}
+
+// --- parallel ---
+
+test "parallel runs both" {
+    var a = 0
+    var b = 0
+    parallel(0, { a = 1 }, { b = 2 })
+    assert a == 1 { "parallel should run first action" }
+    assert b == 2 { "parallel should run second action" }
+}

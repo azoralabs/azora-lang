@@ -1,0 +1,405 @@
+/*
+ * Copyright 2026 AzoraTech
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+@file:experimental
+
+package std.gfx.internal
+
+/**
+ * @file LLVMGfxGlyph
+ *
+ * Bitmap font renderer for LLVM native targets.
+ *
+ * Provides text rendering using a built-in 5x7 pixel font covering
+ * ASCII printable characters (32–126). Each glyph is rendered as
+ * filled rectangles via `az_draw_rect`, requiring no external font
+ * libraries (FreeType, CoreText, etc.).
+ *
+ * When Azora targets KMP (Kotlin Multiplatform) or JS, the UI `Text`
+ * view uses platform-native text rendering. On LLVM native targets,
+ * this internal glyph renderer provides the fallback so that `Text`
+ * views and `gfxDrawText` work out of the box.
+ *
+ * Usage:
+ *   use std.gfx
+ *   use scope std
+ *
+ *   gfxDrawText(10.0, 20.0, "Hello World", GfxColor(r: 1.0, g: 1.0, b: 1.0, a: 1.0), 2.0, 800, 600)
+ *   gfxDrawTextCenter(400.0, 300.0, "GAME OVER", colors::RED, 4.0, 800, 600)
+ *
+ * @since 0.0.1
+ */
+
+expose scope std {
+
+    // ══════════════════════════════════════════════════════════════════
+    // 5×7 Bitmap Font - ASCII 32..126 (95 glyphs)
+    // ══════════════════════════════════════════════════════════════════
+    //
+    // Each glyph is 5 columns × 7 rows. Stored as 7 row values per
+    // glyph. Each row value is a 5-bit integer where:
+    //   bit 4 (16) = leftmost pixel
+    //   bit 0 (1)  = rightmost pixel
+    //
+    // Glyph data index = (charCode - 32) * 7
+
+    fin GLYPH_W = 5
+    fin GLYPH_H = 7
+    fin GLYPH_FIRST = 32
+    fin GLYPH_LAST = 126
+
+    fin FONT = [
+        //   (32) SPACE
+        0, 0, 0, 0, 0, 0, 0,
+        // ! (33)
+        4, 4, 4, 4, 4, 0, 4,
+        // " (34)
+        10, 10, 10, 0, 0, 0, 0,
+        // # (35)
+        10, 10, 31, 10, 31, 10, 10,
+        // $ (36)
+        4, 15, 20, 14, 5, 30, 4,
+        // % (37)
+        24, 25, 2, 4, 8, 19, 3,
+        // & (38)
+        12, 18, 20, 8, 21, 18, 13,
+        // ' (39)
+        4, 4, 8, 0, 0, 0, 0,
+        // ( (40)
+        2, 4, 8, 8, 8, 4, 2,
+        // ) (41)
+        8, 4, 2, 2, 2, 4, 8,
+        // * (42)
+        0, 4, 21, 14, 21, 4, 0,
+        // + (43)
+        0, 4, 4, 31, 4, 4, 0,
+        // , (44)
+        0, 0, 0, 0, 0, 4, 8,
+        // - (45)
+        0, 0, 0, 31, 0, 0, 0,
+        // . (46)
+        0, 0, 0, 0, 0, 0, 4,
+        // / (47)
+        0, 1, 2, 4, 8, 16, 0,
+        // 0 (48)
+        14, 17, 19, 21, 25, 17, 14,
+        // 1 (49)
+        4, 12, 4, 4, 4, 4, 14,
+        // 2 (50)
+        14, 17, 1, 2, 4, 8, 31,
+        // 3 (51)
+        31, 2, 4, 2, 1, 17, 14,
+        // 4 (52)
+        2, 6, 10, 18, 31, 2, 2,
+        // 5 (53)
+        31, 16, 30, 1, 1, 17, 14,
+        // 6 (54)
+        6, 8, 16, 30, 17, 17, 14,
+        // 7 (55)
+        31, 1, 2, 4, 8, 8, 8,
+        // 8 (56)
+        14, 17, 17, 14, 17, 17, 14,
+        // 9 (57)
+        14, 17, 17, 15, 1, 2, 12,
+        // : (58)
+        0, 0, 4, 0, 0, 4, 0,
+        // ; (59)
+        0, 0, 4, 0, 0, 4, 8,
+        // < (60)
+        2, 4, 8, 16, 8, 4, 2,
+        // = (61)
+        0, 0, 31, 0, 31, 0, 0,
+        // > (62)
+        8, 4, 2, 1, 2, 4, 8,
+        // ? (63)
+        14, 17, 1, 2, 4, 0, 4,
+        // @ (64)
+        14, 17, 23, 21, 23, 16, 14,
+        // A (65)
+        14, 17, 17, 31, 17, 17, 17,
+        // B (66)
+        30, 17, 17, 30, 17, 17, 30,
+        // C (67)
+        14, 17, 16, 16, 16, 17, 14,
+        // D (68)
+        28, 18, 17, 17, 17, 18, 28,
+        // E (69)
+        31, 16, 16, 30, 16, 16, 31,
+        // F (70)
+        31, 16, 16, 30, 16, 16, 16,
+        // G (71)
+        14, 17, 16, 23, 17, 17, 15,
+        // H (72)
+        17, 17, 17, 31, 17, 17, 17,
+        // I (73)
+        14, 4, 4, 4, 4, 4, 14,
+        // J (74)
+        7, 2, 2, 2, 2, 18, 12,
+        // K (75)
+        17, 18, 20, 24, 20, 18, 17,
+        // L (76)
+        16, 16, 16, 16, 16, 16, 31,
+        // M (77)
+        17, 27, 21, 21, 17, 17, 17,
+        // N (78)
+        17, 17, 25, 21, 19, 17, 17,
+        // O (79)
+        14, 17, 17, 17, 17, 17, 14,
+        // P (80)
+        30, 17, 17, 30, 16, 16, 16,
+        // Q (81)
+        14, 17, 17, 17, 21, 18, 13,
+        // R (82)
+        30, 17, 17, 30, 20, 18, 17,
+        // S (83)
+        15, 16, 16, 14, 1, 1, 30,
+        // T (84)
+        31, 4, 4, 4, 4, 4, 4,
+        // U (85)
+        17, 17, 17, 17, 17, 17, 14,
+        // V (86)
+        17, 17, 17, 17, 10, 10, 4,
+        // W (87)
+        17, 17, 17, 21, 21, 27, 17,
+        // X (88)
+        17, 17, 10, 4, 10, 17, 17,
+        // Y (89)
+        17, 17, 10, 4, 4, 4, 4,
+        // Z (90)
+        31, 1, 2, 4, 8, 16, 31,
+        // [ (91)
+        14, 8, 8, 8, 8, 8, 14,
+        // \ (92)
+        0, 16, 8, 4, 2, 1, 0,
+        // ] (93)
+        14, 2, 2, 2, 2, 2, 14,
+        // ^ (94)
+        4, 10, 17, 0, 0, 0, 0,
+        // _ (95)
+        0, 0, 0, 0, 0, 0, 31,
+        // ` (96)
+        8, 4, 2, 0, 0, 0, 0,
+        // a (97)
+        0, 0, 14, 1, 15, 17, 15,
+        // b (98)
+        16, 16, 30, 17, 17, 17, 30,
+        // c (99)
+        0, 0, 14, 16, 16, 17, 14,
+        // d (100)
+        1, 1, 15, 17, 17, 17, 15,
+        // e (101)
+        0, 0, 14, 17, 31, 16, 14,
+        // f (102)
+        6, 9, 8, 28, 8, 8, 8,
+        // g (103)
+        0, 0, 15, 17, 15, 1, 14,
+        // h (104)
+        16, 16, 22, 25, 17, 17, 17,
+        // i (105)
+        4, 0, 12, 4, 4, 4, 14,
+        // j (106)
+        2, 0, 6, 2, 2, 18, 12,
+        // k (107)
+        16, 16, 18, 20, 24, 20, 18,
+        // l (108)
+        12, 4, 4, 4, 4, 4, 14,
+        // m (109)
+        0, 0, 26, 21, 21, 17, 17,
+        // n (110)
+        0, 0, 22, 25, 17, 17, 17,
+        // o (111)
+        0, 0, 14, 17, 17, 17, 14,
+        // p (112)
+        0, 0, 30, 17, 30, 16, 16,
+        // q (113)
+        0, 0, 15, 17, 15, 1, 1,
+        // r (114)
+        0, 0, 22, 25, 16, 16, 16,
+        // s (115)
+        0, 0, 14, 16, 14, 1, 30,
+        // t (116)
+        8, 8, 28, 8, 8, 9, 6,
+        // u (117)
+        0, 0, 17, 17, 17, 19, 13,
+        // v (118)
+        0, 0, 17, 17, 17, 10, 4,
+        // w (119)
+        0, 0, 17, 17, 21, 21, 10,
+        // x (120)
+        0, 0, 17, 10, 4, 10, 17,
+        // y (121)
+        0, 0, 17, 17, 15, 1, 14,
+        // z (122)
+        0, 0, 31, 2, 4, 8, 31,
+        // { (123)
+        2, 4, 4, 8, 4, 4, 2,
+        // | (124)
+        4, 4, 4, 4, 4, 4, 4,
+        // } (125)
+        8, 4, 4, 2, 4, 4, 8,
+        // ~ (126)
+        0, 0, 8, 21, 2, 0, 0
+    ]
+
+    // ══════════════════════════════════════════════════════════════════
+    // Text Rendering API
+    // ══════════════════════════════════════════════════════════════════
+
+    /**
+     * Draws a single glyph at pixel coordinates.
+     *
+     * Each "on" pixel of the 5×7 bitmap is rendered as a filled
+     * rectangle of size `scale × scale`.
+     *
+     * @param charCode ASCII code of the character (32–126).
+     * @param x Left edge in pixels.
+     * @param y Top edge in pixels.
+     * @param color Fill color.
+     * @param scale Pixel scale (1.0 = one screen pixel per font pixel).
+     * @param sw Screen width in pixels.
+     * @param sh Screen height in pixels.
+     * @since 0.0.1
+     */
+    func gfxDrawGlyph(charCode: Int, x: Real, y: Real, color: GfxColor, scale: Real, sw: Int, sh: Int) {
+        if charCode < GLYPH_FIRST { return }
+        if charCode > GLYPH_LAST { return }
+        fin idx = (charCode - GLYPH_FIRST) * GLYPH_H
+
+        for row in 0..6 {
+            fin bits = FONT[idx + row]
+            if bits == 0 { continue }
+            for col in 0..4 {
+                // Extract bit: bit 4 = col 0, bit 0 = col 4
+                fin shift = 4 - col
+                fin mask = 1
+                var test = bits
+                for s in 0..shift - 1 { test = test / 2 }
+                if test % 2 == 1 {
+                    fin px = x + toReal(col) * scale
+                    fin py = y + toReal(row) * scale
+                    az_draw_rect(px, py, scale, scale, color.r, color.g, color.b, color.a, sw, sh)
+                }
+            }
+        }
+    }
+
+    /**
+     * Draws a text string at pixel coordinates.
+     *
+     * Renders each character using the built-in 5×7 bitmap font.
+     * Characters outside ASCII 32–126 are skipped. Character spacing
+     * is 6 pixels (5 glyph + 1 gap) × scale.
+     *
+     * @param x Left edge in pixels.
+     * @param y Top edge in pixels.
+     * @param text The string to render.
+     * @param color Text color.
+     * @param scale Pixel scale (1.0 = 5×7 pixels per glyph, 2.0 = 10×14, etc.).
+     * @param sw Screen width in pixels.
+     * @param sh Screen height in pixels.
+     * @since 0.0.1
+     */
+    func gfxDrawText(x: Real, y: Real, text: String, color: GfxColor, scale: Real, sw: Int, sh: Int) {
+        fin spacing = (toReal(GLYPH_W) + 1.0) * scale
+        var cx = x
+        for i in 0..text.length - 1 {
+            fin ch = text.charAt(i)
+            fin charCode = ord(ch)
+            if charCode >= GLYPH_FIRST && charCode <= GLYPH_LAST {
+                gfxDrawGlyph(charCode, cx, y, color, scale, sw, sh)
+            }
+            cx = cx + spacing
+        }
+    }
+
+    /**
+     * Draws right-aligned text.
+     *
+     * @param x Right edge in pixels.
+     * @param y Top edge in pixels.
+     * @param text The string to render.
+     * @param color Text color.
+     * @param scale Pixel scale.
+     * @param sw Screen width.
+     * @param sh Screen height.
+     * @since 0.0.1
+     */
+    func gfxDrawTextRight(x: Real, y: Real, text: String, color: GfxColor, scale: Real, sw: Int, sh: Int) {
+        fin textWidth = gfxTextWidth(text, scale)
+        gfxDrawText(x - textWidth, y, text, color, scale, sw, sh)
+    }
+
+    /**
+     * Draws center-aligned text.
+     *
+     * @param x Center X position in pixels.
+     * @param y Top edge in pixels.
+     * @param text The string to render.
+     * @param color Text color.
+     * @param scale Pixel scale.
+     * @param sw Screen width.
+     * @param sh Screen height.
+     * @since 0.0.1
+     */
+    func gfxDrawTextCenter(x: Real, y: Real, text: String, color: GfxColor, scale: Real, sw: Int, sh: Int) {
+        fin textWidth = gfxTextWidth(text, scale)
+        gfxDrawText(x - textWidth / 2.0, y, text, color, scale, sw, sh)
+    }
+
+    /**
+     * Measures the pixel width of a text string at the given scale.
+     *
+     * @param text The string to measure.
+     * @param scale Pixel scale.
+     * @return Width in pixels.
+     * @since 0.0.1
+     */
+    func gfxTextWidth(text: String, scale: Real): Real {
+        return toReal(text.length) * (toReal(GLYPH_W) + 1.0) * scale
+    }
+
+    /**
+     * Returns the pixel height of a line of text at the given scale.
+     *
+     * @param scale Pixel scale.
+     * @return Height in pixels.
+     * @since 0.0.1
+     */
+    func gfxTextHeight(scale: Real): Real {
+        return toReal(GLYPH_H) * scale
+    }
+
+    /**
+     * Draws text with a background rectangle (label style).
+     *
+     * @param x Left edge in pixels.
+     * @param y Top edge in pixels.
+     * @param text The string to render.
+     * @param fgColor Text color.
+     * @param bgColor Background color.
+     * @param scale Pixel scale.
+     * @param padding Padding around text in pixels.
+     * @param sw Screen width.
+     * @param sh Screen height.
+     * @since 0.0.1
+     */
+    func gfxDrawLabel(x: Real, y: Real, text: String, fgColor: GfxColor, bgColor: GfxColor, scale: Real, padding: Real, sw: Int, sh: Int) {
+        fin tw = gfxTextWidth(text, scale)
+        fin th = gfxTextHeight(scale)
+        az_draw_rect(x - padding, y - padding, tw + padding * 2.0, th + padding * 2.0, bgColor.r, bgColor.g, bgColor.b, bgColor.a, sw, sh)
+        gfxDrawText(x, y, text, fgColor, scale, sw, sh)
+    }
+}

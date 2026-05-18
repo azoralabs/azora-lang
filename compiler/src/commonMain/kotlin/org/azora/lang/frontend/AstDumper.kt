@@ -1,0 +1,282 @@
+package org.azora.lang.frontend
+
+/**
+ * Produces a tree-style dump of the AST for debugging and display.
+ */
+fun Program.dumpTree(): String {
+    val sb = StringBuilder()
+    sb.appendLine("Program")
+    if (packageName != null) {
+        sb.appendLine("    package: $packageName")
+    }
+    for (item in items) {
+        dumpTopLevel(sb, item, "    ")
+    }
+    return sb.toString().trimEnd()
+}
+
+private fun dumpTopLevel(sb: StringBuilder, item: TopLevel, indent: String) {
+    when (item) {
+        is TopLevel.Func -> {
+            val func = item.decl
+            val params = func.params.joinToString(", ") { "${it.name}: ${it.typeName}" }
+            val inlineStr = if (func.isInline) ", inline" else ""
+            sb.appendLine("${indent}FuncDecl(name=${func.name}, returnType=${func.returnType}$inlineStr)")
+            for (param in func.params) {
+                sb.appendLine("$indent    Param(name=${param.name}, type=${param.typeName})")
+            }
+            sb.appendLine("$indent    body:")
+            for (stmt in func.body) {
+                dumpStmt(sb, stmt, "$indent        ")
+            }
+        }
+        is TopLevel.VarDecl -> {
+            sb.appendLine("${indent}VarDecl(name=${item.name}, type=${item.typeName ?: "inferred"})")
+            sb.appendLine("$indent    init:")
+            dumpExpr(sb, item.initializer, "$indent        ")
+        }
+        is TopLevel.FinDecl -> {
+            sb.appendLine("${indent}FinDecl(name=${item.name}, type=${item.typeName ?: "inferred"})")
+            sb.appendLine("$indent    init:")
+            dumpExpr(sb, item.initializer, "$indent        ")
+        }
+        is TopLevel.LetDecl -> {
+            sb.appendLine("${indent}LetDecl(name=${item.name}, type=${item.typeName ?: "inferred"})")
+            sb.appendLine("$indent    init:")
+            dumpExpr(sb, item.initializer, "$indent        ")
+        }
+        is TopLevel.InlineVar -> {
+            sb.appendLine("${indent}InlineVar(name=${item.name})")
+            sb.appendLine("$indent    init:")
+            dumpExpr(sb, item.initializer, "$indent        ")
+        }
+        is TopLevel.InlineFin -> {
+            sb.appendLine("${indent}InlineFin(name=${item.name})")
+            sb.appendLine("$indent    init:")
+            dumpExpr(sb, item.initializer, "$indent        ")
+        }
+        is TopLevel.InlineLet -> {
+            sb.appendLine("${indent}InlineLet(name=${item.name})")
+            sb.appendLine("$indent    init:")
+            dumpExpr(sb, item.initializer, "$indent        ")
+        }
+        is TopLevel.InlineAssignment -> {
+            sb.appendLine("${indent}InlineAssignment(name=${item.name})")
+            sb.appendLine("$indent    value:")
+            dumpExpr(sb, item.value, "$indent        ")
+        }
+        is TopLevel.InlineIf -> {
+            sb.appendLine("${indent}InlineIf")
+            sb.appendLine("$indent    condition:")
+            dumpExpr(sb, item.condition, "$indent        ")
+            sb.appendLine("$indent    then:")
+            for (i in item.thenBranch) dumpTopLevel(sb, i, "$indent        ")
+            if (item.elseBranch != null) {
+                sb.appendLine("$indent    else:")
+                for (i in item.elseBranch) dumpTopLevel(sb, i, "$indent        ")
+            }
+        }
+        is TopLevel.InlineBlock -> {
+            sb.appendLine("${indent}InlineBlock")
+            for (i in item.body) dumpTopLevel(sb, i, "$indent    ")
+        }
+        is TopLevel.DeepInlineBlock -> {
+            sb.appendLine("${indent}DeepInlineBlock")
+            for (i in item.body) dumpTopLevel(sb, i, "$indent    ")
+        }
+        is TopLevel.DeepInlineIf -> {
+            sb.appendLine("${indent}DeepInlineIf")
+            sb.appendLine("$indent    condition:")
+            dumpExpr(sb, item.condition, "$indent        ")
+            sb.appendLine("$indent    then:")
+            for (i in item.thenBranch) dumpTopLevel(sb, i, "$indent        ")
+            if (item.elseBranch != null) {
+                sb.appendLine("$indent    else:")
+                for (i in item.elseBranch) dumpTopLevel(sb, i, "$indent        ")
+            }
+        }
+        is TopLevel.Test -> {
+            sb.appendLine("${indent}Test(name=\"${item.name}\")")
+            sb.appendLine("$indent    body:")
+            for (s in item.body) dumpStmt(sb, s, "$indent        ")
+        }
+        is TopLevel.InlineAssert -> {
+            sb.appendLine("${indent}InlineAssert")
+            sb.appendLine("$indent    condition:")
+            dumpExpr(sb, item.condition, "$indent        ")
+            sb.appendLine("$indent    message:")
+            dumpExpr(sb, item.message, "$indent        ")
+        }
+        is TopLevel.InlineTrace -> {
+            sb.appendLine("${indent}InlineTrace")
+            sb.appendLine("$indent    message:")
+            dumpExpr(sb, item.message, "$indent        ")
+        }
+    }
+}
+
+private fun dumpStmt(sb: StringBuilder, stmt: Stmt, indent: String) {
+    when (stmt) {
+        is Stmt.VarDecl -> {
+            sb.appendLine("${indent}VarDecl(name=${stmt.name}, type=${stmt.type})")
+            sb.appendLine("$indent    init:")
+            dumpExpr(sb, stmt.initializer, "$indent        ")
+        }
+        is Stmt.FinDecl -> {
+            sb.appendLine("${indent}FinDecl(name=${stmt.name}, type=${stmt.type})")
+            sb.appendLine("$indent    init:")
+            dumpExpr(sb, stmt.initializer, "$indent        ")
+        }
+        is Stmt.LetDecl -> {
+            sb.appendLine("${indent}LetDecl(name=${stmt.name}, type=${stmt.type})")
+            sb.appendLine("$indent    init:")
+            dumpExpr(sb, stmt.initializer, "$indent        ")
+        }
+        is Stmt.InlineFin -> {
+            sb.appendLine("${indent}InlineFin(name=${stmt.name}, type=${stmt.type})")
+            sb.appendLine("$indent    init:")
+            dumpExpr(sb, stmt.initializer, "$indent        ")
+        }
+        is Stmt.InlineLet -> {
+            sb.appendLine("${indent}InlineLet(name=${stmt.name}, type=${stmt.type})")
+            sb.appendLine("$indent    init:")
+            dumpExpr(sb, stmt.initializer, "$indent        ")
+        }
+        is Stmt.InlineVar -> {
+            sb.appendLine("${indent}InlineVar(name=${stmt.name}, type=${stmt.type})")
+            sb.appendLine("$indent    init:")
+            dumpExpr(sb, stmt.initializer, "$indent        ")
+        }
+        is Stmt.InlineAssignment -> {
+            sb.appendLine("${indent}InlineAssignment(name=${stmt.name})")
+            sb.appendLine("$indent    value:")
+            dumpExpr(sb, stmt.value, "$indent        ")
+        }
+        is Stmt.Assignment -> {
+            sb.appendLine("${indent}Assignment(name=${stmt.name})")
+            sb.appendLine("$indent    value:")
+            dumpExpr(sb, stmt.value, "$indent        ")
+        }
+        is Stmt.Return -> {
+            sb.appendLine("${indent}Return")
+            if (stmt.value != null) {
+                dumpExpr(sb, stmt.value, "$indent    ")
+            }
+        }
+        is Stmt.ExprStmt -> {
+            sb.appendLine("${indent}ExprStmt")
+            dumpExpr(sb, stmt.expr, "$indent    ")
+        }
+        is Stmt.Zone -> {
+            sb.appendLine("${indent}Zone")
+            for (s in stmt.body) dumpStmt(sb, s, "$indent    ")
+        }
+        is Stmt.FriendZone -> {
+            sb.appendLine("${indent}FriendZone")
+            for (s in stmt.body) dumpStmt(sb, s, "$indent    ")
+        }
+        is Stmt.If -> {
+            sb.appendLine("${indent}If")
+            sb.appendLine("$indent    condition:")
+            dumpExpr(sb, stmt.condition, "$indent        ")
+            sb.appendLine("$indent    then:")
+            for (s in stmt.thenBranch) dumpStmt(sb, s, "$indent        ")
+            if (stmt.elseBranch != null) {
+                sb.appendLine("$indent    else:")
+                for (s in stmt.elseBranch) dumpStmt(sb, s, "$indent        ")
+            }
+        }
+        is Stmt.InlineIf -> {
+            sb.appendLine("${indent}InlineIf")
+            sb.appendLine("$indent    condition:")
+            dumpExpr(sb, stmt.condition, "$indent        ")
+            sb.appendLine("$indent    then:")
+            for (s in stmt.thenBranch) dumpStmt(sb, s, "$indent        ")
+            if (stmt.elseBranch != null) {
+                sb.appendLine("$indent    else:")
+                for (s in stmt.elseBranch) dumpStmt(sb, s, "$indent        ")
+            }
+        }
+        is Stmt.InlineBlock -> {
+            sb.appendLine("${indent}InlineBlock")
+            for (s in stmt.body) dumpStmt(sb, s, "$indent    ")
+        }
+        is Stmt.DeepInlineBlock -> {
+            sb.appendLine("${indent}DeepInlineBlock")
+            for (s in stmt.body) dumpStmt(sb, s, "$indent    ")
+        }
+        is Stmt.DeepInlineIf -> {
+            sb.appendLine("${indent}DeepInlineIf")
+            sb.appendLine("$indent    condition:")
+            dumpExpr(sb, stmt.condition, "$indent        ")
+            sb.appendLine("$indent    then:")
+            for (s in stmt.thenBranch) dumpStmt(sb, s, "$indent        ")
+            if (stmt.elseBranch != null) {
+                sb.appendLine("$indent    else:")
+                for (s in stmt.elseBranch) dumpStmt(sb, s, "$indent        ")
+            }
+        }
+        is Stmt.NoInline -> {
+            sb.appendLine("${indent}NoInline")
+            dumpStmt(sb, stmt.stmt, "$indent    ")
+        }
+        is Stmt.Assert -> {
+            sb.appendLine("${indent}Assert")
+            sb.appendLine("$indent    condition:")
+            dumpExpr(sb, stmt.condition, "$indent        ")
+            sb.appendLine("$indent    message:")
+            dumpExpr(sb, stmt.message, "$indent        ")
+        }
+        is Stmt.Trace -> {
+            sb.appendLine("${indent}Trace")
+            sb.appendLine("$indent    message:")
+            dumpExpr(sb, stmt.message, "$indent        ")
+        }
+        is Stmt.InlineAssert -> {
+            sb.appendLine("${indent}InlineAssert")
+            sb.appendLine("$indent    condition:")
+            dumpExpr(sb, stmt.condition, "$indent        ")
+            sb.appendLine("$indent    message:")
+            dumpExpr(sb, stmt.message, "$indent        ")
+        }
+        is Stmt.InlineTrace -> {
+            sb.appendLine("${indent}InlineTrace")
+            sb.appendLine("$indent    message:")
+            dumpExpr(sb, stmt.message, "$indent        ")
+        }
+    }
+}
+
+private fun dumpExpr(sb: StringBuilder, expr: Expr, indent: String) {
+    when (expr) {
+        is Expr.IntLiteral -> sb.appendLine("${indent}IntLiteral(${expr.value}, suffix=${expr.suffix})")
+        is Expr.RealLiteral -> sb.appendLine("${indent}RealLiteral(${expr.value}, suffix=${expr.suffix})")
+        is Expr.StringLiteral -> sb.appendLine("${indent}StringLiteral(\"${expr.value}\")")
+        is Expr.BoolLiteral -> sb.appendLine("${indent}BoolLiteral(${expr.value})")
+        is Expr.CharLiteral -> sb.appendLine("${indent}CharLiteral('${expr.value}')")
+        is Expr.Identifier -> sb.appendLine("${indent}Identifier(${expr.name})")
+        is Expr.Binary -> {
+            sb.appendLine("${indent}Binary(op=${expr.op})")
+            dumpExpr(sb, expr.left, "$indent    ")
+            dumpExpr(sb, expr.right, "$indent    ")
+        }
+        is Expr.Unary -> {
+            sb.appendLine("${indent}Unary(op=${expr.op})")
+            dumpExpr(sb, expr.operand, "$indent    ")
+        }
+        is Expr.Call -> {
+            sb.appendLine("${indent}Call(name=${expr.callee})")
+            for (arg in expr.args) {
+                dumpExpr(sb, arg, "$indent    ")
+            }
+        }
+        is Expr.UpperScopeAccess -> {
+            val access = "::" + "_::".repeat(expr.depth - 1) + expr.name
+            sb.appendLine("${indent}UpperScopeAccess($access, depth=${expr.depth})")
+        }
+        is Expr.Grouping -> {
+            sb.appendLine("${indent}Grouping")
+            dumpExpr(sb, expr.expr, "$indent    ")
+        }
+    }
+}

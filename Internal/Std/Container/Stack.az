@@ -1,0 +1,155 @@
+/*
+ * Copyright 2026 AzoraTech
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+@file:experimental
+
+package std.container
+
+/**
+ * @file Stack
+ *
+ * Generic LIFO stack collection.
+ *
+ * Provides a last-in-first-out stack backed by a pointer array,
+ * with push, pop, and peek operations.
+ * Uses pointer-based storage with explicit capacity management.
+ *
+ * @since 0.0.1
+ */
+
+expose scope std {
+    /**
+     * A generic last-in-first-out (LIFO) stack.
+     *
+     * Stack provides pointer-backed storage where elements are
+     * added and removed from the top.
+     *
+     * @param T The type of elements stored in this stack.
+     * @since 0.0.1
+     */
+    pack Stack<T> {
+        confine var data: [T]* = alloc [T](8)
+        confine var size: Int = 0
+        confine var capacity: Int = 8
+    }
+
+    impl ctor() for Stack<T> { mut self ->
+        self.data = alloc [T](8)
+        self.size = 0
+        self.capacity = 8
+    }
+
+    impl Stack<T> {
+        // --- Capacity ---
+
+        /** The number of elements in the stack. */
+        prop length: Int = size
+
+        /** Whether the stack contains no elements. */
+        prop isEmpty: Bool = size == 0
+
+        /** Whether the stack contains at least one element. */
+        prop isNotEmpty: Bool = size > 0
+
+        // --- Internal ---
+
+        func growStack() {
+            fin newCap = capacity * 2
+            fin newData = alloc [T](newCap)
+            var i = 0
+            while i < size {
+                (*newData)[i] = (*data)[i]
+                i += 1
+            }
+            fin oldData = data
+            self.data = newData
+            self.capacity = newCap
+            drop oldData
+        }
+
+        // --- Operations ---
+
+        /**
+         * Pushes an element onto the top of the stack.
+         *
+         * @param element The element to push.
+         * @since 0.0.1
+         */
+        func push(element: T) {
+            if size >= capacity { self.growStack() }
+            (*data)[size] = element
+            self.size = size + 1
+        }
+
+        /**
+         * Removes and returns the top element of the stack.
+         *
+         * @return The removed top element.
+         * @throws AssertionError if the stack is empty.
+         * @since 0.0.1
+         */
+        func pop(): T {
+            assert size > 0 { "Stack is empty" }
+            fin top = (*data)[size - 1]
+            self.size = size - 1
+            return top
+        }
+
+        /**
+         * Returns the top element without removing it.
+         *
+         * @return The top element.
+         * @throws AssertionError if the stack is empty.
+         * @since 0.0.1
+         */
+        func peek(): T {
+            assert size > 0 { "Stack is empty" }
+            return (*data)[size - 1]
+        }
+
+        /**
+         * Removes all elements from the stack.
+         *
+         * @since 0.0.1
+         */
+        func clear() {
+            fin oldData = data
+            self.data = alloc [T](8)
+            self.size = 0
+            self.capacity = 8
+            drop oldData
+        }
+
+        // --- String ---
+
+        /**
+         * Returns a string representation of the stack.
+         *
+         * @return A string in the format "[bottom, ..., top]".
+         * @since 0.0.1
+         */
+        func toString(): String {
+            var s = "["
+            var i = 0
+            while i < size {
+                if i > 0 { s = s + ", " }
+                s = s + toString((*data)[i])
+                i += 1
+            }
+            return s + "]"
+        }
+    }
+}

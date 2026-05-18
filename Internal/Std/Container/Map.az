@@ -1,0 +1,303 @@
+/*
+ * Copyright 2026 AzoraTech
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+@file:experimental
+
+package std.container
+
+/**
+ * @file Map
+ *
+ * Generic key-value dictionary collection.
+ *
+ * Provides an associative array backed by parallel pointer arrays,
+ * with support for insertion, lookup, removal, and functional iteration.
+ * Uses pointer-based storage with explicit capacity management.
+ *
+ * @since 0.0.1
+ */
+
+expose scope std {
+    /**
+     * A generic key-value dictionary using parallel pointer arrays.
+     *
+     * Map stores associations between keys and values. Keys are unique;
+     * inserting with an existing key replaces the previous value.
+     *
+     * @param K The type of keys.
+     * @param V The type of values.
+     * @since 0.0.1
+     */
+    pack Map<K, V> {
+        confine var keys: [K]* = alloc [K](8)
+        confine var values: [V]* = alloc [V](8)
+        confine var size: Int = 0
+        confine var capacity: Int = 8
+    }
+
+    impl oper[:] for Map<K, V> { ref self, key ->
+        var i = 0
+        while i < size {
+            if (*keys)[i] == key { return (*values)[i] }
+            i += 1
+        }
+        assert false { "Key not found in Map" }
+    }
+
+    impl oper[:]= for Map<K, V> { mut self, key, value ->
+        var i = 0
+        while i < size {
+            if (*keys)[i] == key {
+                (*values)[i] = value
+                return
+            }
+            i += 1
+        }
+        if size >= capacity { self.growMap() }
+        (*keys)[size] = key
+        (*values)[size] = value
+        self.size = size + 1
+    }
+
+    impl Map<K, V> {
+        // --- Capacity ---
+
+        /** The number of key-value pairs in the map. */
+        prop length: Int = size
+
+        /** Whether the map contains no entries. */
+        prop isEmpty: Bool = size == 0
+
+        /** Whether the map contains at least one entry. */
+        prop isNotEmpty: Bool = size > 0
+
+        // --- Internal ---
+
+        confine func growMap() {
+            fin newCap = capacity * 2
+            fin newKeys = alloc [K](newCap)
+            fin newValues = alloc [V](newCap)
+            var i = 0
+            while i < size {
+                (*newKeys)[i] = (*keys)[i]
+                (*newValues)[i] = (*values)[i]
+                i += 1
+            }
+            fin oldKeys = keys
+            fin oldValues = values
+            self.keys = newKeys
+            self.values = newValues
+            self.capacity = newCap
+            drop oldKeys
+            drop oldValues
+        }
+
+        // --- Access ---
+
+        /**
+         * Associates the given key with the given value.
+         *
+         * If the key already exists, its value is replaced.
+         *
+         * @param key The key to insert or update.
+         * @param value The value to associate with the key.
+         * @since 0.0.1
+         */
+        func put(key: K, value: V) {
+            var i = 0
+            while i < size {
+                if (*keys)[i] == key {
+                    (*values)[i] = value
+                    return
+                }
+                i += 1
+            }
+            if size >= capacity { self.growMap() }
+            (*keys)[size] = key
+            (*values)[size] = value
+            self.size = size + 1
+        }
+
+        /**
+         * Returns the value associated with the given key.
+         *
+         * @param key The key to look up.
+         * @return The associated value.
+         * @throws AssertionError if the key is not found.
+         * @since 0.0.1
+         */
+        func get(key: K): V {
+            var i = 0
+            while i < size {
+                if (*keys)[i] == key { return (*values)[i] }
+                i += 1
+            }
+            assert false { "Key not found in Map" }
+        }
+
+        /**
+         * Returns the value for the given key, or a default if not found.
+         *
+         * @param key The key to look up.
+         * @param default The fallback value.
+         * @return The associated value or the default.
+         * @since 0.0.1
+         */
+        func getOrDefault(key: K, default: V): V {
+            return for i in 0..(size - 1) {
+                if (*keys)[i] == key { (*values)[i] }
+            } else { default }
+        }
+
+        /**
+         * Removes the entry with the given key and returns its value.
+         *
+         * @param key The key to remove.
+         * @return The removed value.
+         * @throws AssertionError if the key is not found.
+         * @since 0.0.1
+         */
+        func remove(key: K): V {
+            var idx = -1
+            var i = 0
+            while i < size {
+                if (*keys)[i] == key {
+                    idx = i
+                }
+                i += 1
+            }
+            assert idx >= 0 { "Key not found in Map" }
+            fin removed = (*values)[idx]
+            var j = idx
+            while j < size - 1 {
+                (*keys)[j] = (*keys)[j + 1]
+                (*values)[j] = (*values)[j + 1]
+                j += 1
+            }
+            self.size = size - 1
+            return removed
+        }
+
+        /**
+         * Checks whether the map contains the given key.
+         *
+         * @param key The key to search for.
+         * @return true if the key exists, false otherwise.
+         * @since 0.0.1
+         */
+        func containsKey(key: K): Bool {
+            return for i in 0..(size - 1) {
+                if (*keys)[i] == key { true }
+            } else { false }
+        }
+
+        /**
+         * Checks whether the map contains the given value.
+         *
+         * @param value The value to search for.
+         * @return true if the value exists, false otherwise.
+         * @since 0.0.1
+         */
+        func containsValue(value: V): Bool {
+            return for i in 0..(size - 1) {
+                if (*values)[i] == value { true }
+            } else { false }
+        }
+
+        /**
+         * Removes all entries from the map.
+         *
+         * @since 0.0.1
+         */
+        func clear() {
+            fin oldKeys = keys
+            fin oldValues = values
+            self.keys = alloc [K](8)
+            self.values = alloc [V](8)
+            self.size = 0
+            self.capacity = 8
+            drop oldKeys
+            drop oldValues
+        }
+
+        // --- Functional ---
+
+        /**
+         * Executes the given action on each key-value pair.
+         *
+         * @param action The function to apply to each key and value.
+         * @since 0.0.1
+         */
+        func forEach(action: (K, V) -> Unit) {
+            var i = 0
+            while i < size {
+                action((*keys)[i], (*values)[i])
+                i += 1
+            }
+        }
+
+        /**
+         * Returns an array of all keys.
+         *
+         * @return An array containing all keys in insertion order.
+         * @since 0.0.1
+         */
+        func keys(): [K] {
+            var result: [K] = [].fill<K>(size)
+            var i = 0
+            while i < size {
+                result[i] = (*keys)[i]
+                i += 1
+            }
+            return result
+        }
+
+        /**
+         * Returns an array of all values.
+         *
+         * @return An array containing all values in insertion order.
+         * @since 0.0.1
+         */
+        func values(): [V] {
+            var result: [V] = [].fill<V>(size)
+            var i = 0
+            while i < size {
+                result[i] = (*values)[i]
+                i += 1
+            }
+            return result
+        }
+
+        // --- String ---
+
+        /**
+         * Returns a string representation of the map.
+         *
+         * @return A string in the format "{key1: value1, key2: value2}".
+         * @since 0.0.1
+         */
+        func toString(): String {
+            var s = "{"
+            var i = 0
+            while i < size {
+                if i > 0 { s = s + ", " }
+                s = s + toString((*keys)[i]) + ": " + toString((*values)[i])
+                i += 1
+            }
+            return s + "}"
+        }
+    }
+}

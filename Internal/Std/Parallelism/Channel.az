@@ -1,0 +1,118 @@
+/*
+ * Copyright 2026 AzoraTech
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+@file:experimental
+
+package std.channel
+
+/**
+ * @file Channel
+ *
+ * Thread-safe message channel.
+ *
+ * Provides a FIFO message queue for communication between threads,
+ * with send, receive, and close operations protected by a mutex.
+ *
+ * @since 0.0.1
+ */
+
+expose scope std {
+    /**
+     * A thread-safe FIFO message channel for inter-thread communication.
+     *
+     * Channel provides a synchronized queue that allows threads to
+     * send and receive messages safely.
+     *
+     * @param T The type of messages in this channel.
+     * @since 0.0.1
+     */
+    pack Channel<T> {
+        confine var queue: Queue<T> = Queue<T>()
+        confine var mutex: Mutex = Mutex(0)
+        confine var closed: Bool = false
+    }
+
+    impl Channel<T> {
+        // --- Capacity ---
+
+        /** The number of messages currently in the channel. */
+        prop length: Int = queue.length
+
+        /** Whether the channel has no messages. */
+        prop isEmpty: Bool = queue.isEmpty
+
+        /** Whether the channel has been closed. */
+        prop isClosed: Bool = closed
+
+        // --- Operations ---
+
+        /**
+         * Sends a message to the channel.
+         *
+         * @param value The message to send.
+         * @throws AssertionError if the channel is closed.
+         * @since 0.0.1
+         */
+        func send(value: T) {
+            assert !closed { "Cannot send on closed channel" }
+            mutex.lock()
+            queue.enqueue(value)
+            mutex.unlock()
+        }
+
+        /**
+         * Receives and removes the next message from the channel.
+         *
+         * @return The next message.
+         * @throws AssertionError if the channel is empty.
+         * @since 0.0.1
+         */
+        func receive(): T {
+            assert queue.isNotEmpty { "Channel is empty" }
+            mutex.lock()
+            fin value = queue.dequeue()
+            mutex.unlock()
+            return value
+        }
+
+        /**
+         * Attempts to receive a message without blocking.
+         *
+         * @param default The value to return if the channel is empty.
+         * @return The next message, or the default value if empty.
+         * @since 0.0.1
+         */
+        func tryReceive(default: T): T {
+            mutex.lock()
+            if queue.isEmpty {
+                mutex.unlock()
+                return default
+            }
+            fin value = queue.dequeue()
+            mutex.unlock()
+            return value
+        }
+
+        /**
+         * Closes the channel, preventing further sends.
+         *
+         * @since 0.0.1
+         */
+        func close() {
+            self.closed = true
+        }
+    }
+}

@@ -1,0 +1,192 @@
+/*
+ * Copyright 2026 AzoraTech
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package testing
+
+use scope std
+
+// --- Sort tests ---
+
+test "sort ascending" {
+    fin sorted = sort<Int>([5, 3, 1, 4, 2])
+    assert sorted[0] == 1 { "first" }
+    assert sorted[1] == 2 { "second" }
+    assert sorted[2] == 3 { "third" }
+    assert sorted[3] == 4 { "fourth" }
+    assert sorted[4] == 5 { "fifth" }
+}
+
+test "sort already sorted" {
+    fin sorted = sort<Int>([1, 2, 3])
+    assert sorted[0] == 1 { "already sorted" }
+    assert sorted[2] == 3 { "already sorted" }
+}
+
+test "sort single element" {
+    fin sorted = sort<Int>([42])
+    assert sorted[0] == 42 { "single" }
+    assert sorted.length == 1 { "length 1" }
+}
+
+test "sort empty" {
+    fin sorted = sort<Int>([])
+    assert sorted.length == 0 { "empty" }
+}
+
+test "sort descending" {
+    fin sorted = sortDescending<Int>([1, 5, 3, 2, 4])
+    assert sorted[0] == 5 { "first" }
+    assert sorted[4] == 1 { "last" }
+}
+
+test "isSorted true" {
+    assert isSorted<Int>([1, 2, 3, 4, 5]) == true { "sorted" }
+}
+
+test "isSorted false" {
+    assert isSorted<Int>([1, 3, 2]) == false { "not sorted" }
+}
+
+test "isSorted empty" {
+    assert isSorted<Int>([]) == true { "empty is sorted" }
+}
+
+test "isSorted single" {
+    assert isSorted<Int>([1]) == true { "single is sorted" }
+}
+
+test "isSortedDescending" {
+    assert isSortedDescending<Int>([5, 4, 3, 2, 1]) == true { "desc sorted" }
+    assert isSortedDescending<Int>([1, 2, 3]) == false { "not desc sorted" }
+}
+
+test "reverse" {
+    fin rev = reverse<Int>([1, 2, 3, 4, 5])
+    assert rev[0] == 5 { "first" }
+    assert rev[4] == 1 { "last" }
+    assert rev.length == 5 { "length" }
+}
+
+test "reverse empty" {
+    fin rev = reverse<Int>([])
+    assert rev.length == 0 { "empty reverse" }
+}
+
+test "unique sorted" {
+    fin u = unique<Int>([1, 1, 2, 2, 3, 3, 3])
+    assert u.length == 3 { "3 unique" }
+    assert u[0] == 1 { "first" }
+    assert u[1] == 2 { "second" }
+    assert u[2] == 3 { "third" }
+}
+
+test "unique no duplicates" {
+    fin u = unique<Int>([1, 2, 3])
+    assert u.length == 3 { "already unique" }
+}
+
+test "swap" {
+    fin arr = swap<Int>([10, 20, 30], 0, 2)
+    assert arr[0] == 30 { "swapped first" }
+    assert arr[2] == 10 { "swapped last" }
+    assert arr[1] == 20 { "middle unchanged" }
+}
+
+test "rotateLeft" {
+    fin r = rotateLeft<Int>([1, 2, 3, 4, 5], 2)
+    assert r[0] == 3 { "first after rotate" }
+    assert r[1] == 4 { "second" }
+    assert r[4] == 2 { "last" }
+}
+
+test "rotateLeft zero" {
+    fin r = rotateLeft<Int>([1, 2, 3], 0)
+    assert r[0] == 1 { "no rotation" }
+}
+
+// --- Search tests ---
+
+test "linearSearch found" {
+    assert linearSearch<Int>([10, 20, 30, 40], 30) == 2 { "found at index 2" }
+}
+
+test "linearSearch not found" {
+    assert linearSearch<Int>([10, 20, 30], 99) == -1 { "not found" }
+}
+
+test "binarySearch found" {
+    assert binarySearch<Int>([1, 3, 5, 7, 9, 11], 7) == 3 { "found at 3" }
+}
+
+test "binarySearch not found" {
+    assert binarySearch<Int>([1, 3, 5, 7, 9], 4) == -1 { "not found" }
+}
+
+test "binarySearch first" {
+    assert binarySearch<Int>([1, 2, 3], 1) == 0 { "first element" }
+}
+
+test "binarySearch last" {
+    assert binarySearch<Int>([1, 2, 3], 3) == 2 { "last element" }
+}
+
+test "minOf" {
+    assert minOf<Int>([5, 3, 8, 1, 4]) == 1 { "min is 1" }
+}
+
+test "maxOf" {
+    assert maxOf<Int>([5, 3, 8, 1, 4]) == 8 { "max is 8" }
+}
+
+test "count occurrences" {
+    assert count<Int>([1, 2, 1, 3, 1], 1) == 3 { "1 appears 3 times" }
+    assert count<Int>([1, 2, 3], 5) == 0 { "5 not found" }
+}
+
+test "findIndex" {
+    fin idx = findIndex<Int>([10, 20, 30, 40], { x -> x > 25 })
+    assert idx == 2 { "first > 25 at index 2" }
+}
+
+test "findIndex not found" {
+    fin idx = findIndex<Int>([1, 2, 3], { x -> x > 10 })
+    assert idx == -1 { "not found" }
+}
+
+test "findLastIndex" {
+    fin idx = findLastIndex<Int>([1, 2, 3, 2, 1], { x -> x == 2 })
+    assert idx == 3 { "last 2 at index 3" }
+}
+
+test "arrayContains" {
+    assert arrayContains<Int>([1, 2, 3], 2) == true { "contains 2" }
+    assert arrayContains<Int>([1, 2, 3], 5) == false { "does not contain 5" }
+}
+
+// --- Combined sort + search ---
+
+test "sort then binary search" {
+    fin arr = [50, 10, 40, 20, 30]
+    fin sorted = sort<Int>(arr)
+    assert binarySearch<Int>(sorted, 30) == 2 { "30 at index 2 in sorted" }
+    assert binarySearch<Int>(sorted, 50) == 4 { "50 at index 4 in sorted" }
+}
+
+test "sort preserves length" {
+    fin arr = [3, 1, 4, 1, 5, 9, 2, 6]
+    fin sorted = sort<Int>(arr)
+    assert sorted.length == 8 { "length preserved" }
+}

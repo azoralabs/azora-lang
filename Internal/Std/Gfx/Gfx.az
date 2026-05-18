@@ -1,0 +1,437 @@
+/*
+ * Copyright 2026 AzoraTech
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+@file:experimental
+
+package std.gfx
+
+/**
+ * @file Gfx
+ *
+ * Cross-platform graphics interface using OpenGL ES 3.0.
+ *
+ * Provides low-level OpenGL ES 3.0 bindings through bridge declarations,
+ * GL constants, and high-level 2D rendering helpers for games and
+ * visualizations.
+ *
+ * Usage:
+ *   use scope std
+ *
+ *   gfxSetViewport(0, 0, 800, 600)
+ *   gfxClear(GfxColor(r: 0.1, g: 0.1, b: 0.2, a: 1.0))
+ *   gfxDrawRect(GfxRect(x: 100.0, y: 200.0, width: 50.0, height: 50.0),
+ *               GfxColor(r: 1.0, g: 0.0, b: 0.0, a: 1.0))
+ *
+ * @since 0.0.1
+ */
+
+expose scope std {
+
+    // ====================================================================
+    // C Bridge - OpenGL ES 3.0 core functions
+    // ====================================================================
+
+    bridge .C {
+        // State
+        func glClear(mask: Int)
+        func glClearColor(r: Real, g: Real, b: Real, a: Real)
+        func glViewport(x: Int, y: Int, width: Int, height: Int)
+        func glEnable(cap: Int)
+        func glDisable(cap: Int)
+        func glBlendFunc(sfactor: Int, dfactor: Int)
+        func glLineWidth(width: Real)
+        func glScissor(x: Int, y: Int, width: Int, height: Int)
+        func glGetError(): Int
+
+        // Shaders
+        func glCreateShader(shaderType: Int): Int
+        func glShaderSource(shader: Int, count: Int, source: Int, length: Int)
+        func glCompileShader(shader: Int)
+        func glGetShaderiv(shader: Int, pname: Int, params: Int)
+        func glGetShaderInfoLog(shader: Int, maxLength: Int, length: Int, infoLog: Int)
+        func glDeleteShader(shader: Int)
+
+        // Programs
+        func glCreateProgram(): Int
+        func glAttachShader(program: Int, shader: Int)
+        func glLinkProgram(program: Int)
+        func glGetProgramiv(program: Int, pname: Int, params: Int)
+        func glGetProgramInfoLog(program: Int, maxLength: Int, length: Int, infoLog: Int)
+        func glUseProgram(program: Int)
+        func glDeleteProgram(program: Int)
+
+        // Uniforms
+        func glGetUniformLocation(program: Int, name: String): Int
+        func glUniform1i(location: Int, v0: Int)
+        func glUniform1f(location: Int, v0: Real)
+        func glUniform2f(location: Int, v0: Real, v1: Real)
+        func glUniform3f(location: Int, v0: Real, v1: Real, v2: Real)
+        func glUniform4f(location: Int, v0: Real, v1: Real, v2: Real, v3: Real)
+        func glUniformMatrix4fv(location: Int, count: Int, transpose: Int, value: Int)
+
+        // Vertex buffers
+        func glGenBuffers(n: Int, buffers: Int)
+        func glDeleteBuffers(n: Int, buffers: Int)
+        func glBindBuffer(target: Int, buffer: Int)
+        func glBufferData(target: Int, size: Int, data: Int, usage: Int)
+        func glBufferSubData(target: Int, offset: Int, size: Int, data: Int)
+
+        // Vertex arrays
+        func glGenVertexArrays(n: Int, arrays: Int)
+        func glDeleteVertexArrays(n: Int, arrays: Int)
+        func glBindVertexArray(array: Int)
+        func glVertexAttribPointer(index: Int, size: Int, glType: Int, normalized: Int, stride: Int, pointer: Int)
+        func glEnableVertexAttribArray(index: Int)
+        func glDisableVertexAttribArray(index: Int)
+
+        // Drawing
+        func glDrawArrays(mode: Int, first: Int, count: Int)
+        func glDrawElements(mode: Int, count: Int, glType: Int, indices: Int)
+
+        // High-level helpers (implemented in native runtime)
+        func az_draw_rect(x: Real, y: Real, w: Real, h: Real, r: Real, g: Real, b: Real, a: Real, sw: Int, sh: Int)
+
+        // Textures
+        func glGenTextures(n: Int, textures: Int)
+        func glDeleteTextures(n: Int, textures: Int)
+        func glBindTexture(target: Int, texture: Int)
+        func glTexImage2D(target: Int, level: Int, internalFormat: Int, width: Int, height: Int, border: Int, format: Int, glType: Int, pixels: Int)
+        func glTexParameteri(target: Int, pname: Int, param: Int)
+        func glActiveTexture(texture: Int)
+        func glGenerateMipmap(target: Int)
+
+        // Framebuffers
+        func glGenFramebuffers(n: Int, framebuffers: Int)
+        func glDeleteFramebuffers(n: Int, framebuffers: Int)
+        func glBindFramebuffer(target: Int, framebuffer: Int)
+        func glFramebufferTexture2D(target: Int, attachment: Int, textarget: Int, texture: Int, level: Int)
+        func glCheckFramebufferStatus(target: Int): Int
+    }
+
+    // ====================================================================
+    // JS Bridge - WebGL 2.0 (maps to OpenGL ES 3.0)
+    // ====================================================================
+
+    bridge .JS {
+        func webgl_getContext(canvasHandle: Int): Int
+        func webgl_clearColor(ctx: Int, r: Real, g: Real, b: Real, a: Real)
+        func webgl_clear(ctx: Int, mask: Int)
+        func webgl_viewport(ctx: Int, x: Int, y: Int, w: Int, h: Int)
+        func webgl_enable(ctx: Int, cap: Int)
+        func webgl_blendFunc(ctx: Int, sf: Int, df: Int)
+        func webgl_createShader(ctx: Int, shaderType: Int): Int
+        func webgl_shaderSource(ctx: Int, shader: Int, source: String)
+        func webgl_compileShader(ctx: Int, shader: Int)
+        func webgl_createProgram(ctx: Int): Int
+        func webgl_attachShader(ctx: Int, program: Int, shader: Int)
+        func webgl_linkProgram(ctx: Int, program: Int)
+        func webgl_useProgram(ctx: Int, program: Int)
+        func webgl_getUniformLocation(ctx: Int, program: Int, name: String): Int
+        func webgl_uniform4f(ctx: Int, loc: Int, v0: Real, v1: Real, v2: Real, v3: Real)
+        func webgl_drawArrays(ctx: Int, mode: Int, first: Int, count: Int)
+    }
+
+    // ====================================================================
+    // JVM Bridge - LWJGL OpenGL ES bindings
+    // ====================================================================
+
+    bridge .JVM {
+        func jvm_glClear(mask: Int)
+        func jvm_glClearColor(r: Real, g: Real, b: Real, a: Real)
+        func jvm_glViewport(x: Int, y: Int, width: Int, height: Int)
+        func jvm_glEnable(cap: Int)
+        func jvm_glBlendFunc(sfactor: Int, dfactor: Int)
+        func jvm_glCreateShader(shaderType: Int): Int
+        func jvm_glShaderSource(shader: Int, source: String)
+        func jvm_glCompileShader(shader: Int)
+        func jvm_glCreateProgram(): Int
+        func jvm_glAttachShader(program: Int, shader: Int)
+        func jvm_glLinkProgram(program: Int)
+        func jvm_glUseProgram(program: Int)
+        func jvm_glGetUniformLocation(program: Int, name: String): Int
+        func jvm_glUniform4f(location: Int, v0: Real, v1: Real, v2: Real, v3: Real)
+        func jvm_glDrawArrays(mode: Int, first: Int, count: Int)
+    }
+
+    // ====================================================================
+    // OpenGL ES 3.0 Constants
+    // ====================================================================
+
+    scope gl {
+        // Clear bits
+        fin COLOR_BUFFER_BIT: Int = 16384
+        fin DEPTH_BUFFER_BIT: Int = 256
+        fin STENCIL_BUFFER_BIT: Int = 1024
+
+        // Primitives
+        fin POINTS: Int = 0
+        fin LINES: Int = 1
+        fin LINE_LOOP: Int = 2
+        fin LINE_STRIP: Int = 3
+        fin TRIANGLES: Int = 4
+        fin TRIANGLE_STRIP: Int = 5
+        fin TRIANGLE_FAN: Int = 6
+
+        // Shader types
+        fin VERTEX_SHADER: Int = 35633
+        fin FRAGMENT_SHADER: Int = 35632
+
+        // Shader params
+        fin COMPILE_STATUS: Int = 35713
+        fin LINK_STATUS: Int = 35714
+
+        // Buffer targets
+        fin ARRAY_BUFFER: Int = 34962
+        fin ELEMENT_ARRAY_BUFFER: Int = 34963
+
+        // Buffer usage
+        fin STATIC_DRAW: Int = 35044
+        fin DYNAMIC_DRAW: Int = 35048
+        fin STREAM_DRAW: Int = 35040
+
+        // Data types
+        fin BYTE: Int = 5120
+        fin UNSIGNED_BYTE: Int = 5121
+        fin SHORT: Int = 5122
+        fin UNSIGNED_SHORT: Int = 5123
+        fin INT: Int = 5124
+        fin UNSIGNED_INT: Int = 5125
+        fin FLOAT: Int = 5126
+
+        // Texture targets
+        fin TEXTURE_2D: Int = 3553
+        fin TEXTURE_CUBE_MAP: Int = 34067
+
+        // Texture params
+        fin TEXTURE_MAG_FILTER: Int = 10240
+        fin TEXTURE_MIN_FILTER: Int = 10241
+        fin TEXTURE_WRAP_S: Int = 10242
+        fin TEXTURE_WRAP_T: Int = 10243
+        fin NEAREST: Int = 9728
+        fin LINEAR: Int = 9729
+        fin CLAMP_TO_EDGE: Int = 33071
+        fin REPEAT: Int = 10497
+
+        // Pixel formats
+        fin RGBA: Int = 6408
+        fin RGB: Int = 6407
+        fin ALPHA: Int = 6406
+
+        // Blend
+        fin BLEND: Int = 3042
+        fin SRC_ALPHA: Int = 770
+        fin ONE_MINUS_SRC_ALPHA: Int = 771
+
+        // Depth
+        fin DEPTH_TEST: Int = 2929
+        fin LESS: Int = 513
+
+        // Scissor
+        fin SCISSOR_TEST: Int = 3089
+
+        // Texture units
+        fin TEXTURE0: Int = 33984
+        fin TEXTURE1: Int = 33985
+        fin TEXTURE2: Int = 33986
+        fin TEXTURE3: Int = 33987
+
+        // Framebuffer
+        fin FRAMEBUFFER: Int = 36160
+        fin COLOR_ATTACHMENT0: Int = 36064
+        fin FRAMEBUFFER_COMPLETE: Int = 36053
+
+        // Boolean
+        fin TRUE: Int = 1
+        fin FALSE: Int = 0
+    }
+
+    // ====================================================================
+    // Error Types
+    // ====================================================================
+
+    fail GfxError {
+        ShaderCompileError,
+        ProgramLinkError,
+        TextureLoadError,
+        ContextCreationFailed,
+        FramebufferIncomplete
+    }
+
+    // ====================================================================
+    // Data Types
+    // ====================================================================
+
+    /**
+     * An RGBA color with components in [0.0, 1.0].
+     * @since 0.0.1
+     */
+    pack GfxColor {
+        var r: Real = 0.0
+        var g: Real = 0.0
+        var b: Real = 0.0
+        var a: Real = 1.0
+    }
+
+    impl GfxColor {
+        func toHex(): Int { ref self ->
+            fin ri = toInt(r * 255.0)
+            fin gi = toInt(g * 255.0)
+            fin bi = toInt(b * 255.0)
+            fin ai = toInt(a * 255.0)
+            return ri * 16777216 + gi * 65536 + bi * 256 + ai
+        }
+    }
+
+    // Common colors
+    scope colors {
+        fin BLACK: GfxColor = GfxColor(r: 0.0, g: 0.0, b: 0.0, a: 1.0)
+        fin WHITE: GfxColor = GfxColor(r: 1.0, g: 1.0, b: 1.0, a: 1.0)
+        fin RED: GfxColor = GfxColor(r: 1.0, g: 0.0, b: 0.0, a: 1.0)
+        fin GREEN: GfxColor = GfxColor(r: 0.0, g: 1.0, b: 0.0, a: 1.0)
+        fin BLUE: GfxColor = GfxColor(r: 0.0, g: 0.0, b: 1.0, a: 1.0)
+        fin YELLOW: GfxColor = GfxColor(r: 1.0, g: 1.0, b: 0.0, a: 1.0)
+        fin CYAN: GfxColor = GfxColor(r: 0.0, g: 1.0, b: 1.0, a: 1.0)
+        fin MAGENTA: GfxColor = GfxColor(r: 1.0, g: 0.0, b: 1.0, a: 1.0)
+        fin ORANGE: GfxColor = GfxColor(r: 1.0, g: 0.5, b: 0.0, a: 1.0)
+        fin GRAY: GfxColor = GfxColor(r: 0.5, g: 0.5, b: 0.5, a: 1.0)
+        fin DARK_GRAY: GfxColor = GfxColor(r: 0.2, g: 0.2, b: 0.2, a: 1.0)
+        fin TRANSPARENT: GfxColor = GfxColor(r: 0.0, g: 0.0, b: 0.0, a: 0.0)
+    }
+
+    /**
+     * A 2D axis-aligned rectangle.
+     * @since 0.0.1
+     */
+    pack GfxRect {
+        var x: Real = 0.0
+        var y: Real = 0.0
+        var width: Real = 0.0
+        var height: Real = 0.0
+    }
+
+    /**
+     * A 2D vertex with position and texture coordinates.
+     * @since 0.0.1
+     */
+    pack GfxVertex {
+        var x: Real = 0.0
+        var y: Real = 0.0
+        var u: Real = 0.0
+        var v: Real = 0.0
+        var r: Real = 1.0
+        var g: Real = 1.0
+        var b: Real = 1.0
+        var a: Real = 1.0
+    }
+
+    /**
+     * A compiled shader program handle.
+     * @since 0.0.1
+     */
+    pack GfxShader {
+        var programId: Int = 0
+        var vertexId: Int = 0
+        var fragmentId: Int = 0
+    }
+
+    /**
+     * A texture handle.
+     * @since 0.0.1
+     */
+    pack GfxTexture {
+        var textureId: Int = 0
+        var width: Int = 0
+        var height: Int = 0
+    }
+
+    /**
+     * Renderer state for 2D batch rendering.
+     * @since 0.0.1
+     */
+    pack GfxRenderer {
+        var shader: GfxShader = GfxShader()
+        var vao: Int = 0
+        var vbo: Int = 0
+        var screenWidth: Int = 800
+        var screenHeight: Int = 600
+        var initialized: Bool = false
+    }
+
+    // ====================================================================
+    // High-Level 2D Rendering API
+    // ====================================================================
+
+    // Default vertex shader for 2D colored quads
+    scope shaderSrc {
+        fin VERT_2D: String = "#version 300 es\nlayout(location=0) in vec2 aPos;\nlayout(location=1) in vec4 aColor;\nuniform vec2 uResolution;\nout vec4 vColor;\nvoid main(){\nvec2 ndc=aPos/uResolution*2.0-1.0;\ngl_Position=vec4(ndc.x,-ndc.y,0.0,1.0);\nvColor=aColor;\n}"
+
+        fin FRAG_2D: String = "#version 300 es\nprecision mediump float;\nin vec4 vColor;\nout vec4 fragColor;\nvoid main(){\nfragColor=vColor;\n}"
+    }
+
+    /**
+     * Sets the viewport and clears the screen with the given color.
+     *
+     * @param x Viewport x origin.
+     * @param y Viewport y origin.
+     * @param width Viewport width.
+     * @param height Viewport height.
+     * @since 0.0.1
+     */
+    func gfxSetViewport(x: Int, y: Int, width: Int, height: Int) {
+        glViewport(x, y, width, height)
+    }
+
+    /**
+     * Clears the screen with the given color.
+     *
+     * @param color The clear color.
+     * @since 0.0.1
+     */
+    func gfxClear(color: GfxColor) {
+        glClearColor(color.r, color.g, color.b, color.a)
+        glClear(gl::COLOR_BUFFER_BIT)
+    }
+
+    /**
+     * Enables alpha blending for transparency.
+     * @since 0.0.1
+     */
+    func gfxEnableBlend() {
+        glEnable(gl::BLEND)
+        glBlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA)
+    }
+
+    /**
+     * Disables alpha blending.
+     * @since 0.0.1
+     */
+    func gfxDisableBlend() {
+        glDisable(gl::BLEND)
+    }
+
+    /**
+     * Draws a filled colored rectangle.
+     *
+     * @param rect The rectangle position and size.
+     * @param color The fill color.
+     * @param screenWidth Screen width for coordinate mapping.
+     * @param screenHeight Screen height for coordinate mapping.
+     * @since 0.0.1
+     */
+    func gfxDrawRect(rect: GfxRect, color: GfxColor, screenWidth: Int, screenHeight: Int) {
+        az_draw_rect(rect.x, rect.y, rect.width, rect.height, color.r, color.g, color.b, color.a, screenWidth, screenHeight)
+    }
+}

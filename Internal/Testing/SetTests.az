@@ -1,0 +1,196 @@
+/*
+ * Copyright 2026 AzoraTech
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package testing
+
+use scope std
+
+// --- Construction ---
+
+test "Set default construction" {
+    var set = Set<Int>()
+    assert set.length == 0 { "new set should have length 0" }
+    assert set.isEmpty { "new set should be empty" }
+}
+
+// --- Add ---
+
+test "Set add" {
+    var set = Set<Int>()
+    fin added1 = set.add(1)
+    fin added2 = set.add(2)
+    fin added3 = set.add(3)
+    assert added1 { "first add should return true" }
+    assert added2 { "second add should return true" }
+    assert added3 { "third add should return true" }
+    assert set.length == 3 { "length after 3 adds should be 3" }
+}
+
+test "Set add duplicate" {
+    var set = Set<Int>()
+    set.add(1)
+    fin added = set.add(1)
+    assert !added { "duplicate add should return false" }
+    assert set.length == 1 { "duplicate should not increase length" }
+}
+
+// --- Remove ---
+
+test "Set remove" {
+    var set = Set<Int>()
+    set.add(1)
+    set.add(2)
+    set.add(3)
+    fin removed = set.remove(2)
+    assert removed { "remove existing should return true" }
+    assert set.length == 2 { "length after remove should be 2" }
+    assert !set.contains(2) { "removed element should not exist" }
+}
+
+test "Set remove nonexistent" {
+    var set = Set<Int>()
+    set.add(1)
+    fin removed = set.remove(99)
+    assert !removed { "remove nonexistent should return false" }
+    assert set.length == 1 { "length should not change" }
+}
+
+// --- Contains ---
+
+test "Set contains" {
+    var set = Set<String>()
+    set.add("apple")
+    set.add("banana")
+    assert set.contains("apple") { "should contain apple" }
+    assert !set.contains("cherry") { "should not contain cherry" }
+}
+
+// --- Clear ---
+
+test "Set clear" {
+    var set = Set<Int>()
+    set.add(1)
+    set.add(2)
+    set.clear()
+    assert set.length == 0 { "length after clear should be 0" }
+    assert set.isEmpty { "set should be empty after clear" }
+}
+
+// --- Union ---
+
+test "Set union" {
+    var a = Set<Int>()
+    a.add(1)
+    a.add(2)
+    a.add(3)
+    var b = Set<Int>()
+    b.add(3)
+    b.add(4)
+    b.add(5)
+    var u = a.union(b)
+    assert u.length == 5 { "union length should be 5" }
+    assert u.contains(1) { "union should contain 1" }
+    assert u.contains(3) { "union should contain 3" }
+    assert u.contains(5) { "union should contain 5" }
+}
+
+// --- Intersect ---
+
+test "Set intersect" {
+    var a = Set<Int>()
+    a.add(1)
+    a.add(2)
+    a.add(3)
+    var b = Set<Int>()
+    b.add(2)
+    b.add(3)
+    b.add(4)
+    var inter = a.intersect(b)
+    assert inter.length == 2 { "intersect length should be 2" }
+    assert inter.contains(2) { "intersect should contain 2" }
+    assert inter.contains(3) { "intersect should contain 3" }
+    assert !inter.contains(1) { "intersect should not contain 1" }
+}
+
+// --- Difference ---
+
+test "Set difference" {
+    var a = Set<Int>()
+    a.add(1)
+    a.add(2)
+    a.add(3)
+    var b = Set<Int>()
+    b.add(2)
+    b.add(3)
+    b.add(4)
+    var diff = a.difference(b)
+    assert diff.length == 1 { "difference length should be 1" }
+    assert diff.contains(1) { "difference should contain 1" }
+    assert !diff.contains(2) { "difference should not contain 2" }
+}
+
+// --- Functional ---
+
+test "Set forEach" {
+    var set = Set<Int>()
+    set.add(1)
+    set.add(2)
+    set.add(3)
+    var total = 0
+    set.forEach({ x -> total += x })
+    assert total == 6 { "forEach sum should be 6" }
+}
+
+test "Set filter" {
+    var set = Set<Int>()
+    set.add(1)
+    set.add(2)
+    set.add(3)
+    set.add(4)
+    var evens = set.filter({ x -> x % 2 == 0 })
+    assert evens.length == 2 { "filtered set length should be 2" }
+    assert evens.contains(2) { "filtered should contain 2" }
+    assert evens.contains(4) { "filtered should contain 4" }
+}
+
+test "Set any and all" {
+    var set = Set<Int>()
+    set.add(2)
+    set.add(4)
+    set.add(6)
+    assert set.all({ x -> x % 2 == 0 }) { "all even should be true" }
+    assert set.any({ x -> x > 4 }) { "any > 4 should be true" }
+    assert !set.any({ x -> x > 10 }) { "any > 10 should be false" }
+}
+
+// --- ToArray ---
+
+test "Set toArray" {
+    var set = Set<Int>()
+    set.add(10)
+    set.add(20)
+    var arr = set.toArray()
+    assert arr.length == 2 { "toArray length should be 2" }
+    assert arr[0] == 10 { "first element should be 10" }
+    assert arr[1] == 20 { "second element should be 20" }
+}
+
+// --- ToString ---
+
+test "Set toString empty" {
+    var set = Set<Int>()
+    assert set.toString() == "{}" { "empty set toString should be {}" }
+}

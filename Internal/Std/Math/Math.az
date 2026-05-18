@@ -1,0 +1,239 @@
+/*
+ * Copyright 2026 AzoraTech
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+@file:experimental
+
+package std.math
+
+/**
+ * @file Math
+ *
+ * Core mathematical constants and utility functions.
+ *
+ * Provides fundamental constants (PI, E, TAU, SQRT2) and common numeric
+ * operations such as absolute value, clamping, linear interpolation,
+ * floor, ceil, and rounding.
+ *
+ * @since 0.0.1
+ */
+
+expose scope std {
+    scope math {
+        /**
+         * The ratio of a circle's circumference to its diameter.
+         *
+         * @since 0.0.1
+         */
+        fin PI: Real = 3.14159265358979
+
+        /**
+         * Euler's number, the base of natural logarithms.
+         *
+         * @since 0.0.1
+         */
+        fin E: Real = 2.71828182845905
+
+        /**
+         * The ratio of a circle's circumference to its radius (2 * PI).
+         *
+         * @since 0.0.1
+         */
+        fin TAU: Real = 6.28318530717959
+
+        /**
+         * The square root of 2.
+         *
+         * @since 0.0.1
+         */
+        fin SQRT2: Real = 1.41421356237310
+
+        /**
+         * The golden ratio (phi).
+         *
+         * @since 0.0.1
+         */
+        fin PHI: Real = 1.61803398874989
+
+        /**
+         * Positive infinity representation.
+         *
+         * @since 0.0.1
+         */
+        fin INF: Real = 1.0 / 0.0
+
+        /**
+         * The smallest positive real value.
+         *
+         * @since 0.0.1
+         */
+        fin EPSILON: Real = 0.00000000000001
+    }
+
+    /**
+     * Returns the absolute value of the given number.
+     *
+     * @param x The value to take the absolute value of.
+     * @return The non-negative magnitude of x.
+     * @since 0.0.1
+     */
+    func abs<T>(x: T): T
+    out { r -> assert r >= 0 { "abs must return non-negative" } }
+    scope {
+        return if x < 0 { -x } else { x }
+    }
+
+    /**
+     * Returns the smaller of two values.
+     *
+     * @param a The first value to compare.
+     * @param b The second value to compare.
+     * @return The lesser of a and b.
+     * @since 0.0.1
+     */
+    func min<T>(a: T, b: T): T = if a < b { a } else { b }
+
+    /**
+     * Returns the larger of two values.
+     *
+     * @param a The first value to compare.
+     * @param b The second value to compare.
+     * @return The greater of a and b.
+     * @since 0.0.1
+     */
+    func max<T>(a: T, b: T): T = if a > b { a } else { b }
+
+    /**
+     * Constrains a value within the given range.
+     *
+     * @param x The value to clamp.
+     * @param lo The lower bound of the range.
+     * @param hi The upper bound of the range.
+     * @return x if it falls within [lo, hi], otherwise the nearest bound.
+     * @since 0.0.1
+     */
+    func clamp<T>(x: T, lo: T, hi: T): T
+    in { assert lo <= hi { "clamp lower bound must be <= upper bound" } }
+    scope {
+        return max<T>(lo, min<T>(x, hi))
+    }
+
+    /**
+     * Returns the sign of a number as an integer.
+     *
+     * @param x The value to determine the sign of.
+     * @return 1 if x is positive, -1 if negative, 0 if zero.
+     * @since 0.0.1
+     */
+    func sign<T>(x: T): Int = if x > 0 { 1 } else { if x < 0 { -1 } else { 0 } }
+
+    /**
+     * Performs linear interpolation between two values.
+     *
+     * @param a The start value.
+     * @param b The end value.
+     * @param t The interpolation factor, typically in [0.0, 1.0].
+     * @return The interpolated value a + (b - a) * t.
+     * @since 0.0.1
+     */
+    func lerp(a: Real, b: Real, t: Real): Real
+    in {
+        assert t >= 0.0 { "lerp factor must be >= 0.0" }
+        assert t <= 1.0 { "lerp factor must be <= 1.0" }
+    }
+    scope {
+        return a + (b - a) * t
+    }
+
+    /**
+     * Returns the floor of a real number (largest integer <= x).
+     *
+     * @param x The value.
+     * @return The floor value as an integer.
+     * @since 0.0.1
+     */
+    func floor(x: Real): Int {
+        fin i = x as Int
+        return if x < 0.0 && x != (i as Real) { i - 1 } else { i }
+    }
+
+    /**
+     * Returns the ceiling of a real number (smallest integer >= x).
+     *
+     * @param x The value.
+     * @return The ceiling value as an integer.
+     * @since 0.0.1
+     */
+    func ceil(x: Real): Int {
+        fin i = x as Int
+        return if x > 0.0 && x != (i as Real) { i + 1 } else { i }
+    }
+
+    /**
+     * Rounds a real number to the nearest integer.
+     *
+     * @param x The value.
+     * @return The rounded value.
+     * @since 0.0.1
+     */
+    func round(x: Real): Int {
+        return floor(x + 0.5)
+    }
+
+    /**
+     * Returns the fractional part of a real number.
+     *
+     * @param x The value.
+     * @return The fractional part (x - floor(x)).
+     * @since 0.0.1
+     */
+    func frac(x: Real): Real {
+        return x - (floor(x) as Real)
+    }
+
+    /**
+     * Maps a value from one range to another.
+     *
+     * @param x The value to map.
+     * @param inMin The input range minimum.
+     * @param inMax The input range maximum.
+     * @param outMin The output range minimum.
+     * @param outMax The output range maximum.
+     * @return The mapped value.
+     * @since 0.0.1
+     */
+    func mapRange(x: Real, inMin: Real, inMax: Real, outMin: Real, outMax: Real): Real
+    in { assert inMax != inMin { "Input range must not be zero-width" } }
+    scope {
+        return outMin + (x - inMin) * (outMax - outMin) / (inMax - inMin)
+    }
+
+    /**
+     * Checks if two real numbers are approximately equal.
+     *
+     * @param a The first value.
+     * @param b The second value.
+     * @param epsilon The tolerance (default: 0.00000001).
+     * @return true if |a - b| < epsilon.
+     * @since 0.0.1
+     */
+    func approxEqual(a: Real, b: Real, epsilon: Real): Bool
+    in { assert epsilon > 0.0 { "epsilon must be positive" } }
+    scope {
+        var diff = a - b
+        if diff < 0.0 { diff = -diff }
+        return diff < epsilon
+    }
+}

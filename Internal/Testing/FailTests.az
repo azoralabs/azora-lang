@@ -1,0 +1,194 @@
+/*
+ * Copyright 2026 AzoraTech
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package testing
+
+// --- Comprehensive fail set tests ---
+
+fail IOError {
+    FileNotFound
+    PermissionDenied
+    DiskFull
+}
+
+fail ParseError {
+    InvalidSyntax
+    UnexpectedToken
+    EndOfInput
+}
+
+// --- Basic fail returns ---
+
+func readFile(path: String): String!IOError {
+    if path == "" { return fail .FileNotFound }
+    if path == "/secret" { return fail .PermissionDenied }
+    return "file contents"
+}
+
+test "fail basic success" {
+    fin content = readFile("test.txt") catch "error"
+    assert content == "file contents" { "should return content" }
+}
+
+test "fail basic not found" {
+    fin content = readFile("") catch "error"
+    assert content == "error" { "empty path should fail" }
+}
+
+test "fail basic permission denied" {
+    fin content = readFile("/secret") catch "denied"
+    assert content == "denied" { "secret should fail" }
+}
+
+// --- Try propagation ---
+
+func processFile(path: String): Int!IOError {
+    fin content = try readFile(path)
+    return stringLength(content)
+}
+
+test "try propagation success" {
+    fin len = processFile("test.txt") catch -1
+    assert len == 13 { "file contents has 13 chars" }
+}
+
+test "try propagation failure" {
+    fin len = processFile("") catch -1
+    assert len == -1 { "propagated failure" }
+}
+
+// --- Multiple fail sets ---
+
+func parseNumber(s: String): Int!ParseError {
+    if s == "" { return fail .EndOfInput }
+    if s == "abc" { return fail .InvalidSyntax }
+    return 42
+}
+
+test "fail multiple sets" {
+    fin a = readFile("test.txt") catch "err"
+    fin b = parseNumber("123") catch -1
+    assert a == "file contents" { "file read success" }
+    assert b == 42 { "parse success" }
+}
+
+test "fail different error types" {
+    fin a = readFile("") catch "io_err"
+    fin b = parseNumber("") catch -1
+    assert a == "io_err" { "io error caught" }
+    assert b == -1 { "parse error caught" }
+}
+
+// --- Chained fail operations ---
+
+func validateAndRead(path: String): String!IOError {
+    if stringLength(path) == 0 { return fail .FileNotFound }
+    fin content = try readFile(path)
+    return content
+}
+
+test "chained fail success" {
+    fin result = validateAndRead("test.txt") catch "err"
+    assert result == "file contents" { "chained success" }
+}
+
+test "chained fail first check" {
+    fin result = validateAndRead("") catch "err"
+    assert result == "err" { "first check fails" }
+}
+
+// --- Fail with defer ---
+
+func withDefer(): [Int]!IOError {
+    var log: [Int] = [0]
+    defer { log[0] = 99 }
+    return log
+}
+
+test "fail with defer runs" {
+    fin result = withDefer()
+    fin log = try result
+    assert log[0] == 99 { "defer should have set value" }
+}
+
+// --- Fail in loops ---
+
+func findFirst(items: [String]): String!IOError {
+    var i = 0
+    while i < items.length {
+        if items[i] != "" {
+            return items[i]
+        }
+        i += 1
+    }
+    return fail .FileNotFound
+}
+
+test "fail in loop found" {
+    fin result = findFirst(["", "", "hello"]) catch "none"
+    assert result == "hello" { "found hello" }
+}
+
+test "fail in loop not found" {
+    fin result = findFirst(["", "", ""]) catch "none"
+    assert result == "none" { "not found" }
+}
+
+// --- Nested fail handling ---
+
+func outer(): Int!IOError {
+    fin inner = readFile("test.txt") catch "fallback"
+    return stringLength(inner)
+}
+
+test "nested fail handling" {
+    fin result = outer() catch -1
+    assert result == 13 { "outer gets inner result" }
+}
+
+// --- Fail with computation ---
+
+fail MathFailError {
+    DivByZero
+    NegativeRoot
+}
+
+func safeSqrt(n: Int): Int!MathFailError {
+    if n < 0 { return fail .NegativeRoot }
+    if n == 0 { return 0 }
+    var x = n
+    var y = (x + 1) / 2
+    while y < x {
+        x = y
+        y = (x + n / x) / 2
+    }
+    return x
+}
+
+test "fail sqrt success" {
+    fin result = safeSqrt(16) catch -1
+    assert result == 4 { "sqrt(16) = 4" }
+}
+
+test "fail sqrt zero" {
+    fin result = safeSqrt(0) catch -1
+    assert result == 0 { "sqrt(0) = 0" }
+}
+
+test "fail sqrt negative" {
+    fin result = safeSqrt(-4) catch -1
+    assert result == -1 { "negative fails" }
+}

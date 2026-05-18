@@ -1,0 +1,302 @@
+/*
+ * Copyright 2026 AzoraTech
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+@file:experimental
+
+package std.math
+
+/**
+ * @file Extra
+ *
+ * Extended mathematical functions.
+ *
+ * Provides additional math utilities including exponentiation,
+ * factorial, GCD/LCM, parity checks, array aggregation,
+ * Fibonacci, prime checking, and combinatorics.
+ *
+ * @since 0.0.1
+ */
+
+expose scope std {
+    /**
+     * Computes exponentiation.
+     *
+     * @param base The base value.
+     * @param exp The exponent (must be non-negative).
+     * @return base raised to the power of exp.
+     * @since 0.0.1
+     */
+    func pow<T>(base: T, exp: Int): T
+    in { assert exp >= 0 { "Exponent must be non-negative" } }
+    scope {
+        if exp == 0 { return 1 }
+        var result = base
+        var i = 1
+        while i < exp {
+            result = result * base
+            i += 1
+        }
+        return result
+    }
+
+    /**
+     * Computes the factorial of n.
+     *
+     * @param n The non-negative integer.
+     * @return n! (n factorial).
+     * @since 0.0.1
+     */
+    func factorial<T>(n: T): T
+    in { assert n >= 0 { "Factorial requires non-negative input" } }
+    out { r -> assert r >= 1 { "Factorial result must be >= 1" } }
+    scope {
+        if n <= 1 { return 1 }
+        var result = 1
+        var i = 2
+        while i <= n {
+            result = result * i
+            i += 1
+        }
+        return result
+    }
+
+    /**
+     * Computes the greatest common divisor using the Euclidean algorithm.
+     *
+     * @param a The first integer.
+     * @param b The second integer.
+     * @return The GCD of a and b.
+     * @since 0.0.1
+     */
+    func gcd<T>(a: T, b: T): T
+    out { r -> assert r >= 0 { "GCD must be non-negative" } }
+    scope {
+        var x = a
+        if x < 0 { x = -x }
+        var y = b
+        if y < 0 { y = -y }
+        while y != 0 {
+            fin temp = y
+            y = x % y
+            x = temp
+        }
+        return x
+    }
+
+    /**
+     * Computes the least common multiple.
+     *
+     * @param a The first integer.
+     * @param b The second integer.
+     * @return The LCM of a and b.
+     * @since 0.0.1
+     */
+    func lcm<T>(a: T, b: T): T
+    out { r -> assert r >= 0 { "LCM must be non-negative" } }
+    scope {
+        if a == 0 || b == 0 { return 0 }
+        var absA = a
+        if absA < 0 { absA = -absA }
+        var absB = b
+        if absB < 0 { absB = -absB }
+        return absA / gcd<T>(a, b) * absB
+    }
+
+    /**
+     * Checks if an integer is even.
+     *
+     * @param n The integer to check.
+     * @return true if n is even.
+     * @since 0.0.1
+     */
+    func isEven<T>(n: T): Bool = n % 2 == 0
+
+    /**
+     * Checks if an integer is odd.
+     *
+     * @param n The integer to check.
+     * @return true if n is odd.
+     * @since 0.0.1
+     */
+    func isOdd<T>(n: T): Bool = n % 2 != 0
+
+    /**
+     * Computes the sum of an integer array.
+     *
+     * @param arr The array to sum.
+     * @return The sum of all elements.
+     * @since 0.0.1
+     */
+    func sum<T>(arr: [T]): T {
+        var total = 0
+        var i = 0
+        while i < arr.length {
+            total += arr[i]
+            i += 1
+        }
+        return total
+    }
+
+    /**
+     * Computes the sum of a real array.
+     *
+     * @param arr The array to sum.
+     * @return The sum of all elements.
+     * @since 0.0.1
+     */
+    func sumReal<T>(arr: [T]): T {
+        var total = 0.0
+        var i = 0
+        while i < arr.length {
+            total += arr[i]
+            i += 1
+        }
+        return total
+    }
+
+    /**
+     * Computes the product of an integer array.
+     *
+     * @param arr The array to multiply.
+     * @return The product of all elements.
+     * @since 0.0.1
+     */
+    func product<T>(arr: [T]): T {
+        if arr.length == 0 { return 0 }
+        var result = 1
+        var i = 0
+        while i < arr.length {
+            result = result * arr[i]
+            i += 1
+        }
+        return result
+    }
+
+    /**
+     * Computes the Nth Fibonacci number (fib).
+     *
+     * @param n The index (0-based) of the Fibonacci number.
+     * @return The Nth Fibonacci number.
+     * @since 0.0.1
+     */
+    func fib<T>(n: T): T
+    in { assert n >= 0 { "Fibonacci requires non-negative input" } }
+    out { r -> assert r >= 0 { "Fibonacci result must be non-negative" } }
+    scope {
+        if n == 0 { return 0 }
+        if n == 1 { return 1 }
+        var a = 0
+        var b = 1
+        var i = 2
+        while i <= n {
+            fin temp = a + b
+            a = b
+            b = temp
+            i += 1
+        }
+        return b
+    }
+
+    /**
+     * Checks if a number is prime.
+     *
+     * @param n The number to check (must be non-negative).
+     * @return true if n is prime.
+     * @since 0.0.1
+     */
+    func isPrime(n: Int): Bool
+    in { assert n >= 0 { "isPrime requires non-negative input" } }
+    scope {
+        if n < 2 { return false }
+        if n < 4 { return true }
+        if n % 2 == 0 { return false }
+        if n % 3 == 0 { return false }
+        var i = 5
+        while i * i <= n {
+            if n % i == 0 { return false }
+            if n % (i + 2) == 0 { return false }
+            i += 6
+        }
+        return true
+    }
+
+    /**
+     * Computes the average of an integer array.
+     *
+     * @param arr The array to average (must be non-empty).
+     * @return The average as a real number.
+     * @since 0.0.1
+     */
+    func average(arr: [Int]): Real
+    in { assert arr.length > 0 { "Array must not be empty" } }
+    scope {
+        var total = 0
+        var i = 0
+        while i < arr.length {
+            total += arr[i]
+            i += 1
+        }
+        return (total as Real) / (arr.length as Real)
+    }
+
+    /**
+     * Computes n choose k (binomial coefficient).
+     *
+     * @param n The total count.
+     * @param k The selection count.
+     * @return C(n, k).
+     * @since 0.0.1
+     */
+    func choose(n: Int, k: Int): Int
+    in {
+        assert n >= 0 { "n must be non-negative" }
+        assert k >= 0 { "k must be non-negative" }
+        assert k <= n { "k must be <= n" }
+    }
+    scope {
+        if k == 0 || k == n { return 1 }
+        var result = 1
+        var i = 0
+        fin kk = if k > n - k { n - k } else { k }
+        while i < kk {
+            result = result * (n - i)
+            result = result / (i + 1)
+            i += 1
+        }
+        return result
+    }
+
+    /**
+     * Computes the integer square root (floor of sqrt).
+     *
+     * @param n The non-negative integer.
+     * @return The largest integer whose square is <= n.
+     * @since 0.0.1
+     */
+    func isqrt(n: Int): Int
+    in { assert n >= 0 { "isqrt requires non-negative input" } }
+    out { r -> assert r * r <= n { "isqrt result squared must be <= n" } }
+    scope {
+        if n == 0 { return 0 }
+        var x = n
+        var y = (x + 1) / 2
+        while y < x {
+            x = y
+            y = (x + n / x) / 2
+        }
+        return x
+    }
+}

@@ -1,0 +1,318 @@
+/*
+ * Copyright 2026 AzoraTech
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+@file:experimental
+
+package std.os
+
+/**
+ * @file Os
+ *
+ * Cross-platform operating system interface.
+ *
+ * Provides window creation (GLFW on native, canvas on web), input handling,
+ * time functions, and basic file I/O through bridge declarations.
+ *
+ * Usage:
+ *   use scope std
+ *
+ *   fin window = OsWindow(width: 800, height: 600, title: "My App")
+ *   while window.isOpen {
+ *       osPollEvents()
+ *       fin input = osGetKeyState(window)
+ *       // ... game logic ...
+ *       osSwapBuffers(window)
+ *   }
+ *   osDestroyWindow(window)
+ *
+ * @since 0.0.1
+ */
+
+expose scope std {
+
+    // ====================================================================
+    // C Bridge - GLFW + POSIX (native targets via LLVM)
+    // ====================================================================
+
+    bridge .C {
+        // Azora native runtime - macOS Cocoa/OpenGL
+        func az_create_window(width: Int, height: Int, title: String): Int
+        func az_destroy_window()
+        func az_poll_events()
+        func az_should_close(): Int
+        func az_swap_buffers()
+        func az_get_time(): Real
+        func az_get_key(keycode: Int): Int
+        func az_key_up(): Int
+        func az_key_down(): Int
+        func az_key_left(): Int
+        func az_key_right(): Int
+        func az_key_space(): Int
+        func az_key_escape(): Int
+        func az_key_return(): Int
+        func az_key_p(): Int
+        func az_key_r(): Int
+        func az_key_q(): Int
+
+        // POSIX - Time
+        func usleep(usec: Int): Int
+
+        // C stdlib - Memory
+        func memset(ptr: Int, value: Int, size: Int): Int
+        func memcpy(dest: Int, src: Int, size: Int): Int
+
+        // C stdlib - File I/O
+        func fopen(path: String, mode: String): Int
+        func fclose(fp: Int): Int
+        func fread(buf: Int, size: Int, count: Int, fp: Int): Int
+        func fwrite(buf: Int, size: Int, count: Int, fp: Int): Int
+    }
+
+    // ====================================================================
+    // JS Bridge - Web platform APIs
+    // ====================================================================
+
+    bridge .JS {
+        func js_createCanvas(width: Int, height: Int, title: String): Int
+        func js_destroyCanvas(handle: Int)
+        func js_isCanvasOpen(handle: Int): Bool
+        func js_pollEvents(handle: Int)
+        func js_getKeyState(handle: Int, keyCode: Int): Bool
+        func js_swapBuffers(handle: Int)
+        func js_getTime(): Real
+        func js_requestAnimationFrame(callback: Int)
+    }
+
+    // ====================================================================
+    // JVM Bridge - AWT/LWJGL
+    // ====================================================================
+
+    bridge .JVM {
+        func jvm_createWindow(width: Int, height: Int, title: String): Int
+        func jvm_destroyWindow(handle: Int)
+        func jvm_isWindowOpen(handle: Int): Bool
+        func jvm_pollEvents(handle: Int)
+        func jvm_getKeyState(handle: Int, keyCode: Int): Bool
+        func jvm_swapBuffers(handle: Int)
+        func jvm_getTime(): Real
+    }
+
+    // ====================================================================
+    // Error Types
+    // ====================================================================
+
+    fail OsError {
+        InitFailed,
+        WindowCreateFailed,
+        FileNotFound,
+        PermissionDenied,
+        InvalidHandle,
+        Timeout
+    }
+
+    // ====================================================================
+    // GLFW Key Constants
+    // ====================================================================
+
+    scope key {
+        fin SPACE = 32
+        fin ESCAPE = 256
+        fin ENTER = 257
+        fin RIGHT = 262
+        fin LEFT = 263
+        fin DOWN = 264
+        fin UP = 265
+        fin A = 65
+        fin D = 68
+        fin S = 83
+        fin W = 87
+        fin P = 80
+        fin R = 82
+        fin Q = 81
+    }
+
+    // ====================================================================
+    // Window Abstraction
+    // ====================================================================
+
+    /**
+     * Represents an OS window with an OpenGL ES context.
+     *
+     * @since 0.0.1
+     */
+    pack OsWindow {
+        var handle: Int = 0
+        var width: Int = 800
+        var height: Int = 600
+        var title: String = "Azora"
+        var isOpen: Bool = true
+    }
+
+    impl OsWindow {
+        prop shouldClose: Bool = !isOpen
+    }
+
+    // ====================================================================
+    // Input State
+    // ====================================================================
+
+    /**
+     * Snapshot of keyboard input state.
+     *
+     * @since 0.0.1
+     */
+    pack KeyState {
+        var up: Bool = false
+        var down: Bool = false
+        var left: Bool = false
+        var right: Bool = false
+        var space: Bool = false
+        var escape: Bool = false
+        var enter: Bool = false
+        var p: Bool = false
+        var r: Bool = false
+    }
+
+    // ====================================================================
+    // Clock / Timing
+    // ====================================================================
+
+    /**
+     * High-resolution timing state.
+     *
+     * @since 0.0.1
+     */
+    pack OsClock {
+        var startTime: Real = 0.0
+        var lastFrame: Real = 0.0
+        var deltaTime: Real = 0.0
+        var frameCount: Int = 0
+    }
+
+    impl OsClock {
+        func tick() { mut self ->
+            fin now = glfwGetTime()
+            if lastFrame == 0.0 {
+                self.startTime = now
+                self.lastFrame = now
+                self.deltaTime = 0.016
+            } else {
+                self.deltaTime = now - lastFrame
+                self.lastFrame = now
+            }
+            self.frameCount = frameCount + 1
+        }
+
+        prop elapsed: Real = lastFrame - startTime
+        prop fps: Int = if deltaTime > 0.0 { toInt(1.0 / deltaTime) } else { 0 }
+    }
+
+    // ====================================================================
+    // High-Level Window API
+    // ====================================================================
+
+    /**
+     * Creates an OS window with an OpenGL ES 3.0 context.
+     *
+     * @param width Window width in pixels.
+     * @param height Window height in pixels.
+     * @param title Window title string.
+     * @return An OsWindow handle.
+     * @since 0.0.1
+     */
+    func osCreateWindow(width: Int, height: Int, title: String): OsWindow {
+        glfwInit()
+        // Request OpenGL ES 3.0 context
+        glfwWindowHint(glfw::CLIENT_API, glfw::OPENGL_ES_API)
+        glfwWindowHint(glfw::CONTEXT_VERSION_MAJOR, 3)
+        glfwWindowHint(glfw::CONTEXT_VERSION_MINOR, 0)
+        fin handle = glfwCreateWindow(width, height, title, 0, 0)
+        glfwMakeContextCurrent(handle)
+        glfwSwapInterval(1)
+        return OsWindow(handle: handle, width: width, height: height, title: title, isOpen: true)
+    }
+
+    /**
+     * Destroys an OS window and cleans up resources.
+     *
+     * @param window The window to destroy.
+     * @since 0.0.1
+     */
+    func osDestroyWindow(window: OsWindow) {
+        glfwDestroyWindow(window.handle)
+        glfwTerminate()
+    }
+
+    /**
+     * Polls OS events and updates the window's open state.
+     *
+     * @param window The window to poll events for.
+     * @return The updated window with isOpen reflecting close requests.
+     * @since 0.0.1
+     */
+    func osPollEvents(window: OsWindow): OsWindow {
+        glfwPollEvents()
+        fin shouldClose = glfwWindowShouldClose(window.handle)
+        return OsWindow(
+            handle: window.handle,
+            width: window.width,
+            height: window.height,
+            title: window.title,
+            isOpen: shouldClose == 0
+        )
+    }
+
+    /**
+     * Swaps the front and back buffers for the given window.
+     *
+     * @param window The window.
+     * @since 0.0.1
+     */
+    func osSwapBuffers(window: OsWindow) {
+        glfwSwapBuffers(window.handle)
+    }
+
+    /**
+     * Reads the current keyboard state for a window.
+     *
+     * @param window The window.
+     * @return A KeyState snapshot.
+     * @since 0.0.1
+     */
+    func osGetKeyState(window: OsWindow): KeyState {
+        return KeyState(
+            up: glfwGetKey(window.handle, key::UP) == glfw::PRESS,
+            down: glfwGetKey(window.handle, key::DOWN) == glfw::PRESS,
+            left: glfwGetKey(window.handle, key::LEFT) == glfw::PRESS,
+            right: glfwGetKey(window.handle, key::RIGHT) == glfw::PRESS,
+            space: glfwGetKey(window.handle, key::SPACE) == glfw::PRESS,
+            escape: glfwGetKey(window.handle, key::ESCAPE) == glfw::PRESS,
+            enter: glfwGetKey(window.handle, key::ENTER) == glfw::PRESS,
+            p: glfwGetKey(window.handle, key::P) == glfw::PRESS,
+            r: glfwGetKey(window.handle, key::R) == glfw::PRESS
+        )
+    }
+
+    /**
+     * Returns the current time in seconds since GLFW initialization.
+     *
+     * @return Time in seconds.
+     * @since 0.0.1
+     */
+    func osGetTime(): Real {
+        return glfwGetTime()
+    }
+}

@@ -1,0 +1,277 @@
+/*
+ * Copyright 2026 AzoraTech
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package testing
+
+// --- Basic pack declaration ---
+
+pack Size {
+    var width: Int
+    var height: Int
+}
+
+test "pack basic construction" {
+    var s = Size(width: 10, height: 20)
+    assert s.width == 10 { "width" }
+    assert s.height == 20 { "height" }
+}
+
+// --- Default values ---
+
+pack Point {
+    var x: Int = 0
+    var y: Int = 0
+}
+
+test "pack default values" {
+    var p = Point()
+    assert p.x == 0 { "default x" }
+    assert p.y == 0 { "default y" }
+}
+
+test "pack partial construction" {
+    var p = Point(x: 5)
+    assert p.x == 5 { "x" }
+    assert p.y == 0 { "default y" }
+}
+
+// --- Zero-init with _ ---
+
+pack ZeroInit {
+    var a: Int = 0
+    var b: Real = 0.0
+    var c: Bool = false
+    var d: String = ""
+}
+
+test "pack zero-init" {
+    var z = ZeroInit()
+    assert z.a == 0 { "int zero" }
+    assert z.b == 0.0 { "real zero" }
+    assert z.c == false { "bool zero" }
+    assert z.d == "" { "string zero" }
+}
+
+// --- Immutable fields ---
+
+pack Color {
+    fin r: Int
+    fin g: Int
+    fin b: Int
+    fin a: Int = 255
+}
+
+test "pack fin fields" {
+    var c = Color(r: 255, g: 0, b: 0)
+    assert c.r == 255 { "r" }
+    assert c.g == 0 { "g" }
+    assert c.b == 0 { "b" }
+    assert c.a == 255 { "a default" }
+}
+
+// --- Custom constructors ---
+
+impl ctor() for Size { mut self ->
+    self.width = 6
+    self.height = 7
+}
+
+impl ctor(side: Int) for Size { mut self ->
+    self.width = side
+    self.height = side
+}
+
+test "pack custom ctor no-arg" {
+    var s = Size()
+    assert s.width == 6 { "ctor width" }
+    assert s.height == 7 { "ctor height" }
+}
+
+test "pack custom ctor with param" {
+    var s = Size(side: 5)
+    assert s.width == 5 { "ctor width" }
+    assert s.height == 5 { "ctor height" }
+}
+
+// --- Methods ---
+
+impl Size {
+    func area(): Int { ref self ->
+        self.width * self.height
+    }
+
+    func perimeter(): Int { ref self ->
+        2 * (self.width + self.height)
+    }
+
+    func isSquare(): Bool { ref self ->
+        self.width == self.height
+    }
+}
+
+test "pack methods" {
+    var s = Size(width: 10, height: 20)
+    assert s.area() == 200 { "area" }
+    assert s.perimeter() == 60 { "perimeter" }
+    assert s.isSquare() == false { "not square" }
+}
+
+test "pack methods on square" {
+    var s = Size(side: 5)
+    assert s.area() == 25 { "square area" }
+    assert s.isSquare() == true { "is square" }
+}
+
+// --- Mutating methods ---
+
+impl Size {
+    func scale(factor: Int) { mut self ->
+        self.width *= factor
+        self.height *= factor
+    }
+
+    func reset() { mut self ->
+        self.width = 0
+        self.height = 0
+    }
+}
+
+test "pack mutating methods" {
+    var s = Size(width: 3, height: 4)
+    s.scale(factor: 2)
+    assert s.width == 6 { "scaled width" }
+    assert s.height == 8 { "scaled height" }
+    s.reset()
+    assert s.width == 0 { "reset width" }
+    assert s.height == 0 { "reset height" }
+}
+
+// --- Properties ---
+
+impl Size {
+    prop area2: Int = self.width * self.height
+}
+
+test "pack property" {
+    var s = Size(width: 4, height: 5)
+    assert s.area2 == 20 { "property area" }
+}
+
+// --- Operator overloading ---
+
+pack Vec2 {
+    var x: Real = 0.0
+    var y: Real = 0.0
+}
+
+impl oper+ for Vec2 { ref self, rhs ->
+    Vec2(x: self.x + rhs.x, y: self.y + rhs.y)
+}
+
+impl oper- for Vec2 { ref self, rhs ->
+    Vec2(x: self.x - rhs.x, y: self.y - rhs.y)
+}
+
+impl oper== for Vec2 { ref self, rhs ->
+    self.x == rhs.x && self.y == rhs.y
+}
+
+impl oper!= for Vec2 { ref self, rhs ->
+    self.x != rhs.x || self.y != rhs.y
+}
+
+test "pack operator overloading" {
+    var a = Vec2(x: 1.0, y: 2.0)
+    var b = Vec2(x: 3.0, y: 4.0)
+    var sum = a + b
+    assert sum.x == 4.0 { "sum x" }
+    assert sum.y == 6.0 { "sum y" }
+    var diff = b - a
+    assert diff.x == 2.0 { "diff x" }
+    assert diff.y == 2.0 { "diff y" }
+}
+
+test "pack equality operator" {
+    var a = Vec2(x: 1.0, y: 2.0)
+    var b = Vec2(x: 1.0, y: 2.0)
+    var c = Vec2(x: 3.0, y: 4.0)
+    assert a == b { "equal" }
+    assert a != c { "not equal" }
+}
+
+// --- Mixed-type operator ---
+
+impl oper* by Real for Vec2 { ref self, rhs ->
+    Vec2(x: self.x * rhs, y: self.y * rhs)
+}
+
+impl oper* by Real for Vec2 { lhs, ref self ->
+    Vec2(x: self.x * lhs, y: self.y * lhs)
+}
+
+test "pack mixed-type operator" {
+    var v = Vec2(x: 2.0, y: 3.0)
+    var scaled = v * 2.0
+    assert scaled.x == 4.0 { "scaled x" }
+    assert scaled.y == 6.0 { "scaled y" }
+    var reversed = 2.0 * v
+    assert reversed.x == 4.0 { "reversed x" }
+    assert reversed.y == 6.0 { "reversed y" }
+}
+
+// --- Self constructor in operator body ---
+
+impl Vec2 {
+    func magnitude(): Real { ref self ->
+        (self.x * self.x + self.y * self.y)
+    }
+}
+
+test "pack method call" {
+    var v = Vec2(x: 3.0, y: 4.0)
+    assert v.magnitude() == 25.0 { "magnitude squared" }
+}
+
+// --- Spec implementation ---
+
+impl Size {
+    func toString(): String { ref self ->
+        "Size(${self.width}, ${self.height})"
+    }
+}
+
+test "pack toString method" {
+    var s = Size(width: 10, height: 20)
+    assert s.toString() == "Size(10, 20)" { "toString" }
+}
+
+// --- Field mutation ---
+
+test "pack field mutation" {
+    var p = Point(x: 1, y: 2)
+    p.x = 10
+    p.y = 20
+    assert p.x == 10 { "mutated x" }
+    assert p.y == 20 { "mutated y" }
+}
+
+test "pack compound assignment" {
+    var p = Point(x: 5, y: 10)
+    p.x += 3
+    p.y -= 2
+    assert p.x == 8 { "compound x" }
+    assert p.y == 8 { "compound y" }
+}

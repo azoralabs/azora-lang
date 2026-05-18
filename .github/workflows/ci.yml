@@ -1,0 +1,174 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ── Compiler unit tests ──────────────────────────────────────────
+  compiler-tests:
+    name: Compiler Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Run compiler unit tests
+        run: |
+          ./gradlew :compiler:desktopTest \
+            --tests "org.azora.lang.codegen.ProgramTest" \
+            --tests "org.azora.lang.codegen.PrimitiveTypeTest" \
+            --tests "org.azora.lang.codegen.MetaprogrammingTest" \
+            --tests "org.azora.lang.codegen.SymbolTest" \
+            --tests "org.azora.lang.codegen.TestAssertTraceTest" \
+            --tests "org.azora.lang.codegen.ZoneTest"
+
+  # ── Internal/Testing .az integration tests ───────────────────────
+  integration-tests:
+    name: Azora Integration Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Run Internal/Testing .az tests
+        run: ./gradlew :compiler:desktopTest --tests "org.azora.lang.InternalAzTestRunner"
+
+  # ── Code generator tests (per-target, allow failures) ────────────
+  codegen-tests:
+    name: Codegen – ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: JavaScript
+            tests: "org.azora.lang.codegen.InternalAzJSCodegenRunner"
+            setup: ""
+          - target: Kotlin
+            tests: "org.azora.lang.codegen.InternalAzKotlinCodegenRunner"
+            setup: ""
+          - target: Python
+            tests: "org.azora.lang.codegen.InternalAzPythonCodegenRunner"
+            setup: ""
+          - target: C#
+            tests: "org.azora.lang.codegen.InternalAzCSharpCodegenRunner"
+            setup: |
+              sudo apt-get update -q && sudo apt-get install -yq dotnet-sdk-8.0
+          - target: Swift
+            tests: "org.azora.lang.codegen.InternalAzSwiftCodegenRunner"
+            setup: ""
+          - target: LLVM
+            tests: "org.azora.lang.codegen.InternalAzLlvmCodegenRunner"
+            setup: ""
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Install ${{ matrix.target }} toolchain
+        if: matrix.setup != ''
+        run: ${{ matrix.setup }}
+
+      - name: Run ${{ matrix.target }} codegen tests
+        run: ./gradlew :compiler:desktopTest --tests "${{ matrix.tests }}"
+        continue-on-error: true
+
+  # ── Cross-platform builds ────────────────────────────────────────
+  build-macos:
+    name: macOS
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Compiler unit tests
+        run: |
+          ./gradlew :compiler:desktopTest \
+            --tests "org.azora.lang.codegen.ProgramTest" \
+            --tests "org.azora.lang.codegen.PrimitiveTypeTest" \
+            --tests "org.azora.lang.codegen.MetaprogrammingTest" \
+            --tests "org.azora.lang.codegen.SymbolTest" \
+            --tests "org.azora.lang.codegen.TestAssertTraceTest" \
+            --tests "org.azora.lang.codegen.ZoneTest"
+
+      - name: Azora integration tests
+        run: ./gradlew :compiler:desktopTest --tests "org.azora.lang.InternalAzTestRunner"
+
+  build-windows:
+    name: Windows
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Compiler unit tests
+        run: |
+          ./gradlew :compiler:desktopTest `
+            --tests "org.azora.lang.codegen.ProgramTest" `
+            --tests "org.azora.lang.codegen.PrimitiveTypeTest" `
+            --tests "org.azora.lang.codegen.MetaprogrammingTest" `
+            --tests "org.azora.lang.codegen.SymbolTest" `
+            --tests "org.azora.lang.codegen.TestAssertTraceTest" `
+            --tests "org.azora.lang.codegen.ZoneTest"
+
+      - name: Azora integration tests
+        run: ./gradlew :compiler:desktopTest --tests "org.azora.lang.InternalAzTestRunner"

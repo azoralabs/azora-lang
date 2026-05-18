@@ -1,0 +1,225 @@
+/*
+ * Copyright 2026 AzoraTech
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+@file:experimental
+
+package std.char
+
+/**
+ * @file Char
+ *
+ * Character utilities and Unicode support.
+ *
+ * Provides functions for character classification, conversion,
+ * and Unicode code point manipulation. Characters in Azora are
+ * Unicode code points represented by the Char type.
+ *
+ * @since 0.0.1
+ */
+
+expose scope std {
+    /**
+     * Returns the Unicode code point of a character.
+     *
+     * @param c The character to convert.
+     * @return The integer code point.
+     * @since 0.0.1
+     */
+    func charToCode(c: Char): Int {
+        return ord(c)
+    }
+
+    /**
+     * Returns the character for a Unicode code point.
+     *
+     * @param code The code point (must be a valid Unicode value).
+     * @return The character at the given code point.
+     * @since 0.0.1
+     */
+    func codeToChar(code: Int): Char
+    in { assert code >= 0 { "Code point must be non-negative" } }
+    scope {
+        return chr(code)
+    }
+
+    /**
+     * Checks if a character is an ASCII digit (0-9).
+     *
+     * @param c The character to check.
+     * @return true if c is a digit.
+     * @since 0.0.1
+     */
+    func charIsDigit(c: Char): Bool {
+        return isDigit(c)
+    }
+
+    /**
+     * Checks if a character is an ASCII letter (a-z, A-Z).
+     *
+     * @param c The character to check.
+     * @return true if c is a letter.
+     * @since 0.0.1
+     */
+    func charIsAlpha(c: Char): Bool {
+        return isAlpha(c)
+    }
+
+    /**
+     * Checks if a character is alphanumeric.
+     *
+     * @param c The character to check.
+     * @return true if c is a letter or digit.
+     * @since 0.0.1
+     */
+    func charIsAlphanumeric(c: Char): Bool {
+        return isAlphanumeric(c)
+    }
+
+    /**
+     * Checks if a character is uppercase.
+     *
+     * @param c The character to check.
+     * @return true if c is an uppercase letter.
+     * @since 0.0.1
+     */
+    func charIsUpper(c: Char): Bool {
+        return isUpper(c)
+    }
+
+    /**
+     * Checks if a character is lowercase.
+     *
+     * @param c The character to check.
+     * @return true if c is a lowercase letter.
+     * @since 0.0.1
+     */
+    func charIsLower(c: Char): Bool {
+        return isLower(c)
+    }
+
+    /**
+     * Checks if a character is whitespace.
+     *
+     * @param c The character to check.
+     * @return true if c is a whitespace character.
+     * @since 0.0.1
+     */
+    func charIsWhitespace(c: Char): Bool {
+        return isWhitespace(c)
+    }
+
+    /**
+     * Converts a character to uppercase.
+     *
+     * @param c The character to convert.
+     * @return The uppercase version of c.
+     * @since 0.0.1
+     */
+    func charToUpper(c: Char): Char {
+        return toUpper(c)
+    }
+
+    /**
+     * Converts a character to lowercase.
+     *
+     * @param c The character to convert.
+     * @return The lowercase version of c.
+     * @since 0.0.1
+     */
+    func charToLower(c: Char): Char {
+        return toLower(c)
+    }
+
+    /**
+     * Checks if a character is an ASCII character (code 0-127).
+     *
+     * @param c The character to check.
+     * @return true if c is in the ASCII range.
+     * @since 0.0.1
+     */
+    func charIsAscii(c: Char): Bool {
+        fin code = ord(c)
+        return code >= 0 && code <= 127
+    }
+
+    /**
+     * Checks if a character is a printable ASCII character (code 32-126).
+     *
+     * @param c The character to check.
+     * @return true if c is printable.
+     * @since 0.0.1
+     */
+    func charIsPrintable(c: Char): Bool {
+        fin code = ord(c)
+        return code >= 32 && code <= 126
+    }
+
+    /**
+     * Checks if a character is a hexadecimal digit (0-9, a-f, A-F).
+     *
+     * @param c The character to check.
+     * @return true if c is a hex digit.
+     * @since 0.0.1
+     */
+    func charIsHexDigit(c: Char): Bool {
+        fin code = ord(c)
+        return (code >= 48 && code <= 57) ||
+               (code >= 65 && code <= 70) ||
+               (code >= 97 && code <= 102)
+    }
+
+    /**
+     * Converts a hex digit character to its integer value.
+     *
+     * @param c The hex digit character.
+     * @return The integer value (0-15).
+     * @since 0.0.1
+     */
+    func hexDigitToInt(c: Char): Int
+    in { assert charIsHexDigit(c) { "Character must be a hex digit" } }
+    scope {
+        fin code = ord(c)
+        if code >= 48 && code <= 57 { return code - 48 }
+        if code >= 65 && code <= 70 { return code - 55 }
+        return code - 87
+    }
+
+    /**
+     * Converts a digit character to its integer value.
+     *
+     * @param c The digit character.
+     * @return The integer value (0-9).
+     * @since 0.0.1
+     */
+    func digitToInt(c: Char): Int
+    in { assert isDigit(c) { "Character must be a digit" } }
+    scope {
+        return ord(c) - 48
+    }
+
+    /**
+     * Converts an integer (0-9) to a digit character.
+     *
+     * @param n The integer to convert.
+     * @return The digit character.
+     * @since 0.0.1
+     */
+    func intToDigit(n: Int): Char
+    in { assert n >= 0 && n <= 9 { "Integer must be 0-9" } }
+    scope {
+        return chr(n + 48)
+    }
+}

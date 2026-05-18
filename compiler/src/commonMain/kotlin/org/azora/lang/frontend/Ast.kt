@@ -1,0 +1,814 @@
+/*
+ * Copyright 2026 AzoraTech
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.azora.lang.frontend
+
+// ---------------------------------------------------------------------------
+// Expressions
+// ---------------------------------------------------------------------------
+
+/**
+ * Base class for all AST expression nodes.
+ *
+ * Every expression carries source-location metadata ([line], [column], [length])
+ * so that later compiler phases can produce precise diagnostics.
+ */
+sealed class Expr {
+    /** 1-based line number where this expression starts. */
+    abstract val line: Int
+    /** 1-based column number where this expression starts. */
+    abstract val column: Int
+    /** Length of the source text that produced this expression. */
+    abstract val length: Int
+
+    /**
+     * Integer literal expression (e.g. `42`, `42L`, `42s`).
+     *
+     * @property value the parsed integer value
+     * @property suffix the numeric type suffix (e.g. [NumericSuffix.LONG] for `42L`)
+     * @property line 1-based source line
+     * @property column 1-based source column
+     * @property length source text length
+     */
+    data class IntLiteral(val value: Long, override val line: Int, override val column: Int = 0, override val length: Int = 0, val suffix: NumericSuffix = NumericSuffix.NONE) : Expr()
+
+    /**
+     * Floating-point literal expression (e.g. `3.14`, `3.14f`, `3.14D`).
+     *
+     * @property value the parsed double-precision value
+     * @property suffix the numeric type suffix (e.g. [NumericSuffix.FLOAT] for `3.14f`)
+     * @property line 1-based source line
+     * @property column 1-based source column
+     * @property length source text length
+     */
+    data class RealLiteral(val value: Double, override val line: Int, override val column: Int = 0, override val length: Int = 0, val suffix: NumericSuffix = NumericSuffix.NONE) : Expr()
+
+    /**
+     * Character literal expression (e.g. `'a'`, `'\n'`).
+     *
+     * @property value the character value
+     * @property line 1-based source line
+     * @property column 1-based source column
+     * @property length source text length
+     */
+    data class CharLiteral(val value: Char, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+
+    /**
+     * String literal expression (e.g. `"hello"`).
+     *
+     * @property value the unescaped string content
+     * @property line 1-based source line
+     * @property column 1-based source column
+     * @property length source text length
+     */
+    data class StringLiteral(val value: String, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+
+    /**
+     * Boolean literal expression (`true` or `false`).
+     *
+     * @property value the boolean value
+     * @property line 1-based source line
+     * @property column 1-based source column
+     * @property length source text length
+     */
+    data class BoolLiteral(val value: Boolean, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+
+    /**
+     * Variable or function name reference.
+     *
+     * @property name the identifier text
+     * @property line 1-based source line
+     * @property column 1-based source column
+     * @property length source text length
+     */
+    data class Identifier(val name: String, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+
+    /**
+     * Binary operator expression (e.g. `a + b`, `x == y`).
+     *
+     * @property left the left-hand operand
+     * @property op the operator token type
+     * @property right the right-hand operand
+     * @property line 1-based source line
+     * @property column 1-based source column
+     * @property length source text length
+     */
+    data class Binary(val left: Expr, val op: TokenType, val right: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+
+    /**
+     * Unary operator expression (e.g. `-x`, `!flag`).
+     *
+     * @property op the operator token type ([TokenType.MINUS] or [TokenType.BANG])
+     * @property operand the operand expression
+     * @property line 1-based source line
+     * @property column 1-based source column
+     * @property length source text length
+     */
+    data class Unary(val op: TokenType, val operand: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+
+    /**
+     * Function call expression (e.g. `add(1, 2)`).
+     *
+     * @property callee the name of the function being called
+     * @property args the list of argument expressions
+     * @property line 1-based source line
+     * @property column 1-based source column
+     * @property length source text length
+     */
+    data class Call(val callee: String, val args: List<Expr>, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+
+    /**
+     * Parenthesized expression (e.g. `(a + b)`).
+     *
+     * @property expr the inner expression
+     * @property line 1-based source line
+     * @property column 1-based source column
+     * @property length source text length
+     */
+    data class Grouping(val expr: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+
+    /**
+     * Upper scope access (`::name`). Resolves the variable in the parent scope,
+     * skipping the current scope. Used when a local variable shadows an outer one.
+     *
+     * @property name the variable name to look up in the upper scope
+     */
+    /**
+     * Upper scope access (`::name`, `::::name`, etc.).
+     * Each `::` skips one scope level.
+     *
+     * @property name the variable name
+     * @property depth how many scopes to skip (1 for `::`, 2 for `::::`, etc.)
+     */
+    data class UpperScopeAccess(val name: String, val depth: Int = 1, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+}
+
+// ---------------------------------------------------------------------------
+// Statements
+// ---------------------------------------------------------------------------
+
+/**
+ * Base class for all AST statement nodes.
+ *
+ * Statements represent actions that execute in sequence within a function body.
+ * Every statement carries source-location metadata for diagnostics.
+ */
+sealed class Stmt {
+    /** 1-based line number where this statement starts. */
+    abstract val line: Int
+    /** 1-based column number where this statement starts. */
+    abstract val column: Int
+    /** Length of the source text that produced this statement. */
+    abstract val length: Int
+
+    /**
+     * Mutable binding (`var`).
+     *
+     * @property name the variable name
+     * @property type the declared or inferred type annotation
+     * @property initializer the expression that provides the initial value
+     * @property line 1-based source line
+     * @property column 1-based source column
+     * @property length source text length
+     */
+    data class VarDecl(
+        val name: String,
+        val type: TypeAnnotation,
+        val initializer: Expr,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0
+    ) : Stmt()
+
+    /**
+     * Deeply immutable binding (`fin`).
+     *
+     * @property name the variable name
+     * @property type the declared or inferred type annotation
+     * @property initializer the expression that provides the initial value
+     * @property line 1-based source line
+     * @property column 1-based source column
+     * @property length source text length
+     */
+    data class FinDecl(
+        val name: String,
+        val type: TypeAnnotation,
+        val initializer: Expr,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0
+    ) : Stmt()
+
+    /**
+     * Immutable binding (`let`).
+     *
+     * @property name the variable name
+     * @property type the declared or inferred type annotation
+     * @property initializer the expression that provides the initial value
+     * @property line 1-based source line
+     * @property column 1-based source column
+     * @property length source text length
+     */
+    data class LetDecl(
+        val name: String,
+        val type: TypeAnnotation,
+        val initializer: Expr,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0
+    ) : Stmt()
+
+    /**
+     * Compile-time constant binding (`inline fin`).
+     *
+     * Evaluated during CTFE. The initializer must be a compile-time constant.
+     * All references to the name are replaced with the computed value --
+     * the binding itself is removed from the final AST.
+     *
+     * @property name the binding name
+     * @property type the declared or inferred type annotation
+     * @property initializer the compile-time constant expression
+     * @property line 1-based source line
+     * @property column 1-based source column
+     * @property length source text length
+     */
+    data class InlineFin(
+        val name: String,
+        val type: TypeAnnotation,
+        val initializer: Expr,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0
+    ) : Stmt()
+
+    /**
+     * Deep compile-time block (`deepinline { ... }`).
+     *
+     * Like `inline { }` but recursive -- nested `if`, `var`, etc. are
+     * also compile-time. Use `noinline` to escape back to runtime.
+     *
+     * @property body the list of statements evaluated at compile time
+     * @property line 1-based source line
+     * @property column 1-based source column
+     * @property length source text length
+     */
+    data class DeepInlineBlock(
+        val body: List<Stmt>,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0
+    ) : Stmt()
+
+    /**
+     * Cancels inline context (`noinline stmt`).
+     *
+     * Inside a `deepinline { }` or `inline { }` block, marks a statement
+     * as runtime -- it will not be evaluated at compile time.
+     *
+     * @property stmt the wrapped runtime statement
+     * @property line 1-based source line
+     * @property column 1-based source column
+     * @property length source text length
+     */
+    data class NoInline(
+        val stmt: Stmt,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0
+    ) : Stmt()
+
+    /**
+     * Compile-time block (`inline { ... }`).
+     *
+     * All statements inside are implicitly compile-time:
+     * `var` becomes `inline var`, `fin` becomes `inline fin`, `let` becomes `inline let`,
+     * `if` becomes `inline if`, assignment becomes `inline assignment`.
+     * Runtime statements (e.g. `println(...)`) survive into the final AST.
+     *
+     * @property body the list of statements inside the inline block
+     * @property line 1-based source line
+     * @property column 1-based source column
+     * @property length source text length
+     */
+    data class InlineBlock(
+        val body: List<Stmt>,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0
+    ) : Stmt()
+
+    /**
+     * Compile-time immutable binding (`inline let`).
+     *
+     * @property name the binding name
+     * @property type the declared or inferred type annotation
+     * @property initializer the compile-time constant expression
+     * @property line 1-based source line
+     * @property column 1-based source column
+     * @property length source text length
+     */
+    data class InlineLet(
+        val name: String,
+        val type: TypeAnnotation,
+        val initializer: Expr,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0
+    ) : Stmt()
+
+    /**
+     * Compile-time mutable binding (`inline var`).
+     *
+     * @property name the binding name
+     * @property type the declared or inferred type annotation
+     * @property initializer the compile-time constant expression
+     * @property line 1-based source line
+     * @property column 1-based source column
+     * @property length source text length
+     */
+    data class InlineVar(
+        val name: String,
+        val type: TypeAnnotation,
+        val initializer: Expr,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0
+    ) : Stmt()
+
+    /**
+     * Compile-time reassignment (`inline x = expr`).
+     *
+     * @property name the name of the compile-time variable being reassigned
+     * @property value the new value expression
+     * @property line 1-based source line
+     * @property column 1-based source column
+     * @property length source text length
+     */
+    data class InlineAssignment(
+        val name: String,
+        val value: Expr,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0
+    ) : Stmt()
+
+    /**
+     * Runtime variable reassignment (e.g. `x = 42`).
+     *
+     * @property name the name of the variable being reassigned
+     * @property value the new value expression
+     * @property line 1-based source line
+     * @property column 1-based source column
+     * @property length source text length
+     */
+    data class Assignment(
+        val name: String,
+        val value: Expr,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0
+    ) : Stmt()
+
+    /**
+     * Return statement, optionally carrying a value.
+     *
+     * @property value the return value expression, or `null` for `Unit`-returning functions
+     * @property line 1-based source line
+     * @property column 1-based source column
+     * @property length source text length
+     */
+    data class Return(
+        val value: Expr?,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0
+    ) : Stmt()
+
+    /**
+     * Expression used as a statement (e.g. a function call like `println("hi")`).
+     *
+     * @property expr the expression being evaluated for its side effects
+     * @property line 1-based source line
+     * @property column 1-based source column
+     * @property length source text length
+     */
+    data class ExprStmt(
+        val expr: Expr,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0
+    ) : Stmt()
+
+    /**
+     * Scoped block (`zone { ... }`). Introduces a new variable scope.
+     *
+     * @property body the list of statements inside the zone
+     * @property line 1-based source line
+     * @property column 1-based source column
+     * @property length source text length
+     */
+    data class Zone(
+        val body: List<Stmt>,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0
+    ) : Stmt()
+
+    /**
+     * Friend zone block (`friend zone { ... }`).
+     *
+     * Multiple friend zone blocks in the same parent scope share a persistent
+     * variable scope. Variables declared in one friend zone are visible in
+     * other friend zones, but not in the regular code between them.
+     *
+     * @property body the statements inside the friend zone
+     */
+    data class FriendZone(
+        val body: List<Stmt>,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0
+    ) : Stmt()
+
+    /**
+     * Runtime if/else statement.
+     *
+     * @property condition the boolean condition expression
+     * @property thenBranch the statements to execute when the condition is true
+     * @property elseBranch the statements to execute when the condition is false, or `null` if no else branch
+     * @property line 1-based source line
+     * @property column 1-based source column
+     * @property length source text length
+     */
+    data class If(
+        val condition: Expr,
+        val thenBranch: List<Stmt>,
+        val elseBranch: List<Stmt>?,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0
+    ) : Stmt()
+
+    /**
+     * Compile-time conditional.
+     *
+     * Evaluated during CTFE. The condition must be a compile-time constant.
+     * Only the taken branch survives into the final AST -- the other branch
+     * is completely removed (not even type-checked).
+     *
+     * @property condition the compile-time boolean condition
+     * @property thenBranch the statements to emit when the condition is true
+     * @property elseBranch the statements to emit when the condition is false, or `null`
+     * @property line 1-based source line
+     * @property column 1-based source column
+     * @property length source text length
+     */
+    data class InlineIf(
+        val condition: Expr,
+        val thenBranch: List<Stmt>,
+        val elseBranch: List<Stmt>?,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0
+    ) : Stmt()
+
+    /**
+     * Deep compile-time conditional (`deepinline if`).
+     *
+     * Like `inline if` but the taken branch is recursively deep-inlined:
+     * all `var`/`fin`/`let`/`if`/assignment inside become compile-time.
+     * Use `noinline` to escape back to runtime.
+     *
+     * @property condition the compile-time boolean condition
+     * @property thenBranch the statements to deep-inline when the condition is true
+     * @property elseBranch the statements to deep-inline when the condition is false, or `null`
+     * @property line 1-based source line
+     * @property column 1-based source column
+     * @property length source text length
+     */
+    data class DeepInlineIf(
+        val condition: Expr,
+        val thenBranch: List<Stmt>,
+        val elseBranch: List<Stmt>?,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0
+    ) : Stmt()
+
+    /**
+     * Runtime assertion (`assert condition { "message" }`).
+     *
+     * Evaluates condition at runtime; if false, prints error message and aborts.
+     * NOT allowed at global scope.
+     *
+     * @property condition the boolean condition expression
+     * @property message the error message expression (must be String)
+     * @property line 1-based source line
+     * @property column 1-based source column
+     * @property length source text length
+     */
+    data class Assert(
+        val condition: Expr,
+        val message: Expr,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0
+    ) : Stmt()
+
+    /**
+     * Runtime trace (`trace { expr }`).
+     *
+     * Prints `[TRACE] message` at runtime.
+     * NOT allowed at global scope.
+     *
+     * @property message the message expression (must be String)
+     * @property line 1-based source line
+     * @property column 1-based source column
+     * @property length source text length
+     */
+    data class Trace(
+        val message: Expr,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0
+    ) : Stmt()
+
+    /**
+     * Compile-time assertion (`inline assert condition { "message" }`).
+     *
+     * Evaluated during CTFE. If condition is false, produces a compilation error.
+     * Allowed in all scopes including global.
+     *
+     * @property condition the compile-time boolean condition
+     * @property message the error message expression (must be String)
+     * @property line 1-based source line
+     * @property column 1-based source column
+     * @property length source text length
+     */
+    data class InlineAssert(
+        val condition: Expr,
+        val message: Expr,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0
+    ) : Stmt()
+
+    /**
+     * Compile-time trace (`inline trace { expr }`).
+     *
+     * Evaluated during CTFE, message stored as a compiler warning.
+     * Allowed in all scopes including global.
+     *
+     * @property message the message expression (must be String)
+     * @property line 1-based source line
+     * @property column 1-based source column
+     * @property length source text length
+     */
+    data class InlineTrace(
+        val message: Expr,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0
+    ) : Stmt()
+}
+
+// ---------------------------------------------------------------------------
+// Type annotations
+// ---------------------------------------------------------------------------
+
+/**
+ * Represents a type annotation on a variable or return type.
+ *
+ * Azora supports both explicit type annotations (e.g. `var x: Int = 0`) and
+ * type inference (e.g. `var x = 0`), represented by the two variants.
+ */
+sealed class TypeAnnotation {
+    /**
+     * An explicit, user-specified type annotation (e.g. `: Int`, `: String`).
+     *
+     * @property name the type name as written in source (e.g. `"Int"`, `"Bool"`)
+     */
+    data class Explicit(val name: String) : TypeAnnotation()
+
+    /**
+     * A type that should be inferred by the compiler from context (no annotation present).
+     */
+    object Inferred : TypeAnnotation() {
+        override fun toString() = "inferred"
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Declarations
+// ---------------------------------------------------------------------------
+
+/**
+ * A function parameter declaration.
+ *
+ * @property name the parameter name
+ * @property typeName the type name as written in source (e.g. `"Int"`, `"(Int, Int) -> Int"`)
+ */
+data class Param(val name: String, val typeName: String)
+
+/**
+ * A function declaration in the AST.
+ *
+ * Represents a complete function including its signature and body. Functions
+ * may be marked as `inline` to be substituted at call sites by the CTFE evaluator.
+ *
+ * @property name the function name
+ * @property params the list of parameter declarations
+ * @property returnType the return type annotation (explicit or inferred)
+ * @property body the list of statements forming the function body
+ * @property isInline whether this function is marked `inline` for compile-time substitution
+ * @property line 1-based source line where the function declaration starts
+ * @property column 1-based source column where the function declaration starts
+ * @property length source text length of the function declaration
+ */
+data class FuncDecl(
+    val name: String,
+    val params: List<Param>,
+    val returnType: TypeAnnotation,
+    val body: List<Stmt>,
+    val isInline: Boolean = false,
+    val line: Int,
+    val column: Int = 0,
+    val length: Int = 0
+)
+
+// ---------------------------------------------------------------------------
+// Top-level items (can be functions or compile-time constructs)
+// ---------------------------------------------------------------------------
+
+/**
+ * Base class for top-level items in a program.
+ *
+ * Top-level items can be function declarations or compile-time constructs
+ * (inline variables, inline conditionals, inline blocks) that are resolved
+ * by the CTFE evaluator before semantic analysis.
+ */
+sealed class TopLevel {
+    /**
+     * A top-level function declaration.
+     *
+     * @property decl the full function declaration
+     */
+    data class Func(val decl: FuncDecl) : TopLevel()
+
+    /** Runtime top-level mutable binding (`var`). Survives CTFE. */
+    data class VarDecl(val name: String, val typeName: String?, val initializer: Expr, val line: Int, val column: Int = 0) : TopLevel()
+    /** Runtime top-level deeply immutable binding (`fin`). Survives CTFE. */
+    data class FinDecl(val name: String, val typeName: String?, val initializer: Expr, val line: Int, val column: Int = 0) : TopLevel()
+    /** Runtime top-level immutable binding (`let`). Survives CTFE. */
+    data class LetDecl(val name: String, val typeName: String?, val initializer: Expr, val line: Int, val column: Int = 0) : TopLevel()
+
+    /**
+     * A top-level compile-time mutable binding (`inline var`).
+     *
+     * @property name the binding name
+     * @property initializer the compile-time constant expression
+     * @property line 1-based source line
+     * @property column 1-based source column
+     */
+    data class InlineVar(val name: String, val initializer: Expr, val line: Int, val column: Int = 0) : TopLevel()
+
+    /**
+     * A top-level compile-time deeply immutable binding (`inline fin`).
+     *
+     * @property name the binding name
+     * @property initializer the compile-time constant expression
+     * @property line 1-based source line
+     * @property column 1-based source column
+     */
+    data class InlineFin(val name: String, val initializer: Expr, val line: Int, val column: Int = 0) : TopLevel()
+
+    /**
+     * A top-level compile-time immutable binding (`inline let`).
+     *
+     * @property name the binding name
+     * @property initializer the compile-time constant expression
+     * @property line 1-based source line
+     * @property column 1-based source column
+     */
+    data class InlineLet(val name: String, val initializer: Expr, val line: Int, val column: Int = 0) : TopLevel()
+
+    /**
+     * A top-level compile-time reassignment (`inline x = expr`).
+     *
+     * @property name the name of the compile-time variable being reassigned
+     * @property value the new value expression
+     * @property line 1-based source line
+     * @property column 1-based source column
+     */
+    data class InlineAssignment(val name: String, val value: Expr, val line: Int, val column: Int = 0) : TopLevel()
+
+    /**
+     * A top-level compile-time conditional (`inline if`).
+     *
+     * The condition is evaluated at compile time. Only the taken branch's
+     * top-level items survive into the final program.
+     *
+     * @property condition the compile-time boolean condition
+     * @property thenBranch the top-level items to include when the condition is true
+     * @property elseBranch the top-level items to include when the condition is false, or `null`
+     * @property line 1-based source line
+     * @property column 1-based source column
+     */
+    data class InlineIf(val condition: Expr, val thenBranch: List<TopLevel>, val elseBranch: List<TopLevel>?, val line: Int, val column: Int = 0) : TopLevel()
+
+    /**
+     * A top-level compile-time block (`inline { ... }`).
+     *
+     * All items inside are implicitly compile-time. Functions pass through;
+     * bindings and conditionals are evaluated at compile time.
+     *
+     * @property body the list of top-level items inside the block
+     * @property line 1-based source line
+     * @property column 1-based source column
+     */
+    data class InlineBlock(val body: List<TopLevel>, val line: Int, val column: Int = 0) : TopLevel()
+
+    /**
+     * A top-level deep compile-time block (`deepinline { ... }`).
+     *
+     * Like [InlineBlock] but recursive -- all nested constructs are also
+     * evaluated at compile time unless escaped with `noinline`.
+     *
+     * @property body the list of top-level items inside the block
+     * @property line 1-based source line
+     * @property column 1-based source column
+     */
+    data class DeepInlineBlock(val body: List<TopLevel>, val line: Int, val column: Int = 0) : TopLevel()
+
+    /**
+     * A top-level deep compile-time conditional (`deepinline if`).
+     *
+     * Like [InlineIf] but the taken branch is recursively deep-inlined.
+     *
+     * @property condition the compile-time boolean condition
+     * @property thenBranch the top-level items to deep-inline when the condition is true
+     * @property elseBranch the top-level items to deep-inline when the condition is false, or `null`
+     * @property line 1-based source line
+     * @property column 1-based source column
+     */
+    data class DeepInlineIf(val condition: Expr, val thenBranch: List<TopLevel>, val elseBranch: List<TopLevel>?, val line: Int, val column: Int = 0) : TopLevel()
+
+    /**
+     * A top-level test declaration (`test "name" { body }`).
+     *
+     * @property name the test name string
+     * @property body the test body statements
+     * @property line 1-based source line
+     * @property column 1-based source column
+     */
+    data class Test(val name: String, val body: List<Stmt>, val line: Int, val column: Int = 0) : TopLevel()
+
+    /**
+     * A top-level compile-time assertion (`inline assert condition { "message" }`).
+     *
+     * @property condition the compile-time boolean condition
+     * @property message the error message expression
+     * @property line 1-based source line
+     * @property column 1-based source column
+     */
+    data class InlineAssert(val condition: Expr, val message: Expr, val line: Int, val column: Int = 0) : TopLevel()
+
+    /**
+     * A top-level compile-time trace (`inline trace { expr }`).
+     *
+     * @property message the message expression
+     * @property line 1-based source line
+     * @property column 1-based source column
+     */
+    data class InlineTrace(val message: Expr, val line: Int, val column: Int = 0) : TopLevel()
+}
+
+/**
+ * The root of an Azora AST, representing a complete source file.
+ *
+ * @property packageName the declared package name, or `null` if no `package` declaration is present
+ * @property items the list of top-level items (functions and compile-time constructs)
+ */
+data class Program(
+    val packageName: String?,
+    val items: List<TopLevel>
+) {
+    /** Convenience — returns only the resolved function declarations. */
+    val functions: List<FuncDecl> get() = items.filterIsInstance<TopLevel.Func>().map { it.decl }
+
+    /** Convenience — returns only the test declarations. */
+    val tests: List<TopLevel.Test> get() = items.filterIsInstance<TopLevel.Test>()
+}

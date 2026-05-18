@@ -1,0 +1,136 @@
+/*
+ * Copyright 2026 AzoraTech
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+@file:experimental
+
+package std.traits
+
+/**
+ * @file Core
+ *
+ * Core type specifications.
+ *
+ * Defines fundamental specifications for type capabilities:
+ * equality comparison, ordering, and string representation.
+ *
+ * @since 0.0.1
+ */
+
+expose scope std {
+    /**
+     * Types that support equality comparison via == and !=.
+     *
+     * @since 0.0.1
+     */
+    spec Equatable
+
+    /** Int supports equality comparison. */
+    impl Equatable for Int
+
+    /** Real supports equality comparison. */
+    impl Equatable for Real
+
+    /** String supports equality comparison. */
+    impl Equatable for String
+
+    /** Char supports equality comparison. */
+    impl Equatable for Char
+
+    /** Bool supports equality comparison. */
+    impl Equatable for Bool
+
+    /**
+     * Types that support ordering via < and >.
+     *
+     * @since 0.0.1
+     */
+    spec Comparable
+
+    /** Int supports ordering. */
+    impl Comparable for Int
+
+    /** Real supports ordering. */
+    impl Comparable for Real
+
+    /** String supports ordering. */
+    impl Comparable for String
+
+    /** Char supports ordering. */
+    impl Comparable for Char
+
+    /**
+     * Types that have a string representation.
+     *
+     * @since 0.0.1
+     */
+    spec Displayable
+
+    /** Int has a string representation. */
+    impl Displayable for Int
+
+    /** Real has a string representation. */
+    impl Displayable for Real
+
+    /** String has a string representation. */
+    impl Displayable for String
+
+    /** Char has a string representation. */
+    impl Displayable for Char
+
+    /** Bool has a string representation. */
+    impl Displayable for Bool
+
+    /**
+     * Types that can be hashed.
+     *
+     * @since 0.0.1
+     */
+    spec Hashable
+
+    /** Int is hashable. */
+    impl Hashable for Int
+
+    /** String is hashable. */
+    impl Hashable for String
+
+    /** Char is hashable. */
+    impl Hashable for Char
+
+    /** Bool is hashable. */
+    impl Hashable for Bool
+
+    /**
+     * Types that can be copied.
+     *
+     * @since 0.0.1
+     */
+    spec Copyable
+
+    /** Int is copyable. */
+    impl Copyable for Int
+
+    /** Real is copyable. */
+    impl Copyable for Real
+
+    /** String is copyable. */
+    impl Copyable for String
+
+    /** Char is copyable. */
+    impl Copyable for Char
+
+    /** Bool is copyable. */
+    impl Copyable for Bool
+}

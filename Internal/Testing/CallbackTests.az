@@ -1,0 +1,189 @@
+/*
+ * Copyright 2026 AzoraTech
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package testing
+
+func applyCallback(cb: Callback, v: Int): Int {
+    return cb(v)
+}
+
+func runCallback(x: Int, cb: Callback): Int {
+    return cb(x)
+}
+
+func applyTwo(cb: Callback, a: Int, b: Int): Int {
+    return cb(a, b)
+}
+
+func runTwo(a: Int, b: Int, cb: Callback): Int {
+    return cb(a, b)
+}
+
+test "Lambda variable and invocation" {
+    var add = { a, b -> a + b }
+    assert add(1, 2) == 3 { "add(1, 2) should be 3" }
+    assert add(10, 20) == 30 { "add(10, 20) should be 30" }
+}
+
+test "Lambda no-arg" {
+    var f = { 42 }
+    assert f() == 42 { "no-arg lambda should return 42" }
+}
+
+test "Lambda as function argument" {
+    var result = applyCallback({ x -> x + 1 }, 5)
+    assert result == 6 { "apply should return 6" }
+}
+
+test "Trailing lambda syntax" {
+    var result = runCallback(10) { v -> v * 2 }
+    assert result == 20 { "trailing lambda should return 20" }
+}
+
+test "Trailing lambda syntax with it" {
+    var result = runCallback(10) { it * 2 }
+    assert result == 20 { "trailing lambda should return 20" }
+}
+
+test "Implicit it with Tuple" {
+    var result = applyTwo({ it.0 + it.1 }, 3, 7)
+    assert result == 10 { "it.0 + it.1 should be 10" }
+}
+
+test "Trailing lambda with Tuple it" {
+    var result = runTwo(3, 7) { it.0 * it.1 }
+    assert result == 21 { "trailing it.0 * it.1 should be 21" }
+}
+
+test "Closure capture" {
+    var base = 100
+    var addBase = { x -> x + base }
+    assert addBase(5) == 105 { "closure should capture base=100" }
+}
+
+test "Nested lambdas" {
+    var outer = { x ->
+        var inner = { y -> x + y }
+        inner(10)
+    }
+    assert outer(5) == 15 { "nested lambda should return 15" }
+}
+
+test "Multi-statement lambda body" {
+    var compute = { a, b ->
+        var sum = a + b
+        var doubled = sum * 2
+        doubled
+    }
+    assert compute(3, 4) == 14 { "multi-statement body: (3+4)*2 = 14" }
+}
+
+test "Lambda typename" {
+    var f = { x -> x }
+    assert f.typename == "Callback" { "lambda typename should be Callback" }
+}
+
+test "Lambda returning lambda" {
+    var makeAdder = { x ->
+        { y -> x + y }
+    }
+    var add5 = makeAdder(5)
+    assert add5(3) == 8 { "returned lambda should add 5" }
+}
+
+test "Lambda with string operations" {
+    var greet = { name -> "Hello, " + name + "!" }
+    assert greet("World") == "Hello, World!" { "string lambda" }
+}
+
+// --- Variadic Lambda Tests ---
+
+test "Variadic lambda sum with for iteration" {
+    var sum = <T...>{
+        var total = 0
+        for x in it {
+            total += x
+        }
+        total
+    }
+    assert sum(1, 2, 3) == 6 { "variadic sum(1,2,3) should be 6" }
+    assert sum(10, 20, 30, 40) == 100 { "variadic sum(10,20,30,40) should be 100" }
+}
+
+test "Variadic lambda it.length" {
+    var len = <T...>{ it.length }
+    assert len() == 0 { "variadic len() should be 0" }
+    assert len(1) == 1 { "variadic len(1) should be 1" }
+    assert len(1, 2, 3) == 3 { "variadic len(1,2,3) should be 3" }
+}
+
+test "Variadic lambda index access" {
+    var first = <T...>{ it[0] }
+    assert first(42) == 42 { "variadic first(42) should be 42" }
+    assert first(10, 20, 30) == 10 { "variadic first(10,20,30) should be 10" }
+}
+
+test "Variadic lambda for with index" {
+    var indexSum = <T...>{
+        var total = 0
+        for x in it with i {
+            total += i
+        }
+        total
+    }
+    assert indexSum(10, 20, 30) == 3 { "index sum of 3 elements: 0+1+2 = 3" }
+}
+
+test "Variadic lambda inline for with index" {
+    var indexSum = <T...>{
+        inline var $total = 0
+        inline for _ in $it with $i {
+            $total += $i
+        }
+        $total
+    }
+    assert indexSum(10, 20, 30) == 3 { "index sum of 3 elements: 0+1+2 = 3" }
+}
+
+test "Variadic lambda typename" {
+    var f = <T...>{ it }
+    assert f.typename == "Callback" { "variadic lambda typename should be Callback" }
+}
+
+test "Variadic lambda closure capture" {
+    var base = 100
+    var addBase = <T...>{
+        var total = base
+        for x in it {
+            total += x
+        }
+        total
+    }
+    assert addBase(1, 2, 3) == 106 { "variadic closure should capture base=100" }
+}
+
+test "Variadic lambda empty args" {
+    var empty = <T...>{ it.length }
+    assert empty() == 0 { "variadic with no args should have length 0" }
+}
+
+test "Variadic lambda where constraint" {
+    var needsThree = <T...> where T.length >= 3 {
+        it[0] + it[1] + it[2]
+    }
+    assert needsThree(1, 2, 3) == 6 { "where constraint satisfied: 1+2+3=6" }
+    assert needsThree(10, 20, 30, 40) == 60 { "extra args ok: 10+20+30=60" }
+}

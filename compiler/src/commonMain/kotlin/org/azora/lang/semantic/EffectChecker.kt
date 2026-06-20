@@ -162,6 +162,31 @@ class EffectChecker {
                 collectCallsFromExpr(stmt.message, calls)
             }
             is Stmt.InlineTrace -> collectCallsFromExpr(stmt.message, calls)
+            is Stmt.While -> {
+                collectCallsFromExpr(stmt.condition, calls)
+                stmt.body.forEach { collectCallsFromStmt(it, calls) }
+            }
+            is Stmt.For -> {
+                if (stmt.iterable is Expr.Range) {
+                    collectCallsFromExpr(stmt.iterable.from, calls)
+                    collectCallsFromExpr(stmt.iterable.to, calls)
+                } else {
+                    collectCallsFromExpr(stmt.iterable, calls)
+                }
+                stmt.body.forEach { collectCallsFromStmt(it, calls) }
+            }
+            is Stmt.Loop -> stmt.body.forEach { collectCallsFromStmt(it, calls) }
+            is Stmt.Break -> {}
+            is Stmt.Continue -> {}
+            is Stmt.IndexAssign -> {
+                collectCallsFromExpr(stmt.target, calls)
+                collectCallsFromExpr(stmt.index, calls)
+                collectCallsFromExpr(stmt.value, calls)
+            }
+            is Stmt.MemberAssign -> {
+                collectCallsFromExpr(stmt.target, calls)
+                collectCallsFromExpr(stmt.value, calls)
+            }
         }
     }
 
@@ -174,6 +199,16 @@ class EffectChecker {
             is Expr.Binary -> { collectCallsFromExpr(expr.left, calls); collectCallsFromExpr(expr.right, calls) }
             is Expr.Unary -> collectCallsFromExpr(expr.operand, calls)
             is Expr.Grouping -> collectCallsFromExpr(expr.expr, calls)
+            is Expr.Range -> { collectCallsFromExpr(expr.from, calls); collectCallsFromExpr(expr.to, calls) }
+            is Expr.ArrayLiteral -> expr.elements.forEach { collectCallsFromExpr(it, calls) }
+            is Expr.Index -> { collectCallsFromExpr(expr.target, calls); collectCallsFromExpr(expr.index, calls) }
+            is Expr.Member -> collectCallsFromExpr(expr.target, calls)
+            is Expr.MethodCall -> { collectCallsFromExpr(expr.target, calls); expr.args.forEach { collectCallsFromExpr(it, calls) } }
+            is Expr.StringTemplate -> {
+                for (part in expr.parts) {
+                    if (part is Expr.StringTemplatePart.Expr) collectCallsFromExpr(part.expr, calls)
+                }
+            }
             is Expr.IntLiteral, is Expr.RealLiteral,
             is Expr.StringLiteral, is Expr.BoolLiteral,
             is Expr.CharLiteral,

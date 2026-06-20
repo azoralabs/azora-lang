@@ -73,6 +73,20 @@ class TypeScriptCodegen {
                     emitTest(item)
                     if (i < program.items.lastIndex) line("")
                 }
+                is IrTopLevel.Struct -> {
+                    line("class ${item.name} {")
+                    indent++
+                    for (f in item.fields) line("${f.name}: ${mapType(f.type)};")
+                    val params = item.fields.joinToString(", ") { "${it.name}: ${mapType(it.type)}" }
+                    line("constructor($params) {")
+                    indent++
+                    for (f in item.fields) line("this.${f.name} = ${f.name};")
+                    indent--
+                    line("}")
+                    indent--
+                    line("}")
+                    if (i < program.items.lastIndex) line("")
+                }
             }
         }
 
@@ -113,6 +127,8 @@ class TypeScriptCodegen {
             is IrStmt.FinDecl -> line("const ${stmt.name}: ${mapType(stmt.type)} = ${emitExpr(stmt.initializer)};")
             is IrStmt.LetDecl -> line("const ${stmt.name}: ${mapType(stmt.type)} = ${emitExpr(stmt.initializer)};")
             is IrStmt.Assignment -> line("${stmt.name} = ${emitExpr(stmt.value)};")
+            is IrStmt.IndexAssign -> line("${emitExpr(stmt.target)}[${emitExpr(stmt.index)}] = ${emitExpr(stmt.value)};")
+            is IrStmt.MemberAssign -> line("${emitExpr(stmt.target)}.${stmt.name} = ${emitExpr(stmt.value)};")
             is IrStmt.Return -> {
                 if (stmt.value != null) line("return ${emitExpr(stmt.value)};")
                 else line("return;")
@@ -161,6 +177,30 @@ class TypeScriptCodegen {
                     line("}")
                 }
             }
+            is IrStmt.While -> {
+                line("while (${emitExpr(stmt.condition)}) {")
+                indent++
+                for (s in stmt.body) emitStmt(s)
+                indent--
+                line("}")
+            }
+            is IrStmt.For -> {
+                val op = if (stmt.inclusive) "<=" else "<"
+                line("for (let ${stmt.counter} = ${emitExpr(stmt.start)}; ${stmt.counter} $op ${emitExpr(stmt.end)}; ${stmt.counter}++) {")
+                indent++
+                for (s in stmt.body) emitStmt(s)
+                indent--
+                line("}")
+            }
+            is IrStmt.Loop -> {
+                line("while (true) {")
+                indent++
+                for (s in stmt.body) emitStmt(s)
+                indent--
+                line("}")
+            }
+            is IrStmt.Break -> line("break;")
+            is IrStmt.Continue -> line("continue;")
         }
     }
 
@@ -209,6 +249,36 @@ class TypeScriptCodegen {
             val name = if (expr.name == "println") "console.log" else expr.name
             "$name(${expr.args.joinToString(", ") { emitExpr(it) }})"
         }
+        is IrExpr.ArrayLiteral -> "[${expr.elements.joinToString(", ") { emitExpr(it) }}]"
+        is IrExpr.Index -> "${emitExpr(expr.target)}[${emitExpr(expr.index)}]"
+        is IrExpr.Member -> {
+            val prop = when (expr.name) {
+                "isEmpty" -> "length === 0"
+                "isNotEmpty" -> "length !== 0"
+                else -> expr.name
+            }
+            "${emitExpr(expr.target)}.$prop"
+        }
+        is IrExpr.MethodCall -> {
+            val call = when (expr.name) {
+                "add" -> "push(${expr.args.joinToString(", ") { emitExpr(it) }})"
+                "isEmpty" -> "length === 0"
+                "isNotEmpty" -> "length !== 0"
+                else -> "${expr.name}(${expr.args.joinToString(", ") { emitExpr(it) }})"
+            }
+            "${emitExpr(expr.target)}.$call"
+        }
+        is IrExpr.StructCtor -> "new ${expr.name}(${expr.args.joinToString(", ") { emitExpr(it) }})"
+        is IrExpr.StringTemplate -> {
+            val sb = StringBuilder("`")
+            for (part in expr.parts) {
+                when (part) {
+                    is IrExpr.IrTemplatePart.Literal -> sb.append(part.text.replace("\\", "\\\\").replace("`", "\\`").replace("\${", "\\\${"))
+                    is IrExpr.IrTemplatePart.Expr -> sb.append("\${").append(emitExpr(part.expr)).append("}")
+                }
+            }
+            sb.append("`").toString()
+        }
     }
 
     private fun mapType(type: IrType): String = when (type) {
@@ -225,6 +295,14 @@ class TypeScriptCodegen {
         IrType.Decimal -> "number"
         IrType.Long, IrType.ULong -> "bigint"
         IrType.Cent, IrType.UCent -> "bigint"
+        is IrType.Array -> "${mapType(type.element)}[]"
+        is IrType.Map -> "Map<${mapType(type.key)}, ${mapType(type.value)}>"
+        is IrType.Set -> "Set<${mapType(type.element)}>"
+        is IrType.Function -> "(${type.params.joinToString(", ") { mapType(it) }}) => ${mapType(type.ret)}"
+        is IrType.Tuple -> "[${type.elements.joinToString(", ") { mapType(it) }}]"
+        is IrType.Nullable -> "${mapType(type.inner)} | null"
+        is IrType.Named -> type.name
+        IrType.Any -> "any"
     }
 
     private fun escapeString(s: String): String =

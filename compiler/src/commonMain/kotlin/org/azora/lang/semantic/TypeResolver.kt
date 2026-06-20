@@ -23,6 +23,7 @@ import org.azora.lang.frontend.Program
 import org.azora.lang.frontend.Stmt
 import org.azora.lang.frontend.TokenType
 import org.azora.lang.frontend.TypeAnnotation
+import org.azora.lang.frontend.TypeRef
 import org.azora.lang.ir.IrType
 import kotlin.collections.iterator
 
@@ -190,6 +191,79 @@ class TypeResolver(private val table: SymbolTable) {
                     errors.add("line ${stmt.line}: trace message must be String, got $msgType")
                 }
             }
+            is Stmt.While -> {
+                val condType = resolveExpr(stmt.condition)
+                if (condType != null && condType != IrType.Bool) {
+                    errors.add("line ${stmt.line}: while condition must be Bool, got $condType")
+                }
+                table.pushScope()
+                resolveBody(stmt.body, returnType)
+                table.popScope()
+            }
+            is Stmt.For -> {
+                when (val iter = stmt.iterable) {
+                    is Expr.Range -> {
+                        val fromType = resolveExpr(iter.from)
+                        val toType = resolveExpr(iter.to)
+                        if (fromType != null && fromType != IrType.Int) {
+                            errors.add("line ${stmt.line}: range start must be Int, got $fromType")
+                        }
+                        if (toType != null && toType != IrType.Int) {
+                            errors.add("line ${stmt.line}: range end must be Int, got $toType")
+                        }
+                    }
+                    else -> {
+                        errors.add("line ${stmt.line}: for loop iterable must be an integer range (e.g. 0..10)")
+                    }
+                }
+                table.pushScope()
+                table.defineVariable(VariableSymbol(stmt.name, IrType.Int, mutable = true))
+                resolveBody(stmt.body, returnType)
+                table.popScope()
+            }
+            is Stmt.Loop -> {
+                table.pushScope()
+                resolveBody(stmt.body, returnType)
+                table.popScope()
+            }
+            is Stmt.Break -> { /* no type constraint */ }
+            is Stmt.Continue -> { /* no type constraint */ }
+            is Stmt.IndexAssign -> {
+                val targetType = resolveExpr(stmt.target) ?: return
+                val indexType = resolveExpr(stmt.index) ?: return
+                if (targetType !is IrType.Array) {
+                    errors.add("line ${stmt.line}: cannot index-assign to $targetType (not an array)")
+                    return
+                }
+                if (indexType != IrType.Int) {
+                    errors.add("line ${stmt.line}: array index must be Int, got $indexType")
+                    return
+                }
+                val valueType = resolveExpr(stmt.value) ?: return
+                if (valueType != targetType.element) {
+                    errors.add("line ${stmt.line}: cannot assign $valueType to array of ${targetType.element}")
+                }
+            }
+            is Stmt.MemberAssign -> {
+                val targetType = resolveExpr(stmt.target) ?: return
+                val valueType = resolveExpr(stmt.value) ?: return
+                if (targetType is IrType.Named) {
+                    val field = table.lookupStruct(targetType.name)?.field(stmt.name)
+                    if (field == null) {
+                        errors.add("line ${stmt.line}: no field '${stmt.name}' on struct ${targetType.name}")
+                        return
+                    }
+                    if (!field.mutable) {
+                        errors.add("line ${stmt.line}: cannot assign to immutable field '${stmt.name}' of struct ${targetType.name}")
+                        return
+                    }
+                    if (valueType != field.type) {
+                        errors.add("line ${stmt.line}: cannot assign $valueType to field '${stmt.name}' of type ${field.type}")
+                    }
+                } else {
+                    errors.add("line ${stmt.line}: cannot assign member '${stmt.name}' on $targetType (not a struct)")
+                }
+            }
             is Stmt.InlineAssert -> errors.add("line ${stmt.line}: inline assert could not be evaluated at compile time")
             is Stmt.InlineTrace -> errors.add("line ${stmt.line}: inline trace could not be evaluated at compile time")
         }
@@ -262,6 +336,22 @@ class TypeResolver(private val table: SymbolTable) {
                 resolveBinaryType(expr.op, leftType, rightType, expr.line)
             }
             is Expr.Call -> {
+                // Struct construction: `Name(args)` where Name is a pack.
+                val struct = table.lookupStruct(expr.callee)
+                if (struct != null) {
+                    if (expr.args.size != struct.fields.size) {
+                        errors.add("line ${expr.line}: '${expr.callee}' expects ${struct.fields.size} field arguments, got ${expr.args.size}")
+                        return null
+                    }
+                    for (i in expr.args.indices) {
+                        val argType = resolveExpr(expr.args[i]) ?: return null
+                        val fieldType = struct.fields[i].type
+                        if (argType != fieldType) {
+                            errors.add("line ${expr.line}: field '${struct.fields[i].name}' of '${expr.callee}': expected $fieldType, got $argType")
+                        }
+                    }
+                    return IrType.Named(struct.name)
+                }
                 val func = table.lookupFunction(expr.callee)
                 if (func == null) {
                     errors.add("line ${expr.line}: undefined function '${expr.callee}'")
@@ -283,7 +373,106 @@ class TypeResolver(private val table: SymbolTable) {
                 func.returnType
             }
             is Expr.Grouping -> resolveExpr(expr.expr)
+            is Expr.Range -> {
+                errors.add("line ${expr.line}: ranges can only be used as for-loop iterables")
+                null
+            }
+            is Expr.ArrayLiteral -> {
+                if (expr.elements.isEmpty()) {
+                    errors.add("line ${expr.line}: cannot infer element type of an empty array literal")
+                    null
+                } else {
+                    val elemType = resolveExpr(expr.elements[0]) ?: return null
+                    for (i in 1 until expr.elements.size) {
+                        val t = resolveExpr(expr.elements[i]) ?: return null
+                        if (t != elemType) {
+                            errors.add("line ${expr.line}: array elements must share a type, got $elemType and $t")
+                            return null
+                        }
+                    }
+                    IrType.Array(elemType)
+                }
+            }
+            is Expr.Index -> {
+                val targetType = resolveExpr(expr.target) ?: return null
+                val indexType = resolveExpr(expr.index) ?: return null
+                if (indexType != IrType.Int) {
+                    errors.add("line ${expr.line}: array index must be Int, got $indexType")
+                    return null
+                }
+                if (targetType !is IrType.Array) {
+                    errors.add("line ${expr.line}: cannot index into $targetType (not an array)")
+                    return null
+                }
+                targetType.element
+            }
+            is Expr.Member -> {
+                val targetType = resolveExpr(expr.target) ?: return null
+                when {
+                    expr.name == "length" && (targetType is IrType.Array || targetType == IrType.String) -> IrType.Int
+                    (expr.name == "isEmpty" || expr.name == "isNotEmpty") && targetType is IrType.Array -> IrType.Bool
+                    targetType is IrType.Named -> {
+                        val field = table.lookupStruct(targetType.name)?.field(expr.name)
+                        if (field == null) {
+                            errors.add("line ${expr.line}: no field '${expr.name}' on struct ${targetType.name}")
+                            null
+                        } else field.type
+                    }
+                    else -> {
+                        errors.add("line ${expr.line}: no member '${expr.name}' on $targetType")
+                        null
+                    }
+                }
+            }
+            is Expr.MethodCall -> {
+                val targetType = resolveExpr(expr.target) ?: return null
+                resolveBuiltinMethod(targetType, expr.name, expr.args, expr.line)
+            }
+            is Expr.StringTemplate -> {
+                for (part in expr.parts) {
+                    if (part is Expr.StringTemplatePart.Expr) {
+                        resolveExpr(part.expr) // any type is allowed; formatted at runtime
+                    }
+                }
+                IrType.String
+            }
         }
+    }
+
+    /**
+     * Type-checks a builtin method call on a receiver of [receiverType].
+     * Currently supports a small set of array methods (`add`, `isEmpty`, `isNotEmpty`).
+     */
+    private fun resolveBuiltinMethod(receiverType: IrType, name: String, args: List<Expr>, line: Int): IrType? {
+        if (receiverType is IrType.Array) {
+            return when (name) {
+                "add" -> {
+                    if (args.size != 1) {
+                        errors.add("line $line: 'add' expects 1 argument, got ${args.size}")
+                        return null
+                    }
+                    val argType = resolveExpr(args[0]) ?: return null
+                    if (argType != receiverType.element) {
+                        errors.add("line $line: 'add' expects ${receiverType.element}, got $argType")
+                        return null
+                    }
+                    IrType.Unit
+                }
+                "isEmpty", "isNotEmpty" -> {
+                    if (args.isNotEmpty()) {
+                        errors.add("line $line: '$name' expects 0 arguments, got ${args.size}")
+                        return null
+                    }
+                    IrType.Bool
+                }
+                else -> {
+                    errors.add("line $line: no method '$name' on array")
+                    null
+                }
+            }
+        }
+        errors.add("line $line: no method '$name' on $receiverType")
+        return null
     }
 
     private fun resolveBinaryType(op: TokenType, left: IrType, right: IrType, line: Int): IrType? {
@@ -339,7 +528,7 @@ class TypeResolver(private val table: SymbolTable) {
         val initType = resolveExpr(initializer) ?: return
         when (typeAnn) {
             is TypeAnnotation.Explicit -> {
-                val declaredType = tryResolveType(typeAnn.name, line) ?: return
+                val declaredType = tryResolveType(typeAnn.ref, line) ?: return
                 if (declaredType != initType) {
                     errors.add("line $line: type mismatch in '$name': declared $declaredType but initializer is $initType")
                 }
@@ -351,9 +540,9 @@ class TypeResolver(private val table: SymbolTable) {
         }
     }
 
-    private fun tryResolveType(name: String, line: Int): IrType? {
+    private fun tryResolveType(ref: TypeRef, line: Int): IrType? {
         return try {
-            IrType.Companion.fromName(name)
+            IrType.resolve(ref)
         } catch (e: Exception) {
             errors.add("line $line: ${e.message}")
             null

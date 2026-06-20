@@ -47,6 +47,26 @@ data class VariableSymbol(
 )
 
 /**
+ * A field of a `pack` (struct) type.
+ *
+ * @property name the field name
+ * @property type the resolved field type
+ * @property mutable whether the field is `var` (mutable)
+ */
+data class StructField(val name: String, val type: IrType, val mutable: Boolean)
+
+/**
+ * A resolved `pack` (struct) type, with its ordered fields.
+ *
+ * @property name the struct name
+ * @property fields the ordered list of fields
+ */
+data class StructType(val name: String, val fields: List<StructField>) {
+    /** Looks up a field by name. */
+    fun field(name: String): StructField? = fields.find { it.name == name }
+}
+
+/**
  * Symbol table built in two stages:
  * 1. [SymbolCollector] populates function signatures (global scope).
  * 2. [TypeResolver] uses it to look up functions and manages local scopes.
@@ -59,6 +79,7 @@ class SymbolTable {
 
     private val functions = mutableMapOf<String, FunctionSymbol>()
     private val scopes = ArrayDeque<MutableMap<String, VariableSymbol>>()
+    private val structs = mutableMapOf<String, StructType>()
 
     // -- Functions (global) -------------------------------------------------
 
@@ -82,6 +103,24 @@ class SymbolTable {
      * @return the [FunctionSymbol] if found, or `null` if undefined
      */
     fun lookupFunction(name: String): FunctionSymbol? = functions[name]
+
+    // -- Structs -----------------------------------------------------------
+
+    /**
+     * Registers a struct type.
+     *
+     * @param struct the struct type to register
+     * @throws IllegalStateException if a struct with the same name is already defined
+     */
+    fun defineStruct(struct: StructType) {
+        if (structs.containsKey(struct.name)) {
+            error("Struct '${struct.name}' already defined")
+        }
+        structs[struct.name] = struct
+    }
+
+    /** Looks up a struct by name. */
+    fun lookupStruct(name: String): StructType? = structs[name]
 
     // -- Local variable scopes ----------------------------------------------
 

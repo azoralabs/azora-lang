@@ -78,6 +78,7 @@ package org.azora.lang.frontend
 enum class TokenType {
     // Literals
     INT_LITERAL, REAL_LITERAL, STRING_LITERAL, CHAR_LITERAL, TRUE, FALSE,
+    INTERPOLATED_STRING,
 
     // Identifier
     IDENTIFIER,
@@ -85,15 +86,20 @@ enum class TokenType {
     // Keywords
     VAR, FIN, LET, FUNC, RETURN, PACKAGE, IF, ELSE, INLINE, DEEPINLINE, NOINLINE, ZONE, FRIEND,
     TEST, ASSERT, TRACE,
+    FOR, WHILE, LOOP, IN, BREAK, CONTINUE,
+    PACK,
 
     // Operators
     PLUS, MINUS, STAR, SLASH, PERCENT,
     EQUAL, EQUAL_EQUAL, BANG_EQUAL,
     LESS, LESS_EQUAL, GREATER, GREATER_EQUAL,
     AND_AND, OR_OR, BANG,
+    DOT, DOT_DOT, DOT_DOT_LESS,
+    PLUS_EQUAL, MINUS_EQUAL, STAR_EQUAL, SLASH_EQUAL, PERCENT_EQUAL,
 
     // Delimiters
     L_PAREN, R_PAREN, L_BRACE, R_BRACE,
+    L_BRACKET, R_BRACKET,
     COMMA, COLON, DOUBLE_COLON, ARROW,
 
     // Special
@@ -126,6 +132,20 @@ enum class NumericSuffix {
  * produce the correct typed literal node.
  */
 data class NumericLiteral(val value: Any, val suffix: NumericSuffix = NumericSuffix.NONE)
+
+/**
+ * One segment of an interpolated string literal.
+ *
+ * - [Literal] is a chunk of literal text (escapes already resolved).
+ * - [Expr] is an embedded expression given as raw source text, parsed later
+ *   in the surrounding expression context.
+ */
+sealed class StringPart {
+    /** A literal text chunk of an interpolated string. */
+    data class Literal(val text: String) : StringPart()
+    /** An embedded expression, as raw source text (e.g. `"a + b"` from `"${a + b}"`). */
+    data class Expr(val source: String) : StringPart()
+}
 
 /**
  * A single lexical token produced by the [Lexer].

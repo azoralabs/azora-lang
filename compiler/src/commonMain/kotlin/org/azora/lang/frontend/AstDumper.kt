@@ -112,6 +112,10 @@ private fun dumpTopLevel(sb: StringBuilder, item: TopLevel, indent: String) {
             sb.appendLine("$indent    message:")
             dumpExpr(sb, item.message, "$indent        ")
         }
+        is TopLevel.Pack -> {
+            val fields = item.fields.joinToString(", ") { "${it.name}: ${it.type}" }
+            sb.appendLine("${indent}Pack(name=${item.name}, fields=[$fields])")
+        }
     }
 }
 
@@ -244,6 +248,42 @@ private fun dumpStmt(sb: StringBuilder, stmt: Stmt, indent: String) {
             sb.appendLine("$indent    message:")
             dumpExpr(sb, stmt.message, "$indent        ")
         }
+        is Stmt.While -> {
+            sb.appendLine("${indent}While")
+            sb.appendLine("$indent    condition:")
+            dumpExpr(sb, stmt.condition, "$indent        ")
+            sb.appendLine("$indent    body:")
+            stmt.body.forEach { dumpStmt(sb, it, "$indent    ") }
+        }
+        is Stmt.For -> {
+            sb.appendLine("${indent}For(var=${stmt.name})")
+            sb.appendLine("$indent    iterable:")
+            dumpExpr(sb, stmt.iterable, "$indent        ")
+            sb.appendLine("$indent    body:")
+            stmt.body.forEach { dumpStmt(sb, it, "$indent    ") }
+        }
+        is Stmt.Loop -> {
+            sb.appendLine("${indent}Loop")
+            stmt.body.forEach { dumpStmt(sb, it, "$indent    ") }
+        }
+        is Stmt.Break -> sb.appendLine("${indent}Break")
+        is Stmt.Continue -> sb.appendLine("${indent}Continue")
+        is Stmt.IndexAssign -> {
+            sb.appendLine("${indent}IndexAssign")
+            sb.appendLine("$indent    target:")
+            dumpExpr(sb, stmt.target, "$indent        ")
+            sb.appendLine("$indent    index:")
+            dumpExpr(sb, stmt.index, "$indent        ")
+            sb.appendLine("$indent    value:")
+            dumpExpr(sb, stmt.value, "$indent        ")
+        }
+        is Stmt.MemberAssign -> {
+            sb.appendLine("${indent}MemberAssign(name=${stmt.name})")
+            sb.appendLine("$indent    target:")
+            dumpExpr(sb, stmt.target, "$indent        ")
+            sb.appendLine("$indent    value:")
+            dumpExpr(sb, stmt.value, "$indent        ")
+        }
     }
 }
 
@@ -277,6 +317,45 @@ private fun dumpExpr(sb: StringBuilder, expr: Expr, indent: String) {
         is Expr.Grouping -> {
             sb.appendLine("${indent}Grouping")
             dumpExpr(sb, expr.expr, "$indent    ")
+        }
+        is Expr.Range -> {
+            val op = if (expr.inclusive) ".." else "..<"
+            sb.appendLine("${indent}Range($op)")
+            dumpExpr(sb, expr.from, "$indent    ")
+            dumpExpr(sb, expr.to, "$indent    ")
+        }
+        is Expr.ArrayLiteral -> {
+            sb.appendLine("${indent}ArrayLiteral")
+            for (elem in expr.elements) dumpExpr(sb, elem, "$indent    ")
+        }
+        is Expr.Index -> {
+            sb.appendLine("${indent}Index")
+            sb.appendLine("$indent    target:")
+            dumpExpr(sb, expr.target, "$indent        ")
+            sb.appendLine("$indent    index:")
+            dumpExpr(sb, expr.index, "$indent        ")
+        }
+        is Expr.Member -> {
+            sb.appendLine("${indent}Member(name=${expr.name})")
+            dumpExpr(sb, expr.target, "$indent    ")
+        }
+        is Expr.MethodCall -> {
+            sb.appendLine("${indent}MethodCall(name=${expr.name})")
+            sb.appendLine("$indent    target:")
+            dumpExpr(sb, expr.target, "$indent        ")
+            for (arg in expr.args) dumpExpr(sb, arg, "$indent    ")
+        }
+        is Expr.StringTemplate -> {
+            sb.appendLine("${indent}StringTemplate")
+            for (part in expr.parts) {
+                when (part) {
+                    is Expr.StringTemplatePart.Literal -> sb.appendLine("$indent    Literal(\"${part.text}\")")
+                    is Expr.StringTemplatePart.Expr -> {
+                        sb.appendLine("$indent    Expr:")
+                        dumpExpr(sb, part.expr, "$indent        ")
+                    }
+                }
+            }
         }
     }
 }

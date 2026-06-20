@@ -58,6 +58,7 @@ class IrOptimizer {
                 is IrTopLevel.Global -> IrTopLevel.Global(foldStmt(item.stmt))
                 is IrTopLevel.Func -> IrTopLevel.Func(item.function.copy(body = item.function.body.map { foldStmt(it) }))
                 is IrTopLevel.Test -> IrTopLevel.Test(item.name, item.body.map { foldStmt(it) })
+                is IrTopLevel.Struct -> item
             }
         })
     }
@@ -77,6 +78,13 @@ class IrOptimizer {
         is IrStmt.Zone -> stmt.copy(body = stmt.body.map { foldStmt(it) })
         is IrStmt.Assert -> stmt.copy(condition = foldExpr(stmt.condition), message = foldExpr(stmt.message))
         is IrStmt.Trace -> stmt.copy(message = foldExpr(stmt.message))
+        is IrStmt.While -> stmt.copy(condition = foldExpr(stmt.condition), body = stmt.body.map { foldStmt(it) })
+        is IrStmt.For -> stmt.copy(start = foldExpr(stmt.start), end = foldExpr(stmt.end), body = stmt.body.map { foldStmt(it) })
+        is IrStmt.Loop -> stmt.copy(body = stmt.body.map { foldStmt(it) })
+        is IrStmt.Break -> stmt
+        is IrStmt.Continue -> stmt
+        is IrStmt.IndexAssign -> stmt.copy(target = foldExpr(stmt.target), index = foldExpr(stmt.index), value = foldExpr(stmt.value))
+        is IrStmt.MemberAssign -> stmt.copy(target = foldExpr(stmt.target), value = foldExpr(stmt.value))
     }
 
     private fun foldExpr(expr: IrExpr): IrExpr = when (expr) {
@@ -158,6 +166,7 @@ class IrOptimizer {
                 }
                 is IrTopLevel.Func -> IrTopLevel.Func(propagateInFunction(item.function))
                 is IrTopLevel.Test -> IrTopLevel.Test(item.name, propagateStmts(item.body, mutableMapOf()))
+                is IrTopLevel.Struct -> item
             }
         })
     }
@@ -236,6 +245,27 @@ class IrOptimizer {
                 is IrStmt.Trace -> stmt.copy(
                     message = foldExpr(propagateExpr(stmt.message, constants))
                 )
+                is IrStmt.While -> stmt.copy(
+                    condition = foldExpr(propagateExpr(stmt.condition, constants)),
+                    body = propagateStmts(stmt.body, constants.toMutableMap())
+                )
+                is IrStmt.For -> stmt.copy(
+                    start = foldExpr(propagateExpr(stmt.start, constants)),
+                    end = foldExpr(propagateExpr(stmt.end, constants)),
+                    body = propagateStmts(stmt.body, constants.toMutableMap())
+                )
+                is IrStmt.Loop -> stmt.copy(body = propagateStmts(stmt.body, constants.toMutableMap()))
+                is IrStmt.Break -> stmt
+                is IrStmt.Continue -> stmt
+                is IrStmt.IndexAssign -> stmt.copy(
+                    target = foldExpr(propagateExpr(stmt.target, constants)),
+                    index = foldExpr(propagateExpr(stmt.index, constants)),
+                    value = foldExpr(propagateExpr(stmt.value, constants))
+                )
+                is IrStmt.MemberAssign -> stmt.copy(
+                    target = foldExpr(propagateExpr(stmt.target, constants)),
+                    value = foldExpr(propagateExpr(stmt.value, constants))
+                )
             }
         }
     }
@@ -268,6 +298,7 @@ class IrOptimizer {
                 is IrTopLevel.Global -> IrTopLevel.Global(eliminateDeadCode(listOf(item.stmt)).first())
                 is IrTopLevel.Func -> IrTopLevel.Func(item.function.copy(body = eliminateDeadCode(item.function.body)))
                 is IrTopLevel.Test -> IrTopLevel.Test(item.name, eliminateDeadCode(item.body))
+                is IrTopLevel.Struct -> item
             }
         })
     }
@@ -388,6 +419,7 @@ class IrOptimizer {
                     name != null && name in usedNames
                 }
                 is IrTopLevel.Test -> true // Tests are always kept
+                is IrTopLevel.Struct -> true // Struct definitions are always kept
             }
         }
 
@@ -397,6 +429,7 @@ class IrOptimizer {
                 is IrTopLevel.Func -> IrTopLevel.Func(removeUnusedLocals(item.function))
                 is IrTopLevel.Global -> item
                 is IrTopLevel.Test -> item
+                is IrTopLevel.Struct -> item
             }
         }
 
@@ -456,6 +489,27 @@ class IrOptimizer {
                 collectReferencedNamesFromExpr(stmt.message, names)
             }
             is IrStmt.Trace -> collectReferencedNamesFromExpr(stmt.message, names)
+            is IrStmt.While -> {
+                collectReferencedNamesFromExpr(stmt.condition, names)
+                stmt.body.forEach { collectReferencedNamesFromStmt(it, names) }
+            }
+            is IrStmt.For -> {
+                collectReferencedNamesFromExpr(stmt.start, names)
+                collectReferencedNamesFromExpr(stmt.end, names)
+                stmt.body.forEach { collectReferencedNamesFromStmt(it, names) }
+            }
+            is IrStmt.Loop -> stmt.body.forEach { collectReferencedNamesFromStmt(it, names) }
+            is IrStmt.Break -> {}
+            is IrStmt.Continue -> {}
+            is IrStmt.IndexAssign -> {
+                collectReferencedNamesFromExpr(stmt.target, names)
+                collectReferencedNamesFromExpr(stmt.index, names)
+                collectReferencedNamesFromExpr(stmt.value, names)
+            }
+            is IrStmt.MemberAssign -> {
+                collectReferencedNamesFromExpr(stmt.target, names)
+                collectReferencedNamesFromExpr(stmt.value, names)
+            }
         }
     }
 
@@ -472,6 +526,16 @@ class IrOptimizer {
                 collectReferencedNamesFromExpr(expr.right, names)
             }
             is IrExpr.Unary -> collectReferencedNamesFromExpr(expr.operand, names)
+            is IrExpr.ArrayLiteral -> expr.elements.forEach { collectReferencedNamesFromExpr(it, names) }
+            is IrExpr.Index -> {
+                collectReferencedNamesFromExpr(expr.target, names)
+                collectReferencedNamesFromExpr(expr.index, names)
+            }
+            is IrExpr.Member -> collectReferencedNamesFromExpr(expr.target, names)
+            is IrExpr.MethodCall -> {
+                collectReferencedNamesFromExpr(expr.target, names)
+                expr.args.forEach { collectReferencedNamesFromExpr(it, names) }
+            }
             else -> {}
         }
     }
@@ -509,6 +573,27 @@ class IrOptimizer {
                 collectReferencedNamesFromExpr(stmt.message, names)
             }
             is IrStmt.Trace -> collectReferencedNamesFromExpr(stmt.message, names)
+            is IrStmt.While -> {
+                collectReferencedNamesFromExpr(stmt.condition, names)
+                stmt.body.forEach { collectReferencedVarNamesFromStmt(it, names) }
+            }
+            is IrStmt.For -> {
+                collectReferencedNamesFromExpr(stmt.start, names)
+                collectReferencedNamesFromExpr(stmt.end, names)
+                stmt.body.forEach { collectReferencedVarNamesFromStmt(it, names) }
+            }
+            is IrStmt.Loop -> stmt.body.forEach { collectReferencedVarNamesFromStmt(it, names) }
+            is IrStmt.Break -> {}
+            is IrStmt.Continue -> {}
+            is IrStmt.IndexAssign -> {
+                collectReferencedNamesFromExpr(stmt.target, names)
+                collectReferencedNamesFromExpr(stmt.index, names)
+                collectReferencedNamesFromExpr(stmt.value, names)
+            }
+            is IrStmt.MemberAssign -> {
+                collectReferencedNamesFromExpr(stmt.target, names)
+                collectReferencedNamesFromExpr(stmt.value, names)
+            }
         }
     }
 }

@@ -55,6 +55,7 @@ class IrInterpreter {
                 is IrTopLevel.Global -> executeStmt(item.stmt)
                 is IrTopLevel.Func -> functions[item.function.name] = item.function
                 is IrTopLevel.Test -> tests.add(item)
+                is IrTopLevel.Struct -> { /* struct definitions need no execution */ }
             }
         }
 
@@ -119,13 +120,13 @@ class IrInterpreter {
 
         val result = executeBody(func.body)
         popScope()
-        return result
+        return (result as? ReturnSignal)?.value
     }
 
     private fun executeBody(body: List<IrStmt>): Any? {
         for (stmt in body) {
             val result = executeStmt(stmt)
-            if (result is ReturnSignal) return result.value
+            if (result is ControlSignal) return result
         }
         return null
     }
@@ -146,14 +147,62 @@ class IrInterpreter {
                 val branch = if (cond) stmt.thenBranch else stmt.elseBranch
                 if (branch != null) {
                     val result = executeBody(branch)
-                    if (result is ReturnSignal) return result
+                    if (result is ControlSignal) return result
                 }
             }
             is IrStmt.Zone -> {
                 pushScope()
                 val result = executeBody(stmt.body)
                 popScope()
-                if (result is ReturnSignal) return result
+                if (result is ControlSignal) return result
+            }
+            is IrStmt.While -> {
+                while (evalExpr(stmt.condition) as Boolean) {
+                    pushScope()
+                    val result = executeBody(stmt.body)
+                    popScope()
+                    if (result is BreakSignal) break
+                    if (result is ReturnSignal) return result
+                    // ContinueSignal or null → loop again
+                }
+            }
+            is IrStmt.For -> {
+                val start = evalExpr(stmt.start) as Long
+                val end = evalExpr(stmt.end) as Long
+                var i = start
+                while (if (stmt.inclusive) i <= end else i < end) {
+                    pushScope()
+                    defineVar(stmt.counter, i)
+                    val result = executeBody(stmt.body)
+                    popScope()
+                    if (result is BreakSignal) break
+                    if (result is ReturnSignal) return result
+                    i++
+                    // ContinueSignal or null falls through to the increment above
+                }
+            }
+            is IrStmt.Loop -> {
+                while (true) {
+                    pushScope()
+                    val result = executeBody(stmt.body)
+                    popScope()
+                    if (result is BreakSignal) break
+                    if (result is ReturnSignal) return result
+                    // ContinueSignal or null → loop again
+                }
+            }
+            is IrStmt.Break -> return BreakSignal
+            is IrStmt.Continue -> return ContinueSignal
+            is IrStmt.IndexAssign -> {
+                @Suppress("UNCHECKED_CAST")
+                val list = evalExpr(stmt.target) as MutableList<Any?>
+                val idx = (evalExpr(stmt.index) as Long).toInt()
+                list[idx] = evalExpr(stmt.value)
+            }
+            is IrStmt.MemberAssign -> {
+                @Suppress("UNCHECKED_CAST")
+                val map = evalExpr(stmt.target) as MutableMap<String, Any?>
+                map[stmt.name] = evalExpr(stmt.value)
             }
             is IrStmt.Assert -> {
                 val cond = evalExpr(stmt.condition) as Boolean
@@ -191,6 +240,61 @@ class IrInterpreter {
             }
             is IrExpr.Binary -> evalBinary(expr)
             is IrExpr.Call -> evalCall(expr)
+            is IrExpr.ArrayLiteral -> expr.elements.map { evalExpr(it) }.toMutableList()
+            is IrExpr.Index -> {
+                @Suppress("UNCHECKED_CAST")
+                val list = evalExpr(expr.target) as MutableList<Any?>
+                val idx = (evalExpr(expr.index) as Long).toInt()
+                list[idx]
+            }
+            is IrExpr.Member -> {
+                val receiver = evalExpr(expr.target)
+                when (receiver) {
+                    is MutableList<*> -> when (expr.name) {
+                        "length" -> receiver.size.toLong()
+                        "isEmpty" -> receiver.isEmpty()
+                        "isNotEmpty" -> receiver.isNotEmpty()
+                        else -> error("no member '${expr.name}' on array")
+                    }
+                    is String -> if (expr.name == "length") receiver.length.toLong() else error("no member '${expr.name}' on string")
+                    is Map<*, *> -> {
+                        @Suppress("UNCHECKED_CAST")
+                        (receiver as Map<String, Any?>)[expr.name]
+                    }
+                    else -> error("no member '${expr.name}' on $receiver")
+                }
+            }
+            is IrExpr.StructCtor -> {
+                val map = linkedMapOf<String, Any?>()
+                for (i in expr.fieldNames.indices) {
+                    map[expr.fieldNames[i]] = evalExpr(expr.args[i])
+                }
+                map
+            }
+            is IrExpr.StringTemplate -> {
+                val sb = StringBuilder()
+                for (part in expr.parts) {
+                    when (part) {
+                        is IrExpr.IrTemplatePart.Literal -> sb.append(part.text)
+                        is IrExpr.IrTemplatePart.Expr -> sb.append(formatValue(evalExpr(part.expr)))
+                    }
+                }
+                sb.toString()
+            }
+            is IrExpr.MethodCall -> {
+                val receiver = evalExpr(expr.target)
+                val args = expr.args.map { evalExpr(it) }
+                when (expr.name) {
+                    "add" -> {
+                        @Suppress("UNCHECKED_CAST")
+                        (receiver as MutableList<Any?>).add(args[0])
+                        null
+                    }
+                    "isEmpty" -> (receiver as List<*>).isEmpty()
+                    "isNotEmpty" -> (receiver as List<*>).isNotEmpty()
+                    else -> error("no method '${expr.name}' on $receiver")
+                }
+            }
         }
     }
 
@@ -240,6 +344,7 @@ class IrInterpreter {
         return when {
             left is Long && right is Long -> left.compareTo(right)
             left is Double && right is Double -> left.compareTo(right)
+            left is Char && right is Char -> left.compareTo(right)
             else -> error("Cannot compare $left and $right")
         }
     }
@@ -267,5 +372,9 @@ class IrInterpreter {
         else -> value.toString()
     }
 
-    private data class ReturnSignal(val value: Any?)
+    /** Control-flow signal raised by `return`/`break`/`continue`. */
+    private sealed class ControlSignal
+    private data class ReturnSignal(val value: Any?) : ControlSignal()
+    private object BreakSignal : ControlSignal()
+    private object ContinueSignal : ControlSignal()
 }

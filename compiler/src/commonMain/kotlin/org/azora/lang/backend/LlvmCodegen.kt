@@ -51,6 +51,10 @@ class LlvmCodegen {
     private var usesPrintf = false
     private var usesAbort = false
 
+    /** Tracks the continue/end labels of enclosing loops for `break`/`continue`. */
+    private data class LoopTarget(val continueLabel: String, val endLabel: String)
+    private val loopStack = ArrayDeque<LoopTarget>()
+
     /**
      * Generates LLVM IR text (`.ll` format) from the given IR program.
      *
@@ -69,12 +73,24 @@ class LlvmCodegen {
         usesPuts = false
         usesPrintf = false
         usesAbort = false
+        loopStack.clear()
 
         // Generate body into a separate buffer (so we know which externals are used)
         val body = StringBuilder()
         val savedOut = out
         // Temporarily redirect output to body buffer
         val bodyBuilder = StringBuilder()
+
+        // Emit struct type definitions
+        val structs = program.items.filterIsInstance<IrTopLevel.Struct>()
+        if (structs.isNotEmpty()) {
+            bodyBuilder.appendLine("; Struct types")
+            for (s in structs) {
+                val fieldTypes = s.fields.joinToString(", ") { mapType(it.type) }
+                bodyBuilder.appendLine("%struct.${sanitizeName(s.name)} = type { $fieldTypes }")
+            }
+            bodyBuilder.appendLine()
+        }
 
         // Emit globals
         val globals = program.items.filterIsInstance<IrTopLevel.Global>()
@@ -172,6 +188,7 @@ class LlvmCodegen {
 
     private fun emitTestFunction(test: IrTopLevel.Test) {
         localVars.clear()
+        loopStack.clear()
         tmpCounter = 0
         labelCounter = 0
 
@@ -189,6 +206,7 @@ class LlvmCodegen {
 
     private fun emitFunction(func: IrFunction) {
         localVars.clear()
+        loopStack.clear()
         tmpCounter = 0
         labelCounter = 0
 
@@ -277,7 +295,92 @@ class LlvmCodegen {
             is IrStmt.If -> emitIf(stmt)
             is IrStmt.Assert -> emitAssert(stmt)
             is IrStmt.Trace -> emitTrace(stmt)
+            is IrStmt.While -> emitWhile(stmt)
+            is IrStmt.For -> emitFor(stmt)
+            is IrStmt.Loop -> emitLoop(stmt)
+            is IrStmt.Break -> {
+                val target = loopStack.lastOrNull() ?: error("break outside of loop")
+                emit("  br label %${target.endLabel}")
+            }
+            is IrStmt.Continue -> {
+                val target = loopStack.lastOrNull() ?: error("continue outside of loop")
+                emit("  br label %${target.continueLabel}")
+            }
+            is IrStmt.IndexAssign -> {
+                val target = emitExpr(stmt.target)
+                val index = emitExpr(stmt.index)
+                val value = emitExpr(stmt.value)
+                emit("  ; index assign $target[$index] = $value — not yet lowered")
+            }
+            is IrStmt.MemberAssign -> {
+                val target = emitExpr(stmt.target)
+                val value = emitExpr(stmt.value)
+                emit("  ; member assign $target.${stmt.name} = $value — not yet lowered")
+            }
         }
+    }
+
+    private fun emitWhile(stmt: IrStmt.While) {
+        val condLabel = nextLabel("while_cond")
+        val bodyLabel = nextLabel("while_body")
+        val endLabel = nextLabel("while_end")
+        emit("  br label %$condLabel")
+        line("$condLabel:")
+        val cond = emitExpr(stmt.condition)
+        emit("  br i1 $cond, label %$bodyLabel, label %$endLabel")
+        line("$bodyLabel:")
+        loopStack.addLast(LoopTarget(condLabel, endLabel))
+        for (s in stmt.body) emitStmt(s)
+        loopStack.removeLast()
+        emit("  br label %$condLabel")
+        line("$endLabel:")
+    }
+
+    private fun emitFor(stmt: IrStmt.For) {
+        val counterAlloca = nextTmp()
+        emit("  $counterAlloca = alloca i32")
+        val startVal = emitExpr(stmt.start)
+        emit("  store i32 $startVal, i32* $counterAlloca")
+        localVars[stmt.counter] = counterAlloca
+
+        val condLabel = nextLabel("for_cond")
+        val bodyLabel = nextLabel("for_body")
+        val incLabel = nextLabel("for_inc")
+        val endLabel = nextLabel("for_end")
+        emit("  br label %$condLabel")
+        line("$condLabel:")
+        val loaded = nextTmp()
+        emit("  $loaded = load i32, i32* $counterAlloca")
+        val endVal = emitExpr(stmt.end)
+        val cmp = nextTmp()
+        val pred = if (stmt.inclusive) "sle" else "slt"
+        emit("  $cmp = icmp $pred i32 $loaded, $endVal")
+        emit("  br i1 $cmp, label %$bodyLabel, label %$endLabel")
+        line("$bodyLabel:")
+        loopStack.addLast(LoopTarget(incLabel, endLabel))
+        for (s in stmt.body) emitStmt(s)
+        loopStack.removeLast()
+        emit("  br label %$incLabel")
+        line("$incLabel:")
+        val incLoaded = nextTmp()
+        emit("  $incLoaded = load i32, i32* $counterAlloca")
+        val incd = nextTmp()
+        emit("  $incd = add i32 $incLoaded, 1")
+        emit("  store i32 $incd, i32* $counterAlloca")
+        emit("  br label %$condLabel")
+        line("$endLabel:")
+    }
+
+    private fun emitLoop(stmt: IrStmt.Loop) {
+        val bodyLabel = nextLabel("loop_body")
+        val endLabel = nextLabel("loop_end")
+        emit("  br label %$bodyLabel")
+        line("$bodyLabel:")
+        loopStack.addLast(LoopTarget(bodyLabel, endLabel))
+        for (s in stmt.body) emitStmt(s)
+        loopStack.removeLast()
+        emit("  br label %$bodyLabel")
+        line("$endLabel:")
     }
 
     private fun emitAssert(stmt: IrStmt.Assert) {
@@ -371,6 +474,42 @@ class LlvmCodegen {
         is IrExpr.Unary -> emitUnary(expr)
         is IrExpr.Binary -> emitBinary(expr)
         is IrExpr.Call -> emitCall(expr)
+        is IrExpr.ArrayLiteral -> {
+            // Dynamic resizable arrays require runtime support not yet implemented
+            // in this backend; emit a null placeholder and a descriptive comment.
+            emit("  ; array literal of ${expr.elements.size} element(s) — lowered to null placeholder")
+            "null"
+        }
+        is IrExpr.Index -> {
+            val target = emitExpr(expr.target)
+            val index = emitExpr(expr.index)
+            emit("  ; index into $target at $index — array indexing not yet lowered")
+            "0"
+        }
+        is IrExpr.Member -> {
+            val target = emitExpr(expr.target)
+            emit("  ; member ${expr.name} of $target — lowered to 0 placeholder")
+            "0"
+        }
+        is IrExpr.MethodCall -> {
+            val target = emitExpr(expr.target)
+            emit("  ; method ${expr.name} on $target — lowered to 0 placeholder")
+            "0"
+        }
+        is IrExpr.StructCtor -> {
+            val fields = expr.fieldNames.joinToString(", ")
+            emit("  ; struct ${expr.name}($fields) construction — lowered to null placeholder")
+            "null"
+        }
+        is IrExpr.StringTemplate -> {
+            // Lowered to a static string of the literal segments (runtime concatenation
+            // of embedded expressions is not yet implemented in this backend).
+            val static = expr.parts.filterIsInstance<IrExpr.IrTemplatePart.Literal>().joinToString("") { it.text }
+            val ref = addStringConstant(static)
+            val ptr = nextTmp()
+            emit("  $ptr = getelementptr [${ref.byteLen} x i8], [${ref.byteLen} x i8]* ${ref.name}, i64 0, i64 0")
+            ptr
+        }
     }
 
     private fun emitUnary(expr: IrExpr.Unary): String {
@@ -585,6 +724,16 @@ class LlvmCodegen {
                 val unused = nextTmp()
                 emit("  $unused = call i32 @puts(i8* $ptr)")
             }
+            else -> {
+                // Compound, nullable, named, and dynamic types are represented as
+                // opaque pointers; print a placeholder until value lowering exists.
+                usesPuts = true
+                val placeholder = addStringConstant("<value>")
+                val ptr = nextTmp()
+                emit("  $ptr = getelementptr [${placeholder.byteLen} x i8], [${placeholder.byteLen} x i8]* ${placeholder.name}, i64 0, i64 0")
+                val unused = nextTmp()
+                emit("  $unused = call i32 @puts(i8* $ptr)")
+            }
         }
         return "void"
     }
@@ -611,7 +760,21 @@ class LlvmCodegen {
         IrType.UCent -> "i128"
         IrType.Float -> "float"
         IrType.Decimal -> "fp128"
+        // Compound and user-defined types are represented as opaque pointers
+        // until dedicated struct/heap lowering is implemented.
+        is IrType.Array -> "%struct.${sanitizeName("Array")}*"
+        is IrType.Map -> "%struct.${sanitizeName("Map")}*"
+        is IrType.Set -> "%struct.${sanitizeName("Set")}*"
+        is IrType.Function -> "i8*"
+        is IrType.Tuple -> "%struct.${sanitizeName("Tuple")}*"
+        is IrType.Nullable -> "i8*"
+        is IrType.Named -> "%struct.${sanitizeName(type.name)}*"
+        IrType.Any -> "i8*"
     }
+
+    /** Sanitizes a name for use in LLVM identifiers (struct names, etc.). */
+    private fun sanitizeName(name: String): String =
+        name.map { if (it.isLetterOrDigit() || it == '_') it else '_' }.joinToString("")
 
     private fun nextTmp(): String = "%${tmpCounter++}"
 

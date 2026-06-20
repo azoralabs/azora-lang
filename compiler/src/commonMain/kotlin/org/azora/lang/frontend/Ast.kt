@@ -154,6 +154,66 @@ sealed class Expr {
      * @property depth how many scopes to skip (1 for `::`, 2 for `::::`, etc.)
      */
     data class UpperScopeAccess(val name: String, val depth: Int = 1, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+
+    /**
+     * Integer range expression `a..b` (inclusive) or `a..<b` (exclusive).
+     *
+     * Currently ranges are used as the iterable of a `for` loop.
+     *
+     * @property from the start bound expression
+     * @property to the end bound expression
+     * @property inclusive whether the end is included (`..` vs `..<`)
+     */
+    data class Range(val from: Expr, val to: Expr, val inclusive: Boolean, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+
+    /**
+     * Array literal `[a, b, c]` (or empty `[]`).
+     *
+     * @property elements the element expressions
+     */
+    data class ArrayLiteral(val elements: List<Expr>, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+
+    /**
+     * Index access `target[index]`.
+     *
+     * @property target the indexed expression (an array)
+     * @property index the index expression
+     */
+    data class Index(val target: Expr, val index: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+
+    /**
+     * Member access `target.name`.
+     *
+     * @property target the receiver expression
+     * @property name the member name
+     */
+    data class Member(val target: Expr, val name: String, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+
+    /**
+     * Method call `target.name(args)`.
+     *
+     * @property target the receiver expression
+     * @property name the method name
+     * @property args the argument expressions
+     */
+    data class MethodCall(val target: Expr, val name: String, val args: List<Expr>, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+
+    /**
+     * One segment of a string-interpolation template.
+     */
+    sealed class StringTemplatePart {
+        /** A literal text chunk. */
+        data class Literal(val text: String) : StringTemplatePart()
+        /** An embedded expression. */
+        data class Expr(val expr: org.azora.lang.frontend.Expr) : StringTemplatePart()
+    }
+
+    /**
+     * Interpolated string `"hello $name, count: ${n + 1}"`.
+     *
+     * @property parts the ordered literal/expr segments
+     */
+    data class StringTemplate(val parts: List<StringTemplatePart>, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 }
 
 // ---------------------------------------------------------------------------
@@ -583,11 +643,164 @@ sealed class Stmt {
         override val column: Int = 0,
         override val length: Int = 0
     ) : Stmt()
+
+    /**
+     * `while` loop. Repeatedly executes [body] while [condition] is true.
+     *
+     * @property condition the boolean loop condition
+     * @property body the statements to execute each iteration
+     */
+    data class While(
+        val condition: Expr,
+        val body: List<Stmt>,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0
+    ) : Stmt()
+
+    /**
+     * `for name in iterable { body }` loop.
+     *
+     * Currently [iterable] must be an [Expr.Range]; the loop variable [name]
+     * takes each integer value in the range.
+     *
+     * @property name the loop variable name
+     * @property iterable the iterable expression (a range)
+     * @property body the statements to execute each iteration
+     */
+    data class For(
+        val name: String,
+        val iterable: Expr,
+        val body: List<Stmt>,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0
+    ) : Stmt()
+
+    /**
+     * Infinite `loop { body }`. Exits via `break`.
+     *
+     * @property body the statements to execute repeatedly
+     */
+    data class Loop(
+        val body: List<Stmt>,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0
+    ) : Stmt()
+
+    /**
+     * `break` statement. Exits the innermost enclosing loop.
+     */
+    object Break : Stmt() {
+        override val line: Int get() = 0
+        override val column: Int get() = 0
+        override val length: Int get() = 0
+    }
+
+    /**
+     * `continue` statement. Skips to the next iteration of the innermost loop.
+     */
+    object Continue : Stmt() {
+        override val line: Int get() = 0
+        override val column: Int get() = 0
+        override val length: Int get() = 0
+    }
+
+    /**
+     * Index assignment `target[index] = value`.
+     *
+     * @property target the indexed expression (an array)
+     * @property index the index expression
+     * @property value the new value expression
+     */
+    data class IndexAssign(
+        val target: Expr,
+        val index: Expr,
+        val value: Expr,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0
+    ) : Stmt()
+
+    /**
+     * Member assignment `target.name = value`.
+     *
+     * @property target the receiver expression
+     * @property name the member name
+     * @property value the new value expression
+     */
+    data class MemberAssign(
+        val target: Expr,
+        val name: String,
+        val value: Expr,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0
+    ) : Stmt()
 }
 
 // ---------------------------------------------------------------------------
 // Type annotations
 // ---------------------------------------------------------------------------
+
+/**
+ * A structured reference to a type as written in source code.
+ *
+ * This is the AST-level type representation produced by the parser. The
+ * semantic layer resolves a [TypeRef] into a concrete [org.azora.lang.ir.IrType].
+ *
+ * Variants:
+ * - [Named] -- a simple or generic type name: `Int`, `String`, `List<Int>`
+ * - [Array] -- `[T]`
+ * - [Map] -- `[K: V]`
+ * - [Set] -- `![T]`
+ * - [Function] -- `(A, B) -> R`
+ * - [Tuple] -- `(A, B)` (two or more elements)
+ * - [Nullable] -- `T?`
+ */
+sealed class TypeRef {
+    /** A named type, optionally generic: `Int`, `List<Int>`. */
+    data class Named(val name: String, val args: List<TypeRef> = emptyList()) : TypeRef() {
+        override fun toString() = if (args.isEmpty()) name else "$name<${args.joinToString(", ")}>"
+    }
+
+    /** Array type `[T]`. */
+    data class Array(val element: TypeRef) : TypeRef() {
+        override fun toString() = "[$element]"
+    }
+
+    /** Map type `[K: V]`. */
+    data class Map(val key: TypeRef, val value: TypeRef) : TypeRef() {
+        override fun toString() = "[$key: $value]"
+    }
+
+    /** Set type `![T]`. */
+    data class Set(val element: TypeRef) : TypeRef() {
+        override fun toString() = "![$element]"
+    }
+
+    /** Function type `(A, B) -> R`. */
+    data class Function(val params: List<TypeRef>, val ret: TypeRef) : TypeRef() {
+        override fun toString() = "(${params.joinToString(", ")}) -> $ret"
+    }
+
+    /** Tuple type `(A, B)` (two or more elements). */
+    data class Tuple(val elements: List<TypeRef>) : TypeRef() {
+        override fun toString() = "(${elements.joinToString(", ")})"
+    }
+
+    /** Nullable type `T?`. */
+    data class Nullable(val inner: TypeRef) : TypeRef() {
+        override fun toString() = "$inner?"
+    }
+
+    /** Human-readable name for diagnostics (the simple name for [Named]). */
+    fun displayName(): String = when (this) {
+        is Named -> name
+        else -> toString()
+    }
+}
 
 /**
  * Represents a type annotation on a variable or return type.
@@ -597,11 +810,14 @@ sealed class Stmt {
  */
 sealed class TypeAnnotation {
     /**
-     * An explicit, user-specified type annotation (e.g. `: Int`, `: String`).
+     * An explicit, user-specified type annotation (e.g. `: Int`, `: [Int]`).
      *
-     * @property name the type name as written in source (e.g. `"Int"`, `"Bool"`)
+     * @property ref the structured type reference as parsed from source
      */
-    data class Explicit(val name: String) : TypeAnnotation()
+    data class Explicit(val ref: TypeRef) : TypeAnnotation() {
+        /** Convenience: the display name of the referenced type. */
+        val name: String get() = ref.displayName()
+    }
 
     /**
      * A type that should be inferred by the compiler from context (no annotation present).
@@ -619,9 +835,22 @@ sealed class TypeAnnotation {
  * A function parameter declaration.
  *
  * @property name the parameter name
- * @property typeName the type name as written in source (e.g. `"Int"`, `"(Int, Int) -> Int"`)
+ * @property type the structured type reference as written in source
  */
-data class Param(val name: String, val typeName: String)
+data class Param(val name: String, val type: TypeRef) {
+    /** Convenience: the type name as written in source (for diagnostics/dumping). */
+    val typeName: String get() = type.displayName()
+}
+
+/**
+ * A field of a `pack` (struct) declaration.
+ *
+ * @property name the field name
+ * @property type the field's type reference
+ * @property mutable whether the field is `var` (mutable) vs `fin`/`let` (immutable)
+ * @property default an optional default-value expression
+ */
+data class PackField(val name: String, val type: TypeRef, val mutable: Boolean, val default: Expr?)
 
 /**
  * A function declaration in the AST.
@@ -669,11 +898,20 @@ sealed class TopLevel {
     data class Func(val decl: FuncDecl) : TopLevel()
 
     /** Runtime top-level mutable binding (`var`). Survives CTFE. */
-    data class VarDecl(val name: String, val typeName: String?, val initializer: Expr, val line: Int, val column: Int = 0) : TopLevel()
+    data class VarDecl(val name: String, val type: TypeRef?, val initializer: Expr, val line: Int, val column: Int = 0) : TopLevel() {
+        /** Convenience: the type name as written in source, or null. */
+        val typeName: String? get() = type?.displayName()
+    }
     /** Runtime top-level deeply immutable binding (`fin`). Survives CTFE. */
-    data class FinDecl(val name: String, val typeName: String?, val initializer: Expr, val line: Int, val column: Int = 0) : TopLevel()
+    data class FinDecl(val name: String, val type: TypeRef?, val initializer: Expr, val line: Int, val column: Int = 0) : TopLevel() {
+        /** Convenience: the type name as written in source, or null. */
+        val typeName: String? get() = type?.displayName()
+    }
     /** Runtime top-level immutable binding (`let`). Survives CTFE. */
-    data class LetDecl(val name: String, val typeName: String?, val initializer: Expr, val line: Int, val column: Int = 0) : TopLevel()
+    data class LetDecl(val name: String, val type: TypeRef?, val initializer: Expr, val line: Int, val column: Int = 0) : TopLevel() {
+        /** Convenience: the type name as written in source, or null. */
+        val typeName: String? get() = type?.displayName()
+    }
 
     /**
      * A top-level compile-time mutable binding (`inline var`).
@@ -775,6 +1013,14 @@ sealed class TopLevel {
      * @property column 1-based source column
      */
     data class Test(val name: String, val body: List<Stmt>, val line: Int, val column: Int = 0) : TopLevel()
+
+    /**
+     * A `pack` (struct) declaration: `pack Name { fin x: Int, var y: Int = 0 }`.
+     *
+     * @property name the struct name
+     * @property fields the ordered list of field declarations
+     */
+    data class Pack(val name: String, val fields: List<PackField>, val line: Int, val column: Int = 0) : TopLevel()
 
     /**
      * A top-level compile-time assertion (`inline assert condition { "message" }`).

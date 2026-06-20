@@ -67,7 +67,7 @@ class SymbolCollector {
                 is TopLevel.FinDecl -> {
                     try {
                         val initType = inferExprType(item.initializer, emptyMap())
-                        val type = if (item.typeName != null) IrType.Companion.fromName(item.typeName)
+                        val type = if (item.type != null) IrType.resolve(item.type)
                                    else initType ?: IrType.Int
                         table.defineVariable(VariableSymbol(item.name, type, mutable = false))
                     } catch (e: Exception) {
@@ -80,14 +80,28 @@ class SymbolCollector {
 
         for (func in program.functions) {
             try {
-                val params = func.params.map { it.name to IrType.Companion.fromName(it.typeName) }
+                val params = func.params.map { it.name to IrType.resolve(it.type) }
                 val returnType = when (val rt = func.returnType) {
-                    is TypeAnnotation.Explicit -> IrType.Companion.fromName(rt.name)
+                    is TypeAnnotation.Explicit -> IrType.resolve(rt.ref)
                     is TypeAnnotation.Inferred -> inferReturnType(func, params)
                 }
                 table.defineFunction(FunctionSymbol(func.name, params, returnType, func.isInline))
             } catch (e: Exception) {
                 errors.add("line ${func.line}: ${e.message}")
+            }
+        }
+
+        // Register pack (struct) declarations
+        for (item in program.items) {
+            if (item is TopLevel.Pack) {
+                try {
+                    val fields = item.fields.map { field ->
+                        StructField(field.name, IrType.resolve(field.type), field.mutable)
+                    }
+                    table.defineStruct(StructType(item.name, fields))
+                } catch (e: Exception) {
+                    errors.add("line ${item.line}: ${e.message}")
+                }
             }
         }
 
@@ -186,5 +200,8 @@ class SymbolCollector {
         is Expr.Grouping -> inferExprType(expr.expr, env)
         is Expr.Call -> null // can't infer without full symbol table yet
         is Expr.UpperScopeAccess -> null // can't infer type from upper scope access during symbol collection
+        is Expr.Range -> null // ranges are not first-class values
+        is Expr.ArrayLiteral, is Expr.Index, is Expr.Member, is Expr.MethodCall -> null
+        is Expr.StringTemplate -> IrType.String
     }
 }

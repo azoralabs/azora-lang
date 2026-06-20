@@ -57,6 +57,13 @@ class Lexer(private val source: String) {
             "test" to TokenType.TEST,
             "assert" to TokenType.ASSERT,
             "trace" to TokenType.TRACE,
+            "for" to TokenType.FOR,
+            "while" to TokenType.WHILE,
+            "loop" to TokenType.LOOP,
+            "in" to TokenType.IN,
+            "break" to TokenType.BREAK,
+            "continue" to TokenType.CONTINUE,
+            "pack" to TokenType.PACK,
             "true" to TokenType.TRUE,
             "false" to TokenType.FALSE
         )
@@ -85,22 +92,33 @@ class Lexer(private val source: String) {
             ')' -> { if (bracketDepth > 0) bracketDepth--; addToken(TokenType.R_PAREN) }
             '{' -> { bracketDepth++; addToken(TokenType.L_BRACE) }
             '}' -> { if (bracketDepth > 0) bracketDepth--; addToken(TokenType.R_BRACE) }
+            '[' -> { bracketDepth++; addToken(TokenType.L_BRACKET) }
+            ']' -> { if (bracketDepth > 0) bracketDepth--; addToken(TokenType.R_BRACKET) }
             ',' -> addToken(TokenType.COMMA)
+            '.' -> when {
+                match('.') -> addToken(if (match('<')) TokenType.DOT_DOT_LESS else TokenType.DOT_DOT)
+                else -> addToken(TokenType.DOT)
+            }
             ':' -> addToken(if (match(':')) TokenType.DOUBLE_COLON else TokenType.COLON)
-            '+' -> addToken(TokenType.PLUS)
-            '*' -> addToken(TokenType.STAR)
-            '%' -> addToken(TokenType.PERCENT)
+            '+' -> addToken(if (match('=')) TokenType.PLUS_EQUAL else TokenType.PLUS)
+            '*' -> addToken(if (match('=')) TokenType.STAR_EQUAL else TokenType.STAR)
+            '%' -> addToken(if (match('=')) TokenType.PERCENT_EQUAL else TokenType.PERCENT)
             '!' -> addToken(if (match('=')) TokenType.BANG_EQUAL else TokenType.BANG)
             '=' -> addToken(if (match('=')) TokenType.EQUAL_EQUAL else TokenType.EQUAL)
             '<' -> addToken(if (match('=')) TokenType.LESS_EQUAL else TokenType.LESS)
             '>' -> addToken(if (match('=')) TokenType.GREATER_EQUAL else TokenType.GREATER)
             '&' -> if (match('&')) addToken(TokenType.AND_AND)
             '|' -> if (match('|')) addToken(TokenType.OR_OR)
-            '-' -> addToken(if (match('>')) TokenType.ARROW else TokenType.MINUS)
+            '-' -> when {
+                match('>') -> addToken(TokenType.ARROW)
+                match('=') -> addToken(TokenType.MINUS_EQUAL)
+                else -> addToken(TokenType.MINUS)
+            }
             '/' -> {
                 when {
                     match('/') -> while (!isAtEnd() && peek() != '\n') advance()
                     match('*') -> skipBlockComment()
+                    match('=') -> addToken(TokenType.SLASH_EQUAL)
                     else -> addToken(TokenType.SLASH)
                 }
             }
@@ -134,26 +152,78 @@ class Lexer(private val source: String) {
 
     private fun scanString() {
         val sb = StringBuilder()
+        val parts = mutableListOf<StringPart>()
+        var hasInterpolation = false
+
+        fun flushLiteral() {
+            if (sb.isNotEmpty()) {
+                parts.add(StringPart.Literal(sb.toString()))
+                sb.clear()
+            }
+        }
+
         while (!isAtEnd() && peek() != '"') {
-            if (peek() == '\\') {
-                advance()
-                when (if (!isAtEnd()) advance() else '\u0000') {
-                    'n' -> sb.append('\n')
-                    't' -> sb.append('\t')
-                    'r' -> sb.append('\r')
-                    '\\' -> sb.append('\\')
-                    '"' -> sb.append('"')
-                    else -> sb.append('?')
+            when {
+                peek() == '\\' -> {
+                    advance() // consume backslash
+                    when (if (!isAtEnd()) advance() else ' ') {
+                        'n' -> sb.append('\n')
+                        't' -> sb.append('\t')
+                        'r' -> sb.append('\r')
+                        '\\' -> sb.append('\\')
+                        '"' -> sb.append('"')
+                        '$' -> sb.append('$')
+                        else -> sb.append('?')
+                    }
                 }
-            } else {
-                val ch = advance()
-                if (ch == '\n') { line++; column = 1 }
-                sb.append(ch)
+                peek() == '$' -> {
+                    hasInterpolation = true
+                    flushLiteral()
+                    advance() // consume '$'
+                    if (!isAtEnd() && peek() == '{') {
+                        advance() // consume '{'
+                        val exprSrc = StringBuilder()
+                        var depth = 1
+                        while (!isAtEnd() && depth > 0) {
+                            val c = advance()
+                            if (c == '\n') { line++; column = 1 }
+                            when {
+                                c == '{' -> depth++
+                                c == '}' -> { depth--; if (depth == 0) break }
+                            }
+                            if (depth > 0) exprSrc.append(c)
+                        }
+                        if (depth > 0) error("Unterminated interpolation in string at line $line")
+                        parts.add(StringPart.Expr(exprSrc.toString()))
+                    } else {
+                        // $identifier
+                        val ident = StringBuilder()
+                        while (!isAtEnd() && (peek().isLetterOrDigit() || peek() == '_')) {
+                            ident.append(advance())
+                        }
+                        if (ident.isEmpty()) {
+                            sb.append('$') // lone '$' — treat as literal
+                        } else {
+                            parts.add(StringPart.Expr(ident.toString()))
+                        }
+                    }
+                }
+                else -> {
+                    val ch = advance()
+                    if (ch == '\n') { line++; column = 1 }
+                    sb.append(ch)
+                }
             }
         }
         if (isAtEnd()) error("Unterminated string at line $line")
         advance() // closing "
-        tokens.add(Token(TokenType.STRING_LITERAL, source.substring(start, current), line, startColumn, sb.toString()))
+        val lexeme = source.substring(start, current)
+        if (hasInterpolation) {
+            flushLiteral()
+            tokens.add(Token(TokenType.INTERPOLATED_STRING, lexeme, line, startColumn, parts))
+        } else {
+            tokens.add(Token(TokenType.STRING_LITERAL, lexeme, line, startColumn, sb.toString()))
+        }
     }
 
     private fun scanCharLiteral() {

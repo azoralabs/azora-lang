@@ -150,6 +150,32 @@ class AllocDropAnalyzer {
                 collectUsedVars(stmt.message, used)
             }
             is Stmt.InlineTrace -> collectUsedVars(stmt.message, used)
+            is Stmt.While -> {
+                collectUsedVars(stmt.condition, used)
+                stmt.body.forEach { analyzeStmt(it, defined, used, errors) }
+            }
+            is Stmt.For -> {
+                if (stmt.iterable is Expr.Range) {
+                    collectUsedVars(stmt.iterable.from, used)
+                    collectUsedVars(stmt.iterable.to, used)
+                } else {
+                    collectUsedVars(stmt.iterable, used)
+                }
+                defined.add(stmt.name)
+                stmt.body.forEach { analyzeStmt(it, defined, used, errors) }
+            }
+            is Stmt.Loop -> stmt.body.forEach { analyzeStmt(it, defined, used, errors) }
+            is Stmt.Break -> {}
+            is Stmt.Continue -> {}
+            is Stmt.IndexAssign -> {
+                collectUsedVars(stmt.target, used)
+                collectUsedVars(stmt.index, used)
+                collectUsedVars(stmt.value, used)
+            }
+            is Stmt.MemberAssign -> {
+                collectUsedVars(stmt.target, used)
+                collectUsedVars(stmt.value, used)
+            }
         }
     }
 
@@ -161,6 +187,16 @@ class AllocDropAnalyzer {
             is Expr.Unary -> collectUsedVars(expr.operand, used)
             is Expr.Call -> expr.args.forEach { collectUsedVars(it, used) }
             is Expr.Grouping -> collectUsedVars(expr.expr, used)
+            is Expr.Range -> { collectUsedVars(expr.from, used); collectUsedVars(expr.to, used) }
+            is Expr.ArrayLiteral -> expr.elements.forEach { collectUsedVars(it, used) }
+            is Expr.Index -> { collectUsedVars(expr.target, used); collectUsedVars(expr.index, used) }
+            is Expr.Member -> collectUsedVars(expr.target, used)
+            is Expr.MethodCall -> { collectUsedVars(expr.target, used); expr.args.forEach { collectUsedVars(it, used) } }
+            is Expr.StringTemplate -> {
+                for (part in expr.parts) {
+                    if (part is Expr.StringTemplatePart.Expr) collectUsedVars(part.expr, used)
+                }
+            }
             is Expr.IntLiteral, is Expr.RealLiteral,
             is Expr.StringLiteral, is Expr.BoolLiteral,
             is Expr.CharLiteral -> {}

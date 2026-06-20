@@ -59,6 +59,14 @@ class KotlinCodegen {
                     emitTest(item)
                     if (i < program.items.lastIndex) line("")
                 }
+                is IrTopLevel.Struct -> {
+                    val fields = item.fields.joinToString(", ") { f ->
+                        val kw = if (f.mutable) "var" else "val"
+                        "$kw ${f.name}: ${mapType(f.type)}"
+                    }
+                    line("class ${item.name}($fields)")
+                    if (i < program.items.lastIndex) line("")
+                }
             }
         }
 
@@ -107,6 +115,8 @@ class KotlinCodegen {
             is IrStmt.FinDecl -> line("val ${stmt.name}: ${mapType(stmt.type)} = ${emitExpr(stmt.initializer)}")
             is IrStmt.LetDecl -> line("val ${stmt.name}: ${mapType(stmt.type)} = ${emitExpr(stmt.initializer)}")
             is IrStmt.Assignment -> line("${stmt.name} = ${emitExpr(stmt.value)}")
+            is IrStmt.IndexAssign -> line("${emitExpr(stmt.target)}[${emitExpr(stmt.index)}] = ${emitExpr(stmt.value)}")
+            is IrStmt.MemberAssign -> line("${emitExpr(stmt.target)}.${stmt.name} = ${emitExpr(stmt.value)}")
             is IrStmt.Return -> {
                 if (stmt.value != null) line("return ${emitExpr(stmt.value)}")
                 else line("return")
@@ -156,6 +166,34 @@ class KotlinCodegen {
                     line("}")
                 }
             }
+            is IrStmt.While -> {
+                line("while (${emitExpr(stmt.condition)}) {")
+                indent++
+                for (s in stmt.body) emitStmt(s)
+                indent--
+                line("}")
+            }
+            is IrStmt.For -> {
+                val bounds = if (stmt.inclusive) {
+                    "${emitExpr(stmt.start)}..${emitExpr(stmt.end)}"
+                } else {
+                    "${emitExpr(stmt.start)} until ${emitExpr(stmt.end)}"
+                }
+                line("for (${stmt.counter} in $bounds) {")
+                indent++
+                for (s in stmt.body) emitStmt(s)
+                indent--
+                line("}")
+            }
+            is IrStmt.Loop -> {
+                line("while (true) {")
+                indent++
+                for (s in stmt.body) emitStmt(s)
+                indent--
+                line("}")
+            }
+            is IrStmt.Break -> line("break")
+            is IrStmt.Continue -> line("continue")
         }
     }
 
@@ -211,6 +249,36 @@ class KotlinCodegen {
             }
         }
         is IrExpr.Call -> "${expr.name}(${expr.args.joinToString(", ") { emitExpr(it) }})"
+        is IrExpr.ArrayLiteral -> "mutableListOf(${expr.elements.joinToString(", ") { emitExpr(it) }})"
+        is IrExpr.Index -> "${emitExpr(expr.target)}[${emitExpr(expr.index)}]"
+        is IrExpr.Member -> {
+            val prop = when (expr.name) {
+                "length" -> if (expr.target.type == IrType.String) "length" else "size"
+                "isEmpty" -> "isEmpty()"
+                "isNotEmpty" -> "isNotEmpty()"
+                else -> expr.name
+            }
+            "${emitExpr(expr.target)}.$prop"
+        }
+        is IrExpr.MethodCall -> {
+            val call = when (expr.name) {
+                "isEmpty" -> "isEmpty()"
+                "isNotEmpty" -> "isNotEmpty()"
+                else -> "${expr.name}(${expr.args.joinToString(", ") { emitExpr(it) }})"
+            }
+            "${emitExpr(expr.target)}.$call"
+        }
+        is IrExpr.StructCtor -> "${expr.name}(${expr.args.joinToString(", ") { emitExpr(it) }})"
+        is IrExpr.StringTemplate -> {
+            val sb = StringBuilder("\"")
+            for (part in expr.parts) {
+                when (part) {
+                    is IrExpr.IrTemplatePart.Literal -> sb.append(escapeString(part.text))
+                    is IrExpr.IrTemplatePart.Expr -> sb.append("\${").append(emitExpr(part.expr)).append("}")
+                }
+            }
+            sb.append("\"").toString()
+        }
     }
 
     private fun mapType(type: IrType): String = when (type) {
@@ -231,6 +299,18 @@ class KotlinCodegen {
         IrType.UCent -> "ULong"      // best available JVM type
         IrType.Float -> "Float"
         IrType.Decimal -> "Double"   // best available JVM type
+        is IrType.Array -> "MutableList<${mapType(type.element)}>"
+        is IrType.Map -> "MutableMap<${mapType(type.key)}, ${mapType(type.value)}>"
+        is IrType.Set -> "MutableSet<${mapType(type.element)}>"
+        is IrType.Function -> "(${type.params.joinToString(", ") { mapType(it) }}) -> ${mapType(type.ret)}"
+        is IrType.Tuple -> when (type.elements.size) {
+            2 -> "Pair<${type.elements.joinToString(", ") { mapType(it) }}>"
+            3 -> "Triple<${type.elements.joinToString(", ") { mapType(it) }}>"
+            else -> "List<Any>" // N-ary tuples fall back until a dedicated tuple type exists
+        }
+        is IrType.Nullable -> "${mapType(type.inner)}?"
+        is IrType.Named -> type.name
+        IrType.Any -> "Any"
     }
 
     private fun escapeString(s: String): String =

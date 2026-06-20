@@ -16,6 +16,8 @@
 
 package org.azora.lang.ir
 
+import org.azora.lang.frontend.TypeRef
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -80,15 +82,39 @@ sealed class IrType {
     /** 128-bit decimal floating-point type. */
     object Decimal : IrType() { override fun toString() = "Decimal" }
 
+    /** Array type `[T]`. */
+    data class Array(val element: IrType) : IrType() { override fun toString() = "[$element]" }
+
+    /** Map type `[K: V]`. */
+    data class Map(val key: IrType, val value: IrType) : IrType() { override fun toString() = "[$key: $value]" }
+
+    /** Set type `![T]`. */
+    data class Set(val element: IrType) : IrType() { override fun toString() = "![$element]" }
+
+    /** Function type `(A, B) -> R`. */
+    data class Function(val params: List<IrType>, val ret: IrType) : IrType() { override fun toString() = "(${params.joinToString(", ")}) -> $ret" }
+
+    /** Tuple type `(A, B)`. */
+    data class Tuple(val elements: List<IrType>) : IrType() { override fun toString() = "(${elements.joinToString(", ")})" }
+
+    /** Nullable type `T?`. */
+    data class Nullable(val inner: IrType) : IrType() { override fun toString() = "$inner?" }
+
+    /** A user-defined or unresolved named type (struct, enum, generic base). */
+    data class Named(val name: kotlin.String) : IrType() { override fun toString() = name }
+
+    /** The dynamic / erased type, used when a precise type is unknown. */
+    object Any : IrType() { override fun toString() = "Any" }
+
     companion object {
         /** The set of all numeric types (integer + floating-point). */
-        val numericTypes: Set<IrType> = setOf(Int, UInt, Real, Byte, UByte, Short, UShort, Long, ULong, Cent, UCent, Float, Decimal)
+        val numericTypes: kotlin.collections.Set<IrType> = setOf(Int, UInt, Real, Byte, UByte, Short, UShort, Long, ULong, Cent, UCent, Float, Decimal)
 
         /** The set of all integer numeric types. */
-        val integerTypes: Set<IrType> = setOf(Int, UInt, Byte, UByte, Short, UShort, Long, ULong, Cent, UCent)
+        val integerTypes: kotlin.collections.Set<IrType> = setOf(Int, UInt, Byte, UByte, Short, UShort, Long, ULong, Cent, UCent)
 
         /** The set of all floating-point numeric types. */
-        val floatTypes: Set<IrType> = setOf(Real, Float, Decimal)
+        val floatTypes: kotlin.collections.Set<IrType> = setOf(Real, Float, Decimal)
 
         /**
          * Resolves a type name string to its corresponding [IrType].
@@ -115,7 +141,37 @@ sealed class IrType {
             "UCent" -> UCent
             "Float" -> Float
             "Decimal" -> Decimal
+            "Any" -> Any
             else -> error("Unknown type: $name")
+        }
+
+        /**
+         * Returns `true` if [name] is a built-in primitive type resolvable via [fromName].
+         */
+        fun isPrimitiveName(name: kotlin.String): Boolean = try {
+            fromName(name); true
+        } catch (_: Exception) {
+            false
+        }
+
+        /**
+         * Resolves a structured [TypeRef] (from the parser) into a concrete [IrType].
+         *
+         * Primitive names resolve to their primitive type; all other named types
+         * (structs, enums, generic bases not yet specialized) resolve to [Named].
+         * Compound types resolve recursively.
+         */
+        fun resolve(ref: TypeRef): IrType = when (ref) {
+            is TypeRef.Named -> {
+                if (ref.args.isEmpty() && isPrimitiveName(ref.name)) fromName(ref.name)
+                else Named(ref.name)
+            }
+            is TypeRef.Array -> Array(resolve(ref.element))
+            is TypeRef.Map -> Map(resolve(ref.key), resolve(ref.value))
+            is TypeRef.Set -> Set(resolve(ref.element))
+            is TypeRef.Function -> Function(ref.params.map { resolve(it) }, resolve(ref.ret))
+            is TypeRef.Tuple -> Tuple(ref.elements.map { resolve(it) })
+            is TypeRef.Nullable -> Nullable(resolve(ref.inner))
         }
     }
 }
@@ -277,6 +333,67 @@ sealed class IrExpr {
         override val type: IrType
     ) : IrExpr()
 
+    /**
+     * Array literal `[a, b, c]`.
+     *
+     * @property elements the element expressions
+     * @property type the resolved array type [IrType.Array]
+     */
+    data class ArrayLiteral(val elements: List<IrExpr>, override val type: IrType) : IrExpr()
+
+    /**
+     * Index access `target[index]`.
+     *
+     * @property target the indexed expression
+     * @property index the index expression
+     * @property type the element type of the indexed array
+     */
+    data class Index(val target: IrExpr, val index: IrExpr, override val type: IrType) : IrExpr()
+
+    /**
+     * Member access `target.name`.
+     *
+     * @property target the receiver expression
+     * @property name the member name
+     * @property type the resolved member type
+     */
+    data class Member(val target: IrExpr, val name: String, override val type: IrType) : IrExpr()
+
+    /**
+     * Method call `target.name(args)`.
+     *
+     * @property target the receiver expression
+     * @property name the method name
+     * @property args the argument expressions
+     * @property type the resolved return type of the method
+     */
+    data class MethodCall(val target: IrExpr, val name: String, val args: List<IrExpr>, override val type: IrType) : IrExpr()
+
+    /**
+     * Struct construction `Name(args)`, where [name] is a pack.
+     *
+     * @property name the struct (pack) name
+     * @property fieldNames the field names, in positional order (used by the interpreter)
+     * @property args the positional field-initializer expressions
+     * @property type the resolved struct type [IrType.Named]
+     */
+    data class StructCtor(val name: String, val fieldNames: List<String>, val args: List<IrExpr>, override val type: IrType) : IrExpr()
+
+    /** One segment of a string-interpolation template. */
+    sealed class IrTemplatePart {
+        /** A literal text chunk. */
+        data class Literal(val text: String) : IrTemplatePart()
+        /** An embedded expression. */
+        data class Expr(val expr: IrExpr) : IrTemplatePart()
+    }
+
+    /**
+     * Interpolated string `"hello $name"`. Always has type [IrType.String].
+     */
+    data class StringTemplate(val parts: List<IrTemplatePart>) : IrExpr() {
+        override val type: IrType = IrType.String
+    }
+
     /** Pretty-prints this expression as Azora IR text. */
     fun prettyPrint(): String = when (this) {
         is IntLiteral -> "$value"
@@ -300,6 +417,17 @@ sealed class IrExpr {
             "(${left.prettyPrint()} $opStr ${right.prettyPrint()})"
         }
         is Call -> "$name(${args.joinToString(", ") { it.prettyPrint() }})"
+        is ArrayLiteral -> "[${elements.joinToString(", ") { it.prettyPrint() }}]"
+        is Index -> "${target.prettyPrint()}[${index.prettyPrint()}]"
+        is Member -> "${target.prettyPrint()}.$name"
+        is MethodCall -> "${target.prettyPrint()}.$name(${args.joinToString(", ") { it.prettyPrint() }})"
+        is StructCtor -> "$name(${args.joinToString(", ") { it.prettyPrint() }})"
+        is StringTemplate -> parts.joinToString("") {
+            when (it) {
+                is IrTemplatePart.Literal -> "\"${it.text}\""
+                is IrTemplatePart.Expr -> "\${${it.expr.prettyPrint()}}"
+            }
+        }
     }
 }
 
@@ -350,6 +478,24 @@ sealed class IrStmt {
     data class Assignment(val name: String, val value: IrExpr) : IrStmt()
 
     /**
+     * Index assignment `target[index] = value`.
+     *
+     * @property target the indexed expression
+     * @property index the index expression
+     * @property value the new value expression
+     */
+    data class IndexAssign(val target: IrExpr, val index: IrExpr, val value: IrExpr) : IrStmt()
+
+    /**
+     * Member assignment `target.name = value`.
+     *
+     * @property target the receiver expression
+     * @property name the member name
+     * @property value the new value expression
+     */
+    data class MemberAssign(val target: IrExpr, val name: String, val value: IrExpr) : IrStmt()
+
+    /**
      * Return statement.
      *
      * @property value the return value expression, or `null` for void returns
@@ -398,6 +544,38 @@ sealed class IrStmt {
      */
     data class Trace(val message: IrExpr) : IrStmt()
 
+    /**
+     * `while` loop.
+     *
+     * @property condition the boolean loop condition
+     * @property body the statements executed each iteration
+     */
+    data class While(val condition: IrExpr, val body: List<IrStmt>) : IrStmt()
+
+    /**
+     * Integer `for` loop lowered from `for name in start..end` / `..<`.
+     *
+     * @property counter the loop counter variable name
+     * @property start the inclusive start bound
+     * @property end the end bound
+     * @property inclusive whether [end] is included (`..` vs `..<`)
+     * @property body the statements executed each iteration
+     */
+    data class For(val counter: String, val start: IrExpr, val end: IrExpr, val inclusive: Boolean, val body: List<IrStmt>) : IrStmt()
+
+    /**
+     * Infinite `loop { body }`. Exits via [Break].
+     *
+     * @property body the statements executed repeatedly
+     */
+    data class Loop(val body: List<IrStmt>) : IrStmt()
+
+    /** `break` — exits the innermost enclosing loop. */
+    object Break : IrStmt() { override fun toString() = "break" }
+
+    /** `continue` — skips to the next iteration of the innermost loop. */
+    object Continue : IrStmt() { override fun toString() = "continue" }
+
     /** Pretty-prints this statement as Azora IR text. */
     fun prettyPrint(sb: StringBuilder, indent: Int) {
         val pad = "    ".repeat(indent)
@@ -406,6 +584,8 @@ sealed class IrStmt {
             is FinDecl -> sb.appendLine("${pad}fin $name: $type = ${initializer.prettyPrint()}")
             is LetDecl -> sb.appendLine("${pad}let $name: $type = ${initializer.prettyPrint()}")
             is Assignment -> sb.appendLine("${pad}$name = ${value.prettyPrint()}")
+            is IndexAssign -> sb.appendLine("${pad}${target.prettyPrint()}[${index.prettyPrint()}] = ${value.prettyPrint()}")
+            is MemberAssign -> sb.appendLine("${pad}${target.prettyPrint()}.$name = ${value.prettyPrint()}")
             is Return -> if (value != null) sb.appendLine("${pad}return ${value.prettyPrint()}") else sb.appendLine("${pad}return")
             is ExprStmt -> sb.appendLine("${pad}${expr.prettyPrint()}")
             is If -> {
@@ -424,6 +604,24 @@ sealed class IrStmt {
             }
             is Assert -> sb.appendLine("${pad}assert ${condition.prettyPrint()} { ${message.prettyPrint()} }")
             is Trace -> sb.appendLine("${pad}trace { ${message.prettyPrint()} }")
+            is While -> {
+                sb.appendLine("${pad}while ${condition.prettyPrint()} {")
+                for (s in body) s.prettyPrint(sb, indent + 1)
+                sb.appendLine("${pad}}")
+            }
+            is For -> {
+                val op = if (inclusive) ".." else "..<"
+                sb.appendLine("${pad}for $counter in ${start.prettyPrint()}$op${end.prettyPrint()} {")
+                for (s in body) s.prettyPrint(sb, indent + 1)
+                sb.appendLine("${pad}}")
+            }
+            is Loop -> {
+                sb.appendLine("${pad}loop {")
+                for (s in body) s.prettyPrint(sb, indent + 1)
+                sb.appendLine("${pad}}")
+            }
+            is Break -> sb.appendLine("${pad}break")
+            is Continue -> sb.appendLine("${pad}continue")
         }
     }
 }
@@ -456,6 +654,9 @@ data class IrFunction(
     }
 }
 
+/** A field of an IR struct type. */
+data class IrField(val name: String, val type: IrType, val mutable: Boolean)
+
 /**
  * A top-level item in the IR program — either a global statement or a function.
  */
@@ -470,6 +671,14 @@ sealed class IrTopLevel {
      * @property body the list of IR statements forming the test body
      */
     data class Test(val name: String, val body: List<IrStmt>) : IrTopLevel()
+
+    /**
+     * A `pack` (struct) declaration, emitted so backends can generate the type definition.
+     *
+     * @property name the struct name
+     * @property fields the ordered list of fields
+     */
+    data class Struct(val name: String, val fields: List<IrField>) : IrTopLevel()
 }
 
 /**
@@ -519,6 +728,11 @@ data class IrProgram(
                     sb.appendLine("}")
                     if (i < items.lastIndex) sb.appendLine()
                 }
+                is IrTopLevel.Struct -> {
+                    val fields = item.fields.joinToString(", ") { "${it.name}: ${it.type}" }
+                    sb.appendLine("pack ${item.name} { $fields }")
+                    if (i < items.lastIndex) sb.appendLine()
+                }
             }
         }
         return sb.toString().trimEnd()
@@ -549,6 +763,10 @@ data class IrProgram(
                     sb.appendLine("        body:")
                     for (stmt in item.body) dumpIrStmtTree(sb, stmt, "            ")
                 }
+                is IrTopLevel.Struct -> {
+                    val fields = item.fields.joinToString(", ") { "${it.name}: ${it.type}" }
+                    sb.appendLine("    IrStruct(name=${item.name}, fields=[$fields])")
+                }
             }
         }
         return sb.toString().trimEnd()
@@ -574,6 +792,22 @@ private fun dumpIrStmtTree(sb: StringBuilder, stmt: IrStmt, indent: String) {
         }
         is IrStmt.Assignment -> {
             sb.appendLine("${indent}IrAssignment(name=${stmt.name})")
+            sb.appendLine("$indent    value:")
+            dumpIrExprTree(sb, stmt.value, "$indent        ")
+        }
+        is IrStmt.IndexAssign -> {
+            sb.appendLine("${indent}IrIndexAssign")
+            sb.appendLine("$indent    target:")
+            dumpIrExprTree(sb, stmt.target, "$indent        ")
+            sb.appendLine("$indent    index:")
+            dumpIrExprTree(sb, stmt.index, "$indent        ")
+            sb.appendLine("$indent    value:")
+            dumpIrExprTree(sb, stmt.value, "$indent        ")
+        }
+        is IrStmt.MemberAssign -> {
+            sb.appendLine("${indent}IrMemberAssign(name=${stmt.name})")
+            sb.appendLine("$indent    target:")
+            dumpIrExprTree(sb, stmt.target, "$indent        ")
             sb.appendLine("$indent    value:")
             dumpIrExprTree(sb, stmt.value, "$indent        ")
         }
@@ -612,6 +846,29 @@ private fun dumpIrStmtTree(sb: StringBuilder, stmt: IrStmt, indent: String) {
             sb.appendLine("$indent    message:")
             dumpIrExprTree(sb, stmt.message, "$indent        ")
         }
+        is IrStmt.While -> {
+            sb.appendLine("${indent}IrWhile")
+            sb.appendLine("$indent    condition:")
+            dumpIrExprTree(sb, stmt.condition, "$indent        ")
+            sb.appendLine("$indent    body:")
+            for (s in stmt.body) dumpIrStmtTree(sb, s, "$indent        ")
+        }
+        is IrStmt.For -> {
+            sb.appendLine("${indent}IrFor(counter=${stmt.counter}, inclusive=${stmt.inclusive})")
+            sb.appendLine("$indent    start:")
+            dumpIrExprTree(sb, stmt.start, "$indent        ")
+            sb.appendLine("$indent    end:")
+            dumpIrExprTree(sb, stmt.end, "$indent        ")
+            sb.appendLine("$indent    body:")
+            for (s in stmt.body) dumpIrStmtTree(sb, s, "$indent        ")
+        }
+        is IrStmt.Loop -> {
+            sb.appendLine("${indent}IrLoop")
+            sb.appendLine("$indent    body:")
+            for (s in stmt.body) dumpIrStmtTree(sb, s, "$indent        ")
+        }
+        is IrStmt.Break -> sb.appendLine("${indent}IrBreak")
+        is IrStmt.Continue -> sb.appendLine("${indent}IrContinue")
     }
 }
 
@@ -635,6 +892,42 @@ private fun dumpIrExprTree(sb: StringBuilder, expr: IrExpr, indent: String) {
         is IrExpr.Call -> {
             sb.appendLine("${indent}IrCall(name=${expr.name}) : ${expr.type}")
             for (arg in expr.args) dumpIrExprTree(sb, arg, "$indent    ")
+        }
+        is IrExpr.ArrayLiteral -> {
+            sb.appendLine("${indent}IrArrayLiteral : ${expr.type}")
+            for (elem in expr.elements) dumpIrExprTree(sb, elem, "$indent    ")
+        }
+        is IrExpr.Index -> {
+            sb.appendLine("${indent}IrIndex : ${expr.type}")
+            sb.appendLine("$indent    target:")
+            dumpIrExprTree(sb, expr.target, "$indent        ")
+            sb.appendLine("$indent    index:")
+            dumpIrExprTree(sb, expr.index, "$indent        ")
+        }
+        is IrExpr.Member -> {
+            sb.appendLine("${indent}IrMember(name=${expr.name}) : ${expr.type}")
+            dumpIrExprTree(sb, expr.target, "$indent    ")
+        }
+        is IrExpr.MethodCall -> {
+            sb.appendLine("${indent}IrMethodCall(name=${expr.name}) : ${expr.type}")
+            dumpIrExprTree(sb, expr.target, "$indent    ")
+            for (arg in expr.args) dumpIrExprTree(sb, arg, "$indent    ")
+        }
+        is IrExpr.StructCtor -> {
+            sb.appendLine("${indent}IrStructCtor(name=${expr.name}) : ${expr.type}")
+            for (arg in expr.args) dumpIrExprTree(sb, arg, "$indent    ")
+        }
+        is IrExpr.StringTemplate -> {
+            sb.appendLine("${indent}IrStringTemplate : String")
+            for (part in expr.parts) {
+                when (part) {
+                    is IrExpr.IrTemplatePart.Literal -> sb.appendLine("$indent    Literal(\"${part.text}\")")
+                    is IrExpr.IrTemplatePart.Expr -> {
+                        sb.appendLine("$indent    Expr:")
+                        dumpIrExprTree(sb, part.expr, "$indent        ")
+                    }
+                }
+            }
         }
     }
 }

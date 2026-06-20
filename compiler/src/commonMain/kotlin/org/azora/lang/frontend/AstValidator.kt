@@ -145,6 +145,13 @@ class AstValidator {
             is Stmt.Trace -> {}
             is Stmt.InlineAssert -> {}
             is Stmt.InlineTrace -> {}
+            is Stmt.While -> stmt.body.forEach { validateStmt(it, funcName, errors) }
+            is Stmt.For -> stmt.body.forEach { validateStmt(it, funcName, errors) }
+            is Stmt.Loop -> stmt.body.forEach { validateStmt(it, funcName, errors) }
+            is Stmt.Break -> {}
+            is Stmt.Continue -> {}
+            is Stmt.IndexAssign -> {}
+            is Stmt.MemberAssign -> {}
         }
     }
 
@@ -159,6 +166,9 @@ class AstValidator {
                     (stmt.elseBranch != null && hasReturnInBody(stmt.elseBranch))
             is Stmt.Zone -> hasReturnInBody(stmt.body)
             is Stmt.FriendZone -> hasReturnInBody(stmt.body)
+            is Stmt.While -> hasReturnInBody(stmt.body)
+            is Stmt.For -> hasReturnInBody(stmt.body)
+            is Stmt.Loop -> hasReturnInBody(stmt.body)
             else -> false
         }
     }

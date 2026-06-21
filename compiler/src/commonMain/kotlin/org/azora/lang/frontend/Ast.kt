@@ -214,6 +214,37 @@ sealed class Expr {
      * @property parts the ordered literal/expr segments
      */
     data class StringTemplate(val parts: List<StringTemplatePart>, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+
+    /** Tuple literal `(a, b, c)` (two or more elements). */
+    data class TupleLit(val elements: List<Expr>, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+
+    /** Tuple positional access `target.index` (e.g. `pair.0`). */
+    data class TupleAccess(val target: Expr, val index: Int, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+
+    /** `expr catch fallback` — evaluates [expr]; if it throws, evaluates [fallback]. */
+    data class CatchExpr(val expr: Expr, val fallback: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+
+    /**
+     * Lambda `{ params -> body }`. Parameters carry explicit types. The result type is a
+     * function type inferred from the body's return value.
+     */
+    data class Lambda(val params: List<Param>, val body: List<Stmt>, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+
+    /** A named argument `name: value` in a call expression. */
+    data class NamedArg(val name: String, val value: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+
+    /** `null` literal. */
+    object NullLiteral : Expr() {
+        override val line get() = 0
+        override val column get() = 0
+        override val length get() = 0
+    }
+
+    /** `a ?? b` — returns `a` if non-null, else `b`. */
+    data class NullCoalesce(val left: Expr, val right: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+
+    /** `a?.field` — safe member access; returns null if `a` is null. */
+    data class SafeMember(val target: Expr, val name: String, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 }
 
 // ---------------------------------------------------------------------------
@@ -738,6 +769,42 @@ sealed class Stmt {
         override val column: Int = 0,
         override val length: Int = 0
     ) : Stmt()
+
+    /**
+     * One branch of a `when` expression: any of [patterns] matches → run [body].
+     */
+    data class WhenBranch(val patterns: List<Expr>, val body: List<Stmt>, val line: Int, val column: Int = 0)
+
+    /**
+     * `when scrutinee { patterns -> body ... else -> body }`.
+     *
+     * @property scrutinee the matched expression
+     * @property branches the pattern branches
+     * @property elseBranch the fallback branch, or `null`
+     */
+    data class When(
+        val scrutinee: Expr,
+        val branches: List<WhenBranch>,
+        val elseBranch: List<Stmt>?,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0
+    ) : Stmt()
+
+    /** `throw value` — raises [value] as a throwable. */
+    data class Throw(val value: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Stmt()
+
+    /**
+     * `try { body } catch { name -> handler }`.
+     *
+     * @property body the protected statements
+     * @property catchName the binding name for the caught value, or `null` if none
+     * @property catchBody the handler statements, or `null` if the try has no catch
+     */
+    data class Try(val body: List<Stmt>, val catchName: String?, val catchBody: List<Stmt>?, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Stmt()
+
+    /** `defer { body }` — runs [body] when the enclosing function exits. */
+    data class Defer(val body: List<Stmt>, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Stmt()
 }
 
 // ---------------------------------------------------------------------------
@@ -873,6 +940,7 @@ data class FuncDecl(
     val returnType: TypeAnnotation,
     val body: List<Stmt>,
     val isInline: Boolean = false,
+    val typeParams: List<String> = emptyList(),
     val line: Int,
     val column: Int = 0,
     val length: Int = 0
@@ -1020,7 +1088,36 @@ sealed class TopLevel {
      * @property name the struct name
      * @property fields the ordered list of field declarations
      */
-    data class Pack(val name: String, val fields: List<PackField>, val line: Int, val column: Int = 0) : TopLevel()
+    data class Pack(val name: String, val fields: List<PackField>, val typeParams: List<String> = emptyList(), val line: Int, val column: Int = 0) : TopLevel()
+
+    /**
+     * A simple `enum` declaration: `enum Color { Red; Green; Blue }`.
+     *
+     * @property name the enum name
+     * @property variants the variant names, in declaration order
+     */
+    data class Enum(val name: String, val variants: List<String>, val line: Int, val column: Int = 0) : TopLevel()
+
+    /**
+     * An `impl Type { methods }` block. Each method gets an implicit `self: Type` receiver;
+     * calls desugar to `Type_method(self, ...)`.
+     *
+     * @property typeName the struct the methods extend
+     * @property methods the method declarations (without an explicit `self` parameter)
+     */
+    data class Impl(val typeName: String, val methods: List<FuncDecl>, val traitName: String? = null, val line: Int, val column: Int = 0) : TopLevel()
+
+    /** `spec Name { func method(params): Ret; ... }` — a trait / interface declaration. */
+    data class Spec(val name: String, val methods: List<FuncDecl>, val line: Int, val column: Int = 0) : TopLevel()
+
+    /** `typealias Name = Type` — a type alias. */
+    data class TypeAlias(val name: String, val type: TypeRef, val line: Int, val column: Int = 0) : TopLevel()
+
+    /** A variant of a `slot` (tagged union): `VariantName(Type1, Type2)` or `VariantName` (no payload). */
+    data class SlotVariant(val name: String, val payloadTypes: List<TypeRef>)
+
+    /** `slot Name { Variant(Type); Variant2(Type1, Type2); Variant3 }` — a tagged union. */
+    data class Slot(val name: String, val variants: List<SlotVariant>, val line: Int, val column: Int = 0) : TopLevel()
 
     /**
      * A top-level compile-time assertion (`inline assert condition { "message" }`).

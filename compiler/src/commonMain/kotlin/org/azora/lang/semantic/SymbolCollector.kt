@@ -80,12 +80,13 @@ class SymbolCollector {
 
         for (func in program.functions) {
             try {
-                val params = func.params.map { it.name to IrType.resolve(it.type) }
+                val tpSet = func.typeParams.toSet()
+                val params = func.params.map { it.name to IrType.resolve(it.type, tpSet) }
                 val returnType = when (val rt = func.returnType) {
-                    is TypeAnnotation.Explicit -> IrType.resolve(rt.ref)
+                    is TypeAnnotation.Explicit -> IrType.resolve(rt.ref, tpSet)
                     is TypeAnnotation.Inferred -> inferReturnType(func, params)
                 }
-                table.defineFunction(FunctionSymbol(func.name, params, returnType, func.isInline))
+                table.defineFunction(FunctionSymbol(func.name, params, returnType, func.isInline, func.typeParams))
             } catch (e: Exception) {
                 errors.add("line ${func.line}: ${e.message}")
             }
@@ -95,12 +96,91 @@ class SymbolCollector {
         for (item in program.items) {
             if (item is TopLevel.Pack) {
                 try {
+                    val tpSet = item.typeParams.toSet()
                     val fields = item.fields.map { field ->
-                        StructField(field.name, IrType.resolve(field.type), field.mutable)
+                        StructField(field.name, IrType.resolve(field.type, tpSet), field.mutable)
                     }
-                    table.defineStruct(StructType(item.name, fields))
+                    table.defineStruct(StructType(item.name, fields, item.typeParams))
                 } catch (e: Exception) {
                     errors.add("line ${item.line}: ${e.message}")
+                }
+            }
+        }
+
+        // Register enum declarations
+        for (item in program.items) {
+            if (item is TopLevel.Enum) {
+                try {
+                    table.defineEnum(item.name, item.variants)
+                } catch (e: Exception) {
+                    errors.add("line ${item.line}: ${e.message}")
+                }
+            }
+        }
+
+        // Register slot (tagged union) declarations
+        for (item in program.items) {
+            if (item is TopLevel.Slot) {
+                try {
+                    val variants = item.variants.map { v -> v.name to v.payloadTypes.map { IrType.resolve(it) } }
+                    table.defineSlot(item.name, variants)
+                } catch (e: Exception) {
+                    errors.add("line ${item.line}: ${e.message}")
+                }
+            }
+        }
+
+        // Register impl methods as functions `Type_method(self, ...)`
+        for (item in program.items) {
+            if (item is TopLevel.Impl) {
+                for (method in item.methods) {
+                    val mangled = "${item.typeName}_${method.name}"
+                    try {
+                        val selfType = IrType.Named(item.typeName)
+                        val params = mutableListOf<Pair<String, IrType>>()
+                        params.add("self" to selfType)
+                        for (p in method.params) params.add(p.name to IrType.resolve(p.type))
+                        val returnType = when (val rt = method.returnType) {
+                            is TypeAnnotation.Explicit -> IrType.resolve(rt.ref)
+                            is TypeAnnotation.Inferred -> inferReturnType(method, params)
+                        }
+                        table.defineFunction(FunctionSymbol(mangled, params, returnType, method.isInline))
+                        table.defineMethod(item.typeName, method.name, mangled)
+                    } catch (e: Exception) {
+                        errors.add("line ${method.line}: ${e.message}")
+                    }
+                }
+            }
+        }
+
+        // Register spec (trait) declarations
+        for (item in program.items) {
+            if (item is TopLevel.Spec) {
+                table.defineSpec(item.name, item.methods.map { it.name })
+            }
+        }
+
+// Register type aliases
+        for (item in program.items) {
+            if (item is TopLevel.TypeAlias) {
+                table.defineAlias(item.name, item.type)
+                IrType.aliases[item.name] = item.type
+            }
+        }
+
+        // Validate impl Trait for Type — all spec methods must be present
+        for (item in program.items) {
+            if (item is TopLevel.Impl && item.traitName != null) {
+                val required = table.lookupSpec(item.traitName)
+                if (required == null) {
+                    errors.add("line ${item.line}: unknown spec '${item.traitName}'")
+                } else {
+                    val provided = item.methods.map { it.name }.toSet()
+                    for (req in required) {
+                        if (req !in provided) {
+                            errors.add("line ${item.line}: '${item.typeName}' does not implement '${item.traitName}.${req}'")
+                        }
+                    }
                 }
             }
         }
@@ -203,5 +283,11 @@ class SymbolCollector {
         is Expr.Range -> null // ranges are not first-class values
         is Expr.ArrayLiteral, is Expr.Index, is Expr.Member, is Expr.MethodCall -> null
         is Expr.StringTemplate -> IrType.String
+        is Expr.TupleLit, is Expr.TupleAccess -> null
+        is Expr.CatchExpr -> null
+        is Expr.Lambda -> null
+        is Expr.NamedArg -> null
+        is Expr.NullLiteral -> IrType.Any
+        is Expr.NullCoalesce, is Expr.SafeMember -> null
     }
 }

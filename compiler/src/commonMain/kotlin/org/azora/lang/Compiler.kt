@@ -26,6 +26,7 @@ import org.azora.lang.frontend.Program
 import org.azora.lang.ir.IrGenerator
 import org.azora.lang.ir.IrOptimizer
 import org.azora.lang.ir.IrProgram
+import org.azora.lang.ir.IrType
 import org.azora.lang.semantic.EffectChecker
 import org.azora.lang.semantic.SemanticPipeline
 
@@ -110,6 +111,9 @@ class Compiler {
      *   [CompilationResult.Failure] with error messages
      */
     fun compile(source: String, warningsAsErrors: Boolean = false, release: Boolean = true): CompilationResult {
+
+        // Clear per-compilation state
+        IrType.aliases.clear()
 
         // ===============================================================
         // Phase 1 — Frontend

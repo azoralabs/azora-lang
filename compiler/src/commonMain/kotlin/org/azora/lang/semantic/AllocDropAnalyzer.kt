@@ -176,6 +176,21 @@ class AllocDropAnalyzer {
                 collectUsedVars(stmt.target, used)
                 collectUsedVars(stmt.value, used)
             }
+            is Stmt.When -> {
+                collectUsedVars(stmt.scrutinee, used)
+                for (branch in stmt.branches) {
+                    branch.patterns.forEach { collectUsedVars(it, used) }
+                    branch.body.forEach { analyzeStmt(it, defined, used, errors) }
+                }
+                stmt.elseBranch?.forEach { analyzeStmt(it, defined, used, errors) }
+            }
+            is Stmt.Throw -> collectUsedVars(stmt.value, used)
+            is Stmt.Try -> {
+                stmt.body.forEach { analyzeStmt(it, defined, used, errors) }
+                if (stmt.catchName != null) defined.add(stmt.catchName)
+                stmt.catchBody?.forEach { analyzeStmt(it, defined, used, errors) }
+            }
+            is Stmt.Defer -> stmt.body.forEach { analyzeStmt(it, defined, used, errors) }
         }
     }
 
@@ -197,6 +212,17 @@ class AllocDropAnalyzer {
                     if (part is Expr.StringTemplatePart.Expr) collectUsedVars(part.expr, used)
                 }
             }
+            is Expr.TupleLit -> expr.elements.forEach { collectUsedVars(it, used) }
+            is Expr.TupleAccess -> collectUsedVars(expr.target, used)
+            is Expr.CatchExpr -> { collectUsedVars(expr.expr, used); collectUsedVars(expr.fallback, used) }
+            is Expr.Lambda -> {
+                // Lambda bodies are analyzed by the enclosing statement analysis;
+                // here we only note the bound parameters so they are not flagged unused.
+            }
+            is Expr.NamedArg -> collectUsedVars(expr.value, used)
+            is Expr.NullLiteral -> {}
+            is Expr.NullCoalesce -> { collectUsedVars(expr.left, used); collectUsedVars(expr.right, used) }
+            is Expr.SafeMember -> collectUsedVars(expr.target, used)
             is Expr.IntLiteral, is Expr.RealLiteral,
             is Expr.StringLiteral, is Expr.BoolLiteral,
             is Expr.CharLiteral -> {}

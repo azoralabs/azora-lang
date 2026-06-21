@@ -117,6 +117,27 @@ class KotlinCodegen {
             is IrStmt.Assignment -> line("${stmt.name} = ${emitExpr(stmt.value)}")
             is IrStmt.IndexAssign -> line("${emitExpr(stmt.target)}[${emitExpr(stmt.index)}] = ${emitExpr(stmt.value)}")
             is IrStmt.MemberAssign -> line("${emitExpr(stmt.target)}.${stmt.name} = ${emitExpr(stmt.value)}")
+            is IrStmt.When -> {
+                line("when (${emitExpr(stmt.scrutinee)}) {")
+                indent++
+                for (b in stmt.branches) {
+                    val pats = b.patterns.joinToString(", ") { emitExpr(it) }
+                    line("$pats -> {")
+                    indent++
+                    for (s in b.body) emitStmt(s)
+                    indent--
+                    line("}")
+                }
+                if (stmt.elseBranch != null) {
+                    line("else -> {")
+                    indent++
+                    for (s in stmt.elseBranch) emitStmt(s)
+                    indent--
+                    line("}")
+                }
+                indent--
+                line("}")
+            }
             is IrStmt.Return -> {
                 if (stmt.value != null) line("return ${emitExpr(stmt.value)}")
                 else line("return")
@@ -192,6 +213,22 @@ class KotlinCodegen {
                 indent--
                 line("}")
             }
+            is IrStmt.Throw -> line("throw RuntimeException(\"\" + ${emitExpr(stmt.value)})")
+            is IrStmt.Try -> {
+                line("try {")
+                indent++
+                for (s in stmt.body) emitStmt(s)
+                indent--
+                if (stmt.catchBody != null) {
+                    line("} catch (_e: RuntimeException) {")
+                    indent++
+                    if (stmt.catchName != null) line("val ${stmt.catchName} = _e.message")
+                    for (s in stmt.catchBody) emitStmt(s)
+                    indent--
+                }
+                line("}")
+            }
+            is IrStmt.Defer -> {}
             is IrStmt.Break -> line("break")
             is IrStmt.Continue -> line("continue")
         }
@@ -220,6 +257,7 @@ class KotlinCodegen {
             val op = when (expr.op) {
                 IrUnaryOp.NEG -> "-"
                 IrUnaryOp.NOT -> "!"
+                IrUnaryOp.BIT_NOT -> "notValidKotlin"
             }
             "($op${emitExpr(expr.operand)})"
         }
@@ -244,6 +282,8 @@ class KotlinCodegen {
                     IrBinaryOp.GTE -> ">="
                     IrBinaryOp.AND -> "&&"
                     IrBinaryOp.OR -> "||"
+                IrBinaryOp.BIT_AND -> "&"; IrBinaryOp.BIT_OR -> "|"; IrBinaryOp.BIT_XOR -> "^"
+                IrBinaryOp.SHL -> "shl"; IrBinaryOp.SHR -> "shr"
                 }
                 "(${emitExpr(expr.left)} $op ${emitExpr(expr.right)})"
             }
@@ -269,6 +309,16 @@ class KotlinCodegen {
             "${emitExpr(expr.target)}.$call"
         }
         is IrExpr.StructCtor -> "${expr.name}(${expr.args.joinToString(", ") { emitExpr(it) }})"
+        is IrExpr.TupleLit -> "listOf(${expr.elements.joinToString(", ") { emitExpr(it) }})"
+        is IrExpr.TupleAccess -> "${emitExpr(expr.target)}[${expr.index}]"
+        is IrExpr.CatchExpr -> "runCatching { ${emitExpr(expr.expr)} }.getOrDefault(${emitExpr(expr.fallback)})"
+        is IrExpr.SlotPattern -> "" /* handled by when lowering */
+        is IrExpr.Lambda -> {
+            val ps = expr.params.joinToString(", ") { (n, t) -> "$n: ${mapType(t)}" }
+            val ret = expr.body.singleOrNull() as? IrStmt.Return
+            if (ret != null) "{ $ps -> ${if (ret.value != null) emitExpr(ret.value) else ""} }"
+            else "{ $ps -> Unit }"
+        }
         is IrExpr.StringTemplate -> {
             val sb = StringBuilder("\"")
             for (part in expr.parts) {
@@ -311,6 +361,8 @@ class KotlinCodegen {
         is IrType.Nullable -> "${mapType(type.inner)}?"
         is IrType.Named -> type.name
         IrType.Any -> "Any"
+        is IrType.Tuple -> "List<Any>"
+        is IrType.Function -> "(${type.params.joinToString(", ") { mapType(it) }}) -> ${mapType(type.ret)}"
     }
 
     private fun escapeString(s: String): String =

@@ -152,6 +152,18 @@ class AstValidator {
             is Stmt.Continue -> {}
             is Stmt.IndexAssign -> {}
             is Stmt.MemberAssign -> {}
+            is Stmt.When -> {
+                for (branch in stmt.branches) {
+                    branch.body.forEach { validateStmt(it, funcName, errors) }
+                }
+                stmt.elseBranch?.forEach { validateStmt(it, funcName, errors) }
+            }
+            is Stmt.Throw -> validateStmt(Stmt.ExprStmt(stmt.value, stmt.line, stmt.column), funcName, errors)
+            is Stmt.Try -> {
+                stmt.body.forEach { validateStmt(it, funcName, errors) }
+                stmt.catchBody?.forEach { validateStmt(it, funcName, errors) }
+            }
+            is Stmt.Defer -> stmt.body.forEach { validateStmt(it, funcName, errors) }
         }
     }
 
@@ -169,6 +181,8 @@ class AstValidator {
             is Stmt.While -> hasReturnInBody(stmt.body)
             is Stmt.For -> hasReturnInBody(stmt.body)
             is Stmt.Loop -> hasReturnInBody(stmt.body)
+            is Stmt.When -> stmt.branches.any { hasReturnInBody(it.body) } ||
+                    (stmt.elseBranch != null && hasReturnInBody(stmt.elseBranch))
             else -> false
         }
     }

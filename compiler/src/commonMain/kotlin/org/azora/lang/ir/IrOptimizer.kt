@@ -85,6 +85,17 @@ class IrOptimizer {
         is IrStmt.Continue -> stmt
         is IrStmt.IndexAssign -> stmt.copy(target = foldExpr(stmt.target), index = foldExpr(stmt.index), value = foldExpr(stmt.value))
         is IrStmt.MemberAssign -> stmt.copy(target = foldExpr(stmt.target), value = foldExpr(stmt.value))
+        is IrStmt.When -> stmt.copy(
+            scrutinee = foldExpr(stmt.scrutinee),
+            branches = stmt.branches.map { b -> b.copy(patterns = b.patterns.map { foldExpr(it) }, body = b.body.map { foldStmt(it) }) },
+            elseBranch = stmt.elseBranch?.map { foldStmt(it) }
+        )
+        is IrStmt.Throw -> stmt.copy(value = foldExpr(stmt.value))
+        is IrStmt.Try -> stmt.copy(
+            body = stmt.body.map { foldStmt(it) },
+            catchBody = stmt.catchBody?.map { foldStmt(it) }
+        )
+        is IrStmt.Defer -> stmt.copy(body = stmt.body.map { foldStmt(it) })
     }
 
     private fun foldExpr(expr: IrExpr): IrExpr = when (expr) {
@@ -130,6 +141,11 @@ class IrOptimizer {
                 IrBinaryOp.LTE -> IrExpr.BoolLiteral(left.value <= right.value)
                 IrBinaryOp.GT -> IrExpr.BoolLiteral(left.value > right.value)
                 IrBinaryOp.GTE -> IrExpr.BoolLiteral(left.value >= right.value)
+                IrBinaryOp.BIT_AND -> null // skip constant folding for bitwise
+                IrBinaryOp.BIT_OR -> null
+                IrBinaryOp.BIT_XOR -> null
+                IrBinaryOp.SHL -> null
+                IrBinaryOp.SHR -> null
                 else -> null
             }
         }
@@ -266,6 +282,22 @@ class IrOptimizer {
                     target = foldExpr(propagateExpr(stmt.target, constants)),
                     value = foldExpr(propagateExpr(stmt.value, constants))
                 )
+                is IrStmt.When -> stmt.copy(
+                    scrutinee = foldExpr(propagateExpr(stmt.scrutinee, constants)),
+                    branches = stmt.branches.map { b ->
+                        b.copy(
+                            patterns = b.patterns.map { foldExpr(propagateExpr(it, constants)) },
+                            body = propagateStmts(b.body, constants.toMutableMap())
+                        )
+                    },
+                    elseBranch = stmt.elseBranch?.let { propagateStmts(it, constants.toMutableMap()) }
+                )
+                is IrStmt.Throw -> stmt.copy(value = foldExpr(propagateExpr(stmt.value, constants)))
+                is IrStmt.Try -> stmt.copy(
+                    body = propagateStmts(stmt.body, constants.toMutableMap()),
+                    catchBody = stmt.catchBody?.let { propagateStmts(it, constants.toMutableMap()) }
+                )
+                is IrStmt.Defer -> stmt.copy(body = propagateStmts(stmt.body, constants.toMutableMap()))
             }
         }
     }
@@ -510,6 +542,20 @@ class IrOptimizer {
                 collectReferencedNamesFromExpr(stmt.target, names)
                 collectReferencedNamesFromExpr(stmt.value, names)
             }
+            is IrStmt.When -> {
+                collectReferencedNamesFromExpr(stmt.scrutinee, names)
+                for (b in stmt.branches) {
+                    b.patterns.forEach { collectReferencedNamesFromExpr(it, names) }
+                    b.body.forEach { collectReferencedNamesFromStmt(it, names) }
+                }
+                stmt.elseBranch?.forEach { collectReferencedNamesFromStmt(it, names) }
+            }
+            is IrStmt.Throw -> collectReferencedNamesFromExpr(stmt.value, names)
+            is IrStmt.Try -> {
+                stmt.body.forEach { collectReferencedNamesFromStmt(it, names) }
+                stmt.catchBody?.forEach { collectReferencedNamesFromStmt(it, names) }
+            }
+            is IrStmt.Defer -> stmt.body.forEach { collectReferencedNamesFromStmt(it, names) }
         }
     }
 
@@ -594,6 +640,20 @@ class IrOptimizer {
                 collectReferencedNamesFromExpr(stmt.target, names)
                 collectReferencedNamesFromExpr(stmt.value, names)
             }
+            is IrStmt.When -> {
+                collectReferencedNamesFromExpr(stmt.scrutinee, names)
+                for (b in stmt.branches) {
+                    b.patterns.forEach { collectReferencedNamesFromExpr(it, names) }
+                    b.body.forEach { collectReferencedVarNamesFromStmt(it, names) }
+                }
+                stmt.elseBranch?.forEach { collectReferencedVarNamesFromStmt(it, names) }
+            }
+            is IrStmt.Throw -> collectReferencedNamesFromExpr(stmt.value, names)
+            is IrStmt.Try -> {
+                stmt.body.forEach { collectReferencedVarNamesFromStmt(it, names) }
+                stmt.catchBody?.forEach { collectReferencedVarNamesFromStmt(it, names) }
+            }
+            is IrStmt.Defer -> stmt.body.forEach { collectReferencedVarNamesFromStmt(it, names) }
         }
     }
 }

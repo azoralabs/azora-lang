@@ -64,6 +64,20 @@ class Lexer(private val source: String) {
             "break" to TokenType.BREAK,
             "continue" to TokenType.CONTINUE,
             "pack" to TokenType.PACK,
+            "enum" to TokenType.ENUM,
+            "when" to TokenType.WHEN,
+            "throw" to TokenType.THROW,
+            "try" to TokenType.TRY,
+            "catch" to TokenType.CATCH,
+            "impl" to TokenType.IMPL,
+            "spec" to TokenType.SPEC,
+            "defer" to TokenType.DEFER,
+            "typealias" to TokenType.TYPEALIAS,
+            "slot" to TokenType.SLOT,
+            "as" to TokenType.AS,
+            "guard" to TokenType.GUARD,
+            "is" to TokenType.IS,
+            "null" to TokenType.NULL,
             "true" to TokenType.TRUE,
             "false" to TokenType.FALSE
         )
@@ -100,18 +114,35 @@ class Lexer(private val source: String) {
                 else -> addToken(TokenType.DOT)
             }
             ':' -> addToken(if (match(':')) TokenType.DOUBLE_COLON else TokenType.COLON)
-            '+' -> addToken(if (match('=')) TokenType.PLUS_EQUAL else TokenType.PLUS)
+            '+' -> addToken(if (match('=')) TokenType.PLUS_EQUAL else if (match('+')) TokenType.PLUS_PLUS else TokenType.PLUS)
             '*' -> addToken(if (match('=')) TokenType.STAR_EQUAL else TokenType.STAR)
             '%' -> addToken(if (match('=')) TokenType.PERCENT_EQUAL else TokenType.PERCENT)
             '!' -> addToken(if (match('=')) TokenType.BANG_EQUAL else TokenType.BANG)
             '=' -> addToken(if (match('=')) TokenType.EQUAL_EQUAL else TokenType.EQUAL)
-            '<' -> addToken(if (match('=')) TokenType.LESS_EQUAL else TokenType.LESS)
-            '>' -> addToken(if (match('=')) TokenType.GREATER_EQUAL else TokenType.GREATER)
-            '&' -> if (match('&')) addToken(TokenType.AND_AND)
-            '|' -> if (match('|')) addToken(TokenType.OR_OR)
+            '<' -> when {
+                match('=') -> addToken(TokenType.LESS_EQUAL)
+                match('<') -> addToken(TokenType.SHIFT_LEFT)
+                else -> addToken(TokenType.LESS)
+            }
+            '>' -> when {
+                match('=') -> addToken(TokenType.GREATER_EQUAL)
+                match('>') -> addToken(TokenType.SHIFT_RIGHT)
+                else -> addToken(TokenType.GREATER)
+            }
+            '&' -> if (match('&')) addToken(TokenType.AND_AND) else addToken(TokenType.AMP)
+            '|' -> if (match('|')) addToken(TokenType.OR_OR) else addToken(TokenType.PIPE)
+            '^' -> addToken(TokenType.CARET)
+            '~' -> addToken(TokenType.TILDE)
+            '?' -> when {
+                match('?') -> addToken(TokenType.QMARK_QMARK)
+                match('.') -> addToken(TokenType.QMARK_DOT)
+                match('=') -> addToken(TokenType.QMARK_EQUAL)
+                else -> addToken(TokenType.QMARK)
+            }
             '-' -> when {
                 match('>') -> addToken(TokenType.ARROW)
                 match('=') -> addToken(TokenType.MINUS_EQUAL)
+                match('-') -> addToken(TokenType.MINUS_MINUS)
                 else -> addToken(TokenType.MINUS)
             }
             '/' -> {

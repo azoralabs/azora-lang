@@ -137,6 +137,11 @@ class CtfeEvaluator(private val table: SymbolTable) {
         is TopLevel.FinDecl -> Pair(listOf(item), false)
         is TopLevel.LetDecl -> Pair(listOf(item), false)
         is TopLevel.Pack -> Pair(listOf(item), false)
+        is TopLevel.Enum -> Pair(listOf(item), false)
+        is TopLevel.Impl -> Pair(listOf(item), false)
+        is TopLevel.Spec -> Pair(listOf(item), false)
+        is TopLevel.TypeAlias -> Pair(listOf(item), false)
+        is TopLevel.Slot -> Pair(listOf(item), false)
         is TopLevel.InlineVar -> {
             val (folded, _) = foldExpr(item.initializer, program)
             if (isConstant(folded)) { inlineEnv[item.name] = folded; Pair(emptyList(), true) }
@@ -241,6 +246,11 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 is TopLevel.FinDecl -> result.add(item)
                 is TopLevel.LetDecl -> result.add(item)
                 is TopLevel.Pack -> result.add(item)
+                is TopLevel.Enum -> result.add(item)
+                is TopLevel.Impl -> result.add(item)
+                is TopLevel.Spec -> result.add(item)
+                is TopLevel.TypeAlias -> result.add(item)
+                is TopLevel.Slot -> result.add(item)
                 is TopLevel.InlineVar, is TopLevel.InlineFin, is TopLevel.InlineLet,
                 is TopLevel.InlineAssignment -> {
                     val (resolved, _) = resolveTopLevelItem(item, program, errors)
@@ -410,6 +420,37 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 val (newValue, vc) = foldExpr(stmt.value, program)
                 val changed = tc || vc
                 Pair(listOf(if (changed) stmt.copy(target = newTarget, value = newValue) else stmt), changed)
+            }
+            is Stmt.When -> {
+                var changed = false
+                val (newScrut, sc) = foldExpr(stmt.scrutinee, program)
+                if (sc) changed = true
+                val newBranches = stmt.branches.map { b ->
+                    val newPats = b.patterns.map { foldExpr(it, program) }
+                    if (newPats.any { it.second }) changed = true
+                    val (newBody, bc) = foldBody(b.body, program, errors)
+                    if (bc) changed = true
+                    Stmt.WhenBranch(newPats.map { it.first }, newBody, b.line, b.column)
+                }
+                val (newElse, ec) = if (stmt.elseBranch != null) foldBody(stmt.elseBranch, program, errors) else Pair(null, false)
+                if (ec) changed = true
+                Pair(listOf(if (changed) Stmt.When(newScrut, newBranches, newElse, stmt.line, stmt.column, stmt.length) else stmt), changed)
+            }
+            is Stmt.Throw -> {
+                val (v, c) = foldExpr(stmt.value, program)
+                Pair(listOf(if (c) Stmt.Throw(v, stmt.line, stmt.column, stmt.length) else stmt), c)
+            }
+            is Stmt.Try -> {
+                var changed = false
+                val (newBody, bc) = foldBody(stmt.body, program, errors)
+                if (bc) changed = true
+                val (newCatch, cc) = if (stmt.catchBody != null) foldBody(stmt.catchBody, program, errors) else Pair(null, false)
+                if (cc) changed = true
+                Pair(listOf(if (changed) Stmt.Try(newBody, stmt.catchName, newCatch, stmt.line, stmt.column, stmt.length) else stmt), changed)
+            }
+            is Stmt.Defer -> {
+                val (newBody, changed) = foldBody(stmt.body, program, errors)
+                Pair(listOf(if (changed) Stmt.Defer(newBody, stmt.line, stmt.column, stmt.length) else stmt), changed)
             }
         }
     }
@@ -772,7 +813,10 @@ class CtfeEvaluator(private val table: SymbolTable) {
             // Literals are already folded
             is Expr.IntLiteral, is Expr.RealLiteral,
             is Expr.StringLiteral, is Expr.BoolLiteral,
-            is Expr.CharLiteral -> Pair(expr, false)
+            is Expr.CharLiteral,
+            is Expr.TupleLit, is Expr.TupleAccess,
+            is Expr.CatchExpr, is Expr.Lambda,
+            is Expr.NamedArg, is Expr.NullLiteral, is Expr.NullCoalesce, is Expr.SafeMember -> Pair(expr, false)
             is Expr.Range -> {
                 val (from, fc) = foldExpr(expr.from, program)
                 val (to, tc) = foldExpr(expr.to, program)
@@ -1005,7 +1049,10 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 is Stmt.InlineTrace -> {} // no-op during interpretation
                 is Stmt.While, is Stmt.For, is Stmt.Loop,
                 is Stmt.Break, is Stmt.Continue,
-                is Stmt.IndexAssign, is Stmt.MemberAssign -> return null // side-effecting — can't CTFE
+                is Stmt.IndexAssign, is Stmt.MemberAssign,
+                is Stmt.When,
+                is Stmt.Throw, is Stmt.Try,
+                is Stmt.Defer -> return null // can't be evaluated at compile time
             }
         }
         return null
@@ -1022,6 +1069,10 @@ class CtfeEvaluator(private val table: SymbolTable) {
             is Expr.Range -> null // ranges are not CTFE-evaluable values
             is Expr.ArrayLiteral, is Expr.Index, is Expr.Member, is Expr.MethodCall -> null // not CTFE-evaluable
             is Expr.StringTemplate -> null // not CTFE-evaluable
+            is Expr.TupleLit, is Expr.TupleAccess -> null // not CTFE-evaluable
+            is Expr.CatchExpr -> null // not CTFE-evaluable
+            is Expr.Lambda -> null // not CTFE-evaluable
+            is Expr.NamedArg -> null // not CTFE-evaluable
             is Expr.Unary -> {
                 val operand = evalExpr(expr.operand, env, program) ?: return null
                 tryFoldUnary(expr.op, operand, expr.line)
@@ -1035,6 +1086,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 val evalArgs = expr.args.map { evalExpr(it, env, program) ?: return null }
                 tryEvalCall(expr.callee, evalArgs, program, expr.line)
             }
+            is Expr.NullLiteral, is Expr.NullCoalesce, is Expr.SafeMember -> null
         }
     }
 }

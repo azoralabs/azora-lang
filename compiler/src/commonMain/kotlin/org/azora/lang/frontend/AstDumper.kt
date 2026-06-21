@@ -116,6 +116,22 @@ private fun dumpTopLevel(sb: StringBuilder, item: TopLevel, indent: String) {
             val fields = item.fields.joinToString(", ") { "${it.name}: ${it.type}" }
             sb.appendLine("${indent}Pack(name=${item.name}, fields=[$fields])")
         }
+        is TopLevel.Enum -> {
+            sb.appendLine("${indent}Enum(name=${item.name}, variants=[${item.variants.joinToString(", ")}])")
+        }
+        is TopLevel.Impl -> {
+            val trait = if (item.traitName != null) " for ${item.traitName}" else ""
+            sb.appendLine("${indent}Impl(type=${item.typeName}$trait, methods=[${item.methods.joinToString(", ") { it.name }}])")
+        }
+        is TopLevel.Spec -> {
+            sb.appendLine("${indent}Spec(name=${item.name}, methods=[${item.methods.joinToString(", ") { it.name }}])")
+        }
+        is TopLevel.TypeAlias -> {
+            sb.appendLine("${indent}TypeAlias(${item.name} = ${item.type})")
+        }
+        is TopLevel.Slot -> {
+            sb.appendLine("${indent}Slot(name=${item.name}, variants=[${item.variants.joinToString(", ") { v -> v.name + "(" + v.payloadTypes.joinToString(",") + "" + ")" }}])")
+        }
     }
 }
 
@@ -284,6 +300,33 @@ private fun dumpStmt(sb: StringBuilder, stmt: Stmt, indent: String) {
             sb.appendLine("$indent    value:")
             dumpExpr(sb, stmt.value, "$indent        ")
         }
+        is Stmt.When -> {
+            sb.appendLine("${indent}When")
+            sb.appendLine("$indent    scrutinee:")
+            dumpExpr(sb, stmt.scrutinee, "$indent        ")
+            for (branch in stmt.branches) {
+                sb.appendLine("$indent    branch(${branch.patterns.size} patterns):")
+                for (p in branch.patterns) dumpExpr(sb, p, "$indent        ")
+                for (s in branch.body) dumpStmt(sb, s, "$indent        ")
+            }
+            if (stmt.elseBranch != null) {
+                sb.appendLine("$indent    else:")
+                for (s in stmt.elseBranch) dumpStmt(sb, s, "$indent        ")
+            }
+        }
+        is Stmt.Throw -> {
+            sb.appendLine("${indent}Throw")
+            dumpExpr(sb, stmt.value, "$indent    ")
+        }
+        is Stmt.Try -> {
+            sb.appendLine("${indent}Try(catchName=${stmt.catchName})")
+            for (s in stmt.body) dumpStmt(sb, s, "$indent    ")
+            if (stmt.catchBody != null) for (s in stmt.catchBody) dumpStmt(sb, s, "$indent    ")
+        }
+        is Stmt.Defer -> {
+            sb.appendLine("${indent}Defer")
+            stmt.body.forEach { dumpStmt(sb, it, "$indent    ") }
+        }
     }
 }
 
@@ -323,6 +366,37 @@ private fun dumpExpr(sb: StringBuilder, expr: Expr, indent: String) {
             sb.appendLine("${indent}Range($op)")
             dumpExpr(sb, expr.from, "$indent    ")
             dumpExpr(sb, expr.to, "$indent    ")
+        }
+        is Expr.TupleLit -> {
+            sb.appendLine("${indent}TupleLit")
+            for (e in expr.elements) dumpExpr(sb, e, "$indent    ")
+        }
+        is Expr.TupleAccess -> {
+            sb.appendLine("${indent}TupleAccess(.${expr.index})")
+            dumpExpr(sb, expr.target, "$indent    ")
+        }
+        is Expr.CatchExpr -> {
+            sb.appendLine("${indent}CatchExpr")
+            dumpExpr(sb, expr.expr, "$indent    ")
+            dumpExpr(sb, expr.fallback, "$indent    ")
+        }
+        is Expr.Lambda -> {
+            sb.appendLine("${indent}Lambda(params=[${expr.params.joinToString(", ") { "${it.name}: ${it.type}" }}])")
+            for (s in expr.body) dumpStmt(sb, s, "$indent    ")
+        }
+        is Expr.NamedArg -> {
+            sb.appendLine("${indent}NamedArg(${expr.name})")
+            dumpExpr(sb, expr.value, "$indent    ")
+        }
+        is Expr.NullLiteral -> sb.appendLine("${indent}NullLiteral")
+        is Expr.NullCoalesce -> {
+            sb.appendLine("${indent}NullCoalesce")
+            dumpExpr(sb, expr.left, "$indent    ")
+            dumpExpr(sb, expr.right, "$indent    ")
+        }
+        is Expr.SafeMember -> {
+            sb.appendLine("${indent}SafeMember(${expr.name})")
+            dumpExpr(sb, expr.target, "$indent    ")
         }
         is Expr.ArrayLiteral -> {
             sb.appendLine("${indent}ArrayLiteral")

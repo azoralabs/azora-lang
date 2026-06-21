@@ -187,11 +187,26 @@ class EffectChecker {
                 collectCallsFromExpr(stmt.target, calls)
                 collectCallsFromExpr(stmt.value, calls)
             }
+            is Stmt.When -> {
+                collectCallsFromExpr(stmt.scrutinee, calls)
+                for (branch in stmt.branches) {
+                    branch.patterns.forEach { collectCallsFromExpr(it, calls) }
+                    branch.body.forEach { collectCallsFromStmt(it, calls) }
+                }
+                stmt.elseBranch?.forEach { collectCallsFromStmt(it, calls) }
+            }
+            is Stmt.Throw -> collectCallsFromExpr(stmt.value, calls)
+            is Stmt.Try -> {
+                stmt.body.forEach { collectCallsFromStmt(it, calls) }
+                stmt.catchBody?.forEach { collectCallsFromStmt(it, calls) }
+            }
+            is Stmt.Defer -> stmt.body.forEach { collectCallsFromStmt(it, calls) }
         }
     }
 
     private fun collectCallsFromExpr(expr: Expr, calls: MutableSet<String>) {
         when (expr) {
+
             is Expr.Call -> {
                 calls.add(expr.callee)
                 expr.args.forEach { collectCallsFromExpr(it, calls) }
@@ -209,6 +224,16 @@ class EffectChecker {
                     if (part is Expr.StringTemplatePart.Expr) collectCallsFromExpr(part.expr, calls)
                 }
             }
+            is Expr.TupleLit -> expr.elements.forEach { collectCallsFromExpr(it, calls) }
+            is Expr.TupleAccess -> collectCallsFromExpr(expr.target, calls)
+            is Expr.CatchExpr -> { collectCallsFromExpr(expr.expr, calls); collectCallsFromExpr(expr.fallback, calls) }
+            is Expr.Lambda -> {
+                for (s in expr.body) collectCallsFromStmt(s, calls)
+            }
+            is Expr.NamedArg -> collectCallsFromExpr(expr.value, calls)
+            is Expr.NullLiteral -> {}
+            is Expr.NullCoalesce -> { collectCallsFromExpr(expr.left, calls); collectCallsFromExpr(expr.right, calls) }
+            is Expr.SafeMember -> collectCallsFromExpr(expr.target, calls)
             is Expr.IntLiteral, is Expr.RealLiteral,
             is Expr.StringLiteral, is Expr.BoolLiteral,
             is Expr.CharLiteral,

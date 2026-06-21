@@ -99,26 +99,26 @@ class IrGenerator(private val table: SymbolTable) {
         }
 
         // Lower top-level items in source order to preserve interleaving
-        val items = program.items.mapNotNull { item ->
+        val items = program.items.flatMap { item ->
             when (item) {
                 is TopLevel.Func -> {
-                    if (item.decl.isInline) null // Skip inline functions — already substituted by CTFE
-                    else IrTopLevel.Func(lowerFunction(item.decl))
+                    if (item.decl.isInline) emptyList()
+                    else listOf(IrTopLevel.Func(lowerFunction(item.decl)))
                 }
                 is TopLevel.FinDecl -> {
                     val init = lowerExpr(item.initializer)
                     val type = if (item.type != null) IrType.resolve(item.type) else init.type
-                    IrTopLevel.Global(IrStmt.FinDecl(item.name, type, init))
+                    listOf(IrTopLevel.Global(IrStmt.FinDecl(item.name, type, init)))
                 }
                 is TopLevel.LetDecl -> {
                     val init = lowerExpr(item.initializer)
                     val type = if (item.type != null) IrType.resolve(item.type) else init.type
-                    IrTopLevel.Global(IrStmt.LetDecl(item.name, type, init))
+                    listOf(IrTopLevel.Global(IrStmt.LetDecl(item.name, type, init)))
                 }
                 is TopLevel.VarDecl -> {
                     val init = lowerExpr(item.initializer)
                     val type = if (item.type != null) IrType.resolve(item.type) else init.type
-                    IrTopLevel.Global(IrStmt.VarDecl(item.name, type, init))
+                    listOf(IrTopLevel.Global(IrStmt.VarDecl(item.name, type, init)))
                 }
                 is TopLevel.Test -> {
                     table.pushScope()
@@ -126,13 +126,18 @@ class IrGenerator(private val table: SymbolTable) {
                     val body = lowerBody(item.body)
                     popNameScope()
                     table.popScope()
-                    IrTopLevel.Test(item.name, body)
+                    listOf(IrTopLevel.Test(item.name, body))
                 }
                 is TopLevel.Pack -> {
-                    val fields = item.fields.map { IrField(it.name, IrType.resolve(it.type), it.mutable) }
-                    IrTopLevel.Struct(item.name, fields)
+                    val tpSet = item.typeParams.toSet()
+                    val fields = item.fields.map { IrField(it.name, IrType.resolve(it.type, tpSet), it.mutable) }
+                    listOf(IrTopLevel.Struct(item.name, fields))
                 }
-                else -> null // Inline constructs already resolved by CTFE
+                is TopLevel.Impl -> item.methods.mapNotNull { method ->
+                    if (method.isInline) null
+                    else IrTopLevel.Func(lowerMethod(item.typeName, method))
+                }
+                else -> emptyList() // Inline constructs already resolved by CTFE
             }
         }
         return IrProgram(program.packageName, items)
@@ -155,6 +160,23 @@ class IrGenerator(private val table: SymbolTable) {
         table.popScope()
 
         return IrFunction(func.name, mangledParams, symbol.returnType, body)
+    }
+
+    /** Lowers an impl method into a free function `Type_method(self, ...)`. */
+    private fun lowerMethod(typeName: String, method: FuncDecl): IrFunction {
+        val mangled = "${typeName}_${method.name}"
+        val symbol = table.lookupFunction(mangled)!!
+        table.pushScope()
+        pushNameScope()
+        val mangledParams = symbol.params.map { (name, type) ->
+            val m = registerName(name)
+            table.defineVariable(VariableSymbol(name, type))
+            m to type
+        }
+        val body = lowerBody(method.body)
+        popNameScope()
+        table.popScope()
+        return IrFunction(mangled, mangledParams, symbol.returnType, body)
     }
 
     /** A shared friend name scope, or null if no friend zones encountered yet. */
@@ -291,17 +313,38 @@ class IrGenerator(private val table: SymbolTable) {
             }
             is Stmt.For -> {
                 val range = stmt.iterable as? Expr.Range
-                    ?: error("for loop iterable must be a range (e.g. 0..10), got ${stmt.iterable::class.simpleName}")
-                val start = lowerExpr(range.from)
-                val end = lowerExpr(range.to)
-                table.pushScope()
-                pushNameScope()
-                val counter = registerName(stmt.name)
-                table.defineVariable(VariableSymbol(stmt.name, IrType.Int, mutable = true))
-                val body = lowerBody(stmt.body)
-                popNameScope()
-                table.popScope()
-                IrStmt.For(counter, start, end, range.inclusive, body)
+                if (range != null) {
+                    val start = lowerExpr(range.from)
+                    val end = lowerExpr(range.to)
+                    table.pushScope()
+                    pushNameScope()
+                    val counter = registerName(stmt.name)
+                    table.defineVariable(VariableSymbol(stmt.name, IrType.Int, mutable = true))
+                    val body = lowerBody(stmt.body)
+                    popNameScope()
+                    table.popScope()
+                    IrStmt.For(counter, start, end, range.inclusive, body)
+                } else {
+                    // For-in over an array: lower to index-based loop
+                    val arrExpr = lowerExpr(stmt.iterable)
+                    val elemType = (arrExpr.type as? IrType.Array)?.element ?: IrType.Any
+                    table.pushScope()
+                    pushNameScope()
+                    val counter = registerName("__idx")
+                    table.defineVariable(VariableSymbol("__idx", IrType.Int, mutable = true))
+                    val elemMangled = registerName(stmt.name)
+                    table.defineVariable(VariableSymbol(stmt.name, elemType, mutable = false))
+                    val body = lowerBody(stmt.body)
+                    popNameScope()
+                    table.popScope()
+                    // Body: fin item = arr[__idx]; ...original body...
+                    val fullBody = mutableListOf<IrStmt>()
+                    fullBody.add(IrStmt.FinDecl(elemMangled, elemType,
+                        IrExpr.Index(arrExpr, IrExpr.Var(counter, IrType.Int), elemType)))
+                    fullBody.addAll(body)
+                    IrStmt.For(counter, IrExpr.IntLiteral(0),
+                        IrExpr.Member(arrExpr, "length", IrType.Int), false, fullBody)
+                }
             }
             is Stmt.Loop -> {
                 table.pushScope()
@@ -313,6 +356,62 @@ class IrGenerator(private val table: SymbolTable) {
             }
             is Stmt.Break -> IrStmt.Break
             is Stmt.Continue -> IrStmt.Continue
+            is Stmt.Defer -> IrStmt.Defer(lowerBody(stmt.body))
+            is Stmt.When -> {
+                val scrutinee = lowerExpr(stmt.scrutinee)
+                val branches = stmt.branches.map { b ->
+                    var slotBindings: List<Pair<String, IrType>>? = null
+                    val irPatterns = b.patterns.map { pat ->
+                        if (pat is Expr.MethodCall && pat.target is Expr.Identifier &&
+                            table.lookupSlot(pat.target.name) != null) {
+                            val slotVariants = table.lookupSlot(pat.target.name)!!
+                            val variant = slotVariants.find { it.first == pat.name }
+                            val bindNames = pat.args.map { (it as Expr.Identifier).name }
+                            if (variant != null) slotBindings = bindNames.zip(variant.second)
+                            IrExpr.SlotPattern(pat.target.name, pat.name, bindNames)
+                        } else {
+                            lowerExpr(pat)
+                        }
+                    }
+                    if (slotBindings != null) {
+                        table.pushScope()
+                        pushNameScope()
+                        for ((name, type) in slotBindings!!) {
+                            val mangled = registerName(name)
+                            table.defineVariable(VariableSymbol(name, type))
+                        }
+                    }
+                    val body = lowerBody(b.body)
+                    if (slotBindings != null) {
+                        popNameScope()
+                        table.popScope()
+                    }
+                    IrWhenBranch(irPatterns, body)
+                }
+                val elseBranch = stmt.elseBranch?.let { lowerBody(it) }
+                IrStmt.When(scrutinee, branches, elseBranch)
+            }
+            is Stmt.Throw -> IrStmt.Throw(lowerExpr(stmt.value))
+            is Stmt.Try -> {
+                table.pushScope()
+                pushNameScope()
+                val body = lowerBody(stmt.body)
+                popNameScope()
+                table.popScope()
+                val catchBody = if (stmt.catchBody != null) {
+                    table.pushScope()
+                    pushNameScope()
+                    if (stmt.catchName != null) {
+                        registerName(stmt.catchName)
+                        table.defineVariable(VariableSymbol(stmt.catchName, IrType.Any, mutable = false))
+                    }
+                    val cb = lowerBody(stmt.catchBody)
+                    popNameScope()
+                    table.popScope()
+                    cb
+                } else null
+                IrStmt.Try(body, stmt.catchName, catchBody)
+            }
             is Stmt.InlineAssert -> error("InlineAssert should have been resolved by CTFE before IR generation")
             is Stmt.InlineTrace -> error("InlineTrace should have been resolved by CTFE before IR generation")
         }
@@ -345,6 +444,17 @@ class IrGenerator(private val table: SymbolTable) {
             is Expr.RealLiteral -> IrExpr.RealLiteral(expr.value, suffixToRealType(expr.suffix))
             is Expr.StringLiteral -> IrExpr.StringLiteral(expr.value)
             is Expr.BoolLiteral -> IrExpr.BoolLiteral(expr.value)
+            is Expr.NullLiteral -> IrExpr.Var("__null", IrType.Any)
+            is Expr.NamedArg -> lowerExpr(expr.value)
+            is Expr.NullCoalesce -> {
+                val left = lowerExpr(expr.left)
+                val right = lowerExpr(expr.right)
+                IrExpr.Call("__nullCoalesce", listOf(left, right), right.type)
+            }
+            is Expr.SafeMember -> {
+                val target = lowerExpr(expr.target)
+                IrExpr.Call("__safeMember", listOf(target, IrExpr.StringLiteral(expr.name)), IrType.Any)
+            }
             is Expr.CharLiteral -> IrExpr.CharLiteral(expr.value)
             is Expr.Identifier -> {
                 val sym = table.lookupVariable(expr.name)!!
@@ -359,6 +469,7 @@ class IrGenerator(private val table: SymbolTable) {
                 val op = when (expr.op) {
                     TokenType.MINUS -> IrUnaryOp.NEG
                     TokenType.BANG -> IrUnaryOp.NOT
+                    TokenType.TILDE -> IrUnaryOp.BIT_NOT
                     else -> error("Unknown unary op: ${expr.op}")
                 }
                 IrExpr.Unary(op, operand, operand.type)
@@ -366,6 +477,26 @@ class IrGenerator(private val table: SymbolTable) {
             is Expr.Binary -> {
                 val left = lowerExpr(expr.left)
                 val right = lowerExpr(expr.right)
+                // Operator overloading on user types
+                if (left.type is IrType.Named && left.type == right.type) {
+                    val lt = left.type as IrType.Named
+                    val methodName = operatorMethodName(expr.op)
+                    if (methodName != null) {
+                        val mangled = table.lookupMethod(lt.name, methodName)
+                        if (mangled != null) {
+                            val func = table.lookupFunction(mangled)!!
+                            return IrExpr.Call(mangled, listOf(left, right), func.returnType)
+                        }
+                    }
+                    if (expr.op == TokenType.BANG_EQUAL) {
+                        val eqMangled = table.lookupMethod(lt.name, "equals")
+                        if (eqMangled != null) {
+                            val func = table.lookupFunction(eqMangled)!!
+                            return IrExpr.Unary(IrUnaryOp.NOT,
+                                IrExpr.Call(eqMangled, listOf(left, right), func.returnType), IrType.Bool)
+                        }
+                    }
+                }
                 val op = lowerBinaryOp(expr.op)
                 val type = when (op) {
                     IrBinaryOp.EQ, IrBinaryOp.NEQ,
@@ -383,13 +514,27 @@ class IrGenerator(private val table: SymbolTable) {
             is Expr.Call -> {
                 val struct = table.lookupStruct(expr.callee)
                 if (struct != null) {
-                    val args = expr.args.map { lowerExpr(it) }
-                    IrExpr.StructCtor(expr.callee, struct.fields.map { it.name }, args, IrType.Named(expr.callee))
-                } else {
-                    val func = table.lookupFunction(expr.callee)!!
-                    val args = expr.args.map { lowerExpr(it) }
-                    IrExpr.Call(expr.callee, args, func.returnType)
+                    // Handle named arguments — reorder to field order
+                    val args = if (expr.args.isNotEmpty() && expr.args[0] is Expr.NamedArg) {
+                        val namedMap = expr.args.associate { (it as Expr.NamedArg).name to (it as Expr.NamedArg).value }
+                        struct.fields.map { f -> lowerExpr(namedMap[f.name]!!) }
+                    } else {
+                        expr.args.map { lowerExpr(it) }
+                    }
+                    return IrExpr.StructCtor(expr.callee, struct.fields.map { it.name }, args, IrType.Named(expr.callee))
                 }
+                val func = table.lookupFunction(expr.callee)
+                if (func != null) {
+                    val args = expr.args.map { lowerExpr(it) }
+                    return IrExpr.Call(expr.callee, args, func.returnType)
+                }
+                // Calling a lambda stored in a variable.
+                val v = table.lookupVariable(expr.callee)
+                if (v != null && v.type is IrType.Function) {
+                    val args = expr.args.map { lowerExpr(it) }
+                    return IrExpr.Call(resolveName(expr.callee), args, v.type.ret)
+                }
+                error("undefined function or variable '${expr.callee}'")
             }
             is Expr.Grouping -> lowerExpr(expr.expr)
             is Expr.Range -> error("range expressions can only be used as for-loop iterables")
@@ -405,6 +550,17 @@ class IrGenerator(private val table: SymbolTable) {
                 IrExpr.Index(target, index, elemType)
             }
             is Expr.Member -> {
+                // Slot no-payload construction: SlotName.Variant (no parens)
+                if (expr.target is Expr.Identifier) {
+                    val slotVariants = table.lookupSlot(expr.target.name)
+                    if (slotVariants != null && slotVariants.any { it.first == expr.name && it.second.isEmpty() }) {
+                        return IrExpr.StructCtor(expr.target.name, listOf("__tag"), listOf(IrExpr.StringLiteral(expr.name)), IrType.Named(expr.target.name))
+                    }
+                }
+                // Enum variant `Color.Red` → string literal "Red"
+                if (expr.target is Expr.Identifier && table.lookupEnum(expr.target.name) != null) {
+                    return IrExpr.StringLiteral(expr.name)
+                }
                 val target = lowerExpr(expr.target)
                 val memberType = when {
                     expr.name == "length" && (target.type is IrType.Array || target.type == IrType.String) -> IrType.Int
@@ -418,7 +574,24 @@ class IrGenerator(private val table: SymbolTable) {
                 IrExpr.Member(target, expr.name, memberType)
             }
             is Expr.MethodCall -> {
+                // Slot construction: SlotName.Variant(args)
+                if (expr.target is Expr.Identifier && table.lookupSlot(expr.target.name) != null) {
+                    val args = expr.args.map { lowerExpr(it) }
+                    val fieldNames = listOf("__tag") + args.indices.map { "__$it" }
+                    val allArgs = listOf(IrExpr.StringLiteral(expr.name)) + args
+                    return IrExpr.StructCtor(expr.target.name, fieldNames, allArgs, IrType.Named(expr.target.name))
+                }
                 val target = lowerExpr(expr.target)
+                val tt = target.type
+                // User method on a struct: obj.method(args) -> Type_method(obj, args)
+                if (tt is IrType.Named) {
+                    val mangled = table.lookupMethod(tt.name, expr.name)
+                    if (mangled != null) {
+                        val func = table.lookupFunction(mangled)!!
+                        val args = expr.args.map { lowerExpr(it) }
+                        return IrExpr.Call(mangled, listOf(target) + args, func.returnType)
+                    }
+                }
                 val args = expr.args.map { lowerExpr(it) }
                 IrExpr.MethodCall(target, expr.name, args, builtinMethodReturnType(target.type, expr.name))
             }
@@ -431,6 +604,37 @@ class IrGenerator(private val table: SymbolTable) {
                 }
                 IrExpr.StringTemplate(parts)
             }
+            is Expr.TupleLit -> {
+                val elems = expr.elements.map { lowerExpr(it) }
+                IrExpr.TupleLit(elems, IrType.Tuple(elems.map { it.type }))
+            }
+            is Expr.TupleAccess -> {
+                val target = lowerExpr(expr.target)
+                val tt = target.type
+                val elemType = if (tt is IrType.Tuple && expr.index in tt.elements.indices) tt.elements[expr.index] else IrType.Any
+                IrExpr.TupleAccess(target, expr.index, elemType)
+            }
+            is Expr.CatchExpr -> {
+                val e = lowerExpr(expr.expr)
+                val f = lowerExpr(expr.fallback)
+                IrExpr.CatchExpr(e, f, e.type)
+            }
+            is Expr.NamedArg -> lowerExpr(expr.value)
+            is Expr.Lambda -> {
+                table.pushScope()
+                pushNameScope()
+                val irParams = expr.params.map { p ->
+                    val t = IrType.resolve(p.type)
+                    val m = registerName(p.name)
+                    table.defineVariable(VariableSymbol(p.name, t))
+                    m to t
+                }
+                val body = lowerBody(expr.body)
+                popNameScope()
+                table.popScope()
+                val retType = body.mapNotNull { (it as? IrStmt.Return)?.value?.type }.firstOrNull() ?: IrType.Unit
+                IrExpr.Lambda(irParams, body, IrType.Function(irParams.map { it.second }, retType))
+            }
         }
     }
 
@@ -439,6 +643,17 @@ class IrGenerator(private val table: SymbolTable) {
         receiverType is IrType.Array && name == "add" -> IrType.Unit
         receiverType is IrType.Array && (name == "isEmpty" || name == "isNotEmpty") -> IrType.Bool
         else -> IrType.Any
+    }
+
+    /** Maps an operator token to the impl method name for operator overloading. */
+    private fun operatorMethodName(op: TokenType): String? = when (op) {
+        TokenType.PLUS -> "plus"
+        TokenType.MINUS -> "minus"
+        TokenType.STAR -> "times"
+        TokenType.SLASH -> "div"
+        TokenType.PERCENT -> "mod"
+        TokenType.EQUAL_EQUAL -> "equals"
+        else -> null
     }
 
     private fun lowerBinaryOp(op: TokenType): IrBinaryOp = when (op) {
@@ -455,6 +670,11 @@ class IrGenerator(private val table: SymbolTable) {
         TokenType.GREATER_EQUAL -> IrBinaryOp.GTE
         TokenType.AND_AND -> IrBinaryOp.AND
         TokenType.OR_OR -> IrBinaryOp.OR
+        TokenType.AMP -> IrBinaryOp.BIT_AND
+        TokenType.PIPE -> IrBinaryOp.BIT_OR
+        TokenType.CARET -> IrBinaryOp.BIT_XOR
+        TokenType.SHIFT_LEFT -> IrBinaryOp.SHL
+        TokenType.SHIFT_RIGHT -> IrBinaryOp.SHR
         else -> error("Unknown binary op: $op")
     }
 

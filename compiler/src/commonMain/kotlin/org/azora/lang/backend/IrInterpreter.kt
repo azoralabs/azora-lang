@@ -34,9 +34,10 @@ class IrInterpreter {
 
     private val output = StringBuilder()
     private val functions = mutableMapOf<String, IrFunction>()
+    private var deferStack = mutableListOf<List<IrStmt>>()
 
     /** Scope stack: index 0 = global, last = innermost. */
-    private val scopes = ArrayDeque<MutableMap<String, Any?>>()
+    private var scopes = ArrayDeque<MutableMap<String, Any?>>()
 
     fun interpret(program: IrProgram): String {
         output.clear()
@@ -44,7 +45,7 @@ class IrInterpreter {
         scopes.clear()
 
         // Global scope
-        scopes.addLast(mutableMapOf())
+        scopes.addLast(mutableMapOf("__null" to null))
 
         // Collect tests
         val tests = mutableListOf<IrTopLevel.Test>()
@@ -118,9 +119,21 @@ class IrInterpreter {
             defineVar(func.params[i].first, args[i])
         }
 
-        val result = executeBody(func.body)
+        val savedDefers = deferStack
+        deferStack = mutableListOf()
+        var retValue: Any? = null
+        try {
+            val result = executeBody(func.body)
+            retValue = (result as? ReturnSignal)?.value
+        } finally {
+            // Run deferred blocks in reverse order (LIFO).
+            for (i in deferStack.indices.reversed()) {
+                executeBody(deferStack[i])
+            }
+            deferStack = savedDefers
+        }
         popScope()
-        return (result as? ReturnSignal)?.value
+        return retValue
     }
 
     private fun executeBody(body: List<IrStmt>): Any? {
@@ -193,6 +206,7 @@ class IrInterpreter {
             }
             is IrStmt.Break -> return BreakSignal
             is IrStmt.Continue -> return ContinueSignal
+            is IrStmt.Defer -> { deferStack.add(stmt.body) }
             is IrStmt.IndexAssign -> {
                 @Suppress("UNCHECKED_CAST")
                 val list = evalExpr(stmt.target) as MutableList<Any?>
@@ -203,6 +217,61 @@ class IrInterpreter {
                 @Suppress("UNCHECKED_CAST")
                 val map = evalExpr(stmt.target) as MutableMap<String, Any?>
                 map[stmt.name] = evalExpr(stmt.value)
+            }
+            is IrStmt.When -> {
+                val scrut = evalExpr(stmt.scrutinee)
+                var matched = false
+                for (b in stmt.branches) {
+                    var hit = false
+                    for (p in b.patterns) {
+                        if (p is IrExpr.SlotPattern) {
+                            val scrutMap = scrut as? Map<*, *>
+                            if (scrutMap != null && scrutMap["__tag"] == p.variantName) {
+                                for (i in p.bindings.indices) {
+                                    defineVar(p.bindings[i], scrutMap["__$i"])
+                                }
+                                hit = true; break
+                            }
+                        } else if (evalExpr(p) == scrut) { hit = true; break }
+                    }
+                    if (hit) {
+                        matched = true
+                        pushScope()
+                        val result = executeBody(b.body)
+                        popScope()
+                        if (result is ControlSignal) return result
+                        break
+                    }
+                }
+                if (!matched && stmt.elseBranch != null) {
+                    pushScope()
+                    val result = executeBody(stmt.elseBranch)
+                    popScope()
+                    if (result is ControlSignal) return result
+                }
+            }
+            is IrStmt.Throw -> throw AzoraThrownException(evalExpr(stmt.value))
+            is IrStmt.Try -> {
+                pushScope()
+                var thrown: AzoraThrownException? = null
+                var signal: ControlSignal? = null
+                try {
+                    val result = executeBody(stmt.body)
+                    if (result is ControlSignal) signal = result
+                } catch (e: AzoraThrownException) {
+                    thrown = e
+                }
+                popScope()
+                if (signal != null) return signal
+                if (thrown != null && stmt.catchBody != null) {
+                    pushScope()
+                    if (stmt.catchName != null) defineVar(stmt.catchName, thrown.value)
+                    val result = executeBody(stmt.catchBody)
+                    popScope()
+                    if (result is ControlSignal) return result
+                } else if (thrown != null) {
+                    throw thrown
+                }
             }
             is IrStmt.Assert -> {
                 val cond = evalExpr(stmt.condition) as Boolean
@@ -236,6 +305,9 @@ class IrInterpreter {
                         else -> error("Cannot negate $operand")
                     }
                     IrUnaryOp.NOT -> !(operand as Boolean)
+                    IrUnaryOp.BIT_NOT -> {
+                        if (operand is Long) operand.inv() else error("Cannot bitwise-NOT $operand")
+                    }
                 }
             }
             is IrExpr.Binary -> evalBinary(expr)
@@ -256,7 +328,12 @@ class IrInterpreter {
                         "isNotEmpty" -> receiver.isNotEmpty()
                         else -> error("no member '${expr.name}' on array")
                     }
-                    is String -> if (expr.name == "length") receiver.length.toLong() else error("no member '${expr.name}' on string")
+                    is String -> when (expr.name) {
+                        "length" -> receiver.length.toLong()
+                        "isEmpty" -> receiver.isEmpty()
+                        "isNotEmpty" -> receiver.isNotEmpty()
+                        else -> error("no member '${expr.name}' on string")
+                    }
                     is Map<*, *> -> {
                         @Suppress("UNCHECKED_CAST")
                         (receiver as Map<String, Any?>)[expr.name]
@@ -271,6 +348,17 @@ class IrInterpreter {
                 }
                 map
             }
+            is IrExpr.TupleLit -> expr.elements.map { evalExpr(it) }
+            is IrExpr.TupleAccess -> {
+                @Suppress("UNCHECKED_CAST")
+                val list = evalExpr(expr.target) as List<Any?>
+                list[expr.index]
+            }
+            is IrExpr.CatchExpr -> {
+                try { evalExpr(expr.expr) } catch (e: AzoraThrownException) { evalExpr(expr.fallback) }
+            }
+            is IrExpr.Lambda -> Closure(expr.params, expr.body, scopes.toList())
+            is IrExpr.SlotPattern -> error("SlotPattern should be handled by when matching, not evaluated")
             is IrExpr.StringTemplate -> {
                 val sb = StringBuilder()
                 for (part in expr.parts) {
@@ -284,14 +372,33 @@ class IrInterpreter {
             is IrExpr.MethodCall -> {
                 val receiver = evalExpr(expr.target)
                 val args = expr.args.map { evalExpr(it) }
-                when (expr.name) {
-                    "add" -> {
-                        @Suppress("UNCHECKED_CAST")
-                        (receiver as MutableList<Any?>).add(args[0])
-                        null
+                when {
+                    receiver is String -> when (expr.name) {
+                        "toUpperCase" -> receiver.uppercase()
+                        "toLowerCase" -> receiver.lowercase()
+                        "contains" -> receiver.contains(args[0] as String)
+                        "startsWith" -> receiver.startsWith(args[0] as String)
+                        "endsWith" -> receiver.endsWith(args[0] as String)
+                        "trim" -> receiver.trim()
+                        "replace" -> receiver.replace(args[0] as String, args[1] as String)
+                        "split" -> receiver.split(args[0] as String).toMutableList()
+                        "indexOf" -> receiver.indexOf(args[0] as String).toLong()
+                        else -> error("no method '${expr.name}' on String")
                     }
-                    "isEmpty" -> (receiver as List<*>).isEmpty()
-                    "isNotEmpty" -> (receiver as List<*>).isNotEmpty()
+                    receiver is MutableList<*> -> {
+                        @Suppress("UNCHECKED_CAST")
+                        val list = receiver as MutableList<Any?>
+                        when (expr.name) {
+                            "add" -> { list.add(args[0]); null }
+                            "insert" -> { list.add((args[0] as Long).toInt(), args[1]); null }
+                            "remove" -> { list.removeAt((args[0] as Long).toInt()); null }
+                            "contains" -> list.contains(args[0])
+                            "indexOf" -> list.indexOf(args[0]).toLong()
+                            "isEmpty" -> list.isEmpty()
+                            "isNotEmpty" -> list.isNotEmpty()
+                            else -> error("no method '${expr.name}' on array")
+                        }
+                    }
                     else -> error("no method '${expr.name}' on $receiver")
                 }
             }
@@ -303,30 +410,30 @@ class IrInterpreter {
         val right = evalExpr(expr.right)
 
         return when (expr.op) {
-            IrBinaryOp.ADD -> when (left) {
-                is Long if right is Long -> left + right
-                is Double if right is Double -> left + right
-                is String if right is String -> left + right
+            IrBinaryOp.ADD -> when {
+                left is String || right is String -> formatValue(left) + formatValue(right)
+                left is Long && right is Long -> left + right
+                left is Number && right is Number -> toNum(left) + toNum(right)
                 else -> error("Cannot add $left and $right")
             }
-            IrBinaryOp.SUB -> when (left) {
-                is Long if right is Long -> left - right
-                is Double if right is Double -> left - right
+            IrBinaryOp.SUB -> when {
+                left is Long && right is Long -> left - right
+                left is Number && right is Number -> toNum(left) - toNum(right)
                 else -> error("Cannot subtract $left and $right")
             }
-            IrBinaryOp.MUL -> when (left) {
-                is Long if right is Long -> left * right
-                is Double if right is Double -> left * right
+            IrBinaryOp.MUL -> when {
+                left is Long && right is Long -> left * right
+                left is Number && right is Number -> toNum(left) * toNum(right)
                 else -> error("Cannot multiply $left and $right")
             }
-            IrBinaryOp.DIV -> when (left) {
-                is Long if right is Long -> left / right
-                is Double if right is Double -> left / right
+            IrBinaryOp.DIV -> when {
+                left is Long && right is Long -> left / right
+                left is Number && right is Number -> toNum(left) / toNum(right)
                 else -> error("Cannot divide $left and $right")
             }
-            IrBinaryOp.MOD -> when (left) {
-                is Long if right is Long -> left % right
-                is Double if right is Double -> left % right
+            IrBinaryOp.MOD -> when {
+                left is Long && right is Long -> left % right
+                left is Number && right is Number -> toNum(left) % toNum(right)
                 else -> error("Cannot modulo $left and $right")
             }
             IrBinaryOp.EQ -> left == right
@@ -337,6 +444,11 @@ class IrInterpreter {
             IrBinaryOp.GTE -> compare(left, right) >= 0
             IrBinaryOp.AND -> (left as Boolean) && (right as Boolean)
             IrBinaryOp.OR -> (left as Boolean) || (right as Boolean)
+            IrBinaryOp.BIT_AND -> (left as Long) and (right as Long)
+            IrBinaryOp.BIT_OR -> (left as Long) or (right as Long)
+            IrBinaryOp.BIT_XOR -> (left as Long) xor (right as Long)
+            IrBinaryOp.SHL -> (left as Long) shl (right as Long).toInt()
+            IrBinaryOp.SHR -> (left as Long) shr (right as Long).toInt()
         }
     }
 
@@ -345,21 +457,72 @@ class IrInterpreter {
             left is Long && right is Long -> left.compareTo(right)
             left is Double && right is Double -> left.compareTo(right)
             left is Char && right is Char -> left.compareTo(right)
+            left is Number && right is Number -> toNum(left).compareTo(toNum(right))
             else -> error("Cannot compare $left and $right")
         }
     }
 
+    private fun toNum(x: Any): Double = when (x) {
+        is Long -> x.toDouble()
+        is Double -> x
+        else -> x.toString().toDouble()
+    }
+
+    /** Returns both operands as Long (if both are integer) or both as Double. */
+    private fun pairNum(l: Any, r: Any): Pair<Double, Double> = toNum(l) to toNum(r)
+
     private fun evalCall(expr: IrExpr.Call): Any? {
         val args = expr.args.map { evalExpr(it) }
 
+        if (expr.name == "__nullCoalesce") {
+            return if (args[0] != null) args[0] else args[1]
+        }
+        if (expr.name == "__safeMember") {
+            val target = args[0]
+            val fieldName = args[1] as String
+            if (target == null) return null
+            return when (target) {
+                is MutableList<*> -> when (fieldName) {
+                    "length" -> target.size.toLong()
+                    "isEmpty" -> target.isEmpty()
+                    "isNotEmpty" -> target.isNotEmpty()
+                    else -> error("no member '$fieldName' on array")
+                }
+                is String -> when (fieldName) {
+                    "length" -> target.length.toLong()
+                    "isEmpty" -> target.isEmpty()
+                    "isNotEmpty" -> target.isNotEmpty()
+                    else -> error("no member '$fieldName' on string")
+                }
+                is Map<*, *> -> {
+                    @Suppress("UNCHECKED_CAST")
+                    (target as Map<String, Any?>)[fieldName]
+                }
+                else -> error("no member '$fieldName' on $target")
+            }
+        }
         if (expr.name == "println") {
             val value = args.firstOrNull()
             output.appendLine(formatValue(value))
             return null
         }
 
-        val func = functions[expr.name] ?: error("Undefined function: ${expr.name}")
-        return executeFunction(func, args)
+        val func = functions[expr.name]
+        if (func != null) return executeFunction(func, args)
+
+        // Calling a lambda stored in a variable.
+        val callee = lookupVar(expr.name)
+        if (callee is Closure) {
+            val saved = scopes
+            scopes = ArrayDeque()
+            callee.capturedScopes.forEach { scopes.addLast(it) }
+            pushScope()
+            for (i in callee.params.indices) defineVar(callee.params[i].first, args[i])
+            val result = executeBody(callee.body)
+            scopes = saved
+            return (result as? ReturnSignal)?.value
+        }
+        error("Undefined function: ${expr.name}")
     }
 
     private fun formatValue(value: Any?): String = when (value) {
@@ -377,4 +540,14 @@ class IrInterpreter {
     private data class ReturnSignal(val value: Any?) : ControlSignal()
     private object BreakSignal : ControlSignal()
     private object ContinueSignal : ControlSignal()
+
+    /** A value thrown by `throw`, caught by `try`/`catch`. */
+    private class AzoraThrownException(val value: Any?) : RuntimeException(value?.toString())
+
+    /** A lambda value capturing its definition environment. */
+    private class Closure(
+        val params: List<Pair<String, org.azora.lang.ir.IrType>>,
+        val body: List<org.azora.lang.ir.IrStmt>,
+        val capturedScopes: List<MutableMap<String, Any?>>
+    )
 }

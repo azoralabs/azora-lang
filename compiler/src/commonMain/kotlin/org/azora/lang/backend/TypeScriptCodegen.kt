@@ -129,6 +129,25 @@ class TypeScriptCodegen {
             is IrStmt.Assignment -> line("${stmt.name} = ${emitExpr(stmt.value)};")
             is IrStmt.IndexAssign -> line("${emitExpr(stmt.target)}[${emitExpr(stmt.index)}] = ${emitExpr(stmt.value)};")
             is IrStmt.MemberAssign -> line("${emitExpr(stmt.target)}.${stmt.name} = ${emitExpr(stmt.value)};")
+            is IrStmt.When -> {
+                line("switch (${emitExpr(stmt.scrutinee)}) {")
+                indent++
+                for (b in stmt.branches) {
+                    for (p in b.patterns) line("case ${emitExpr(p)}:")
+                    indent++
+                    for (s in b.body) emitStmt(s)
+                    line("break;")
+                    indent--
+                }
+                if (stmt.elseBranch != null) {
+                    line("default:")
+                    indent++
+                    for (s in stmt.elseBranch) emitStmt(s)
+                    indent--
+                }
+                indent--
+                line("}")
+            }
             is IrStmt.Return -> {
                 if (stmt.value != null) line("return ${emitExpr(stmt.value)};")
                 else line("return;")
@@ -199,6 +218,22 @@ class TypeScriptCodegen {
                 indent--
                 line("}")
             }
+            is IrStmt.Throw -> line("throw ${emitExpr(stmt.value)};")
+            is IrStmt.Try -> {
+                line("try {")
+                indent++
+                for (s in stmt.body) emitStmt(s)
+                indent--
+                if (stmt.catchBody != null) {
+                    line("} catch (_e) {")
+                    indent++
+                    if (stmt.catchName != null) line("const ${stmt.catchName} = _e;")
+                    for (s in stmt.catchBody) emitStmt(s)
+                    indent--
+                }
+                line("}")
+            }
+            is IrStmt.Defer -> {}
             is IrStmt.Break -> line("break;")
             is IrStmt.Continue -> line("continue;")
         }
@@ -218,6 +253,7 @@ class TypeScriptCodegen {
             val op = when (expr.op) {
                 IrUnaryOp.NEG -> "-"
                 IrUnaryOp.NOT -> "!"
+                IrUnaryOp.BIT_NOT -> "~"
             }
             "($op${emitExpr(expr.operand)})"
         }
@@ -241,6 +277,8 @@ class TypeScriptCodegen {
                     IrBinaryOp.GTE -> ">="
                     IrBinaryOp.AND -> "&&"
                     IrBinaryOp.OR -> "||"
+                IrBinaryOp.BIT_AND -> "&"; IrBinaryOp.BIT_OR -> "|"; IrBinaryOp.BIT_XOR -> "^"
+                IrBinaryOp.SHL -> "<<"; IrBinaryOp.SHR -> ">>"
                 }
                 "(${emitExpr(expr.left)} $op ${emitExpr(expr.right)})"
             }
@@ -269,6 +307,17 @@ class TypeScriptCodegen {
             "${emitExpr(expr.target)}.$call"
         }
         is IrExpr.StructCtor -> "new ${expr.name}(${expr.args.joinToString(", ") { emitExpr(it) }})"
+        is IrExpr.TupleLit -> "[${expr.elements.joinToString(", ") { emitExpr(it) }}]"
+        is IrExpr.TupleAccess -> "${emitExpr(expr.target)}[${expr.index}]"
+        is IrExpr.CatchExpr -> "(() => { try { return ${emitExpr(expr.expr)}; } catch { return ${emitExpr(expr.fallback)}; } })()"
+        is IrExpr.SlotPattern -> "" /* handled by when lowering */
+        is IrExpr.Lambda -> {
+            val ps = expr.params.joinToString(", ") { (n, _) -> n }
+            val ret = expr.body.singleOrNull() as? IrStmt.Return
+            if (ret != null && ret.value != null) "($ps) => ${emitExpr(ret.value)}"
+            else if (ret != null) "($ps) => {}"
+            else "($ps) => {}"
+        }
         is IrExpr.StringTemplate -> {
             val sb = StringBuilder("`")
             for (part in expr.parts) {
@@ -303,6 +352,8 @@ class TypeScriptCodegen {
         is IrType.Nullable -> "${mapType(type.inner)} | null"
         is IrType.Named -> type.name
         IrType.Any -> "any"
+        is IrType.Tuple -> "any[]"
+        is IrType.Function -> "(${type.params.joinToString(", ") { mapType(it) }}) => ${mapType(type.ret)}"
     }
 
     private fun escapeString(s: String): String =

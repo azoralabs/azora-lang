@@ -107,6 +107,8 @@ sealed class IrType {
     object Any : IrType() { override fun toString() = "Any" }
 
     companion object {
+        /** Type aliases registered by the compiler (cleared per compilation). */
+        val aliases = mutableMapOf<kotlin.String, TypeRef>()
         /** The set of all numeric types (integer + floating-point). */
         val numericTypes: kotlin.collections.Set<IrType> = setOf(Int, UInt, Real, Byte, UByte, Short, UShort, Long, ULong, Cent, UCent, Float, Decimal)
 
@@ -161,17 +163,19 @@ sealed class IrType {
          * (structs, enums, generic bases not yet specialized) resolve to [Named].
          * Compound types resolve recursively.
          */
-        fun resolve(ref: TypeRef): IrType = when (ref) {
+        fun resolve(ref: TypeRef, typeParams: kotlin.collections.Set<kotlin.String> = emptySet()): IrType = when (ref) {
             is TypeRef.Named -> {
-                if (ref.args.isEmpty() && isPrimitiveName(ref.name)) fromName(ref.name)
+                if (ref.name in typeParams) Any
+                else if (ref.name in aliases) resolve(aliases[ref.name]!!, typeParams)
+                else if (ref.args.isEmpty() && isPrimitiveName(ref.name)) fromName(ref.name)
                 else Named(ref.name)
             }
-            is TypeRef.Array -> Array(resolve(ref.element))
-            is TypeRef.Map -> Map(resolve(ref.key), resolve(ref.value))
-            is TypeRef.Set -> Set(resolve(ref.element))
-            is TypeRef.Function -> Function(ref.params.map { resolve(it) }, resolve(ref.ret))
-            is TypeRef.Tuple -> Tuple(ref.elements.map { resolve(it) })
-            is TypeRef.Nullable -> Nullable(resolve(ref.inner))
+            is TypeRef.Array -> Array(resolve(ref.element, typeParams))
+            is TypeRef.Map -> Map(resolve(ref.key, typeParams), resolve(ref.value, typeParams))
+            is TypeRef.Set -> Set(resolve(ref.element, typeParams))
+            is TypeRef.Function -> Function(ref.params.map { resolve(it, typeParams) }, resolve(ref.ret, typeParams))
+            is TypeRef.Tuple -> Tuple(ref.elements.map { resolve(it, typeParams) })
+            is TypeRef.Nullable -> Nullable(resolve(ref.inner, typeParams))
         }
     }
 }
@@ -215,7 +219,17 @@ enum class IrBinaryOp {
     /** Logical AND (`&&`). */
     AND,
     /** Logical OR (`||`). */
-    OR
+    OR,
+    /** Bitwise AND (`&`). */
+    BIT_AND,
+    /** Bitwise OR (`|`). */
+    BIT_OR,
+    /** Bitwise XOR (`^`). */
+    BIT_XOR,
+    /** Left shift (`<<`). */
+    SHL,
+    /** Right shift (`>>`). */
+    SHR
 }
 
 /**
@@ -228,7 +242,9 @@ enum class IrUnaryOp {
     /** Arithmetic negation (`-`). */
     NEG,
     /** Logical negation (`!`). */
-    NOT
+    NOT,
+    /** Bitwise NOT (`~`). */
+    BIT_NOT
 }
 
 /**
@@ -394,6 +410,29 @@ sealed class IrExpr {
         override val type: IrType = IrType.String
     }
 
+    /** Tuple literal `(a, b, c)`. */
+    data class TupleLit(val elements: List<IrExpr>, override val type: IrType) : IrExpr()
+
+    /** Tuple positional access `target.index`. */
+    data class TupleAccess(val target: IrExpr, val index: Int, override val type: IrType) : IrExpr()
+
+    /** `expr catch fallback` — evaluates [expr]; on throw, evaluates [fallback]. */
+    data class CatchExpr(val expr: IrExpr, val fallback: IrExpr, override val type: IrType) : IrExpr()
+
+    /**
+     * A lambda/closure `{ params -> body }`.
+     *
+     * @property params the parameter name/type pairs
+     * @property body the lambda body statements
+     * @property type the resolved function type [IrType.Function]
+     */
+    data class Lambda(val params: List<Pair<String, IrType>>, val body: List<IrStmt>, override val type: IrType) : IrExpr()
+
+    /** A slot pattern `SlotName.VariantName(bindings)` in a `when` branch. Never evaluated — consumed by the interpreter. */
+    data class SlotPattern(val slotName: String, val variantName: String, val bindings: List<String>) : IrExpr() {
+        override val type: IrType = IrType.Bool
+    }
+
     /** Pretty-prints this expression as Azora IR text. */
     fun prettyPrint(): String = when (this) {
         is IntLiteral -> "$value"
@@ -403,7 +442,7 @@ sealed class IrExpr {
         is CharLiteral -> "'$value'"
         is Var -> name
         is Unary -> {
-            val opStr = when (op) { IrUnaryOp.NEG -> "-"; IrUnaryOp.NOT -> "!" }
+            val opStr = when (op) { IrUnaryOp.NEG -> "-"; IrUnaryOp.NOT -> "!"; IrUnaryOp.BIT_NOT -> "~" }
             "($opStr${operand.prettyPrint()})"
         }
         is Binary -> {
@@ -412,6 +451,8 @@ sealed class IrExpr {
                 IrBinaryOp.DIV -> "/"; IrBinaryOp.MOD -> "%"; IrBinaryOp.EQ -> "=="
                 IrBinaryOp.NEQ -> "!="; IrBinaryOp.LT -> "<"; IrBinaryOp.LTE -> "<="
                 IrBinaryOp.GT -> ">"; IrBinaryOp.GTE -> ">="; IrBinaryOp.AND -> "&&"
+                IrBinaryOp.BIT_AND -> "&"; IrBinaryOp.BIT_OR -> "|"; IrBinaryOp.BIT_XOR -> "^"
+                IrBinaryOp.SHL -> "<<"; IrBinaryOp.SHR -> ">>"
                 IrBinaryOp.OR -> "||"
             }
             "(${left.prettyPrint()} $opStr ${right.prettyPrint()})"
@@ -428,6 +469,11 @@ sealed class IrExpr {
                 is IrTemplatePart.Expr -> "\${${it.expr.prettyPrint()}}"
             }
         }
+        is TupleLit -> "(${elements.joinToString(", ") { it.prettyPrint() }})"
+        is TupleAccess -> "${target.prettyPrint()}.$index"
+        is CatchExpr -> "(${expr.prettyPrint()} catch ${fallback.prettyPrint()})"
+        is Lambda -> "{ ${params.joinToString(", ") { (n, t) -> "$n: $t" }} -> ... }"
+        is SlotPattern -> "$slotName.$variantName(${bindings.joinToString(",")})"
     }
 }
 
@@ -576,6 +622,20 @@ sealed class IrStmt {
     /** `continue` — skips to the next iteration of the innermost loop. */
     object Continue : IrStmt() { override fun toString() = "continue" }
 
+    /**
+     * `when scrutinee { patterns -> body ... else -> body }`.
+     */
+    data class When(val scrutinee: IrExpr, val branches: List<IrWhenBranch>, val elseBranch: List<IrStmt>?) : IrStmt()
+
+    /** `throw value`. */
+    data class Throw(val value: IrExpr) : IrStmt()
+
+    /** `try { body } catch { name -> handler }`. */
+    data class Try(val body: List<IrStmt>, val catchName: String?, val catchBody: List<IrStmt>?) : IrStmt()
+
+    /** `defer { body }` — runs [body] when the enclosing function exits. */
+    data class Defer(val body: List<IrStmt>) : IrStmt()
+
     /** Pretty-prints this statement as Azora IR text. */
     fun prettyPrint(sb: StringBuilder, indent: Int) {
         val pad = "    ".repeat(indent)
@@ -622,6 +682,36 @@ sealed class IrStmt {
             }
             is Break -> sb.appendLine("${pad}break")
             is Continue -> sb.appendLine("${pad}continue")
+            is When -> {
+                sb.appendLine("${pad}when ${scrutinee.prettyPrint()} {")
+                for (b in branches) {
+                    sb.appendLine("${pad}    ${b.patterns.joinToString(", ") { it.prettyPrint() }} -> {")
+                    for (s in b.body) s.prettyPrint(sb, indent + 2)
+                    sb.appendLine("${pad}    }")
+                }
+                if (elseBranch != null) {
+                    sb.appendLine("${pad}    else -> {")
+                    for (s in elseBranch) s.prettyPrint(sb, indent + 2)
+                    sb.appendLine("${pad}    }")
+                }
+                sb.appendLine("${pad}}")
+            }
+            is Throw -> sb.appendLine("${pad}throw ${value.prettyPrint()}")
+            is Defer -> {
+                sb.appendLine("${pad}defer {")
+                for (s in body) s.prettyPrint(sb, indent + 1)
+                sb.appendLine("${pad}}")
+            }
+            is Try -> {
+                sb.appendLine("${pad}try {")
+                for (s in body) s.prettyPrint(sb, indent + 1)
+                if (catchBody != null) {
+                    val bind = if (catchName != null) "$catchName -> " else ""
+                    sb.appendLine("${pad}} catch { $bind")
+                    for (s in catchBody) s.prettyPrint(sb, indent + 1)
+                }
+                sb.appendLine("${pad}}")
+            }
         }
     }
 }
@@ -656,6 +746,9 @@ data class IrFunction(
 
 /** A field of an IR struct type. */
 data class IrField(val name: String, val type: IrType, val mutable: Boolean)
+
+/** One branch of an IR `when`: any of [patterns] matches → run [body]. */
+data class IrWhenBranch(val patterns: List<IrExpr>, val body: List<IrStmt>)
 
 /**
  * A top-level item in the IR program — either a global statement or a function.
@@ -869,6 +962,37 @@ private fun dumpIrStmtTree(sb: StringBuilder, stmt: IrStmt, indent: String) {
         }
         is IrStmt.Break -> sb.appendLine("${indent}IrBreak")
         is IrStmt.Continue -> sb.appendLine("${indent}IrContinue")
+        is IrStmt.When -> {
+            sb.appendLine("${indent}IrWhen")
+            sb.appendLine("$indent    scrutinee:")
+            dumpIrExprTree(sb, stmt.scrutinee, "$indent        ")
+            for (b in stmt.branches) {
+                sb.appendLine("$indent    branch:")
+                for (p in b.patterns) dumpIrExprTree(sb, p, "$indent        ")
+                for (s in b.body) dumpIrStmtTree(sb, s, "$indent        ")
+            }
+            if (stmt.elseBranch != null) {
+                sb.appendLine("$indent    else:")
+                for (s in stmt.elseBranch) dumpIrStmtTree(sb, s, "$indent        ")
+            }
+        }
+        is IrStmt.Throw -> {
+            sb.appendLine("${indent}IrThrow")
+            dumpIrExprTree(sb, stmt.value, "$indent    ")
+        }
+        is IrStmt.Try -> {
+            sb.appendLine("${indent}IrTry(catchName=${stmt.catchName})")
+            sb.appendLine("$indent    body:")
+            for (s in stmt.body) dumpIrStmtTree(sb, s, "$indent        ")
+            if (stmt.catchBody != null) {
+                sb.appendLine("$indent    catch:")
+                for (s in stmt.catchBody) dumpIrStmtTree(sb, s, "$indent        ")
+            }
+        }
+        is IrStmt.Defer -> {
+            sb.appendLine("${indent}IrDefer")
+            for (s in stmt.body) dumpIrStmtTree(sb, s, "$indent    ")
+        }
     }
 }
 
@@ -928,6 +1052,26 @@ private fun dumpIrExprTree(sb: StringBuilder, expr: IrExpr, indent: String) {
                     }
                 }
             }
+        }
+        is IrExpr.TupleLit -> {
+            sb.appendLine("${indent}IrTupleLit : ${expr.type}")
+            for (e in expr.elements) dumpIrExprTree(sb, e, "$indent    ")
+        }
+        is IrExpr.TupleAccess -> {
+            sb.appendLine("${indent}IrTupleAccess(index=${expr.index}) : ${expr.type}")
+            dumpIrExprTree(sb, expr.target, "$indent    ")
+        }
+        is IrExpr.CatchExpr -> {
+            sb.appendLine("${indent}IrCatchExpr : ${expr.type}")
+            dumpIrExprTree(sb, expr.expr, "$indent    ")
+            dumpIrExprTree(sb, expr.fallback, "$indent    ")
+        }
+        is IrExpr.SlotPattern -> {
+            sb.appendLine("${indent}IrSlotPattern(${expr.slotName}.${expr.variantName}, bindings=${expr.bindings})")
+        }
+        is IrExpr.Lambda -> {
+            sb.appendLine("${indent}IrLambda : ${expr.type}")
+            for (s in expr.body) dumpIrStmtTree(sb, s, "$indent    ")
         }
     }
 }

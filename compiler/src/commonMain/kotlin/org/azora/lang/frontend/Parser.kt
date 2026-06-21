@@ -41,6 +41,9 @@ class Parser(private val tokens: List<Token>) {
 
     private var current = 0
 
+    /** When `>>` (SHIFT_RIGHT) is split for nested generics, this flag signals a pending `>` for the enclosing type. */
+    private var pendingGreater = false
+
     /**
      * Parses the token stream into a [Program] AST.
      *
@@ -75,6 +78,11 @@ class Parser(private val tokens: List<Token>) {
             check(TokenType.DEEPINLINE) -> parseTopLevelDeepInline()
             check(TokenType.TEST) -> parseTestDecl()
             check(TokenType.PACK) -> parsePack()
+            check(TokenType.ENUM) -> parseEnumDecl()
+            check(TokenType.IMPL) -> parseImpl()
+            check(TokenType.SPEC) -> parseSpec()
+            check(TokenType.SLOT) -> parseSlot()
+            check(TokenType.TYPEALIAS) -> parseTypeAlias()
             check(TokenType.FIN) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseExpr(); consumeNewline(); TopLevel.FinDecl(name, type, init, start.line, start.column) }
             check(TokenType.VAR) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseExpr(); consumeNewline(); TopLevel.VarDecl(name, type, init, start.line, start.column) }
             check(TokenType.LET) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseExpr(); consumeNewline(); TopLevel.LetDecl(name, type, init, start.line, start.column) }
@@ -290,6 +298,7 @@ class Parser(private val tokens: List<Token>) {
         val start = peek()
         consume(TokenType.PACK, "Expected 'pack'")
         val name = consume(TokenType.IDENTIFIER, "Expected pack name").lexeme
+        val typeParams = parseTypeParams()
         consume(TokenType.L_BRACE, "Expected '{' after pack name")
         skipNewlines()
         val fields = mutableListOf<PackField>()
@@ -301,7 +310,7 @@ class Parser(private val tokens: List<Token>) {
         }
         consume(TokenType.R_BRACE, "Expected '}' after pack fields")
         consumeNewline()
-        return TopLevel.Pack(name, fields, start.line, start.column)
+        return TopLevel.Pack(name, fields, typeParams, start.line, start.column)
     }
 
     private fun parsePackField(): PackField {
@@ -317,6 +326,145 @@ class Parser(private val tokens: List<Token>) {
         val default = if (match(TokenType.EQUAL)) parseExpr() else null
         consumeNewline()
         return PackField(name, type, mutable, default)
+    }
+
+    /** `enum Name { Var1; Var2; ... }` — variants one per line. */
+    private fun parseEnumDecl(): TopLevel.Enum {
+        val start = peek()
+        consume(TokenType.ENUM, "Expected 'enum'")
+        val name = consume(TokenType.IDENTIFIER, "Expected enum name").lexeme
+        consume(TokenType.L_BRACE, "Expected '{' after enum name")
+        skipNewlines()
+        val variants = mutableListOf<String>()
+        while (!check(TokenType.R_BRACE) && !isAtEnd()) {
+            skipNewlines()
+            if (check(TokenType.R_BRACE)) break
+            variants.add(consume(TokenType.IDENTIFIER, "Expected variant name").lexeme)
+            consumeNewline()
+        }
+        consume(TokenType.R_BRACE, "Expected '}' after enum variants")
+        consumeNewline()
+        return TopLevel.Enum(name, variants, start.line, start.column)
+    }
+
+    /** `impl Type { methods }` or `impl Trait for Type { methods }`. */
+    private fun parseImpl(): TopLevel.Impl {
+        val start = peek()
+        consume(TokenType.IMPL, "Expected 'impl'")
+        val first = consume(TokenType.IDENTIFIER, "Expected type or trait name after 'impl'").lexeme
+        var typeName = first
+        var traitName: String? = null
+        if (match(TokenType.FOR)) {
+            traitName = first
+            typeName = consume(TokenType.IDENTIFIER, "Expected type name after 'for'").lexeme
+        }
+        consume(TokenType.L_BRACE, "Expected '{' after impl type")
+        skipNewlines()
+        val methods = mutableListOf<FuncDecl>()
+        while (!check(TokenType.R_BRACE) && !isAtEnd()) {
+            skipNewlines()
+            if (check(TokenType.R_BRACE)) break
+            val isInline = match(TokenType.INLINE)
+            methods.add(parseFuncDecl(isInline))
+            skipNewlines()
+        }
+        consume(TokenType.R_BRACE, "Expected '}' after impl methods")
+        consumeNewline()
+        return TopLevel.Impl(typeName, methods, traitName, start.line, start.column)
+    }
+
+    /** `slot Name { Variant(Type); Variant2(Type1, Type2); Variant3 }` — a tagged union. */
+    private fun parseSlot(): TopLevel.Slot {
+        val start = peek()
+        consume(TokenType.SLOT, "Expected 'slot'")
+        val name = consume(TokenType.IDENTIFIER, "Expected slot name").lexeme
+        consume(TokenType.L_BRACE, "Expected '{' after slot name")
+        skipNewlines()
+        val variants = mutableListOf<TopLevel.SlotVariant>()
+        while (!check(TokenType.R_BRACE) && !isAtEnd()) {
+            skipNewlines()
+            if (check(TokenType.R_BRACE)) break
+            val vname = consume(TokenType.IDENTIFIER, "Expected variant name").lexeme
+            val payloadTypes = if (match(TokenType.L_PAREN)) {
+                val types = mutableListOf<TypeRef>()
+                if (!check(TokenType.R_PAREN)) {
+                    do { types.add(parseTypeName()) } while (match(TokenType.COMMA))
+                }
+                consume(TokenType.R_PAREN, "Expected ')' after payload types")
+                types
+            } else emptyList()
+            consumeNewline()
+            variants.add(TopLevel.SlotVariant(vname, payloadTypes))
+        }
+        consume(TokenType.R_BRACE, "Expected '}' after slot variants")
+        consumeNewline()
+        return TopLevel.Slot(name, variants, start.line, start.column)
+    }
+
+    /** `spec Name { func method(params): Ret ... }` — a trait declaration (signatures only). */
+    private fun parseSpec(): TopLevel.Spec {
+        val start = peek()
+        consume(TokenType.SPEC, "Expected 'spec'")
+        val name = consume(TokenType.IDENTIFIER, "Expected spec name").lexeme
+        consume(TokenType.L_BRACE, "Expected '{' after spec name")
+        skipNewlines()
+        val methods = mutableListOf<FuncDecl>()
+        while (!check(TokenType.R_BRACE) && !isAtEnd()) {
+            skipNewlines()
+            if (check(TokenType.R_BRACE)) break
+            consume(TokenType.FUNC, "Expected 'func' in spec")
+            val mname = consume(TokenType.IDENTIFIER, "Expected method name").lexeme
+            consume(TokenType.L_PAREN, "Expected '('")
+            val params = parseParams()
+            consume(TokenType.R_PAREN, "Expected ')'")
+            val returnType: TypeAnnotation = if (match(TokenType.COLON)) {
+                TypeAnnotation.Explicit(parseTypeName())
+            } else {
+                TypeAnnotation.Inferred
+            }
+            consumeNewline()
+            methods.add(FuncDecl(mname, params, returnType, emptyList(), false, emptyList(), start.line, start.column))
+        }
+        consume(TokenType.R_BRACE, "Expected '}' after spec methods")
+        consumeNewline()
+        return TopLevel.Spec(name, methods, start.line, start.column)
+    }
+
+    /** `when scrutinee { patterns -> { body } ... else -> { body } }`. */
+    private fun parseWhen(): Stmt.When {
+        val start = peek()
+        consume(TokenType.WHEN, "Expected 'when'")
+        val scrutinee = parseExpr()
+        consume(TokenType.L_BRACE, "Expected '{' after when scrutinee")
+        skipNewlines()
+        val branches = mutableListOf<Stmt.WhenBranch>()
+        var elseBranch: List<Stmt>? = null
+        while (!check(TokenType.R_BRACE) && !isAtEnd()) {
+            skipNewlines()
+            if (check(TokenType.R_BRACE)) break
+            if (match(TokenType.ELSE)) {
+                consume(TokenType.ARROW, "Expected '->' after else")
+                consume(TokenType.L_BRACE, "Expected '{' after '->'")
+                skipNewlines()
+                elseBranch = parseBlock()
+                consume(TokenType.R_BRACE, "Expected '}'")
+                skipNewlines()
+                break
+            }
+            val patterns = mutableListOf<Expr>()
+            patterns.add(parseExpr())
+            while (match(TokenType.COMMA)) patterns.add(parseExpr())
+            consume(TokenType.ARROW, "Expected '->' after when patterns")
+            consume(TokenType.L_BRACE, "Expected '{' after '->'")
+            skipNewlines()
+            val body = parseBlock()
+            consume(TokenType.R_BRACE, "Expected '}'")
+            skipNewlines()
+            branches.add(Stmt.WhenBranch(patterns, body, start.line, start.column))
+        }
+        consume(TokenType.R_BRACE, "Expected '}' after when body")
+        consumeNewline()
+        return Stmt.When(scrutinee, branches, elseBranch, start.line, start.column)
     }
 
     private fun parseTopLevelInlineAssert(): TopLevel.InlineAssert {
@@ -356,6 +504,7 @@ class Parser(private val tokens: List<Token>) {
     private fun parseFuncDecl(isInline: Boolean = false): FuncDecl {
         val start = peek()
         consume(TokenType.FUNC, "Expected 'func'")
+        val typeParams = parseTypeParams()
         val name = consume(TokenType.IDENTIFIER, "Expected function name").lexeme
         consume(TokenType.L_PAREN, "Expected '(' after function name")
         val params = parseParams()
@@ -387,7 +536,7 @@ class Parser(private val tokens: List<Token>) {
             consumeNewline()
             body = stmts
         }
-        return FuncDecl(name, params, returnType, body, isInline, start.line, start.column)
+        return FuncDecl(name, params, returnType, body, isInline, typeParams, start.line, start.column)
     }
 
     private fun parseParams(): List<Param> {
@@ -402,7 +551,20 @@ class Parser(private val tokens: List<Token>) {
         return params
     }
 
-    private fun parseTypeName(): TypeRef = parseTypeAtom()
+    /** `<T, U>` type-parameter list (returns empty list if none). */
+    private fun parseTypeParams(): List<String> {
+        if (!check(TokenType.LESS)) return emptyList()
+        advance()
+        val params = mutableListOf<String>()
+        do { params.add(consume(TokenType.IDENTIFIER, "Expected type parameter name").lexeme) } while (match(TokenType.COMMA))
+        consume(TokenType.GREATER, "Expected '>' after type parameters")
+        return params
+    }
+
+    private fun parseTypeName(): TypeRef {
+        val base = parseTypeAtom()
+        return if (match(TokenType.QMARK)) TypeRef.Nullable(base) else base
+    }
 
     /**
      * Parses a structured type reference.
@@ -455,7 +617,13 @@ class Parser(private val tokens: List<Token>) {
                 val args = if (match(TokenType.LESS)) {
                     val a = mutableListOf<TypeRef>()
                     do { a.add(parseTypeName()) } while (match(TokenType.COMMA))
-                    consume(TokenType.GREATER, "Expected '>' to close generic type arguments")
+                    // Accept '>', or '>>' (which closes this and one enclosing generic)
+                    when {
+                        pendingGreater -> { pendingGreater = false }
+                        check(TokenType.GREATER) -> { advance() }
+                        check(TokenType.SHIFT_RIGHT) -> { advance(); pendingGreater = true }
+                        else -> consume(TokenType.GREATER, "Expected '>' to close generic type arguments")
+                    }
                     a
                 } else emptyList()
                 TypeRef.Named(name, args)
@@ -487,6 +655,11 @@ class Parser(private val tokens: List<Token>) {
             check(TokenType.LOOP) -> parseLoop()
             check(TokenType.BREAK) -> parseBreak()
             check(TokenType.CONTINUE) -> parseContinue()
+            check(TokenType.WHEN) -> parseWhen()
+            check(TokenType.THROW) -> parseThrow()
+            check(TokenType.TRY) -> parseTry()
+            check(TokenType.DEFER) -> parseDefer()
+            check(TokenType.GUARD) -> parseGuard()
             else -> parseExprStmt()
         }
     }
@@ -538,6 +711,75 @@ class Parser(private val tokens: List<Token>) {
         consume(TokenType.CONTINUE, "Expected 'continue'")
         consumeNewline()
         return Stmt.Continue
+    }
+
+    private fun parseThrow(): Stmt.Throw {
+        val start = peek()
+        consume(TokenType.THROW, "Expected 'throw'")
+        val value = parseExpr()
+        consumeNewline()
+        return Stmt.Throw(value, start.line, start.column)
+    }
+
+    private fun parseDefer(): Stmt.Defer {
+        val start = peek()
+        consume(TokenType.DEFER, "Expected 'defer'")
+        consume(TokenType.L_BRACE, "Expected '{' after 'defer'")
+        skipNewlines()
+        val body = parseBlock()
+        consume(TokenType.R_BRACE, "Expected '}'")
+        consumeNewline()
+        return Stmt.Defer(body, start.line, start.column)
+    }
+
+    /** `guard condition else { body }` — sugar for `if !condition { body }`. */
+    private fun parseGuard(): Stmt {
+        val start = peek()
+        consume(TokenType.GUARD, "Expected 'guard'")
+        val condition = parseExpr()
+        consume(TokenType.ELSE, "Expected 'else' after guard condition")
+        consume(TokenType.L_BRACE, "Expected '{' after 'else'")
+        skipNewlines()
+        val body = parseBlock()
+        consume(TokenType.R_BRACE, "Expected '}'")
+        consumeNewline()
+        // Desugar to: if !(condition) { body }
+        val negated = Expr.Unary(TokenType.BANG, condition, start.line, start.column)
+        return Stmt.If(negated, body, null, start.line, start.column)
+    }
+
+    private fun parseTypeAlias(): TopLevel.TypeAlias {
+        val start = peek()
+        consume(TokenType.TYPEALIAS, "Expected 'typealias'")
+        val name = consume(TokenType.IDENTIFIER, "Expected type alias name").lexeme
+        consume(TokenType.EQUAL, "Expected '=' in typealias")
+        val type = parseTypeName()
+        consumeNewline()
+        return TopLevel.TypeAlias(name, type, start.line, start.column)
+    }
+
+    private fun parseTry(): Stmt.Try {
+        val start = peek()
+        consume(TokenType.TRY, "Expected 'try'")
+        consume(TokenType.L_BRACE, "Expected '{' after 'try'")
+        skipNewlines()
+        val body = parseBlock()
+        consume(TokenType.R_BRACE, "Expected '}' after try body")
+        var catchName: String? = null
+        var catchBody: List<Stmt>? = null
+        if (match(TokenType.CATCH)) {
+            consume(TokenType.L_BRACE, "Expected '{' after 'catch'")
+            skipNewlines()
+            if (check(TokenType.IDENTIFIER) && peekNext()?.type == TokenType.ARROW) {
+                catchName = advance().lexeme
+                consume(TokenType.ARROW, "Expected '->'")
+                skipNewlines()
+            }
+            catchBody = parseBlock()
+            consume(TokenType.R_BRACE, "Expected '}' after catch body")
+        }
+        consumeNewline()
+        return Stmt.Try(body, catchName, catchBody, start.line, start.column)
     }
 
     private fun parseInline(): Stmt {
@@ -883,6 +1125,21 @@ class Parser(private val tokens: List<Token>) {
                 buildAssignment(expr, rhs, start.line, start.column)
             }
             else -> {
+                // ++ / -- on an identifier: desugar to x = x + 1 / x = x - 1
+                if (expr is Expr.Identifier) {
+                    when {
+                        match(TokenType.PLUS_PLUS) -> {
+                            consumeNewline()
+                            val rhs = Expr.Binary(expr, TokenType.PLUS, Expr.IntLiteral(1, start.line), start.line)
+                            return Stmt.Assignment(expr.name, rhs, start.line, start.column)
+                        }
+                        match(TokenType.MINUS_MINUS) -> {
+                            consumeNewline()
+                            val rhs = Expr.Binary(expr, TokenType.MINUS, Expr.IntLiteral(1, start.line), start.line)
+                            return Stmt.Assignment(expr.name, rhs, start.line, start.column)
+                        }
+                    }
+                }
                 consumeNewline()
                 Stmt.ExprStmt(expr, start.line, start.column)
             }
@@ -907,7 +1164,20 @@ class Parser(private val tokens: List<Token>) {
     // Expressions (precedence climbing)
     // -----------------------------------------------------------------------
 
-    private fun parseExpr(): Expr = parseOr()
+    private fun parseExpr(): Expr {
+        var e = parseOr()
+        // `??` — null-coalesce (lower precedence than || but higher than catch)
+        while (check(TokenType.QMARK_QMARK)) {
+            advance()
+            val right = parseOr()
+            e = Expr.NullCoalesce(e, right, e.line)
+        }
+        while (match(TokenType.CATCH)) {
+            val fallback = parseOr()
+            e = Expr.CatchExpr(e, fallback, e.line, e.column, e.length)
+        }
+        return e
+    }
 
     private fun parseOr(): Expr {
         var left = parseAnd()
@@ -919,10 +1189,37 @@ class Parser(private val tokens: List<Token>) {
     }
 
     private fun parseAnd(): Expr {
-        var left = parseEquality()
+        var left = parseBitwiseOr()
         while (match(TokenType.AND_AND)) {
-            val right = parseEquality()
+            val right = parseBitwiseOr()
             left = Expr.Binary(left, TokenType.AND_AND, right, left.line)
+        }
+        return left
+    }
+
+    private fun parseBitwiseOr(): Expr {
+        var left = parseBitwiseXor()
+        while (match(TokenType.PIPE)) {
+            val right = parseBitwiseXor()
+            left = Expr.Binary(left, TokenType.PIPE, right, left.line)
+        }
+        return left
+    }
+
+    private fun parseBitwiseXor(): Expr {
+        var left = parseBitwiseAnd()
+        while (match(TokenType.CARET)) {
+            val right = parseBitwiseAnd()
+            left = Expr.Binary(left, TokenType.CARET, right, left.line)
+        }
+        return left
+    }
+
+    private fun parseBitwiseAnd(): Expr {
+        var left = parseEquality()
+        while (match(TokenType.AMP)) {
+            val right = parseEquality()
+            left = Expr.Binary(left, TokenType.AMP, right, left.line)
         }
         return left
     }
@@ -938,10 +1235,20 @@ class Parser(private val tokens: List<Token>) {
     }
 
     private fun parseComparison(): Expr {
-        var left = parseRange()
+        var left = parseShift()
         while (check(TokenType.LESS) || check(TokenType.LESS_EQUAL) ||
                check(TokenType.GREATER) || check(TokenType.GREATER_EQUAL)
         ) {
+            val op = advance().type
+            val right = parseShift()
+            left = Expr.Binary(left, op, right, left.line)
+        }
+        return left
+    }
+
+    private fun parseShift(): Expr {
+        var left = parseRange()
+        while (check(TokenType.SHIFT_LEFT) || check(TokenType.SHIFT_RIGHT)) {
             val op = advance().type
             val right = parseRange()
             left = Expr.Binary(left, op, right, left.line)
@@ -980,7 +1287,7 @@ class Parser(private val tokens: List<Token>) {
     }
 
     private fun parseUnary(): Expr {
-        if (check(TokenType.BANG) || check(TokenType.MINUS)) {
+        if (check(TokenType.BANG) || check(TokenType.MINUS) || check(TokenType.TILDE)) {
             val op = advance()
             val operand = parseUnary()
             return Expr.Unary(op.type, operand, op.line, op.column, op.lexeme.length)
@@ -998,8 +1305,18 @@ class Parser(private val tokens: List<Token>) {
             when {
                 check(TokenType.DOT) -> {
                     val dot = advance()
-                    val name = consume(TokenType.IDENTIFIER, "Expected member name after '.'").lexeme
-                    expr = Expr.Member(expr, name, expr.line, expr.column, dot.lexeme.length + name.length)
+                    if (check(TokenType.INT_LITERAL)) {
+                        val idx = (advance().literal as NumericLiteral).value as Long
+                        expr = Expr.TupleAccess(expr, idx.toInt(), expr.line, expr.column)
+                    } else {
+                        val name = consume(TokenType.IDENTIFIER, "Expected member name after '.'").lexeme
+                        expr = Expr.Member(expr, name, expr.line, expr.column, dot.lexeme.length + name.length)
+                    }
+                }
+                check(TokenType.QMARK_DOT) -> {
+                    advance()
+                    val name = consume(TokenType.IDENTIFIER, "Expected member name after '?.'").lexeme
+                    expr = Expr.SafeMember(expr, name, expr.line, expr.column)
                 }
                 check(TokenType.L_BRACKET) -> {
                     advance()
@@ -1011,7 +1328,14 @@ class Parser(private val tokens: List<Token>) {
                     advance()
                     val args = mutableListOf<Expr>()
                     if (!check(TokenType.R_PAREN)) {
-                        do { args.add(parseExpr()) } while (match(TokenType.COMMA))
+                        do {
+                            val first = parseExpr()
+                            val arg = if (first is Expr.Identifier && check(TokenType.COLON)) {
+                                advance()
+                                Expr.NamedArg(first.name, parseExpr(), first.line, first.column, first.length)
+                            } else first
+                            args.add(arg)
+                        } while (match(TokenType.COMMA))
                     }
                     consume(TokenType.R_PAREN, "Expected ')' after arguments")
                     expr = when (expr) {
@@ -1054,6 +1378,7 @@ class Parser(private val tokens: List<Token>) {
             TokenType.CHAR_LITERAL -> { advance(); Expr.CharLiteral(tok.literal as Char, tok.line, tok.column, tok.lexeme.length) }
             TokenType.TRUE -> { advance(); Expr.BoolLiteral(true, tok.line, tok.column, tok.lexeme.length) }
             TokenType.FALSE -> { advance(); Expr.BoolLiteral(false, tok.line, tok.column, tok.lexeme.length) }
+            TokenType.NULL -> { advance(); Expr.NullLiteral }
             TokenType.IDENTIFIER -> { advance(); Expr.Identifier(tok.lexeme, tok.line, tok.column, tok.lexeme.length) }
             TokenType.DOUBLE_COLON -> {
                 advance() // consume first '::'
@@ -1069,9 +1394,16 @@ class Parser(private val tokens: List<Token>) {
             }
             TokenType.L_PAREN -> {
                 advance()
-                val expr = parseExpr()
-                consume(TokenType.R_PAREN, "Expected ')'")
-                Expr.Grouping(expr, tok.line, tok.column)
+                val first = parseExpr()
+                if (match(TokenType.COMMA)) {
+                    val elements = mutableListOf(first)
+                    do { elements.add(parseExpr()) } while (match(TokenType.COMMA))
+                    consume(TokenType.R_PAREN, "Expected ')' after tuple")
+                    Expr.TupleLit(elements, tok.line, tok.column)
+                } else {
+                    consume(TokenType.R_PAREN, "Expected ')'")
+                    Expr.Grouping(first, tok.line, tok.column)
+                }
             }
             TokenType.L_BRACKET -> {
                 advance()
@@ -1082,6 +1414,7 @@ class Parser(private val tokens: List<Token>) {
                 consume(TokenType.R_BRACKET, "Expected ']' after array elements")
                 Expr.ArrayLiteral(elements, tok.line, tok.column)
             }
+            TokenType.L_BRACE -> parseLambda(tok.line, tok.column)
             else -> error("Unexpected token '${tok.lexeme}' at line ${tok.line}")
         }
     }
@@ -1089,6 +1422,31 @@ class Parser(private val tokens: List<Token>) {
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
+
+    /** `{ params -> body }` or `{ -> body }` — a lambda. Parameters carry explicit types. */
+    private fun parseLambda(line: Int, column: Int): Expr.Lambda {
+        consume(TokenType.L_BRACE, "Expected '{'")
+        skipNewlines()
+        val params = mutableListOf<Param>()
+        if (!check(TokenType.ARROW)) {
+            do {
+                val name = consume(TokenType.IDENTIFIER, "Expected lambda parameter name").lexeme
+                consume(TokenType.COLON, "Expected ':' after lambda parameter name")
+                val type = parseTypeName()
+                params.add(Param(name, type))
+            } while (match(TokenType.COMMA))
+        }
+        consume(TokenType.ARROW, "Expected '->' in lambda")
+        skipNewlines()
+        val body = parseBlock().toMutableList()
+        // A lambda implicitly returns its last expression.
+        if (body.isNotEmpty() && body.last() is Stmt.ExprStmt) {
+            val last = body.removeAt(body.size - 1) as Stmt.ExprStmt
+            body.add(Stmt.Return(last.expr, last.line, last.column, last.length))
+        }
+        consume(TokenType.R_BRACE, "Expected '}' after lambda body")
+        return Expr.Lambda(params, body, line, column)
+    }
 
     /**
      * Parses an expression from a raw source string (used to parse the embedded

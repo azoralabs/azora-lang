@@ -22,6 +22,7 @@ import org.azora.lang.frontend.NumericSuffix
 import org.azora.lang.frontend.Program
 import org.azora.lang.frontend.Stmt
 import org.azora.lang.frontend.TokenType
+import org.azora.lang.frontend.TopLevel
 import org.azora.lang.frontend.TypeAnnotation
 import org.azora.lang.frontend.TypeRef
 import org.azora.lang.ir.IrType
@@ -43,14 +44,10 @@ import kotlin.collections.iterator
 class TypeResolver(private val table: SymbolTable) {
 
     private val errors = mutableListOf<String>()
+    private var program: Program? = null
 
-    /**
-     * Type-checks all functions in the given program.
-     *
-     * @param program the CTFE-stabilized AST to type-check
-     * @return a list of type error messages (empty if the program is well-typed)
-     */
     fun resolve(program: Program): List<String> {
+        this.program = program
         for (func in program.functions) {
             resolveFunction(func)
         }
@@ -59,6 +56,21 @@ class TypeResolver(private val table: SymbolTable) {
             table.pushScope()
             for (stmt in test.body) resolveStmt(stmt, IrType.Unit)
             table.popScope()
+        }
+        // Resolve impl method bodies (self + declared params in scope)
+        for (item in program.items) {
+            if (item is TopLevel.Impl) {
+                for (method in item.methods) {
+                    val mangled = "${item.typeName}_${method.name}"
+                    val func = table.lookupFunction(mangled) ?: continue
+                    table.pushScope()
+                    for ((name, type) in func.params) {
+                        table.defineVariable(VariableSymbol(name, type))
+                    }
+                    resolveBody(method.body, func.returnType)
+                    table.popScope()
+                }
+            }
         }
         return errors
     }
@@ -211,9 +223,22 @@ class TypeResolver(private val table: SymbolTable) {
                         if (toType != null && toType != IrType.Int) {
                             errors.add("line ${stmt.line}: range end must be Int, got $toType")
                         }
+                        table.pushScope()
+                        table.defineVariable(VariableSymbol(stmt.name, IrType.Int, mutable = true))
+                        resolveBody(stmt.body, returnType)
+                        table.popScope()
                     }
                     else -> {
-                        errors.add("line ${stmt.line}: for loop iterable must be an integer range (e.g. 0..10)")
+                        val iterType = resolveExpr(iter)
+                        if (iterType == null) return
+                        if (iterType !is IrType.Array) {
+                            errors.add("line ${stmt.line}: for loop iterable must be a range or array, got $iterType")
+                            return
+                        }
+                        table.pushScope()
+                        table.defineVariable(VariableSymbol(stmt.name, iterType.element, mutable = false))
+                        resolveBody(stmt.body, returnType)
+                        table.popScope()
                     }
                 }
                 table.pushScope()
@@ -264,6 +289,64 @@ class TypeResolver(private val table: SymbolTable) {
                     errors.add("line ${stmt.line}: cannot assign member '${stmt.name}' on $targetType (not a struct)")
                 }
             }
+            is Stmt.When -> {
+                resolveExpr(stmt.scrutinee) ?: return
+                for (branch in stmt.branches) {
+                    var handledBySlot = false
+                    for (pattern in branch.patterns) {
+                        if (pattern is Expr.MethodCall && pattern.target is Expr.Identifier) {
+                            val slotVariants = table.lookupSlot(pattern.target.name)
+                            if (slotVariants != null) {
+                                val variant = slotVariants.find { it.first == pattern.name }
+                                if (variant != null) {
+                                    table.pushScope()
+                                    for (i in pattern.args.indices) {
+                                        val bindName = (pattern.args[i] as? Expr.Identifier)?.name
+                                        if (bindName != null && i < variant.second.size) {
+                                            table.defineVariable(VariableSymbol(bindName, variant.second[i], mutable = true))
+                                        }
+                                    }
+                                    resolveBody(branch.body, returnType)
+                                    table.popScope()
+                                    handledBySlot = true
+                                    break
+                                }
+                            }
+                        }
+                    }
+                    if (handledBySlot) continue
+                    for (pattern in branch.patterns) {
+                        resolveExpr(pattern) ?: return
+                    }
+                    table.pushScope()
+                    resolveBody(branch.body, returnType)
+                    table.popScope()
+                }
+                if (stmt.elseBranch != null) {
+                    table.pushScope()
+                    resolveBody(stmt.elseBranch, returnType)
+                    table.popScope()
+                }
+            }
+            is Stmt.Throw -> { resolveExpr(stmt.value) }
+            is Stmt.Try -> {
+                table.pushScope()
+                resolveBody(stmt.body, returnType)
+                table.popScope()
+                if (stmt.catchBody != null) {
+                    table.pushScope()
+                    if (stmt.catchName != null) {
+                        table.defineVariable(VariableSymbol(stmt.catchName, IrType.Any, mutable = false))
+                    }
+                    resolveBody(stmt.catchBody, returnType)
+                    table.popScope()
+                }
+            }
+            is Stmt.Defer -> {
+                table.pushScope()
+                resolveBody(stmt.body, returnType)
+                table.popScope()
+            }
             is Stmt.InlineAssert -> errors.add("line ${stmt.line}: inline assert could not be evaluated at compile time")
             is Stmt.InlineTrace -> errors.add("line ${stmt.line}: inline trace could not be evaluated at compile time")
         }
@@ -296,6 +379,7 @@ class TypeResolver(private val table: SymbolTable) {
             is Expr.RealLiteral -> suffixToRealType(expr.suffix)
             is Expr.StringLiteral -> IrType.String
             is Expr.BoolLiteral -> IrType.Bool
+            is Expr.NullLiteral -> IrType.Any  // null is compatible with any nullable type
             is Expr.CharLiteral -> IrType.Char
             is Expr.Identifier -> {
                 val sym = table.lookupVariable(expr.name)
@@ -316,7 +400,7 @@ class TypeResolver(private val table: SymbolTable) {
                 val operandType = resolveExpr(expr.operand) ?: return null
                 when (expr.op) {
                     TokenType.MINUS -> {
-                        if (operandType !in IrType.Companion.numericTypes) {
+                        if (operandType !in IrType.numericTypes) {
                             errors.add("line ${expr.line}: cannot negate $operandType")
                             null
                         } else operandType
@@ -326,6 +410,12 @@ class TypeResolver(private val table: SymbolTable) {
                             errors.add("line ${expr.line}: '!' requires Bool, got $operandType")
                             null
                         } else IrType.Bool
+                    }
+                    TokenType.TILDE -> {
+                        if (operandType !in IrType.integerTypes) {
+                            errors.add("line ${expr.line}: '~' requires integer, got $operandType")
+                            null
+                        } else operandType
                     }
                     else -> { errors.add("line ${expr.line}: unknown unary op ${expr.op}"); null }
                 }
@@ -343,17 +433,52 @@ class TypeResolver(private val table: SymbolTable) {
                         errors.add("line ${expr.line}: '${expr.callee}' expects ${struct.fields.size} field arguments, got ${expr.args.size}")
                         return null
                     }
-                    for (i in expr.args.indices) {
-                        val argType = resolveExpr(expr.args[i]) ?: return null
-                        val fieldType = struct.fields[i].type
-                        if (argType != fieldType) {
-                            errors.add("line ${expr.line}: field '${struct.fields[i].name}' of '${expr.callee}': expected $fieldType, got $argType")
+                    // Handle named arguments — reorder to field order
+                    val effectiveArgs = if (expr.args.isNotEmpty() && expr.args[0] is Expr.NamedArg) {
+                        if (!expr.args.all { it is Expr.NamedArg }) {
+                            errors.add("line ${expr.line}: cannot mix named and positional arguments")
+                            return null
+                        }
+                        val namedMap = expr.args.associate { (it as Expr.NamedArg).name to (it as Expr.NamedArg).value }
+                        struct.fields.map { f -> namedMap[f.name]
+                            ?: run { errors.add("line ${expr.line}: missing field '${f.name}' in '${expr.callee}'"); return null }
+                        }
+                    } else {
+                        expr.args
+                    }
+                    if (effectiveArgs.size != struct.fields.size) {
+                        errors.add("line ${expr.line}: '${expr.callee}' expects ${struct.fields.size} field arguments, got ${effectiveArgs.size}")
+                        return null
+                    }
+                    for (i in effectiveArgs.indices) {
+                        val argType = resolveExpr(effectiveArgs[i]) ?: return null
+                        if (struct.typeParams.isEmpty()) {
+                            val fieldType = struct.fields[i].type
+                            if (!isCompatible(fieldType, argType)) {
+                                errors.add("line ${expr.line}: field '${struct.fields[i].name}' of '${expr.callee}': expected $fieldType, got $argType")
+                            }
                         }
                     }
                     return IrType.Named(struct.name)
                 }
                 val func = table.lookupFunction(expr.callee)
                 if (func == null) {
+                    // Maybe a lambda stored in a variable.
+                    val v = table.lookupVariable(expr.callee)
+                    if (v != null && v.type is IrType.Function) {
+                        val fn = v.type
+                        if (expr.args.size != fn.params.size) {
+                            errors.add("line ${expr.line}: '${expr.callee}' expects ${fn.params.size} args, got ${expr.args.size}")
+                            return null
+                        }
+                        for (i in expr.args.indices) {
+                            val at = resolveExpr(expr.args[i]) ?: return null
+                            if (!isCompatible(fn.params[i], at)) {
+                                errors.add("line ${expr.line}: arg ${i + 1} of '${expr.callee}': expected ${fn.params[i]}, got $at")
+                            }
+                        }
+                        return fn.ret
+                    }
                     errors.add("line ${expr.line}: undefined function '${expr.callee}'")
                     return null
                 }
@@ -362,12 +487,31 @@ class TypeResolver(private val table: SymbolTable) {
                     return null
                 }
                 val isBuiltin = expr.callee == "println"
+                val isGeneric = func.typeParams.isNotEmpty()
+                val argTypes = mutableListOf<IrType>()
                 for (i in expr.args.indices) {
                     val argType = resolveExpr(expr.args[i]) ?: return null
-                    val paramType = func.params[i].second
-                    // Built-in println accepts any type
-                    if (!isBuiltin && argType != paramType) {
-                        errors.add("line ${expr.line}: arg ${i + 1} of '${expr.callee}': expected $paramType, got $argType")
+                    argTypes.add(argType)
+                    if (!isBuiltin && !isGeneric) {
+                        val paramType = func.params[i].second
+                        if (!isCompatible(paramType, argType)) {
+                            errors.add("line ${expr.line}: arg ${i + 1} of '${expr.callee}': expected $paramType, got $argType")
+                        }
+                    }
+                }
+                // Generic function: infer type params from args for a precise return type.
+                if (isGeneric) {
+                    val funcDecl = program?.functions?.find { it.name == expr.callee }
+                    if (funcDecl != null) {
+                        val bindings = mutableMapOf<String, IrType>()
+                        for (i in funcDecl.params.indices) {
+                            val paramRef = funcDecl.params[i].type
+                            if (paramRef is TypeRef.Named && paramRef.name in func.typeParams && i < argTypes.size) {
+                                bindings[paramRef.name] = argTypes[i]
+                            }
+                        }
+                        val retRef = (funcDecl.returnType as? TypeAnnotation.Explicit)?.ref
+                        if (retRef is TypeRef.Named && retRef.name in bindings) return bindings[retRef.name]!!
                     }
                 }
                 func.returnType
@@ -407,6 +551,25 @@ class TypeResolver(private val table: SymbolTable) {
                 targetType.element
             }
             is Expr.Member -> {
+                // Enum variant: `Color.Red` → string value "Red"
+                if (expr.target is Expr.Identifier) {
+                    val variants = table.lookupEnum(expr.target.name)
+                    if (variants != null) {
+                        if (expr.name in variants) return IrType.String
+                        errors.add("line ${expr.line}: enum '${expr.target.name}' has no variant '${expr.name}'")
+                        return null
+                    }
+                }
+                // Slot no-payload construction: SlotName.Variant (no parens)
+                if (expr.target is Expr.Identifier) {
+                    val slotVariants = table.lookupSlot(expr.target.name)
+                    if (slotVariants != null) {
+                        val variant = slotVariants.find { it.first == expr.name }
+                        if (variant != null && variant.second.isEmpty()) {
+                            return IrType.Named(expr.target.name)
+                        }
+                    }
+                }
                 val targetType = resolveExpr(expr.target) ?: return null
                 when {
                     expr.name == "length" && (targetType is IrType.Array || targetType == IrType.String) -> IrType.Int
@@ -425,7 +588,55 @@ class TypeResolver(private val table: SymbolTable) {
                 }
             }
             is Expr.MethodCall -> {
+                // Slot construction: SlotName.Variant(args) — check BEFORE resolving target
+                if (expr.target is Expr.Identifier) {
+                    val slotVariants = table.lookupSlot(expr.target.name)
+                    if (slotVariants != null) {
+                        val variant = slotVariants.find { it.first == expr.name }
+                        if (variant != null) {
+                            if (expr.args.size != variant.second.size) {
+                                errors.add("line ${expr.line}: '${expr.name}' expects ${variant.second.size} payload args, got ${expr.args.size}")
+                                return null
+                            }
+                            for (i in expr.args.indices) {
+                                val at = resolveExpr(expr.args[i]) ?: return null
+                                if (!isCompatible(variant.second[i], at)) {
+                                    errors.add("line ${expr.line}: payload ${i+1} of '${expr.name}': expected ${variant.second[i]}, got $at")
+                                }
+                            }
+                            return IrType.Named(expr.target.name)
+                        }
+                    }
+                }
+                // User-defined method on a struct: obj.method(args) -> Type_method(self, args)
                 val targetType = resolveExpr(expr.target) ?: return null
+                if (targetType is IrType.Named) {
+                    val mangled = table.lookupMethod(targetType.name, expr.name)
+                    if (mangled != null) {
+                        val func = table.lookupFunction(mangled)!!
+                        val declared = func.params.size - 1 // exclude `self`
+                        if (expr.args.size != declared) {
+                            errors.add("line ${expr.line}: method '${expr.name}' expects $declared args, got ${expr.args.size}")
+                            return null
+                        }
+                        for (i in expr.args.indices) {
+                            val argType = resolveExpr(expr.args[i]) ?: return null
+                            val paramType = func.params[i + 1].second
+                            if (!isCompatible(paramType, argType)) {
+                                errors.add("line ${expr.line}: arg ${i + 1} of '${expr.name}': expected $paramType, got $argType")
+                            }
+                        }
+                        return func.returnType
+                    }
+                }
+                // Builtin string methods
+                if (targetType == IrType.String) {
+                    return resolveStringMethod(expr.name, expr.args, expr.line)
+                }
+                // Builtin array methods
+                if (targetType is IrType.Array) {
+                    return resolveArrayMethod(expr.name, expr.args, targetType, expr.line)
+                }
                 resolveBuiltinMethod(targetType, expr.name, expr.args, expr.line)
             }
             is Expr.StringTemplate -> {
@@ -436,6 +647,58 @@ class TypeResolver(private val table: SymbolTable) {
                 }
                 IrType.String
             }
+            is Expr.TupleLit -> {
+                val types = expr.elements.map { resolveExpr(it) ?: return null }
+                IrType.Tuple(types)
+            }
+            is Expr.TupleAccess -> {
+                val targetType = resolveExpr(expr.target) ?: return null
+                if (targetType !is IrType.Tuple) {
+                    errors.add("line ${expr.line}: cannot use '.${expr.index}' on $targetType (not a tuple)")
+                    return null
+                }
+                if (expr.index !in targetType.elements.indices) {
+                    errors.add("line ${expr.line}: tuple index ${expr.index} out of bounds (tuple has ${targetType.elements.size} elements)")
+                    return null
+                }
+                targetType.elements[expr.index]
+            }
+            is Expr.CatchExpr -> {
+                val t1 = resolveExpr(expr.expr) ?: return null
+                resolveExpr(expr.fallback) ?: return null
+                t1
+            }
+            is Expr.NamedArg -> resolveExpr(expr.value)
+            is Expr.NullCoalesce -> {
+                val leftType = resolveExpr(expr.left) ?: return null
+                resolveExpr(expr.right) ?: return null
+                // Result type is the non-nullable version of left, or right's type
+                if (leftType is IrType.Nullable) leftType.inner else leftType
+            }
+            is Expr.SafeMember -> {
+                val targetType = resolveExpr(expr.target) ?: return null
+                val inner = if (targetType is IrType.Nullable) targetType.inner else targetType
+                if (expr.name == "length" && (inner is IrType.Array || inner == IrType.String)) {
+                    IrType.Nullable(IrType.Int)
+                } else if (inner is IrType.Named) {
+                    val field = table.lookupStruct(inner.name)?.field(expr.name)
+                    IrType.Nullable(field?.type ?: IrType.Any)
+                } else {
+                    IrType.Nullable(IrType.Any)
+                }
+            }
+            is Expr.Lambda -> {
+                val paramTypes = expr.params.map { IrType.resolve(it.type) }
+                table.pushScope()
+                for (p in expr.params) table.defineVariable(VariableSymbol(p.name, IrType.resolve(p.type)))
+                var retType: IrType = IrType.Unit
+                for (s in expr.body) {
+                    if (s is Stmt.Return && s.value != null) { retType = resolveExpr(s.value) ?: IrType.Unit; break }
+                }
+                resolveBody(expr.body, retType)
+                table.popScope()
+                IrType.Function(paramTypes, retType)
+            }
         }
     }
 
@@ -443,60 +706,149 @@ class TypeResolver(private val table: SymbolTable) {
      * Type-checks a builtin method call on a receiver of [receiverType].
      * Currently supports a small set of array methods (`add`, `isEmpty`, `isNotEmpty`).
      */
-    private fun resolveBuiltinMethod(receiverType: IrType, name: String, args: List<Expr>, line: Int): IrType? {
-        if (receiverType is IrType.Array) {
-            return when (name) {
-                "add" -> {
-                    if (args.size != 1) {
-                        errors.add("line $line: 'add' expects 1 argument, got ${args.size}")
-                        return null
-                    }
-                    val argType = resolveExpr(args[0]) ?: return null
-                    if (argType != receiverType.element) {
-                        errors.add("line $line: 'add' expects ${receiverType.element}, got $argType")
-                        return null
-                    }
-                    IrType.Unit
-                }
-                "isEmpty", "isNotEmpty" -> {
-                    if (args.isNotEmpty()) {
-                        errors.add("line $line: '$name' expects 0 arguments, got ${args.size}")
-                        return null
-                    }
-                    IrType.Bool
-                }
-                else -> {
-                    errors.add("line $line: no method '$name' on array")
-                    null
-                }
+    /** Type-checks a builtin string method. */
+    private fun resolveStringMethod(name: String, args: List<Expr>, line: Int): IrType? {
+        return when (name) {
+            "toUpperCase", "toLowerCase", "trim" -> {
+                if (args.isNotEmpty()) { errors.add("line $line: '$name' expects 0 arguments"); return null }
+                IrType.String
             }
+            "contains", "startsWith", "endsWith" -> {
+                if (args.size != 1) { errors.add("line $line: '$name' expects 1 argument"); return null }
+                resolveExpr(args[0]) ?: return null
+                IrType.Bool
+            }
+            "replace" -> {
+                if (args.size != 2) { errors.add("line $line: 'replace' expects 2 arguments"); return null }
+                resolveExpr(args[0]) ?: return null; resolveExpr(args[1]) ?: return null
+                IrType.String
+            }
+            "split" -> {
+                if (args.size != 1) { errors.add("line $line: 'split' expects 1 argument"); return null }
+                resolveExpr(args[0]) ?: return null
+                IrType.Array(IrType.String)
+            }
+            "indexOf" -> {
+                if (args.size != 1) { errors.add("line $line: 'indexOf' expects 1 argument"); return null }
+                resolveExpr(args[0]) ?: return null
+                IrType.Int
+            }
+            else -> { errors.add("line $line: no method '$name' on String"); null }
         }
+    }
+
+    /** Type-checks a builtin array method. */
+    private fun resolveArrayMethod(name: String, args: List<Expr>, arrType: IrType.Array, line: Int): IrType? {
+        return when (name) {
+            "add" -> {
+                if (args.size != 1) { errors.add("line $line: 'add' expects 1 argument"); return null }
+                resolveExpr(args[0]) ?: return null
+                IrType.Unit
+            }
+            "insert" -> {
+                if (args.size != 2) { errors.add("line $line: 'insert' expects 2 arguments"); return null }
+                resolveExpr(args[0]) ?: return null; resolveExpr(args[1]) ?: return null
+                IrType.Unit
+            }
+            "remove" -> {
+                if (args.size != 1) { errors.add("line $line: 'remove' expects 1 argument"); return null }
+                resolveExpr(args[0]) ?: return null
+                IrType.Unit
+            }
+            "contains" -> {
+                if (args.size != 1) { errors.add("line $line: 'contains' expects 1 argument"); return null }
+                resolveExpr(args[0]) ?: return null
+                IrType.Bool
+            }
+            "indexOf" -> {
+                if (args.size != 1) { errors.add("line $line: 'indexOf' expects 1 argument"); return null }
+                resolveExpr(args[0]) ?: return null
+                IrType.Int
+            }
+            "isEmpty", "isNotEmpty" -> {
+                if (args.isNotEmpty()) { errors.add("line $line: '$name' expects 0 arguments"); return null }
+                IrType.Bool
+            }
+            else -> { errors.add("line $line: no method '$name' on array"); null }
+        }
+    }
+
+    private fun resolveBuiltinMethod(receiverType: IrType, name: String, args: List<Expr>, line: Int): IrType? {
+        if (receiverType is IrType.Array) return resolveArrayMethod(name, args, receiverType, line)
+        if (receiverType == IrType.String) return resolveStringMethod(name, args, line)
         errors.add("line $line: no method '$name' on $receiverType")
         return null
     }
 
+    /** Maps an operator token to the impl method name used for operator overloading. */
+    private fun operatorMethodName(op: TokenType): String? = when (op) {
+        TokenType.PLUS -> "plus"
+        TokenType.MINUS -> "minus"
+        TokenType.STAR -> "times"
+        TokenType.SLASH -> "div"
+        TokenType.PERCENT -> "mod"
+        TokenType.EQUAL_EQUAL -> "equals"
+        else -> null
+    }
+
+    /** Checks if an initializer type is compatible with a declared type (nullable widening, Any from null). */
+    private fun isCompatible(declared: IrType, actual: IrType): Boolean {
+        if (declared == actual) return true
+        // null (Any) is compatible with any Nullable type
+        if (actual == IrType.Any && declared is IrType.Nullable) return true
+        // non-nullable is compatible with its nullable version
+        if (declared is IrType.Nullable && declared.inner == actual) return true
+        // Any is compatible with anything
+        if (declared == IrType.Any || actual == IrType.Any) return true
+        return false
+    }
+
+    /** Promotes two numeric types to their common supertype (wider wins). */
+    private fun promote(a: IrType, b: IrType): IrType? {
+        if (a == b) return a
+        if (a in IrType.floatTypes || b in IrType.floatTypes) {
+            // Float promotion: Float < Real < Decimal
+            if (a == IrType.Decimal || b == IrType.Decimal) return IrType.Decimal
+            if (a == IrType.Real || b == IrType.Real) return IrType.Real
+            return IrType.Float
+        }
+        // Integer promotion: Byte < Short < Int < Long < Cent
+        val rank = mapOf(IrType.Byte to 0, IrType.UByte to 0, IrType.Short to 1, IrType.UShort to 1,
+            IrType.Int to 2, IrType.UInt to 2, IrType.Long to 3, IrType.ULong to 3,
+            IrType.Cent to 4, IrType.UCent to 4)
+        val ra = rank[a] ?: return null
+        val rb = rank[b] ?: return null
+        return if (ra >= rb) a else b
+    }
+
     private fun resolveBinaryType(op: TokenType, left: IrType, right: IrType, line: Int): IrType? {
+        // Operator overloading on user types
+        if (left is IrType.Named && left == right) {
+            val methodName = operatorMethodName(op)
+            if (methodName != null) {
+                val mangled = table.lookupMethod(left.name, methodName)
+                if (mangled != null) return table.lookupFunction(mangled)?.returnType
+            }
+            if (op == TokenType.BANG_EQUAL) {
+                val eqMangled = table.lookupMethod(left.name, "equals")
+                if (eqMangled != null) return IrType.Bool
+            }
+        }
         return when (op) {
             TokenType.PLUS -> {
-                if (left == IrType.String && right == IrType.String) IrType.String
-                else if (left != right || left !in IrType.Companion.numericTypes) {
-                    errors.add("line $line: cannot apply '$op' to $left and $right")
-                    null
-                } else left
+                if (left == IrType.String || right == IrType.String) IrType.String
+                else if (left in IrType.numericTypes && right in IrType.numericTypes) promote(left, right)
+                else { errors.add("line $line: cannot apply '$op' to $left and $right"); null }
             }
             TokenType.STAR -> {
                 if ((left == IrType.String && right == IrType.Int) ||
                     (left == IrType.Int && right == IrType.String)) IrType.String
-                else if (left != right || left !in IrType.Companion.numericTypes) {
-                    errors.add("line $line: cannot apply '$op' to $left and $right")
-                    null
-                } else left
+                else if (left in IrType.numericTypes && right in IrType.numericTypes) promote(left, right)
+                else { errors.add("line $line: cannot apply '$op' to $left and $right"); null }
             }
             TokenType.MINUS, TokenType.SLASH, TokenType.PERCENT -> {
-                if (left != right || left !in IrType.Companion.numericTypes) {
-                    errors.add("line $line: cannot apply '$op' to $left and $right")
-                    null
-                } else left
+                if (left in IrType.numericTypes && right in IrType.numericTypes) promote(left, right)
+                else { errors.add("line $line: cannot apply '$op' to $left and $right"); null }
             }
             TokenType.EQUAL_EQUAL, TokenType.BANG_EQUAL -> {
                 if (left != right) {
@@ -516,6 +868,12 @@ class TypeResolver(private val table: SymbolTable) {
                     null
                 } else IrType.Bool
             }
+            TokenType.AMP, TokenType.PIPE, TokenType.CARET, TokenType.SHIFT_LEFT, TokenType.SHIFT_RIGHT -> {
+                if (left !in IrType.integerTypes || right !in IrType.integerTypes) {
+                    errors.add("line $line: '$op' requires integer operands, got $left and $right")
+                    null
+                } else left
+            }
             else -> { errors.add("line $line: unknown binary op $op"); null }
         }
     }
@@ -529,7 +887,7 @@ class TypeResolver(private val table: SymbolTable) {
         when (typeAnn) {
             is TypeAnnotation.Explicit -> {
                 val declaredType = tryResolveType(typeAnn.ref, line) ?: return
-                if (declaredType != initType) {
+                if (!isCompatible(declaredType, initType)) {
                     errors.add("line $line: type mismatch in '$name': declared $declaredType but initializer is $initType")
                 }
                 table.defineVariable(VariableSymbol(name, declaredType, mutable))

@@ -30,7 +30,8 @@ data class FunctionSymbol(
     val name: String,
     val params: List<Pair<String, IrType>>,
     val returnType: IrType,
-    val isInline: Boolean = false
+    val isInline: Boolean = false,
+    val typeParams: List<String> = emptyList()
 )
 
 /**
@@ -61,7 +62,7 @@ data class StructField(val name: String, val type: IrType, val mutable: Boolean)
  * @property name the struct name
  * @property fields the ordered list of fields
  */
-data class StructType(val name: String, val fields: List<StructField>) {
+data class StructType(val name: String, val fields: List<StructField>, val typeParams: List<String> = emptyList()) {
     /** Looks up a field by name. */
     fun field(name: String): StructField? = fields.find { it.name == name }
 }
@@ -80,6 +81,12 @@ class SymbolTable {
     private val functions = mutableMapOf<String, FunctionSymbol>()
     private val scopes = ArrayDeque<MutableMap<String, VariableSymbol>>()
     private val structs = mutableMapOf<String, StructType>()
+    private val enums = mutableMapOf<String, List<String>>()
+    // type name -> (method name -> mangled function name "Type_method")
+    private val methods = mutableMapOf<String, MutableMap<String, String>>()
+    private val specs = mutableMapOf<String, List<String>>() // spec name → method names
+    // slot name → list of (variant name → payload types)
+    private val slots = mutableMapOf<String, List<Pair<String, List<IrType>>>>()
 
     // -- Functions (global) -------------------------------------------------
 
@@ -121,6 +128,45 @@ class SymbolTable {
 
     /** Looks up a struct by name. */
     fun lookupStruct(name: String): StructType? = structs[name]
+
+    // -- Enums -------------------------------------------------------------
+
+    /** Registers an enum's variants. */
+    fun defineEnum(name: String, variants: List<String>) {
+        if (enums.containsKey(name)) error("Enum '$name' already defined")
+        enums[name] = variants
+    }
+
+    /** Returns the variants of an enum, or `null` if no such enum exists. */
+    fun lookupEnum(name: String): List<String>? = enums[name]
+
+    // -- Impl methods ------------------------------------------------------
+
+    /** Registers that [typeName] has a method [methodName] implemented by mangled [funcName]. */
+    fun defineMethod(typeName: String, methodName: String, funcName: String) {
+        methods.getOrPut(typeName) { mutableMapOf() }[methodName] = funcName
+    }
+
+    /** Looks up the mangled function name for a method, or `null`. */
+    fun lookupMethod(typeName: String, methodName: String): String? = methods[typeName]?.get(methodName)
+
+    // -- Specs (traits) ---------------------------------------------------
+
+    fun defineSpec(name: String, methodNames: List<String>) {
+        specs[name] = methodNames
+    }
+
+
+    // -- Type aliases -----------------------------------------------------
+    private val aliases = mutableMapOf<String, org.azora.lang.frontend.TypeRef>()
+    fun defineAlias(name: String, type: org.azora.lang.frontend.TypeRef) { aliases[name] = type }
+    fun lookupAlias(name: String): org.azora.lang.frontend.TypeRef? = aliases[name]
+
+    fun lookupSpec(name: String): List<String>? = specs[name]
+
+    // -- Slots (tagged unions) --------------------------------------------
+    fun defineSlot(name: String, variants: List<Pair<String, List<IrType>>>) { slots[name] = variants }
+    fun lookupSlot(name: String): List<Pair<String, List<IrType>>>? = slots[name]
 
     // -- Local variable scopes ----------------------------------------------
 

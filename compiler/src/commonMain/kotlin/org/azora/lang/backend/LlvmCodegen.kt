@@ -24,20 +24,41 @@ import org.azora.lang.ir.IrStmt
 import org.azora.lang.ir.IrTopLevel
 import org.azora.lang.ir.IrType
 import org.azora.lang.ir.IrUnaryOp
-import kotlin.text.iterator
 
 /**
  * Backend — lowers [IrProgram] to LLVM IR text (`.ll` format).
  *
- * Type mapping:
- *   Int    → i32
- *   Real   → double
- *   Bool   → i1
- *   String → i8* (pointer to null-terminated C string)
- *   Unit   → void
+ * The emitted IR is self-contained and directly executable with `lli` or
+ * compilable with `clang`/`llc`. No target triple is pinned, so the module
+ * adopts the host target.
  *
- * Strings are emitted as global constants. `println` is declared as an
- * external call to `puts` (for strings) or `printf` (for formatted output).
+ * Type mapping:
+ *   Int/UInt        → i32
+ *   Byte/UByte      → i8
+ *   Short/UShort    → i16
+ *   Long/ULong      → i64
+ *   Cent/UCent      → i128
+ *   Real            → double
+ *   Float           → float
+ *   Decimal         → fp128
+ *   Bool            → i1
+ *   Char            → i8
+ *   String          → i8* (null-terminated C string)
+ *   Unit            → void
+ *
+ * String literals are emitted as private globals. Output goes through `printf`
+ * (numeric values) and `puts` (strings/booleans). String concatenation,
+ * repetition, comparison and interpolation are lowered to small runtime
+ * helpers that call libc (`malloc`, `strlen`, `strcpy`, `strcat`, `strcmp`,
+ * `snprintf`).
+ *
+ * ## Correctness invariants
+ * - Every basic block ends with exactly one terminator. The [terminated] flag
+ *   tracks whether the current block already has one; [emitStmts] stops
+ *   emitting once a block is terminated so no dead (and invalid) instructions
+ *   or duplicate terminators are produced.
+ * - Unnamed temporaries are numbered consecutively (`%0`, `%1`, …) as LLVM
+ *   requires; the terminator-aware emission guarantees no gaps.
  */
 class LlvmCodegen {
 
@@ -46,10 +67,28 @@ class LlvmCodegen {
     private var labelCounter = 0
     private var stringCounter = 0
     private val stringConstants = mutableListOf<Pair<String, String>>() // @name -> value
-    private val localVars = mutableMapOf<String, String>() // var name -> LLVM register/alloca
+
+    /** name -> (alloca register, llvm element type). */
+    private val localVars = mutableMapOf<String, Pair<String, String>>()
+
+    /** True once the current basic block has a terminator. */
+    private var terminated = false
+
+    // Which libc declarations / runtime helpers are referenced.
     private var usesPuts = false
     private var usesPrintf = false
     private var usesAbort = false
+    private var usesMalloc = false
+    private var usesStrlen = false
+    private var usesStrcpy = false
+    private var usesStrcat = false
+    private var usesStrcmp = false
+    private var usesSnprintf = false
+    private var usesStrConcat = false
+    private var usesStrRepeat = false
+    private var usesIntToStr = false
+    private var usesRealToStr = false
+    private var usesCharToStr = false
 
     /** Tracks the continue/end labels of enclosing loops for `break`/`continue`. */
     private data class LoopTarget(val continueLabel: String, val endLabel: String)
@@ -57,12 +96,6 @@ class LlvmCodegen {
 
     /**
      * Generates LLVM IR text (`.ll` format) from the given IR program.
-     *
-     * The output includes external declarations for `puts` and `printf`,
-     * function definitions, and string constant globals.
-     *
-     * @param program the optimized IR program to lower to LLVM IR
-     * @return the generated LLVM IR text as a string
      */
     fun generate(program: IrProgram): String {
         out.clear()
@@ -73,55 +106,65 @@ class LlvmCodegen {
         usesPuts = false
         usesPrintf = false
         usesAbort = false
+        usesMalloc = false
+        usesStrlen = false
+        usesStrcpy = false
+        usesStrcat = false
+        usesStrcmp = false
+        usesSnprintf = false
+        usesStrConcat = false
+        usesStrRepeat = false
+        usesIntToStr = false
+        usesRealToStr = false
+        usesCharToStr = false
         loopStack.clear()
 
-        // Generate body into a separate buffer (so we know which externals are used)
         val body = StringBuilder()
-        val savedOut = out
-        // Temporarily redirect output to body buffer
-        val bodyBuilder = StringBuilder()
 
-        // Emit struct type definitions
+        // Struct type definitions (declared for reference; aggregate lowering is
+        // not yet implemented, but the type must exist for pointer mapping).
         val structs = program.items.filterIsInstance<IrTopLevel.Struct>()
         if (structs.isNotEmpty()) {
-            bodyBuilder.appendLine("; Struct types")
+            body.appendLine("; Struct types")
             for (s in structs) {
                 val fieldTypes = s.fields.joinToString(", ") { mapType(it.type) }
-                bodyBuilder.appendLine("%struct.${sanitizeName(s.name)} = type { $fieldTypes }")
+                body.appendLine("%struct.${sanitizeName(s.name)} = type { $fieldTypes }")
             }
-            bodyBuilder.appendLine()
+            body.appendLine()
         }
 
-        // Emit globals
+        // Global variables
         val globals = program.items.filterIsInstance<IrTopLevel.Global>()
         if (globals.isNotEmpty()) {
-            bodyBuilder.appendLine("; Global variables")
+            body.appendLine("; Global variables")
             for (global in globals) {
-                // Use out temporarily
                 out.clear()
                 emitGlobal(global.stmt)
-                bodyBuilder.append(out)
+                body.append(out)
             }
-            bodyBuilder.appendLine()
+            body.appendLine()
         }
 
-        // Emit functions
+        // Functions
         for (item in program.items.filterIsInstance<IrTopLevel.Func>()) {
             out.clear()
             emitFunction(item.function)
-            bodyBuilder.append(out)
-            bodyBuilder.appendLine()
+            body.append(out)
+            body.appendLine()
         }
 
-        // Emit tests
+        // Tests
         for (item in program.items.filterIsInstance<IrTopLevel.Test>()) {
             out.clear()
             emitTestFunction(item)
-            bodyBuilder.append(out)
-            bodyBuilder.appendLine()
+            body.append(out)
+            body.appendLine()
         }
 
-        // Emit string constants
+        // Runtime helpers (appended after the body so string-constant ids are stable).
+        val helpers = buildRuntimeHelpers()
+
+        // String constants
         val strConsts = StringBuilder()
         if (stringConstants.isNotEmpty()) {
             strConsts.appendLine("; String constants")
@@ -132,16 +175,23 @@ class LlvmCodegen {
             }
         }
 
-        // Assemble final output
+        // Assemble final output.
         out.clear()
         line("; LLVM IR generated by Azora compiler")
-        line("target triple = \"x86_64-unknown-linux-gnu\"")
         line("")
+        // External declarations.
         if (usesPuts) line("declare i32 @puts(i8*)")
         if (usesPrintf) line("declare i32 @printf(i8*, ...)")
+        if (usesSnprintf) line("declare i32 @snprintf(i8*, i64, i8*, ...)")
         if (usesAbort) line("declare void @abort() noreturn")
-        if (usesPuts || usesPrintf || usesAbort) line("")
-        out.append(bodyBuilder)
+        if (usesMalloc) line("declare i8* @malloc(i64)")
+        if (usesStrlen) line("declare i64 @strlen(i8*)")
+        if (usesStrcpy) line("declare i8* @strcpy(i8*, i8*)")
+        if (usesStrcat) line("declare i8* @strcat(i8*, i8*)")
+        if (usesStrcmp) line("declare i32 @strcmp(i8*, i8*)")
+        line("")
+        out.append(body)
+        if (helpers.isNotEmpty()) out.append(helpers)
         out.append(strConsts)
 
         return out.toString().trimEnd()
@@ -164,10 +214,7 @@ class LlvmCodegen {
         val llvmType = mapType(type)
         val value = when (initializer) {
             is IrExpr.IntLiteral -> "${initializer.value}"
-            is IrExpr.RealLiteral -> {
-                val bits = initializer.value.toBits()
-                "0x${bits.toULong().toString(16).uppercase()}"
-            }
+            is IrExpr.RealLiteral -> floatConst(initializer.value, type)
             is IrExpr.CharLiteral -> "${initializer.value.code}"
             is IrExpr.BoolLiteral -> if (initializer.value) "1" else "0"
             is IrExpr.StringLiteral -> {
@@ -191,16 +238,14 @@ class LlvmCodegen {
         loopStack.clear()
         tmpCounter = 0
         labelCounter = 0
+        terminated = false
+        currentBlock = "entry"
 
-        val safeName = test.name.replace(" ", "_").replace("\"", "")
+        val safeName = sanitizeName(test.name.replace(" ", "_"))
         line("define void @test_$safeName() {")
         line("entry:")
-
-        for (stmt in test.body) {
-            emitStmt(stmt)
-        }
-
-        emit("  ret void")
+        emitStmts(test.body)
+        emitTerminator("  ret void")
         line("}")
     }
 
@@ -209,30 +254,37 @@ class LlvmCodegen {
         loopStack.clear()
         tmpCounter = 0
         labelCounter = 0
+        terminated = false
+        currentBlock = "entry"
 
-        val retType = mapType(func.returnType)
+        // The program entry point is always emitted as `i32 @main` returning 0,
+        // so the produced executable / `lli` run yields a clean exit code.
+        val isMain = func.name == "main"
+        val retType = if (isMain) "i32" else mapType(func.returnType)
+
         val params = func.params.joinToString(", ") { (name, type) ->
-            "${mapType(type)} %$name"
+            "${mapType(type)} %arg.$name"
         }
 
         line("define $retType @${func.name}($params) {")
         line("entry:")
 
-        // Allocate stack space for parameters so they can be referenced
+        // Spill parameters to the stack so they can be referenced (and reassigned).
         for ((name, type) in func.params) {
+            val t = mapType(type)
             val alloca = nextTmp()
-            emit("  $alloca = alloca ${mapType(type)}")
-            emit("  store ${mapType(type)} %$name, ${mapType(type)}* $alloca")
-            localVars[name] = alloca
+            emit("  $alloca = alloca $t")
+            emit("  store $t %arg.$name, $t* $alloca")
+            localVars[name] = alloca to t
         }
 
-        for (stmt in func.body) {
-            emitStmt(stmt)
-        }
+        emitStmts(func.body)
 
-        // If function is void and no explicit return, add one
-        if (func.returnType == IrType.Unit) {
-            emit("  ret void")
+        // Guarantee the final block has a terminator.
+        when {
+            isMain -> emitTerminator("  ret i32 0")
+            func.returnType == IrType.Unit -> emitTerminator("  ret void")
+            else -> emitTerminator("  ret ${mapType(func.returnType)} ${defaultValue(func.returnType)}")
         }
 
         line("}")
@@ -242,217 +294,84 @@ class LlvmCodegen {
     // Statements
     // -----------------------------------------------------------------------
 
+    /** Emits a list of statements, stopping as soon as a terminator is reached. */
+    private fun emitStmts(stmts: List<IrStmt>) {
+        for (s in stmts) {
+            emitStmt(s)
+            if (terminated) break
+        }
+    }
+
     private fun emitStmt(stmt: IrStmt) {
         when (stmt) {
-            is IrStmt.VarDecl -> {
-                val type = mapType(stmt.type)
-                val alloca = nextTmp()
-                emit("  $alloca = alloca $type")
-                val value = emitExpr(stmt.initializer)
-                emit("  store $type $value, $type* $alloca")
-                localVars[stmt.name] = alloca
-            }
-            is IrStmt.FinDecl -> {
-                // Same as var at LLVM level (immutability is a source-level concern)
-                val type = mapType(stmt.type)
-                val alloca = nextTmp()
-                emit("  $alloca = alloca $type")
-                val value = emitExpr(stmt.initializer)
-                emit("  store $type $value, $type* $alloca")
-                localVars[stmt.name] = alloca
-            }
-            is IrStmt.LetDecl -> {
-                val type = mapType(stmt.type)
-                val alloca = nextTmp()
-                emit("  $alloca = alloca $type")
-                val value = emitExpr(stmt.initializer)
-                emit("  store $type $value, $type* $alloca")
-                localVars[stmt.name] = alloca
-            }
+            is IrStmt.VarDecl -> emitLocalDecl(stmt.name, stmt.type, stmt.initializer)
+            is IrStmt.FinDecl -> emitLocalDecl(stmt.name, stmt.type, stmt.initializer)
+            is IrStmt.LetDecl -> emitLocalDecl(stmt.name, stmt.type, stmt.initializer)
             is IrStmt.Assignment -> {
-                val alloca = localVars[stmt.name] ?: error("Undefined variable: ${stmt.name}")
+                val (alloca, type) = localVars[stmt.name]
+                    ?: error("Undefined variable: ${stmt.name}")
                 val value = emitExpr(stmt.value)
-                val type = mapType(stmt.value.type)
                 emit("  store $type $value, $type* $alloca")
             }
             is IrStmt.Return -> {
                 if (stmt.value != null) {
                     val value = emitExpr(stmt.value)
                     val type = mapType(stmt.value.type)
-                    emit("  ret $type $value")
+                    emitTerminator("  ret $type $value")
                 } else {
-                    emit("  ret void")
+                    emitTerminator("  ret void")
                 }
             }
-            is IrStmt.ExprStmt -> {
-                emitExpr(stmt.expr)
-            }
-            is IrStmt.Zone -> {
-                emit("  ; zone begin")
-                for (s in stmt.body) emitStmt(s)
-                emit("  ; zone end")
-            }
+            is IrStmt.ExprStmt -> emitExpr(stmt.expr)
+            is IrStmt.Zone -> emitStmts(stmt.body)
             is IrStmt.If -> emitIf(stmt)
             is IrStmt.Assert -> emitAssert(stmt)
             is IrStmt.Trace -> emitTrace(stmt)
             is IrStmt.While -> emitWhile(stmt)
             is IrStmt.For -> emitFor(stmt)
             is IrStmt.Loop -> emitLoop(stmt)
+            is IrStmt.When -> emitWhen(stmt)
             is IrStmt.Break -> {
                 val target = loopStack.lastOrNull() ?: error("break outside of loop")
-                emit("  br label %${target.endLabel}")
+                emitTerminator("  br label %${target.endLabel}")
             }
             is IrStmt.Continue -> {
                 val target = loopStack.lastOrNull() ?: error("continue outside of loop")
-                emit("  br label %${target.continueLabel}")
+                emitTerminator("  br label %${target.continueLabel}")
             }
             is IrStmt.IndexAssign -> {
-                val target = emitExpr(stmt.target)
-                val index = emitExpr(stmt.index)
-                val value = emitExpr(stmt.value)
-                emit("  ; index assign $target[$index] = $value — not yet lowered")
+                emitExpr(stmt.target)
+                emitExpr(stmt.index)
+                emitExpr(stmt.value)
+                emit("  ; index assign — aggregate lowering not yet implemented")
             }
             is IrStmt.MemberAssign -> {
-                val target = emitExpr(stmt.target)
-                val value = emitExpr(stmt.value)
-                emit("  ; member assign $target.${stmt.name} = $value — not yet lowered")
+                emitExpr(stmt.target)
+                emitExpr(stmt.value)
+                emit("  ; member assign .${stmt.name} — aggregate lowering not yet implemented")
             }
-            is IrStmt.When -> {
-                val scrut = emitExpr(stmt.scrutinee)
-                val endLabel = nextLabel("when_end")
-                for (b in stmt.branches) {
-                    val bodyLabel = nextLabel("when_body")
-                    val nextLabel2 = nextLabel("when_next")
-                    var first = true
-                    emit("  ; when branch")
-                    for (p in b.patterns) {
-                        val pv = emitExpr(p)
-                        val cmp = nextTmp()
-                        emit("  $cmp = icmp eq i32 $scrut, $pv")
-                        emit("  br i1 $cmp, label %$bodyLabel, label %$nextLabel2")
-                        line("$bodyLabel:")
-                        loopStack.addLast(LoopTarget(endLabel, endLabel))
-                        for (s in b.body) emitStmt(s)
-                        loopStack.removeLast()
-                        emit("  br label %$endLabel")
-                        line("$nextLabel2:")
-                    }
-                }
-                if (stmt.elseBranch != null) {
-                    val elseLabel = nextLabel("when_else")
-                    emit("  br label %$elseLabel")
-                    line("$elseLabel:")
-                    loopStack.addLast(LoopTarget(endLabel, endLabel))
-                    for (s in stmt.elseBranch) emitStmt(s)
-                    loopStack.removeLast()
-                }
-                emit("  br label %$endLabel")
-                line("$endLabel:")
-            }
-            is IrStmt.Defer -> {}
+            is IrStmt.Defer -> emit("  ; defer — not lowered")
             is IrStmt.Throw -> {
-                val v = emitExpr(stmt.value)
-                emit("  ; throw $v — lowered to unreachable")
-                emit("  unreachable")
+                emitExpr(stmt.value)
+                emit("  ; throw — lowered to abort")
+                usesAbort = true
+                emit("  call void @abort()")
+                emitTerminator("  unreachable")
             }
             is IrStmt.Try -> {
-                emit("  ; try { ... } — body emitted, catch not lowered")
-                for (s in stmt.body) emitStmt(s)
-                if (stmt.catchBody != null) {
-                    emit("  ; catch { ... } — not lowered")
-                    for (s in stmt.catchBody) emitStmt(s)
-                }
+                emit("  ; try { ... } — body emitted, exception handling not lowered")
+                emitStmts(stmt.body)
             }
         }
     }
 
-    private fun emitWhile(stmt: IrStmt.While) {
-        val condLabel = nextLabel("while_cond")
-        val bodyLabel = nextLabel("while_body")
-        val endLabel = nextLabel("while_end")
-        emit("  br label %$condLabel")
-        line("$condLabel:")
-        val cond = emitExpr(stmt.condition)
-        emit("  br i1 $cond, label %$bodyLabel, label %$endLabel")
-        line("$bodyLabel:")
-        loopStack.addLast(LoopTarget(condLabel, endLabel))
-        for (s in stmt.body) emitStmt(s)
-        loopStack.removeLast()
-        emit("  br label %$condLabel")
-        line("$endLabel:")
-    }
-
-    private fun emitFor(stmt: IrStmt.For) {
-        val counterAlloca = nextTmp()
-        emit("  $counterAlloca = alloca i32")
-        val startVal = emitExpr(stmt.start)
-        emit("  store i32 $startVal, i32* $counterAlloca")
-        localVars[stmt.counter] = counterAlloca
-
-        val condLabel = nextLabel("for_cond")
-        val bodyLabel = nextLabel("for_body")
-        val incLabel = nextLabel("for_inc")
-        val endLabel = nextLabel("for_end")
-        emit("  br label %$condLabel")
-        line("$condLabel:")
-        val loaded = nextTmp()
-        emit("  $loaded = load i32, i32* $counterAlloca")
-        val endVal = emitExpr(stmt.end)
-        val cmp = nextTmp()
-        val pred = if (stmt.inclusive) "sle" else "slt"
-        emit("  $cmp = icmp $pred i32 $loaded, $endVal")
-        emit("  br i1 $cmp, label %$bodyLabel, label %$endLabel")
-        line("$bodyLabel:")
-        loopStack.addLast(LoopTarget(incLabel, endLabel))
-        for (s in stmt.body) emitStmt(s)
-        loopStack.removeLast()
-        emit("  br label %$incLabel")
-        line("$incLabel:")
-        val incLoaded = nextTmp()
-        emit("  $incLoaded = load i32, i32* $counterAlloca")
-        val incd = nextTmp()
-        emit("  $incd = add i32 $incLoaded, 1")
-        emit("  store i32 $incd, i32* $counterAlloca")
-        emit("  br label %$condLabel")
-        line("$endLabel:")
-    }
-
-    private fun emitLoop(stmt: IrStmt.Loop) {
-        val bodyLabel = nextLabel("loop_body")
-        val endLabel = nextLabel("loop_end")
-        emit("  br label %$bodyLabel")
-        line("$bodyLabel:")
-        loopStack.addLast(LoopTarget(bodyLabel, endLabel))
-        for (s in stmt.body) emitStmt(s)
-        loopStack.removeLast()
-        emit("  br label %$bodyLabel")
-        line("$endLabel:")
-    }
-
-    private fun emitAssert(stmt: IrStmt.Assert) {
-        usesAbort = true
-        usesPuts = true
-        val cond = emitExpr(stmt.condition)
-        val failLabel = nextLabel("assert_fail")
-        val passLabel = nextLabel("assert_pass")
-        emit("  br i1 $cond, label %$passLabel, label %$failLabel")
-        line("$failLabel:")
-        val msg = emitExpr(stmt.message)
-        val unused = nextTmp()
-        emit("  $unused = call i32 @puts(i8* $msg)")
-        emit("  call void @abort()")
-        emit("  unreachable")
-        line("$passLabel:")
-    }
-
-    private fun emitTrace(stmt: IrStmt.Trace) {
-        usesPrintf = true
-        val msg = emitExpr(stmt.message)
-        val fmtRef = addStringConstant("[TRACE] %s\n")
-        val fmtPtr = nextTmp()
-        emit("  $fmtPtr = getelementptr [${fmtRef.byteLen} x i8], [${fmtRef.byteLen} x i8]* ${fmtRef.name}, i64 0, i64 0")
-        val unused = nextTmp()
-        emit("  $unused = call i32 (i8*, ...) @printf(i8* $fmtPtr, i8* $msg)")
+    private fun emitLocalDecl(name: String, type: IrType, initializer: IrExpr) {
+        val t = mapType(type)
+        val alloca = nextTmp()
+        emit("  $alloca = alloca $t")
+        val value = emitExpr(initializer)
+        emit("  store $t $value, $t* $alloca")
+        localVars[name] = alloca to t
     }
 
     private fun emitIf(stmt: IrStmt.If) {
@@ -462,57 +381,187 @@ class LlvmCodegen {
         val mergeLabel = nextLabel("merge")
 
         if (stmt.elseBranch != null) {
-            emit("  br i1 $cond, label %$thenLabel, label %$elseLabel")
+            emitTerminator("  br i1 $cond, label %$thenLabel, label %$elseLabel")
         } else {
-            emit("  br i1 $cond, label %$thenLabel, label %$mergeLabel")
+            emitTerminator("  br i1 $cond, label %$thenLabel, label %$mergeLabel")
         }
 
-        // Then branch
-        line("$thenLabel:")
-        for (s in stmt.thenBranch) emitStmt(s)
-        emit("  br label %$mergeLabel")
+        startBlock(thenLabel)
+        emitStmts(stmt.thenBranch)
+        emitTerminator("  br label %$mergeLabel")
 
-        // Else branch
         if (stmt.elseBranch != null) {
-            line("$elseLabel:")
-            for (s in stmt.elseBranch) emitStmt(s)
-            emit("  br label %$mergeLabel")
+            startBlock(elseLabel)
+            emitStmts(stmt.elseBranch)
+            emitTerminator("  br label %$mergeLabel")
         }
 
-        // Merge
-        line("$mergeLabel:")
+        startBlock(mergeLabel)
+    }
+
+    private fun emitWhile(stmt: IrStmt.While) {
+        val condLabel = nextLabel("while_cond")
+        val bodyLabel = nextLabel("while_body")
+        val endLabel = nextLabel("while_end")
+
+        emitTerminator("  br label %$condLabel")
+        startBlock(condLabel)
+        val cond = emitExpr(stmt.condition)
+        emitTerminator("  br i1 $cond, label %$bodyLabel, label %$endLabel")
+
+        startBlock(bodyLabel)
+        loopStack.addLast(LoopTarget(condLabel, endLabel))
+        emitStmts(stmt.body)
+        loopStack.removeLast()
+        emitTerminator("  br label %$condLabel")
+
+        startBlock(endLabel)
+    }
+
+    private fun emitFor(stmt: IrStmt.For) {
+        val t = mapType(stmt.start.type)
+        val unsigned = isUnsigned(stmt.start.type)
+        val counterAlloca = nextTmp()
+        emit("  $counterAlloca = alloca $t")
+        val startVal = emitExpr(stmt.start)
+        emit("  store $t $startVal, $t* $counterAlloca")
+        localVars[stmt.counter] = counterAlloca to t
+
+        val condLabel = nextLabel("for_cond")
+        val bodyLabel = nextLabel("for_body")
+        val incLabel = nextLabel("for_inc")
+        val endLabel = nextLabel("for_end")
+
+        emitTerminator("  br label %$condLabel")
+        startBlock(condLabel)
+        val loaded = nextTmp()
+        emit("  $loaded = load $t, $t* $counterAlloca")
+        val endVal = emitExpr(stmt.end)
+        val cmp = nextTmp()
+        val pred = when {
+            stmt.inclusive && unsigned -> "ule"
+            stmt.inclusive -> "sle"
+            unsigned -> "ult"
+            else -> "slt"
+        }
+        emit("  $cmp = icmp $pred $t $loaded, $endVal")
+        emitTerminator("  br i1 $cmp, label %$bodyLabel, label %$endLabel")
+
+        startBlock(bodyLabel)
+        loopStack.addLast(LoopTarget(incLabel, endLabel))
+        emitStmts(stmt.body)
+        loopStack.removeLast()
+        emitTerminator("  br label %$incLabel")
+
+        startBlock(incLabel)
+        val incLoaded = nextTmp()
+        emit("  $incLoaded = load $t, $t* $counterAlloca")
+        val incd = nextTmp()
+        emit("  $incd = add $t $incLoaded, 1")
+        emit("  store $t $incd, $t* $counterAlloca")
+        emitTerminator("  br label %$condLabel")
+
+        startBlock(endLabel)
+    }
+
+    private fun emitLoop(stmt: IrStmt.Loop) {
+        val bodyLabel = nextLabel("loop_body")
+        val endLabel = nextLabel("loop_end")
+
+        emitTerminator("  br label %$bodyLabel")
+        startBlock(bodyLabel)
+        loopStack.addLast(LoopTarget(bodyLabel, endLabel))
+        emitStmts(stmt.body)
+        loopStack.removeLast()
+        emitTerminator("  br label %$bodyLabel")
+
+        startBlock(endLabel)
+    }
+
+    private fun emitWhen(stmt: IrStmt.When) {
+        val scrutType = mapType(stmt.scrutinee.type)
+        val scrut = emitExpr(stmt.scrutinee)
+        val endLabel = nextLabel("when_end")
+
+        for (branch in stmt.branches) {
+            val bodyLabel = nextLabel("when_body")
+            // Test each pattern; any match jumps to the body, otherwise fall
+            // through to the next pattern test (and finally the next branch).
+            for ((i, pattern) in branch.patterns.withIndex()) {
+                val pv = emitExpr(pattern)
+                val cmp = nextTmp()
+                emit("  $cmp = icmp eq $scrutType $scrut, $pv")
+                if (i == branch.patterns.lastIndex) {
+                    val nextLabel = nextLabel("when_next")
+                    emitTerminator("  br i1 $cmp, label %$bodyLabel, label %$nextLabel")
+                    startBlock(bodyLabel)
+                    emitStmts(branch.body)
+                    emitTerminator("  br label %$endLabel")
+                    startBlock(nextLabel)
+                } else {
+                    val moreLabel = nextLabel("when_or")
+                    emitTerminator("  br i1 $cmp, label %$bodyLabel, label %$moreLabel")
+                    startBlock(moreLabel)
+                }
+            }
+        }
+
+        if (stmt.elseBranch != null) {
+            emitStmts(stmt.elseBranch)
+        }
+        emitTerminator("  br label %$endLabel")
+        startBlock(endLabel)
+    }
+
+    private fun emitAssert(stmt: IrStmt.Assert) {
+        usesAbort = true
+        usesPuts = true
+        val cond = emitExpr(stmt.condition)
+        val failLabel = nextLabel("assert_fail")
+        val passLabel = nextLabel("assert_pass")
+        emitTerminator("  br i1 $cond, label %$passLabel, label %$failLabel")
+
+        startBlock(failLabel)
+        val msg = emitExpr(stmt.message)
+        val unused = nextTmp()
+        emit("  $unused = call i32 @puts(i8* $msg)")
+        emit("  call void @abort()")
+        emitTerminator("  unreachable")
+
+        startBlock(passLabel)
+    }
+
+    private fun emitTrace(stmt: IrStmt.Trace) {
+        usesPrintf = true
+        val msg = stringify(stmt.message)
+        val fmtRef = addStringConstant("[TRACE] %s\n")
+        val fmtPtr = gepString(fmtRef)
+        val unused = nextTmp()
+        emit("  $unused = call i32 (i8*, ...) @printf(i8* $fmtPtr, i8* $msg)")
     }
 
     // -----------------------------------------------------------------------
     // Expressions
     // -----------------------------------------------------------------------
 
-    /**
-     * Emits LLVM IR for an expression and returns the register holding the result.
-     */
+    /** Emits LLVM IR for an expression and returns the register/value. */
     private fun emitExpr(expr: IrExpr): String = when (expr) {
         is IrExpr.IntLiteral -> "${expr.value}"
         is IrExpr.CharLiteral -> "${expr.value.code}"
-        is IrExpr.RealLiteral -> {
-            // LLVM requires hex for exact double representation, but decimal works for constants
-            val bits = expr.value.toBits()
-            "0x${bits.toULong().toString(16).uppercase()}"
-        }
+        is IrExpr.RealLiteral -> floatConst(expr.value, expr.type)
         is IrExpr.BoolLiteral -> if (expr.value) "1" else "0"
         is IrExpr.StringLiteral -> {
             val ref = addStringConstant(expr.value)
-            val tmp = nextTmp()
-            emit("  $tmp = getelementptr [${ref.byteLen} x i8], [${ref.byteLen} x i8]* ${ref.name}, i64 0, i64 0")
-            tmp
+            gepString(ref)
         }
         is IrExpr.Var -> {
-            val alloca = localVars[expr.name]
-            val type = mapType(expr.type)
+            val local = localVars[expr.name]
             val tmp = nextTmp()
-            if (alloca != null) {
+            if (local != null) {
+                val (alloca, type) = local
                 emit("  $tmp = load $type, $type* $alloca")
             } else {
-                // Fall back to global variable
+                val type = mapType(expr.type)
                 emit("  $tmp = load $type, $type* @${expr.name}")
             }
             tmp
@@ -520,62 +569,52 @@ class LlvmCodegen {
         is IrExpr.Unary -> emitUnary(expr)
         is IrExpr.Binary -> emitBinary(expr)
         is IrExpr.Call -> emitCall(expr)
+        is IrExpr.StringTemplate -> emitStringTemplate(expr)
         is IrExpr.ArrayLiteral -> {
-            // Dynamic resizable arrays require runtime support not yet implemented
-            // in this backend; emit a null placeholder and a descriptive comment.
-            emit("  ; array literal of ${expr.elements.size} element(s) — lowered to null placeholder")
+            for (e in expr.elements) emitExpr(e)
+            emit("  ; array literal — aggregate lowering not yet implemented")
             "null"
         }
         is IrExpr.Index -> {
-            val target = emitExpr(expr.target)
-            val index = emitExpr(expr.index)
-            emit("  ; index into $target at $index — array indexing not yet lowered")
-            "0"
+            emitExpr(expr.target)
+            emitExpr(expr.index)
+            emit("  ; index — aggregate lowering not yet implemented")
+            defaultValue(expr.type)
         }
         is IrExpr.Member -> {
-            val target = emitExpr(expr.target)
-            emit("  ; member ${expr.name} of $target — lowered to 0 placeholder")
-            "0"
+            emitExpr(expr.target)
+            emit("  ; member .${expr.name} — aggregate lowering not yet implemented")
+            defaultValue(expr.type)
         }
         is IrExpr.MethodCall -> {
-            val target = emitExpr(expr.target)
-            emit("  ; method ${expr.name} on $target — lowered to 0 placeholder")
-            "0"
+            emitExpr(expr.target)
+            for (a in expr.args) emitExpr(a)
+            emit("  ; method .${expr.name} — not lowered")
+            defaultValue(expr.type)
         }
         is IrExpr.StructCtor -> {
-            val fields = expr.fieldNames.joinToString(", ")
-            emit("  ; struct ${expr.name}($fields) construction — lowered to null placeholder")
+            for (a in expr.args) emitExpr(a)
+            emit("  ; struct ${expr.name} construction — aggregate lowering not yet implemented")
             "null"
         }
         is IrExpr.TupleLit -> {
-            emit("  ; tuple literal of ${expr.elements.size} elements — lowered to null placeholder")
+            for (e in expr.elements) emitExpr(e)
+            emit("  ; tuple literal — aggregate lowering not yet implemented")
             "null"
         }
         is IrExpr.TupleAccess -> {
-            emit("  ; tuple access .${expr.index} — lowered to 0 placeholder")
-            "0"
+            emitExpr(expr.target)
+            emit("  ; tuple access .${expr.index} — not lowered")
+            defaultValue(expr.type)
         }
         is IrExpr.CatchExpr -> {
-            val e = emitExpr(expr.expr)
-            emit("  ; catch expr (fallback) — lowered to first value")
-            e
+            // The fallback path is not lowered; evaluate the primary expression.
+            emitExpr(expr.expr)
         }
-        is IrExpr.SlotPattern -> {
-            emit("  ; slot pattern ${expr.slotName}.${expr.variantName}")
-            "0"
-        }
+        is IrExpr.SlotPattern -> "0"
         is IrExpr.Lambda -> {
-            emit("  ; lambda/closure — lowered to null placeholder")
+            emit("  ; lambda/closure — not lowered")
             "null"
-        }
-        is IrExpr.StringTemplate -> {
-            // Lowered to a static string of the literal segments (runtime concatenation
-            // of embedded expressions is not yet implemented in this backend).
-            val static = expr.parts.filterIsInstance<IrExpr.IrTemplatePart.Literal>().joinToString("") { it.text }
-            val ref = addStringConstant(static)
-            val ptr = nextTmp()
-            emit("  $ptr = getelementptr [${ref.byteLen} x i8], [${ref.byteLen} x i8]* ${ref.name}, i64 0, i64 0")
-            ptr
         }
     }
 
@@ -586,67 +625,66 @@ class LlvmCodegen {
             IrUnaryOp.NEG -> {
                 val llvmType = mapType(expr.type)
                 when {
-                    expr.type in IrType.Companion.integerTypes -> emit("  $tmp = sub $llvmType 0, $operand")
-                    expr.type in IrType.Companion.floatTypes -> emit("  $tmp = fneg $llvmType $operand")
+                    expr.type in IrType.integerTypes -> emit("  $tmp = sub $llvmType 0, $operand")
+                    expr.type in IrType.floatTypes -> emit("  $tmp = fneg $llvmType $operand")
                     else -> error("Cannot negate type: ${expr.type}")
                 }
             }
             IrUnaryOp.NOT -> emit("  $tmp = xor i1 $operand, 1")
-                IrUnaryOp.BIT_NOT -> emit("  $tmp = xor i64 $operand, -1")
+            IrUnaryOp.BIT_NOT -> emit("  $tmp = xor ${mapType(expr.type)} $operand, -1")
         }
         return tmp
     }
 
     private fun emitBinary(expr: IrExpr.Binary): String {
-        // String * Int → emit a call to a helper (not native LLVM op)
-        // For now, treat string ops as calls to runtime helpers
-        if (expr.op == IrBinaryOp.ADD && expr.left.type == IrType.String) {
-            return emitStringConcat(expr)
+        // String-typed operations are routed to runtime helpers.
+        if (expr.left.type == IrType.String || expr.right.type == IrType.String) {
+            return emitStringBinary(expr)
         }
-        if (expr.op == IrBinaryOp.MUL &&
-            (expr.left.type == IrType.String || expr.right.type == IrType.String)) {
-            return emitStringRepeat(expr)
+
+        val leftType = expr.left.type
+        val llvmType = mapType(leftType)
+
+        // Short-circuit boolean && / || via control flow.
+        if (leftType == IrType.Bool && (expr.op == IrBinaryOp.AND || expr.op == IrBinaryOp.OR)) {
+            return emitShortCircuit(expr)
         }
 
         val left = emitExpr(expr.left)
         val right = emitExpr(expr.right)
         val tmp = nextTmp()
 
-        val leftType = expr.left.type
-        val llvmType = mapType(leftType)
         when {
-            // Integer operations (all integer types)
-            leftType in IrType.Companion.integerTypes || leftType == IrType.Char -> {
-                // Use unsigned division/modulo for unsigned types
-                val isUnsigned = leftType == IrType.UInt || leftType == IrType.UByte || leftType == IrType.UShort || leftType == IrType.ULong || leftType == IrType.UCent
+            leftType in IrType.integerTypes || leftType == IrType.Char -> {
+                val u = isUnsigned(leftType)
                 val inst = when (expr.op) {
                     IrBinaryOp.ADD -> "add $llvmType"
                     IrBinaryOp.SUB -> "sub $llvmType"
                     IrBinaryOp.MUL -> "mul $llvmType"
-                    IrBinaryOp.DIV -> if (isUnsigned) "udiv $llvmType" else "sdiv $llvmType"
-                    IrBinaryOp.MOD -> if (isUnsigned) "urem $llvmType" else "srem $llvmType"
+                    IrBinaryOp.DIV -> if (u) "udiv $llvmType" else "sdiv $llvmType"
+                    IrBinaryOp.MOD -> if (u) "urem $llvmType" else "srem $llvmType"
                     IrBinaryOp.EQ -> "icmp eq $llvmType"
                     IrBinaryOp.NEQ -> "icmp ne $llvmType"
-                    IrBinaryOp.LT -> if (isUnsigned) "icmp ult $llvmType" else "icmp slt $llvmType"
-                    IrBinaryOp.LTE -> if (isUnsigned) "icmp ule $llvmType" else "icmp sle $llvmType"
-                    IrBinaryOp.GT -> if (isUnsigned) "icmp ugt $llvmType" else "icmp sgt $llvmType"
-                    IrBinaryOp.GTE -> if (isUnsigned) "icmp uge $llvmType" else "icmp sge $llvmType"
+                    IrBinaryOp.LT -> if (u) "icmp ult $llvmType" else "icmp slt $llvmType"
+                    IrBinaryOp.LTE -> if (u) "icmp ule $llvmType" else "icmp sle $llvmType"
+                    IrBinaryOp.GT -> if (u) "icmp ugt $llvmType" else "icmp sgt $llvmType"
+                    IrBinaryOp.GTE -> if (u) "icmp uge $llvmType" else "icmp sge $llvmType"
                     IrBinaryOp.BIT_AND -> "and $llvmType"
                     IrBinaryOp.BIT_OR -> "or $llvmType"
                     IrBinaryOp.BIT_XOR -> "xor $llvmType"
                     IrBinaryOp.SHL -> "shl $llvmType"
-                    IrBinaryOp.SHR -> if (isUnsigned) "lshr $llvmType" else "ashr $llvmType"
+                    IrBinaryOp.SHR -> if (u) "lshr $llvmType" else "ashr $llvmType"
                     else -> error("Unsupported int op: ${expr.op}")
                 }
                 emit("  $tmp = $inst $left, $right")
             }
-            // Float operations (all floating-point types)
-            leftType in IrType.Companion.floatTypes -> {
+            leftType in IrType.floatTypes -> {
                 val inst = when (expr.op) {
                     IrBinaryOp.ADD -> "fadd $llvmType"
                     IrBinaryOp.SUB -> "fsub $llvmType"
                     IrBinaryOp.MUL -> "fmul $llvmType"
                     IrBinaryOp.DIV -> "fdiv $llvmType"
+                    IrBinaryOp.MOD -> "frem $llvmType"
                     IrBinaryOp.EQ -> "fcmp oeq $llvmType"
                     IrBinaryOp.NEQ -> "fcmp one $llvmType"
                     IrBinaryOp.LT -> "fcmp olt $llvmType"
@@ -657,170 +695,389 @@ class LlvmCodegen {
                 }
                 emit("  $tmp = $inst $left, $right")
             }
-            // Boolean operations
             leftType == IrType.Bool -> {
                 when (expr.op) {
-                    IrBinaryOp.AND -> emit("  $tmp = and i1 $left, $right")
-                    IrBinaryOp.OR -> emit("  $tmp = or i1 $left, $right")
                     IrBinaryOp.EQ -> emit("  $tmp = icmp eq i1 $left, $right")
                     IrBinaryOp.NEQ -> emit("  $tmp = icmp ne i1 $left, $right")
+                    IrBinaryOp.BIT_AND -> emit("  $tmp = and i1 $left, $right")
+                    IrBinaryOp.BIT_OR -> emit("  $tmp = or i1 $left, $right")
+                    IrBinaryOp.BIT_XOR -> emit("  $tmp = xor i1 $left, $right")
                     else -> error("Unsupported bool op: ${expr.op}")
                 }
             }
-            // String operations (equality lowered to a placeholder; full lowering needs a runtime strcmp)
-            leftType == IrType.String -> {
-                emit("  ; string ${expr.op} — lowered to placeholder")
-                emit("  $tmp = icmp eq i1 0, 0")
-            }
-            else -> {
-                emit("  ; unsupported ${expr.op} on ${expr.left.type} — lowered to placeholder")
-                emit("  $tmp = icmp eq i1 0, 0")
-            }
+            else -> error("Unsupported binary ${expr.op} on ${expr.left.type}")
         }
         return tmp
     }
 
-    private fun emitStringConcat(expr: IrExpr.Binary): String {
-        // For string concat, we'd need a runtime helper.
-        // Emit a comment and placeholder — real implementation needs malloc + strcpy + strcat.
+    /** Lowers `&&` / `||` with short-circuit evaluation via phi. */
+    private fun emitShortCircuit(expr: IrExpr.Binary): String {
+        val isAnd = expr.op == IrBinaryOp.AND
         val left = emitExpr(expr.left)
+        val rhsLabel = nextLabel(if (isAnd) "and_rhs" else "or_rhs")
+        val endLabel = nextLabel(if (isAnd) "and_end" else "or_end")
+        // Capture the predecessor block that holds the left value.
+        val leftBlock = currentBlock
+        if (isAnd) {
+            emitTerminator("  br i1 $left, label %$rhsLabel, label %$endLabel")
+        } else {
+            emitTerminator("  br i1 $left, label %$endLabel, label %$rhsLabel")
+        }
+        startBlock(rhsLabel)
         val right = emitExpr(expr.right)
+        val rhsBlock = currentBlock
+        emitTerminator("  br label %$endLabel")
+        startBlock(endLabel)
         val tmp = nextTmp()
-        emit("  ; TODO: string concatenation runtime call")
-        emit("  $tmp = call i8* @__azora_str_concat(i8* $left, i8* $right)")
+        // On the short-circuit edge the result is the left value (false for &&,
+        // true for ||); otherwise it is the right value.
+        val shortVal = if (isAnd) "false" else "true"
+        emit("  $tmp = phi i1 [ $shortVal, %$leftBlock ], [ $right, %$rhsBlock ]")
         return tmp
     }
 
-    private fun emitStringRepeat(expr: IrExpr.Binary): String {
-        val (strExpr, intExpr) = if (expr.left.type == IrType.String)
-            expr.left to expr.right else expr.right to expr.left
-        val str = emitExpr(strExpr)
-        val count = emitExpr(intExpr)
-        val tmp = nextTmp()
-        emit("  ; TODO: string repeat runtime call")
-        emit("  $tmp = call i8* @__azora_str_repeat(i8* $str, i32 $count)")
-        return tmp
+    private fun emitStringBinary(expr: IrExpr.Binary): String {
+        return when (expr.op) {
+            IrBinaryOp.ADD -> {
+                usesStrConcat = true
+                val left = stringify(expr.left)
+                val right = stringify(expr.right)
+                val tmp = nextTmp()
+                emit("  $tmp = call i8* @__azora_str_concat(i8* $left, i8* $right)")
+                tmp
+            }
+            IrBinaryOp.MUL -> {
+                usesStrRepeat = true
+                val (strExpr, intExpr) = if (expr.left.type == IrType.String)
+                    expr.left to expr.right else expr.right to expr.left
+                val str = emitExpr(strExpr)
+                val countRaw = emitExpr(intExpr)
+                val count = coerceToI32(countRaw, intExpr.type)
+                val tmp = nextTmp()
+                emit("  $tmp = call i8* @__azora_str_repeat(i8* $str, i32 $count)")
+                tmp
+            }
+            IrBinaryOp.EQ, IrBinaryOp.NEQ -> {
+                usesStrcmp = true
+                val left = emitExpr(expr.left)
+                val right = emitExpr(expr.right)
+                val cmp = nextTmp()
+                emit("  $cmp = call i32 @strcmp(i8* $left, i8* $right)")
+                val tmp = nextTmp()
+                val pred = if (expr.op == IrBinaryOp.EQ) "eq" else "ne"
+                emit("  $tmp = icmp $pred i32 $cmp, 0")
+                tmp
+            }
+            else -> error("Unsupported string op: ${expr.op}")
+        }
+    }
+
+    private fun emitStringTemplate(expr: IrExpr.StringTemplate): String {
+        usesStrConcat = true
+        // Fold the parts left-to-right with the concat helper.
+        var acc: String? = null
+        for (part in expr.parts) {
+            val piece = when (part) {
+                is IrExpr.IrTemplatePart.Literal -> gepString(addStringConstant(part.text))
+                is IrExpr.IrTemplatePart.Expr -> stringify(part.expr)
+            }
+            acc = if (acc == null) piece else {
+                val tmp = nextTmp()
+                emit("  $tmp = call i8* @__azora_str_concat(i8* $acc, i8* $piece)")
+                tmp
+            }
+        }
+        return acc ?: gepString(addStringConstant(""))
     }
 
     private fun emitCall(expr: IrExpr.Call): String {
-        // Special handling for println
-        if (expr.name == "println") {
-            return emitPrintln(expr)
-        }
+        if (expr.name == "println") return emitPrintln(expr)
+        if (expr.name == "print") return emitPrintln(expr, newline = false)
 
-        val args = expr.args.map { arg ->
-            val value = emitExpr(arg)
-            "${mapType(arg.type)} $value"
+        val args = expr.args.joinToString(", ") { arg ->
+            "${mapType(arg.type)} ${emitExpr(arg)}"
         }
         val retType = mapType(expr.type)
-
         return if (expr.type == IrType.Unit) {
-            emit("  call void @${expr.name}(${args.joinToString(", ")})")
+            emit("  call void @${expr.name}($args)")
             "void"
         } else {
             val tmp = nextTmp()
-            emit("  $tmp = call $retType @${expr.name}(${args.joinToString(", ")})")
+            emit("  $tmp = call $retType @${expr.name}($args)")
             tmp
         }
     }
 
-    private fun emitPrintln(expr: IrExpr.Call): String {
+    private fun emitPrintln(expr: IrExpr.Call, newline: Boolean = true): String {
+        val nl = if (newline) "\n" else ""
         if (expr.args.isEmpty()) {
-            usesPuts = true
-            val nl = addStringConstant("")
-            val ptr = nextTmp()
-            emit("  $ptr = getelementptr [${nl.byteLen} x i8], [${nl.byteLen} x i8]* ${nl.name}, i64 0, i64 0")
-            val unused = nextTmp()
-            emit("  $unused = call i32 @puts(i8* $ptr)")
+            printfFmt("", emptyList())
+            if (newline) printNewline()
             return "void"
         }
 
         val arg = expr.args[0]
-        val value = emitExpr(arg)
-
         when (arg.type) {
             IrType.String -> {
-                usesPuts = true
-                val unused = nextTmp()
-                emit("  $unused = call i32 @puts(i8* $value)")
-            }
-            IrType.Int, IrType.UInt, IrType.Byte, IrType.UByte, IrType.Short, IrType.UShort -> {
-                usesPrintf = true
-                val fmt = addStringConstant("%d\n")
-                val ptr = nextTmp()
-                emit("  $ptr = getelementptr [${fmt.byteLen} x i8], [${fmt.byteLen} x i8]* ${fmt.name}, i64 0, i64 0")
-                val unused = nextTmp()
-                emit("  $unused = call i32 (i8*, ...) @printf(i8* $ptr, ${mapType(arg.type)} $value)")
-            }
-            IrType.Long, IrType.ULong -> {
-                usesPrintf = true
-                val fmt = addStringConstant("%lld\n")
-                val ptr = nextTmp()
-                emit("  $ptr = getelementptr [${fmt.byteLen} x i8], [${fmt.byteLen} x i8]* ${fmt.name}, i64 0, i64 0")
-                val unused = nextTmp()
-                emit("  $unused = call i32 (i8*, ...) @printf(i8* $ptr, i64 $value)")
-            }
-            IrType.Cent, IrType.UCent -> {
-                usesPrintf = true
-                val fmt = addStringConstant("%lld\n")
-                val ptr = nextTmp()
-                emit("  $ptr = getelementptr [${fmt.byteLen} x i8], [${fmt.byteLen} x i8]* ${fmt.name}, i64 0, i64 0")
-                val unused = nextTmp()
-                emit("  $unused = call i32 (i8*, ...) @printf(i8* $ptr, i128 $value)")
-            }
-            IrType.Real, IrType.Float, IrType.Decimal -> {
-                usesPrintf = true
-                val fmt = addStringConstant("%f\n")
-                val ptr = nextTmp()
-                emit("  $ptr = getelementptr [${fmt.byteLen} x i8], [${fmt.byteLen} x i8]* ${fmt.name}, i64 0, i64 0")
-                val unused = nextTmp()
-                emit("  $unused = call i32 (i8*, ...) @printf(i8* $ptr, ${mapType(arg.type)} $value)")
+                if (newline) {
+                    usesPuts = true
+                    val v = emitExpr(arg)
+                    val unused = nextTmp()
+                    emit("  $unused = call i32 @puts(i8* $v)")
+                } else {
+                    val v = emitExpr(arg)
+                    printfFmt("%s", listOf("i8* $v"))
+                }
             }
             IrType.Char -> {
-                usesPrintf = true
-                val fmt = addStringConstant("%c\n")
-                val ptr = nextTmp()
-                emit("  $ptr = getelementptr [${fmt.byteLen} x i8], [${fmt.byteLen} x i8]* ${fmt.name}, i64 0, i64 0")
-                val unused = nextTmp()
-                emit("  $unused = call i32 (i8*, ...) @printf(i8* $ptr, i8 $value)")
+                val v = coerceToI32(emitExpr(arg), arg.type)
+                printfFmt("%c$nl", listOf("i32 $v"))
+            }
+            IrType.Int, IrType.UInt, IrType.Byte, IrType.UByte, IrType.Short, IrType.UShort -> {
+                val v = coerceToI32(emitExpr(arg), arg.type)
+                printfFmt("%d$nl", listOf("i32 $v"))
+            }
+            IrType.Long, IrType.ULong -> {
+                val v = emitExpr(arg)
+                printfFmt("%lld$nl", listOf("i64 $v"))
+            }
+            IrType.Cent, IrType.UCent -> {
+                val v = emitExpr(arg)
+                // No portable printf length modifier for i128; truncate to i64.
+                val t = nextTmp()
+                emit("  $t = trunc i128 $v to i64")
+                printfFmt("%lld$nl", listOf("i64 $t"))
+            }
+            IrType.Real -> {
+                val v = emitExpr(arg)
+                printfFmt("%g$nl", listOf("double $v"))
+            }
+            IrType.Float -> {
+                val v = emitExpr(arg)
+                val ext = nextTmp()
+                emit("  $ext = fpext float $v to double")
+                printfFmt("%g$nl", listOf("double $ext"))
+            }
+            IrType.Decimal -> {
+                val v = emitExpr(arg)
+                val d = nextTmp()
+                emit("  $d = fptrunc fp128 $v to double")
+                printfFmt("%g$nl", listOf("double $d"))
             }
             IrType.Bool -> {
-                usesPuts = true
-                val trueRef = addStringConstant("true")
-                val falseRef = addStringConstant("false")
-                val truePtr = nextTmp()
-                val falsePtr = nextTmp()
-                val selected = nextTmp()
-                emit("  $truePtr = getelementptr [${trueRef.byteLen} x i8], [${trueRef.byteLen} x i8]* ${trueRef.name}, i64 0, i64 0")
-                emit("  $falsePtr = getelementptr [${falseRef.byteLen} x i8], [${falseRef.byteLen} x i8]* ${falseRef.name}, i64 0, i64 0")
-                emit("  $selected = select i1 $value, i8* $truePtr, i8* $falsePtr")
-                val unused = nextTmp()
-                emit("  $unused = call i32 @puts(i8* $selected)")
-            }
-            IrType.Unit -> {
-                usesPuts = true
-                val nl = addStringConstant("")
-                val ptr = nextTmp()
-                emit("  $ptr = getelementptr [${nl.byteLen} x i8], [${nl.byteLen} x i8]* ${nl.name}, i64 0, i64 0")
-                val unused = nextTmp()
-                emit("  $unused = call i32 @puts(i8* $ptr)")
+                val v = emitExpr(arg)
+                val s = boolToStr(v)
+                if (newline) {
+                    usesPuts = true
+                    val unused = nextTmp()
+                    emit("  $unused = call i32 @puts(i8* $s)")
+                } else {
+                    printfFmt("%s", listOf("i8* $s"))
+                }
             }
             else -> {
-                // Compound, nullable, named, and dynamic types are represented as
-                // opaque pointers; print a placeholder until value lowering exists.
-                usesPuts = true
-                val placeholder = addStringConstant("<value>")
-                val ptr = nextTmp()
-                emit("  $ptr = getelementptr [${placeholder.byteLen} x i8], [${placeholder.byteLen} x i8]* ${placeholder.name}, i64 0, i64 0")
-                val unused = nextTmp()
-                emit("  $unused = call i32 @puts(i8* $ptr)")
+                emitExpr(arg)
+                val placeholder = gepString(addStringConstant("<value>"))
+                if (newline) {
+                    usesPuts = true
+                    val unused = nextTmp()
+                    emit("  $unused = call i32 @puts(i8* $placeholder)")
+                } else {
+                    printfFmt("%s", listOf("i8* $placeholder"))
+                }
             }
         }
         return "void"
     }
 
+    /** Emits a `printf` call with the given format and already-typed arguments. */
+    private fun printfFmt(fmt: String, args: List<String>) {
+        usesPrintf = true
+        val ref = addStringConstant(fmt)
+        val ptr = gepString(ref)
+        val all = (listOf("i8* $ptr") + args).joinToString(", ")
+        val unused = nextTmp()
+        emit("  $unused = call i32 (i8*, ...) @printf($all)")
+    }
+
+    private fun printNewline() {
+        usesPrintf = true
+        printfFmt("\n", emptyList())
+    }
+
     // -----------------------------------------------------------------------
-    // Helpers
+    // Value conversion helpers (used for printf varargs / string building)
+    // -----------------------------------------------------------------------
+
+    /** Sign/zero-extends a sub-i32 integer value to i32 for printf varargs. */
+    private fun coerceToI32(value: String, type: IrType): String = when (type) {
+        IrType.Int, IrType.UInt -> value
+        IrType.Byte, IrType.Short -> {
+            val t = nextTmp(); emit("  $t = sext ${mapType(type)} $value to i32"); t
+        }
+        IrType.Char, IrType.UByte, IrType.UShort -> {
+            val t = nextTmp(); emit("  $t = zext ${mapType(type)} $value to i32"); t
+        }
+        IrType.Long, IrType.ULong -> {
+            val t = nextTmp(); emit("  $t = trunc i64 $value to i32"); t
+        }
+        else -> value
+    }
+
+    /** Produces an `i8*` C string for any scalar value (used by interpolation). */
+    private fun stringify(expr: IrExpr): String {
+        return when (expr.type) {
+            IrType.String -> emitExpr(expr)
+            IrType.Bool -> boolToStr(emitExpr(expr))
+            IrType.Char -> {
+                usesCharToStr = true; usesSnprintf = true; usesMalloc = true
+                val v = coerceToI32(emitExpr(expr), expr.type)
+                val tmp = nextTmp()
+                emit("  $tmp = call i8* @__azora_char_to_str(i32 $v)")
+                tmp
+            }
+            IrType.Real, IrType.Float, IrType.Decimal -> {
+                usesRealToStr = true; usesSnprintf = true; usesMalloc = true
+                val raw = emitExpr(expr)
+                val d = when (expr.type) {
+                    IrType.Real -> raw
+                    IrType.Float -> { val t = nextTmp(); emit("  $t = fpext float $raw to double"); t }
+                    else -> { val t = nextTmp(); emit("  $t = fptrunc fp128 $raw to double"); t }
+                }
+                val tmp = nextTmp()
+                emit("  $tmp = call i8* @__azora_real_to_str(double $d)")
+                tmp
+            }
+            else -> {
+                // Integer / char types → 64-bit then format.
+                usesIntToStr = true; usesSnprintf = true; usesMalloc = true
+                val raw = emitExpr(expr)
+                val v = widenToI64(raw, expr.type)
+                val tmp = nextTmp()
+                emit("  $tmp = call i8* @__azora_int_to_str(i64 $v)")
+                tmp
+            }
+        }
+    }
+
+    private fun widenToI64(value: String, type: IrType): String = when (type) {
+        IrType.Long, IrType.ULong -> value
+        IrType.Cent, IrType.UCent -> { val t = nextTmp(); emit("  $t = trunc i128 $value to i64"); t }
+        IrType.UInt, IrType.UByte, IrType.UShort, IrType.Char ->
+            { val t = nextTmp(); emit("  $t = zext ${mapType(type)} $value to i64"); t }
+        else -> { val t = nextTmp(); emit("  $t = sext ${mapType(type)} $value to i64"); t }
+    }
+
+    /** Selects the `"true"`/`"false"` C string for a boolean value. */
+    private fun boolToStr(value: String): String {
+        val trueRef = addStringConstant("true")
+        val falseRef = addStringConstant("false")
+        val truePtr = gepString(trueRef)
+        val falsePtr = gepString(falseRef)
+        val sel = nextTmp()
+        emit("  $sel = select i1 $value, i8* $truePtr, i8* $falsePtr")
+        return sel
+    }
+
+    // -----------------------------------------------------------------------
+    // Runtime helper definitions
+    // -----------------------------------------------------------------------
+
+    private fun buildRuntimeHelpers(): String {
+        val sb = StringBuilder()
+
+        if (usesStrConcat) {
+            usesMalloc = true; usesStrlen = true; usesStrcpy = true; usesStrcat = true
+            sb.appendLine("; runtime: string concatenation")
+            sb.appendLine("define i8* @__azora_str_concat(i8* %a, i8* %b) {")
+            sb.appendLine("entry:")
+            sb.appendLine("  %la = call i64 @strlen(i8* %a)")
+            sb.appendLine("  %lb = call i64 @strlen(i8* %b)")
+            sb.appendLine("  %sum = add i64 %la, %lb")
+            sb.appendLine("  %size = add i64 %sum, 1")
+            sb.appendLine("  %buf = call i8* @malloc(i64 %size)")
+            sb.appendLine("  %c1 = call i8* @strcpy(i8* %buf, i8* %a)")
+            sb.appendLine("  %c2 = call i8* @strcat(i8* %buf, i8* %b)")
+            sb.appendLine("  ret i8* %buf")
+            sb.appendLine("}")
+            sb.appendLine()
+        }
+
+        if (usesStrRepeat) {
+            usesMalloc = true; usesStrlen = true
+            sb.appendLine("; runtime: string repetition")
+            sb.appendLine("define i8* @__azora_str_repeat(i8* %s, i32 %n) {")
+            sb.appendLine("entry:")
+            sb.appendLine("  %len = call i64 @strlen(i8* %s)")
+            sb.appendLine("  %n64 = sext i32 %n to i64")
+            sb.appendLine("  %total = mul i64 %len, %n64")
+            sb.appendLine("  %size = add i64 %total, 1")
+            sb.appendLine("  %buf = call i8* @malloc(i64 %size)")
+            sb.appendLine("  store i8 0, i8* %buf")
+            sb.appendLine("  br label %cond")
+            sb.appendLine("cond:")
+            sb.appendLine("  %i = phi i32 [ 0, %entry ], [ %inext, %body ]")
+            sb.appendLine("  %dst = phi i8* [ %buf, %entry ], [ %dst2, %body ]")
+            sb.appendLine("  %done = icmp sge i32 %i, %n")
+            sb.appendLine("  br i1 %done, label %end, label %body")
+            sb.appendLine("body:")
+            sb.appendLine("  %cpy = call i8* @strcpy(i8* %dst, i8* %s)")
+            sb.appendLine("  %dst2 = getelementptr i8, i8* %dst, i64 %len")
+            sb.appendLine("  %inext = add i32 %i, 1")
+            sb.appendLine("  br label %cond")
+            sb.appendLine("end:")
+            sb.appendLine("  ret i8* %buf")
+            sb.appendLine("}")
+            sb.appendLine()
+        }
+
+        if (usesIntToStr) {
+            usesMalloc = true; usesSnprintf = true
+            val fmt = addStringConstant("%lld")
+            sb.appendLine("; runtime: integer to string")
+            sb.appendLine("define i8* @__azora_int_to_str(i64 %v) {")
+            sb.appendLine("entry:")
+            sb.appendLine("  %buf = call i8* @malloc(i64 24)")
+            sb.appendLine("  %fmt = getelementptr [${fmt.byteLen} x i8], [${fmt.byteLen} x i8]* ${fmt.name}, i64 0, i64 0")
+            sb.appendLine("  %r = call i32 (i8*, i64, i8*, ...) @snprintf(i8* %buf, i64 24, i8* %fmt, i64 %v)")
+            sb.appendLine("  ret i8* %buf")
+            sb.appendLine("}")
+            sb.appendLine()
+        }
+
+        if (usesRealToStr) {
+            usesMalloc = true; usesSnprintf = true
+            val fmt = addStringConstant("%g")
+            sb.appendLine("; runtime: real to string")
+            sb.appendLine("define i8* @__azora_real_to_str(double %v) {")
+            sb.appendLine("entry:")
+            sb.appendLine("  %buf = call i8* @malloc(i64 32)")
+            sb.appendLine("  %fmt = getelementptr [${fmt.byteLen} x i8], [${fmt.byteLen} x i8]* ${fmt.name}, i64 0, i64 0")
+            sb.appendLine("  %r = call i32 (i8*, i64, i8*, ...) @snprintf(i8* %buf, i64 32, i8* %fmt, double %v)")
+            sb.appendLine("  ret i8* %buf")
+            sb.appendLine("}")
+            sb.appendLine()
+        }
+
+        if (usesCharToStr) {
+            usesMalloc = true; usesSnprintf = true
+            val fmt = addStringConstant("%c")
+            sb.appendLine("; runtime: char to string")
+            sb.appendLine("define i8* @__azora_char_to_str(i32 %v) {")
+            sb.appendLine("entry:")
+            sb.appendLine("  %buf = call i8* @malloc(i64 2)")
+            sb.appendLine("  %fmt = getelementptr [${fmt.byteLen} x i8], [${fmt.byteLen} x i8]* ${fmt.name}, i64 0, i64 0")
+            sb.appendLine("  %r = call i32 (i8*, i64, i8*, ...) @snprintf(i8* %buf, i64 2, i8* %fmt, i32 %v)")
+            sb.appendLine("  ret i8* %buf")
+            sb.appendLine("}")
+            sb.appendLine()
+        }
+
+        return sb.toString()
+    }
+
+    // -----------------------------------------------------------------------
+    // Low-level helpers
     // -----------------------------------------------------------------------
 
     private fun mapType(type: IrType): String = when (type) {
@@ -841,32 +1098,60 @@ class LlvmCodegen {
         IrType.UCent -> "i128"
         IrType.Float -> "float"
         IrType.Decimal -> "fp128"
-        // Compound and user-defined types are represented as opaque pointers
-        // until dedicated struct/heap lowering is implemented.
-        is IrType.Array -> "%struct.${sanitizeName("Array")}*"
-        is IrType.Map -> "%struct.${sanitizeName("Map")}*"
-        is IrType.Set -> "%struct.${sanitizeName("Set")}*"
+        IrType.Any -> "i8*"
+        is IrType.Array -> "i8*"
+        is IrType.Map -> "i8*"
+        is IrType.Set -> "i8*"
         is IrType.Function -> "i8*"
-        is IrType.Tuple -> "%struct.${sanitizeName("Tuple")}*"
+        is IrType.Tuple -> "i8*"
         is IrType.Nullable -> "i8*"
         is IrType.Named -> "%struct.${sanitizeName(type.name)}*"
-        IrType.Any -> "i8*"
-        is IrType.Tuple -> "i8*"
-        is IrType.Function -> "i8*"
     }
 
-    /** Sanitizes a name for use in LLVM identifiers (struct names, etc.). */
+    private fun isUnsigned(type: IrType): Boolean = when (type) {
+        IrType.UInt, IrType.UByte, IrType.UShort, IrType.ULong, IrType.UCent -> true
+        else -> false
+    }
+
+    /** A type-appropriate default/zero value, used for unreachable returns. */
+    private fun defaultValue(type: IrType): String = when (type) {
+        in IrType.floatTypes -> floatConst(0.0, type)
+        IrType.Bool -> "false"
+        IrType.String -> "null"
+        IrType.Unit -> ""
+        is IrType.Array, is IrType.Map, is IrType.Set, is IrType.Function,
+        is IrType.Tuple, is IrType.Nullable, is IrType.Named, IrType.Any -> "null"
+        else -> "0"
+    }
+
+    /** Formats a floating-point constant in the exact LLVM hex form. */
+    private fun floatConst(value: Double, type: IrType): String {
+        // LLVM accepts the 64-bit IEEE-754 hex for both float and double
+        // constants (for float it must be exactly representable, which holds
+        // because the value originated from a float).
+        val bits = if (type == IrType.Float)
+            value.toFloat().toDouble().toRawBits()
+        else
+            value.toRawBits()
+        return "0x" + bits.toULong().toString(16).uppercase().padStart(16, '0')
+    }
+
+    private fun gepString(ref: StringRef): String {
+        val tmp = nextTmp()
+        emit("  $tmp = getelementptr [${ref.byteLen} x i8], [${ref.byteLen} x i8]* ${ref.name}, i64 0, i64 0")
+        return tmp
+    }
+
     private fun sanitizeName(name: String): String =
         name.map { if (it.isLetterOrDigit() || it == '_') it else '_' }.joinToString("")
 
     private fun nextTmp(): String = "%${tmpCounter++}"
 
-    private fun nextLabel(prefix: String): String = "${prefix}.${labelCounter++}"
+    private fun nextLabel(prefix: String): String = "$prefix.${labelCounter++}"
 
     data class StringRef(val name: String, val byteLen: Int)
 
     private fun addStringConstant(value: String): StringRef {
-        // Check if we already have this string
         for ((name, v) in stringConstants) {
             if (v == value) return StringRef(name, value.length + 1)
         }
@@ -890,6 +1175,22 @@ class LlvmCodegen {
             }
         }
         return sb.toString()
+    }
+
+    /** The label of the basic block currently being emitted (for phi nodes). */
+    private var currentBlock: String = "entry"
+
+    private fun startBlock(label: String) {
+        line("$label:")
+        currentBlock = label
+        terminated = false
+    }
+
+    private fun emitTerminator(text: String) {
+        if (!terminated) {
+            out.appendLine(text)
+            terminated = true
+        }
     }
 
     private fun emit(text: String) {

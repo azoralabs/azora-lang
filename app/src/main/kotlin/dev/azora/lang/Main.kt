@@ -140,7 +140,8 @@ private fun handleCompile(args: List<String>) {
     }
 
     val target = args[0]
-    val filePath = args[1]
+    val debug = args.any { it == "--debug" || it == "-O0" }
+    val filePath = args.drop(1).first { !it.startsWith("-") }
     val file = File(filePath)
     if (!file.exists()) {
         System.err.println("File not found: $filePath")
@@ -148,14 +149,17 @@ private fun handleCompile(args: List<String>) {
     }
 
     val source = resolveAndConcatenate(file)
-    val result = Compiler().compile(source)
+    val result = Compiler().compile(source, release = !debug)
     when (result) {
         is CompilationResult.Success -> {
+            // In debug mode emit code from the un-optimized IR so backend output
+            // reflects the program exactly (useful for backend debugging).
+            val backendIr = if (debug) result.ir else result.optimizedIr
             val output = when (target) {
-                "kotlin", "kt" -> result.kotlin
-                "typescript", "ts" -> result.typescript
-                "llvm", "ll" -> result.llvm
-                "ir" -> result.optimizedIr.prettyPrint()
+                "kotlin", "kt" -> if (debug) org.azora.lang.backend.KotlinCodegen().generate(backendIr) else result.kotlin
+                "typescript", "ts" -> if (debug) org.azora.lang.backend.TypeScriptCodegen().generate(backendIr) else result.typescript
+                "llvm", "ll" -> if (debug) org.azora.lang.backend.LlvmCodegen().generate(backendIr) else result.llvm
+                "ir" -> backendIr.prettyPrint()
                 "ast" -> result.ast.dumpTree()
                 else -> {
                     System.err.println("Unknown target: $target (use kotlin, typescript, llvm, ir, or ast)")

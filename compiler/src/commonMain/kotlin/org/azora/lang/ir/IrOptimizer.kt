@@ -236,7 +236,7 @@ class IrOptimizer {
                 is IrStmt.If -> {
                     val cond = foldExpr(propagateExpr(stmt.condition, constants))
                     // If condition is constant, eliminate the branch at IR level
-                    if (cond is IrExpr.BoolLiteral) {
+                    val result = if (cond is IrExpr.BoolLiteral) {
                         // Wrap surviving branch in an If with true condition
                         // (DCE will handle further cleanup)
                         val branch = if (cond.value) stmt.thenBranch else (stmt.elseBranch ?: emptyList())
@@ -252,8 +252,18 @@ class IrOptimizer {
                             elseBranch = stmt.elseBranch?.let { propagateStmts(it, constants.toMutableMap()) }
                         )
                     }
+                    // A variable assigned in a conditionally-executed branch is no
+                    // longer known to hold its previous constant after the `if`.
+                    invalidate(constants, collectAssigned(stmt.thenBranch))
+                    stmt.elseBranch?.let { invalidate(constants, collectAssigned(it)) }
+                    result
                 }
-                is IrStmt.Zone -> stmt.copy(body = propagateStmts(stmt.body, constants.toMutableMap()))
+                is IrStmt.Zone -> {
+                    val result = stmt.copy(body = propagateStmts(stmt.body, constants.toMutableMap()))
+                    // Reassignments to outer variables inside the zone persist.
+                    invalidate(constants, collectAssigned(stmt.body))
+                    result
+                }
                 is IrStmt.Assert -> stmt.copy(
                     condition = foldExpr(propagateExpr(stmt.condition, constants)),
                     message = foldExpr(propagateExpr(stmt.message, constants))
@@ -261,16 +271,39 @@ class IrOptimizer {
                 is IrStmt.Trace -> stmt.copy(
                     message = foldExpr(propagateExpr(stmt.message, constants))
                 )
-                is IrStmt.While -> stmt.copy(
-                    condition = foldExpr(propagateExpr(stmt.condition, constants)),
-                    body = propagateStmts(stmt.body, constants.toMutableMap())
-                )
-                is IrStmt.For -> stmt.copy(
-                    start = foldExpr(propagateExpr(stmt.start, constants)),
-                    end = foldExpr(propagateExpr(stmt.end, constants)),
-                    body = propagateStmts(stmt.body, constants.toMutableMap())
-                )
-                is IrStmt.Loop -> stmt.copy(body = propagateStmts(stmt.body, constants.toMutableMap()))
+                is IrStmt.While -> {
+                    // Variables mutated in the loop body are not constant across
+                    // iterations, so drop them before lowering the condition/body.
+                    val assigned = collectAssigned(stmt.body)
+                    val inner = constants.toMutableMap().also { invalidate(it, assigned) }
+                    val result = stmt.copy(
+                        condition = foldExpr(propagateExpr(stmt.condition, inner)),
+                        body = propagateStmts(stmt.body, inner)
+                    )
+                    invalidate(constants, assigned)
+                    result
+                }
+                is IrStmt.For -> {
+                    // The counter and any body-assigned variables vary per iteration.
+                    val assigned = collectAssigned(stmt.body) + stmt.counter
+                    val start = foldExpr(propagateExpr(stmt.start, constants))
+                    val end = foldExpr(propagateExpr(stmt.end, constants))
+                    val inner = constants.toMutableMap().also { invalidate(it, assigned) }
+                    val result = stmt.copy(
+                        start = start,
+                        end = end,
+                        body = propagateStmts(stmt.body, inner)
+                    )
+                    invalidate(constants, assigned)
+                    result
+                }
+                is IrStmt.Loop -> {
+                    val assigned = collectAssigned(stmt.body)
+                    val inner = constants.toMutableMap().also { invalidate(it, assigned) }
+                    val result = stmt.copy(body = propagateStmts(stmt.body, inner))
+                    invalidate(constants, assigned)
+                    result
+                }
                 is IrStmt.Break -> stmt
                 is IrStmt.Continue -> stmt
                 is IrStmt.IndexAssign -> stmt.copy(
@@ -282,24 +315,71 @@ class IrOptimizer {
                     target = foldExpr(propagateExpr(stmt.target, constants)),
                     value = foldExpr(propagateExpr(stmt.value, constants))
                 )
-                is IrStmt.When -> stmt.copy(
-                    scrutinee = foldExpr(propagateExpr(stmt.scrutinee, constants)),
-                    branches = stmt.branches.map { b ->
-                        b.copy(
-                            patterns = b.patterns.map { foldExpr(propagateExpr(it, constants)) },
-                            body = propagateStmts(b.body, constants.toMutableMap())
-                        )
-                    },
-                    elseBranch = stmt.elseBranch?.let { propagateStmts(it, constants.toMutableMap()) }
-                )
+                is IrStmt.When -> {
+                    val result = stmt.copy(
+                        scrutinee = foldExpr(propagateExpr(stmt.scrutinee, constants)),
+                        branches = stmt.branches.map { b ->
+                            b.copy(
+                                patterns = b.patterns.map { foldExpr(propagateExpr(it, constants)) },
+                                body = propagateStmts(b.body, constants.toMutableMap())
+                            )
+                        },
+                        elseBranch = stmt.elseBranch?.let { propagateStmts(it, constants.toMutableMap()) }
+                    )
+                    for (b in stmt.branches) invalidate(constants, collectAssigned(b.body))
+                    stmt.elseBranch?.let { invalidate(constants, collectAssigned(it)) }
+                    result
+                }
                 is IrStmt.Throw -> stmt.copy(value = foldExpr(propagateExpr(stmt.value, constants)))
-                is IrStmt.Try -> stmt.copy(
-                    body = propagateStmts(stmt.body, constants.toMutableMap()),
-                    catchBody = stmt.catchBody?.let { propagateStmts(it, constants.toMutableMap()) }
-                )
-                is IrStmt.Defer -> stmt.copy(body = propagateStmts(stmt.body, constants.toMutableMap()))
+                is IrStmt.Try -> {
+                    val result = stmt.copy(
+                        body = propagateStmts(stmt.body, constants.toMutableMap()),
+                        catchBody = stmt.catchBody?.let { propagateStmts(it, constants.toMutableMap()) }
+                    )
+                    invalidate(constants, collectAssigned(stmt.body))
+                    stmt.catchBody?.let { invalidate(constants, collectAssigned(it)) }
+                    result
+                }
+                is IrStmt.Defer -> {
+                    val result = stmt.copy(body = propagateStmts(stmt.body, constants.toMutableMap()))
+                    invalidate(constants, collectAssigned(stmt.body))
+                    result
+                }
             }
         }
+    }
+
+    /** Removes [names] from the known-constants map (they are no longer constant). */
+    private fun invalidate(constants: MutableMap<String, IrExpr>, names: Set<String>) {
+        for (name in names) constants.remove(name)
+    }
+
+    /**
+     * Collects the names of variables reassigned anywhere within [stmts]
+     * (including nested control flow). Such variables cannot be treated as
+     * holding a known constant once the enclosing construct may have run.
+     */
+    private fun collectAssigned(stmts: List<IrStmt>): Set<String> {
+        val assigned = mutableSetOf<String>()
+        fun visit(stmt: IrStmt) {
+            when (stmt) {
+                is IrStmt.Assignment -> assigned.add(stmt.name)
+                is IrStmt.If -> { stmt.thenBranch.forEach(::visit); stmt.elseBranch?.forEach(::visit) }
+                is IrStmt.Zone -> stmt.body.forEach(::visit)
+                is IrStmt.While -> stmt.body.forEach(::visit)
+                is IrStmt.For -> { assigned.add(stmt.counter); stmt.body.forEach(::visit) }
+                is IrStmt.Loop -> stmt.body.forEach(::visit)
+                is IrStmt.When -> {
+                    stmt.branches.forEach { it.body.forEach(::visit) }
+                    stmt.elseBranch?.forEach(::visit)
+                }
+                is IrStmt.Try -> { stmt.body.forEach(::visit); stmt.catchBody?.forEach(::visit) }
+                is IrStmt.Defer -> stmt.body.forEach(::visit)
+                else -> {}
+            }
+        }
+        stmts.forEach(::visit)
+        return assigned
     }
 
     private fun propagateExpr(expr: IrExpr, constants: Map<String, IrExpr>): IrExpr = when (expr) {

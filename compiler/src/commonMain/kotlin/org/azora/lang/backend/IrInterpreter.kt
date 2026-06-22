@@ -474,6 +474,22 @@ class IrInterpreter {
     private fun evalCall(expr: IrExpr.Call): Any? {
         val args = expr.args.map { evalExpr(it) }
 
+        if (expr.name == "__isCheck") {
+            val value = args[0]
+            val typeName = args[1] as String
+            val result = when (typeName) {
+                "Int", "UInt", "Byte", "UByte", "Short", "UShort", "Long", "ULong", "Cent", "UCent" -> value is Long
+                "Real", "Float", "Decimal" -> value is Double
+                "String" -> value is String
+                "Bool" -> value is Boolean
+                "Char" -> value is Char
+                else -> {
+                    // Check if it's a struct (Map) or slot (Map with __tag) or enum
+                    value is Map<*, *>
+                }
+            }
+            return result
+        }
         if (expr.name == "__nullCoalesce") {
             return if (args[0] != null) args[0] else args[1]
         }

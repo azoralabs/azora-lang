@@ -31,7 +31,9 @@ data class FunctionSymbol(
     val params: List<Pair<String, IrType>>,
     val returnType: IrType,
     val isInline: Boolean = false,
-    val typeParams: List<String> = emptyList()
+    val typeParams: List<String> = emptyList(),
+    val paramNames: List<String> = emptyList(),
+    val defaults: Map<Int, org.azora.lang.frontend.Expr> = emptyMap()
 )
 
 /**

@@ -105,6 +105,7 @@ enum class TokenType {
     AS, GUARD, IS,
     QMARK, QMARK_QMARK, QMARK_DOT, QMARK_EQUAL,
     NULL,
+    USE,
 
     // Delimiters
     L_PAREN, R_PAREN, L_BRACE, R_BRACE,

@@ -78,6 +78,7 @@ class Lexer(private val source: String) {
             "guard" to TokenType.GUARD,
             "is" to TokenType.IS,
             "null" to TokenType.NULL,
+            "use" to TokenType.USE,
             "true" to TokenType.TRUE,
             "false" to TokenType.FALSE
         )
@@ -104,8 +105,8 @@ class Lexer(private val source: String) {
         when (val c = advance()) {
             '(' -> { bracketDepth++; addToken(TokenType.L_PAREN) }
             ')' -> { if (bracketDepth > 0) bracketDepth--; addToken(TokenType.R_PAREN) }
-            '{' -> { bracketDepth++; addToken(TokenType.L_BRACE) }
-            '}' -> { if (bracketDepth > 0) bracketDepth--; addToken(TokenType.R_BRACE) }
+            '{' -> addToken(TokenType.L_BRACE)  // braces don't suppress newlines (statement blocks)
+            '}' -> addToken(TokenType.R_BRACE)
             '[' -> { bracketDepth++; addToken(TokenType.L_BRACKET) }
             ']' -> { if (bracketDepth > 0) bracketDepth--; addToken(TokenType.R_BRACKET) }
             ',' -> addToken(TokenType.COMMA)

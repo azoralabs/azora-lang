@@ -86,7 +86,9 @@ class SymbolCollector {
                     is TypeAnnotation.Explicit -> IrType.resolve(rt.ref, tpSet)
                     is TypeAnnotation.Inferred -> inferReturnType(func, params)
                 }
-                table.defineFunction(FunctionSymbol(func.name, params, returnType, func.isInline, func.typeParams))
+                val paramNames = func.params.map { it.name }
+                val defaults = func.params.mapIndexedNotNull { i, p -> p.defaultValue?.let { i to it } }.toMap()
+                table.defineFunction(FunctionSymbol(func.name, params, returnType, func.isInline, func.typeParams, paramNames, defaults))
             } catch (e: Exception) {
                 errors.add("line ${func.line}: ${e.message}")
             }
@@ -288,6 +290,7 @@ class SymbolCollector {
         is Expr.Lambda -> null
         is Expr.NamedArg -> null
         is Expr.NullLiteral -> IrType.Any
-        is Expr.NullCoalesce, is Expr.SafeMember -> null
+        is Expr.NullCoalesce, is Expr.SafeMember,
+        is Expr.Cast, is Expr.IsCheck, is Expr.MapLit, is Expr.SetLit -> null
     }
 }

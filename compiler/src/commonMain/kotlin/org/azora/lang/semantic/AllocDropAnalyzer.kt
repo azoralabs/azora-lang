@@ -222,6 +222,10 @@ class AllocDropAnalyzer {
             is Expr.NamedArg -> collectUsedVars(expr.value, used)
             is Expr.NullLiteral -> {}
             is Expr.NullCoalesce -> { collectUsedVars(expr.left, used); collectUsedVars(expr.right, used) }
+            is Expr.Cast -> collectUsedVars(expr.expr, used)
+            is Expr.IsCheck -> collectUsedVars(expr.expr, used)
+            is Expr.MapLit -> { for ((k, v) in expr.entries) { collectUsedVars(k, used); collectUsedVars(v, used) } }
+            is Expr.SetLit -> expr.elements.forEach { collectUsedVars(it, used) }
             is Expr.SafeMember -> collectUsedVars(expr.target, used)
             is Expr.IntLiteral, is Expr.RealLiteral,
             is Expr.StringLiteral, is Expr.BoolLiteral,

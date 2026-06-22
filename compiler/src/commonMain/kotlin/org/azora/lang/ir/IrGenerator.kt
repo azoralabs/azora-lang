@@ -446,6 +446,11 @@ class IrGenerator(private val table: SymbolTable) {
             is Expr.BoolLiteral -> IrExpr.BoolLiteral(expr.value)
             is Expr.NullLiteral -> IrExpr.Var("__null", IrType.Any)
             is Expr.NamedArg -> lowerExpr(expr.value)
+            is Expr.Cast -> lowerExpr(expr.expr)  // runtime already correct type
+            is Expr.IsCheck -> {
+                val inner = lowerExpr(expr.expr)
+                IrExpr.Call("__isCheck", listOf(inner, IrExpr.StringLiteral(expr.typeName)), IrType.Bool)
+            }
             is Expr.NullCoalesce -> {
                 val left = lowerExpr(expr.left)
                 val right = lowerExpr(expr.right)
@@ -525,8 +530,23 @@ class IrGenerator(private val table: SymbolTable) {
                 }
                 val func = table.lookupFunction(expr.callee)
                 if (func != null) {
-                    val args = expr.args.map { lowerExpr(it) }
-                    return IrExpr.Call(expr.callee, args, func.returnType)
+                    // Handle named arguments — reorder to param order
+                    val args = if (expr.args.isNotEmpty() && expr.args[0] is Expr.NamedArg && func.paramNames.isNotEmpty()) {
+                        val namedMap = expr.args.associate { (it as Expr.NamedArg).name to (it as Expr.NamedArg).value }
+                        func.paramNames.map { pn -> lowerExpr(namedMap[pn]!!) }
+                    } else {
+                        expr.args.map { lowerExpr(it) }
+                    }
+                    // Fill in defaults for missing args
+                    val fullArgs = if (args.size < func.params.size && func.defaults.isNotEmpty()) {
+                        val result = args.toMutableList()
+                        for (i in args.size until func.params.size) {
+                            val default = func.defaults[i]
+                            result.add(if (default != null) lowerExpr(default) else error("Missing arg ${func.params[i].first} of '${expr.callee}'"))
+                        }
+                        result
+                    } else args
+                    return IrExpr.Call(expr.callee, fullArgs, func.returnType)
                 }
                 // Calling a lambda stored in a variable.
                 val v = table.lookupVariable(expr.callee)
@@ -542,6 +562,14 @@ class IrGenerator(private val table: SymbolTable) {
                 val elems = expr.elements.map { lowerExpr(it) }
                 val elemType = if (elems.isEmpty()) IrType.Any else elems.first().type
                 IrExpr.ArrayLiteral(elems, IrType.Array(elemType))
+            }
+            is Expr.MapLit -> {
+                // Lower to an empty array placeholder for now (map support is partial)
+                IrExpr.ArrayLiteral(emptyList(), IrType.Array(IrType.Any))
+            }
+            is Expr.SetLit -> {
+                val elems = expr.elements.map { lowerExpr(it) }
+                IrExpr.ArrayLiteral(elems, IrType.Array(if (elems.isEmpty()) IrType.Any else elems.first().type))
             }
             is Expr.Index -> {
                 val target = lowerExpr(expr.target)

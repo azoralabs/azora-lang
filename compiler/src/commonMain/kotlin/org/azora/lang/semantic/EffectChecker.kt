@@ -233,6 +233,10 @@ class EffectChecker {
             is Expr.NamedArg -> collectCallsFromExpr(expr.value, calls)
             is Expr.NullLiteral -> {}
             is Expr.NullCoalesce -> { collectCallsFromExpr(expr.left, calls); collectCallsFromExpr(expr.right, calls) }
+            is Expr.Cast -> collectCallsFromExpr(expr.expr, calls)
+            is Expr.IsCheck -> collectCallsFromExpr(expr.expr, calls)
+            is Expr.MapLit -> { for ((k, v) in expr.entries) { collectCallsFromExpr(k, calls); collectCallsFromExpr(v, calls) } }
+            is Expr.SetLit -> expr.elements.forEach { collectCallsFromExpr(it, calls) }
             is Expr.SafeMember -> collectCallsFromExpr(expr.target, calls)
             is Expr.IntLiteral, is Expr.RealLiteral,
             is Expr.StringLiteral, is Expr.BoolLiteral,

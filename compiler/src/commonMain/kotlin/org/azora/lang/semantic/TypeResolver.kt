@@ -326,6 +326,26 @@ class TypeResolver(private val table: SymbolTable) {
                     table.pushScope()
                     resolveBody(stmt.elseBranch, returnType)
                     table.popScope()
+                } else {
+                    // Exhaustiveness check for enum/slot
+                    val scrutType = resolveExpr(stmt.scrutinee)
+                    if (scrutType != null) {
+                        val allVariants = if (scrutType is IrType.Named) {
+                            table.lookupSlot(scrutType.name)?.map { it.first }
+                        } else null
+                        if (allVariants != null && scrutType is IrType.Named) {
+                            val covered = mutableSetOf<String>()
+                            for (branch in stmt.branches) {
+                                for (pattern in branch.patterns) {
+                                    extractVariantName(pattern, table)?.let { covered.add(it) }
+                                }
+                            }
+                            val missing = allVariants.filter { it !in covered && it != "_" }
+                            if (missing.isNotEmpty()) {
+                                errors.add("line ${stmt.line}: non-exhaustive when: missing variants ${missing.joinToString(", ")}")
+                            }
+                        }
+                    }
                 }
             }
             is Stmt.Throw -> { resolveExpr(stmt.value) }
@@ -482,15 +502,30 @@ class TypeResolver(private val table: SymbolTable) {
                     errors.add("line ${expr.line}: undefined function '${expr.callee}'")
                     return null
                 }
-                if (expr.args.size != func.params.size) {
-                    errors.add("line ${expr.line}: '${expr.callee}' expects ${func.params.size} args, got ${expr.args.size}")
+                // Handle named arguments — reorder to param order
+                val effectiveArgs = if (expr.args.isNotEmpty() && expr.args[0] is Expr.NamedArg && func.paramNames.isNotEmpty()) {
+                    val namedMap = expr.args.associate { (it as Expr.NamedArg).name to (it as Expr.NamedArg).value }
+                    func.paramNames.map { pn -> namedMap[pn] ?: error("Missing arg '$pn'") }
+                } else {
+                    expr.args
+                }
+                // Check arg count — allow fewer only if defaults cover the gap
+                if (effectiveArgs.size > func.params.size) {
+                    errors.add("line ${expr.line}: '${expr.callee}' expects ${func.params.size} args, got ${effectiveArgs.size}")
                     return null
+                }
+                if (effectiveArgs.size < func.params.size) {
+                    val minArgs = func.params.size - func.defaults.size
+                    if (effectiveArgs.size < minArgs) {
+                        errors.add("line ${expr.line}: '${expr.callee}' expects at least $minArgs args, got ${effectiveArgs.size}")
+                        return null
+                    }
                 }
                 val isBuiltin = expr.callee == "println"
                 val isGeneric = func.typeParams.isNotEmpty()
                 val argTypes = mutableListOf<IrType>()
-                for (i in expr.args.indices) {
-                    val argType = resolveExpr(expr.args[i]) ?: return null
+                for (i in effectiveArgs.indices) {
+                    val argType = resolveExpr(effectiveArgs[i]) ?: return null
                     argTypes.add(argType)
                     if (!isBuiltin && !isGeneric) {
                         val paramType = func.params[i].second
@@ -669,6 +704,16 @@ class TypeResolver(private val table: SymbolTable) {
                 t1
             }
             is Expr.NamedArg -> resolveExpr(expr.value)
+            is Expr.MapLit -> { for ((k, v) in expr.entries) { resolveExpr(k) ?: return null; resolveExpr(v) ?: return null }; IrType.Any }
+            is Expr.SetLit -> { for (e in expr.elements) { resolveExpr(e) ?: return null }; IrType.Array(IrType.Any) }
+            is Expr.Cast -> {
+                resolveExpr(expr.expr) ?: return null
+                IrType.resolve(expr.targetType)
+            }
+            is Expr.IsCheck -> {
+                resolveExpr(expr.expr) ?: return null
+                IrType.Bool
+            }
             is Expr.NullCoalesce -> {
                 val leftType = resolveExpr(expr.left) ?: return null
                 resolveExpr(expr.right) ?: return null
@@ -789,6 +834,16 @@ class TypeResolver(private val table: SymbolTable) {
         TokenType.PERCENT -> "mod"
         TokenType.EQUAL_EQUAL -> "equals"
         else -> null
+    }
+
+    /** Extracts the variant name from a when pattern expression (Color.Red → "Red"). */
+    private fun extractVariantName(pattern: Expr, table: SymbolTable): String? {
+        return when (pattern) {
+            is Expr.Member -> pattern.name
+            is Expr.MethodCall -> pattern.name
+            is Expr.StringLiteral -> pattern.value
+            else -> null
+        }
     }
 
     /** Checks if an initializer type is compatible with a declared type (nullable widening, Any from null). */

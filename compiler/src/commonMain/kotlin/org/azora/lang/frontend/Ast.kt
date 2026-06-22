@@ -245,6 +245,18 @@ sealed class Expr {
 
     /** `a?.field` — safe member access; returns null if `a` is null. */
     data class SafeMember(val target: Expr, val name: String, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+
+    /** `expr as Type` — type cast. */
+    data class Cast(val expr: Expr, val targetType: TypeRef, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+
+    /** `expr is Type` — runtime type check, returns Bool. */
+    data class IsCheck(val expr: Expr, val typeName: String, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+
+    /** Map literal `["k": v, "k2": v2]`. */
+    data class MapLit(val entries: List<Pair<Expr, Expr>>, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+
+    /** Set literal `![1, 2, 3]`. */
+    data class SetLit(val elements: List<Expr>, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 }
 
 // ---------------------------------------------------------------------------
@@ -904,7 +916,7 @@ sealed class TypeAnnotation {
  * @property name the parameter name
  * @property type the structured type reference as written in source
  */
-data class Param(val name: String, val type: TypeRef) {
+data class Param(val name: String, val type: TypeRef, val defaultValue: Expr? = null) {
     /** Convenience: the type name as written in source (for diagnostics/dumping). */
     val typeName: String get() = type.displayName()
 }

@@ -11,8 +11,6 @@ application {
 dependencies {
     implementation(projects.compiler)
     implementation(projects.buildConfig)
-    implementation(projects.buildTool)
-    implementation(libs.kotlinx.coroutines.core)
 }
 
 java {

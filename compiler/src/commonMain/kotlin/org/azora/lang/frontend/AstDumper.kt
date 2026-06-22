@@ -394,6 +394,22 @@ private fun dumpExpr(sb: StringBuilder, expr: Expr, indent: String) {
             dumpExpr(sb, expr.left, "$indent    ")
             dumpExpr(sb, expr.right, "$indent    ")
         }
+        is Expr.Cast -> {
+            sb.appendLine("${indent}Cast(${expr.targetType})")
+            dumpExpr(sb, expr.expr, "$indent    ")
+        }
+        is Expr.IsCheck -> {
+            sb.appendLine("${indent}IsCheck(${expr.typeName})")
+            dumpExpr(sb, expr.expr, "$indent    ")
+        }
+        is Expr.MapLit -> {
+            sb.appendLine("${indent}MapLit")
+            for ((k, v) in expr.entries) { dumpExpr(sb, k, "$indent    "); dumpExpr(sb, v, "$indent    ") }
+        }
+        is Expr.SetLit -> {
+            sb.appendLine("${indent}SetLit")
+            for (e in expr.elements) dumpExpr(sb, e, "$indent    ")
+        }
         is Expr.SafeMember -> {
             sb.appendLine("${indent}SafeMember(${expr.name})")
             dumpExpr(sb, expr.target, "$indent    ")

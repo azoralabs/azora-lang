@@ -816,7 +816,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
             is Expr.CharLiteral,
             is Expr.TupleLit, is Expr.TupleAccess,
             is Expr.CatchExpr, is Expr.Lambda,
-            is Expr.NamedArg, is Expr.NullLiteral, is Expr.NullCoalesce, is Expr.SafeMember -> Pair(expr, false)
+            is Expr.NamedArg, is Expr.NullLiteral, is Expr.NullCoalesce, is Expr.Cast, is Expr.IsCheck, is Expr.MapLit, is Expr.SetLit, is Expr.SafeMember -> Pair(expr, false)
             is Expr.Range -> {
                 val (from, fc) = foldExpr(expr.from, program)
                 val (to, tc) = foldExpr(expr.to, program)
@@ -1086,7 +1086,9 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 val evalArgs = expr.args.map { evalExpr(it, env, program) ?: return null }
                 tryEvalCall(expr.callee, evalArgs, program, expr.line)
             }
-            is Expr.NullLiteral, is Expr.NullCoalesce, is Expr.SafeMember -> null
+            is Expr.NullLiteral, is Expr.NullCoalesce, is Expr.SafeMember,
+            is Expr.Cast, is Expr.IsCheck,
+            is Expr.MapLit, is Expr.SetLit -> null
         }
     }
 }

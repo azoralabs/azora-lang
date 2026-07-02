@@ -637,6 +637,11 @@ class LlvmCodegen {
             emitExpr(expr.expr)
         }
         is IrExpr.SlotPattern -> "0"
+        is IrExpr.Await -> {
+            emitExpr(expr.value)
+            emit("  ; await — no coroutine runtime (interpreter-only)")
+            defaultValue(expr.type)
+        }
         is IrExpr.Lambda -> {
             emit("  ; lambda/closure — not lowered")
             "null"

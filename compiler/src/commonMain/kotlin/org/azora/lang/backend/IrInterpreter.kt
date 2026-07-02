@@ -23,6 +23,9 @@ import org.azora.lang.ir.IrProgram
 import org.azora.lang.ir.IrStmt
 import org.azora.lang.ir.IrTopLevel
 import org.azora.lang.ir.IrUnaryOp
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.async
 
 /**
  * Backend — interprets [IrProgram] directly instead of generating code.
@@ -38,6 +41,12 @@ class IrInterpreter {
     /** Stack of yield accumulators — one per active `flow` generator call. */
     private val yieldAccumulators = ArrayDeque<MutableList<Any?>>()
 
+    /** The runBlocking coroutine scope — used by `task`/`await` for cooperative concurrency. */
+    private var coroutineScope: CoroutineScope? = null
+
+    /** Fire-and-forget tasks created via `launch { … }`; joined before interpret() returns. */
+    private val launchedTasks = mutableListOf<kotlinx.coroutines.Deferred<Any?>>()
+
     /** A deferred block, optionally restricted to run only on error (`fail defer`). */
     private class DeferredBlock(val body: List<IrStmt>, val onFail: Boolean)
 
@@ -49,6 +58,7 @@ class IrInterpreter {
         functions.clear()
         scopes.clear()
         yieldAccumulators.clear()
+        launchedTasks.clear()
 
         // Global scope
         scopes.addLast(mutableMapOf("__null" to null))
@@ -56,29 +66,38 @@ class IrInterpreter {
         // Collect tests
         val tests = mutableListOf<IrTopLevel.Test>()
 
-        // Process top-level items in source order
-        for (item in program.items) {
-            when (item) {
-                is IrTopLevel.Global -> executeStmt(item.stmt)
-                is IrTopLevel.Func -> functions[item.function.name] = item.function
-                is IrTopLevel.Test -> tests.add(item)
-                is IrTopLevel.Struct -> { /* struct definitions need no execution */ }
+        // The evaluator is `suspend` (to support `await`); run it under runBlocking so
+        // the public interpret() entry point stays non-suspend and callers are unchanged.
+        return kotlinx.coroutines.runBlocking {
+            coroutineScope = this
+
+            // Process top-level items in source order
+            for (item in program.items) {
+                when (item) {
+                    is IrTopLevel.Global -> executeStmt(item.stmt)
+                    is IrTopLevel.Func -> functions[item.function.name] = item.function
+                    is IrTopLevel.Test -> tests.add(item)
+                    is IrTopLevel.Struct -> { /* struct definitions need no execution */ }
+                }
             }
+
+            // Execute main
+            val main = functions["main"] ?: error("No 'main' function found")
+            executeFunction(main, emptyList())
+
+            // Execute tests after main
+            for (test in tests) {
+                executeTest(test)
+            }
+
+            // Join any fire-and-forget `launch { … }` tasks so their side effects complete.
+            for (task in launchedTasks) task.await()
+
+            output.toString().trimEnd()
         }
-
-        // Execute main
-        val main = functions["main"] ?: error("No 'main' function found")
-        executeFunction(main, emptyList())
-
-        // Execute tests after main
-        for (test in tests) {
-            executeTest(test)
-        }
-
-        return output.toString().trimEnd()
     }
 
-    private fun executeTest(test: IrTopLevel.Test) {
+    private suspend fun executeTest(test: IrTopLevel.Test) {
         pushScope()
         try {
             executeBody(test.body)
@@ -117,7 +136,7 @@ class IrInterpreter {
 
     // -- Execution ----------------------------------------------------------
 
-    private fun executeFunction(func: IrFunction, args: List<Any?>): Any? {
+    private suspend fun executeFunction(func: IrFunction, args: List<Any?>): Any? {
         pushScope()
 
         // Bind parameters
@@ -152,7 +171,7 @@ class IrInterpreter {
         return retValue
     }
 
-    private fun executeBody(body: List<IrStmt>): Any? {
+    private suspend fun executeBody(body: List<IrStmt>): Any? {
         for (stmt in body) {
             val result = executeStmt(stmt)
             if (result is ControlSignal) return result
@@ -160,7 +179,7 @@ class IrInterpreter {
         return null
     }
 
-    private fun executeStmt(stmt: IrStmt): Any? {
+    private suspend fun executeStmt(stmt: IrStmt): Any? {
         when (stmt) {
             is IrStmt.VarDecl -> defineVar(stmt.name, evalExpr(stmt.initializer))
             is IrStmt.FinDecl -> defineVar(stmt.name, evalExpr(stmt.initializer))
@@ -339,7 +358,7 @@ class IrInterpreter {
         return null
     }
 
-    private fun evalExpr(expr: IrExpr): Any? {
+    private suspend fun evalExpr(expr: IrExpr): Any? {
         return when (expr) {
             is IrExpr.IntLiteral -> expr.value
             is IrExpr.RealLiteral -> expr.value
@@ -423,6 +442,14 @@ class IrInterpreter {
                 try { evalExpr(expr.expr) } catch (e: AzoraThrownException) { evalExpr(expr.fallback) }
             }
             is IrExpr.Lambda -> Closure(expr.params, expr.body, scopes.toList())
+            is IrExpr.Await -> {
+                val task = evalExpr(expr.value)
+                val closure = task as? Closure ?: error("await requires a task (a `task { … }` value)")
+                val scope = coroutineScope ?: error("await used outside of the interpreter's runBlocking scope")
+                // Run the task as a coroutine on the runBlocking (single-thread) dispatcher,
+                // then suspend until it completes. No data races: same thread, cooperative.
+                scope.async { invokeClosure(closure) }.await()
+            }
             is IrExpr.SlotPattern -> error("SlotPattern should be handled by when matching, not evaluated")
             is IrExpr.StringTemplate -> {
                 val sb = StringBuilder()
@@ -464,13 +491,19 @@ class IrInterpreter {
                             else -> error("no method '${expr.name}' on array")
                         }
                     }
+                    receiver is AzoraChannel -> when (expr.name) {
+                        "send" -> { receiver.channel.send(args[0]); null }
+                        "receive" -> receiver.channel.receive()
+                        "close" -> { receiver.channel.close(); null }
+                        else -> error("no method '${expr.name}' on channel")
+                    }
                     else -> error("no method '${expr.name}' on $receiver")
                 }
             }
         }
     }
 
-    private fun evalBinary(expr: IrExpr.Binary): Any {
+    private suspend fun evalBinary(expr: IrExpr.Binary): Any {
         val left = evalExpr(expr.left)
         val right = evalExpr(expr.right)
 
@@ -536,7 +569,7 @@ class IrInterpreter {
     /** Returns both operands as Long (if both are integer) or both as Double. */
     private fun pairNum(l: Any, r: Any): Pair<Double, Double> = toNum(l) to toNum(r)
 
-    private fun evalCall(expr: IrExpr.Call): Any? {
+    private suspend fun evalCall(expr: IrExpr.Call): Any? {
         val args = expr.args.map { evalExpr(it) }
 
         if (expr.name == "__isCheck") {
@@ -601,6 +634,17 @@ class IrInterpreter {
             output.appendLine(formatValue(value))
             return null
         }
+        if (expr.name == "channel") {
+            // A buffered channel (effectively unbounded) for task-to-task communication.
+            return AzoraChannel(Channel<Any?>(Channel.UNLIMITED))
+        }
+        if (expr.name == "__launch") {
+            // `launch { … }` — start a fire-and-forget task; joined before interpret() returns.
+            val thunk = args[0] as? Closure ?: error("launch expects a task body")
+            val scope = coroutineScope ?: error("launch used outside of the interpreter's runBlocking scope")
+            launchedTasks.add(scope.async { invokeClosure(thunk) })
+            return null
+        }
 
         val func = functions[expr.name]
         if (func != null) {
@@ -622,10 +666,23 @@ class IrInterpreter {
             pushScope()
             for (i in callee.params.indices) defineVar(callee.params[i].first, args[i])
             val result = executeBody(callee.body)
+            popScope()
             scopes = saved
             return (result as? ReturnSignal)?.value
         }
         error("Undefined function: ${expr.name}")
+    }
+
+    /** Runs a no-argument closure (a `task { … }` thunk) and returns its result. */
+    private suspend fun invokeClosure(closure: Closure): Any? {
+        val saved = scopes
+        scopes = ArrayDeque()
+        closure.capturedScopes.forEach { scopes.addLast(it) }
+        pushScope()
+        val result = executeBody(closure.body)
+        popScope()
+        scopes = saved
+        return (result as? ReturnSignal)?.value ?: result
     }
 
     private fun formatValue(value: Any?): String = when (value) {
@@ -682,4 +739,7 @@ class IrInterpreter {
 
     /** A heap pointer — a mutable cell holding the pointee value. */
     private class Pointer(var value: Any?)
+
+    /** A communication channel between tasks, wrapping a kotlinx.coroutines channel. */
+    private class AzoraChannel(val channel: Channel<Any?>)
 }

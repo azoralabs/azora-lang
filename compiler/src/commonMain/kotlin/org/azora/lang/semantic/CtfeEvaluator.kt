@@ -869,7 +869,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
             is Expr.CharLiteral,
             is Expr.TupleLit, is Expr.TupleAccess,
             is Expr.CatchExpr, is Expr.Lambda,
-            is Expr.NamedArg, is Expr.NullLiteral, is Expr.NullCoalesce, is Expr.Cast, is Expr.IsCheck, is Expr.MapLit, is Expr.SafeMember, is Expr.Alloc, is Expr.Deref, is Expr.Isolated -> Pair(expr, false)
+            is Expr.NamedArg, is Expr.NullLiteral, is Expr.NullCoalesce, is Expr.Cast, is Expr.IsCheck, is Expr.MapLit, is Expr.SafeMember, is Expr.Alloc, is Expr.Deref, is Expr.Isolated, is Expr.Await -> Pair(expr, false)
             is Expr.Range -> {
                 val (from, fc) = foldExpr(expr.from, program)
                 val (to, tc) = foldExpr(expr.to, program)
@@ -1156,7 +1156,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
             is Expr.NullLiteral, is Expr.NullCoalesce, is Expr.SafeMember,
             is Expr.Cast, is Expr.IsCheck,
             is Expr.MapLit -> null
-            is Expr.Alloc, is Expr.Deref, is Expr.Isolated -> null // runtime ops, not CTFE-evaluable
+            is Expr.Alloc, is Expr.Deref, is Expr.Isolated, is Expr.Await -> null // runtime ops, not CTFE-evaluable
         }
     }
 }

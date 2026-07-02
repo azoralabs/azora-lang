@@ -788,6 +788,10 @@ class TypeResolver(private val table: SymbolTable) {
                 (target as? IrType.Pointer)?.inner ?: IrType.Any
             }
             is Expr.Isolated -> resolveExpr(expr.value) ?: IrType.Any
+            is Expr.Await -> {
+                val t = resolveExpr(expr.value) ?: return null
+                (t as? IrType.Function)?.ret ?: IrType.Any
+            }
             is Expr.Cast -> {
                 resolveExpr(expr.expr) ?: return null
                 IrType.resolve(expr.targetType)
@@ -903,6 +907,14 @@ class TypeResolver(private val table: SymbolTable) {
     private fun resolveBuiltinMethod(receiverType: IrType, name: String, args: List<Expr>, line: Int): IrType? {
         if (receiverType is IrType.Array) return resolveArrayMethod(name, args, receiverType, line)
         if (receiverType == IrType.String) return resolveStringMethod(name, args, line)
+        // `Channel` methods: `send`/`close` → Unit, `receive` → the element (typed as Any).
+        if (receiverType is IrType.Named && receiverType.name == "Channel") {
+            return when (name) {
+                "send", "close" -> IrType.Unit
+                "receive" -> IrType.Any
+                else -> { errors.add("line $line: no method '$name' on Channel"); null }
+            }
+        }
         errors.add("line $line: no method '$name' on $receiverType")
         return null
     }

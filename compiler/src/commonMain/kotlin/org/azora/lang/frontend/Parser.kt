@@ -1832,6 +1832,11 @@ class Parser(private val tokens: List<Token>) {
             val at = advance()
             return Expr.Deref(parseUnary(), at.line, at.column, at.lexeme.length)
         }
+        // `await task` — suspend until the task completes.
+        if (check(TokenType.AWAIT)) {
+            val at = advance()
+            return Expr.Await(parseUnary(), at.line, at.column, at.lexeme.length)
+        }
         if (check(TokenType.BANG) || check(TokenType.MINUS) || check(TokenType.TILDE)) {
             val op = advance()
             val operand = parseUnary()
@@ -1991,6 +1996,32 @@ class Parser(private val tokens: List<Token>) {
                 }
             }
             TokenType.L_BRACE -> parseLambda(tok.line, tok.column)
+            // `task { body }` — a no-argument thunk (a lambda), awaited later.
+            TokenType.TASK -> {
+                val t = advance() // 'task'
+                consume(TokenType.L_BRACE, "Expected '{' after 'task'")
+                skipNewlines()
+                val body = parseBlock().toMutableList()
+                if (body.isNotEmpty() && body.last() is Stmt.ExprStmt) {
+                    val last = body.removeAt(body.size - 1) as Stmt.ExprStmt
+                    body.add(Stmt.Return(last.expr, last.line, last.column, last.length))
+                }
+                consume(TokenType.R_BRACE, "Expected '}' after task body")
+                Expr.Lambda(emptyList(), body, t.line, t.column)
+            }
+            // `launch { body }` — fire-and-forget task; desugars to a __launch(thunk) call.
+            TokenType.LAUNCH -> {
+                val t = advance() // 'launch'
+                consume(TokenType.L_BRACE, "Expected '{' after 'launch'")
+                skipNewlines()
+                val body = parseBlock().toMutableList()
+                if (body.isNotEmpty() && body.last() is Stmt.ExprStmt) {
+                    val last = body.removeAt(body.size - 1) as Stmt.ExprStmt
+                    body.add(Stmt.Return(last.expr, last.line, last.column, last.length))
+                }
+                consume(TokenType.R_BRACE, "Expected '}' after launch body")
+                Expr.Call("__launch", listOf(Expr.Lambda(emptyList(), body, t.line, t.column)), t.line, t.column)
+            }
             else -> error("Unexpected token '${tok.lexeme}' at line ${tok.line}")
         }
     }

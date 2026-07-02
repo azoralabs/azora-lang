@@ -600,6 +600,11 @@ class IrGenerator(private val table: SymbolTable) {
                 val value = lowerExpr(expr.value)
                 IrExpr.Call("__isolated", listOf(value), value.type)
             }
+            is Expr.Await -> {
+                val task = lowerExpr(expr.value)
+                val resultType = (task.type as? IrType.Function)?.ret ?: IrType.Any
+                IrExpr.Await(task, resultType)
+            }
             is Expr.Index -> {
                 val target = lowerExpr(expr.target)
                 val tt = target.type

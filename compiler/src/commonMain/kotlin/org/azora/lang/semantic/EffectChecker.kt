@@ -248,6 +248,7 @@ class EffectChecker {
             is Expr.Alloc -> collectCallsFromExpr(expr.value, calls)
             is Expr.Deref -> collectCallsFromExpr(expr.target, calls)
             is Expr.Isolated -> collectCallsFromExpr(expr.value, calls)
+            is Expr.Await -> collectCallsFromExpr(expr.value, calls)
             is Expr.SafeMember -> collectCallsFromExpr(expr.target, calls)
             is Expr.IntLiteral, is Expr.RealLiteral,
             is Expr.StringLiteral, is Expr.BoolLiteral,

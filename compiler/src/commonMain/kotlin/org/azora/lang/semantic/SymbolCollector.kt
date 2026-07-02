@@ -40,6 +40,14 @@ class SymbolCollector {
         if (table.lookupFunction("println") == null) {
             table.defineFunction(FunctionSymbol("println", listOf("value" to IrType.String), IrType.Unit))
         }
+        if (table.lookupFunction("channel") == null) {
+            // `channel()` — creates a buffered channel for task-to-task communication.
+            table.defineFunction(FunctionSymbol("channel", emptyList(), IrType.Named("Channel")))
+        }
+        if (table.lookupFunction("__launch") == null) {
+            // `launch { body }` desugars to __launch(thunk); fire-and-forget, joined at end.
+            table.defineFunction(FunctionSymbol("__launch", listOf("thunk" to IrType.Any), IrType.Unit))
+        }
     }
 
     /**
@@ -304,6 +312,6 @@ class SymbolCollector {
         is Expr.NamedArg -> null
         is Expr.NullLiteral -> IrType.Any
         is Expr.NullCoalesce, is Expr.SafeMember,
-        is Expr.Cast, is Expr.IsCheck, is Expr.MapLit, is Expr.Alloc, is Expr.Deref, is Expr.Isolated -> null
+        is Expr.Cast, is Expr.IsCheck, is Expr.MapLit, is Expr.Alloc, is Expr.Deref, is Expr.Isolated, is Expr.Await -> null
     }
 }

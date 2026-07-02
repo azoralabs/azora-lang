@@ -81,4 +81,101 @@ class Tier4ConcurrencyTest {
             }
         """.trimIndent()))
     }
+
+    @Test fun taskAwaitReturnsResult() {
+        assertEquals("42", run("""
+            func main() {
+                var t = task {
+                    42
+                }
+                println(await t)
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun taskAwaitComputedResult() {
+        assertEquals("30", run("""
+            func compute(a: Int, b: Int): Int {
+                return a * b
+            }
+            func main() {
+                var t = task {
+                    compute(5, 6)
+                }
+                println(await t)
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun multipleTasksAwaited() {
+        assertEquals("10\n20", run("""
+            func main() {
+                var t1 = task { 10 }
+                var t2 = task { 20 }
+                println(await t1)
+                println(await t2)
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun channelSendAndReceive() {
+        assertEquals("1\n2", run("""
+            func main() {
+                var ch = channel()
+                ch.send(1)
+                ch.send(2)
+                println(ch.receive())
+                println(ch.receive())
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun channelWithProducerTask() {
+        // A producer task sends values; the consumer receives them via await ordering.
+        assertEquals("10\n20", run("""
+            func produce(ch: Channel): Int {
+                ch.send(10)
+                ch.send(20)
+                ch.close()
+                return 0
+            }
+            func main() {
+                var ch = channel()
+                var p = task {
+                    produce(ch)
+                }
+                await p
+                println(ch.receive())
+                println(ch.receive())
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun launchRunsAndIsJoinedAtEnd() {
+        // `launch` is fire-and-forget; its side effect completes before main returns.
+        assertEquals("main\nlaunched", run("""
+            func main() {
+                println("main")
+                launch {
+                    println("launched")
+                }
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun launchProducerWithChannelConsumer() {
+        // A launched producer feeds a channel that main consumes cooperatively.
+        assertEquals("1\n2", run("""
+            func main() {
+                var ch = channel()
+                launch {
+                    ch.send(1)
+                    ch.send(2)
+                    ch.close()
+                }
+                println(ch.receive())
+                println(ch.receive())
+            }
+        """.trimIndent()))
+    }
 }

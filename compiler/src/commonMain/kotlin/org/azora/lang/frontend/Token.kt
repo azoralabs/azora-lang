@@ -122,8 +122,8 @@ enum class TokenType {
     FAIL,
     // Memory model: `alloc <expr>`, `drop <expr>`, `unsafe { }`, `isolated(expr)`.
     ALLOC, DROP, UNSAFE, ISOLATED,
-    // Concurrency: `flow name(...) { … yield v }` generators.
-    FLOW, YIELD,
+    // Concurrency: `flow name(...) { … yield v }` generators, `task { }` / `await`, `launch { }`.
+    FLOW, YIELD, TASK, AWAIT, LAUNCH,
     // `deco Name { fields }` — decorator/annotation declaration.
     DECO,
 

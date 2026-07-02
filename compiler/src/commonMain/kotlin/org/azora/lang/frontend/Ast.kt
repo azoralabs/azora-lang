@@ -263,6 +263,9 @@ sealed class Expr {
 
     /** `isolated(expr)` — produce an independent deep copy of [value]. */
     data class Isolated(val value: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+
+    /** `await task` — suspend until the task completes and yield its result. */
+    data class Await(val value: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 }
 
 // ---------------------------------------------------------------------------

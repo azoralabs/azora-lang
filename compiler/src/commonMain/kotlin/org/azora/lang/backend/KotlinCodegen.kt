@@ -312,6 +312,7 @@ class KotlinCodegen {
             if (expr.name in POINTER_RUNTIME) usesPointers = true
             "${expr.name}(${expr.args.joinToString(", ") { emitExpr(it) }})"
         }
+        is IrExpr.Await -> emitExpr(expr.value) // no coroutine runtime: emit the task inline
         is IrExpr.ArrayLiteral -> "mutableListOf(${expr.elements.joinToString(", ") { emitExpr(it) }})"
         is IrExpr.MapLit -> "mutableMapOf(${expr.entries.joinToString(", ") { "${emitExpr(it.first)} to ${emitExpr(it.second)}" }})"
         is IrExpr.Index -> "${emitExpr(expr.target)}[${emitExpr(expr.index)}]"

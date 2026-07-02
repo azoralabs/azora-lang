@@ -440,6 +440,10 @@ private fun dumpExpr(sb: StringBuilder, expr: Expr, indent: String) {
             sb.appendLine("${indent}Isolated")
             dumpExpr(sb, expr.value, "$indent    ")
         }
+        is Expr.Await -> {
+            sb.appendLine("${indent}Await")
+            dumpExpr(sb, expr.value, "$indent    ")
+        }
         is Expr.SafeMember -> {
             sb.appendLine("${indent}SafeMember(${expr.name})")
             dumpExpr(sb, expr.target, "$indent    ")

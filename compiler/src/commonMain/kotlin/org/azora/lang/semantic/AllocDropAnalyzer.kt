@@ -237,6 +237,7 @@ class AllocDropAnalyzer {
             is Expr.Alloc -> collectUsedVars(expr.value, used)
             is Expr.Deref -> collectUsedVars(expr.target, used)
             is Expr.Isolated -> collectUsedVars(expr.value, used)
+            is Expr.Await -> collectUsedVars(expr.value, used)
             is Expr.SafeMember -> collectUsedVars(expr.target, used)
             is Expr.IntLiteral, is Expr.RealLiteral,
             is Expr.StringLiteral, is Expr.BoolLiteral,

@@ -7,7 +7,7 @@ import kotlin.test.*
 
 /**
  * Tests for the structured type-reference system ([org.azora.lang.frontend.TypeRef])
- * and its resolution to [IrType]. Covers array, map, set, function, tuple, and
+ * and its resolution to [IrType]. Covers array, map, function, tuple, and
  * generic named-type annotations.
  */
 class TypeRefTest {
@@ -42,13 +42,6 @@ class TypeRefTest {
         assertIs<IrType.Map>(t)
         assertEquals(IrType.String, t.key)
         assertEquals(IrType.Int, t.value)
-    }
-
-    @Test
-    fun setTypeAnnotation() {
-        val t = firstParamType("func f(x: ![Int]): Int { return 0 }")
-        assertIs<IrType.Set>(t)
-        assertEquals(IrType.Int, t.element)
     }
 
     @Test

@@ -91,8 +91,17 @@ class LlvmCodegen {
     private var usesCharToStr = false
 
     /** Tracks the continue/end labels of enclosing loops for `break`/`continue`. */
-    private data class LoopTarget(val continueLabel: String, val endLabel: String)
+    private data class LoopTarget(val continueLabel: String, val endLabel: String, val label: String? = null)
     private val loopStack = ArrayDeque<LoopTarget>()
+
+    /** Finds the loop target for a `break`/`continue`: innermost if [label] is null, else the nearest loop tagged with [label]. */
+    private fun findLoopTarget(label: String?): LoopTarget? {
+        if (label == null) return loopStack.lastOrNull()
+        for (i in loopStack.indices.reversed()) {
+            if (loopStack[i].label == label) return loopStack[i]
+        }
+        return null
+    }
 
     /**
      * Generates LLVM IR text (`.ll` format) from the given IR program.
@@ -332,11 +341,11 @@ class LlvmCodegen {
             is IrStmt.Loop -> emitLoop(stmt)
             is IrStmt.When -> emitWhen(stmt)
             is IrStmt.Break -> {
-                val target = loopStack.lastOrNull() ?: error("break outside of loop")
+                val target = findLoopTarget(stmt.label) ?: error("break outside of loop")
                 emitTerminator("  br label %${target.endLabel}")
             }
             is IrStmt.Continue -> {
-                val target = loopStack.lastOrNull() ?: error("continue outside of loop")
+                val target = findLoopTarget(stmt.label) ?: error("continue outside of loop")
                 emitTerminator("  br label %${target.continueLabel}")
             }
             is IrStmt.IndexAssign -> {
@@ -351,6 +360,7 @@ class LlvmCodegen {
                 emit("  ; member assign .${stmt.name} — aggregate lowering not yet implemented")
             }
             is IrStmt.Defer -> emit("  ; defer — not lowered")
+            is IrStmt.Yield -> emit("  ; yield — not lowered (interpreter-only)")
             is IrStmt.Throw -> {
                 emitExpr(stmt.value)
                 emit("  ; throw — lowered to abort")
@@ -410,7 +420,7 @@ class LlvmCodegen {
         emitTerminator("  br i1 $cond, label %$bodyLabel, label %$endLabel")
 
         startBlock(bodyLabel)
-        loopStack.addLast(LoopTarget(condLabel, endLabel))
+        loopStack.addLast(LoopTarget(condLabel, endLabel, stmt.label))
         emitStmts(stmt.body)
         loopStack.removeLast()
         emitTerminator("  br label %$condLabel")
@@ -423,8 +433,8 @@ class LlvmCodegen {
         val unsigned = isUnsigned(stmt.start.type)
         val counterAlloca = nextTmp()
         emit("  $counterAlloca = alloca $t")
-        val startVal = emitExpr(stmt.start)
-        emit("  store $t $startVal, $t* $counterAlloca")
+        val initVal = emitExpr(if (stmt.reverse) stmt.end else stmt.start)
+        emit("  store $t $initVal, $t* $counterAlloca")
         localVars[stmt.counter] = counterAlloca to t
 
         val condLabel = nextLabel("for_cond")
@@ -436,28 +446,36 @@ class LlvmCodegen {
         startBlock(condLabel)
         val loaded = nextTmp()
         emit("  $loaded = load $t, $t* $counterAlloca")
-        val endVal = emitExpr(stmt.end)
-        val cmp = nextTmp()
-        val pred = when {
-            stmt.inclusive && unsigned -> "ule"
-            stmt.inclusive -> "sle"
-            unsigned -> "ult"
-            else -> "slt"
+        // Emit the bound expression first so register numbering stays increasing.
+        val (bound, pred) = if (stmt.reverse) {
+            emitExpr(stmt.start) to if (unsigned) "uge" else "sge"
+        } else {
+            val endVal = emitExpr(stmt.end)
+            val p = when {
+                stmt.inclusive && unsigned -> "ule"
+                stmt.inclusive -> "sle"
+                unsigned -> "ult"
+                else -> "slt"
+            }
+            endVal to p
         }
-        emit("  $cmp = icmp $pred $t $loaded, $endVal")
+        val cmp = nextTmp()
+        emit("  $cmp = icmp $pred $t $loaded, $bound")
         emitTerminator("  br i1 $cmp, label %$bodyLabel, label %$endLabel")
 
         startBlock(bodyLabel)
-        loopStack.addLast(LoopTarget(incLabel, endLabel))
+        loopStack.addLast(LoopTarget(incLabel, endLabel, stmt.label))
         emitStmts(stmt.body)
         loopStack.removeLast()
         emitTerminator("  br label %$incLabel")
 
         startBlock(incLabel)
+        val stepVal = stmt.step?.let { emitExpr(it) } ?: "1"
         val incLoaded = nextTmp()
         emit("  $incLoaded = load $t, $t* $counterAlloca")
         val incd = nextTmp()
-        emit("  $incd = add $t $incLoaded, 1")
+        if (stmt.reverse) emit("  $incd = sub $t $incLoaded, $stepVal")
+        else emit("  $incd = add $t $incLoaded, $stepVal")
         emit("  store $t $incd, $t* $counterAlloca")
         emitTerminator("  br label %$condLabel")
 
@@ -470,7 +488,7 @@ class LlvmCodegen {
 
         emitTerminator("  br label %$bodyLabel")
         startBlock(bodyLabel)
-        loopStack.addLast(LoopTarget(bodyLabel, endLabel))
+        loopStack.addLast(LoopTarget(bodyLabel, endLabel, stmt.label))
         emitStmts(stmt.body)
         loopStack.removeLast()
         emitTerminator("  br label %$bodyLabel")
@@ -555,6 +573,8 @@ class LlvmCodegen {
             gepString(ref)
         }
         is IrExpr.Var -> {
+            // The null literal is lowered to `Var("__null", Any)`; emit LLVM's null pointer.
+            if (expr.name == "__null") return "null"
             val local = localVars[expr.name]
             val tmp = nextTmp()
             if (local != null) {
@@ -573,6 +593,11 @@ class LlvmCodegen {
         is IrExpr.ArrayLiteral -> {
             for (e in expr.elements) emitExpr(e)
             emit("  ; array literal — aggregate lowering not yet implemented")
+            "null"
+        }
+        is IrExpr.MapLit -> {
+            for ((k, v) in expr.entries) { emitExpr(k); emitExpr(v) }
+            emit("  ; map literal — aggregate lowering not yet implemented")
             "null"
         }
         is IrExpr.Index -> {
@@ -655,6 +680,13 @@ class LlvmCodegen {
         val tmp = nextTmp()
 
         when {
+            // Nullable / erased-any pointers: only equality against null (or another
+            // pointer) is meaningful — lower as pointer comparison.
+            (leftType is IrType.Nullable || leftType == IrType.Any) &&
+                (expr.op == IrBinaryOp.EQ || expr.op == IrBinaryOp.NEQ) -> {
+                val pred = if (expr.op == IrBinaryOp.EQ) "eq" else "ne"
+                emit("  $tmp = icmp $pred i8* $left, $right")
+            }
             leftType in IrType.integerTypes || leftType == IrType.Char -> {
                 val u = isUnsigned(leftType)
                 val inst = when (expr.op) {
@@ -705,7 +737,12 @@ class LlvmCodegen {
                     else -> error("Unsupported bool op: ${expr.op}")
                 }
             }
-            else -> error("Unsupported binary ${expr.op} on ${expr.left.type}")
+            else -> {
+                // Unsupported operand type (e.g. arithmetic on a nullable/boxed
+                // value). The LLVM backend has no unboxing model yet, so degrade
+                // to a stub — consistent with how other aggregate ops are handled.
+                emit("  ; binary ${expr.op} on ${expr.left.type} — not lowered (nullable aggregate)")
+            }
         }
         return tmp
     }
@@ -1101,10 +1138,10 @@ class LlvmCodegen {
         IrType.Any -> "i8*"
         is IrType.Array -> "i8*"
         is IrType.Map -> "i8*"
-        is IrType.Set -> "i8*"
         is IrType.Function -> "i8*"
         is IrType.Tuple -> "i8*"
         is IrType.Nullable -> "i8*"
+        is IrType.Pointer -> "i8*"
         is IrType.Named -> "%struct.${sanitizeName(type.name)}*"
     }
 
@@ -1119,7 +1156,7 @@ class LlvmCodegen {
         IrType.Bool -> "false"
         IrType.String -> "null"
         IrType.Unit -> ""
-        is IrType.Array, is IrType.Map, is IrType.Set, is IrType.Function,
+        is IrType.Array, is IrType.Map, is IrType.Function,
         is IrType.Tuple, is IrType.Nullable, is IrType.Named, IrType.Any -> "null"
         else -> "0"
     }

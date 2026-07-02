@@ -86,8 +86,9 @@ class AstValidator {
         }
 
         // Non-Unit functions must have at least one return on every path
-        // (simplified: check that at least one return exists in the body tree)
-        if (func.returnType is TypeAnnotation.Explicit && func.returnType.name != "Unit") {
+        // (simplified: check that at least one return exists in the body tree).
+        // A `flow` generator produces values via `yield`, not `return`, so it's exempt.
+        if (!func.isFlow && func.returnType is TypeAnnotation.Explicit && func.returnType.name != "Unit") {
             if (!hasReturnInBody(func.body)) {
                 errors.add("line ${func.line}: function '${func.name}' declares return type " +
                         "'${func.returnType}' but has no return statement")
@@ -134,6 +135,7 @@ class AstValidator {
             is Stmt.DeepInlineBlock -> stmt.body.forEach { validateStmt(it, funcName, errors) }
             is Stmt.NoInline -> validateStmt(stmt.stmt, funcName, errors)
             is Stmt.InlineBlock -> stmt.body.forEach { validateStmt(it, funcName, errors) }
+            is Stmt.InlineFor -> stmt.body.forEach { validateStmt(it, funcName, errors) }
             is Stmt.InlineFin -> {}
             is Stmt.InlineLet -> {}
             is Stmt.InlineVar -> {}
@@ -149,9 +151,11 @@ class AstValidator {
             is Stmt.For -> stmt.body.forEach { validateStmt(it, funcName, errors) }
             is Stmt.Loop -> stmt.body.forEach { validateStmt(it, funcName, errors) }
             is Stmt.Break -> {}
+            is Stmt.Yield -> {}
             is Stmt.Continue -> {}
             is Stmt.IndexAssign -> {}
             is Stmt.MemberAssign -> {}
+            is Stmt.DerefAssign -> {}
             is Stmt.When -> {
                 for (branch in stmt.branches) {
                     branch.body.forEach { validateStmt(it, funcName, errors) }

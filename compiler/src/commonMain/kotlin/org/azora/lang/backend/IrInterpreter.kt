@@ -34,7 +34,12 @@ class IrInterpreter {
 
     private val output = StringBuilder()
     private val functions = mutableMapOf<String, IrFunction>()
-    private var deferStack = mutableListOf<List<IrStmt>>()
+    private var deferStack = mutableListOf<DeferredBlock>()
+    /** Stack of yield accumulators — one per active `flow` generator call. */
+    private val yieldAccumulators = ArrayDeque<MutableList<Any?>>()
+
+    /** A deferred block, optionally restricted to run only on error (`fail defer`). */
+    private class DeferredBlock(val body: List<IrStmt>, val onFail: Boolean)
 
     /** Scope stack: index 0 = global, last = innermost. */
     private var scopes = ArrayDeque<MutableMap<String, Any?>>()
@@ -43,6 +48,7 @@ class IrInterpreter {
         output.clear()
         functions.clear()
         scopes.clear()
+        yieldAccumulators.clear()
 
         // Global scope
         scopes.addLast(mutableMapOf("__null" to null))
@@ -122,17 +128,27 @@ class IrInterpreter {
         val savedDefers = deferStack
         deferStack = mutableListOf()
         var retValue: Any? = null
+        var failed = false
+        var toRethrow: AzoraThrownException? = null
         try {
             val result = executeBody(func.body)
             retValue = (result as? ReturnSignal)?.value
+        } catch (e: AzoraThrownException) {
+            // The function exited via `throw`/`fail` — fail-defers should run.
+            failed = true
+            toRethrow = e
         } finally {
-            // Run deferred blocks in reverse order (LIFO).
+            // Run deferred blocks in reverse order (LIFO). Skip `fail defer`
+            // blocks when the function returned normally.
             for (i in deferStack.indices.reversed()) {
-                executeBody(deferStack[i])
+                val d = deferStack[i]
+                if (d.onFail && !failed) continue
+                executeBody(d.body)
             }
             deferStack = savedDefers
         }
         popScope()
+        if (toRethrow != null) throw toRethrow
         return retValue
     }
 
@@ -174,24 +190,41 @@ class IrInterpreter {
                     pushScope()
                     val result = executeBody(stmt.body)
                     popScope()
-                    if (result is BreakSignal) break
-                    if (result is ReturnSignal) return result
-                    // ContinueSignal or null → loop again
+                    when (result) {
+                        is ReturnSignal -> return result
+                        is BreakSignal -> {
+                            // Consume unlabeled break or one aimed at this loop; else propagate.
+                            if (result.label == null || result.label == stmt.label) break
+                            return result
+                        }
+                        is ContinueSignal -> {
+                            if (result.label != null && result.label != stmt.label) return result
+                            // else fall through to the next iteration
+                        }
+                    }
                 }
             }
             is IrStmt.For -> {
                 val start = evalExpr(stmt.start) as Long
                 val end = evalExpr(stmt.end) as Long
-                var i = start
-                while (if (stmt.inclusive) i <= end else i < end) {
+                val step = (stmt.step?.let { evalExpr(it) as Long } ?: 1L)
+                var i = if (stmt.reverse) end else start
+                while (if (stmt.reverse) i >= start else if (stmt.inclusive) i <= end else i < end) {
                     pushScope()
                     defineVar(stmt.counter, i)
                     val result = executeBody(stmt.body)
                     popScope()
-                    if (result is BreakSignal) break
-                    if (result is ReturnSignal) return result
-                    i++
-                    // ContinueSignal or null falls through to the increment above
+                    when (result) {
+                        is ReturnSignal -> return result
+                        is BreakSignal -> {
+                            if (result.label == null || result.label == stmt.label) break
+                            return result
+                        }
+                        is ContinueSignal -> {
+                            if (result.label != null && result.label != stmt.label) return result
+                        }
+                    }
+                    i = if (stmt.reverse) i - step else i + step
                 }
             }
             is IrStmt.Loop -> {
@@ -199,19 +232,37 @@ class IrInterpreter {
                     pushScope()
                     val result = executeBody(stmt.body)
                     popScope()
-                    if (result is BreakSignal) break
-                    if (result is ReturnSignal) return result
-                    // ContinueSignal or null → loop again
+                    when (result) {
+                        is ReturnSignal -> return result
+                        is BreakSignal -> {
+                            if (result.label == null || result.label == stmt.label) break
+                            return result
+                        }
+                        is ContinueSignal -> {
+                            if (result.label != null && result.label != stmt.label) return result
+                        }
+                    }
                 }
             }
-            is IrStmt.Break -> return BreakSignal
-            is IrStmt.Continue -> return ContinueSignal
-            is IrStmt.Defer -> { deferStack.add(stmt.body) }
+            is IrStmt.Break -> return BreakSignal(stmt.label)
+            is IrStmt.Continue -> return ContinueSignal(stmt.label)
+            is IrStmt.Defer -> { deferStack.add(DeferredBlock(stmt.body, stmt.onFail)) }
+            is IrStmt.Yield -> { yieldAccumulators.lastOrNull()?.add(evalExpr(stmt.value)) }
             is IrStmt.IndexAssign -> {
-                @Suppress("UNCHECKED_CAST")
-                val list = evalExpr(stmt.target) as MutableList<Any?>
-                val idx = (evalExpr(stmt.index) as Long).toInt()
-                list[idx] = evalExpr(stmt.value)
+                val target = evalExpr(stmt.target)
+                val key = evalExpr(stmt.index)
+                val value = evalExpr(stmt.value)
+                when (target) {
+                    is MutableMap<*, *> -> {
+                        @Suppress("UNCHECKED_CAST")
+                        (target as MutableMap<Any?, Any?>)[key] = value
+                    }
+                    is MutableList<*> -> {
+                        @Suppress("UNCHECKED_CAST")
+                        (target as MutableList<Any?>)[(key as Long).toInt()] = value
+                    }
+                    else -> error("Cannot index-assign to $target")
+                }
             }
             is IrStmt.MemberAssign -> {
                 @Suppress("UNCHECKED_CAST")
@@ -313,11 +364,25 @@ class IrInterpreter {
             is IrExpr.Binary -> evalBinary(expr)
             is IrExpr.Call -> evalCall(expr)
             is IrExpr.ArrayLiteral -> expr.elements.map { evalExpr(it) }.toMutableList()
+            is IrExpr.MapLit -> {
+                val map = linkedMapOf<Any?, Any?>()
+                for ((k, v) in expr.entries) map[evalExpr(k)] = evalExpr(v)
+                map
+            }
             is IrExpr.Index -> {
-                @Suppress("UNCHECKED_CAST")
-                val list = evalExpr(expr.target) as MutableList<Any?>
-                val idx = (evalExpr(expr.index) as Long).toInt()
-                list[idx]
+                val target = evalExpr(expr.target)
+                val key = evalExpr(expr.index)
+                when (target) {
+                    is MutableMap<*, *> -> {
+                        @Suppress("UNCHECKED_CAST")
+                        (target as MutableMap<Any?, Any?>)[key]
+                    }
+                    is MutableList<*> -> {
+                        @Suppress("UNCHECKED_CAST")
+                        (target as MutableList<Any?>)[(key as Long).toInt()]
+                    }
+                    else -> error("Cannot index into $target")
+                }
             }
             is IrExpr.Member -> {
                 val receiver = evalExpr(expr.target)
@@ -493,6 +558,20 @@ class IrInterpreter {
         if (expr.name == "__nullCoalesce") {
             return if (args[0] != null) args[0] else args[1]
         }
+        if (expr.name == "__alloc") {
+            // Heap-allocate: wrap the value in a mutable cell (a pointer).
+            return Pointer(args[0])
+        }
+        if (expr.name == "__deref") {
+            return (args[0] as Pointer).value
+        }
+        if (expr.name == "__derefAssign") {
+            (args[0] as Pointer).value = args[1]
+            return null
+        }
+        if (expr.name == "__isolated") {
+            return deepCopy(args[0])
+        }
         if (expr.name == "__safeMember") {
             val target = args[0]
             val fieldName = args[1] as String
@@ -524,7 +603,15 @@ class IrInterpreter {
         }
 
         val func = functions[expr.name]
-        if (func != null) return executeFunction(func, args)
+        if (func != null) {
+            // A `flow` generator: run its body, collecting `yield`ed values into a list.
+            if (func.isFlow) {
+                yieldAccumulators.addLast(mutableListOf())
+                executeFunction(func, args)
+                return yieldAccumulators.removeLast()
+            }
+            return executeFunction(func, args)
+        }
 
         // Calling a lambda stored in a variable.
         val callee = lookupVar(expr.name)
@@ -551,11 +638,37 @@ class IrInterpreter {
         else -> value.toString()
     }
 
+    /** Returns an independent deep copy of [value] (for `isolated(…)`). */
+    private fun deepCopy(value: Any?): Any? = when (value) {
+        null -> null
+        // Immutable scalars are safe to share.
+        is Long, is Double, is Boolean, is Char, is String -> value
+        is Closure -> value
+        is MutableList<*> -> {
+            @Suppress("UNCHECKED_CAST")
+            val list = value as MutableList<Any?>
+            list.mapTo(mutableListOf()) { deepCopy(it) }
+        }
+        is MutableMap<*, *> -> {
+            // Structs and maps: copy entries with deep-copied values.
+            @Suppress("UNCHECKED_CAST")
+            val map = value as MutableMap<String, Any?>
+            val copy = linkedMapOf<String, Any?>()
+            for ((k, v) in map) copy[k] = deepCopy(v)
+            copy
+        }
+        is Pointer -> Pointer(deepCopy(value.value))
+        else -> value
+    }
+
+
     /** Control-flow signal raised by `return`/`break`/`continue`. */
     private sealed class ControlSignal
     private data class ReturnSignal(val value: Any?) : ControlSignal()
-    private object BreakSignal : ControlSignal()
-    private object ContinueSignal : ControlSignal()
+    /** `break`, optionally targeting a labeled loop ([label]). */
+    private data class BreakSignal(val label: String?) : ControlSignal()
+    /** `continue`, optionally targeting a labeled loop ([label]). */
+    private data class ContinueSignal(val label: String?) : ControlSignal()
 
     /** A value thrown by `throw`, caught by `try`/`catch`. */
     private class AzoraThrownException(val value: Any?) : RuntimeException(value?.toString())
@@ -566,4 +679,7 @@ class IrInterpreter {
         val body: List<org.azora.lang.ir.IrStmt>,
         val capturedScopes: List<MutableMap<String, Any?>>
     )
+
+    /** A heap pointer — a mutable cell holding the pointee value. */
+    private class Pointer(var value: Any?)
 }

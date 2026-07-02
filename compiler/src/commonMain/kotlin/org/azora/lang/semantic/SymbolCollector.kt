@@ -88,7 +88,9 @@ class SymbolCollector {
                 }
                 val paramNames = func.params.map { it.name }
                 val defaults = func.params.mapIndexedNotNull { i, p -> p.defaultValue?.let { i to it } }.toMap()
-                table.defineFunction(FunctionSymbol(func.name, params, returnType, func.isInline, func.typeParams, paramNames, defaults))
+                // A `flow` generator's call returns a list of its (element-type) yields.
+                val callReturnType = if (func.isFlow) IrType.Array(returnType) else returnType
+                table.defineFunction(FunctionSymbol(func.name, params, callReturnType, func.isInline, func.typeParams, paramNames, defaults))
             } catch (e: Exception) {
                 errors.add("line ${func.line}: ${e.message}")
             }
@@ -114,6 +116,17 @@ class SymbolCollector {
             if (item is TopLevel.Enum) {
                 try {
                     table.defineEnum(item.name, item.variants)
+                } catch (e: Exception) {
+                    errors.add("line ${item.line}: ${e.message}")
+                }
+            }
+        }
+
+        // Register fail (error-set) declarations
+        for (item in program.items) {
+            if (item is TopLevel.Fail) {
+                try {
+                    table.defineFail(item.name, item.variants)
                 } catch (e: Exception) {
                     errors.add("line ${item.line}: ${e.message}")
                 }
@@ -291,6 +304,6 @@ class SymbolCollector {
         is Expr.NamedArg -> null
         is Expr.NullLiteral -> IrType.Any
         is Expr.NullCoalesce, is Expr.SafeMember,
-        is Expr.Cast, is Expr.IsCheck, is Expr.MapLit, is Expr.SetLit -> null
+        is Expr.Cast, is Expr.IsCheck, is Expr.MapLit, is Expr.Alloc, is Expr.Deref, is Expr.Isolated -> null
     }
 }

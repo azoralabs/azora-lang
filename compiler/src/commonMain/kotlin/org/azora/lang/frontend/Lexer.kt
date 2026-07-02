@@ -63,6 +63,18 @@ class Lexer(private val source: String) {
             "in" to TokenType.IN,
             "break" to TokenType.BREAK,
             "continue" to TokenType.CONTINUE,
+            "by" to TokenType.BY,
+            "reverse" to TokenType.REVERSE,
+            "infx" to TokenType.INFX,
+            "oper" to TokenType.OPER,
+            "deco" to TokenType.DECO,
+            "fail" to TokenType.FAIL,
+            "alloc" to TokenType.ALLOC,
+            "drop" to TokenType.DROP,
+            "unsafe" to TokenType.UNSAFE,
+            "isolated" to TokenType.ISOLATED,
+            "flow" to TokenType.FLOW,
+            "yield" to TokenType.YIELD,
             "pack" to TokenType.PACK,
             "enum" to TokenType.ENUM,
             "when" to TokenType.WHEN,
@@ -110,6 +122,7 @@ class Lexer(private val source: String) {
             '[' -> { bracketDepth++; addToken(TokenType.L_BRACKET) }
             ']' -> { if (bracketDepth > 0) bracketDepth--; addToken(TokenType.R_BRACKET) }
             ',' -> addToken(TokenType.COMMA)
+            '@' -> addToken(TokenType.AT)
             '.' -> when {
                 match('.') -> addToken(if (match('<')) TokenType.DOT_DOT_LESS else TokenType.DOT_DOT)
                 else -> addToken(TokenType.DOT)
@@ -134,12 +147,7 @@ class Lexer(private val source: String) {
             '|' -> if (match('|')) addToken(TokenType.OR_OR) else addToken(TokenType.PIPE)
             '^' -> addToken(TokenType.CARET)
             '~' -> addToken(TokenType.TILDE)
-            '?' -> when {
-                match('?') -> addToken(TokenType.QMARK_QMARK)
-                match('.') -> addToken(TokenType.QMARK_DOT)
-                match('=') -> addToken(TokenType.QMARK_EQUAL)
-                else -> addToken(TokenType.QMARK)
-            }
+            '?' -> scanNullableOp()
             '-' -> when {
                 match('>') -> addToken(TokenType.ARROW)
                 match('=') -> addToken(TokenType.MINUS_EQUAL)
@@ -154,7 +162,14 @@ class Lexer(private val source: String) {
                     else -> addToken(TokenType.SLASH)
                 }
             }
-            '"' -> scanString()
+            '"' -> {
+                // Triple-quoted raw string `"""…"""` vs. regular `"…"`.
+                if (!isAtEnd(1) && source[current] == '"' && !isAtEnd(2) && source[current + 1] == '"') {
+                    scanRawString()
+                } else {
+                    scanString()
+                }
+            }
             '\'' -> scanCharLiteral()
             '\n' -> {
                 if (bracketDepth <= 0) {
@@ -180,6 +195,33 @@ class Lexer(private val source: String) {
                 else -> error("Unexpected character '$c' at line $line")
             }
         }
+    }
+
+    /**
+     * Scans a triple-quoted raw string `"""…"""`. The content is taken literally —
+     * backslash escapes are NOT processed and newlines are preserved — until the
+     * closing `"""`. Emitted as a normal [TokenType.STRING_LITERAL] so the parser
+     * and all backends (which already escape string values) handle it unchanged.
+     *
+     * The opening `"` has already been consumed by [scanToken]; this consumes the
+     * remaining two `"` of the opening delimiter.
+     */
+    private fun scanRawString() {
+        advance() // second '"' of opening delimiter
+        advance() // third '"' of opening delimiter
+        val sb = StringBuilder()
+        while (!isAtEnd()) {
+            if (peek() == '"' && !isAtEnd(1) && source[current + 1] == '"' &&
+                !isAtEnd(2) && source[current + 2] == '"') {
+                advance(); advance(); advance() // closing """
+                tokens.add(Token(TokenType.STRING_LITERAL, source.substring(start, current), line, startColumn, sb.toString()))
+                return
+            }
+            val c = advance()
+            if (c == '\n') { line++; column = 1 }
+            sb.append(c)
+        }
+        error("Unterminated raw string at line $line")
     }
 
     private fun scanString() {
@@ -255,6 +297,49 @@ class Lexer(private val source: String) {
             tokens.add(Token(TokenType.INTERPOLATED_STRING, lexeme, line, startColumn, parts))
         } else {
             tokens.add(Token(TokenType.STRING_LITERAL, lexeme, line, startColumn, sb.toString()))
+        }
+    }
+
+    /**
+     * Scans a `?`-led operator. Beyond the plain nullable marker (`?`), this
+     * recognizes the null-conditional compound assignment operators
+     * (`?=` `?+=` `?-=` `?*=` `?/=` `?%=`) and the null-conditional
+     * increment/decrement operators (`?++` `?--`), as well as `??` and `?.`.
+     *
+     * The leading `?` has already been consumed by [scanToken] when this is
+     * called, so [start] points at it and [current] is just past it.
+     */
+    private fun scanNullableOp() {
+        when {
+            match('?') -> addToken(TokenType.QMARK_QMARK)
+            match('.') -> addToken(TokenType.QMARK_DOT)
+            match('=') -> addToken(TokenType.QMARK_EQUAL)
+            !isAtEnd() && peek() in "+-*/%" -> {
+                val opChar = peek()
+                val afterOp = if (!isAtEnd(1)) source[current + 1] else ' '
+                when {
+                    // ?+= ?-= ?*= ?/= ?%=  — compound null-conditional assignment
+                    afterOp == '=' -> {
+                        advance() // op char
+                        advance() // '='
+                        addToken(when (opChar) {
+                            '+' -> TokenType.QMARK_PLUS_EQUAL
+                            '-' -> TokenType.QMARK_MINUS_EQUAL
+                            '*' -> TokenType.QMARK_STAR_EQUAL
+                            '/' -> TokenType.QMARK_SLASH_EQUAL
+                            '%' -> TokenType.QMARK_PERCENT_EQUAL
+                            else -> error("unreachable nullable compound op")
+                        })
+                    }
+                    // ?++ / ?-- — null-conditional inc/dec
+                    opChar == '+' && afterOp == '+' -> { advance(); advance(); addToken(TokenType.QMARK_PLUS_PLUS) }
+                    opChar == '-' && afterOp == '-' -> { advance(); advance(); addToken(TokenType.QMARK_MINUS_MINUS) }
+                    // Lone '?' followed by an operator char that isn't part of a
+                    // null-conditional op (e.g. `a ? b : c` style, or `T?` then `+`).
+                    else -> addToken(TokenType.QMARK)
+                }
+            }
+            else -> addToken(TokenType.QMARK)
         }
     }
 

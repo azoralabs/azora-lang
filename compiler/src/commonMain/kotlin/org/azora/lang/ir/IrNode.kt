@@ -88,9 +88,6 @@ sealed class IrType {
     /** Map type `[K: V]`. */
     data class Map(val key: IrType, val value: IrType) : IrType() { override fun toString() = "[$key: $value]" }
 
-    /** Set type `![T]`. */
-    data class Set(val element: IrType) : IrType() { override fun toString() = "![$element]" }
-
     /** Function type `(A, B) -> R`. */
     data class Function(val params: List<IrType>, val ret: IrType) : IrType() { override fun toString() = "(${params.joinToString(", ")}) -> $ret" }
 
@@ -99,6 +96,9 @@ sealed class IrType {
 
     /** Nullable type `T?`. */
     data class Nullable(val inner: IrType) : IrType() { override fun toString() = "$inner?" }
+
+    /** Pointer type `T*` — a heap reference to [inner]. Runtime representation is a mutable cell. */
+    data class Pointer(val inner: IrType) : IrType() { override fun toString() = "$inner*" }
 
     /** A user-defined or unresolved named type (struct, enum, generic base). */
     data class Named(val name: kotlin.String) : IrType() { override fun toString() = name }
@@ -172,10 +172,13 @@ sealed class IrType {
             }
             is TypeRef.Array -> Array(resolve(ref.element, typeParams))
             is TypeRef.Map -> Map(resolve(ref.key, typeParams), resolve(ref.value, typeParams))
-            is TypeRef.Set -> Set(resolve(ref.element, typeParams))
             is TypeRef.Function -> Function(ref.params.map { resolve(it, typeParams) }, resolve(ref.ret, typeParams))
             is TypeRef.Tuple -> Tuple(ref.elements.map { resolve(it, typeParams) })
             is TypeRef.Nullable -> Nullable(resolve(ref.inner, typeParams))
+            is TypeRef.Pointer -> Pointer(resolve(ref.inner, typeParams))
+            // `T!ErrSet` — at runtime a value of T (errors propagate via exceptions),
+            // so the IR type is just the inner ok type.
+            is TypeRef.Failable -> resolve(ref.ok, typeParams)
         }
     }
 }
@@ -357,6 +360,9 @@ sealed class IrExpr {
      */
     data class ArrayLiteral(val elements: List<IrExpr>, override val type: IrType) : IrExpr()
 
+    /** Map literal `["k": v, "k2": v2]`. [type] is an [IrType.Map]. */
+    data class MapLit(val entries: List<Pair<IrExpr, IrExpr>>, override val type: IrType) : IrExpr()
+
     /**
      * Index access `target[index]`.
      *
@@ -459,6 +465,7 @@ sealed class IrExpr {
         }
         is Call -> "$name(${args.joinToString(", ") { it.prettyPrint() }})"
         is ArrayLiteral -> "[${elements.joinToString(", ") { it.prettyPrint() }}]"
+        is MapLit -> "[${entries.joinToString(", ") { "${it.first.prettyPrint()} : ${it.second.prettyPrint()}" }}]"
         is Index -> "${target.prettyPrint()}[${index.prettyPrint()}]"
         is Member -> "${target.prettyPrint()}.$name"
         is MethodCall -> "${target.prettyPrint()}.$name(${args.joinToString(", ") { it.prettyPrint() }})"
@@ -596,7 +603,7 @@ sealed class IrStmt {
      * @property condition the boolean loop condition
      * @property body the statements executed each iteration
      */
-    data class While(val condition: IrExpr, val body: List<IrStmt>) : IrStmt()
+    data class While(val condition: IrExpr, val body: List<IrStmt>, val label: String? = null) : IrStmt()
 
     /**
      * Integer `for` loop lowered from `for name in start..end` / `..<`.
@@ -607,20 +614,32 @@ sealed class IrStmt {
      * @property inclusive whether [end] is included (`..` vs `..<`)
      * @property body the statements executed each iteration
      */
-    data class For(val counter: String, val start: IrExpr, val end: IrExpr, val inclusive: Boolean, val body: List<IrStmt>) : IrStmt()
+    data class For(
+        val counter: String,
+        val start: IrExpr,
+        val end: IrExpr,
+        val inclusive: Boolean,
+        val body: List<IrStmt>,
+        /** Step for the counter; null means 1. */
+        val step: IrExpr? = null,
+        /** Iterate downwards from [end] to [start]. */
+        val reverse: Boolean = false,
+        /** Optional `@label` for labeled `break`/`continue`. */
+        val label: String? = null
+    ) : IrStmt()
 
     /**
      * Infinite `loop { body }`. Exits via [Break].
      *
      * @property body the statements executed repeatedly
      */
-    data class Loop(val body: List<IrStmt>) : IrStmt()
+    data class Loop(val body: List<IrStmt>, val label: String? = null) : IrStmt()
 
-    /** `break` — exits the innermost enclosing loop. */
-    object Break : IrStmt() { override fun toString() = "break" }
+    /** `break` — exits the enclosing loop, or the loop tagged [label] if given. */
+    data class Break(val label: String? = null) : IrStmt()
 
-    /** `continue` — skips to the next iteration of the innermost loop. */
-    object Continue : IrStmt() { override fun toString() = "continue" }
+    /** `continue` — next iteration of the enclosing loop, or the loop tagged [label] if given. */
+    data class Continue(val label: String? = null) : IrStmt()
 
     /**
      * `when scrutinee { patterns -> body ... else -> body }`.
@@ -634,7 +653,10 @@ sealed class IrStmt {
     data class Try(val body: List<IrStmt>, val catchName: String?, val catchBody: List<IrStmt>?) : IrStmt()
 
     /** `defer { body }` — runs [body] when the enclosing function exits. */
-    data class Defer(val body: List<IrStmt>) : IrStmt()
+    data class Defer(val body: List<IrStmt>, val onFail: Boolean = false) : IrStmt()
+
+    /** `yield value` — emit a value from a `flow` generator. */
+    data class Yield(val value: IrExpr) : IrStmt()
 
     /** Pretty-prints this statement as Azora IR text. */
     fun prettyPrint(sb: StringBuilder, indent: Int) {
@@ -671,7 +693,9 @@ sealed class IrStmt {
             }
             is For -> {
                 val op = if (inclusive) ".." else "..<"
-                sb.appendLine("${pad}for $counter in ${start.prettyPrint()}$op${end.prettyPrint()} {")
+                val stepPart = if (step != null) " by ${step.prettyPrint()}" else ""
+                val revPart = if (reverse) "reverse " else ""
+                sb.appendLine("${pad}for $revPart$counter in ${start.prettyPrint()}$op${end.prettyPrint()}$stepPart {")
                 for (s in body) s.prettyPrint(sb, indent + 1)
                 sb.appendLine("${pad}}")
             }
@@ -680,8 +704,14 @@ sealed class IrStmt {
                 for (s in body) s.prettyPrint(sb, indent + 1)
                 sb.appendLine("${pad}}")
             }
-            is Break -> sb.appendLine("${pad}break")
-            is Continue -> sb.appendLine("${pad}continue")
+            is Break -> {
+                val lbl = if (label != null) " @$label" else ""
+                sb.appendLine("${pad}break$lbl")
+            }
+            is Continue -> {
+                val lbl = if (label != null) " @$label" else ""
+                sb.appendLine("${pad}continue$lbl")
+            }
             is When -> {
                 sb.appendLine("${pad}when ${scrutinee.prettyPrint()} {")
                 for (b in branches) {
@@ -702,6 +732,7 @@ sealed class IrStmt {
                 for (s in body) s.prettyPrint(sb, indent + 1)
                 sb.appendLine("${pad}}")
             }
+            is Yield -> sb.appendLine("${pad}yield ${value.prettyPrint()}")
             is Try -> {
                 sb.appendLine("${pad}try {")
                 for (s in body) s.prettyPrint(sb, indent + 1)
@@ -732,7 +763,9 @@ data class IrFunction(
     val name: String,
     val params: List<Pair<String, IrType>>,
     val returnType: IrType,
-    val body: List<IrStmt>
+    val body: List<IrStmt>,
+    /** `flow` generator: calling it returns a list of `yield`ed values. */
+    val isFlow: Boolean = false
 ) {
     /** Pretty-prints this function as Azora IR text. */
     fun prettyPrint(sb: StringBuilder, indent: Int) {
@@ -947,11 +980,15 @@ private fun dumpIrStmtTree(sb: StringBuilder, stmt: IrStmt, indent: String) {
             for (s in stmt.body) dumpIrStmtTree(sb, s, "$indent        ")
         }
         is IrStmt.For -> {
-            sb.appendLine("${indent}IrFor(counter=${stmt.counter}, inclusive=${stmt.inclusive})")
+            sb.appendLine("${indent}IrFor(counter=${stmt.counter}, inclusive=${stmt.inclusive}, reverse=${stmt.reverse})")
             sb.appendLine("$indent    start:")
             dumpIrExprTree(sb, stmt.start, "$indent        ")
             sb.appendLine("$indent    end:")
             dumpIrExprTree(sb, stmt.end, "$indent        ")
+            if (stmt.step != null) {
+                sb.appendLine("$indent    step:")
+                dumpIrExprTree(sb, stmt.step, "$indent        ")
+            }
             sb.appendLine("$indent    body:")
             for (s in stmt.body) dumpIrStmtTree(sb, s, "$indent        ")
         }
@@ -960,8 +997,8 @@ private fun dumpIrStmtTree(sb: StringBuilder, stmt: IrStmt, indent: String) {
             sb.appendLine("$indent    body:")
             for (s in stmt.body) dumpIrStmtTree(sb, s, "$indent        ")
         }
-        is IrStmt.Break -> sb.appendLine("${indent}IrBreak")
-        is IrStmt.Continue -> sb.appendLine("${indent}IrContinue")
+        is IrStmt.Break -> sb.appendLine("${indent}IrBreak(label=${stmt.label})")
+        is IrStmt.Continue -> sb.appendLine("${indent}IrContinue(label=${stmt.label})")
         is IrStmt.When -> {
             sb.appendLine("${indent}IrWhen")
             sb.appendLine("$indent    scrutinee:")
@@ -993,6 +1030,10 @@ private fun dumpIrStmtTree(sb: StringBuilder, stmt: IrStmt, indent: String) {
             sb.appendLine("${indent}IrDefer")
             for (s in stmt.body) dumpIrStmtTree(sb, s, "$indent    ")
         }
+        is IrStmt.Yield -> {
+            sb.appendLine("${indent}IrYield")
+            dumpIrExprTree(sb, stmt.value, "$indent    ")
+        }
     }
 }
 
@@ -1020,6 +1061,14 @@ private fun dumpIrExprTree(sb: StringBuilder, expr: IrExpr, indent: String) {
         is IrExpr.ArrayLiteral -> {
             sb.appendLine("${indent}IrArrayLiteral : ${expr.type}")
             for (elem in expr.elements) dumpIrExprTree(sb, elem, "$indent    ")
+        }
+        is IrExpr.MapLit -> {
+            sb.appendLine("${indent}IrMapLiteral : ${expr.type}")
+            for ((k, v) in expr.entries) {
+                sb.appendLine("$indent    entry:")
+                dumpIrExprTree(sb, k, "$indent        ")
+                dumpIrExprTree(sb, v, "$indent        ")
+            }
         }
         is IrExpr.Index -> {
             sb.appendLine("${indent}IrIndex : ${expr.type}")

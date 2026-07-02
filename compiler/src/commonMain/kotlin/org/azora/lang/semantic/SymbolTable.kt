@@ -142,6 +142,19 @@ class SymbolTable {
     /** Returns the variants of an enum, or `null` if no such enum exists. */
     fun lookupEnum(name: String): List<String>? = enums[name]
 
+    // -- Fail (error-set) declarations -------------------------------------
+
+    private val fails = mutableMapOf<String, List<String>>()
+
+    /** Registers an error-set's variants. */
+    fun defineFail(name: String, variants: List<String>) {
+        if (fails.containsKey(name)) error("Error-set '$name' already defined")
+        fails[name] = variants
+    }
+
+    /** Returns the variants of an error-set, or `null` if no such error-set exists. */
+    fun lookupFail(name: String): List<String>? = fails[name]
+
     // -- Impl methods ------------------------------------------------------
 
     /** Registers that [typeName] has a method [methodName] implemented by mangled [funcName]. */

@@ -143,6 +143,10 @@ class EffectChecker {
             is Stmt.DeepInlineBlock -> stmt.body.forEach { collectCallsFromStmt(it, calls) }
             is Stmt.NoInline -> collectCallsFromStmt(stmt.stmt, calls)
             is Stmt.InlineBlock -> stmt.body.forEach { collectCallsFromStmt(it, calls) }
+            is Stmt.InlineFor -> {
+                collectCallsFromExpr(stmt.iterable, calls)
+                stmt.body.forEach { collectCallsFromStmt(it, calls) }
+            }
             is Stmt.InlineFin -> collectCallsFromExpr(stmt.initializer, calls)
             is Stmt.InlineLet -> collectCallsFromExpr(stmt.initializer, calls)
             is Stmt.InlineVar -> collectCallsFromExpr(stmt.initializer, calls)
@@ -187,6 +191,10 @@ class EffectChecker {
                 collectCallsFromExpr(stmt.target, calls)
                 collectCallsFromExpr(stmt.value, calls)
             }
+            is Stmt.DerefAssign -> {
+                collectCallsFromExpr(stmt.target, calls)
+                collectCallsFromExpr(stmt.value, calls)
+            }
             is Stmt.When -> {
                 collectCallsFromExpr(stmt.scrutinee, calls)
                 for (branch in stmt.branches) {
@@ -196,6 +204,7 @@ class EffectChecker {
                 stmt.elseBranch?.forEach { collectCallsFromStmt(it, calls) }
             }
             is Stmt.Throw -> collectCallsFromExpr(stmt.value, calls)
+            is Stmt.Yield -> collectCallsFromExpr(stmt.value, calls)
             is Stmt.Try -> {
                 stmt.body.forEach { collectCallsFromStmt(it, calls) }
                 stmt.catchBody?.forEach { collectCallsFromStmt(it, calls) }
@@ -236,7 +245,9 @@ class EffectChecker {
             is Expr.Cast -> collectCallsFromExpr(expr.expr, calls)
             is Expr.IsCheck -> collectCallsFromExpr(expr.expr, calls)
             is Expr.MapLit -> { for ((k, v) in expr.entries) { collectCallsFromExpr(k, calls); collectCallsFromExpr(v, calls) } }
-            is Expr.SetLit -> expr.elements.forEach { collectCallsFromExpr(it, calls) }
+            is Expr.Alloc -> collectCallsFromExpr(expr.value, calls)
+            is Expr.Deref -> collectCallsFromExpr(expr.target, calls)
+            is Expr.Isolated -> collectCallsFromExpr(expr.value, calls)
             is Expr.SafeMember -> collectCallsFromExpr(expr.target, calls)
             is Expr.IntLiteral, is Expr.RealLiteral,
             is Expr.StringLiteral, is Expr.BoolLiteral,

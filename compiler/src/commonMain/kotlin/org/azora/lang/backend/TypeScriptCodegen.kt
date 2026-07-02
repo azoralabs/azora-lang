@@ -43,6 +43,18 @@ class TypeScriptCodegen {
 
     private val out = StringBuilder()
     private var indent = 0
+    private var usesPointers = false
+
+    private val POINTER_RUNTIME = setOf("__alloc", "__deref", "__derefAssign", "__isolated")
+
+    private val pointerPreamble: String = """
+        class AzoraPtr<T> { constructor(public value: T) {} }
+        function __alloc<T>(v: T): AzoraPtr<T> { return new AzoraPtr(v); }
+        function __deref<T>(p: AzoraPtr<T>): T { return p.value; }
+        function __derefAssign<T>(p: AzoraPtr<T>, v: T): void { p.value = v; }
+        // NOTE: __isolated is a shallow copy in the TypeScript backend.
+        function __isolated<T>(v: T): T { return v; }
+    """.trimIndent()
 
     /**
      * Generates TypeScript source code from the given IR program.
@@ -56,6 +68,7 @@ class TypeScriptCodegen {
     fun generate(program: IrProgram): String {
         out.clear()
         indent = 0
+        usesPointers = false
 
         if (program.packageName != null) {
             line("// package: ${program.packageName}")
@@ -96,7 +109,8 @@ class TypeScriptCodegen {
             line("main()")
         }
 
-        return out.toString().trimEnd()
+        val body = out.toString().trimEnd()
+        return if (usesPointers) pointerPreamble + "\n\n" + body else body
     }
 
     private fun emitTest(test: IrTopLevel.Test) {
@@ -197,22 +211,37 @@ class TypeScriptCodegen {
                 }
             }
             is IrStmt.While -> {
-                line("while (${emitExpr(stmt.condition)}) {")
+                val lbl = if (stmt.label != null) "${stmt.label}: " else ""
+                line("${lbl}while (${emitExpr(stmt.condition)}) {")
                 indent++
                 for (s in stmt.body) emitStmt(s)
                 indent--
                 line("}")
             }
             is IrStmt.For -> {
-                val op = if (stmt.inclusive) "<=" else "<"
-                line("for (let ${stmt.counter} = ${emitExpr(stmt.start)}; ${stmt.counter} $op ${emitExpr(stmt.end)}; ${stmt.counter}++) {")
+                val lbl = if (stmt.label != null) "${stmt.label}: " else ""
+                // Emit `i++` / `i--` for the default step, `i += N` / `i -= N` otherwise.
+                val inc = when {
+                    stmt.reverse && stmt.step != null -> "${stmt.counter} -= ${emitExpr(stmt.step)}"
+                    stmt.reverse -> "${stmt.counter}--"
+                    stmt.step != null -> "${stmt.counter} += ${emitExpr(stmt.step)}"
+                    else -> "${stmt.counter}++"
+                }
+                val header = if (stmt.reverse) {
+                    "for (let ${stmt.counter} = ${emitExpr(stmt.end)}; ${stmt.counter} >= ${emitExpr(stmt.start)}; $inc)"
+                } else {
+                    val op = if (stmt.inclusive) "<=" else "<"
+                    "for (let ${stmt.counter} = ${emitExpr(stmt.start)}; ${stmt.counter} $op ${emitExpr(stmt.end)}; $inc)"
+                }
+                line("$lbl$header {")
                 indent++
                 for (s in stmt.body) emitStmt(s)
                 indent--
                 line("}")
             }
             is IrStmt.Loop -> {
-                line("while (true) {")
+                val lbl = if (stmt.label != null) "${stmt.label}: " else ""
+                line("${lbl}while (true) {")
                 indent++
                 for (s in stmt.body) emitStmt(s)
                 indent--
@@ -234,8 +263,9 @@ class TypeScriptCodegen {
                 line("}")
             }
             is IrStmt.Defer -> {}
-            is IrStmt.Break -> line("break;")
-            is IrStmt.Continue -> line("continue;")
+            is IrStmt.Yield -> {}
+            is IrStmt.Break -> line(if (stmt.label != null) "break ${stmt.label};" else "break;")
+            is IrStmt.Continue -> line(if (stmt.label != null) "continue ${stmt.label};" else "continue;")
         }
     }
 
@@ -284,10 +314,12 @@ class TypeScriptCodegen {
             }
         }
         is IrExpr.Call -> {
+            if (expr.name in POINTER_RUNTIME) usesPointers = true
             val name = if (expr.name == "println") "console.log" else expr.name
             "$name(${expr.args.joinToString(", ") { emitExpr(it) }})"
         }
         is IrExpr.ArrayLiteral -> "[${expr.elements.joinToString(", ") { emitExpr(it) }}]"
+        is IrExpr.MapLit -> "({ ${expr.entries.joinToString(", ") { "[${emitExpr(it.first)}]: ${emitExpr(it.second)}" }} })"
         is IrExpr.Index -> "${emitExpr(expr.target)}[${emitExpr(expr.index)}]"
         is IrExpr.Member -> {
             val prop = when (expr.name) {
@@ -345,8 +377,8 @@ class TypeScriptCodegen {
         IrType.Long, IrType.ULong -> "bigint"
         IrType.Cent, IrType.UCent -> "bigint"
         is IrType.Array -> "${mapType(type.element)}[]"
-        is IrType.Map -> "Map<${mapType(type.key)}, ${mapType(type.value)}>"
-        is IrType.Set -> "Set<${mapType(type.element)}>"
+        is IrType.Map -> "Record<${mapType(type.key)}, ${mapType(type.value)}>"
+        is IrType.Pointer -> "AzoraPtr<${mapType(type.inner)}>"
         is IrType.Function -> "(${type.params.joinToString(", ") { mapType(it) }}) => ${mapType(type.ret)}"
         is IrType.Tuple -> "[${type.elements.joinToString(", ") { mapType(it) }}]"
         is IrType.Nullable -> "${mapType(type.inner)} | null"

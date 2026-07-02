@@ -85,6 +85,7 @@ class IrOptimizer {
         is IrStmt.Continue -> stmt
         is IrStmt.IndexAssign -> stmt.copy(target = foldExpr(stmt.target), index = foldExpr(stmt.index), value = foldExpr(stmt.value))
         is IrStmt.MemberAssign -> stmt.copy(target = foldExpr(stmt.target), value = foldExpr(stmt.value))
+        is IrStmt.Yield -> stmt.copy(value = foldExpr(stmt.value))
         is IrStmt.When -> stmt.copy(
             scrutinee = foldExpr(stmt.scrutinee),
             branches = stmt.branches.map { b -> b.copy(patterns = b.patterns.map { foldExpr(it) }, body = b.body.map { foldStmt(it) }) },
@@ -315,6 +316,7 @@ class IrOptimizer {
                     target = foldExpr(propagateExpr(stmt.target, constants)),
                     value = foldExpr(propagateExpr(stmt.value, constants))
                 )
+                is IrStmt.Yield -> stmt.copy(value = foldExpr(propagateExpr(stmt.value, constants)))
                 is IrStmt.When -> {
                     val result = stmt.copy(
                         scrutinee = foldExpr(propagateExpr(stmt.scrutinee, constants)),
@@ -631,6 +633,7 @@ class IrOptimizer {
                 stmt.elseBranch?.forEach { collectReferencedNamesFromStmt(it, names) }
             }
             is IrStmt.Throw -> collectReferencedNamesFromExpr(stmt.value, names)
+            is IrStmt.Yield -> collectReferencedNamesFromExpr(stmt.value, names)
             is IrStmt.Try -> {
                 stmt.body.forEach { collectReferencedNamesFromStmt(it, names) }
                 stmt.catchBody?.forEach { collectReferencedNamesFromStmt(it, names) }
@@ -729,6 +732,7 @@ class IrOptimizer {
                 stmt.elseBranch?.forEach { collectReferencedVarNamesFromStmt(it, names) }
             }
             is IrStmt.Throw -> collectReferencedNamesFromExpr(stmt.value, names)
+            is IrStmt.Yield -> collectReferencedNamesFromExpr(stmt.value, names)
             is IrStmt.Try -> {
                 stmt.body.forEach { collectReferencedVarNamesFromStmt(it, names) }
                 stmt.catchBody?.forEach { collectReferencedVarNamesFromStmt(it, names) }

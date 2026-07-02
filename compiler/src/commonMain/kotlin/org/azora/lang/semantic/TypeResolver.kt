@@ -84,9 +84,25 @@ class TypeResolver(private val table: SymbolTable) {
             table.defineVariable(VariableSymbol(name, type))
         }
 
+        // `T!ErrSet` enforcement: track the function's declared error set so that
+        // `fail`/`throw` of an error variant can be checked against it.
+        val savedFailSet = declaredFailSet
+        declaredFailSet = (func.returnType as? TypeAnnotation.Explicit)
+            ?.ref?.let { (it as? TypeRef.Failable)?.errSet }
         resolveBody(func.body, symbol.returnType)
+        declaredFailSet = savedFailSet
 
         table.popScope()
+    }
+
+    /** The declared error set of the function currently being resolved (`T!E`'s `E`), or null. */
+    private var declaredFailSet: String? = null
+
+    /** If [expr] is `ErrSet.Variant`, returns the error-set name; otherwise null. */
+    private fun failSetOf(expr: Expr): String? {
+        val m = expr as? Expr.Member ?: return null
+        val id = m.target as? Expr.Identifier ?: return null
+        return if (table.lookupFail(id.name) != null) id.name else null
     }
 
     /**
@@ -135,7 +151,7 @@ class TypeResolver(private val table: SymbolTable) {
                     return
                 }
                 val valueType = resolveExpr(stmt.value) ?: return
-                if (varSym.type != valueType) {
+                if (!isCompatible(varSym.type, valueType)) {
                     errors.add("line ${stmt.line}: cannot assign $valueType to '${stmt.name}' of type ${varSym.type}")
                 }
             }
@@ -175,6 +191,7 @@ class TypeResolver(private val table: SymbolTable) {
                 }
             }
             is Stmt.InlineIf -> errors.add("line ${stmt.line}: inline if condition could not be evaluated at compile time")
+            is Stmt.InlineFor -> errors.add("line ${stmt.line}: inline for range could not be evaluated at compile time")
             is Stmt.DeepInlineIf -> errors.add("line ${stmt.line}: deepinline if condition could not be evaluated at compile time")
             is Stmt.Zone -> {
                 table.pushScope()
@@ -255,6 +272,21 @@ class TypeResolver(private val table: SymbolTable) {
             is Stmt.Continue -> { /* no type constraint */ }
             is Stmt.IndexAssign -> {
                 val targetType = resolveExpr(stmt.target) ?: return
+                // User-defined index-assign operator (`oper[]=`) on a struct.
+                if (targetType is IrType.Named) {
+                    val mangled = table.lookupMethod(targetType.name, "indexSet")
+                    if (mangled != null) {
+                        resolveExpr(stmt.index) ?: return
+                        resolveExpr(stmt.value) ?: return
+                        return
+                    }
+                }
+                // Map index-assign: `map[key] = value`.
+                if (targetType is IrType.Map) {
+                    resolveExpr(stmt.index) ?: return
+                    resolveExpr(stmt.value) ?: return
+                    return
+                }
                 val indexType = resolveExpr(stmt.index) ?: return
                 if (targetType !is IrType.Array) {
                     errors.add("line ${stmt.line}: cannot index-assign to $targetType (not an array)")
@@ -268,6 +300,10 @@ class TypeResolver(private val table: SymbolTable) {
                 if (valueType != targetType.element) {
                     errors.add("line ${stmt.line}: cannot assign $valueType to array of ${targetType.element}")
                 }
+            }
+            is Stmt.DerefAssign -> {
+                resolveExpr(stmt.target) ?: return
+                resolveExpr(stmt.value) ?: return
             }
             is Stmt.MemberAssign -> {
                 val targetType = resolveExpr(stmt.target) ?: return
@@ -348,7 +384,15 @@ class TypeResolver(private val table: SymbolTable) {
                     }
                 }
             }
-            is Stmt.Throw -> { resolveExpr(stmt.value) }
+            is Stmt.Throw -> {
+                resolveExpr(stmt.value)
+                // `T!E` enforcement: a thrown error variant must belong to the declared set E.
+                val thrownSet = failSetOf(stmt.value)
+                if (thrownSet != null && declaredFailSet != null && thrownSet != declaredFailSet) {
+                    errors.add("line ${stmt.line}: function declares '!$declaredFailSet' but throws error from '$thrownSet'")
+                }
+            }
+            is Stmt.Yield -> { resolveExpr(stmt.value) }
             is Stmt.Try -> {
                 table.pushScope()
                 resolveBody(stmt.body, returnType)
@@ -574,6 +618,19 @@ class TypeResolver(private val table: SymbolTable) {
             }
             is Expr.Index -> {
                 val targetType = resolveExpr(expr.target) ?: return null
+                // User-defined index operator (`oper[]`) on a struct.
+                if (targetType is IrType.Named) {
+                    val mangled = table.lookupMethod(targetType.name, "index")
+                    if (mangled != null) {
+                        resolveExpr(expr.index) ?: return null
+                        return table.lookupFunction(mangled)?.returnType ?: IrType.Any
+                    }
+                }
+                // Map indexing: `map[key]` — key may be any type.
+                if (targetType is IrType.Map) {
+                    resolveExpr(expr.index) ?: return null
+                    return targetType.value
+                }
                 val indexType = resolveExpr(expr.index) ?: return null
                 if (indexType != IrType.Int) {
                     errors.add("line ${expr.line}: array index must be Int, got $indexType")
@@ -592,6 +649,15 @@ class TypeResolver(private val table: SymbolTable) {
                     if (variants != null) {
                         if (expr.name in variants) return IrType.String
                         errors.add("line ${expr.line}: enum '${expr.target.name}' has no variant '${expr.name}'")
+                        return null
+                    }
+                }
+                // Error-set variant: `ErrSet.Variant` → string value "Variant"
+                if (expr.target is Expr.Identifier) {
+                    val errs = table.lookupFail(expr.target.name)
+                    if (errs != null) {
+                        if (expr.name in errs) return IrType.String
+                        errors.add("line ${expr.line}: error-set '${expr.target.name}' has no variant '${expr.name}'")
                         return null
                     }
                 }
@@ -704,8 +770,24 @@ class TypeResolver(private val table: SymbolTable) {
                 t1
             }
             is Expr.NamedArg -> resolveExpr(expr.value)
-            is Expr.MapLit -> { for ((k, v) in expr.entries) { resolveExpr(k) ?: return null; resolveExpr(v) ?: return null }; IrType.Any }
-            is Expr.SetLit -> { for (e in expr.elements) { resolveExpr(e) ?: return null }; IrType.Array(IrType.Any) }
+            is Expr.MapLit -> {
+                var keyType: IrType? = null
+                var valType: IrType? = null
+                for ((k, v) in expr.entries) {
+                    keyType = resolveExpr(k) ?: return null
+                    valType = resolveExpr(v) ?: return null
+                }
+                IrType.Map(keyType ?: IrType.Any, valType ?: IrType.Any)
+            }
+            is Expr.Alloc -> {
+                val inner = resolveExpr(expr.value) ?: return null
+                IrType.Pointer(inner)
+            }
+            is Expr.Deref -> {
+                val target = resolveExpr(expr.target) ?: return null
+                (target as? IrType.Pointer)?.inner ?: IrType.Any
+            }
+            is Expr.Isolated -> resolveExpr(expr.value) ?: IrType.Any
             is Expr.Cast -> {
                 resolveExpr(expr.expr) ?: return null
                 IrType.resolve(expr.targetType)
@@ -858,6 +940,10 @@ class TypeResolver(private val table: SymbolTable) {
         return false
     }
 
+    /** If [t] is a nullable wrapper around a numeric type, return its inner type; else [t]. */
+    private fun unwrapNullableNumeric(t: IrType): IrType =
+        if (t is IrType.Nullable && t.inner in IrType.numericTypes) t.inner else t
+
     /** Promotes two numeric types to their common supertype (wider wins). */
     private fun promote(a: IrType, b: IrType): IrType? {
         if (a == b) return a
@@ -889,6 +975,10 @@ class TypeResolver(private val table: SymbolTable) {
                 if (eqMangled != null) return IrType.Bool
             }
         }
+        // Unwrap nullable numeric operands for primitive operations so that
+        // e.g. `Int? + Int` type-checks (the null-conditional operators rely on this).
+        val left = unwrapNullableNumeric(left)
+        val right = unwrapNullableNumeric(right)
         return when (op) {
             TokenType.PLUS -> {
                 if (left == IrType.String || right == IrType.String) IrType.String
@@ -906,10 +996,17 @@ class TypeResolver(private val table: SymbolTable) {
                 else { errors.add("line $line: cannot apply '$op' to $left and $right"); null }
             }
             TokenType.EQUAL_EQUAL, TokenType.BANG_EQUAL -> {
-                if (left != right) {
+                // Equality is allowed between identical types, against null (which
+                // resolves to Any), or between a nullable type and its inner type.
+                val nullCompare = left == IrType.Any || right == IrType.Any
+                val nullableMatch = (left is IrType.Nullable && left.inner == right) ||
+                    (right is IrType.Nullable && right.inner == left)
+                if (left == right || nullCompare || nullableMatch) {
+                    IrType.Bool
+                } else {
                     errors.add("line $line: cannot compare $left and $right")
                     null
-                } else IrType.Bool
+                }
             }
             TokenType.LESS, TokenType.LESS_EQUAL, TokenType.GREATER, TokenType.GREATER_EQUAL -> {
                 if (left != right || (left !in IrType.Companion.numericTypes && left != IrType.Char)) {

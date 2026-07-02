@@ -119,6 +119,10 @@ class AllocDropAnalyzer {
             is Stmt.DeepInlineBlock -> stmt.body.forEach { analyzeStmt(it, defined, used, errors) }
             is Stmt.NoInline -> analyzeStmt(stmt.stmt, defined, used, errors)
             is Stmt.InlineBlock -> stmt.body.forEach { analyzeStmt(it, defined, used, errors) }
+            is Stmt.InlineFor -> {
+                collectUsedVars(stmt.iterable, used)
+                stmt.body.forEach { analyzeStmt(it, defined, used, errors) }
+            }
             is Stmt.InlineFin -> {
                 collectUsedVars(stmt.initializer, used)
                 defined.add(stmt.name)
@@ -176,6 +180,10 @@ class AllocDropAnalyzer {
                 collectUsedVars(stmt.target, used)
                 collectUsedVars(stmt.value, used)
             }
+            is Stmt.DerefAssign -> {
+                collectUsedVars(stmt.target, used)
+                collectUsedVars(stmt.value, used)
+            }
             is Stmt.When -> {
                 collectUsedVars(stmt.scrutinee, used)
                 for (branch in stmt.branches) {
@@ -185,6 +193,7 @@ class AllocDropAnalyzer {
                 stmt.elseBranch?.forEach { analyzeStmt(it, defined, used, errors) }
             }
             is Stmt.Throw -> collectUsedVars(stmt.value, used)
+            is Stmt.Yield -> collectUsedVars(stmt.value, used)
             is Stmt.Try -> {
                 stmt.body.forEach { analyzeStmt(it, defined, used, errors) }
                 if (stmt.catchName != null) defined.add(stmt.catchName)
@@ -225,7 +234,9 @@ class AllocDropAnalyzer {
             is Expr.Cast -> collectUsedVars(expr.expr, used)
             is Expr.IsCheck -> collectUsedVars(expr.expr, used)
             is Expr.MapLit -> { for ((k, v) in expr.entries) { collectUsedVars(k, used); collectUsedVars(v, used) } }
-            is Expr.SetLit -> expr.elements.forEach { collectUsedVars(it, used) }
+            is Expr.Alloc -> collectUsedVars(expr.value, used)
+            is Expr.Deref -> collectUsedVars(expr.target, used)
+            is Expr.Isolated -> collectUsedVars(expr.value, used)
             is Expr.SafeMember -> collectUsedVars(expr.target, used)
             is Expr.IntLiteral, is Expr.RealLiteral,
             is Expr.StringLiteral, is Expr.BoolLiteral,

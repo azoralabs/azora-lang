@@ -88,14 +88,4 @@ class PolishTest {
         assertIs<CompilationResult.Failure>(result)
         assertTrue(result.errors.any { it.contains("non-exhaustive") }, "Expected non-exhaustive error, got: ${result.errors}")
     }
-
-    // Set literals
-    @Test fun setLiteral() {
-        assertEquals("3", run("""
-            func main() {
-                var s = ![1, 2, 3]
-                println(s.length)
-            }
-        """.trimIndent()))
-    }
 }

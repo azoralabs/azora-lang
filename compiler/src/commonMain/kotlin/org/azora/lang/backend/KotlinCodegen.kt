@@ -32,6 +32,19 @@ class KotlinCodegen {
 
     private val out = StringBuilder()
     private var indent = 0
+    private var usesPointers = false
+
+    /** Runtime helpers emitted as a preamble when pointer/isolated ops are used. */
+    private val POINTER_RUNTIME = setOf("__alloc", "__deref", "__derefAssign", "__isolated")
+
+    private val pointerPreamble: String = """
+        private class AzoraPtr<T>(var value: T)
+        private fun <T> __alloc(v: T): AzoraPtr<T> = AzoraPtr(v)
+        private fun <T> __deref(p: AzoraPtr<T>): T = p.value
+        private fun <T> __derefAssign(p: AzoraPtr<T>, v: T) { p.value = v }
+        // NOTE: __isolated is a shallow copy in the Kotlin backend (no deep-copy for arbitrary types).
+        private fun <T> __isolated(v: T): T = v
+    """.trimIndent()
 
     /**
      * Generates Kotlin source code from the given IR program.
@@ -42,6 +55,7 @@ class KotlinCodegen {
     fun generate(program: IrProgram): String {
         out.clear()
         indent = 0
+        usesPointers = false
 
         if (program.packageName != null) {
             line("package ${program.packageName}")
@@ -70,7 +84,8 @@ class KotlinCodegen {
             }
         }
 
-        return out.toString().trimEnd()
+        val body = out.toString().trimEnd()
+        return if (usesPointers) pointerPreamble + "\n\n" + body else body
     }
 
     private fun emitTest(test: IrTopLevel.Test) {
@@ -188,26 +203,30 @@ class KotlinCodegen {
                 }
             }
             is IrStmt.While -> {
-                line("while (${emitExpr(stmt.condition)}) {")
+                val lbl = if (stmt.label != null) "${stmt.label}@ " else ""
+                line("${lbl}while (${emitExpr(stmt.condition)}) {")
                 indent++
                 for (s in stmt.body) emitStmt(s)
                 indent--
                 line("}")
             }
             is IrStmt.For -> {
-                val bounds = if (stmt.inclusive) {
-                    "${emitExpr(stmt.start)}..${emitExpr(stmt.end)}"
-                } else {
-                    "${emitExpr(stmt.start)} until ${emitExpr(stmt.end)}"
+                val lbl = if (stmt.label != null) "${stmt.label}@ " else ""
+                val bounds = when {
+                    stmt.reverse -> "${emitExpr(stmt.end)} downTo ${emitExpr(stmt.start)}"
+                    stmt.inclusive -> "${emitExpr(stmt.start)}..${emitExpr(stmt.end)}"
+                    else -> "${emitExpr(stmt.start)} until ${emitExpr(stmt.end)}"
                 }
-                line("for (${stmt.counter} in $bounds) {")
+                val stepPart = if (stmt.step != null) " step ${emitExpr(stmt.step)}" else ""
+                line("${lbl}for (${stmt.counter} in $bounds$stepPart) {")
                 indent++
                 for (s in stmt.body) emitStmt(s)
                 indent--
                 line("}")
             }
             is IrStmt.Loop -> {
-                line("while (true) {")
+                val lbl = if (stmt.label != null) "${stmt.label}@ " else ""
+                line("${lbl}while (true) {")
                 indent++
                 for (s in stmt.body) emitStmt(s)
                 indent--
@@ -229,8 +248,9 @@ class KotlinCodegen {
                 line("}")
             }
             is IrStmt.Defer -> {}
-            is IrStmt.Break -> line("break")
-            is IrStmt.Continue -> line("continue")
+            is IrStmt.Yield -> {}
+            is IrStmt.Break -> line(if (stmt.label != null) "break@${stmt.label}" else "break")
+            is IrStmt.Continue -> line(if (stmt.label != null) "continue@${stmt.label}" else "continue")
         }
     }
 
@@ -288,8 +308,12 @@ class KotlinCodegen {
                 "(${emitExpr(expr.left)} $op ${emitExpr(expr.right)})"
             }
         }
-        is IrExpr.Call -> "${expr.name}(${expr.args.joinToString(", ") { emitExpr(it) }})"
+        is IrExpr.Call -> {
+            if (expr.name in POINTER_RUNTIME) usesPointers = true
+            "${expr.name}(${expr.args.joinToString(", ") { emitExpr(it) }})"
+        }
         is IrExpr.ArrayLiteral -> "mutableListOf(${expr.elements.joinToString(", ") { emitExpr(it) }})"
+        is IrExpr.MapLit -> "mutableMapOf(${expr.entries.joinToString(", ") { "${emitExpr(it.first)} to ${emitExpr(it.second)}" }})"
         is IrExpr.Index -> "${emitExpr(expr.target)}[${emitExpr(expr.index)}]"
         is IrExpr.Member -> {
             val prop = when (expr.name) {
@@ -351,7 +375,7 @@ class KotlinCodegen {
         IrType.Decimal -> "Double"   // best available JVM type
         is IrType.Array -> "MutableList<${mapType(type.element)}>"
         is IrType.Map -> "MutableMap<${mapType(type.key)}, ${mapType(type.value)}>"
-        is IrType.Set -> "MutableSet<${mapType(type.element)}>"
+        is IrType.Pointer -> "AzoraPtr<${mapType(type.inner)}>"
         is IrType.Function -> "(${type.params.joinToString(", ") { mapType(it) }}) -> ${mapType(type.ret)}"
         is IrType.Tuple -> when (type.elements.size) {
             2 -> "Pair<${type.elements.joinToString(", ") { mapType(it) }}>"

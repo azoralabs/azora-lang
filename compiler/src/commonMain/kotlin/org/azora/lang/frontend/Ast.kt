@@ -255,8 +255,14 @@ sealed class Expr {
     /** Map literal `["k": v, "k2": v2]`. */
     data class MapLit(val entries: List<Pair<Expr, Expr>>, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 
-    /** Set literal `![1, 2, 3]`. */
-    data class SetLit(val elements: List<Expr>, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+    /** `alloc <expr>` — heap-allocate a value and return a pointer to it. */
+    data class Alloc(val value: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+
+    /** `*ptr` — dereference a pointer. */
+    data class Deref(val target: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+
+    /** `isolated(expr)` — produce an independent deep copy of [value]. */
+    data class Isolated(val value: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 }
 
 // ---------------------------------------------------------------------------
@@ -698,7 +704,9 @@ sealed class Stmt {
         val body: List<Stmt>,
         override val line: Int,
         override val column: Int = 0,
-        override val length: Int = 0
+        override val length: Int = 0,
+        /** Optional `@label` for labeled `break`/`continue`. */
+        val label: String? = null
     ) : Stmt()
 
     /**
@@ -717,7 +725,13 @@ sealed class Stmt {
         val body: List<Stmt>,
         override val line: Int,
         override val column: Int = 0,
-        override val length: Int = 0
+        override val length: Int = 0,
+        /** Optional step for integer-range loops: `for x by N in a..b`. Null means step 1. */
+        val step: Expr? = null,
+        /** Iterate the range downwards: `reverse for x in a..b`. */
+        val reverse: Boolean = false,
+        /** Optional `@label` for labeled `break`/`continue`. */
+        val label: String? = null
     ) : Stmt()
 
     /**
@@ -729,26 +743,46 @@ sealed class Stmt {
         val body: List<Stmt>,
         override val line: Int,
         override val column: Int = 0,
+        override val length: Int = 0,
+        /** Optional `@label` for labeled `break`/`continue`. */
+        val label: String? = null
+    ) : Stmt()
+
+    /**
+     * Compile-time unrolled loop (`inline for x in a..b { body }`).
+     *
+     * The range bounds must be compile-time integer constants. The [CtfeEvaluator]
+     * substitutes [name] with each value and splices the (folded) body into the
+     * enclosing scope, so this node never survives into semantic analysis/IR.
+     *
+     * @property name the loop variable, bound to each integer value during unrolling
+     * @property iterable the range expression (`a..b` / `a..<b`)
+     * @property body the statements unrolled once per value
+     */
+    data class InlineFor(
+        val name: String,
+        val iterable: Expr,
+        val body: List<Stmt>,
+        override val line: Int,
+        override val column: Int = 0,
         override val length: Int = 0
     ) : Stmt()
 
     /**
-     * `break` statement. Exits the innermost enclosing loop.
+     * `break` statement. Exits the enclosing loop. With a label (`break @lbl`)
+     * it exits the loop tagged with that label, skipping any inner loops.
+     *
+     * @property label the target label, or `null` for the innermost loop
      */
-    object Break : Stmt() {
-        override val line: Int get() = 0
-        override val column: Int get() = 0
-        override val length: Int get() = 0
-    }
+    data class Break(val label: String? = null, override val line: Int = 0, override val column: Int = 0, override val length: Int = 0) : Stmt()
 
     /**
-     * `continue` statement. Skips to the next iteration of the innermost loop.
+     * `continue` statement. Skips to the next iteration of the enclosing loop.
+     * With a label (`continue @lbl`) it targets the loop tagged with that label.
+     *
+     * @property label the target label, or `null` for the innermost loop
      */
-    object Continue : Stmt() {
-        override val line: Int get() = 0
-        override val column: Int get() = 0
-        override val length: Int get() = 0
-    }
+    data class Continue(val label: String? = null, override val line: Int = 0, override val column: Int = 0, override val length: Int = 0) : Stmt()
 
     /**
      * Index assignment `target[index] = value`.
@@ -806,6 +840,12 @@ sealed class Stmt {
     /** `throw value` — raises [value] as a throwable. */
     data class Throw(val value: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Stmt()
 
+    /** `*ptr = value` — store through a pointer. */
+    data class DerefAssign(val target: Expr, val value: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Stmt()
+
+    /** `yield value` — emit a value from a `flow` generator. */
+    data class Yield(val value: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Stmt()
+
     /**
      * `try { body } catch { name -> handler }`.
      *
@@ -816,7 +856,7 @@ sealed class Stmt {
     data class Try(val body: List<Stmt>, val catchName: String?, val catchBody: List<Stmt>?, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Stmt()
 
     /** `defer { body }` — runs [body] when the enclosing function exits. */
-    data class Defer(val body: List<Stmt>, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Stmt()
+    data class Defer(val body: List<Stmt>, override val line: Int, override val column: Int = 0, override val length: Int = 0, val onFail: Boolean = false) : Stmt()
 }
 
 // ---------------------------------------------------------------------------
@@ -854,11 +894,6 @@ sealed class TypeRef {
         override fun toString() = "[$key: $value]"
     }
 
-    /** Set type `![T]`. */
-    data class Set(val element: TypeRef) : TypeRef() {
-        override fun toString() = "![$element]"
-    }
-
     /** Function type `(A, B) -> R`. */
     data class Function(val params: List<TypeRef>, val ret: TypeRef) : TypeRef() {
         override fun toString() = "(${params.joinToString(", ")}) -> $ret"
@@ -872,6 +907,16 @@ sealed class TypeRef {
     /** Nullable type `T?`. */
     data class Nullable(val inner: TypeRef) : TypeRef() {
         override fun toString() = "$inner?"
+    }
+
+    /** Failable type `T!ErrSet` — a value of [ok] or an error from set [errSet]. */
+    data class Failable(val ok: TypeRef, val errSet: String) : TypeRef() {
+        override fun toString() = "$ok!$errSet"
+    }
+
+    /** Pointer type `T*` — a reference to a heap value of [inner]. */
+    data class Pointer(val inner: TypeRef) : TypeRef() {
+        override fun toString() = "$inner*"
     }
 
     /** Human-readable name for diagnostics (the simple name for [Named]). */
@@ -955,7 +1000,28 @@ data class FuncDecl(
     val typeParams: List<String> = emptyList(),
     val line: Int,
     val column: Int = 0,
-    val length: Int = 0
+    val length: Int = 0,
+    /** Decorator/annotation applications (`@Name` / `@Name(args)`). Not yet enforced. */
+    val annotations: List<Annotation> = emptyList(),
+    /** `flow` generator: calling it returns a (eagerly-built) list of `yield`ed values. */
+    val isFlow: Boolean = false
+)
+
+/**
+ * A decorator/annotation application: `@Name`, `@Name(args)`, or `@target:Name`.
+ *
+ * @property name the decorator name
+ * @property args optional arguments (`@Name(a, b)`)
+ * @property target optional use-site target (`@file:Name`, `@field:Name`)
+ * @property line 1-based source line
+ * @property column 1-based source column
+ */
+data class Annotation(
+    val name: String,
+    val args: List<Expr> = emptyList(),
+    val target: String? = null,
+    val line: Int = 0,
+    val column: Int = 0
 )
 
 // ---------------------------------------------------------------------------
@@ -978,17 +1044,17 @@ sealed class TopLevel {
     data class Func(val decl: FuncDecl) : TopLevel()
 
     /** Runtime top-level mutable binding (`var`). Survives CTFE. */
-    data class VarDecl(val name: String, val type: TypeRef?, val initializer: Expr, val line: Int, val column: Int = 0) : TopLevel() {
+    data class VarDecl(val name: String, val type: TypeRef?, val initializer: Expr, val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList()) : TopLevel() {
         /** Convenience: the type name as written in source, or null. */
         val typeName: String? get() = type?.displayName()
     }
     /** Runtime top-level deeply immutable binding (`fin`). Survives CTFE. */
-    data class FinDecl(val name: String, val type: TypeRef?, val initializer: Expr, val line: Int, val column: Int = 0) : TopLevel() {
+    data class FinDecl(val name: String, val type: TypeRef?, val initializer: Expr, val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList()) : TopLevel() {
         /** Convenience: the type name as written in source, or null. */
         val typeName: String? get() = type?.displayName()
     }
     /** Runtime top-level immutable binding (`let`). Survives CTFE. */
-    data class LetDecl(val name: String, val type: TypeRef?, val initializer: Expr, val line: Int, val column: Int = 0) : TopLevel() {
+    data class LetDecl(val name: String, val type: TypeRef?, val initializer: Expr, val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList()) : TopLevel() {
         /** Convenience: the type name as written in source, or null. */
         val typeName: String? get() = type?.displayName()
     }
@@ -1100,7 +1166,10 @@ sealed class TopLevel {
      * @property name the struct name
      * @property fields the ordered list of field declarations
      */
-    data class Pack(val name: String, val fields: List<PackField>, val typeParams: List<String> = emptyList(), val line: Int, val column: Int = 0) : TopLevel()
+    data class Pack(val name: String, val fields: List<PackField>, val typeParams: List<String> = emptyList(), val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList()) : TopLevel()
+
+    /** `deco Name { fields }` — declares a decorator/annotation type. Parsed and stored; not yet enforced. */
+    data class Deco(val name: String, val fields: List<PackField>, val line: Int, val column: Int = 0) : TopLevel()
 
     /**
      * A simple `enum` declaration: `enum Color { Red; Green; Blue }`.
@@ -1109,6 +1178,9 @@ sealed class TopLevel {
      * @property variants the variant names, in declaration order
      */
     data class Enum(val name: String, val variants: List<String>, val line: Int, val column: Int = 0) : TopLevel()
+
+    /** `fail ErrSet { V1, V2 }` — an error set (a named set of error variants). */
+    data class Fail(val name: String, val variants: List<String>, val line: Int, val column: Int = 0) : TopLevel()
 
     /**
      * An `impl Type { methods }` block. Each method gets an implicit `self: Type` receiver;

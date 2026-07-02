@@ -137,7 +137,9 @@ class CtfeEvaluator(private val table: SymbolTable) {
         is TopLevel.FinDecl -> Pair(listOf(item), false)
         is TopLevel.LetDecl -> Pair(listOf(item), false)
         is TopLevel.Pack -> Pair(listOf(item), false)
+        is TopLevel.Deco -> Pair(listOf(item), false)
         is TopLevel.Enum -> Pair(listOf(item), false)
+        is TopLevel.Fail -> Pair(listOf(item), false)
         is TopLevel.Impl -> Pair(listOf(item), false)
         is TopLevel.Spec -> Pair(listOf(item), false)
         is TopLevel.TypeAlias -> Pair(listOf(item), false)
@@ -246,7 +248,9 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 is TopLevel.FinDecl -> result.add(item)
                 is TopLevel.LetDecl -> result.add(item)
                 is TopLevel.Pack -> result.add(item)
+                is TopLevel.Deco -> result.add(item)
                 is TopLevel.Enum -> result.add(item)
+                is TopLevel.Fail -> result.add(item)
                 is TopLevel.Impl -> result.add(item)
                 is TopLevel.Spec -> result.add(item)
                 is TopLevel.TypeAlias -> result.add(item)
@@ -307,6 +311,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
             is Stmt.NoInline -> foldNoInline(stmt, program)
             is Stmt.InlineBlock -> foldInlineBlock(stmt, program, errors)
             is Stmt.InlineIf -> foldInlineIf(stmt, program, errors)
+            is Stmt.InlineFor -> foldInlineFor(stmt, program, errors)
             is Stmt.InlineFin -> foldInlineConst(stmt.name, stmt.initializer, program, errors)
             is Stmt.InlineLet -> foldInlineConst(stmt.name, stmt.initializer, program, errors)
             is Stmt.InlineVar -> foldInlineConst(stmt.name, stmt.initializer, program, errors)
@@ -415,6 +420,12 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 val changed = tc || ic || vc
                 Pair(listOf(if (changed) stmt.copy(target = newTarget, index = newIndex, value = newValue) else stmt), changed)
             }
+            is Stmt.DerefAssign -> {
+                val (newTarget, tc) = foldExpr(stmt.target, program)
+                val (newValue, vc) = foldExpr(stmt.value, program)
+                val changed = tc || vc
+                Pair(listOf(if (changed) stmt.copy(target = newTarget, value = newValue) else stmt), changed)
+            }
             is Stmt.MemberAssign -> {
                 val (newTarget, tc) = foldExpr(stmt.target, program)
                 val (newValue, vc) = foldExpr(stmt.value, program)
@@ -439,6 +450,10 @@ class CtfeEvaluator(private val table: SymbolTable) {
             is Stmt.Throw -> {
                 val (v, c) = foldExpr(stmt.value, program)
                 Pair(listOf(if (c) Stmt.Throw(v, stmt.line, stmt.column, stmt.length) else stmt), c)
+            }
+            is Stmt.Yield -> {
+                val (v, c) = foldExpr(stmt.value, program)
+                Pair(listOf(if (c) Stmt.Yield(v, stmt.line, stmt.column, stmt.length) else stmt), c)
             }
             is Stmt.Try -> {
                 var changed = false
@@ -766,6 +781,44 @@ class CtfeEvaluator(private val table: SymbolTable) {
         }
     }
 
+    /**
+     * Compile-time loop unrolling (`inline for x in a..b { body }`).
+     *
+     * The range bounds must fold to integer constants. For each value, the loop
+     * variable is bound in [inlineEnv] (so `foldExpr` substitutes it) and the
+     * body is folded and spliced into the enclosing scope. The node never survives
+     * into semantic analysis.
+     */
+    private fun foldInlineFor(stmt: Stmt.InlineFor, program: Program, errors: MutableList<String>): Pair<List<Stmt>, Boolean> {
+        val range = stmt.iterable as? Expr.Range
+        if (range == null) {
+            errors.add("line ${stmt.line}: inline for requires a literal range, got ${stmt.iterable::class.simpleName}")
+            return Pair(emptyList(), false)
+        }
+        val (startExpr, _) = foldExpr(range.from, program)
+        val (endExpr, _) = foldExpr(range.to, program)
+        val start = (startExpr as? Expr.IntLiteral)?.value
+        val end = (endExpr as? Expr.IntLiteral)?.value
+        if (start == null || end == null) {
+            // Bounds not yet constant — leave for the fixed-point loop / TypeResolver.
+            return Pair(listOf(stmt), false)
+        }
+        val savedEnv = inlineEnv.toMap()
+        val result = mutableListOf<Stmt>()
+        var i = start
+        while (if (range.inclusive) i <= end else i < end) {
+            inlineEnv[stmt.name] = Expr.IntLiteral(i, stmt.line)
+            val (folded, _) = foldBody(stmt.body, program, errors)
+            result.addAll(folded)
+            i++
+        }
+        // Restore the CTCE environment: drop the loop variable and any inline
+        // bindings local to the body so they don't leak past the unrolled loop.
+        inlineEnv.clear()
+        inlineEnv.putAll(savedEnv)
+        return Pair(result, true)
+    }
+
     // -- Expression-level folding -------------------------------------------
 
     private fun foldExpr(expr: Expr, program: Program): Pair<Expr, Boolean> {
@@ -816,7 +869,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
             is Expr.CharLiteral,
             is Expr.TupleLit, is Expr.TupleAccess,
             is Expr.CatchExpr, is Expr.Lambda,
-            is Expr.NamedArg, is Expr.NullLiteral, is Expr.NullCoalesce, is Expr.Cast, is Expr.IsCheck, is Expr.MapLit, is Expr.SetLit, is Expr.SafeMember -> Pair(expr, false)
+            is Expr.NamedArg, is Expr.NullLiteral, is Expr.NullCoalesce, is Expr.Cast, is Expr.IsCheck, is Expr.MapLit, is Expr.SafeMember, is Expr.Alloc, is Expr.Deref, is Expr.Isolated -> Pair(expr, false)
             is Expr.Range -> {
                 val (from, fc) = foldExpr(expr.from, program)
                 val (to, tc) = foldExpr(expr.to, program)
@@ -978,6 +1031,8 @@ class CtfeEvaluator(private val table: SymbolTable) {
                     // Side-effecting expressions can't be CTFE'd
                     return null
                 }
+                is Stmt.DerefAssign -> return null // pointer store is not CTFE-evaluable
+                is Stmt.Yield -> return null // generators are not CTFE-evaluable
                 is Stmt.If -> {
                     val cond = evalExpr(stmt.condition, env, program) ?: return null
                     if (cond !is Expr.BoolLiteral) return null
@@ -991,6 +1046,18 @@ class CtfeEvaluator(private val table: SymbolTable) {
                     val branch = if (cond.value) stmt.thenBranch else (stmt.elseBranch ?: continue)
                     val result = interpretBody(branch, env, program, line)
                     if (result != null) return result
+                }
+                is Stmt.InlineFor -> {
+                    val range = stmt.iterable as? Expr.Range ?: return null
+                    val s = (evalExpr(range.from, env, program) as? Expr.IntLiteral)?.value ?: return null
+                    val e = (evalExpr(range.to, env, program) as? Expr.IntLiteral)?.value ?: return null
+                    var i = s
+                    while (if (range.inclusive) i <= e else i < e) {
+                        env[stmt.name] = Expr.IntLiteral(i, stmt.line)
+                        val result = interpretBody(stmt.body, env, program, line)
+                        if (result != null) return result
+                        i++
+                    }
                 }
                 is Stmt.DeepInlineIf -> {
                     val cond = evalExpr(stmt.condition, env, program) ?: return null
@@ -1088,7 +1155,8 @@ class CtfeEvaluator(private val table: SymbolTable) {
             }
             is Expr.NullLiteral, is Expr.NullCoalesce, is Expr.SafeMember,
             is Expr.Cast, is Expr.IsCheck,
-            is Expr.MapLit, is Expr.SetLit -> null
+            is Expr.MapLit -> null
+            is Expr.Alloc, is Expr.Deref, is Expr.Isolated -> null // runtime ops, not CTFE-evaluable
         }
     }
 }

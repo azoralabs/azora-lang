@@ -159,7 +159,7 @@ class IrGenerator(private val table: SymbolTable) {
         popNameScope()
         table.popScope()
 
-        return IrFunction(func.name, mangledParams, symbol.returnType, body)
+        return IrFunction(func.name, mangledParams, symbol.returnType, body, func.isFlow)
     }
 
     /** Lowers an impl method into a free function `Type_method(self, ...)`. */
@@ -245,6 +245,7 @@ class IrGenerator(private val table: SymbolTable) {
             is Stmt.DeepInlineBlock -> error("DeepInlineBlock should have been resolved by CTFE before IR generation")
             is Stmt.NoInline -> lowerStmt(stmt.stmt)
             is Stmt.InlineBlock -> error("InlineBlock should have been resolved by CTFE before IR generation")
+            is Stmt.InlineFor -> error("InlineFor should have been resolved by CTFE before IR generation")
             is Stmt.InlineFin -> error("InlineFin should have been resolved by CTFE before IR generation")
             is Stmt.InlineLet -> error("InlineLet should have been resolved by CTFE before IR generation")
             is Stmt.InlineVar -> error("InlineVar should have been resolved by CTFE before IR generation")
@@ -255,9 +256,24 @@ class IrGenerator(private val table: SymbolTable) {
             }
             is Stmt.IndexAssign -> {
                 val target = lowerExpr(stmt.target)
+                val tt = target.type
+                // User-defined index-assign operator (`oper[]=`) on a struct → Type_indexSet(self, i, v).
+                if (tt is IrType.Named) {
+                    val mangled = table.lookupMethod(tt.name, "indexSet")
+                    if (mangled != null) {
+                        val index = lowerExpr(stmt.index)
+                        val value = lowerExpr(stmt.value)
+                        return IrStmt.ExprStmt(IrExpr.Call(mangled, listOf(target, index, value), IrType.Unit))
+                    }
+                }
                 val index = lowerExpr(stmt.index)
                 val value = lowerExpr(stmt.value)
                 IrStmt.IndexAssign(target, index, value)
+            }
+            is Stmt.DerefAssign -> {
+                val target = lowerExpr(stmt.target)
+                val value = lowerExpr(stmt.value)
+                IrStmt.ExprStmt(IrExpr.Call("__derefAssign", listOf(target, value), IrType.Unit))
             }
             is Stmt.MemberAssign -> {
                 val target = lowerExpr(stmt.target)
@@ -309,13 +325,14 @@ class IrGenerator(private val table: SymbolTable) {
                 val body = lowerBody(stmt.body)
                 popNameScope()
                 table.popScope()
-                IrStmt.While(cond, body)
+                IrStmt.While(cond, body, stmt.label)
             }
             is Stmt.For -> {
                 val range = stmt.iterable as? Expr.Range
                 if (range != null) {
                     val start = lowerExpr(range.from)
                     val end = lowerExpr(range.to)
+                    val step = stmt.step?.let { lowerExpr(it) }
                     table.pushScope()
                     pushNameScope()
                     val counter = registerName(stmt.name)
@@ -323,7 +340,7 @@ class IrGenerator(private val table: SymbolTable) {
                     val body = lowerBody(stmt.body)
                     popNameScope()
                     table.popScope()
-                    IrStmt.For(counter, start, end, range.inclusive, body)
+                    IrStmt.For(counter, start, end, range.inclusive, body, step = step, reverse = stmt.reverse, label = stmt.label)
                 } else {
                     // For-in over an array: lower to index-based loop
                     val arrExpr = lowerExpr(stmt.iterable)
@@ -352,11 +369,12 @@ class IrGenerator(private val table: SymbolTable) {
                 val body = lowerBody(stmt.body)
                 popNameScope()
                 table.popScope()
-                IrStmt.Loop(body)
+                IrStmt.Loop(body, stmt.label)
             }
-            is Stmt.Break -> IrStmt.Break
-            is Stmt.Continue -> IrStmt.Continue
-            is Stmt.Defer -> IrStmt.Defer(lowerBody(stmt.body))
+            is Stmt.Break -> IrStmt.Break(stmt.label)
+            is Stmt.Continue -> IrStmt.Continue(stmt.label)
+            is Stmt.Defer -> IrStmt.Defer(lowerBody(stmt.body), stmt.onFail)
+            is Stmt.Yield -> IrStmt.Yield(lowerExpr(stmt.value))
             is Stmt.When -> {
                 val scrutinee = lowerExpr(stmt.scrutinee)
                 val branches = stmt.branches.map { b ->
@@ -564,17 +582,42 @@ class IrGenerator(private val table: SymbolTable) {
                 IrExpr.ArrayLiteral(elems, IrType.Array(elemType))
             }
             is Expr.MapLit -> {
-                // Lower to an empty array placeholder for now (map support is partial)
-                IrExpr.ArrayLiteral(emptyList(), IrType.Array(IrType.Any))
+                val entries = expr.entries.map { lowerExpr(it.first) to lowerExpr(it.second) }
+                val keyType = entries.firstOrNull()?.first?.type ?: IrType.Any
+                val valType = entries.firstOrNull()?.second?.type ?: IrType.Any
+                IrExpr.MapLit(entries, IrType.Map(keyType, valType))
             }
-            is Expr.SetLit -> {
-                val elems = expr.elements.map { lowerExpr(it) }
-                IrExpr.ArrayLiteral(elems, IrType.Array(if (elems.isEmpty()) IrType.Any else elems.first().type))
+            is Expr.Alloc -> {
+                val value = lowerExpr(expr.value)
+                IrExpr.Call("__alloc", listOf(value), IrType.Pointer(value.type))
+            }
+            is Expr.Deref -> {
+                val target = lowerExpr(expr.target)
+                val inner = (target.type as? IrType.Pointer)?.inner ?: IrType.Any
+                IrExpr.Call("__deref", listOf(target), inner)
+            }
+            is Expr.Isolated -> {
+                val value = lowerExpr(expr.value)
+                IrExpr.Call("__isolated", listOf(value), value.type)
             }
             is Expr.Index -> {
                 val target = lowerExpr(expr.target)
+                val tt = target.type
+                // User-defined index operator (`oper[]`) on a struct → Type_index(self, i).
+                if (tt is IrType.Named) {
+                    val mangled = table.lookupMethod(tt.name, "index")
+                    if (mangled != null) {
+                        val func = table.lookupFunction(mangled)!!
+                        val index = lowerExpr(expr.index)
+                        return IrExpr.Call(mangled, listOf(target, index), func.returnType)
+                    }
+                }
                 val index = lowerExpr(expr.index)
-                val elemType = (target.type as? IrType.Array)?.element ?: IrType.Any
+                val elemType = when (tt) {
+                    is IrType.Array -> tt.element
+                    is IrType.Map -> tt.value
+                    else -> IrType.Any
+                }
                 IrExpr.Index(target, index, elemType)
             }
             is Expr.Member -> {
@@ -587,6 +630,10 @@ class IrGenerator(private val table: SymbolTable) {
                 }
                 // Enum variant `Color.Red` → string literal "Red"
                 if (expr.target is Expr.Identifier && table.lookupEnum(expr.target.name) != null) {
+                    return IrExpr.StringLiteral(expr.name)
+                }
+                // Error-set variant `ErrSet.Variant` → string literal "Variant"
+                if (expr.target is Expr.Identifier && table.lookupFail(expr.target.name) != null) {
                     return IrExpr.StringLiteral(expr.name)
                 }
                 val target = lowerExpr(expr.target)

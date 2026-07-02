@@ -116,8 +116,15 @@ private fun dumpTopLevel(sb: StringBuilder, item: TopLevel, indent: String) {
             val fields = item.fields.joinToString(", ") { "${it.name}: ${it.type}" }
             sb.appendLine("${indent}Pack(name=${item.name}, fields=[$fields])")
         }
+        is TopLevel.Deco -> {
+            val fields = item.fields.joinToString(", ") { "${it.name}: ${it.type}" }
+            sb.appendLine("${indent}Deco(name=${item.name}, fields=[$fields])")
+        }
         is TopLevel.Enum -> {
             sb.appendLine("${indent}Enum(name=${item.name}, variants=[${item.variants.joinToString(", ")}])")
+        }
+        is TopLevel.Fail -> {
+            sb.appendLine("${indent}Fail(name=${item.name}, variants=[${item.variants.joinToString(", ")}])")
         }
         is TopLevel.Impl -> {
             val trait = if (item.traitName != null) " for ${item.traitName}" else ""
@@ -221,6 +228,10 @@ private fun dumpStmt(sb: StringBuilder, stmt: Stmt, indent: String) {
             sb.appendLine("${indent}InlineBlock")
             for (s in stmt.body) dumpStmt(sb, s, "$indent    ")
         }
+        is Stmt.InlineFor -> {
+            sb.appendLine("${indent}InlineFor ${stmt.name} in ${stmt.iterable::class.simpleName}")
+            for (s in stmt.body) dumpStmt(sb, s, "$indent    ")
+        }
         is Stmt.DeepInlineBlock -> {
             sb.appendLine("${indent}DeepInlineBlock")
             for (s in stmt.body) dumpStmt(sb, s, "$indent    ")
@@ -300,6 +311,13 @@ private fun dumpStmt(sb: StringBuilder, stmt: Stmt, indent: String) {
             sb.appendLine("$indent    value:")
             dumpExpr(sb, stmt.value, "$indent        ")
         }
+        is Stmt.DerefAssign -> {
+            sb.appendLine("${indent}DerefAssign")
+            sb.appendLine("$indent    target:")
+            dumpExpr(sb, stmt.target, "$indent        ")
+            sb.appendLine("$indent    value:")
+            dumpExpr(sb, stmt.value, "$indent        ")
+        }
         is Stmt.When -> {
             sb.appendLine("${indent}When")
             sb.appendLine("$indent    scrutinee:")
@@ -316,6 +334,10 @@ private fun dumpStmt(sb: StringBuilder, stmt: Stmt, indent: String) {
         }
         is Stmt.Throw -> {
             sb.appendLine("${indent}Throw")
+            dumpExpr(sb, stmt.value, "$indent    ")
+        }
+        is Stmt.Yield -> {
+            sb.appendLine("${indent}Yield")
             dumpExpr(sb, stmt.value, "$indent    ")
         }
         is Stmt.Try -> {
@@ -406,9 +428,17 @@ private fun dumpExpr(sb: StringBuilder, expr: Expr, indent: String) {
             sb.appendLine("${indent}MapLit")
             for ((k, v) in expr.entries) { dumpExpr(sb, k, "$indent    "); dumpExpr(sb, v, "$indent    ") }
         }
-        is Expr.SetLit -> {
-            sb.appendLine("${indent}SetLit")
-            for (e in expr.elements) dumpExpr(sb, e, "$indent    ")
+        is Expr.Alloc -> {
+            sb.appendLine("${indent}Alloc")
+            dumpExpr(sb, expr.value, "$indent    ")
+        }
+        is Expr.Deref -> {
+            sb.appendLine("${indent}Deref")
+            dumpExpr(sb, expr.target, "$indent    ")
+        }
+        is Expr.Isolated -> {
+            sb.appendLine("${indent}Isolated")
+            dumpExpr(sb, expr.value, "$indent    ")
         }
         is Expr.SafeMember -> {
             sb.appendLine("${indent}SafeMember(${expr.name})")

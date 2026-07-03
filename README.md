@@ -70,7 +70,7 @@ The IR is target-agnostic. Every backend lowers from the same optimized IR. Addi
 - Named function args: `create(value: 30, label: "A")`
 - Inline functions: `inline func square(x) { ... }` — substituted at call sites
 - Trailing-lambda syntax: `map(items) { x -> x * 2 }`
-- Implicit `it` in single-param lambdas: `{ it + 1 }`
+- Implicit `it` in single-param lambdas: `{ it + 1 }` (type inferred from context)
 
 ### Control Flow
 - `if` / `else if` / `else`
@@ -178,12 +178,11 @@ The IR is target-agnostic. Every backend lowers from the same optimized IR. Addi
 ./gradlew :compiler:desktopTest
 ```
 
-476 tests covering all features. Tests verify runtime correctness through the IR interpreter.
+478 tests covering all features. Tests verify runtime correctness through the IR interpreter.
 
 ## Missing Features (Roadmap)
 
 ### Language
-- **`it` type inference** — implicit `it` is `Any`; should infer from context
 - **Exhaustiveness checking for enums** (currently only slots)
 - **Multi-statement lambda codegen** — best-effort in Kotlin/TS
 

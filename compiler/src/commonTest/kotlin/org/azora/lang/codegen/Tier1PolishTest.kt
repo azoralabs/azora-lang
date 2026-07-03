@@ -432,6 +432,30 @@ class Tier1PolishTest {
         """.trimIndent()))
     }
 
+    // -- `it` type inference for single-arg lambdas ------------------------
+
+    @Test fun itTypeInferredFromExpectedFunctionType() {
+        assertEquals("6", run("""
+            func apply(f: (Int) -> Int, x: Int): Int {
+                return f(x)
+            }
+            func main() {
+                println(apply({ it + 1 }, 5))
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun itInferenceComposes() {
+        assertEquals("12", run("""
+            func twice(f: (Int) -> Int, x: Int): Int {
+                return f(f(x))
+            }
+            func main() {
+                println(twice({ it * 2 }, 3))
+            }
+        """.trimIndent()))
+    }
+
     // -- real map runtime ---------------------------------------------------
 
     @Test fun mapLiteralAndAccessWithStringKeys() {

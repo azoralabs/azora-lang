@@ -98,6 +98,12 @@ class TypeResolver(private val table: SymbolTable) {
     /** The declared error set of the function currently being resolved (`T!E`'s `E`), or null. */
     private var declaredFailSet: String? = null
 
+    /**
+     * Expected type for an implicit `it` lambda parameter, inferred from context (e.g. the
+     * function-parameter type a lambda is passed as). Consumed by `Expr.Lambda` resolution.
+     */
+    private var expectedItType: IrType? = null
+
     /** If [expr] is `ErrSet.Variant`, returns the error-set name; otherwise null. */
     private fun failSetOf(expr: Expr): String? {
         val m = expr as? Expr.Member ?: return null
@@ -569,7 +575,16 @@ class TypeResolver(private val table: SymbolTable) {
                 val isGeneric = func.typeParams.isNotEmpty()
                 val argTypes = mutableListOf<IrType>()
                 for (i in effectiveArgs.indices) {
-                    val argType = resolveExpr(effectiveArgs[i]) ?: return null
+                    // `it` inference: if this argument is an implicit-`it` lambda, seed `it`'s type
+                    // from the corresponding function-parameter type before resolving it.
+                    val arg = effectiveArgs[i]
+                    val prevIt = expectedItType
+                    if (arg is Expr.Lambda && arg.params.size == 1 && arg.params[0].name == "it" && i < func.params.size) {
+                        val ptype = func.params[i].second
+                        if (ptype is IrType.Function && ptype.params.isNotEmpty()) expectedItType = ptype.params[0]
+                    }
+                    val argType = resolveExpr(arg) ?: run { expectedItType = prevIt; return null }
+                    expectedItType = prevIt
                     argTypes.add(argType)
                     if (!isBuiltin && !isGeneric) {
                         val paramType = func.params[i].second
@@ -819,9 +834,15 @@ class TypeResolver(private val table: SymbolTable) {
                 }
             }
             is Expr.Lambda -> {
-                val paramTypes = expr.params.map { IrType.resolve(it.type) }
+                // Infer the implicit `it` parameter's type from context when available.
+                val paramTypes = expr.params.map { p ->
+                    if (p.name == "it" && p.type == TypeRef.Named("Any") && expectedItType != null) expectedItType!!
+                    else IrType.resolve(p.type)
+                }
                 table.pushScope()
-                for (p in expr.params) table.defineVariable(VariableSymbol(p.name, IrType.resolve(p.type)))
+                for (i in expr.params.indices) {
+                    table.defineVariable(VariableSymbol(expr.params[i].name, paramTypes[i]))
+                }
                 var retType: IrType = IrType.Unit
                 for (s in expr.body) {
                     if (s is Stmt.Return && s.value != null) { retType = resolveExpr(s.value) ?: IrType.Unit; break }

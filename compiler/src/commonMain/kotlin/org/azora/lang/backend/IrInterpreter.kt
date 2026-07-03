@@ -25,6 +25,7 @@ import org.azora.lang.ir.IrTopLevel
 import org.azora.lang.ir.IrUnaryOp
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.coroutineContext
+import kotlin.math.pow
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
@@ -42,6 +43,28 @@ class IrInterpreter {
 
     private val output = StringBuilder()
     private val functions = mutableMapOf<String, IrFunction>()
+
+    /**
+     * Implementations for extern (`bridge`) functions that the interpreter can run directly.
+     * In a real backend these link to native code; here common C-math maps to `kotlin.math`.
+     */
+    private val externImpls: Map<String, (List<Any?>) -> Any?> = mapOf(
+        "sin" to { a -> kotlin.math.sin(a[0] as Double) },
+        "cos" to { a -> kotlin.math.cos(a[0] as Double) },
+        "tan" to { a -> kotlin.math.tan(a[0] as Double) },
+        "asin" to { a -> kotlin.math.asin(a[0] as Double) },
+        "acos" to { a -> kotlin.math.acos(a[0] as Double) },
+        "atan" to { a -> kotlin.math.atan(a[0] as Double) },
+        "sqrt" to { a -> kotlin.math.sqrt(a[0] as Double) },
+        "exp" to { a -> kotlin.math.exp(a[0] as Double) },
+        "ln" to { a -> kotlin.math.ln(a[0] as Double) },
+        "log" to { a -> kotlin.math.log10(a[0] as Double) },
+        "floor" to { a -> kotlin.math.floor(a[0] as Double) },
+        "ceil" to { a -> kotlin.math.ceil(a[0] as Double) },
+        "round" to { a -> kotlin.math.round(a[0] as Double) },
+        "abs" to { a -> if (a[0] is Long) kotlin.math.abs(a[0] as Long) else kotlin.math.abs(a[0] as Double) },
+        "pow" to { a -> (a[0] as Double).pow(a[1] as Double) }
+    )
 
     /** The runBlocking coroutine scope — used by `task`/`await` for cooperative concurrency. */
     private var coroutineScope: CoroutineScope? = null
@@ -96,6 +119,7 @@ class IrInterpreter {
                     is IrTopLevel.Func -> functions[item.function.name] = item.function
                     is IrTopLevel.Test -> tests.add(item)
                     is IrTopLevel.Struct -> { /* struct definitions need no execution */ }
+                    is IrTopLevel.Extern -> { /* extern declarations need no execution */ }
                 }
             }
 
@@ -747,6 +771,9 @@ class IrInterpreter {
             st.scopes = saved
             return (result as? ReturnSignal)?.value
         }
+        // Extern (`bridge`) function: resolve to a known implementation (e.g. C-math).
+        val extern = externImpls[expr.name]
+        if (extern != null) return extern(args)
         error("Undefined function: ${expr.name}")
     }
 

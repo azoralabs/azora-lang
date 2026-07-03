@@ -162,6 +162,12 @@ class LlvmCodegen {
             body.appendLine()
         }
 
+        // Extern (`bridge`) function declarations
+        for (item in program.items.filterIsInstance<IrTopLevel.Extern>()) {
+            val params = item.params.joinToString(", ") { (_, t) -> mapType(t) }
+            body.appendLine("declare ${mapType(item.returnType)} @${item.name}($params)")
+        }
+
         // Tests
         for (item in program.items.filterIsInstance<IrTopLevel.Test>()) {
             out.clear()

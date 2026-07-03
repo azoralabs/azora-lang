@@ -1174,6 +1174,12 @@ sealed class TopLevel {
     /** `deco Name { fields }` — declares a decorator/annotation type. Parsed and stored; not yet enforced. */
     data class Deco(val name: String, val fields: List<PackField>, val line: Int, val column: Int = 0) : TopLevel()
 
+    /** An extern function signature inside a `bridge` block: `func sin(x: Real): Real` (no body). */
+    data class BridgeSig(val name: String, val params: List<Param>, val returnType: TypeRef, val line: Int, val column: Int = 0)
+
+    /** `bridge <target> { func sigs }` — declares extern functions for FFI (C, JVM, JS, …). */
+    data class Bridge(val target: String, val funcs: List<BridgeSig>, val line: Int, val column: Int = 0) : TopLevel()
+
     /**
      * A simple `enum` declaration: `enum Color { Red; Green; Blue }`.
      *

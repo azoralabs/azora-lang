@@ -81,6 +81,11 @@ class KotlinCodegen {
                     line("class ${item.name}($fields)")
                     if (i < program.items.lastIndex) line("")
                 }
+                is IrTopLevel.Extern -> {
+                    val params = item.params.joinToString(", ") { (n, t) -> "$n: ${mapType(t)}" }
+                    line("external fun ${item.name}($params): ${mapType(item.returnType)}")
+                    if (i < program.items.lastIndex) line("")
+                }
             }
         }
 

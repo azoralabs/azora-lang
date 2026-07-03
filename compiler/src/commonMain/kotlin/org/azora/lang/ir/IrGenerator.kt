@@ -139,6 +139,13 @@ class IrGenerator(private val table: SymbolTable) {
                 }
                 else -> emptyList() // Inline constructs already resolved by CTFE
             }
+        } +
+        // Emit extern declarations for `bridge` (FFI) function signatures.
+        program.items.filterIsInstance<TopLevel.Bridge>().flatMap { bridge ->
+            bridge.funcs.map { sig ->
+                val params = sig.params.map { it.name to IrType.resolve(it.type) }
+                IrTopLevel.Extern(sig.name, params, IrType.resolve(sig.returnType))
+            }
         }
         return IrProgram(program.packageName, items)
     }

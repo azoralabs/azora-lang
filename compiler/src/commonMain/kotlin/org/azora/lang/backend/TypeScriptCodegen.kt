@@ -100,6 +100,11 @@ class TypeScriptCodegen {
                     line("}")
                     if (i < program.items.lastIndex) line("")
                 }
+                is IrTopLevel.Extern -> {
+                    val params = item.params.joinToString(", ") { (n, t) -> "$n: ${mapType(t)}" }
+                    line("declare function ${item.name}($params): ${mapType(item.returnType)};")
+                    if (i < program.items.lastIndex) line("")
+                }
             }
         }
 

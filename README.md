@@ -159,6 +159,11 @@ The IR is target-agnostic. Every backend lowers from the same optimized IR. Addi
 ### Resource Management
 - `defer { body }` — runs at function exit (LIFO, even through return/throw)
 
+### FFI (Foreign Function Interface)
+- `bridge <target> { func sigs }` — declares extern functions for cross-target interop (C, JVM, JS, …)
+- Interpreter resolves common C-math (`sin`, `cos`, `sqrt`, `pow`, …) to `kotlin.math`
+- Codegens emit real extern declarations: Kotlin `external fun`, TypeScript `declare function`, LLVM `declare`
+
 ### Backends
 - **Kotlin/JVM**: full code generation to Kotlin source
 - **TypeScript**: full code generation
@@ -178,7 +183,7 @@ The IR is target-agnostic. Every backend lowers from the same optimized IR. Addi
 ./gradlew :compiler:desktopTest
 ```
 
-478 tests covering all features. Tests verify runtime correctness through the IR interpreter.
+482 tests covering all features. Tests verify runtime correctness through the IR interpreter.
 
 ## Missing Features (Roadmap)
 
@@ -188,7 +193,6 @@ The IR is target-agnostic. Every backend lowers from the same optimized IR. Addi
 
 ### Systems (large effort)
 - **`region { }` arenas**, pointer arithmetic
-- **FFI**: `bridge .C { func sin(x): Real }`
 - **Dependency injection**: `solo`/`wrap`/`inject`
 - **UI / reactivity**: `view`/`rem`/`effect`
 - **Inheritance**: `node`/`leaf`/`base`

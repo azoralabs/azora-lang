@@ -78,6 +78,7 @@ class Lexer(private val source: String) {
             "task" to TokenType.TASK,
             "await" to TokenType.AWAIT,
             "launch" to TokenType.LAUNCH,
+            "bridge" to TokenType.BRIDGE,
             "pack" to TokenType.PACK,
             "enum" to TokenType.ENUM,
             "when" to TokenType.WHEN,

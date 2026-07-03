@@ -817,6 +817,12 @@ sealed class IrTopLevel {
      * @property fields the ordered list of fields
      */
     data class Struct(val name: String, val fields: List<IrField>) : IrTopLevel()
+
+    /**
+     * An extern (`bridge`) function declaration — a signature with no body, emitted so
+     * backends can declare it (`external fun` / `declare` / LLVM `declare`) for FFI linking.
+     */
+    data class Extern(val name: String, val params: List<Pair<String, IrType>>, val returnType: IrType) : IrTopLevel()
 }
 
 /**
@@ -871,6 +877,11 @@ data class IrProgram(
                     sb.appendLine("pack ${item.name} { $fields }")
                     if (i < items.lastIndex) sb.appendLine()
                 }
+                is IrTopLevel.Extern -> {
+                    val params = item.params.joinToString(", ") { (n, t) -> "$n: $t" }
+                    sb.appendLine("extern func ${item.name}($params): ${item.returnType}")
+                    if (i < items.lastIndex) sb.appendLine()
+                }
             }
         }
         return sb.toString().trimEnd()
@@ -904,6 +915,10 @@ data class IrProgram(
                 is IrTopLevel.Struct -> {
                     val fields = item.fields.joinToString(", ") { "${it.name}: ${it.type}" }
                     sb.appendLine("    IrStruct(name=${item.name}, fields=[$fields])")
+                }
+                is IrTopLevel.Extern -> {
+                    val params = item.params.joinToString(", ") { (n, t) -> "$n: $t" }
+                    sb.appendLine("    IrExtern(name=${item.name}, params=($params), ret=${item.returnType})")
                 }
             }
         }

@@ -58,7 +58,7 @@ class IrOptimizer {
                 is IrTopLevel.Global -> IrTopLevel.Global(foldStmt(item.stmt))
                 is IrTopLevel.Func -> IrTopLevel.Func(item.function.copy(body = item.function.body.map { foldStmt(it) }))
                 is IrTopLevel.Test -> IrTopLevel.Test(item.name, item.body.map { foldStmt(it) })
-                is IrTopLevel.Struct -> item
+                is IrTopLevel.Struct, is IrTopLevel.Extern -> item
             }
         })
     }
@@ -184,7 +184,7 @@ class IrOptimizer {
                 }
                 is IrTopLevel.Func -> IrTopLevel.Func(propagateInFunction(item.function))
                 is IrTopLevel.Test -> IrTopLevel.Test(item.name, propagateStmts(item.body, mutableMapOf()))
-                is IrTopLevel.Struct -> item
+                is IrTopLevel.Struct, is IrTopLevel.Extern -> item
             }
         })
     }
@@ -422,7 +422,7 @@ class IrOptimizer {
                 is IrTopLevel.Global -> IrTopLevel.Global(eliminateDeadCode(listOf(item.stmt)).first())
                 is IrTopLevel.Func -> IrTopLevel.Func(item.function.copy(body = eliminateDeadCode(item.function.body)))
                 is IrTopLevel.Test -> IrTopLevel.Test(item.name, eliminateDeadCode(item.body))
-                is IrTopLevel.Struct -> item
+                is IrTopLevel.Struct, is IrTopLevel.Extern -> item
             }
         })
     }
@@ -543,7 +543,7 @@ class IrOptimizer {
                     name != null && name in usedNames
                 }
                 is IrTopLevel.Test -> true // Tests are always kept
-                is IrTopLevel.Struct -> true // Struct definitions are always kept
+                is IrTopLevel.Struct, is IrTopLevel.Extern -> true // declarations are always kept
             }
         }
 
@@ -553,7 +553,7 @@ class IrOptimizer {
                 is IrTopLevel.Func -> IrTopLevel.Func(removeUnusedLocals(item.function))
                 is IrTopLevel.Global -> item
                 is IrTopLevel.Test -> item
-                is IrTopLevel.Struct -> item
+                is IrTopLevel.Struct, is IrTopLevel.Extern -> item
             }
         }
 

@@ -104,6 +104,22 @@ class SymbolCollector {
             }
         }
 
+        // Register bridge (FFI extern) function signatures
+        for (item in program.items) {
+            if (item is TopLevel.Bridge) {
+                for (sig in item.funcs) {
+                    try {
+                        val params = sig.params.map { it.name to IrType.resolve(it.type) }
+                        val ret = IrType.resolve(sig.returnType)
+                        val paramNames = sig.params.map { it.name }
+                        table.defineFunction(FunctionSymbol(sig.name, params, ret, false, emptyList(), paramNames, emptyMap()))
+                    } catch (e: Exception) {
+                        errors.add("line ${sig.line}: ${e.message}")
+                    }
+                }
+            }
+        }
+
         // Register pack (struct) declarations
         for (item in program.items) {
             if (item is TopLevel.Pack) {

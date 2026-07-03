@@ -145,6 +145,7 @@ class Parser(private val tokens: List<Token>) {
             check(TokenType.FAIL) -> parseFailDecl()
             check(TokenType.IMPL) -> parseImpl()
             check(TokenType.INFX) -> parseInfx()
+            check(TokenType.BRIDGE) -> parseBridge()
             check(TokenType.SPEC) -> parseSpec()
             check(TokenType.SLOT) -> parseSlot()
             check(TokenType.TYPEALIAS) -> parseTypeAlias()
@@ -575,6 +576,33 @@ class Parser(private val tokens: List<Token>) {
         consumeNewline()
         val method = FuncDecl(methodName, params, returnType, body, false, emptyList(), start.line, start.column)
         return TopLevel.Impl(typeName, listOf(method), null, start.line, start.column)
+    }
+
+    /**
+     * `bridge <target> { func sigs }` — declares extern functions for FFI.
+     * Each signature is `func name(params): RetType` (no body).
+     */
+    private fun parseBridge(): TopLevel.Bridge {
+        val start = consume(TokenType.BRIDGE, "Expected 'bridge'")
+        val target = consume(TokenType.IDENTIFIER, "Expected bridge target (e.g. C, JVM)").lexeme
+        consume(TokenType.L_BRACE, "Expected '{' after bridge target")
+        skipNewlines()
+        val funcs = mutableListOf<TopLevel.BridgeSig>()
+        while (!check(TokenType.R_BRACE) && !isAtEnd()) {
+            skipNewlines()
+            if (check(TokenType.R_BRACE)) break
+            consume(TokenType.FUNC, "Expected 'func' in bridge block")
+            val fname = consume(TokenType.IDENTIFIER, "Expected extern function name").lexeme
+            consume(TokenType.L_PAREN, "Expected '('")
+            val params = parseParams()
+            consume(TokenType.R_PAREN, "Expected ')'")
+            val returnType = if (match(TokenType.COLON)) parseTypeName() else TypeRef.Named("Unit")
+            consumeNewline()
+            funcs.add(TopLevel.BridgeSig(fname, params, returnType, start.line, start.column))
+        }
+        consume(TokenType.R_BRACE, "Expected '}' after bridge functions")
+        consumeNewline()
+        return TopLevel.Bridge(target, funcs, start.line, start.column)
     }
 
     /** `slot Name { Variant(Type); Variant2(Type1, Type2); Variant3 }` — a tagged union. */

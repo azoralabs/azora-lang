@@ -124,6 +124,8 @@ enum class TokenType {
     ALLOC, DROP, UNSAFE, ISOLATED,
     // Concurrency: `flow name(...) { … yield v }` generators, `task { }` / `await`, `launch { }`.
     FLOW, YIELD, TASK, AWAIT, LAUNCH,
+    // FFI: `bridge <target> { func sigs }` — extern function declarations.
+    BRIDGE,
     // `deco Name { fields }` — decorator/annotation declaration.
     DECO,
 

@@ -130,6 +130,9 @@ private fun dumpTopLevel(sb: StringBuilder, item: TopLevel, indent: String) {
             val trait = if (item.traitName != null) " for ${item.traitName}" else ""
             sb.appendLine("${indent}Impl(type=${item.typeName}$trait, methods=[${item.methods.joinToString(", ") { it.name }}])")
         }
+        is TopLevel.Bridge -> {
+            sb.appendLine("${indent}Bridge(target=${item.target}, funcs=[${item.funcs.joinToString(", ") { it.name }}])")
+        }
         is TopLevel.Spec -> {
             sb.appendLine("${indent}Spec(name=${item.name}, methods=[${item.methods.joinToString(", ") { it.name }}])")
         }

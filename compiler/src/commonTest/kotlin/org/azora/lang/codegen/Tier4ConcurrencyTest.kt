@@ -34,7 +34,8 @@ class Tier4ConcurrencyTest {
         """.trimIndent()))
     }
 
-    @Test fun flowResultIsAList() {
+    @Test fun flowResultIsConsumable() {
+        // A flow result is a lazy producer; consume by iteration.
         assertEquals("3", run("""
             flow upto(n: Int): Int {
                 var i = 0
@@ -44,8 +45,31 @@ class Tier4ConcurrencyTest {
                 }
             }
             func main() {
-                var nums = upto(3)
-                println(nums.length)
+                var count = 0
+                for x in upto(3) {
+                    count++
+                }
+                println(count)
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun flowIsLazyOnlyFirstValuesConsumed() {
+        // A lazy flow's body runs only as far as consumed: stopping early must not
+        // force the rest. We break after the first value and observe the side effect.
+        assertEquals("0", run("""
+            flow naturals(): Int {
+                var i = 0
+                loop {
+                    yield i
+                    i++
+                }
+            }
+            func main() {
+                for x in naturals() {
+                    println(x)
+                    break
+                }
             }
         """.trimIndent()))
     }

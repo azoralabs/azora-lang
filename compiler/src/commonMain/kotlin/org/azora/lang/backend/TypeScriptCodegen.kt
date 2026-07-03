@@ -239,6 +239,13 @@ class TypeScriptCodegen {
                 indent--
                 line("}")
             }
+            is IrStmt.ForEach -> {
+                line("for (const ${stmt.elem} of ${emitExpr(stmt.iterable)}) {")
+                indent++
+                for (s in stmt.body) emitStmt(s)
+                indent--
+                line("}")
+            }
             is IrStmt.Loop -> {
                 val lbl = if (stmt.label != null) "${stmt.label}: " else ""
                 line("${lbl}while (true) {")

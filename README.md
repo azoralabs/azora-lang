@@ -51,10 +51,12 @@ The IR is target-agnostic. Every backend lowers from the same optimized IR. Addi
 
 ### Types
 - **Primitives**: `Int`, `UInt`, `Long`, `ULong`, `Byte`, `UByte`, `Short`, `UShort`, `Cent`, `UCent`, `Float`, `Real`, `Decimal`, `Bool`, `Char`, `String`, `Unit`
-- **Compound**: arrays `[T]`, tuples `(A, B)`, function types `(A) -> B`, maps `["k": v]`, sets `![1, 2, 3]`
-- **User-defined**: `pack` (structs), `enum`, `slot` (tagged unions), `typealias`
+- **Compound**: arrays `[T]`, tuples `(A, B)`, function types `(A) -> B`, maps `["k": v]`
+- **User-defined**: `pack` (structs), `enum`, `slot` (tagged unions), `typealias`, `fail` (error sets)
 - **Type parameters**: generics (`func<T>`, `pack<T>`) with call-site inference
 - **Nullable**: `T?` with `null`, `??` (coalesce), `?.` (safe access)
+- **Failable**: `T!ErrSet` — a value of `T` or an error from a declared set
+- **Pointer**: `T*` — a heap reference (`alloc`, `*deref`)
 - **Integer/float promotion**: `2 + 1.5` → `3.5` (auto-widens)
 
 ### Bindings
@@ -73,6 +75,9 @@ The IR is target-agnostic. Every backend lowers from the same optimized IR. Addi
 ### Control Flow
 - `if` / `else if` / `else`
 - `while`, `for x in a..b`, `for x in array`, `loop`
+- `for x by N in a..b` (step), `reverse for x in a..b` (descending)
+- `loop { } while cond` (do-while), `for/while/loop … else { }` (else runs unless `break`)
+- Labeled loops: `@lbl for …`, `break @lbl` / `continue @lbl`
 - `break`, `continue`
 - `when expr { patterns -> { body } else -> { body } }` — pattern matching on enums, slots (with destructuring), and literals
 - Exhaustiveness checking on slot types
@@ -82,13 +87,35 @@ The IR is target-agnostic. Every backend lowers from the same optimized IR. Addi
 - **Methods** (`impl`): methods with implicit `self`, mutation by reference
 - **Traits** (`spec`): trait declarations with validated implementations (`impl Trait for Type`)
 - **Operator overloading**: `plus`, `minus`, `times`, `div`, `mod`, `equals` → `+`, `-`, `*`, `/`, `%`, `==`, `!=`
-- **Infix functions**: `a plus b` syntax (any method callable infix)
+- **Index overloading**: `oper[]` / `oper[]=` in `impl` blocks → user types become indexable (`m[i]`, `m[i] = v`)
+- **Infix functions**: `a plus b` syntax (any method callable infix); `infx Type.method(...) { }` declares an extension method usable infix
+- **Named zones**: `zone Name { … }` is a namespace; members accessed as `Name::member`
 
 ### Error Handling
 - `throw value` — raises any value
 - `try { } catch { name -> body }` — catches with optional binding
 - `expr catch fallback` — catch expression
 - `guard condition else { body }` — early exit
+- **Error sets**: `fail ErrSet { V1, V2 }` declares a set of error variants
+- **Failable types**: `T!ErrSet` — a function returning `T` or an error from `ErrSet`; `fail ErrSet.V` raises one (enforced: a `T!E` function's failures must belong to `E`)
+- `fail defer { body }` — defer that runs only when the function exits via an error
+
+### Memory Model
+- `alloc <expr>` — heap-allocate a value, returning a `T*` pointer
+- `*ptr` dereference, `*ptr = v` store-through
+- `drop <expr>` — release (advisory under GC)
+- `unsafe { … }` — opt-in block
+- `isolated(expr)` — produce an independent deep copy
+
+### Concurrency
+- **Generators**: `flow name(params): Elem { … yield v }` — a flow is a LAZY producer; its body runs incrementally, suspending at each `yield` until consumed (`for x in flow()`). Infinite flows work; breaking early only runs the body as far as consumed
+- **Tasks**: `task { … }` / `await t` — cooperative async via coroutines (single-thread, no data races)
+- **Channels**: `channel()` with `.send(v)` / `.receive()` / `.close()` for task-to-task communication
+- **Launch**: `launch { … }` — fire-and-forget task (joined before the program exits)
+
+### Decorators
+- `deco Name { fields }` declares an annotation type
+- `@Name`, `@Name(args)`, `@target:Name` applied to declarations (parsed and stored)
 
 ### Functional
 - Lambdas with closures: `{ x: Int -> body }`
@@ -106,22 +133,27 @@ The IR is target-agnostic. Every backend lowers from the same optimized IR. Addi
 - Logical: `&& || !`
 - Bitwise: `& | ^ ~ << >>`
 - Assignment: `= += -= *= /= %=`, `++`, `--`
-- Null-safe: `?? ?.`
-- Casts: `expr as Type`, `expr is Type`
+- Null-conditional: `??`, `?.`, and null-conditional compound assignment `?= ?+= ?-= ?*= ?/= ?%=` / `?++ ?--`
+- Casts: `expr as Type`, `expr is Type`, negated `expr is! Type`
 - Compound assignment on fields/indices
+- Raw strings: `"""…"""` (literal, multi-line)
 
 ### Strings & Arrays
 - String interpolation: `"hello $name"`, `"result: ${expr}"`
+- Raw strings: `"""…"""` (literal, multi-line, no escapes)
 - String methods: `toUpperCase()`, `toLowerCase()`, `contains()`, `startsWith()`, `endsWith()`, `trim()`, `replace()`, `split()`, `indexOf()`
 - Array methods: `add()`, `insert()`, `remove()`, `contains()`, `indexOf()`, `.length`, `.isEmpty`, `.isNotEmpty`
+- Map literals `["k": v]`, access `m[key]`, mutation `m[key] = v`
 - For-in array iteration: `for item in items { }`
 
 ### Metaprogramming (CTCE)
 - `inline fin`, `inline let`, `inline var` — compile-time bindings
 - `inline if condition { }` — conditional compilation
+- `inline for x in a..b { … }` — compile-time loop unrolling
 - `inline { }` / `deepinline { }` — compile-time blocks
 - `noinline` — escape hatch back to runtime
 - `inline func` — body substitution at call sites
+- `inline assert` / `inline trace` — compile-time assertions and traces
 - Constant folding, constant propagation, dead-code elimination
 
 ### Resource Management
@@ -146,20 +178,18 @@ The IR is target-agnostic. Every backend lowers from the same optimized IR. Addi
 ./gradlew :compiler:desktopTest
 ```
 
-329 tests covering all features. Tests verify runtime correctness through the IR interpreter.
+476 tests covering all features. Tests verify runtime correctness through the IR interpreter.
 
 ## Missing Features (Roadmap)
 
 ### Language
-- **`fail`-set error unions** (`T!E`) — typed error handling with `?` propagation
-- **Exhaustiveness checking for enums** (currently only slots)
 - **`it` type inference** — implicit `it` is `Any`; should infer from context
+- **Exhaustiveness checking for enums** (currently only slots)
 - **Multi-statement lambda codegen** — best-effort in Kotlin/TS
 
 ### Systems (large effort)
-- **Pointers / memory**: `alloc`, `*deref`, `drop`, `region`, `unsafe`
-- **Concurrency**: `task`/`suspend`, `async`/`await`, `flow`/`yield`, `channel`
-- **Decorators**: `deco`, `@Name(args)`
+- **Real parallelism** — `task`/`launch` run cooperatively on one thread; true parallel execution needs a thread-safe interpreter
+- **`region { }` arenas**, pointer arithmetic
 - **FFI**: `bridge .C { func sin(x): Real }`
 - **Dependency injection**: `solo`/`wrap`/`inject`
 - **UI / reactivity**: `view`/`rem`/`effect`
@@ -168,9 +198,9 @@ The IR is target-agnostic. Every backend lowers from the same optimized IR. Addi
 
 ### Known Limitations
 - Generics use type erasure (field types are `Any` at runtime)
-- LLVM backend uses placeholders for closures, defer, compound types
+- LLVM backend uses placeholders for closures, defer, compound types, pointers, and concurrency
 - `use` is parsed as metadata (files merged by CLI, no semantic name resolution)
-- No map/set runtime methods (literals parse, lowered to arrays)
+- Concurrency features (`flow`/`task`/`await`/`channel`/`launch`) run in the interpreter only; Kotlin/TS/LLVM backends stub them
 
 ## Project Structure
 

@@ -361,6 +361,10 @@ class LlvmCodegen {
             }
             is IrStmt.Defer -> emit("  ; defer — not lowered")
             is IrStmt.Yield -> emit("  ; yield — not lowered (interpreter-only)")
+            is IrStmt.ForEach -> {
+                emitExpr(stmt.iterable)
+                emit("  ; for-each over ${stmt.elem} — not lowered (interpreter-only)")
+            }
             is IrStmt.Throw -> {
                 emitExpr(stmt.value)
                 emit("  ; throw — lowered to abort")

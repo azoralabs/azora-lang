@@ -97,6 +97,7 @@ class IrOptimizer {
             catchBody = stmt.catchBody?.map { foldStmt(it) }
         )
         is IrStmt.Defer -> stmt.copy(body = stmt.body.map { foldStmt(it) })
+        is IrStmt.ForEach -> stmt.copy(iterable = foldExpr(stmt.iterable), body = stmt.body.map { foldStmt(it) })
     }
 
     private fun foldExpr(expr: IrExpr): IrExpr = when (expr) {
@@ -347,6 +348,14 @@ class IrOptimizer {
                     invalidate(constants, collectAssigned(stmt.body))
                     result
                 }
+                is IrStmt.ForEach -> {
+                    val result = stmt.copy(
+                        iterable = foldExpr(propagateExpr(stmt.iterable, constants)),
+                        body = propagateStmts(stmt.body, constants.toMutableMap())
+                    )
+                    invalidate(constants, collectAssigned(stmt.body))
+                    result
+                }
             }
         }
     }
@@ -370,6 +379,7 @@ class IrOptimizer {
                 is IrStmt.Zone -> stmt.body.forEach(::visit)
                 is IrStmt.While -> stmt.body.forEach(::visit)
                 is IrStmt.For -> { assigned.add(stmt.counter); stmt.body.forEach(::visit) }
+                is IrStmt.ForEach -> { assigned.add(stmt.elem); stmt.body.forEach(::visit) }
                 is IrStmt.Loop -> stmt.body.forEach(::visit)
                 is IrStmt.When -> {
                     stmt.branches.forEach { it.body.forEach(::visit) }
@@ -612,6 +622,10 @@ class IrOptimizer {
                 collectReferencedNamesFromExpr(stmt.end, names)
                 stmt.body.forEach { collectReferencedNamesFromStmt(it, names) }
             }
+            is IrStmt.ForEach -> {
+                collectReferencedNamesFromExpr(stmt.iterable, names)
+                stmt.body.forEach { collectReferencedNamesFromStmt(it, names) }
+            }
             is IrStmt.Loop -> stmt.body.forEach { collectReferencedNamesFromStmt(it, names) }
             is IrStmt.Break -> {}
             is IrStmt.Continue -> {}
@@ -709,6 +723,10 @@ class IrOptimizer {
             is IrStmt.For -> {
                 collectReferencedNamesFromExpr(stmt.start, names)
                 collectReferencedNamesFromExpr(stmt.end, names)
+                stmt.body.forEach { collectReferencedVarNamesFromStmt(it, names) }
+            }
+            is IrStmt.ForEach -> {
+                collectReferencedNamesFromExpr(stmt.iterable, names)
                 stmt.body.forEach { collectReferencedVarNamesFromStmt(it, names) }
             }
             is IrStmt.Loop -> stmt.body.forEach { collectReferencedVarNamesFromStmt(it, names) }

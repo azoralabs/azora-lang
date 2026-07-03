@@ -25,6 +25,8 @@ import org.azora.lang.ir.IrTopLevel
 import org.azora.lang.ir.IrUnaryOp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.SendChannel
+import kotlinx.coroutines.channels.produce
 import kotlinx.coroutines.async
 
 /**
@@ -38,8 +40,11 @@ class IrInterpreter {
     private val output = StringBuilder()
     private val functions = mutableMapOf<String, IrFunction>()
     private var deferStack = mutableListOf<DeferredBlock>()
-    /** Stack of yield accumulators — one per active `flow` generator call. */
+    /** Stack of yield accumulators — one per active `flow` generator call (eager). */
     private val yieldAccumulators = ArrayDeque<MutableList<Any?>>()
+
+    /** Stack of produce-channels for LAZY flows — each `yield` sends to the top. */
+    private val flowProduceChannels = ArrayDeque<SendChannel<Any?>>()
 
     /** The runBlocking coroutine scope — used by `task`/`await` for cooperative concurrency. */
     private var coroutineScope: CoroutineScope? = null
@@ -58,6 +63,7 @@ class IrInterpreter {
         functions.clear()
         scopes.clear()
         yieldAccumulators.clear()
+        flowProduceChannels.clear()
         launchedTasks.clear()
 
         // Global scope
@@ -246,6 +252,41 @@ class IrInterpreter {
                     i = if (stmt.reverse) i - step else i + step
                 }
             }
+            is IrStmt.ForEach -> {
+                val iterable = evalExpr(stmt.iterable)
+                // Both MutableList and kotlinx ReceiveChannel expose `iterator()`, but neither
+                // shares a common Iterable supertype, so iterate each directly.
+                when (iterable) {
+                    is MutableList<*> -> {
+                        for (item in iterable) {
+                            pushScope()
+                            defineVar(stmt.elem, item)
+                            val result = executeBody(stmt.body)
+                            popScope()
+                            if (result is BreakSignal) break
+                            if (result is ReturnSignal) return result
+                        }
+                    }
+                    is kotlinx.coroutines.channels.ReceiveChannel<*> -> {
+                        try {
+                            for (item in iterable) {
+                                pushScope()
+                                defineVar(stmt.elem, item)
+                                val result = executeBody(stmt.body)
+                                popScope()
+                                if (result is BreakSignal) break
+                                if (result is ReturnSignal) return result
+                            }
+                        } finally {
+                            // Cancel the producer so an early `break` (or an infinite flow)
+                            // doesn't leave it suspended and block runBlocking.
+                            @Suppress("UNCHECKED_CAST")
+                            (iterable as kotlinx.coroutines.channels.ReceiveChannel<Any?>).cancel()
+                        }
+                    }
+                    else -> error("cannot iterate over $iterable")
+                }
+            }
             is IrStmt.Loop -> {
                 while (true) {
                     pushScope()
@@ -266,7 +307,12 @@ class IrInterpreter {
             is IrStmt.Break -> return BreakSignal(stmt.label)
             is IrStmt.Continue -> return ContinueSignal(stmt.label)
             is IrStmt.Defer -> { deferStack.add(DeferredBlock(stmt.body, stmt.onFail)) }
-            is IrStmt.Yield -> { yieldAccumulators.lastOrNull()?.add(evalExpr(stmt.value)) }
+            is IrStmt.Yield -> {
+                val channel = flowProduceChannels.lastOrNull()
+                val value = evalExpr(stmt.value)
+                if (channel != null) channel.send(value) // lazy flow: suspend until received
+                else yieldAccumulators.lastOrNull()?.add(value) // eager fallback
+            }
             is IrStmt.IndexAssign -> {
                 val target = evalExpr(stmt.target)
                 val key = evalExpr(stmt.index)
@@ -648,11 +694,18 @@ class IrInterpreter {
 
         val func = functions[expr.name]
         if (func != null) {
-            // A `flow` generator: run its body, collecting `yield`ed values into a list.
+            // A `flow` generator: return a LAZY producer (rendezvous channel). The body
+            // runs in a coroutine, suspending at each `yield` until the consumer receives.
             if (func.isFlow) {
-                yieldAccumulators.addLast(mutableListOf())
-                executeFunction(func, args)
-                return yieldAccumulators.removeLast()
+                val scope = coroutineScope ?: error("flow used outside of the interpreter's runBlocking scope")
+                return scope.produce<Any?> {
+                    flowProduceChannels.addLast(this)
+                    try {
+                        executeFunction(func, args)
+                    } finally {
+                        flowProduceChannels.removeLast()
+                    }
+                }
             }
             return executeFunction(func, args)
         }

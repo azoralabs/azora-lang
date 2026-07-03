@@ -662,6 +662,9 @@ sealed class IrStmt {
     /** `yield value` — emit a value from a `flow` generator. */
     data class Yield(val value: IrExpr) : IrStmt()
 
+    /** `for x in <iterable>` (non-range) — bind [elem] to each value of [iterable], run [body]. */
+    data class ForEach(val elem: String, val iterable: IrExpr, val body: List<IrStmt>) : IrStmt()
+
     /** Pretty-prints this statement as Azora IR text. */
     fun prettyPrint(sb: StringBuilder, indent: Int) {
         val pad = "    ".repeat(indent)
@@ -737,6 +740,11 @@ sealed class IrStmt {
                 sb.appendLine("${pad}}")
             }
             is Yield -> sb.appendLine("${pad}yield ${value.prettyPrint()}")
+            is ForEach -> {
+                sb.appendLine("${pad}for $elem in ${iterable.prettyPrint()} {")
+                for (s in body) s.prettyPrint(sb, indent + 1)
+                sb.appendLine("${pad}}")
+            }
             is Try -> {
                 sb.appendLine("${pad}try {")
                 for (s in body) s.prettyPrint(sb, indent + 1)
@@ -1037,6 +1045,13 @@ private fun dumpIrStmtTree(sb: StringBuilder, stmt: IrStmt, indent: String) {
         is IrStmt.Yield -> {
             sb.appendLine("${indent}IrYield")
             dumpIrExprTree(sb, stmt.value, "$indent    ")
+        }
+        is IrStmt.ForEach -> {
+            sb.appendLine("${indent}IrForEach(elem=${stmt.elem})")
+            sb.appendLine("$indent    iterable:")
+            dumpIrExprTree(sb, stmt.iterable, "$indent        ")
+            sb.appendLine("$indent    body:")
+            for (s in stmt.body) dumpIrStmtTree(sb, s, "$indent        ")
         }
     }
 }

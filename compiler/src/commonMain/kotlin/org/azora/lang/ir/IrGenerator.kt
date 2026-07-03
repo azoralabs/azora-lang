@@ -342,25 +342,17 @@ class IrGenerator(private val table: SymbolTable) {
                     table.popScope()
                     IrStmt.For(counter, start, end, range.inclusive, body, step = step, reverse = stmt.reverse, label = stmt.label)
                 } else {
-                    // For-in over an array: lower to index-based loop
-                    val arrExpr = lowerExpr(stmt.iterable)
-                    val elemType = (arrExpr.type as? IrType.Array)?.element ?: IrType.Any
+                    // For-in over a non-range iterable (array, flow, channel): for-each.
+                    val iterable = lowerExpr(stmt.iterable)
+                    val elemType = (iterable.type as? IrType.Array)?.element ?: IrType.Any
                     table.pushScope()
                     pushNameScope()
-                    val counter = registerName("__idx")
-                    table.defineVariable(VariableSymbol("__idx", IrType.Int, mutable = true))
-                    val elemMangled = registerName(stmt.name)
+                    val elem = registerName(stmt.name)
                     table.defineVariable(VariableSymbol(stmt.name, elemType, mutable = false))
                     val body = lowerBody(stmt.body)
                     popNameScope()
                     table.popScope()
-                    // Body: fin item = arr[__idx]; ...original body...
-                    val fullBody = mutableListOf<IrStmt>()
-                    fullBody.add(IrStmt.FinDecl(elemMangled, elemType,
-                        IrExpr.Index(arrExpr, IrExpr.Var(counter, IrType.Int), elemType)))
-                    fullBody.addAll(body)
-                    IrStmt.For(counter, IrExpr.IntLiteral(0),
-                        IrExpr.Member(arrExpr, "length", IrType.Int), false, fullBody)
+                    IrStmt.ForEach(elem, iterable, body)
                 }
             }
             is Stmt.Loop -> {

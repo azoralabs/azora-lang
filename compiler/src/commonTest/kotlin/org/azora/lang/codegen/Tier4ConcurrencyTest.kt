@@ -177,14 +177,18 @@ class Tier4ConcurrencyTest {
 
     @Test fun launchRunsAndIsJoinedAtEnd() {
         // `launch` is fire-and-forget; its side effect completes before main returns.
-        assertEquals("main\nlaunched", run("""
+        // With real parallelism the ordering of `main` vs `launched` is nondeterministic,
+        // so check that both lines appear (in any order).
+        val output = run("""
             func main() {
                 println("main")
                 launch {
                     println("launched")
                 }
             }
-        """.trimIndent()))
+        """.trimIndent())
+        val lines = output.lines().sorted()
+        assertEquals(listOf("launched", "main"), lines)
     }
 
     @Test fun launchProducerWithChannelConsumer() {
@@ -199,6 +203,18 @@ class Tier4ConcurrencyTest {
                 }
                 println(ch.receive())
                 println(ch.receive())
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun parallelTasksAggregateResults() {
+        // Two independent tasks run in parallel (Dispatchers.Default); both are awaited
+        // and their results combined.
+        assertEquals("300", run("""
+            func main() {
+                var t1 = task { 100 }
+                var t2 = task { 200 }
+                println(await t1 + await t2)
             }
         """.trimIndent()))
     }

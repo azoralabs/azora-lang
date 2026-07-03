@@ -109,7 +109,7 @@ The IR is target-agnostic. Every backend lowers from the same optimized IR. Addi
 
 ### Concurrency
 - **Generators**: `flow name(params): Elem { … yield v }` — a flow is a LAZY producer; its body runs incrementally, suspending at each `yield` until consumed (`for x in flow()`). Infinite flows work; breaking early only runs the body as far as consumed
-- **Tasks**: `task { … }` / `await t` — cooperative async via coroutines (single-thread, no data races)
+- **Tasks**: `task { … }` / `await t` — async with **real parallelism** (runs on `Dispatchers.Default`, a multi-threaded pool); each task gets isolated execution state, so concurrent tasks never race
 - **Channels**: `channel()` with `.send(v)` / `.receive()` / `.close()` for task-to-task communication
 - **Launch**: `launch { … }` — fire-and-forget task (joined before the program exits)
 
@@ -187,7 +187,6 @@ The IR is target-agnostic. Every backend lowers from the same optimized IR. Addi
 - **Multi-statement lambda codegen** — best-effort in Kotlin/TS
 
 ### Systems (large effort)
-- **Real parallelism** — `task`/`launch` run cooperatively on one thread; true parallel execution needs a thread-safe interpreter
 - **`region { }` arenas**, pointer arithmetic
 - **FFI**: `bridge .C { func sin(x): Real }`
 - **Dependency injection**: `solo`/`wrap`/`inject`
@@ -199,7 +198,7 @@ The IR is target-agnostic. Every backend lowers from the same optimized IR. Addi
 - Generics use type erasure (field types are `Any` at runtime)
 - LLVM backend uses placeholders for closures, defer, compound types, pointers, and concurrency
 - `use` is parsed as metadata (files merged by CLI, no semantic name resolution)
-- Concurrency features (`flow`/`task`/`await`/`channel`/`launch`) run in the interpreter only; Kotlin/TS/LLVM backends stub them
+- Concurrency features (`flow`/`task`/`await`/`channel`/`launch`) execute with real parallelism in the interpreter (Dispatchers.Default); Kotlin/TS/LLVM backends stub them
 
 ## Project Structure
 

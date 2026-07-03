@@ -23,7 +23,10 @@ import org.azora.lang.ir.IrProgram
 import org.azora.lang.ir.IrStmt
 import org.azora.lang.ir.IrTopLevel
 import org.azora.lang.ir.IrUnaryOp
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.SendChannel
 import kotlinx.coroutines.channels.produce
@@ -39,12 +42,6 @@ class IrInterpreter {
 
     private val output = StringBuilder()
     private val functions = mutableMapOf<String, IrFunction>()
-    private var deferStack = mutableListOf<DeferredBlock>()
-    /** Stack of yield accumulators — one per active `flow` generator call (eager). */
-    private val yieldAccumulators = ArrayDeque<MutableList<Any?>>()
-
-    /** Stack of produce-channels for LAZY flows — each `yield` sends to the top. */
-    private val flowProduceChannels = ArrayDeque<SendChannel<Any?>>()
 
     /** The runBlocking coroutine scope — used by `task`/`await` for cooperative concurrency. */
     private var coroutineScope: CoroutineScope? = null
@@ -52,29 +49,44 @@ class IrInterpreter {
     /** Fire-and-forget tasks created via `launch { … }`; joined before interpret() returns. */
     private val launchedTasks = mutableListOf<kotlinx.coroutines.Deferred<Any?>>()
 
+    /**
+     * Per-coroutine execution state. Each coroutine (main + each `task`/`launch`/`flow`)
+     * gets its own [ExecState] in its coroutine context, so concurrent tasks on different
+     * threads don't share mutable scope/defer/flow state. Accessed via [state].
+     */
+    private class ExecState(
+        var scopes: ArrayDeque<MutableMap<String, Any?>> = ArrayDeque(),
+        var deferStack: MutableList<DeferredBlock> = mutableListOf(),
+        val yieldAccumulators: ArrayDeque<MutableList<Any?>> = ArrayDeque(),
+        val flowProduceChannels: ArrayDeque<SendChannel<Any?>> = ArrayDeque()
+    ) : CoroutineContext.Element {
+        companion object Key : CoroutineContext.Key<ExecState>
+        override val key: CoroutineContext.Key<*> get() = Key
+    }
+
+    /** The current coroutine's execution state. */
+    private suspend fun state(): ExecState = coroutineContext[ExecState]!!
+
     /** A deferred block, optionally restricted to run only on error (`fail defer`). */
     private class DeferredBlock(val body: List<IrStmt>, val onFail: Boolean)
-
-    /** Scope stack: index 0 = global, last = innermost. */
-    private var scopes = ArrayDeque<MutableMap<String, Any?>>()
 
     fun interpret(program: IrProgram): String {
         output.clear()
         functions.clear()
-        scopes.clear()
-        yieldAccumulators.clear()
-        flowProduceChannels.clear()
         launchedTasks.clear()
 
+        val mainState = ExecState()
         // Global scope
-        scopes.addLast(mutableMapOf("__null" to null))
+        mainState.scopes.addLast(mutableMapOf("__null" to null))
 
         // Collect tests
         val tests = mutableListOf<IrTopLevel.Test>()
 
-        // The evaluator is `suspend` (to support `await`); run it under runBlocking so
-        // the public interpret() entry point stays non-suspend and callers are unchanged.
-        return kotlinx.coroutines.runBlocking {
+        // The evaluator is `suspend` (to support `await`); run it on a multi-threaded
+        // dispatcher (Dispatchers.Default) so `task`/`launch` achieve real parallelism.
+        // Each task gets its own ExecState (isolated scopes/defers), so concurrent tasks
+        // never share mutable execution state. The public interpret() stays non-suspend.
+        return kotlinx.coroutines.runBlocking(Dispatchers.Default + mainState) {
             coroutineScope = this
 
             // Process top-level items in source order
@@ -97,9 +109,10 @@ class IrInterpreter {
             }
 
             // Join any fire-and-forget `launch { … }` tasks so their side effects complete.
-            for (task in launchedTasks) task.await()
+            val toJoin = synchronized(launchedTasks) { launchedTasks.toList() }
+            for (task in toJoin) task.await()
 
-            output.toString().trimEnd()
+            synchronized(output) { output.toString().trimEnd() }
         }
     }
 
@@ -114,28 +127,30 @@ class IrInterpreter {
 
     // -- Scope management ---------------------------------------------------
 
-    private fun pushScope() { scopes.addLast(mutableMapOf()) }
-    private fun popScope() { scopes.removeLast() }
+    private suspend fun pushScope() { state().scopes.addLast(mutableMapOf()) }
+    private suspend fun popScope() { state().scopes.removeLast() }
 
-    private fun defineVar(name: String, value: Any?) {
-        scopes.last()[name] = value
+    private suspend fun defineVar(name: String, value: Any?) {
+        state().scopes.last()[name] = value
     }
 
-    private fun assignVar(name: String, value: Any?) {
+    private suspend fun assignVar(name: String, value: Any?) {
+        val s = state().scopes
         // Search from innermost to outermost for existing binding
-        for (i in scopes.indices.reversed()) {
-            if (name in scopes[i]) {
-                scopes[i][name] = value
+        for (i in s.indices.reversed()) {
+            if (name in s[i]) {
+                s[i][name] = value
                 return
             }
         }
-        scopes.last()[name] = value
+        s.last()[name] = value
     }
 
     /** Look up variable from innermost scope outward. */
-    private fun lookupVar(name: String): Any? {
-        for (i in scopes.indices.reversed()) {
-            if (name in scopes[i]) return scopes[i][name]
+    private suspend fun lookupVar(name: String): Any? {
+        val s = state().scopes
+        for (i in s.indices.reversed()) {
+            if (name in s[i]) return s[i][name]
         }
         return null
     }
@@ -150,8 +165,9 @@ class IrInterpreter {
             defineVar(func.params[i].first, args[i])
         }
 
-        val savedDefers = deferStack
-        deferStack = mutableListOf()
+        val st = state()
+        val savedDefers = st.deferStack
+        st.deferStack = mutableListOf()
         var retValue: Any? = null
         var failed = false
         var toRethrow: AzoraThrownException? = null
@@ -165,12 +181,12 @@ class IrInterpreter {
         } finally {
             // Run deferred blocks in reverse order (LIFO). Skip `fail defer`
             // blocks when the function returned normally.
-            for (i in deferStack.indices.reversed()) {
-                val d = deferStack[i]
+            for (i in st.deferStack.indices.reversed()) {
+                val d = st.deferStack[i]
                 if (d.onFail && !failed) continue
                 executeBody(d.body)
             }
-            deferStack = savedDefers
+            st.deferStack = savedDefers
         }
         popScope()
         if (toRethrow != null) throw toRethrow
@@ -306,12 +322,13 @@ class IrInterpreter {
             }
             is IrStmt.Break -> return BreakSignal(stmt.label)
             is IrStmt.Continue -> return ContinueSignal(stmt.label)
-            is IrStmt.Defer -> { deferStack.add(DeferredBlock(stmt.body, stmt.onFail)) }
+            is IrStmt.Defer -> { state().deferStack.add(DeferredBlock(stmt.body, stmt.onFail)) }
             is IrStmt.Yield -> {
-                val channel = flowProduceChannels.lastOrNull()
+                val st = state()
+                val channel = st.flowProduceChannels.lastOrNull()
                 val value = evalExpr(stmt.value)
                 if (channel != null) channel.send(value) // lazy flow: suspend until received
-                else yieldAccumulators.lastOrNull()?.add(value) // eager fallback
+                else st.yieldAccumulators.lastOrNull()?.add(value) // eager fallback
             }
             is IrStmt.IndexAssign -> {
                 val target = evalExpr(stmt.target)
@@ -398,7 +415,7 @@ class IrInterpreter {
             }
             is IrStmt.Trace -> {
                 val msg = formatValue(evalExpr(stmt.message))
-                output.appendLine("[TRACE] $msg")
+                synchronized(output) { output.appendLine("[TRACE] $msg") }
             }
         }
         return null
@@ -487,14 +504,17 @@ class IrInterpreter {
             is IrExpr.CatchExpr -> {
                 try { evalExpr(expr.expr) } catch (e: AzoraThrownException) { evalExpr(expr.fallback) }
             }
-            is IrExpr.Lambda -> Closure(expr.params, expr.body, scopes.toList())
+            is IrExpr.Lambda -> {
+                val st = state()
+                Closure(expr.params, expr.body, st.scopes.toList())
+            }
             is IrExpr.Await -> {
                 val task = evalExpr(expr.value)
                 val closure = task as? Closure ?: error("await requires a task (a `task { … }` value)")
                 val scope = coroutineScope ?: error("await used outside of the interpreter's runBlocking scope")
-                // Run the task as a coroutine on the runBlocking (single-thread) dispatcher,
-                // then suspend until it completes. No data races: same thread, cooperative.
-                scope.async { invokeClosure(closure) }.await()
+                // Run the task in its own coroutine with an isolated ExecState (real parallelism
+                // on Dispatchers.Default); each task has its own scope/defer stack.
+                scope.async(context = childState()) { invokeClosure(closure) }.await()
             }
             is IrExpr.SlotPattern -> error("SlotPattern should be handled by when matching, not evaluated")
             is IrExpr.StringTemplate -> {
@@ -677,7 +697,7 @@ class IrInterpreter {
         }
         if (expr.name == "println") {
             val value = args.firstOrNull()
-            output.appendLine(formatValue(value))
+            synchronized(output) { output.appendLine(formatValue(value)) }
             return null
         }
         if (expr.name == "channel") {
@@ -688,7 +708,8 @@ class IrInterpreter {
             // `launch { … }` — start a fire-and-forget task; joined before interpret() returns.
             val thunk = args[0] as? Closure ?: error("launch expects a task body")
             val scope = coroutineScope ?: error("launch used outside of the interpreter's runBlocking scope")
-            launchedTasks.add(scope.async { invokeClosure(thunk) })
+            val deferred = scope.async(context = childState()) { invokeClosure(thunk) }
+            synchronized(launchedTasks) { launchedTasks.add(deferred) }
             return null
         }
 
@@ -698,12 +719,14 @@ class IrInterpreter {
             // runs in a coroutine, suspending at each `yield` until the consumer receives.
             if (func.isFlow) {
                 val scope = coroutineScope ?: error("flow used outside of the interpreter's runBlocking scope")
-                return scope.produce<Any?> {
-                    flowProduceChannels.addLast(this)
+                // The producer runs in its own coroutine with an isolated ExecState
+                // (scopes snapshotted from the caller) so concurrent flows don't share state.
+                return scope.produce<Any?>(context = childState()) {
+                    state().flowProduceChannels.addLast(this)
                     try {
                         executeFunction(func, args)
                     } finally {
-                        flowProduceChannels.removeLast()
+                        state().flowProduceChannels.removeLast()
                     }
                 }
             }
@@ -713,28 +736,33 @@ class IrInterpreter {
         // Calling a lambda stored in a variable.
         val callee = lookupVar(expr.name)
         if (callee is Closure) {
-            val saved = scopes
-            scopes = ArrayDeque()
-            callee.capturedScopes.forEach { scopes.addLast(it) }
+            val st = state()
+            val saved = st.scopes
+            st.scopes = ArrayDeque()
+            callee.capturedScopes.forEach { st.scopes.addLast(it) }
             pushScope()
             for (i in callee.params.indices) defineVar(callee.params[i].first, args[i])
             val result = executeBody(callee.body)
             popScope()
-            scopes = saved
+            st.scopes = saved
             return (result as? ReturnSignal)?.value
         }
         error("Undefined function: ${expr.name}")
     }
 
+    /** A child [ExecState] whose scopes are a snapshot of the current coroutine's. */
+    private suspend fun childState(): ExecState = ExecState(scopes = ArrayDeque(state().scopes.toList()))
+
     /** Runs a no-argument closure (a `task { … }` thunk) and returns its result. */
     private suspend fun invokeClosure(closure: Closure): Any? {
-        val saved = scopes
-        scopes = ArrayDeque()
-        closure.capturedScopes.forEach { scopes.addLast(it) }
+        val st = state()
+        val saved = st.scopes
+        st.scopes = ArrayDeque()
+        closure.capturedScopes.forEach { st.scopes.addLast(it) }
         pushScope()
         val result = executeBody(closure.body)
         popScope()
-        scopes = saved
+        st.scopes = saved
         return (result as? ReturnSignal)?.value ?: result
     }
 

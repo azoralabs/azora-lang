@@ -542,6 +542,18 @@ class IrGenerator(private val table: SymbolTable) {
             is Expr.Binary -> {
                 val left = lowerExpr(expr.left)
                 val right = lowerExpr(expr.right)
+                // Pointer arithmetic: ptr + n, ptr - n, ptr - ptr
+                if (left.type is IrType.Pointer && right.type in IrType.integerTypes &&
+                    (expr.op == TokenType.PLUS || expr.op == TokenType.MINUS)) {
+                    val fn = if (expr.op == TokenType.PLUS) "__ptrAdd" else "__ptrSub"
+                    return IrExpr.Call(fn, listOf(left, right), left.type)
+                }
+                if (left.type in IrType.integerTypes && right.type is IrType.Pointer && expr.op == TokenType.PLUS) {
+                    return IrExpr.Call("__ptrAdd", listOf(right, left), right.type)
+                }
+                if (left.type is IrType.Pointer && right.type is IrType.Pointer && expr.op == TokenType.MINUS) {
+                    return IrExpr.Call("__ptrDiff", listOf(left, right), IrType.Int)
+                }
                 // Operator overloading on user types
                 if (left.type is IrType.Named && left.type == right.type) {
                     val lt = left.type as IrType.Named
@@ -631,7 +643,9 @@ class IrGenerator(private val table: SymbolTable) {
             }
             is Expr.Alloc -> {
                 val value = lowerExpr(expr.value)
-                IrExpr.Call("__alloc", listOf(value), IrType.Pointer(value.type))
+                // alloc [a, b, c] → pointer to element type (buffer for arithmetic).
+                val pointee = (value.type as? IrType.Array)?.element ?: value.type
+                IrExpr.Call("__alloc", listOf(value), IrType.Pointer(pointee))
             }
             is Expr.Deref -> {
                 val target = lowerExpr(expr.target)

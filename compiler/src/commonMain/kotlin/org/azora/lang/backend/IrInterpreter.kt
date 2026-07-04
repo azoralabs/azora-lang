@@ -260,7 +260,7 @@ class IrInterpreter {
                 } finally {
                     if (stmt.alloc) {
                         // Free all allocations made in this arena (null their pointee cells).
-                        for (ptr in state().regionAllocations.removeLast()) ptr.value = null
+                        for (ptr in state().regionAllocations.removeLast()) ptr.setValue(null)
                     }
                 }
                 popScope()
@@ -698,7 +698,7 @@ class IrInterpreter {
             return if (args[0] != null) args[0] else args[1]
         }
         if (expr.name == "__alloc") {
-            val ptr = Pointer(args[0])
+            val ptr = asPointer(args[0])
             // Register with the current `zone alloc { }` arena (if any) for cleanup at exit.
             state().regionAllocations.lastOrNull()?.add(ptr)
             return ptr
@@ -707,8 +707,23 @@ class IrInterpreter {
             return (args[0] as Pointer).value
         }
         if (expr.name == "__derefAssign") {
-            (args[0] as Pointer).value = args[1]
+            (args[0] as Pointer).setValue(args[1])
             return null
+        }
+        if (expr.name == "__ptrAdd") {
+            val ptr = args[0] as Pointer
+            val n = (args[1] as Long).toInt()
+            return Pointer(ptr.buffer, ptr.index + n)
+        }
+        if (expr.name == "__ptrSub") {
+            val ptr = args[0] as Pointer
+            val n = (args[1] as Long).toInt()
+            return Pointer(ptr.buffer, ptr.index - n)
+        }
+        if (expr.name == "__ptrDiff") {
+            val a = args[0] as Pointer
+            val b = args[1] as Pointer
+            return (a.index - b.index).toLong()
         }
         if (expr.name == "__isolated") {
             return deepCopy(args[0])
@@ -853,7 +868,10 @@ class IrInterpreter {
             for ((k, v) in map) copy[k] = deepCopy(v)
             copy
         }
-        is Pointer -> Pointer(deepCopy(value.value))
+        is Pointer -> {
+            val copiedBuffer = value.buffer.map { deepCopy(it) }.toMutableList()
+            Pointer(copiedBuffer, value.index)
+        }
         else -> value
     }
 
@@ -877,7 +895,23 @@ class IrInterpreter {
     )
 
     /** A heap pointer — a mutable cell holding the pointee value. */
-    private class Pointer(var value: Any?)
+    private class Pointer(val buffer: MutableList<Any?>, val index: Int) {
+        val value: Any? get() = buffer[index]
+        fun setValue(v: Any?) { buffer[index] = v }
+
+        override fun equals(other: Any?): Boolean =
+            other is Pointer && other.buffer === buffer && other.index == index
+        override fun hashCode(): Int = System.identityHashCode(buffer) * 31 + index
+    }
+
+    /** Wraps a value in a single-element Pointer buffer (or reuses a list directly). */
+    private fun asPointer(value: Any?): Pointer =
+        if (value is MutableList<*>) {
+            @Suppress("UNCHECKED_CAST")
+            Pointer(value as MutableList<Any?>, 0)
+        } else {
+            Pointer(mutableListOf(value), 0)
+        }
 
     /** A communication channel between tasks, wrapping a kotlinx.coroutines channel. */
     private class AzoraChannel(val channel: Channel<Any?>)

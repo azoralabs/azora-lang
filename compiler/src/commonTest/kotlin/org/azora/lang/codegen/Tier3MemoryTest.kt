@@ -148,4 +148,48 @@ class Tier3MemoryTest {
             }
         """.trimIndent()))
     }
+
+    @Test fun pointerArithmeticOffsetAndDeref() {
+        assertEquals("10\n20\n30", run("""
+            func main() {
+                var p: Int* = alloc [10, 20, 30]
+                println(*p)
+                var p1 = p + 1
+                println(*p1)
+                println(*(p + 2))
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun pointerArithmeticSubtract() {
+        assertEquals("30\n20", run("""
+            func main() {
+                var p: Int* = alloc [10, 20, 30]
+                var end = p + 2
+                println(*end)
+                var back = end - 1
+                println(*back)
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun pointerArithmeticWriteThroughOffset() {
+        assertEquals("99", run("""
+            func main() {
+                var p: Int* = alloc [10, 20, 30]
+                *(p + 1) = 99
+                println(*(p + 1))
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun pointerArithmeticDistance() {
+        assertEquals("3", run("""
+            func main() {
+                var p: Int* = alloc [10, 20, 30, 40]
+                var q = p + 3
+                println(q - p)
+            }
+        """.trimIndent()))
+    }
 }

@@ -798,7 +798,9 @@ class TypeResolver(private val table: SymbolTable) {
             }
             is Expr.Alloc -> {
                 val inner = resolveExpr(expr.value) ?: return null
-                IrType.Pointer(inner)
+                // alloc [a, b, c] → pointer to the element type (buffer), not pointer to array.
+                val pointee = (inner as? IrType.Array)?.element ?: inner
+                IrType.Pointer(pointee)
             }
             is Expr.Deref -> {
                 val target = resolveExpr(expr.target) ?: return null
@@ -1012,6 +1014,21 @@ class TypeResolver(private val table: SymbolTable) {
                 val eqMangled = table.lookupMethod(left.name, "equals")
                 if (eqMangled != null) return IrType.Bool
             }
+        }
+        // Pointer arithmetic: Pointer(T) + Int → Pointer(T), Pointer(T) - Int → Pointer(T),
+        // Pointer(T) - Pointer(T) → Int, Pointer(T) ==/!= Pointer(T) → Bool.
+        if (left is IrType.Pointer) {
+            return when {
+                op == TokenType.MINUS && right is IrType.Pointer -> IrType.Int // pointer distance
+                op == TokenType.PLUS || op == TokenType.MINUS ->
+                    if (right in IrType.integerTypes) left else { errors.add("line $line: pointer arithmetic requires Int offset, got $right"); null }
+                op == TokenType.EQUAL_EQUAL || op == TokenType.BANG_EQUAL ->
+                    if (right is IrType.Pointer) IrType.Bool else { errors.add("line $line: pointer comparison requires Pointer, got $right"); null }
+                else -> { errors.add("line $line: unsupported pointer operation '$op'"); null }
+            }
+        }
+        if (left in IrType.integerTypes && right is IrType.Pointer && op == TokenType.PLUS) {
+            return right // Int + Pointer → Pointer
         }
         // Unwrap nullable numeric operands for primitive operations so that
         // e.g. `Int? + Int` type-checks (the null-conditional operators rely on this).

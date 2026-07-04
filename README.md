@@ -103,11 +103,13 @@ The IR is target-agnostic. Every backend lowers from the same optimized IR. Addi
 
 ### Memory Model
 - `alloc <expr>` — heap-allocate a value, returning a `T*` pointer
+- `alloc [10, 20, 30]` — allocate a buffer and return a pointer to the first element (enables pointer arithmetic)
 - `*ptr` dereference, `*ptr = v` store-through
 - `drop <expr>` — release (advisory under GC)
 - `unsafe { … }` — opt-in block
 - `isolated(expr)` — produce an independent deep copy
 - `zone alloc { … }` / `friend zone alloc { … }` — scoped allocation arenas; pointers allocated inside are tracked and freed at zone exit
+- Pointer arithmetic: `ptr + n`, `ptr - n` (offset), `ptr1 - ptr2` (distance), `ptr1 == ptr2` (equality)
 
 ### Concurrency
 - **Generators**: `flow name(params): Elem { … yield v }` — a flow is a LAZY producer; its body runs incrementally, suspending at each `yield` until consumed (`for x in flow()`). Infinite flows work; breaking early only runs the body as far as consumed
@@ -191,7 +193,7 @@ The IR is target-agnostic. Every backend lowers from the same optimized IR. Addi
 ./gradlew :compiler:desktopTest
 ```
 
-492 tests covering all features. Tests verify runtime correctness through the IR interpreter.
+496 tests covering all features. Tests verify runtime correctness through the IR interpreter.
 
 ## Missing Features (Roadmap)
 
@@ -199,7 +201,6 @@ The IR is target-agnostic. Every backend lowers from the same optimized IR. Addi
 - **Multi-statement lambda codegen** — best-effort in Kotlin/TS
 
 ### Systems (large effort)
-- **Pointer arithmetic**
 - **UI / reactivity**: `view`/`rem`/`effect`
 - **Inheritance**: `node`/`leaf`/`base`
 - **Variadic generics**: `pack Tuple<T...>`

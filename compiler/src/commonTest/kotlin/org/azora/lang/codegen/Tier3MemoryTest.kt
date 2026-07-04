@@ -120,4 +120,32 @@ class Tier3MemoryTest {
         assertTrue("__alloc" in result.typescript && "AzoraPtr" in result.typescript,
             "TypeScript should emit a pointer runtime preamble, got:\n${result.typescript}")
     }
+
+    @Test fun zoneAllocFreesAtExit() {
+        // `zone alloc { }` tracks allocations and frees them at exit.
+        assertEquals("5\nnull", run("""
+            func main() {
+                var p: Int* = alloc 0
+                zone alloc {
+                    p = alloc 5
+                    println(*p)
+                }
+                println(*p)
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun friendZoneAllocFreesAtExit() {
+        // `friend zone alloc { }` — arena scoping on top of shared friend scope.
+        assertEquals("7\nnull", run("""
+            func main() {
+                var q: Int* = alloc 0
+                friend zone alloc {
+                    q = alloc 7
+                    println(*q)
+                }
+                println(*q)
+            }
+        """.trimIndent()))
+    }
 }

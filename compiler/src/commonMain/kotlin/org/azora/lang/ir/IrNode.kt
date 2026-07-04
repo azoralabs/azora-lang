@@ -584,7 +584,7 @@ sealed class IrStmt {
      *
      * @property body the list of statements inside the zone
      */
-    data class Zone(val body: List<IrStmt>) : IrStmt()
+    data class Zone(val body: List<IrStmt>, val alloc: Boolean = false) : IrStmt()
 
     /**
      * Runtime assertion (`assert condition { "message" }`).

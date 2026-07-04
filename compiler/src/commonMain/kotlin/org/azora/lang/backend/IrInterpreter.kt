@@ -81,7 +81,8 @@ class IrInterpreter {
         var scopes: ArrayDeque<MutableMap<String, Any?>> = ArrayDeque(),
         var deferStack: MutableList<DeferredBlock> = mutableListOf(),
         val yieldAccumulators: ArrayDeque<MutableList<Any?>> = ArrayDeque(),
-        val flowProduceChannels: ArrayDeque<SendChannel<Any?>> = ArrayDeque()
+        val flowProduceChannels: ArrayDeque<SendChannel<Any?>> = ArrayDeque(),
+        val regionAllocations: ArrayDeque<MutableList<Pointer>> = ArrayDeque()
     ) : CoroutineContext.Element {
         companion object Key : CoroutineContext.Key<ExecState>
         override val key: CoroutineContext.Key<*> get() = Key
@@ -246,9 +247,19 @@ class IrInterpreter {
             }
             is IrStmt.Zone -> {
                 pushScope()
-                val result = executeBody(stmt.body)
+                if (stmt.alloc) state().regionAllocations.addLast(mutableListOf())
+                var signal: ControlSignal? = null
+                try {
+                    val result = executeBody(stmt.body)
+                    if (result is ControlSignal) signal = result
+                } finally {
+                    if (stmt.alloc) {
+                        // Free all allocations made in this arena (null their pointee cells).
+                        for (ptr in state().regionAllocations.removeLast()) ptr.value = null
+                    }
+                }
                 popScope()
-                if (result is ControlSignal) return result
+                if (signal != null) return signal
             }
             is IrStmt.While -> {
                 while (evalExpr(stmt.condition) as Boolean) {
@@ -682,8 +693,10 @@ class IrInterpreter {
             return if (args[0] != null) args[0] else args[1]
         }
         if (expr.name == "__alloc") {
-            // Heap-allocate: wrap the value in a mutable cell (a pointer).
-            return Pointer(args[0])
+            val ptr = Pointer(args[0])
+            // Register with the current `zone alloc { }` arena (if any) for cleanup at exit.
+            state().regionAllocations.lastOrNull()?.add(ptr)
+            return ptr
         }
         if (expr.name == "__deref") {
             return (args[0] as Pointer).value

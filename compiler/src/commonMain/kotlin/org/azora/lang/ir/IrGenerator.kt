@@ -212,11 +212,17 @@ class IrGenerator(private val table: SymbolTable) {
                 nameScopes.addLast(friendNameScope!!)
                 // Restore previously saved friend variables
                 for ((_, sym) in friendSymbols) table.defineVariable(sym)
-                for (s in stmt.body) result.add(lowerStmt(s))
+                val lowered = stmt.body.map { lowerStmt(it) }
                 // Save variables back for next friend zone
                 table.exportCurrentScope(friendSymbols)
                 nameScopes.removeLast()
                 table.popScope()
+                if (stmt.alloc) {
+                    // `friend zone alloc { }` — arena scoping on top of shared friend scope.
+                    result.add(IrStmt.Zone(lowered, alloc = true))
+                } else {
+                    result.addAll(lowered)
+                }
             } else {
                 result.add(lowerStmt(stmt))
             }
@@ -310,7 +316,7 @@ class IrGenerator(private val table: SymbolTable) {
                 val stmts = lowerBody(stmt.body)
                 popNameScope()
                 table.popScope()
-                IrStmt.Zone(stmts)
+                IrStmt.Zone(stmts, stmt.alloc)
             }
             is Stmt.FriendZone -> {
                 // Should be handled by lowerBody — if we get here, it's a bug

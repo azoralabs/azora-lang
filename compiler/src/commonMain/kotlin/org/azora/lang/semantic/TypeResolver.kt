@@ -374,6 +374,7 @@ class TypeResolver(private val table: SymbolTable) {
                     if (scrutType != null) {
                         val allVariants = if (scrutType is IrType.Named) {
                             table.lookupSlot(scrutType.name)?.map { it.first }
+                                ?: table.lookupEnum(scrutType.name)
                         } else null
                         if (allVariants != null && scrutType is IrType.Named) {
                             val covered = mutableSetOf<String>()
@@ -658,11 +659,12 @@ class TypeResolver(private val table: SymbolTable) {
                 targetType.element
             }
             is Expr.Member -> {
-                // Enum variant: `Color.Red` → string value "Red"
+                // Enum variant: `Color.Red` → Named type carrying the enum identity
+                // (enables exhaustiveness checking in `when`; runtime value is still a string).
                 if (expr.target is Expr.Identifier) {
                     val variants = table.lookupEnum(expr.target.name)
                     if (variants != null) {
-                        if (expr.name in variants) return IrType.String
+                        if (expr.name in variants) return IrType.Named(expr.target.name)
                         errors.add("line ${expr.line}: enum '${expr.target.name}' has no variant '${expr.name}'")
                         return null
                     }
@@ -964,6 +966,8 @@ class TypeResolver(private val table: SymbolTable) {
     /** Checks if an initializer type is compatible with a declared type (nullable widening, Any from null). */
     private fun isCompatible(declared: IrType, actual: IrType): Boolean {
         if (declared == actual) return true
+        // An enum value (Named, known enum) is usable wherever a String is expected.
+        if (declared == IrType.String && actual is IrType.Named && table.lookupEnum(actual.name) != null) return true
         // null (Any) is compatible with any Nullable type
         if (actual == IrType.Any && declared is IrType.Nullable) return true
         // non-nullable is compatible with its nullable version

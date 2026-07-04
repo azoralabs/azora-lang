@@ -536,7 +536,9 @@ sealed class Stmt {
         val body: List<Stmt>,
         override val line: Int,
         override val column: Int = 0,
-        override val length: Int = 0
+        override val length: Int = 0,
+        /** `zone alloc { }` — allocations inside are tracked and freed at exit. */
+        val alloc: Boolean = false
     ) : Stmt()
 
     /**
@@ -552,7 +554,9 @@ sealed class Stmt {
         val body: List<Stmt>,
         override val line: Int,
         override val column: Int = 0,
-        override val length: Int = 0
+        override val length: Int = 0,
+        /** `friend zone alloc { }` — shared-scope + arena. */
+        val alloc: Boolean = false
     ) : Stmt()
 
     /**

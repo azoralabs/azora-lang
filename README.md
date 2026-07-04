@@ -80,7 +80,7 @@ The IR is target-agnostic. Every backend lowers from the same optimized IR. Addi
 - Labeled loops: `@lbl for …`, `break @lbl` / `continue @lbl`
 - `break`, `continue`
 - `when expr { patterns -> { body } else -> { body } }` — pattern matching on enums, slots (with destructuring), and literals
-- Exhaustiveness checking on slot types
+- Exhaustiveness checking on slot and enum types
 
 ### Object-Oriented
 - **Structs** (`pack`): fields, construction, field access/mutation
@@ -106,6 +106,7 @@ The IR is target-agnostic. Every backend lowers from the same optimized IR. Addi
 - `drop <expr>` — release (advisory under GC)
 - `unsafe { … }` — opt-in block
 - `isolated(expr)` — produce an independent deep copy
+- `zone alloc { … }` / `friend zone alloc { … }` — scoped allocation arenas; pointers allocated inside are tracked and freed at zone exit
 
 ### Concurrency
 - **Generators**: `flow name(params): Elem { … yield v }` — a flow is a LAZY producer; its body runs incrementally, suspending at each `yield` until consumed (`for x in flow()`). Infinite flows work; breaking early only runs the body as far as consumed
@@ -183,16 +184,15 @@ The IR is target-agnostic. Every backend lowers from the same optimized IR. Addi
 ./gradlew :compiler:desktopTest
 ```
 
-482 tests covering all features. Tests verify runtime correctness through the IR interpreter.
+486 tests covering all features. Tests verify runtime correctness through the IR interpreter.
 
 ## Missing Features (Roadmap)
 
 ### Language
-- **Exhaustiveness checking for enums** (currently only slots)
 - **Multi-statement lambda codegen** — best-effort in Kotlin/TS
 
 ### Systems (large effort)
-- **`region { }` arenas**, pointer arithmetic
+- **Pointer arithmetic**
 - **Dependency injection**: `solo`/`wrap`/`inject`
 - **UI / reactivity**: `view`/`rem`/`effect`
 - **Inheritance**: `node`/`leaf`/`base`

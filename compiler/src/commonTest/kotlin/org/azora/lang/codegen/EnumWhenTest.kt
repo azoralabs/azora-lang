@@ -98,6 +98,44 @@ class EnumWhenTest {
         """.trimIndent()))
     }
 
+    @Test fun enumWhenExhaustiveNoElse() {
+        assertEquals("a", run("""
+            enum E {
+                A
+                B
+                C
+            }
+            func main() {
+                fin x = E.A
+                when x {
+                    E.A -> { println("a") }
+                    E.B -> { println("b") }
+                    E.C -> { println("c") }
+                }
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun enumWhenNonExhaustiveErrors() {
+        val result = Compiler().compile("""
+            enum E {
+                A
+                B
+                C
+            }
+            func main() {
+                fin x = E.A
+                when x {
+                    E.A -> { println("a") }
+                    E.B -> { println("b") }
+                }
+            }
+        """.trimIndent())
+        assertIs<CompilationResult.Failure>(result, "Expected non-exhaustive error")
+        val errors = (result as CompilationResult.Failure).errors.joinToString()
+        assertTrue("non-exhaustive" in errors || "C" in errors, "Expected exhaustiveness error, got: $errors")
+    }
+
     @Test fun whenMatchesInteger() {
         assertEquals("two", run("""
             func main() {

@@ -1321,24 +1321,26 @@ class Parser(private val tokens: List<Token>) {
     private fun parseZone(): Stmt.Zone {
         val start = peek()
         consume(TokenType.ZONE, "Expected 'zone'")
+        val isAlloc = match(TokenType.ALLOC) // `zone alloc { }` — scoped allocation arena
         consume(TokenType.L_BRACE, "Expected '{' after 'zone'")
         skipNewlines()
         val body = parseBlock()
         consume(TokenType.R_BRACE, "Expected '}'")
         consumeNewline()
-        return Stmt.Zone(body, start.line, start.column)
+        return Stmt.Zone(body, start.line, start.column, alloc = isAlloc)
     }
 
     private fun parseFriendZone(): Stmt.FriendZone {
         val start = peek()
         consume(TokenType.FRIEND, "Expected 'friend'")
         consume(TokenType.ZONE, "Expected 'zone' after 'friend'")
+        val isAlloc = match(TokenType.ALLOC) // `friend zone alloc { }`
         consume(TokenType.L_BRACE, "Expected '{' after 'friend zone'")
         skipNewlines()
         val body = parseBlock()
         consume(TokenType.R_BRACE, "Expected '}'")
         consumeNewline()
-        return Stmt.FriendZone(body, start.line, start.column)
+        return Stmt.FriendZone(body, start.line, start.column, alloc = isAlloc)
     }
 
     private fun parseNoInline(): Stmt.NoInline {

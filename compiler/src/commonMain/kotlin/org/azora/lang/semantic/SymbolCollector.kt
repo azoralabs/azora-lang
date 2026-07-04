@@ -120,6 +120,34 @@ class SymbolCollector {
             }
         }
 
+        // Register solo (singleton struct) declarations
+        for (item in program.items) {
+            if (item is TopLevel.Solo) {
+                try {
+                    val tpSet = emptySet<String>()
+                    val fields = item.fields.map { field ->
+                        StructField(field.name, IrType.resolve(field.type, tpSet), field.mutable)
+                    }
+                    table.defineStruct(StructType(item.name, fields, emptyList()))
+                    // Register methods as Type_method (like impl)
+                    for (method in item.methods) {
+                        val mangled = "${item.name}_${method.name}"
+                        val params = mutableListOf<Pair<String, IrType>>()
+                        params.add("self" to IrType.Named(item.name))
+                        for (p in method.params) params.add(p.name to IrType.resolve(p.type))
+                        val returnType = when (val rt = method.returnType) {
+                            is TypeAnnotation.Explicit -> IrType.resolve(rt.ref)
+                            is TypeAnnotation.Inferred -> inferReturnType(method, params)
+                        }
+                        table.defineFunction(FunctionSymbol(mangled, params, returnType, method.isInline))
+                        table.defineMethod(item.name, method.name, mangled)
+                    }
+                } catch (e: Exception) {
+                    errors.add("line ${item.line}: ${e.message}")
+                }
+            }
+        }
+
         // Register pack (struct) declarations
         for (item in program.items) {
             if (item is TopLevel.Pack) {
@@ -328,6 +356,6 @@ class SymbolCollector {
         is Expr.NamedArg -> null
         is Expr.NullLiteral -> IrType.Any
         is Expr.NullCoalesce, is Expr.SafeMember,
-        is Expr.Cast, is Expr.IsCheck, is Expr.MapLit, is Expr.Alloc, is Expr.Deref, is Expr.Isolated, is Expr.Await -> null
+        is Expr.Cast, is Expr.IsCheck, is Expr.MapLit, is Expr.Alloc, is Expr.Deref, is Expr.Isolated, is Expr.Await, is Expr.Inject -> null
     }
 }

@@ -126,6 +126,10 @@ enum class TokenType {
     FLOW, YIELD, TASK, AWAIT, LAUNCH,
     // FFI: `bridge <target> { func sigs }` — extern function declarations.
     BRIDGE,
+    // DI: `solo Name { … }` singleton, `inject Type` resolve, `wrap Name { … }` container.
+    SOLO, INJECT, WRAP,
+    // Error handling: `rescue { … }` — catch-and-suppress.
+    RESCUE,
     // `deco Name { fields }` — decorator/annotation declaration.
     DECO,
 

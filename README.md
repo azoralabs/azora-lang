@@ -99,6 +99,7 @@ The IR is target-agnostic. Every backend lowers from the same optimized IR. Addi
 - **Error sets**: `fail ErrSet { V1, V2 }` declares a set of error variants
 - **Failable types**: `T!ErrSet` — a function returning `T` or an error from `ErrSet`; `fail ErrSet.V` raises one (enforced: a `T!E` function's failures must belong to `E`)
 - `fail defer { body }` — defer that runs only when the function exits via an error
+- `rescue { body }` — catch-and-suppress: runs on error and swallows it (the function continues normally)
 
 ### Memory Model
 - `alloc <expr>` — heap-allocate a value, returning a `T*` pointer
@@ -160,6 +161,12 @@ The IR is target-agnostic. Every backend lowers from the same optimized IR. Addi
 ### Resource Management
 - `defer { body }` — runs at function exit (LIFO, even through return/throw)
 
+### Dependency Injection
+- `solo Name { fields; methods }` — declares a singleton struct with one shared instance (lazily created)
+- `wrap Name { solo Type(args); … }` — a DI container that wires singletons with construction args
+- `inject Type` — resolves the singleton instance (same object every time; thread-safe under parallelism)
+- Methods and fields accessible via chaining: `inject Config.get()`
+
 ### FFI (Foreign Function Interface)
 - `bridge <target> { func sigs }` — declares extern functions for cross-target interop (C, JVM, JS, …)
 - Interpreter resolves common C-math (`sin`, `cos`, `sqrt`, `pow`, …) to `kotlin.math`
@@ -184,7 +191,7 @@ The IR is target-agnostic. Every backend lowers from the same optimized IR. Addi
 ./gradlew :compiler:desktopTest
 ```
 
-486 tests covering all features. Tests verify runtime correctness through the IR interpreter.
+492 tests covering all features. Tests verify runtime correctness through the IR interpreter.
 
 ## Missing Features (Roadmap)
 
@@ -193,7 +200,6 @@ The IR is target-agnostic. Every backend lowers from the same optimized IR. Addi
 
 ### Systems (large effort)
 - **Pointer arithmetic**
-- **Dependency injection**: `solo`/`wrap`/`inject`
 - **UI / reactivity**: `view`/`rem`/`effect`
 - **Inheritance**: `node`/`leaf`/`base`
 - **Variadic generics**: `pack Tuple<T...>`

@@ -133,11 +133,48 @@ class IrGenerator(private val table: SymbolTable) {
                     val fields = item.fields.map { IrField(it.name, IrType.resolve(it.type, tpSet), it.mutable) }
                     listOf(IrTopLevel.Struct(item.name, fields))
                 }
+                is TopLevel.Solo -> {
+                    val fields = item.fields.map { IrField(it.name, IrType.resolve(it.type), it.mutable) }
+                    val result = mutableListOf<IrTopLevel>(IrTopLevel.Struct(item.name, fields))
+                    // Lower methods as free functions Name_method (like impl).
+                    for (method in item.methods) {
+                        if (!method.isInline) result.add(IrTopLevel.Func(lowerMethod(item.name, method)))
+                    }
+                    // Emit a __singleton_Name factory that constructs the struct from field defaults.
+                    val defaults = item.fields.map { f ->
+                        if (f.default != null) lowerExpr(f.default)
+                        else defaultValueForType(IrType.resolve(f.type))
+                    }
+                    val factory = IrFunction(
+                        "__singleton_${item.name}",
+                        emptyList(),
+                        IrType.Named(item.name),
+                        listOf(IrStmt.Return(IrExpr.StructCtor(item.name, item.fields.map { it.name }, defaults, IrType.Named(item.name))))
+                    )
+                    result.add(IrTopLevel.Func(factory))
+                    result
+                }
                 is TopLevel.Impl -> item.methods.mapNotNull { method ->
                     if (method.isInline) null
                     else IrTopLevel.Func(lowerMethod(item.typeName, method))
                 }
                 else -> emptyList() // Inline constructs already resolved by CTFE
+            }
+        } +
+        // Emit __singleton factories for `wrap` registrations (DI container wiring).
+        program.items.filterIsInstance<TopLevel.Wrap>().flatMap { wrap ->
+            wrap.registrations.mapNotNull { reg ->
+                val struct = table.lookupStruct(reg.typeName) ?: return@mapNotNull null
+                val loweredArgs = reg.args.map { lowerExpr(it) }
+                // Pad with type-based defaults for fields not covered by the construction args.
+                val fullArgs = loweredArgs + struct.fields.drop(loweredArgs.size).map { defaultValueForType(it.type) }
+                val factory = IrFunction(
+                    "__singleton_${reg.typeName}",
+                    emptyList(),
+                    IrType.Named(reg.typeName),
+                    listOf(IrStmt.Return(IrExpr.StructCtor(reg.typeName, struct.fields.map { it.name }, fullArgs, IrType.Named(reg.typeName))))
+                )
+                IrTopLevel.Func(factory)
             }
         } +
         // Emit extern declarations for `bridge` (FFI) function signatures.
@@ -378,7 +415,7 @@ class IrGenerator(private val table: SymbolTable) {
             }
             is Stmt.Break -> IrStmt.Break(stmt.label)
             is Stmt.Continue -> IrStmt.Continue(stmt.label)
-            is Stmt.Defer -> IrStmt.Defer(lowerBody(stmt.body), stmt.onFail)
+            is Stmt.Defer -> IrStmt.Defer(lowerBody(stmt.body), stmt.onFail, stmt.suppress)
             is Stmt.Yield -> IrStmt.Yield(lowerExpr(stmt.value))
             is Stmt.When -> {
                 val scrutinee = lowerExpr(stmt.scrutinee)
@@ -610,6 +647,9 @@ class IrGenerator(private val table: SymbolTable) {
                 val resultType = (task.type as? IrType.Function)?.ret ?: IrType.Any
                 IrExpr.Await(task, resultType)
             }
+            is Expr.Inject -> {
+                IrExpr.Call("__inject", listOf(IrExpr.StringLiteral(expr.typeName)), IrType.Named(expr.typeName))
+            }
             is Expr.Index -> {
                 val target = lowerExpr(expr.target)
                 val tt = target.type
@@ -766,5 +806,21 @@ class IrGenerator(private val table: SymbolTable) {
     private fun resolveTypeAnnotation(ann: TypeAnnotation, init: IrExpr): IrType = when (ann) {
         is TypeAnnotation.Explicit -> IrType.resolve(ann.ref)
         is TypeAnnotation.Inferred -> init.type
+    }
+
+    /** Provides a default (zero) value for solo fields without explicit defaults. */
+    private fun defaultValueForType(type: IrType): IrExpr = when (type) {
+        is IrType.Int -> IrExpr.IntLiteral(0, type)
+        is IrType.Long -> IrExpr.IntLiteral(0, type)
+        is IrType.Byte -> IrExpr.IntLiteral(0, type)
+        is IrType.Short -> IrExpr.IntLiteral(0, type)
+        is IrType.UInt -> IrExpr.IntLiteral(0, type)
+        is IrType.ULong -> IrExpr.IntLiteral(0, type)
+        is IrType.Real -> IrExpr.RealLiteral(0.0, type)
+        is IrType.Float -> IrExpr.RealLiteral(0.0, type)
+        is IrType.String -> IrExpr.StringLiteral("")
+        is IrType.Bool -> IrExpr.BoolLiteral(false)
+        is IrType.Char -> IrExpr.CharLiteral(' ')
+        else -> IrExpr.Var("__null", IrType.Any)
     }
 }

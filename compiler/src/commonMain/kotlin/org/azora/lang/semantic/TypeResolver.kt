@@ -809,6 +809,7 @@ class TypeResolver(private val table: SymbolTable) {
                 val t = resolveExpr(expr.value) ?: return null
                 (t as? IrType.Function)?.ret ?: IrType.Any
             }
+            is Expr.Inject -> IrType.Named(expr.typeName)
             is Expr.Cast -> {
                 resolveExpr(expr.expr) ?: return null
                 IrType.resolve(expr.targetType)

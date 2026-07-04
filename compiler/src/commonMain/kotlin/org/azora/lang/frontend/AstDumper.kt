@@ -133,6 +133,12 @@ private fun dumpTopLevel(sb: StringBuilder, item: TopLevel, indent: String) {
         is TopLevel.Bridge -> {
             sb.appendLine("${indent}Bridge(target=${item.target}, funcs=[${item.funcs.joinToString(", ") { it.name }}])")
         }
+        is TopLevel.Solo -> {
+            sb.appendLine("${indent}Solo(name=${item.name}, fields=[${item.fields.joinToString(", ") { it.name }}], methods=[${item.methods.joinToString(", ") { it.name }}])")
+        }
+        is TopLevel.Wrap -> {
+            sb.appendLine("${indent}Wrap(name=${item.name}, registrations=[${item.registrations.joinToString(", ") { "${it.typeName}(${it.args.size} args)" }}])")
+        }
         is TopLevel.Spec -> {
             sb.appendLine("${indent}Spec(name=${item.name}, methods=[${item.methods.joinToString(", ") { it.name }}])")
         }
@@ -446,6 +452,9 @@ private fun dumpExpr(sb: StringBuilder, expr: Expr, indent: String) {
         is Expr.Await -> {
             sb.appendLine("${indent}Await")
             dumpExpr(sb, expr.value, "$indent    ")
+        }
+        is Expr.Inject -> {
+            sb.appendLine("${indent}Inject(${expr.typeName})")
         }
         is Expr.SafeMember -> {
             sb.appendLine("${indent}SafeMember(${expr.name})")

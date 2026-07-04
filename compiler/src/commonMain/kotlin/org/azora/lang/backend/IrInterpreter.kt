@@ -69,6 +69,9 @@ class IrInterpreter {
     /** The runBlocking coroutine scope — used by `task`/`await` for cooperative concurrency. */
     private var coroutineScope: CoroutineScope? = null
 
+    /** Singleton instances for DI (`solo` / `inject`), keyed by type name. Synchronized for parallelism. */
+    private val singletons = mutableMapOf<String, Any?>()
+
     /** Fire-and-forget tasks created via `launch { … }`; joined before interpret() returns. */
     private val launchedTasks = mutableListOf<kotlinx.coroutines.Deferred<Any?>>()
 
@@ -92,7 +95,7 @@ class IrInterpreter {
     private suspend fun state(): ExecState = coroutineContext[ExecState]!!
 
     /** A deferred block, optionally restricted to run only on error (`fail defer`). */
-    private class DeferredBlock(val body: List<IrStmt>, val onFail: Boolean)
+    private class DeferredBlock(val body: List<IrStmt>, val onFail: Boolean, val suppress: Boolean = false)
 
     fun interpret(program: IrProgram): String {
         output.clear()
@@ -196,6 +199,7 @@ class IrInterpreter {
         var retValue: Any? = null
         var failed = false
         var toRethrow: AzoraThrownException? = null
+        var suppressed = false
         try {
             val result = executeBody(func.body)
             retValue = (result as? ReturnSignal)?.value
@@ -210,11 +214,12 @@ class IrInterpreter {
                 val d = st.deferStack[i]
                 if (d.onFail && !failed) continue
                 executeBody(d.body)
+                if (d.suppress) suppressed = true
             }
             st.deferStack = savedDefers
         }
         popScope()
-        if (toRethrow != null) throw toRethrow
+        if (toRethrow != null && !suppressed) throw toRethrow
         return retValue
     }
 
@@ -357,7 +362,7 @@ class IrInterpreter {
             }
             is IrStmt.Break -> return BreakSignal(stmt.label)
             is IrStmt.Continue -> return ContinueSignal(stmt.label)
-            is IrStmt.Defer -> { state().deferStack.add(DeferredBlock(stmt.body, stmt.onFail)) }
+            is IrStmt.Defer -> { state().deferStack.add(DeferredBlock(stmt.body, stmt.onFail, stmt.suppress)) }
             is IrStmt.Yield -> {
                 val st = state()
                 val channel = st.flowProduceChannels.lastOrNull()
@@ -707,6 +712,19 @@ class IrInterpreter {
         }
         if (expr.name == "__isolated") {
             return deepCopy(args[0])
+        }
+        if (expr.name == "__inject") {
+            val typeName = args[0] as String
+            // Fast path: cached singleton (no suspend inside synchronized).
+            val cached = synchronized(singletons) { singletons[typeName] }
+            if (cached != null) return cached
+            // Slow path: create the singleton via its factory (outside the lock).
+            val factoryName = "__singleton_$typeName"
+            val factory = functions[factoryName]
+                ?: error("No singleton factory for '$typeName' — is it declared as `solo`?")
+            val instance = executeFunction(factory, emptyList())
+            // putIfAbsent handles the race where another coroutine created it meanwhile.
+            return synchronized(singletons) { singletons.putIfAbsent(typeName, instance) ?: instance }
         }
         if (expr.name == "__safeMember") {
             val target = args[0]

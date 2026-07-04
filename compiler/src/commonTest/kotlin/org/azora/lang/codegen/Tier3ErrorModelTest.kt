@@ -171,4 +171,20 @@ class Tier3ErrorModelTest {
             }
         """.trimIndent()))
     }
+
+    @Test fun rescueSuppressesErrorAndContinues() {
+        assertEquals("rescued!\nok", run("""
+            fail E {
+                Bad
+            }
+            func risky() {
+                rescue { println("rescued!") }
+                fail E.Bad
+            }
+            func main() {
+                risky()
+                println("ok")
+            }
+        """.trimIndent()))
+    }
 }

@@ -146,6 +146,8 @@ class Parser(private val tokens: List<Token>) {
             check(TokenType.IMPL) -> parseImpl()
             check(TokenType.INFX) -> parseInfx()
             check(TokenType.BRIDGE) -> parseBridge()
+            check(TokenType.SOLO) -> parseSolo()
+            check(TokenType.WRAP) -> parseWrap()
             check(TokenType.SPEC) -> parseSpec()
             check(TokenType.SLOT) -> parseSlot()
             check(TokenType.TYPEALIAS) -> parseTypeAlias()
@@ -605,6 +607,64 @@ class Parser(private val tokens: List<Token>) {
         return TopLevel.Bridge(target, funcs, start.line, start.column)
     }
 
+    /** `solo Name { fields; methods }` — a singleton struct with one shared instance. */
+    private fun parseSolo(): TopLevel.Solo {
+        val start = consume(TokenType.SOLO, "Expected 'solo'")
+        val name = consume(TokenType.IDENTIFIER, "Expected solo name").lexeme
+        consume(TokenType.L_BRACE, "Expected '{' after solo name")
+        skipNewlines()
+        val fields = mutableListOf<PackField>()
+        val methods = mutableListOf<FuncDecl>()
+        while (!check(TokenType.R_BRACE) && !isAtEnd()) {
+            skipNewlines()
+            if (check(TokenType.R_BRACE)) break
+            if (check(TokenType.FUNC)) {
+                methods.add(parseFuncDecl())
+            } else {
+                fields.add(parsePackField())
+            }
+            skipNewlines()
+        }
+        consume(TokenType.R_BRACE, "Expected '}' after solo body")
+        consumeNewline()
+        return TopLevel.Solo(name, fields, methods, start.line, start.column)
+    }
+
+    /**
+     * `wrap Name { solo Type(args); … }` — a DI container that wires singletons with
+     * construction args. Each `solo Type(args)` generates a `__singleton_Type` factory
+     * that constructs the type with the given arguments.
+     */
+    private fun parseWrap(): TopLevel.Wrap {
+        val start = consume(TokenType.WRAP, "Expected 'wrap'")
+        val name = consume(TokenType.IDENTIFIER, "Expected wrap name").lexeme
+        consume(TokenType.L_BRACE, "Expected '{' after wrap name")
+        skipNewlines()
+        val registrations = mutableListOf<TopLevel.WrapReg>()
+        while (!check(TokenType.R_BRACE) && !isAtEnd()) {
+            skipNewlines()
+            if (check(TokenType.R_BRACE)) break
+            if (match(TokenType.SOLO)) {
+                val typeName = consume(TokenType.IDENTIFIER, "Expected type name after 'solo'").lexeme
+                val args = if (match(TokenType.L_PAREN)) {
+                    val a = mutableListOf<Expr>()
+                    if (!check(TokenType.R_PAREN)) {
+                        do { a.add(parseExpr()) } while (match(TokenType.COMMA))
+                    }
+                    consume(TokenType.R_PAREN, "Expected ')' after solo args")
+                    a
+                } else emptyList()
+                registrations.add(TopLevel.WrapReg(typeName, args, null, start.line, start.column))
+            } else {
+                error("Expected 'solo' in wrap block at line ${peek().line}")
+            }
+            consumeNewline()
+        }
+        consume(TokenType.R_BRACE, "Expected '}' after wrap body")
+        consumeNewline()
+        return TopLevel.Wrap(name, registrations, start.line, start.column)
+    }
+
     /** `slot Name { Variant(Type); Variant2(Type1, Type2); Variant3 }` — a tagged union. */
     private fun parseSlot(): TopLevel.Slot {
         val start = peek()
@@ -906,6 +966,7 @@ class Parser(private val tokens: List<Token>) {
             check(TokenType.YIELD) -> parseYield()
             check(TokenType.TRY) -> parseTry()
             check(TokenType.DEFER) -> parseDefer()
+            check(TokenType.RESCUE) -> parseRescue()
             check(TokenType.GUARD) -> parseGuard()
             else -> parseExprStmt()
         }
@@ -1145,6 +1206,18 @@ class Parser(private val tokens: List<Token>) {
         consume(TokenType.R_BRACE, "Expected '}'")
         consumeNewline()
         return Stmt.Defer(body, start.line, start.column, onFail = true)
+    }
+
+    /** `rescue { body }` — catch-and-suppress: runs the handler on error, then swallows it. */
+    private fun parseRescue(): Stmt.Defer {
+        val start = peek()
+        consume(TokenType.RESCUE, "Expected 'rescue'")
+        consume(TokenType.L_BRACE, "Expected '{' after 'rescue'")
+        skipNewlines()
+        val body = parseBlock()
+        consume(TokenType.R_BRACE, "Expected '}'")
+        consumeNewline()
+        return Stmt.Defer(body, start.line, start.column, onFail = true, suppress = true)
     }
 
     /** `guard condition else { body }` — sugar for `if !condition { body }`. */
@@ -1867,6 +1940,13 @@ class Parser(private val tokens: List<Token>) {
             val at = advance()
             return Expr.Await(parseUnary(), at.line, at.column, at.lexeme.length)
         }
+        // `inject Type` — resolve the singleton instance.
+        if (check(TokenType.INJECT)) {
+            val at = advance()
+            val typeName = consume(TokenType.IDENTIFIER, "Expected type name after 'inject'").lexeme
+            // Chain into parsePostfix so `inject Config.get()` works.
+            return parsePostfix(Expr.Inject(typeName, at.line, at.column, at.lexeme.length))
+        }
         if (check(TokenType.BANG) || check(TokenType.MINUS) || check(TokenType.TILDE)) {
             val op = advance()
             val operand = parseUnary()
@@ -1879,8 +1959,8 @@ class Parser(private val tokens: List<Token>) {
      * Postfix chain: member access (`a.b`), indexing (`a[i]`), and calls (`f(...)`,
      * `a.m(...)`). Repeated left-associatively, e.g. `a.b[i].c()`.
      */
-    private fun parsePostfix(): Expr {
-        var expr = parsePrimary()
+    private fun parsePostfix(initial: Expr? = null): Expr {
+        var expr = initial ?: parsePrimary()
         while (true) {
             when {
                 check(TokenType.DOT) -> {

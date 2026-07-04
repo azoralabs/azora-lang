@@ -266,6 +266,9 @@ sealed class Expr {
 
     /** `await task` — suspend until the task completes and yield its result. */
     data class Await(val value: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+
+    /** `inject Type` — resolve the singleton instance of [typeName] from the DI container. */
+    data class Inject(val typeName: String, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 }
 
 // ---------------------------------------------------------------------------
@@ -863,7 +866,7 @@ sealed class Stmt {
     data class Try(val body: List<Stmt>, val catchName: String?, val catchBody: List<Stmt>?, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Stmt()
 
     /** `defer { body }` — runs [body] when the enclosing function exits. */
-    data class Defer(val body: List<Stmt>, override val line: Int, override val column: Int = 0, override val length: Int = 0, val onFail: Boolean = false) : Stmt()
+    data class Defer(val body: List<Stmt>, override val line: Int, override val column: Int = 0, override val length: Int = 0, val onFail: Boolean = false, val suppress: Boolean = false) : Stmt()
 }
 
 // ---------------------------------------------------------------------------
@@ -1183,6 +1186,15 @@ sealed class TopLevel {
 
     /** `bridge <target> { func sigs }` — declares extern functions for FFI (C, JVM, JS, …). */
     data class Bridge(val target: String, val funcs: List<BridgeSig>, val line: Int, val column: Int = 0) : TopLevel()
+
+    /** `solo Name { fields; methods }` — declares a singleton struct with one lazily-created shared instance. */
+    data class Solo(val name: String, val fields: List<PackField>, val methods: List<FuncDecl>, val line: Int, val column: Int = 0) : TopLevel()
+
+    /** A singleton registration inside a `wrap` block: `solo Type(args) [bind Spec]`. */
+    data class WrapReg(val typeName: String, val args: List<Expr>, val bindSpec: String? = null, val line: Int = 0, val column: Int = 0)
+
+    /** `wrap Name { solo Type(args); Concrete bind Spec }` — a DI container that wires singletons. */
+    data class Wrap(val name: String, val registrations: List<WrapReg>, val line: Int, val column: Int = 0) : TopLevel()
 
     /**
      * A simple `enum` declaration: `enum Color { Red; Green; Blue }`.

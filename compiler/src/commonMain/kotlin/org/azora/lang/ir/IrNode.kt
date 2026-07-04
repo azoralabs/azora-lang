@@ -657,7 +657,7 @@ sealed class IrStmt {
     data class Try(val body: List<IrStmt>, val catchName: String?, val catchBody: List<IrStmt>?) : IrStmt()
 
     /** `defer { body }` — runs [body] when the enclosing function exits. */
-    data class Defer(val body: List<IrStmt>, val onFail: Boolean = false) : IrStmt()
+    data class Defer(val body: List<IrStmt>, val onFail: Boolean = false, val suppress: Boolean = false) : IrStmt()
 
     /** `yield value` — emit a value from a `flow` generator. */
     data class Yield(val value: IrExpr) : IrStmt()

@@ -89,6 +89,12 @@ class SymbolTable {
     private val specs = mutableMapOf<String, List<String>>() // spec name → method names
     // slot name → list of (variant name → payload types)
     private val slots = mutableMapOf<String, List<Pair<String, List<IrType>>>>()
+    /** Node inheritance: child node name → parent node name. */
+    val nodeParents = mutableMapOf<String, String>()
+    /** Leaf nodes that cannot be subclassed. */
+    val leafNodes = mutableSetOf<String>()
+    /** All registered node type names (for dynamic dispatch checks). */
+    val nodeTypes = mutableSetOf<String>()
 
     // -- Functions (global) -------------------------------------------------
 

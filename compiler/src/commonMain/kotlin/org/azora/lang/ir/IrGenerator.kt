@@ -154,6 +154,17 @@ class IrGenerator(private val table: SymbolTable) {
                     result.add(IrTopLevel.Func(factory))
                     result
                 }
+                is TopLevel.Node -> {
+                    // Emit the struct (fields already flattened by SymbolCollector).
+                    val struct = table.lookupStruct(item.name)!!
+                    val fields = struct.fields.map { IrField(it.name, it.type, it.mutable) }
+                    val result = mutableListOf<IrTopLevel>(IrTopLevel.Struct(item.name, fields))
+                    // Lower own methods as free functions.
+                    for (method in item.methods) {
+                        if (!method.isInline) result.add(IrTopLevel.Func(lowerMethod(item.name, method)))
+                    }
+                    result
+                }
                 is TopLevel.Impl -> item.methods.mapNotNull { method ->
                     if (method.isInline) null
                     else IrTopLevel.Func(lowerMethod(item.typeName, method))
@@ -206,8 +217,21 @@ class IrGenerator(private val table: SymbolTable) {
         return IrFunction(func.name, mangledParams, symbol.returnType, body, func.isFlow)
     }
 
+    /** The current node type being lowered (for `base` resolution). Null outside a node method. */
+    private var currentNodeType: String? = null
+
     /** Lowers an impl method into a free function `Type_method(self, ...)`. */
     private fun lowerMethod(typeName: String, method: FuncDecl): IrFunction {
+        val savedNodeType = currentNodeType
+        currentNodeType = typeName
+        try {
+            return lowerMethodInternal(typeName, method)
+        } finally {
+            currentNodeType = savedNodeType
+        }
+    }
+
+    private fun lowerMethodInternal(typeName: String, method: FuncDecl): IrFunction {
         val mangled = "${typeName}_${method.name}"
         val symbol = table.lookupFunction(mangled)!!
         table.pushScope()
@@ -598,6 +622,19 @@ class IrGenerator(private val table: SymbolTable) {
                     } else {
                         expr.args.map { lowerExpr(it) }
                     }
+                    // Node types: prepend __type and __chain for dynamic dispatch.
+                    if (expr.callee in table.nodeTypes) {
+                        val chain = mutableListOf(expr.callee)
+                        var p = table.nodeParents[expr.callee]
+                        while (p != null) { chain.add(p); p = table.nodeParents[p] }
+                        val chainLit = IrExpr.ArrayLiteral(chain.map { IrExpr.StringLiteral(it) }, IrType.Array(IrType.String))
+                        return IrExpr.StructCtor(
+                            expr.callee,
+                            listOf("__type", "__chain") + struct.fields.map { it.name },
+                            listOf(IrExpr.StringLiteral(expr.callee), chainLit) + args,
+                            IrType.Named(expr.callee)
+                        )
+                    }
                     return IrExpr.StructCtor(expr.callee, struct.fields.map { it.name }, args, IrType.Named(expr.callee))
                 }
                 val func = table.lookupFunction(expr.callee)
@@ -720,6 +757,20 @@ class IrGenerator(private val table: SymbolTable) {
                     val allArgs = listOf(IrExpr.StringLiteral(expr.name)) + args
                     return IrExpr.StructCtor(expr.target.name, fieldNames, allArgs, IrType.Named(expr.target.name))
                 }
+                // `base.method(args)` — resolve to the parent node's method.
+                if (expr.target is Expr.Identifier && expr.target.name == "__base__") {
+                    val parent = currentNodeType?.let { table.nodeParents[it] }
+                    if (parent != null) {
+                        val mangled = "${parent}_${expr.name}"
+                        val func = table.lookupFunction(mangled)
+                        if (func != null) {
+                            val args = expr.args.map { lowerExpr(it) }
+                            val selfVar = IrExpr.Var(resolveName("self"), IrType.Named(parent))
+                            return IrExpr.Call(mangled, listOf(selfVar) + args, func.returnType)
+                        }
+                    }
+                    error("'base' used but current type has no parent with method '${expr.name}'")
+                }
                 val target = lowerExpr(expr.target)
                 val tt = target.type
                 // User method on a struct: obj.method(args) -> Type_method(obj, args)
@@ -728,6 +779,10 @@ class IrGenerator(private val table: SymbolTable) {
                     if (mangled != null) {
                         val func = table.lookupFunction(mangled)!!
                         val args = expr.args.map { lowerExpr(it) }
+                        // Node types use dynamic dispatch — keep as MethodCall.
+                        if (tt.name in table.nodeTypes) {
+                            return IrExpr.MethodCall(target, expr.name, args, func.returnType)
+                        }
                         return IrExpr.Call(mangled, listOf(target) + args, func.returnType)
                     }
                 }

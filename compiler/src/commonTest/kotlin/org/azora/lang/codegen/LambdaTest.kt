@@ -49,8 +49,8 @@ class LambdaTest {
     @Test fun closureCapturesLocalVar() {
         assertEquals("7", run("""
             func main() {
-                var base = 3
-                var add = { x: Int -> x + base }
+                var offset = 3
+                var add = { x: Int -> x + offset }
                 println(add(4))
             }
         """.trimIndent()))

@@ -148,6 +148,8 @@ class Parser(private val tokens: List<Token>) {
             check(TokenType.BRIDGE) -> parseBridge()
             check(TokenType.SOLO) -> parseSolo()
             check(TokenType.WRAP) -> parseWrap()
+            check(TokenType.NODE) -> parseNode()
+            check(TokenType.LEAF) -> parseNode(isLeaf = true)
             check(TokenType.SPEC) -> parseSpec()
             check(TokenType.SLOT) -> parseSlot()
             check(TokenType.TYPEALIAS) -> parseTypeAlias()
@@ -503,10 +505,11 @@ class Parser(private val tokens: List<Token>) {
             if (check(TokenType.R_BRACE)) break
             val methodStart = peek()
             val isInline = match(TokenType.INLINE)
+            val isVirt = match(TokenType.VIRT)
             if (check(TokenType.OPER)) {
                 methods.add(parseOperMethod(methodStart))
             } else {
-                methods.add(parseFuncDecl(isInline))
+                methods.add(parseFuncDecl(isInline, isVirtual = isVirt))
             }
             skipNewlines()
         }
@@ -628,6 +631,71 @@ class Parser(private val tokens: List<Token>) {
         consume(TokenType.R_BRACE, "Expected '}' after solo body")
         consumeNewline()
         return TopLevel.Solo(name, fields, methods, start.line, start.column)
+    }
+
+    /**
+     * `[leaf] node Name(var|fin param: Type, ...) [: Parent(args)] { methods; fields }`
+     * — an inheritable type. Ctor params are fields. `repl func` marks overrides.
+     */
+    private fun parseNode(isLeaf: Boolean = false): TopLevel.Node {
+        val start = peek()
+        if (isLeaf) consume(TokenType.LEAF, "Expected 'leaf'")
+        match(TokenType.NODE) // `leaf Name` or `leaf node Name` — node is optional
+        val name = consume(TokenType.IDENTIFIER, "Expected node name").lexeme
+        // Ctor params: (var|fin name: Type, ...)
+        val params = mutableListOf<TopLevel.NodeParam>()
+        consume(TokenType.L_PAREN, "Expected '(' after node name")
+        if (!check(TokenType.R_PAREN)) {
+            do {
+                val mutable = when {
+                    check(TokenType.VAR) -> { advance(); true }
+                    check(TokenType.FIN) -> { advance(); false }
+                    else -> true
+                }
+                val pname = consume(TokenType.IDENTIFIER, "Expected ctor param name").lexeme
+                consume(TokenType.COLON, "Expected ':' after ctor param name")
+                val ptype = parseTypeName()
+                params.add(TopLevel.NodeParam(pname, ptype, mutable))
+            } while (match(TokenType.COMMA))
+        }
+        consume(TokenType.R_PAREN, "Expected ')' after ctor params")
+        // Optional parent: : Parent(args)
+        var parent: String? = null
+        var parentArgs = emptyList<Expr>()
+        if (match(TokenType.COLON)) {
+            parent = consume(TokenType.IDENTIFIER, "Expected parent node name").lexeme
+            if (match(TokenType.L_PAREN)) {
+                parentArgs = mutableListOf()
+                if (!check(TokenType.R_PAREN)) {
+                    do { parentArgs.add(parseExpr()) } while (match(TokenType.COMMA))
+                }
+                consume(TokenType.R_PAREN, "Expected ')' after parent args")
+                parentArgs = parentArgs.toList()
+            }
+        }
+        // Body: methods (func / repl func) and extra fields
+        consume(TokenType.L_BRACE, "Expected '{' after node header")
+        skipNewlines()
+        val methods = mutableListOf<FuncDecl>()
+        val extraFields = mutableListOf<PackField>()
+        while (!check(TokenType.R_BRACE) && !isAtEnd()) {
+            skipNewlines()
+            if (check(TokenType.R_BRACE)) break
+            val isRepl = match(TokenType.REPL)
+            val isVirt = match(TokenType.VIRT)
+            if (check(TokenType.FUNC)) {
+                val method = parseFuncDecl(isOverride = isRepl, isVirtual = isVirt || isRepl)
+                methods.add(method)
+            } else if (check(TokenType.VAR) || check(TokenType.FIN) || check(TokenType.LET)) {
+                extraFields.add(parsePackField())
+            } else {
+                error("Expected 'func', 'repl func', 'virt func', or field in node body at line ${peek().line}")
+            }
+            skipNewlines()
+        }
+        consume(TokenType.R_BRACE, "Expected '}' after node body")
+        consumeNewline()
+        return TopLevel.Node(name, params, methods, parent, parentArgs, isLeaf, extraFields, start.line, start.column)
     }
 
     /**
@@ -795,7 +863,7 @@ class Parser(private val tokens: List<Token>) {
         return name
     }
 
-    private fun parseFuncDecl(isInline: Boolean = false, annotations: List<Annotation> = emptyList(), isFlow: Boolean = false): FuncDecl {
+    private fun parseFuncDecl(isInline: Boolean = false, annotations: List<Annotation> = emptyList(), isFlow: Boolean = false, isOverride: Boolean = false, isVirtual: Boolean = false): FuncDecl {
         val start = peek()
         consume(if (isFlow) TokenType.FLOW else TokenType.FUNC, "Expected '${if (isFlow) "flow" else "func"}'")
         val typeParams = parseTypeParams()
@@ -830,7 +898,7 @@ class Parser(private val tokens: List<Token>) {
             consumeNewline()
             body = stmts
         }
-        return FuncDecl(name, params, returnType, body, isInline, typeParams, start.line, start.column, start.lexeme.length, annotations, isFlow)
+        return FuncDecl(name, params, returnType, body, isInline, typeParams, start.line, start.column, start.lexeme.length, annotations, isFlow, isOverride, isVirtual)
     }
 
     private fun parseParams(): List<Param> {
@@ -2054,6 +2122,11 @@ class Parser(private val tokens: List<Token>) {
             TokenType.FALSE -> { advance(); Expr.BoolLiteral(false, tok.line, tok.column, tok.lexeme.length) }
             TokenType.NULL -> { advance(); Expr.NullLiteral }
             TokenType.IDENTIFIER -> { advance(); Expr.Identifier(tok.lexeme, tok.line, tok.column, tok.lexeme.length) }
+            TokenType.BASE -> {
+                advance()
+                // `base` parses as a synthetic identifier the IrGenerator intercepts for parent dispatch.
+                Expr.Identifier("__base__", tok.line, tok.column, tok.lexeme.length)
+            }
             TokenType.DOUBLE_COLON -> {
                 advance() // consume first '::'
                 var depth = 1

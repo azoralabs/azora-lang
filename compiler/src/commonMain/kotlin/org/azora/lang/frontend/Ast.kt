@@ -1014,7 +1014,11 @@ data class FuncDecl(
     /** Decorator/annotation applications (`@Name` / `@Name(args)`). Not yet enforced. */
     val annotations: List<Annotation> = emptyList(),
     /** `flow` generator: calling it returns a (eagerly-built) list of `yield`ed values. */
-    val isFlow: Boolean = false
+    val isFlow: Boolean = false,
+    /** `repl func` — overrides a parent node's method. */
+    val isOverride: Boolean = false,
+    /** `virt func` — virtual method (dynamic dispatch). */
+    val isVirtual: Boolean = false
 )
 
 /**
@@ -1189,6 +1193,25 @@ sealed class TopLevel {
 
     /** `solo Name { fields; methods }` — declares a singleton struct with one lazily-created shared instance. */
     data class Solo(val name: String, val fields: List<PackField>, val methods: List<FuncDecl>, val line: Int, val column: Int = 0) : TopLevel()
+
+    /** A constructor parameter for a `node`: `var name: Type` or `fin name: Type`. Stored as a field. */
+    data class NodeParam(val name: String, val type: TypeRef, val mutable: Boolean)
+
+    /**
+     * `node Name(params) [: Parent(args)] { methods }` — an inheritable type with ctor params (fields)
+     * and methods. `leaf node` cannot be subclassed. `repl func` marks overrides.
+     */
+    data class Node(
+        val name: String,
+        val params: List<NodeParam>,
+        val methods: List<FuncDecl>,
+        val parent: String? = null,
+        val parentArgs: List<Expr> = emptyList(),
+        val isLeaf: Boolean = false,
+        val extraFields: List<PackField> = emptyList(),
+        val line: Int,
+        val column: Int = 0
+    ) : TopLevel()
 
     /** A singleton registration inside a `wrap` block: `solo Type(args) [bind Spec]`. */
     data class WrapReg(val typeName: String, val args: List<Expr>, val bindSpec: String? = null, val line: Int = 0, val column: Int = 0)

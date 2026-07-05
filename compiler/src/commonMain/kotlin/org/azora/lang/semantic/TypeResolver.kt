@@ -971,6 +971,14 @@ class TypeResolver(private val table: SymbolTable) {
         if (declared == actual) return true
         // An enum value (Named, known enum) is usable wherever a String is expected.
         if (declared == IrType.String && actual is IrType.Named && table.lookupEnum(actual.name) != null) return true
+        // Node upcast: a child node is compatible with its parent (walk the parent chain).
+        if (declared is IrType.Named && actual is IrType.Named) {
+            var t: String? = actual.name
+            while (t != null) {
+                if (t == declared.name) return true
+                t = table.nodeParents[t]
+            }
+        }
         // null (Any) is compatible with any Nullable type
         if (actual == IrType.Any && declared is IrType.Nullable) return true
         // non-nullable is compatible with its nullable version

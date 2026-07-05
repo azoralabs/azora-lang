@@ -570,6 +570,19 @@ class IrInterpreter {
             is IrExpr.MethodCall -> {
                 val receiver = evalExpr(expr.target)
                 val args = expr.args.map { evalExpr(it) }
+                // Dynamic dispatch for node instances: walk the __chain to find the method.
+                if (receiver is Map<*, *>) {
+                    val chain = receiver["__chain"] as? MutableList<*>
+                    if (chain != null) {
+                        for (t in chain) {
+                            val mangled = "${t}_${expr.name}"
+                            val func = functions[mangled]
+                            if (func != null) {
+                                return executeFunction(func, listOf(receiver) + args)
+                            }
+                        }
+                    }
+                }
                 when {
                     receiver is String -> when (expr.name) {
                         "toUpperCase" -> receiver.uppercase()

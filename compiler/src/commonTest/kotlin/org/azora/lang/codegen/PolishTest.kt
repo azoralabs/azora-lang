@@ -30,9 +30,9 @@ class PolishTest {
 
     @Test fun defaultParamInt() {
         assertEquals("1\n42", run("""
-            func power(base: Int, exp: Int = 0): Int {
+            func power(val: Int, exp: Int = 0): Int {
                 if exp == 0 { return 1 }
-                return base
+                return val
             }
             func main() {
                 println(power(0))

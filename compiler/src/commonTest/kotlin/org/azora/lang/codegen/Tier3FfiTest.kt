@@ -35,7 +35,7 @@ class Tier3FfiTest {
     @Test fun bridgePowTwoArgs() {
         assertEquals("1024.0", run("""
             bridge C {
-                func pow(base: Real, exp: Real): Real
+                func pow(val: Real, exp: Real): Real
             }
             func main() {
                 println(pow(2.0, 10.0))

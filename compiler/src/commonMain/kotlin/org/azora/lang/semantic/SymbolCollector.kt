@@ -163,6 +163,83 @@ class SymbolCollector {
             }
         }
 
+        // Register node (inheritable type) declarations — flatten parent fields + methods.
+        // Node registration requires a multi-pass approach: register fields first (for
+        // parent field flattening), then register methods (for parent method inheritance).
+        val nodeDeclMap = program.items.filterIsInstance<TopLevel.Node>().associateBy { it.name }
+        for (item in nodeDeclMap.values) {
+            try {
+                // Flatten fields: parent's fields first (if not shadowed), then own ctor params + extra fields.
+                val fields = mutableListOf<StructField>()
+                val seenNames = mutableSetOf<String>()
+                // Walk parent chain collecting inherited fields.
+                var p: TopLevel.Node? = item
+                val chain = mutableListOf<TopLevel.Node>()
+                while (p != null) {
+                    chain.add(0, p) // prepend so parent fields come first
+                    p = p.parent?.let { nodeDeclMap[it] }
+                }
+                for (node in chain) {
+                    for (np in node.params) {
+                        if (np.name !in seenNames) {
+                            fields.add(StructField(np.name, IrType.resolve(np.type), np.mutable))
+                            seenNames.add(np.name)
+                        }
+                    }
+                    for (ef in node.extraFields) {
+                        if (ef.name !in seenNames) {
+                            fields.add(StructField(ef.name, IrType.resolve(ef.type), ef.mutable))
+                            seenNames.add(ef.name)
+                        }
+                    }
+                }
+                table.defineStruct(StructType(item.name, fields, emptyList()))
+                table.nodeTypes.add(item.name)
+                // Record parent relationship for dynamic dispatch.
+                if (item.parent != null) {
+                    table.nodeParents[item.name] = item.parent!!
+                }
+                if (item.isLeaf) table.leafNodes.add(item.name)
+            } catch (e: Exception) {
+                errors.add("line ${item.line}: ${e.message}")
+            }
+        }
+        // Register node methods: for each node, register own methods (as Type_method).
+        // Inherited (non-overridden) methods from parents are also registered as aliases.
+        for (item in nodeDeclMap.values) {
+            try {
+                // Register own methods.
+                for (method in item.methods) {
+                    val mangled = "${item.name}_${method.name}"
+                    val params = mutableListOf<Pair<String, IrType>>()
+                    params.add("self" to IrType.Named(item.name))
+                    for (p in method.params) params.add(p.name to IrType.resolve(p.type))
+                    val returnType = when (val rt = method.returnType) {
+                        is TypeAnnotation.Explicit -> IrType.resolve(rt.ref)
+                        is TypeAnnotation.Inferred -> inferReturnType(method, params)
+                    }
+                    table.defineFunction(FunctionSymbol(mangled, params, returnType, method.isInline))
+                    table.defineMethod(item.name, method.name, mangled)
+                }
+                // Register inherited methods from parent chain (if not overridden by this node).
+                val ownMethodNames = item.methods.map { it.name }.toSet()
+                var parentName = item.parent
+                while (parentName != null) {
+                    val parentNode = nodeDeclMap[parentName] ?: break
+                    for (method in parentNode.methods) {
+                        if (method.name !in ownMethodNames && method.name !in item.methods.map { it.name }) {
+                            // Inherited method: register an alias so lookupMethod(childName, methodName) finds it.
+                            val parentMangled = "${parentNode.name}_${method.name}"
+                            table.defineMethod(item.name, method.name, parentMangled)
+                        }
+                    }
+                    parentName = parentNode.parent
+                }
+            } catch (e: Exception) {
+                errors.add("line ${item.line}: ${e.message}")
+            }
+        }
+
         // Register enum declarations
         for (item in program.items) {
             if (item is TopLevel.Enum) {

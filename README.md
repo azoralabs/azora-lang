@@ -82,6 +82,17 @@ The IR is target-agnostic. Every backend lowers from the same optimized IR. Addi
 - `when expr { patterns -> { body } else -> { body } }` — pattern matching on enums, slots (with destructuring), and literals
 - Exhaustiveness checking on slot and enum types
 
+### Inheritance
+- `node Name(params) { fields; methods }` — an inheritable type (ctor params are stored as fields)
+- `leaf Name(params) : Parent(args) { repl func overrides }` — a final subclass with single inheritance
+- `repl func` — marks a method that overrides the parent's method
+- `virt func` — marks a method as virtual (dynamic dispatch; default in `node`)
+- `base.method(args)` — calls the parent node's implementation (like `super` in other languages)
+- Dynamic dispatch: a parent-typed variable calls the runtime type's method (virtual dispatch)
+- Inherited methods that call `self.method()` dispatch dynamically to the child's override
+- `isCompatible` walks the parent chain for implicit upcasts
+- `base` is a reserved keyword (cannot be used as a variable name)
+
 ### Object-Oriented
 - **Structs** (`pack`): fields, construction, field access/mutation
 - **Methods** (`impl`): methods with implicit `self`, mutation by reference
@@ -193,7 +204,7 @@ The IR is target-agnostic. Every backend lowers from the same optimized IR. Addi
 ./gradlew :compiler:desktopTest
 ```
 
-496 tests covering all features. Tests verify runtime correctness through the IR interpreter.
+504 tests covering all features. Tests verify runtime correctness through the IR interpreter.
 
 ## Missing Features (Roadmap)
 
@@ -202,7 +213,6 @@ The IR is target-agnostic. Every backend lowers from the same optimized IR. Addi
 
 ### Systems (large effort)
 - **UI / reactivity**: `view`/`rem`/`effect`
-- **Inheritance**: `node`/`leaf`/`base`
 - **Variadic generics**: `pack Tuple<T...>`
 
 ### Known Limitations

@@ -130,6 +130,8 @@ enum class TokenType {
     SOLO, INJECT, WRAP,
     // Error handling: `rescue { … }` — catch-and-suppress.
     RESCUE,
+    // Inheritance: `node Name(params)`, `leaf Name`, `repl func` (override), `virt` (virtual), `base` (parent/super).
+    NODE, LEAF, REPL, VIRT, BASE,
     // `deco Name { fields }` — decorator/annotation declaration.
     DECO,
 

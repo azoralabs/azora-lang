@@ -170,8 +170,12 @@ class IrGenerator(private val table: SymbolTable) {
                     else IrTopLevel.Func(lowerMethod(item.typeName, method))
                 }
                 is TopLevel.View -> {
-                    // A view is lowered like a function (reactive semantics are interpreter-only).
                     val decl = FuncDecl(item.name, item.params, TypeAnnotation.Inferred, item.body, false, emptyList(), item.line, item.column)
+                    listOf(IrTopLevel.Func(lowerFunction(decl)))
+                }
+                is TopLevel.Hook -> {
+                    // A hook is lowered as a function `__hook_<name>` with no params.
+                    val decl = FuncDecl("__hook_${item.name}", emptyList(), TypeAnnotation.Inferred, item.body, false, emptyList(), item.line, item.column)
                     listOf(IrTopLevel.Func(lowerFunction(decl)))
                 }
                 else -> emptyList() // Inline constructs already resolved by CTFE
@@ -771,6 +775,18 @@ class IrGenerator(private val table: SymbolTable) {
                     return IrExpr.StringLiteral(expr.name)
                 }
                 val target = lowerExpr(expr.target)
+                // Check for a computed property (prop): `Type_name` zero-arg method.
+                val tt2 = target.type
+                if (tt2 is IrType.Named) {
+                    val mangled = table.lookupMethod(tt2.name, expr.name)
+                    if (mangled != null) {
+                        val func = table.lookupFunction(mangled)
+                        if (func != null && func.params.size == 1) {
+                            // It's a prop — lower to a method call Type_name(self).
+                            return IrExpr.Call(mangled, listOf(target), func.returnType)
+                        }
+                    }
+                }
                 val memberType = when {
                     expr.name == "length" && (target.type is IrType.Array || target.type == IrType.String) -> IrType.Int
                     (expr.name == "isEmpty" || expr.name == "isNotEmpty") && target.type is IrType.Array -> IrType.Bool

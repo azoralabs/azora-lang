@@ -146,6 +146,9 @@ private fun dumpTopLevel(sb: StringBuilder, item: TopLevel, indent: String) {
         is TopLevel.View -> {
             sb.appendLine("${indent}View(name=${item.name}, params=[${item.params.joinToString(", ") { it.name }}])")
         }
+        is TopLevel.Hook -> {
+            sb.appendLine("${indent}Hook(name=${item.name})")
+        }
         is TopLevel.Spec -> {
             sb.appendLine("${indent}Spec(name=${item.name}, methods=[${item.methods.joinToString(", ") { it.name }}])")
         }

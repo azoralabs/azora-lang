@@ -151,6 +151,7 @@ class Parser(private val tokens: List<Token>) {
             check(TokenType.NODE) -> parseNode()
             check(TokenType.LEAF) -> parseNode(isLeaf = true)
             check(TokenType.VIEW) -> parseView()
+            check(TokenType.HOOK) -> parseHook()
             check(TokenType.SPEC) -> parseSpec()
             check(TokenType.SLOT) -> parseSlot()
             check(TokenType.TYPEALIAS) -> parseTypeAlias()
@@ -507,10 +508,20 @@ class Parser(private val tokens: List<Token>) {
             val methodStart = peek()
             val isInline = match(TokenType.INLINE)
             val isVirt = match(TokenType.VIRT)
-            if (check(TokenType.OPER)) {
-                methods.add(parseOperMethod(methodStart))
-            } else {
-                methods.add(parseFuncDecl(isInline, isVirtual = isVirt))
+            when {
+                check(TokenType.PROP) -> {
+                    advance()
+                    val propName = consume(TokenType.IDENTIFIER, "Expected property name").lexeme
+                    val propType: TypeAnnotation = if (match(TokenType.COLON)) TypeAnnotation.Explicit(parseTypeName()) else TypeAnnotation.Inferred
+                    consume(TokenType.L_BRACE, "Expected '{' after prop type")
+                    skipNewlines()
+                    val propBody = parseBlock()
+                    consume(TokenType.R_BRACE, "Expected '}' after prop body")
+                    consumeNewline()
+                    methods.add(FuncDecl(propName, emptyList(), propType, propBody, false, emptyList(), methodStart.line, methodStart.column))
+                }
+                check(TokenType.OPER) -> methods.add(parseOperMethod(methodStart))
+                else -> methods.add(parseFuncDecl(isInline, isVirtual = isVirt))
             }
             skipNewlines()
         }
@@ -684,13 +695,50 @@ class Parser(private val tokens: List<Token>) {
             if (check(TokenType.R_BRACE)) break
             val isRepl = match(TokenType.REPL)
             val isVirt = match(TokenType.VIRT)
-            if (check(TokenType.FUNC)) {
-                val method = parseFuncDecl(isOverride = isRepl, isVirtual = isVirt || isRepl)
-                methods.add(method)
-            } else if (check(TokenType.VAR) || check(TokenType.FIN) || check(TokenType.LET)) {
-                extraFields.add(parsePackField())
-            } else {
-                error("Expected 'func', 'repl func', 'virt func', or field in node body at line ${peek().line}")
+            when {
+                check(TokenType.FUNC) -> {
+                    val method = parseFuncDecl(isOverride = isRepl, isVirtual = isVirt || isRepl)
+                    methods.add(method)
+                }
+                check(TokenType.PROP) -> {
+                    // `prop name: T { body }` — computed property. Lowered as a zero-arg method.
+                    advance()
+                    val propName = consume(TokenType.IDENTIFIER, "Expected property name").lexeme
+                    val propType: TypeAnnotation = if (match(TokenType.COLON)) TypeAnnotation.Explicit(parseTypeName()) else TypeAnnotation.Inferred
+                    consume(TokenType.L_BRACE, "Expected '{' after prop type")
+                    skipNewlines()
+                    val propBody = parseBlock()
+                    consume(TokenType.R_BRACE, "Expected '}' after prop body")
+                    consumeNewline()
+                    methods.add(FuncDecl(propName, emptyList(), propType, propBody, false, emptyList(), peek().line, peek().column))
+                }
+                check(TokenType.CTOR) -> {
+                    // `ctor(params) { body }` — secondary constructor. Lowered as `ctor__<type>` function.
+                    advance()
+                    consume(TokenType.L_PAREN, "Expected '(' after ctor")
+                    val ctorParams = parseParams()
+                    consume(TokenType.R_PAREN, "Expected ')' after ctor params")
+                    consume(TokenType.L_BRACE, "Expected '{' after ctor header")
+                    skipNewlines()
+                    val ctorBody = parseBlock()
+                    consume(TokenType.R_BRACE, "Expected '}' after ctor body")
+                    consumeNewline()
+                    methods.add(FuncDecl("ctor", ctorParams, TypeAnnotation.Inferred, ctorBody, false, emptyList(), peek().line, peek().column))
+                }
+                check(TokenType.DTOR) -> {
+                    // `dtor { body }` — destructor. Lowered as `dtor__<type>` function.
+                    advance()
+                    consume(TokenType.L_BRACE, "Expected '{' after dtor")
+                    skipNewlines()
+                    val dtorBody = parseBlock()
+                    consume(TokenType.R_BRACE, "Expected '}' after dtor body")
+                    consumeNewline()
+                    methods.add(FuncDecl("dtor", emptyList(), TypeAnnotation.Inferred, dtorBody, false, emptyList(), peek().line, peek().column))
+                }
+                check(TokenType.VAR) || check(TokenType.FIN) || check(TokenType.LET) -> {
+                    extraFields.add(parsePackField())
+                }
+                else -> error("Expected 'func', 'repl func', 'virt func', 'prop', 'ctor', 'dtor', or field in node body at line ${peek().line}")
             }
             skipNewlines()
         }
@@ -1245,13 +1293,13 @@ class Parser(private val tokens: List<Token>) {
         return Stmt.Zone(body, start.line, start.column)
     }
 
-    /** `drop <expr>` — release a heap value. Desugars to evaluating [expr] (advisory free under GC). */
+    /** `drop <expr>` — release a heap value; calls `__drop(value)` which triggers dtor if present. */
     private fun parseDrop(): Stmt {
         val start = peek()
         consume(TokenType.DROP, "Expected 'drop'")
         val value = parseExpr()
         consumeNewline()
-        return Stmt.ExprStmt(value, start.line, start.column)
+        return Stmt.ExprStmt(Expr.Call("__drop", listOf(value), start.line, start.column, start.lexeme.length), start.line, start.column)
     }
 
     /** `yield <expr>` — emit a value from a `flow` generator. */
@@ -1342,6 +1390,22 @@ class Parser(private val tokens: List<Token>) {
         consume(TokenType.R_BRACE, "Expected '}' after view body")
         consumeNewline()
         return TopLevel.View(name, params, body, start.line, start.column)
+    }
+
+    /** `hook name { body }` — a lifecycle callback. */
+    private fun parseHook(): TopLevel.Hook {
+        val start = consume(TokenType.HOOK, "Expected 'hook'")
+        val name = consume(TokenType.IDENTIFIER, "Expected hook name").lexeme
+        consume(TokenType.L_BRACE, "Expected '{' after hook name")
+        skipNewlines()
+        val body = mutableListOf<Stmt>()
+        while (!check(TokenType.R_BRACE) && !isAtEnd()) {
+            body.add(parseStmt())
+            skipNewlines()
+        }
+        consume(TokenType.R_BRACE, "Expected '}' after hook body")
+        consumeNewline()
+        return TopLevel.Hook(name, body, start.line, start.column)
     }
 
     /** `guard condition else { body }` — sugar for `if !condition { body }`. */

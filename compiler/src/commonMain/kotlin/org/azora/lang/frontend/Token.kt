@@ -136,6 +136,8 @@ enum class TokenType {
     ELLIPSIS,
     // Reactivity: `rem` (reactive state), `effect { }` (side-effect), `view Name() { }` (component).
     REM, EFFECT, VIEW,
+    // Object model: `hook name { }`, `prop name: T { }`, `ctor(params) { }`, `dtor { }`.
+    HOOK, PROP, CTOR, DTOR,
     // `deco Name { fields }` — decorator/annotation declaration.
     DECO,
 

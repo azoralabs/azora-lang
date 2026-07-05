@@ -1231,6 +1231,9 @@ sealed class TopLevel {
     /** `view Name(params) { body }` — a reactive UI component (like a function but with reactive semantics). */
     data class View(val name: String, val params: List<Param>, val body: List<Stmt>, val line: Int, val column: Int = 0) : TopLevel()
 
+    /** `hook name { body }` — a lifecycle callback (start/stop/etc). Called by the runtime. */
+    data class Hook(val name: String, val body: List<Stmt>, val line: Int, val column: Int = 0) : TopLevel()
+
     /**
      * A simple `enum` declaration: `enum Color { Red; Green; Blue }`.
      *

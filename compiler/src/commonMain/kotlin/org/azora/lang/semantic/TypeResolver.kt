@@ -704,11 +704,23 @@ class TypeResolver(private val table: SymbolTable) {
                     expr.name == "length" && (targetType is IrType.Array || targetType == IrType.String) -> IrType.Int
                     (expr.name == "isEmpty" || expr.name == "isNotEmpty") && targetType is IrType.Array -> IrType.Bool
                     targetType is IrType.Named -> {
-                        val field = table.lookupStruct(targetType.name)?.field(expr.name)
-                        if (field == null) {
-                            errors.add("line ${expr.line}: no field '${expr.name}' on struct ${targetType.name}")
-                            null
-                        } else field.type
+                        val struct = table.lookupStruct(targetType.name)
+                        val field = struct?.field(expr.name)
+                        if (field != null) {
+                            field.type
+                        } else {
+                            // Check for a computed property (prop): zero-arg method `Type_name`.
+                            val mangled = table.lookupMethod(targetType.name, expr.name)
+                            if (mangled != null) {
+                                val func = table.lookupFunction(mangled)
+                                // Only treat as a prop if it has exactly 1 param (self).
+                                if (func != null && func.params.size == 1) func.returnType
+                                else { errors.add("line ${expr.line}: no field '${expr.name}' on struct ${targetType.name}"); null }
+                            } else {
+                                errors.add("line ${expr.line}: no field '${expr.name}' on struct ${targetType.name}")
+                                null
+                            }
+                        }
                     }
                     else -> {
                         errors.add("line ${expr.line}: no member '${expr.name}' on $targetType")

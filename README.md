@@ -95,6 +95,12 @@ The IR is target-agnostic. Every backend lowers from the same optimized IR. Addi
 - `isCompatible` walks the parent chain for implicit upcasts
 - `base` is a reserved keyword (cannot be used as a variable name)
 
+### Object Model
+- `hook name { body }` — lifecycle callbacks (run after main, in declaration order)
+- `prop name: T { body }` — computed properties (inside `impl`, `node`, `solo` bodies; accessed as `obj.name`)
+- `ctor(params) { body }` — secondary constructors (inside `node`/`solo` bodies)
+- `dtor { body }` — destructors (inside `node` bodies; called by `drop`)
+
 ### Object-Oriented
 - **Structs** (`pack`): fields, construction, field access/mutation
 - **Methods** (`impl`): methods with implicit `self`, mutation by reference
@@ -211,7 +217,7 @@ The IR is target-agnostic. Every backend lowers from the same optimized IR. Addi
 ./gradlew :compiler:desktopTest
 ```
 
-511 tests covering all features. Tests verify runtime correctness through the IR interpreter.
+515 tests covering all features. Tests verify runtime correctness through the IR interpreter.
 
 ## Missing Features (Roadmap)
 

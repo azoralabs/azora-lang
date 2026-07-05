@@ -44,6 +44,9 @@ class SymbolCollector {
             // `channel()` — creates a buffered channel for task-to-task communication.
             table.defineFunction(FunctionSymbol("channel", emptyList(), IrType.Named("Channel")))
         }
+        if (table.lookupFunction("__drop") == null) {
+            table.defineFunction(FunctionSymbol("__drop", listOf("value" to IrType.Any), IrType.Unit))
+        }
         if (table.lookupFunction("__launch") == null) {
             // `launch { body }` desugars to __launch(thunk); fire-and-forget, joined at end.
             table.defineFunction(FunctionSymbol("__launch", listOf("thunk" to IrType.Any), IrType.Unit))
@@ -113,6 +116,9 @@ class SymbolCollector {
             if (item is TopLevel.View) {
                 val params = item.params.map { it.name to IrType.resolve(it.type) }
                 table.defineFunction(FunctionSymbol(item.name, params, IrType.Any))
+            }
+            if (item is TopLevel.Hook) {
+                table.defineFunction(FunctionSymbol("__hook_${item.name}", emptyList(), IrType.Any))
             }
         }
 

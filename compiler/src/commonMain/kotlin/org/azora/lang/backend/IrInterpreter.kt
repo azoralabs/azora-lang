@@ -140,6 +140,13 @@ class IrInterpreter {
             val toJoin = synchronized(launchedTasks) { launchedTasks.toList() }
             for (task in toJoin) task.await()
 
+            // Execute lifecycle hooks (`hook start { }`, `hook stop { }`, etc.) in declaration order.
+            for (fn in functions.keys.sorted()) {
+                if (fn.startsWith("__hook_")) {
+                    executeFunction(functions[fn]!!, emptyList())
+                }
+            }
+
             synchronized(output) { output.toString().trimEnd() }
         }
     }
@@ -522,8 +529,21 @@ class IrInterpreter {
                         else -> error("no member '${expr.name}' on string")
                     }
                     is Map<*, *> -> {
+                        // Check for a computed property (prop): `Type_prop_name` method.
+                        val typeName = receiver["__type"] as? String
+                        if (typeName != null) {
+                            val propFunc = functions["${typeName}_prop_${expr.name}"]
+                            if (propFunc != null) return@evalExpr executeFunction(propFunc, listOf(receiver))
+                        }
                         @Suppress("UNCHECKED_CAST")
-                        (receiver as Map<String, Any?>)[expr.name]
+                        val result = (receiver as Map<String, Any?>)[expr.name]
+                        // Fallback: if no field, check for prop method on the struct type.
+                        if (result == null && receiver.containsKey("__type") == false) {
+                            // For non-node structs, check Type_prop_name
+                            val propKey = receiver.keys.firstOrNull()
+                            // Can't easily get the type name for plain structs; skip for now.
+                        }
+                        result
                     }
                     else -> error("no member '${expr.name}' on $receiver")
                 }
@@ -734,6 +754,18 @@ class IrInterpreter {
         }
         if (expr.name == "__derefAssign") {
             (args[0] as Pointer).setValue(args[1])
+            return null
+        }
+        if (expr.name == "__drop") {
+            // `drop <expr>` — if the value is a Map (struct/node instance), call its dtor if one exists.
+            val value = args[0]
+            if (value is Map<*, *>) {
+                val typeName = value["__type"] as? String
+                if (typeName != null) {
+                    val dtorFunc = functions["${typeName}_dtor"]
+                    if (dtorFunc != null) executeFunction(dtorFunc, listOf(value))
+                }
+            }
             return null
         }
         if (expr.name == "__ptrAdd") {

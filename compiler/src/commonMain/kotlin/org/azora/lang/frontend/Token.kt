@@ -138,6 +138,8 @@ enum class TokenType {
     REM, EFFECT, VIEW,
     // Object model: `hook name { }`, `prop name: T { }`, `ctor(params) { }`, `dtor { }`.
     HOOK, PROP, CTOR, DTOR,
+    // Alternating execution: `flip { } flop { }`.
+    FLIP, FLOP,
     // `deco Name { fields }` — decorator/annotation declaration.
     DECO,
 

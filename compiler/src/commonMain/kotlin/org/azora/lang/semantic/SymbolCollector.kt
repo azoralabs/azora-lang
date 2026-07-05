@@ -47,6 +47,9 @@ class SymbolCollector {
         if (table.lookupFunction("__drop") == null) {
             table.defineFunction(FunctionSymbol("__drop", listOf("value" to IrType.Any), IrType.Unit))
         }
+        if (table.lookupFunction("__flipflop") == null) {
+            table.defineFunction(FunctionSymbol("__flipflop", listOf("id" to IrType.Int), IrType.Bool))
+        }
         if (table.lookupFunction("__launch") == null) {
             // `launch { body }` desugars to __launch(thunk); fire-and-forget, joined at end.
             table.defineFunction(FunctionSymbol("__launch", listOf("thunk" to IrType.Any), IrType.Unit))

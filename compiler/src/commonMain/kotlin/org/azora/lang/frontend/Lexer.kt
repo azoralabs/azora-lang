@@ -95,6 +95,8 @@ class Lexer(private val source: String) {
             "prop" to TokenType.PROP,
             "ctor" to TokenType.CTOR,
             "dtor" to TokenType.DTOR,
+            "flip" to TokenType.FLIP,
+            "flop" to TokenType.FLOP,
             "pack" to TokenType.PACK,
             "enum" to TokenType.ENUM,
             "when" to TokenType.WHEN,

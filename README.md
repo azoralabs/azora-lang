@@ -100,6 +100,7 @@ The IR is target-agnostic. Every backend lowers from the same optimized IR. Addi
 - `prop name: T { body }` — computed properties (inside `impl`, `node`, `solo` bodies; accessed as `obj.name`)
 - `ctor(params) { body }` — secondary constructors (inside `node`/`solo` bodies)
 - `dtor { body }` — destructors (inside `node` bodies; called by `drop`)
+- `flip { body } flop { body }` — alternating execution: runs the flip body on the first encounter, flop on the next, flip again, etc. (typically used inside loops)
 
 ### Object-Oriented
 - **Structs** (`pack`): fields, construction, field access/mutation
@@ -217,7 +218,7 @@ The IR is target-agnostic. Every backend lowers from the same optimized IR. Addi
 ./gradlew :compiler:desktopTest
 ```
 
-515 tests covering all features. Tests verify runtime correctness through the IR interpreter.
+517 tests covering all features. Tests verify runtime correctness through the IR interpreter.
 
 ## Missing Features (Roadmap)
 

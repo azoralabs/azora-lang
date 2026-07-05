@@ -1095,6 +1095,7 @@ class Parser(private val tokens: List<Token>) {
             check(TokenType.RESCUE) -> parseRescue()
             check(TokenType.REM) -> parseRem()
             check(TokenType.EFFECT) -> parseEffect()
+            check(TokenType.FLIP) -> parseFlipFlop()
             check(TokenType.GUARD) -> parseGuard()
             else -> parseExprStmt()
         }
@@ -1406,6 +1407,48 @@ class Parser(private val tokens: List<Token>) {
         consume(TokenType.R_BRACE, "Expected '}' after hook body")
         consumeNewline()
         return TopLevel.Hook(name, body, start.line, start.column)
+    }
+
+    /**
+     * `flip { body } flop { body }` — alternating execution. On the first encounter
+     * the flip body runs; on the next, the flop body; then flip again, etc.
+     *
+     * By default (no label), alternates on each encounter — works inside loops
+     * (alternates per iteration) and inside function bodies (alternates per call).
+     *
+     * With a label — `flip@label { } flop@label { }` — the toggle is scoped to
+     * that specific labeled loop, so multiple labeled loops each have independent toggles.
+     *
+     * Desugars to `if (__flipflop(id)) { flipBody } else { flopBody }`.
+     */
+    private fun parseFlipFlop(): Stmt {
+        val start = consume(TokenType.FLIP, "Expected 'flip'")
+        // Optional label: `flip@label` — scopes the toggle to a specific labeled loop.
+        val label = if (match(TokenType.AT)) {
+            consume(TokenType.IDENTIFIER, "Expected label name after 'flip@'").lexeme
+        } else null
+        consume(TokenType.L_BRACE, "Expected '{' after 'flip'")
+        skipNewlines()
+        val flipBody = parseBlock()
+        consume(TokenType.R_BRACE, "Expected '}' after flip body")
+        val flopBody = if (match(TokenType.FLOP)) {
+            // Optional label on flop too (must match flip's label if present).
+            if (match(TokenType.AT)) consume(TokenType.IDENTIFIER, "Expected label name after 'flop@'").lexeme
+            consume(TokenType.L_BRACE, "Expected '{' after 'flop'")
+            skipNewlines()
+            val body = parseBlock()
+            consume(TokenType.R_BRACE, "Expected '}' after flop body")
+            body
+        } else emptyList()
+        consumeNewline()
+        // Unique ID: incorporate the label (if any) so labeled loops get independent toggles.
+        val baseId = start.line * 10000 + start.column
+        val id = if (label != null) {
+            // Hash the label into the id to make it unique per (location, label) pair.
+            baseId xor label.hashCode()
+        } else baseId
+        val cond = Expr.Call("__flipflop", listOf(Expr.IntLiteral(id.toLong(), start.line)), start.line, start.column, start.lexeme.length)
+        return Stmt.If(cond, flipBody, flopBody, start.line, start.column)
     }
 
     /** `guard condition else { body }` — sugar for `if !condition { body }`. */

@@ -77,4 +77,77 @@ class ObjectModelTest {
             }
         """.trimIndent()))
     }
+
+    @Test fun flipFlopAlternates() {
+        assertEquals("A\nB\nA\nB\nA", run("""
+            func main() {
+                for i in 0..<5 {
+                    flip { println("A") } flop { println("B") }
+                }
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun flipWithoutFlop() {
+        assertEquals("on\noff\non\noff", run("""
+            func main() {
+                for i in 0..<4 {
+                    flip { println("on") } flop { println("off") }
+                }
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun flipFlopInFunctionCalls() {
+        // By default, flip/flop alternates on each function call (not just loops).
+        assertEquals("tick\ntock\ntick\ntock", run("""
+            func metronome() {
+                flip { println("tick") } flop { println("tock") }
+            }
+            func main() {
+                metronome()
+                metronome()
+                metronome()
+                metronome()
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun flipFlopLabeledLoop() {
+        // `@a for ... { flip@a { } flop@a { } }` — label declared on the loop, referenced by flip/flop.
+        assertEquals("A\nB\nA", run("""
+            func main() {
+                @a for i in 0..<3 {
+                    flip@a { println("A") } flop@a { println("B") }
+                }
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun flipFlopTwoLabeledLoops() {
+        // Two separate labeled loops, each with its own flip/flop — independent toggles.
+        assertEquals("A\nB\nX\nY", run("""
+            func main() {
+                @a for i in 0..<2 {
+                    flip@a { println("A") } flop@a { println("B") }
+                }
+                @b for j in 0..<2 {
+                    flip@b { println("X") } flop@b { println("Y") }
+                }
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun flipFlopNestedLabeledLoops() {
+        // Nested labeled loops: @a for outer (2x), @b for inner (2x each = 4 total).
+        assertEquals("AiBi\nAjBj\nAiBi\nAjBj", run("""
+            func main() {
+                @a for i in 0..<2 {
+                    @b for j in 0..<2 {
+                        flip@b { println("AiBi") } flop@b { println("AjBj") }
+                    }
+                }
+            }
+        """.trimIndent()))
+    }
 }

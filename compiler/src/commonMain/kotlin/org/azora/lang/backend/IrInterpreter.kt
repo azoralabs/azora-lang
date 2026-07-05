@@ -72,6 +72,9 @@ class IrInterpreter {
     /** Singleton instances for DI (`solo` / `inject`), keyed by type name. Synchronized for parallelism. */
     private val singletons = mutableMapOf<String, Any?>()
 
+    /** Flip/flop state: unique id → current boolean (true = flip, false = flop). */
+    private val flipFlopState = mutableMapOf<Int, Boolean>()
+
     /** Fire-and-forget tasks created via `launch { … }`; joined before interpret() returns. */
     private val launchedTasks = mutableListOf<kotlinx.coroutines.Deferred<Any?>>()
 
@@ -785,6 +788,13 @@ class IrInterpreter {
         }
         if (expr.name == "__isolated") {
             return deepCopy(args[0])
+        }
+        if (expr.name == "__flipflop") {
+            // Alternating execution: returns true on first call, false on second, etc.
+            val id = (args[0] as Long).toInt()
+            val current = flipFlopState[id] ?: true
+            flipFlopState[id] = !current
+            return current
         }
         if (expr.name == "__inject") {
             val typeName = args[0] as String

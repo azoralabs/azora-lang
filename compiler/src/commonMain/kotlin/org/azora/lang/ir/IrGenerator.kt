@@ -639,15 +639,29 @@ class IrGenerator(private val table: SymbolTable) {
                 }
                 val func = table.lookupFunction(expr.callee)
                 if (func != null) {
-                    // Handle named arguments — reorder to param order
-                    val args = if (expr.args.isNotEmpty() && expr.args[0] is Expr.NamedArg && func.paramNames.isNotEmpty()) {
+                    // Lower args, flattening any Spread expressions.
+                    val loweredArgs = expr.args.flatMap { arg ->
+                        if (arg is Expr.Spread) listOf(IrExpr.Spread(lowerExpr(arg.array)))
+                        else listOf(lowerExpr(arg))
+                    }
+                    // Handle named arguments — reorder to param order (pre-spread only)
+                    val args = if (loweredArgs.isNotEmpty() && expr.args[0] is Expr.NamedArg && func.paramNames.isNotEmpty()) {
                         val namedMap = expr.args.associate { (it as Expr.NamedArg).name to (it as Expr.NamedArg).value }
                         func.paramNames.map { pn -> lowerExpr(namedMap[pn]!!) }
                     } else {
-                        expr.args.map { lowerExpr(it) }
+                        loweredArgs
                     }
-                    // Fill in defaults for missing args
-                    val fullArgs = if (args.size < func.params.size && func.defaults.isNotEmpty()) {
+                    // Variadic: pack extra args into an array for the last param.
+                    val hasSpread = args.any { it is IrExpr.Spread }
+                    val effectiveArgs = if (func.isVariadic && args.size >= func.params.size - 1) {
+                        val fixed = args.take(func.params.size - 1)
+                        val rest = args.drop(func.params.size - 1)
+                        val elemType = (func.params.last().second as? IrType.Array)?.element ?: IrType.Any
+                        fixed + listOf(IrExpr.ArrayLiteral(rest, IrType.Array(elemType)))
+                    } else if (hasSpread) {
+                        // Non-variadic with spread: keep spread args for evalCall to splice.
+                        args
+                    } else if (args.size < func.params.size && func.defaults.isNotEmpty()) {
                         val result = args.toMutableList()
                         for (i in args.size until func.params.size) {
                             val default = func.defaults[i]
@@ -655,7 +669,7 @@ class IrGenerator(private val table: SymbolTable) {
                         }
                         result
                     } else args
-                    return IrExpr.Call(expr.callee, fullArgs, func.returnType)
+                    return IrExpr.Call(expr.callee, effectiveArgs, func.returnType)
                 }
                 // Calling a lambda stored in a variable.
                 val v = table.lookupVariable(expr.callee)
@@ -700,6 +714,9 @@ class IrGenerator(private val table: SymbolTable) {
             }
             is Expr.Inject -> {
                 IrExpr.Call("__inject", listOf(IrExpr.StringLiteral(expr.typeName)), IrType.Named(expr.typeName))
+            }
+            is Expr.Spread -> {
+                IrExpr.Spread(lowerExpr(expr.array))
             }
             is Expr.Index -> {
                 val target = lowerExpr(expr.target)

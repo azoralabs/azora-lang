@@ -54,6 +54,8 @@ The IR is target-agnostic. Every backend lowers from the same optimized IR. Addi
 - **Compound**: arrays `[T]`, tuples `(A, B)`, function types `(A) -> B`, maps `["k": v]`
 - **User-defined**: `pack` (structs), `enum`, `slot` (tagged unions), `typealias`, `fail` (error sets)
 - **Type parameters**: generics (`func<T>`, `pack<T>`) with call-site inference
+- **Variadic generics**: `func<T...> name(first: Int, rest: T...)` — the last type param can be variadic; `rest: T...` collects remaining call args into an array
+- **Spread operator**: `f(arr...)` — splat an array's elements as individual call arguments
 - **Nullable**: `T?` with `null`, `??` (coalesce), `?.` (safe access)
 - **Failable**: `T!ErrSet` — a value of `T` or an error from a declared set
 - **Pointer**: `T*` — a heap reference (`alloc`, `*deref`)
@@ -204,7 +206,7 @@ The IR is target-agnostic. Every backend lowers from the same optimized IR. Addi
 ./gradlew :compiler:desktopTest
 ```
 
-504 tests covering all features. Tests verify runtime correctness through the IR interpreter.
+507 tests covering all features. Tests verify runtime correctness through the IR interpreter.
 
 ## Missing Features (Roadmap)
 
@@ -213,7 +215,6 @@ The IR is target-agnostic. Every backend lowers from the same optimized IR. Addi
 
 ### Systems (large effort)
 - **UI / reactivity**: `view`/`rem`/`effect`
-- **Variadic generics**: `pack Tuple<T...>`
 
 ### Known Limitations
 - Generics use type erasure (field types are `Any` at runtime)

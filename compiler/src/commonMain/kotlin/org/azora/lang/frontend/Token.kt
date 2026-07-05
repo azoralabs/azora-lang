@@ -132,6 +132,8 @@ enum class TokenType {
     RESCUE,
     // Inheritance: `node Name(params)`, `leaf Name`, `repl func` (override), `virt` (virtual), `base` (parent/super).
     NODE, LEAF, REPL, VIRT, BASE,
+    // Variadic generics: `T...` type params, `args: T...` variadic params, `arr...` spread.
+    ELLIPSIS,
     // `deco Name { fields }` — decorator/annotation declaration.
     DECO,
 

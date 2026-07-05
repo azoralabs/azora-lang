@@ -442,6 +442,11 @@ sealed class IrExpr {
     /** `await task` — suspend until the task (a no-arg closure) completes, yielding its result. */
     data class Await(val value: IrExpr, override val type: IrType = IrType.Any) : IrExpr()
 
+    /** `arr...` — spread an array's elements as individual call arguments. */
+    data class Spread(val array: IrExpr) : IrExpr() {
+        override val type: IrType = IrType.Any
+    }
+
     /** Pretty-prints this expression as Azora IR text. */
     fun prettyPrint(): String = when (this) {
         is IntLiteral -> "$value"
@@ -485,6 +490,7 @@ sealed class IrExpr {
         is Lambda -> "{ ${params.joinToString(", ") { (n, t) -> "$n: $t" }} -> ... }"
         is SlotPattern -> "$slotName.$variantName(${bindings.joinToString(",")})"
         is Await -> "await ${value.prettyPrint()}"
+        is Spread -> "...${array.prettyPrint()}"
     }
 }
 
@@ -1155,6 +1161,10 @@ private fun dumpIrExprTree(sb: StringBuilder, expr: IrExpr, indent: String) {
         is IrExpr.Await -> {
             sb.appendLine("${indent}IrAwait : ${expr.type}")
             dumpIrExprTree(sb, expr.value, "$indent    ")
+        }
+        is IrExpr.Spread -> {
+            sb.appendLine("${indent}IrSpread")
+            dumpIrExprTree(sb, expr.array, "$indent    ")
         }
         is IrExpr.Lambda -> {
             sb.appendLine("${indent}IrLambda : ${expr.type}")

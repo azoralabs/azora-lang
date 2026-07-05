@@ -137,7 +137,7 @@ class Lexer(private val source: String) {
             ',' -> addToken(TokenType.COMMA)
             '@' -> addToken(TokenType.AT)
             '.' -> when {
-                match('.') -> addToken(if (match('<')) TokenType.DOT_DOT_LESS else TokenType.DOT_DOT)
+                match('.') -> if (match('.')) addToken(TokenType.ELLIPSIS) else addToken(if (match('<')) TokenType.DOT_DOT_LESS else TokenType.DOT_DOT)
                 else -> addToken(TokenType.DOT)
             }
             ':' -> addToken(if (match(':')) TokenType.DOUBLE_COLON else TokenType.COLON)

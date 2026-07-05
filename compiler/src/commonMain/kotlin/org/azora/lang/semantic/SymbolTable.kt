@@ -33,7 +33,8 @@ data class FunctionSymbol(
     val isInline: Boolean = false,
     val typeParams: List<String> = emptyList(),
     val paramNames: List<String> = emptyList(),
-    val defaults: Map<Int, org.azora.lang.frontend.Expr> = emptyMap()
+    val defaults: Map<Int, org.azora.lang.frontend.Expr> = emptyMap(),
+    val isVariadic: Boolean = false
 )
 
 /**

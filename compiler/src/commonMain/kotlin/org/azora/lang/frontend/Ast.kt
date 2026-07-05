@@ -269,6 +269,9 @@ sealed class Expr {
 
     /** `inject Type` — resolve the singleton instance of [typeName] from the DI container. */
     data class Inject(val typeName: String, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+
+    /** `arr...` — spread an array's elements as individual call arguments. */
+    data class Spread(val array: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 }
 
 // ---------------------------------------------------------------------------

@@ -557,6 +557,7 @@ class IrInterpreter {
                 scope.async(context = childState()) { invokeClosure(closure) }.await()
             }
             is IrExpr.SlotPattern -> error("SlotPattern should be handled by when matching, not evaluated")
+            is IrExpr.Spread -> error("Spread should be handled by evalCall, not evaluated directly")
             is IrExpr.StringTemplate -> {
                 val sb = StringBuilder()
                 for (part in expr.parts) {
@@ -689,7 +690,19 @@ class IrInterpreter {
     private fun pairNum(l: Any, r: Any): Pair<Double, Double> = toNum(l) to toNum(r)
 
     private suspend fun evalCall(expr: IrExpr.Call): Any? {
-        val args = expr.args.map { evalExpr(it) }
+        // Evaluate args, splicing any Spread (arr...) into individual elements.
+        val args = mutableListOf<Any?>()
+        for (argExpr in expr.args) {
+            if (argExpr is IrExpr.Spread) {
+                val arr = evalExpr(argExpr.array)
+                if (arr is MutableList<*>) {
+                    @Suppress("UNCHECKED_CAST")
+                    args.addAll(arr as MutableList<Any?>)
+                } else error("spread requires an array, got $arr")
+            } else {
+                args.add(evalExpr(argExpr))
+            }
+        }
 
         if (expr.name == "__isCheck") {
             val value = args[0]

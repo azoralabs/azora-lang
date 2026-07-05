@@ -652,6 +652,11 @@ class LlvmCodegen {
             emit("  ; await — no coroutine runtime (interpreter-only)")
             defaultValue(expr.type)
         }
+        is IrExpr.Spread -> {
+            emitExpr(expr.array)
+            emit("  ; spread — interpreter-only")
+            "null"
+        }
         is IrExpr.Lambda -> {
             emit("  ; lambda/closure — not lowered")
             "null"

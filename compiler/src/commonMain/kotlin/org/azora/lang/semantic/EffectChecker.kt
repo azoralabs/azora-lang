@@ -250,6 +250,7 @@ class EffectChecker {
             is Expr.Isolated -> collectCallsFromExpr(expr.value, calls)
             is Expr.Await -> collectCallsFromExpr(expr.value, calls)
             is Expr.Inject -> { /* no sub-expressions to collect */ }
+            is Expr.Spread -> collectCallsFromExpr(expr.array, calls)
             is Expr.SafeMember -> collectCallsFromExpr(expr.target, calls)
             is Expr.IntLiteral, is Expr.RealLiteral,
             is Expr.StringLiteral, is Expr.BoolLiteral,

@@ -331,6 +331,7 @@ class TypeScriptCodegen {
             "$name(${expr.args.joinToString(", ") { emitExpr(it) }})"
         }
         is IrExpr.Await -> emitExpr(expr.value) // no coroutine runtime: emit the task inline
+        is IrExpr.Spread -> "...${emitExpr(expr.array)}" // TS spread operator
         is IrExpr.ArrayLiteral -> "[${expr.elements.joinToString(", ") { emitExpr(it) }}]"
         is IrExpr.MapLit -> "({ ${expr.entries.joinToString(", ") { "[${emitExpr(it.first)}]: ${emitExpr(it.second)}" }} })"
         is IrExpr.Index -> "${emitExpr(expr.target)}[${emitExpr(expr.index)}]"

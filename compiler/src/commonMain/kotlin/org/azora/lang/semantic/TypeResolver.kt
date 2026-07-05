@@ -560,12 +560,21 @@ class TypeResolver(private val table: SymbolTable) {
                 } else {
                     expr.args
                 }
-                // Check arg count — allow fewer only if defaults cover the gap
-                if (effectiveArgs.size > func.params.size) {
+                // Check arg count.
+                val hasSpread = effectiveArgs.any { it is Expr.Spread }
+                if (func.isVariadic) {
+                    // Variadic: min args = params - 1 (all but the variadic param).
+                    val minArgs = func.params.size - 1
+                    if (effectiveArgs.size < minArgs) {
+                        errors.add("line ${expr.line}: '${expr.callee}' expects at least $minArgs args, got ${effectiveArgs.size}")
+                        return null
+                    }
+                } else if (hasSpread) {
+                    // A spread arg fills remaining params — skip the count check (runtime handles correctness).
+                } else if (effectiveArgs.size > func.params.size) {
                     errors.add("line ${expr.line}: '${expr.callee}' expects ${func.params.size} args, got ${effectiveArgs.size}")
                     return null
-                }
-                if (effectiveArgs.size < func.params.size) {
+                } else if (effectiveArgs.size < func.params.size) {
                     val minArgs = func.params.size - func.defaults.size
                     if (effectiveArgs.size < minArgs) {
                         errors.add("line ${expr.line}: '${expr.callee}' expects at least $minArgs args, got ${effectiveArgs.size}")
@@ -812,6 +821,7 @@ class TypeResolver(private val table: SymbolTable) {
                 (t as? IrType.Function)?.ret ?: IrType.Any
             }
             is Expr.Inject -> IrType.Named(expr.typeName)
+            is Expr.Spread -> { resolveExpr(expr.array) ?: return null; IrType.Any }
             is Expr.Cast -> {
                 resolveExpr(expr.expr) ?: return null
                 IrType.resolve(expr.targetType)
@@ -1046,16 +1056,19 @@ class TypeResolver(private val table: SymbolTable) {
             TokenType.PLUS -> {
                 if (left == IrType.String || right == IrType.String) IrType.String
                 else if (left in IrType.numericTypes && right in IrType.numericTypes) promote(left, right)
+                else if (left == IrType.Any || right == IrType.Any) IrType.Any // erased generics
                 else { errors.add("line $line: cannot apply '$op' to $left and $right"); null }
             }
             TokenType.STAR -> {
                 if ((left == IrType.String && right == IrType.Int) ||
                     (left == IrType.Int && right == IrType.String)) IrType.String
                 else if (left in IrType.numericTypes && right in IrType.numericTypes) promote(left, right)
+                else if (left == IrType.Any || right == IrType.Any) IrType.Any
                 else { errors.add("line $line: cannot apply '$op' to $left and $right"); null }
             }
             TokenType.MINUS, TokenType.SLASH, TokenType.PERCENT -> {
                 if (left in IrType.numericTypes && right in IrType.numericTypes) promote(left, right)
+                else if (left == IrType.Any || right == IrType.Any) IrType.Any
                 else { errors.add("line $line: cannot apply '$op' to $left and $right"); null }
             }
             TokenType.EQUAL_EQUAL, TokenType.BANG_EQUAL -> {

@@ -907,24 +907,33 @@ class Parser(private val tokens: List<Token>) {
         do {
             val name = consume(TokenType.IDENTIFIER, "Expected parameter name").lexeme
             consume(TokenType.COLON, "Expected ':' after parameter name")
-            val type = parseTypeName()
+            val type = parseTypeName() // handles `...T` prefix → Array(T)
             val default = if (match(TokenType.EQUAL)) parseExpr() else null
             params.add(Param(name, type, default))
         } while (match(TokenType.COMMA))
         return params
     }
 
-    /** `<T, U>` type-parameter list (returns empty list if none). */
+    /** `<T, U>` type-parameter list. The last param may be `...T` (variadic). Returns names. */
     private fun parseTypeParams(): List<String> {
         if (!check(TokenType.LESS)) return emptyList()
         advance()
         val params = mutableListOf<String>()
-        do { params.add(consume(TokenType.IDENTIFIER, "Expected type parameter name").lexeme) } while (match(TokenType.COMMA))
+        do {
+            match(TokenType.ELLIPSIS) // optional `...` prefix marks variadic
+            val name = consume(TokenType.IDENTIFIER, "Expected type parameter name").lexeme
+            params.add(name)
+        } while (match(TokenType.COMMA))
         consume(TokenType.GREATER, "Expected '>' after type parameters")
         return params
     }
 
     private fun parseTypeName(): TypeRef {
+        // `...T` — variadic type (prefix). Wraps the type in an array.
+        if (match(TokenType.ELLIPSIS)) {
+            val inner = parseTypeAtom()
+            return TypeRef.Array(inner)
+        }
         var base = parseTypeAtom()
         // Suffix type modifiers: `T?` (nullable) and `T!ErrSet` (failable), in any order.
         while (true) {
@@ -2066,11 +2075,17 @@ class Parser(private val tokens: List<Token>) {
                     val args = mutableListOf<Expr>()
                     if (!check(TokenType.R_PAREN)) {
                         do {
-                            val first = parseExpr()
-                            val arg = if (first is Expr.Identifier && check(TokenType.COLON)) {
-                                advance()
-                                Expr.NamedArg(first.name, parseExpr(), first.line, first.column, first.length)
-                            } else first
+                            // Spread: `...arr` — prefix splat of the array's elements into individual args.
+                            val arg = if (match(TokenType.ELLIPSIS)) {
+                                val first = parseExpr()
+                                Expr.Spread(first, first.line, first.column, first.length)
+                            } else {
+                                val first = parseExpr()
+                                if (first is Expr.Identifier && check(TokenType.COLON)) {
+                                    advance()
+                                    Expr.NamedArg(first.name, parseExpr(), first.line, first.column, first.length)
+                                } else first
+                            }
                             args.add(arg)
                         } while (match(TokenType.COMMA))
                     }

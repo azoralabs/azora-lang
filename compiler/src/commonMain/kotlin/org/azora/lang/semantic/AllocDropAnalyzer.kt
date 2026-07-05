@@ -184,6 +184,11 @@ class AllocDropAnalyzer {
                 collectUsedVars(stmt.target, used)
                 collectUsedVars(stmt.value, used)
             }
+            is Stmt.RemDecl -> {
+                collectUsedVars(stmt.initializer, used)
+                defined.add(stmt.name)
+            }
+            is Stmt.Effect -> stmt.body.forEach { analyzeStmt(it, defined, used, errors) }
             is Stmt.When -> {
                 collectUsedVars(stmt.scrutinee, used)
                 for (branch in stmt.branches) {

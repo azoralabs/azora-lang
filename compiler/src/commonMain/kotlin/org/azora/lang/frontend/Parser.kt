@@ -150,6 +150,7 @@ class Parser(private val tokens: List<Token>) {
             check(TokenType.WRAP) -> parseWrap()
             check(TokenType.NODE) -> parseNode()
             check(TokenType.LEAF) -> parseNode(isLeaf = true)
+            check(TokenType.VIEW) -> parseView()
             check(TokenType.SPEC) -> parseSpec()
             check(TokenType.SLOT) -> parseSlot()
             check(TokenType.TYPEALIAS) -> parseTypeAlias()
@@ -1044,6 +1045,8 @@ class Parser(private val tokens: List<Token>) {
             check(TokenType.TRY) -> parseTry()
             check(TokenType.DEFER) -> parseDefer()
             check(TokenType.RESCUE) -> parseRescue()
+            check(TokenType.REM) -> parseRem()
+            check(TokenType.EFFECT) -> parseEffect()
             check(TokenType.GUARD) -> parseGuard()
             else -> parseExprStmt()
         }
@@ -1295,6 +1298,50 @@ class Parser(private val tokens: List<Token>) {
         consume(TokenType.R_BRACE, "Expected '}'")
         consumeNewline()
         return Stmt.Defer(body, start.line, start.column, onFail = true, suppress = true)
+    }
+
+    /** `rem x: T = init` — reactive state declaration. */
+    private fun parseRem(): Stmt.RemDecl {
+        val start = peek()
+        consume(TokenType.REM, "Expected 'rem'")
+        val name = consume(TokenType.IDENTIFIER, "Expected variable name after 'rem'").lexeme
+        val type: TypeAnnotation = if (match(TokenType.COLON)) TypeAnnotation.Explicit(parseTypeName()) else TypeAnnotation.Inferred
+        consume(TokenType.EQUAL, "Expected '=' in rem declaration")
+        val init = parseExpr()
+        consumeNewline()
+        return Stmt.RemDecl(name, type, init, start.line, start.column)
+    }
+
+    /** `effect { body }` — reactive side-effect block. */
+    private fun parseEffect(): Stmt.Effect {
+        val start = peek()
+        consume(TokenType.EFFECT, "Expected 'effect'")
+        consume(TokenType.L_BRACE, "Expected '{' after 'effect'")
+        skipNewlines()
+        val body = parseBlock()
+        consume(TokenType.R_BRACE, "Expected '}'")
+        consumeNewline()
+        return Stmt.Effect(body, start.line, start.column)
+    }
+
+    /** `view Name(params) { body }` — a reactive UI component. */
+    private fun parseView(): TopLevel.View {
+        val start = peek()
+        consume(TokenType.VIEW, "Expected 'view'")
+        val name = consume(TokenType.IDENTIFIER, "Expected view name").lexeme
+        consume(TokenType.L_PAREN, "Expected '(' after view name")
+        val params = parseParams()
+        consume(TokenType.R_PAREN, "Expected ')' after view params")
+        consume(TokenType.L_BRACE, "Expected '{' after view header")
+        skipNewlines()
+        val body = mutableListOf<Stmt>()
+        while (!check(TokenType.R_BRACE) && !isAtEnd()) {
+            body.add(parseStmt())
+            skipNewlines()
+        }
+        consume(TokenType.R_BRACE, "Expected '}' after view body")
+        consumeNewline()
+        return TopLevel.View(name, params, body, start.line, start.column)
     }
 
     /** `guard condition else { body }` — sugar for `if !condition { body }`. */

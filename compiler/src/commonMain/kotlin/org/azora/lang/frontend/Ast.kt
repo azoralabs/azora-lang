@@ -870,6 +870,12 @@ sealed class Stmt {
 
     /** `defer { body }` — runs [body] when the enclosing function exits. */
     data class Defer(val body: List<Stmt>, override val line: Int, override val column: Int = 0, override val length: Int = 0, val onFail: Boolean = false, val suppress: Boolean = false) : Stmt()
+
+    /** `rem x: T = init` — reactive state declaration. */
+    data class RemDecl(val name: String, val type: TypeAnnotation, val initializer: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Stmt()
+
+    /** `effect { body }` — reactive side-effect; re-runs when tracked `rem` variables change. */
+    data class Effect(val body: List<Stmt>, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Stmt()
 }
 
 // ---------------------------------------------------------------------------
@@ -1221,6 +1227,9 @@ sealed class TopLevel {
 
     /** `wrap Name { solo Type(args); Concrete bind Spec }` — a DI container that wires singletons. */
     data class Wrap(val name: String, val registrations: List<WrapReg>, val line: Int, val column: Int = 0) : TopLevel()
+
+    /** `view Name(params) { body }` — a reactive UI component (like a function but with reactive semantics). */
+    data class View(val name: String, val params: List<Param>, val body: List<Stmt>, val line: Int, val column: Int = 0) : TopLevel()
 
     /**
      * A simple `enum` declaration: `enum Color { Red; Green; Blue }`.

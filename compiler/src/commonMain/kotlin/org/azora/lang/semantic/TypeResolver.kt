@@ -145,6 +145,8 @@ class TypeResolver(private val table: SymbolTable) {
     private fun resolveStmt(stmt: Stmt, returnType: IrType) {
         when (stmt) {
             is Stmt.VarDecl -> resolveBinding(stmt.name, stmt.type, stmt.initializer, stmt.line, mutable = true)
+            is Stmt.RemDecl -> resolveBinding(stmt.name, stmt.type, stmt.initializer, stmt.line, mutable = true)
+            is Stmt.Effect -> { resolveBody(stmt.body, returnType) }
             is Stmt.FinDecl -> resolveBinding(stmt.name, stmt.type, stmt.initializer, stmt.line, mutable = false)
             is Stmt.Assignment -> {
                 val varSym = table.lookupVariable(stmt.name)

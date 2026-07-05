@@ -121,6 +121,8 @@ class EffectChecker {
     private fun collectCallsFromStmt(stmt: Stmt, calls: MutableSet<String>) {
         when (stmt) {
             is Stmt.VarDecl -> collectCallsFromExpr(stmt.initializer, calls)
+            is Stmt.RemDecl -> collectCallsFromExpr(stmt.initializer, calls)
+            is Stmt.Effect -> stmt.body.forEach { collectCallsFromStmt(it, calls) }
             is Stmt.FinDecl -> collectCallsFromExpr(stmt.initializer, calls)
             is Stmt.Assignment -> collectCallsFromExpr(stmt.value, calls)
             is Stmt.Return -> stmt.value?.let { collectCallsFromExpr(it, calls) }

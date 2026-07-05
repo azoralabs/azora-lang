@@ -156,6 +156,8 @@ class AstValidator {
             is Stmt.IndexAssign -> {}
             is Stmt.MemberAssign -> {}
             is Stmt.DerefAssign -> {}
+            is Stmt.RemDecl -> {}
+            is Stmt.Effect -> {}
             is Stmt.When -> {
                 for (branch in stmt.branches) {
                     branch.body.forEach { validateStmt(it, funcName, errors) }

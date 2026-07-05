@@ -108,6 +108,14 @@ class SymbolCollector {
             }
         }
 
+        // Register view declarations (treated as functions for type-checking).
+        for (item in program.items) {
+            if (item is TopLevel.View) {
+                val params = item.params.map { it.name to IrType.resolve(it.type) }
+                table.defineFunction(FunctionSymbol(item.name, params, IrType.Any))
+            }
+        }
+
         // Register bridge (FFI extern) function signatures
         for (item in program.items) {
             if (item is TopLevel.Bridge) {

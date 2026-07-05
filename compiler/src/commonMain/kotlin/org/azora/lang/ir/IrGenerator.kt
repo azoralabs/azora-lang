@@ -169,6 +169,11 @@ class IrGenerator(private val table: SymbolTable) {
                     if (method.isInline) null
                     else IrTopLevel.Func(lowerMethod(item.typeName, method))
                 }
+                is TopLevel.View -> {
+                    // A view is lowered like a function (reactive semantics are interpreter-only).
+                    val decl = FuncDecl(item.name, item.params, TypeAnnotation.Inferred, item.body, false, emptyList(), item.line, item.column)
+                    listOf(IrTopLevel.Func(lowerFunction(decl)))
+                }
                 else -> emptyList() // Inline constructs already resolved by CTFE
             }
         } +
@@ -440,6 +445,17 @@ class IrGenerator(private val table: SymbolTable) {
             is Stmt.Break -> IrStmt.Break(stmt.label)
             is Stmt.Continue -> IrStmt.Continue(stmt.label)
             is Stmt.Defer -> IrStmt.Defer(lowerBody(stmt.body), stmt.onFail, stmt.suppress)
+            is Stmt.RemDecl -> {
+                val init = lowerExpr(stmt.initializer)
+                val type = resolveTypeAnnotation(stmt.type, init)
+                val mangled = registerName(stmt.name)
+                table.defineVariable(VariableSymbol(stmt.name, type, mutable = true))
+                IrStmt.VarDecl(mangled, type, init)
+            }
+            is Stmt.Effect -> {
+                lowerBody(stmt.body).forEach { /* effects run as-is */ }
+                lowerBody(stmt.body).firstOrNull() ?: IrStmt.ExprStmt(IrExpr.IntLiteral(0))
+            }
             is Stmt.Yield -> IrStmt.Yield(lowerExpr(stmt.value))
             is Stmt.When -> {
                 val scrutinee = lowerExpr(stmt.scrutinee)

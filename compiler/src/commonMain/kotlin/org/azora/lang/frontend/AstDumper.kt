@@ -143,6 +143,9 @@ private fun dumpTopLevel(sb: StringBuilder, item: TopLevel, indent: String) {
             val parent = if (item.parent != null) " : ${item.parent}" else ""
             sb.appendLine("${indent}Node(name=${item.name}$parent, leaf=${item.isLeaf}, params=[${item.params.joinToString(", ") { it.name }}], methods=[${item.methods.joinToString(", ") { it.name }}])")
         }
+        is TopLevel.View -> {
+            sb.appendLine("${indent}View(name=${item.name}, params=[${item.params.joinToString(", ") { it.name }}])")
+        }
         is TopLevel.Spec -> {
             sb.appendLine("${indent}Spec(name=${item.name}, methods=[${item.methods.joinToString(", ") { it.name }}])")
         }
@@ -330,6 +333,13 @@ private fun dumpStmt(sb: StringBuilder, stmt: Stmt, indent: String) {
             dumpExpr(sb, stmt.target, "$indent        ")
             sb.appendLine("$indent    value:")
             dumpExpr(sb, stmt.value, "$indent        ")
+        }
+        is Stmt.RemDecl -> {
+            sb.appendLine("${indent}RemDecl(name=${stmt.name})")
+        }
+        is Stmt.Effect -> {
+            sb.appendLine("${indent}Effect")
+            for (s in stmt.body) dumpStmt(sb, s, "$indent    ")
         }
         is Stmt.When -> {
             sb.appendLine("${indent}When")

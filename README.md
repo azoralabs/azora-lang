@@ -187,6 +187,11 @@ The IR is target-agnostic. Every backend lowers from the same optimized IR. Addi
 - Interpreter resolves common C-math (`sin`, `cos`, `sqrt`, `pow`, …) to `kotlin.math`
 - Codegens emit real extern declarations: Kotlin `external fun`, TypeScript `declare function`, LLVM `declare`
 
+### Reactivity
+- `rem x: T = init` — reactive state declaration (behaves like `var` in the interpreter; reactive re-runs are future work)
+- `effect { body }` — reactive side-effect block (runs once immediately; matches the old interpreter's semantics)
+- `view Name(params) { body }` — a reactive UI component declaration (lowered like a function; callable from code)
+
 ### Backends
 - **Kotlin/JVM**: full code generation to Kotlin source
 - **TypeScript**: full code generation
@@ -206,7 +211,7 @@ The IR is target-agnostic. Every backend lowers from the same optimized IR. Addi
 ./gradlew :compiler:desktopTest
 ```
 
-507 tests covering all features. Tests verify runtime correctness through the IR interpreter.
+511 tests covering all features. Tests verify runtime correctness through the IR interpreter.
 
 ## Missing Features (Roadmap)
 
@@ -214,7 +219,9 @@ The IR is target-agnostic. Every backend lowers from the same optimized IR. Addi
 - **Multi-statement lambda codegen** — best-effort in Kotlin/TS
 
 ### Systems (large effort)
-- **UI / reactivity**: `view`/`rem`/`effect`
+- **Full reactivity** — `rem`/`effect` currently run once; automatic dependency tracking and re-runs are future work
+- **UI rendering** — `view` is parsed and callable; no DOM/Compose rendering backend yet
+- **Multi-statement lambda codegen** — best-effort in Kotlin/TS
 
 ### Known Limitations
 - Generics use type erasure (field types are `Any` at runtime)

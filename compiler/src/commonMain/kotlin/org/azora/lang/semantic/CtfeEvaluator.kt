@@ -144,6 +144,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
         is TopLevel.Solo -> Pair(listOf(item), false)
         is TopLevel.Wrap -> Pair(listOf(item), false)
         is TopLevel.Node -> Pair(listOf(item), false)
+        is TopLevel.View -> Pair(listOf(item), false)
         is TopLevel.Impl -> Pair(listOf(item), false)
         is TopLevel.Spec -> Pair(listOf(item), false)
         is TopLevel.TypeAlias -> Pair(listOf(item), false)
@@ -259,6 +260,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 is TopLevel.Solo -> result.add(item)
                 is TopLevel.Wrap -> result.add(item)
                 is TopLevel.Node -> result.add(item)
+                is TopLevel.View -> result.add(item)
                 is TopLevel.Impl -> result.add(item)
                 is TopLevel.Spec -> result.add(item)
                 is TopLevel.TypeAlias -> result.add(item)
@@ -462,6 +464,14 @@ class CtfeEvaluator(private val table: SymbolTable) {
             is Stmt.Yield -> {
                 val (v, c) = foldExpr(stmt.value, program)
                 Pair(listOf(if (c) Stmt.Yield(v, stmt.line, stmt.column, stmt.length) else stmt), c)
+            }
+            is Stmt.RemDecl -> {
+                val (newInit, changed) = foldExpr(stmt.initializer, program)
+                Pair(listOf(stmt.copy(initializer = newInit)), changed)
+            }
+            is Stmt.Effect -> {
+                val (newBody, changed) = foldBody(stmt.body, program, errors)
+                Pair(listOf(stmt.copy(body = newBody)), changed)
             }
             is Stmt.Try -> {
                 var changed = false
@@ -1024,6 +1034,8 @@ class CtfeEvaluator(private val table: SymbolTable) {
                     val value = evalExpr(stmt.initializer, env, program) ?: return null
                     env[stmt.name] = value
                 }
+                is Stmt.RemDecl -> return null // reactive state, not CTFE-evaluable
+                is Stmt.Effect -> return null // effects are not CTFE-evaluable
                 is Stmt.FinDecl -> {
                     val value = evalExpr(stmt.initializer, env, program) ?: return null
                     env[stmt.name] = value

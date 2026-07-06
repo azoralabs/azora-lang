@@ -556,14 +556,23 @@ class IrGenerator(private val table: SymbolTable) {
             is Expr.Cast -> {
                 val inner = lowerExpr(expr.expr)
                 val target = IrType.resolve(expr.targetType)
-                // Numeric casts convert the value; all other casts (interface
-                // upcasts, Any) are representation-preserving no-ops.
+                // Numeric casts convert the value. Pointer-carrying values
+                // (String, arrays, packs, Any, pointers) cast to/from integer
+                // types for FFI (`window as Long`); native backends lower these
+                // to ptrtoint/inttoptr. All other casts (interface upcasts,
+                // Any) are representation-preserving no-ops.
                 val numeric = IrType.integerTypes + IrType.floatTypes
-                if (target != inner.type && (target in numeric || target == IrType.Char) &&
-                    (inner.type in numeric || inner.type == IrType.Char)) {
-                    IrExpr.NumCast(inner, target)
-                } else {
-                    inner
+                fun isNumericish(t: IrType) = t in numeric || t == IrType.Char
+                fun isPointerish(t: IrType) =
+                    t == IrType.String || t == IrType.Any || t is IrType.Array || t is IrType.Map ||
+                        t is IrType.Named || t is IrType.Pointer || t is IrType.Nullable || t is IrType.Tuple
+                when {
+                    target == inner.type -> inner
+                    isNumericish(target) && isNumericish(inner.type) -> IrExpr.NumCast(inner, target)
+                    // pointer → integer / integer → pointer (FFI)
+                    isNumericish(target) && isPointerish(inner.type) -> IrExpr.NumCast(inner, target)
+                    isPointerish(target) && isNumericish(inner.type) -> IrExpr.NumCast(inner, target)
+                    else -> inner
                 }
             }
             is Expr.IsCheck -> {

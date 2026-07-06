@@ -209,7 +209,7 @@ class LlvmCodegen {
             strConsts.appendLine("; String constants")
             for ((name, value) in stringConstants) {
                 val escaped = escapeForLlvm(value)
-                val len = value.length + 1
+                val len = value.encodeToByteArray().size + 1
                 strConsts.appendLine("$name = private unnamed_addr constant [$len x i8] c\"$escaped\\00\"")
             }
         }
@@ -704,6 +704,19 @@ class LlvmCodegen {
         val toInt = to in IrType.integerTypes || to == IrType.Char
         val fromFloat = from in IrType.floatTypes
         val toFloat = to in IrType.floatTypes
+        val fromPtr = ft.endsWith("*")
+        val toPtr = tt.endsWith("*")
+
+        // Pointer ↔ integer (FFI): `window as Long`, `az_sym(...) as String`, …
+        if (fromPtr && toInt) {
+            val t = nextTmp(); emit("  $t = ptrtoint $ft $value to $tt"); return t
+        }
+        if (fromInt && toPtr) {
+            val t = nextTmp(); emit("  $t = inttoptr $ft $value to $tt"); return t
+        }
+        if (fromPtr && toPtr) {
+            val t = nextTmp(); emit("  $t = bitcast $ft $value to $tt"); return t
+        }
         val inst = when {
             fromInt && toFloat -> if (isUnsigned(from)) "uitofp" else "sitofp"
             fromFloat && toInt -> if (isUnsigned(to)) "fptoui" else "fptosi"
@@ -1473,26 +1486,25 @@ class LlvmCodegen {
     data class StringRef(val name: String, val byteLen: Int)
 
     private fun addStringConstant(value: String): StringRef {
+        // Constants are emitted as UTF-8 bytes, so lengths are byte lengths.
+        val byteLen = value.encodeToByteArray().size + 1
         for ((name, v) in stringConstants) {
-            if (v == value) return StringRef(name, value.length + 1)
+            if (v == value) return StringRef(name, byteLen)
         }
         val name = "@.str.$stringCounter"
         stringCounter++
         stringConstants.add(name to value)
-        return StringRef(name, value.length + 1)
+        return StringRef(name, byteLen)
     }
 
     private fun escapeForLlvm(s: String): String {
         val sb = StringBuilder()
-        for (c in s) {
-            when (c) {
-                '\\' -> sb.append("\\5C")
-                '"' -> sb.append("\\22")
-                '\n' -> sb.append("\\0A")
-                '\t' -> sb.append("\\09")
-                '\r' -> sb.append("\\0D")
-                else -> if (c.code in 32..126) sb.append(c)
-                        else sb.append("\\${c.code.toString(16).uppercase().padStart(2, '0')}")
+        for (b in s.encodeToByteArray()) {
+            val v = b.toInt() and 0xFF
+            when {
+                v == '\\'.code || v == '"'.code || v < 32 || v > 126 ->
+                    sb.append("\\").append(v.toString(16).uppercase().padStart(2, '0'))
+                else -> sb.append(v.toChar())
             }
         }
         return sb.toString()

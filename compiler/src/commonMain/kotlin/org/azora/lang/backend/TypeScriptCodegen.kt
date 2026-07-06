@@ -356,13 +356,19 @@ class TypeScriptCodegen {
         is IrExpr.TupleLit -> "[${expr.elements.joinToString(", ") { emitExpr(it) }}]"
         is IrExpr.TupleAccess -> "${emitExpr(expr.target)}[${expr.index}]"
         is IrExpr.CatchExpr -> "(() => { try { return ${emitExpr(expr.expr)}; } catch { return ${emitExpr(expr.fallback)}; } })()"
-        is IrExpr.NumCast -> when (expr.type) {
-            // bigint targets need explicit BigInt conversion; other integer
-            // targets truncate; float targets are plain JS numbers.
-            IrType.Long, IrType.ULong, IrType.Cent, IrType.UCent ->
-                "BigInt(Math.trunc(Number(${emitExpr(expr.value)})))"
-            in IrType.integerTypes -> "Math.trunc(Number(${emitExpr(expr.value)}))"
-            else -> "Number(${emitExpr(expr.value)})"
+        is IrExpr.NumCast -> {
+            val sourceNumeric = expr.value.type in IrType.integerTypes ||
+                expr.value.type in IrType.floatTypes || expr.value.type == IrType.Char
+            when {
+                // Pointer-ish casts (FFI) have no JS meaning — pass through.
+                !sourceNumeric -> emitExpr(expr.value)
+                // bigint targets need explicit BigInt conversion; other integer
+                // targets truncate; float targets are plain JS numbers.
+                expr.type in listOf(IrType.Long, IrType.ULong, IrType.Cent, IrType.UCent) ->
+                    "BigInt(Math.trunc(Number(${emitExpr(expr.value)})))"
+                expr.type in IrType.integerTypes -> "Math.trunc(Number(${emitExpr(expr.value)}))"
+                else -> "Number(${emitExpr(expr.value)})"
+            }
         }
         is IrExpr.SlotPattern -> "" /* handled by when lowering */
         is IrExpr.Lambda -> {

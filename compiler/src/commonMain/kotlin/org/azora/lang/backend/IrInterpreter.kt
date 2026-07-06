@@ -577,13 +577,13 @@ class IrInterpreter {
             }
             is IrExpr.NumCast -> {
                 val v = evalExpr(expr.value)
-                val n: Number = when (v) {
+                val n: Number? = when (v) {
                     is Number -> v
                     is Char -> v.code
                     is Boolean -> if (v) 1 else 0
-                    else -> error("cannot numerically cast $v to ${expr.type}")
+                    else -> null // pointer-ish FFI cast — no interpreter meaning, pass through
                 }
-                when (expr.type) {
+                if (n == null) v else when (expr.type) {
                     IrType.Int, IrType.UInt -> n.toInt()
                     IrType.Byte, IrType.UByte -> n.toByte()
                     IrType.Short, IrType.UShort -> n.toShort()

@@ -1245,6 +1245,13 @@ sealed class TopLevel {
     data class Hook(val name: String, val body: List<Stmt>, val line: Int, val column: Int = 0) : TopLevel()
 
     /**
+     * `use ZoneName` or `use ZoneName::Item` — imports items from a named zone so they're
+     * accessible without the `ZoneName::` prefix. [imports] is a list of (zoneName, itemName)
+     * pairs where itemName is null for "import all".
+     */
+    data class UseImport(val imports: List<Pair<String, String?>>, val line: Int, val column: Int = 0) : TopLevel()
+
+    /**
      * A simple `enum` declaration: `enum Color { Red; Green; Blue }`.
      *
      * @property name the enum name

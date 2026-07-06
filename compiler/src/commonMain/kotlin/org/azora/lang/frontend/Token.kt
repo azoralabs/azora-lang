@@ -142,6 +142,10 @@ enum class TokenType {
     FLIP, FLOP,
     // Parameter modifiers: `ref name: T`, `out name: T`, `mut name: T`.
     REF, OUT, MUT,
+    // Visibility: `expose` (public), `confine` (private), `protect` (protected).
+    EXPOSE, CONFINE, PROTECT,
+    // Module: `module Name` (alias for package).
+    MODULE,
     // `deco Name { fields }` — decorator/annotation declaration.
     DECO,
 

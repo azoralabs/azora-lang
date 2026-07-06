@@ -96,6 +96,8 @@ class SymbolTable {
     val leafNodes = mutableSetOf<String>()
     /** All registered node type names (for dynamic dispatch checks). */
     val nodeTypes = mutableSetOf<String>()
+    /** Import aliases: alias name → real (mangled) name. Populated from `use` declarations. */
+    val aliasMap = mutableMapOf<String, String>()
 
     // -- Functions (global) -------------------------------------------------
 
@@ -120,6 +122,11 @@ class SymbolTable {
      */
     fun lookupFunction(name: String): FunctionSymbol? = functions[name]
 
+    /** Returns all registered function names (for import resolution). */
+    fun allFunctionNames(): Set<String> = functions.keys.toSet()
+
+    // -- Structs -----------------------------------------------------------
+
     // -- Structs -----------------------------------------------------------
 
     /**
@@ -137,6 +144,9 @@ class SymbolTable {
 
     /** Looks up a struct by name. */
     fun lookupStruct(name: String): StructType? = structs[name]
+
+    /** Returns all registered struct names (for import resolution). */
+    fun allStructNames(): Set<String> = structs.keys.toSet()
 
     // -- Enums -------------------------------------------------------------
 
@@ -220,6 +230,9 @@ class SymbolTable {
     fun exportCurrentScope(target: MutableMap<String, VariableSymbol>) {
         scopes.lastOrNull()?.let { target.putAll(it) }
     }
+
+    /** Returns all variable names in the global (first) scope (for import resolution). */
+    fun allVariableNames(): Set<String> = scopes.firstOrNull()?.keys?.toSet() ?: emptySet()
 
     /**
      * Looks up a variable by name in the current (innermost) scope only.

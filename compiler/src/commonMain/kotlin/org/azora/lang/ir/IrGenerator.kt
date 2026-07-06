@@ -98,6 +98,11 @@ class IrGenerator(private val table: SymbolTable) {
             }
         }
 
+        // Register import aliases in the global name scope so `use Zone::Item` resolves.
+        for ((alias, real) in table.aliasMap) {
+            nameScopes.last()[alias] = real
+        }
+
         // Lower top-level items in source order to preserve interleaving
         val items = program.items.flatMap { item ->
             when (item) {
@@ -657,7 +662,9 @@ class IrGenerator(private val table: SymbolTable) {
                 IrExpr.Binary(left, op, right, type)
             }
             is Expr.Call -> {
-                val struct = table.lookupStruct(expr.callee)
+                // Resolve import aliases (use Zone::Item → Item maps to Zone__Item).
+                val realCallee = table.aliasMap[expr.callee] ?: expr.callee
+                val struct = table.lookupStruct(realCallee) ?: table.lookupStruct(expr.callee)
                 if (struct != null) {
                     // Handle named arguments — reorder to field order
                     val args = if (expr.args.isNotEmpty() && expr.args[0] is Expr.NamedArg) {
@@ -667,19 +674,19 @@ class IrGenerator(private val table: SymbolTable) {
                         expr.args.map { lowerExpr(it) }
                     }
                     // Node types: prepend __type and __chain for dynamic dispatch.
-                    if (expr.callee in table.nodeTypes) {
-                        val chain = mutableListOf(expr.callee)
-                        var p = table.nodeParents[expr.callee]
+                    if (realCallee in table.nodeTypes) {
+                        val chain = mutableListOf(realCallee)
+                        var p = table.nodeParents[realCallee]
                         while (p != null) { chain.add(p); p = table.nodeParents[p] }
                         val chainLit = IrExpr.ArrayLiteral(chain.map { IrExpr.StringLiteral(it) }, IrType.Array(IrType.String))
                         return IrExpr.StructCtor(
-                            expr.callee,
+                            realCallee,
                             listOf("__type", "__chain") + struct.fields.map { it.name },
-                            listOf(IrExpr.StringLiteral(expr.callee), chainLit) + args,
-                            IrType.Named(expr.callee)
+                            listOf(IrExpr.StringLiteral(realCallee), chainLit) + args,
+                            IrType.Named(realCallee)
                         )
                     }
-                    return IrExpr.StructCtor(expr.callee, struct.fields.map { it.name }, args, IrType.Named(expr.callee))
+                    return IrExpr.StructCtor(realCallee, struct.fields.map { it.name }, args, IrType.Named(realCallee))
                 }
                 val func = table.lookupFunction(expr.callee)
                 if (func != null) {
@@ -713,7 +720,7 @@ class IrGenerator(private val table: SymbolTable) {
                         }
                         result
                     } else args
-                    return IrExpr.Call(expr.callee, effectiveArgs, func.returnType)
+                    return IrExpr.Call(table.aliasMap[expr.callee] ?: expr.callee, effectiveArgs, func.returnType)
                 }
                 // Calling a lambda stored in a variable.
                 val v = table.lookupVariable(expr.callee)

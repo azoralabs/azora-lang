@@ -63,7 +63,11 @@ class Parser(private val tokens: List<Token>) {
      */
     fun parse(): Program {
         skipNewlines()
-        val packageName = if (check(TokenType.PACKAGE)) parsePackage() else null
+        val packageName = when {
+            check(TokenType.PACKAGE) -> parsePackage()
+            check(TokenType.MODULE) -> { advance(); consume(TokenType.IDENTIFIER, "Expected module name").lexeme.also { consumeNewline() } }
+            else -> null
+        }
         val items = mutableListOf<TopLevel>()
         while (!isAtEnd()) {
             skipNewlines()
@@ -132,6 +136,13 @@ class Parser(private val tokens: List<Token>) {
 
     private fun parseTopLevel(): TopLevel {
         val annotations = parseAnnotations()
+        // Optional visibility modifier: expose (default), confine (private), protect (protected).
+        val visibility = when {
+            match(TokenType.EXPOSE) -> "expose"
+            match(TokenType.CONFINE) -> "confine"
+            match(TokenType.PROTECT) -> "protect"
+            else -> ""
+        }
         val start = peek()
         return when {
             check(TokenType.FUNC) -> TopLevel.Func(parseFuncDecl(annotations = annotations))
@@ -695,6 +706,8 @@ class Parser(private val tokens: List<Token>) {
             if (check(TokenType.R_BRACE)) break
             val isRepl = match(TokenType.REPL)
             val isVirt = match(TokenType.VIRT)
+            // Visibility modifiers (expose/confine/protect) — consumed and ignored in single-file mode.
+            if (!match(TokenType.EXPOSE)) { if (!match(TokenType.CONFINE)) { match(TokenType.PROTECT) } }
             when {
                 check(TokenType.FUNC) -> {
                     val method = parseFuncDecl(isOverride = isRepl, isVirtual = isVirt || isRepl)
@@ -1480,15 +1493,36 @@ class Parser(private val tokens: List<Token>) {
         return Stmt.If(negated, body, null, start.line, start.column)
     }
 
-    /** `use module.path`, `use scope std`, `use pages.*` — parsed and ignored (metadata for CLI resolution). */
+    /**
+     * `use ZoneName` — import all items from a named zone.
+     * `use ZoneName::Item` — import a specific item.
+     * `use ZoneName::*` — import all items (same as bare ZoneName).
+     * `use ZoneName::Item1, Item2` — import multiple items.
+     * Stored as a `TopLevel.UseImport` for the SymbolCollector to resolve.
+     */
     private fun parseUse(): TopLevel {
-        val start = peek()
-        consume(TokenType.USE, "Expected 'use'")
-        while (!check(TokenType.NEWLINE) && !check(TokenType.EOF)) {
-            advance()
-        }
+        val start = consume(TokenType.USE, "Expected 'use'")
+        val imports = mutableListOf<Pair<String, String?>>() // (zoneName, itemName or null for all)
+        do {
+            val zoneName = consume(TokenType.IDENTIFIER, "Expected zone name after 'use'").lexeme
+            if (match(TokenType.DOUBLE_COLON)) {
+                if (match(TokenType.STAR)) {
+                    imports.add(zoneName to null) // import all
+                } else {
+                    val itemName = consume(TokenType.IDENTIFIER, "Expected item name after '::'").lexeme
+                    imports.add(zoneName to itemName)
+                    // Allow `ZoneName::Item1, Item2` (shorthand for multiple items in same zone)
+                    while (match(TokenType.COMMA)) {
+                        val more = consume(TokenType.IDENTIFIER, "Expected item name").lexeme
+                        imports.add(zoneName to more)
+                    }
+                }
+            } else {
+                imports.add(zoneName to null) // bare zone name → import all
+            }
+        } while (match(TokenType.COMMA) && check(TokenType.IDENTIFIER))
         consumeNewline()
-        return TopLevel.Test("__use__", emptyList(), start.line, start.column)
+        return TopLevel.UseImport(imports, start.line, start.column)
     }
 
     private fun parseTypeAlias(): TopLevel.TypeAlias {

@@ -149,6 +149,9 @@ private fun dumpTopLevel(sb: StringBuilder, item: TopLevel, indent: String) {
         is TopLevel.Hook -> {
             sb.appendLine("${indent}Hook(name=${item.name})")
         }
+        is TopLevel.UseImport -> {
+            sb.appendLine("${indent}UseImport(${item.imports.joinToString(", ") { (zone, item) -> if (item != null) "$zone::$item" else "$zone::*" }})")
+        }
         is TopLevel.Spec -> {
             sb.appendLine("${indent}Spec(name=${item.name}, methods=[${item.methods.joinToString(", ") { it.name }}])")
         }

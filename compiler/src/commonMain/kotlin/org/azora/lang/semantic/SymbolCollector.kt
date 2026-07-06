@@ -349,6 +349,55 @@ class SymbolCollector {
             }
         }
 
+        // Resolve `use` imports — create aliases so zone items are accessible without prefix.
+        for (item in program.items) {
+            if (item !is TopLevel.UseImport) continue
+            for ((zoneName, itemName) in item.imports) {
+                if (itemName != null) {
+                    // `use Zone::Item` — alias Item → Zone__Item
+                    val mangled = "${zoneName}__${itemName}"
+                    val func = table.lookupFunction(mangled)
+                    if (func != null) {
+                        table.aliasMap[itemName] = mangled
+                        table.defineFunction(func.copy(name = itemName))
+                    }
+                    val struct = table.lookupStruct(mangled)
+                    if (struct != null) {
+                        table.aliasMap[itemName] = mangled
+                        table.defineStruct(struct.copy(name = itemName))
+                    }
+                    val variable = table.lookupVariable(mangled)
+                    if (variable != null) {
+                        table.aliasMap[itemName] = mangled
+                        table.defineVariable(VariableSymbol(itemName, variable.type, variable.mutable))
+                    }
+                } else {
+                    // `use Zone` or `use Zone::*` — alias all Zone__X → X
+                    val knownFuncs = table.allFunctionNames().filter { it.startsWith("${zoneName}__") }
+                    for (fn in knownFuncs) {
+                        val alias = fn.substringAfter("__")
+                        table.aliasMap[alias] = fn
+                        val func = table.lookupFunction(fn)!!
+                        table.defineFunction(func.copy(name = alias))
+                    }
+                    val knownStructs = table.allStructNames().filter { it.startsWith("${zoneName}__") }
+                    for (st in knownStructs) {
+                        val alias = st.substringAfter("__")
+                        table.aliasMap[alias] = st
+                        table.defineStruct(table.lookupStruct(st)!!.copy(name = alias))
+                    }
+                    // Alias global variables (fin/var from zones).
+                    val knownVars = table.allVariableNames().filter { it.startsWith("${zoneName}__") }
+                    for (vn in knownVars) {
+                        val alias = vn.substringAfter("__")
+                        table.aliasMap[alias] = vn
+                        val variable = table.lookupVariable(vn)!!
+                        table.defineVariable(VariableSymbol(alias, variable.type, variable.mutable))
+                    }
+                }
+            }
+        }
+
         return errors
     }
 

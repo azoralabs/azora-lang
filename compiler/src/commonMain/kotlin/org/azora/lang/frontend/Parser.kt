@@ -954,11 +954,18 @@ class Parser(private val tokens: List<Token>) {
         if (check(TokenType.R_PAREN)) return emptyList()
         val params = mutableListOf<Param>()
         do {
+            // Optional modifier: ref/out/mut before the name.
+            val modifier = when {
+                match(TokenType.REF) -> "ref"
+                match(TokenType.OUT) -> "out"
+                match(TokenType.MUT) -> "mut"
+                else -> ""
+            }
             val name = consume(TokenType.IDENTIFIER, "Expected parameter name").lexeme
             consume(TokenType.COLON, "Expected ':' after parameter name")
-            val type = parseTypeName() // handles `...T` prefix → Array(T)
+            val type = parseTypeName()
             val default = if (match(TokenType.EQUAL)) parseExpr() else null
-            params.add(Param(name, type, default))
+            params.add(Param(name, type, default, modifier))
         } while (match(TokenType.COMMA))
         return params
     }

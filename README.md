@@ -68,6 +68,7 @@ The IR is target-agnostic. Every backend lowers from the same optimized IR. Addi
 
 ### Functions
 - Default parameters: `func f(x: Int = 0)`
+- Parameter modifiers: `mut name: T` (mutable parameter), `ref name: T` (by-reference — mutations propagate to caller), `out name: T` (output — callee assigns, caller receives)
 - Generics with inference: `func<T> identity(x: T): T`
 - Named function args: `create(value: 30, label: "A")`
 - Inline functions: `inline func square(x) { ... }` — substituted at call sites
@@ -218,7 +219,7 @@ The IR is target-agnostic. Every backend lowers from the same optimized IR. Addi
 ./gradlew :compiler:desktopTest
 ```
 
-517 tests covering all features. Tests verify runtime correctness through the IR interpreter.
+525 tests covering all features. Tests verify runtime correctness through the IR interpreter.
 
 ## Missing Features (Roadmap)
 

@@ -177,7 +177,10 @@ class IrInterpreter {
         // Search from innermost to outermost for existing binding
         for (i in s.indices.reversed()) {
             if (name in s[i]) {
-                s[i][name] = value
+                val existing = s[i][name]
+                // Auto-deref: if the variable holds a RefCell (ref/out param), update the cell.
+                if (existing is RefCell) existing.value = value
+                else s[i][name] = value
                 return
             }
         }
@@ -188,7 +191,11 @@ class IrInterpreter {
     private suspend fun lookupVar(name: String): Any? {
         val s = state().scopes
         for (i in s.indices.reversed()) {
-            if (name in s[i]) return s[i][name]
+            if (name in s[i]) {
+                // Auto-deref: if the variable holds a RefCell (ref/out param), return the inner value.
+                val value = s[i][name]
+                return if (value is RefCell) value.value else value
+            }
         }
         return null
     }
@@ -198,7 +205,7 @@ class IrInterpreter {
     private suspend fun executeFunction(func: IrFunction, args: List<Any?>): Any? {
         pushScope()
 
-        // Bind parameters
+        // Bind parameters (ref/out params arrive pre-wrapped in RefCells from evalCall).
         for (i in func.params.indices) {
             defineVar(func.params[i].first, args[i])
         }
@@ -868,7 +875,28 @@ class IrInterpreter {
                     }
                 }
             }
-            return executeFunction(func, args)
+            // Wrap ref/out params in RefCells so mutations propagate back to the caller.
+            if (func.refParams.isEmpty()) {
+                return executeFunction(func, args)
+            }
+            val refCells = mutableMapOf<Int, RefCell>()
+            val wrappedArgs = args.toMutableList()
+            for (i in func.refParams) {
+                if (i < wrappedArgs.size) {
+                    val cell = RefCell(wrappedArgs[i])
+                    refCells[i] = cell
+                    wrappedArgs[i] = cell
+                }
+            }
+            val result = executeFunction(func, wrappedArgs)
+            // Propagate ref/out mutations back to the caller's variables.
+            for ((i, cell) in refCells) {
+                val argExpr = expr.args.getOrNull(i)
+                if (argExpr is IrExpr.Var) {
+                    assignVar(argExpr.name, cell.value)
+                }
+            }
+            return result
         }
 
         // Calling a lambda stored in a variable.
@@ -983,4 +1011,7 @@ class IrInterpreter {
 
     /** A communication channel between tasks, wrapping a kotlinx.coroutines channel. */
     private class AzoraChannel(val channel: Channel<Any?>)
+
+    /** A mutable reference cell for `ref`/`out` parameters — auto-unwrapped by lookupVar/assignVar. */
+    private class RefCell(var value: Any?)
 }

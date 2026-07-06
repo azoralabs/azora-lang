@@ -140,6 +140,8 @@ enum class TokenType {
     HOOK, PROP, CTOR, DTOR,
     // Alternating execution: `flip { } flop { }`.
     FLIP, FLOP,
+    // Parameter modifiers: `ref name: T`, `out name: T`, `mut name: T`.
+    REF, OUT, MUT,
     // `deco Name { fields }` — decorator/annotation declaration.
     DECO,
 

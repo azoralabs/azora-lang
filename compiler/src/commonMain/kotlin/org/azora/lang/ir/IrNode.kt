@@ -783,7 +783,9 @@ data class IrFunction(
     val returnType: IrType,
     val body: List<IrStmt>,
     /** `flow` generator: calling it returns a list of `yield`ed values. */
-    val isFlow: Boolean = false
+    val isFlow: Boolean = false,
+    /** Indices of `ref`/`out` parameters — the interpreter wraps these in mutable cells. */
+    val refParams: Set<Int> = emptySet()
 ) {
     /** Pretty-prints this function as Azora IR text. */
     fun prettyPrint(sb: StringBuilder, indent: Int) {

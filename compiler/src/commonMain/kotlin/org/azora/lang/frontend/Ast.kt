@@ -980,7 +980,10 @@ sealed class TypeAnnotation {
  * @property name the parameter name
  * @property type the structured type reference as written in source
  */
-data class Param(val name: String, val type: TypeRef, val defaultValue: Expr? = null) {
+/** Parameter modifier: `""` (default), `"ref"` (by-reference), `"out"` (output), `"mut"` (mutable). */
+typealias ParamModifier = String
+
+data class Param(val name: String, val type: TypeRef, val defaultValue: Expr? = null, val modifier: ParamModifier = "") {
     /** Convenience: the type name as written in source (for diagnostics/dumping). */
     val typeName: String get() = type.displayName()
 }

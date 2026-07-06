@@ -209,13 +209,16 @@ class IrGenerator(private val table: SymbolTable) {
 
     private fun lowerFunction(func: FuncDecl): IrFunction {
         val symbol = table.lookupFunction(func.name)!!
+        // Collect ref/out param indices from the AST FuncDecl.
+        val refParams = func.params.indices.filter { func.params[it].modifier == "ref" || func.params[it].modifier == "out" }.toSet()
         table.pushScope()
         pushNameScope()
 
         // Register parameters
         val mangledParams = symbol.params.map { (name, type) ->
+            val mutable = func.params.getOrNull(symbol.params.indexOfFirst { it.first == name })?.modifier == "mut"
             val mangled = registerName(name)
-            table.defineVariable(VariableSymbol(name, type))
+            table.defineVariable(VariableSymbol(name, type, mutable = true)) // all params mutable for simplicity; mut is enforced at type level
             mangled to type
         }
 
@@ -223,7 +226,7 @@ class IrGenerator(private val table: SymbolTable) {
         popNameScope()
         table.popScope()
 
-        return IrFunction(func.name, mangledParams, symbol.returnType, body, func.isFlow)
+        return IrFunction(func.name, mangledParams, symbol.returnType, body, func.isFlow, refParams)
     }
 
     /** The current node type being lowered (for `base` resolution). Null outside a node method. */

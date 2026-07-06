@@ -71,8 +71,20 @@ class LlvmCodegen {
     /** name -> (alloca register, llvm element type). */
     private val localVars = mutableMapOf<String, Pair<String, String>>()
 
+    /** Struct (pack/solo/node) definitions by name, for field-index lookup. */
+    private val structDefs = mutableMapOf<String, IrTopLevel.Struct>()
+
+    /** Declared parameter types per function (user functions + bridge externs), for call-site coercion. */
+    private val funcParamTypes = mutableMapOf<String, List<IrType>>()
+
     /** True once the current basic block has a terminator. */
     private var terminated = false
+
+    /** Declared return type of the function currently being emitted (null for `main`/tests). */
+    private var currentReturnType: IrType? = null
+
+    /** True while emitting `main` (which is always lowered as `i32 @main`). */
+    private var currentIsMain = false
 
     // Which libc declarations / runtime helpers are referenced.
     private var usesPuts = false
@@ -128,14 +140,26 @@ class LlvmCodegen {
         usesCharToStr = false
         loopStack.clear()
 
+        structDefs.clear()
+        funcParamTypes.clear()
+        for (item in program.items) {
+            when (item) {
+                is IrTopLevel.Func -> funcParamTypes[item.function.name] = item.function.params.map { it.second }
+                is IrTopLevel.Extern -> funcParamTypes[item.name] = item.params.map { it.second }
+                else -> {}
+            }
+        }
+
         val body = StringBuilder()
 
-        // Struct type definitions (declared for reference; aggregate lowering is
-        // not yet implemented, but the type must exist for pointer mapping).
+        // Struct type definitions. Structs are heap-allocated and passed by
+        // pointer (`%struct.T*`); construction, member reads and member writes
+        // lower to malloc + getelementptr below.
         val structs = program.items.filterIsInstance<IrTopLevel.Struct>()
         if (structs.isNotEmpty()) {
             body.appendLine("; Struct types")
             for (s in structs) {
+                structDefs[s.name] = s
                 val fieldTypes = s.fields.joinToString(", ") { mapType(it.type) }
                 body.appendLine("%struct.${sanitizeName(s.name)} = type { $fieldTypes }")
             }
@@ -254,6 +278,8 @@ class LlvmCodegen {
         tmpCounter = 0
         labelCounter = 0
         terminated = false
+        currentReturnType = null
+        currentIsMain = false
         currentBlock = "entry"
 
         val safeName = sanitizeName(test.name.replace(" ", "_"))
@@ -275,6 +301,8 @@ class LlvmCodegen {
         // The program entry point is always emitted as `i32 @main` returning 0,
         // so the produced executable / `lli` run yields a clean exit code.
         val isMain = func.name == "main"
+        currentIsMain = isMain
+        currentReturnType = if (isMain) null else func.returnType
         val retType = if (isMain) "i32" else mapType(func.returnType)
 
         val params = func.params.joinToString(", ") { (name, type) ->
@@ -330,11 +358,18 @@ class LlvmCodegen {
             }
             is IrStmt.Return -> {
                 if (stmt.value != null) {
-                    val value = emitExpr(stmt.value)
-                    val type = mapType(stmt.value.type)
-                    emitTerminator("  ret $type $value")
+                    val declared = currentReturnType
+                    val raw = emitExpr(stmt.value)
+                    if (declared != null && declared != IrType.Unit) {
+                        val value = coerceNumeric(raw, stmt.value.type, declared)
+                        emitTerminator("  ret ${mapType(declared)} $value")
+                    } else {
+                        emitTerminator("  ret ${mapType(stmt.value.type)} $raw")
+                    }
                 } else {
-                    emitTerminator("  ret void")
+                    // `main` is always lowered as `i32 @main`, so a bare
+                    // `return` there yields exit code 0.
+                    emitTerminator(if (currentIsMain) "  ret i32 0" else "  ret void")
                 }
             }
             is IrStmt.ExprStmt -> emitExpr(stmt.expr)
@@ -354,17 +389,8 @@ class LlvmCodegen {
                 val target = findLoopTarget(stmt.label) ?: error("continue outside of loop")
                 emitTerminator("  br label %${target.continueLabel}")
             }
-            is IrStmt.IndexAssign -> {
-                emitExpr(stmt.target)
-                emitExpr(stmt.index)
-                emitExpr(stmt.value)
-                emit("  ; index assign — aggregate lowering not yet implemented")
-            }
-            is IrStmt.MemberAssign -> {
-                emitExpr(stmt.target)
-                emitExpr(stmt.value)
-                emit("  ; member assign .${stmt.name} — aggregate lowering not yet implemented")
-            }
+            is IrStmt.IndexAssign -> emitIndexAssign(stmt)
+            is IrStmt.MemberAssign -> emitMemberAssign(stmt)
             is IrStmt.Defer -> emit("  ; defer — not lowered")
             is IrStmt.Yield -> emit("  ; yield — not lowered (interpreter-only)")
             is IrStmt.ForEach -> {
@@ -600,38 +626,21 @@ class LlvmCodegen {
         is IrExpr.Binary -> emitBinary(expr)
         is IrExpr.Call -> emitCall(expr)
         is IrExpr.StringTemplate -> emitStringTemplate(expr)
-        is IrExpr.ArrayLiteral -> {
-            for (e in expr.elements) emitExpr(e)
-            emit("  ; array literal — aggregate lowering not yet implemented")
-            "null"
-        }
+        is IrExpr.ArrayLiteral -> emitArrayLiteral(expr)
         is IrExpr.MapLit -> {
             for ((k, v) in expr.entries) { emitExpr(k); emitExpr(v) }
             emit("  ; map literal — aggregate lowering not yet implemented")
             "null"
         }
-        is IrExpr.Index -> {
-            emitExpr(expr.target)
-            emitExpr(expr.index)
-            emit("  ; index — aggregate lowering not yet implemented")
-            defaultValue(expr.type)
-        }
-        is IrExpr.Member -> {
-            emitExpr(expr.target)
-            emit("  ; member .${expr.name} — aggregate lowering not yet implemented")
-            defaultValue(expr.type)
-        }
+        is IrExpr.Index -> emitIndexRead(expr)
+        is IrExpr.Member -> emitMemberRead(expr)
         is IrExpr.MethodCall -> {
             emitExpr(expr.target)
             for (a in expr.args) emitExpr(a)
             emit("  ; method .${expr.name} — not lowered")
             defaultValue(expr.type)
         }
-        is IrExpr.StructCtor -> {
-            for (a in expr.args) emitExpr(a)
-            emit("  ; struct ${expr.name} construction — aggregate lowering not yet implemented")
-            "null"
-        }
+        is IrExpr.StructCtor -> emitStructCtor(expr)
         is IrExpr.TupleLit -> {
             for (e in expr.elements) emitExpr(e)
             emit("  ; tuple literal — aggregate lowering not yet implemented")
@@ -646,6 +655,7 @@ class LlvmCodegen {
             // The fallback path is not lowered; evaluate the primary expression.
             emitExpr(expr.expr)
         }
+        is IrExpr.NumCast -> coerceNumeric(emitExpr(expr.value), expr.value.type, expr.type)
         is IrExpr.SlotPattern -> "0"
         is IrExpr.Await -> {
             emitExpr(expr.value)
@@ -661,6 +671,255 @@ class LlvmCodegen {
             emit("  ; lambda/closure — not lowered")
             "null"
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Aggregate lowering (structs & arrays)
+    //
+    // Structs are heap-allocated with malloc and passed around as `%struct.T*`.
+    // Arrays are heap buffers with an i64 length header followed by the packed
+    // elements: [ i64 len | elem0 | elem1 | … ], carried as `i8*`.
+    // -----------------------------------------------------------------------
+
+    /** The byte size of a scalar/pointer LLVM value of IR type [type]. */
+    private fun sizeOfScalar(type: IrType): Int = when (mapType(type)) {
+        "i1", "i8" -> 1
+        "i16" -> 2
+        "i32", "float" -> 4
+        "i128", "fp128" -> 16
+        else -> 8 // i64, double, and all pointers
+    }
+
+    /**
+     * Coerces a numeric [value] of IR type [from] to IR type [to] (for stores
+     * into struct fields / array elements whose declared type is wider or
+     * floating-point, e.g. `Vec3(1, 2, 3)` with `Real` fields).
+     */
+    private fun coerceNumeric(value: String, from: IrType, to: IrType): String {
+        if (from == to) return value
+        val ft = mapType(from)
+        val tt = mapType(to)
+        if (ft == tt) return value
+        val fromInt = from in IrType.integerTypes || from == IrType.Char
+        val toInt = to in IrType.integerTypes || to == IrType.Char
+        val fromFloat = from in IrType.floatTypes
+        val toFloat = to in IrType.floatTypes
+        val inst = when {
+            fromInt && toFloat -> if (isUnsigned(from)) "uitofp" else "sitofp"
+            fromFloat && toInt -> if (isUnsigned(to)) "fptoui" else "fptosi"
+            fromInt && toInt -> {
+                val fw = sizeOfScalar(from); val tw = sizeOfScalar(to)
+                when {
+                    fw < tw -> if (isUnsigned(from)) "zext" else "sext"
+                    fw > tw -> "trunc"
+                    else -> return value
+                }
+            }
+            fromFloat && toFloat -> {
+                val fw = sizeOfScalar(from); val tw = sizeOfScalar(to)
+                when {
+                    fw < tw -> "fpext"
+                    fw > tw -> "fptrunc"
+                    else -> return value
+                }
+            }
+            else -> return value // non-numeric — leave as-is
+        }
+        val tmp = nextTmp()
+        emit("  $tmp = $inst $ft $value to $tt")
+        return tmp
+    }
+
+    /** Widens an index value to i64 for getelementptr. */
+    private fun indexToI64(value: String, type: IrType): String = when (mapType(type)) {
+        "i64" -> value
+        else -> { val t = nextTmp(); emit("  $t = sext ${mapType(type)} $value to i64"); t }
+    }
+
+    /** `Name(args)` → malloc + field stores; the value is the typed pointer. */
+    private fun emitStructCtor(expr: IrExpr.StructCtor): String {
+        val def = structDefs[expr.name] ?: run {
+            emit("  ; struct ${expr.name} has no definition — emitting null")
+            return "null"
+        }
+        usesMalloc = true
+        val st = "%struct.${sanitizeName(expr.name)}"
+
+        // Evaluate constructor arguments first (source order).
+        val argVals = expr.args.map { emitExpr(it) to it.type }
+
+        // sizeof via the getelementptr-on-null idiom (target independent).
+        val sizeGep = nextTmp()
+        emit("  $sizeGep = getelementptr $st, $st* null, i32 1")
+        val size = nextTmp()
+        emit("  $size = ptrtoint $st* $sizeGep to i64")
+        val raw = nextTmp()
+        emit("  $raw = call i8* @malloc(i64 $size)")
+        val ptr = nextTmp()
+        emit("  $ptr = bitcast i8* $raw to $st*")
+
+        for ((i, fieldName) in expr.fieldNames.withIndex()) {
+            if (i >= argVals.size) break
+            val fi = def.fields.indexOfFirst { it.name == fieldName }
+            if (fi < 0) continue // metadata field (e.g. node __type/__chain) not in the layout
+            val field = def.fields[fi]
+            val (rawVal, argType) = argVals[i]
+            val value = coerceNumeric(rawVal, argType, field.type)
+            val ft = mapType(field.type)
+            val fp = nextTmp()
+            emit("  $fp = getelementptr $st, $st* $ptr, i32 0, i32 $fi")
+            emit("  store $ft $value, $ft* $fp")
+        }
+        return ptr
+    }
+
+    /** Emits a pointer to field [name] of struct value [expr] (or null if unknown). */
+    private fun emitFieldPtr(target: IrExpr, name: String): Triple<String, IrType, String>? {
+        val tt = target.type as? IrType.Named ?: return null
+        val def = structDefs[tt.name] ?: return null
+        val fi = def.fields.indexOfFirst { it.name == name }
+        if (fi < 0) return null
+        val st = "%struct.${sanitizeName(tt.name)}"
+        val ptr = emitExpr(target)
+        val fp = nextTmp()
+        emit("  $fp = getelementptr $st, $st* $ptr, i32 0, i32 $fi")
+        return Triple(fp, def.fields[fi].type, mapType(def.fields[fi].type))
+    }
+
+    private fun emitMemberRead(expr: IrExpr.Member): String {
+        val targetType = expr.target.type
+        // Array/string length.
+        if (expr.name == "length" && targetType is IrType.Array) {
+            val raw = emitExpr(expr.target)
+            val lenPtr = nextTmp()
+            emit("  $lenPtr = bitcast i8* $raw to i64*")
+            val len = nextTmp()
+            emit("  $len = load i64, i64* $lenPtr")
+            val t = nextTmp()
+            emit("  $t = trunc i64 $len to i32")
+            return t
+        }
+        if (expr.name == "length" && targetType == IrType.String) {
+            usesStrlen = true
+            val s = emitExpr(expr.target)
+            val len = nextTmp()
+            emit("  $len = call i64 @strlen(i8* $s)")
+            val t = nextTmp()
+            emit("  $t = trunc i64 $len to i32")
+            return t
+        }
+        // Struct field read.
+        val fieldPtr = emitFieldPtr(expr.target, expr.name)
+        if (fieldPtr != null) {
+            val (fp, _, ft) = fieldPtr
+            val tmp = nextTmp()
+            emit("  $tmp = load $ft, $ft* $fp")
+            return tmp
+        }
+        emitExpr(expr.target)
+        emit("  ; member .${expr.name} on ${expr.target.type} — not lowered")
+        return defaultValue(expr.type)
+    }
+
+    private fun emitMemberAssign(stmt: IrStmt.MemberAssign) {
+        val fieldPtr = emitFieldPtr(stmt.target, stmt.name)
+        if (fieldPtr != null) {
+            val (fp, fieldType, ft) = fieldPtr
+            val raw = emitExpr(stmt.value)
+            val value = coerceNumeric(raw, stmt.value.type, fieldType)
+            emit("  store $ft $value, $ft* $fp")
+            return
+        }
+        emitExpr(stmt.target)
+        emitExpr(stmt.value)
+        emit("  ; member assign .${stmt.name} on ${stmt.target.type} — not lowered")
+    }
+
+    /** `[a, b, c]` → malloc(8 + n*elemSize), i64 length header, packed elements. */
+    private fun emitArrayLiteral(expr: IrExpr.ArrayLiteral): String {
+        usesMalloc = true
+        val elemType = (expr.type as? IrType.Array)?.element ?: IrType.Any
+        val et = mapType(elemType)
+        val elemSize = sizeOfScalar(elemType)
+        val total = 8 + expr.elements.size * elemSize
+
+        val vals = expr.elements.map { emitExpr(it) to it.type }
+
+        val raw = nextTmp()
+        emit("  $raw = call i8* @malloc(i64 $total)")
+        val lenPtr = nextTmp()
+        emit("  $lenPtr = bitcast i8* $raw to i64*")
+        emit("  store i64 ${expr.elements.size}, i64* $lenPtr")
+        if (vals.isNotEmpty()) {
+            val dataRaw = nextTmp()
+            emit("  $dataRaw = getelementptr i8, i8* $raw, i64 8")
+            val data = nextTmp()
+            emit("  $data = bitcast i8* $dataRaw to $et*")
+            for ((i, pair) in vals.withIndex()) {
+                val (rawVal, argType) = pair
+                val value = coerceNumeric(rawVal, argType, elemType)
+                val ep = nextTmp()
+                emit("  $ep = getelementptr $et, $et* $data, i64 $i")
+                emit("  store $et $value, $et* $ep")
+            }
+        }
+        return raw
+    }
+
+    /** Emits a pointer to element [index] of array value [target]. */
+    private fun emitArrayElemPtr(target: IrExpr, index: IrExpr, elemType: IrType): String {
+        val et = mapType(elemType)
+        val raw = emitExpr(target)
+        val idxRaw = emitExpr(index)
+        val idx = indexToI64(idxRaw, index.type)
+        val dataRaw = nextTmp()
+        emit("  $dataRaw = getelementptr i8, i8* $raw, i64 8")
+        val data = nextTmp()
+        emit("  $data = bitcast i8* $dataRaw to $et*")
+        val ep = nextTmp()
+        emit("  $ep = getelementptr $et, $et* $data, i64 $idx")
+        return ep
+    }
+
+    private fun emitIndexRead(expr: IrExpr.Index): String {
+        val tt = expr.target.type
+        if (tt is IrType.Array) {
+            val et = mapType(tt.element)
+            val ep = emitArrayElemPtr(expr.target, expr.index, tt.element)
+            val tmp = nextTmp()
+            emit("  $tmp = load $et, $et* $ep")
+            return tmp
+        }
+        if (tt == IrType.String) {
+            val s = emitExpr(expr.target)
+            val idxRaw = emitExpr(expr.index)
+            val idx = indexToI64(idxRaw, expr.index.type)
+            val cp = nextTmp()
+            emit("  $cp = getelementptr i8, i8* $s, i64 $idx")
+            val tmp = nextTmp()
+            emit("  $tmp = load i8, i8* $cp")
+            return tmp
+        }
+        emitExpr(expr.target)
+        emitExpr(expr.index)
+        emit("  ; index on ${expr.target.type} — not lowered")
+        return defaultValue(expr.type)
+    }
+
+    private fun emitIndexAssign(stmt: IrStmt.IndexAssign) {
+        val tt = stmt.target.type
+        if (tt is IrType.Array) {
+            val et = mapType(tt.element)
+            val ep = emitArrayElemPtr(stmt.target, stmt.index, tt.element)
+            val raw = emitExpr(stmt.value)
+            val value = coerceNumeric(raw, stmt.value.type, tt.element)
+            emit("  store $et $value, $et* $ep")
+            return
+        }
+        emitExpr(stmt.target)
+        emitExpr(stmt.index)
+        emitExpr(stmt.value)
+        emit("  ; index assign on ${stmt.target.type} — not lowered")
     }
 
     private fun emitUnary(expr: IrExpr.Unary): String {
@@ -851,9 +1110,14 @@ class LlvmCodegen {
         if (expr.name == "println") return emitPrintln(expr)
         if (expr.name == "print") return emitPrintln(expr, newline = false)
 
-        val args = expr.args.joinToString(", ") { arg ->
-            "${mapType(arg.type)} ${emitExpr(arg)}"
-        }
+        // Coerce arguments to the callee's declared parameter types (numeric
+        // widening such as an Int literal passed to a Real/Long parameter).
+        val declared = funcParamTypes[expr.name]
+        val args = expr.args.mapIndexed { i, arg ->
+            val paramType = declared?.getOrNull(i) ?: arg.type
+            val value = coerceNumeric(emitExpr(arg), arg.type, paramType)
+            "${mapType(paramType)} $value"
+        }.joinToString(", ")
         val retType = mapType(expr.type)
         return if (expr.type == IrType.Unit) {
             emit("  call void @${expr.name}($args)")

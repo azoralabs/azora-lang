@@ -679,6 +679,24 @@ class IrOptimizer {
                 collectReferencedNamesFromExpr(expr.target, names)
                 expr.args.forEach { collectReferencedNamesFromExpr(it, names) }
             }
+            is IrExpr.StructCtor -> expr.args.forEach { collectReferencedNamesFromExpr(it, names) }
+            is IrExpr.StringTemplate -> expr.parts.forEach {
+                if (it is IrExpr.IrTemplatePart.Expr) collectReferencedNamesFromExpr(it.expr, names)
+            }
+            is IrExpr.MapLit -> expr.entries.forEach { (k, v) ->
+                collectReferencedNamesFromExpr(k, names)
+                collectReferencedNamesFromExpr(v, names)
+            }
+            is IrExpr.TupleLit -> expr.elements.forEach { collectReferencedNamesFromExpr(it, names) }
+            is IrExpr.TupleAccess -> collectReferencedNamesFromExpr(expr.target, names)
+            is IrExpr.CatchExpr -> {
+                collectReferencedNamesFromExpr(expr.expr, names)
+                collectReferencedNamesFromExpr(expr.fallback, names)
+            }
+            is IrExpr.NumCast -> collectReferencedNamesFromExpr(expr.value, names)
+            is IrExpr.Await -> collectReferencedNamesFromExpr(expr.value, names)
+            is IrExpr.Spread -> collectReferencedNamesFromExpr(expr.array, names)
+            is IrExpr.Lambda -> expr.body.forEach { collectReferencedNamesFromStmt(it, names) }
             else -> {}
         }
     }

@@ -425,6 +425,9 @@ sealed class IrExpr {
     /** `expr catch fallback` — evaluates [expr]; on throw, evaluates [fallback]. */
     data class CatchExpr(val expr: IrExpr, val fallback: IrExpr, override val type: IrType) : IrExpr()
 
+    /** A numeric conversion `value as Type` (e.g. Int → Real). [type] is the target type. */
+    data class NumCast(val value: IrExpr, override val type: IrType) : IrExpr()
+
     /**
      * A lambda/closure `{ params -> body }`.
      *
@@ -487,6 +490,7 @@ sealed class IrExpr {
         is TupleLit -> "(${elements.joinToString(", ") { it.prettyPrint() }})"
         is TupleAccess -> "${target.prettyPrint()}.$index"
         is CatchExpr -> "(${expr.prettyPrint()} catch ${fallback.prettyPrint()})"
+        is NumCast -> "(${value.prettyPrint()} as $type)"
         is Lambda -> "{ ${params.joinToString(", ") { (n, t) -> "$n: $t" }} -> ... }"
         is SlotPattern -> "$slotName.$variantName(${bindings.joinToString(",")})"
         is Await -> "await ${value.prettyPrint()}"
@@ -1087,6 +1091,10 @@ private fun dumpIrExprTree(sb: StringBuilder, expr: IrExpr, indent: String) {
         is IrExpr.BoolLiteral -> sb.appendLine("${indent}IrBoolLiteral(${expr.value}) : Bool")
         is IrExpr.CharLiteral -> sb.appendLine("${indent}IrCharLiteral('${expr.value}') : Char")
         is IrExpr.Var -> sb.appendLine("${indent}IrVar(${expr.name}) : ${expr.type}")
+        is IrExpr.NumCast -> {
+            sb.appendLine("${indent}IrNumCast : ${expr.type}")
+            dumpIrExprTree(sb, expr.value, "$indent    ")
+        }
         is IrExpr.Binary -> {
             sb.appendLine("${indent}IrBinary(op=${expr.op}) : ${expr.type}")
             dumpIrExprTree(sb, expr.left, "$indent    ")

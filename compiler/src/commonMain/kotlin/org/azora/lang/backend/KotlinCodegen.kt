@@ -350,6 +350,23 @@ class KotlinCodegen {
         is IrExpr.TupleLit -> "listOf(${expr.elements.joinToString(", ") { emitExpr(it) }})"
         is IrExpr.TupleAccess -> "${emitExpr(expr.target)}[${expr.index}]"
         is IrExpr.CatchExpr -> "runCatching { ${emitExpr(expr.expr)} }.getOrDefault(${emitExpr(expr.fallback)})"
+        is IrExpr.NumCast -> {
+            val conv = when (expr.type) {
+                IrType.Int -> ".toInt()"
+                IrType.UInt -> ".toUInt()"
+                IrType.Byte -> ".toByte()"
+                IrType.UByte -> ".toUByte()"
+                IrType.Short -> ".toShort()"
+                IrType.UShort -> ".toUShort()"
+                IrType.Long, IrType.Cent -> ".toLong()"
+                IrType.ULong, IrType.UCent -> ".toULong()"
+                IrType.Float -> ".toFloat()"
+                IrType.Real, IrType.Decimal -> ".toDouble()"
+                IrType.Char -> ".toInt().toChar()"
+                else -> ""
+            }
+            "(${emitExpr(expr.value)})$conv"
+        }
         is IrExpr.SlotPattern -> "" /* handled by when lowering */
         is IrExpr.Lambda -> {
             val ps = expr.params.joinToString(", ") { (n, t) -> "$n: ${mapType(t)}" }

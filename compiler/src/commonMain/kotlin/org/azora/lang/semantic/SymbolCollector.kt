@@ -414,7 +414,8 @@ class SymbolCollector {
         }
         is Expr.RealLiteral -> when (expr.suffix) {
             NumericSuffix.DECIMAL -> IrType.Decimal
-            else -> IrType.Float
+            NumericSuffix.FLOAT -> IrType.Float
+            else -> IrType.Real // unsuffixed real literals default to Real
         }
         is Expr.StringLiteral -> IrType.String
         is Expr.BoolLiteral -> IrType.Bool

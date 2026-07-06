@@ -22,6 +22,7 @@ import org.azora.lang.ir.IrFunction
 import org.azora.lang.ir.IrProgram
 import org.azora.lang.ir.IrStmt
 import org.azora.lang.ir.IrTopLevel
+import org.azora.lang.ir.IrType
 import org.azora.lang.ir.IrUnaryOp
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.coroutineContext
@@ -573,6 +574,25 @@ class IrInterpreter {
             }
             is IrExpr.CatchExpr -> {
                 try { evalExpr(expr.expr) } catch (e: AzoraThrownException) { evalExpr(expr.fallback) }
+            }
+            is IrExpr.NumCast -> {
+                val v = evalExpr(expr.value)
+                val n: Number = when (v) {
+                    is Number -> v
+                    is Char -> v.code
+                    is Boolean -> if (v) 1 else 0
+                    else -> error("cannot numerically cast $v to ${expr.type}")
+                }
+                when (expr.type) {
+                    IrType.Int, IrType.UInt -> n.toInt()
+                    IrType.Byte, IrType.UByte -> n.toByte()
+                    IrType.Short, IrType.UShort -> n.toShort()
+                    IrType.Long, IrType.ULong, IrType.Cent, IrType.UCent -> n.toLong()
+                    IrType.Float -> n.toFloat()
+                    IrType.Real, IrType.Decimal -> n.toDouble()
+                    IrType.Char -> n.toInt().toChar()
+                    else -> v
+                }
             }
             is IrExpr.Lambda -> {
                 val st = state()

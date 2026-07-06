@@ -1128,7 +1128,11 @@ class Parser(private val tokens: List<Token>) {
     private fun parseWhile(label: String? = null): Stmt {
         val start = peek()
         consume(TokenType.WHILE, "Expected 'while'")
+        // As in parseIf: `while f() { … }` — the `{` is the loop body.
+        val savedTrailing = allowTrailingLambda
+        allowTrailingLambda = false
         val condition = parseExpr()
+        allowTrailingLambda = savedTrailing
         consume(TokenType.L_BRACE, "Expected '{' after while condition")
         skipNewlines()
         val body = parseBlock()
@@ -1762,7 +1766,12 @@ class Parser(private val tokens: List<Token>) {
     private fun parseIf(): Stmt.If {
         val start = peek()
         consume(TokenType.IF, "Expected 'if'")
+        // The `{` after the condition is the branch body, never a trailing
+        // lambda of a call in the condition (`if f() { … }`).
+        val savedTrailing = allowTrailingLambda
+        allowTrailingLambda = false
         val condition = parseExpr()
+        allowTrailingLambda = savedTrailing
         consume(TokenType.L_BRACE, "Expected '{' after if condition")
         skipNewlines()
         val thenBranch = parseBlock()

@@ -553,7 +553,19 @@ class IrGenerator(private val table: SymbolTable) {
             is Expr.BoolLiteral -> IrExpr.BoolLiteral(expr.value)
             is Expr.NullLiteral -> IrExpr.Var("__null", IrType.Any)
             is Expr.NamedArg -> lowerExpr(expr.value)
-            is Expr.Cast -> lowerExpr(expr.expr)  // runtime already correct type
+            is Expr.Cast -> {
+                val inner = lowerExpr(expr.expr)
+                val target = IrType.resolve(expr.targetType)
+                // Numeric casts convert the value; all other casts (interface
+                // upcasts, Any) are representation-preserving no-ops.
+                val numeric = IrType.integerTypes + IrType.floatTypes
+                if (target != inner.type && (target in numeric || target == IrType.Char) &&
+                    (inner.type in numeric || inner.type == IrType.Char)) {
+                    IrExpr.NumCast(inner, target)
+                } else {
+                    inner
+                }
+            }
             is Expr.IsCheck -> {
                 val inner = lowerExpr(expr.expr)
                 IrExpr.Call("__isCheck", listOf(inner, IrExpr.StringLiteral(expr.typeName)), IrType.Bool)

@@ -18,6 +18,7 @@ package org.azora.lang.codegen
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /**
  * End-to-end `lli` tests for the LLVM backend's aggregate lowering:
@@ -199,4 +200,73 @@ class LlvmAggregateExecTest {
         }
         """.trimIndent()
     )
+
+    // -----------------------------------------------------------------------
+    // Optimizer side-effect preservation
+    // -----------------------------------------------------------------------
+
+    @Test fun unusedLocalWithCallInitializerKeepsTheCall() = check(
+        "called\ndone",
+        """
+        func sideEffect(): Int {
+            println("called")
+            return 1
+        }
+        func main() {
+            fin unused = sideEffect()
+            println("done")
+        }
+        """.trimIndent()
+    )
+
+    // -----------------------------------------------------------------------
+    // Stack safety: allocas are hoisted to the entry block
+    // -----------------------------------------------------------------------
+
+    /** Locals declared in a hot loop must not grow the stack per iteration
+     *  (2M iterations × per-iteration allocas would overflow an 8MB stack). */
+    @Test fun loopLocalsDoNotGrowTheStack() = check(
+        "3999998",
+        """
+        func main() {
+            var last = 0
+            var i = 0
+            while i < 2000000 {
+                fin doubled = i * 2
+                fin nested = doubled + 0
+                last = nested
+                i = i + 1
+            }
+            println(last)
+        }
+        """.trimIndent()
+    )
+
+    /** Every alloca must be in the entry block, before any branch label. */
+    @Test fun allAllocasLiveInTheEntryBlock() {
+        val ir = LlvmExec.compile(
+            """
+            func main() {
+                var i = 0
+                while i < 3 {
+                    fin x = i * 2
+                    if x > 2 {
+                        fin y = x + 1
+                        println(y)
+                    }
+                    i = i + 1
+                }
+            }
+            """.trimIndent()
+        )
+        val mainBody = ir.substringAfter("define i32 @main()").substringBefore("\n}")
+        var inEntry = true
+        for (line in mainBody.lines()) {
+            val trimmed = line.trim()
+            if (trimmed.endsWith(":") && trimmed != "entry:") inEntry = false
+            if ("= alloca " in trimmed) {
+                assertTrue(inEntry, "alloca outside the entry block: $trimmed")
+            }
+        }
+    }
 }

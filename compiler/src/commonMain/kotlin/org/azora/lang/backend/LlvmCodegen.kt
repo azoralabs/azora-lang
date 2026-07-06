@@ -71,6 +71,20 @@ class LlvmCodegen {
     /** name -> (alloca register, llvm element type). */
     private val localVars = mutableMapOf<String, Pair<String, String>>()
 
+    /**
+     * (variable name, llvm type) -> entry-block alloca register.
+     *
+     * All local allocas are hoisted into the function's entry block: an
+     * `alloca` emitted inside a loop body allocates NEW stack space on every
+     * iteration (stack unwinds only on return), so a render loop would leak
+     * stack each frame and eventually fault on the guard page. One slot per
+     * (name, type) is reused across iterations/branches — IR names are
+     * pre-mangled for shadowing, and disjoint scopes reusing a name always
+     * store before reading.
+     */
+    private val allocaSlots = mutableMapOf<Pair<String, String>, String>()
+    private var allocaCounter = 0
+
     /** Struct (pack/solo/node) definitions by name, for field-index lookup. */
     private val structDefs = mutableMapOf<String, IrTopLevel.Struct>()
 
@@ -285,9 +299,55 @@ class LlvmCodegen {
         val safeName = sanitizeName(test.name.replace(" ", "_"))
         line("define void @test_$safeName() {")
         line("entry:")
+        emitEntryAllocas(test.body)
         emitStmts(test.body)
         emitTerminator("  ret void")
         line("}")
+    }
+
+    /** Emits one entry-block alloca per local declared anywhere in [body] (see [allocaSlots]). */
+    private fun emitEntryAllocas(body: List<IrStmt>) {
+        allocaSlots.clear()
+        allocaCounter = 0
+        val slots = LinkedHashSet<Pair<String, String>>()
+        collectLocalSlots(body, slots)
+        for ((name, type) in slots) {
+            val reg = "%loc${allocaCounter++}.${sanitizeName(name)}"
+            emit("  $reg = alloca $type")
+            allocaSlots[name to type] = reg
+        }
+    }
+
+    /** Collects every (name, llvm type) local slot declared in [stmts], recursively. */
+    private fun collectLocalSlots(stmts: List<IrStmt>, slots: MutableSet<Pair<String, String>>) {
+        for (stmt in stmts) {
+            when (stmt) {
+                is IrStmt.VarDecl -> slots.add(stmt.name to mapType(stmt.type))
+                is IrStmt.FinDecl -> slots.add(stmt.name to mapType(stmt.type))
+                is IrStmt.LetDecl -> slots.add(stmt.name to mapType(stmt.type))
+                is IrStmt.If -> {
+                    collectLocalSlots(stmt.thenBranch, slots)
+                    stmt.elseBranch?.let { collectLocalSlots(it, slots) }
+                }
+                is IrStmt.Zone -> collectLocalSlots(stmt.body, slots)
+                is IrStmt.While -> collectLocalSlots(stmt.body, slots)
+                is IrStmt.For -> {
+                    slots.add(stmt.counter to mapType(stmt.start.type))
+                    collectLocalSlots(stmt.body, slots)
+                }
+                is IrStmt.ForEach -> collectLocalSlots(stmt.body, slots)
+                is IrStmt.Loop -> collectLocalSlots(stmt.body, slots)
+                is IrStmt.When -> {
+                    stmt.branches.forEach { collectLocalSlots(it.body, slots) }
+                    stmt.elseBranch?.let { collectLocalSlots(it, slots) }
+                }
+                is IrStmt.Try -> {
+                    collectLocalSlots(stmt.body, slots)
+                    stmt.catchBody?.let { collectLocalSlots(it, slots) }
+                }
+                else -> {}
+            }
+        }
     }
 
     private fun emitFunction(func: IrFunction) {
@@ -320,6 +380,9 @@ class LlvmCodegen {
             emit("  store $t %arg.$name, $t* $alloca")
             localVars[name] = alloca to t
         }
+
+        // All local allocas live in the entry block (never inside loops).
+        emitEntryAllocas(func.body)
 
         emitStmts(func.body)
 
@@ -413,8 +476,14 @@ class LlvmCodegen {
 
     private fun emitLocalDecl(name: String, type: IrType, initializer: IrExpr) {
         val t = mapType(type)
-        val alloca = nextTmp()
-        emit("  $alloca = alloca $t")
+        // The slot was hoisted to the entry block (see emitEntryAllocas).
+        val alloca = allocaSlots[name to t] ?: run {
+            // Fallback for slots the collector didn't see (should not happen).
+            val reg = "%loc${allocaCounter++}.${sanitizeName(name)}"
+            emit("  $reg = alloca $t")
+            allocaSlots[name to t] = reg
+            reg
+        }
         val value = emitExpr(initializer)
         emit("  store $t $value, $t* $alloca")
         localVars[name] = alloca to t
@@ -467,8 +536,13 @@ class LlvmCodegen {
     private fun emitFor(stmt: IrStmt.For) {
         val t = mapType(stmt.start.type)
         val unsigned = isUnsigned(stmt.start.type)
-        val counterAlloca = nextTmp()
-        emit("  $counterAlloca = alloca $t")
+        // The counter slot was hoisted to the entry block (see emitEntryAllocas).
+        val counterAlloca = allocaSlots[stmt.counter to t] ?: run {
+            val reg = "%loc${allocaCounter++}.${sanitizeName(stmt.counter)}"
+            emit("  $reg = alloca $t")
+            allocaSlots[stmt.counter to t] = reg
+            reg
+        }
         val initVal = emitExpr(if (stmt.reverse) stmt.end else stmt.start)
         emit("  store $t $initVal, $t* $counterAlloca")
         localVars[stmt.counter] = counterAlloca to t

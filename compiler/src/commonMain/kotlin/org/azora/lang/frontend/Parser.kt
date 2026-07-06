@@ -963,9 +963,11 @@ class Parser(private val tokens: List<Token>) {
             }
             val name = consume(TokenType.IDENTIFIER, "Expected parameter name").lexeme
             consume(TokenType.COLON, "Expected ':' after parameter name")
+            // `...T` marks the (last) parameter variadic; parseTypeName wraps it in [T].
+            val isVariadic = check(TokenType.ELLIPSIS)
             val type = parseTypeName()
             val default = if (match(TokenType.EQUAL)) parseExpr() else null
-            params.add(Param(name, type, default, modifier))
+            params.add(Param(name, type, default, modifier, variadic = isVariadic))
         } while (match(TokenType.COMMA))
         return params
     }

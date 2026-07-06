@@ -983,7 +983,14 @@ sealed class TypeAnnotation {
 /** Parameter modifier: `""` (default), `"ref"` (by-reference), `"out"` (output), `"mut"` (mutable). */
 typealias ParamModifier = String
 
-data class Param(val name: String, val type: TypeRef, val defaultValue: Expr? = null, val modifier: ParamModifier = "") {
+data class Param(
+    val name: String,
+    val type: TypeRef,
+    val defaultValue: Expr? = null,
+    val modifier: ParamModifier = "",
+    /** True when declared with the `...T` variadic syntax (call sites pack extra args). */
+    val variadic: Boolean = false,
+) {
     /** Convenience: the type name as written in source (for diagnostics/dumping). */
     val typeName: String get() = type.displayName()
 }

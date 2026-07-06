@@ -104,10 +104,9 @@ class SymbolCollector {
                 val defaults = func.params.mapIndexedNotNull { i, p -> p.defaultValue?.let { i to it } }.toMap()
                 // A `flow` generator's call returns a list of its (element-type) yields.
                 val callReturnType = if (func.isFlow) IrType.Array(returnType) else returnType
-                // Detect variadic: the last param's source type was `T...` which parsed as `[T]`.
-                // If the last param type is `Array` and it has more than 1 param, or if the function
-                // has type params, mark as variadic. Simplest: check if last resolved param type is Array.
-                val isVariadic = params.isNotEmpty() && params.last().second is IrType.Array
+                // Variadic only when declared with the `...T` syntax — a plain
+                // trailing `[T]` parameter takes an array argument as-is.
+                val isVariadic = func.params.lastOrNull()?.variadic == true
                 table.defineFunction(FunctionSymbol(func.name, params, callReturnType, func.isInline, func.typeParams, paramNames, defaults, isVariadic))
             } catch (e: Exception) {
                 errors.add("line ${func.line}: ${e.message}")

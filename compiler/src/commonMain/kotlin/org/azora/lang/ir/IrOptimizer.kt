@@ -566,12 +566,44 @@ class IrOptimizer {
         return func.copy(body = cleanedBody)
     }
 
+    /** True when evaluating [expr] may have observable side effects (calls of any kind). */
+    private fun hasSideEffects(expr: IrExpr): Boolean = when (expr) {
+        is IrExpr.Call, is IrExpr.MethodCall, is IrExpr.StructCtor, is IrExpr.Await -> true
+        is IrExpr.Binary -> hasSideEffects(expr.left) || hasSideEffects(expr.right)
+        is IrExpr.Unary -> hasSideEffects(expr.operand)
+        is IrExpr.NumCast -> hasSideEffects(expr.value)
+        is IrExpr.Index -> hasSideEffects(expr.target) || hasSideEffects(expr.index)
+        is IrExpr.Member -> hasSideEffects(expr.target)
+        is IrExpr.TupleAccess -> hasSideEffects(expr.target)
+        is IrExpr.ArrayLiteral -> expr.elements.any { hasSideEffects(it) }
+        is IrExpr.MapLit -> expr.entries.any { hasSideEffects(it.first) || hasSideEffects(it.second) }
+        is IrExpr.TupleLit -> expr.elements.any { hasSideEffects(it) }
+        is IrExpr.StringTemplate -> expr.parts.any {
+            it is IrExpr.IrTemplatePart.Expr && hasSideEffects(it.expr)
+        }
+        is IrExpr.CatchExpr -> true
+        is IrExpr.Spread -> hasSideEffects(expr.array)
+        else -> false
+    }
+
     private fun removeUnusedDeclsFromBody(body: List<IrStmt>, usedVars: Set<String>): List<IrStmt> {
         return body.mapNotNull { stmt ->
             when (stmt) {
-                is IrStmt.VarDecl -> if (stmt.name in usedVars) stmt else null
-                is IrStmt.FinDecl -> if (stmt.name in usedVars) stmt else null
-                is IrStmt.LetDecl -> if (stmt.name in usedVars) stmt else null
+                // An unused declaration is dropped, but its initializer may have
+                // side effects (function/FFI calls, method calls, struct ctors
+                // running effectful args) — keep those as expression statements.
+                is IrStmt.VarDecl ->
+                    if (stmt.name in usedVars) stmt
+                    else if (hasSideEffects(stmt.initializer)) IrStmt.ExprStmt(stmt.initializer)
+                    else null
+                is IrStmt.FinDecl ->
+                    if (stmt.name in usedVars) stmt
+                    else if (hasSideEffects(stmt.initializer)) IrStmt.ExprStmt(stmt.initializer)
+                    else null
+                is IrStmt.LetDecl ->
+                    if (stmt.name in usedVars) stmt
+                    else if (hasSideEffects(stmt.initializer)) IrStmt.ExprStmt(stmt.initializer)
+                    else null
                 is IrStmt.If -> stmt.copy(
                     thenBranch = removeUnusedDeclsFromBody(stmt.thenBranch, usedVars),
                     elseBranch = stmt.elseBranch?.let { removeUnusedDeclsFromBody(it, usedVars) }

@@ -104,6 +104,7 @@ class Lexer(private val source: String) {
             "confine" to TokenType.CONFINE,
             "protect" to TokenType.PROTECT,
             "module" to TokenType.MODULE,
+            "threadlocal" to TokenType.THREADLOCAL,
             "pack" to TokenType.PACK,
             "enum" to TokenType.ENUM,
             "when" to TokenType.WHEN,

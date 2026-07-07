@@ -146,6 +146,8 @@ enum class TokenType {
     EXPOSE, CONFINE, PROTECT,
     // Module: `module Name` (alias for package).
     MODULE,
+    // Thread-local storage: `threadlocal var x = 0` / `threadlocal fin y = 42`.
+    THREADLOCAL,
     // `deco Name { fields }` — decorator/annotation declaration.
     DECO,
 

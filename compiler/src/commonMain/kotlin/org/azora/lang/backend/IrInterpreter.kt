@@ -76,6 +76,9 @@ class IrInterpreter {
     /** Flip/flop state: unique id → current boolean (true = flip, false = flop). */
     private val flipFlopState = mutableMapOf<Int, Boolean>()
 
+    /** Thread-local initializers: name → initializer expression, re-evaluated per coroutine. */
+    private val threadLocalInits = mutableListOf<Pair<String, IrExpr>>()
+
     /** Fire-and-forget tasks created via `launch { … }`; joined before interpret() returns. */
     private val launchedTasks = mutableListOf<kotlinx.coroutines.Deferred<Any?>>()
 
@@ -89,7 +92,8 @@ class IrInterpreter {
         var deferStack: MutableList<DeferredBlock> = mutableListOf(),
         val yieldAccumulators: ArrayDeque<MutableList<Any?>> = ArrayDeque(),
         val flowProduceChannels: ArrayDeque<SendChannel<Any?>> = ArrayDeque(),
-        val regionAllocations: ArrayDeque<MutableList<Pointer>> = ArrayDeque()
+        val regionAllocations: ArrayDeque<MutableList<Pointer>> = ArrayDeque(),
+        val threadLocals: MutableMap<String, Any?> = mutableMapOf()
     ) : CoroutineContext.Element {
         companion object Key : CoroutineContext.Key<ExecState>
         override val key: CoroutineContext.Key<*> get() = Key
@@ -123,7 +127,32 @@ class IrInterpreter {
             // Process top-level items in source order
             for (item in program.items) {
                 when (item) {
-                    is IrTopLevel.Global -> executeStmt(item.stmt)
+                    is IrTopLevel.Global -> {
+                        // Thread-local variables (`__tl__` prefix) go into per-ExecState storage.
+                        val name = when (val stmt = item.stmt) {
+                            is IrStmt.VarDecl -> stmt.name
+                            is IrStmt.FinDecl -> stmt.name
+                            is IrStmt.LetDecl -> stmt.name
+                            else -> null
+                        }
+                        if (name != null && name.startsWith("__tl__")) {
+                            executeStmt(item.stmt) // evaluates initializer, stores in global scope
+                            // Move from global scope to threadLocals so child coroutines get fresh copies.
+                            val value = state().scopes.first()[name]
+                            state().scopes.first().remove(name)
+                            state().threadLocals[name] = value
+                            // Store the initializer so child coroutines (task/launch/flow) can re-evaluate it.
+                            val init = when (val stmt = item.stmt) {
+                                is IrStmt.VarDecl -> stmt.initializer
+                                is IrStmt.FinDecl -> stmt.initializer
+                                is IrStmt.LetDecl -> stmt.initializer
+                                else -> null
+                            }
+                            if (init != null) threadLocalInits.add(name to init)
+                        } else {
+                            executeStmt(item.stmt)
+                        }
+                    }
                     is IrTopLevel.Func -> functions[item.function.name] = item.function
                     is IrTopLevel.Test -> tests.add(item)
                     is IrTopLevel.Struct -> { /* struct definitions need no execution */ }
@@ -174,6 +203,11 @@ class IrInterpreter {
     }
 
     private suspend fun assignVar(name: String, value: Any?) {
+        // Thread-local variables: store in the per-ExecState map.
+        if (name.startsWith("__tl__") && name in state().threadLocals) {
+            state().threadLocals[name] = value
+            return
+        }
         val s = state().scopes
         // Search from innermost to outermost for existing binding
         for (i in s.indices.reversed()) {
@@ -190,6 +224,8 @@ class IrInterpreter {
 
     /** Look up variable from innermost scope outward. */
     private suspend fun lookupVar(name: String): Any? {
+        // Thread-local variables: each ExecState has its own independent copy.
+        if (name.startsWith("__tl__") && name in state().threadLocals) return state().threadLocals[name]
         val s = state().scopes
         for (i in s.indices.reversed()) {
             if (name in s[i]) {
@@ -940,7 +976,17 @@ class IrInterpreter {
     }
 
     /** A child [ExecState] whose scopes are a snapshot of the current coroutine's. */
-    private suspend fun childState(): ExecState = ExecState(scopes = ArrayDeque(state().scopes.toList()))
+    /** A child [ExecState] whose scopes are a snapshot of the current coroutine's.
+     *  Thread-local variables are re-evaluated from their initializers so each coroutine
+     *  gets its own independent copy. */
+    private suspend fun childState(): ExecState {
+        val child = ExecState(scopes = ArrayDeque(state().scopes.toList()))
+        // Re-evaluate thread-local initializers for the child coroutine (fresh copies).
+        for ((name, init) in threadLocalInits) {
+            child.threadLocals[name] = evalExpr(init)
+        }
+        return child
+    }
 
     /** Runs a no-argument closure (a `task { … }` thunk) and returns its result. */
     private suspend fun invokeClosure(closure: Closure): Any? {

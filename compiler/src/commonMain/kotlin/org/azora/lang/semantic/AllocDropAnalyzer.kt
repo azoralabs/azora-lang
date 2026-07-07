@@ -18,6 +18,7 @@ package org.azora.lang.semantic
 
 import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.FuncDecl
+import org.azora.lang.frontend.TopLevel
 import org.azora.lang.frontend.Program
 import org.azora.lang.frontend.Stmt
 
@@ -48,18 +49,30 @@ class AllocDropAnalyzer {
     fun analyze(program: Program): List<String> {
         val errors = mutableListOf<String>()
 
+        // Collect global variable names (fin/var/let at top level) so assignments to them pass.
+        val globalNames = mutableSetOf<String>()
+        for (item in program.items) {
+            when (item) {
+                is TopLevel.FinDecl -> globalNames.add(item.name)
+                is TopLevel.VarDecl -> globalNames.add(item.name)
+                is TopLevel.LetDecl -> globalNames.add(item.name)
+                else -> {}
+            }
+        }
+
         for (func in program.functions) {
-            analyzeFunction(func, errors)
+            analyzeFunction(func, errors, globalNames)
         }
 
         return errors
     }
 
-    private fun analyzeFunction(func: FuncDecl, errors: MutableList<String>) {
+    private fun analyzeFunction(func: FuncDecl, errors: MutableList<String>, globalNames: Set<String>) {
         val defined = mutableSetOf<String>()
         val used = mutableSetOf<String>()
 
-        // Parameters are always defined
+        // Parameters and global variables are always defined
+        defined.addAll(globalNames)
         for (param in func.params) {
             defined.add(param.name)
         }

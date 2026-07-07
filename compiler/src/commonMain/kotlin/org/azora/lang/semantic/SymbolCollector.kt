@@ -88,6 +88,18 @@ class SymbolCollector {
                         errors.add("line ${item.line}: ${e.message}")
                     }
                 }
+                is TopLevel.VarDecl -> {
+                    if (item.threadlocal) {
+                        try {
+                            val initType = inferExprType(item.initializer, emptyMap())
+                            val type = if (item.type != null) IrType.resolve(item.type)
+                                       else initType ?: IrType.Int
+                            table.defineVariable(VariableSymbol(item.name, type, mutable = true))
+                        } catch (e: Exception) {
+                            errors.add("line ${item.line}: ${e.message}")
+                        }
+                    }
+                }
                 else -> {}
             }
         }

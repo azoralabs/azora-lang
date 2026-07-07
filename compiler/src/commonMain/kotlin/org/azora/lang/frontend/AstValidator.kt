@@ -42,7 +42,11 @@ class AstValidator {
         // Top-level runtime var/let are not thread-safe — only fin allowed
         for (item in program.items) {
             when (item) {
-                is TopLevel.VarDecl -> errors.add("line ${item.line}: top-level 'var' is not allowed (not thread-safe). Use 'fin' for immutable globals or 'inline var' for compile-time variables")
+                is TopLevel.VarDecl -> {
+                    if (!item.threadlocal) {
+                        errors.add("line ${item.line}: top-level 'var' is not allowed (not thread-safe). Use 'fin' for immutable globals or 'inline var' for compile-time variables")
+                    }
+                }
                 is TopLevel.LetDecl -> errors.add("line ${item.line}: top-level 'let' is not allowed (not thread-safe). Use 'fin' for immutable globals or 'inline let' for compile-time variables")
                 else -> {}
             }

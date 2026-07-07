@@ -1077,12 +1077,12 @@ sealed class TopLevel {
     data class Func(val decl: FuncDecl) : TopLevel()
 
     /** Runtime top-level mutable binding (`var`). Survives CTFE. */
-    data class VarDecl(val name: String, val type: TypeRef?, val initializer: Expr, val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList()) : TopLevel() {
+    data class VarDecl(val name: String, val type: TypeRef?, val initializer: Expr, val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList(), val threadlocal: Boolean = false) : TopLevel() {
         /** Convenience: the type name as written in source, or null. */
         val typeName: String? get() = type?.displayName()
     }
     /** Runtime top-level deeply immutable binding (`fin`). Survives CTFE. */
-    data class FinDecl(val name: String, val type: TypeRef?, val initializer: Expr, val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList()) : TopLevel() {
+    data class FinDecl(val name: String, val type: TypeRef?, val initializer: Expr, val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList(), val threadlocal: Boolean = false) : TopLevel() {
         /** Convenience: the type name as written in source, or null. */
         val typeName: String? get() = type?.displayName()
     }

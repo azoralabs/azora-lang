@@ -91,8 +91,8 @@ class IrGenerator(private val table: SymbolTable) {
         // Register global names
         for (item in program.items) {
             when (item) {
-                is TopLevel.FinDecl -> registerName(item.name)
-                is TopLevel.VarDecl -> registerName(item.name)
+                is TopLevel.FinDecl -> if (item.threadlocal) nameScopes.last()[item.name] = "__tl__${item.name}" else registerName(item.name)
+                is TopLevel.VarDecl -> if (item.threadlocal) nameScopes.last()[item.name] = "__tl__${item.name}" else registerName(item.name)
                 is TopLevel.LetDecl -> registerName(item.name)
                 else -> {}
             }
@@ -113,7 +113,8 @@ class IrGenerator(private val table: SymbolTable) {
                 is TopLevel.FinDecl -> {
                     val init = lowerExpr(item.initializer)
                     val type = if (item.type != null) IrType.resolve(item.type) else init.type
-                    listOf(IrTopLevel.Global(IrStmt.FinDecl(item.name, type, init)))
+                    val irName = if (item.threadlocal) "__tl__${item.name}" else item.name
+                    listOf(IrTopLevel.Global(IrStmt.FinDecl(irName, type, init)))
                 }
                 is TopLevel.LetDecl -> {
                     val init = lowerExpr(item.initializer)
@@ -123,7 +124,8 @@ class IrGenerator(private val table: SymbolTable) {
                 is TopLevel.VarDecl -> {
                     val init = lowerExpr(item.initializer)
                     val type = if (item.type != null) IrType.resolve(item.type) else init.type
-                    listOf(IrTopLevel.Global(IrStmt.VarDecl(item.name, type, init)))
+                    val irName = if (item.threadlocal) "__tl__${item.name}" else item.name
+                    listOf(IrTopLevel.Global(IrStmt.VarDecl(irName, type, init)))
                 }
                 is TopLevel.Test -> {
                     table.pushScope()

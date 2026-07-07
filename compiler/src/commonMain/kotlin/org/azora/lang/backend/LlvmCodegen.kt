@@ -414,10 +414,16 @@ class LlvmCodegen {
             is IrStmt.FinDecl -> emitLocalDecl(stmt.name, stmt.type, stmt.initializer)
             is IrStmt.LetDecl -> emitLocalDecl(stmt.name, stmt.type, stmt.initializer)
             is IrStmt.Assignment -> {
-                val (alloca, type) = localVars[stmt.name]
-                    ?: error("Undefined variable: ${stmt.name}")
-                val value = emitExpr(stmt.value)
-                emit("  store $type $value, $type* $alloca")
+                val entry = localVars[stmt.name]
+                if (entry != null) {
+                    val (alloca, type) = entry
+                    val value = emitExpr(stmt.value)
+                    emit("  store $type $value, $type* $alloca")
+                } else {
+                    // Global or thread-local variable — not lowered (LLVM has no global store model yet).
+                    emitExpr(stmt.value)
+                    emit("  ; assignment to global/thread-local ${stmt.name} — not lowered")
+                }
             }
             is IrStmt.Return -> {
                 if (stmt.value != null) {

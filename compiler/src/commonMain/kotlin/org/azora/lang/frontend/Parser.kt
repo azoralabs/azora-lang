@@ -163,6 +163,7 @@ class Parser(private val tokens: List<Token>) {
             check(TokenType.LEAF) -> parseNode(isLeaf = true)
             check(TokenType.VIEW) -> parseView()
             check(TokenType.HOOK) -> parseHook()
+            check(TokenType.THREADLOCAL) -> parseThreadLocal()
             check(TokenType.SPEC) -> parseSpec()
             check(TokenType.SLOT) -> parseSlot()
             check(TokenType.TYPEALIAS) -> parseTypeAlias()
@@ -1433,6 +1434,36 @@ class Parser(private val tokens: List<Token>) {
         consume(TokenType.R_BRACE, "Expected '}' after hook body")
         consumeNewline()
         return TopLevel.Hook(name, body, start.line, start.column)
+    }
+
+    /**
+     * `threadlocal var x: T = init` / `threadlocal fin y: T = init` — thread-local storage.
+     * Each coroutine (main + each task/launch/flow) gets its own independent copy.
+     * Desugars to a regular top-level VarDecl/FinDecl with a `__tl__` name prefix.
+     */
+    private fun parseThreadLocal(): TopLevel {
+        val start = consume(TokenType.THREADLOCAL, "Expected 'threadlocal'")
+        return when {
+            check(TokenType.VAR) -> {
+                advance()
+                val name = consume(TokenType.IDENTIFIER, "Expected variable name").lexeme
+                val type = if (match(TokenType.COLON)) parseTypeName() else null
+                consume(TokenType.EQUAL, "Expected '='")
+                val init = parseExpr()
+                consumeNewline()
+                TopLevel.VarDecl(name, type, init, start.line, start.column, threadlocal = true)
+            }
+            check(TokenType.FIN) -> {
+                advance()
+                val name = consume(TokenType.IDENTIFIER, "Expected variable name").lexeme
+                val type = if (match(TokenType.COLON)) parseTypeName() else null
+                consume(TokenType.EQUAL, "Expected '='")
+                val init = parseExpr()
+                consumeNewline()
+                TopLevel.FinDecl(name, type, init, start.line, start.column, threadlocal = true)
+            }
+            else -> error("Expected 'var' or 'fin' after 'threadlocal' at line ${peek().line}")
+        }
     }
 
     /**

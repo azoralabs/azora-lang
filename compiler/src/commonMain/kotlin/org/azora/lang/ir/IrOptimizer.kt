@@ -101,6 +101,16 @@ class IrOptimizer {
     }
 
     private fun foldExpr(expr: IrExpr): IrExpr = when (expr) {
+        is IrExpr.IfExpr -> {
+            val condition = foldExpr(expr.condition)
+            val thenExpr = foldExpr(expr.thenExpr)
+            val elseExpr = foldExpr(expr.elseExpr)
+            if (condition is IrExpr.BoolLiteral) {
+                if (condition.value) thenExpr else elseExpr
+            } else {
+                expr.copy(condition = condition, thenExpr = thenExpr, elseExpr = elseExpr)
+            }
+        }
         is IrExpr.Binary -> {
             val left = foldExpr(expr.left)
             val right = foldExpr(expr.right)
@@ -402,6 +412,11 @@ class IrOptimizer {
         )
         is IrExpr.Unary -> expr.copy(operand = propagateExpr(expr.operand, constants))
         is IrExpr.Call -> expr.copy(args = expr.args.map { propagateExpr(it, constants) })
+        is IrExpr.IfExpr -> expr.copy(
+            condition = propagateExpr(expr.condition, constants),
+            thenExpr = propagateExpr(expr.thenExpr, constants),
+            elseExpr = propagateExpr(expr.elseExpr, constants)
+        )
         else -> expr
     }
 
@@ -582,6 +597,7 @@ class IrOptimizer {
             it is IrExpr.IrTemplatePart.Expr && hasSideEffects(it.expr)
         }
         is IrExpr.CatchExpr -> true
+        is IrExpr.IfExpr -> hasSideEffects(expr.condition) || hasSideEffects(expr.thenExpr) || hasSideEffects(expr.elseExpr)
         is IrExpr.Spread -> hasSideEffects(expr.array)
         else -> false
     }
@@ -724,6 +740,11 @@ class IrOptimizer {
             is IrExpr.CatchExpr -> {
                 collectReferencedNamesFromExpr(expr.expr, names)
                 collectReferencedNamesFromExpr(expr.fallback, names)
+            }
+            is IrExpr.IfExpr -> {
+                collectReferencedNamesFromExpr(expr.condition, names)
+                collectReferencedNamesFromExpr(expr.thenExpr, names)
+                collectReferencedNamesFromExpr(expr.elseExpr, names)
             }
             is IrExpr.NumCast -> collectReferencedNamesFromExpr(expr.value, names)
             is IrExpr.Await -> collectReferencedNamesFromExpr(expr.value, names)

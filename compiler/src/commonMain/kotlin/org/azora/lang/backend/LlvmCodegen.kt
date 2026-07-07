@@ -757,6 +757,7 @@ class LlvmCodegen {
             emitExpr(expr.expr)
         }
         is IrExpr.NumCast -> coerceNumeric(emitExpr(expr.value), expr.value.type, expr.type)
+        is IrExpr.IfExpr -> emitIfExpr(expr)
         is IrExpr.SlotPattern -> "0"
         is IrExpr.Await -> {
             emitExpr(expr.value)
@@ -1045,7 +1046,12 @@ class LlvmCodegen {
                 when {
                     expr.type in IrType.integerTypes -> emit("  $tmp = sub $llvmType 0, $operand")
                     expr.type in IrType.floatTypes -> emit("  $tmp = fneg $llvmType $operand")
-                    else -> error("Cannot negate type: ${expr.type}")
+                    else -> {
+                        // Erased generic (Any) — no native negate; stub like other
+                        // unlowered aggregate operations.
+                        emit("  ; negate on ${expr.type} — not lowered (erased generic)")
+                        return defaultValue(expr.type)
+                    }
                 }
             }
             IrUnaryOp.NOT -> emit("  $tmp = xor i1 $operand, 1")
@@ -1137,6 +1143,27 @@ class LlvmCodegen {
                 emit("  ; binary ${expr.op} on ${expr.left.type} — not lowered (nullable aggregate)")
             }
         }
+        return tmp
+    }
+
+    /** Lowers an if-expression to a conditional branch feeding a phi. */
+    private fun emitIfExpr(expr: IrExpr.IfExpr): String {
+        val cond = emitExpr(expr.condition)
+        val thenLabel = nextLabel("ifx_then")
+        val elseLabel = nextLabel("ifx_else")
+        val endLabel = nextLabel("ifx_end")
+        emitTerminator("  br i1 $cond, label %$thenLabel, label %$elseLabel")
+        startBlock(thenLabel)
+        val thenValue = coerceNumeric(emitExpr(expr.thenExpr), expr.thenExpr.type, expr.type)
+        val thenBlock = currentBlock
+        emitTerminator("  br label %$endLabel")
+        startBlock(elseLabel)
+        val elseValue = coerceNumeric(emitExpr(expr.elseExpr), expr.elseExpr.type, expr.type)
+        val elseBlock = currentBlock
+        emitTerminator("  br label %$endLabel")
+        startBlock(endLabel)
+        val tmp = nextTmp()
+        emit("  $tmp = phi ${mapType(expr.type)} [ $thenValue, %$thenBlock ], [ $elseValue, %$elseBlock ]")
         return tmp
     }
 

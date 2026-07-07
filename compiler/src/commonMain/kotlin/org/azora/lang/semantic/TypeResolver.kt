@@ -178,7 +178,7 @@ class TypeResolver(private val table: SymbolTable) {
                     }
                 } else {
                     val valueType = resolveExpr(stmt.value) ?: return
-                    if (valueType != returnType) {
+                    if (valueType != returnType && returnType != IrType.Any) {
                         errors.add("line ${stmt.line}: return type mismatch: expected $returnType but got $valueType")
                     }
                 }
@@ -473,7 +473,8 @@ class TypeResolver(private val table: SymbolTable) {
                 val operandType = resolveExpr(expr.operand) ?: return null
                 when (expr.op) {
                     TokenType.MINUS -> {
-                        if (operandType !in IrType.numericTypes) {
+                        // Any (an erased generic T) negates at runtime.
+                        if (operandType !in IrType.numericTypes && operandType != IrType.Any) {
                             errors.add("line ${expr.line}: cannot negate $operandType")
                             null
                         } else operandType
@@ -809,6 +810,12 @@ class TypeResolver(private val table: SymbolTable) {
                 resolveExpr(expr.fallback) ?: return null
                 t1
             }
+            is Expr.IfExpr -> {
+                resolveExpr(expr.condition) ?: return null
+                val t1 = resolveExpr(expr.thenExpr) ?: return null
+                resolveExpr(expr.elseExpr) ?: return null
+                t1
+            }
             is Expr.NamedArg -> resolveExpr(expr.value)
             is Expr.MapLit -> {
                 var keyType: IrType? = null
@@ -1099,7 +1106,9 @@ class TypeResolver(private val table: SymbolTable) {
                 }
             }
             TokenType.LESS, TokenType.LESS_EQUAL, TokenType.GREATER, TokenType.GREATER_EQUAL -> {
-                if (left != right || (left !in IrType.Companion.numericTypes && left != IrType.Char)) {
+                // Any (e.g. an erased generic T) compares at runtime.
+                val anyInvolved = left == IrType.Any || right == IrType.Any
+                if (!anyInvolved && (left != right || (left !in IrType.Companion.numericTypes && left != IrType.Char))) {
                     errors.add("line $line: cannot compare $left and $right with '$op'")
                     null
                 } else IrType.Bool

@@ -608,6 +608,10 @@ class IrInterpreter {
                 val list = evalExpr(expr.target) as List<Any?>
                 list[expr.index]
             }
+            is IrExpr.IfExpr -> {
+                if (evalExpr(expr.condition) as Boolean) evalExpr(expr.thenExpr)
+                else evalExpr(expr.elseExpr)
+            }
             is IrExpr.CatchExpr -> {
                 try { evalExpr(expr.expr) } catch (e: AzoraThrownException) { evalExpr(expr.fallback) }
             }
@@ -620,9 +624,9 @@ class IrInterpreter {
                     else -> null // pointer-ish FFI cast — no interpreter meaning, pass through
                 }
                 if (n == null) v else when (expr.type) {
-                    IrType.Int, IrType.UInt -> n.toInt()
-                    IrType.Byte, IrType.UByte -> n.toByte()
-                    IrType.Short, IrType.UShort -> n.toShort()
+                    IrType.Int, IrType.UInt -> n.toInt().toLong()
+                    IrType.Byte, IrType.UByte -> n.toByte().toLong()
+                    IrType.Short, IrType.UShort -> n.toShort().toLong()
                     IrType.Long, IrType.ULong, IrType.Cent, IrType.UCent -> n.toLong()
                     IrType.Float -> n.toFloat()
                     IrType.Real, IrType.Decimal -> n.toDouble()

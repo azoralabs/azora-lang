@@ -133,6 +133,25 @@ class Lexer(private val source: String) {
      *
      * @return the list of tokens produced from the source
      */
+
+    /** Token types that make a trailing newline a continuation, not a terminator. */
+    private val continuationTypes = setOf(
+        TokenType.PLUS, TokenType.MINUS, TokenType.STAR, TokenType.SLASH, TokenType.PERCENT,
+        TokenType.AND_AND, TokenType.OR_OR,
+        TokenType.EQUAL_EQUAL, TokenType.BANG_EQUAL,
+        TokenType.LESS, TokenType.LESS_EQUAL, TokenType.GREATER, TokenType.GREATER_EQUAL,
+        TokenType.AMP, TokenType.PIPE, TokenType.CARET,
+        TokenType.SHIFT_LEFT, TokenType.SHIFT_RIGHT,
+        TokenType.EQUAL, TokenType.COMMA, TokenType.DOT, TokenType.ARROW,
+        TokenType.QMARK_QMARK
+    )
+
+    private fun shouldEmitNewline(): Boolean {
+        if (tokens.isEmpty()) return false
+        val last = tokens.last().type
+        return last != TokenType.NEWLINE && last !in continuationTypes
+    }
+
     fun tokenize(): List<Token> {
         while (!isAtEnd()) {
             start = current
@@ -202,19 +221,15 @@ class Lexer(private val source: String) {
             }
             '\'' -> scanCharLiteral()
             '\n' -> {
-                if (bracketDepth <= 0) {
-                    if (tokens.isEmpty() || tokens.last().type != TokenType.NEWLINE) {
-                        addToken(TokenType.NEWLINE)
-                    }
+                if (bracketDepth <= 0 && shouldEmitNewline()) {
+                    addToken(TokenType.NEWLINE)
                 }
                 line++; column = 1
             }
             '\r' -> {
                 if (!isAtEnd() && peek() == '\n') advance()
-                if (bracketDepth <= 0) {
-                    if (tokens.isEmpty() || tokens.last().type != TokenType.NEWLINE) {
-                        addToken(TokenType.NEWLINE)
-                    }
+                if (bracketDepth <= 0 && shouldEmitNewline()) {
+                    addToken(TokenType.NEWLINE)
                 }
                 line++; column = 1
             }

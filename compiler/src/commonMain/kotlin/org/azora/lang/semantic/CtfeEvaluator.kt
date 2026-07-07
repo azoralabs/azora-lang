@@ -889,7 +889,17 @@ class CtfeEvaluator(private val table: SymbolTable) {
             is Expr.IntLiteral, is Expr.RealLiteral,
             is Expr.StringLiteral, is Expr.BoolLiteral,
             is Expr.CharLiteral,
-            is Expr.TupleLit, is Expr.TupleAccess,
+            is Expr.TupleLit, is Expr.TupleAccess -> Pair(expr, false)
+            is Expr.IfExpr -> {
+                val (condition, cc) = foldExpr(expr.condition, program)
+                val (thenExpr, tc) = foldExpr(expr.thenExpr, program)
+                val (elseExpr, ec) = foldExpr(expr.elseExpr, program)
+                if (condition is Expr.BoolLiteral) {
+                    Pair(if (condition.value) thenExpr else elseExpr, true)
+                } else {
+                    Pair(expr.copy(condition = condition, thenExpr = thenExpr, elseExpr = elseExpr), cc || tc || ec)
+                }
+            }
             is Expr.CatchExpr, is Expr.Lambda,
             is Expr.NamedArg, is Expr.NullLiteral, is Expr.NullCoalesce, is Expr.Cast, is Expr.IsCheck, is Expr.MapLit, is Expr.SafeMember, is Expr.Alloc, is Expr.Deref, is Expr.Isolated, is Expr.Await, is Expr.Inject, is Expr.Spread -> Pair(expr, false)
             is Expr.Range -> {
@@ -1162,6 +1172,12 @@ class CtfeEvaluator(private val table: SymbolTable) {
             is Expr.StringTemplate -> null // not CTFE-evaluable
             is Expr.TupleLit, is Expr.TupleAccess -> null // not CTFE-evaluable
             is Expr.CatchExpr -> null // not CTFE-evaluable
+            is Expr.IfExpr -> {
+                val condition = evalExpr(expr.condition, env, program) ?: return null
+                if (condition !is Expr.BoolLiteral) return null
+                if (condition.value) evalExpr(expr.thenExpr, env, program)
+                else evalExpr(expr.elseExpr, env, program)
+            }
             is Expr.Lambda -> null // not CTFE-evaluable
             is Expr.NamedArg -> null // not CTFE-evaluable
             is Expr.Unary -> {

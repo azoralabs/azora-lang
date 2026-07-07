@@ -511,6 +511,7 @@ class SymbolCollector {
         is Expr.StringTemplate -> IrType.String
         is Expr.TupleLit, is Expr.TupleAccess -> null
         is Expr.CatchExpr -> null
+        is Expr.IfExpr -> inferExprType(expr.thenExpr, env)
         is Expr.Lambda -> null
         is Expr.NamedArg -> null
         is Expr.NullLiteral -> IrType.Any

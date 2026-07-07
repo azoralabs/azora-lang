@@ -890,6 +890,12 @@ class IrGenerator(private val table: SymbolTable) {
                 val elemType = if (tt is IrType.Tuple && expr.index in tt.elements.indices) tt.elements[expr.index] else IrType.Any
                 IrExpr.TupleAccess(target, expr.index, elemType)
             }
+            is Expr.IfExpr -> {
+                val condition = lowerExpr(expr.condition)
+                val thenExpr = lowerExpr(expr.thenExpr)
+                val elseExpr = lowerExpr(expr.elseExpr)
+                IrExpr.IfExpr(condition, thenExpr, elseExpr, thenExpr.type)
+            }
             is Expr.CatchExpr -> {
                 val e = lowerExpr(expr.expr)
                 val f = lowerExpr(expr.fallback)

@@ -38,4 +38,5 @@ rootProject.name = "azora-lang"
 include(":build-config")
 include(":compiler")
 include(":app")
+include(":azls")
 include(":build-tool")

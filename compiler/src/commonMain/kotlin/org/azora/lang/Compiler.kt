@@ -22,6 +22,7 @@ import org.azora.lang.backend.TypeScriptCodegen
 import org.azora.lang.frontend.AstValidator
 import org.azora.lang.frontend.Lexer
 import org.azora.lang.frontend.Parser
+import org.azora.lang.stdlib.StdlibInjector
 import org.azora.lang.frontend.Program
 import org.azora.lang.ir.IrGenerator
 import org.azora.lang.ir.IrOptimizer
@@ -123,7 +124,11 @@ class Compiler {
         val tokens = Lexer(source).tokenize()
 
         // 2. Parser: tokens → raw AST
-        val ast = Parser(tokens).parse()
+        val parsed = Parser(tokens).parse()
+
+        // 2b. Standard library: append the stdlib declarations the program
+        // actually references (transitively); user definitions shadow stdlib.
+        val ast = StdlibInjector.inject(parsed)
 
         // 3. AST Validation: structural checks
         val validationErrors = AstValidator().validate(ast)

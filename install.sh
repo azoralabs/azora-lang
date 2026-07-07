@@ -104,6 +104,10 @@ if [ "$MODE" = "source" ]; then
     echo "  Building Azora (this may take a minute)..."
     "$SCRIPT_DIR/gradlew" :app:installDist :build-tool:installDist -q
 
+    # Language server for Azora Studio (auto-discovered at ~/.azora/azls/azls.jar)
+    echo "  Installing the Azora Language Server (azls)..."
+    "$SCRIPT_DIR/gradlew" :azls:installAzls -q
+
     DIST_BASE="$SCRIPT_DIR/app/build/install/azora"
     BT_DIST_BASE="$SCRIPT_DIR/build-tool/build/install/azora-build"
     INTERNAL_DIR="$SCRIPT_DIR/Internal"

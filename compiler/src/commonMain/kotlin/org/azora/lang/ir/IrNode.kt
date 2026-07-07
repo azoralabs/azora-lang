@@ -425,6 +425,9 @@ sealed class IrExpr {
     /** `expr catch fallback` — evaluates [expr]; on throw, evaluates [fallback]. */
     data class CatchExpr(val expr: IrExpr, val fallback: IrExpr, override val type: IrType) : IrExpr()
 
+    /** If-expression `if cond { a } else { b }` — one branch becomes the value. */
+    data class IfExpr(val condition: IrExpr, val thenExpr: IrExpr, val elseExpr: IrExpr, override val type: IrType) : IrExpr()
+
     /** A numeric conversion `value as Type` (e.g. Int → Real). [type] is the target type. */
     data class NumCast(val value: IrExpr, override val type: IrType) : IrExpr()
 
@@ -490,6 +493,7 @@ sealed class IrExpr {
         is TupleLit -> "(${elements.joinToString(", ") { it.prettyPrint() }})"
         is TupleAccess -> "${target.prettyPrint()}.$index"
         is CatchExpr -> "(${expr.prettyPrint()} catch ${fallback.prettyPrint()})"
+        is IfExpr -> "(if ${condition.prettyPrint()} { ${thenExpr.prettyPrint()} } else { ${elseExpr.prettyPrint()} })"
         is NumCast -> "(${value.prettyPrint()} as $type)"
         is Lambda -> "{ ${params.joinToString(", ") { (n, t) -> "$n: $t" }} -> ... }"
         is SlotPattern -> "$slotName.$variantName(${bindings.joinToString(",")})"
@@ -1164,6 +1168,12 @@ private fun dumpIrExprTree(sb: StringBuilder, expr: IrExpr, indent: String) {
             sb.appendLine("${indent}IrCatchExpr : ${expr.type}")
             dumpIrExprTree(sb, expr.expr, "$indent    ")
             dumpIrExprTree(sb, expr.fallback, "$indent    ")
+        }
+        is IrExpr.IfExpr -> {
+            sb.appendLine("${indent}IrIfExpr : ${expr.type}")
+            dumpIrExprTree(sb, expr.condition, "$indent    ")
+            dumpIrExprTree(sb, expr.thenExpr, "$indent    ")
+            dumpIrExprTree(sb, expr.elseExpr, "$indent    ")
         }
         is IrExpr.SlotPattern -> {
             sb.appendLine("${indent}IrSlotPattern(${expr.slotName}.${expr.variantName}, bindings=${expr.bindings})")

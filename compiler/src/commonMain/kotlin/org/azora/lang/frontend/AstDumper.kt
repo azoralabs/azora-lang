@@ -431,6 +431,12 @@ private fun dumpExpr(sb: StringBuilder, expr: Expr, indent: String) {
             dumpExpr(sb, expr.expr, "$indent    ")
             dumpExpr(sb, expr.fallback, "$indent    ")
         }
+        is Expr.IfExpr -> {
+            sb.appendLine("${indent}IfExpr")
+            dumpExpr(sb, expr.condition, "$indent    ")
+            dumpExpr(sb, expr.thenExpr, "$indent    ")
+            dumpExpr(sb, expr.elseExpr, "$indent    ")
+        }
         is Expr.Lambda -> {
             sb.appendLine("${indent}Lambda(params=[${expr.params.joinToString(", ") { "${it.name}: ${it.type}" }}])")
             for (s in expr.body) dumpStmt(sb, s, "$indent    ")

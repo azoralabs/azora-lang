@@ -352,6 +352,7 @@ class KotlinCodegen {
         is IrExpr.TupleLit -> "listOf(${expr.elements.joinToString(", ") { emitExpr(it) }})"
         is IrExpr.TupleAccess -> "${emitExpr(expr.target)}[${expr.index}]"
         is IrExpr.CatchExpr -> "runCatching { ${emitExpr(expr.expr)} }.getOrElse { ${emitExpr(expr.fallback)} }"
+        is IrExpr.IfExpr -> "(if (${emitExpr(expr.condition)}) ${emitExpr(expr.thenExpr)} else ${emitExpr(expr.elseExpr)})"
         is IrExpr.NumCast -> {
             val sourceNumeric = expr.value.type in IrType.integerTypes ||
                 expr.value.type in IrType.floatTypes || expr.value.type == IrType.Char

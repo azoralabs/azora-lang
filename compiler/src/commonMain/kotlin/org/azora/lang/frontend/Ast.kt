@@ -225,6 +225,12 @@ sealed class Expr {
     data class CatchExpr(val expr: Expr, val fallback: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 
     /**
+     * If-expression `if cond { a } else { b }` — both branches are single
+     * expressions and one of them becomes the value of the whole expression.
+     */
+    data class IfExpr(val condition: Expr, val thenExpr: Expr, val elseExpr: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+
+    /**
      * Lambda `{ params -> body }`. Parameters carry explicit types. The result type is a
      * function type inferred from the body's return value.
      */

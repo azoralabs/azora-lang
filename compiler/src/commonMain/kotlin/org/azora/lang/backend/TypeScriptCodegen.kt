@@ -370,6 +370,7 @@ class TypeScriptCodegen {
         is IrExpr.TupleLit -> "[${expr.elements.joinToString(", ") { emitExpr(it) }}]"
         is IrExpr.TupleAccess -> "${emitExpr(expr.target)}[${expr.index}]"
         is IrExpr.CatchExpr -> "(() => { try { return ${emitExpr(expr.expr)}; } catch { return ${emitExpr(expr.fallback)}; } })()"
+        is IrExpr.IfExpr -> "((${emitExpr(expr.condition)}) ? ${emitExpr(expr.thenExpr)} : ${emitExpr(expr.elseExpr)})"
         is IrExpr.NumCast -> {
             val sourceNumeric = expr.value.type in IrType.integerTypes ||
                 expr.value.type in IrType.floatTypes || expr.value.type == IrType.Char

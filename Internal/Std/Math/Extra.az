@@ -34,19 +34,19 @@ expose scope std {
     /**
      * Computes exponentiation.
      *
-     * @param base The base value.
+     * @param value The base value.
      * @param exp The exponent (must be non-negative).
-     * @return base raised to the power of exp.
+     * @return value raised to the power of exp.
      * @since 0.0.1
      */
-    func pow<T>(base: T, exp: Int): T
+    func pow<T>(value: T, exp: Int): T
     in { assert exp >= 0 { "Exponent must be non-negative" } }
     scope {
         if exp == 0 { return 1 }
-        var result = base
+        var result = value
         var i = 1
         while i < exp {
-            result = result * base
+            result = result * value
             i += 1
         }
         return result

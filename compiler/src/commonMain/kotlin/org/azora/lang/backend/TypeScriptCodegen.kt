@@ -151,18 +151,25 @@ class TypeScriptCodegen {
             is IrStmt.When -> {
                 line("switch (${emitExpr(stmt.scrutinee)}) {")
                 indent++
+                // Case bodies are wrapped in blocks so `let`/`const` declarations
+                // in different branches don't collide in the shared switch scope.
                 for (b in stmt.branches) {
-                    for (p in b.patterns) line("case ${emitExpr(p)}:")
+                    for ((i, p) in b.patterns.withIndex()) {
+                        if (i == b.patterns.lastIndex) line("case ${emitExpr(p)}: {")
+                        else line("case ${emitExpr(p)}:")
+                    }
                     indent++
                     for (s in b.body) emitStmt(s)
                     line("break;")
                     indent--
+                    line("}")
                 }
                 if (stmt.elseBranch != null) {
-                    line("default:")
+                    line("default: {")
                     indent++
                     for (s in stmt.elseBranch) emitStmt(s)
                     indent--
+                    line("}")
                 }
                 indent--
                 line("}")
@@ -271,8 +278,12 @@ class TypeScriptCodegen {
                     if (stmt.catchName != null) line("const ${stmt.catchName} = _e;")
                     for (s in stmt.catchBody) emitStmt(s)
                     indent--
+                    line("}")
+                } else {
+                    // JS requires a catch or finally clause.
+                    line("} finally {")
+                    line("}")
                 }
-                line("}")
             }
             is IrStmt.Defer -> {}
             is IrStmt.Yield -> {}
@@ -304,6 +315,9 @@ class TypeScriptCodegen {
                 "${emitExpr(expr.left)}.repeat(${emitExpr(expr.right)})"
             } else if (expr.op == IrBinaryOp.MUL && expr.left.type == IrType.Int && expr.right.type == IrType.String) {
                 "${emitExpr(expr.right)}.repeat(${emitExpr(expr.left)})"
+            } else if (expr.op == IrBinaryOp.DIV && expr.type in IrType.integerTypes && mapType(expr.type) == "number") {
+                // Integer division truncates; JS `/` yields a float. (bigint `/` already truncates.)
+                "Math.trunc(${emitExpr(expr.left)} / ${emitExpr(expr.right)})"
             } else {
                 val op = when (expr.op) {
                     IrBinaryOp.ADD -> "+"
@@ -372,11 +386,20 @@ class TypeScriptCodegen {
         }
         is IrExpr.SlotPattern -> "" /* handled by when lowering */
         is IrExpr.Lambda -> {
-            val ps = expr.params.joinToString(", ") { (n, _) -> n }
+            val ps = expr.params.joinToString(", ") { (n, t) -> "$n: ${mapType(t)}" }
             val ret = expr.body.singleOrNull() as? IrStmt.Return
             if (ret != null && ret.value != null) "($ps) => ${emitExpr(ret.value)}"
-            else if (ret != null) "($ps) => {}"
-            else "($ps) => {}"
+            else if (expr.body.isEmpty() || ret != null) "($ps) => {}"
+            else {
+                // Multi-statement body: arrow functions support `return` natively.
+                val body = capture {
+                    indent++
+                    for (s in expr.body) emitStmt(s)
+                    indent--
+                }
+                val pad = "    ".repeat(indent)
+                "($ps) => {\n$body$pad}"
+            }
         }
         is IrExpr.StringTemplate -> {
             val sb = StringBuilder("`")
@@ -412,12 +435,20 @@ class TypeScriptCodegen {
         is IrType.Nullable -> "${mapType(type.inner)} | null"
         is IrType.Named -> type.name
         IrType.Any -> "any"
-        is IrType.Tuple -> "any[]"
-        is IrType.Function -> "(${type.params.joinToString(", ") { mapType(it) }}) => ${mapType(type.ret)}"
+    }
+
+    /** Emits [block] into a scratch region of [out] and returns (and removes) the produced text. */
+    private fun capture(block: () -> Unit): String {
+        val start = out.length
+        block()
+        val text = out.substring(start)
+        out.setLength(start)
+        return text
     }
 
     private fun escapeString(s: String): String =
-        s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\t", "\\t")
+        s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n")
+            .replace("\t", "\\t").replace("\r", "\\r")
 
     private fun line(text: String) {
         repeat(indent) { out.append("    ") }

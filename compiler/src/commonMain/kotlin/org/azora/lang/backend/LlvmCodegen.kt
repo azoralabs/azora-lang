@@ -113,6 +113,7 @@ class LlvmCodegen {
     private var usesStrConcat = false
     private var usesStrRepeat = false
     private var usesIntToStr = false
+    private var usesUintToStr = false
     private var usesRealToStr = false
     private var usesCharToStr = false
 
@@ -150,6 +151,7 @@ class LlvmCodegen {
         usesStrConcat = false
         usesStrRepeat = false
         usesIntToStr = false
+        usesUintToStr = false
         usesRealToStr = false
         usesCharToStr = false
         loopStack.clear()
@@ -612,8 +614,28 @@ class LlvmCodegen {
         startBlock(endLabel)
     }
 
+    /** Emits an equality test between a `when` scrutinee and one pattern value. */
+    private fun emitWhenEq(scrutIrType: IrType, scrutType: String, scrut: String, pv: String): String {
+        val cmp = nextTmp()
+        when {
+            // Strings compare by content, not pointer identity.
+            scrutIrType == IrType.String -> {
+                usesStrcmp = true
+                emit("  $cmp = call i32 @strcmp(i8* $scrut, i8* $pv)")
+                val eq = nextTmp()
+                emit("  $eq = icmp eq i32 $cmp, 0")
+                return eq
+            }
+            // icmp is invalid on floating-point operands.
+            scrutIrType in IrType.floatTypes -> emit("  $cmp = fcmp oeq $scrutType $scrut, $pv")
+            else -> emit("  $cmp = icmp eq $scrutType $scrut, $pv")
+        }
+        return cmp
+    }
+
     private fun emitWhen(stmt: IrStmt.When) {
-        val scrutType = mapType(stmt.scrutinee.type)
+        val scrutIrType = stmt.scrutinee.type
+        val scrutType = mapType(scrutIrType)
         val scrut = emitExpr(stmt.scrutinee)
         val endLabel = nextLabel("when_end")
 
@@ -623,8 +645,7 @@ class LlvmCodegen {
             // through to the next pattern test (and finally the next branch).
             for ((i, pattern) in branch.patterns.withIndex()) {
                 val pv = emitExpr(pattern)
-                val cmp = nextTmp()
-                emit("  $cmp = icmp eq $scrutType $scrut, $pv")
+                val cmp = emitWhenEq(scrutIrType, scrutType, scrut, pv)
                 if (i == branch.patterns.lastIndex) {
                     val nextLabel = nextLabel("when_next")
                     emitTerminator("  br i1 $cmp, label %$bodyLabel, label %$nextLabel")
@@ -656,7 +677,7 @@ class LlvmCodegen {
         emitTerminator("  br i1 $cond, label %$passLabel, label %$failLabel")
 
         startBlock(failLabel)
-        val msg = emitExpr(stmt.message)
+        val msg = stringify(stmt.message)
         val unused = nextTmp()
         emit("  $unused = call i32 @puts(i8* $msg)")
         emit("  call void @abort()")
@@ -1247,20 +1268,28 @@ class LlvmCodegen {
                 val v = coerceToI32(emitExpr(arg), arg.type)
                 printfFmt("%c$nl", listOf("i32 $v"))
             }
-            IrType.Int, IrType.UInt, IrType.Byte, IrType.UByte, IrType.Short, IrType.UShort -> {
+            IrType.Int, IrType.Byte, IrType.Short -> {
                 val v = coerceToI32(emitExpr(arg), arg.type)
                 printfFmt("%d$nl", listOf("i32 $v"))
             }
-            IrType.Long, IrType.ULong -> {
+            IrType.UInt, IrType.UByte, IrType.UShort -> {
+                val v = coerceToI32(emitExpr(arg), arg.type)
+                printfFmt("%u$nl", listOf("i32 $v"))
+            }
+            IrType.Long -> {
                 val v = emitExpr(arg)
                 printfFmt("%lld$nl", listOf("i64 $v"))
+            }
+            IrType.ULong -> {
+                val v = emitExpr(arg)
+                printfFmt("%llu$nl", listOf("i64 $v"))
             }
             IrType.Cent, IrType.UCent -> {
                 val v = emitExpr(arg)
                 // No portable printf length modifier for i128; truncate to i64.
                 val t = nextTmp()
                 emit("  $t = trunc i128 $v to i64")
-                printfFmt("%lld$nl", listOf("i64 $t"))
+                printfFmt(if (arg.type == IrType.UCent) "%llu$nl" else "%lld$nl", listOf("i64 $t"))
             }
             IrType.Real -> {
                 val v = emitExpr(arg)
@@ -1335,6 +1364,9 @@ class LlvmCodegen {
         IrType.Long, IrType.ULong -> {
             val t = nextTmp(); emit("  $t = trunc i64 $value to i32"); t
         }
+        IrType.Cent, IrType.UCent -> {
+            val t = nextTmp(); emit("  $t = trunc i128 $value to i32"); t
+        }
         else -> value
     }
 
@@ -1363,12 +1395,18 @@ class LlvmCodegen {
                 tmp
             }
             else -> {
-                // Integer / char types → 64-bit then format.
-                usesIntToStr = true; usesSnprintf = true; usesMalloc = true
+                // Integer types → 64-bit then format (unsigned types use %llu).
+                usesSnprintf = true; usesMalloc = true
                 val raw = emitExpr(expr)
                 val v = widenToI64(raw, expr.type)
                 val tmp = nextTmp()
-                emit("  $tmp = call i8* @__azora_int_to_str(i64 $v)")
+                if (isUnsigned(expr.type)) {
+                    usesUintToStr = true
+                    emit("  $tmp = call i8* @__azora_uint_to_str(i64 $v)")
+                } else {
+                    usesIntToStr = true
+                    emit("  $tmp = call i8* @__azora_int_to_str(i64 $v)")
+                }
                 tmp
             }
         }
@@ -1450,6 +1488,20 @@ class LlvmCodegen {
             val fmt = addStringConstant("%lld")
             sb.appendLine("; runtime: integer to string")
             sb.appendLine("define i8* @__azora_int_to_str(i64 %v) {")
+            sb.appendLine("entry:")
+            sb.appendLine("  %buf = call i8* @malloc(i64 24)")
+            sb.appendLine("  %fmt = getelementptr [${fmt.byteLen} x i8], [${fmt.byteLen} x i8]* ${fmt.name}, i64 0, i64 0")
+            sb.appendLine("  %r = call i32 (i8*, i64, i8*, ...) @snprintf(i8* %buf, i64 24, i8* %fmt, i64 %v)")
+            sb.appendLine("  ret i8* %buf")
+            sb.appendLine("}")
+            sb.appendLine()
+        }
+
+        if (usesUintToStr) {
+            usesMalloc = true; usesSnprintf = true
+            val fmt = addStringConstant("%llu")
+            sb.appendLine("; runtime: unsigned integer to string")
+            sb.appendLine("define i8* @__azora_uint_to_str(i64 %v) {")
             sb.appendLine("entry:")
             sb.appendLine("  %buf = call i8* @malloc(i64 24)")
             sb.appendLine("  %fmt = getelementptr [${fmt.byteLen} x i8], [${fmt.byteLen} x i8]* ${fmt.name}, i64 0, i64 0")

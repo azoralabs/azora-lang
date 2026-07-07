@@ -256,8 +256,12 @@ class KotlinCodegen {
                     if (stmt.catchName != null) line("val ${stmt.catchName} = _e.message")
                     for (s in stmt.catchBody) emitStmt(s)
                     indent--
+                    line("}")
+                } else {
+                    // Kotlin requires at least one catch or finally clause.
+                    line("} finally {")
+                    line("}")
                 }
-                line("}")
             }
             is IrStmt.Defer -> {}
             is IrStmt.Yield -> {}
@@ -285,13 +289,11 @@ class KotlinCodegen {
         is IrExpr.BoolLiteral -> "${expr.value}"
         is IrExpr.CharLiteral -> "'${escapeChar(expr.value)}'"
         is IrExpr.Var -> expr.name
-        is IrExpr.Unary -> {
-            val op = when (expr.op) {
-                IrUnaryOp.NEG -> "-"
-                IrUnaryOp.NOT -> "!"
-                IrUnaryOp.BIT_NOT -> "notValidKotlin"
-            }
-            "($op${emitExpr(expr.operand)})"
+        is IrExpr.Unary -> when (expr.op) {
+            IrUnaryOp.NEG -> "(-${emitExpr(expr.operand)})"
+            IrUnaryOp.NOT -> "(!${emitExpr(expr.operand)})"
+            // Kotlin has no `~` operator — bitwise NOT is the inv() function.
+            IrUnaryOp.BIT_NOT -> "(${emitExpr(expr.operand)}).inv()"
         }
         is IrExpr.Binary -> {
             // String * Int -> "str".repeat(n)
@@ -349,7 +351,7 @@ class KotlinCodegen {
         is IrExpr.StructCtor -> "${expr.name}(${expr.args.joinToString(", ") { emitExpr(it) }})"
         is IrExpr.TupleLit -> "listOf(${expr.elements.joinToString(", ") { emitExpr(it) }})"
         is IrExpr.TupleAccess -> "${emitExpr(expr.target)}[${expr.index}]"
-        is IrExpr.CatchExpr -> "runCatching { ${emitExpr(expr.expr)} }.getOrDefault(${emitExpr(expr.fallback)})"
+        is IrExpr.CatchExpr -> "runCatching { ${emitExpr(expr.expr)} }.getOrElse { ${emitExpr(expr.fallback)} }"
         is IrExpr.NumCast -> {
             val sourceNumeric = expr.value.type in IrType.integerTypes ||
                 expr.value.type in IrType.floatTypes || expr.value.type == IrType.Char
@@ -372,9 +374,25 @@ class KotlinCodegen {
         is IrExpr.SlotPattern -> "" /* handled by when lowering */
         is IrExpr.Lambda -> {
             val ps = expr.params.joinToString(", ") { (n, t) -> "$n: ${mapType(t)}" }
+            val arrow = if (expr.params.isEmpty()) "" else "$ps -> "
             val ret = expr.body.singleOrNull() as? IrStmt.Return
-            if (ret != null) "{ $ps -> ${if (ret.value != null) emitExpr(ret.value) else ""} }"
-            else "{ $ps -> Unit }"
+            if (ret != null) {
+                "{ $arrow${if (ret.value != null) emitExpr(ret.value) else "Unit"} }"
+            } else {
+                // Multi-statement body: a trailing `return x` becomes the lambda's
+                // final expression (Kotlin lambdas have no local `return`).
+                val stmts = expr.body.toMutableList()
+                val tail = stmts.lastOrNull() as? IrStmt.Return
+                if (tail != null) stmts.removeAt(stmts.lastIndex)
+                val body = capture {
+                    indent++
+                    for (s in stmts) emitStmt(s)
+                    if (tail?.value != null) line(emitExpr(tail.value))
+                    indent--
+                }
+                val pad = "    ".repeat(indent)
+                "{ $arrow\n$body$pad}"
+            }
         }
         is IrExpr.StringTemplate -> {
             val sb = StringBuilder("\"")
@@ -418,12 +436,20 @@ class KotlinCodegen {
         is IrType.Nullable -> "${mapType(type.inner)}?"
         is IrType.Named -> type.name
         IrType.Any -> "Any"
-        is IrType.Tuple -> "List<Any>"
-        is IrType.Function -> "(${type.params.joinToString(", ") { mapType(it) }}) -> ${mapType(type.ret)}"
+    }
+
+    /** Emits [block] into a scratch region of [out] and returns (and removes) the produced text. */
+    private fun capture(block: () -> Unit): String {
+        val start = out.length
+        block()
+        val text = out.substring(start)
+        out.setLength(start)
+        return text
     }
 
     private fun escapeString(s: String): String =
-        s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\t", "\\t")
+        s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n")
+            .replace("\t", "\\t").replace("\r", "\\r").replace("$", "\\$")
 
     private fun escapeChar(c: Char): String = when (c) {
         '\n' -> "\\n"

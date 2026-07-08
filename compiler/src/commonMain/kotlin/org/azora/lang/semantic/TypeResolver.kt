@@ -256,12 +256,17 @@ class TypeResolver(private val table: SymbolTable) {
                     else -> {
                         val iterType = resolveExpr(iter)
                         if (iterType == null) return
-                        if (iterType !is IrType.Array) {
-                            errors.add("line ${stmt.line}: for loop iterable must be a range or array, got $iterType")
-                            return
-                        }
-                        table.pushScope()
-                        table.defineVariable(VariableSymbol(stmt.name, iterType.element, mutable = false))
+                    if (iterType !is IrType.Array && iterType !is IrType.Set) {
+                        errors.add("line ${stmt.line}: for loop iterable must be a range or array, got $iterType")
+                        return
+                    }
+                    table.pushScope()
+                    val elementType = when (iterType) {
+                        is IrType.Array -> iterType.element
+                        is IrType.Set -> iterType.element
+                        else -> error("unreachable")
+                    }
+                    table.defineVariable(VariableSymbol(stmt.name, elementType, mutable = false))
                         resolveBody(stmt.body, returnType)
                         table.popScope()
                     }
@@ -644,6 +649,22 @@ class TypeResolver(private val table: SymbolTable) {
                     IrType.Array(elemType)
                 }
             }
+            is Expr.SetLiteral -> {
+                if (expr.elements.isEmpty()) {
+                    errors.add("line ${expr.line}: cannot infer element type of an empty set literal")
+                    null
+                } else {
+                    val elemType = resolveExpr(expr.elements[0]) ?: return null
+                    for (i in 1 until expr.elements.size) {
+                        val type = resolveExpr(expr.elements[i]) ?: return null
+                        if (type != elemType) {
+                            errors.add("line ${expr.line}: set elements must share a type, got $elemType and $type")
+                            return null
+                        }
+                    }
+                    IrType.Set(elemType)
+                }
+            }
             is Expr.Index -> {
                 val targetType = resolveExpr(expr.target) ?: return null
                 // User-defined index operator (`oper[]`) on a struct.
@@ -702,8 +723,8 @@ class TypeResolver(private val table: SymbolTable) {
                 }
                 val targetType = resolveExpr(expr.target) ?: return null
                 when {
-                    expr.name == "length" && (targetType is IrType.Array || targetType == IrType.String) -> IrType.Int
-                    (expr.name == "isEmpty" || expr.name == "isNotEmpty") && targetType is IrType.Array -> IrType.Bool
+                    expr.name == "length" && (targetType is IrType.Array || targetType is IrType.Map || targetType is IrType.Set || targetType == IrType.String) -> IrType.Int
+                    (expr.name == "isEmpty" || expr.name == "isNotEmpty") && (targetType is IrType.Array || targetType is IrType.Map || targetType is IrType.Set) -> IrType.Bool
                     targetType is IrType.Named -> {
                         val struct = table.lookupStruct(targetType.name)
                         val field = struct?.field(expr.name)
@@ -778,6 +799,12 @@ class TypeResolver(private val table: SymbolTable) {
                 // Builtin array methods
                 if (targetType is IrType.Array) {
                     return resolveArrayMethod(expr.name, expr.args, targetType, expr.line)
+                }
+                if (targetType is IrType.Set) {
+                    return resolveSetMethod(expr.name, expr.args, expr.line)
+                }
+                if (targetType is IrType.Map) {
+                    return resolveMapMethod(expr.name, expr.args, targetType, expr.line)
                 }
                 resolveBuiltinMethod(targetType, expr.name, expr.args, expr.line)
             }
@@ -963,6 +990,8 @@ class TypeResolver(private val table: SymbolTable) {
 
     private fun resolveBuiltinMethod(receiverType: IrType, name: String, args: List<Expr>, line: Int): IrType? {
         if (receiverType is IrType.Array) return resolveArrayMethod(name, args, receiverType, line)
+        if (receiverType is IrType.Set) return resolveSetMethod(name, args, line)
+        if (receiverType is IrType.Map) return resolveMapMethod(name, args, receiverType, line)
         if (receiverType == IrType.String) return resolveStringMethod(name, args, line)
         // `Channel` methods: `send`/`close` → Unit, `receive` → the element (typed as Any).
         if (receiverType is IrType.Named && receiverType.name == "Channel") {
@@ -974,6 +1003,46 @@ class TypeResolver(private val table: SymbolTable) {
         }
         errors.add("line $line: no method '$name' on $receiverType")
         return null
+    }
+
+    private fun resolveSetMethod(name: String, args: List<Expr>, line: Int): IrType? = when (name) {
+        "add", "remove", "contains" -> {
+            if (args.size != 1) { errors.add("line $line: '$name' expects 1 argument"); null }
+            else { resolveExpr(args[0]) ?: return null; IrType.Bool }
+        }
+        "clear" -> {
+            if (args.isNotEmpty()) { errors.add("line $line: 'clear' expects 0 arguments"); null }
+            else IrType.Unit
+        }
+        "isEmpty", "isNotEmpty" -> {
+            if (args.isNotEmpty()) { errors.add("line $line: '$name' expects 0 arguments"); null }
+            else IrType.Bool
+        }
+        else -> { errors.add("line $line: no method '$name' on set"); null }
+    }
+
+    private fun resolveMapMethod(name: String, args: List<Expr>, map: IrType.Map, line: Int): IrType? = when (name) {
+        "get" -> {
+            if (args.size != 1) { errors.add("line $line: 'get' expects 1 argument"); null }
+            else { resolveExpr(args[0]); map.value }
+        }
+        "put" -> {
+            if (args.size != 2) { errors.add("line $line: 'put' expects 2 arguments"); null }
+            else { resolveExpr(args[0]); resolveExpr(args[1]); IrType.Unit }
+        }
+        "containsKey" -> {
+            if (args.size != 1) { errors.add("line $line: 'containsKey' expects 1 argument"); null }
+            else { resolveExpr(args[0]); IrType.Bool }
+        }
+        "clear" -> {
+            if (args.isNotEmpty()) { errors.add("line $line: 'clear' expects 0 arguments"); null }
+            else IrType.Unit
+        }
+        "isEmpty", "isNotEmpty" -> {
+            if (args.isNotEmpty()) { errors.add("line $line: '$name' expects 0 arguments"); null }
+            else IrType.Bool
+        }
+        else -> { errors.add("line $line: no method '$name' on map"); null }
     }
 
     /** Maps an operator token to the impl method name used for operator overloading. */

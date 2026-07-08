@@ -347,6 +347,7 @@ class TypeScriptCodegen {
         is IrExpr.Await -> emitExpr(expr.value) // no coroutine runtime: emit the task inline
         is IrExpr.Spread -> "...${emitExpr(expr.array)}" // TS spread operator
         is IrExpr.ArrayLiteral -> "[${expr.elements.joinToString(", ") { emitExpr(it) }}]"
+        is IrExpr.SetLit -> "new Set([${expr.elements.joinToString(", ") { emitExpr(it) }}])"
         is IrExpr.MapLit -> "({ ${expr.entries.joinToString(", ") { "[${emitExpr(it.first)}]: ${emitExpr(it.second)}" }} })"
         is IrExpr.Index -> "${emitExpr(expr.target)}[${emitExpr(expr.index)}]"
         is IrExpr.Member -> {
@@ -429,6 +430,7 @@ class TypeScriptCodegen {
         IrType.Long, IrType.ULong -> "bigint"
         IrType.Cent, IrType.UCent -> "bigint"
         is IrType.Array -> "${mapType(type.element)}[]"
+        is IrType.Set -> "Set<${mapType(type.element)}>"
         is IrType.Map -> "Record<${mapType(type.key)}, ${mapType(type.value)}>"
         is IrType.Pointer -> "AzoraPtr<${mapType(type.inner)}>"
         is IrType.Function -> "(${type.params.joinToString(", ") { mapType(it) }}) => ${mapType(type.ret)}"

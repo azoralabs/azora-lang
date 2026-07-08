@@ -571,6 +571,7 @@ class IrInterpreter {
             is IrExpr.Binary -> evalBinary(expr)
             is IrExpr.Call -> evalCall(expr)
             is IrExpr.ArrayLiteral -> expr.elements.map { evalExpr(it) }.toMutableList()
+            is IrExpr.SetLit -> expr.elements.map { evalExpr(it) }.distinct().toMutableList()
             is IrExpr.MapLit -> {
                 val map = linkedMapOf<Any?, Any?>()
                 for ((k, v) in expr.entries) map[evalExpr(k)] = evalExpr(v)
@@ -607,6 +608,11 @@ class IrInterpreter {
                         else -> error("no member '${expr.name}' on string")
                     }
                     is Map<*, *> -> {
+                        when (expr.name) {
+                            "length" -> return@evalExpr receiver.size.toLong()
+                            "isEmpty" -> return@evalExpr receiver.isEmpty()
+                            "isNotEmpty" -> return@evalExpr receiver.isNotEmpty()
+                        }
                         // Check for a computed property (prop): `Type_prop_name` method.
                         val typeName = receiver["__type"] as? String
                         if (typeName != null) {
@@ -718,9 +724,33 @@ class IrInterpreter {
                         "indexOf" -> receiver.indexOf(args[0] as String).toLong()
                         else -> error("no method '${expr.name}' on String")
                     }
+                    receiver is MutableMap<*, *> -> {
+                        @Suppress("UNCHECKED_CAST")
+                        val map = receiver as MutableMap<Any?, Any?>
+                        when (expr.name) {
+                            "get" -> map[args[0]]
+                            "put" -> { map[args[0]] = args[1]; null }
+                            "containsKey" -> map.containsKey(args[0])
+                            "clear" -> { map.clear(); null }
+                            "isEmpty" -> map.isEmpty()
+                            "isNotEmpty" -> map.isNotEmpty()
+                            else -> error("no method '${expr.name}' on map")
+                        }
+                    }
                     receiver is MutableList<*> -> {
                         @Suppress("UNCHECKED_CAST")
                         val list = receiver as MutableList<Any?>
+                        if (expr.target.type is IrType.Set) {
+                            return@evalExpr when (expr.name) {
+                                "add" -> if (list.contains(args[0])) false else { list.add(args[0]); true }
+                                "remove" -> list.remove(args[0])
+                                "contains" -> list.contains(args[0])
+                                "clear" -> { list.clear(); null }
+                                "isEmpty" -> list.isEmpty()
+                                "isNotEmpty" -> list.isNotEmpty()
+                                else -> error("no method '${expr.name}' on set")
+                            }
+                        }
                         when (expr.name) {
                             "add" -> { list.add(args[0]); null }
                             "insert" -> { list.add((args[0] as Long).toInt(), args[1]); null }

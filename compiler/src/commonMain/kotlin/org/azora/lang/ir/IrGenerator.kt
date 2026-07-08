@@ -47,6 +47,17 @@ class IrGenerator(private val table: SymbolTable) {
     private fun pushNameScope() { nameScopes.addLast(mutableMapOf()) }
     private fun popNameScope() { nameScopes.removeLast() }
 
+    private fun lowerScopedBody(stmts: List<Stmt>): List<IrStmt> {
+        table.pushScope()
+        pushNameScope()
+        return try {
+            lowerBody(stmts)
+        } finally {
+            popNameScope()
+            table.popScope()
+        }
+    }
+
     /** Register a variable name. If it shadows an outer one, mangle it. */
     private fun registerName(name: String): String {
         // Check if name already exists in any outer scope
@@ -377,15 +388,8 @@ class IrGenerator(private val table: SymbolTable) {
             is Stmt.ExprStmt -> IrStmt.ExprStmt(lowerExpr(stmt.expr))
             is Stmt.If -> {
                 val cond = lowerExpr(stmt.condition)
-                table.pushScope()
-                val thenBranch = lowerBody(stmt.thenBranch)
-                table.popScope()
-                val elseBranch = if (stmt.elseBranch != null) {
-                    table.pushScope()
-                    val branch = lowerBody(stmt.elseBranch)
-                    table.popScope()
-                    branch
-                } else null
+                val thenBranch = lowerScopedBody(stmt.thenBranch)
+                val elseBranch = stmt.elseBranch?.let { lowerScopedBody(it) }
                 IrStmt.If(cond, thenBranch, elseBranch)
             }
             is Stmt.InlineIf -> error("InlineIf should have been resolved by CTFE before IR generation")
@@ -437,7 +441,11 @@ class IrGenerator(private val table: SymbolTable) {
                 } else {
                     // For-in over a non-range iterable (array, flow, channel): for-each.
                     val iterable = lowerExpr(stmt.iterable)
-                    val elemType = (iterable.type as? IrType.Array)?.element ?: IrType.Any
+                    val elemType = when (val type = iterable.type) {
+                        is IrType.Array -> type.element
+                        is IrType.Set -> type.element
+                        else -> IrType.Any
+                    }
                     table.pushScope()
                     pushNameScope()
                     val elem = registerName(stmt.name)
@@ -458,7 +466,7 @@ class IrGenerator(private val table: SymbolTable) {
             }
             is Stmt.Break -> IrStmt.Break(stmt.label)
             is Stmt.Continue -> IrStmt.Continue(stmt.label)
-            is Stmt.Defer -> IrStmt.Defer(lowerBody(stmt.body), stmt.onFail, stmt.suppress)
+            is Stmt.Defer -> IrStmt.Defer(lowerScopedBody(stmt.body), stmt.onFail, stmt.suppress)
             is Stmt.RemDecl -> {
                 val init = lowerExpr(stmt.initializer)
                 val type = resolveTypeAnnotation(stmt.type, init)
@@ -487,22 +495,25 @@ class IrGenerator(private val table: SymbolTable) {
                             lowerExpr(pat)
                         }
                     }
-                    if (slotBindings != null) {
+                    val body = if (slotBindings != null) {
                         table.pushScope()
                         pushNameScope()
-                        for ((name, type) in slotBindings!!) {
+                        for ((name, type) in slotBindings) {
                             val mangled = registerName(name)
                             table.defineVariable(VariableSymbol(name, type))
                         }
-                    }
-                    val body = lowerBody(b.body)
-                    if (slotBindings != null) {
-                        popNameScope()
-                        table.popScope()
+                        try {
+                            lowerBody(b.body)
+                        } finally {
+                            popNameScope()
+                            table.popScope()
+                        }
+                    } else {
+                        lowerScopedBody(b.body)
                     }
                     IrWhenBranch(irPatterns, body)
                 }
-                val elseBranch = stmt.elseBranch?.let { lowerBody(it) }
+                val elseBranch = stmt.elseBranch?.let { lowerScopedBody(it) }
                 IrStmt.When(scrutinee, branches, elseBranch)
             }
             is Stmt.Throw -> IrStmt.Throw(lowerExpr(stmt.value))
@@ -512,11 +523,12 @@ class IrGenerator(private val table: SymbolTable) {
                 val body = lowerBody(stmt.body)
                 popNameScope()
                 table.popScope()
+                var catchIrName: String? = null
                 val catchBody = if (stmt.catchBody != null) {
                     table.pushScope()
                     pushNameScope()
                     if (stmt.catchName != null) {
-                        registerName(stmt.catchName)
+                        catchIrName = registerName(stmt.catchName)
                         table.defineVariable(VariableSymbol(stmt.catchName, IrType.Any, mutable = false))
                     }
                     val cb = lowerBody(stmt.catchBody)
@@ -524,7 +536,7 @@ class IrGenerator(private val table: SymbolTable) {
                     table.popScope()
                     cb
                 } else null
-                IrStmt.Try(body, stmt.catchName, catchBody)
+                IrStmt.Try(body, catchIrName, catchBody)
             }
             is Stmt.InlineAssert -> error("InlineAssert should have been resolved by CTFE before IR generation")
             is Stmt.InlineTrace -> error("InlineTrace should have been resolved by CTFE before IR generation")
@@ -571,7 +583,7 @@ class IrGenerator(private val table: SymbolTable) {
                 val numeric = IrType.integerTypes + IrType.floatTypes
                 fun isNumericish(t: IrType) = t in numeric || t == IrType.Char
                 fun isPointerish(t: IrType) =
-                    t == IrType.String || t == IrType.Any || t is IrType.Array || t is IrType.Map ||
+                    t == IrType.String || t == IrType.Any || t is IrType.Array || t is IrType.Map || t is IrType.Set ||
                         t is IrType.Named || t is IrType.Pointer || t is IrType.Nullable || t is IrType.Tuple
                 when {
                     target == inner.type -> inner
@@ -739,6 +751,11 @@ class IrGenerator(private val table: SymbolTable) {
                 val elemType = if (elems.isEmpty()) IrType.Any else elems.first().type
                 IrExpr.ArrayLiteral(elems, IrType.Array(elemType))
             }
+            is Expr.SetLiteral -> {
+                val elems = expr.elements.map { lowerExpr(it) }
+                val elemType = if (elems.isEmpty()) IrType.Any else elems.first().type
+                IrExpr.SetLit(elems, IrType.Set(elemType))
+            }
             is Expr.MapLit -> {
                 val entries = expr.entries.map { lowerExpr(it.first) to lowerExpr(it.second) }
                 val keyType = entries.firstOrNull()?.first?.type ?: IrType.Any
@@ -821,8 +838,8 @@ class IrGenerator(private val table: SymbolTable) {
                     }
                 }
                 val memberType = when {
-                    expr.name == "length" && (target.type is IrType.Array || target.type == IrType.String) -> IrType.Int
-                    (expr.name == "isEmpty" || expr.name == "isNotEmpty") && target.type is IrType.Array -> IrType.Bool
+                    expr.name == "length" && (target.type is IrType.Array || target.type is IrType.Map || target.type is IrType.Set || target.type == IrType.String) -> IrType.Int
+                    (expr.name == "isEmpty" || expr.name == "isNotEmpty") && (target.type is IrType.Array || target.type is IrType.Map || target.type is IrType.Set) -> IrType.Bool
                     else -> {
                         val tt = target.type
                         if (tt is IrType.Named) table.lookupStruct(tt.name)?.field(expr.name)?.type ?: IrType.Any
@@ -901,7 +918,6 @@ class IrGenerator(private val table: SymbolTable) {
                 val f = lowerExpr(expr.fallback)
                 IrExpr.CatchExpr(e, f, e.type)
             }
-            is Expr.NamedArg -> lowerExpr(expr.value)
             is Expr.Lambda -> {
                 table.pushScope()
                 pushNameScope()
@@ -921,9 +937,31 @@ class IrGenerator(private val table: SymbolTable) {
     }
 
     /** Resolves the return type of a builtin method on a receiver of [receiverType]. */
-    private fun builtinMethodReturnType(receiverType: IrType, name: String): IrType = when {
-        receiverType is IrType.Array && name == "add" -> IrType.Unit
-        receiverType is IrType.Array && (name == "isEmpty" || name == "isNotEmpty") -> IrType.Bool
+    private fun builtinMethodReturnType(receiverType: IrType, name: String): IrType = when (receiverType) {
+        is IrType.Array -> when (name) {
+            "add", "insert", "remove" -> IrType.Unit
+            "contains", "isEmpty", "isNotEmpty" -> IrType.Bool
+            "indexOf" -> IrType.Int
+            else -> IrType.Any
+        }
+        is IrType.Set -> when (name) {
+            "add", "remove", "contains", "isEmpty", "isNotEmpty" -> IrType.Bool
+            "clear" -> IrType.Unit
+            else -> IrType.Any
+        }
+        is IrType.Map -> when (name) {
+            "get" -> receiverType.value
+            "put", "clear" -> IrType.Unit
+            "containsKey", "isEmpty", "isNotEmpty" -> IrType.Bool
+            else -> IrType.Any
+        }
+        IrType.String -> when (name) {
+            "toUpperCase", "toLowerCase", "trim", "replace" -> IrType.String
+            "contains", "startsWith", "endsWith" -> IrType.Bool
+            "split" -> IrType.Array(IrType.String)
+            "indexOf" -> IrType.Int
+            else -> IrType.Any
+        }
         else -> IrType.Any
     }
 
@@ -977,7 +1015,7 @@ class IrGenerator(private val table: SymbolTable) {
         is IrType.Float -> IrExpr.RealLiteral(0.0, type)
         is IrType.String -> IrExpr.StringLiteral("")
         is IrType.Bool -> IrExpr.BoolLiteral(false)
-        is IrType.Char -> IrExpr.CharLiteral(' ')
+        is IrType.Char -> IrExpr.CharLiteral('\u0000')
         else -> IrExpr.Var("__null", IrType.Any)
     }
 }

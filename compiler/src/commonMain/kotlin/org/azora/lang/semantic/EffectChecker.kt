@@ -227,6 +227,7 @@ class EffectChecker {
             is Expr.Grouping -> collectCallsFromExpr(expr.expr, calls)
             is Expr.Range -> { collectCallsFromExpr(expr.from, calls); collectCallsFromExpr(expr.to, calls) }
             is Expr.ArrayLiteral -> expr.elements.forEach { collectCallsFromExpr(it, calls) }
+            is Expr.SetLiteral -> expr.elements.forEach { collectCallsFromExpr(it, calls) }
             is Expr.Index -> { collectCallsFromExpr(expr.target, calls); collectCallsFromExpr(expr.index, calls) }
             is Expr.Member -> collectCallsFromExpr(expr.target, calls)
             is Expr.MethodCall -> { collectCallsFromExpr(expr.target, calls); expr.args.forEach { collectCallsFromExpr(it, calls) } }

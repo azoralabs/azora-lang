@@ -88,6 +88,9 @@ sealed class IrType {
     /** Map type `[K: V]`. */
     data class Map(val key: IrType, val value: IrType) : IrType() { override fun toString() = "[$key: $value]" }
 
+    /** Set type `![T]`. */
+    data class Set(val element: IrType) : IrType() { override fun toString() = "![$element]" }
+
     /** Function type `(A, B) -> R`. */
     data class Function(val params: List<IrType>, val ret: IrType) : IrType() { override fun toString() = "(${params.joinToString(", ")}) -> $ret" }
 
@@ -172,6 +175,7 @@ sealed class IrType {
             }
             is TypeRef.Array -> Array(resolve(ref.element, typeParams))
             is TypeRef.Map -> Map(resolve(ref.key, typeParams), resolve(ref.value, typeParams))
+            is TypeRef.Set -> Set(resolve(ref.element, typeParams))
             is TypeRef.Function -> Function(ref.params.map { resolve(it, typeParams) }, resolve(ref.ret, typeParams))
             is TypeRef.Tuple -> Tuple(ref.elements.map { resolve(it, typeParams) })
             is TypeRef.Nullable -> Nullable(resolve(ref.inner, typeParams))
@@ -363,6 +367,9 @@ sealed class IrExpr {
     /** Map literal `["k": v, "k2": v2]`. [type] is an [IrType.Map]. */
     data class MapLit(val entries: List<Pair<IrExpr, IrExpr>>, override val type: IrType) : IrExpr()
 
+    /** Set literal `![a, b, c]`. */
+    data class SetLit(val elements: List<IrExpr>, override val type: IrType) : IrExpr()
+
     /**
      * Index access `target[index]`.
      *
@@ -480,6 +487,7 @@ sealed class IrExpr {
         is Call -> "$name(${args.joinToString(", ") { it.prettyPrint() }})"
         is ArrayLiteral -> "[${elements.joinToString(", ") { it.prettyPrint() }}]"
         is MapLit -> "[${entries.joinToString(", ") { "${it.first.prettyPrint()} : ${it.second.prettyPrint()}" }}]"
+        is SetLit -> "![${elements.joinToString(", ") { it.prettyPrint() }}]"
         is Index -> "${target.prettyPrint()}[${index.prettyPrint()}]"
         is Member -> "${target.prettyPrint()}.$name"
         is MethodCall -> "${target.prettyPrint()}.$name(${args.joinToString(", ") { it.prettyPrint() }})"
@@ -1123,6 +1131,10 @@ private fun dumpIrExprTree(sb: StringBuilder, expr: IrExpr, indent: String) {
                 dumpIrExprTree(sb, k, "$indent        ")
                 dumpIrExprTree(sb, v, "$indent        ")
             }
+        }
+        is IrExpr.SetLit -> {
+            sb.appendLine("${indent}IrSetLiteral : ${expr.type}")
+            for (elem in expr.elements) dumpIrExprTree(sb, elem, "$indent    ")
         }
         is IrExpr.Index -> {
             sb.appendLine("${indent}IrIndex : ${expr.type}")

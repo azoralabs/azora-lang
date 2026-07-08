@@ -1225,6 +1225,13 @@ class Parser(private val tokens: List<Token>) {
      */
     private fun parseTypeAtom(): TypeRef {
         return when {
+            check(TokenType.BANG) -> {
+                advance()
+                consume(TokenType.L_BRACKET, "Expected '[' after '!' in set type")
+                val element = parseTypeName()
+                consume(TokenType.R_BRACKET, "Expected ']' in set type")
+                TypeRef.Set(element)
+            }
             check(TokenType.L_BRACKET) -> {
                 advance() // consume '['
                 val first = parseTypeName()
@@ -2471,6 +2478,16 @@ class Parser(private val tokens: List<Token>) {
             val typeName = consume(TokenType.IDENTIFIER, "Expected type name after 'inject'").lexeme
             // Chain into parsePostfix so `inject Config.get()` works.
             return parsePostfix(Expr.Inject(typeName, at.line, at.column, at.lexeme.length))
+        }
+        if (check(TokenType.BANG) && peekNext()?.type == TokenType.L_BRACKET) {
+            val at = advance()
+            advance() // '['
+            val elements = mutableListOf<Expr>()
+            if (!check(TokenType.R_BRACKET)) {
+                do { elements += parseExpr() } while (match(TokenType.COMMA))
+            }
+            consume(TokenType.R_BRACKET, "Expected ']' after set elements")
+            return Expr.SetLiteral(elements, at.line, at.column, at.lexeme.length)
         }
         if (check(TokenType.BANG) || check(TokenType.MINUS) || check(TokenType.TILDE)) {
             val op = advance()

@@ -329,6 +329,7 @@ class KotlinCodegen {
         is IrExpr.Await -> emitExpr(expr.value) // no coroutine runtime: emit the task inline
         is IrExpr.Spread -> "*${emitExpr(expr.array)}" // Kotlin spread operator
         is IrExpr.ArrayLiteral -> "mutableListOf(${expr.elements.joinToString(", ") { emitExpr(it) }})"
+        is IrExpr.SetLit -> "mutableSetOf(${expr.elements.joinToString(", ") { emitExpr(it) }})"
         is IrExpr.MapLit -> "mutableMapOf(${expr.entries.joinToString(", ") { "${emitExpr(it.first)} to ${emitExpr(it.second)}" }})"
         is IrExpr.Index -> "${emitExpr(expr.target)}[${emitExpr(expr.index)}]"
         is IrExpr.Member -> {
@@ -426,6 +427,7 @@ class KotlinCodegen {
         IrType.Float -> "Float"
         IrType.Decimal -> "Double"   // best available JVM type
         is IrType.Array -> "MutableList<${mapType(type.element)}>"
+        is IrType.Set -> "MutableSet<${mapType(type.element)}>"
         is IrType.Map -> "MutableMap<${mapType(type.key)}, ${mapType(type.value)}>"
         is IrType.Pointer -> "AzoraPtr<${mapType(type.inner)}>"
         is IrType.Function -> "(${type.params.joinToString(", ") { mapType(it) }}) -> ${mapType(type.ret)}"

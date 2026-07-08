@@ -91,6 +91,12 @@ class LlvmCodegen {
     /** Declared parameter types per function (user functions + bridge externs), for call-site coercion. */
     private val funcParamTypes = mutableMapOf<String, List<IrType>>()
 
+    /** LLVM element types for top-level and thread-local variables. */
+    private val globalVars = mutableMapOf<String, String>()
+
+    private data class DynamicGlobalInitializer(val name: String, val type: IrType, val initializer: IrExpr)
+    private val dynamicGlobalInitializers = mutableListOf<DynamicGlobalInitializer>()
+
     /** True once the current basic block has a terminator. */
     private var terminated = false
 
@@ -109,9 +115,12 @@ class LlvmCodegen {
     private var usesStrcpy = false
     private var usesStrcat = false
     private var usesStrcmp = false
+    private var usesMemcpy = false
     private var usesSnprintf = false
     private var usesStrConcat = false
     private var usesStrRepeat = false
+    private var usesArrayGrow = false
+    private var usesMapGrow = false
     private var usesIntToStr = false
     private var usesUintToStr = false
     private var usesRealToStr = false
@@ -147,9 +156,12 @@ class LlvmCodegen {
         usesStrcpy = false
         usesStrcat = false
         usesStrcmp = false
+        usesMemcpy = false
         usesSnprintf = false
         usesStrConcat = false
         usesStrRepeat = false
+        usesArrayGrow = false
+        usesMapGrow = false
         usesIntToStr = false
         usesUintToStr = false
         usesRealToStr = false
@@ -158,10 +170,18 @@ class LlvmCodegen {
 
         structDefs.clear()
         funcParamTypes.clear()
+        globalVars.clear()
+        dynamicGlobalInitializers.clear()
         for (item in program.items) {
             when (item) {
                 is IrTopLevel.Func -> funcParamTypes[item.function.name] = item.function.params.map { it.second }
                 is IrTopLevel.Extern -> funcParamTypes[item.name] = item.params.map { it.second }
+                is IrTopLevel.Global -> when (val stmt = item.stmt) {
+                    is IrStmt.VarDecl -> globalVars[stmt.name] = mapType(stmt.type)
+                    is IrStmt.FinDecl -> globalVars[stmt.name] = mapType(stmt.type)
+                    is IrStmt.LetDecl -> globalVars[stmt.name] = mapType(stmt.type)
+                    else -> {}
+                }
                 else -> {}
             }
         }
@@ -191,6 +211,13 @@ class LlvmCodegen {
                 emitGlobal(global.stmt)
                 body.append(out)
             }
+            body.appendLine()
+        }
+
+        if (dynamicGlobalInitializers.isNotEmpty()) {
+            out.clear()
+            emitGlobalInitializerFunction()
+            body.append(out)
             body.appendLine()
         }
 
@@ -244,6 +271,7 @@ class LlvmCodegen {
         if (usesStrcpy) line("declare i8* @strcpy(i8*, i8*)")
         if (usesStrcat) line("declare i8* @strcat(i8*, i8*)")
         if (usesStrcmp) line("declare i32 @strcmp(i8*, i8*)")
+        if (usesMemcpy) line("declare i8* @memcpy(i8*, i8*, i64)")
         line("")
         out.append(body)
         if (helpers.isNotEmpty()) out.append(helpers)
@@ -277,11 +305,33 @@ class LlvmCodegen {
                 "getelementptr ([${ref.byteLen} x i8], [${ref.byteLen} x i8]* ${ref.name}, i64 0, i64 0)"
             }
             else -> {
-                line("; TODO: non-constant global initializer for $name")
+                dynamicGlobalInitializers += DynamicGlobalInitializer(name, type, initializer)
                 "zeroinitializer"
             }
         }
-        line("@$name = global $llvmType $value")
+        val storage = if (name.startsWith("__tl__")) "thread_local global" else "global"
+        line("@$name = $storage $llvmType $value")
+    }
+
+    private fun emitGlobalInitializerFunction() {
+        localVars.clear()
+        allocaSlots.clear()
+        loopStack.clear()
+        terminated = false
+        currentBlock = "entry"
+        currentReturnType = IrType.Unit
+        currentIsMain = false
+
+        line("define void @__azora_init_globals() {")
+        line("entry:")
+        for ((name, type, initializer) in dynamicGlobalInitializers) {
+            val raw = emitExpr(initializer)
+            val value = coerceNumeric(raw, initializer.type, type)
+            val llvmType = mapType(type)
+            emit("  store $llvmType $value, $llvmType* @$name")
+        }
+        emitTerminator("  ret void")
+        line("}")
     }
 
     // -----------------------------------------------------------------------
@@ -337,7 +387,16 @@ class LlvmCodegen {
                     slots.add(stmt.counter to mapType(stmt.start.type))
                     collectLocalSlots(stmt.body, slots)
                 }
-                is IrStmt.ForEach -> collectLocalSlots(stmt.body, slots)
+                is IrStmt.ForEach -> {
+                    val elemType = when (val type = stmt.iterable.type) {
+                        is IrType.Array -> type.element
+                        is IrType.Set -> type.element
+                        else -> IrType.Any
+                    }
+                    slots.add(stmt.elem to mapType(elemType))
+                    slots.add(foreachIndexName(stmt.elem) to "i64")
+                    collectLocalSlots(stmt.body, slots)
+                }
                 is IrStmt.Loop -> collectLocalSlots(stmt.body, slots)
                 is IrStmt.When -> {
                     stmt.branches.forEach { collectLocalSlots(it.body, slots) }
@@ -386,6 +445,10 @@ class LlvmCodegen {
         // All local allocas live in the entry block (never inside loops).
         emitEntryAllocas(func.body)
 
+        if (isMain && dynamicGlobalInitializers.isNotEmpty()) {
+            emit("  call void @__azora_init_globals()")
+        }
+
         emitStmts(func.body)
 
         // Guarantee the final block has a terminator.
@@ -422,9 +485,10 @@ class LlvmCodegen {
                     val value = emitExpr(stmt.value)
                     emit("  store $type $value, $type* $alloca")
                 } else {
-                    // Global or thread-local variable — not lowered (LLVM has no global store model yet).
-                    emitExpr(stmt.value)
-                    emit("  ; assignment to global/thread-local ${stmt.name} — not lowered")
+                    val type = globalVars[stmt.name]
+                        ?: error("Assignment target '${stmt.name}' has no local or global storage")
+                    val value = emitExpr(stmt.value)
+                    emit("  store $type $value, $type* @${stmt.name}")
                 }
             }
             is IrStmt.Return -> {
@@ -464,10 +528,7 @@ class LlvmCodegen {
             is IrStmt.MemberAssign -> emitMemberAssign(stmt)
             is IrStmt.Defer -> emit("  ; defer — not lowered")
             is IrStmt.Yield -> emit("  ; yield — not lowered (interpreter-only)")
-            is IrStmt.ForEach -> {
-                emitExpr(stmt.iterable)
-                emit("  ; for-each over ${stmt.elem} — not lowered (interpreter-only)")
-            }
+            is IrStmt.ForEach -> emitForEach(stmt)
             is IrStmt.Throw -> {
                 emitExpr(stmt.value)
                 emit("  ; throw — lowered to abort")
@@ -595,6 +656,76 @@ class LlvmCodegen {
         if (stmt.reverse) emit("  $incd = sub $t $incLoaded, $stepVal")
         else emit("  $incd = add $t $incLoaded, $stepVal")
         emit("  store $t $incd, $t* $counterAlloca")
+        emitTerminator("  br label %$condLabel")
+
+        startBlock(endLabel)
+    }
+
+    private fun emitForEach(stmt: IrStmt.ForEach) {
+        val elemType = when (val type = stmt.iterable.type) {
+            is IrType.Array -> type.element
+            is IrType.Set -> type.element
+            else -> null
+        } ?: run {
+            emitExpr(stmt.iterable)
+            emit("  ; for-each over ${stmt.elem} — not lowered for ${stmt.iterable.type}")
+            return
+        }
+        val et = mapType(elemType)
+
+        val elemAlloca = allocaSlots[stmt.elem to et] ?: run {
+            val reg = "%loc${allocaCounter++}.${sanitizeName(stmt.elem)}"
+            emit("  $reg = alloca $et")
+            allocaSlots[stmt.elem to et] = reg
+            reg
+        }
+        val indexName = foreachIndexName(stmt.elem)
+        val indexAlloca = allocaSlots[indexName to "i64"] ?: run {
+            val reg = "%loc${allocaCounter++}.${sanitizeName(indexName)}"
+            emit("  $reg = alloca i64")
+            allocaSlots[indexName to "i64"] = reg
+            reg
+        }
+
+        val raw = emitExpr(stmt.iterable)
+        val len = emitArrayLengthI64(raw)
+        val dataRaw = nextTmp()
+        emit("  $dataRaw = getelementptr i8, i8* $raw, i64 8")
+        val data = nextTmp()
+        emit("  $data = bitcast i8* $dataRaw to $et*")
+        emit("  store i64 0, i64* $indexAlloca")
+
+        val condLabel = nextLabel("foreach_cond")
+        val bodyLabel = nextLabel("foreach_body")
+        val incLabel = nextLabel("foreach_inc")
+        val endLabel = nextLabel("foreach_end")
+
+        emitTerminator("  br label %$condLabel")
+        startBlock(condLabel)
+        val idx = nextTmp()
+        emit("  $idx = load i64, i64* $indexAlloca")
+        val cmp = nextTmp()
+        emit("  $cmp = icmp ult i64 $idx, $len")
+        emitTerminator("  br i1 $cmp, label %$bodyLabel, label %$endLabel")
+
+        startBlock(bodyLabel)
+        val ep = nextTmp()
+        emit("  $ep = getelementptr $et, $et* $data, i64 $idx")
+        val value = nextTmp()
+        emit("  $value = load $et, $et* $ep, align 1")
+        emit("  store $et $value, $et* $elemAlloca")
+        localVars[stmt.elem] = elemAlloca to et
+        loopStack.addLast(LoopTarget(incLabel, endLabel))
+        emitStmts(stmt.body)
+        loopStack.removeLast()
+        emitTerminator("  br label %$incLabel")
+
+        startBlock(incLabel)
+        val incLoaded = nextTmp()
+        emit("  $incLoaded = load i64, i64* $indexAlloca")
+        val next = nextTmp()
+        emit("  $next = add i64 $incLoaded, 1")
+        emit("  store i64 $next, i64* $indexAlloca")
         emitTerminator("  br label %$condLabel")
 
         startBlock(endLabel)
@@ -728,19 +859,11 @@ class LlvmCodegen {
         is IrExpr.Call -> emitCall(expr)
         is IrExpr.StringTemplate -> emitStringTemplate(expr)
         is IrExpr.ArrayLiteral -> emitArrayLiteral(expr)
-        is IrExpr.MapLit -> {
-            for ((k, v) in expr.entries) { emitExpr(k); emitExpr(v) }
-            emit("  ; map literal — aggregate lowering not yet implemented")
-            "null"
-        }
+        is IrExpr.SetLit -> emitSetLiteral(expr)
+        is IrExpr.MapLit -> emitMapLiteral(expr)
         is IrExpr.Index -> emitIndexRead(expr)
         is IrExpr.Member -> emitMemberRead(expr)
-        is IrExpr.MethodCall -> {
-            emitExpr(expr.target)
-            for (a in expr.args) emitExpr(a)
-            emit("  ; method .${expr.name} — not lowered")
-            defaultValue(expr.type)
-        }
+        is IrExpr.MethodCall -> emitMethodCall(expr)
         is IrExpr.StructCtor -> emitStructCtor(expr)
         is IrExpr.TupleLit -> {
             for (e in expr.elements) emitExpr(e)
@@ -845,10 +968,17 @@ class LlvmCodegen {
         return tmp
     }
 
+    private fun foreachIndexName(elem: String): String = "__foreach_idx_$elem"
+
     /** Widens an index value to i64 for getelementptr. */
     private fun indexToI64(value: String, type: IrType): String = when (mapType(type)) {
         "i64" -> value
-        else -> { val t = nextTmp(); emit("  $t = sext ${mapType(type)} $value to i64"); t }
+        else -> {
+            val t = nextTmp()
+            val inst = if (isUnsigned(type) || type == IrType.Char) "zext" else "sext"
+            emit("  $t = $inst ${mapType(type)} $value to i64")
+            t
+        }
     }
 
     /** `Name(args)` → malloc + field stores; the value is the typed pointer. */
@@ -904,15 +1034,15 @@ class LlvmCodegen {
     private fun emitMemberRead(expr: IrExpr.Member): String {
         val targetType = expr.target.type
         // Array/string length.
-        if (expr.name == "length" && targetType is IrType.Array) {
+        if (expr.name == "length" && (targetType is IrType.Array || targetType is IrType.Map || targetType is IrType.Set)) {
             val raw = emitExpr(expr.target)
-            val lenPtr = nextTmp()
-            emit("  $lenPtr = bitcast i8* $raw to i64*")
-            val len = nextTmp()
-            emit("  $len = load i64, i64* $lenPtr")
+            val len = emitArrayLengthI64(raw)
             val t = nextTmp()
             emit("  $t = trunc i64 $len to i32")
             return t
+        }
+        if ((expr.name == "isEmpty" || expr.name == "isNotEmpty") && (targetType is IrType.Array || targetType is IrType.Map || targetType is IrType.Set)) {
+            return emitArrayEmptyCheck(expr.target, notEmpty = expr.name == "isNotEmpty")
         }
         if (expr.name == "length" && targetType == IrType.String) {
             usesStrlen = true
@@ -950,6 +1080,73 @@ class LlvmCodegen {
         emit("  ; member assign .${stmt.name} on ${stmt.target.type} — not lowered")
     }
 
+    private fun emitMethodCall(expr: IrExpr.MethodCall): String {
+        val arrayType = expr.target.type as? IrType.Array
+        if (arrayType != null) {
+            when (expr.name) {
+                "add" -> {
+                    if (expr.args.size == 1) {
+                        emitArrayAdd(expr.target, expr.args[0], arrayType.element)
+                        return "void"
+                    }
+                }
+                "isEmpty" -> return emitArrayEmptyCheck(expr.target, notEmpty = false)
+                "isNotEmpty" -> return emitArrayEmptyCheck(expr.target, notEmpty = true)
+                "contains" -> {
+                    if (expr.args.size == 1) return emitArrayContains(expr.target, expr.args[0], arrayType.element)
+                }
+            }
+        }
+
+        val setType = expr.target.type as? IrType.Set
+        if (setType != null) {
+            when (expr.name) {
+                "add" -> if (expr.args.size == 1) return emitSetAdd(expr.target, expr.args[0], setType.element)
+                "contains" -> if (expr.args.size == 1) return emitArrayContains(expr.target, expr.args[0], setType.element)
+                "remove" -> if (expr.args.size == 1) return emitSetRemove(expr.target, expr.args[0], setType.element)
+                "clear" -> {
+                    val raw = emitExpr(expr.target)
+                    val lenPtr = nextTmp()
+                    emit("  $lenPtr = bitcast i8* $raw to i64*")
+                    emit("  store i64 0, i64* $lenPtr")
+                    return "void"
+                }
+                "isEmpty" -> return emitArrayEmptyCheck(expr.target, notEmpty = false)
+                "isNotEmpty" -> return emitArrayEmptyCheck(expr.target, notEmpty = true)
+            }
+        }
+
+        val map = expr.target.type as? IrType.Map
+        if (map != null) {
+            when (expr.name) {
+                "get" -> if (expr.args.size == 1) {
+                    return emitMapIndexRead(IrExpr.Index(expr.target, expr.args[0], map.value), map)
+                }
+                "put" -> if (expr.args.size == 2) {
+                    emitMapIndexAssign(IrStmt.IndexAssign(expr.target, expr.args[0], expr.args[1]), map)
+                    return "void"
+                }
+                "containsKey" -> if (expr.args.size == 1) {
+                    return emitArrayContains(expr.target, expr.args[0], map.key)
+                }
+                "clear" -> {
+                    val raw = emitExpr(expr.target)
+                    val lenPtr = nextTmp()
+                    emit("  $lenPtr = bitcast i8* $raw to i64*")
+                    emit("  store i64 0, i64* $lenPtr")
+                    return "void"
+                }
+                "isEmpty" -> return emitArrayEmptyCheck(expr.target, notEmpty = false)
+                "isNotEmpty" -> return emitArrayEmptyCheck(expr.target, notEmpty = true)
+            }
+        }
+
+        emitExpr(expr.target)
+        for (a in expr.args) emitExpr(a)
+        emit("  ; method .${expr.name} — not lowered")
+        return defaultValue(expr.type)
+    }
+
     /** `[a, b, c]` → malloc(8 + n*elemSize), i64 length header, packed elements. */
     private fun emitArrayLiteral(expr: IrExpr.ArrayLiteral): String {
         usesMalloc = true
@@ -975,10 +1172,489 @@ class LlvmCodegen {
                 val value = coerceNumeric(rawVal, argType, elemType)
                 val ep = nextTmp()
                 emit("  $ep = getelementptr $et, $et* $data, i64 $i")
-                emit("  store $et $value, $et* $ep")
+                emit("  store $et $value, $et* $ep, align 1")
             }
         }
         return raw
+    }
+
+    private fun emitSetLiteral(expr: IrExpr.SetLit): String {
+        usesMalloc = true
+        val setType = expr.type as? IrType.Set ?: return "null"
+        var raw = nextTmp()
+        emit("  $raw = call i8* @malloc(i64 8)")
+        val lenPtr = nextTmp()
+        emit("  $lenPtr = bitcast i8* $raw to i64*")
+        emit("  store i64 0, i64* $lenPtr")
+        for (element in expr.elements) {
+            val valueRaw = emitExpr(element)
+            val value = coerceNumeric(valueRaw, element.type, setType.element)
+            raw = emitSetInsertRaw(raw, value, setType.element).first
+        }
+        return raw
+    }
+
+    private fun emitSetAdd(target: IrExpr, valueExpr: IrExpr, elementType: IrType): String {
+        val raw = emitExpr(target)
+        val valueRaw = emitExpr(valueExpr)
+        val value = coerceNumeric(valueRaw, valueExpr.type, elementType)
+        val (updated, added) = emitSetInsertRaw(raw, value, elementType)
+        variableStorage(target)?.let { (address, type) ->
+            emit("  store $type $updated, $type* $address")
+        } ?: emit("  ; set add receiver is not assignable — grown buffer not stored")
+        return added
+    }
+
+    private fun emitSetInsertRaw(raw: String, value: String, elementType: IrType): Pair<String, String> {
+        usesArrayGrow = true
+        val et = mapType(elementType)
+        val length = emitArrayLengthI64(raw)
+        val dataRaw = nextTmp()
+        emit("  $dataRaw = getelementptr i8, i8* $raw, i64 8")
+        val data = nextTmp()
+        emit("  $data = bitcast i8* $dataRaw to $et*")
+
+        val condLabel = nextLabel("set_add_cond")
+        val cmpLabel = nextLabel("set_add_cmp")
+        val nextLabel = nextLabel("set_add_next")
+        val foundLabel = nextLabel("set_add_found")
+        val insertLabel = nextLabel("set_add_insert")
+        val endLabel = nextLabel("set_add_end")
+        val nextIndex = "%set_add_next_${labelCounter++}"
+        val grownValue = "%set_add_grown_${labelCounter++}"
+        val preheader = currentBlock
+
+        emitTerminator("  br label %$condLabel")
+        startBlock(condLabel)
+        val idx = nextTmp()
+        emit("  $idx = phi i64 [ 0, %$preheader ], [ $nextIndex, %$nextLabel ]")
+        val inRange = nextTmp()
+        emit("  $inRange = icmp ult i64 $idx, $length")
+        emitTerminator("  br i1 $inRange, label %$cmpLabel, label %$insertLabel")
+
+        startBlock(cmpLabel)
+        val ep = nextTmp()
+        emit("  $ep = getelementptr $et, $et* $data, i64 $idx")
+        val candidate = nextTmp()
+        emit("  $candidate = load $et, $et* $ep, align 1")
+        val equal = emitArrayElementEq(elementType, et, candidate, value)
+        emitTerminator("  br i1 $equal, label %$foundLabel, label %$nextLabel")
+
+        startBlock(nextLabel)
+        emit("  $nextIndex = add i64 $idx, 1")
+        emitTerminator("  br label %$condLabel")
+
+        startBlock(foundLabel)
+        emitTerminator("  br label %$endLabel")
+
+        startBlock(insertLabel)
+        emit("  $grownValue = call i8* @__azora_array_grow(i8* $raw, i64 ${sizeOfScalar(elementType)})")
+        val grownDataRaw = nextTmp()
+        emit("  $grownDataRaw = getelementptr i8, i8* $grownValue, i64 8")
+        val grownData = nextTmp()
+        emit("  $grownData = bitcast i8* $grownDataRaw to $et*")
+        val addedPtr = nextTmp()
+        emit("  $addedPtr = getelementptr $et, $et* $grownData, i64 $length")
+        emit("  store $et $value, $et* $addedPtr, align 1")
+        emitTerminator("  br label %$endLabel")
+
+        startBlock(endLabel)
+        val updated = nextTmp()
+        emit("  $updated = phi i8* [ $raw, %$foundLabel ], [ $grownValue, %$insertLabel ]")
+        val added = nextTmp()
+        emit("  $added = phi i1 [ false, %$foundLabel ], [ true, %$insertLabel ]")
+        return updated to added
+    }
+
+    private fun emitSetRemove(target: IrExpr, valueExpr: IrExpr, elementType: IrType): String {
+        val et = mapType(elementType)
+        val raw = emitExpr(target)
+        val valueRaw = emitExpr(valueExpr)
+        val value = coerceNumeric(valueRaw, valueExpr.type, elementType)
+        val lenPtr = nextTmp()
+        emit("  $lenPtr = bitcast i8* $raw to i64*")
+        val length = nextTmp()
+        emit("  $length = load i64, i64* $lenPtr")
+        val dataRaw = nextTmp()
+        emit("  $dataRaw = getelementptr i8, i8* $raw, i64 8")
+        val data = nextTmp()
+        emit("  $data = bitcast i8* $dataRaw to $et*")
+
+        val condLabel = nextLabel("set_remove_cond")
+        val cmpLabel = nextLabel("set_remove_cmp")
+        val nextLabel = nextLabel("set_remove_next")
+        val foundLabel = nextLabel("set_remove_found")
+        val shiftCondLabel = nextLabel("set_remove_shift_cond")
+        val shiftBodyLabel = nextLabel("set_remove_shift_body")
+        val shrinkLabel = nextLabel("set_remove_shrink")
+        val missLabel = nextLabel("set_remove_miss")
+        val endLabel = nextLabel("set_remove_end")
+        val nextIndex = "%set_remove_next_${labelCounter++}"
+        val shiftedIndex = "%set_remove_shift_${labelCounter++}"
+        val preheader = currentBlock
+
+        emitTerminator("  br label %$condLabel")
+        startBlock(condLabel)
+        val idx = nextTmp()
+        emit("  $idx = phi i64 [ 0, %$preheader ], [ $nextIndex, %$nextLabel ]")
+        val inRange = nextTmp()
+        emit("  $inRange = icmp ult i64 $idx, $length")
+        emitTerminator("  br i1 $inRange, label %$cmpLabel, label %$missLabel")
+
+        startBlock(cmpLabel)
+        val ep = nextTmp()
+        emit("  $ep = getelementptr $et, $et* $data, i64 $idx")
+        val candidate = nextTmp()
+        emit("  $candidate = load $et, $et* $ep, align 1")
+        val equal = emitArrayElementEq(elementType, et, candidate, value)
+        emitTerminator("  br i1 $equal, label %$foundLabel, label %$nextLabel")
+
+        startBlock(nextLabel)
+        emit("  $nextIndex = add i64 $idx, 1")
+        emitTerminator("  br label %$condLabel")
+
+        startBlock(foundLabel)
+        emitTerminator("  br label %$shiftCondLabel")
+
+        startBlock(shiftCondLabel)
+        val shiftIndex = nextTmp()
+        emit("  $shiftIndex = phi i64 [ $idx, %$foundLabel ], [ $shiftedIndex, %$shiftBodyLabel ]")
+        val lastIndex = nextTmp()
+        emit("  $lastIndex = sub i64 $length, 1")
+        val needsShift = nextTmp()
+        emit("  $needsShift = icmp ult i64 $shiftIndex, $lastIndex")
+        emitTerminator("  br i1 $needsShift, label %$shiftBodyLabel, label %$shrinkLabel")
+
+        startBlock(shiftBodyLabel)
+        val sourceIndex = nextTmp()
+        emit("  $sourceIndex = add i64 $shiftIndex, 1")
+        val sourcePtr = nextTmp()
+        emit("  $sourcePtr = getelementptr $et, $et* $data, i64 $sourceIndex")
+        val shiftedValue = nextTmp()
+        emit("  $shiftedValue = load $et, $et* $sourcePtr, align 1")
+        val destinationPtr = nextTmp()
+        emit("  $destinationPtr = getelementptr $et, $et* $data, i64 $shiftIndex")
+        emit("  store $et $shiftedValue, $et* $destinationPtr, align 1")
+        emit("  $shiftedIndex = add i64 $shiftIndex, 1")
+        emitTerminator("  br label %$shiftCondLabel")
+
+        startBlock(shrinkLabel)
+        val newLength = nextTmp()
+        emit("  $newLength = sub i64 $length, 1")
+        emit("  store i64 $newLength, i64* $lenPtr")
+        emitTerminator("  br label %$endLabel")
+
+        startBlock(missLabel)
+        emitTerminator("  br label %$endLabel")
+
+        startBlock(endLabel)
+        val removed = nextTmp()
+        emit("  $removed = phi i1 [ true, %$shrinkLabel ], [ false, %$missLabel ]")
+        return removed
+    }
+
+    /** Map layout: `[i64 length | packed keys | packed values]`. */
+    private fun emitMapLiteral(expr: IrExpr.MapLit): String {
+        usesMalloc = true
+        val mapType = expr.type as? IrType.Map ?: return "null"
+        val keyType = mapType.key
+        val valueType = mapType.value
+        val kt = mapType(keyType)
+        val vt = mapType(valueType)
+        val keySize = sizeOfScalar(keyType)
+        val valueSize = sizeOfScalar(valueType)
+        val count = expr.entries.size
+        val total = 8 + count * keySize + count * valueSize
+        val entries = expr.entries.map { (key, value) ->
+            (emitExpr(key) to key.type) to (emitExpr(value) to value.type)
+        }
+
+        val raw = nextTmp()
+        emit("  $raw = call i8* @malloc(i64 $total)")
+        val lenPtr = nextTmp()
+        emit("  $lenPtr = bitcast i8* $raw to i64*")
+        emit("  store i64 $count, i64* $lenPtr")
+        if (entries.isNotEmpty()) {
+            val keysRaw = nextTmp()
+            emit("  $keysRaw = getelementptr i8, i8* $raw, i64 8")
+            val keys = nextTmp()
+            emit("  $keys = bitcast i8* $keysRaw to $kt*")
+            val valuesRaw = nextTmp()
+            emit("  $valuesRaw = getelementptr i8, i8* $keysRaw, i64 ${count * keySize}")
+            val values = nextTmp()
+            emit("  $values = bitcast i8* $valuesRaw to $vt*")
+            for (i in entries.indices) {
+                val (keyPair, valuePair) = entries[i]
+                val key = coerceNumeric(keyPair.first, keyPair.second, keyType)
+                val value = coerceNumeric(valuePair.first, valuePair.second, valueType)
+                val kp = nextTmp()
+                emit("  $kp = getelementptr $kt, $kt* $keys, i64 $i")
+                emit("  store $kt $key, $kt* $kp, align 1")
+                val vp = nextTmp()
+                emit("  $vp = getelementptr $vt, $vt* $values, i64 $i")
+                emit("  store $vt $value, $vt* $vp, align 1")
+            }
+        }
+        return raw
+    }
+
+    private fun emitMapPointers(
+        raw: String,
+        length: String,
+        keyType: IrType,
+        valueType: IrType,
+    ): Pair<String, String> {
+        val kt = mapType(keyType)
+        val vt = mapType(valueType)
+        val keysRaw = nextTmp()
+        emit("  $keysRaw = getelementptr i8, i8* $raw, i64 8")
+        val keys = nextTmp()
+        emit("  $keys = bitcast i8* $keysRaw to $kt*")
+        val keyBytes = nextTmp()
+        emit("  $keyBytes = mul i64 $length, ${sizeOfScalar(keyType)}")
+        val valuesRaw = nextTmp()
+        emit("  $valuesRaw = getelementptr i8, i8* $keysRaw, i64 $keyBytes")
+        val values = nextTmp()
+        emit("  $values = bitcast i8* $valuesRaw to $vt*")
+        return keys to values
+    }
+
+    private fun emitMapIndexRead(expr: IrExpr.Index, map: IrType.Map): String {
+        val kt = mapType(map.key)
+        val vt = mapType(map.value)
+        val raw = emitExpr(expr.target)
+        val length = emitArrayLengthI64(raw)
+        val keyRaw = emitExpr(expr.index)
+        val key = coerceNumeric(keyRaw, expr.index.type, map.key)
+        val (keys, values) = emitMapPointers(raw, length, map.key, map.value)
+
+        val condLabel = nextLabel("map_get_cond")
+        val cmpLabel = nextLabel("map_get_cmp")
+        val nextLabel = nextLabel("map_get_next")
+        val foundLabel = nextLabel("map_get_found")
+        val missLabel = nextLabel("map_get_miss")
+        val endLabel = nextLabel("map_get_end")
+        val nextIndex = "%map_get_next_${labelCounter++}"
+        val foundValue = "%map_get_value_${labelCounter++}"
+        val preheader = currentBlock
+
+        emitTerminator("  br label %$condLabel")
+        startBlock(condLabel)
+        val idx = nextTmp()
+        emit("  $idx = phi i64 [ 0, %$preheader ], [ $nextIndex, %$nextLabel ]")
+        val inRange = nextTmp()
+        emit("  $inRange = icmp ult i64 $idx, $length")
+        emitTerminator("  br i1 $inRange, label %$cmpLabel, label %$missLabel")
+
+        startBlock(cmpLabel)
+        val kp = nextTmp()
+        emit("  $kp = getelementptr $kt, $kt* $keys, i64 $idx")
+        val candidate = nextTmp()
+        emit("  $candidate = load $kt, $kt* $kp, align 1")
+        val equal = emitArrayElementEq(map.key, kt, candidate, key)
+        emitTerminator("  br i1 $equal, label %$foundLabel, label %$nextLabel")
+
+        startBlock(nextLabel)
+        emit("  $nextIndex = add i64 $idx, 1")
+        emitTerminator("  br label %$condLabel")
+
+        startBlock(foundLabel)
+        val vp = nextTmp()
+        emit("  $vp = getelementptr $vt, $vt* $values, i64 $idx")
+        emit("  $foundValue = load $vt, $vt* $vp, align 1")
+        emitTerminator("  br label %$endLabel")
+
+        startBlock(missLabel)
+        emitTerminator("  br label %$endLabel")
+
+        startBlock(endLabel)
+        val result = nextTmp()
+        emit("  $result = phi $vt [ $foundValue, %$foundLabel ], [ ${defaultValue(map.value)}, %$missLabel ]")
+        return result
+    }
+
+    private fun emitMapIndexAssign(stmt: IrStmt.IndexAssign, map: IrType.Map) {
+        usesMapGrow = true
+        val kt = mapType(map.key)
+        val vt = mapType(map.value)
+        val raw = emitExpr(stmt.target)
+        val length = emitArrayLengthI64(raw)
+        val keyRaw = emitExpr(stmt.index)
+        val key = coerceNumeric(keyRaw, stmt.index.type, map.key)
+        val valueRaw = emitExpr(stmt.value)
+        val value = coerceNumeric(valueRaw, stmt.value.type, map.value)
+        val (keys, values) = emitMapPointers(raw, length, map.key, map.value)
+
+        val condLabel = nextLabel("map_set_cond")
+        val cmpLabel = nextLabel("map_set_cmp")
+        val nextLabel = nextLabel("map_set_next")
+        val foundLabel = nextLabel("map_set_found")
+        val insertLabel = nextLabel("map_set_insert")
+        val endLabel = nextLabel("map_set_end")
+        val nextIndex = "%map_set_next_${labelCounter++}"
+        val preheader = currentBlock
+
+        emitTerminator("  br label %$condLabel")
+        startBlock(condLabel)
+        val idx = nextTmp()
+        emit("  $idx = phi i64 [ 0, %$preheader ], [ $nextIndex, %$nextLabel ]")
+        val inRange = nextTmp()
+        emit("  $inRange = icmp ult i64 $idx, $length")
+        emitTerminator("  br i1 $inRange, label %$cmpLabel, label %$insertLabel")
+
+        startBlock(cmpLabel)
+        val kp = nextTmp()
+        emit("  $kp = getelementptr $kt, $kt* $keys, i64 $idx")
+        val candidate = nextTmp()
+        emit("  $candidate = load $kt, $kt* $kp, align 1")
+        val equal = emitArrayElementEq(map.key, kt, candidate, key)
+        emitTerminator("  br i1 $equal, label %$foundLabel, label %$nextLabel")
+
+        startBlock(nextLabel)
+        emit("  $nextIndex = add i64 $idx, 1")
+        emitTerminator("  br label %$condLabel")
+
+        startBlock(foundLabel)
+        val existingValue = nextTmp()
+        emit("  $existingValue = getelementptr $vt, $vt* $values, i64 $idx")
+        emit("  store $vt $value, $vt* $existingValue, align 1")
+        emitTerminator("  br label %$endLabel")
+
+        startBlock(insertLabel)
+        val grown = nextTmp()
+        emit("  $grown = call i8* @__azora_map_grow(i8* $raw, i64 ${sizeOfScalar(map.key)}, i64 ${sizeOfScalar(map.value)})")
+        val newLength = nextTmp()
+        emit("  $newLength = add i64 $length, 1")
+        val (newKeys, newValues) = emitMapPointers(grown, newLength, map.key, map.value)
+        val newKey = nextTmp()
+        emit("  $newKey = getelementptr $kt, $kt* $newKeys, i64 $length")
+        emit("  store $kt $key, $kt* $newKey, align 1")
+        val newValue = nextTmp()
+        emit("  $newValue = getelementptr $vt, $vt* $newValues, i64 $length")
+        emit("  store $vt $value, $vt* $newValue, align 1")
+        variableStorage(stmt.target)?.let { (address, type) ->
+            emit("  store $type $grown, $type* $address")
+        } ?: emit("  ; map insertion receiver is not assignable — grown buffer not stored")
+        emitTerminator("  br label %$endLabel")
+
+        startBlock(endLabel)
+    }
+
+    private fun emitArrayLengthI64(raw: String): String {
+        val lenPtr = nextTmp()
+        emit("  $lenPtr = bitcast i8* $raw to i64*")
+        val len = nextTmp()
+        emit("  $len = load i64, i64* $lenPtr")
+        return len
+    }
+
+    private fun emitArrayEmptyCheck(target: IrExpr, notEmpty: Boolean): String {
+        val raw = emitExpr(target)
+        val len = emitArrayLengthI64(raw)
+        val tmp = nextTmp()
+        val pred = if (notEmpty) "ne" else "eq"
+        emit("  $tmp = icmp $pred i64 $len, 0")
+        return tmp
+    }
+
+    private fun variableStorage(target: IrExpr): Pair<String, String>? {
+        val v = target as? IrExpr.Var ?: return null
+        val local = localVars[v.name]
+        if (local != null) return local
+        return "@${v.name}" to mapType(v.type)
+    }
+
+    private fun emitArrayAdd(target: IrExpr, valueExpr: IrExpr, elemType: IrType) {
+        usesArrayGrow = true
+        val et = mapType(elemType)
+        val raw = emitExpr(target)
+        val oldLen = emitArrayLengthI64(raw)
+        val rawValue = emitExpr(valueExpr)
+        val value = coerceNumeric(rawValue, valueExpr.type, elemType)
+        val grown = nextTmp()
+        emit("  $grown = call i8* @__azora_array_grow(i8* $raw, i64 ${sizeOfScalar(elemType)})")
+        val dataRaw = nextTmp()
+        emit("  $dataRaw = getelementptr i8, i8* $grown, i64 8")
+        val data = nextTmp()
+        emit("  $data = bitcast i8* $dataRaw to $et*")
+        val ep = nextTmp()
+        emit("  $ep = getelementptr $et, $et* $data, i64 $oldLen")
+        emit("  store $et $value, $et* $ep, align 1")
+
+        val storage = variableStorage(target)
+        if (storage != null) {
+            val (addr, type) = storage
+            emit("  store $type $grown, $type* $addr")
+        } else {
+            emit("  ; array add receiver is not assignable — grown buffer not stored")
+        }
+    }
+
+    private fun emitArrayContains(target: IrExpr, needleExpr: IrExpr, elemType: IrType): String {
+        val et = mapType(elemType)
+        val raw = emitExpr(target)
+        val len = emitArrayLengthI64(raw)
+        val needleRaw = emitExpr(needleExpr)
+        val needle = coerceNumeric(needleRaw, needleExpr.type, elemType)
+        val dataRaw = nextTmp()
+        emit("  $dataRaw = getelementptr i8, i8* $raw, i64 8")
+        val data = nextTmp()
+        emit("  $data = bitcast i8* $dataRaw to $et*")
+
+        val condLabel = nextLabel("contains_cond")
+        val cmpLabel = nextLabel("contains_cmp")
+        val nextLabel = nextLabel("contains_next")
+        val foundLabel = nextLabel("contains_found")
+        val missLabel = nextLabel("contains_miss")
+        val endLabel = nextLabel("contains_end")
+        val nextIndex = "%contains_next_${labelCounter++}"
+        val preheader = currentBlock
+
+        emitTerminator("  br label %$condLabel")
+        startBlock(condLabel)
+        val idx = nextTmp()
+        emit("  $idx = phi i64 [ 0, %$preheader ], [ $nextIndex, %$nextLabel ]")
+        val inRange = nextTmp()
+        emit("  $inRange = icmp ult i64 $idx, $len")
+        emitTerminator("  br i1 $inRange, label %$cmpLabel, label %$missLabel")
+
+        startBlock(cmpLabel)
+        val ep = nextTmp()
+        emit("  $ep = getelementptr $et, $et* $data, i64 $idx")
+        val item = nextTmp()
+        emit("  $item = load $et, $et* $ep, align 1")
+        val eq = emitArrayElementEq(elemType, et, item, needle)
+        emitTerminator("  br i1 $eq, label %$foundLabel, label %$nextLabel")
+
+        startBlock(nextLabel)
+        emit("  $nextIndex = add i64 $idx, 1")
+        emitTerminator("  br label %$condLabel")
+
+        startBlock(foundLabel)
+        emitTerminator("  br label %$endLabel")
+
+        startBlock(missLabel)
+        emitTerminator("  br label %$endLabel")
+
+        startBlock(endLabel)
+        val result = nextTmp()
+        emit("  $result = phi i1 [ true, %$foundLabel ], [ false, %$missLabel ]")
+        return result
+    }
+
+    private fun emitArrayElementEq(type: IrType, llvmType: String, left: String, right: String): String {
+        if (type == IrType.String) {
+            usesStrcmp = true
+            val cmp = nextTmp()
+            emit("  $cmp = call i32 @strcmp(i8* $left, i8* $right)")
+            val eq = nextTmp()
+            emit("  $eq = icmp eq i32 $cmp, 0")
+            return eq
+        }
+        val eq = nextTmp()
+        if (type in IrType.floatTypes) emit("  $eq = fcmp oeq $llvmType $left, $right")
+        else emit("  $eq = icmp eq $llvmType $left, $right")
+        return eq
     }
 
     /** Emits a pointer to element [index] of array value [target]. */
@@ -1002,9 +1678,10 @@ class LlvmCodegen {
             val et = mapType(tt.element)
             val ep = emitArrayElemPtr(expr.target, expr.index, tt.element)
             val tmp = nextTmp()
-            emit("  $tmp = load $et, $et* $ep")
+            emit("  $tmp = load $et, $et* $ep, align 1")
             return tmp
         }
+        if (tt is IrType.Map) return emitMapIndexRead(expr, tt)
         if (tt == IrType.String) {
             val s = emitExpr(expr.target)
             val idxRaw = emitExpr(expr.index)
@@ -1028,7 +1705,11 @@ class LlvmCodegen {
             val ep = emitArrayElemPtr(stmt.target, stmt.index, tt.element)
             val raw = emitExpr(stmt.value)
             val value = coerceNumeric(raw, stmt.value.type, tt.element)
-            emit("  store $et $value, $et* $ep")
+            emit("  store $et $value, $et* $ep, align 1")
+            return
+        }
+        if (tt is IrType.Map) {
+            emitMapIndexAssign(stmt, tt)
             return
         }
         emitExpr(stmt.target)
@@ -1510,6 +2191,69 @@ class LlvmCodegen {
             sb.appendLine()
         }
 
+        if (usesArrayGrow) {
+            usesMalloc = true
+            sb.appendLine("; runtime: append one element to a packed array buffer")
+            sb.appendLine("define i8* @__azora_array_grow(i8* %old, i64 %elemSize) {")
+            sb.appendLine("entry:")
+            sb.appendLine("  %lenPtr = bitcast i8* %old to i64*")
+            sb.appendLine("  %len = load i64, i64* %lenPtr")
+            sb.appendLine("  %newLen = add i64 %len, 1")
+            sb.appendLine("  %oldBytes = mul i64 %len, %elemSize")
+            sb.appendLine("  %newBytes = mul i64 %newLen, %elemSize")
+            sb.appendLine("  %newSize = add i64 %newBytes, 8")
+            sb.appendLine("  %newRaw = call i8* @malloc(i64 %newSize)")
+            sb.appendLine("  %newLenPtr = bitcast i8* %newRaw to i64*")
+            sb.appendLine("  store i64 %newLen, i64* %newLenPtr")
+            sb.appendLine("  %oldData = getelementptr i8, i8* %old, i64 8")
+            sb.appendLine("  %newData = getelementptr i8, i8* %newRaw, i64 8")
+            sb.appendLine("  br label %copy.cond")
+            sb.appendLine("copy.cond:")
+            sb.appendLine("  %i = phi i64 [ 0, %entry ], [ %next, %copy.body ]")
+            sb.appendLine("  %done = icmp uge i64 %i, %oldBytes")
+            sb.appendLine("  br i1 %done, label %copy.end, label %copy.body")
+            sb.appendLine("copy.body:")
+            sb.appendLine("  %src = getelementptr i8, i8* %oldData, i64 %i")
+            sb.appendLine("  %byte = load i8, i8* %src")
+            sb.appendLine("  %dst = getelementptr i8, i8* %newData, i64 %i")
+            sb.appendLine("  store i8 %byte, i8* %dst")
+            sb.appendLine("  %next = add i64 %i, 1")
+            sb.appendLine("  br label %copy.cond")
+            sb.appendLine("copy.end:")
+            sb.appendLine("  ret i8* %newRaw")
+            sb.appendLine("}")
+            sb.appendLine()
+        }
+
+        if (usesMapGrow) {
+            usesMalloc = true
+            usesMemcpy = true
+            sb.appendLine("; runtime: append storage for one packed map entry")
+            sb.appendLine("define i8* @__azora_map_grow(i8* %old, i64 %keySize, i64 %valueSize) {")
+            sb.appendLine("entry:")
+            sb.appendLine("  %lenPtr = bitcast i8* %old to i64*")
+            sb.appendLine("  %len = load i64, i64* %lenPtr")
+            sb.appendLine("  %newLen = add i64 %len, 1")
+            sb.appendLine("  %oldKeyBytes = mul i64 %len, %keySize")
+            sb.appendLine("  %oldValueBytes = mul i64 %len, %valueSize")
+            sb.appendLine("  %newKeyBytes = mul i64 %newLen, %keySize")
+            sb.appendLine("  %newValueBytes = mul i64 %newLen, %valueSize")
+            sb.appendLine("  %payloadBytes = add i64 %newKeyBytes, %newValueBytes")
+            sb.appendLine("  %totalBytes = add i64 %payloadBytes, 8")
+            sb.appendLine("  %newRaw = call i8* @malloc(i64 %totalBytes)")
+            sb.appendLine("  %newLenPtr = bitcast i8* %newRaw to i64*")
+            sb.appendLine("  store i64 %newLen, i64* %newLenPtr")
+            sb.appendLine("  %oldKeys = getelementptr i8, i8* %old, i64 8")
+            sb.appendLine("  %oldValues = getelementptr i8, i8* %oldKeys, i64 %oldKeyBytes")
+            sb.appendLine("  %newKeys = getelementptr i8, i8* %newRaw, i64 8")
+            sb.appendLine("  %newValues = getelementptr i8, i8* %newKeys, i64 %newKeyBytes")
+            sb.appendLine("  %copyKeys = call i8* @memcpy(i8* %newKeys, i8* %oldKeys, i64 %oldKeyBytes)")
+            sb.appendLine("  %copyValues = call i8* @memcpy(i8* %newValues, i8* %oldValues, i64 %oldValueBytes)")
+            sb.appendLine("  ret i8* %newRaw")
+            sb.appendLine("}")
+            sb.appendLine()
+        }
+
         if (usesIntToStr) {
             usesMalloc = true; usesSnprintf = true
             val fmt = addStringConstant("%lld")
@@ -1593,7 +2337,7 @@ class LlvmCodegen {
         IrType.Decimal -> "fp128"
         IrType.Any -> "i8*"
         is IrType.Array -> "i8*"
-        is IrType.Map -> "i8*"
+        is IrType.Map, is IrType.Set -> "i8*"
         is IrType.Function -> "i8*"
         is IrType.Tuple -> "i8*"
         is IrType.Nullable -> "i8*"
@@ -1612,13 +2356,14 @@ class LlvmCodegen {
         IrType.Bool -> "false"
         IrType.String -> "null"
         IrType.Unit -> ""
-        is IrType.Array, is IrType.Map, is IrType.Function,
+        is IrType.Array, is IrType.Map, is IrType.Set, is IrType.Function,
         is IrType.Tuple, is IrType.Nullable, is IrType.Named, IrType.Any -> "null"
         else -> "0"
     }
 
     /** Formats a floating-point constant in the exact LLVM hex form. */
     private fun floatConst(value: Double, type: IrType): String {
+        if (type == IrType.Decimal) return fp128Const(value)
         // LLVM accepts the 64-bit IEEE-754 hex for both float and double
         // constants (for float it must be exactly representable, which holds
         // because the value originated from a float).
@@ -1627,6 +2372,54 @@ class LlvmCodegen {
         else
             value.toRawBits()
         return "0x" + bits.toULong().toString(16).uppercase().padStart(16, '0')
+    }
+
+    /** Converts a binary64 value exactly into LLVM's 128-bit `0xL...` encoding. */
+    private fun fp128Const(value: Double): String {
+        val bits = value.toRawBits()
+        val sign = bits and Long.MIN_VALUE
+        val exponent = ((bits ushr 52) and 0x7ff).toInt()
+        val fraction = bits and 0x000f_ffff_ffff_ffffL
+
+        val quadExponent: Int
+        val quadHighFraction: Long
+        val quadLowFraction: Long
+        when {
+            exponent == 0 && fraction == 0L -> {
+                quadExponent = 0
+                quadHighFraction = 0
+                quadLowFraction = 0
+            }
+            exponent == 0 -> {
+                val leadingBit = 63 - fraction.countLeadingZeroBits()
+                quadExponent = leadingBit + 15309 // leadingBit - 1074 + binary128 bias
+                val remainder = fraction xor (1L shl leadingBit)
+                val shift = 112 - leadingBit
+                if (shift >= 64) {
+                    quadHighFraction = remainder shl (shift - 64)
+                    quadLowFraction = 0
+                } else {
+                    quadHighFraction = remainder ushr (64 - shift)
+                    quadLowFraction = remainder shl shift
+                }
+            }
+            exponent == 0x7ff -> {
+                quadExponent = 0x7fff
+                quadHighFraction = fraction ushr 4
+                quadLowFraction = fraction shl 60
+            }
+            else -> {
+                quadExponent = exponent - 1023 + 16383
+                quadHighFraction = fraction ushr 4
+                quadLowFraction = fraction shl 60
+            }
+        }
+
+        val high = sign or (quadExponent.toLong() shl 48) or quadHighFraction
+        val highHex = high.toULong().toString(16).uppercase().padStart(16, '0')
+        val lowHex = quadLowFraction.toULong().toString(16).uppercase().padStart(16, '0')
+        // LLVM's fp128 text form writes the low 64-bit word before the high word.
+        return "0xL$lowHex$highHex"
     }
 
     private fun gepString(ref: StringRef): String {

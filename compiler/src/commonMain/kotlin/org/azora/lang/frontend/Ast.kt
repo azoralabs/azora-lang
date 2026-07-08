@@ -173,6 +173,9 @@ sealed class Expr {
      */
     data class ArrayLiteral(val elements: List<Expr>, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 
+    /** Set literal `![a, b, c]`. */
+    data class SetLiteral(val elements: List<Expr>, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+
     /**
      * Index access `target[index]`.
      *
@@ -917,6 +920,11 @@ sealed class TypeRef {
     /** Map type `[K: V]`. */
     data class Map(val key: TypeRef, val value: TypeRef) : TypeRef() {
         override fun toString() = "[$key: $value]"
+    }
+
+    /** Set type `![T]`. */
+    data class Set(val element: TypeRef) : TypeRef() {
+        override fun toString() = "![$element]"
     }
 
     /** Function type `(A, B) -> R`. */

@@ -162,7 +162,7 @@ class AzoraLanguageServerTest {
 
     @Test
     fun completesStdlibFunctions() {
-        val source = "func main() {\n    ab\n}"
+        val source = "use std.math\nfunc main() {\n    ab\n}"
         val offset = source.indexOf("    ab") + 6
         val list = completions(source, offset)
         assertTrue(list.any { it.label == "abs" && it.kind == "function" }, "stdlib abs should complete: $list")
@@ -172,10 +172,40 @@ class AzoraLanguageServerTest {
 
     @Test
     fun stdlibConstantsComplete() {
-        val source = "func main() {\n    P\n}"
+        val source = "use std\nfunc main() {\n    P\n}"
         val offset = source.indexOf("    P") + 5
         val list = completions(source, offset)
         assertTrue(list.any { it.label == "PI" && it.kind == "variable" }, "PI should complete: $list")
+    }
+
+    @Test
+    fun stdlibCompletionsAreImportGated() {
+        val source = "func main() {\n    ab\n}"
+        val offset = source.indexOf("    ab") + 6
+        val list = completions(source, offset)
+        assertTrue(list.none { it.label == "abs" && it.kind == "function" },
+            "abs must not complete without 'use std.math': $list")
+    }
+
+    @Test
+    fun libraryModuleSectionsAreImportGated() {
+        val prelude = "//@azora-module engine\nfunc appInit(w: Int): Int {\n    return w\n}\n\n//@azora-module\nfunc projectHelper(): Int {\n    return 1\n}"
+        val bare = "func main() {\n    ap\n}"
+        val bareOffset = bare.indexOf("    ap") + 6
+        val without = completions(bare, bareOffset, prelude)
+        assertTrue(without.none { it.label == "appInit" },
+            "engine symbol must not complete without 'use engine': $without")
+
+        val imported = "use engine\nfunc main() {\n    ap\n}"
+        val importedOffset = imported.indexOf("    ap") + 6
+        val with = completions(imported, importedOffset, prelude)
+        assertTrue(with.any { it.label == "appInit" && "engine" in it.detail },
+            "engine symbol should complete (tagged) with 'use engine': $with")
+
+        // Unmarked (project) prelude symbols are never gated.
+        val project = completions("func main() {\n    pro\n}", "func main() {\n    pro\n}".indexOf("    pro") + 7, prelude)
+        assertTrue(project.any { it.label == "projectHelper" },
+            "project symbol should complete without imports: $project")
     }
 
     @Test

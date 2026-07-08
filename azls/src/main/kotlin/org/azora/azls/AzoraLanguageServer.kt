@@ -197,13 +197,19 @@ class AzoraLanguageServer {
             BUILTIN_FUNCTIONS.forEach { (name, detail) ->
                 out.add(Completion(name, "function", detail, "$name("))
             }
+            val imports = importsOf(source)
             for (index in listOf(userIndex, preludeIndex, stdlibIndex)) {
+                // Symbols from a packaged module (std.*, engine, …) are only
+                // offered when the document imports that module via `use`; the
+                // document's own symbols (userIndex) are never gated.
+                fun visible(name: String): Boolean =
+                    index === userIndex || moduleVisible(index.origins[name], imports)
                 fun withOrigin(name: String, detail: String): String =
                     index.origins[name]?.let { "$detail — $it" } ?: detail
-                index.functions.values.forEach { out.add(functionCompletion(it).let { c -> c.copy(detail = withOrigin(c.label, c.detail)) }) }
-                index.packs.values.forEach { out.add(Completion(it.name, "pack", withOrigin(it.name, packDetail(it)), it.name)) }
-                index.enums.values.forEach { out.add(Completion(it.name, "enum", withOrigin(it.name, "enum ${it.name}"), it.name)) }
-                index.topLevelVars.forEach { (name, detail) -> out.add(Completion(name, "variable", withOrigin(name, detail), name)) }
+                index.functions.values.forEach { if (visible(it.name)) out.add(functionCompletion(it).let { c -> c.copy(detail = withOrigin(c.label, c.detail)) }) }
+                index.packs.values.forEach { if (visible(it.name)) out.add(Completion(it.name, "pack", withOrigin(it.name, packDetail(it)), it.name)) }
+                index.enums.values.forEach { if (visible(it.name)) out.add(Completion(it.name, "enum", withOrigin(it.name, "enum ${it.name}"), it.name)) }
+                index.topLevelVars.forEach { (name, detail) -> if (visible(name)) out.add(Completion(name, "variable", withOrigin(name, detail), name)) }
             }
             AzHighlighter.KEYWORDS.forEach { out.add(Completion(it, "keyword", "", it)) }
         }
@@ -349,7 +355,27 @@ class AzoraLanguageServer {
         if (prelude.isBlank()) return EMPTY_INDEX
         val key = prelude.hashCode()
         cachedPreludeIndex?.let { if (cachedPreludeKey == key) return it }
-        val index = SymbolIndex().apply { parseTolerant(prelude)?.let(::addProgram) }
+        // The prelude is split into module sections by `//@azora-module <name>`
+        // markers (emitted by Studio for engine/library sources); symbols from a
+        // marked section carry that module as their origin and are import-gated
+        // in completion. Unmarked sections (project files) are always visible.
+        val index = SymbolIndex()
+        var module: String? = null
+        val section = StringBuilder()
+        fun flush() {
+            if (section.isNotBlank()) parseTolerant(section.toString())?.let { index.addProgram(it, module) }
+            section.setLength(0)
+        }
+        for (line in prelude.lines()) {
+            val trimmed = line.trim()
+            if (trimmed.startsWith(MODULE_MARKER)) {
+                flush()
+                module = trimmed.removePrefix(MODULE_MARKER).trim().ifEmpty { null }
+            } else {
+                section.append(line).append('\n')
+            }
+        }
+        flush()
         cachedPreludeKey = key
         cachedPreludeIndex = index
         return index
@@ -366,6 +392,34 @@ class AzoraLanguageServer {
 
     private fun packDetail(pack: TopLevel.Pack): String =
         "pack ${pack.name}(${pack.fields.joinToString(", ") { "${it.name}: ${it.type.displayName()}" }})"
+
+    /**
+     * Module paths imported by the document's `use` lines: `use engine`,
+     * `use std.math`, `use scope std`, `use std.math::abs` (the `::` item part
+     * imports its whole module for completion purposes).
+     */
+    private fun importsOf(source: String): Set<String> {
+        val out = mutableSetOf<String>()
+        for (line in source.lines()) {
+            val trimmed = line.trim()
+            if (!trimmed.startsWith("use ")) continue
+            var rest = trimmed.removePrefix("use ").trim()
+            if (rest.startsWith("scope ")) rest = rest.removePrefix("scope ").trim()
+            for (part in rest.split(",")) {
+                val zone = part.trim().substringBefore("::").trim()
+                if (zone.isNotEmpty() && zone.all { it.isLetterOrDigit() || it == '_' || it == '.' }) {
+                    out.add(zone)
+                }
+            }
+        }
+        return out
+    }
+
+    /** A packaged symbol is visible when its module (or a parent) is imported. */
+    private fun moduleVisible(origin: String?, imports: Set<String>): Boolean {
+        if (origin == null) return true
+        return imports.any { imported -> origin == imported || origin.startsWith("$imported.") }
+    }
 
     // ----- text helpers -----
 
@@ -399,6 +453,9 @@ class AzoraLanguageServer {
 
     private companion object {
         val EMPTY_INDEX = SymbolIndex()
+
+        /** Prefix marking the module of the prelude section that follows. */
+        const val MODULE_MARKER = "//@azora-module"
 
         /** Functions the compiler registers as builtins (see SymbolCollector). */
         val BUILTIN_FUNCTIONS = listOf(
@@ -447,8 +504,8 @@ internal class SymbolIndex {
     /** Top-level variable name → pack type name (for member completion). */
     private val topLevelVarTypes = mutableMapOf<String, String>()
 
-    fun addProgram(program: Program) {
-        val module = program.packageName
+    fun addProgram(program: Program, moduleOverride: String? = null) {
+        val module = moduleOverride ?: program.packageName
         fun origin(name: String) {
             if (module != null) origins.putIfAbsent(name, module)
         }

@@ -114,24 +114,30 @@ class IrOptimizer {
         is IrExpr.Binary -> {
             val left = foldExpr(expr.left)
             val right = foldExpr(expr.right)
-            tryFoldBinary(left, expr.op, right) ?: expr.copy(left = left, right = right)
+            tryFoldBinary(left, expr.op, right, expr.type) ?: expr.copy(left = left, right = right)
         }
         is IrExpr.Unary -> {
             val operand = foldExpr(expr.operand)
-            tryFoldUnary(expr.op, operand) ?: expr.copy(operand = operand)
+            tryFoldUnary(expr.op, operand, expr.type) ?: expr.copy(operand = operand)
         }
         is IrExpr.Call -> expr.copy(args = expr.args.map { foldExpr(it) })
         else -> expr
     }
 
-    private fun tryFoldBinary(left: IrExpr, op: IrBinaryOp, right: IrExpr): IrExpr? {
+    private fun tryFoldBinary(left: IrExpr, op: IrBinaryOp, right: IrExpr, resultType: IrType): IrExpr? {
         if (left is IrExpr.IntLiteral && right is IrExpr.IntLiteral) {
+            if (resultType == IrType.Cent || resultType == IrType.UCent) return null
+            val unsigned = resultType in setOf(IrType.UInt, IrType.UByte, IrType.UShort, IrType.ULong)
+            if (unsigned && op in setOf(
+                    IrBinaryOp.DIV, IrBinaryOp.MOD,
+                    IrBinaryOp.LT, IrBinaryOp.LTE, IrBinaryOp.GT, IrBinaryOp.GTE
+                )) return null
             return when (op) {
-                IrBinaryOp.ADD -> IrExpr.IntLiteral(left.value + right.value)
-                IrBinaryOp.SUB -> IrExpr.IntLiteral(left.value - right.value)
-                IrBinaryOp.MUL -> IrExpr.IntLiteral(left.value * right.value)
-                IrBinaryOp.DIV -> if (right.value != 0L) IrExpr.IntLiteral(left.value / right.value) else null
-                IrBinaryOp.MOD -> if (right.value != 0L) IrExpr.IntLiteral(left.value % right.value) else null
+                IrBinaryOp.ADD -> IrExpr.IntLiteral(left.value + right.value, resultType)
+                IrBinaryOp.SUB -> IrExpr.IntLiteral(left.value - right.value, resultType)
+                IrBinaryOp.MUL -> IrExpr.IntLiteral(left.value * right.value, resultType)
+                IrBinaryOp.DIV -> if (right.value != 0L) IrExpr.IntLiteral(left.value / right.value, resultType) else null
+                IrBinaryOp.MOD -> if (right.value != 0L) IrExpr.IntLiteral(left.value % right.value, resultType) else null
                 IrBinaryOp.EQ -> IrExpr.BoolLiteral(left.value == right.value)
                 IrBinaryOp.NEQ -> IrExpr.BoolLiteral(left.value != right.value)
                 IrBinaryOp.LT -> IrExpr.BoolLiteral(left.value < right.value)
@@ -143,10 +149,10 @@ class IrOptimizer {
         }
         if (left is IrExpr.RealLiteral && right is IrExpr.RealLiteral) {
             return when (op) {
-                IrBinaryOp.ADD -> IrExpr.RealLiteral(left.value + right.value)
-                IrBinaryOp.SUB -> IrExpr.RealLiteral(left.value - right.value)
-                IrBinaryOp.MUL -> IrExpr.RealLiteral(left.value * right.value)
-                IrBinaryOp.DIV -> IrExpr.RealLiteral(left.value / right.value)
+                IrBinaryOp.ADD -> IrExpr.RealLiteral(left.value + right.value, resultType)
+                IrBinaryOp.SUB -> IrExpr.RealLiteral(left.value - right.value, resultType)
+                IrBinaryOp.MUL -> IrExpr.RealLiteral(left.value * right.value, resultType)
+                IrBinaryOp.DIV -> IrExpr.RealLiteral(left.value / right.value, resultType)
                 IrBinaryOp.EQ -> IrExpr.BoolLiteral(left.value == right.value)
                 IrBinaryOp.NEQ -> IrExpr.BoolLiteral(left.value != right.value)
                 IrBinaryOp.LT -> IrExpr.BoolLiteral(left.value < right.value)
@@ -173,9 +179,9 @@ class IrOptimizer {
         return null
     }
 
-    private fun tryFoldUnary(op: IrUnaryOp, operand: IrExpr): IrExpr? {
-        if (op == IrUnaryOp.NEG && operand is IrExpr.IntLiteral) return IrExpr.IntLiteral(-operand.value)
-        if (op == IrUnaryOp.NEG && operand is IrExpr.RealLiteral) return IrExpr.RealLiteral(-operand.value)
+    private fun tryFoldUnary(op: IrUnaryOp, operand: IrExpr, resultType: IrType): IrExpr? {
+        if (op == IrUnaryOp.NEG && operand is IrExpr.IntLiteral) return IrExpr.IntLiteral(-operand.value, resultType)
+        if (op == IrUnaryOp.NEG && operand is IrExpr.RealLiteral) return IrExpr.RealLiteral(-operand.value, resultType)
         if (op == IrUnaryOp.NOT && operand is IrExpr.BoolLiteral) return IrExpr.BoolLiteral(!operand.value)
         return null
     }
@@ -359,11 +365,13 @@ class IrOptimizer {
                     result
                 }
                 is IrStmt.ForEach -> {
+                    val assigned = collectAssigned(stmt.body) + stmt.elem
+                    val inner = constants.toMutableMap().also { invalidate(it, assigned) }
                     val result = stmt.copy(
                         iterable = foldExpr(propagateExpr(stmt.iterable, constants)),
-                        body = propagateStmts(stmt.body, constants.toMutableMap())
+                        body = propagateStmts(stmt.body, inner)
                     )
-                    invalidate(constants, collectAssigned(stmt.body))
+                    invalidate(constants, assigned)
                     result
                 }
             }
@@ -591,6 +599,7 @@ class IrOptimizer {
         is IrExpr.Member -> hasSideEffects(expr.target)
         is IrExpr.TupleAccess -> hasSideEffects(expr.target)
         is IrExpr.ArrayLiteral -> expr.elements.any { hasSideEffects(it) }
+        is IrExpr.SetLit -> expr.elements.any { hasSideEffects(it) }
         is IrExpr.MapLit -> expr.entries.any { hasSideEffects(it.first) || hasSideEffects(it.second) }
         is IrExpr.TupleLit -> expr.elements.any { hasSideEffects(it) }
         is IrExpr.StringTemplate -> expr.parts.any {
@@ -647,7 +656,10 @@ class IrOptimizer {
             is IrStmt.VarDecl -> collectReferencedNamesFromExpr(stmt.initializer, names)
             is IrStmt.FinDecl -> collectReferencedNamesFromExpr(stmt.initializer, names)
             is IrStmt.LetDecl -> collectReferencedNamesFromExpr(stmt.initializer, names)
-            is IrStmt.Assignment -> collectReferencedNamesFromExpr(stmt.value, names)
+            is IrStmt.Assignment -> {
+                names.add(stmt.name)
+                collectReferencedNamesFromExpr(stmt.value, names)
+            }
             is IrStmt.Return -> stmt.value?.let { collectReferencedNamesFromExpr(it, names) }
             is IrStmt.ExprStmt -> collectReferencedNamesFromExpr(stmt.expr, names)
             is IrStmt.If -> {
@@ -718,6 +730,7 @@ class IrOptimizer {
             }
             is IrExpr.Unary -> collectReferencedNamesFromExpr(expr.operand, names)
             is IrExpr.ArrayLiteral -> expr.elements.forEach { collectReferencedNamesFromExpr(it, names) }
+            is IrExpr.SetLit -> expr.elements.forEach { collectReferencedNamesFromExpr(it, names) }
             is IrExpr.Index -> {
                 collectReferencedNamesFromExpr(expr.target, names)
                 collectReferencedNamesFromExpr(expr.index, names)

@@ -858,6 +858,10 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 if (folded != null) Pair(folded, true)
                 else Pair(expr.copy(operand = operand), changed)
             }
+            is Expr.SetLiteral -> {
+                val folded = expr.elements.map { foldExpr(it, program) }
+                Pair(expr.copy(elements = folded.map { it.first }), folded.any { it.second })
+            }
             is Expr.Call -> {
                 val foldedArgs = expr.args.map { foldExpr(it, program) }
                 val anyChanged = foldedArgs.any { it.second }
@@ -1168,7 +1172,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
             is Expr.UpperScopeAccess -> env[expr.name]
             is Expr.Grouping -> evalExpr(expr.expr, env, program)
             is Expr.Range -> null // ranges are not CTFE-evaluable values
-            is Expr.ArrayLiteral, is Expr.Index, is Expr.Member, is Expr.MethodCall -> null // not CTFE-evaluable
+            is Expr.ArrayLiteral, is Expr.SetLiteral, is Expr.Index, is Expr.Member, is Expr.MethodCall -> null // not CTFE-evaluable
             is Expr.StringTemplate -> null // not CTFE-evaluable
             is Expr.TupleLit, is Expr.TupleAccess -> null // not CTFE-evaluable
             is Expr.CatchExpr -> null // not CTFE-evaluable

@@ -463,6 +463,10 @@ private fun dumpExpr(sb: StringBuilder, expr: Expr, indent: String) {
             sb.appendLine("${indent}MapLit")
             for ((k, v) in expr.entries) { dumpExpr(sb, k, "$indent    "); dumpExpr(sb, v, "$indent    ") }
         }
+        is Expr.SetLiteral -> {
+            sb.appendLine("${indent}SetLiteral")
+            for (element in expr.elements) dumpExpr(sb, element, "$indent    ")
+        }
         is Expr.Alloc -> {
             sb.appendLine("${indent}Alloc")
             dumpExpr(sb, expr.value, "$indent    ")

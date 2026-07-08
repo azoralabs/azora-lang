@@ -18,6 +18,7 @@ package org.azora.lang.codegen
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /**
  * Regression tests for specific [org.azora.lang.backend.LlvmCodegen] fixes,
@@ -32,7 +33,8 @@ class LlvmRegressionExecTest {
 
     private fun check(expected: String, source: String) {
         if (!LlvmExec.available) return
-        assertEquals(expected, LlvmExec.run(source))
+        assertEquals(expected, LlvmExec.run(source), "debug IR")
+        assertEquals(expected, LlvmExec.run(source, optimized = true), "optimized IR")
     }
 
     private fun main(body: String): String = "func main() {\n$body\n}"
@@ -51,6 +53,91 @@ class LlvmRegressionExecTest {
             """.trimIndent()
         )
     )
+
+    @Test fun ifBranchShadowDoesNotLeakPastBranch() = check(
+        "2\n1",
+        main(
+            """
+            var x = 1
+            if true {
+                var x = 2
+                println(x)
+            }
+            println(x)
+            """.trimIndent()
+        )
+    )
+
+    @Test fun whenBranchShadowDoesNotLeakPastBranch() = check(
+        "5\n1",
+        main(
+            """
+            var x = 1
+            when x {
+                1 -> {
+                    var x = 5
+                    println(x)
+                }
+                else -> { println(0) }
+            }
+            println(x)
+            """.trimIndent()
+        )
+    )
+
+    @Test fun threadLocalAssignmentUsesLlvmTlsStorage() {
+        val source = """
+            threadlocal var counter = 0
+            func main() {
+                counter = 5
+            }
+        """.trimIndent()
+        for (optimized in listOf(false, true)) {
+            val ir = LlvmExec.compile(source, optimized)
+            assertTrue("@__tl__counter = thread_local global i32 0" in ir)
+            assertTrue("store i32 5, i32* @__tl__counter" in ir)
+        }
+    }
+
+    @Test fun threadLocalAggregatesUseTlsAndRuntimeInitialization() {
+        val source = """
+            threadlocal var numbers = [1, 2, 3]
+            threadlocal var names = ["first": 10, "second": 20]
+            threadlocal var unique = ![1, 2, 2, 3]
+            func main() {
+                println(numbers[1])
+                println(names["second"])
+                println(unique.length)
+            }
+        """.trimIndent()
+        for (optimized in listOf(false, true)) {
+            val ir = LlvmExec.compile(source, optimized)
+            assertTrue("@__tl__numbers = thread_local global i8* zeroinitializer" in ir)
+            assertTrue("@__tl__names = thread_local global i8* zeroinitializer" in ir)
+            assertTrue("@__tl__unique = thread_local global i8* zeroinitializer" in ir)
+            assertTrue("define void @__azora_init_globals()" in ir)
+            assertTrue("store i8*" in ir && "i8** @__tl__numbers" in ir)
+            assertTrue("store i8*" in ir && "i8** @__tl__names" in ir)
+            assertTrue("store i8*" in ir && "i8** @__tl__unique" in ir)
+            assertTrue("call void @__azora_init_globals()" in ir)
+        }
+    }
+
+    @Test fun decimalCollectionsUseExplicitPackedAlignment() {
+        val ir = LlvmExec.compile(
+            """
+            func main() {
+                var array = [1.5D, 2.5D]
+                var map = ["value": 3.5D]
+                var set = ![1.5D, 2.5D]
+                array[0] = map["value"]
+                println(set.length)
+            }
+            """.trimIndent()
+        )
+        assertTrue("store fp128" in ir && "align 1" in ir)
+        assertTrue("load fp128" in ir && "align 1" in ir)
+    }
 
     @Test fun whenOnStringMultiPattern() = check(
         "vowel\nother",

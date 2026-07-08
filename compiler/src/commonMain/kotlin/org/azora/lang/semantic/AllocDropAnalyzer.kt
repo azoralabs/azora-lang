@@ -231,6 +231,7 @@ class AllocDropAnalyzer {
             is Expr.Grouping -> collectUsedVars(expr.expr, used)
             is Expr.Range -> { collectUsedVars(expr.from, used); collectUsedVars(expr.to, used) }
             is Expr.ArrayLiteral -> expr.elements.forEach { collectUsedVars(it, used) }
+            is Expr.SetLiteral -> expr.elements.forEach { collectUsedVars(it, used) }
             is Expr.Index -> { collectUsedVars(expr.target, used); collectUsedVars(expr.index, used) }
             is Expr.Member -> collectUsedVars(expr.target, used)
             is Expr.MethodCall -> { collectUsedVars(expr.target, used); expr.args.forEach { collectUsedVars(it, used) } }

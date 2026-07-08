@@ -511,7 +511,14 @@ class SymbolCollector {
         is Expr.Call -> null // can't infer without full symbol table yet
         is Expr.UpperScopeAccess -> null // can't infer type from upper scope access during symbol collection
         is Expr.Range -> null // ranges are not first-class values
-        is Expr.ArrayLiteral, is Expr.Index, is Expr.Member, is Expr.MethodCall -> null
+        is Expr.ArrayLiteral -> expr.elements.firstOrNull()?.let { inferExprType(it, env) }?.let(IrType::Array)
+        is Expr.SetLiteral -> expr.elements.firstOrNull()?.let { inferExprType(it, env) }?.let(IrType::Set)
+        is Expr.MapLit -> expr.entries.firstOrNull()?.let { (key, value) ->
+            val keyType = inferExprType(key, env)
+            val valueType = inferExprType(value, env)
+            if (keyType != null && valueType != null) IrType.Map(keyType, valueType) else null
+        }
+        is Expr.Index, is Expr.Member, is Expr.MethodCall -> null
         is Expr.StringTemplate -> IrType.String
         is Expr.TupleLit, is Expr.TupleAccess -> null
         is Expr.CatchExpr -> null
@@ -520,6 +527,6 @@ class SymbolCollector {
         is Expr.NamedArg -> null
         is Expr.NullLiteral -> IrType.Any
         is Expr.NullCoalesce, is Expr.SafeMember,
-        is Expr.Cast, is Expr.IsCheck, is Expr.MapLit, is Expr.Alloc, is Expr.Deref, is Expr.Isolated, is Expr.Await, is Expr.Inject, is Expr.Spread -> null
+        is Expr.Cast, is Expr.IsCheck, is Expr.Alloc, is Expr.Deref, is Expr.Isolated, is Expr.Await, is Expr.Inject, is Expr.Spread -> null
     }
 }

@@ -1727,6 +1727,10 @@ class Parser(private val tokens: List<Token>) {
      */
     private fun parseUse(): TopLevel {
         val start = consume(TokenType.USE, "Expected 'use'")
+        // `use scope std` — the optional `scope` reads naturally and is skipped.
+        if (check(TokenType.IDENTIFIER) && peek().lexeme == "scope" && peekNext()?.type == TokenType.IDENTIFIER) {
+            advance()
+        }
         val imports = mutableListOf<Pair<String, String?>>() // (zoneName, itemName or null for all)
         do {
             val zoneBase = StringBuilder(consume(TokenType.IDENTIFIER, "Expected zone name after 'use'").lexeme)

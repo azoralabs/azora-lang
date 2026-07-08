@@ -40,7 +40,26 @@ import kotlinx.coroutines.async
  * Uses a scope stack so that `zone { }` blocks introduce new scopes and
  * `::` / `::::` can resolve variables at the correct depth.
  */
+/**
+ * Debugger attachment point for [IrInterpreter].
+ *
+ * Debug builds (see `Compiler.compile(debug = true)`) instrument every
+ * statement with a `__dbg(line)` call; the interpreter forwards those to
+ * [onLine] together with a snapshot of the variables currently in scope.
+ * Because the hook is a `suspend` function, a debugger pauses execution by
+ * simply not returning until the user resumes.
+ */
+interface AzoraDebugHost {
+    suspend fun onLine(line: Int, locals: Map<String, Any?>)
+}
+
 class IrInterpreter {
+
+    /** When set, receives `__dbg` line events from debug-instrumented programs. */
+    var debugHost: AzoraDebugHost? = null
+
+    /** When set, receives each println/trace line as it is produced (live output). */
+    var outputListener: ((String) -> Unit)? = null
 
     private val output = StringBuilder()
     private val functions = mutableMapOf<String, IrFunction>()
@@ -223,6 +242,17 @@ class IrInterpreter {
     }
 
     /** Look up variable from innermost scope outward. */
+    /** User-visible variables in scope, innermost shadowing outermost (for the debugger). */
+    private suspend fun snapshotLocals(): Map<String, Any?> {
+        val snapshot = LinkedHashMap<String, Any?>()
+        for (scope in state().scopes) {
+            for ((name, value) in scope) {
+                if (!name.startsWith("__")) snapshot[name] = value
+            }
+        }
+        return snapshot
+    }
+
     private suspend fun lookupVar(name: String): Any? {
         // Thread-local variables: each ExecState has its own independent copy.
         if (name.startsWith("__tl__") && name in state().threadLocals) return state().threadLocals[name]
@@ -510,6 +540,7 @@ class IrInterpreter {
             is IrStmt.Trace -> {
                 val msg = formatValue(evalExpr(stmt.message))
                 synchronized(output) { output.appendLine("[TRACE] $msg") }
+                outputListener?.invoke("[TRACE] $msg")
             }
         }
         return null
@@ -900,9 +931,16 @@ class IrInterpreter {
                 else -> error("no member '$fieldName' on $target")
             }
         }
+        if (expr.name == "__dbg") {
+            // Debug-build line marker — pauses here while a debugger is attached.
+            debugHost?.onLine(((args.firstOrNull() as? Long) ?: 0L).toInt(), snapshotLocals())
+            return null
+        }
         if (expr.name == "println") {
             val value = args.firstOrNull()
-            synchronized(output) { output.appendLine(formatValue(value)) }
+            val text = formatValue(value)
+            synchronized(output) { output.appendLine(text) }
+            outputListener?.invoke(text)
             return null
         }
         if (expr.name == "channel") {

@@ -24,39 +24,57 @@ import org.azora.lang.frontend.TopLevel
 /**
  * Injects standard-library declarations into a user compilation unit.
  *
- * The stdlib sources embedded in [AzStdlib] are parsed once and indexed by
- * top-level name. [inject] walks the user program for referenced names and
- * appends only the stdlib items actually used (functions, constants, packs,
- * enums, and the extern `bridge` signatures their bodies call), following
- * references transitively — so `println(abs(-5))` pulls in `abs` and nothing
- * else, and programs that never touch the stdlib compile exactly as before.
+ * Standard-library symbols are **import-gated**: a file sees a module's names
+ * only after importing it —
  *
- * A user declaration always shadows the stdlib item of the same name; the
- * stdlib version is simply not injected.
+ * - `use std.math` — unqualified access to that module (`abs(x)`),
+ * - `use std.math::abs` — selective import of listed names,
+ * - `use std` / `use scope std` — every stdlib module,
+ * - `std.math.abs(x)` / `std.abs(x)` — qualified access needs no import.
+ *
+ * Only the items actually referenced are appended (functions, constants,
+ * packs, enums, plus the extern `bridge` signatures their bodies call),
+ * following stdlib-internal references transitively. A user declaration always
+ * shadows the stdlib item of the same name, and programs that never touch the
+ * stdlib compile exactly as before.
  */
 object StdlibInjector {
 
     private class Index {
-        /** name → the item providing it (function, binding, pack, or enum). */
+        /** module ("std.math") → name → the item providing it. */
+        val modules = LinkedHashMap<String, LinkedHashMap<String, TopLevel>>()
+        /** Flat name → item view (first module wins), for transitive resolution. */
         val items = LinkedHashMap<String, TopLevel>()
+        /** name → module that provides it, for import hints. */
+        val moduleOfName = LinkedHashMap<String, String>()
         /** extern name → single-signature bridge declaring it. */
         val externs = LinkedHashMap<String, TopLevel.Bridge>()
     }
 
     private val index: Index by lazy { buildIndex() }
 
+    /** The stdlib module providing [name] ("std.math"), or null — used for error hints. */
+    fun moduleOf(name: String): String? = index.moduleOfName[name]
+
     private fun buildIndex(): Index {
         val idx = Index()
         for (program in AzStdlib.loadPrograms()) {
+            val module = program.packageName ?: "std"
+            val moduleItems = idx.modules.getOrPut(module) { LinkedHashMap() }
+            fun register(name: String, item: TopLevel) {
+                moduleItems.putIfAbsent(name, item)
+                idx.items.putIfAbsent(name, item)
+                idx.moduleOfName.putIfAbsent(name, module)
+            }
             for (item in program.items) {
                 when (item) {
-                    is TopLevel.Func -> idx.items.putIfAbsent(item.decl.name, item)
-                    is TopLevel.FinDecl -> idx.items.putIfAbsent(item.name, item)
-                    is TopLevel.LetDecl -> idx.items.putIfAbsent(item.name, item)
-                    is TopLevel.VarDecl -> idx.items.putIfAbsent(item.name, item)
-                    is TopLevel.Pack -> idx.items.putIfAbsent(item.name, item)
-                    is TopLevel.Enum -> idx.items.putIfAbsent(item.name, item)
-                    is TopLevel.Fail -> idx.items.putIfAbsent(item.name, item)
+                    is TopLevel.Func -> register(item.decl.name, item)
+                    is TopLevel.FinDecl -> register(item.name, item)
+                    is TopLevel.LetDecl -> register(item.name, item)
+                    is TopLevel.VarDecl -> register(item.name, item)
+                    is TopLevel.Pack -> register(item.name, item)
+                    is TopLevel.Enum -> register(item.name, item)
+                    is TopLevel.Fail -> register(item.name, item)
                     is TopLevel.Bridge -> for (sig in item.funcs) {
                         idx.externs.putIfAbsent(sig.name, TopLevel.Bridge(item.target, listOf(sig), item.line, item.column))
                     }
@@ -65,6 +83,28 @@ object StdlibInjector {
             }
         }
         return idx
+    }
+
+    /** Names made visible by the program's `use std…` imports. */
+    private fun importedNames(program: Program): Set<String> {
+        val visible = mutableSetOf<String>()
+        for (item in program.items) {
+            if (item !is TopLevel.UseImport) continue
+            for ((path, selected) in item.imports) {
+                when {
+                    path == "std" -> index.modules.values.forEach { visible += it.keys }
+                    path.startsWith("std.") -> {
+                        val module = index.modules[path] ?: continue
+                        if (selected != null) {
+                            if (selected in module) visible += selected
+                        } else {
+                            visible += module.keys
+                        }
+                    }
+                }
+            }
+        }
+        return visible
     }
 
     /** Names declared at the top level of the user [program] (these shadow the stdlib). */
@@ -87,15 +127,27 @@ object StdlibInjector {
     }
 
     /**
-     * Returns [program] with every stdlib item it (transitively) references
-     * appended. Returns the program unchanged when nothing is referenced.
+     * Returns [program] with every stdlib item it references appended —
+     * gated by `use std…` imports; qualified `std.` access is rewritten to
+     * plain calls and injected without an import. Returns the program
+     * unchanged when nothing stdlib-related is referenced.
      */
     fun inject(program: Program): Program {
         if (index.items.isEmpty() && index.externs.isEmpty()) return program
 
         val shadowed = userDeclaredNames(program)
+
+        // `std.math.abs(x)` / `std.PI` → plain names, collected as requirements.
+        val qualified = mutableSetOf<String>()
+        val rewritten = if ("std" in shadowed) program
+            else QualifiedStdRewriter(index.modules, qualified).rewrite(program)
+
+        val visible = importedNames(rewritten) + qualified
+
         val referenced = mutableSetOf<String>()
-        for (item in program.items) collectNamesFromItem(item, referenced)
+        for (item in rewritten.items) collectNamesFromItem(item, referenced)
+        referenced.retainAll(visible)
+        referenced += qualified
 
         val injected = LinkedHashMap<String, TopLevel>()
         val injectedExterns = LinkedHashMap<String, TopLevel>()
@@ -119,8 +171,8 @@ object StdlibInjector {
             frontier = next
         }
 
-        if (injected.isEmpty() && injectedExterns.isEmpty()) return program
-        return program.copy(items = program.items + injected.values + injectedExterns.values)
+        if (injected.isEmpty() && injectedExterns.isEmpty()) return rewritten
+        return rewritten.copy(items = rewritten.items + injected.values + injectedExterns.values)
     }
 
     // -----------------------------------------------------------------

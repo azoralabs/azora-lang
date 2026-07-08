@@ -21,6 +21,7 @@ import org.azora.lang.backend.LlvmCodegen
 import org.azora.lang.backend.TypeScriptCodegen
 import org.azora.lang.frontend.AstValidator
 import org.azora.lang.frontend.Lexer
+import org.azora.lang.frontend.DebugInstrumenter
 import org.azora.lang.frontend.Parser
 import org.azora.lang.stdlib.StdlibInjector
 import org.azora.lang.frontend.Program
@@ -111,7 +112,18 @@ class Compiler {
      * @return a [CompilationResult.Success] with all generated outputs, or a
      *   [CompilationResult.Failure] with error messages
      */
-    fun compile(source: String, warningsAsErrors: Boolean = false, release: Boolean = true): CompilationResult {
+    /**
+     * When an unknown-symbol error names something the standard library
+     * provides, point at the missing import ("add 'use std.math'").
+     */
+    private fun withStdlibHint(message: String): String {
+        val match = Regex("(?:undefined function|undefined variable) '([A-Za-z_][A-Za-z0-9_]*)'").find(message)
+            ?: return message
+        val module = StdlibInjector.moduleOf(match.groupValues[1]) ?: return message
+        return "$message — '${match.groupValues[1]}' is in the standard library: add 'use $module'"
+    }
+
+    fun compile(source: String, warningsAsErrors: Boolean = false, release: Boolean = true, debug: Boolean = false): CompilationResult {
 
         // Clear per-compilation state
         IrType.aliases.clear()
@@ -124,7 +136,11 @@ class Compiler {
         val tokens = Lexer(source).tokenize()
 
         // 2. Parser: tokens → raw AST
-        val parsed = Parser(tokens).parse()
+        val rawAst = Parser(tokens).parse()
+
+        // 2a. Debug builds: instrument statements with `__dbg(line)` markers so a
+        // debugger can pause at breakpoints (stdlib, injected below, stays clean).
+        val parsed = if (debug) DebugInstrumenter.instrument(rawAst) else rawAst
 
         // 2b. Standard library: append the stdlib declarations the program
         // actually references (transitively); user definitions shadow stdlib.
@@ -147,7 +163,7 @@ class Compiler {
         val errors = semantic.errors.filter { !it.startsWith("warning:") }
 
         if (errors.isNotEmpty()) {
-            return CompilationResult.Failure(semantic.errors)
+            return CompilationResult.Failure(semantic.errors.map { withStdlibHint(it) })
         }
         if (warningsAsErrors && warnings.isNotEmpty()) {
             return CompilationResult.Failure(semantic.errors)

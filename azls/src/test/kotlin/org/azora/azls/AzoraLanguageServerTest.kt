@@ -166,7 +166,8 @@ class AzoraLanguageServerTest {
         val offset = source.indexOf("    ab") + 6
         val list = completions(source, offset)
         assertTrue(list.any { it.label == "abs" && it.kind == "function" }, "stdlib abs should complete: $list")
-        assertTrue(list.any { it.label == "abs" && "func abs" in it.detail }, "abs should carry its signature: $list")
+        assertTrue(list.any { it.label == "abs" && "func abs" in it.detail && "std.math" in it.detail },
+            "abs should carry its signature and module: $list")
     }
 
     @Test

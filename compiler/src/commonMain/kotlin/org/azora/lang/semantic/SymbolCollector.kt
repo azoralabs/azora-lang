@@ -44,6 +44,10 @@ class SymbolCollector {
             // `channel()` — creates a buffered channel for task-to-task communication.
             table.defineFunction(FunctionSymbol("channel", emptyList(), IrType.Named("Channel")))
         }
+        if (table.lookupFunction("__dbg") == null) {
+            // Debug-build line marker (see frontend.DebugInstrumenter).
+            table.defineFunction(FunctionSymbol("__dbg", listOf("line" to IrType.Int), IrType.Unit))
+        }
         if (table.lookupFunction("__drop") == null) {
             table.defineFunction(FunctionSymbol("__drop", listOf("value" to IrType.Any), IrType.Unit))
         }

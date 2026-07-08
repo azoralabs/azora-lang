@@ -17,7 +17,7 @@ class LlvmStdlibExecTest {
 
     @Test fun floorCeilRoundNative() = check(
         "3\n4\n4",
-        "func main() {\n    println(floor(3.7))\n    println(ceil(3.2))\n    println(round(3.6))\n}"
+        "use std.math\nfunc main() {\n    println(floor(3.7))\n    println(ceil(3.2))\n    println(round(3.6))\n}"
     )
 
     @Test fun ifExpressionNative() = check(

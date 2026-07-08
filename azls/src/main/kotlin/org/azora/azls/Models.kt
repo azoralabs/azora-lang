@@ -58,3 +58,24 @@ data class Hover(val signature: String, val detail: String = "")
 /** An outline entry (top-level declaration). */
 @Serializable
 data class DocumentSymbol(val name: String, val kind: String, val line: Int, val detail: String = "")
+
+/** One variable visible at a debug pause. */
+@Serializable
+data class DebugLocal(val name: String, val value: String)
+
+/**
+ * Debug-session snapshot polled by Studio.
+ *
+ * @property status `none`, `starting`, `running`, `paused`, `terminated` or `failed`
+ * @property line 1-based document line while paused
+ * @property output program output produced since the previous poll
+ */
+@Serializable
+data class DebugStatus(
+    val status: String,
+    val line: Int = 0,
+    val pauseId: Int = 0,
+    val locals: List<DebugLocal> = emptyList(),
+    val output: String = "",
+    val error: String? = null,
+)

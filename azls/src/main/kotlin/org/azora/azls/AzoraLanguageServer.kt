@@ -17,6 +17,7 @@
 package org.azora.azls
 
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import org.azora.lang.CompilationResult
 import org.azora.lang.Compiler
@@ -63,6 +64,60 @@ class AzoraLanguageServer {
     private var cachedPreludeIndex: SymbolIndex? = null
 
     fun version(): String = "0.1.0"
+
+    // -----------------------------------------------------------------
+    // Debugging (single session; polled from Studio)
+    // -----------------------------------------------------------------
+
+    @Volatile
+    private var debugSession: AzoraDebugSession? = null
+
+    /**
+     * Starts a debug run of [source] (with [prelude] as the rest of the
+     * compilation unit). [breakpointsJson] is a JSON array of 1-based document
+     * lines. Returns `{"ok":true}` or `{"error":"…"}` on compile failure.
+     */
+    fun debugStart(source: String, prelude: String, breakpointsJson: String): String {
+        debugSession?.stop()
+        val breakpoints = parseBreakpoints(breakpointsJson)
+        val session = AzoraDebugSession(source, prelude, breakpoints)
+        session.start()
+        debugSession = session
+        return if (session.status == "failed") {
+            json.encodeToString(DebugStatus.serializer(), DebugStatus("failed", error = session.error ?: "compile failed"))
+        } else {
+            """{"ok":true}"""
+        }
+    }
+
+    /** Current session state + output produced since the last poll. */
+    fun debugStatus(): String {
+        val session = debugSession
+            ?: return json.encodeToString(DebugStatus.serializer(), DebugStatus("none"))
+        return json.encodeToString(
+            DebugStatus.serializer(),
+            DebugStatus(
+                status = session.status,
+                line = session.pausedLine,
+                pauseId = session.pauseId,
+                locals = session.locals.map { DebugLocal(it.first, it.second) },
+                output = session.drainOutput(),
+                error = session.error
+            )
+        )
+    }
+
+    fun debugResume(): String { debugSession?.resume(); return """{"ok":true}""" }
+    fun debugStep(): String { debugSession?.step(); return """{"ok":true}""" }
+    fun debugStop(): String { debugSession?.stop(); return """{"ok":true}""" }
+    fun debugSetBreakpoints(breakpointsJson: String): String {
+        debugSession?.setBreakpoints(parseBreakpoints(breakpointsJson))
+        return """{"ok":true}"""
+    }
+
+    private fun parseBreakpoints(breakpointsJson: String): Set<Int> = runCatching {
+        json.decodeFromString(ListSerializer(Int.serializer()), breakpointsJson).toSet()
+    }.getOrDefault(emptySet())
 
     // -----------------------------------------------------------------
     // Highlighting
@@ -143,10 +198,12 @@ class AzoraLanguageServer {
                 out.add(Completion(name, "function", detail, "$name("))
             }
             for (index in listOf(userIndex, preludeIndex, stdlibIndex)) {
-                index.functions.values.forEach { out.add(functionCompletion(it)) }
-                index.packs.values.forEach { out.add(Completion(it.name, "pack", packDetail(it), it.name)) }
-                index.enums.values.forEach { out.add(Completion(it.name, "enum", "enum ${it.name}", it.name)) }
-                index.topLevelVars.forEach { (name, detail) -> out.add(Completion(name, "variable", detail, name)) }
+                fun withOrigin(name: String, detail: String): String =
+                    index.origins[name]?.let { "$detail — $it" } ?: detail
+                index.functions.values.forEach { out.add(functionCompletion(it).let { c -> c.copy(detail = withOrigin(c.label, c.detail)) }) }
+                index.packs.values.forEach { out.add(Completion(it.name, "pack", withOrigin(it.name, packDetail(it)), it.name)) }
+                index.enums.values.forEach { out.add(Completion(it.name, "enum", withOrigin(it.name, "enum ${it.name}"), it.name)) }
+                index.topLevelVars.forEach { (name, detail) -> out.add(Completion(name, "variable", withOrigin(name, detail), name)) }
             }
             AzHighlighter.KEYWORDS.forEach { out.add(Completion(it, "keyword", "", it)) }
         }
@@ -381,6 +438,9 @@ internal class SymbolIndex {
     val packs = linkedMapOf<String, TopLevel.Pack>()
     val enums = linkedMapOf<String, TopLevel.Enum>()
 
+    /** symbol name → module it came from ("std.math"), when packaged. */
+    val origins = linkedMapOf<String, String>()
+
     /** name → display detail for top-level var/let/fin bindings. */
     val topLevelVars = linkedMapOf<String, String>()
 
@@ -388,11 +448,15 @@ internal class SymbolIndex {
     private val topLevelVarTypes = mutableMapOf<String, String>()
 
     fun addProgram(program: Program) {
+        val module = program.packageName
+        fun origin(name: String) {
+            if (module != null) origins.putIfAbsent(name, module)
+        }
         for (item in program.items) {
             when (item) {
-                is TopLevel.Func -> functions[item.decl.name] = item.decl
-                is TopLevel.Pack -> packs[item.name] = item
-                is TopLevel.Enum -> enums[item.name] = item
+                is TopLevel.Func -> { functions[item.decl.name] = item.decl; origin(item.decl.name) }
+                is TopLevel.Pack -> { packs[item.name] = item; origin(item.name) }
+                is TopLevel.Enum -> { enums[item.name] = item; origin(item.name) }
                 is TopLevel.Solo -> item.methods.forEach { functions[it.name] = it }
                 is TopLevel.VarDecl -> registerTopVar(item.name, "var", item.type, item.initializer)
                 is TopLevel.LetDecl -> registerTopVar(item.name, "let", item.type, item.initializer)

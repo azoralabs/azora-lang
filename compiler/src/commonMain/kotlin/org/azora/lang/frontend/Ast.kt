@@ -553,7 +553,9 @@ sealed class Stmt {
         override val column: Int = 0,
         override val length: Int = 0,
         /** `zone alloc { }` — allocations inside are tracked and freed at exit. */
-        val alloc: Boolean = false
+        val alloc: Boolean = false,
+        /** Explicit opt-in boundary for operations whose contracts cannot be proven safe. */
+        val unsafe: Boolean = false
     ) : Stmt()
 
     /**
@@ -907,6 +909,13 @@ sealed class Stmt {
  * - [Nullable] -- `T?`
  */
 sealed class TypeRef {
+    enum class RefKind(val spelling: String) {
+        BORROWED("ref"),
+        MUTABLE("mut ref"),
+        SHARED("shared ref"),
+        WEAK("weak ref")
+    }
+
     /** A named type, optionally generic: `Int`, `List<Int>`. */
     data class Named(val name: String, val args: List<TypeRef> = emptyList()) : TypeRef() {
         override fun toString() = if (args.isEmpty()) name else "$name<${args.joinToString(", ")}>"
@@ -950,6 +959,11 @@ sealed class TypeRef {
     /** Pointer type `T*` — a reference to a heap value of [inner]. */
     data class Pointer(val inner: TypeRef) : TypeRef() {
         override fun toString() = "$inner*"
+    }
+
+    /** A checked reference. Ownership is carried by the qualifier, not punctuation. */
+    data class Reference(val kind: RefKind, val inner: TypeRef) : TypeRef() {
+        override fun toString() = "${kind.spelling} $inner"
     }
 
     /** Human-readable name for diagnostics (the simple name for [Named]). */
@@ -1051,7 +1065,11 @@ data class FuncDecl(
     /** `repl func` — overrides a parent node's method. */
     val isOverride: Boolean = false,
     /** `virt func` — virtual method (dynamic dispatch). */
-    val isVirtual: Boolean = false
+    val isVirtual: Boolean = false,
+    /** `task name(...)` — a structured asynchronous function. */
+    val isTask: Boolean = false,
+    /** Declaration requires an explicit unsafe calling context. */
+    val isUnsafe: Boolean = false,
 )
 
 /**

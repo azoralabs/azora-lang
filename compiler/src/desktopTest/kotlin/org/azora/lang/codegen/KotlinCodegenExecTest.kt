@@ -36,6 +36,20 @@ class KotlinCodegenExecTest {
         assertEquals(expected, KotlinExec.run(source))
     }
 
+    @Test fun structuredTasksAndAsyncBlocks() = check(
+        "42",
+        """
+        task left(): Int { return 19 }
+        task main() {
+            fin a = left()
+            fin b = async { 23 }
+            fin av = await a
+            fin bv = await b
+            println(av + bv)
+        }
+        """.trimIndent()
+    )
+
     /** Scalars: arithmetic, bitwise (incl. `~` → `.inv()`), control flow, strings, lambdas. */
     @Test fun scalarFeatures() = check(
         "sum = 15\n8\n2\n-11\n16\nababab\ntwo or three\n10\npositive",

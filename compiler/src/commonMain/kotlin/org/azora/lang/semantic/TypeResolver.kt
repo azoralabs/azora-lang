@@ -42,6 +42,7 @@ import kotlin.collections.iterator
  *   function signatures and manage local variable scopes
  */
 class TypeResolver(private val table: SymbolTable) {
+    private var unsafeContext = false
 
     private val errors = mutableListOf<String>()
     private var program: Program? = null
@@ -80,8 +81,11 @@ class TypeResolver(private val table: SymbolTable) {
         table.pushScope()
 
         // Register parameters as local variables
-        for ((name, type) in symbol.params) {
-            table.defineVariable(VariableSymbol(name, type))
+        for (i in symbol.params.indices) {
+            val (name, type) = symbol.params[i]
+            val modifier = func.params.getOrNull(i)?.modifier.orEmpty()
+            val mutable = modifier in setOf("mut", "out", "ref", "mut ref")
+            table.defineVariable(VariableSymbol(name, type, mutable))
         }
 
         // `T!ErrSet` enforcement: track the function's declared error set so that
@@ -89,7 +93,10 @@ class TypeResolver(private val table: SymbolTable) {
         val savedFailSet = declaredFailSet
         declaredFailSet = (func.returnType as? TypeAnnotation.Explicit)
             ?.ref?.let { (it as? TypeRef.Failable)?.errSet }
+        val savedUnsafe = unsafeContext
+        unsafeContext = func.isUnsafe
         resolveBody(func.body, symbol.returnType)
+        unsafeContext = savedUnsafe
         declaredFailSet = savedFailSet
 
         table.popScope()
@@ -203,7 +210,10 @@ class TypeResolver(private val table: SymbolTable) {
             is Stmt.DeepInlineIf -> errors.add("line ${stmt.line}: deepinline if condition could not be evaluated at compile time")
             is Stmt.Zone -> {
                 table.pushScope()
+                val savedUnsafe = unsafeContext
+                if (stmt.unsafe) unsafeContext = true
                 resolveBody(stmt.body, returnType)
+                unsafeContext = savedUnsafe
                 table.popScope()
             }
             is Stmt.FriendZone -> {
@@ -561,6 +571,10 @@ class TypeResolver(private val table: SymbolTable) {
                     errors.add("line ${expr.line}: undefined function '${expr.callee}'")
                     return null
                 }
+                if (func.isUnsafe && !unsafeContext) {
+                    errors.add("line ${expr.line}: call to unsafe '${expr.callee}' requires an unsafe block or unsafe function")
+                    return null
+                }
                 // Handle named arguments — reorder to param order
                 val effectiveArgs = if (expr.args.isNotEmpty() && expr.args[0] is Expr.NamedArg && func.paramNames.isNotEmpty()) {
                     val namedMap = expr.args.associate { (it as Expr.NamedArg).name to (it as Expr.NamedArg).value }
@@ -626,7 +640,15 @@ class TypeResolver(private val table: SymbolTable) {
                         if (retRef is TypeRef.Named && retRef.name in bindings) return bindings[retRef.name]!!
                     }
                 }
-                func.returnType
+                if (expr.callee == "async") {
+                    val thunk = argTypes.firstOrNull()
+                    val result = (thunk as? IrType.Function)?.ret ?: IrType.Any
+                    IrType.Task(result)
+                } else if (func.isTask) {
+                    IrType.Task(func.returnType)
+                } else {
+                    func.returnType
+                }
             }
             is Expr.Grouping -> resolveExpr(expr.expr)
             is Expr.Range -> {
@@ -866,7 +888,14 @@ class TypeResolver(private val table: SymbolTable) {
             is Expr.Isolated -> resolveExpr(expr.value) ?: IrType.Any
             is Expr.Await -> {
                 val t = resolveExpr(expr.value) ?: return null
-                (t as? IrType.Function)?.ret ?: IrType.Any
+                when (t) {
+                    is IrType.Task -> t.result
+                    is IrType.Function -> t.ret // legacy `await task { ... }`
+                    else -> {
+                        errors.add("line ${expr.line}: await requires a task, got $t")
+                        null
+                    }
+                }
             }
             is Expr.Inject -> IrType.Named(expr.typeName)
             is Expr.Spread -> { resolveExpr(expr.array) ?: return null; IrType.Any }

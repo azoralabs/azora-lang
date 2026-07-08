@@ -39,6 +39,31 @@ class TypeScriptExecTest {
 
     private fun main(body: String): String = "func main() {\n$body\n}"
 
+    @Test fun structuredTasksAndAsyncBlocks() = check(
+        "42",
+        """
+        task left(): Int { return 19 }
+        task main() {
+            fin a = left()
+            fin b = async { 23 }
+            fin av = await a
+            fin bv = await b
+            println(av + bv)
+        }
+        """.trimIndent()
+    )
+
+    @Test fun taskMainJoinsUnawaitedChildren() = check(
+        "main\nchild",
+        """
+        task child() { println("child") }
+        task main() {
+            child()
+            println("main")
+        }
+        """.trimIndent()
+    )
+
     // -----------------------------------------------------------------------
     // Basics
     // -----------------------------------------------------------------------

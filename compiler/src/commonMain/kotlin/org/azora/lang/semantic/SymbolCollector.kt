@@ -58,6 +58,9 @@ class SymbolCollector {
             // `launch { body }` desugars to __launch(thunk); fire-and-forget, joined at end.
             table.defineFunction(FunctionSymbol("__launch", listOf("thunk" to IrType.Any), IrType.Unit))
         }
+        if (table.lookupFunction("async") == null) {
+            table.defineFunction(FunctionSymbol("async", listOf("thunk" to IrType.Any), IrType.Task(IrType.Any)))
+        }
     }
 
     /**
@@ -123,7 +126,20 @@ class SymbolCollector {
                 // Variadic only when declared with the `...T` syntax — a plain
                 // trailing `[T]` parameter takes an array argument as-is.
                 val isVariadic = func.params.lastOrNull()?.variadic == true
-                table.defineFunction(FunctionSymbol(func.name, params, callReturnType, func.isInline, func.typeParams, paramNames, defaults, isVariadic))
+                table.defineFunction(
+                    FunctionSymbol(
+                        name = func.name,
+                        params = params,
+                        returnType = callReturnType,
+                        isInline = func.isInline,
+                        typeParams = func.typeParams,
+                        paramNames = paramNames,
+                        defaults = defaults,
+                        isVariadic = isVariadic,
+                        isTask = func.isTask,
+                        isUnsafe = func.isUnsafe,
+                    )
+                )
             } catch (e: Exception) {
                 errors.add("line ${func.line}: ${e.message}")
             }

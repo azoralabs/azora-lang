@@ -44,6 +44,7 @@ class TypeScriptCodegen {
     private val out = StringBuilder()
     private var indent = 0
     private var usesPointers = false
+    private var usesTasks = false
 
     private val POINTER_RUNTIME = setOf("__alloc", "__deref", "__derefAssign", "__isolated")
 
@@ -69,9 +70,22 @@ class TypeScriptCodegen {
         out.clear()
         indent = 0
         usesPointers = false
+        usesTasks = program.functions.any { it.isTask }
 
         if (program.packageName != null) {
             line("// package: ${program.packageName}")
+            line("")
+        }
+        if (usesTasks) {
+            line("const __azoraChildren = new Set<Promise<unknown>>();")
+            line("function __azoraSpawn<T>(body: () => Promise<T> | T): Promise<T> {")
+            indent++
+            line("const task = Promise.resolve().then(body);")
+            line("__azoraChildren.add(task);")
+            line("void task.then(() => __azoraChildren.delete(task), () => __azoraChildren.delete(task));")
+            line("return task;")
+            indent--
+            line("}")
             line("")
         }
 
@@ -109,9 +123,20 @@ class TypeScriptCodegen {
         }
 
         // Entry point
-        if (program.functions.any { it.name == "main" }) {
+        val main = program.functions.firstOrNull { it.name == "main" }
+        if (main != null) {
             line("")
-            line("main()")
+            if (main.isTask) {
+                line("async function __azoraRunMain(): Promise<void> {")
+                indent++
+                line("await main();")
+                line("while (__azoraChildren.size > 0) await Promise.all(Array.from(__azoraChildren));")
+                indent--
+                line("}")
+                line("void __azoraRunMain();")
+            } else {
+                line("main()")
+            }
         }
 
         val body = out.toString().trimEnd()
@@ -130,8 +155,9 @@ class TypeScriptCodegen {
         val params = func.params.joinToString(", ") { (name, type) ->
             "$name: ${mapType(type)}"
         }
-        val retType = mapType(func.returnType)
-        line("function ${func.name}($params): $retType {")
+        val retType = if (func.isTask) "Promise<${mapType(func.returnType)}>" else mapType(func.returnType)
+        val async = if (func.isTask) "async " else ""
+        line("${async}function ${func.name}($params): $retType {")
         indent++
         for (stmt in func.body) {
             emitStmt(stmt)
@@ -342,9 +368,15 @@ class TypeScriptCodegen {
         is IrExpr.Call -> {
             if (expr.name in POINTER_RUNTIME) usesPointers = true
             val name = if (expr.name == "println") "console.log" else expr.name
-            "$name(${expr.args.joinToString(", ") { emitExpr(it) }})"
+            if (expr.name == "async" && expr.args.size == 1) {
+                "__azoraSpawn(${emitExpr(expr.args.single())})"
+            } else if (expr.type is IrType.Task) {
+                "__azoraSpawn(() => $name(${expr.args.joinToString(", ") { emitExpr(it) }}))"
+            } else {
+                "$name(${expr.args.joinToString(", ") { emitExpr(it) }})"
+            }
         }
-        is IrExpr.Await -> emitExpr(expr.value) // no coroutine runtime: emit the task inline
+        is IrExpr.Await -> "await ${emitExpr(expr.value)}"
         is IrExpr.Spread -> "...${emitExpr(expr.array)}" // TS spread operator
         is IrExpr.ArrayLiteral -> "[${expr.elements.joinToString(", ") { emitExpr(it) }}]"
         is IrExpr.SetLit -> "new Set([${expr.elements.joinToString(", ") { emitExpr(it) }}])"
@@ -434,6 +466,7 @@ class TypeScriptCodegen {
         is IrType.Map -> "Record<${mapType(type.key)}, ${mapType(type.value)}>"
         is IrType.Pointer -> "AzoraPtr<${mapType(type.inner)}>"
         is IrType.Function -> "(${type.params.joinToString(", ") { mapType(it) }}) => ${mapType(type.ret)}"
+        is IrType.Task -> "Promise<${mapType(type.result)}>"
         is IrType.Tuple -> "[${type.elements.joinToString(", ") { mapType(it) }}]"
         is IrType.Nullable -> "${mapType(type.inner)} | null"
         is IrType.Named -> type.name

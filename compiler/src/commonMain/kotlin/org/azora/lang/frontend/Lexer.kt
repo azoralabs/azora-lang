@@ -100,6 +100,8 @@ class Lexer(private val source: String) {
             "ref" to TokenType.REF,
             "out" to TokenType.OUT,
             "mut" to TokenType.MUT,
+            "shared" to TokenType.SHARED,
+            "weak" to TokenType.WEAK,
             "expose" to TokenType.EXPOSE,
             "confine" to TokenType.CONFINE,
             "protect" to TokenType.PROTECT,

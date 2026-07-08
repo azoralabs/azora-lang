@@ -1033,6 +1033,9 @@ class CtfeEvaluator(private val table: SymbolTable) {
      */
     private fun tryEvalCall(name: String, args: List<Expr>, program: Program, line: Int): Expr? {
         val funcDecl = program.functions.find { it.name == name } ?: return null
+        // Tasks/flows are execution boundaries, not pure value expressions. Folding
+        // them would erase scheduling, cancellation, and Task<T> from the type graph.
+        if (funcDecl.isTask || funcDecl.isFlow || funcDecl.isUnsafe) return null
         if (args.size != funcDecl.params.size) return null // arg count mismatch — let TypeResolver report it
 
         // Build a compile-time environment: param name → constant value

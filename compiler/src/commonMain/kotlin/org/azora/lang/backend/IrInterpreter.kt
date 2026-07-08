@@ -677,11 +677,15 @@ class IrInterpreter {
             }
             is IrExpr.Await -> {
                 val task = evalExpr(expr.value)
-                val closure = task as? Closure ?: error("await requires a task (a `task { … }` value)")
-                val scope = coroutineScope ?: error("await used outside of the interpreter's runBlocking scope")
-                // Run the task in its own coroutine with an isolated ExecState (real parallelism
-                // on Dispatchers.Default); each task has its own scope/defer stack.
-                scope.async(context = childState()) { invokeClosure(closure) }.await()
+                when (task) {
+                    is TaskHandle -> task.deferred.await()
+                    is Closure -> {
+                        val scope = coroutineScope ?: error("await used outside of the interpreter's runBlocking scope")
+                        // Legacy `await task { ... }`: run the thunk as a structured child.
+                        scope.async(context = childState()) { invokeClosure(task) }.await()
+                    }
+                    else -> error("await requires Task<T>, got $task")
+                }
             }
             is IrExpr.SlotPattern -> error("SlotPattern should be handled by when matching, not evaluated")
             is IrExpr.Spread -> error("Spread should be handled by evalCall, not evaluated directly")
@@ -973,6 +977,11 @@ class IrInterpreter {
             outputListener?.invoke(text)
             return null
         }
+        if (expr.name == "async") {
+            val thunk = args.firstOrNull() as? Closure ?: error("async expects a task body")
+            val scope = coroutineScope ?: error("async used outside of the interpreter's structured scope")
+            return TaskHandle(scope.async(context = childState()) { invokeClosure(thunk) })
+        }
         if (expr.name == "channel") {
             // A buffered channel (effectively unbounded) for task-to-task communication.
             return AzoraChannel(Channel<Any?>(Channel.UNLIMITED))
@@ -1002,6 +1011,10 @@ class IrInterpreter {
                         state().flowProduceChannels.removeLast()
                     }
                 }
+            }
+            if (func.isTask) {
+                val scope = coroutineScope ?: error("task used outside of the interpreter's structured scope")
+                return TaskHandle(scope.async(context = childState()) { executeFunction(func, args) })
             }
             // Wrap ref/out params in RefCells so mutations propagate back to the caller.
             if (func.refParams.isEmpty()) {
@@ -1127,6 +1140,9 @@ class IrInterpreter {
         val body: List<org.azora.lang.ir.IrStmt>,
         val capturedScopes: List<MutableMap<String, Any?>>
     )
+
+    /** A structured child task. Its Deferred is parented to the interpreter root scope. */
+    private class TaskHandle(val deferred: kotlinx.coroutines.Deferred<Any?>)
 
     /** A heap pointer — a mutable cell holding the pointee value. */
     private class Pointer(val buffer: MutableList<Any?>, val index: Int) {

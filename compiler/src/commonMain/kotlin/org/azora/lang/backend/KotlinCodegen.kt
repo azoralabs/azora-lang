@@ -33,6 +33,7 @@ class KotlinCodegen {
     private val out = StringBuilder()
     private var indent = 0
     private var usesPointers = false
+    private var returnLabel: String? = null
 
     /** Runtime helpers emitted as a preamble when pointer/isolated ops are used. */
     private val POINTER_RUNTIME = setOf("__alloc", "__deref", "__derefAssign", "__isolated")
@@ -59,6 +60,10 @@ class KotlinCodegen {
 
         if (program.packageName != null) {
             line("package ${program.packageName}")
+            line("")
+        }
+        if (program.functions.any { it.isTask }) {
+            line("import kotlinx.coroutines.*")
             line("")
         }
 
@@ -106,6 +111,25 @@ class KotlinCodegen {
     private fun emitFunction(func: IrFunction) {
         val params = func.params.joinToString(", ") { (name, type) ->
             "$name: ${mapType(type)}"
+        }
+        if (func.isTask) {
+            if (func.name == "main") {
+                line("fun main() = kotlinx.coroutines.runBlocking {")
+                indent++
+                for (stmt in func.body) emitStmt(stmt)
+                indent--
+                line("}")
+            } else {
+                line("fun kotlinx.coroutines.CoroutineScope.${func.name}($params): kotlinx.coroutines.Deferred<${mapType(func.returnType)}> = async {")
+                indent++
+                val previousLabel = returnLabel
+                returnLabel = "async"
+                for (stmt in func.body) emitStmt(stmt)
+                returnLabel = previousLabel
+                indent--
+                line("}")
+            }
+            return
         }
         // Kotlin requires main() to return Unit — wrap non-Unit main
         if (func.name == "main" && func.returnType != IrType.Unit) {
@@ -159,8 +183,9 @@ class KotlinCodegen {
                 line("}")
             }
             is IrStmt.Return -> {
-                if (stmt.value != null) line("return ${emitExpr(stmt.value)}")
-                else line("return")
+                val prefix = returnLabel?.let { "return@$it" } ?: "return"
+                if (stmt.value != null) line("$prefix ${emitExpr(stmt.value)}")
+                else line(prefix)
             }
             is IrStmt.ExprStmt -> line(emitExpr(stmt.expr))
             is IrStmt.Zone -> {
@@ -324,9 +349,13 @@ class KotlinCodegen {
         }
         is IrExpr.Call -> {
             if (expr.name in POINTER_RUNTIME) usesPointers = true
-            "${expr.name}(${expr.args.joinToString(", ") { emitExpr(it) }})"
+            if (expr.name == "async" && expr.args.singleOrNull() is IrExpr.Lambda) {
+                "async ${emitExpr(expr.args.single())}"
+            } else {
+                "${expr.name}(${expr.args.joinToString(", ") { emitExpr(it) }})"
+            }
         }
-        is IrExpr.Await -> emitExpr(expr.value) // no coroutine runtime: emit the task inline
+        is IrExpr.Await -> "${emitExpr(expr.value)}.await()"
         is IrExpr.Spread -> "*${emitExpr(expr.array)}" // Kotlin spread operator
         is IrExpr.ArrayLiteral -> "mutableListOf(${expr.elements.joinToString(", ") { emitExpr(it) }})"
         is IrExpr.SetLit -> "mutableSetOf(${expr.elements.joinToString(", ") { emitExpr(it) }})"
@@ -431,6 +460,7 @@ class KotlinCodegen {
         is IrType.Map -> "MutableMap<${mapType(type.key)}, ${mapType(type.value)}>"
         is IrType.Pointer -> "AzoraPtr<${mapType(type.inner)}>"
         is IrType.Function -> "(${type.params.joinToString(", ") { mapType(it) }}) -> ${mapType(type.ret)}"
+        is IrType.Task -> "kotlinx.coroutines.Deferred<${mapType(type.result)}>"
         is IrType.Tuple -> when (type.elements.size) {
             2 -> "Pair<${type.elements.joinToString(", ") { mapType(it) }}>"
             3 -> "Triple<${type.elements.joinToString(", ") { mapType(it) }}>"

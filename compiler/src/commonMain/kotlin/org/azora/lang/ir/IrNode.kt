@@ -94,6 +94,9 @@ sealed class IrType {
     /** Function type `(A, B) -> R`. */
     data class Function(val params: List<IrType>, val ret: IrType) : IrType() { override fun toString() = "(${params.joinToString(", ")}) -> $ret" }
 
+    /** Handle returned by an asynchronous `task` invocation. */
+    data class Task(val result: IrType) : IrType() { override fun toString() = "Task<$result>" }
+
     /** Tuple type `(A, B)`. */
     data class Tuple(val elements: List<IrType>) : IrType() { override fun toString() = "(${elements.joinToString(", ")})" }
 
@@ -180,6 +183,9 @@ sealed class IrType {
             is TypeRef.Tuple -> Tuple(ref.elements.map { resolve(it, typeParams) })
             is TypeRef.Nullable -> Nullable(resolve(ref.inner, typeParams))
             is TypeRef.Pointer -> Pointer(resolve(ref.inner, typeParams))
+            // Checked references are erased after ownership/lifetime analysis. Backends
+            // receive the referenced value ABI while the AST retains the qualifier.
+            is TypeRef.Reference -> resolve(ref.inner, typeParams)
             // `T!ErrSet` — at runtime a value of T (errors propagate via exceptions),
             // so the IR type is just the inner ok type.
             is TypeRef.Failable -> resolve(ref.ok, typeParams)
@@ -801,13 +807,17 @@ data class IrFunction(
     /** `flow` generator: calling it returns a list of `yield`ed values. */
     val isFlow: Boolean = false,
     /** Indices of `ref`/`out` parameters — the interpreter wraps these in mutable cells. */
-    val refParams: Set<Int> = emptySet()
+    val refParams: Set<Int> = emptySet(),
+    val isTask: Boolean = false,
+    val isUnsafe: Boolean = false,
 ) {
     /** Pretty-prints this function as Azora IR text. */
     fun prettyPrint(sb: StringBuilder, indent: Int) {
         val pad = "    ".repeat(indent)
         val params = params.joinToString(", ") { (name, type) -> "$name: $type" }
-        sb.appendLine("${pad}func $name($params): $returnType {")
+        val keyword = if (isTask) "task" else "func"
+        val unsafe = if (isUnsafe) "unsafe " else ""
+        sb.appendLine("$pad$unsafe$keyword $name($params): $returnType {")
         for (stmt in body) stmt.prettyPrint(sb, indent + 1)
         sb.appendLine("${pad}}")
     }

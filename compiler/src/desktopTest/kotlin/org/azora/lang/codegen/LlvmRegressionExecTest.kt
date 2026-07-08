@@ -39,6 +39,27 @@ class LlvmRegressionExecTest {
 
     private fun main(body: String): String = "func main() {\n$body\n}"
 
+    @Test fun namedTaskAwaitUsesPayloadAbi() = check(
+        "42",
+        """
+        task answer(): Int { return 42 }
+        task main() {
+            fin value = await answer()
+            println(value)
+        }
+        """.trimIndent()
+    )
+
+    @Test fun completedAsyncBlocksRemainValidLlvm() = check(
+        "42",
+        """
+        task main() {
+            fin value = async { 42 }
+            println(await value)
+        }
+        """.trimIndent()
+    )
+
     /** A concatenated string has a fresh pointer — only strcmp can match it. */
     @Test fun whenOnRuntimeString() = check(
         "H",

@@ -883,9 +883,10 @@ class LlvmCodegen {
         is IrExpr.IfExpr -> emitIfExpr(expr)
         is IrExpr.SlotPattern -> "0"
         is IrExpr.Await -> {
+            // LLVM currently represents Task<T> as an eagerly completed T. This is
+            // allocation-free and ABI-correct; the native scheduler can replace the
+            // representation without changing the language-level Task<T> contract.
             emitExpr(expr.value)
-            emit("  ; await — no coroutine runtime (interpreter-only)")
-            defaultValue(expr.type)
         }
         is IrExpr.Spread -> {
             emitExpr(expr.array)
@@ -1931,6 +1932,15 @@ class LlvmCodegen {
     private fun emitCall(expr: IrExpr.Call): String {
         if (expr.name == "println") return emitPrintln(expr)
         if (expr.name == "print") return emitPrintln(expr, newline = false)
+        if (expr.name == "async") {
+            val lambda = expr.args.singleOrNull() as? IrExpr.Lambda
+                ?: error("LLVM async lowering requires a task block")
+            val statements = lambda.body.toMutableList()
+            val tail = statements.lastOrNull() as? IrStmt.Return
+            if (tail != null) statements.removeAt(statements.lastIndex)
+            emitStmts(statements)
+            return tail?.value?.let { emitExpr(it) } ?: defaultValue(expr.type)
+        }
 
         // Coerce arguments to the callee's declared parameter types (numeric
         // widening such as an Int literal passed to a Real/Long parameter).
@@ -2339,6 +2349,7 @@ class LlvmCodegen {
         is IrType.Array -> "i8*"
         is IrType.Map, is IrType.Set -> "i8*"
         is IrType.Function -> "i8*"
+        is IrType.Task -> mapType(type.result)
         is IrType.Tuple -> "i8*"
         is IrType.Nullable -> "i8*"
         is IrType.Pointer -> "i8*"
@@ -2358,6 +2369,7 @@ class LlvmCodegen {
         IrType.Unit -> ""
         is IrType.Array, is IrType.Map, is IrType.Set, is IrType.Function,
         is IrType.Tuple, is IrType.Nullable, is IrType.Named, IrType.Any -> "null"
+        is IrType.Task -> defaultValue(type.result)
         else -> "0"
     }
 

@@ -83,7 +83,13 @@ object KotlinExec {
             ktFile.writeText(kotlin)
             val jar = File(dir, "program.jar")
 
-            val compileProc = ProcessBuilder(tool, ktFile.absolutePath, "-include-runtime", "-d", jar.absolutePath, "-nowarn")
+            val coroutineJar = System.getProperty("java.class.path")
+                .split(File.pathSeparator)
+                .firstOrNull { "kotlinx-coroutines-core" in File(it).name }
+            val compileArgs = mutableListOf(tool, ktFile.absolutePath)
+            if (coroutineJar != null) compileArgs += listOf("-classpath", coroutineJar)
+            compileArgs += listOf("-include-runtime", "-d", jar.absolutePath, "-nowarn")
+            val compileProc = ProcessBuilder(compileArgs)
                 .redirectErrorStream(false)
                 .start()
             val compileErr = compileProc.errorStream.bufferedReader().readText()
@@ -92,7 +98,11 @@ object KotlinExec {
             }
 
             val java = File(System.getProperty("java.home"), "bin/java").absolutePath
-            val runProc = ProcessBuilder(java, "-jar", jar.absolutePath).start()
+            val runProc = if (coroutineJar == null) {
+                ProcessBuilder(java, "-jar", jar.absolutePath).start()
+            } else {
+                ProcessBuilder(java, "-cp", jar.absolutePath + File.pathSeparator + coroutineJar, "ProgramKt").start()
+            }
             val stdout = runProc.inputStream.bufferedReader().readText()
             val stderr = runProc.errorStream.bufferedReader().readText()
             if (runProc.waitFor() != 0) {

@@ -21,6 +21,8 @@ import org.azora.lang.frontend.FuncDecl
 import org.azora.lang.frontend.TopLevel
 import org.azora.lang.frontend.Program
 import org.azora.lang.frontend.Stmt
+import org.azora.lang.frontend.TypeAnnotation
+import org.azora.lang.frontend.TypeRef
 
 /**
  * Semantic — Alloc / Drop Analysis.
@@ -76,6 +78,16 @@ class AllocDropAnalyzer {
         for (param in func.params) {
             defined.add(param.name)
         }
+        if (func.isTask && !func.isUnsafe) {
+            for (param in func.params) {
+                if (param.modifier in setOf("ref", "mut ref", "out")) {
+                    errors.add(
+                        "line ${func.line}: task '${func.name}' cannot suspend with ${param.modifier} parameter '${param.name}'; " +
+                            "use shared ref, pass ownership, or mark the task unsafe"
+                    )
+                }
+            }
+        }
 
         for (stmt in func.body) {
             analyzeStmt(stmt, defined, used, errors)
@@ -97,10 +109,12 @@ class AllocDropAnalyzer {
     private fun analyzeStmt(stmt: Stmt, defined: MutableSet<String>, used: MutableSet<String>, errors: MutableList<String>) {
         when (stmt) {
             is Stmt.VarDecl -> {
+                validateReferenceBinding(stmt.type, stmt.initializer, mutable = true, stmt.line, errors)
                 collectUsedVars(stmt.initializer, used)
                 defined.add(stmt.name)
             }
             is Stmt.FinDecl -> {
+                validateReferenceBinding(stmt.type, stmt.initializer, mutable = false, stmt.line, errors)
                 collectUsedVars(stmt.initializer, used)
                 defined.add(stmt.name)
             }
@@ -152,6 +166,7 @@ class AllocDropAnalyzer {
                 collectUsedVars(stmt.value, used)
             }
             is Stmt.LetDecl -> {
+                validateReferenceBinding(stmt.type, stmt.initializer, mutable = false, stmt.line, errors)
                 collectUsedVars(stmt.initializer, used)
                 defined.add(stmt.name)
             }
@@ -218,6 +233,27 @@ class AllocDropAnalyzer {
                 stmt.catchBody?.forEach { analyzeStmt(it, defined, used, errors) }
             }
             is Stmt.Defer -> stmt.body.forEach { analyzeStmt(it, defined, used, errors) }
+        }
+    }
+
+    private fun validateReferenceBinding(
+        annotation: TypeAnnotation,
+        initializer: Expr,
+        mutable: Boolean,
+        line: Int,
+        errors: MutableList<String>
+    ) {
+        val reference = (annotation as? TypeAnnotation.Explicit)?.ref as? TypeRef.Reference ?: return
+        val isPlace = initializer is Expr.Identifier || initializer is Expr.Member ||
+            initializer is Expr.Index || initializer is Expr.Deref
+        if (!isPlace) {
+            errors.add("line $line: ${reference.kind.spelling} must borrow a stable variable, field, index, or dereference")
+        }
+        if (reference.kind == TypeRef.RefKind.MUTABLE && !mutable) {
+            errors.add("line $line: mut ref requires a 'var' binding")
+        }
+        if (reference.kind != TypeRef.RefKind.MUTABLE && mutable) {
+            errors.add("line $line: ${reference.kind.spelling} binding must use 'fin' or 'let'")
         }
     }
 

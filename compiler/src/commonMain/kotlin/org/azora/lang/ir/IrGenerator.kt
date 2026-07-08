@@ -228,7 +228,9 @@ class IrGenerator(private val table: SymbolTable) {
     private fun lowerFunction(func: FuncDecl): IrFunction {
         val symbol = table.lookupFunction(func.name)!!
         // Collect ref/out param indices from the AST FuncDecl.
-        val refParams = func.params.indices.filter { func.params[it].modifier == "ref" || func.params[it].modifier == "out" }.toSet()
+        val refParams = func.params.indices.filter {
+            func.params[it].modifier in setOf("ref", "out", "mut ref")
+        }.toSet()
         table.pushScope()
         pushNameScope()
 
@@ -244,7 +246,16 @@ class IrGenerator(private val table: SymbolTable) {
         popNameScope()
         table.popScope()
 
-        return IrFunction(func.name, mangledParams, symbol.returnType, body, func.isFlow, refParams)
+        return IrFunction(
+            func.name,
+            mangledParams,
+            symbol.returnType,
+            body,
+            func.isFlow,
+            refParams,
+            func.isTask,
+            func.isUnsafe
+        )
     }
 
     /** The current node type being lowered (for `base` resolution). Null outside a node method. */
@@ -734,7 +745,15 @@ class IrGenerator(private val table: SymbolTable) {
                         }
                         result
                     } else args
-                    return IrExpr.Call(table.aliasMap[expr.callee] ?: expr.callee, effectiveArgs, func.returnType)
+                    val callType = when {
+                        expr.callee == "async" -> {
+                            val result = (effectiveArgs.firstOrNull()?.type as? IrType.Function)?.ret ?: IrType.Any
+                            IrType.Task(result)
+                        }
+                        func.isTask -> IrType.Task(func.returnType)
+                        else -> func.returnType
+                    }
+                    return IrExpr.Call(table.aliasMap[expr.callee] ?: expr.callee, effectiveArgs, callType)
                 }
                 // Calling a lambda stored in a variable.
                 val v = table.lookupVariable(expr.callee)
@@ -779,7 +798,11 @@ class IrGenerator(private val table: SymbolTable) {
             }
             is Expr.Await -> {
                 val task = lowerExpr(expr.value)
-                val resultType = (task.type as? IrType.Function)?.ret ?: IrType.Any
+                val resultType = when (val type = task.type) {
+                    is IrType.Task -> type.result
+                    is IrType.Function -> type.ret
+                    else -> IrType.Any
+                }
                 IrExpr.Await(task, resultType)
             }
             is Expr.Inject -> {

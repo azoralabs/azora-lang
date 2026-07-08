@@ -140,8 +140,8 @@ enum class TokenType {
     HOOK, PROP, CTOR, DTOR,
     // Alternating execution: `flip { } flop { }`.
     FLIP, FLOP,
-    // Parameter modifiers: `ref name: T`, `out name: T`, `mut name: T`.
-    REF, OUT, MUT,
+    // Ownership/reference modifiers: `ref T`, `mut ref T`, `shared ref T`, `weak ref T`.
+    REF, OUT, MUT, SHARED, WEAK,
     // Visibility: `expose` (public), `confine` (private), `protect` (protected).
     EXPOSE, CONFINE, PROTECT,
     // Module: `module Name` (alias for package).

@@ -18,6 +18,7 @@ package org.azora.lang
 
 import org.azora.lang.backend.KotlinCodegen
 import org.azora.lang.backend.LlvmCodegen
+import org.azora.lang.backend.SwiftCodegen
 import org.azora.lang.backend.TypeScriptCodegen
 import org.azora.lang.frontend.AstValidator
 import org.azora.lang.frontend.Lexer
@@ -68,6 +69,7 @@ sealed class CompilationResult {
      *
      * @property kotlin the generated Kotlin source code
      * @property typescript the generated TypeScript source code
+     * @property swift the generated Swift 6.3 source code
      * @property llvm the generated LLVM IR text
      * @property ast the CTFE-stabilized AST after semantic analysis
      * @property ir the typed IR before optimization
@@ -78,6 +80,7 @@ sealed class CompilationResult {
     data class Success(
         val kotlin: String,
         val typescript: String,
+        val swift: String,
         val llvm: String,
         val ast: Program,
         val ir: IrProgram,
@@ -191,9 +194,12 @@ class Compiler {
         // 12. IR → TypeScript
         val typescript = TypeScriptCodegen().generate(backendIr)
 
-        // 13. IR → LLVM IR
+        // 13. IR → Swift 6.3
+        val swift = SwiftCodegen().generate(backendIr)
+
+        // 14. IR → LLVM IR
         val llvm = LlvmCodegen().generate(backendIr)
 
-        return CompilationResult.Success(kotlin, typescript, llvm, semantic.program, ir, optimizedIr, semantic.effects, warnings)
+        return CompilationResult.Success(kotlin, typescript, swift, llvm, semantic.program, ir, optimizedIr, semantic.effects, warnings)
     }
 }

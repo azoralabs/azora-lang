@@ -111,7 +111,7 @@ fun azGenerateCSharp(source: String): String =
 fun azGeneratePython(source: String): String =
     json(false, "", "Python code generation is not available in this version of the compiler.")
 
-/** Swift codegen is not implemented in the new compiler. */
+/** Generates Swift 6.3 source. */
 @JsExport
 fun azGenerateSwift(source: String): String =
-    json(false, "", "Swift code generation is not available in this version of the compiler.")
+    withCompiled(source) { it.swift }

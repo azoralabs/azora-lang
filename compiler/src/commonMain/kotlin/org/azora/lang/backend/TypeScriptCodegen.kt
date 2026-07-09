@@ -78,6 +78,7 @@ class TypeScriptCodegen {
         }
         if (usesTasks) {
             line("const __azoraChildren = new Set<Promise<unknown>>();")
+            line("function cancel<T>(_task: Promise<T>): void {}")
             line("function __azoraSpawn<T>(body: () => Promise<T> | T): Promise<T> {")
             indent++
             line("const task = Promise.resolve().then(body);")
@@ -370,6 +371,8 @@ class TypeScriptCodegen {
             val name = if (expr.name == "println") "console.log" else expr.name
             if (expr.name == "async" && expr.args.size == 1) {
                 "__azoraSpawn(${emitExpr(expr.args.single())})"
+            } else if (expr.name == "cancel" && expr.args.size == 1) {
+                "cancel(${emitExpr(expr.args.single())})"
             } else if (expr.type is IrType.Task) {
                 "__azoraSpawn(() => $name(${expr.args.joinToString(", ") { emitExpr(it) }}))"
             } else {

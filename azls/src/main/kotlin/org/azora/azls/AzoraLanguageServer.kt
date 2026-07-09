@@ -276,19 +276,86 @@ class AzoraLanguageServer {
     fun hover(source: String, offset: Int, prelude: String = ""): String {
         val word = wordAt(source, offset) ?: return "null"
         val userIndex = SymbolIndex().apply { parseTolerant(source)?.let(::addProgram) }
+        // Doc comments are only extracted for the edited document: prelude
+        // sections are parsed individually so their declaration lines don't map
+        // back to the concatenated prelude text.
         val indices = listOf(userIndex, preludeIndex(prelude), stdlibIndex)
         for (index in indices) {
+            val fromUser = index === userIndex
             index.functions[word]?.let {
-                return json.encodeToString(Hover.serializer(), Hover(signatureOf(it)))
+                val doc = if (fromUser) docCommentAbove(source, it.line) else ""
+                return json.encodeToString(Hover.serializer(), Hover(signatureOf(it), doc = doc))
             }
             index.packs[word]?.let {
-                return json.encodeToString(Hover.serializer(), Hover(packDetail(it)))
+                val doc = if (fromUser) docCommentAbove(source, it.line) else ""
+                return json.encodeToString(Hover.serializer(), Hover(packDetail(it), doc = doc))
             }
             index.enums[word]?.let {
-                return json.encodeToString(Hover.serializer(), Hover("enum ${it.name} { ${it.variants.joinToString(", ")} }"))
+                val doc = if (fromUser) docCommentAbove(source, it.line) else ""
+                return json.encodeToString(Hover.serializer(), Hover("enum ${it.name} { ${it.variants.joinToString(", ")} }", doc = doc))
             }
         }
         return "null"
+    }
+
+    // -----------------------------------------------------------------
+    // Go to definition
+    // -----------------------------------------------------------------
+
+    /**
+     * Resolves the declaration of the symbol at [offset].
+     *
+     * Locals/params and top-level declarations in [source] resolve to a line in
+     * the edited document; symbols that live in the [prelude] (other project
+     * files / installed libraries) or the stdlib resolve to a name the client
+     * can search for. Returns `"null"` when the word isn't a known symbol.
+     */
+    fun definition(source: String, offset: Int, prelude: String = ""): String {
+        val word = wordAt(source, offset) ?: return "null"
+        val safeOffset = offset.coerceIn(0, source.length)
+        val cursorLine = source.take(safeOffset).count { it == '\n' } + 1
+        val userIndex = SymbolIndex().apply { parseTolerant(source)?.let(::addProgram) }
+
+        // A local variable or parameter of the enclosing function wins over a
+        // same-named top-level declaration.
+        userIndex.localDeclarationLine(word, cursorLine)?.let { line ->
+            return json.encodeToString(Definition.serializer(), Definition(line = line, name = word, inCurrentFile = true))
+        }
+        userIndex.declarationLine(word)?.let { line ->
+            return json.encodeToString(Definition.serializer(), Definition(line = line, name = word, inCurrentFile = true))
+        }
+        // Known elsewhere (prelude/stdlib): report the name so the client can
+        // locate the source file.
+        val known = preludeIndex(prelude).hasSymbol(word) || stdlibIndex.hasSymbol(word)
+        if (known) {
+            return json.encodeToString(Definition.serializer(), Definition(line = 0, name = word, inCurrentFile = false))
+        }
+        return "null"
+    }
+
+    /**
+     * The contiguous `//` / `///` comment block immediately above [declLine]
+     * (1-based) in [sourceText], as plain text, or `""` when there is none.
+     * Blank lines and `@annotation` lines between the comment and the
+     * declaration are tolerated.
+     */
+    private fun docCommentAbove(sourceText: String, declLine: Int): String {
+        val lines = sourceText.lines()
+        if (declLine < 1 || declLine > lines.size) return ""
+        var i = declLine - 2 // 0-based line directly above the declaration
+        // Skip annotation lines sitting between the doc block and the decl.
+        while (i >= 0 && lines[i].trim().startsWith("@")) i--
+        val collected = ArrayDeque<String>()
+        while (i >= 0) {
+            val trimmed = lines[i].trim()
+            when {
+                trimmed.startsWith("///") -> collected.addFirst(trimmed.removePrefix("///").trim())
+                trimmed.startsWith("//") -> collected.addFirst(trimmed.removePrefix("//").trim())
+                else -> break
+            }
+            i--
+        }
+        return collected.joinToString("\n").trim()
     }
 
     // -----------------------------------------------------------------
@@ -504,6 +571,9 @@ internal class SymbolIndex {
     /** Top-level variable name → pack type name (for member completion). */
     private val topLevelVarTypes = mutableMapOf<String, String>()
 
+    /** Top-level binding name → its declaration line (for go-to-definition). */
+    private val topLevelVarLines = mutableMapOf<String, Int>()
+
     fun addProgram(program: Program, moduleOverride: String? = null) {
         val module = moduleOverride ?: program.packageName
         fun origin(name: String) {
@@ -515,9 +585,9 @@ internal class SymbolIndex {
                 is TopLevel.Pack -> { packs[item.name] = item; origin(item.name) }
                 is TopLevel.Enum -> { enums[item.name] = item; origin(item.name) }
                 is TopLevel.Solo -> item.methods.forEach { functions[it.name] = it }
-                is TopLevel.VarDecl -> registerTopVar(item.name, "var", item.type, item.initializer)
-                is TopLevel.LetDecl -> registerTopVar(item.name, "let", item.type, item.initializer)
-                is TopLevel.FinDecl -> registerTopVar(item.name, "fin", item.type, item.initializer)
+                is TopLevel.VarDecl -> registerTopVar(item.name, "var", item.type, item.initializer, item.line)
+                is TopLevel.LetDecl -> registerTopVar(item.name, "let", item.type, item.initializer, item.line)
+                is TopLevel.FinDecl -> registerTopVar(item.name, "fin", item.type, item.initializer, item.line)
                 else -> {}
             }
         }
@@ -526,9 +596,41 @@ internal class SymbolIndex {
 
     private val programs = mutableListOf<Program>()
 
-    private fun registerTopVar(name: String, keyword: String, type: TypeRef?, initializer: org.azora.lang.frontend.Expr) {
+    private fun registerTopVar(name: String, keyword: String, type: TypeRef?, initializer: org.azora.lang.frontend.Expr, line: Int) {
         topLevelVars[name] = "$keyword $name" + (type?.let { ": ${it.displayName()}" } ?: "")
         packTypeOf(type, initializer)?.let { topLevelVarTypes[name] = it }
+        topLevelVarLines[name] = line
+    }
+
+    /** Whether [name] is any top-level function/pack/enum/binding in this index. */
+    fun hasSymbol(name: String): Boolean =
+        name in functions || name in packs || name in enums || name in topLevelVars
+
+    /** Declaration line of top-level [name] (func/pack/enum/binding), or null. */
+    fun declarationLine(name: String): Int? =
+        functions[name]?.line ?: packs[name]?.line ?: enums[name]?.line ?: topLevelVarLines[name]
+
+    /**
+     * Declaration line of a local/parameter named [name] visible at [atLine]:
+     * the nearest matching `var`/`let`/`fin`/`for` binding at or above the
+     * cursor, else a parameter (reported at the function's own line).
+     */
+    fun localDeclarationLine(name: String, atLine: Int): Int? {
+        val enclosing = enclosingFunction(atLine) ?: return null
+        var best: Int? = null
+        walkStmts(enclosing.body) { stmt ->
+            val (declName, line) = when (stmt) {
+                is Stmt.VarDecl -> stmt.name to stmt.line
+                is Stmt.LetDecl -> stmt.name to stmt.line
+                is Stmt.FinDecl -> stmt.name to stmt.line
+                is Stmt.For -> stmt.name to stmt.line
+                else -> return@walkStmts
+            }
+            if (declName == name && line <= atLine && (best == null || line > best!!)) best = line
+        }
+        if (best != null) return best
+        if (enclosing.params.any { it.name == name }) return enclosing.line
+        return null
     }
 
     /** Locals + params of the function whose body contains [line]: (name, kind, detail). */

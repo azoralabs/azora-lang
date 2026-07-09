@@ -349,7 +349,9 @@ class KotlinCodegen {
         }
         is IrExpr.Call -> {
             if (expr.name in POINTER_RUNTIME) usesPointers = true
-            if (expr.name == "async" && expr.args.singleOrNull() is IrExpr.Lambda) {
+            if (expr.name == "cancel" && expr.args.size == 1) {
+                "${emitExpr(expr.args.single())}.cancel()"
+            } else if (expr.name == "async" && expr.args.singleOrNull() is IrExpr.Lambda) {
                 "async ${emitExpr(expr.args.single())}"
             } else {
                 "${expr.name}(${expr.args.joinToString(", ") { emitExpr(it) }})"

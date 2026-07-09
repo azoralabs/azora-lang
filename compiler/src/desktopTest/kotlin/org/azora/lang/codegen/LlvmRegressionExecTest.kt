@@ -50,6 +50,17 @@ class LlvmRegressionExecTest {
         """.trimIndent()
     )
 
+    @Test fun namedTaskParametersAreCopiedIntoTaskContext() = check(
+        "42",
+        """
+        task add(a: Int, b: Int): Int { return a + b }
+        task main() {
+            fin value = await add(19, 23)
+            println(value)
+        }
+        """.trimIndent()
+    )
+
     @Test fun completedAsyncBlocksRemainValidLlvm() = check(
         "42",
         """
@@ -59,6 +70,80 @@ class LlvmRegressionExecTest {
         }
         """.trimIndent()
     )
+
+    @Test fun asyncBlocksCaptureLocalValuesOnSpawn() = check(
+        "42",
+        """
+        task main() {
+            fin seed = 40
+            fin value = async { seed + 2 }
+            println(await value)
+        }
+        """.trimIndent()
+    )
+
+    @Test fun unawaitedChildTasksJoinAtScopeExit() = check(
+        "42",
+        """
+        task child(): Int {
+            println(42)
+            return 0
+        }
+        task main() {
+            child()
+        }
+        """.trimIndent()
+    )
+
+    @Test fun taskThreadsInitializeThreadLocalAggregates() = check(
+        "42",
+        """
+        threadlocal var numbers = [41]
+        task read(): Int { return numbers[0] + 1 }
+        task main() {
+            println(await read())
+        }
+        """.trimIndent()
+    )
+
+    @Test fun zoneAllocWaitsForChildTasksBeforeFreeingArena() = check(
+        "42",
+        """
+        task main() {
+            zone alloc {
+                var p: Int* = alloc 41
+                fin value = async { *p + 1 }
+                println(await value)
+            }
+        }
+        """.trimIndent()
+    )
+
+    @Test fun cancelCallsNativeTaskCancellationRuntime() = check(
+        "42",
+        """
+        task answer(): Int { return 42 }
+        task main() {
+            fin value = answer()
+            println(await value)
+            cancel(value)
+        }
+        """.trimIndent()
+    )
+
+    @Test fun cancelLoweringIncludesPthreadCancel() {
+        val ir = LlvmExec.compile(
+            """
+            task answer(): Int { return 42 }
+            task main() {
+                fin value = answer()
+                cancel(value)
+            }
+            """.trimIndent()
+        )
+        assertTrue("declare i32 @pthread_cancel" in ir)
+        assertTrue("call void @__azora_task_cancel" in ir)
+    }
 
     /** A concatenated string has a fresh pointer — only strcmp can match it. */
     @Test fun whenOnRuntimeString() = check(
@@ -136,11 +221,12 @@ class LlvmRegressionExecTest {
             assertTrue("@__tl__numbers = thread_local global i8* zeroinitializer" in ir)
             assertTrue("@__tl__names = thread_local global i8* zeroinitializer" in ir)
             assertTrue("@__tl__unique = thread_local global i8* zeroinitializer" in ir)
-            assertTrue("define void @__azora_init_globals()" in ir)
+            assertTrue("define void @__azora_init_threadlocals()" in ir)
             assertTrue("store i8*" in ir && "i8** @__tl__numbers" in ir)
             assertTrue("store i8*" in ir && "i8** @__tl__names" in ir)
             assertTrue("store i8*" in ir && "i8** @__tl__unique" in ir)
-            assertTrue("call void @__azora_init_globals()" in ir)
+            assertTrue("call void @__azora_init_threadlocals()" in ir)
+            assertTrue("define i8* @__emutls_get_address" in ir)
         }
     }
 

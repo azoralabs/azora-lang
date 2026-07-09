@@ -61,6 +61,9 @@ class SymbolCollector {
         if (table.lookupFunction("async") == null) {
             table.defineFunction(FunctionSymbol("async", listOf("thunk" to IrType.Any), IrType.Task(IrType.Any)))
         }
+        if (table.lookupFunction("cancel") == null) {
+            table.defineFunction(FunctionSymbol("cancel", listOf("task" to IrType.Any), IrType.Unit))
+        }
     }
 
     /**

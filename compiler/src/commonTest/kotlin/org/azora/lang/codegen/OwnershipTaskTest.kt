@@ -49,7 +49,8 @@ class OwnershipTaskTest {
         assertTrue("async function loadUser" in result.typescript)
         assertTrue("Promise<number>" in result.typescript)
         assertTrue("await user" in result.typescript)
-        assertTrue("define i32 @loadUser" in result.llvm)
+        assertTrue("define %azora.task* @loadUser" in result.llvm)
+        assertTrue("define i32 @__azora_task_body_loadUser" in result.llvm)
     }
 
     @Test

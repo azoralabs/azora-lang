@@ -51,9 +51,32 @@ data class Diagnostic(val line: Int, val message: String, val severity: String)
 @Serializable
 data class Completion(val label: String, val kind: String, val detail: String = "", val insert: String = "")
 
-/** Hover information for the symbol under the caret. */
+/**
+ * Hover information for the symbol under the caret.
+ *
+ * @property signature the declaration signature (monospace)
+ * @property detail extra type information
+ * @property doc the doc-comment block preceding the declaration, if any
+ */
 @Serializable
-data class Hover(val signature: String, val detail: String = "")
+data class Hover(val signature: String, val detail: String = "", val doc: String = "")
+
+/**
+ * The declaration site of the symbol under the caret.
+ *
+ * @property line 1-based declaration line; when [inCurrentFile] is false this is
+ *   0 and [name] carries the symbol so the client can search other files
+ * @property column 1-based column, when known
+ * @property name the symbol name (used to locate cross-file declarations)
+ * @property inCurrentFile whether the declaration is in the edited document
+ */
+@Serializable
+data class Definition(
+    val line: Int,
+    val column: Int = 0,
+    val name: String = "",
+    val inCurrentFile: Boolean = true,
+)
 
 /** An outline entry (top-level declaration). */
 @Serializable

@@ -62,7 +62,7 @@ import org.azora.lang.ir.IrUnaryOp
  */
 class LlvmCodegen {
 
-    private val out = StringBuilder()
+    private var out = StringBuilder()
     private var tmpCounter = 0
     private var labelCounter = 0
     private var stringCounter = 0
@@ -94,8 +94,27 @@ class LlvmCodegen {
     /** LLVM element types for top-level and thread-local variables. */
     private val globalVars = mutableMapOf<String, String>()
 
-    private data class DynamicGlobalInitializer(val name: String, val type: IrType, val initializer: IrExpr)
+    private data class DynamicGlobalInitializer(
+        val name: String,
+        val type: IrType,
+        val initializer: IrExpr,
+        val threadLocal: Boolean,
+    )
     private val dynamicGlobalInitializers = mutableListOf<DynamicGlobalInitializer>()
+
+    /** Extra named context structs discovered while outlining async blocks. */
+    private val lateTypeDefinitions = linkedSetOf<String>()
+
+    /** Outlined async/task helper functions emitted after source functions. */
+    private val deferredFunctions = mutableListOf<String>()
+
+    /** Function-local structured task scopes; spawned tasks attach to the innermost scope. */
+    private val taskScopeStack = ArrayDeque<String>()
+
+    /** Active zone alloc arenas; returns clean them from inner to outer. */
+    private val arenaStack = ArrayDeque<String>()
+
+    private var taskContextCounter = 0
 
     /** True once the current basic block has a terminator. */
     private var terminated = false
@@ -125,6 +144,10 @@ class LlvmCodegen {
     private var usesUintToStr = false
     private var usesRealToStr = false
     private var usesCharToStr = false
+    private var usesFree = false
+    private var usesAllocatorRuntime = false
+    private var usesArenaRuntime = false
+    private var usesTaskRuntime = false
 
     /** Tracks the continue/end labels of enclosing loops for `break`/`continue`. */
     private data class LoopTarget(val continueLabel: String, val endLabel: String, val label: String? = null)
@@ -166,15 +189,29 @@ class LlvmCodegen {
         usesUintToStr = false
         usesRealToStr = false
         usesCharToStr = false
+        usesFree = false
+        usesAllocatorRuntime = false
+        usesArenaRuntime = false
+        usesTaskRuntime = false
         loopStack.clear()
+        taskScopeStack.clear()
+        arenaStack.clear()
+        taskContextCounter = 0
 
         structDefs.clear()
         funcParamTypes.clear()
         globalVars.clear()
         dynamicGlobalInitializers.clear()
+        lateTypeDefinitions.clear()
+        deferredFunctions.clear()
         for (item in program.items) {
             when (item) {
-                is IrTopLevel.Func -> funcParamTypes[item.function.name] = item.function.params.map { it.second }
+                is IrTopLevel.Func -> {
+                    funcParamTypes[item.function.name] = item.function.params.map { it.second }
+                    if (item.function.isTask && item.function.name != "main") {
+                        usesTaskRuntime = true
+                    }
+                }
                 is IrTopLevel.Extern -> funcParamTypes[item.name] = item.params.map { it.second }
                 is IrTopLevel.Global -> when (val stmt = item.stmt) {
                     is IrStmt.VarDecl -> globalVars[stmt.name] = mapType(stmt.type)
@@ -214,9 +251,17 @@ class LlvmCodegen {
             body.appendLine()
         }
 
-        if (dynamicGlobalInitializers.isNotEmpty()) {
+        val normalGlobalInitializers = dynamicGlobalInitializers.filterNot { it.threadLocal }
+        val threadLocalInitializers = dynamicGlobalInitializers.filter { it.threadLocal }
+        if (normalGlobalInitializers.isNotEmpty()) {
             out.clear()
-            emitGlobalInitializerFunction()
+            emitGlobalInitializerFunction("__azora_init_globals", normalGlobalInitializers)
+            body.append(out)
+            body.appendLine()
+        }
+        if (threadLocalInitializers.isNotEmpty()) {
+            out.clear()
+            emitGlobalInitializerFunction("__azora_init_threadlocals", threadLocalInitializers)
             body.append(out)
             body.appendLine()
         }
@@ -224,9 +269,19 @@ class LlvmCodegen {
         // Functions
         for (item in program.items.filterIsInstance<IrTopLevel.Func>()) {
             out.clear()
-            emitFunction(item.function)
+            if (item.function.isTask && item.function.name != "main") {
+                emitTaskFunction(item.function)
+            } else {
+                emitFunction(item.function)
+            }
             body.append(out)
             body.appendLine()
+        }
+        var deferredIndex = 0
+        while (deferredIndex < deferredFunctions.size) {
+            body.append(deferredFunctions[deferredIndex])
+            body.appendLine()
+            deferredIndex++
         }
 
         // Extern (`bridge`) function declarations
@@ -244,6 +299,7 @@ class LlvmCodegen {
         }
 
         // Runtime helpers (appended after the body so string-constant ids are stable).
+        if (usesTaskRuntime || usesArenaRuntime) usesAllocatorRuntime = true
         val helpers = buildRuntimeHelpers()
 
         // String constants
@@ -267,12 +323,27 @@ class LlvmCodegen {
         if (usesSnprintf) line("declare i32 @snprintf(i8*, i64, i8*, ...)")
         if (usesAbort) line("declare void @abort() noreturn")
         if (usesMalloc) line("declare i8* @malloc(i64)")
+        if (usesFree) line("declare void @free(i8*)")
         if (usesStrlen) line("declare i64 @strlen(i8*)")
         if (usesStrcpy) line("declare i8* @strcpy(i8*, i8*)")
         if (usesStrcat) line("declare i8* @strcat(i8*, i8*)")
         if (usesStrcmp) line("declare i32 @strcmp(i8*, i8*)")
         if (usesMemcpy) line("declare i8* @memcpy(i8*, i8*, i64)")
+        if (usesTaskRuntime) {
+            line("declare i32 @pthread_create(i8**, i8*, i8* (i8*)*, i8*)")
+            line("declare i32 @pthread_join(i8*, i8**)")
+            line("declare i32 @pthread_cancel(i8*)")
+        }
         line("")
+        if (usesTaskRuntime || lateTypeDefinitions.isNotEmpty()) {
+            line("%azora.task = type { i8*, i8*, i1, i1 }")
+            line("%azora.scope = type { i64, i64, %azora.task** }")
+        }
+        if (usesArenaRuntime) {
+            line("%azora.arena = type { i64, i64, i8** }")
+        }
+        for (typeDef in lateTypeDefinitions) line(typeDef)
+        if (usesTaskRuntime || usesArenaRuntime || lateTypeDefinitions.isNotEmpty()) line("")
         out.append(body)
         if (helpers.isNotEmpty()) out.append(helpers)
         out.append(strConsts)
@@ -305,7 +376,12 @@ class LlvmCodegen {
                 "getelementptr ([${ref.byteLen} x i8], [${ref.byteLen} x i8]* ${ref.name}, i64 0, i64 0)"
             }
             else -> {
-                dynamicGlobalInitializers += DynamicGlobalInitializer(name, type, initializer)
+                dynamicGlobalInitializers += DynamicGlobalInitializer(
+                    name = name,
+                    type = type,
+                    initializer = initializer,
+                    threadLocal = name.startsWith("__tl__"),
+                )
                 "zeroinitializer"
             }
         }
@@ -313,22 +389,24 @@ class LlvmCodegen {
         line("@$name = $storage $llvmType $value")
     }
 
-    private fun emitGlobalInitializerFunction() {
+    private fun emitGlobalInitializerFunction(name: String, initializers: List<DynamicGlobalInitializer>) {
         localVars.clear()
         allocaSlots.clear()
         loopStack.clear()
+        taskScopeStack.clear()
+        arenaStack.clear()
         terminated = false
         currentBlock = "entry"
         currentReturnType = IrType.Unit
         currentIsMain = false
 
-        line("define void @__azora_init_globals() {")
+        line("define void @$name() {")
         line("entry:")
-        for ((name, type, initializer) in dynamicGlobalInitializers) {
+        for ((globalName, type, initializer) in initializers) {
             val raw = emitExpr(initializer)
             val value = coerceNumeric(raw, initializer.type, type)
             val llvmType = mapType(type)
-            emit("  store $llvmType $value, $llvmType* @$name")
+            emit("  store $llvmType $value, $llvmType* @$globalName")
         }
         emitTerminator("  ret void")
         line("}")
@@ -341,6 +419,8 @@ class LlvmCodegen {
     private fun emitTestFunction(test: IrTopLevel.Test) {
         localVars.clear()
         loopStack.clear()
+        taskScopeStack.clear()
+        arenaStack.clear()
         tmpCounter = 0
         labelCounter = 0
         terminated = false
@@ -352,7 +432,9 @@ class LlvmCodegen {
         line("define void @test_$safeName() {")
         line("entry:")
         emitEntryAllocas(test.body)
+        emitRootTaskScopeIfNeeded()
         emitStmts(test.body)
+        emitFunctionExitCleanup()
         emitTerminator("  ret void")
         line("}")
     }
@@ -414,6 +496,8 @@ class LlvmCodegen {
     private fun emitFunction(func: IrFunction) {
         localVars.clear()
         loopStack.clear()
+        taskScopeStack.clear()
+        arenaStack.clear()
         tmpCounter = 0
         labelCounter = 0
         terminated = false
@@ -444,21 +528,164 @@ class LlvmCodegen {
 
         // All local allocas live in the entry block (never inside loops).
         emitEntryAllocas(func.body)
+        emitRootTaskScopeIfNeeded()
 
-        if (isMain && dynamicGlobalInitializers.isNotEmpty()) {
+        if (isMain && dynamicGlobalInitializers.any { !it.threadLocal }) {
             emit("  call void @__azora_init_globals()")
+        }
+        if (isMain && dynamicGlobalInitializers.any { it.threadLocal }) {
+            emit("  call void @__azora_init_threadlocals()")
         }
 
         emitStmts(func.body)
 
         // Guarantee the final block has a terminator.
         when {
-            isMain -> emitTerminator("  ret i32 0")
-            func.returnType == IrType.Unit -> emitTerminator("  ret void")
-            else -> emitTerminator("  ret ${mapType(func.returnType)} ${defaultValue(func.returnType)}")
+            isMain -> {
+                emitFunctionExitCleanup()
+                emitTerminator("  ret i32 0")
+            }
+            func.returnType == IrType.Unit -> {
+                emitFunctionExitCleanup()
+                emitTerminator("  ret void")
+            }
+            else -> {
+                emitFunctionExitCleanup()
+                emitTerminator("  ret ${mapType(func.returnType)} ${defaultValue(func.returnType)}")
+            }
         }
 
         line("}")
+    }
+
+    private fun emitTaskFunction(func: IrFunction) {
+        usesTaskRuntime = true
+        usesAllocatorRuntime = true
+
+        val bodyName = taskBodyName(func.name)
+        emitFunction(func.copy(name = bodyName, isTask = false))
+        line("")
+        emitTaskEntryWrapper(func, bodyName)
+        line("")
+        emitTaskPublicSpawner(func)
+    }
+
+    private fun emitTaskEntryWrapper(func: IrFunction, bodyName: String) {
+        localVars.clear()
+        loopStack.clear()
+        taskScopeStack.clear()
+        arenaStack.clear()
+        tmpCounter = 0
+        labelCounter = 0
+        terminated = false
+        currentBlock = "entry"
+        val entryName = taskEntryName(func.name)
+        line("define i8* @$entryName(i8* %ctx.raw) {")
+        line("entry:")
+        if (dynamicGlobalInitializers.any { it.threadLocal }) {
+            emit("  call void @__azora_init_threadlocals()")
+        }
+        val argRegs = mutableListOf<Pair<String, IrType>>()
+        val ctxType = taskContextType(func.name)
+        if (func.params.isNotEmpty()) {
+            emit("  %ctx = bitcast i8* %ctx.raw to $ctxType*")
+            for ((i, param) in func.params.withIndex()) {
+                val (_, type) = param
+                val llvmType = mapType(type)
+                val ptr = "%argptr.$i"
+                val value = "%argval.$i"
+                emit("  $ptr = getelementptr $ctxType, $ctxType* %ctx, i32 0, i32 $i")
+                emit("  $value = load $llvmType, $llvmType* $ptr, align 1")
+                argRegs += value to type
+            }
+            emit("  call void @__azora_free(i8* %ctx.raw)")
+        }
+        val args = argRegs.joinToString(", ") { (value, type) -> "${mapType(type)} $value" }
+        if (func.returnType == IrType.Unit) {
+            emit("  call void @$bodyName($args)")
+            emitTerminator("  ret i8* null")
+        } else {
+            val retType = mapType(func.returnType)
+            val result = "%task.result"
+            emit("  $result = call $retType @$bodyName($args)")
+            val raw = emitResultBox(result, func.returnType)
+            emitTerminator("  ret i8* $raw")
+        }
+        line("}")
+    }
+
+    private fun emitTaskPublicSpawner(func: IrFunction) {
+        localVars.clear()
+        loopStack.clear()
+        taskScopeStack.clear()
+        arenaStack.clear()
+        tmpCounter = 0
+        labelCounter = 0
+        terminated = false
+        currentBlock = "entry"
+        val params = func.params.joinToString(", ") { (name, type) ->
+            "${mapType(type)} %arg.$name"
+        }
+        line("define %azora.task* @${func.name}($params) {")
+        line("entry:")
+        val ctxRaw = if (func.params.isEmpty()) {
+            "null"
+        } else {
+            val ctxType = taskContextType(func.name)
+            lateTypeDefinitions.add("$ctxType = type { ${func.params.joinToString(", ") { mapType(it.second) }} }")
+            val sizeGep = "%ctx.size.gep"
+            val size = "%ctx.size"
+            val raw = "%ctx.raw"
+            val ctx = "%ctx"
+            emit("  $sizeGep = getelementptr $ctxType, $ctxType* null, i32 1")
+            emit("  $size = ptrtoint $ctxType* $sizeGep to i64")
+            emit("  $raw = call i8* @__azora_alloc(i64 $size)")
+            emit("  $ctx = bitcast i8* $raw to $ctxType*")
+            for ((i, param) in func.params.withIndex()) {
+                val (name, type) = param
+                val llvmType = mapType(type)
+                val ptr = "%ctx.arg.$i"
+                emit("  $ptr = getelementptr $ctxType, $ctxType* $ctx, i32 0, i32 $i")
+                emit("  store $llvmType %arg.$name, $llvmType* $ptr, align 1")
+            }
+            raw
+        }
+        val entry = taskEntryName(func.name)
+        emit("  %task = call %azora.task* @__azora_task_spawn(i8* (i8*)* @$entry, i8* $ctxRaw)")
+        emitTerminator("  ret %azora.task* %task")
+        line("}")
+    }
+
+    private fun taskBodyName(name: String): String = "__azora_task_body_${sanitizeName(name)}"
+    private fun taskEntryName(name: String): String = "__azora_task_entry_${sanitizeName(name)}"
+    private fun taskContextType(name: String): String = "%azora.ctx.${sanitizeName(name)}"
+
+    private fun emitRootTaskScopeIfNeeded() {
+        if (!usesTaskRuntime) return
+        val scope = nextTmp()
+        emit("  $scope = alloca %azora.scope")
+        emit("  call void @__azora_scope_init(%azora.scope* $scope)")
+        taskScopeStack.addLast(scope)
+    }
+
+    private fun emitFunctionExitCleanup() {
+        if (terminated) return
+        emitAllTaskScopeCleanups()
+        emitAllArenaCleanups()
+    }
+
+    private fun emitAllTaskScopeCleanups() {
+        if (!usesTaskRuntime) return
+        for (scope in taskScopeStack.asReversed()) {
+            emit("  call void @__azora_scope_join_all(%azora.scope* $scope)")
+        }
+    }
+
+    private fun emitAllArenaCleanups() {
+        if (!usesArenaRuntime) return
+        for (arena in arenaStack.asReversed()) {
+            emit("  call void @__azora_arena_free_all(%azora.arena* $arena)")
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -495,6 +722,7 @@ class LlvmCodegen {
                 if (stmt.value != null) {
                     val declared = currentReturnType
                     val raw = emitExpr(stmt.value)
+                    emitFunctionExitCleanup()
                     if (declared != null && declared != IrType.Unit) {
                         val value = coerceNumeric(raw, stmt.value.type, declared)
                         emitTerminator("  ret ${mapType(declared)} $value")
@@ -504,11 +732,12 @@ class LlvmCodegen {
                 } else {
                     // `main` is always lowered as `i32 @main`, so a bare
                     // `return` there yields exit code 0.
+                    emitFunctionExitCleanup()
                     emitTerminator(if (currentIsMain) "  ret i32 0" else "  ret void")
                 }
             }
             is IrStmt.ExprStmt -> emitExpr(stmt.expr)
-            is IrStmt.Zone -> emitStmts(stmt.body)
+            is IrStmt.Zone -> emitZone(stmt)
             is IrStmt.If -> emitIf(stmt)
             is IrStmt.Assert -> emitAssert(stmt)
             is IrStmt.Trace -> emitTrace(stmt)
@@ -541,6 +770,36 @@ class LlvmCodegen {
                 emitStmts(stmt.body)
             }
         }
+    }
+
+    private fun emitZone(stmt: IrStmt.Zone) {
+        if (!stmt.alloc) {
+            emitStmts(stmt.body)
+            return
+        }
+        usesArenaRuntime = true
+        usesAllocatorRuntime = true
+        val arena = nextTmp()
+        emit("  $arena = alloca %azora.arena")
+        emit("  call void @__azora_arena_begin(%azora.arena* $arena)")
+        arenaStack.addLast(arena)
+
+        var nestedScope: String? = null
+        if (usesTaskRuntime) {
+            nestedScope = nextTmp()
+            emit("  $nestedScope = alloca %azora.scope")
+            emit("  call void @__azora_scope_init(%azora.scope* $nestedScope)")
+            taskScopeStack.addLast(nestedScope)
+        }
+
+        emitStmts(stmt.body)
+
+        if (!terminated) {
+            if (nestedScope != null) emit("  call void @__azora_scope_join_all(%azora.scope* $nestedScope)")
+            emit("  call void @__azora_arena_free_all(%azora.arena* $arena)")
+        }
+        if (nestedScope != null) taskScopeStack.removeLast()
+        arenaStack.removeLast()
     }
 
     private fun emitLocalDecl(name: String, type: IrType, initializer: IrExpr) {
@@ -882,12 +1141,7 @@ class LlvmCodegen {
         is IrExpr.NumCast -> coerceNumeric(emitExpr(expr.value), expr.value.type, expr.type)
         is IrExpr.IfExpr -> emitIfExpr(expr)
         is IrExpr.SlotPattern -> "0"
-        is IrExpr.Await -> {
-            // LLVM currently represents Task<T> as an eagerly completed T. This is
-            // allocation-free and ABI-correct; the native scheduler can replace the
-            // representation without changing the language-level Task<T> contract.
-            emitExpr(expr.value)
-        }
+        is IrExpr.Await -> emitAwait(expr)
         is IrExpr.Spread -> {
             emitExpr(expr.array)
             emit("  ; spread — interpreter-only")
@@ -896,6 +1150,356 @@ class LlvmCodegen {
         is IrExpr.Lambda -> {
             emit("  ; lambda/closure — not lowered")
             "null"
+        }
+    }
+
+    private data class Capture(val name: String, val type: IrType, val llvmType: String)
+
+    private fun emitAwait(expr: IrExpr.Await): String {
+        usesTaskRuntime = true
+        val handle = if (expr.value is IrExpr.Lambda) {
+            emitLambdaTaskSpawn(expr.value, expr.type, "legacy_task")
+        } else {
+            emitExpr(expr.value)
+        }
+        return emitTaskJoin(handle, expr.type)
+    }
+
+    private fun emitTaskJoin(handle: String, resultType: IrType): String {
+        usesTaskRuntime = true
+        if (resultType == IrType.Unit) {
+            val ignored = nextTmp()
+            emit("  $ignored = call i8* @__azora_task_join(%azora.task* $handle)")
+            return "void"
+        }
+        val raw = nextTmp()
+        emit("  $raw = call i8* @__azora_task_join(%azora.task* $handle)")
+        val ptrType = "${mapType(resultType)}*"
+        val typed = nextTmp()
+        emit("  $typed = bitcast i8* $raw to $ptrType")
+        val value = nextTmp()
+        emit("  $value = load ${mapType(resultType)}, $ptrType $typed, align 1")
+        return value
+    }
+
+    private fun emitResultBox(value: String, type: IrType): String {
+        usesAllocatorRuntime = true
+        val raw = nextTmp()
+        emit("  $raw = call i8* @__azora_alloc(i64 ${sizeOfScalar(type)})")
+        val ptrType = "${mapType(type)}*"
+        val typed = nextTmp()
+        emit("  $typed = bitcast i8* $raw to $ptrType")
+        emit("  store ${mapType(type)} $value, $ptrType $typed, align 1")
+        return raw
+    }
+
+    private fun emitTaskScopeAttach(handle: String) {
+        val scope = taskScopeStack.lastOrNull() ?: return
+        usesTaskRuntime = true
+        emit("  call void @__azora_scope_attach(%azora.scope* $scope, %azora.task* $handle)")
+    }
+
+    private fun emitHeapAlloc(size: String): String {
+        usesAllocatorRuntime = true
+        val arena = arenaStack.lastOrNull()
+        val raw = nextTmp()
+        if (arena != null) {
+            usesArenaRuntime = true
+            emit("  $raw = call i8* @__azora_arena_alloc(%azora.arena* $arena, i64 $size)")
+        } else {
+            emit("  $raw = call i8* @__azora_alloc(i64 $size)")
+        }
+        return raw
+    }
+
+    private fun emitLambdaTaskSpawn(lambda: IrExpr.Lambda, resultType: IrType, prefix: String): String {
+        usesTaskRuntime = true
+        usesAllocatorRuntime = true
+        val id = taskContextCounter++
+        val safePrefix = sanitizeName(prefix)
+        val bodyName = "__azora_${safePrefix}_body_$id"
+        val entryName = "__azora_${safePrefix}_entry_$id"
+        val ctxType = "%azora.ctx.${safePrefix}.$id"
+        val captures = collectCaptures(lambda)
+        if (captures.isNotEmpty()) {
+            lateTypeDefinitions.add("$ctxType = type { ${captures.joinToString(", ") { it.llvmType }} }")
+        }
+
+        val ctxRaw = if (captures.isEmpty()) {
+            "null"
+        } else {
+            val sizeGep = nextTmp()
+            val size = nextTmp()
+            emit("  $sizeGep = getelementptr $ctxType, $ctxType* null, i32 1")
+            emit("  $size = ptrtoint $ctxType* $sizeGep to i64")
+            val raw = nextTmp()
+            emit("  $raw = call i8* @__azora_alloc(i64 $size)")
+            val ctx = nextTmp()
+            emit("  $ctx = bitcast i8* $raw to $ctxType*")
+            for ((i, capture) in captures.withIndex()) {
+                val storage = localVars[capture.name] ?: continue
+                val field = nextTmp()
+                val value = nextTmp()
+                emit("  $field = getelementptr $ctxType, $ctxType* $ctx, i32 0, i32 $i")
+                emit("  $value = load ${storage.second}, ${storage.second}* ${storage.first}")
+                emit("  store ${capture.llvmType} $value, ${capture.llvmType}* $field, align 1")
+            }
+            raw
+        }
+
+        deferredFunctions += renderDeferredFunction {
+            emitFunction(IrFunction(bodyName, captures.map { it.name to it.type }, resultType, lambda.body))
+        }
+        deferredFunctions += renderDeferredFunction {
+            emitLambdaTaskEntry(entryName, bodyName, ctxType, captures, resultType)
+        }
+
+        val handle = nextTmp()
+        emit("  $handle = call %azora.task* @__azora_task_spawn(i8* (i8*)* @$entryName, i8* $ctxRaw)")
+        emitTaskScopeAttach(handle)
+        return handle
+    }
+
+    private fun emitLambdaTaskEntry(
+        entryName: String,
+        bodyName: String,
+        ctxType: String,
+        captures: List<Capture>,
+        resultType: IrType,
+    ) {
+        localVars.clear()
+        loopStack.clear()
+        taskScopeStack.clear()
+        arenaStack.clear()
+        tmpCounter = 0
+        labelCounter = 0
+        terminated = false
+        currentBlock = "entry"
+        line("define i8* @$entryName(i8* %ctx.raw) {")
+        line("entry:")
+        if (dynamicGlobalInitializers.any { it.threadLocal }) {
+            emit("  call void @__azora_init_threadlocals()")
+        }
+        val captureValues = mutableListOf<Pair<String, IrType>>()
+        if (captures.isNotEmpty()) {
+            emit("  %ctx = bitcast i8* %ctx.raw to $ctxType*")
+            for ((i, capture) in captures.withIndex()) {
+                val ptr = "%capture.ptr.$i"
+                val value = "%capture.val.$i"
+                emit("  $ptr = getelementptr $ctxType, $ctxType* %ctx, i32 0, i32 $i")
+                emit("  $value = load ${capture.llvmType}, ${capture.llvmType}* $ptr, align 1")
+                captureValues += value to capture.type
+            }
+            emit("  call void @__azora_free(i8* %ctx.raw)")
+        }
+        val args = captureValues.joinToString(", ") { (value, type) -> "${mapType(type)} $value" }
+        if (resultType == IrType.Unit) {
+            emit("  call void @$bodyName($args)")
+            emitTerminator("  ret i8* null")
+        } else {
+            val result = "%task.result"
+            emit("  $result = call ${mapType(resultType)} @$bodyName($args)")
+            val boxed = emitResultBox(result, resultType)
+            emitTerminator("  ret i8* $boxed")
+        }
+        line("}")
+    }
+
+    private fun renderDeferredFunction(block: () -> Unit): String {
+        val savedOut = out
+        val savedLocalVars = localVars.toMap()
+        val savedAllocaSlots = allocaSlots.toMap()
+        val savedLoopStack = ArrayDeque(loopStack)
+        val savedTaskScopes = ArrayDeque(taskScopeStack)
+        val savedArenas = ArrayDeque(arenaStack)
+        val savedTmp = tmpCounter
+        val savedLabel = labelCounter
+        val savedAlloca = allocaCounter
+        val savedTerminated = terminated
+        val savedBlock = currentBlock
+        val savedReturnType = currentReturnType
+        val savedIsMain = currentIsMain
+
+        out = StringBuilder()
+        try {
+            block()
+            return out.toString()
+        } finally {
+            out = savedOut
+            localVars.clear(); localVars.putAll(savedLocalVars)
+            allocaSlots.clear(); allocaSlots.putAll(savedAllocaSlots)
+            loopStack.clear(); loopStack.addAll(savedLoopStack)
+            taskScopeStack.clear(); taskScopeStack.addAll(savedTaskScopes)
+            arenaStack.clear(); arenaStack.addAll(savedArenas)
+            tmpCounter = savedTmp
+            labelCounter = savedLabel
+            allocaCounter = savedAlloca
+            terminated = savedTerminated
+            currentBlock = savedBlock
+            currentReturnType = savedReturnType
+            currentIsMain = savedIsMain
+        }
+    }
+
+    private fun collectCaptures(lambda: IrExpr.Lambda): List<Capture> {
+        val declared = linkedSetOf<String>()
+        val refs = linkedMapOf<String, IrType>()
+        lambda.params.forEach { declared.add(it.first) }
+        collectDeclaredNames(lambda.body, declared)
+        collectReferencedVars(lambda.body, refs)
+        return refs
+            .filterKeys { it !in declared && it in localVars }
+            .map { (name, type) ->
+                val llvmType = localVars[name]?.second ?: mapType(type)
+                Capture(name, type, llvmType)
+            }
+    }
+
+    private fun collectDeclaredNames(stmts: List<IrStmt>, names: MutableSet<String>) {
+        for (stmt in stmts) {
+            when (stmt) {
+                is IrStmt.VarDecl -> names.add(stmt.name)
+                is IrStmt.FinDecl -> names.add(stmt.name)
+                is IrStmt.LetDecl -> names.add(stmt.name)
+                is IrStmt.For -> {
+                    names.add(stmt.counter)
+                    collectDeclaredNames(stmt.body, names)
+                }
+                is IrStmt.ForEach -> {
+                    names.add(stmt.elem)
+                    collectDeclaredNames(stmt.body, names)
+                }
+                is IrStmt.If -> {
+                    collectDeclaredNames(stmt.thenBranch, names)
+                    stmt.elseBranch?.let { collectDeclaredNames(it, names) }
+                }
+                is IrStmt.Zone -> collectDeclaredNames(stmt.body, names)
+                is IrStmt.While -> collectDeclaredNames(stmt.body, names)
+                is IrStmt.Loop -> collectDeclaredNames(stmt.body, names)
+                is IrStmt.When -> {
+                    stmt.branches.forEach { collectDeclaredNames(it.body, names) }
+                    stmt.elseBranch?.let { collectDeclaredNames(it, names) }
+                }
+                is IrStmt.Try -> {
+                    collectDeclaredNames(stmt.body, names)
+                    stmt.catchName?.let { names.add(it) }
+                    stmt.catchBody?.let { collectDeclaredNames(it, names) }
+                }
+                is IrStmt.Defer -> collectDeclaredNames(stmt.body, names)
+                else -> {}
+            }
+        }
+    }
+
+    private fun collectReferencedVars(stmts: List<IrStmt>, refs: MutableMap<String, IrType>) {
+        for (stmt in stmts) {
+            when (stmt) {
+                is IrStmt.VarDecl -> collectReferencedVars(stmt.initializer, refs)
+                is IrStmt.FinDecl -> collectReferencedVars(stmt.initializer, refs)
+                is IrStmt.LetDecl -> collectReferencedVars(stmt.initializer, refs)
+                is IrStmt.Assignment -> collectReferencedVars(stmt.value, refs)
+                is IrStmt.IndexAssign -> {
+                    collectReferencedVars(stmt.target, refs)
+                    collectReferencedVars(stmt.index, refs)
+                    collectReferencedVars(stmt.value, refs)
+                }
+                is IrStmt.MemberAssign -> {
+                    collectReferencedVars(stmt.target, refs)
+                    collectReferencedVars(stmt.value, refs)
+                }
+                is IrStmt.Return -> stmt.value?.let { collectReferencedVars(it, refs) }
+                is IrStmt.ExprStmt -> collectReferencedVars(stmt.expr, refs)
+                is IrStmt.If -> {
+                    collectReferencedVars(stmt.condition, refs)
+                    collectReferencedVars(stmt.thenBranch, refs)
+                    stmt.elseBranch?.let { collectReferencedVars(it, refs) }
+                }
+                is IrStmt.Zone -> collectReferencedVars(stmt.body, refs)
+                is IrStmt.Assert -> {
+                    collectReferencedVars(stmt.condition, refs)
+                    collectReferencedVars(stmt.message, refs)
+                }
+                is IrStmt.Trace -> collectReferencedVars(stmt.message, refs)
+                is IrStmt.While -> {
+                    collectReferencedVars(stmt.condition, refs)
+                    collectReferencedVars(stmt.body, refs)
+                }
+                is IrStmt.For -> {
+                    collectReferencedVars(stmt.start, refs)
+                    collectReferencedVars(stmt.end, refs)
+                    stmt.step?.let { collectReferencedVars(it, refs) }
+                    collectReferencedVars(stmt.body, refs)
+                }
+                is IrStmt.ForEach -> {
+                    collectReferencedVars(stmt.iterable, refs)
+                    collectReferencedVars(stmt.body, refs)
+                }
+                is IrStmt.Loop -> collectReferencedVars(stmt.body, refs)
+                is IrStmt.When -> {
+                    collectReferencedVars(stmt.scrutinee, refs)
+                    stmt.branches.forEach { branch ->
+                        branch.patterns.forEach { collectReferencedVars(it, refs) }
+                        collectReferencedVars(branch.body, refs)
+                    }
+                    stmt.elseBranch?.let { collectReferencedVars(it, refs) }
+                }
+                is IrStmt.Throw -> collectReferencedVars(stmt.value, refs)
+                is IrStmt.Try -> {
+                    collectReferencedVars(stmt.body, refs)
+                    stmt.catchBody?.let { collectReferencedVars(it, refs) }
+                }
+                is IrStmt.Defer -> collectReferencedVars(stmt.body, refs)
+                is IrStmt.Yield -> collectReferencedVars(stmt.value, refs)
+                is IrStmt.Break, is IrStmt.Continue -> {}
+            }
+        }
+    }
+
+    private fun collectReferencedVars(expr: IrExpr, refs: MutableMap<String, IrType>) {
+        when (expr) {
+            is IrExpr.Var -> refs.putIfAbsent(expr.name, expr.type)
+            is IrExpr.Unary -> collectReferencedVars(expr.operand, refs)
+            is IrExpr.Binary -> {
+                collectReferencedVars(expr.left, refs)
+                collectReferencedVars(expr.right, refs)
+            }
+            is IrExpr.Call -> expr.args.forEach { collectReferencedVars(it, refs) }
+            is IrExpr.ArrayLiteral -> expr.elements.forEach { collectReferencedVars(it, refs) }
+            is IrExpr.MapLit -> expr.entries.forEach {
+                collectReferencedVars(it.first, refs)
+                collectReferencedVars(it.second, refs)
+            }
+            is IrExpr.SetLit -> expr.elements.forEach { collectReferencedVars(it, refs) }
+            is IrExpr.Index -> {
+                collectReferencedVars(expr.target, refs)
+                collectReferencedVars(expr.index, refs)
+            }
+            is IrExpr.Member -> collectReferencedVars(expr.target, refs)
+            is IrExpr.MethodCall -> {
+                collectReferencedVars(expr.target, refs)
+                expr.args.forEach { collectReferencedVars(it, refs) }
+            }
+            is IrExpr.StructCtor -> expr.args.forEach { collectReferencedVars(it, refs) }
+            is IrExpr.StringTemplate -> expr.parts.forEach { part ->
+                if (part is IrExpr.IrTemplatePart.Expr) collectReferencedVars(part.expr, refs)
+            }
+            is IrExpr.TupleLit -> expr.elements.forEach { collectReferencedVars(it, refs) }
+            is IrExpr.TupleAccess -> collectReferencedVars(expr.target, refs)
+            is IrExpr.CatchExpr -> {
+                collectReferencedVars(expr.expr, refs)
+                collectReferencedVars(expr.fallback, refs)
+            }
+            is IrExpr.IfExpr -> {
+                collectReferencedVars(expr.condition, refs)
+                collectReferencedVars(expr.thenExpr, refs)
+                collectReferencedVars(expr.elseExpr, refs)
+            }
+            is IrExpr.NumCast -> collectReferencedVars(expr.value, refs)
+            is IrExpr.Lambda -> {}
+            is IrExpr.Await -> collectReferencedVars(expr.value, refs)
+            is IrExpr.Spread -> collectReferencedVars(expr.array, refs)
+            is IrExpr.IntLiteral, is IrExpr.RealLiteral, is IrExpr.StringLiteral,
+            is IrExpr.BoolLiteral, is IrExpr.CharLiteral, is IrExpr.SlotPattern -> {}
         }
     }
 
@@ -988,7 +1592,6 @@ class LlvmCodegen {
             emit("  ; struct ${expr.name} has no definition — emitting null")
             return "null"
         }
-        usesMalloc = true
         val st = "%struct.${sanitizeName(expr.name)}"
 
         // Evaluate constructor arguments first (source order).
@@ -999,8 +1602,7 @@ class LlvmCodegen {
         emit("  $sizeGep = getelementptr $st, $st* null, i32 1")
         val size = nextTmp()
         emit("  $size = ptrtoint $st* $sizeGep to i64")
-        val raw = nextTmp()
-        emit("  $raw = call i8* @malloc(i64 $size)")
+        val raw = emitHeapAlloc(size)
         val ptr = nextTmp()
         emit("  $ptr = bitcast i8* $raw to $st*")
 
@@ -1150,7 +1752,6 @@ class LlvmCodegen {
 
     /** `[a, b, c]` → malloc(8 + n*elemSize), i64 length header, packed elements. */
     private fun emitArrayLiteral(expr: IrExpr.ArrayLiteral): String {
-        usesMalloc = true
         val elemType = (expr.type as? IrType.Array)?.element ?: IrType.Any
         val et = mapType(elemType)
         val elemSize = sizeOfScalar(elemType)
@@ -1158,8 +1759,7 @@ class LlvmCodegen {
 
         val vals = expr.elements.map { emitExpr(it) to it.type }
 
-        val raw = nextTmp()
-        emit("  $raw = call i8* @malloc(i64 $total)")
+        val raw = emitHeapAlloc("$total")
         val lenPtr = nextTmp()
         emit("  $lenPtr = bitcast i8* $raw to i64*")
         emit("  store i64 ${expr.elements.size}, i64* $lenPtr")
@@ -1180,10 +1780,8 @@ class LlvmCodegen {
     }
 
     private fun emitSetLiteral(expr: IrExpr.SetLit): String {
-        usesMalloc = true
         val setType = expr.type as? IrType.Set ?: return "null"
-        var raw = nextTmp()
-        emit("  $raw = call i8* @malloc(i64 8)")
+        var raw = emitHeapAlloc("8")
         val lenPtr = nextTmp()
         emit("  $lenPtr = bitcast i8* $raw to i64*")
         emit("  store i64 0, i64* $lenPtr")
@@ -1356,7 +1954,6 @@ class LlvmCodegen {
 
     /** Map layout: `[i64 length | packed keys | packed values]`. */
     private fun emitMapLiteral(expr: IrExpr.MapLit): String {
-        usesMalloc = true
         val mapType = expr.type as? IrType.Map ?: return "null"
         val keyType = mapType.key
         val valueType = mapType.value
@@ -1370,8 +1967,7 @@ class LlvmCodegen {
             (emitExpr(key) to key.type) to (emitExpr(value) to value.type)
         }
 
-        val raw = nextTmp()
-        emit("  $raw = call i8* @malloc(i64 $total)")
+        val raw = emitHeapAlloc("$total")
         val lenPtr = nextTmp()
         emit("  $lenPtr = bitcast i8* $raw to i64*")
         emit("  store i64 $count, i64* $lenPtr")
@@ -1935,11 +2531,35 @@ class LlvmCodegen {
         if (expr.name == "async") {
             val lambda = expr.args.singleOrNull() as? IrExpr.Lambda
                 ?: error("LLVM async lowering requires a task block")
-            val statements = lambda.body.toMutableList()
-            val tail = statements.lastOrNull() as? IrStmt.Return
-            if (tail != null) statements.removeAt(statements.lastIndex)
-            emitStmts(statements)
-            return tail?.value?.let { emitExpr(it) } ?: defaultValue(expr.type)
+            val resultType = (expr.type as? IrType.Task)?.result ?: IrType.Any
+            return emitLambdaTaskSpawn(lambda, resultType, "async")
+        }
+        if (expr.name == "__launch") {
+            val lambda = expr.args.singleOrNull() as? IrExpr.Lambda
+                ?: error("LLVM launch lowering requires a task block")
+            emitLambdaTaskSpawn(lambda, IrType.Unit, "launch")
+            return "void"
+        }
+        if (expr.name == "__alloc") {
+            return emitPointerAlloc(expr.args.single())
+        }
+        if (expr.name == "__deref") {
+            return emitPointerDeref(expr.args.single(), expr.type)
+        }
+        if (expr.name == "__derefAssign") {
+            emitPointerAssign(expr.args[0], expr.args[1])
+            return "void"
+        }
+        if (expr.name == "__drop") {
+            emitExpr(expr.args.single())
+            emit("  ; drop — advisory for raw pointers; arenas/task scopes own native cleanup")
+            return "void"
+        }
+        if (expr.name == "cancel") {
+            usesTaskRuntime = true
+            val handle = emitExpr(expr.args.single())
+            emit("  call void @__azora_task_cancel(%azora.task* $handle)")
+            return "void"
         }
 
         // Coerce arguments to the callee's declared parameter types (numeric
@@ -1957,8 +2577,46 @@ class LlvmCodegen {
         } else {
             val tmp = nextTmp()
             emit("  $tmp = call $retType @${expr.name}($args)")
+            if (expr.type is IrType.Task) emitTaskScopeAttach(tmp)
             tmp
         }
+    }
+
+    private fun emitPointerAlloc(valueExpr: IrExpr): String {
+        val value = emitExpr(valueExpr)
+        val arrayType = valueExpr.type as? IrType.Array
+        if (arrayType != null) {
+            val data = nextTmp()
+            emit("  $data = getelementptr i8, i8* $value, i64 8")
+            return data
+        }
+        val raw = emitHeapAlloc("${sizeOfScalar(valueExpr.type)}")
+        val typed = nextTmp()
+        val ptrType = "${mapType(valueExpr.type)}*"
+        emit("  $typed = bitcast i8* $raw to $ptrType")
+        emit("  store ${mapType(valueExpr.type)} $value, $ptrType $typed, align 1")
+        return raw
+    }
+
+    private fun emitPointerDeref(ptrExpr: IrExpr, resultType: IrType): String {
+        val ptr = emitExpr(ptrExpr)
+        val typed = nextTmp()
+        val ptrType = "${mapType(resultType)}*"
+        emit("  $typed = bitcast i8* $ptr to $ptrType")
+        val value = nextTmp()
+        emit("  $value = load ${mapType(resultType)}, $ptrType $typed, align 1")
+        return value
+    }
+
+    private fun emitPointerAssign(ptrExpr: IrExpr, valueExpr: IrExpr) {
+        val ptr = emitExpr(ptrExpr)
+        val pointee = (ptrExpr.type as? IrType.Pointer)?.inner ?: valueExpr.type
+        val raw = emitExpr(valueExpr)
+        val value = coerceNumeric(raw, valueExpr.type, pointee)
+        val typed = nextTmp()
+        val ptrType = "${mapType(pointee)}*"
+        emit("  $typed = bitcast i8* $ptr to $ptrType")
+        emit("  store ${mapType(pointee)} $value, $ptrType $typed, align 1")
     }
 
     private fun emitPrintln(expr: IrExpr.Call, newline: Boolean = true): String {
@@ -2156,6 +2814,304 @@ class LlvmCodegen {
     private fun buildRuntimeHelpers(): String {
         val sb = StringBuilder()
 
+        if (usesAllocatorRuntime) {
+            usesMalloc = true
+            usesFree = true
+            usesAbort = true
+            sb.appendLine("; runtime: checked native allocation")
+            sb.appendLine("define i8* @__azora_alloc(i64 %size) {")
+            sb.appendLine("entry:")
+            sb.appendLine("  %p = call i8* @malloc(i64 %size)")
+            sb.appendLine("  %isnull = icmp eq i8* %p, null")
+            sb.appendLine("  br i1 %isnull, label %oom, label %ok")
+            sb.appendLine("oom:")
+            sb.appendLine("  call void @abort()")
+            sb.appendLine("  unreachable")
+            sb.appendLine("ok:")
+            sb.appendLine("  ret i8* %p")
+            sb.appendLine("}")
+            sb.appendLine()
+            sb.appendLine("define void @__azora_free(i8* %ptr) {")
+            sb.appendLine("entry:")
+            sb.appendLine("  %isnull = icmp eq i8* %ptr, null")
+            sb.appendLine("  br i1 %isnull, label %end, label %free")
+            sb.appendLine("free:")
+            sb.appendLine("  call void @free(i8* %ptr)")
+            sb.appendLine("  br label %end")
+            sb.appendLine("end:")
+            sb.appendLine("  ret void")
+            sb.appendLine("}")
+            sb.appendLine()
+        }
+
+        if (globalVars.keys.any { it.startsWith("__tl__") }) {
+            sb.appendLine("; runtime: lli fallback for Mach-O emulated TLS lookup")
+            sb.appendLine("define i8* @__emutls_get_address(i8* %control) {")
+            sb.appendLine("entry:")
+            sb.appendLine("  %templ.addr.raw = getelementptr i8, i8* %control, i64 24")
+            sb.appendLine("  %templ.addr = bitcast i8* %templ.addr.raw to i8**")
+            sb.appendLine("  %templ = load i8*, i8** %templ.addr")
+            sb.appendLine("  ret i8* %templ")
+            sb.appendLine("}")
+            sb.appendLine()
+        }
+
+        if (usesArenaRuntime) {
+            usesAllocatorRuntime = true
+            sb.appendLine("; runtime: scoped arena allocation")
+            sb.appendLine("define void @__azora_arena_begin(%azora.arena* %arena) {")
+            sb.appendLine("entry:")
+            sb.appendLine("  %count = getelementptr %azora.arena, %azora.arena* %arena, i32 0, i32 0")
+            sb.appendLine("  %cap = getelementptr %azora.arena, %azora.arena* %arena, i32 0, i32 1")
+            sb.appendLine("  %items = getelementptr %azora.arena, %azora.arena* %arena, i32 0, i32 2")
+            sb.appendLine("  store i64 0, i64* %count")
+            sb.appendLine("  store i64 0, i64* %cap")
+            sb.appendLine("  store i8** null, i8*** %items")
+            sb.appendLine("  ret void")
+            sb.appendLine("}")
+            sb.appendLine()
+            sb.appendLine("define i8* @__azora_arena_alloc(%azora.arena* %arena, i64 %size) {")
+            sb.appendLine("entry:")
+            sb.appendLine("  %ptr = call i8* @__azora_alloc(i64 %size)")
+            sb.appendLine("  %countPtr = getelementptr %azora.arena, %azora.arena* %arena, i32 0, i32 0")
+            sb.appendLine("  %capPtr = getelementptr %azora.arena, %azora.arena* %arena, i32 0, i32 1")
+            sb.appendLine("  %itemsPtr = getelementptr %azora.arena, %azora.arena* %arena, i32 0, i32 2")
+            sb.appendLine("  %count = load i64, i64* %countPtr")
+            sb.appendLine("  %cap = load i64, i64* %capPtr")
+            sb.appendLine("  %full = icmp uge i64 %count, %cap")
+            sb.appendLine("  br i1 %full, label %grow, label %store")
+            sb.appendLine("grow:")
+            sb.appendLine("  %iszero = icmp eq i64 %cap, 0")
+            sb.appendLine("  %double = mul i64 %cap, 2")
+            sb.appendLine("  %newCap = select i1 %iszero, i64 8, i64 %double")
+            sb.appendLine("  %bytes = mul i64 %newCap, 8")
+            sb.appendLine("  %newRaw = call i8* @__azora_alloc(i64 %bytes)")
+            sb.appendLine("  %newItems = bitcast i8* %newRaw to i8**")
+            sb.appendLine("  %oldItems = load i8**, i8*** %itemsPtr")
+            sb.appendLine("  br label %copy.cond")
+            sb.appendLine("copy.cond:")
+            sb.appendLine("  %i = phi i64 [ 0, %grow ], [ %next, %copy.body ]")
+            sb.appendLine("  %done = icmp uge i64 %i, %count")
+            sb.appendLine("  br i1 %done, label %copy.end, label %copy.body")
+            sb.appendLine("copy.body:")
+            sb.appendLine("  %oldSlot = getelementptr i8*, i8** %oldItems, i64 %i")
+            sb.appendLine("  %oldVal = load i8*, i8** %oldSlot")
+            sb.appendLine("  %newSlot = getelementptr i8*, i8** %newItems, i64 %i")
+            sb.appendLine("  store i8* %oldVal, i8** %newSlot")
+            sb.appendLine("  %next = add i64 %i, 1")
+            sb.appendLine("  br label %copy.cond")
+            sb.appendLine("copy.end:")
+            sb.appendLine("  %oldRaw = bitcast i8** %oldItems to i8*")
+            sb.appendLine("  call void @__azora_free(i8* %oldRaw)")
+            sb.appendLine("  store i8** %newItems, i8*** %itemsPtr")
+            sb.appendLine("  store i64 %newCap, i64* %capPtr")
+            sb.appendLine("  br label %store")
+            sb.appendLine("store:")
+            sb.appendLine("  %items = load i8**, i8*** %itemsPtr")
+            sb.appendLine("  %slot = getelementptr i8*, i8** %items, i64 %count")
+            sb.appendLine("  store i8* %ptr, i8** %slot")
+            sb.appendLine("  %newCount = add i64 %count, 1")
+            sb.appendLine("  store i64 %newCount, i64* %countPtr")
+            sb.appendLine("  ret i8* %ptr")
+            sb.appendLine("}")
+            sb.appendLine()
+            sb.appendLine("define void @__azora_arena_free_all(%azora.arena* %arena) {")
+            sb.appendLine("entry:")
+            sb.appendLine("  %countPtr = getelementptr %azora.arena, %azora.arena* %arena, i32 0, i32 0")
+            sb.appendLine("  %capPtr = getelementptr %azora.arena, %azora.arena* %arena, i32 0, i32 1")
+            sb.appendLine("  %itemsPtr = getelementptr %azora.arena, %azora.arena* %arena, i32 0, i32 2")
+            sb.appendLine("  %count = load i64, i64* %countPtr")
+            sb.appendLine("  %items = load i8**, i8*** %itemsPtr")
+            sb.appendLine("  br label %loop")
+            sb.appendLine("loop:")
+            sb.appendLine("  %i = phi i64 [ 0, %entry ], [ %next, %body ]")
+            sb.appendLine("  %done = icmp uge i64 %i, %count")
+            sb.appendLine("  br i1 %done, label %end, label %body")
+            sb.appendLine("body:")
+            sb.appendLine("  %slot = getelementptr i8*, i8** %items, i64 %i")
+            sb.appendLine("  %ptr = load i8*, i8** %slot")
+            sb.appendLine("  call void @__azora_free(i8* %ptr)")
+            sb.appendLine("  %next = add i64 %i, 1")
+            sb.appendLine("  br label %loop")
+            sb.appendLine("end:")
+            sb.appendLine("  %raw = bitcast i8** %items to i8*")
+            sb.appendLine("  call void @__azora_free(i8* %raw)")
+            sb.appendLine("  store i64 0, i64* %countPtr")
+            sb.appendLine("  store i64 0, i64* %capPtr")
+            sb.appendLine("  store i8** null, i8*** %itemsPtr")
+            sb.appendLine("  ret void")
+            sb.appendLine("}")
+            sb.appendLine()
+        }
+
+        if (usesTaskRuntime) {
+            usesAllocatorRuntime = true
+            usesFree = true
+            sb.appendLine("; runtime: pthread-backed structured tasks")
+            sb.appendLine("define %azora.task* @__azora_task_spawn(i8* (i8*)* %fn, i8* %ctx) {")
+            sb.appendLine("entry:")
+            sb.appendLine("  %task.raw = call i8* @__azora_alloc(i64 24)")
+            sb.appendLine("  %task = bitcast i8* %task.raw to %azora.task*")
+            sb.appendLine("  %thread.slot.raw = call i8* @__azora_alloc(i64 8)")
+            sb.appendLine("  %thread.slot = bitcast i8* %thread.slot.raw to i8**")
+            sb.appendLine("  %create = call i32 @pthread_create(i8** %thread.slot, i8* null, i8* (i8*)* %fn, i8* %ctx)")
+            sb.appendLine("  %thread = load i8*, i8** %thread.slot")
+            sb.appendLine("  call void @__azora_free(i8* %thread.slot.raw)")
+            sb.appendLine("  %thread.field = getelementptr %azora.task, %azora.task* %task, i32 0, i32 0")
+            sb.appendLine("  %result.field = getelementptr %azora.task, %azora.task* %task, i32 0, i32 1")
+            sb.appendLine("  %joined.field = getelementptr %azora.task, %azora.task* %task, i32 0, i32 2")
+            sb.appendLine("  %cancel.field = getelementptr %azora.task, %azora.task* %task, i32 0, i32 3")
+            sb.appendLine("  store i8* %thread, i8** %thread.field")
+            sb.appendLine("  store i8* null, i8** %result.field")
+            sb.appendLine("  store i1 false, i1* %joined.field")
+            sb.appendLine("  store i1 false, i1* %cancel.field")
+            sb.appendLine("  ret %azora.task* %task")
+            sb.appendLine("}")
+            sb.appendLine()
+            sb.appendLine("define i8* @__azora_task_join(%azora.task* %task) {")
+            sb.appendLine("entry:")
+            sb.appendLine("  %isnull = icmp eq %azora.task* %task, null")
+            sb.appendLine("  br i1 %isnull, label %null, label %check")
+            sb.appendLine("null:")
+            sb.appendLine("  ret i8* null")
+            sb.appendLine("check:")
+            sb.appendLine("  %joined.field = getelementptr %azora.task, %azora.task* %task, i32 0, i32 2")
+            sb.appendLine("  %joined = load i1, i1* %joined.field")
+            sb.appendLine("  br i1 %joined, label %done, label %join")
+            sb.appendLine("join:")
+            sb.appendLine("  %thread.field = getelementptr %azora.task, %azora.task* %task, i32 0, i32 0")
+            sb.appendLine("  %thread = load i8*, i8** %thread.field")
+            sb.appendLine("  %result.addr = alloca i8*")
+            sb.appendLine("  store i8* null, i8** %result.addr")
+            sb.appendLine("  %rc = call i32 @pthread_join(i8* %thread, i8** %result.addr)")
+            sb.appendLine("  %result = load i8*, i8** %result.addr")
+            sb.appendLine("  %result.field = getelementptr %azora.task, %azora.task* %task, i32 0, i32 1")
+            sb.appendLine("  store i8* %result, i8** %result.field")
+            sb.appendLine("  store i1 true, i1* %joined.field")
+            sb.appendLine("  br label %done")
+            sb.appendLine("done:")
+            sb.appendLine("  %stored.field = getelementptr %azora.task, %azora.task* %task, i32 0, i32 1")
+            sb.appendLine("  %stored = load i8*, i8** %stored.field")
+            sb.appendLine("  ret i8* %stored")
+            sb.appendLine("}")
+            sb.appendLine()
+            sb.appendLine("define void @__azora_task_cancel(%azora.task* %task) {")
+            sb.appendLine("entry:")
+            sb.appendLine("  %isnull = icmp eq %azora.task* %task, null")
+            sb.appendLine("  br i1 %isnull, label %end, label %check")
+            sb.appendLine("check:")
+            sb.appendLine("  %cancel.field = getelementptr %azora.task, %azora.task* %task, i32 0, i32 3")
+            sb.appendLine("  store i1 true, i1* %cancel.field")
+            sb.appendLine("  %joined.field = getelementptr %azora.task, %azora.task* %task, i32 0, i32 2")
+            sb.appendLine("  %joined = load i1, i1* %joined.field")
+            sb.appendLine("  br i1 %joined, label %end, label %cancel")
+            sb.appendLine("cancel:")
+            sb.appendLine("  %thread.field = getelementptr %azora.task, %azora.task* %task, i32 0, i32 0")
+            sb.appendLine("  %thread = load i8*, i8** %thread.field")
+            sb.appendLine("  %rc = call i32 @pthread_cancel(i8* %thread)")
+            sb.appendLine("  br label %end")
+            sb.appendLine("end:")
+            sb.appendLine("  ret void")
+            sb.appendLine("}")
+            sb.appendLine()
+            sb.appendLine("define void @__azora_task_destroy(%azora.task* %task) {")
+            sb.appendLine("entry:")
+            sb.appendLine("  %isnull = icmp eq %azora.task* %task, null")
+            sb.appendLine("  br i1 %isnull, label %end, label %join")
+            sb.appendLine("join:")
+            sb.appendLine("  %result = call i8* @__azora_task_join(%azora.task* %task)")
+            sb.appendLine("  call void @__azora_free(i8* %result)")
+            sb.appendLine("  %raw = bitcast %azora.task* %task to i8*")
+            sb.appendLine("  call void @__azora_free(i8* %raw)")
+            sb.appendLine("  br label %end")
+            sb.appendLine("end:")
+            sb.appendLine("  ret void")
+            sb.appendLine("}")
+            sb.appendLine()
+            sb.appendLine("define void @__azora_scope_init(%azora.scope* %scope) {")
+            sb.appendLine("entry:")
+            sb.appendLine("  %count = getelementptr %azora.scope, %azora.scope* %scope, i32 0, i32 0")
+            sb.appendLine("  %cap = getelementptr %azora.scope, %azora.scope* %scope, i32 0, i32 1")
+            sb.appendLine("  %items = getelementptr %azora.scope, %azora.scope* %scope, i32 0, i32 2")
+            sb.appendLine("  store i64 0, i64* %count")
+            sb.appendLine("  store i64 0, i64* %cap")
+            sb.appendLine("  store %azora.task** null, %azora.task*** %items")
+            sb.appendLine("  ret void")
+            sb.appendLine("}")
+            sb.appendLine()
+            sb.appendLine("define void @__azora_scope_attach(%azora.scope* %scope, %azora.task* %task) {")
+            sb.appendLine("entry:")
+            sb.appendLine("  %countPtr = getelementptr %azora.scope, %azora.scope* %scope, i32 0, i32 0")
+            sb.appendLine("  %capPtr = getelementptr %azora.scope, %azora.scope* %scope, i32 0, i32 1")
+            sb.appendLine("  %itemsPtr = getelementptr %azora.scope, %azora.scope* %scope, i32 0, i32 2")
+            sb.appendLine("  %count = load i64, i64* %countPtr")
+            sb.appendLine("  %cap = load i64, i64* %capPtr")
+            sb.appendLine("  %full = icmp uge i64 %count, %cap")
+            sb.appendLine("  br i1 %full, label %grow, label %store")
+            sb.appendLine("grow:")
+            sb.appendLine("  %iszero = icmp eq i64 %cap, 0")
+            sb.appendLine("  %double = mul i64 %cap, 2")
+            sb.appendLine("  %newCap = select i1 %iszero, i64 8, i64 %double")
+            sb.appendLine("  %bytes = mul i64 %newCap, 8")
+            sb.appendLine("  %newRaw = call i8* @__azora_alloc(i64 %bytes)")
+            sb.appendLine("  %newItems = bitcast i8* %newRaw to %azora.task**")
+            sb.appendLine("  %oldItems = load %azora.task**, %azora.task*** %itemsPtr")
+            sb.appendLine("  br label %copy.cond")
+            sb.appendLine("copy.cond:")
+            sb.appendLine("  %i = phi i64 [ 0, %grow ], [ %next, %copy.body ]")
+            sb.appendLine("  %done = icmp uge i64 %i, %count")
+            sb.appendLine("  br i1 %done, label %copy.end, label %copy.body")
+            sb.appendLine("copy.body:")
+            sb.appendLine("  %oldSlot = getelementptr %azora.task*, %azora.task** %oldItems, i64 %i")
+            sb.appendLine("  %oldVal = load %azora.task*, %azora.task** %oldSlot")
+            sb.appendLine("  %newSlot = getelementptr %azora.task*, %azora.task** %newItems, i64 %i")
+            sb.appendLine("  store %azora.task* %oldVal, %azora.task** %newSlot")
+            sb.appendLine("  %next = add i64 %i, 1")
+            sb.appendLine("  br label %copy.cond")
+            sb.appendLine("copy.end:")
+            sb.appendLine("  %oldRaw = bitcast %azora.task** %oldItems to i8*")
+            sb.appendLine("  call void @__azora_free(i8* %oldRaw)")
+            sb.appendLine("  store %azora.task** %newItems, %azora.task*** %itemsPtr")
+            sb.appendLine("  store i64 %newCap, i64* %capPtr")
+            sb.appendLine("  br label %store")
+            sb.appendLine("store:")
+            sb.appendLine("  %items = load %azora.task**, %azora.task*** %itemsPtr")
+            sb.appendLine("  %slot = getelementptr %azora.task*, %azora.task** %items, i64 %count")
+            sb.appendLine("  store %azora.task* %task, %azora.task** %slot")
+            sb.appendLine("  %newCount = add i64 %count, 1")
+            sb.appendLine("  store i64 %newCount, i64* %countPtr")
+            sb.appendLine("  ret void")
+            sb.appendLine("}")
+            sb.appendLine()
+            sb.appendLine("define void @__azora_scope_join_all(%azora.scope* %scope) {")
+            sb.appendLine("entry:")
+            sb.appendLine("  %countPtr = getelementptr %azora.scope, %azora.scope* %scope, i32 0, i32 0")
+            sb.appendLine("  %capPtr = getelementptr %azora.scope, %azora.scope* %scope, i32 0, i32 1")
+            sb.appendLine("  %itemsPtr = getelementptr %azora.scope, %azora.scope* %scope, i32 0, i32 2")
+            sb.appendLine("  %count = load i64, i64* %countPtr")
+            sb.appendLine("  %items = load %azora.task**, %azora.task*** %itemsPtr")
+            sb.appendLine("  br label %loop")
+            sb.appendLine("loop:")
+            sb.appendLine("  %i = phi i64 [ 0, %entry ], [ %next, %body ]")
+            sb.appendLine("  %done = icmp uge i64 %i, %count")
+            sb.appendLine("  br i1 %done, label %end, label %body")
+            sb.appendLine("body:")
+            sb.appendLine("  %slot = getelementptr %azora.task*, %azora.task** %items, i64 %i")
+            sb.appendLine("  %task = load %azora.task*, %azora.task** %slot")
+            sb.appendLine("  call void @__azora_task_destroy(%azora.task* %task)")
+            sb.appendLine("  %next = add i64 %i, 1")
+            sb.appendLine("  br label %loop")
+            sb.appendLine("end:")
+            sb.appendLine("  %raw = bitcast %azora.task** %items to i8*")
+            sb.appendLine("  call void @__azora_free(i8* %raw)")
+            sb.appendLine("  store i64 0, i64* %countPtr")
+            sb.appendLine("  store i64 0, i64* %capPtr")
+            sb.appendLine("  store %azora.task** null, %azora.task*** %itemsPtr")
+            sb.appendLine("  ret void")
+            sb.appendLine("}")
+            sb.appendLine()
+        }
+
         if (usesStrConcat) {
             usesMalloc = true; usesStrlen = true; usesStrcpy = true; usesStrcat = true
             sb.appendLine("; runtime: string concatenation")
@@ -2349,7 +3305,10 @@ class LlvmCodegen {
         is IrType.Array -> "i8*"
         is IrType.Map, is IrType.Set -> "i8*"
         is IrType.Function -> "i8*"
-        is IrType.Task -> mapType(type.result)
+        is IrType.Task -> {
+            usesTaskRuntime = true
+            "%azora.task*"
+        }
         is IrType.Tuple -> "i8*"
         is IrType.Nullable -> "i8*"
         is IrType.Pointer -> "i8*"
@@ -2369,7 +3328,7 @@ class LlvmCodegen {
         IrType.Unit -> ""
         is IrType.Array, is IrType.Map, is IrType.Set, is IrType.Function,
         is IrType.Tuple, is IrType.Nullable, is IrType.Named, IrType.Any -> "null"
-        is IrType.Task -> defaultValue(type.result)
+        is IrType.Task -> "null"
         else -> "0"
     }
 

@@ -20,6 +20,7 @@ import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class AzoraLanguageServerTest {
@@ -38,6 +39,12 @@ class AzoraLanguageServerTest {
 
     private fun symbols(source: String): List<DocumentSymbol> =
         json.decodeFromString(ListSerializer(DocumentSymbol.serializer()), azls.symbols(source))
+
+    private fun hover(source: String, offset: Int, prelude: String = ""): Hover? =
+        azls.hover(source, offset, prelude).let { if (it == "null") null else json.decodeFromString(Hover.serializer(), it) }
+
+    private fun definition(source: String, offset: Int, prelude: String = ""): Definition? =
+        azls.definition(source, offset, prelude).let { if (it == "null") null else json.decodeFromString(Definition.serializer(), it) }
 
     // -----------------------------------------------------------------
     // Highlighting
@@ -257,6 +264,50 @@ class AzoraLanguageServerTest {
         val list = symbols(source)
         assertEquals(listOf("Point", "Color", "main"), list.map { it.name })
         assertEquals(listOf("pack", "enum", "function"), list.map { it.kind })
+    }
+
+    @Test
+    fun hoverIncludesDocComment() {
+        val source = "/// Adds two integers.\n/// Returns their sum.\nfunc add(a: Int, b: Int): Int {\n    return a + b\n}\nfunc main() {\n    add(1, 2)\n}"
+        val offset = source.lastIndexOf("add") + 1
+        val h = hover(source, offset)!!
+        assertEquals("func add(a: Int, b: Int): Int", h.signature)
+        assertEquals("Adds two integers.\nReturns their sum.", h.doc)
+    }
+
+    @Test
+    fun definitionFindsTopLevelFunctionInFile() {
+        val source = "func helper(): Int {\n    return 1\n}\nfunc main() {\n    helper()\n}"
+        val offset = source.lastIndexOf("helper") + 1
+        val def = definition(source, offset)!!
+        assertTrue(def.inCurrentFile)
+        assertEquals(1, def.line)
+    }
+
+    @Test
+    fun definitionFindsLocalVariable() {
+        val source = "func main() {\n    var total = 0\n    total = total + 1\n}"
+        val offset = source.lastIndexOf("total") + 1
+        val def = definition(source, offset)!!
+        assertTrue(def.inCurrentFile)
+        assertEquals(2, def.line)
+    }
+
+    @Test
+    fun definitionReportsExternalSymbolByName() {
+        // abs lives in the stdlib, not this file → not in current file, named for search.
+        val source = "func main() {\n    abs(3)\n}"
+        val offset = source.indexOf("abs") + 1
+        val def = definition(source, offset)!!
+        assertFalse(def.inCurrentFile)
+        assertEquals("abs", def.name)
+    }
+
+    @Test
+    fun definitionReturnsNullForUnknownWord() {
+        val source = "func main() {\n    nonexistentThing()\n}"
+        val offset = source.indexOf("nonexistentThing") + 1
+        assertEquals("null", azls.definition(source, offset))
     }
 
     @Test

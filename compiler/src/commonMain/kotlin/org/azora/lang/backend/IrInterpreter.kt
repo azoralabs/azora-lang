@@ -982,6 +982,10 @@ class IrInterpreter {
             val scope = coroutineScope ?: error("async used outside of the interpreter's structured scope")
             return TaskHandle(scope.async(context = childState()) { invokeClosure(thunk) })
         }
+        if (expr.name == "cancel") {
+            (args.firstOrNull() as? TaskHandle)?.deferred?.cancel()
+            return null
+        }
         if (expr.name == "channel") {
             // A buffered channel (effectively unbounded) for task-to-task communication.
             return AzoraChannel(Channel<Any?>(Channel.UNLIMITED))

@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 AzoraTech
+ * Copyright 2026 AzoraLabs
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -145,8 +145,8 @@ bridge .PY {
     func math.hypot as az_hypot(x: Real, y: Real): Real
 }
 
-expose scope std {
-    scope math {
+friend zone std {
+    friend zone math {
         func sin(x: Real): Real { return az_sin(x) }
         func cos(x: Real): Real { return az_cos(x) }
         func tan(x: Real): Real { return az_tan(x) }

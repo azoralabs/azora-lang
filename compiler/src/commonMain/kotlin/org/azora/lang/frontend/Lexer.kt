@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 AzoraTech
+ * Copyright 2026 AzoraLabs
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -105,6 +105,7 @@ class Lexer(private val source: String) {
             "expose" to TokenType.EXPOSE,
             "confine" to TokenType.CONFINE,
             "protect" to TokenType.PROTECT,
+            "protected" to TokenType.PROTECT,
             "module" to TokenType.MODULE,
             "threadlocal" to TokenType.THREADLOCAL,
             "pack" to TokenType.PACK,

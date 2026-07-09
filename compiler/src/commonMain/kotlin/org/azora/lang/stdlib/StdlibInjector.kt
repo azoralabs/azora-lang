@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 AzoraTech
+ * Copyright 2026 AzoraLabs
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,10 +27,11 @@ import org.azora.lang.frontend.TopLevel
  * Standard-library symbols are **import-gated**: a file sees a module's names
  * only after importing it —
  *
- * - `use std.math` — unqualified access to that module (`abs(x)`),
+ * - `use std.math` — unqualified access to that module (`abs(x)`) plus `math::abs(x)`,
+ * - `use std.*` / `use std.{math, concurrency}` — wildcard/grouped module imports,
  * - `use std.math::abs` — selective import of listed names,
- * - `use std` / `use scope std` — every stdlib module,
- * - `std.math.abs(x)` / `std.abs(x)` — qualified access needs no import.
+ * - `use std` / `use zone std` — every stdlib module,
+ * - `std::math::abs(x)` / `std::abs(x)` — qualified access needs no import.
  *
  * Only the items actually referenced are appended (functions, constants,
  * packs, enums, plus the extern `bridge` signatures their bodies call),
@@ -107,6 +108,25 @@ object StdlibInjector {
         return visible
     }
 
+    /** Short std module aliases made visible by imports (`use std.math` -> `math`). */
+    private fun moduleAliases(program: Program): Set<String> {
+        val aliases = mutableSetOf<String>()
+        for (item in program.items) {
+            if (item !is TopLevel.UseImport) continue
+            for ((path, selected) in item.imports) {
+                if (selected != null) continue
+                when {
+                    path == "std" -> index.modules.keys
+                        .filter { it.startsWith("std.") }
+                        .forEach { aliases += it.removePrefix("std.").substringBefore('.') }
+                    path.startsWith("std.") && path in index.modules ->
+                        aliases += path.removePrefix("std.").substringBefore('.')
+                }
+            }
+        }
+        return aliases
+    }
+
     /** Names declared at the top level of the user [program] (these shadow the stdlib). */
     private fun userDeclaredNames(program: Program): Set<String> {
         val names = mutableSetOf<String>()
@@ -137,10 +157,11 @@ object StdlibInjector {
 
         val shadowed = userDeclaredNames(program)
 
-        // `std.math.abs(x)` / `std.PI` → plain names, collected as requirements.
+        // `std::math::abs(x)` / `std::PI` → plain names, collected as requirements.
         val qualified = mutableSetOf<String>()
+        val moduleAliases = moduleAliases(program) - shadowed
         val rewritten = if ("std" in shadowed) program
-            else QualifiedStdRewriter(index.modules, qualified).rewrite(program)
+            else QualifiedStdRewriter(index.modules, qualified, moduleAliases).rewrite(program)
 
         val visible = importedNames(rewritten) + qualified
 

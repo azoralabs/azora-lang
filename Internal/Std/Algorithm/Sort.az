@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 AzoraTech
+ * Copyright 2026 AzoraLabs
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,7 +29,7 @@ package std.algorithm
  * @since 0.0.1
  */
 
-expose scope std {
+friend zone std {
     /**
      * Sorts an array in ascending order using insertion sort.
      *
@@ -42,7 +42,7 @@ expose scope std {
     func sort<T>(arr: [T]): [T]
     out {
         r -> assert r.length == arr.length { "sort must preserve length" }
-    } scope {
+    } zone {
         var result: [T] = [].fill<T>(arr.length)
         var i = 0
         while i < arr.length {
@@ -75,7 +75,7 @@ expose scope std {
     func sortDescending<T>(arr: [T]): [T]
     out {
         r -> assert r.length == arr.length { "sortDescending must preserve length" }
-    } scope {
+    } zone {
         var result: [T] = [].fill<T>(arr.length)
         var i = 0
         while i < arr.length {
@@ -140,7 +140,7 @@ expose scope std {
     func reverse<T>(arr: [T]): [T]
     out {
         r -> assert r.length == arr.length { "reverse must preserve length" }
-    } scope {
+    } zone {
         var result: [T] = [].fill<T>(arr.length)
         var i = 0
         while i < arr.length {
@@ -195,7 +195,7 @@ expose scope std {
     in {
         assert i >= 0 && i < arr.length { "swap index i out of bounds" }
         assert j >= 0 && j < arr.length { "swap index j out of bounds" }
-    } scope {
+    } zone {
         var result: [T] = [].fill<T>(arr.length)
         var k = 0
         while k < arr.length {

@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 AzoraTech
+ * Copyright 2026 AzoraLabs
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,7 +30,7 @@ package std.char
  * @since 0.0.1
  */
 
-expose scope std {
+friend zone std {
     /**
      * Returns the Unicode code point of a character.
      *
@@ -51,7 +51,7 @@ expose scope std {
      */
     func codeToChar(code: Int): Char
     in { assert code >= 0 { "Code point must be non-negative" } }
-    scope {
+    zone {
         return chr(code)
     }
 
@@ -190,7 +190,7 @@ expose scope std {
      */
     func hexDigitToInt(c: Char): Int
     in { assert charIsHexDigit(c) { "Character must be a hex digit" } }
-    scope {
+    zone {
         fin code = ord(c)
         if code >= 48 && code <= 57 { return code - 48 }
         if code >= 65 && code <= 70 { return code - 55 }
@@ -206,7 +206,7 @@ expose scope std {
      */
     func digitToInt(c: Char): Int
     in { assert isDigit(c) { "Character must be a digit" } }
-    scope {
+    zone {
         return ord(c) - 48
     }
 
@@ -219,7 +219,7 @@ expose scope std {
      */
     func intToDigit(n: Int): Char
     in { assert n >= 0 && n <= 9 { "Integer must be 0-9" } }
-    scope {
+    zone {
         return chr(n + 48)
     }
 }

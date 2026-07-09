@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 AzoraTech
+ * Copyright 2026 AzoraLabs
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,7 +37,7 @@ fail StringError {
     InvalidFormat
 }
 
-expose scope std {
+friend zone std {
     /**
      * Returns the length of a string.
      *
@@ -59,7 +59,7 @@ expose scope std {
      */
     func strCharAt(s: String, index: Int): Char!StringError
     in { assert index >= 0 { "Index must be non-negative" } }
-    scope {
+    zone {
         if index >= stringLength(s) { return fail .IndexOutOfBounds }
         return charAt(s, index)
     }
@@ -78,7 +78,7 @@ expose scope std {
         assert start >= 0 { "Start must be non-negative" }
         assert end >= start { "End must be >= start" }
     }
-    scope {
+    zone {
         return substring(s, start, end)
     }
 
@@ -261,7 +261,7 @@ expose scope std {
      */
     func strRepeat(s: String, n: Int): String
     in { assert n >= 0 { "Repetition count must be non-negative" } }
-    scope {
+    zone {
         return s * n
     }
 

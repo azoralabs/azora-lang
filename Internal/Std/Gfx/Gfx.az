@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 AzoraTech
+ * Copyright 2026 AzoraLabs
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,7 +28,7 @@ package std.gfx
  * visualizations.
  *
  * Usage:
- *   use scope std
+ *   use zone std
  *
  *   gfxSetViewport(0, 0, 800, 600)
  *   gfxClear(GfxColor(r: 0.1, g: 0.1, b: 0.2, a: 1.0))
@@ -38,7 +38,7 @@ package std.gfx
  * @since 0.0.1
  */
 
-expose scope std {
+friend zone std {
 
     // ====================================================================
     // C Bridge - OpenGL ES 3.0 core functions
@@ -170,7 +170,7 @@ expose scope std {
     // OpenGL ES 3.0 Constants
     // ====================================================================
 
-    scope gl {
+    friend zone gl {
         // Clear bits
         fin COLOR_BUFFER_BIT: Int = 16384
         fin DEPTH_BUFFER_BIT: Int = 256
@@ -296,7 +296,7 @@ expose scope std {
     }
 
     // Common colors
-    scope colors {
+    friend zone colors {
         fin BLACK: GfxColor = GfxColor(r: 0.0, g: 0.0, b: 0.0, a: 1.0)
         fin WHITE: GfxColor = GfxColor(r: 1.0, g: 1.0, b: 1.0, a: 1.0)
         fin RED: GfxColor = GfxColor(r: 1.0, g: 0.0, b: 0.0, a: 1.0)
@@ -375,7 +375,7 @@ expose scope std {
     // ====================================================================
 
     // Default vertex shader for 2D colored quads
-    scope shaderSrc {
+    friend zone shaderSrc {
         fin VERT_2D: String = "#version 300 es\nlayout(location=0) in vec2 aPos;\nlayout(location=1) in vec4 aColor;\nuniform vec2 uResolution;\nout vec4 vColor;\nvoid main(){\nvec2 ndc=aPos/uResolution*2.0-1.0;\ngl_Position=vec4(ndc.x,-ndc.y,0.0,1.0);\nvColor=aColor;\n}"
 
         fin FRAG_2D: String = "#version 300 es\nprecision mediump float;\nin vec4 vColor;\nout vec4 fragColor;\nvoid main(){\nfragColor=vColor;\n}"

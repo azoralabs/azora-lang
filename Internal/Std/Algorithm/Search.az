@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 AzoraTech
+ * Copyright 2026 AzoraLabs
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,7 +34,7 @@ fail SearchError {
     EmptyArray
 }
 
-expose scope std {
+friend zone std {
     /**
      * Performs a linear search for a target in an array.
      *
@@ -86,7 +86,7 @@ expose scope std {
      */
     func minOf<T>(arr: [T]): T
     in { assert arr.length > 0 { "Array must not be empty" } }
-    scope {
+    zone {
         var result = arr[0]
         var i = 1
         while i < arr.length {
@@ -105,7 +105,7 @@ expose scope std {
      */
     func maxOf<T>(arr: [T]): T
     in { assert arr.length > 0 { "Array must not be empty" } }
-    scope {
+    zone {
         var result = arr[0]
         var i = 1
         while i < arr.length {
@@ -125,7 +125,7 @@ expose scope std {
      */
     func count<T>(arr: [T], target: T): Int
     out { r -> assert r >= 0 { "count must return non-negative" } }
-    scope {
+    zone {
         var c = 0
         var i = 0
         while i < arr.length {

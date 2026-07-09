@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 AzoraTech
+ * Copyright 2026 AzoraLabs
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,8 +24,9 @@ import org.azora.lang.frontend.TopLevel
 /**
  * Rewrites qualified standard-library access into plain references:
  *
- * - `std.math.abs(x)` / `std.abs(x)` → `abs(x)`
- * - `std.math.PI` / `std.PI` → `PI`
+ * - `std::math::abs(x)` / `std::abs(x)` → `abs(x)`
+ * - `math::abs(x)` after `use std.math` → `abs(x)`
+ * - `std::math::PI` / `std::PI` → `PI`
  *
  * Every rewritten name is recorded in [required] so [StdlibInjector] injects
  * it without needing a `use` import. Only paths that actually resolve to a
@@ -36,6 +37,7 @@ import org.azora.lang.frontend.TopLevel
 internal class QualifiedStdRewriter(
     private val modules: Map<String, Map<String, TopLevel>>,
     private val required: MutableSet<String>,
+    private val moduleAliases: Set<String> = emptySet(),
 ) {
 
     fun rewrite(program: Program): Program = program.copy(
@@ -51,17 +53,37 @@ internal class QualifiedStdRewriter(
         }
     )
 
-    /** Resolves `std` / `std.<module>` member [name]; records and returns it when known. */
-    private fun resolve(target: Expr, name: String): Boolean {
-        val known = when {
-            target is Expr.Identifier && target.name == "std" ->
-                modules.values.any { name in it }
-            target is Expr.Member && (target.target as? Expr.Identifier)?.name == "std" ->
-                modules["std.${target.name}"]?.containsKey(name) == true
-            else -> false
+    private fun resolveQualifiedName(name: String): String? {
+        if ("__" !in name) return null
+        val parts = name.split("__")
+        if (parts.size < 2) return null
+
+        if (parts.first() == "std") {
+            if (parts.size == 2) {
+                val item = parts[1]
+                if (modules.values.any { item in it }) return item
+            }
+            for (itemStart in parts.lastIndex downTo 2) {
+                val module = "std." + parts.subList(1, itemStart).joinToString(".")
+                val item = parts.subList(itemStart, parts.size).joinToString("__")
+                if (modules[module]?.containsKey(item) == true) return item
+            }
+            return null
         }
-        if (known) required.add(name)
-        return known
+
+        if (parts.first() !in moduleAliases) return null
+        for (itemStart in parts.lastIndex downTo 1) {
+            val module = "std." + parts.subList(0, itemStart).joinToString(".")
+            val item = parts.subList(itemStart, parts.size).joinToString("__")
+            if (modules[module]?.containsKey(item) == true) return item
+        }
+        return null
+    }
+
+    private fun resolvedQualifiedName(name: String): String? {
+        val resolved = resolveQualifiedName(name) ?: return null
+        required.add(resolved)
+        return resolved
     }
 
     private fun stmt(s: Stmt): Stmt = when (s) {
@@ -95,18 +117,13 @@ internal class QualifiedStdRewriter(
     }
 
     private fun expr(e: Expr): Expr = when (e) {
-        is Expr.MethodCall -> {
-            val target = expr(e.target)
+        is Expr.Identifier -> resolvedQualifiedName(e.name)?.let { e.copy(name = it) } ?: e
+        is Expr.MethodCall -> e.copy(target = expr(e.target), args = e.args.map(::expr))
+        is Expr.Member -> e.copy(target = expr(e.target))
+        is Expr.Call -> {
             val args = e.args.map(::expr)
-            if (resolve(target, e.name)) Expr.Call(e.name, args, e.line, e.column, e.length)
-            else e.copy(target = target, args = args)
+            resolvedQualifiedName(e.callee)?.let { e.copy(callee = it, args = args) } ?: e.copy(args = args)
         }
-        is Expr.Member -> {
-            val target = expr(e.target)
-            if (resolve(target, e.name)) Expr.Identifier(e.name, e.line, e.column, e.length)
-            else e.copy(target = target)
-        }
-        is Expr.Call -> e.copy(args = e.args.map(::expr))
         is Expr.Binary -> e.copy(left = expr(e.left), right = expr(e.right))
         is Expr.Unary -> e.copy(operand = expr(e.operand))
         is Expr.Grouping -> e.copy(expr = expr(e.expr))

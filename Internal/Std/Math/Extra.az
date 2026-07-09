@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 AzoraTech
+ * Copyright 2026 AzoraLabs
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,7 +30,7 @@ package std.math
  * @since 0.0.1
  */
 
-expose scope std {
+friend zone std {
     /**
      * Computes exponentiation.
      *
@@ -41,7 +41,7 @@ expose scope std {
      */
     func pow<T>(value: T, exp: Int): T
     in { assert exp >= 0 { "Exponent must be non-negative" } }
-    scope {
+    zone {
         if exp == 0 { return 1 }
         var result = value
         var i = 1
@@ -62,7 +62,7 @@ expose scope std {
     func factorial<T>(n: T): T
     in { assert n >= 0 { "Factorial requires non-negative input" } }
     out { r -> assert r >= 1 { "Factorial result must be >= 1" } }
-    scope {
+    zone {
         if n <= 1 { return 1 }
         var result = 1
         var i = 2
@@ -83,7 +83,7 @@ expose scope std {
      */
     func gcd<T>(a: T, b: T): T
     out { r -> assert r >= 0 { "GCD must be non-negative" } }
-    scope {
+    zone {
         var x = a
         if x < 0 { x = -x }
         var y = b
@@ -106,7 +106,7 @@ expose scope std {
      */
     func lcm<T>(a: T, b: T): T
     out { r -> assert r >= 0 { "LCM must be non-negative" } }
-    scope {
+    zone {
         if a == 0 || b == 0 { return 0 }
         var absA = a
         if absA < 0 { absA = -absA }
@@ -195,7 +195,7 @@ expose scope std {
     func fib<T>(n: T): T
     in { assert n >= 0 { "Fibonacci requires non-negative input" } }
     out { r -> assert r >= 0 { "Fibonacci result must be non-negative" } }
-    scope {
+    zone {
         if n == 0 { return 0 }
         if n == 1 { return 1 }
         var a = 0
@@ -219,7 +219,7 @@ expose scope std {
      */
     func isPrime(n: Int): Bool
     in { assert n >= 0 { "isPrime requires non-negative input" } }
-    scope {
+    zone {
         if n < 2 { return false }
         if n < 4 { return true }
         if n % 2 == 0 { return false }
@@ -242,7 +242,7 @@ expose scope std {
      */
     func average(arr: [Int]): Real
     in { assert arr.length > 0 { "Array must not be empty" } }
-    scope {
+    zone {
         var total = 0
         var i = 0
         while i < arr.length {
@@ -266,7 +266,7 @@ expose scope std {
         assert k >= 0 { "k must be non-negative" }
         assert k <= n { "k must be <= n" }
     }
-    scope {
+    zone {
         if k == 0 || k == n { return 1 }
         var result = 1
         var i = 0
@@ -289,7 +289,7 @@ expose scope std {
     func isqrt(n: Int): Int
     in { assert n >= 0 { "isqrt requires non-negative input" } }
     out { r -> assert r * r <= n { "isqrt result squared must be <= n" } }
-    scope {
+    zone {
         if n == 0 { return 0 }
         var x = n
         var y = (x + 1) / 2

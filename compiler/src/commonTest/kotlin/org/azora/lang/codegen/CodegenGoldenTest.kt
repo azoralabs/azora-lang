@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 AzoraTech
+ * Copyright 2026 AzoraLabs
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ import org.azora.lang.Compiler
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 /**
  * Golden (full-output) tests for the Kotlin, TypeScript and LLVM backends.
@@ -381,6 +382,265 @@ class CodegenGoldenTest {
             }
         """.trimIndent()
         assertEquals(expected, compile(aggregateProgram).dart)
+    }
+
+    // -----------------------------------------------------------------------
+    // C#
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun csharpFullOutputScalar() {
+        val expected = """
+            using System;
+            using System.Collections.Generic;
+            using System.Linq;
+            using System.Threading.Tasks;
+
+            public static class Program {
+                static string classify(int n) {
+                    if ((n < 0)) {
+                        return "negative";
+                    } else if ((n == 0)) {
+                        return "zero";
+                    }
+                    return "positive";
+                }
+
+                static void main() {
+                    int sum = 5;
+                    Console.WriteLine(${'$'}"sum = {sum}");
+                    int total = 0;
+                    for (var i = 1; i <= 5; i++) {
+                        total = (total + i);
+                    }
+                    Console.WriteLine(total);
+                    while ((total > 10)) {
+                        total = (total - 4);
+                    }
+                    Console.WriteLine(total);
+                    Console.WriteLine(classify(5));
+                    Console.WriteLine(2);
+                }
+                public static void Main() {
+                    main();
+                }
+            }
+        """.trimIndent()
+        assertEquals(expected, compile(scalarProgram).csharp)
+    }
+
+    @Test
+    fun csharpFullOutputAggregate() {
+        val expected = """
+            using System;
+            using System.Collections.Generic;
+            using System.Linq;
+            using System.Threading.Tasks;
+
+            public static class Program {
+                static void main() {
+                    Point p = new Point(3, 4);
+                    p.x = (p.x + 1);
+                    Console.WriteLine(p.x);
+                    List<int> nums = new List<int>{10, 20, 30};
+                    nums[1] = 25;
+                    Console.WriteLine(nums[1]);
+                    switch (2) {
+                        case 1:
+                        {
+                            Console.WriteLine("one");
+                        }
+                        break;
+                        case 2:
+                        case 3:
+                        {
+                            Console.WriteLine("two or three");
+                        }
+                        break;
+                        default:
+                        {
+                            Console.WriteLine("other");
+                        }
+                        break;
+                    }
+                }
+                public static void Main() {
+                    main();
+                }
+            }
+
+            public class Point {
+                public int x;
+                public int y;
+                public Point(int x, int y) {
+                    this.x = x;
+                    this.y = y;
+                }
+            }
+        """.trimIndent()
+        assertEquals(expected, compile(aggregateProgram).csharp)
+    }
+
+    // -----------------------------------------------------------------------
+    // Python
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun pythonFullOutputScalar() {
+        val expected = """
+            def classify(n):
+                if (n < 0):
+                    return "negative"
+                elif (n == 0):
+                    return "zero"
+                return "positive"
+
+            def main():
+                sum = 5
+                print(f"sum = {sum}")
+                total = 0
+                for i in range(1, 5 + 1):
+                    total = (total + i)
+                print(total)
+                while (total > 10):
+                    total = (total - 4)
+                print(total)
+                print(classify(5))
+                print(2)
+
+            main()
+        """.trimIndent()
+        assertEquals(expected, compile(scalarProgram).python)
+    }
+
+    @Test
+    fun pythonFullOutputAggregate() {
+        val expected = """
+            class Point:
+                def __init__(self, x, y):
+                    self.x = x
+                    self.y = y
+
+            def main():
+                p = Point(3, 4)
+                p.x = (p.x + 1)
+                print(p.x)
+                nums = [10, 20, 30]
+                nums[1] = 25
+                print(nums[1])
+                __when0 = 2
+                if __when0 == 1:
+                    print("one")
+                elif __when0 == 2 or __when0 == 3:
+                    print("two or three")
+                else:
+                    print("other")
+
+            main()
+        """.trimIndent()
+        assertEquals(expected, compile(aggregateProgram).python)
+    }
+
+    // -----------------------------------------------------------------------
+    // Rust
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun rustFullOutputScalar() {
+        val expected = """
+            #![allow(unused, unused_mut, non_snake_case, unused_variables, dead_code, unused_parens)]
+            use std::collections::{HashMap, HashSet};
+
+            fn classify(n: i32) -> String {
+                if (n < 0) {
+                    return "negative".to_string();
+                } else if (n == 0) {
+                    return "zero".to_string();
+                }
+                return "positive".to_string();
+            }
+
+            fn main() {
+                let mut sum: i32 = 5;
+                println!("{}", format!("sum = {}", sum));
+                let mut total: i32 = 0;
+                for i in 1..=5 {
+                    total = (total + i);
+                }
+                println!("{}", total);
+                while (total > 10) {
+                    total = (total - 4);
+                }
+                println!("{}", total);
+                println!("{}", classify(5));
+                println!("{}", 2);
+            }
+        """.trimIndent()
+        assertEquals(expected, compile(scalarProgram).rust)
+    }
+
+    @Test
+    fun rustFullOutputAggregate() {
+        val expected = """
+            #![allow(unused, unused_mut, non_snake_case, unused_variables, dead_code, unused_parens)]
+            use std::collections::{HashMap, HashSet};
+
+            #[derive(Clone)]
+            struct Point {
+                x: i32,
+                y: i32,
+            }
+
+            fn main() {
+                let mut p: Point = Point { x: 3, y: 4 };
+                p.x = (p.x + 1);
+                println!("{}", p.x);
+                let mut nums: Vec<i32> = vec![10, 20, 30];
+                nums[(1) as usize] = 25;
+                println!("{}", nums[(1) as usize]);
+                match 2 {
+                    1 => {
+                        println!("{}", "one".to_string());
+                    }
+                    2 | 3 => {
+                        println!("{}", "two or three".to_string());
+                    }
+                    _ => {
+                        println!("{}", "other".to_string());
+                    }
+                }
+            }
+        """.trimIndent()
+        assertEquals(expected, compile(aggregateProgram).rust)
+    }
+
+    // -----------------------------------------------------------------------
+    // WASM (WAT) — structural assertions (full behaviour is covered by the
+    // WasmCodegenExecTest end-to-end suite).
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun wasmScalarStructure() {
+        val wat = compile(scalarProgram).wasm
+        assertTrue(wat.startsWith("(module"), "should be a WAT module")
+        assertTrue("(import \"env\" \"print_str\"" in wat, "imports print_str")
+        assertTrue("(memory (export \"memory\") 16)" in wat, "exports memory")
+        assertTrue("(func \$__str_concat" in wat, "emits the string-concat runtime")
+        assertTrue("(func \$__int_to_str" in wat, "emits the int-to-string runtime")
+        assertTrue("(func \$classify (param \$n i32) (result i32)" in wat, "lowers classify")
+        assertTrue("(export \"main\" (func \$main))" in wat, "exports main")
+        assertTrue("negative" in wat && "positive" in wat, "embeds string constants")
+    }
+
+    @Test
+    fun wasmAggregateStructure() {
+        val wat = compile(aggregateProgram).wasm
+        assertTrue(wat.startsWith("(module"), "should be a WAT module")
+        // Struct construction: alloc + field stores.
+        assertTrue("(call \$__alloc (i32.const 8))" in wat, "allocates the 2-field pack")
+        // Array construction: length-prefixed alloc of 3 i32 elements.
+        assertTrue("(call \$__alloc (i32.const 16))" in wat, "allocates the 3-element array")
+        assertTrue("(export \"main\" (func \$main))" in wat, "exports main")
     }
 
     // -----------------------------------------------------------------------

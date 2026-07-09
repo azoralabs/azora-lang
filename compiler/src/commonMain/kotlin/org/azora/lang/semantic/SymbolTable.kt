@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 AzoraTech
+ * Copyright 2026 AzoraLabs
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package org.azora.lang.semantic
 
+import org.azora.lang.frontend.Visibility
 import org.azora.lang.ir.IrType
 
 /**
@@ -37,6 +38,7 @@ data class FunctionSymbol(
     val isVariadic: Boolean = false,
     val isTask: Boolean = false,
     val isUnsafe: Boolean = false,
+    val visibility: Visibility = Visibility.EXPOSE,
 )
 
 /**
@@ -49,7 +51,8 @@ data class FunctionSymbol(
 data class VariableSymbol(
     val name: String,
     val type: IrType,
-    val mutable: Boolean = true
+    val mutable: Boolean = true,
+    val visibility: Visibility = Visibility.EXPOSE,
 )
 
 /**
@@ -59,7 +62,12 @@ data class VariableSymbol(
  * @property type the resolved field type
  * @property mutable whether the field is `var` (mutable)
  */
-data class StructField(val name: String, val type: IrType, val mutable: Boolean)
+data class StructField(
+    val name: String,
+    val type: IrType,
+    val mutable: Boolean,
+    val visibility: Visibility = Visibility.EXPOSE,
+)
 
 /**
  * A resolved `pack` (struct) type, with its ordered fields.
@@ -67,7 +75,12 @@ data class StructField(val name: String, val type: IrType, val mutable: Boolean)
  * @property name the struct name
  * @property fields the ordered list of fields
  */
-data class StructType(val name: String, val fields: List<StructField>, val typeParams: List<String> = emptyList()) {
+data class StructType(
+    val name: String,
+    val fields: List<StructField>,
+    val typeParams: List<String> = emptyList(),
+    val visibility: Visibility = Visibility.EXPOSE,
+) {
     /** Looks up a field by name. */
     fun field(name: String): StructField? = fields.find { it.name == name }
 }

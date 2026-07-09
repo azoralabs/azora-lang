@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 AzoraTech
+ * Copyright 2026 AzoraLabs
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ import org.azora.lang.frontend.Stmt
 import org.azora.lang.frontend.TokenType
 import org.azora.lang.frontend.TopLevel
 import org.azora.lang.frontend.TypeAnnotation
+import org.azora.lang.frontend.Visibility
 import org.azora.lang.ir.IrType
 
 /**
@@ -34,6 +35,8 @@ import org.azora.lang.ir.IrType
  * happens in [TypeResolver] (Pass 2).
  */
 class SymbolCollector {
+    private fun isImportable(visibility: Visibility): Boolean = visibility != Visibility.CONFINE
+
 
     private fun registerBuiltins(table: SymbolTable) {
         // println accepts String — type checker will allow String args
@@ -93,7 +96,7 @@ class SymbolCollector {
                         val initType = inferExprType(item.initializer, emptyMap())
                         val type = if (item.type != null) IrType.resolve(item.type)
                                    else initType ?: IrType.Int
-                        table.defineVariable(VariableSymbol(item.name, type, mutable = false))
+                        table.defineVariable(VariableSymbol(item.name, type, mutable = false, visibility = item.visibility))
                     } catch (e: Exception) {
                         errors.add("line ${item.line}: ${e.message}")
                     }
@@ -104,7 +107,7 @@ class SymbolCollector {
                             val initType = inferExprType(item.initializer, emptyMap())
                             val type = if (item.type != null) IrType.resolve(item.type)
                                        else initType ?: IrType.Int
-                            table.defineVariable(VariableSymbol(item.name, type, mutable = true))
+                            table.defineVariable(VariableSymbol(item.name, type, mutable = true, visibility = item.visibility))
                         } catch (e: Exception) {
                             errors.add("line ${item.line}: ${e.message}")
                         }
@@ -141,6 +144,7 @@ class SymbolCollector {
                         isVariadic = isVariadic,
                         isTask = func.isTask,
                         isUnsafe = func.isUnsafe,
+                        visibility = func.visibility,
                     )
                 )
             } catch (e: Exception) {
@@ -181,9 +185,9 @@ class SymbolCollector {
                 try {
                     val tpSet = emptySet<String>()
                     val fields = item.fields.map { field ->
-                        StructField(field.name, IrType.resolve(field.type, tpSet), field.mutable)
+                        StructField(field.name, IrType.resolve(field.type, tpSet), field.mutable, field.visibility)
                     }
-                    table.defineStruct(StructType(item.name, fields, emptyList()))
+                    table.defineStruct(StructType(item.name, fields, emptyList(), item.visibility))
                     // Register methods as Type_method (like impl)
                     for (method in item.methods) {
                         val mangled = "${item.name}_${method.name}"
@@ -194,7 +198,7 @@ class SymbolCollector {
                             is TypeAnnotation.Explicit -> IrType.resolve(rt.ref)
                             is TypeAnnotation.Inferred -> inferReturnType(method, params)
                         }
-                        table.defineFunction(FunctionSymbol(mangled, params, returnType, method.isInline))
+                        table.defineFunction(FunctionSymbol(mangled, params, returnType, method.isInline, visibility = method.visibility))
                         table.defineMethod(item.name, method.name, mangled)
                     }
                 } catch (e: Exception) {
@@ -209,9 +213,9 @@ class SymbolCollector {
                 try {
                     val tpSet = item.typeParams.toSet()
                     val fields = item.fields.map { field ->
-                        StructField(field.name, IrType.resolve(field.type, tpSet), field.mutable)
+                        StructField(field.name, IrType.resolve(field.type, tpSet), field.mutable, field.visibility)
                     }
-                    table.defineStruct(StructType(item.name, fields, item.typeParams))
+                    table.defineStruct(StructType(item.name, fields, item.typeParams, item.visibility))
                 } catch (e: Exception) {
                     errors.add("line ${item.line}: ${e.message}")
                 }
@@ -243,12 +247,12 @@ class SymbolCollector {
                     }
                     for (ef in node.extraFields) {
                         if (ef.name !in seenNames) {
-                            fields.add(StructField(ef.name, IrType.resolve(ef.type), ef.mutable))
+                            fields.add(StructField(ef.name, IrType.resolve(ef.type), ef.mutable, ef.visibility))
                             seenNames.add(ef.name)
                         }
                     }
                 }
-                table.defineStruct(StructType(item.name, fields, emptyList()))
+                table.defineStruct(StructType(item.name, fields, emptyList(), item.visibility))
                 table.nodeTypes.add(item.name)
                 // Record parent relationship for dynamic dispatch.
                 if (item.parent != null) {
@@ -273,7 +277,7 @@ class SymbolCollector {
                         is TypeAnnotation.Explicit -> IrType.resolve(rt.ref)
                         is TypeAnnotation.Inferred -> inferReturnType(method, params)
                     }
-                    table.defineFunction(FunctionSymbol(mangled, params, returnType, method.isInline))
+                    table.defineFunction(FunctionSymbol(mangled, params, returnType, method.isInline, visibility = method.visibility))
                     table.defineMethod(item.name, method.name, mangled)
                 }
                 // Register inherited methods from parent chain (if not overridden by this node).
@@ -343,7 +347,7 @@ class SymbolCollector {
                             is TypeAnnotation.Explicit -> IrType.resolve(rt.ref)
                             is TypeAnnotation.Inferred -> inferReturnType(method, params)
                         }
-                        table.defineFunction(FunctionSymbol(mangled, params, returnType, method.isInline))
+                        table.defineFunction(FunctionSymbol(mangled, params, returnType, method.isInline, visibility = method.visibility))
                         table.defineMethod(item.typeName, method.name, mangled)
                     } catch (e: Exception) {
                         errors.add("line ${method.line}: ${e.message}")
@@ -393,41 +397,57 @@ class SymbolCollector {
                     val mangled = "${zoneName}__${itemName}"
                     val func = table.lookupFunction(mangled)
                     if (func != null) {
-                        table.aliasMap[itemName] = mangled
-                        table.defineFunction(func.copy(name = itemName))
+                        if (isImportable(func.visibility)) {
+                            table.aliasMap[itemName] = mangled
+                            table.defineFunction(func.copy(name = itemName))
+                        } else {
+                            errors.add("line ${item.line}: cannot import confined function '$zoneName::$itemName'")
+                        }
                     }
                     val struct = table.lookupStruct(mangled)
                     if (struct != null) {
-                        table.aliasMap[itemName] = mangled
-                        table.defineStruct(struct.copy(name = itemName))
+                        if (isImportable(struct.visibility)) {
+                            table.aliasMap[itemName] = mangled
+                            table.defineStruct(struct.copy(name = itemName))
+                        } else {
+                            errors.add("line ${item.line}: cannot import confined type '$zoneName::$itemName'")
+                        }
                     }
                     val variable = table.lookupVariable(mangled)
                     if (variable != null) {
-                        table.aliasMap[itemName] = mangled
-                        table.defineVariable(VariableSymbol(itemName, variable.type, variable.mutable))
+                        if (isImportable(variable.visibility)) {
+                            table.aliasMap[itemName] = mangled
+                            table.defineVariable(VariableSymbol(itemName, variable.type, variable.mutable, variable.visibility))
+                        } else {
+                            errors.add("line ${item.line}: cannot import confined variable '$zoneName::$itemName'")
+                        }
                     }
                 } else {
                     // `use Zone` or `use Zone::*` — alias all Zone__X → X
                     val knownFuncs = table.allFunctionNames().filter { it.startsWith("${zoneName}__") }
                     for (fn in knownFuncs) {
                         val alias = fn.substringAfter("__")
-                        table.aliasMap[alias] = fn
                         val func = table.lookupFunction(fn)!!
+                        if (!isImportable(func.visibility)) continue
+                        table.aliasMap[alias] = fn
                         table.defineFunction(func.copy(name = alias))
                     }
                     val knownStructs = table.allStructNames().filter { it.startsWith("${zoneName}__") }
                     for (st in knownStructs) {
                         val alias = st.substringAfter("__")
+                        val struct = table.lookupStruct(st)!!
+                        if (!isImportable(struct.visibility)) continue
                         table.aliasMap[alias] = st
-                        table.defineStruct(table.lookupStruct(st)!!.copy(name = alias))
+                        table.defineStruct(struct.copy(name = alias))
                     }
                     // Alias global variables (fin/var from zones).
                     val knownVars = table.allVariableNames().filter { it.startsWith("${zoneName}__") }
                     for (vn in knownVars) {
                         val alias = vn.substringAfter("__")
-                        table.aliasMap[alias] = vn
                         val variable = table.lookupVariable(vn)!!
-                        table.defineVariable(VariableSymbol(alias, variable.type, variable.mutable))
+                        if (!isImportable(variable.visibility)) continue
+                        table.aliasMap[alias] = vn
+                        table.defineVariable(VariableSymbol(alias, variable.type, variable.mutable, variable.visibility))
                     }
                 }
             }

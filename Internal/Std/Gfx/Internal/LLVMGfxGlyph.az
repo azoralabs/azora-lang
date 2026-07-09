@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 AzoraTech
+ * Copyright 2026 AzoraLabs
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,7 +35,7 @@ package std.gfx.internal
  *
  * Usage:
  *   use std.gfx
- *   use scope std
+ *   use zone std
  *
  *   gfxDrawText(10.0, 20.0, "Hello World", GfxColor(r: 1.0, g: 1.0, b: 1.0, a: 1.0), 2.0, 800, 600)
  *   gfxDrawTextCenter(400.0, 300.0, "GAME OVER", colors::RED, 4.0, 800, 600)
@@ -43,7 +43,7 @@ package std.gfx.internal
  * @since 0.0.1
  */
 
-expose scope std {
+friend zone std {
 
     // ══════════════════════════════════════════════════════════════════
     // 5×7 Bitmap Font - ASCII 32..126 (95 glyphs)

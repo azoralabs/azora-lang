@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 AzoraTech
+ * Copyright 2026 AzoraLabs
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -1008,6 +1008,8 @@ sealed class TypeAnnotation {
  * @property name the parameter name
  * @property type the structured type reference as written in source
  */
+enum class Visibility { EXPOSE, PROTECT, CONFINE }
+
 /** Parameter modifier: `""` (default), `"ref"` (by-reference), `"out"` (output), `"mut"` (mutable). */
 typealias ParamModifier = String
 
@@ -1031,7 +1033,13 @@ data class Param(
  * @property mutable whether the field is `var` (mutable) vs `fin`/`let` (immutable)
  * @property default an optional default-value expression
  */
-data class PackField(val name: String, val type: TypeRef, val mutable: Boolean, val default: Expr?)
+data class PackField(
+    val name: String,
+    val type: TypeRef,
+    val mutable: Boolean,
+    val default: Expr?,
+    val visibility: Visibility = Visibility.EXPOSE,
+)
 
 /**
  * A function declaration in the AST.
@@ -1070,6 +1078,8 @@ data class FuncDecl(
     val isTask: Boolean = false,
     /** Declaration requires an explicit unsafe calling context. */
     val isUnsafe: Boolean = false,
+    /** Visibility exported to import/member access rules. */
+    val visibility: Visibility = Visibility.EXPOSE,
 )
 
 /**
@@ -1109,17 +1119,17 @@ sealed class TopLevel {
     data class Func(val decl: FuncDecl) : TopLevel()
 
     /** Runtime top-level mutable binding (`var`). Survives CTFE. */
-    data class VarDecl(val name: String, val type: TypeRef?, val initializer: Expr, val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList(), val threadlocal: Boolean = false) : TopLevel() {
+    data class VarDecl(val name: String, val type: TypeRef?, val initializer: Expr, val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList(), val threadlocal: Boolean = false, val visibility: Visibility = Visibility.EXPOSE) : TopLevel() {
         /** Convenience: the type name as written in source, or null. */
         val typeName: String? get() = type?.displayName()
     }
     /** Runtime top-level deeply immutable binding (`fin`). Survives CTFE. */
-    data class FinDecl(val name: String, val type: TypeRef?, val initializer: Expr, val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList(), val threadlocal: Boolean = false) : TopLevel() {
+    data class FinDecl(val name: String, val type: TypeRef?, val initializer: Expr, val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList(), val threadlocal: Boolean = false, val visibility: Visibility = Visibility.EXPOSE) : TopLevel() {
         /** Convenience: the type name as written in source, or null. */
         val typeName: String? get() = type?.displayName()
     }
     /** Runtime top-level immutable binding (`let`). Survives CTFE. */
-    data class LetDecl(val name: String, val type: TypeRef?, val initializer: Expr, val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList()) : TopLevel() {
+    data class LetDecl(val name: String, val type: TypeRef?, val initializer: Expr, val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList(), val visibility: Visibility = Visibility.EXPOSE) : TopLevel() {
         /** Convenience: the type name as written in source, or null. */
         val typeName: String? get() = type?.displayName()
     }
@@ -1231,7 +1241,7 @@ sealed class TopLevel {
      * @property name the struct name
      * @property fields the ordered list of field declarations
      */
-    data class Pack(val name: String, val fields: List<PackField>, val typeParams: List<String> = emptyList(), val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList()) : TopLevel()
+    data class Pack(val name: String, val fields: List<PackField>, val typeParams: List<String> = emptyList(), val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList(), val visibility: Visibility = Visibility.EXPOSE) : TopLevel()
 
     /** `deco Name { fields }` — declares a decorator/annotation type. Parsed and stored; not yet enforced. */
     data class Deco(val name: String, val fields: List<PackField>, val line: Int, val column: Int = 0) : TopLevel()
@@ -1243,7 +1253,7 @@ sealed class TopLevel {
     data class Bridge(val target: String, val funcs: List<BridgeSig>, val line: Int, val column: Int = 0) : TopLevel()
 
     /** `solo Name { fields; methods }` — declares a singleton struct with one lazily-created shared instance. */
-    data class Solo(val name: String, val fields: List<PackField>, val methods: List<FuncDecl>, val line: Int, val column: Int = 0) : TopLevel()
+    data class Solo(val name: String, val fields: List<PackField>, val methods: List<FuncDecl>, val line: Int, val column: Int = 0, val visibility: Visibility = Visibility.EXPOSE) : TopLevel()
 
     /** A constructor parameter for a `node`: `var name: Type` or `fin name: Type`. Stored as a field. */
     data class NodeParam(val name: String, val type: TypeRef, val mutable: Boolean)
@@ -1261,7 +1271,8 @@ sealed class TopLevel {
         val isLeaf: Boolean = false,
         val extraFields: List<PackField> = emptyList(),
         val line: Int,
-        val column: Int = 0
+        val column: Int = 0,
+        val visibility: Visibility = Visibility.EXPOSE,
     ) : TopLevel()
 
     /** A singleton registration inside a `wrap` block: `solo Type(args) [bind Spec]`. */

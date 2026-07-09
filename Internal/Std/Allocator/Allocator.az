@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 AzoraTech
+ * Copyright 2026 AzoraLabs
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,7 +36,7 @@ package std.allocator
  * @since 0.0.1
  */
 
-expose scope std {
+friend zone std {
 
     // -----------------------------------------------------------------------
     // Error Set
@@ -128,7 +128,7 @@ expose scope std {
     impl ctor(capacity: Int) for Arena
     in {
         assert capacity > 0 { "Arena capacity must be positive" }
-    } scope { mut self ->
+    } zone { mut self ->
         self.capacity = capacity
         self.offset = 0
         self.allocCount = 0
@@ -192,7 +192,7 @@ expose scope std {
         func alloc(size: Int): Int!AllocError
         in {
             assert size > 0 { "Allocation size must be positive" }
-        } scope {
+        } zone {
             if offset + size > capacity {
                 return fail .OutOfMemory
             }
@@ -221,7 +221,7 @@ expose scope std {
         in {
             assert size > 0 { "Allocation size must be positive" }
             assert alignment > 0 { "Alignment must be positive" }
-        } scope {
+        } zone {
             fin remainder = offset % alignment
             fin padding = if remainder == 0 { 0 } else { alignment - remainder }
             fin aligned = offset + padding
@@ -334,7 +334,7 @@ expose scope std {
     in {
         assert slotSize > 0 { "Slot size must be positive" }
         assert slotCount > 0 { "Slot count must be positive" }
-    } scope { mut self ->
+    } zone { mut self ->
         self.slotSize = slotSize
         self.slotCount = slotCount
         self.freeStack = alloc [Int](slotCount)
@@ -429,7 +429,7 @@ expose scope std {
         in {
             assert slot >= 0 && slot < slotCount { "Invalid slot index" }
         }
-        scope {
+        zone {
             (*freeStack)[freeCount] = slot
             self.freeCount = freeCount + 1
             self.acquiredCount = acquiredCount - 1
@@ -518,7 +518,7 @@ expose scope std {
     impl ctor(capacity: Int) for StackAllocator
     in {
         assert capacity > 0 { "StackAllocator capacity must be positive" }
-    } scope { mut self ->
+    } zone { mut self ->
         self.capacity = capacity
         self.offset = 0
         self.allocCount = 0
@@ -578,7 +578,7 @@ expose scope std {
         func alloc(size: Int): Int!AllocError
         in {
             assert size > 0 { "Allocation size must be positive" }
-        } scope {
+        } zone {
             if offset + size > capacity {
                 return fail .OutOfMemory
             }
@@ -604,7 +604,7 @@ expose scope std {
         in {
             assert size > 0 { "Free size must be positive" }
             assert size <= offset { "Cannot free more than allocated" }
-        } scope {
+        } zone {
             self.offset = offset - size
             self.allocCount = allocCount - 1
         }
@@ -668,7 +668,7 @@ expose scope std {
      *
      * @since 0.0.1
      */
-    scope Alloc {
+    friend zone Alloc {
         /**
          * Creates an arena allocator with the given byte capacity.
          *
@@ -679,7 +679,7 @@ expose scope std {
         func arena(size: Int): Arena
         in {
             assert size > 0 { "Arena size must be positive" }
-        } scope {
+        } zone {
             return Arena(size)
         }
 
@@ -695,7 +695,7 @@ expose scope std {
         in {
             assert slotSize > 0 { "Slot size must be positive" }
             assert count > 0 { "Slot count must be positive" }
-        } scope {
+        } zone {
             return Pool(slotSize, count)
         }
 
@@ -709,7 +709,7 @@ expose scope std {
         func stack(size: Int): StackAllocator
         in {
             assert size > 0 { "Stack size must be positive" }
-        } scope {
+        } zone {
             return StackAllocator(size)
         }
     }

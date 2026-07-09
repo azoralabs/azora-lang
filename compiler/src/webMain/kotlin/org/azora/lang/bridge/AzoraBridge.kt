@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 AzoraTech
+ * Copyright 2026 AzoraLabs
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -101,15 +101,25 @@ fun azGenerateJavaScript(source: String): String =
 fun azGenerateLlvmIr(source: String): String =
     withCompiled(source) { it.llvm }
 
-/** C# codegen is not implemented in the new compiler. */
+/** Generates C# / .NET source. */
 @JsExport
 fun azGenerateCSharp(source: String): String =
-    json(false, "", "C# code generation is not available in this version of the compiler.")
+    withCompiled(source) { it.csharp }
 
-/** Python codegen is not implemented in the new compiler. */
+/** Generates Python 3 source. */
 @JsExport
 fun azGeneratePython(source: String): String =
-    json(false, "", "Python code generation is not available in this version of the compiler.")
+    withCompiled(source) { it.python }
+
+/** Generates Rust source. */
+@JsExport
+fun azGenerateRust(source: String): String =
+    withCompiled(source) { it.rust }
+
+/** Generates WebAssembly text (WAT). */
+@JsExport
+fun azGenerateWasm(source: String): String =
+    withCompiled(source) { it.wasm }
 
 /** Generates Swift 6.3 source. */
 @JsExport

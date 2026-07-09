@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 AzoraTech
+ * Copyright 2026 AzoraLabs
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,7 +29,7 @@ package std.functional
  * @since 0.0.1
  */
 
-expose scope std {
+friend zone std {
     /**
      * Returns the identity value (passes through unchanged).
      *
@@ -180,7 +180,7 @@ expose scope std {
      */
     func take<T>(arr: [T], n: Int): [T]
     in { assert n >= 0 { "take count must be non-negative" } }
-    scope {
+    zone {
         fin len = if n < arr.length { n } else { arr.length }
         var result: [T] = [].fill<T>(len)
         var i = 0
@@ -201,7 +201,7 @@ expose scope std {
      */
     func drop<T>(arr: [T], n: Int): [T]
     in { assert n >= 0 { "drop count must be non-negative" } }
-    scope {
+    zone {
         fin start = if n < arr.length { n } else { arr.length }
         var result: [T] = [].fill<T>(arr.length - start)
         var i = start
@@ -243,7 +243,7 @@ expose scope std {
      */
     func fill<T>(value: T, count: Int): [T]
     in { assert count >= 0 { "fill count must be non-negative" } }
-    scope {
+    zone {
         var result: [T] = [].fill<T>(count)
         var i = 0
         while i < count {

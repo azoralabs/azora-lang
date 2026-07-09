@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 AzoraTech
+ * Copyright 2026 AzoraLabs
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -135,7 +135,7 @@ private fun handleCheck(args: List<String>) {
 
 private fun handleCompile(args: List<String>) {
     if (args.size < 2) {
-        System.err.println("Usage: azora compile <kotlin|typescript|swift|dart|llvm|ir> <file.az>")
+        System.err.println("Usage: azora compile <kotlin|typescript|swift|dart|csharp|python|rust|wasm|llvm|ir> <file.az>")
         return
     }
 
@@ -160,11 +160,15 @@ private fun handleCompile(args: List<String>) {
                 "typescript", "ts" -> if (debug) org.azora.lang.backend.TypeScriptCodegen().generate(backendIr) else result.typescript
                 "swift", "sw" -> if (debug) org.azora.lang.backend.SwiftCodegen().generate(backendIr) else result.swift
                 "dart" -> if (debug) org.azora.lang.backend.DartCodegen().generate(backendIr) else result.dart
+                "csharp", "cs" -> if (debug) org.azora.lang.backend.CSharpCodegen().generate(backendIr) else result.csharp
+                "python", "py" -> if (debug) org.azora.lang.backend.PythonCodegen().generate(backendIr) else result.python
+                "rust", "rs" -> if (debug) org.azora.lang.backend.RustCodegen().generate(backendIr) else result.rust
+                "wasm", "wat" -> if (debug) org.azora.lang.backend.WasmCodegen().generate(backendIr) else result.wasm
                 "llvm", "ll" -> if (debug) org.azora.lang.backend.LlvmCodegen().generate(backendIr) else result.llvm
                 "ir" -> backendIr.prettyPrint()
                 "ast" -> result.ast.dumpTree()
                 else -> {
-                    System.err.println("Unknown target: $target (use kotlin, typescript, swift, dart, llvm, ir, or ast)")
+                    System.err.println("Unknown target: $target (use kotlin, typescript, swift, dart, csharp, python, rust, wasm, llvm, ir, or ast)")
                     return
                 }
             }
@@ -229,6 +233,10 @@ private fun printUsage() {
           typescript, ts  TypeScript source
           swift, sw       Swift 6.3 source
           dart            Dart source
+          csharp, cs      C# / .NET source
+          python, py      Python 3 source
+          rust, rs        Rust source
+          wasm, wat       WebAssembly text (WAT)
           llvm, ll        LLVM IR text
           ir              Azora IR (pretty-printed)
           ast             AST dump (for debugging)

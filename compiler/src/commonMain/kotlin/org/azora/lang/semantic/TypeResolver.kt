@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 AzoraTech
+ * Copyright 2026 AzoraLabs
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ import org.azora.lang.frontend.TokenType
 import org.azora.lang.frontend.TopLevel
 import org.azora.lang.frontend.TypeAnnotation
 import org.azora.lang.frontend.TypeRef
+import org.azora.lang.frontend.Visibility
 import org.azora.lang.ir.IrType
 import kotlin.collections.iterator
 
@@ -43,6 +44,7 @@ import kotlin.collections.iterator
  */
 class TypeResolver(private val table: SymbolTable) {
     private var unsafeContext = false
+    private var currentReceiverType: String? = null
 
     private val errors = mutableListOf<String>()
     private var program: Program? = null
@@ -68,7 +70,10 @@ class TypeResolver(private val table: SymbolTable) {
                     for ((name, type) in func.params) {
                         table.defineVariable(VariableSymbol(name, type))
                     }
+                    val savedReceiver = currentReceiverType
+                    currentReceiverType = item.typeName
                     resolveBody(method.body, func.returnType)
+                    currentReceiverType = savedReceiver
                     table.popScope()
                 }
             }
@@ -94,8 +99,11 @@ class TypeResolver(private val table: SymbolTable) {
         declaredFailSet = (func.returnType as? TypeAnnotation.Explicit)
             ?.ref?.let { (it as? TypeRef.Failable)?.errSet }
         val savedUnsafe = unsafeContext
+        val savedReceiver = currentReceiverType
         unsafeContext = func.isUnsafe
+        currentReceiverType = null
         resolveBody(func.body, symbol.returnType)
+        currentReceiverType = savedReceiver
         unsafeContext = savedUnsafe
         declaredFailSet = savedFailSet
 
@@ -104,6 +112,28 @@ class TypeResolver(private val table: SymbolTable) {
 
     /** The declared error set of the function currently being resolved (`T!E`'s `E`), or null. */
     private var declaredFailSet: String? = null
+
+    private fun canAccessMember(ownerType: String, visibility: Visibility): Boolean = when (visibility) {
+        Visibility.EXPOSE -> true
+        Visibility.CONFINE -> currentReceiverType == ownerType
+        Visibility.PROTECT -> {
+            var cursor = currentReceiverType
+            while (cursor != null) {
+                if (cursor == ownerType) return true
+                cursor = table.nodeParents[cursor]
+            }
+            false
+        }
+    }
+
+    private fun reportInaccessible(line: Int, kind: String, ownerType: String, name: String, visibility: Visibility) {
+        val label = when (visibility) {
+            Visibility.EXPOSE -> "exposed"
+            Visibility.PROTECT -> "protected"
+            Visibility.CONFINE -> "confined"
+        }
+        errors.add("line $line: cannot access $label $kind '$name' on $ownerType")
+    }
 
     /**
      * Expected type for an implicit `it` lambda parameter, inferred from context (e.g. the
@@ -335,6 +365,10 @@ class TypeResolver(private val table: SymbolTable) {
                     val field = table.lookupStruct(targetType.name)?.field(stmt.name)
                     if (field == null) {
                         errors.add("line ${stmt.line}: no field '${stmt.name}' on struct ${targetType.name}")
+                        return
+                    }
+                    if (!canAccessMember(targetType.name, field.visibility)) {
+                        reportInaccessible(stmt.line, "field", targetType.name, stmt.name, field.visibility)
                         return
                     }
                     if (!field.mutable) {
@@ -751,14 +785,26 @@ class TypeResolver(private val table: SymbolTable) {
                         val struct = table.lookupStruct(targetType.name)
                         val field = struct?.field(expr.name)
                         if (field != null) {
-                            field.type
+                            if (!canAccessMember(targetType.name, field.visibility)) {
+                                reportInaccessible(expr.line, "field", targetType.name, expr.name, field.visibility)
+                                null
+                            } else {
+                                field.type
+                            }
                         } else {
                             // Check for a computed property (prop): zero-arg method `Type_name`.
                             val mangled = table.lookupMethod(targetType.name, expr.name)
                             if (mangled != null) {
                                 val func = table.lookupFunction(mangled)
                                 // Only treat as a prop if it has exactly 1 param (self).
-                                if (func != null && func.params.size == 1) func.returnType
+                                if (func != null && func.params.size == 1) {
+                                    if (!canAccessMember(targetType.name, func.visibility)) {
+                                        reportInaccessible(expr.line, "property", targetType.name, expr.name, func.visibility)
+                                        null
+                                    } else {
+                                        func.returnType
+                                    }
+                                }
                                 else { errors.add("line ${expr.line}: no field '${expr.name}' on struct ${targetType.name}"); null }
                             } else {
                                 errors.add("line ${expr.line}: no field '${expr.name}' on struct ${targetType.name}")
@@ -799,6 +845,10 @@ class TypeResolver(private val table: SymbolTable) {
                     val mangled = table.lookupMethod(targetType.name, expr.name)
                     if (mangled != null) {
                         val func = table.lookupFunction(mangled)!!
+                        if (!canAccessMember(targetType.name, func.visibility)) {
+                            reportInaccessible(expr.line, "method", targetType.name, expr.name, func.visibility)
+                            return null
+                        }
                         val declared = func.params.size - 1 // exclude `self`
                         if (expr.args.size != declared) {
                             errors.add("line ${expr.line}: method '${expr.name}' expects $declared args, got ${expr.args.size}")
@@ -920,7 +970,12 @@ class TypeResolver(private val table: SymbolTable) {
                     IrType.Nullable(IrType.Int)
                 } else if (inner is IrType.Named) {
                     val field = table.lookupStruct(inner.name)?.field(expr.name)
-                    IrType.Nullable(field?.type ?: IrType.Any)
+                    if (field != null && !canAccessMember(inner.name, field.visibility)) {
+                        reportInaccessible(expr.line, "field", inner.name, expr.name, field.visibility)
+                        null
+                    } else {
+                        IrType.Nullable(field?.type ?: IrType.Any)
+                    }
                 } else {
                     IrType.Nullable(IrType.Any)
                 }

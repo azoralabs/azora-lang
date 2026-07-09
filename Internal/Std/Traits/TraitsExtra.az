@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 AzoraTech
+ * Copyright 2026 AzoraLabs
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,7 +26,7 @@ package std.traits
  * @since 0.0.1
  */
 
-expose scope std {
+friend zone std {
     /**
      * Types that have a sensible default/zero value.
      * Int=0, Real=0.0, String="", Bool=false, Char='\0'.

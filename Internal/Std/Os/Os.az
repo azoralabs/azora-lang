@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 AzoraTech
+ * Copyright 2026 AzoraLabs
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,7 +27,7 @@ package std.os
  * time functions, and basic file I/O through bridge declarations.
  *
  * Usage:
- *   use scope std
+ *   use zone std
  *
  *   fin window = OsWindow(width: 800, height: 600, title: "My App")
  *   while window.isOpen {
@@ -41,7 +41,7 @@ package std.os
  * @since 0.0.1
  */
 
-expose scope std {
+friend zone std {
 
     // ====================================================================
     // C Bridge - GLFW + POSIX (native targets via LLVM)
@@ -127,7 +127,7 @@ expose scope std {
     // GLFW Key Constants
     // ====================================================================
 
-    scope key {
+    friend zone key {
         fin SPACE = 32
         fin ESCAPE = 256
         fin ENTER = 257

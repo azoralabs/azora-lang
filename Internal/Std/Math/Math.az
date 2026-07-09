@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 AzoraTech
+ * Copyright 2026 AzoraLabs
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,8 +30,8 @@ package std.math
  * @since 0.0.1
  */
 
-expose scope std {
-    scope math {
+friend zone std {
+    friend zone math {
         /**
          * The ratio of a circle's circumference to its diameter.
          *
@@ -91,7 +91,7 @@ expose scope std {
      */
     func abs<T>(x: T): T
     out { r -> assert r >= 0 { "abs must return non-negative" } }
-    scope {
+    zone {
         return if x < 0 { -x } else { x }
     }
 
@@ -126,7 +126,7 @@ expose scope std {
      */
     func clamp<T>(x: T, lo: T, hi: T): T
     in { assert lo <= hi { "clamp lower bound must be <= upper bound" } }
-    scope {
+    zone {
         return max<T>(lo, min<T>(x, hi))
     }
 
@@ -153,7 +153,7 @@ expose scope std {
         assert t >= 0.0 { "lerp factor must be >= 0.0" }
         assert t <= 1.0 { "lerp factor must be <= 1.0" }
     }
-    scope {
+    zone {
         return a + (b - a) * t
     }
 
@@ -216,7 +216,7 @@ expose scope std {
      */
     func mapRange(x: Real, inMin: Real, inMax: Real, outMin: Real, outMax: Real): Real
     in { assert inMax != inMin { "Input range must not be zero-width" } }
-    scope {
+    zone {
         return outMin + (x - inMin) * (outMax - outMin) / (inMax - inMin)
     }
 
@@ -231,7 +231,7 @@ expose scope std {
      */
     func approxEqual(a: Real, b: Real, epsilon: Real): Bool
     in { assert epsilon > 0.0 { "epsilon must be positive" } }
-    scope {
+    zone {
         var diff = a - b
         if diff < 0.0 { diff = -diff }
         return diff < epsilon

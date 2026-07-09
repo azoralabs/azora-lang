@@ -96,16 +96,38 @@ class StdlibInjectionTest {
         assertIs<CompilationResult.Failure>(gated)
     }
 
-    @Test fun useScopeStdImportsEverything() {
-        assertEquals("5", run("use scope std\nfunc main() {\n    println(abs(-5))\n}"))
+    @Test fun useZoneStdImportsEverything() {
+        assertEquals("5", run("use zone std\nfunc main() {\n    println(abs(-5))\n}"))
+    }
+
+    @Test fun useStdStarImportsEverything() {
+        assertEquals("5\n9", run("use std.*\nfunc main() {\n    println(abs(-5))\n    println(max(2, 9))\n}"))
+    }
+
+    @Test fun groupedStdModulesImportBareNames() {
+        assertEquals("5\n2", run("use std.{math, concurrency}\nfunc main() {\n    println(abs(-5))\n    println(min(2, 9))\n}"))
+    }
+
+    @Test fun stdModuleImportCreatesShortAlias() {
+        assertEquals("5\n2", run("use std.math\nfunc main() {\n    println(math::abs(-5))\n    println(math::min(2, 9))\n}"))
+    }
+
+    @Test fun stdStarImportCreatesShortModuleAlias() {
+        assertEquals("9", run("use std.*\nfunc main() {\n    println(math::max(2, 9))\n}"))
     }
 
     @Test fun qualifiedAccessNeedsNoImport() {
-        assertEquals("5\n2", run("func main() {\n    println(std.math.abs(-5))\n    println(std.min(2, 9))\n}"))
+        assertEquals("5\n2", run("func main() {\n    println(std::math::abs(-5))\n    println(std::min(2, 9))\n}"))
     }
 
     @Test fun qualifiedConstantAccess() {
-        val out = run("func main() {\n    println(std.math.PI)\n}")
+        val out = run("func main() {\n    println(std::math::PI)\n}")
         assertTrue(out.startsWith("3.14159"), out)
+    }
+
+    @Test fun dottedStdAccessIsNotNamespaceAccess() {
+        val result = Compiler().compile("func main() {\n    println(std.math.abs(-5))\n}")
+        assertIs<CompilationResult.Failure>(result)
+        assertTrue(result.errors.any { "std" in it }, "${result.errors}")
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 AzoraTech
+ * Copyright 2026 AzoraLabs
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,15 @@
 
 package org.azora.lang
 
+import org.azora.lang.backend.CSharpCodegen
 import org.azora.lang.backend.DartCodegen
 import org.azora.lang.backend.KotlinCodegen
 import org.azora.lang.backend.LlvmCodegen
+import org.azora.lang.backend.PythonCodegen
+import org.azora.lang.backend.RustCodegen
 import org.azora.lang.backend.SwiftCodegen
 import org.azora.lang.backend.TypeScriptCodegen
+import org.azora.lang.backend.WasmCodegen
 import org.azora.lang.frontend.AstValidator
 import org.azora.lang.frontend.Lexer
 import org.azora.lang.frontend.DebugInstrumenter
@@ -72,6 +76,10 @@ sealed class CompilationResult {
      * @property typescript the generated TypeScript source code
      * @property swift the generated Swift 6.3 source code
      * @property dart the generated Dart source code
+     * @property csharp the generated C# / .NET source code
+     * @property python the generated Python 3 source code
+     * @property rust the generated Rust source code
+     * @property wasm the generated WebAssembly text (WAT)
      * @property llvm the generated LLVM IR text
      * @property ast the CTFE-stabilized AST after semantic analysis
      * @property ir the typed IR before optimization
@@ -84,6 +92,10 @@ sealed class CompilationResult {
         val typescript: String,
         val swift: String,
         val dart: String,
+        val csharp: String,
+        val python: String,
+        val rust: String,
+        val wasm: String,
         val llvm: String,
         val ast: Program,
         val ir: IrProgram,
@@ -203,9 +215,21 @@ class Compiler {
         // 14. IR → Dart
         val dart = DartCodegen().generate(backendIr)
 
-        // 15. IR → LLVM IR
+        // 15. IR → C# / .NET
+        val csharp = CSharpCodegen().generate(backendIr)
+
+        // 16. IR → Python 3
+        val python = PythonCodegen().generate(backendIr)
+
+        // 17. IR → Rust
+        val rust = RustCodegen().generate(backendIr)
+
+        // 18. IR → WebAssembly text (WAT)
+        val wasm = WasmCodegen().generate(backendIr)
+
+        // 19. IR → LLVM IR
         val llvm = LlvmCodegen().generate(backendIr)
 
-        return CompilationResult.Success(kotlin, typescript, swift, dart, llvm, semantic.program, ir, optimizedIr, semantic.effects, warnings)
+        return CompilationResult.Success(kotlin, typescript, swift, dart, csharp, python, rust, wasm, llvm, semantic.program, ir, optimizedIr, semantic.effects, warnings)
     }
 }

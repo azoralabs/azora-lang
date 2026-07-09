@@ -115,3 +115,8 @@ fun azGeneratePython(source: String): String =
 @JsExport
 fun azGenerateSwift(source: String): String =
     withCompiled(source) { it.swift }
+
+/** Generates Dart source. */
+@JsExport
+fun azGenerateDart(source: String): String =
+    withCompiled(source) { it.dart }

@@ -16,6 +16,7 @@
 
 package org.azora.lang
 
+import org.azora.lang.backend.DartCodegen
 import org.azora.lang.backend.KotlinCodegen
 import org.azora.lang.backend.LlvmCodegen
 import org.azora.lang.backend.SwiftCodegen
@@ -70,6 +71,7 @@ sealed class CompilationResult {
      * @property kotlin the generated Kotlin source code
      * @property typescript the generated TypeScript source code
      * @property swift the generated Swift 6.3 source code
+     * @property dart the generated Dart source code
      * @property llvm the generated LLVM IR text
      * @property ast the CTFE-stabilized AST after semantic analysis
      * @property ir the typed IR before optimization
@@ -81,6 +83,7 @@ sealed class CompilationResult {
         val kotlin: String,
         val typescript: String,
         val swift: String,
+        val dart: String,
         val llvm: String,
         val ast: Program,
         val ir: IrProgram,
@@ -197,9 +200,12 @@ class Compiler {
         // 13. IR → Swift 6.3
         val swift = SwiftCodegen().generate(backendIr)
 
-        // 14. IR → LLVM IR
+        // 14. IR → Dart
+        val dart = DartCodegen().generate(backendIr)
+
+        // 15. IR → LLVM IR
         val llvm = LlvmCodegen().generate(backendIr)
 
-        return CompilationResult.Success(kotlin, typescript, swift, llvm, semantic.program, ir, optimizedIr, semantic.effects, warnings)
+        return CompilationResult.Success(kotlin, typescript, swift, dart, llvm, semantic.program, ir, optimizedIr, semantic.effects, warnings)
     }
 }

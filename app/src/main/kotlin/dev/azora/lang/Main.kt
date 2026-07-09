@@ -135,7 +135,7 @@ private fun handleCheck(args: List<String>) {
 
 private fun handleCompile(args: List<String>) {
     if (args.size < 2) {
-        System.err.println("Usage: azora compile <kotlin|typescript|swift|llvm|ir> <file.az>")
+        System.err.println("Usage: azora compile <kotlin|typescript|swift|dart|llvm|ir> <file.az>")
         return
     }
 
@@ -159,11 +159,12 @@ private fun handleCompile(args: List<String>) {
                 "kotlin", "kt" -> if (debug) org.azora.lang.backend.KotlinCodegen().generate(backendIr) else result.kotlin
                 "typescript", "ts" -> if (debug) org.azora.lang.backend.TypeScriptCodegen().generate(backendIr) else result.typescript
                 "swift", "sw" -> if (debug) org.azora.lang.backend.SwiftCodegen().generate(backendIr) else result.swift
+                "dart" -> if (debug) org.azora.lang.backend.DartCodegen().generate(backendIr) else result.dart
                 "llvm", "ll" -> if (debug) org.azora.lang.backend.LlvmCodegen().generate(backendIr) else result.llvm
                 "ir" -> backendIr.prettyPrint()
                 "ast" -> result.ast.dumpTree()
                 else -> {
-                    System.err.println("Unknown target: $target (use kotlin, typescript, swift, llvm, ir, or ast)")
+                    System.err.println("Unknown target: $target (use kotlin, typescript, swift, dart, llvm, ir, or ast)")
                     return
                 }
             }
@@ -227,6 +228,7 @@ private fun printUsage() {
           kotlin, kt      Kotlin/JVM source
           typescript, ts  TypeScript source
           swift, sw       Swift 6.3 source
+          dart            Dart source
           llvm, ll        LLVM IR text
           ir              Azora IR (pretty-printed)
           ast             AST dump (for debugging)

@@ -311,6 +311,79 @@ class CodegenGoldenTest {
     }
 
     // -----------------------------------------------------------------------
+    // Dart
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun dartFullOutputScalar() {
+        val expected = """
+            String classify(int n) {
+                if ((n < 0)) {
+                    return "negative";
+                } else if ((n == 0)) {
+                    return "zero";
+                }
+                return "positive";
+            }
+
+            void main() {
+                final int sum = 5;
+                print("sum = ${'$'}{sum}");
+                int total = 0;
+                for (int i = 1; i <= 5; i++) {
+                    total = (total + i);
+                }
+                print(total);
+                while ((total > 10)) {
+                    total = (total - 4);
+                }
+                print(total);
+                print(classify(5));
+                print(2);
+            }
+        """.trimIndent()
+        assertEquals(expected, compile(scalarProgram).dart)
+    }
+
+    @Test
+    fun dartFullOutputAggregate() {
+        val expected = """
+            class Point {
+                int x;
+                int y;
+                Point(this.x, this.y);
+            }
+
+            void main() {
+                final Point p = Point(3, 4);
+                p.x = (p.x + 1);
+                print(p.x);
+                final List<int> nums = [10, 20, 30];
+                nums[1] = 25;
+                print(nums[1]);
+                switch (2) {
+                    case 1:
+                    {
+                        print("one");
+                    }
+                    break;
+                    case 2:
+                    case 3:
+                    {
+                        print("two or three");
+                    }
+                    break;
+                    default:
+                    {
+                        print("other");
+                    }
+                }
+            }
+        """.trimIndent()
+        assertEquals(expected, compile(aggregateProgram).dart)
+    }
+
+    // -----------------------------------------------------------------------
     // LLVM
     // -----------------------------------------------------------------------
 

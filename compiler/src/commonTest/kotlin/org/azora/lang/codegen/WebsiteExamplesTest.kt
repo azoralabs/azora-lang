@@ -372,5 +372,291 @@ class WebsiteExamplesTest {
         """.trimIndent())
         assertTrue("fun add(a: Int, b: Int): Int" in r.kotlin, r.kotlin)
         assertTrue("function add(a: number, b: number): number" in r.typescript, r.typescript)
+        // The other seven backends are produced too.
+        assertTrue(r.swift.isNotBlank())
+        assertTrue(r.dart.isNotBlank())
+        assertTrue(r.csharp.isNotBlank())
+        assertTrue(r.python.isNotBlank())
+        assertTrue(r.rust.isNotBlank())
+        assertTrue(r.wasm.isNotBlank())
+        assertTrue(r.llvm.isNotBlank())
     }
+
+    // ── Chapters 26–35 (modern language) ────────────────────────────────────
+
+    @Test fun ch26_maps_read() = assertEquals("1\n3", run("""
+        func main() {
+            var m = ["a": 1, "b": 2, "c": 3]
+            println(m["a"])
+            println(m["c"])
+        }
+    """.trimIndent()))
+
+    @Test fun ch26_maps_update() = assertEquals("99", run("""
+        func main() {
+            var m = ["a": 1, "b": 2, "c": 3]
+            m["b"] = 99
+            println(m["b"])
+        }
+    """.trimIndent()))
+
+    @Test fun ch26_maps_int_keys() = assertEquals("30\n40", run("""
+        func main() {
+            var scores = [10: 10, 20: 20, 30: 30]
+            scores[40] = 40
+            println(scores[30])
+            println(scores[40])
+        }
+    """.trimIndent()))
+
+    @Test fun ch27_slot_destructure() = assertEquals("42", run("""
+        slot Option {
+            Some(Int)
+            None
+        }
+        func main() {
+            var o = Option.Some(42)
+            when o {
+                Option.Some(v) -> { println(v) }
+                Option.None    -> { println("nothing") }
+            }
+        }
+    """.trimIndent()))
+
+    @Test fun ch27_slot_multi_payload() = assertEquals("7", run("""
+        slot Shape {
+            Circle(Int)
+            Rect(Int, Int)
+            Point
+        }
+        func main() {
+            var s = Shape.Rect(3, 4)
+            when s {
+                Shape.Circle(r)   -> { println(r) }
+                Shape.Rect(w, h)  -> { println(w + h) }
+                Shape.Point       -> { println("0") }
+            }
+        }
+    """.trimIndent()))
+
+    @Test fun ch28_node_basic() = assertEquals("Rex\n...", run("""
+        node Animal(name: String) {
+            func speak(): String { return "..." }
+            func describe(): String { return self.name }
+        }
+        func main() {
+            var a = Animal("Rex")
+            println(a.describe())
+            println(a.speak())
+        }
+    """.trimIndent()))
+
+    @Test fun ch28_leaf_override() = assertEquals("Rex\nWoof", run("""
+        node Animal(name: String) {
+            func speak(): String { return "generic" }
+        }
+        leaf Dog(name: String) : Animal(name) {
+            repl func speak(): String { return "Woof" }
+        }
+        func main() {
+            var d = Dog("Rex")
+            println(d.name)
+            println(d.speak())
+        }
+    """.trimIndent()))
+
+    @Test fun ch28_dynamic_dispatch() = assertEquals("Woof", run("""
+        node Animal(name: String) {
+            func speak(): String { return "generic" }
+        }
+        leaf Dog(name: String) : Animal(name) {
+            repl func speak(): String { return "Woof" }
+        }
+        func main() {
+            var a: Animal = Dog("Rex")
+            println(a.speak())
+        }
+    """.trimIndent()))
+
+    @Test fun ch29_alloc_scalar() = assertEquals("42\n99", run("""
+        func main() {
+            var p: Int* = alloc 42
+            println(*p)
+            *p = 99
+            println(*p)
+        }
+    """.trimIndent()))
+
+    @Test fun ch29_pointer_arithmetic() = assertEquals("10\n20\n99\n3", run("""
+        func main() {
+            var p: Int* = alloc [10, 20, 30]
+            println(*p)
+            println(*(p + 1))
+            *(p + 2) = 99
+            println(*(p + 2))
+            var q = p + 3
+            println(q - p)
+        }
+    """.trimIndent()))
+
+    @Test fun ch29_isolated() = assertEquals("1", run("""
+        func main() {
+            var original = [1, 2, 3]
+            var copy = isolated(original)
+            copy[0] = 99
+            println(original[0])
+        }
+    """.trimIndent()))
+
+    @Test fun ch30_error_set() = assertEquals("Bad", run("""
+        fail E { Bad }
+        func f(): Int!E {
+            fail E.Bad
+            return 0
+        }
+        func main() {
+            try {
+                println(f())
+            } catch {
+                e -> println(e)
+            }
+        }
+    """.trimIndent()))
+
+    @Test fun ch31_flow() = assertEquals("0\n1\n4\n9", run("""
+        flow squares(n: Int): Int {
+            for i in 0..<n { yield i * i }
+        }
+        func main() {
+            for x in squares(4) { println(x) }
+        }
+    """.trimIndent()))
+
+    @Test fun ch31_channel() = assertEquals("10\n20", run("""
+        func produce(ch: Channel): Int {
+            ch.send(10)
+            ch.send(20)
+            ch.close()
+            return 0
+        }
+        func main() {
+            var ch = channel()
+            var p = task { produce(ch) }
+            await p
+            println(ch.receive())
+            println(ch.receive())
+        }
+    """.trimIndent()))
+
+    @Test fun ch32_solo_get() = assertEquals("42", run("""
+        solo Config {
+            var value: Int = 42
+            func get(): Int { return self.value }
+        }
+        func main() {
+            println(inject Config.get())
+        }
+    """.trimIndent()))
+
+    @Test fun ch32_solo_shared_instance() = assertEquals("1\n2\n3", run("""
+        solo Counter {
+            var n: Int = 0
+            func inc(): Int {
+                self.n = self.n + 1
+                return self.n
+            }
+        }
+        func main() {
+            var c1 = inject Counter
+            println(c1.inc())
+            println(c1.inc())
+            var c2 = inject Counter
+            println(c2.inc())
+        }
+    """.trimIndent()))
+
+    @Test fun ch33_bridge_math() = assertEquals("4.0\n0.0", run("""
+        bridge C {
+            func sqrt(x: Real): Real
+            func sin(x: Real): Real
+        }
+        func main() {
+            println(sqrt(16.0))
+            println(sin(0.0))
+        }
+    """.trimIndent()))
+
+    @Test fun ch33_bridge_pow() = assertEquals("1024.0", run("""
+        bridge C {
+            func pow(val: Real, exp: Real): Real
+        }
+        func main() {
+            println(pow(2.0, 10.0))
+        }
+    """.trimIndent()))
+
+    @Test fun ch34_rem() = assertEquals("0\n42", run("""
+        func main() {
+            rem count: Int = 0
+            println(count)
+            count = 42
+            println(count)
+        }
+    """.trimIndent()))
+
+    @Test fun ch34_effect() = assertEquals("hello\ndone", run("""
+        func main() {
+            rem msg: String = "hello"
+            effect {
+                println(msg)
+            }
+            println("done")
+        }
+    """.trimIndent()))
+
+    @Test fun ch34_view() = assertEquals("Hello, World!", run("""
+        view Greet(name: String) {
+            println("Hello, " + name + "!")
+        }
+        func main() {
+            Greet("World")
+        }
+    """.trimIndent()))
+
+    @Test fun ch35_variadic() = assertEquals("3\n10", run("""
+        func<...T> variadicSum(first: Int, rest: ...T): Int {
+            var total = first
+            for x in rest { total = total + x }
+            return total
+        }
+        func main() {
+            println(variadicSum(1, 2))
+            println(variadicSum(1, 2, 3, 4))
+        }
+    """.trimIndent()))
+
+    @Test fun ch35_deco() = assertEquals("hi", run("""
+        deco Log { msg: String }
+        @Log("entry")
+        func greet(): String { return "hi" }
+        func main() {
+            println(greet())
+        }
+    """.trimIndent()))
+
+    @Test fun ch35_visibility() = assertEquals("ok\nprivate", run("""
+        expose func helper(): String { return "ok" }
+        confine func secret(): String { return "private" }
+        func main() {
+            println(helper())
+            println(secret())
+        }
+    """.trimIndent()))
+
+    @Test fun ch35_threadlocal() = assertEquals("42", run("""
+        threadlocal fin answer = 42
+        func main() {
+            println(answer)
+        }
+    """.trimIndent()))
 }

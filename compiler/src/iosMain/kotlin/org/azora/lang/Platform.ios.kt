@@ -18,3 +18,12 @@ package org.azora.lang
 
 /** iOS implementation: always returns `"iOS"`. */
 internal actual fun detectHostOS(): String = "iOS"
+
+/** iOS implementation: no-op — the interpreter's coroutine dispatcher is cooperative here. */
+internal actual inline fun <R> azSync(lock: Any, block: () -> R): R = block()
+
+/** iOS implementation: native provides `runBlocking`, so the synchronous interpreter entry works. */
+internal actual fun <T> azRunBlocking(
+    context: kotlin.coroutines.CoroutineContext,
+    block: suspend kotlinx.coroutines.CoroutineScope.() -> T,
+): T = kotlinx.coroutines.runBlocking(context, block)

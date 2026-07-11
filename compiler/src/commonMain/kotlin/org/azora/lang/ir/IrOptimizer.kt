@@ -602,6 +602,7 @@ class IrOptimizer {
         is IrExpr.SetLit -> expr.elements.any { hasSideEffects(it) }
         is IrExpr.MapLit -> expr.entries.any { hasSideEffects(it.first) || hasSideEffects(it.second) }
         is IrExpr.TupleLit -> expr.elements.any { hasSideEffects(it) }
+        is IrExpr.VariantLit -> expr.elements.any { hasSideEffects(it) }
         is IrExpr.StringTemplate -> expr.parts.any {
             it is IrExpr.IrTemplatePart.Expr && hasSideEffects(it.expr)
         }
@@ -749,6 +750,7 @@ class IrOptimizer {
                 collectReferencedNamesFromExpr(v, names)
             }
             is IrExpr.TupleLit -> expr.elements.forEach { collectReferencedNamesFromExpr(it, names) }
+            is IrExpr.VariantLit -> expr.elements.forEach { collectReferencedNamesFromExpr(it, names) }
             is IrExpr.TupleAccess -> collectReferencedNamesFromExpr(expr.target, names)
             is IrExpr.CatchExpr -> {
                 collectReferencedNamesFromExpr(expr.expr, names)

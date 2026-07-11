@@ -29,10 +29,13 @@ import org.azora.lang.backend.IrInterpreter
  * `{"success":Boolean,"output":String,"errors":String}`, matching the contract the
  * playground's `wasmLoader.js` expects (`az*` exports on the `globalThis.compiler` global).
  *
- * The new compiler has four backends — the IR interpreter, Kotlin, TypeScript, and LLVM IR.
- * C#, Python, and Swift codegen are not implemented; those exports report unsupported.
+ * The compiler lowers one IR to nine codegen targets — Kotlin, TypeScript, Swift, Dart, C#,
+ * Python, Rust, WebAssembly, and LLVM IR — plus the IR interpreter. Each has an `azGenerate*`
+ * export. Execution (`azInterpret` / `azRunTests`) runs the suspend interpreter
+ * ([IrInterpreter.interpretSuspend]); Wasm/JS cannot `runBlocking`, so these are `suspend`
+ * exports (the loader `await`s them).
  */
-private const val AZORA_VERSION = "0.0.1-alpha.2"
+private const val AZORA_VERSION = "0.0.3"
 
 private fun json(success: Boolean, output: String, errors: String): String =
     "{\"success\":${success},\"output\":${jsonStr(output)},\"errors\":${jsonStr(errors)}}"
@@ -60,6 +63,15 @@ private fun withCompiled(source: String, onSuccess: (CompilationResult.Success) 
     }
 }
 
+/** [withCompiled] for `suspend` success callbacks (used by the interpreter entry points). */
+private suspend fun withCompiledSuspend(source: String, onSuccess: suspend (CompilationResult.Success) -> String): String {
+    val result = Compiler().compile(source, release = false)
+    return when (result) {
+        is CompilationResult.Success -> json(true, onSuccess(result), "")
+        is CompilationResult.Failure -> json(false, "", result.errors.joinToString("\n"))
+    }
+}
+
 /** Version string shown in the playground. */
 @JsExport
 fun azGetVersion(): String = AZORA_VERSION
@@ -71,16 +83,16 @@ fun azPreprocess(source: String): String =
 
 /** Interprets the source and returns program output (main then tests). */
 @JsExport
-fun azInterpret(source: String): String =
-    withCompiled(source) {
-        try { IrInterpreter().interpret(it.ir) } catch (e: Throwable) { "Runtime error: ${e.message ?: e.toString()}" }
+suspend fun azInterpret(source: String): String =
+    withCompiledSuspend(source) {
+        try { IrInterpreter().interpretSuspend(it.ir) } catch (e: Throwable) { "Runtime error: ${e.message ?: e.toString()}" }
     }
 
 /** Runs the program's `test` blocks (same path as [azInterpret], which runs tests after main). */
 @JsExport
-fun azRunTests(source: String): String =
-    withCompiled(source) {
-        try { IrInterpreter().interpret(it.ir) } catch (e: Throwable) { "Runtime error: ${e.message ?: e.toString()}" }
+suspend fun azRunTests(source: String): String =
+    withCompiledSuspend(source) {
+        try { IrInterpreter().interpretSuspend(it.ir) } catch (e: Throwable) { "Runtime error: ${e.message ?: e.toString()}" }
     }
 
 /** Generates Kotlin/JVM source. */

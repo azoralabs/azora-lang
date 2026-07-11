@@ -76,9 +76,10 @@ class TypeRefTest {
 
     @Test
     fun nestedGenericNamedTypeAnnotation() {
-        val t = firstParamType("func f(x: Map<String, List<Int>>): Int { return 0 }")
+        // `Map`/`Set`/`Arr` are primitive collection types now; use a plain user generic name here.
+        val t = firstParamType("func f(x: Dictionary<String, List<Int>>): Int { return 0 }")
         assertIs<IrType.Named>(t)
-        assertEquals("Map", t.name)
+        assertEquals("Dictionary", t.name)
     }
 
     @Test

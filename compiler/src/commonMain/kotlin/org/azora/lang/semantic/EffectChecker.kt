@@ -237,6 +237,7 @@ class EffectChecker {
                 }
             }
             is Expr.TupleLit -> expr.elements.forEach { collectCallsFromExpr(it, calls) }
+            is Expr.VariantLit -> expr.elements.forEach { collectCallsFromExpr(it, calls) }
             is Expr.TupleAccess -> collectCallsFromExpr(expr.target, calls)
             is Expr.CatchExpr -> { collectCallsFromExpr(expr.expr, calls); collectCallsFromExpr(expr.fallback, calls) }
             is Expr.IfExpr -> { collectCallsFromExpr(expr.condition, calls); collectCallsFromExpr(expr.thenExpr, calls); collectCallsFromExpr(expr.elseExpr, calls) }

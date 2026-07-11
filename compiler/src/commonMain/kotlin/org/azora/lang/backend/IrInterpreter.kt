@@ -16,6 +16,9 @@
 
 package org.azora.lang.backend
 
+import org.azora.lang.azRunBlocking
+import org.azora.lang.azSync
+import org.azora.lang.putIfAbsentCompat
 import org.azora.lang.ir.IrBinaryOp
 import org.azora.lang.ir.IrExpr
 import org.azora.lang.ir.IrFunction
@@ -29,6 +32,7 @@ import kotlin.coroutines.coroutineContext
 import kotlin.math.pow
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.SendChannel
 import kotlinx.coroutines.channels.produce
@@ -124,82 +128,112 @@ class IrInterpreter {
     /** A deferred block, optionally restricted to run only on error (`fail defer`). */
     private class DeferredBlock(val body: List<IrStmt>, val onFail: Boolean, val suppress: Boolean = false)
 
+    /**
+     * Runs the program and returns its captured output (synchronous entry point).
+     *
+     * Implemented via [azRunBlocking] — a real `runBlocking` on JVM/native (which can block the
+     * calling thread), and a stub on Wasm/JS (where blocking is impossible). On Wasm/JS, use
+     * [interpretSuspend] instead. The evaluator is `suspend` (to support `await`); it runs on
+     * `Dispatchers.Default` so `task`/`launch` achieve real parallelism, and each task gets its
+     * own [ExecState] (isolated scopes/defers) so concurrent tasks never share mutable state.
+     */
     fun interpret(program: IrProgram): String {
+        val mainState = resetFor()
+        return azRunBlocking(Dispatchers.Default + mainState) {
+            coroutineScope = this
+            runProgramBody(program)
+            azSync(output) { output.toString().trimEnd() }
+        }
+    }
+
+    /**
+     * Runs the program as a `suspend` function — the entry point on Wasm/JS, where `runBlocking` is
+     * unavailable. Establishes the same `Dispatchers.Default + mainState` context via `withContext`,
+     * so `task`/`await`/`flow`/`channel` work cooperatively (single-threaded on Wasm/JS).
+     */
+    suspend fun interpretSuspend(program: IrProgram): String {
+        val mainState = resetFor()
+        return kotlinx.coroutines.withContext(Dispatchers.Default + mainState) {
+            coroutineScope = this
+            runProgramBody(program)
+            azSync(output) { output.toString().trimEnd() }
+        }
+    }
+
+    /** Clears per-run state and returns a fresh main [ExecState] (with a global scope) to seed the context. */
+    private fun resetFor(): ExecState {
         output.clear()
         functions.clear()
         launchedTasks.clear()
-
         val mainState = ExecState()
         // Global scope
         mainState.scopes.addLast(mutableMapOf("__null" to null))
+        return mainState
+    }
 
+    /**
+     * Processes top-level items in source order, runs `main`, runs `test` blocks, joins fire-and-forget
+     * `launch` tasks, and finally runs lifecycle `hook`s. Must run inside the coroutine context seeded
+     * by [interpret] / [interpretSuspend] so [state] resolves the main [ExecState].
+     */
+    private suspend fun runProgramBody(program: IrProgram) {
         // Collect tests
         val tests = mutableListOf<IrTopLevel.Test>()
 
-        // The evaluator is `suspend` (to support `await`); run it on a multi-threaded
-        // dispatcher (Dispatchers.Default) so `task`/`launch` achieve real parallelism.
-        // Each task gets its own ExecState (isolated scopes/defers), so concurrent tasks
-        // never share mutable execution state. The public interpret() stays non-suspend.
-        return kotlinx.coroutines.runBlocking(Dispatchers.Default + mainState) {
-            coroutineScope = this
-
-            // Process top-level items in source order
-            for (item in program.items) {
-                when (item) {
-                    is IrTopLevel.Global -> {
-                        // Thread-local variables (`__tl__` prefix) go into per-ExecState storage.
-                        val name = when (val stmt = item.stmt) {
-                            is IrStmt.VarDecl -> stmt.name
-                            is IrStmt.FinDecl -> stmt.name
-                            is IrStmt.LetDecl -> stmt.name
+        // Process top-level items in source order
+        for (item in program.items) {
+            when (item) {
+                is IrTopLevel.Global -> {
+                    // Thread-local variables (`__tl__` prefix) go into per-ExecState storage.
+                    val name = when (val stmt = item.stmt) {
+                        is IrStmt.VarDecl -> stmt.name
+                        is IrStmt.FinDecl -> stmt.name
+                        is IrStmt.LetDecl -> stmt.name
+                        else -> null
+                    }
+                    if (name != null && name.startsWith("__tl__")) {
+                        executeStmt(item.stmt) // evaluates initializer, stores in global scope
+                        // Move from global scope to threadLocals so child coroutines get fresh copies.
+                        val value = state().scopes.first()[name]
+                        state().scopes.first().remove(name)
+                        state().threadLocals[name] = value
+                        // Store the initializer so child coroutines (task/launch/flow) can re-evaluate it.
+                        val init = when (val stmt = item.stmt) {
+                            is IrStmt.VarDecl -> stmt.initializer
+                            is IrStmt.FinDecl -> stmt.initializer
+                            is IrStmt.LetDecl -> stmt.initializer
                             else -> null
                         }
-                        if (name != null && name.startsWith("__tl__")) {
-                            executeStmt(item.stmt) // evaluates initializer, stores in global scope
-                            // Move from global scope to threadLocals so child coroutines get fresh copies.
-                            val value = state().scopes.first()[name]
-                            state().scopes.first().remove(name)
-                            state().threadLocals[name] = value
-                            // Store the initializer so child coroutines (task/launch/flow) can re-evaluate it.
-                            val init = when (val stmt = item.stmt) {
-                                is IrStmt.VarDecl -> stmt.initializer
-                                is IrStmt.FinDecl -> stmt.initializer
-                                is IrStmt.LetDecl -> stmt.initializer
-                                else -> null
-                            }
-                            if (init != null) threadLocalInits.add(name to init)
-                        } else {
-                            executeStmt(item.stmt)
-                        }
+                        if (init != null) threadLocalInits.add(name to init)
+                    } else {
+                        executeStmt(item.stmt)
                     }
-                    is IrTopLevel.Func -> functions[item.function.name] = item.function
-                    is IrTopLevel.Test -> tests.add(item)
-                    is IrTopLevel.Struct -> { /* struct definitions need no execution */ }
-                    is IrTopLevel.Extern -> { /* extern declarations need no execution */ }
                 }
+                is IrTopLevel.Func -> functions[item.function.name] = item.function
+                is IrTopLevel.Test -> tests.add(item)
+                is IrTopLevel.Struct -> { /* struct definitions need no execution */ }
+                is IrTopLevel.Extern -> { /* extern declarations need no execution */ }
             }
+        }
 
-            // Execute main
-            val main = functions["main"] ?: error("No 'main' function found")
-            executeFunction(main, emptyList())
+        // Execute main
+        val main = functions["main"] ?: error("No 'main' function found")
+        executeFunction(main, emptyList())
 
-            // Execute tests after main
-            for (test in tests) {
-                executeTest(test)
+        // Execute tests after main
+        for (test in tests) {
+            executeTest(test)
+        }
+
+        // Join any fire-and-forget `launch { … }` tasks so their side effects complete.
+        val toJoin = azSync(launchedTasks) { launchedTasks.toList() }
+        for (task in toJoin) task.await()
+
+        // Execute lifecycle hooks (`hook start { }`, `hook stop { }`, etc.) in declaration order.
+        for (fn in functions.keys.sorted()) {
+            if (fn.startsWith("__hook_")) {
+                executeFunction(functions[fn]!!, emptyList())
             }
-
-            // Join any fire-and-forget `launch { … }` tasks so their side effects complete.
-            val toJoin = synchronized(launchedTasks) { launchedTasks.toList() }
-            for (task in toJoin) task.await()
-
-            // Execute lifecycle hooks (`hook start { }`, `hook stop { }`, etc.) in declaration order.
-            for (fn in functions.keys.sorted()) {
-                if (fn.startsWith("__hook_")) {
-                    executeFunction(functions[fn]!!, emptyList())
-                }
-            }
-
-            synchronized(output) { output.toString().trimEnd() }
         }
     }
 
@@ -489,6 +523,9 @@ class IrInterpreter {
                                 }
                                 hit = true; break
                             }
+                        } else if (p is IrExpr.Call && p.name == "__isCheck") {
+                            // `is Type` pattern (e.g. matching a Var<…>): a boolean type test on the scrutinee.
+                            if (evalExpr(p) == true) { hit = true; break }
                         } else if (evalExpr(p) == scrut) { hit = true; break }
                     }
                     if (hit) {
@@ -539,7 +576,7 @@ class IrInterpreter {
             }
             is IrStmt.Trace -> {
                 val msg = formatValue(evalExpr(stmt.message))
-                synchronized(output) { output.appendLine("[TRACE] $msg") }
+                azSync(output) { output.appendLine("[TRACE] $msg") }
                 outputListener?.invoke("[TRACE] $msg")
             }
         }
@@ -640,6 +677,10 @@ class IrInterpreter {
                 map
             }
             is IrExpr.TupleLit -> expr.elements.map { evalExpr(it) }
+            // A Var<...> holds exactly one value; `var(a, b, …)` holds the first. Its static type is
+            // Variant over all candidate element types; at runtime it is just the held value, so
+            // `when v { is T -> … }` becomes a runtime type test.
+            is IrExpr.VariantLit -> if (expr.elements.isEmpty()) null else evalExpr(expr.elements.first())
             is IrExpr.TupleAccess -> {
                 @Suppress("UNCHECKED_CAST")
                 val list = evalExpr(expr.target) as List<Any?>
@@ -931,7 +972,7 @@ class IrInterpreter {
         if (expr.name == "__inject") {
             val typeName = args[0] as String
             // Fast path: cached singleton (no suspend inside synchronized).
-            val cached = synchronized(singletons) { singletons[typeName] }
+            val cached = azSync(singletons) { singletons[typeName] }
             if (cached != null) return cached
             // Slow path: create the singleton via its factory (outside the lock).
             val factoryName = "__singleton_$typeName"
@@ -939,7 +980,7 @@ class IrInterpreter {
                 ?: error("No singleton factory for '$typeName' — is it declared as `solo`?")
             val instance = executeFunction(factory, emptyList())
             // putIfAbsent handles the race where another coroutine created it meanwhile.
-            return synchronized(singletons) { singletons.putIfAbsent(typeName, instance) ?: instance }
+            return azSync(singletons) { singletons.putIfAbsentCompat(typeName, instance) ?: instance }
         }
         if (expr.name == "__safeMember") {
             val target = args[0]
@@ -973,7 +1014,7 @@ class IrInterpreter {
         if (expr.name == "println") {
             val value = args.firstOrNull()
             val text = formatValue(value)
-            synchronized(output) { output.appendLine(text) }
+            azSync(output) { output.appendLine(text) }
             outputListener?.invoke(text)
             return null
         }
@@ -995,7 +1036,7 @@ class IrInterpreter {
             val thunk = args[0] as? Closure ?: error("launch expects a task body")
             val scope = coroutineScope ?: error("launch used outside of the interpreter's runBlocking scope")
             val deferred = scope.async(context = childState()) { invokeClosure(thunk) }
-            synchronized(launchedTasks) { launchedTasks.add(deferred) }
+            azSync(launchedTasks) { launchedTasks.add(deferred) }
             return null
         }
 
@@ -1155,7 +1196,7 @@ class IrInterpreter {
 
         override fun equals(other: Any?): Boolean =
             other is Pointer && other.buffer === buffer && other.index == index
-        override fun hashCode(): Int = System.identityHashCode(buffer) * 31 + index
+        override fun hashCode(): Int = buffer.hashCode() * 31 + index
     }
 
     /** Wraps a value in a single-element Pointer buffer (or reuses a list directly). */

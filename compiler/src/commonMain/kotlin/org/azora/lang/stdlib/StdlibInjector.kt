@@ -20,6 +20,7 @@ import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.Program
 import org.azora.lang.frontend.Stmt
 import org.azora.lang.frontend.TopLevel
+import org.azora.lang.putIfAbsentCompat
 
 /**
  * Injects standard-library declarations into a user compilation unit.
@@ -63,9 +64,9 @@ object StdlibInjector {
             val module = program.packageName ?: "std"
             val moduleItems = idx.modules.getOrPut(module) { LinkedHashMap() }
             fun register(name: String, item: TopLevel) {
-                moduleItems.putIfAbsent(name, item)
-                idx.items.putIfAbsent(name, item)
-                idx.moduleOfName.putIfAbsent(name, module)
+                moduleItems.putIfAbsentCompat(name, item)
+                idx.items.putIfAbsentCompat(name, item)
+                idx.moduleOfName.putIfAbsentCompat(name, module)
             }
             for (item in program.items) {
                 when (item) {
@@ -77,7 +78,7 @@ object StdlibInjector {
                     is TopLevel.Enum -> register(item.name, item)
                     is TopLevel.Fail -> register(item.name, item)
                     is TopLevel.Bridge -> for (sig in item.funcs) {
-                        idx.externs.putIfAbsent(sig.name, TopLevel.Bridge(item.target, listOf(sig), item.line, item.column))
+                        idx.externs.putIfAbsentCompat(sig.name, TopLevel.Bridge(item.target, listOf(sig), item.line, item.column))
                     }
                     else -> {}
                 }
@@ -339,6 +340,7 @@ object StdlibInjector {
                 collectNamesFromExpr(v, names)
             }
             is Expr.TupleLit -> expr.elements.forEach { collectNamesFromExpr(it, names) }
+            is Expr.VariantLit -> expr.elements.forEach { collectNamesFromExpr(it, names) }
             is Expr.TupleAccess -> collectNamesFromExpr(expr.target, names)
             is Expr.StringTemplate -> expr.parts.forEach { part ->
                 if (part is Expr.StringTemplatePart.Expr) collectNamesFromExpr(part.expr, names)

@@ -286,7 +286,7 @@ class WasmCodegen {
         is IrExpr.StringTemplate -> emitTemplate(expr)
         is IrExpr.CatchExpr -> emitExpr(expr.expr) // no exception support — evaluate the primary expression
         is IrExpr.SetLit, is IrExpr.MapLit, is IrExpr.TupleLit, is IrExpr.TupleAccess,
-        is IrExpr.Lambda, is IrExpr.SlotPattern -> "(i32.const 0)" // unsupported by the MVP target
+        is IrExpr.VariantLit, is IrExpr.Lambda, is IrExpr.SlotPattern -> "(i32.const 0)" // unsupported by the MVP target
     }
 
     private fun emitBinary(expr: IrExpr.Binary): String {

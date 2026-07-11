@@ -892,6 +892,10 @@ class TypeResolver(private val table: SymbolTable) {
                 val types = expr.elements.map { resolveExpr(it) ?: return null }
                 IrType.Tuple(types)
             }
+            is Expr.VariantLit -> {
+                val types = expr.elements.map { resolveExpr(it) ?: return null }
+                IrType.Variant(types)
+            }
             is Expr.TupleAccess -> {
                 val targetType = resolveExpr(expr.target) ?: return null
                 if (targetType !is IrType.Tuple) {
@@ -1169,6 +1173,8 @@ class TypeResolver(private val table: SymbolTable) {
         if (declared is IrType.Nullable && declared.inner == actual) return true
         // Any is compatible with anything
         if (declared == IrType.Any || actual == IrType.Any) return true
+        // A value of type T is assignable to a `Var<…>` (Variant) when T is one of its alternatives.
+        if (declared is IrType.Variant && actual in declared.elements) return true
         return false
     }
 

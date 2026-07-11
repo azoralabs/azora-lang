@@ -100,6 +100,10 @@ sealed class IrType {
     /** Tuple type `(A, B)`. */
     data class Tuple(val elements: List<IrType>) : IrType() { override fun toString() = "(${elements.joinToString(", ")})" }
 
+    /** Variant type `Var<A, B, ...>` — a tagged union holding exactly one value whose type is one of
+     *  [elements] (like C++ `std::variant`). Runtime representation is the held value plus its type. */
+    data class Variant(val elements: List<IrType>) : IrType() { override fun toString() = "Var<${elements.joinToString(", ")}>" }
+
     /** Nullable type `T?`. */
     data class Nullable(val inner: IrType) : IrType() { override fun toString() = "$inner?" }
 
@@ -173,6 +177,13 @@ sealed class IrType {
             is TypeRef.Named -> {
                 if (ref.name in typeParams) Any
                 else if (ref.name in aliases) resolve(aliases[ref.name]!!, typeParams)
+                // Collection type names map to their primitive IR types (constructors are the
+                // `arr()/set()/map()/tup()/var()` sugar; Vec stays a stdlib pack → Named).
+                else if (ref.name == "Arr" && ref.args.size == 1) Array(resolve(ref.args[0], typeParams))
+                else if (ref.name == "Set" && ref.args.size == 1) Set(resolve(ref.args[0], typeParams))
+                else if (ref.name == "Map" && ref.args.size == 2) Map(resolve(ref.args[0], typeParams), resolve(ref.args[1], typeParams))
+                else if (ref.name == "Tup" && ref.args.size >= 2) Tuple(ref.args.map { resolve(it, typeParams) })
+                else if (ref.name == "Var" && ref.args.size >= 2) Variant(ref.args.map { resolve(it, typeParams) })
                 else if (ref.args.isEmpty() && isPrimitiveName(ref.name)) fromName(ref.name)
                 else Named(ref.name)
             }
@@ -432,6 +443,10 @@ sealed class IrExpr {
     /** Tuple literal `(a, b, c)`. */
     data class TupleLit(val elements: List<IrExpr>, override val type: IrType) : IrExpr()
 
+    /** Variant literal `var(a, b, c)` — constructs a `Var<...>` holding the first element; [type] is
+     *  an [IrType.Variant] over the candidate element types. */
+    data class VariantLit(val elements: List<IrExpr>, override val type: IrType) : IrExpr()
+
     /** Tuple positional access `target.index`. */
     data class TupleAccess(val target: IrExpr, val index: Int, override val type: IrType) : IrExpr()
 
@@ -505,6 +520,7 @@ sealed class IrExpr {
             }
         }
         is TupleLit -> "(${elements.joinToString(", ") { it.prettyPrint() }})"
+        is VariantLit -> "var(${elements.joinToString(", ") { it.prettyPrint() }})"
         is TupleAccess -> "${target.prettyPrint()}.$index"
         is CatchExpr -> "(${expr.prettyPrint()} catch ${fallback.prettyPrint()})"
         is IfExpr -> "(if ${condition.prettyPrint()} { ${thenExpr.prettyPrint()} } else { ${elseExpr.prettyPrint()} })"
@@ -1180,6 +1196,10 @@ private fun dumpIrExprTree(sb: StringBuilder, expr: IrExpr, indent: String) {
         }
         is IrExpr.TupleLit -> {
             sb.appendLine("${indent}IrTupleLit : ${expr.type}")
+            for (e in expr.elements) dumpIrExprTree(sb, e, "$indent    ")
+        }
+        is IrExpr.VariantLit -> {
+            sb.appendLine("${indent}IrVariantLit : ${expr.type}")
             for (e in expr.elements) dumpIrExprTree(sb, e, "$indent    ")
         }
         is IrExpr.TupleAccess -> {

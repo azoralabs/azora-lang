@@ -18,7 +18,6 @@ package org.azora.lang.codegen
 
 import org.azora.lang.CompilationResult
 import org.azora.lang.Compiler
-import org.azora.lang.backend.SwiftCodegen
 import java.io.File
 import kotlin.test.fail
 

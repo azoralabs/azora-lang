@@ -1005,8 +1005,8 @@ class Parser(private val tokens: List<Token>) {
                 break
             }
             val patterns = mutableListOf<Expr>()
-            patterns.add(parseExpr())
-            while (match(TokenType.COMMA)) patterns.add(parseExpr())
+            patterns.add(parseWhenPattern(scrutinee))
+            while (match(TokenType.COMMA)) patterns.add(parseWhenPattern(scrutinee))
             consume(TokenType.ARROW, "Expected '->' after when patterns")
             consume(TokenType.L_BRACE, "Expected '{' after '->'")
             skipNewlines()
@@ -1210,16 +1210,39 @@ class Parser(private val tokens: List<Token>) {
             }
             val name = consumeIdentifierLike("Expected parameter name")
             consume(TokenType.COLON, "Expected ':' after parameter name")
+            val queryShape = parseQueryParamShape()
+            val annotations = if (queryShape != null) {
+                listOf(Annotation("Query", emptyList(), null, peek().line, peek().column))
+            } else {
+                emptyList()
+            }
             // `...T` marks the (last) parameter variadic; parseTypeName wraps it in [T].
             val isVariadic = check(TokenType.ELLIPSIS)
-            val parsedType = parseTypeName()
+            val parsedType = if (queryShape != null) TypeRef.Named("QueryCursor") else parseTypeName()
             val reference = parsedType as? TypeRef.Reference
             val type = reference?.inner ?: parsedType
             val normalizedModifier = reference?.kind?.spelling ?: modifier
             val default = if (match(TokenType.EQUAL)) parseExpr() else null
-            params.add(Param(name, type, default, normalizedModifier, variadic = isVariadic))
+            params.add(Param(name, type, default, normalizedModifier, variadic = isVariadic, annotations = annotations, queryShape = queryShape))
         } while (match(TokenType.COMMA))
         return params
+    }
+
+    private fun parseQueryParamShape(): TypeRef? {
+        if (!check(TokenType.AT)) return null
+        val at = advance()
+        val name = consume(TokenType.IDENTIFIER, "Expected decorator name after '@'").lexeme
+        if (name != "Query") {
+            error("Only @Query is currently supported in parameter type position, got @$name at line ${at.line}")
+        }
+        if (check(TokenType.AMP)) {
+            error("@Query uses Azora references: write 'ref T' or 'mut ref T', not '&T', at line ${peek().line}")
+        }
+        val shape = parseTypeName()
+        if (shape !is TypeRef.Tuple) {
+            error("@Query expects a tuple type, for example @Query (mut ref Transform, ref Velocity), at line ${at.line}")
+        }
+        return shape
     }
 
     /** `<T, U>` type-parameter list. The last param may be `...T` (variadic). Returns names. */
@@ -1349,6 +1372,8 @@ class Parser(private val tokens: List<Token>) {
 
     private fun parseStmt(): Stmt {
         return when {
+            // `var(...)` is the variant constructor (an expression statement); `var name = …` is a declaration.
+            check(TokenType.VAR) && peekNext()?.type == TokenType.L_PAREN -> parseExprStmt()
             check(TokenType.VAR) -> parseVarDecl()
             check(TokenType.FIN) -> parseFinDecl()
             check(TokenType.LET) -> parseLetDecl()
@@ -1517,13 +1542,18 @@ class Parser(private val tokens: List<Token>) {
     private fun parseLoop(label: String? = null): Stmt {
         val start = peek()
         consume(TokenType.LOOP, "Expected 'loop'")
+        // `loop iterable { }` iterates anything exposing reset()/hasNext(); bare `loop { }` is infinite.
+        val savedTrailing = allowTrailingLambda
+        allowTrailingLambda = false
+        val iterable: Expr? = if (!check(TokenType.L_BRACE)) parseExpr() else null
+        allowTrailingLambda = savedTrailing
         consume(TokenType.L_BRACE, "Expected '{' after 'loop'")
         skipNewlines()
         val body = parseBlock().toMutableList()
         consume(TokenType.R_BRACE, "Expected '}' after loop body")
         // do-while: `loop { body } while cond` — runs the body first, then repeats
         // while [cond] holds. Desugared to `loop { body; if (!cond) { break } }`.
-        if (match(TokenType.WHILE)) {
+        if (iterable == null && match(TokenType.WHILE)) {
             val cond = parseExpr()
             val exit = Stmt.If(
                 Expr.Unary(TokenType.BANG, cond, start.line, start.column, start.lexeme.length),
@@ -1536,6 +1566,16 @@ class Parser(private val tokens: List<Token>) {
         skipNewlines()
         val elseBranch = parseLoopElse()
         consumeNewline()
+        // `loop iterable { body }` desugars to `zone { iterable.reset(); while (iterable.hasNext()) { body } }`.
+        // Desugared at parse time so reset()/hasNext() go through the normal (user-type) method resolution.
+        if (iterable != null) {
+            val reset = Stmt.ExprStmt(
+                Expr.MethodCall(iterable, "reset", emptyList(), start.line, start.column, start.lexeme.length),
+                start.line, start.column
+            )
+            val cond = Expr.MethodCall(iterable, "hasNext", emptyList(), start.line, start.column, start.lexeme.length)
+            return Stmt.Zone(listOf(reset, Stmt.While(cond, body, start.line, start.column, label = label)), start.line, start.column)
+        }
         val loop = Stmt.Loop(body, start.line, start.column, label = label)
         return if (elseBranch != null) withLoopElse(loop, elseBranch, start.line, start.column) else loop
     }
@@ -2745,8 +2785,57 @@ class Parser(private val tokens: List<Token>) {
         return Expr.IfExpr(condition, thenExpr, elseExpr, start.line, start.column)
     }
 
+    private enum class CollectionKind { ARRAY, SET, MAP, TUPLE, VARIANT }
+
+    /** Parses `arr(...)` / `set(...)` / `map(...)` / `tup(...)` / `var(...)` collection constructors.
+     *  `arr/set/tup/var` lower to the existing literal AST nodes; `map` parses `key : value` pairs.
+     *  (`vec(...)` is intentionally NOT handled here — it is a normal call to the stdlib `vec` function.) */
+    private fun parseCollectionCtor(start: Token, kind: CollectionKind): Expr {
+        advance() // the ctor keyword/identifier
+        consume(TokenType.L_PAREN, "Expected '(' after '${start.lexeme}'")
+        if (kind == CollectionKind.MAP) {
+            val entries = mutableListOf<Pair<Expr, Expr>>()
+            if (!check(TokenType.R_PAREN)) {
+                do {
+                    val key = parseExpr()
+                    consume(TokenType.COLON, "Expected ':' between map key and value in map(...)")
+                    entries.add(key to parseExpr())
+                } while (match(TokenType.COMMA))
+            }
+            consume(TokenType.R_PAREN, "Expected ')' after map(...)")
+            return Expr.MapLit(entries, start.line, start.column, start.lexeme.length)
+        }
+        val elements = mutableListOf<Expr>()
+        if (!check(TokenType.R_PAREN)) {
+            do { elements += parseExpr() } while (match(TokenType.COMMA))
+        }
+        consume(TokenType.R_PAREN, "Expected ')' after ${start.lexeme}(...)")
+        return when (kind) {
+            CollectionKind.ARRAY -> Expr.ArrayLiteral(elements, start.line, start.column, start.lexeme.length)
+            CollectionKind.SET -> Expr.SetLiteral(elements, start.line, start.column, start.lexeme.length)
+            CollectionKind.TUPLE -> Expr.TupleLit(elements, start.line, start.column, start.lexeme.length)
+            CollectionKind.VARIANT -> Expr.VariantLit(elements, start.line, start.column, start.lexeme.length)
+            CollectionKind.MAP -> error("unreachable")
+        }
+    }
+
     private fun parsePrimary(): Expr {
         val tok = peek()
+        // Collection constructor ctors — contextual: an identifier `arr`/`set`/`map`/`tup` is the
+        // collection constructor only when immediately followed by `(` in primary position. They
+        // remain valid identifiers everywhere else (e.g. as method names after `.`).
+        if (tok.type == TokenType.IDENTIFIER && peekNext()?.type == TokenType.L_PAREN) {
+            when (tok.lexeme) {
+                "arr" -> return parseCollectionCtor(tok, CollectionKind.ARRAY)
+                "set" -> return parseCollectionCtor(tok, CollectionKind.SET)
+                "map" -> return parseCollectionCtor(tok, CollectionKind.MAP)
+                "tup" -> return parseCollectionCtor(tok, CollectionKind.TUPLE)
+            }
+        }
+        // `var(...)` — variant constructor (`var` is otherwise the declaration keyword).
+        if (tok.type == TokenType.VAR && peekNext()?.type == TokenType.L_PAREN) {
+            return parseCollectionCtor(tok, CollectionKind.VARIANT)
+        }
         return when (tok.type) {
             TokenType.IF -> parseIfExpr()
             TokenType.INT_LITERAL -> {

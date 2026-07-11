@@ -221,6 +221,10 @@ sealed class Expr {
     /** Tuple literal `(a, b, c)` (two or more elements). */
     data class TupleLit(val elements: List<Expr>, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 
+    /** Variant literal `var(a, b, c)` — constructs a `Var<...>` holding exactly one of the given
+     *  candidate values (the first, by default). At least two candidates are required. */
+    data class VariantLit(val elements: List<Expr>, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+
     /** Tuple positional access `target.index` (e.g. `pair.0`). */
     data class TupleAccess(val target: Expr, val index: Int, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 
@@ -769,7 +773,10 @@ sealed class Stmt {
         override val column: Int = 0,
         override val length: Int = 0,
         /** Optional `@label` for labeled `break`/`continue`. */
-        val label: String? = null
+        val label: String? = null,
+        /** Optional iterable for `loop iterable { }` — when present, desugars to
+         *  `iterable.reset(); while iterable.hasNext() { body }`. */
+        val iterable: Expr? = null
     ) : Stmt()
 
     /**
@@ -1020,6 +1027,10 @@ data class Param(
     val modifier: ParamModifier = "",
     /** True when declared with the `...T` variadic syntax (call sites pack extra args). */
     val variadic: Boolean = false,
+    /** Parameter-level decorators, parsed from `name: @Decorator Type`. */
+    val annotations: List<Annotation> = emptyList(),
+    /** Typed query shape from `name: @Query (T, U, Filter<V>)`; erased to QueryCursor at runtime. */
+    val queryShape: TypeRef? = null,
 ) {
     /** Convenience: the type name as written in source (for diagnostics/dumping). */
     val typeName: String get() = type.displayName()

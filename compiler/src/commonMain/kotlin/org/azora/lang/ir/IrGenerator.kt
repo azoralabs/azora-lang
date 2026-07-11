@@ -473,7 +473,15 @@ class IrGenerator(private val table: SymbolTable) {
                 val body = lowerBody(stmt.body)
                 popNameScope()
                 table.popScope()
-                IrStmt.Loop(body, stmt.label)
+                if (stmt.iterable != null) {
+                    // `loop iterable { body }` → iterable.reset(); while iterable.hasNext() { body }
+                    val iter = lowerExpr(stmt.iterable)
+                    val reset = IrStmt.ExprStmt(IrExpr.MethodCall(iter, "reset", emptyList(), IrType.Unit))
+                    val cond = IrExpr.MethodCall(iter, "hasNext", emptyList(), IrType.Bool)
+                    IrStmt.Zone(listOf(reset, IrStmt.While(cond, body, stmt.label)), alloc = false)
+                } else {
+                    IrStmt.Loop(body, stmt.label)
+                }
             }
             is Stmt.Break -> IrStmt.Break(stmt.label)
             is Stmt.Continue -> IrStmt.Continue(stmt.label)
@@ -923,6 +931,10 @@ class IrGenerator(private val table: SymbolTable) {
             is Expr.TupleLit -> {
                 val elems = expr.elements.map { lowerExpr(it) }
                 IrExpr.TupleLit(elems, IrType.Tuple(elems.map { it.type }))
+            }
+            is Expr.VariantLit -> {
+                val elems = expr.elements.map { lowerExpr(it) }
+                IrExpr.VariantLit(elems, IrType.Variant(elems.map { it.type }))
             }
             is Expr.TupleAccess -> {
                 val target = lowerExpr(expr.target)

@@ -16,6 +16,7 @@
 
 package org.azora.lang.backend
 
+import org.azora.lang.putIfAbsentCompat
 import org.azora.lang.ir.IrBinaryOp
 import org.azora.lang.ir.IrExpr
 import org.azora.lang.ir.IrFunction
@@ -1129,6 +1130,11 @@ class LlvmCodegen {
             emit("  ; tuple literal — aggregate lowering not yet implemented")
             "null"
         }
+        is IrExpr.VariantLit -> {
+            for (e in expr.elements) emitExpr(e)
+            emit("  ; variant literal — aggregate lowering not yet implemented")
+            "null"
+        }
         is IrExpr.TupleAccess -> {
             emitExpr(expr.target)
             emit("  ; tuple access .${expr.index} — not lowered")
@@ -1457,7 +1463,7 @@ class LlvmCodegen {
 
     private fun collectReferencedVars(expr: IrExpr, refs: MutableMap<String, IrType>) {
         when (expr) {
-            is IrExpr.Var -> refs.putIfAbsent(expr.name, expr.type)
+            is IrExpr.Var -> refs.putIfAbsentCompat(expr.name, expr.type)
             is IrExpr.Unary -> collectReferencedVars(expr.operand, refs)
             is IrExpr.Binary -> {
                 collectReferencedVars(expr.left, refs)
@@ -1484,6 +1490,7 @@ class LlvmCodegen {
                 if (part is IrExpr.IrTemplatePart.Expr) collectReferencedVars(part.expr, refs)
             }
             is IrExpr.TupleLit -> expr.elements.forEach { collectReferencedVars(it, refs) }
+            is IrExpr.VariantLit -> expr.elements.forEach { collectReferencedVars(it, refs) }
             is IrExpr.TupleAccess -> collectReferencedVars(expr.target, refs)
             is IrExpr.CatchExpr -> {
                 collectReferencedVars(expr.expr, refs)
@@ -3310,6 +3317,7 @@ class LlvmCodegen {
             "%azora.task*"
         }
         is IrType.Tuple -> "i8*"
+        is IrType.Variant -> "i8*"
         is IrType.Nullable -> "i8*"
         is IrType.Pointer -> "i8*"
         is IrType.Named -> "%struct.${sanitizeName(type.name)}*"

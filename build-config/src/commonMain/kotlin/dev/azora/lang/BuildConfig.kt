@@ -17,6 +17,6 @@
 package dev.azora.lang
 
 object BuildConfig {
-    const val VERSION = "0.0.1-alpha.2"
+    const val VERSION = "0.0.3"
     const val LANGUAGE_NAME = "Azora"
 }

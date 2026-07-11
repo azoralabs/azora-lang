@@ -152,4 +152,90 @@ func main() { println("running tests...") }"""))
         assertTrue("console.log" in r.typescript, r.typescript)
         assertTrue("ret" in r.llvm || "puts" in r.llvm, r.llvm)
     }
+
+    // ── Modern-language examples (chapters 26–35 era) ───────────────────────
+
+    @Test fun maps() = assertEquals("90\n75\n80", run("""package playground
+func main() {
+    var scores = ["alice": 90, "bob": 75]
+    scores["carol"] = 88
+    println(scores["alice"])
+    println(scores["bob"])
+    scores["bob"] = 80
+    println(scores["bob"])
+}"""))
+
+    @Test fun taggedUnions() = assertEquals("75\n24\n0", run("""package playground
+slot Shape {
+    Circle(Int)
+    Rect(Int, Int)
+    Empty
+}
+func area(s: Shape): Int {
+    when s {
+        Shape.Circle(r) -> { return r * r * 3 }
+        Shape.Rect(w, h) -> { return w * h }
+        Shape.Empty -> { return 0 }
+    }
+}
+func main() {
+    println(area(Shape.Circle(5)))
+    println(area(Shape.Rect(4, 6)))
+    println(area(Shape.Empty))
+}"""))
+
+    @Test fun inheritance() = assertEquals("Woof", run("""package playground
+node Animal(name: String) {
+    func speak(): String { return "..." }
+}
+leaf Dog(name: String) : Animal(name) {
+    repl func speak(): String { return "Woof" }
+}
+func main() {
+    var d: Animal = Dog("Rex")
+    println(d.speak())
+}"""))
+
+    @Test fun generators() = assertEquals("30", run("""package playground
+flow squares(n: Int): Int {
+    for i in 0..<n { yield i * i }
+}
+func main() {
+    var sum = 0
+    for x in squares(5) { sum += x }
+    println(sum)
+}"""))
+
+    @Test fun dependencyInjection() = assertEquals("1\n2", run("""package playground
+solo Counter {
+    var n: Int = 0
+    func inc(): Int {
+        self.n = self.n + 1
+        return self.n
+    }
+}
+func main() {
+    println(inject Counter.inc())
+    println(inject Counter.inc())
+}"""))
+
+    @Test fun pointers() = assertEquals("10\n20\n99", run("""package playground
+func main() {
+    var p: Int* = alloc [10, 20, 30]
+    println(*p)
+    println(*(p + 1))
+    *(p + 2) = 99
+    println(*(p + 2))
+}"""))
+
+    @Test fun variadic() = assertEquals("6\n100", run("""package playground
+func<...T> sumAll(first: Int, rest: ...T): Int {
+    var total = first
+    for x in rest { total = total + x }
+    return total
+}
+func main() {
+    println(sumAll(1, 2, 3))
+    println(sumAll(10, 20, 30, 40))
+}"""))
 }

@@ -893,7 +893,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
             is Expr.IntLiteral, is Expr.RealLiteral,
             is Expr.StringLiteral, is Expr.BoolLiteral,
             is Expr.CharLiteral,
-            is Expr.TupleLit, is Expr.TupleAccess -> Pair(expr, false)
+            is Expr.TupleLit, is Expr.TupleAccess, is Expr.VariantLit -> Pair(expr, false)
             is Expr.IfExpr -> {
                 val (condition, cc) = foldExpr(expr.condition, program)
                 val (thenExpr, tc) = foldExpr(expr.thenExpr, program)
@@ -1177,7 +1177,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
             is Expr.Range -> null // ranges are not CTFE-evaluable values
             is Expr.ArrayLiteral, is Expr.SetLiteral, is Expr.Index, is Expr.Member, is Expr.MethodCall -> null // not CTFE-evaluable
             is Expr.StringTemplate -> null // not CTFE-evaluable
-            is Expr.TupleLit, is Expr.TupleAccess -> null // not CTFE-evaluable
+            is Expr.TupleLit, is Expr.TupleAccess, is Expr.VariantLit -> null // not CTFE-evaluable
             is Expr.CatchExpr -> null // not CTFE-evaluable
             is Expr.IfExpr -> {
                 val condition = evalExpr(expr.condition, env, program) ?: return null

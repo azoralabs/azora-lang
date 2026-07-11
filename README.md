@@ -34,18 +34,20 @@ func main() {
 ```
 Source → Lexer → Parser → AST Validator
                    ↓
-              CTFE Evaluator (inline/deepinline)
+              Stdlib Injection (only the modules you `use`)
                    ↓
-              Symbol Collection → Type Resolution → Alloc/Drop → Effect Check
+              Symbol Collection → Type Resolution ⇄ CTFE → Alloc/Drop → Effect Check
                    ↓
               IR Generator → IR Optimizer
                    ↓
-     ┌───────────┬───────────┬───────────┐
-     ↓           ↓           ↓           ↓
-  Kotlin     TypeScript    LLVM IR   Interpreter
+  ┌──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬────────────┐
+  ↓      ↓      ↓      ↓      ↓      ↓      ↓      ↓      ↓      ↓            ↓
+Kotlin  TS    Swift  Dart   C#    Python Rust   Wasm   LLVM   Interpreter  (IR dump)
 ```
 
-The IR is target-agnostic. Every backend lowers from the same optimized IR. Adding a new target means one new file.
+The IR is target-agnostic. **Every** compile lowers the optimized IR to all nine
+codegen targets in one pass — `Compiler.compile()` returns them all at once.
+Adding a new target means one new file under `backend/`.
 
 ## Implemented Features
 
@@ -200,11 +202,49 @@ The IR is target-agnostic. Every backend lowers from the same optimized IR. Addi
 - `effect { body }` — reactive side-effect block (runs once immediately; matches the old interpreter's semantics)
 - `view Name(params) { body }` — a reactive UI component declaration (lowered like a function; callable from code)
 
-### Backends
-- **Kotlin/JVM**: full code generation to Kotlin source
-- **TypeScript**: full code generation
-- **LLVM IR**: text output (partial — placeholders for closures, compound types)
-- **Interpreter**: in-memory execution (used by tests, REPL, playground)
+### Backends (targets)
+Every compile produces all of these from the same optimized IR:
+
+| Target | Output | Status |
+|--------|--------|--------|
+| **Kotlin/JVM** | Kotlin source | Full |
+| **TypeScript** | TypeScript source | Full |
+| **Swift** | Swift 6.3 script (`main.swift`) | Full |
+| **Dart** | Dart source | Full (all int widths → 64-bit `int`) |
+| **C# / .NET** | C# source (static `Program` class) | Full |
+| **Python 3** | Python source (dynamic, no annotations) | Full |
+| **Rust** | Rust source (`Option<T>` for nullable) | Full |
+| **WebAssembly** | WAT (folded S-exprs, linear memory + host imports) | Full |
+| **LLVM IR** | `.ll` text (`lli`/`clang`/`llc` ready) | Partial — placeholders for closures, defer, compound types, pointers |
+| **Interpreter** | In-memory execution | Full — used by tests, REPL, and the playground |
+
+Use `azora compile <target> <file.az>` to emit any of them. Target IDs:
+`kotlin` `typescript` `swift` `dart` `csharp` `python` `rust` `wasm` `llvm` `ir` `ast`.
+
+### Standard Library
+A growing standard library lives in `Internal/Std/` (35 modules: `math`, `string`,
+`container`, `algorithm`, `concurrency`, `parallelism`, `result`, `traits`, `io`,
+`os`, `random`, `gfx`, `functional`, `allocator`, `ui`, …). It is **import-gated**:
+a file sees a module's names only after importing it, and only the items actually
+referenced are injected (transitively) — so a program that never touches the stdlib
+compiles exactly as before. User declarations always shadow stdlib items.
+
+```
+use std.math              // unqualified: abs(x), plus math::abs(x)
+use std.{math, string}    // grouped
+use std.*                 // wildcard
+use std.math::abs         // selective
+std::math::abs(x)         // fully qualified — no import needed
+```
+
+### Tooling
+- **`azls`** — language server (`azls.jar`): error-tolerant syntax highlighting,
+  full diagnostics, completion (keywords/builtins/user symbols/in-scope locals),
+  hover signatures, and document symbols. Loaded reflectively (JSON in/out) by
+  Azora Studio, with an optional `prelude` for cross-file intelligence.
+- **Debugger** — `DebugInstrumenter` tags statements with `__dbg(line)` markers
+  (debug builds only); `AzoraDebugSession` drives step/breakpoint execution.
+- **Azora Studio** — the IDE (separate `azora-studio` repo) hosting `azls`.
 
 ### CLI
 - `azora run <file.az>` — compile and run
@@ -219,7 +259,7 @@ The IR is target-agnostic. Every backend lowers from the same optimized IR. Addi
 ./gradlew :compiler:desktopTest
 ```
 
-525 tests covering all features. Tests verify runtime correctness through the IR interpreter.
+534 tests covering all features. Tests verify runtime correctness through the IR interpreter.
 
 ## Missing Features (Roadmap)
 
@@ -233,21 +273,22 @@ The IR is target-agnostic. Every backend lowers from the same optimized IR. Addi
 
 ### Known Limitations
 - Generics use type erasure (field types are `Any` at runtime)
-- LLVM backend uses placeholders for closures, defer, compound types, pointers, and concurrency
+- LLVM backend uses placeholders for closures, defer, and compound types
 - `use` is parsed as metadata (files merged by CLI, no semantic name resolution)
-- Concurrency features (`flow`/`task`/`await`/`channel`/`launch`) execute with real parallelism in the interpreter (Dispatchers.Default); Kotlin/TS/LLVM backends stub them
+- Concurrency features (`flow`/`task`/`await`/`channel`/`launch`) execute with real parallelism in the interpreter (`Dispatchers.Default`) and lower to LLVM; other source backends stub them
 
 ## Project Structure
 
 ```
 azora-lang/
-├── compiler/          IR-based compiler (commonMain + wasmJs)
-├── app/              CLI entry point (azora run/check/compile/repl)
-├── build-config/     Version constants
+├── compiler/          IR-based compiler (commonMain + wasmJs) + stdlib injector
+├── app/               CLI entry point (azora run/check/compile/repl)
+├── azls/              Language server + debug session (azls.jar)
+├── build-config/      Version constants
 ├── build-logic/       Gradle convention plugins
-├── Internal/Std/     Standard library source (.az files, not yet compilable)
-├── Internal/Testing/ Integration tests (.az files)
-└── examples/         Example projects
+├── Internal/Std/      Standard library source (.az files → compiled into AzStdlib)
+├── Internal/Testing/  Integration tests (.az files)
+└── examples/          Example projects (demo-website, demo-multiplatform)
 ```
 
 ## Websites

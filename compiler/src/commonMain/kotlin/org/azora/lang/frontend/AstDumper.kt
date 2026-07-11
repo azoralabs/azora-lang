@@ -422,6 +422,10 @@ private fun dumpExpr(sb: StringBuilder, expr: Expr, indent: String) {
             sb.appendLine("${indent}TupleLit")
             for (e in expr.elements) dumpExpr(sb, e, "$indent    ")
         }
+        is Expr.VariantLit -> {
+            sb.appendLine("${indent}VariantLit")
+            for (e in expr.elements) dumpExpr(sb, e, "$indent    ")
+        }
         is Expr.TupleAccess -> {
             sb.appendLine("${indent}TupleAccess(.${expr.index})")
             dumpExpr(sb, expr.target, "$indent    ")

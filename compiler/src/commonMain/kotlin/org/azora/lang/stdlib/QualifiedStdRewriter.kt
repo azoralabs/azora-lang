@@ -132,6 +132,7 @@ internal class QualifiedStdRewriter(
         is Expr.ArrayLiteral -> e.copy(elements = e.elements.map(::expr))
         is Expr.MapLit -> e.copy(entries = e.entries.map { (k, v) -> expr(k) to expr(v) })
         is Expr.TupleLit -> e.copy(elements = e.elements.map(::expr))
+        is Expr.VariantLit -> e.copy(elements = e.elements.map(::expr))
         is Expr.TupleAccess -> e.copy(target = expr(e.target))
         is Expr.StringTemplate -> e.copy(parts = e.parts.map { part ->
             if (part is Expr.StringTemplatePart.Expr) Expr.StringTemplatePart.Expr(expr(part.expr)) else part

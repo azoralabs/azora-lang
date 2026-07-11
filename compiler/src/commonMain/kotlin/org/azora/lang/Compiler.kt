@@ -16,13 +16,7 @@
 
 package org.azora.lang
 
-import org.azora.lang.backend.CSharpCodegen
-import org.azora.lang.backend.DartCodegen
-import org.azora.lang.backend.KotlinCodegen
 import org.azora.lang.backend.LlvmCodegen
-import org.azora.lang.backend.PythonCodegen
-import org.azora.lang.backend.RustCodegen
-import org.azora.lang.backend.SwiftCodegen
 import org.azora.lang.backend.TypeScriptCodegen
 import org.azora.lang.backend.WasmCodegen
 import org.azora.lang.frontend.AstValidator
@@ -62,8 +56,8 @@ import org.azora.lang.semantic.SemanticPipeline
  *     9.  AST → typed IR
  *     10. IR optimization (constant folding, constant propagation, DCE)
  *
- *   Phase 4 — Backend
- *     11. IR → Kotlin source
+ *   Phase 4 — Backend (one optimized IR → nine codegen targets)
+ *     11. IR → Kotlin, TypeScript, Swift, Dart, C#, Python, Rust, Wasm, LLVM
  */
 /**
  * The result of compiling Azora source code through the full pipeline.
@@ -117,7 +111,8 @@ sealed class CompilationResult {
  *
  * Drives all four phases: frontend (lexer, parser, AST validation),
  * semantic analysis (multi-pass with CTFE), IR generation with optimization,
- * and backend code generation to Kotlin, TypeScript, and LLVM IR.
+ * and backend code generation to nine targets — Kotlin, TypeScript, Swift,
+ * Dart, C#, Python, Rust, WebAssembly, and LLVM IR — all from one optimized IR.
  */
 class Compiler {
 

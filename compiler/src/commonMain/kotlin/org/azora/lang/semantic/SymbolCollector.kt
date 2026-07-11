@@ -559,7 +559,7 @@ class SymbolCollector {
         }
         is Expr.Index, is Expr.Member, is Expr.MethodCall -> null
         is Expr.StringTemplate -> IrType.String
-        is Expr.TupleLit, is Expr.TupleAccess -> null
+        is Expr.TupleLit, is Expr.TupleAccess, is Expr.VariantLit -> null
         is Expr.CatchExpr -> null
         is Expr.IfExpr -> inferExprType(expr.thenExpr, env)
         is Expr.Lambda -> null

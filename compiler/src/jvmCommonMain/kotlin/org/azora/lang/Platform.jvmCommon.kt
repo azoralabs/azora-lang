@@ -27,3 +27,12 @@ internal actual fun detectHostOS(): String {
         else -> "Linux"
     }
 }
+
+/** JVM implementation: a real monitor lock (the interpreter runs on a multi-threaded dispatcher). */
+internal actual inline fun <R> azSync(lock: Any, block: () -> R): R = synchronized(lock, block)
+
+/** JVM implementation: the real `runBlocking`, which can block the calling thread. */
+internal actual fun <T> azRunBlocking(
+    context: kotlin.coroutines.CoroutineContext,
+    block: suspend kotlinx.coroutines.CoroutineScope.() -> T,
+): T = kotlinx.coroutines.runBlocking(context, block)

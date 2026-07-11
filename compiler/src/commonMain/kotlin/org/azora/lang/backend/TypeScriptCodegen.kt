@@ -404,6 +404,7 @@ class TypeScriptCodegen {
         }
         is IrExpr.StructCtor -> "new ${expr.name}(${expr.args.joinToString(", ") { emitExpr(it) }})"
         is IrExpr.TupleLit -> "[${expr.elements.joinToString(", ") { emitExpr(it) }}]"
+        is IrExpr.VariantLit -> emitExpr(expr.elements.first())
         is IrExpr.TupleAccess -> "${emitExpr(expr.target)}[${expr.index}]"
         is IrExpr.CatchExpr -> "(() => { try { return ${emitExpr(expr.expr)}; } catch { return ${emitExpr(expr.fallback)}; } })()"
         is IrExpr.IfExpr -> "((${emitExpr(expr.condition)}) ? ${emitExpr(expr.thenExpr)} : ${emitExpr(expr.elseExpr)})"
@@ -471,6 +472,7 @@ class TypeScriptCodegen {
         is IrType.Function -> "(${type.params.joinToString(", ") { mapType(it) }}) => ${mapType(type.ret)}"
         is IrType.Task -> "Promise<${mapType(type.result)}>"
         is IrType.Tuple -> "[${type.elements.joinToString(", ") { mapType(it) }}]"
+        is IrType.Variant -> "any"
         is IrType.Nullable -> "${mapType(type.inner)} | null"
         is IrType.Named -> type.name
         IrType.Any -> "any"

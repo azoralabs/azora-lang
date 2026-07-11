@@ -169,10 +169,8 @@ class LoopTest {
             }
         """.trimIndent())
         assertIs<CompilationResult.Success>(result)
-        // Kotlin backend uses an `until` range in a for
-        assertTrue("for (" in result.kotlin && "until" in result.kotlin, "Kotlin should emit a for-until loop, got:\n${result.kotlin}")
-        // TypeScript backend emits a classic for loop with `++`
-        assertTrue("for (let" in result.typescript && "++" in result.typescript, "TypeScript should emit a for loop, got:\n${result.typescript}")
+        // JavaScript backend emits a classic for loop with `++`
+        assertTrue("for (let" in result.javascript && "++" in result.javascript, "JavaScript should emit a for loop, got:\n${result.javascript}")
         // LLVM backend emits loop labels
         assertTrue("for_cond" in result.llvm || "br label" in result.llvm, "LLVM should emit loop branches, got:\n${result.llvm}")
     }

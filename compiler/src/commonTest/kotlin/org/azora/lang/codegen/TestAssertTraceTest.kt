@@ -56,28 +56,15 @@ class TestAssertTraceTest {
     }
 
     @Test
-    fun test_kotlinEmit() {
+    fun test_javascriptEmit() {
         val result = compile("""
             test "my test" {
                 assert 1 == 1 { "fail" }
             }
             func main() {}
         """.trimIndent())
-        assertTrue("@org.junit.Test" in result.kotlin, "Kotlin should emit @Test annotation, got:\n${result.kotlin}")
-        assertTrue("fun `test my_test`" in result.kotlin,
-            "Kotlin should emit test function, got:\n${result.kotlin}")
-    }
-
-    @Test
-    fun test_typescriptEmit() {
-        val result = compile("""
-            test "my test" {
-                assert 1 == 1 { "fail" }
-            }
-            func main() {}
-        """.trimIndent())
-        assertTrue("test(" in result.typescript, "TypeScript should emit test(), got:\n${result.typescript}")
-        assertTrue("\"my test\"" in result.typescript, "TypeScript should include test name, got:\n${result.typescript}")
+        assertTrue("test(" in result.javascript, "JavaScript should emit test(), got:\n${result.javascript}")
+        assertTrue("\"my test\"" in result.javascript, "JavaScript should include test name, got:\n${result.javascript}")
     }
 
     @Test
@@ -142,23 +129,13 @@ class TestAssertTraceTest {
     }
 
     @Test
-    fun assert_kotlinEmit() {
+    fun assert_javascriptEmit() {
         val result = compile("""
             func main() {
                 assert 1 == 1 { "ok" }
             }
         """.trimIndent())
-        assertTrue("require" in result.kotlin, "Kotlin should emit require(), got:\n${result.kotlin}")
-    }
-
-    @Test
-    fun assert_typescriptEmit() {
-        val result = compile("""
-            func main() {
-                assert 1 == 1 { "ok" }
-            }
-        """.trimIndent())
-        assertTrue("throw new Error" in result.typescript, "TypeScript should emit throw, got:\n${result.typescript}")
+        assertTrue("throw new Error" in result.javascript, "JavaScript should emit throw, got:\n${result.javascript}")
     }
 
     @Test
@@ -189,24 +166,14 @@ class TestAssertTraceTest {
     }
 
     @Test
-    fun trace_kotlinEmit() {
+    fun trace_javascriptEmit() {
         val result = compile("""
             func main() {
                 trace { "debug" }
             }
         """.trimIndent())
-        assertTrue("[TRACE]" in result.kotlin, "Kotlin should emit TRACE println, got:\n${result.kotlin}")
-    }
-
-    @Test
-    fun trace_typescriptEmit() {
-        val result = compile("""
-            func main() {
-                trace { "debug" }
-            }
-        """.trimIndent())
-        assertTrue("console.log" in result.typescript, "TypeScript should emit console.log, got:\n${result.typescript}")
-        assertTrue("[TRACE]" in result.typescript, "TypeScript should include TRACE prefix, got:\n${result.typescript}")
+        assertTrue("console.log" in result.javascript, "JavaScript should emit console.log, got:\n${result.javascript}")
+        assertTrue("[TRACE]" in result.javascript, "JavaScript should include TRACE prefix, got:\n${result.javascript}")
     }
 
     @Test

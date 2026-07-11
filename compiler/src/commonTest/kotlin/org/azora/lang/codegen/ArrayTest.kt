@@ -183,10 +183,8 @@ class ArrayTest {
             }
         """.trimIndent())
         assertIs<CompilationResult.Success>(result)
-        // Kotlin backend uses mutableListOf and index access
-        assertTrue("mutableListOf" in result.kotlin, "Kotlin should emit mutableListOf, got:\n${result.kotlin}")
-        assertTrue("a[0]" in result.kotlin, "Kotlin should emit a[0], got:\n${result.kotlin}")
-        // TypeScript backend emits an array literal and index access
-        assertTrue("[1, 2, 3]" in result.typescript, "TypeScript should emit an array literal, got:\n${result.typescript}")
+        // JavaScript backend emits an array literal and index access
+        assertTrue("[1, 2, 3]" in result.javascript, "JavaScript should emit an array literal, got:\n${result.javascript}")
+        assertTrue("a[0]" in result.javascript, "JavaScript should emit a[0], got:\n${result.javascript}")
     }
 }

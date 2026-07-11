@@ -16,8 +16,8 @@
 
 package org.azora.lang
 
+import org.azora.lang.backend.JavaScriptCodegen
 import org.azora.lang.backend.LlvmCodegen
-import org.azora.lang.backend.TypeScriptCodegen
 import org.azora.lang.backend.WasmCodegen
 import org.azora.lang.frontend.AstValidator
 import org.azora.lang.frontend.Lexer
@@ -56,8 +56,8 @@ import org.azora.lang.semantic.SemanticPipeline
  *     9.  AST → typed IR
  *     10. IR optimization (constant folding, constant propagation, DCE)
  *
- *   Phase 4 — Backend (one optimized IR → nine codegen targets)
- *     11. IR → Kotlin, TypeScript, Swift, Dart, C#, Python, Rust, Wasm, LLVM
+ *   Phase 4 — Backend (one optimized IR → three codegen targets)
+ *     11. IR → JavaScript, Wasm, LLVM
  */
 /**
  * The result of compiling Azora source code through the full pipeline.
@@ -66,13 +66,7 @@ sealed class CompilationResult {
     /**
      * Successful compilation result containing all generated outputs and metadata.
      *
-     * @property kotlin the generated Kotlin source code
-     * @property typescript the generated TypeScript source code
-     * @property swift the generated Swift 6.3 source code
-     * @property dart the generated Dart source code
-     * @property csharp the generated C# / .NET source code
-     * @property python the generated Python 3 source code
-     * @property rust the generated Rust source code
+     * @property javascript the generated JavaScript source code
      * @property wasm the generated WebAssembly text (WAT)
      * @property llvm the generated LLVM IR text
      * @property ast the CTFE-stabilized AST after semantic analysis
@@ -82,13 +76,7 @@ sealed class CompilationResult {
      * @property warnings any non-fatal warnings collected during compilation
      */
     data class Success(
-        val kotlin: String,
-        val typescript: String,
-        val swift: String,
-        val dart: String,
-        val csharp: String,
-        val python: String,
-        val rust: String,
+        val javascript: String,
         val wasm: String,
         val llvm: String,
         val ast: Program,
@@ -111,8 +99,8 @@ sealed class CompilationResult {
  *
  * Drives all four phases: frontend (lexer, parser, AST validation),
  * semantic analysis (multi-pass with CTFE), IR generation with optimization,
- * and backend code generation to nine targets — Kotlin, TypeScript, Swift,
- * Dart, C#, Python, Rust, WebAssembly, and LLVM IR — all from one optimized IR.
+ * and backend code generation to three targets — JavaScript, WebAssembly, and
+ * LLVM IR — all from one optimized IR.
  */
 class Compiler {
 
@@ -198,33 +186,15 @@ class Compiler {
 
         val backendIr = optimizedIr
 
-        // 11. IR → Kotlin source
-        val kotlin = KotlinCodegen().generate(backendIr)
+        // 11. IR → JavaScript
+        val javascript = JavaScriptCodegen().generate(backendIr)
 
-        // 12. IR → TypeScript
-        val typescript = TypeScriptCodegen().generate(backendIr)
-
-        // 13. IR → Swift 6.3
-        val swift = SwiftCodegen().generate(backendIr)
-
-        // 14. IR → Dart
-        val dart = DartCodegen().generate(backendIr)
-
-        // 15. IR → C# / .NET
-        val csharp = CSharpCodegen().generate(backendIr)
-
-        // 16. IR → Python 3
-        val python = PythonCodegen().generate(backendIr)
-
-        // 17. IR → Rust
-        val rust = RustCodegen().generate(backendIr)
-
-        // 18. IR → WebAssembly text (WAT)
+        // 12. IR → WebAssembly text (WAT)
         val wasm = WasmCodegen().generate(backendIr)
 
-        // 19. IR → LLVM IR
+        // 13. IR → LLVM IR
         val llvm = LlvmCodegen().generate(backendIr)
 
-        return CompilationResult.Success(kotlin, typescript, swift, dart, csharp, python, rust, wasm, llvm, semantic.program, ir, optimizedIr, semantic.effects, warnings)
+        return CompilationResult.Success(javascript, wasm, llvm, semantic.program, ir, optimizedIr, semantic.effects, warnings)
     }
 }

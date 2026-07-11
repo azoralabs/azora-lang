@@ -370,14 +370,8 @@ class WebsiteExamplesTest {
                 println(add(2, 3))
             }
         """.trimIndent())
-        assertTrue("fun add(a: Int, b: Int): Int" in r.kotlin, r.kotlin)
-        assertTrue("function add(a: number, b: number): number" in r.typescript, r.typescript)
-        // The other seven backends are produced too.
-        assertTrue(r.swift.isNotBlank())
-        assertTrue(r.dart.isNotBlank())
-        assertTrue(r.csharp.isNotBlank())
-        assertTrue(r.python.isNotBlank())
-        assertTrue(r.rust.isNotBlank())
+        assertTrue("function add(a, b)" in r.javascript, r.javascript)
+        // The other backends are produced too.
         assertTrue(r.wasm.isNotBlank())
         assertTrue(r.llvm.isNotBlank())
     }

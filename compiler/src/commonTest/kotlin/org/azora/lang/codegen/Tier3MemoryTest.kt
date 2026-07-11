@@ -114,11 +114,9 @@ class Tier3MemoryTest {
             }
         """.trimIndent())
         assertIs<CompilationResult.Success>(result)
-        // Kotlin backend must define the pointer runtime helpers it calls.
-        assertTrue("__alloc" in result.kotlin && "AzoraPtr" in result.kotlin,
-            "Kotlin should emit a pointer runtime preamble, got:\n${result.kotlin}")
-        assertTrue("__alloc" in result.typescript && "AzoraPtr" in result.typescript,
-            "TypeScript should emit a pointer runtime preamble, got:\n${result.typescript}")
+        // JavaScript backend must define the pointer runtime helpers it calls.
+        assertTrue("__alloc" in result.javascript && "AzoraPtr" in result.javascript,
+            "JavaScript should emit a pointer runtime preamble, got:\n${result.javascript}")
     }
 
     @Test fun zoneAllocFreesAtExit() {

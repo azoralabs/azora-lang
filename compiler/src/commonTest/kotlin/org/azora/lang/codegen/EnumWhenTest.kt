@@ -215,10 +215,8 @@ class EnumWhenTest {
             }
         """.trimIndent())
         assertIs<CompilationResult.Success>(result)
-        // Kotlin: enum value is a string literal, when on a string
-        assertTrue("\"Red\"" in result.kotlin, result.kotlin)
-        assertTrue("when (" in result.kotlin, result.kotlin)
-        // TypeScript: switch on a string
-        assertTrue("switch" in result.typescript, result.typescript)
+        // JavaScript: enum value is a string literal, switch on a string
+        assertTrue("\"Red\"" in result.javascript, result.javascript)
+        assertTrue("switch" in result.javascript, result.javascript)
     }
 }

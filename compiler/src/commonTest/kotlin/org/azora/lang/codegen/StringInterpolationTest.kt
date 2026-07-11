@@ -118,10 +118,8 @@ class StringInterpolationTest {
             }
         """.trimIndent())
         assertIs<CompilationResult.Success>(result)
-        // Kotlin uses ${name} interpolation
-        assertTrue("\${name}" in result.kotlin, "Kotlin should interpolate \${name}, got:\n${result.kotlin}")
-        // TypeScript uses a template literal
-        assertTrue("`hello" in result.typescript && "\${name}" in result.typescript,
-            "TypeScript should emit a template literal, got:\n${result.typescript}")
+        // JavaScript uses a template literal
+        assertTrue("`hello" in result.javascript && "\${name}" in result.javascript,
+            "JavaScript should emit a template literal, got:\n${result.javascript}")
     }
 }

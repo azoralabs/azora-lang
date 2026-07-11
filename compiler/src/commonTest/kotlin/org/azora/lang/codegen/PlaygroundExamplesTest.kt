@@ -145,11 +145,11 @@ test "factorial of 0 is 1" { assert factorial(0) == 1 { "0! should be 1" } }
 func main() { println("running tests...") }"""))
 
     @Test fun codegenWorks() {
-        // The bundle's generateKotlin/generateJavaScript/generateLlvmIr wrap these.
+        // The bundle's generateJavaScript/generateLlvmIr/generateWasm wrap these.
         val r = Compiler().compile("func main() { println(42) }", release = false)
         assertIs<CompilationResult.Success>(r)
-        assertTrue("fun main()" in r.kotlin, r.kotlin)
-        assertTrue("console.log" in r.typescript, r.typescript)
+        assertTrue("function main()" in r.javascript, r.javascript)
+        assertTrue("console.log" in r.javascript, r.javascript)
         assertTrue("ret" in r.llvm || "puts" in r.llvm, r.llvm)
     }
 

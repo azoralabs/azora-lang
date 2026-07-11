@@ -95,50 +95,17 @@ suspend fun azRunTests(source: String): String =
         try { IrInterpreter().interpretSuspend(it.ir) } catch (e: Throwable) { "Runtime error: ${e.message ?: e.toString()}" }
     }
 
-/** Generates Kotlin/JVM source. */
-@JsExport
-fun azGenerateKotlin(source: String): String =
-    withCompiled(source) { it.kotlin }
-
-/**
- * Generates JavaScript source. The new compiler's web backend is TypeScript; the playground's
- * JS runner strips the type annotations before executing, so the TypeScript output is returned.
- */
+/** Generates JavaScript source. */
 @JsExport
 fun azGenerateJavaScript(source: String): String =
-    withCompiled(source) { it.typescript }
+    withCompiled(source) { it.javascript }
 
 /** Generates LLVM IR text. */
 @JsExport
 fun azGenerateLlvmIr(source: String): String =
     withCompiled(source) { it.llvm }
 
-/** Generates C# / .NET source. */
-@JsExport
-fun azGenerateCSharp(source: String): String =
-    withCompiled(source) { it.csharp }
-
-/** Generates Python 3 source. */
-@JsExport
-fun azGeneratePython(source: String): String =
-    withCompiled(source) { it.python }
-
-/** Generates Rust source. */
-@JsExport
-fun azGenerateRust(source: String): String =
-    withCompiled(source) { it.rust }
-
 /** Generates WebAssembly text (WAT). */
 @JsExport
 fun azGenerateWasm(source: String): String =
     withCompiled(source) { it.wasm }
-
-/** Generates Swift 6.3 source. */
-@JsExport
-fun azGenerateSwift(source: String): String =
-    withCompiled(source) { it.swift }
-
-/** Generates Dart source. */
-@JsExport
-fun azGenerateDart(source: String): String =
-    withCompiled(source) { it.dart }

@@ -20,24 +20,49 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /**
- * End-to-end tests for the [org.azora.lang.backend.CSharpCodegen] backend.
+ * End-to-end tests for the [org.azora.lang.backend.JavaScriptCodegen] backend.
  *
- * Each test compiles a small Azora program to C#, compiles it with `csc`,
- * executes the assembly with `mono`, and asserts on the program's standard
- * output — validating that the generated C# is both syntactically valid and
- * semantically matches the interpreter.
+ * Each test compiles a small Azora program to JavaScript, executes it with
+ * Node.js, and asserts on the program's standard output — validating that the
+ * generated JavaScript is both syntactically valid and semantically matches
+ * the interpreter.
  *
- * Tests skip themselves when no `csc`/`mono` pair is available.
+ * Tests skip themselves when no `node` is available.
  */
-class CSharpCodegenExecTest {
+class JavaScriptExecTest {
 
-    /** Runs [source] and asserts its stdout equals [expected] (skips without the toolchain). */
+    /** Runs [source] and asserts its stdout equals [expected] (skips without `node`). */
     private fun check(expected: String, source: String) {
-        if (!CSharpExec.available) return
-        assertEquals(expected, CSharpExec.run(source))
+        if (!NodeExec.available) return
+        assertEquals(expected, NodeExec.run(source))
     }
 
     private fun main(body: String): String = "func main() {\n$body\n}"
+
+    @Test fun structuredTasksAndAsyncBlocks() = check(
+        "42",
+        """
+        task left(): Int { return 19 }
+        task main() {
+            fin a = left()
+            fin b = async { 23 }
+            fin av = await a
+            fin bv = await b
+            println(av + bv)
+        }
+        """.trimIndent()
+    )
+
+    @Test fun taskMainJoinsUnawaitedChildren() = check(
+        "main\nchild",
+        """
+        task child() { println("child") }
+        task main() {
+            child()
+            println("main")
+        }
+        """.trimIndent()
+    )
 
     // -----------------------------------------------------------------------
     // Basics
@@ -49,7 +74,7 @@ class CSharpCodegenExecTest {
     @Test fun arithmetic() =
         check("14", main("""println(2 + 3 * 4)"""))
 
-    /** C# integer `/` truncates toward zero. */
+    /** Integer division must truncate (JS `/` would print 3.4). */
     @Test fun integerDivisionTruncates() = check(
         "3",
         main(
@@ -63,6 +88,7 @@ class CSharpCodegenExecTest {
         )
     )
 
+    /** Negative integer division truncates toward zero (Math.trunc, not floor). */
     @Test fun negativeIntegerDivisionTruncatesTowardZero() = check(
         "-3",
         main(
@@ -286,7 +312,6 @@ class CSharpCodegenExecTest {
         """.trimIndent()
     )
 
-    /** `double` is a C# keyword — exercises verbatim-identifier (`@double`) sanitization. */
     @Test fun lambdaValue() = check(
         "10",
         main(
@@ -326,24 +351,5 @@ class CSharpCodegenExecTest {
             println("after")
             """.trimIndent()
         )
-    )
-
-    // -----------------------------------------------------------------------
-    // Structured concurrency
-    // -----------------------------------------------------------------------
-
-    /** Awaited spawned tasks yield deterministic results. */
-    @Test fun structuredTasksAndAsyncBlocks() = check(
-        "42",
-        """
-        task left(): Int { return 19 }
-        task main() {
-            fin a = left()
-            fin b = async { 23 }
-            fin av = await a
-            fin bv = await b
-            println(av + bv)
-        }
-        """.trimIndent()
     )
 }

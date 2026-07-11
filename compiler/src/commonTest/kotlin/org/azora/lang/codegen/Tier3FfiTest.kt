@@ -53,8 +53,7 @@ class Tier3FfiTest {
             }
         """.trimIndent())
         assertIs<CompilationResult.Success>(result)
-        assertTrue("external fun sqrt" in result.kotlin, "Kotlin should emit external fun, got:\n${result.kotlin}")
-        assertTrue("declare function sqrt" in result.typescript, "TypeScript should emit declare function, got:\n${result.typescript}")
+        assertTrue("// extern function sqrt" in result.javascript, "JavaScript should emit an extern comment, got:\n${result.javascript}")
         assertTrue("declare" in result.llvm && "sqrt" in result.llvm, "LLVM should emit declare, got:\n${result.llvm}")
     }
 }

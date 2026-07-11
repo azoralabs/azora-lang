@@ -92,9 +92,7 @@ class TypeRefTest {
     @Test
     fun arrayTypeLoweredToAllBackends() {
         val result = compile("func f(x: [Int]): Int { return 0 }")
-        // Kotlin backend maps [Int] -> MutableList<Int>
-        assertTrue("MutableList<Int>" in result.kotlin, "Kotlin backend should emit MutableList<Int>, got:\n${result.kotlin}")
-        // TypeScript backend maps [Int] -> number[]
-        assertTrue("number[]" in result.typescript, "TypeScript backend should emit number[], got:\n${result.typescript}")
+        // JavaScript is untyped, so the array parameter carries no type annotation.
+        assertTrue("function f(x)" in result.javascript, "JavaScript backend should emit function f(x), got:\n${result.javascript}")
     }
 }

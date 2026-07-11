@@ -99,15 +99,9 @@ class PrimitiveTypeTest {
     }
 
     @Test
-    fun char_kotlinEmit() {
+    fun char_javascriptEmit() {
         val result = compile("func main() { var c: Char = 'z' }".trimIndent())
-        assertTrue("'z'" in result.kotlin, "Kotlin should emit 'z', got:\n${result.kotlin}")
-    }
-
-    @Test
-    fun char_typescriptEmit() {
-        val result = compile("func main() { var c: Char = 'z' }".trimIndent())
-        assertTrue("\"z\"" in result.typescript, "TypeScript should emit char as string \"z\", got:\n${result.typescript}")
+        assertTrue("\"z\"" in result.javascript, "JavaScript should emit char as string \"z\", got:\n${result.javascript}")
     }
 
     // -----------------------------------------------------------------------
@@ -133,12 +127,6 @@ class PrimitiveTypeTest {
         assertNotNull(result)
     }
 
-    @Test
-    fun short_kotlinEmit() {
-        val result = compile("func main() { var x: Short = 42s }".trimIndent())
-        assertTrue("toShort()" in result.kotlin, "Kotlin should use .toShort(), got:\n${result.kotlin}")
-    }
-
     // -----------------------------------------------------------------------
     // UShort (16-bit unsigned, suffix: us)
     // -----------------------------------------------------------------------
@@ -148,12 +136,6 @@ class PrimitiveTypeTest {
         val result = compile("func main() { var x: UShort = 42us }".trimIndent())
         val ir = result.ir.prettyPrint()
         assertTrue("UShort" in ir, "Type should be UShort, got:\n$ir")
-    }
-
-    @Test
-    fun ushort_kotlinEmit() {
-        val result = compile("func main() { var x: UShort = 42us }".trimIndent())
-        assertTrue("toUShort()" in result.kotlin, "Kotlin should use .toUShort(), got:\n${result.kotlin}")
     }
 
     // -----------------------------------------------------------------------
@@ -168,15 +150,9 @@ class PrimitiveTypeTest {
     }
 
     @Test
-    fun long_kotlinEmit() {
+    fun long_javascriptEmit() {
         val result = compile("func main() { var x: Long = 42L }".trimIndent())
-        assertTrue("42L" in result.kotlin, "Kotlin should emit 42L, got:\n${result.kotlin}")
-    }
-
-    @Test
-    fun long_typescriptEmit() {
-        val result = compile("func main() { var x: Long = 42L }".trimIndent())
-        assertTrue("42n" in result.typescript, "TypeScript should emit 42n (bigint), got:\n${result.typescript}")
+        assertTrue("42n" in result.javascript, "JavaScript should emit 42n (bigint), got:\n${result.javascript}")
     }
 
     @Test
@@ -194,12 +170,6 @@ class PrimitiveTypeTest {
         val result = compile("func main() { var x: ULong = 42uL }".trimIndent())
         val ir = result.ir.prettyPrint()
         assertTrue("ULong" in ir, "Type should be ULong, got:\n$ir")
-    }
-
-    @Test
-    fun ulong_kotlinEmit() {
-        val result = compile("func main() { var x: ULong = 42uL }".trimIndent())
-        assertTrue("42uL" in result.kotlin, "Kotlin should emit uL suffix, got:\n${result.kotlin}")
     }
 
     // -----------------------------------------------------------------------
@@ -239,12 +209,6 @@ class PrimitiveTypeTest {
         val result = compile("func main() { var x: Float = 3.14f }".trimIndent())
         val ir = result.ir.prettyPrint()
         assertTrue("Float" in ir, "Type should be Float, got:\n$ir")
-    }
-
-    @Test
-    fun float_kotlinEmit() {
-        val result = compile("func main() { var x: Float = 3.14f }".trimIndent())
-        assertTrue("f" in result.kotlin, "Kotlin should emit f suffix, got:\n${result.kotlin}")
     }
 
     @Test

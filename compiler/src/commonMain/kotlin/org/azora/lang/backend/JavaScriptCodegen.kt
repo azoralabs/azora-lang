@@ -26,20 +26,17 @@ import org.azora.lang.ir.IrType
 import org.azora.lang.ir.IrUnaryOp
 
 /**
- * Backend — lowers [IrProgram] to TypeScript source code.
+ * Backend — lowers [IrProgram] to plain JavaScript source code.
  *
- * Type mapping:
- *   Int    → number
- *   Real   → number
- *   String → string
- *   Bool   → boolean
- *   Unit   → void
+ * JavaScript is dynamically typed, so no type annotations are emitted; the IR
+ * types are only consulted internally to pick the right runtime behaviour
+ * (integer division truncation, `bigint` literals, etc.).
  *
  * `println` maps to `console.log`.
  * `fin`/`let` map to `const`, `var` maps to `let`.
  * String * Int maps to `.repeat(n)`.
  */
-class TypeScriptCodegen {
+class JavaScriptCodegen {
 
     private val out = StringBuilder()
     private var indent = 0
@@ -49,22 +46,22 @@ class TypeScriptCodegen {
     private val POINTER_RUNTIME = setOf("__alloc", "__deref", "__derefAssign", "__isolated")
 
     private val pointerPreamble: String = """
-        class AzoraPtr<T> { constructor(public value: T) {} }
-        function __alloc<T>(v: T): AzoraPtr<T> { return new AzoraPtr(v); }
-        function __deref<T>(p: AzoraPtr<T>): T { return p.value; }
-        function __derefAssign<T>(p: AzoraPtr<T>, v: T): void { p.value = v; }
-        // NOTE: __isolated is a shallow copy in the TypeScript backend.
-        function __isolated<T>(v: T): T { return v; }
+        class AzoraPtr { constructor(value) { this.value = value; } }
+        function __alloc(v) { return new AzoraPtr(v); }
+        function __deref(p) { return p.value; }
+        function __derefAssign(p, v) { p.value = v; }
+        // NOTE: __isolated is a shallow copy in the JavaScript backend.
+        function __isolated(v) { return v; }
     """.trimIndent()
 
     /**
-     * Generates TypeScript source code from the given IR program.
+     * Generates JavaScript source code from the given IR program.
      *
      * If a `main` function is present, an entry-point call (`main()`) is
      * appended at the end of the output.
      *
-     * @param program the optimized IR program to lower to TypeScript
-     * @return the generated TypeScript source code as a string
+     * @param program the optimized IR program to lower to JavaScript
+     * @return the generated JavaScript source code as a string
      */
     fun generate(program: IrProgram): String {
         out.clear()
@@ -77,9 +74,9 @@ class TypeScriptCodegen {
             line("")
         }
         if (usesTasks) {
-            line("const __azoraChildren = new Set<Promise<unknown>>();")
-            line("function cancel<T>(_task: Promise<T>): void {}")
-            line("function __azoraSpawn<T>(body: () => Promise<T> | T): Promise<T> {")
+            line("const __azoraChildren = new Set();")
+            line("function cancel(_task) {}")
+            line("function __azoraSpawn(body) {")
             indent++
             line("const task = Promise.resolve().then(body);")
             line("__azoraChildren.add(task);")
@@ -104,8 +101,7 @@ class TypeScriptCodegen {
                 is IrTopLevel.Struct -> {
                     line("class ${item.name} {")
                     indent++
-                    for (f in item.fields) line("${f.name}: ${mapType(f.type)};")
-                    val params = item.fields.joinToString(", ") { "${it.name}: ${mapType(it.type)}" }
+                    val params = item.fields.joinToString(", ") { it.name }
                     line("constructor($params) {")
                     indent++
                     for (f in item.fields) line("this.${f.name} = ${f.name};")
@@ -116,8 +112,10 @@ class TypeScriptCodegen {
                     if (i < program.items.lastIndex) line("")
                 }
                 is IrTopLevel.Extern -> {
-                    val params = item.params.joinToString(", ") { (n, t) -> "$n: ${mapType(t)}" }
-                    line("declare function ${item.name}($params): ${mapType(item.returnType)};")
+                    // JavaScript has no declarations; the extern is expected to be
+                    // provided by the host. Emit a documentation comment.
+                    val params = item.params.joinToString(", ") { (n, _) -> n }
+                    line("// extern function ${item.name}($params)")
                     if (i < program.items.lastIndex) line("")
                 }
             }
@@ -128,7 +126,7 @@ class TypeScriptCodegen {
         if (main != null) {
             line("")
             if (main.isTask) {
-                line("async function __azoraRunMain(): Promise<void> {")
+                line("async function __azoraRunMain() {")
                 indent++
                 line("await main();")
                 line("while (__azoraChildren.size > 0) await Promise.all(Array.from(__azoraChildren));")
@@ -153,12 +151,9 @@ class TypeScriptCodegen {
     }
 
     private fun emitFunction(func: IrFunction) {
-        val params = func.params.joinToString(", ") { (name, type) ->
-            "$name: ${mapType(type)}"
-        }
-        val retType = if (func.isTask) "Promise<${mapType(func.returnType)}>" else mapType(func.returnType)
+        val params = func.params.joinToString(", ") { (name, _) -> name }
         val async = if (func.isTask) "async " else ""
-        line("${async}function ${func.name}($params): $retType {")
+        line("${async}function ${func.name}($params) {")
         indent++
         for (stmt in func.body) {
             emitStmt(stmt)
@@ -169,9 +164,9 @@ class TypeScriptCodegen {
 
     private fun emitStmt(stmt: IrStmt) {
         when (stmt) {
-            is IrStmt.VarDecl -> line("let ${stmt.name}: ${mapType(stmt.type)} = ${emitExpr(stmt.initializer)};")
-            is IrStmt.FinDecl -> line("const ${stmt.name}: ${mapType(stmt.type)} = ${emitExpr(stmt.initializer)};")
-            is IrStmt.LetDecl -> line("const ${stmt.name}: ${mapType(stmt.type)} = ${emitExpr(stmt.initializer)};")
+            is IrStmt.VarDecl -> line("let ${stmt.name} = ${emitExpr(stmt.initializer)};")
+            is IrStmt.FinDecl -> line("const ${stmt.name} = ${emitExpr(stmt.initializer)};")
+            is IrStmt.LetDecl -> line("const ${stmt.name} = ${emitExpr(stmt.initializer)};")
             is IrStmt.Assignment -> line("${stmt.name} = ${emitExpr(stmt.value)};")
             is IrStmt.IndexAssign -> line("${emitExpr(stmt.target)}[${emitExpr(stmt.index)}] = ${emitExpr(stmt.value)};")
             is IrStmt.MemberAssign -> line("${emitExpr(stmt.target)}.${stmt.name} = ${emitExpr(stmt.value)};")
@@ -380,7 +375,7 @@ class TypeScriptCodegen {
             }
         }
         is IrExpr.Await -> "await ${emitExpr(expr.value)}"
-        is IrExpr.Spread -> "...${emitExpr(expr.array)}" // TS spread operator
+        is IrExpr.Spread -> "...${emitExpr(expr.array)}" // JS spread operator
         is IrExpr.ArrayLiteral -> "[${expr.elements.joinToString(", ") { emitExpr(it) }}]"
         is IrExpr.SetLit -> "new Set([${expr.elements.joinToString(", ") { emitExpr(it) }}])"
         is IrExpr.MapLit -> "({ ${expr.entries.joinToString(", ") { "[${emitExpr(it.first)}]: ${emitExpr(it.second)}" }} })"
@@ -424,7 +419,7 @@ class TypeScriptCodegen {
         }
         is IrExpr.SlotPattern -> "" /* handled by when lowering */
         is IrExpr.Lambda -> {
-            val ps = expr.params.joinToString(", ") { (n, t) -> "$n: ${mapType(t)}" }
+            val ps = expr.params.joinToString(", ") { (n, _) -> n }
             val ret = expr.body.singleOrNull() as? IrStmt.Return
             if (ret != null && ret.value != null) "($ps) => ${emitExpr(ret.value)}"
             else if (expr.body.isEmpty() || ret != null) "($ps) => {}"
@@ -451,6 +446,11 @@ class TypeScriptCodegen {
         }
     }
 
+    /**
+     * Maps an IR type to a JavaScript runtime category. JavaScript is untyped,
+     * so this is not emitted into the output — it is only used to decide runtime
+     * behaviour (e.g. integer division truncation and `bigint` handling).
+     */
     private fun mapType(type: IrType): String = when (type) {
         IrType.Int -> "number"
         IrType.UInt -> "number"
@@ -465,15 +465,15 @@ class TypeScriptCodegen {
         IrType.Decimal -> "number"
         IrType.Long, IrType.ULong -> "bigint"
         IrType.Cent, IrType.UCent -> "bigint"
-        is IrType.Array -> "${mapType(type.element)}[]"
-        is IrType.Set -> "Set<${mapType(type.element)}>"
-        is IrType.Map -> "Record<${mapType(type.key)}, ${mapType(type.value)}>"
-        is IrType.Pointer -> "AzoraPtr<${mapType(type.inner)}>"
-        is IrType.Function -> "(${type.params.joinToString(", ") { mapType(it) }}) => ${mapType(type.ret)}"
-        is IrType.Task -> "Promise<${mapType(type.result)}>"
-        is IrType.Tuple -> "[${type.elements.joinToString(", ") { mapType(it) }}]"
+        is IrType.Array -> "array"
+        is IrType.Set -> "set"
+        is IrType.Map -> "object"
+        is IrType.Pointer -> "object"
+        is IrType.Function -> "function"
+        is IrType.Task -> "promise"
+        is IrType.Tuple -> "array"
         is IrType.Variant -> "any"
-        is IrType.Nullable -> "${mapType(type.inner)} | null"
+        is IrType.Nullable -> mapType(type.inner)
         is IrType.Named -> type.name
         IrType.Any -> "any"
     }

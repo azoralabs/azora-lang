@@ -135,7 +135,7 @@ private fun handleCheck(args: List<String>) {
 
 private fun handleCompile(args: List<String>) {
     if (args.size < 2) {
-        System.err.println("Usage: azora compile <kotlin|typescript|swift|dart|csharp|python|rust|wasm|llvm|ir> <file.az>")
+        System.err.println("Usage: azora compile <javascript|wasm|llvm|ir> <file.az>")
         return
     }
 
@@ -156,19 +156,13 @@ private fun handleCompile(args: List<String>) {
             // reflects the program exactly (useful for backend debugging).
             val backendIr = if (debug) result.ir else result.optimizedIr
             val output = when (target) {
-                "kotlin", "kt" -> if (debug) org.azora.lang.backend.KotlinCodegen().generate(backendIr) else result.kotlin
-                "typescript", "ts" -> if (debug) org.azora.lang.backend.TypeScriptCodegen().generate(backendIr) else result.typescript
-                "swift", "sw" -> if (debug) org.azora.lang.backend.SwiftCodegen().generate(backendIr) else result.swift
-                "dart" -> if (debug) org.azora.lang.backend.DartCodegen().generate(backendIr) else result.dart
-                "csharp", "cs" -> if (debug) org.azora.lang.backend.CSharpCodegen().generate(backendIr) else result.csharp
-                "python", "py" -> if (debug) org.azora.lang.backend.PythonCodegen().generate(backendIr) else result.python
-                "rust", "rs" -> if (debug) org.azora.lang.backend.RustCodegen().generate(backendIr) else result.rust
+                "javascript", "js" -> if (debug) org.azora.lang.backend.JavaScriptCodegen().generate(backendIr) else result.javascript
                 "wasm", "wat" -> if (debug) org.azora.lang.backend.WasmCodegen().generate(backendIr) else result.wasm
                 "llvm", "ll" -> if (debug) org.azora.lang.backend.LlvmCodegen().generate(backendIr) else result.llvm
                 "ir" -> backendIr.prettyPrint()
                 "ast" -> result.ast.dumpTree()
                 else -> {
-                    System.err.println("Unknown target: $target (use kotlin, typescript, swift, dart, csharp, python, rust, wasm, llvm, ir, or ast)")
+                    System.err.println("Unknown target: $target (use javascript, wasm, llvm, ir, or ast)")
                     return
                 }
             }
@@ -229,13 +223,7 @@ private fun printUsage() {
           help                          Show this help
 
         Compile targets:
-          kotlin, kt      Kotlin/JVM source
-          typescript, ts  TypeScript source
-          swift, sw       Swift 6.3 source
-          dart            Dart source
-          csharp, cs      C# / .NET source
-          python, py      Python 3 source
-          rust, rs        Rust source
+          javascript, js  JavaScript source
           wasm, wat       WebAssembly text (WAT)
           llvm, ll        LLVM IR text
           ir              Azora IR (pretty-printed)
@@ -243,7 +231,7 @@ private fun printUsage() {
 
         Examples:
           azora run hello.az
-          azora compile kotlin hello.az > hello.kt
+          azora compile javascript hello.az > hello.js
           azora check program.az
           azora repl
     """.trimIndent())

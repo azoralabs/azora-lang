@@ -42,13 +42,8 @@ class OwnershipTaskTest {
         assertEquals("42", run(source))
 
         val result = compile(source)
-        assertTrue("fun main() = kotlinx.coroutines.runBlocking" in result.kotlin)
-        assertTrue("CoroutineScope.loadUser" in result.kotlin)
-        assertTrue("Deferred<Int>" in result.kotlin)
-        assertTrue(".await()" in result.kotlin)
-        assertTrue("async function loadUser" in result.typescript)
-        assertTrue("Promise<number>" in result.typescript)
-        assertTrue("await user" in result.typescript)
+        assertTrue("async function loadUser" in result.javascript)
+        assertTrue("await user" in result.javascript)
         assertTrue("define %azora.task* @loadUser" in result.llvm)
         assertTrue("define i32 @__azora_task_body_loadUser" in result.llvm)
     }
@@ -78,8 +73,7 @@ class OwnershipTaskTest {
 
         assertEquals("42", run(source))
         val result = compile(source)
-        assertTrue("__azoraSpawn" in result.typescript)
-        assertTrue("async {" in result.kotlin)
+        assertTrue("__azoraSpawn" in result.javascript)
     }
 
     @Test

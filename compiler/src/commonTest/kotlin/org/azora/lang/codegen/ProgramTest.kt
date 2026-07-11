@@ -39,14 +39,10 @@ class ProgramTest {
         val ir = result.ir.prettyPrint()
         assertTrue("println(\"Hello, world!\")" in ir)
 
-        val kotlin = result.kotlin
-        assertTrue("fun main(): Unit" in kotlin)
-        assertTrue("println(\"Hello, world!\")" in kotlin)
-
-        val ts = result.typescript
-        assertTrue("function main(): void" in ts)
-        assertTrue("console.log(\"Hello, world!\")" in ts)
-        assertTrue(ts.trimEnd().endsWith("main()"), "TypeScript should append main() call")
+        val js = result.javascript
+        assertTrue("function main()" in js)
+        assertTrue("console.log(\"Hello, world!\")" in js)
+        assertTrue(js.trimEnd().endsWith("main()"), "JavaScript should append main() call")
     }
 
     // -----------------------------------------------------------------------
@@ -62,11 +58,11 @@ class ProgramTest {
             }
         """.trimIndent())
 
-        val kotlin = result.kotlin
-        // Kotlin backend should emit __azora_main wrapper
-        assertTrue("fun __azora_main(): Int" in kotlin, "Should have __azora_main wrapper, got:\n$kotlin")
-        assertTrue("fun main(): Unit" in kotlin, "Should have Unit main entry point, got:\n$kotlin")
-        assertTrue("__azora_main()" in kotlin, "main should call __azora_main, got:\n$kotlin")
+        val js = result.javascript
+        // JavaScript emits main directly and appends the entry-point call.
+        assertTrue("function main()" in js, "Should emit main function, got:\n$js")
+        assertTrue("return 0;" in js, "Should preserve the return, got:\n$js")
+        assertTrue(js.trimEnd().endsWith("main()"), "JavaScript should append main() call, got:\n$js")
     }
 
     // -----------------------------------------------------------------------

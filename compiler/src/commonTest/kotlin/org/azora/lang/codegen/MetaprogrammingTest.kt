@@ -63,29 +63,14 @@ class MetaprogrammingTest {
             }
         """.trimIndent()
 
-        val expectedKotlin = """
-            package playground
-
-            fun b(): Unit {
-                println("Hello from B")
-            }
-
-            fun main(): Unit {
-                run {
-                    println("Hello from A")
-                }
-                b()
-            }
-        """.trimIndent()
-
-        val expectedTypeScript = """
+        val expectedJavaScript = """
             // package: playground
 
-            function b(): void {
+            function b() {
                 console.log("Hello from B");
             }
 
-            function main(): void {
+            function main() {
                 {
                     console.log("Hello from A");
                 }
@@ -122,8 +107,7 @@ class MetaprogrammingTest {
 
         assertEquals(expectedIr, result.ir.prettyPrint())
         assertEquals(expectedOptimizedIr, result.optimizedIr.prettyPrint())
-        assertEquals(expectedKotlin, result.kotlin)
-        assertEquals(expectedTypeScript, result.typescript)
+        assertEquals(expectedJavaScript, result.javascript)
         assertEquals(expectedLlvm, result.llvm)
     }
 
@@ -332,44 +316,18 @@ class MetaprogrammingTest {
             }
         """.trimIndent()
 
-        val expectedKotlin = """
-            package playground
-
-            fun c(): Unit {
-                println("Hello from C")
-            }
-
-            fun e(): Unit {
-                println("Hello from E")
-            }
-
-            fun main(): Unit {
-                run {
-                    println("Hello from A")
-                }
-                run {
-                    println("Hello from B")
-                }
-                c()
-                run {
-                    println("Hello from D")
-                }
-                e()
-            }
-        """.trimIndent()
-
-        val expectedTypeScript = """
+        val expectedJavaScript = """
             // package: playground
 
-            function c(): void {
+            function c() {
                 console.log("Hello from C");
             }
 
-            function e(): void {
+            function e() {
                 console.log("Hello from E");
             }
 
-            function main(): void {
+            function main() {
                 {
                     console.log("Hello from A");
                 }
@@ -454,8 +412,7 @@ class MetaprogrammingTest {
 
         assertEquals(expectedIr, result.ir.prettyPrint())
         assertEquals(expectedOptimizedIr, result.optimizedIr.prettyPrint())
-        assertEquals(expectedKotlin, result.kotlin)
-        assertEquals(expectedTypeScript, result.typescript)
+        assertEquals(expectedJavaScript, result.javascript)
         assertEquals(expectedLlvm, result.llvm)
     }
 }

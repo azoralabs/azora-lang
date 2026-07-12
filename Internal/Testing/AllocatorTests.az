@@ -52,7 +52,7 @@ impl Arena {
     func allocate(sz: Int): Int!AllocError {
         if sz <= 0 { return 0 }
         if offset + sz > capacity {
-            return fail .OutOfMemory
+            fail return .OutOfMemory
         }
         fin position = offset
         fin newOffset = offset + sz
@@ -70,7 +70,7 @@ impl Arena {
         fin padding = if remainder == 0 { 0 } else { alignment - remainder }
         fin aligned = offset + padding
         if aligned + sz > capacity {
-            return fail .OutOfMemory
+            fail return .OutOfMemory
         }
         fin newOffset = aligned + sz
         self.offset = newOffset
@@ -137,7 +137,7 @@ impl Pool {
             return idx
         }
         if nextFreeIdx >= slotCount {
-            return fail .PoolExhausted
+            fail return .PoolExhausted
         }
         fin idx = nextFreeIdx
         self.nextFreeIdx = nextFreeIdx + 1
@@ -190,7 +190,7 @@ impl StackAlloc {
     func allocate(sz: Int): Int!AllocError {
         if sz <= 0 { return 0 }
         if offset + sz > capacity {
-            return fail .OutOfMemory
+            fail return .OutOfMemory
         }
         fin position = offset
         fin newOffset = offset + sz

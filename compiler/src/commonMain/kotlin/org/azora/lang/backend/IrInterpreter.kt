@@ -160,6 +160,36 @@ class IrInterpreter {
         }
     }
 
+    /**
+     * Runs every `test` block in [program] in isolation — no `main` function
+     * required, and a failing assertion in one test does not abort the others.
+     * Returns one [TestResult] per `test`, in source order. Used by the
+     * `azora test` CLI runner.
+     */
+    fun runTests(program: IrProgram): List<TestResult> {
+        val mainState = resetFor()
+        return azRunBlocking(Dispatchers.Default + mainState) {
+            coroutineScope = this
+            val tests = mutableListOf<IrTopLevel.Test>()
+            for (item in program.items) {
+                when (item) {
+                    is IrTopLevel.Global -> executeStmt(item.stmt)
+                    is IrTopLevel.Func -> functions[item.function.name] = item.function
+                    is IrTopLevel.Test -> tests.add(item)
+                    is IrTopLevel.Struct, is IrTopLevel.Extern -> {}
+                }
+            }
+            tests.map { test ->
+                try {
+                    executeTest(test)
+                    TestResult(test.name, passed = true, null)
+                } catch (e: Exception) {
+                    TestResult(test.name, passed = false, e.message ?: e.toString())
+                }
+            }
+        }
+    }
+
     /** Clears per-run state and returns a fresh main [ExecState] (with a global scope) to seed the context. */
     private fun resetFor(): ExecState {
         output.clear()
@@ -1279,3 +1309,6 @@ class IrInterpreter {
     /** A mutable reference cell for `ref`/`out` parameters — auto-unwrapped by lookupVar/assignVar. */
     private class RefCell(var value: Any?)
 }
+
+/** Outcome of running a single `test` block via [IrInterpreter.runTests]. */
+data class TestResult(val name: String, val passed: Boolean, val message: String?)

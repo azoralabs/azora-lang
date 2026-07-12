@@ -143,8 +143,8 @@ fail ValidationError {
 func validateAndSquare(n: Int): Int!ValidationError
 in { assert n >= -1000 { "input too small" } }
 scope {
-    if n < 0 { return fail .NegativeInput }
-    if n > 46340 { return fail .Overflow }
+    if n < 0 { fail return .NegativeInput }
+    if n > 46340 { fail return .Overflow }
     return n * n
 }
 

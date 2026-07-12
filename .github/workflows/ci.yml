@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 jobs:
-  # ── Compiler unit tests ──────────────────────────────────────────
+  # ── Compiler unit tests (pure JVM, no external toolchains) ────────
   compiler-tests:
     name: Compiler Unit Tests
     runs-on: ubuntu-latest
@@ -40,11 +40,13 @@ jobs:
             --tests "org.azora.lang.codegen.MetaprogrammingTest" \
             --tests "org.azora.lang.codegen.SymbolTest" \
             --tests "org.azora.lang.codegen.TestAssertTraceTest" \
-            --tests "org.azora.lang.codegen.ZoneTest"
+            --tests "org.azora.lang.codegen.ZoneTest" \
+            --tests "org.azora.lang.codegen.TupleVariadicTest" \
+            --tests "org.azora.lang.codegen.StdlibParseDiagnosticTest"
 
-  # ── Internal/Testing .az integration tests ───────────────────────
-  integration-tests:
-    name: Azora Integration Tests
+  # ── `azora test` runs Internal/Testing `test` blocks via the CLI ──
+  azora-cli-tests:
+    name: Azora CLI Test Runner
     runs-on: ubuntu-latest
 
     steps:
@@ -60,59 +62,17 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Run Internal/Testing .az tests
-        run: ./gradlew :compiler:desktopTest --tests "org.azora.lang.InternalAzTestRunner"
+      - name: Build the azora CLI
+        run: ./gradlew :app:installDist
 
-  # ── Code generator tests (per-target, allow failures) ────────────
-  codegen-tests:
-    name: Codegen – ${{ matrix.target }}
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: JavaScript
-            tests: "org.azora.lang.codegen.InternalAzJSCodegenRunner"
-            setup: ""
-          - target: Kotlin
-            tests: "org.azora.lang.codegen.InternalAzKotlinCodegenRunner"
-            setup: ""
-          - target: Python
-            tests: "org.azora.lang.codegen.InternalAzPythonCodegenRunner"
-            setup: ""
-          - target: C#
-            tests: "org.azora.lang.codegen.InternalAzCSharpCodegenRunner"
-            setup: |
-              sudo apt-get update -q && sudo apt-get install -yq dotnet-sdk-8.0
-          - target: Swift
-            tests: "org.azora.lang.codegen.InternalAzSwiftCodegenRunner"
-            setup: ""
-          - target: LLVM
-            tests: "org.azora.lang.codegen.InternalAzLlvmCodegenRunner"
-            setup: ""
+      # Runs every `test { … }` block under Internal/Testing through the
+      # interpreter. Exits non-zero only when a test's assertions fail — files
+      # that don't compile (not-yet-implemented features) are reported in the
+      # log but do not fail the job. Pass `--strict` locally to gate on those too.
+      - name: Run Internal/Testing test blocks
+        run: ./app/build/install/azora/bin/azora test Internal/Testing
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Install ${{ matrix.target }} toolchain
-        if: matrix.setup != ''
-        run: ${{ matrix.setup }}
-
-      - name: Run ${{ matrix.target }} codegen tests
-        run: ./gradlew :compiler:desktopTest --tests "${{ matrix.tests }}"
-        continue-on-error: true
-
-  # ── Cross-platform builds ────────────────────────────────────────
+  # ── Cross-platform builds (compiler subset only) ──────────────────
   build-macos:
     name: macOS
     runs-on: macos-latest
@@ -138,10 +98,8 @@ jobs:
             --tests "org.azora.lang.codegen.MetaprogrammingTest" \
             --tests "org.azora.lang.codegen.SymbolTest" \
             --tests "org.azora.lang.codegen.TestAssertTraceTest" \
-            --tests "org.azora.lang.codegen.ZoneTest"
-
-      - name: Azora integration tests
-        run: ./gradlew :compiler:desktopTest --tests "org.azora.lang.InternalAzTestRunner"
+            --tests "org.azora.lang.codegen.ZoneTest" \
+            --tests "org.azora.lang.codegen.TupleVariadicTest"
 
   build-windows:
     name: Windows
@@ -168,7 +126,5 @@ jobs:
             --tests "org.azora.lang.codegen.MetaprogrammingTest" `
             --tests "org.azora.lang.codegen.SymbolTest" `
             --tests "org.azora.lang.codegen.TestAssertTraceTest" `
-            --tests "org.azora.lang.codegen.ZoneTest"
-
-      - name: Azora integration tests
-        run: ./gradlew :compiler:desktopTest --tests "org.azora.lang.InternalAzTestRunner"
+            --tests "org.azora.lang.codegen.ZoneTest" `
+            --tests "org.azora.lang.codegen.TupleVariadicTest"

@@ -60,7 +60,7 @@ friend zone std {
     func strCharAt(s: String, index: Int): Char!StringError
     in { assert index >= 0 { "Index must be non-negative" } }
     zone {
-        if index >= stringLength(s) { return fail .IndexOutOfBounds }
+        if index >= stringLength(s) { fail return .IndexOutOfBounds }
         return charAt(s, index)
     }
 

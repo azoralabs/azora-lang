@@ -33,8 +33,8 @@ fail ParseError {
 // --- Basic fail returns ---
 
 func readFile(path: String): String!IOError {
-    if path == "" { return fail .FileNotFound }
-    if path == "/secret" { return fail .PermissionDenied }
+    if path == "" { fail return .FileNotFound }
+    if path == "/secret" { fail return .PermissionDenied }
     return "file contents"
 }
 
@@ -73,8 +73,8 @@ test "try propagation failure" {
 // --- Multiple fail sets ---
 
 func parseNumber(s: String): Int!ParseError {
-    if s == "" { return fail .EndOfInput }
-    if s == "abc" { return fail .InvalidSyntax }
+    if s == "" { fail return .EndOfInput }
+    if s == "abc" { fail return .InvalidSyntax }
     return 42
 }
 
@@ -95,7 +95,7 @@ test "fail different error types" {
 // --- Chained fail operations ---
 
 func validateAndRead(path: String): String!IOError {
-    if stringLength(path) == 0 { return fail .FileNotFound }
+    if stringLength(path) == 0 { fail return .FileNotFound }
     fin content = try readFile(path)
     return content
 }
@@ -134,7 +134,7 @@ func findFirst(items: [String]): String!IOError {
         }
         i += 1
     }
-    return fail .FileNotFound
+    fail return .FileNotFound
 }
 
 test "fail in loop found" {
@@ -167,7 +167,7 @@ fail MathFailError {
 }
 
 func safeSqrt(n: Int): Int!MathFailError {
-    if n < 0 { return fail .NegativeRoot }
+    if n < 0 { fail return .NegativeRoot }
     if n == 0 { return 0 }
     var x = n
     var y = (x + 1) / 2

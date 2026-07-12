@@ -128,7 +128,7 @@ sealed class Expr {
      * @property column 1-based source column
      * @property length source text length
      */
-    data class Call(val callee: String, val args: List<Expr>, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+    data class Call(val callee: String, val args: List<Expr>, override val line: Int, override val column: Int = 0, override val length: Int = 0, val typeArgs: List<TypeRef> = emptyList()) : Expr()
 
     /**
      * Parenthesized expression (e.g. `(a + b)`).
@@ -935,7 +935,7 @@ sealed class TypeRef {
     }
 
     /** A named type, optionally generic: `Int`, `List<Int>`. */
-    data class Named(val name: String, val args: List<TypeRef> = emptyList()) : TypeRef() {
+    data class Named(val name: String, val args: List<TypeRef> = emptyList(), val variadic: Boolean = false) : TypeRef() {
         override fun toString() = if (args.isEmpty()) name else "$name<${args.joinToString(", ")}>"
     }
 
@@ -1066,6 +1066,31 @@ data class PackField(
 )
 
 /**
+ * Field generator for a variadic pack body, parsed from
+ * `inline for <loopVar> in <packVar> with index { <fields and/or mixins> }`.
+ *
+ * At monomorphization, the template is expanded once per concrete type in the
+ * variadic pack: `<loopVar>` binds to each element type, and `$index` (in a
+ * structured field name or a [Expr.StringTemplate] mixin) becomes the literal
+ * positional index (`0`, `1`, …).
+ *
+ * @property loopVar the per-iteration type binding (e.g. `Ty`)
+ * @property packVar the variadic type param being iterated (e.g. `T`)
+ * @property fields structured generated fields; `name` may be `$index` (positional)
+ * @property mixins string-template mixins (`mixin "$index: $Ty"`) interpolated with
+ *   the loop bindings and parsed as a field declaration at expansion time
+ */
+data class VariadicFieldTemplate(
+    val loopVar: String,
+    val packVar: String,
+    val fields: List<TplField>,
+    val mixins: List<Expr.StringTemplate> = emptyList(),
+)
+
+/** A single field in a [VariadicFieldTemplate]. `type` may reference [VariadicFieldTemplate.loopVar]. */
+data class TplField(val name: String, val type: TypeRef)
+
+/**
  * A function declaration in the AST.
  *
  * Represents a complete function including its signature and body. Functions
@@ -1106,6 +1131,10 @@ data class FuncDecl(
     val visibility: Visibility = Visibility.EXPOSE,
     /** Receiver mutability for impl/extension methods: `ref self` or `mut ref self`. */
     val receiverModifier: ParamModifier = "mut ref",
+    /** Name of the variadic type param (`T` in `func<T...>`), or null for a fixed function. */
+    val variadicParam: String? = null,
+    /** Minimum element count from a `where <var>.length >= N` clause, or null if unconstrained. */
+    val minVariadicLength: Int? = null,
 )
 
 /**
@@ -1292,6 +1321,12 @@ sealed class TopLevel {
         val visibility: Visibility = Visibility.EXPOSE,
         /** `shield pack X {}` prevents external extensions from taking `mut ref self`. */
         val shielded: Boolean = false,
+        /** Name of the variadic type param (`T` in `pack Tuple<T...>`), or null for a fixed pack. */
+        val variadicParam: String? = null,
+        /** Minimum element count from a `where <var>.length >= N` clause, or null if unconstrained. */
+        val minVariadicLength: Int? = null,
+        /** Field generator for a variadic pack body (`inline for Ty in T with index { … }`), or null. */
+        val fieldTemplate: VariadicFieldTemplate? = null,
     ) : TopLevel()
 
     /** `deco Name { fields }` — declares a decorator/annotation type. Parsed and stored; not yet enforced. */

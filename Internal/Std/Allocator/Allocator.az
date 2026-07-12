@@ -194,7 +194,7 @@ friend zone std {
             assert size > 0 { "Allocation size must be positive" }
         } zone {
             if offset + size > capacity {
-                return fail .OutOfMemory
+                fail return .OutOfMemory
             }
             fin position = offset
             self.offset = offset + size
@@ -226,7 +226,7 @@ friend zone std {
             fin padding = if remainder == 0 { 0 } else { alignment - remainder }
             fin aligned = offset + padding
             if aligned + size > capacity {
-                return fail .OutOfMemory
+                fail return .OutOfMemory
             }
             self.offset = aligned + size
             self.allocCount = allocCount + 1
@@ -407,7 +407,7 @@ friend zone std {
          */
         func acquire(): Int!AllocError {
             if freeCount == 0 {
-                return fail .PoolExhausted
+                fail return .PoolExhausted
             }
             self.freeCount = freeCount - 1
             fin slotIndex = (*freeStack)[freeCount]
@@ -580,7 +580,7 @@ friend zone std {
             assert size > 0 { "Allocation size must be positive" }
         } zone {
             if offset + size > capacity {
-                return fail .OutOfMemory
+                fail return .OutOfMemory
             }
             fin position = offset
             self.offset = offset + size

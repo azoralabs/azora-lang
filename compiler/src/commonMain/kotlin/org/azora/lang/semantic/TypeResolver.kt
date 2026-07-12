@@ -942,15 +942,30 @@ class TypeResolver(private val table: SymbolTable) {
             }
             is Expr.TupleAccess -> {
                 val targetType = resolveExpr(expr.target) ?: return null
-                if (targetType !is IrType.Tuple) {
-                    errors.add("line ${expr.line}: cannot use '.${expr.index}' on $targetType (not a tuple)")
-                    return null
+                when (targetType) {
+                    is IrType.Tuple -> {
+                        if (expr.index !in targetType.elements.indices) {
+                            errors.add("line ${expr.line}: tuple index ${expr.index} out of bounds (tuple has ${targetType.elements.size} elements)")
+                            return null
+                        }
+                        targetType.elements[expr.index]
+                    }
+                    is IrType.Named -> {
+                        // Nominal tuple pack (`__Tuple_<types>`): `.0`/`.1` access a
+                        // numeric-named field, permitted via `@enforceNumFields`.
+                        val field = table.lookupStruct(targetType.name)?.field(expr.index.toString())
+                        if (field != null) {
+                            field.type
+                        } else {
+                            errors.add("line ${expr.line}: cannot use '.${expr.index}' on $targetType (no such field)")
+                            null
+                        }
+                    }
+                    else -> {
+                        errors.add("line ${expr.line}: cannot use '.${expr.index}' on $targetType (not a tuple)")
+                        null
+                    }
                 }
-                if (expr.index !in targetType.elements.indices) {
-                    errors.add("line ${expr.line}: tuple index ${expr.index} out of bounds (tuple has ${targetType.elements.size} elements)")
-                    return null
-                }
-                targetType.elements[expr.index]
             }
             is Expr.CatchExpr -> {
                 val t1 = resolveExpr(expr.expr) ?: return null

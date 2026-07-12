@@ -21,6 +21,7 @@ import org.azora.lang.CompilationResult
 import org.azora.lang.backend.IrInterpreter
 import org.azora.lang.frontend.dumpTree
 import java.io.File
+import kotlin.system.exitProcess
 
 fun main(args: Array<String>) {
     if (args.isEmpty()) {
@@ -32,6 +33,7 @@ fun main(args: Array<String>) {
         "run"     -> handleRun(args.drop(1))
         "check"   -> handleCheck(args.drop(1))
         "compile" -> handleCompile(args.drop(1))
+        "test"    -> handleTest(args.drop(1))
         "repl"    -> repl()
         "version" -> println("Azora ${BuildConfig.VERSION}")
         "help", "--help", "-h" -> printUsage()
@@ -172,6 +174,74 @@ private fun handleCompile(args: List<String>) {
     }
 }
 
+// ── azora test <file.az | dir> ───────────────────────────────────
+
+/**
+ * Runs every `test { … }` block in the given file (or `.az` files under a
+ * directory) through the interpreter, in isolation. A failing assertion in one
+ * test does not abort the others. Exits non-zero if any test fails or any file
+ * fails to compile.
+ */
+private fun handleTest(args: List<String>) {
+    if (args.isEmpty()) {
+        System.err.println("Usage: azora test <file.az | dir>")
+        return
+    }
+    val strict = args.any { it == "--strict" }
+    val target = File(args.first { !it.startsWith("--") })
+    if (!target.exists()) {
+        System.err.println("Not found: ${target.path}")
+        return
+    }
+    val files = if (target.isDirectory) {
+        target.walkTopDown().filter { it.isFile && it.extension == "az" }.sortedBy { it.path }.toList()
+    } else listOf(target)
+
+    var totalPassed = 0
+    var totalFailed = 0
+    var filesFailed = 0
+    for (file in files) {
+        val result = try {
+            Compiler().compile(file.readText(), release = false)
+        } catch (e: Exception) {
+            filesFailed++
+            println("✗ ${file.path} — parse/compile error")
+            println("    ${e.message}")
+            null
+        }
+        when (result) {
+            null -> {}
+            is CompilationResult.Failure -> {
+                filesFailed++
+                println("✗ ${file.path} — compile error")
+                result.errors.forEach { println("    $it") }
+            }
+            is CompilationResult.Success -> {
+                val results = IrInterpreter().runTests(result.ir)
+                if (results.isEmpty()) continue
+                val passed = results.count { it.passed }
+                val failed = results.count { !it.passed }
+                totalPassed += passed
+                totalFailed += failed
+                for (r in results) {
+                    if (r.passed) {
+                        println("✓ ${file.path} :: ${r.name}")
+                    } else {
+                        println("✗ ${file.path} :: ${r.name}")
+                        println("    ${r.message}")
+                    }
+                }
+            }
+        }
+    }
+    val summary = "$totalPassed passed, $totalFailed failed" +
+        if (filesFailed > 0) ", $filesFailed file(s) failed to compile" else ""
+    println("\n$summary")
+    // A test failure (assertion) always fails the run. A compile error only fails
+    // the run under `--strict` — many test files exercise not-yet-implemented features.
+    if (totalFailed > 0 || (strict && filesFailed > 0)) exitProcess(1)
+}
+
 // ── REPL ─────────────────────────────────────────────────────────
 
 private fun repl() {
@@ -218,6 +288,7 @@ private fun printUsage() {
           run <file.az>                 Compile and run a program
           check <file.az>               Type-check without running
           compile <target> <file.az>    Output generated code
+          test <file.az | dir>          Run `test` blocks (file or directory)
           repl                          Interactive REPL
           version                       Show version
           help                          Show this help

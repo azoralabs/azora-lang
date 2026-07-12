@@ -31,6 +31,7 @@ import org.azora.lang.ir.IrProgram
 import org.azora.lang.ir.IrType
 import org.azora.lang.semantic.EffectChecker
 import org.azora.lang.semantic.SemanticPipeline
+import org.azora.lang.semantic.VariadicMonomorphizer
 
 /**
  * Full compiler pipeline:
@@ -145,7 +146,15 @@ class Compiler {
 
         // 2b. Standard library: append the stdlib declarations the program
         // actually references (transitively); user definitions shadow stdlib.
-        val ast = StdlibInjector.inject(parsed)
+        val injected = StdlibInjector.inject(parsed)
+
+        // 2c. Monomorphize variadic generics (e.g. `Tuple<T…>` / `tupleOf(…)`)
+        // into concrete per-instantiation declarations before semantic analysis.
+        val ast = try {
+            VariadicMonomorphizer.monomorphize(injected)
+        } catch (e: IllegalStateException) {
+            return CompilationResult.Failure(listOf(e.message ?: "variadic monomorphization failed"))
+        }
 
         // 3. AST Validation: structural checks
         val validationErrors = AstValidator().validate(ast)

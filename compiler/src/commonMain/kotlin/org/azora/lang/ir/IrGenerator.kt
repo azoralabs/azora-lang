@@ -989,8 +989,17 @@ class IrGenerator(private val table: SymbolTable) {
             is Expr.TupleAccess -> {
                 val target = lowerExpr(expr.target)
                 val tt = target.type
-                val elemType = if (tt is IrType.Tuple && expr.index in tt.elements.indices) tt.elements[expr.index] else IrType.Any
-                IrExpr.TupleAccess(target, expr.index, elemType)
+                when {
+                    // Structural tuple `(a, b).0` → positional list/array access.
+                    tt is IrType.Tuple && expr.index in tt.elements.indices ->
+                        IrExpr.TupleAccess(target, expr.index, tt.elements[expr.index])
+                    // Nominal tuple pack `__Tuple_<types>` → numeric-named field read.
+                    tt is IrType.Named -> {
+                        val fieldType = table.lookupStruct(tt.name)?.field(expr.index.toString())?.type ?: IrType.Any
+                        IrExpr.Member(target, expr.index.toString(), fieldType)
+                    }
+                    else -> IrExpr.TupleAccess(target, expr.index, IrType.Any)
+                }
             }
             is Expr.IfExpr -> {
                 val condition = lowerExpr(expr.condition)

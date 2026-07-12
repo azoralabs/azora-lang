@@ -34,7 +34,7 @@ friend zone std {
      */
     func strParseInt(s: String): Int!ParseError {
         if strIsEmpty(s) {
-            return fail .EmptyInput
+            fail return .EmptyInput
         }
         var result: Int = 0
         var sign: Int = 1
@@ -47,12 +47,12 @@ friend zone std {
             start = 1
         }
         if start >= chars.length {
-            return fail .InvalidFormat
+            fail return .InvalidFormat
         }
         var i: Int = start
         while i < chars.length {
             if !charIsDigit(chars[i]) {
-                return fail .InvalidFormat
+                fail return .InvalidFormat
             }
             result = result * 10 + digitToInt(chars[i])
             i += 1
@@ -65,7 +65,7 @@ friend zone std {
      */
     func strParseReal(s: String): Real!ParseError {
         if strIsEmpty(s) {
-            return fail .EmptyInput
+            fail return .EmptyInput
         }
         var chars: Array<Char> = strToChars(s)
         var sign: Real = 1.0
@@ -80,7 +80,7 @@ friend zone std {
         var i: Int = start
         while i < chars.length && chars[i] != '.' {
             if !charIsDigit(chars[i]) {
-                return fail .InvalidFormat
+                fail return .InvalidFormat
             }
             intPart = intPart * 10.0 + digitToInt(chars[i])
             i += 1
@@ -91,7 +91,7 @@ friend zone std {
             var divisor: Real = 10.0
             while i < chars.length {
                 if !charIsDigit(chars[i]) {
-                    return fail .InvalidFormat
+                    fail return .InvalidFormat
                 }
                 fracPart = fracPart + digitToInt(chars[i]) / divisor
                 divisor = divisor * 10.0

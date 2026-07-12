@@ -42,7 +42,11 @@ friend zone std {
     @enforceNumFields
     pack Tuple<T...> where T.length >= 2 {
         inline for Ty in T with index {
-            $index: Ty
+            mixin "$index: $Ty"
         }
+    }
+
+    func<T...> tupleOf(elements: ...T): Tuple<T...> where T.length >= 2 {
+        return Tuple(elements)
     }
 }

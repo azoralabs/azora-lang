@@ -101,10 +101,15 @@ class JavaScriptCodegen {
                 is IrTopLevel.Struct -> {
                     line("class ${item.name} {")
                     indent++
-                    val params = item.fields.joinToString(", ") { it.name }
+                    // Numeric field names (e.g. `0`, `1` on `@enforceNumFields` tuples) are
+                    // not valid JS identifiers — use positional param names and bracket access.
+                    val params = item.fields.mapIndexed { idx, f -> if (isNumericFieldName(f.name)) "_$idx" else f.name }.joinToString(", ")
                     line("constructor($params) {")
                     indent++
-                    for (f in item.fields) line("this.${f.name} = ${f.name};")
+                    for ((idx, f) in item.fields.withIndex()) {
+                        val param = if (isNumericFieldName(f.name)) "_$idx" else f.name
+                        line("this${jsFieldAccess(f.name)} = $param;")
+                    }
                     indent--
                     line("}")
                     indent--
@@ -431,13 +436,14 @@ class JavaScriptCodegen {
         is IrExpr.MapLit -> "({ ${expr.entries.joinToString(", ") { "[${emitExpr(it.first)}]: ${emitExpr(it.second)}" }} })"
         is IrExpr.Index -> "${emitExpr(expr.target)}[${emitExpr(expr.index)}]"
         is IrExpr.Member -> {
-            val prop = when (expr.name) {
-                "isEmpty" -> "length === 0"
-                "isNotEmpty" -> "length !== 0"
-                "size" -> "length"
-                else -> expr.name
+            val target = emitExpr(expr.target)
+            when (expr.name) {
+                "isEmpty" -> "$target.length === 0"
+                "isNotEmpty" -> "$target.length !== 0"
+                "size" -> "$target.length"
+                // Numeric field (tuple `.0`/`.1`) — must use bracket access in JS.
+                else -> if (isNumericFieldName(expr.name)) "$target[${expr.name}]" else "$target.${expr.name}"
             }
-            "${emitExpr(expr.target)}.$prop"
         }
         is IrExpr.MethodCall -> {
             val call = when (expr.name) {
@@ -547,4 +553,11 @@ class JavaScriptCodegen {
         repeat(indent) { out.append("    ") }
         out.appendLine(text)
     }
+
+    /** `@enforceNumFields` packs may have purely-numeric field names (`0`, `1`, …). */
+    private fun isNumericFieldName(name: String): Boolean = name.isNotEmpty() && name[0].isDigit()
+
+    /** JS property access for a field name: bracket for numeric names, dot otherwise. */
+    private fun jsFieldAccess(name: String): String =
+        if (isNumericFieldName(name)) "[$name]" else ".$name"
 }

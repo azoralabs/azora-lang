@@ -27,7 +27,7 @@ fail FileError {
 }
 
 func safeDivide(a: Int, b: Int): Int!MathError {
-    if b == 0 { return fail .DivisionByZero }
+    if b == 0 { fail return .DivisionByZero }
     return a / b
 }
 
@@ -76,7 +76,7 @@ test "defer runs on success" {
 // --- Section 3: multiple catch chain ---
 
 func alwaysFails(): Int!FileError {
-    return fail .NotFound
+    fail return .NotFound
 }
 
 test "multiple catch chain" {

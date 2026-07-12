@@ -64,8 +64,8 @@ friend zone std {
     func factorial<T>(n: T): T
     in {
         assert n >= 0 { "Factorial requires non-negative input" }
-    } out { r ->
-        assert r >= 1 { "Factorial result must be >= 1" }
+    } out {
+        assert it >= 1 { "Factorial result must be >= 1" }
     } zone {
         if n <= 1 { return 1 }
         var result = 1

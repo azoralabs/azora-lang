@@ -68,7 +68,8 @@ class TypeResolver(private val table: SymbolTable) {
                     val func = table.lookupFunction(mangled) ?: continue
                     table.pushScope()
                     for ((name, type) in func.params) {
-                        table.defineVariable(VariableSymbol(name, type))
+                        val mutable = name != "self" || method.receiverModifier != "ref"
+                        table.defineVariable(VariableSymbol(name, type, mutable = mutable))
                     }
                     val savedReceiver = currentReceiverType
                     currentReceiverType = item.typeName
@@ -115,6 +116,7 @@ class TypeResolver(private val table: SymbolTable) {
 
     private fun canAccessMember(ownerType: String, visibility: Visibility): Boolean = when (visibility) {
         Visibility.EXPOSE -> true
+        Visibility.SHIELD -> true // shielded fields are publicly readable (readonly-style)
         Visibility.CONFINE -> currentReceiverType == ownerType
         Visibility.PROTECT -> {
             var cursor = currentReceiverType
@@ -129,6 +131,7 @@ class TypeResolver(private val table: SymbolTable) {
     private fun reportInaccessible(line: Int, kind: String, ownerType: String, name: String, visibility: Visibility) {
         val label = when (visibility) {
             Visibility.EXPOSE -> "exposed"
+            Visibility.SHIELD -> "shielded"
             Visibility.PROTECT -> "protected"
             Visibility.CONFINE -> "confined"
         }
@@ -215,7 +218,7 @@ class TypeResolver(private val table: SymbolTable) {
                     }
                 } else {
                     val valueType = resolveExpr(stmt.value) ?: return
-                    if (valueType != returnType && returnType != IrType.Any) {
+                    if (!isCompatible(returnType, valueType)) {
                         errors.add("line ${stmt.line}: return type mismatch: expected $returnType but got $valueType")
                     }
                 }
@@ -340,6 +343,18 @@ class TypeResolver(private val table: SymbolTable) {
                     resolveExpr(stmt.value) ?: return
                     return
                 }
+                // Pointer index-assign: `ptr[i] = value` (C++-style *(ptr+i) = value).
+                if (targetType is IrType.Pointer) {
+                    resolveExpr(stmt.index) ?: return
+                    resolveExpr(stmt.value) ?: return
+                    return
+                }
+                // Primitive set index-assign: `s[i] = value` (list-backed, by position).
+                if (targetType is IrType.Set) {
+                    resolveExpr(stmt.index) ?: return
+                    resolveExpr(stmt.value) ?: return
+                    return
+                }
                 val indexType = resolveExpr(stmt.index) ?: return
                 if (targetType !is IrType.Array) {
                     errors.add("line ${stmt.line}: cannot index-assign to $targetType (not an array)")
@@ -359,12 +374,19 @@ class TypeResolver(private val table: SymbolTable) {
                 resolveExpr(stmt.value) ?: return
             }
             is Stmt.MemberAssign -> {
-                val targetType = resolveExpr(stmt.target) ?: return
+                val resolvedTarget = resolveExpr(stmt.target) ?: return
+                // Auto-deref: assigning through a pointer writes through it (`p.v = x` == `(*p).v = x`).
+                val targetType = if (resolvedTarget is IrType.Pointer) resolvedTarget.inner else resolvedTarget
                 val valueType = resolveExpr(stmt.value) ?: return
                 if (targetType is IrType.Named) {
                     val field = table.lookupStruct(targetType.name)?.field(stmt.name)
                     if (field == null) {
                         errors.add("line ${stmt.line}: no field '${stmt.name}' on struct ${targetType.name}")
+                        return
+                    }
+                    val selfTarget = stmt.target as? Expr.Identifier
+                    if (selfTarget?.name == "self" && table.lookupVariable("self")?.mutable == false) {
+                        errors.add("line ${stmt.line}: cannot mutate '${stmt.name}' through ref self")
                         return
                     }
                     if (!canAccessMember(targetType.name, field.visibility)) {
@@ -506,8 +528,13 @@ class TypeResolver(private val table: SymbolTable) {
             is Expr.Identifier -> {
                 val sym = table.lookupVariable(expr.name)
                 if (sym == null) {
-                    errors.add("line ${expr.line}: undefined variable '${expr.name}'")
-                    null
+                    // Implicit self: bare field name in an impl method → self.field
+                    val receiverField = currentReceiverType?.let { table.lookupStruct(it)?.field(expr.name) }
+                    if (receiverField != null) receiverField.type
+                    else {
+                        errors.add("line ${expr.line}: undefined variable '${expr.name}'")
+                        null
+                    }
                 } else sym.type
             }
             is Expr.UpperScopeAccess -> {
@@ -552,8 +579,8 @@ class TypeResolver(private val table: SymbolTable) {
                 // Struct construction: `Name(args)` where Name is a pack.
                 val struct = table.lookupStruct(expr.callee)
                 if (struct != null) {
-                    if (expr.args.size != struct.fields.size) {
-                        errors.add("line ${expr.line}: '${expr.callee}' expects ${struct.fields.size} field arguments, got ${expr.args.size}")
+                    if (expr.args.size > struct.fields.size) {
+                        errors.add("line ${expr.line}: '${expr.callee}' has ${struct.fields.size} fields, got ${expr.args.size} arguments")
                         return null
                     }
                     // Handle named arguments — reorder to field order
@@ -563,15 +590,18 @@ class TypeResolver(private val table: SymbolTable) {
                             return null
                         }
                         val namedMap = expr.args.associate { (it as Expr.NamedArg).name to (it as Expr.NamedArg).value }
-                        struct.fields.map { f -> namedMap[f.name]
-                            ?: run { errors.add("line ${expr.line}: missing field '${f.name}' in '${expr.callee}'"); return null }
+                        struct.fields.map { f -> namedMap[f.name] ?: f.default
+                            ?: run { errors.add("line ${expr.line}: missing field '${f.name}' in '${expr.callee}' (no default)"); return null }
                         }
                     } else {
-                        expr.args
-                    }
-                    if (effectiveArgs.size != struct.fields.size) {
-                        errors.add("line ${expr.line}: '${expr.callee}' expects ${struct.fields.size} field arguments, got ${effectiveArgs.size}")
-                        return null
+                        // Positional — pad omitted trailing fields with their defaults (`Pack<T>()`).
+                        val padded = expr.args.toMutableList()
+                        for (i in expr.args.size until struct.fields.size) {
+                            val d = struct.fields[i].default
+                                ?: run { errors.add("line ${expr.line}: missing field '${struct.fields[i].name}' in '${expr.callee}' (no default)"); return null }
+                            padded.add(d)
+                        }
+                        padded
                     }
                     for (i in effectiveArgs.indices) {
                         val argType = resolveExpr(effectiveArgs[i]) ?: return null
@@ -691,8 +721,8 @@ class TypeResolver(private val table: SymbolTable) {
             }
             is Expr.ArrayLiteral -> {
                 if (expr.elements.isEmpty()) {
-                    errors.add("line ${expr.line}: cannot infer element type of an empty array literal")
-                    null
+                    // Empty array literal `arr()` — element type unknown; defaults to Any (erased).
+                    IrType.Array(IrType.Any)
                 } else {
                     val elemType = resolveExpr(expr.elements[0]) ?: return null
                     for (i in 1 until expr.elements.size) {
@@ -736,16 +766,28 @@ class TypeResolver(private val table: SymbolTable) {
                     resolveExpr(expr.index) ?: return null
                     return targetType.value
                 }
+                // Pointer indexing: `ptr[i]` → the i-th element (C++-style *(ptr+i)).
+                if (targetType is IrType.Pointer) {
+                    resolveExpr(expr.index) ?: return null
+                    return targetType.inner
+                }
+                // Named types (packs like Set/Map without injected oper[], or any struct):
+                // allow indexing with any key type, returning Any (the runtime value may be indexable).
+                if (targetType is IrType.Named) {
+                    resolveExpr(expr.index) ?: return null
+                    return IrType.Any
+                }
                 val indexType = resolveExpr(expr.index) ?: return null
                 if (indexType != IrType.Int) {
                     errors.add("line ${expr.line}: array index must be Int, got $indexType")
                     return null
                 }
-                if (targetType !is IrType.Array) {
+                // Primitive sets are list-backed, so `s[i]` indexes by position (like an array).
+                if (targetType !is IrType.Array && targetType !is IrType.Set) {
                     errors.add("line ${expr.line}: cannot index into $targetType (not an array)")
                     return null
                 }
-                targetType.element
+                if (targetType is IrType.Array) targetType.element else (targetType as IrType.Set).element
             }
             is Expr.Member -> {
                 // Enum variant: `Color.Red` → Named type carrying the enum identity
@@ -777,9 +819,11 @@ class TypeResolver(private val table: SymbolTable) {
                         }
                     }
                 }
-                val targetType = resolveExpr(expr.target) ?: return null
+                val resolvedTarget = resolveExpr(expr.target) ?: return null
+                // Auto-deref: member access on a pointer reads through it (`p.v` == `(*p).v`).
+                val targetType = if (resolvedTarget is IrType.Pointer) resolvedTarget.inner else resolvedTarget
                 when {
-                    expr.name == "length" && (targetType is IrType.Array || targetType is IrType.Map || targetType is IrType.Set || targetType == IrType.String) -> IrType.Int
+                    expr.name in setOf("length", "size") && (targetType is IrType.Array || targetType is IrType.Map || targetType is IrType.Set || targetType == IrType.String) -> IrType.Int
                     (expr.name == "isEmpty" || expr.name == "isNotEmpty") && (targetType is IrType.Array || targetType is IrType.Map || targetType is IrType.Set) -> IrType.Bool
                     targetType is IrType.Named -> {
                         val struct = table.lookupStruct(targetType.name)
@@ -935,9 +979,21 @@ class TypeResolver(private val table: SymbolTable) {
                 val pointee = (inner as? IrType.Array)?.element ?: inner
                 IrType.Pointer(pointee)
             }
+            is Expr.AllocBuffer -> {
+                resolveExpr(expr.count) ?: return null
+                val elem = if (IrType.isPrimitiveName(expr.typeName)) IrType.fromName(expr.typeName) else IrType.Any
+                IrType.Pointer(elem)
+            }
             is Expr.Deref -> {
                 val target = resolveExpr(expr.target) ?: return null
-                (target as? IrType.Pointer)?.inner ?: IrType.Any
+                when (target) {
+                    is IrType.Pointer -> target.inner
+                    is IrType.Named -> {
+                        val mangled = table.lookupMethod(target.name, "deref")
+                        table.lookupFunction(mangled ?: "")?.returnType ?: IrType.Any
+                    }
+                    else -> IrType.Any
+                }
             }
             is Expr.Isolated -> resolveExpr(expr.value) ?: IrType.Any
             is Expr.Await -> {
@@ -970,7 +1026,7 @@ class TypeResolver(private val table: SymbolTable) {
             is Expr.SafeMember -> {
                 val targetType = resolveExpr(expr.target) ?: return null
                 val inner = if (targetType is IrType.Nullable) targetType.inner else targetType
-                if (expr.name == "length" && (inner is IrType.Array || inner == IrType.String)) {
+                if (expr.name in setOf("length", "size") && (inner is IrType.Array || inner == IrType.String)) {
                     IrType.Nullable(IrType.Int)
                 } else if (inner is IrType.Named) {
                     val field = table.lookupStruct(inner.name)?.field(expr.name)
@@ -1043,6 +1099,12 @@ class TypeResolver(private val table: SymbolTable) {
     /** Type-checks a builtin array method. */
     private fun resolveArrayMethod(name: String, args: List<Expr>, arrType: IrType.Array, line: Int): IrType? {
         return when (name) {
+            "fill" -> {
+                // `arr().fill<T>(count)` — pre-allocates `count` slots; returns the array.
+                if (args.size != 1) { errors.add("line $line: 'fill' expects 1 argument"); return null }
+                resolveExpr(args[0]) ?: return null
+                arrType
+            }
             "add" -> {
                 if (args.size != 1) { errors.add("line $line: 'add' expects 1 argument"); return null }
                 resolveExpr(args[0]) ?: return null
@@ -1157,6 +1219,16 @@ class TypeResolver(private val table: SymbolTable) {
     /** Checks if an initializer type is compatible with a declared type (nullable widening, Any from null). */
     private fun isCompatible(declared: IrType, actual: IrType): Boolean {
         if (declared == actual) return true
+        // Primitive literals bridge to std.container collection pack names.
+        val setNames = setOf("Set", "MutableSet")
+        val mapNames = setOf("Map", "MutableMap")
+        val listNames = setOf("List", "MutableList")
+        if (declared is IrType.Set && actual is IrType.Named && actual.name in setNames) return true
+        if (declared is IrType.Named && declared.name in setNames && actual is IrType.Set) return true
+        if (declared is IrType.Map && actual is IrType.Named && actual.name in mapNames) return true
+        if (declared is IrType.Named && declared.name in mapNames && actual is IrType.Map) return true
+        if (declared is IrType.Array && actual is IrType.Named && actual.name in listNames) return true
+        if (declared is IrType.Named && declared.name in listNames && actual is IrType.Array) return true
         // An enum value (Named, known enum) is usable wherever a String is expected.
         if (declared == IrType.String && actual is IrType.Named && table.lookupEnum(actual.name) != null) return true
         // Node upcast: a child node is compatible with its parent (walk the parent chain).
@@ -1213,17 +1285,20 @@ class TypeResolver(private val table: SymbolTable) {
                 if (eqMangled != null) return IrType.Bool
             }
         }
-        // Pointer arithmetic: Pointer(T) + Int → Pointer(T), Pointer(T) - Int → Pointer(T),
-        // Pointer(T) - Pointer(T) → Int, Pointer(T) ==/!= Pointer(T) → Bool.
+        // Pointer arithmetic: Pointer(T) + Int -> Pointer(T), Pointer(T) - Int -> Pointer(T),
+        // Pointer(T) - Pointer(T) -> Int, Pointer(T) ==/!= Pointer(T)|null -> Bool.
         if (left is IrType.Pointer) {
             return when {
                 op == TokenType.MINUS && right is IrType.Pointer -> IrType.Int // pointer distance
                 op == TokenType.PLUS || op == TokenType.MINUS ->
                     if (right in IrType.integerTypes) left else { errors.add("line $line: pointer arithmetic requires Int offset, got $right"); null }
                 op == TokenType.EQUAL_EQUAL || op == TokenType.BANG_EQUAL ->
-                    if (right is IrType.Pointer) IrType.Bool else { errors.add("line $line: pointer comparison requires Pointer, got $right"); null }
+                    if (right is IrType.Pointer || right == IrType.Any) IrType.Bool else { errors.add("line $line: pointer comparison requires Pointer or null, got $right"); null }
                 else -> { errors.add("line $line: unsupported pointer operation '$op'"); null }
             }
+        }
+        if (left == IrType.Any && right is IrType.Pointer && (op == TokenType.EQUAL_EQUAL || op == TokenType.BANG_EQUAL)) {
+            return IrType.Bool
         }
         if (left in IrType.integerTypes && right is IrType.Pointer && op == TokenType.PLUS) {
             return right // Int + Pointer → Pointer
@@ -1310,7 +1385,10 @@ class TypeResolver(private val table: SymbolTable) {
 
     private fun tryResolveType(ref: TypeRef, line: Int): IrType? {
         return try {
-            IrType.resolve(ref)
+            // Inside an impl method, resolve type params (e.g. `T` in `arr[T]`) using the
+            // struct's typeParams so they erase to Any (consistent with the rest of the compiler).
+            val tpSet = currentReceiverType?.let { table.lookupStruct(it)?.typeParams?.toSet() } ?: emptySet()
+            IrType.resolve(ref, tpSet)
         } catch (e: Exception) {
             errors.add("line $line: ${e.message}")
             null

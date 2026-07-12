@@ -41,22 +41,19 @@ friend zone std {
      * @since 0.0.1
      */
     pack Stack<T> {
-        confine var data: [T]* = alloc [T](8)
-        confine var size: Int = 0
-        confine var capacity: Int = 8
+        shield var data: T* = alloc T[8]
+        shield var size: Int = 0
+        shield var capacity: Int = 8
     }
 
-    impl ctor() for Stack<T> { mut self ->
-        self.data = alloc [T](8)
+    impl ctor() for Stack<T> { mut ref self ->
+        self.data = alloc T[8]
         self.size = 0
         self.capacity = 8
     }
 
     impl Stack<T> {
-        // --- Capacity ---
-
-        /** The number of elements in the stack. */
-        prop length: Int = size
+        // --- Properties ---
 
         /** Whether the stack contains no elements. */
         prop isEmpty: Bool = size == 0
@@ -68,10 +65,10 @@ friend zone std {
 
         func growStack() {
             fin newCap = capacity * 2
-            fin newData = alloc [T](newCap)
+            fin newData = alloc T[newCap]
             var i = 0
             while i < size {
-                (*newData)[i] = (*data)[i]
+                newData[i] = data[i]
                 i += 1
             }
             fin oldData = data
@@ -90,7 +87,7 @@ friend zone std {
          */
         func push(element: T) {
             if size >= capacity { self.growStack() }
-            (*data)[size] = element
+            data[size] = element
             self.size = size + 1
         }
 
@@ -103,7 +100,7 @@ friend zone std {
          */
         func pop(): T {
             assert size > 0 { "Stack is empty" }
-            fin top = (*data)[size - 1]
+            fin top = data[size - 1]
             self.size = size - 1
             return top
         }
@@ -117,7 +114,7 @@ friend zone std {
          */
         func peek(): T {
             assert size > 0 { "Stack is empty" }
-            return (*data)[size - 1]
+            return data[size - 1]
         }
 
         /**
@@ -127,7 +124,7 @@ friend zone std {
          */
         func clear() {
             fin oldData = data
-            self.data = alloc [T](8)
+            self.data = alloc T[8]
             self.size = 0
             self.capacity = 8
             drop oldData
@@ -146,7 +143,7 @@ friend zone std {
             var i = 0
             while i < size {
                 if i > 0 { s = s + ", " }
-                s = s + toString((*data)[i])
+                s = s + toString(data[i])
                 i += 1
             }
             return s + "]"

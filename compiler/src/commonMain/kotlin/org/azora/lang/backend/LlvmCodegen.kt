@@ -88,6 +88,9 @@ class LlvmCodegen {
 
     /** Struct (pack/solo/node) definitions by name, for field-index lookup. */
     private val structDefs = mutableMapOf<String, IrTopLevel.Struct>()
+    private val stdlibListNames = setOf("List", "MutableList")
+    private val stdlibSetNames = setOf("Set", "MutableSet")
+    private val stdlibMapNames = setOf("Map", "MutableMap")
 
     /** Declared parameter types per function (user functions + bridge externs), for call-site coercion. */
     private val funcParamTypes = mutableMapOf<String, List<IrType>>()
@@ -205,6 +208,9 @@ class LlvmCodegen {
         dynamicGlobalInitializers.clear()
         lateTypeDefinitions.clear()
         deferredFunctions.clear()
+        for (item in program.items.filterIsInstance<IrTopLevel.Struct>()) {
+            structDefs[item.name] = item
+        }
         for (item in program.items) {
             when (item) {
                 is IrTopLevel.Func -> {
@@ -233,7 +239,6 @@ class LlvmCodegen {
         if (structs.isNotEmpty()) {
             body.appendLine("; Struct types")
             for (s in structs) {
-                structDefs[s.name] = s
                 val fieldTypes = s.fields.joinToString(", ") { mapType(it.type) }
                 body.appendLine("%struct.${sanitizeName(s.name)} = type { $fieldTypes }")
             }
@@ -404,8 +409,7 @@ class LlvmCodegen {
         line("define void @$name() {")
         line("entry:")
         for ((globalName, type, initializer) in initializers) {
-            val raw = emitExpr(initializer)
-            val value = coerceNumeric(raw, initializer.type, type)
+            val value = emitInitializerForDeclaredType(type, initializer)
             val llvmType = mapType(type)
             emit("  store $llvmType $value, $llvmType* @$globalName")
         }
@@ -813,9 +817,39 @@ class LlvmCodegen {
             allocaSlots[name to t] = reg
             reg
         }
-        val value = emitExpr(initializer)
+        val value = emitInitializerForDeclaredType(type, initializer)
         emit("  store $t $value, $t* $alloca")
         localVars[name] = alloca to t
+    }
+
+    private fun emitInitializerForDeclaredType(type: IrType, initializer: IrExpr): String {
+        val stdlibCollection = emitStdlibCollectionInitializer(type, initializer)
+        if (stdlibCollection != null) return stdlibCollection
+        val raw = emitExpr(initializer)
+        return coerceNumeric(raw, initializer.type, type)
+    }
+
+    private fun emitStdlibCollectionInitializer(type: IrType, initializer: IrExpr): String? {
+        val named = type as? IrType.Named ?: return null
+        if (named.name !in structDefs) return null
+        return when {
+            named.name in stdlibListNames && initializer is IrExpr.ArrayLiteral -> {
+                val arrayType = initializer.type as? IrType.Array ?: IrType.Array(IrType.Any)
+                val packed = emitArrayLiteral(initializer)
+                emitStdlibSequenceFromPacked(named.name, packed, arrayType.element)
+            }
+            named.name in stdlibSetNames && initializer is IrExpr.SetLit -> {
+                val setType = initializer.type as? IrType.Set ?: IrType.Set(IrType.Any)
+                val packed = emitSetLiteral(initializer)
+                emitStdlibSequenceFromPacked(named.name, packed, setType.element)
+            }
+            named.name in stdlibMapNames && initializer is IrExpr.MapLit -> {
+                val mapType = initializer.type as? IrType.Map ?: IrType.Map(IrType.Any, IrType.Any)
+                val packed = emitMapLiteral(initializer)
+                emitStdlibMapFromPacked(named.name, packed, mapType)
+            }
+            else -> null
+        }
     }
 
     private fun emitIf(stmt: IrStmt.If) {
@@ -1644,7 +1678,7 @@ class LlvmCodegen {
     private fun emitMemberRead(expr: IrExpr.Member): String {
         val targetType = expr.target.type
         // Array/string length.
-        if (expr.name == "length" && (targetType is IrType.Array || targetType is IrType.Map || targetType is IrType.Set)) {
+        if (expr.name in setOf("length", "size") && (targetType is IrType.Array || targetType is IrType.Map || targetType is IrType.Set)) {
             val raw = emitExpr(expr.target)
             val len = emitArrayLengthI64(raw)
             val t = nextTmp()
@@ -1654,7 +1688,7 @@ class LlvmCodegen {
         if ((expr.name == "isEmpty" || expr.name == "isNotEmpty") && (targetType is IrType.Array || targetType is IrType.Map || targetType is IrType.Set)) {
             return emitArrayEmptyCheck(expr.target, notEmpty = expr.name == "isNotEmpty")
         }
-        if (expr.name == "length" && targetType == IrType.String) {
+        if (expr.name in setOf("length", "size") && targetType == IrType.String) {
             usesStrlen = true
             val s = emitExpr(expr.target)
             val len = nextTmp()
@@ -2144,6 +2178,120 @@ class LlvmCodegen {
         startBlock(endLabel)
     }
 
+    private fun emitStdlibSequenceFromPacked(name: String, packed: String, elementType: IrType): String {
+        val length = emitArrayLengthI64(packed)
+        val dataRaw = nextTmp()
+        emit("  $dataRaw = getelementptr i8, i8* $packed, i64 8")
+        val (count32, capacity64, capacity32) = emitStdlibBufferSizing(length)
+        val data = emitCopiedBufferFromPacked(dataRaw, length, elementType, capacity64)
+        val ptr = emitStructObject(name) ?: return defaultValue(IrType.Named(name))
+        emitStoreStructField(name, ptr, "data", data, IrType.Pointer(elementType))
+        emitStoreStructField(name, ptr, "size", count32, IrType.Int)
+        emitStoreStructField(name, ptr, "capacity", capacity32, IrType.Int)
+        return ptr
+    }
+
+    private fun emitStdlibMapFromPacked(name: String, packed: String, map: IrType.Map): String {
+        val length = emitArrayLengthI64(packed)
+        val keysRaw = nextTmp()
+        emit("  $keysRaw = getelementptr i8, i8* $packed, i64 8")
+        val keyBytes = nextTmp()
+        emit("  $keyBytes = mul i64 $length, ${sizeOfScalar(map.key)}")
+        val valuesRaw = nextTmp()
+        emit("  $valuesRaw = getelementptr i8, i8* $keysRaw, i64 $keyBytes")
+        val (count32, capacity64, capacity32) = emitStdlibBufferSizing(length)
+        val keys = emitCopiedBufferFromPacked(keysRaw, length, map.key, capacity64)
+        val values = emitCopiedBufferFromPacked(valuesRaw, length, map.value, capacity64)
+        val ptr = emitStructObject(name) ?: return defaultValue(IrType.Named(name))
+        emitStoreStructField(name, ptr, "keys", keys, IrType.Pointer(map.key))
+        emitStoreStructField(name, ptr, "values", values, IrType.Pointer(map.value))
+        emitStoreStructField(name, ptr, "size", count32, IrType.Int)
+        emitStoreStructField(name, ptr, "capacity", capacity32, IrType.Int)
+        return ptr
+    }
+
+    private fun emitStdlibBufferSizing(length: String): Triple<String, String, String> {
+        val count32 = nextTmp()
+        emit("  $count32 = trunc i64 $length to i32")
+        val needsMin = nextTmp()
+        emit("  $needsMin = icmp ult i64 $length, 8")
+        val capacity64 = nextTmp()
+        emit("  $capacity64 = select i1 $needsMin, i64 8, i64 $length")
+        val capacity32 = nextTmp()
+        emit("  $capacity32 = trunc i64 $capacity64 to i32")
+        return Triple(count32, capacity64, capacity32)
+    }
+
+    private fun emitCopiedBufferFromPacked(sourceRaw: String, length: String, elementType: IrType, capacity64: String): String {
+        val elemSize = sizeOfScalar(elementType)
+        val bytes = nextTmp()
+        emit("  $bytes = mul i64 $capacity64, $elemSize")
+        val destinationRaw = emitHeapAlloc(bytes)
+        emitCopyPackedBuffer(sourceRaw, destinationRaw, length, elementType)
+        return destinationRaw
+    }
+
+    private fun emitCopyPackedBuffer(sourceRaw: String, destinationRaw: String, length: String, elementType: IrType) {
+        val et = mapType(elementType)
+        val source = nextTmp()
+        emit("  $source = bitcast i8* $sourceRaw to $et*")
+        val destination = nextTmp()
+        emit("  $destination = bitcast i8* $destinationRaw to $et*")
+
+        val condLabel = nextLabel("stdlib_copy_cond")
+        val bodyLabel = nextLabel("stdlib_copy_body")
+        val endLabel = nextLabel("stdlib_copy_end")
+        val nextIndex = "%stdlib_copy_next_${labelCounter++}"
+        val preheader = currentBlock
+
+        emitTerminator("  br label %$condLabel")
+        startBlock(condLabel)
+        val index = nextTmp()
+        emit("  $index = phi i64 [ 0, %$preheader ], [ $nextIndex, %$bodyLabel ]")
+        val inRange = nextTmp()
+        emit("  $inRange = icmp ult i64 $index, $length")
+        emitTerminator("  br i1 $inRange, label %$bodyLabel, label %$endLabel")
+
+        startBlock(bodyLabel)
+        val sourcePtr = nextTmp()
+        emit("  $sourcePtr = getelementptr $et, $et* $source, i64 $index")
+        val value = nextTmp()
+        emit("  $value = load $et, $et* $sourcePtr, align 1")
+        val destinationPtr = nextTmp()
+        emit("  $destinationPtr = getelementptr $et, $et* $destination, i64 $index")
+        emit("  store $et $value, $et* $destinationPtr, align 1")
+        emit("  $nextIndex = add i64 $index, 1")
+        emitTerminator("  br label %$condLabel")
+
+        startBlock(endLabel)
+    }
+
+    private fun emitStructObject(name: String): String? {
+        if (name !in structDefs) return null
+        val st = "%struct.${sanitizeName(name)}"
+        val sizeGep = nextTmp()
+        emit("  $sizeGep = getelementptr $st, $st* null, i32 1")
+        val size = nextTmp()
+        emit("  $size = ptrtoint $st* $sizeGep to i64")
+        val raw = emitHeapAlloc(size)
+        val ptr = nextTmp()
+        emit("  $ptr = bitcast i8* $raw to $st*")
+        return ptr
+    }
+
+    private fun emitStoreStructField(structName: String, ptr: String, fieldName: String, value: String, sourceType: IrType) {
+        val def = structDefs[structName] ?: return
+        val fieldIndex = def.fields.indexOfFirst { it.name == fieldName }
+        if (fieldIndex < 0) return
+        val field = def.fields[fieldIndex]
+        val st = "%struct.${sanitizeName(structName)}"
+        val fp = nextTmp()
+        emit("  $fp = getelementptr $st, $st* $ptr, i32 0, i32 $fieldIndex")
+        val stored = coerceNumeric(value, sourceType, field.type)
+        val ft = mapType(field.type)
+        emit("  store $ft $stored, $ft* $fp")
+    }
+
     private fun emitArrayLengthI64(raw: String): String {
         val lenPtr = nextTmp()
         emit("  $lenPtr = bitcast i8* $raw to i64*")
@@ -2550,6 +2698,9 @@ class LlvmCodegen {
         if (expr.name == "__alloc") {
             return emitPointerAlloc(expr.args.single())
         }
+        if (expr.name == "__allocBuffer") {
+            return emitPointerBufferAlloc(expr)
+        }
         if (expr.name == "__deref") {
             return emitPointerDeref(expr.args.single(), expr.type)
         }
@@ -2572,6 +2723,16 @@ class LlvmCodegen {
         // Coerce arguments to the callee's declared parameter types (numeric
         // widening such as an Int literal passed to a Real/Long parameter).
         val declared = funcParamTypes[expr.name]
+        if (expr.name == "toString" && declared == null && expr.args.size == 1) {
+            emitExpr(expr.args.single())
+            emit("  ; erased generic toString — no native generic stringification ABI yet")
+            return gepString(addStringConstant(""))
+        }
+        if (declared == null && expr.name in localVars) {
+            expr.args.forEach { emitExpr(it) }
+            emit("  ; erased function-value call '${expr.name}' — no native closure ABI yet")
+            return if (expr.type == IrType.Unit) "void" else defaultValue(expr.type)
+        }
         val args = expr.args.mapIndexed { i, arg ->
             val paramType = declared?.getOrNull(i) ?: arg.type
             val value = coerceNumeric(emitExpr(arg), arg.type, paramType)
@@ -2603,6 +2764,23 @@ class LlvmCodegen {
         emit("  $typed = bitcast i8* $raw to $ptrType")
         emit("  store ${mapType(valueExpr.type)} $value, $ptrType $typed, align 1")
         return raw
+    }
+
+    private fun emitPointerBufferAlloc(expr: IrExpr.Call): String {
+        val countExpr = expr.args.single()
+        val count = emitExpr(countExpr)
+        val countType = mapType(countExpr.type)
+        val count64 = if (countType == "i64") {
+            count
+        } else {
+            val widened = nextTmp()
+            emit("  $widened = sext $countType $count to i64")
+            widened
+        }
+        val elementType = (expr.type as? IrType.Pointer)?.inner ?: IrType.Any
+        val bytes = nextTmp()
+        emit("  $bytes = mul i64 $count64, ${sizeOfScalar(elementType)}")
+        return emitHeapAlloc(bytes)
     }
 
     private fun emitPointerDeref(ptrExpr: IrExpr, resultType: IrType): String {
@@ -3320,7 +3498,7 @@ class LlvmCodegen {
         is IrType.Variant -> "i8*"
         is IrType.Nullable -> "i8*"
         is IrType.Pointer -> "i8*"
-        is IrType.Named -> "%struct.${sanitizeName(type.name)}*"
+        is IrType.Named -> if (type.name in structDefs) "%struct.${sanitizeName(type.name)}*" else "i8*"
     }
 
     private fun isUnsigned(type: IrType): Boolean = when (type) {

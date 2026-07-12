@@ -15,7 +15,7 @@ app/build/install/azora/bin/azora run hello.az
 app/build/install/azora/bin/azora check hello.az
 
 # Generate code
-app/build/install/azora/bin/azora compile kotlin hello.az
+app/build/install/azora/bin/azora compile js hello.az
 
 # REPL
 app/build/install/azora/bin/azora repl
@@ -40,27 +40,28 @@ Source → Lexer → Parser → AST Validator
                    ↓
               IR Generator → IR Optimizer
                    ↓
-  ┌──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬────────────┐
-  ↓      ↓      ↓      ↓      ↓      ↓      ↓      ↓      ↓      ↓            ↓
-Kotlin  TS    Swift  Dart   C#    Python Rust   Wasm   LLVM   Interpreter  (IR dump)
+  ┌──────┬──────┬──────┬────────────┐
+  ↓      ↓      ↓      ↓            ↓
+  JS    Wasm   LLVM   Interpreter  (IR dump)
 ```
 
-The IR is target-agnostic. **Every** compile lowers the optimized IR to all nine
-codegen targets in one pass — `Compiler.compile()` returns them all at once.
+The IR is target-agnostic. **Every** compile lowers the optimized IR to the active
+codegen targets in one pass — `Compiler.compile()` returns JavaScript, WebAssembly,
+and LLVM IR together.
 Adding a new target means one new file under `backend/`.
 
 ## Implemented Features
 
 ### Types
 - **Primitives**: `Int`, `UInt`, `Long`, `ULong`, `Byte`, `UByte`, `Short`, `UShort`, `Cent`, `UCent`, `Float`, `Real`, `Decimal`, `Bool`, `Char`, `String`, `Unit`
-- **Compound**: arrays `[T]`, tuples `(A, B)`, function types `(A) -> B`, maps `["k": v]`
+- **Compound**: fixed arrays `Array<T>`, immutable collections `List<T>`/`Set<T>`/`Map<K, V>`, mutable collections `mut List<T>`/`mut Set<T>`/`mut Map<K, V>`, tuples `(A, B)`, function types `(A) -> B`, map values `mapOf("k": v)`
 - **User-defined**: `pack` (structs), `enum`, `slot` (tagged unions), `typealias`, `fail` (error sets)
 - **Type parameters**: generics (`func<T>`, `pack<T>`) with call-site inference
 - **Variadic generics**: `func<T...> name(first: Int, rest: T...)` — the last type param can be variadic; `rest: T...` collects remaining call args into an array
 - **Spread operator**: `f(arr...)` — splat an array's elements as individual call arguments
 - **Nullable**: `T?` with `null`, `??` (coalesce), `?.` (safe access)
 - **Failable**: `T!ErrSet` — a value of `T` or an error from a declared set
-- **Pointer**: `T*` — a heap reference (`alloc`, `*deref`)
+- **Pointer**: `T*` — a heap reference (`alloc`, `deref ptr` / `*ptr`)
 - **Integer/float promotion**: `2 + 1.5` → `3.5` (auto-widens)
 
 ### Bindings
@@ -74,7 +75,7 @@ Adding a new target means one new file under `backend/`.
 - Generics with inference: `func<T> identity(x: T): T`
 - Named function args: `create(value: 30, label: "A")`
 - Inline functions: `inline func square(x) { ... }` — substituted at call sites
-- Trailing-lambda syntax: `map(items) { x -> x * 2 }`
+- Trailing-lambda syntax: `mapOf(items) { x -> x * 2 }`
 - Implicit `it` in single-param lambdas: `{ it + 1 }` (type inferred from context)
 
 ### Control Flow
@@ -106,13 +107,15 @@ Adding a new target means one new file under `backend/`.
 - `flip { body } flop { body }` — alternating execution: runs the flip body on the first encounter, flop on the next, flip again, etc. (typically used inside loops)
 
 ### Object-Oriented
-- **Structs** (`pack`): fields, construction, field access/mutation
-- **Methods** (`impl`): methods with implicit `self`, mutation by reference
+- **Structs** (`pack`): fields, construction, field access/mutation; empty packs can omit the body (`pack Marker`)
+- **Methods** (`impl pack Type`): methods with implicit `self`, mutation by reference in the pack's declaring file
+- **Extensions** (`func Type.method(...) { ref self -> ... }`): external methods; `shield pack` forces extension receivers to be read-only
 - **Traits** (`spec`): trait declarations with validated implementations (`impl Trait for Type`)
+- **Conversion specs**: compact callback specs such as `spec Into<T>: T get { ref self }`; `impl Into<String> for Type { ref self -> ... }` adds `.toString`, while `impl as String` is cast-only (`value as String`)
 - **Operator overloading**: `plus`, `minus`, `times`, `div`, `mod`, `equals` → `+`, `-`, `*`, `/`, `%`, `==`, `!=`
-- **Index overloading**: `oper[]` / `oper[]=` in `impl` blocks → user types become indexable (`m[i]`, `m[i] = v`)
+- **Index overloading**: standalone `impl oper[] for Type { ref self, index -> ... }` and `impl oper[]= for Type { mut ref self, index, value -> ... }` make user types indexable (`m[i]`, `m[i] = v`)
 - **Infix functions**: `a plus b` syntax (any method callable infix); `infx Type.method(...) { }` declares an extension method usable infix
-- **Named zones**: `zone Name { … }` is a namespace; members accessed as `Name::member`
+- **Named zones**: `zone Name { … }` is a namespace; members accessed as `Name::member`; shared namespace contributions can use `friend zone std::math { … }`
 
 ### Error Handling
 - `throw value` — raises any value
@@ -143,6 +146,7 @@ Adding a new target means one new file under `backend/`.
 ### Decorators
 - `deco Name { fields }` declares an annotation type
 - `@Name`, `@Name(args)`, `@target:Name` applied to declarations (parsed and stored)
+- `get` and `set` are reserved accessor keywords; existing method/member positions treat them as soft names where unambiguous.
 
 ### Functional
 - Lambdas with closures: `{ x: Int -> body }`
@@ -193,33 +197,29 @@ Adding a new target means one new file under `backend/`.
 - Methods and fields accessible via chaining: `inject Config.get()`
 
 ### FFI (Foreign Function Interface)
-- `bridge <target> { func sigs }` — declares extern functions for cross-target interop (C, JVM, JS, …)
+- `bridge <target> { func sigs }` — declares extern functions for active backend interop
 - Interpreter resolves common C-math (`sin`, `cos`, `sqrt`, `pow`, …) to `kotlin.math`
-- Codegens emit real extern declarations: Kotlin `external fun`, TypeScript `declare function`, LLVM `declare`
+- Codegens emit backend extern surfaces: JavaScript host comments/import expectations and LLVM `declare`
 
 ### Reactivity
-- `rem x: T = init` — reactive state declaration (behaves like `var` in the interpreter; reactive re-runs are future work)
+- `mem x: T = init` — remembered reactive declaration
+- `rem x: T = init` — saveable/serializable remembered reactive declaration
+- `ret x: T = init` — retained reactive declaration
 - `effect { body }` — reactive side-effect block (runs once immediately; matches the old interpreter's semantics)
 - `view Name(params) { body }` — a reactive UI component declaration (lowered like a function; callable from code)
 
 ### Backends (targets)
-Every compile produces all of these from the same optimized IR:
+Every compile produces the active codegen outputs from the same optimized IR:
 
 | Target | Output | Status |
 |--------|--------|--------|
-| **Kotlin/JVM** | Kotlin source | Full |
-| **TypeScript** | TypeScript source | Full |
-| **Swift** | Swift 6.3 script (`main.swift`) | Full |
-| **Dart** | Dart source | Full (all int widths → 64-bit `int`) |
-| **C# / .NET** | C# source (static `Program` class) | Full |
-| **Python 3** | Python source (dynamic, no annotations) | Full |
-| **Rust** | Rust source (`Option<T>` for nullable) | Full |
+| **JavaScript** | JavaScript source | Full |
 | **WebAssembly** | WAT (folded S-exprs, linear memory + host imports) | Full |
 | **LLVM IR** | `.ll` text (`lli`/`clang`/`llc` ready) | Partial — placeholders for closures, defer, compound types, pointers |
 | **Interpreter** | In-memory execution | Full — used by tests, REPL, and the playground |
 
 Use `azora compile <target> <file.az>` to emit any of them. Target IDs:
-`kotlin` `typescript` `swift` `dart` `csharp` `python` `rust` `wasm` `llvm` `ir` `ast`.
+`js` `wasm` `llvm` `ir` `ast`.
 
 ### Standard Library
 A growing standard library lives in `Internal/Std/` (35 modules: `math`, `string`,
@@ -249,7 +249,7 @@ std::math::abs(x)         // fully qualified — no import needed
 ### CLI
 - `azora run <file.az>` — compile and run
 - `azora check <file.az>` — type-check
-- `azora compile <kotlin|typescript|llvm|ir> <file.az>` — output generated code
+- `azora compile <js|wasm|llvm|ir|ast> <file.az>` — output generated code
 - `azora repl` — interactive REPL
 - Multi-file projects: `.az` files in sibling directories auto-discovered and merged
 
@@ -264,18 +264,16 @@ std::math::abs(x)         // fully qualified — no import needed
 ## Missing Features (Roadmap)
 
 ### Language
-- **Multi-statement lambda codegen** — best-effort in Kotlin/TS
+- **Multi-statement lambda codegen** — best-effort in JavaScript/WASM/LLVM
 
 ### Systems (large effort)
-- **Full reactivity** — `rem`/`effect` currently run once; automatic dependency tracking and re-runs are future work
+- **Full reactivity** — `mem`/`rem`/`ret`/`effect` currently run once; automatic dependency tracking and re-runs are future work
 - **UI rendering** — `view` is parsed and callable; no DOM/Compose rendering backend yet
-- **Multi-statement lambda codegen** — best-effort in Kotlin/TS
 
 ### Known Limitations
 - Generics use type erasure (field types are `Any` at runtime)
 - LLVM backend uses placeholders for closures, defer, and compound types
-- `use` is parsed as metadata (files merged by CLI, no semantic name resolution)
-- Concurrency features (`flow`/`task`/`await`/`channel`/`launch`) execute with real parallelism in the interpreter (`Dispatchers.Default`) and lower to LLVM; other source backends stub them
+- Concurrency features (`flow`/`task`/`await`/`channel`/`launch`) execute with real parallelism in the interpreter (`Dispatchers.Default`) and lower through the active codegen targets where supported
 
 ## Project Structure
 

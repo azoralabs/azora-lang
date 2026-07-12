@@ -413,15 +413,13 @@ class Tier1PolishTest {
     @Test fun operIndexGetAndSet() {
         assertEquals("20\n99", run("""
             pack IntBag {
-                var data: [Int]
+                var data: Array<Int>
             }
-            impl IntBag {
-                oper[](i: Int): Int {
-                    return self.data[i]
-                }
-                oper[]=(i: Int, v: Int) {
-                    self.data[i] = v
-                }
+            impl oper[] for IntBag { ref self, i: Int ->
+                return self.data[i]
+            }
+            impl oper[]= for IntBag { mut ref self, i: Int, v: Int ->
+                self.data[i] = v
             }
             func main() {
                 var b = IntBag([10, 20, 30])
@@ -483,7 +481,7 @@ class Tier1PolishTest {
     @Test fun mapWithExplicitTypeAnnotation() {
         assertEquals("red", run("""
             func main() {
-                var colors: [Int: String] = [1: "red", 2: "green"]
+                var colors: Map<Int, String> = [1: "red", 2: "green"]
                 println(colors[1])
             }
         """.trimIndent()))

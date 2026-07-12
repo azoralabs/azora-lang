@@ -95,15 +95,15 @@ friend zone std {
      * Usage:
      *
      *     var arena = Arena(64 * 1024)
-     *     var particles = alloc [Real](1000) in arena
-     *     var transforms = alloc [Real](1000) in arena
+     *     var particles = alloc Real[1000] in arena
+     *     var transforms = alloc Real[1000] in arena
      *     // ... compute ...
      *     arena.reset()   // all allocations freed at once
      *
      * Or with region blocks:
      *
      *     region(32 * 1024) { alloc ->
-     *         var verts = alloc [Real](600) in alloc
+     *         var verts = alloc Real[600] in alloc
      *     }
      *     // everything freed here
      *
@@ -316,7 +316,7 @@ friend zone std {
         confine var slotSize: Int = 0
         confine var slotCount: Int = 0
         confine var freeCount: Int = 0
-        confine var freeStack: [Int]* = alloc [Int](0)
+        confine var freeStack: Int* = alloc Int[0]
         confine var acquiredCount: Int = 0
         confine var peakAcquired: Int = 0
     }
@@ -337,7 +337,7 @@ friend zone std {
     } zone { mut self ->
         self.slotSize = slotSize
         self.slotCount = slotCount
-        self.freeStack = alloc [Int](slotCount)
+        self.freeStack = alloc Int[slotCount]
         self.freeCount = slotCount
         self.acquiredCount = 0
         self.peakAcquired = 0
@@ -410,12 +410,12 @@ friend zone std {
                 return fail .PoolExhausted
             }
             self.freeCount = freeCount - 1
-            fin slot = (*freeStack)[freeCount]
+            fin slotIndex = (*freeStack)[freeCount]
             self.acquiredCount = acquiredCount + 1
             if acquiredCount > peakAcquired {
                 self.peakAcquired = acquiredCount
             }
-            return slot
+            return slotIndex
         }
 
         /**
@@ -425,12 +425,12 @@ friend zone std {
          *             previously acquired.
          * @since 0.0.1
          */
-        func release(slot: Int)
+        func release(slotIndex: Int)
         in {
-            assert slot >= 0 && slot < slotCount { "Invalid slot index" }
+            assert slotIndex >= 0 && slotIndex < slotCount { "Invalid slot index" }
         }
         zone {
-            (*freeStack)[freeCount] = slot
+            (*freeStack)[freeCount] = slotIndex
             self.freeCount = freeCount + 1
             self.acquiredCount = acquiredCount - 1
         }

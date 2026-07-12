@@ -29,24 +29,14 @@ package std.container
 
 friend zone std {
     pack Deque<T> {
-        var data: [T]* = alloc [T](8)
-        var head: Int = 0
-        var tail: Int = 0
-        var size: Int = 0
-        var capacity: Int = 8
-    }
-
-    impl ctor() for Deque<T> {
-        mut self ->
-        self.data = alloc [T](8)
-        self.head = 0
-        self.tail = 0
-        self.size = 0
-        self.capacity = 8
+        shield var data: T* = alloc T[8]
+        shield var head: Int = 0
+        shield var tail: Int = 0
+        shield var size: Int = 0
+        shield var capacity: Int = 8
     }
 
     impl Deque<T> {
-        prop length: Int { return self.size }
         prop isEmpty: Bool { return self.size == 0 }
         prop isNotEmpty: Bool { return self.size > 0 }
 
@@ -99,11 +89,11 @@ friend zone std {
 
         confine func growDeque(): Unit {
             var newCap: Int = self.capacity * 2
-            var newData: [T]* = alloc [T](newCap)
+            var newData: T* = alloc T[newCap]
             var i = 0
             while i < self.size {
                 var idx: Int = (self.head + i) % self.capacity
-                (*newData)[i] = (*self.data)[idx]
+                newData[i] = (*self.data)[idx]
                 i += 1
             }
             drop self.data

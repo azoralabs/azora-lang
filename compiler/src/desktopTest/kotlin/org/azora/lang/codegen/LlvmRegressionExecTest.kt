@@ -230,6 +230,20 @@ class LlvmRegressionExecTest {
         }
     }
 
+    @Test fun threadLocalStdlibCollectionsInitializeObjects() = check(
+        "3\n2\n3",
+        """
+        threadlocal var numbers: List<Int> = [1, 2, 3]
+        threadlocal var names: Map<String, Int> = ["first": 10, "second": 20]
+        threadlocal var unique: Set<Int> = ![1, 2, 2, 3]
+        func main() {
+            println(numbers.size)
+            println(names.size)
+            println(unique.size)
+        }
+        """.trimIndent()
+    )
+
     @Test fun decimalCollectionsUseExplicitPackedAlignment() {
         val ir = LlvmExec.compile(
             """

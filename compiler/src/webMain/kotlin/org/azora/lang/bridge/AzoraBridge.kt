@@ -29,9 +29,9 @@ import org.azora.lang.backend.IrInterpreter
  * `{"success":Boolean,"output":String,"errors":String}`, matching the contract the
  * playground's `wasmLoader.js` expects (`az*` exports on the `globalThis.compiler` global).
  *
- * The compiler lowers one IR to nine codegen targets — Kotlin, TypeScript, Swift, Dart, C#,
- * Python, Rust, WebAssembly, and LLVM IR — plus the IR interpreter. Each has an `azGenerate*`
- * export. Execution (`azInterpret` / `azRunTests`) runs the suspend interpreter
+ * The compiler lowers one IR to JavaScript, WebAssembly, and LLVM IR, plus the
+ * IR interpreter. Each codegen target has an `azGenerate*` export. Execution
+ * (`azInterpret` / `azRunTests`) runs the suspend interpreter
  * ([IrInterpreter.interpretSuspend]); Wasm/JS cannot `runBlocking`, so these are `suspend`
  * exports (the loader `await`s them).
  */

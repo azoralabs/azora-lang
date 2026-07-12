@@ -189,7 +189,7 @@ friend zone std {
      * @since 0.0.1
      */
     func hexDigitToInt(c: Char): Int
-    in { assert charIsHexDigit(c) { "Character must be a hex digit" } }
+    in { assert (charIsHexDigit(c)) { "Character must be a hex digit" } }
     zone {
         fin code = ord(c)
         if code >= 48 && code <= 57 { return code - 48 }
@@ -205,7 +205,7 @@ friend zone std {
      * @since 0.0.1
      */
     func digitToInt(c: Char): Int
-    in { assert isDigit(c) { "Character must be a digit" } }
+    in { assert (isDigit(c)) { "Character must be a digit" } }
     zone {
         return ord(c) - 48
     }

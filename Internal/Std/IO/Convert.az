@@ -127,7 +127,7 @@ friend zone std {
      * @return The joined string.
      * @since 0.0.1
      */
-    func joinArray<T>(arr: [T], sep: T): T {
+    func joinArray<T>(arr: Array<T>, sep: T): T {
         if arr.length == 0 { return "" }
         var result = arr[0]
         var i = 1

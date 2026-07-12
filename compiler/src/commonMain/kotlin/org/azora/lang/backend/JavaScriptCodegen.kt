@@ -155,11 +155,55 @@ class JavaScriptCodegen {
         val async = if (func.isTask) "async " else ""
         line("${async}function ${func.name}($params) {")
         indent++
-        for (stmt in func.body) {
-            emitStmt(stmt)
+        if (containsDefer(func.body)) {
+            line("const __az_defer = [];")
+            line("let __az_failed = false;")
+            line("let __az_error = undefined;")
+            line("try {")
+            indent++
+            for (stmt in func.body) emitStmt(stmt)
+            indent--
+            line("} catch (__az_e) {")
+            indent++
+            line("__az_failed = true;")
+            line("__az_error = __az_e;")
+            indent--
+            line("} finally {")
+            indent++
+            line("for (let __az_i = __az_defer.length - 1; __az_i >= 0; __az_i--) {")
+            indent++
+            line("const __az_d = __az_defer[__az_i];")
+            line("if (!__az_d.onFail || __az_failed) {")
+            indent++
+            line("__az_d.body();")
+            line("if (__az_d.suppress) __az_error = undefined;")
+            indent--
+            line("}")
+            indent--
+            line("}")
+            indent--
+            line("}")
+            line("if (__az_failed && __az_error !== undefined) throw __az_error;")
+        } else {
+            for (stmt in func.body) emitStmt(stmt)
         }
         indent--
         line("}")
+    }
+
+    private fun containsDefer(stmts: List<IrStmt>): Boolean = stmts.any { stmt ->
+        when (stmt) {
+            is IrStmt.Defer -> true
+            is IrStmt.If -> containsDefer(stmt.thenBranch) || (stmt.elseBranch?.let(::containsDefer) == true)
+            is IrStmt.While -> containsDefer(stmt.body)
+            is IrStmt.For -> containsDefer(stmt.body)
+            is IrStmt.ForEach -> containsDefer(stmt.body)
+            is IrStmt.Loop -> containsDefer(stmt.body)
+            is IrStmt.When -> stmt.branches.any { containsDefer(it.body) } || (stmt.elseBranch?.let(::containsDefer) == true)
+            is IrStmt.Try -> containsDefer(stmt.body) || (stmt.catchBody?.let(::containsDefer) == true)
+            is IrStmt.Zone -> containsDefer(stmt.body)
+            else -> false
+        }
     }
 
     private fun emitStmt(stmt: IrStmt) {
@@ -307,7 +351,13 @@ class JavaScriptCodegen {
                     line("}")
                 }
             }
-            is IrStmt.Defer -> {}
+            is IrStmt.Defer -> {
+                line("__az_defer.push({ onFail: ${stmt.onFail}, suppress: ${stmt.suppress}, body: () => {")
+                indent++
+                for (s in stmt.body) emitStmt(s)
+                indent--
+                line("} });")
+            }
             is IrStmt.Yield -> {}
             is IrStmt.Break -> line(if (stmt.label != null) "break ${stmt.label};" else "break;")
             is IrStmt.Continue -> line(if (stmt.label != null) "continue ${stmt.label};" else "continue;")
@@ -384,6 +434,7 @@ class JavaScriptCodegen {
             val prop = when (expr.name) {
                 "isEmpty" -> "length === 0"
                 "isNotEmpty" -> "length !== 0"
+                "size" -> "length"
                 else -> expr.name
             }
             "${emitExpr(expr.target)}.$prop"
@@ -393,6 +444,7 @@ class JavaScriptCodegen {
                 "add" -> "push(${expr.args.joinToString(", ") { emitExpr(it) }})"
                 "isEmpty" -> "length === 0"
                 "isNotEmpty" -> "length !== 0"
+                "size" -> "length"
                 else -> "${expr.name}(${expr.args.joinToString(", ") { emitExpr(it) }})"
             }
             "${emitExpr(expr.target)}.$call"

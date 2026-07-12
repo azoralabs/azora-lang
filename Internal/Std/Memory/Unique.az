@@ -1,0 +1,68 @@
+/*
+ * Copyright 2026 AzoraLabs
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ */
+
+@file:experimental
+
+package std.memory
+
+/**
+ * @file Unique
+ *
+ * Unique owning pointer. It models a single owner of one heap allocation.
+ *
+ * @since 0.0.3
+ */
+
+friend zone std {
+    pack Unique<T> {
+        shield var raw: T*
+        shield var active: Bool = true
+    }
+
+    impl deref for Unique<T> { ref self ->
+        assert self.active { "Unique pointer was released" }
+        return deref self.raw
+    }
+
+    impl Unique<T> {
+        func get(): T {
+            assert active { "Unique pointer was released" }
+            return deref self.raw
+        }
+
+        func set(value: T) {
+            assert active { "Unique pointer was released" }
+            self.raw[0] = value
+        }
+
+        func ptr(): T* {
+            assert active { "Unique pointer was released" }
+            return self.raw
+        }
+
+        func release(): T* {
+            assert active { "Unique pointer was already released" }
+            self.active = false
+            return self.raw
+        }
+
+        func dispose() {
+            if active {
+                drop self.raw
+                self.active = false
+            }
+        }
+    }
+
+    func uniqueOf<T>(value: T): Unique<T> {
+        return Unique(alloc value, true)
+    }
+
+    func unique<T>(value: T): Unique<T> {
+        return uniqueOf(value)
+    }
+}

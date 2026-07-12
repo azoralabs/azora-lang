@@ -665,7 +665,7 @@ friend zone std {
      * @param children The child views, one per route.
      * @since 0.0.1
      */
-    view NavHost(route: Int, routes: [String], children: () -> Unit) {
+    view NavHost(route: Int, routes: Array<String>, children: () -> Unit) {
         children()
     }
 }

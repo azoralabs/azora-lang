@@ -28,10 +28,9 @@ package std.gfx.internal
  * filled rectangles via `az_draw_rect`, requiring no external font
  * libraries (FreeType, CoreText, etc.).
  *
- * When Azora targets KMP (Kotlin Multiplatform) or JS, the UI `Text`
- * view uses platform-native text rendering. On LLVM native targets,
- * this internal glyph renderer provides the fallback so that `Text`
- * views and `gfxDrawText` work out of the box.
+ * JavaScript and WebAssembly targets use platform text rendering. On
+ * LLVM native targets, this internal glyph renderer provides the fallback
+ * so that `Text` views and `gfxDrawText` work out of the box.
  *
  * Usage:
  *   use std.gfx
@@ -61,8 +60,7 @@ friend zone std {
     fin GLYPH_FIRST = 32
     fin GLYPH_LAST = 126
 
-    fin FONT = [
-        //   (32) SPACE
+    fin FONT = arrayOf(//   (32) SPACE
         0, 0, 0, 0, 0, 0, 0,
         // ! (33)
         4, 4, 4, 4, 4, 0, 4,
@@ -184,7 +182,7 @@ friend zone std {
         14, 8, 8, 8, 8, 8, 14,
         // \ (92)
         0, 16, 8, 4, 2, 1, 0,
-        // ] (93)
+        //) (93)
         14, 2, 2, 2, 2, 2, 14,
         // ^ (94)
         4, 10, 17, 0, 0, 0, 0,
@@ -252,7 +250,7 @@ friend zone std {
         8, 4, 4, 2, 4, 4, 8,
         // ~ (126)
         0, 0, 8, 21, 2, 0, 0
-    ]
+    )
 
     // ══════════════════════════════════════════════════════════════════
     // Text Rendering API
@@ -285,9 +283,9 @@ friend zone std {
                 // Extract bit: bit 4 = col 0, bit 0 = col 4
                 fin shift = 4 - col
                 fin mask = 1
-                var test = bits
-                for s in 0..shift - 1 { test = test / 2 }
-                if test % 2 == 1 {
+                var bitTest = bits
+                for s in 0..shift - 1 { bitTest = bitTest / 2 }
+                if bitTest % 2 == 1 {
                     fin px = x + toReal(col) * scale
                     fin py = y + toReal(row) * scale
                     az_draw_rect(px, py, scale, scale, color.r, color.g, color.b, color.a, sw, sh)

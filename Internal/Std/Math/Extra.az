@@ -40,7 +40,9 @@ friend zone std {
      * @since 0.0.1
      */
     func pow<T>(value: T, exp: Int): T
-    in { assert exp >= 0 { "Exponent must be non-negative" } }
+    in {
+        assert exp >= 0 { "Exponent must be non-negative" }
+    }
     zone {
         if exp == 0 { return 1 }
         var result = value
@@ -60,9 +62,11 @@ friend zone std {
      * @since 0.0.1
      */
     func factorial<T>(n: T): T
-    in { assert n >= 0 { "Factorial requires non-negative input" } }
-    out { r -> assert r >= 1 { "Factorial result must be >= 1" } }
-    zone {
+    in {
+        assert n >= 0 { "Factorial requires non-negative input" }
+    } out { r ->
+        assert r >= 1 { "Factorial result must be >= 1" }
+    } zone {
         if n <= 1 { return 1 }
         var result = 1
         var i = 2
@@ -82,8 +86,9 @@ friend zone std {
      * @since 0.0.1
      */
     func gcd<T>(a: T, b: T): T
-    out { r -> assert r >= 0 { "GCD must be non-negative" } }
-    zone {
+    out {
+        r -> assert r >= 0 { "GCD must be non-negative" }
+    } zone {
         var x = a
         if x < 0 { x = -x }
         var y = b
@@ -105,8 +110,9 @@ friend zone std {
      * @since 0.0.1
      */
     func lcm<T>(a: T, b: T): T
-    out { r -> assert r >= 0 { "LCM must be non-negative" } }
-    zone {
+    out { r ->
+        assert r >= 0 { "LCM must be non-negative" }
+    } zone {
         if a == 0 || b == 0 { return 0 }
         var absA = a
         if absA < 0 { absA = -absA }
@@ -140,7 +146,7 @@ friend zone std {
      * @return The sum of all elements.
      * @since 0.0.1
      */
-    func sum<T>(arr: [T]): T {
+    func sum<T>(arr: Array<T>): T {
         var total = 0
         var i = 0
         while i < arr.length {
@@ -157,7 +163,7 @@ friend zone std {
      * @return The sum of all elements.
      * @since 0.0.1
      */
-    func sumReal<T>(arr: [T]): T {
+    func sumReal<T>(arr: Array<T>): T {
         var total = 0.0
         var i = 0
         while i < arr.length {
@@ -174,7 +180,7 @@ friend zone std {
      * @return The product of all elements.
      * @since 0.0.1
      */
-    func product<T>(arr: [T]): T {
+    func product<T>(arr: Array<T>): T {
         if arr.length == 0 { return 0 }
         var result = 1
         var i = 0
@@ -193,9 +199,11 @@ friend zone std {
      * @since 0.0.1
      */
     func fib<T>(n: T): T
-    in { assert n >= 0 { "Fibonacci requires non-negative input" } }
-    out { r -> assert r >= 0 { "Fibonacci result must be non-negative" } }
-    zone {
+    in {
+        assert n >= 0 { "Fibonacci requires non-negative input" }
+    } out { r ->
+        assert r >= 0 { "Fibonacci result must be non-negative" }
+    } zone {
         if n == 0 { return 0 }
         if n == 1 { return 1 }
         var a = 0
@@ -218,8 +226,9 @@ friend zone std {
      * @since 0.0.1
      */
     func isPrime(n: Int): Bool
-    in { assert n >= 0 { "isPrime requires non-negative input" } }
-    zone {
+    in {
+        assert n >= 0 { "isPrime requires non-negative input" }
+    } zone {
         if n < 2 { return false }
         if n < 4 { return true }
         if n % 2 == 0 { return false }
@@ -240,9 +249,10 @@ friend zone std {
      * @return The average as a real number.
      * @since 0.0.1
      */
-    func average(arr: [Int]): Real
-    in { assert arr.length > 0 { "Array must not be empty" } }
-    zone {
+    func average(arr: Array<Int>): Real
+    in {
+        assert arr.length > 0 { "Array must not be empty" }
+    } zone {
         var total = 0
         var i = 0
         while i < arr.length {
@@ -265,8 +275,7 @@ friend zone std {
         assert n >= 0 { "n must be non-negative" }
         assert k >= 0 { "k must be non-negative" }
         assert k <= n { "k must be <= n" }
-    }
-    zone {
+    } zone {
         if k == 0 || k == n { return 1 }
         var result = 1
         var i = 0
@@ -287,9 +296,11 @@ friend zone std {
      * @since 0.0.1
      */
     func isqrt(n: Int): Int
-    in { assert n >= 0 { "isqrt requires non-negative input" } }
-    out { r -> assert r * r <= n { "isqrt result squared must be <= n" } }
-    zone {
+    in {
+        assert n >= 0 { "isqrt requires non-negative input" }
+    } out { r ->
+        assert r * r <= n { "isqrt result squared must be <= n" }
+    } zone {
         if n == 0 { return 0 }
         var x = n
         var y = (x + 1) / 2

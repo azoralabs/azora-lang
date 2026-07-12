@@ -145,28 +145,6 @@ friend zone std {
     }
 
     // ====================================================================
-    // JVM Bridge - LWJGL OpenGL ES bindings
-    // ====================================================================
-
-    bridge .JVM {
-        func jvm_glClear(mask: Int)
-        func jvm_glClearColor(r: Real, g: Real, b: Real, a: Real)
-        func jvm_glViewport(x: Int, y: Int, width: Int, height: Int)
-        func jvm_glEnable(cap: Int)
-        func jvm_glBlendFunc(sfactor: Int, dfactor: Int)
-        func jvm_glCreateShader(shaderType: Int): Int
-        func jvm_glShaderSource(shader: Int, source: String)
-        func jvm_glCompileShader(shader: Int)
-        func jvm_glCreateProgram(): Int
-        func jvm_glAttachShader(program: Int, shader: Int)
-        func jvm_glLinkProgram(program: Int)
-        func jvm_glUseProgram(program: Int)
-        func jvm_glGetUniformLocation(program: Int, name: String): Int
-        func jvm_glUniform4f(location: Int, v0: Real, v1: Real, v2: Real, v3: Real)
-        func jvm_glDrawArrays(mode: Int, first: Int, count: Int)
-    }
-
-    // ====================================================================
     // OpenGL ES 3.0 Constants
     // ====================================================================
 
@@ -286,7 +264,7 @@ friend zone std {
     }
 
     impl GfxColor {
-        func toHex(): Int { ref self ->
+        func toHex(): Int {
             fin ri = toInt(r * 255.0)
             fin gi = toInt(g * 255.0)
             fin bi = toInt(b * 255.0)

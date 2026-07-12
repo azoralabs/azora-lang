@@ -271,6 +271,9 @@ sealed class Expr {
     /** `alloc <expr>` — heap-allocate a value and return a pointer to it. */
     data class Alloc(val value: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 
+    /** `alloc T(count)` — allocate a buffer of `count` elements of type T (C++-style), returning `T*`. */
+    data class AllocBuffer(val typeName: String, val count: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+
     /** `*ptr` — dereference a pointer. */
     data class Deref(val target: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 
@@ -889,8 +892,16 @@ sealed class Stmt {
     /** `defer { body }` — runs [body] when the enclosing function exits. */
     data class Defer(val body: List<Stmt>, override val line: Int, override val column: Int = 0, override val length: Int = 0, val onFail: Boolean = false, val suppress: Boolean = false) : Stmt()
 
-    /** `rem x: T = init` — reactive state declaration. */
-    data class RemDecl(val name: String, val type: TypeAnnotation, val initializer: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Stmt()
+    /** `mem`/`rem`/`ret x: T = init` — reactive state declaration. */
+    data class RemDecl(
+        val name: String,
+        val type: TypeAnnotation,
+        val initializer: Expr,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0,
+        val kind: ReactiveKind = ReactiveKind.REM,
+    ) : Stmt()
 
     /** `effect { body }` — reactive side-effect; re-runs when tracked `rem` variables change. */
     data class Effect(val body: List<Stmt>, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Stmt()
@@ -908,9 +919,9 @@ sealed class Stmt {
  *
  * Variants:
  * - [Named] -- a simple or generic type name: `Int`, `String`, `List<Int>`
- * - [Array] -- `[T]`
- * - [Map] -- `[K: V]`
- * - [Set] -- `![T]`
+ * - [Array] -- fixed array syntax `Array<T>`
+ * - [Map] -- structural map literal type (kept for backends)
+ * - [Set] -- structural set literal type (kept for backends)
  * - [Function] -- `(A, B) -> R`
  * - [Tuple] -- `(A, B)` (two or more elements)
  * - [Nullable] -- `T?`
@@ -928,19 +939,19 @@ sealed class TypeRef {
         override fun toString() = if (args.isEmpty()) name else "$name<${args.joinToString(", ")}>"
     }
 
-    /** Array type `[T]`. */
+    /** Fixed array type `Array<T>`. */
     data class Array(val element: TypeRef) : TypeRef() {
-        override fun toString() = "[$element]"
+        override fun toString() = "Array<$element>"
     }
 
-    /** Map type `[K: V]`. */
+    /** Structural map type `map[K, V]`. */
     data class Map(val key: TypeRef, val value: TypeRef) : TypeRef() {
-        override fun toString() = "[$key: $value]"
+        override fun toString() = "map[$key, $value]"
     }
 
-    /** Set type `![T]`. */
+    /** Structural set type `set[T]`. */
     data class Set(val element: TypeRef) : TypeRef() {
-        override fun toString() = "![$element]"
+        override fun toString() = "set[$element]"
     }
 
     /** Function type `(A, B) -> R`. */
@@ -988,7 +999,7 @@ sealed class TypeRef {
  */
 sealed class TypeAnnotation {
     /**
-     * An explicit, user-specified type annotation (e.g. `: Int`, `: [Int]`).
+     * An explicit, user-specified type annotation (e.g. `: Int`, `: arr[Int]`).
      *
      * @property ref the structured type reference as parsed from source
      */
@@ -1015,7 +1026,9 @@ sealed class TypeAnnotation {
  * @property name the parameter name
  * @property type the structured type reference as written in source
  */
-enum class Visibility { EXPOSE, PROTECT, CONFINE }
+enum class Visibility { EXPOSE, PROTECT, CONFINE, SHIELD }
+
+enum class ReactiveKind { MEM, REM, RET }
 
 /** Parameter modifier: `""` (default), `"ref"` (by-reference), `"out"` (output), `"mut"` (mutable). */
 typealias ParamModifier = String
@@ -1091,6 +1104,8 @@ data class FuncDecl(
     val isUnsafe: Boolean = false,
     /** Visibility exported to import/member access rules. */
     val visibility: Visibility = Visibility.EXPOSE,
+    /** Receiver mutability for impl/extension methods: `ref self` or `mut ref self`. */
+    val receiverModifier: ParamModifier = "mut ref",
 )
 
 /**
@@ -1108,6 +1123,21 @@ data class Annotation(
     val target: String? = null,
     val line: Int = 0,
     val column: Int = 0
+)
+
+/**
+ * Compact callback form for specs such as `spec Into<T>: T get { ref self }`.
+ *
+ * The spec has no body; implementations provide one callback body directly in
+ * `impl Into<String> for X { ref self -> ... }`. `getter` means the generated
+ * method is intended to be used as property syntax (`x.toString`) as well as
+ * legacy zero-arg call syntax (`x.toString()`).
+ */
+data class SpecCallback(
+    val returnType: TypeRef,
+    val getter: Boolean,
+    val receiverModifier: ParamModifier,
+    val receiverName: String,
 )
 
 // ---------------------------------------------------------------------------
@@ -1252,7 +1282,17 @@ sealed class TopLevel {
      * @property name the struct name
      * @property fields the ordered list of field declarations
      */
-    data class Pack(val name: String, val fields: List<PackField>, val typeParams: List<String> = emptyList(), val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList(), val visibility: Visibility = Visibility.EXPOSE) : TopLevel()
+    data class Pack(
+        val name: String,
+        val fields: List<PackField>,
+        val typeParams: List<String> = emptyList(),
+        val line: Int,
+        val column: Int = 0,
+        val annotations: List<Annotation> = emptyList(),
+        val visibility: Visibility = Visibility.EXPOSE,
+        /** `shield pack X {}` prevents external extensions from taking `mut ref self`. */
+        val shielded: Boolean = false,
+    ) : TopLevel()
 
     /** `deco Name { fields }` — declares a decorator/annotation type. Parsed and stored; not yet enforced. */
     data class Deco(val name: String, val fields: List<PackField>, val line: Int, val column: Int = 0) : TopLevel()
@@ -1260,7 +1300,7 @@ sealed class TopLevel {
     /** An extern function signature inside a `bridge` block: `func sin(x: Real): Real` (no body). */
     data class BridgeSig(val name: String, val params: List<Param>, val returnType: TypeRef, val line: Int, val column: Int = 0)
 
-    /** `bridge <target> { func sigs }` — declares extern functions for FFI (C, JVM, JS, …). */
+    /** `bridge <target> { func sigs }` — declares extern functions for active FFI targets (C/LLVM, JS/WASM). */
     data class Bridge(val target: String, val funcs: List<BridgeSig>, val line: Int, val column: Int = 0) : TopLevel()
 
     /** `solo Name { fields; methods }` — declares a singleton struct with one lazily-created shared instance. */
@@ -1323,10 +1363,28 @@ sealed class TopLevel {
      * @property typeName the struct the methods extend
      * @property methods the method declarations (without an explicit `self` parameter)
      */
-    data class Impl(val typeName: String, val methods: List<FuncDecl>, val traitName: String? = null, val line: Int, val column: Int = 0) : TopLevel()
+    data class Impl(
+        val typeName: String,
+        val methods: List<FuncDecl>,
+        val traitName: String? = null,
+        val line: Int,
+        val column: Int = 0,
+        /** `impl pack X {}` is the same-file/private implementation form. */
+        val isPackImpl: Boolean = false,
+        /** `func X.name(...) { ref self -> ... }` extension implementation form. */
+        val isExtension: Boolean = false,
+        /** Generic arguments on the implemented spec, e.g. `String` in `Into<String>`. */
+        val traitArgs: List<TypeRef> = emptyList(),
+    ) : TopLevel()
 
-    /** `spec Name { func method(params): Ret; ... }` — a trait / interface declaration. */
-    data class Spec(val name: String, val methods: List<FuncDecl>, val line: Int, val column: Int = 0) : TopLevel()
+    /** `spec Name { func method(params): Ret; ... }` or compact callback `spec Name<T>: T get { ref self }`. */
+    data class Spec(
+        val name: String,
+        val methods: List<FuncDecl>,
+        val line: Int,
+        val column: Int = 0,
+        val callback: SpecCallback? = null,
+    ) : TopLevel()
 
     /** `typealias Name = Type` — a type alias. */
     data class TypeAlias(val name: String, val type: TypeRef, val line: Int, val column: Int = 0) : TopLevel()
@@ -1365,7 +1423,12 @@ sealed class TopLevel {
  */
 data class Program(
     val packageName: String?,
-    val items: List<TopLevel>
+    val items: List<TopLevel>,
+    /**
+     * Pack names owned by the source unit before stdlib injection. `impl pack`
+     * uses this set to stay limited to the file that declared the pack.
+     */
+    val localPackNames: Set<String> = emptySet(),
 ) {
     /** Convenience — returns only the resolved function declarations. */
     val functions: List<FuncDecl> get() = items.filterIsInstance<TopLevel.Func>().map { it.decl }

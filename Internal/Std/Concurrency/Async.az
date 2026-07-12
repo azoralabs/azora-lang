@@ -43,7 +43,10 @@ friend zone std {
      */
     task timeout<T>(ms: T, action: () -> Unit): Bool {
         var completed = false
-        fin handle = async { action(); completed = true }
+        fin handle = async {
+            action()
+            completed = true
+        }
         suspend ms
         return completed
     }
@@ -98,8 +101,14 @@ friend zone std {
      */
     task race<T>(tag: T, a: () -> Unit, b: () -> Unit) {
         var done = false
-        fin t1 = async { a(); done = true }
-        fin t2 = async { b(); done = true }
+        fin t1 = async {
+            a()
+            done = true
+        }
+        fin t2 = async {
+            b()
+            done = true
+        }
         while !done {
             suspend 1
         }

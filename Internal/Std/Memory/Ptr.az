@@ -1,0 +1,69 @@
+/*
+ * Copyright 2026 AzoraLabs
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+@file:experimental
+
+package std.memory
+
+/**
+ * @file Ptr
+ *
+ * A thin owning raw-pointer wrapper around `T*`.
+ *
+ * `Ptr<T>` encapsulates a single heap allocation so the pointer can be passed around, dereferenced,
+ * and freed explicitly. It is the unchecked counterpart to [Arc] — no reference counting; the
+ * caller owns the lifetime.
+ *
+ * @since 0.0.3
+ */
+
+friend zone std {
+    /**
+     * An owning wrapper around a raw `T*`.
+     *
+     * @param T the pointee type.
+     * @since 0.0.3
+     */
+    pack Ptr<T> {
+        shield var raw: T*
+    }
+
+    impl deref for Ptr<T> { ref self ->
+        return deref self.raw
+    }
+
+    impl Ptr<T> {
+        /** The pointed-to value. */
+        func get(): T { return deref self.raw }
+
+        /** Replaces the pointed-to value. */
+        func set(value: T) { self.raw[0] = value }
+
+        /** The underlying `T*` (escapes the wrapper). */
+        func ptr(): T* { return self.raw }
+
+        /** Whether this wrapper holds a non-null pointer. */
+        func isNull(): Bool { return self.raw == null }
+    }
+
+    func ptrOf<T>(value: T): Ptr<T> {
+        return Ptr(alloc value)
+    }
+
+    func ptr<T>(value: T): Ptr<T> {
+        return ptrOf(value)
+    }
+}

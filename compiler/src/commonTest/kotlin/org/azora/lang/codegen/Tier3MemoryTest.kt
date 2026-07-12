@@ -77,6 +77,45 @@ class Tier3MemoryTest {
         """.trimIndent()))
     }
 
+    @Test fun derefKeywordReadsAndWritesRawPointer() {
+        assertEquals("5\n12", run("""
+            func main() {
+                var p = alloc 5
+                println(deref p)
+                deref p = 12
+                println(deref p)
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun ptrSmartPointerUsesDerefImpl() {
+        assertEquals("41\n42", run("""
+            use std.memory
+            func main() {
+                var p = ptr(41)
+                println(deref p)
+                p.set(42)
+                println(p.get())
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun sliceIndexesPointerBuffer() {
+        assertEquals("9\n4", run("""
+            use std.memory
+            func main() {
+                var p = alloc Int[3]
+                p[0] = 7
+                p[1] = 8
+                p[2] = 9
+                var s = ptrSlice(p, 3)
+                println(s[2])
+                s[2] = 4
+                println(p[2])
+            }
+        """.trimIndent()))
+    }
+
     @Test fun isolatedProducesIndependentDeepCopy() {
         // Mutating the isolated copy must not affect the original.
         assertEquals("[1, 2, 3]\n[1, 2, 3, 99]", run("""

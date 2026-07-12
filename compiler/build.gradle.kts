@@ -14,10 +14,14 @@ val generateStdlib = tasks.register("generateAzStdlib") {
             "Math/Math.az",
             "Math/Extra.az",
             "Math/Trig.az",
+            "Convert/Convert.az",
             "Container/Tuple.az",
             "Container/List.az",
+            "Container/MutableList.az",
             "Container/Map.az",
+            "Container/MutableMap.az",
             "Container/Set.az",
+            "Container/MutableSet.az",
             "Container/Stack.az",
             "Container/Queue.az",
             "Container/Deque.az",
@@ -42,6 +46,11 @@ val generateStdlib = tasks.register("generateAzStdlib") {
             "Result/Result.az",
             "Random/Random.az",
             "Allocator/Allocator.az",
+            "Memory/Ptr.az",
+            "Memory/Arc.az",
+            "Memory/Unique.az",
+            "Memory/Weak.az",
+            "Memory/Slice.az",
             "Ui/Ui.az",
             "Os/Os.az",
             "Gfx/Gfx.az",
@@ -66,6 +75,9 @@ val generateStdlib = tasks.register("generateAzStdlib") {
         val sourcesList = azFiles.map { (_, relPath, prefix) ->
             uniqueName(prefix, relPath)
         }
+        val namedSourcesList = azFiles.map { (_, relPath, prefix) ->
+            "\"$relPath\" to ${uniqueName(prefix, relPath)}"
+        }
 
         val kt = buildString {
             appendLine("package org.azora.lang.stdlib")
@@ -81,17 +93,20 @@ val generateStdlib = tasks.register("generateAzStdlib") {
                 appendLine()
             }
             appendLine("    val sources = listOf(${sourcesList.joinToString(", ")})")
+            appendLine("    private val namedSources = listOf(${namedSourcesList.joinToString(", ")})")
             appendLine()
             appendLine("    private val cachedPrograms: List<Program> by lazy { loadProgramsInternal() }")
             appendLine()
             appendLine("    fun loadPrograms(): List<Program> = cachedPrograms")
             appendLine()
             appendLine("    private fun loadProgramsInternal(): List<Program> {")
-            appendLine("        return sources.mapNotNull { source ->")
+            appendLine("        return namedSources.map { (name, source) ->")
             appendLine("            try {")
             appendLine("                val tokens = Lexer(source).tokenize()")
             appendLine("                Parser(tokens).parse()")
-            appendLine("            } catch (_: Exception) { null }")
+            appendLine("            } catch (e: Exception) {")
+            appendLine("                error(\"Failed to parse embedded stdlib source \$name: \${e.message}\")")
+            appendLine("            }")
             appendLine("        }")
             appendLine("    }")
             appendLine("}")
@@ -215,11 +230,8 @@ val generateAzCodegenTests = tasks.register("generateAzCodegenTests") {
         data class Target(val className: String, val helperMethod: String)
         val targets = listOf(
             Target("InternalAzJSCodegenRunner", "runJSTest"),
-            Target("InternalAzKotlinCodegenRunner", "runKotlinTest"),
-            Target("InternalAzCSharpCodegenRunner", "runCSharpTest"),
             Target("InternalAzLlvmCodegenRunner", "runLlvmTest"),
-            Target("InternalAzPythonCodegenRunner", "runPythonTest"),
-            Target("InternalAzSwiftCodegenRunner", "runSwiftTest")
+            Target("InternalAzWasmCodegenRunner", "runWasmTest")
         )
 
         for (target in targets) {

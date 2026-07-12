@@ -21,9 +21,9 @@ package std.container
 use std.convert
 
 /**
- * @file Set
+ * @file MutableSet
  *
- * Generic unique-element collection.
+ * Generic mutable unique-element collection.
  *
  * Provides a pointer-backed set that maintains uniqueness of elements,
  * with support for standard set operations like union, intersection, and difference.
@@ -36,24 +36,20 @@ friend zone std {
     /**
      * A generic collection that stores unique elements.
      *
-     * Set guarantees that no duplicate elements are stored.
+     * MutableSet guarantees that no duplicate elements are stored.
      * Elements are stored in insertion order.
      *
      * @param T The type of elements stored in this set.
      * @since 0.0.1
      */
-    pack Set<T> {
+    pack MutableSet<T> {
         shield var data: T* = alloc T[8]
         shield var size: Int = 0
         shield var capacity: Int = 8
     }
 
-    func<T> emptySet(): Set<T> {
-        return Set<T>()
-    }
-
-    func<T> setFrom(elements: ...T): Set<T> {
-        var result = Set<T>()
+    func<T> mutableSetOf(elements: ...T): MutableSet<T> {
+        var result = MutableSet<T>()
         var i = 0
         while i < elements.size {
             result.add(elements[i])
@@ -62,14 +58,14 @@ friend zone std {
         return result
     }
 
-    impl oper[] for Set<T> { ref self, index ->
+    impl oper[] for MutableSet<T> { ref self, index ->
         assert index >= 0 && index < self.size {
             "Set index out of bounds"
         }
         return self.data[index]
     }
 
-    impl oper[]= for Set<T> { mut ref self, index, element ->
+    impl oper[]= for MutableSet<T> { mut ref self, index, element ->
         assert index >= 0 && index < self.size { 
             "Set index out of bounds"
         }
@@ -83,7 +79,7 @@ friend zone std {
         self.data[index] = element
     }
 
-    impl Set<T> {
+    impl MutableSet<T> {
         // --- Properties ---
 
         /** Whether the set contains no elements. */
@@ -182,7 +178,7 @@ friend zone std {
             drop oldData
         }
 
-        // --- Set Operations ---
+        // --- MutableSet Operations ---
 
         /**
          * Returns a new set containing all elements from both sets.
@@ -191,8 +187,8 @@ friend zone std {
          * @return A new set with all unique elements from both sets.
          * @since 0.0.1
          */
-        func union(other: Set<T>): Set<T> {
-            var result = Set<T>()
+        func union(other: MutableSet<T>): MutableSet<T> {
+            var result = MutableSet<T>()
             var i = 0
             while i < size {
                 result.add(data[i])
@@ -214,8 +210,8 @@ friend zone std {
          * @return A new set with common elements.
          * @since 0.0.1
          */
-        func intersect(other: Set<T>): Set<T> {
-            var result = Set<T>()
+        func intersect(other: MutableSet<T>): MutableSet<T> {
+            var result = MutableSet<T>()
             var i = 0
             while i < size {
                 if other.contains(data[i]) {
@@ -233,8 +229,8 @@ friend zone std {
          * @return A new set with elements unique to this set.
          * @since 0.0.1
          */
-        func difference(other: Set<T>): Set<T> {
-            var result = Set<T>()
+        func difference(other: MutableSet<T>): MutableSet<T> {
+            var result = MutableSet<T>()
             var i = 0
             while i < size {
                 if !other.contains(data[i]) {
@@ -268,8 +264,8 @@ friend zone std {
          * @return A new set with matching elements.
          * @since 0.0.1
          */
-        func filter(predicate: (T) -> Bool): Set<T> {
-            var result = Set<T>()
+        func filter(predicate: (T) -> Bool): MutableSet<T> {
+            var result = MutableSet<T>()
             var i = 0
             while i < size {
                 if predicate(data[i]) {
@@ -330,7 +326,7 @@ friend zone std {
 
     }
 
-    impl Into<String> for Set<T> { ref self ->
+    impl Into<String> for MutableSet<T> { ref self ->
         var s = "{"
         var i = 0
         while i < size {

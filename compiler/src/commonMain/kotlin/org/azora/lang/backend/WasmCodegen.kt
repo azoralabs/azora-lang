@@ -33,7 +33,7 @@ import org.azora.lang.ir.IrUnaryOp
  * Value representation (single WASM value per Azora value):
  *  - `Int`/`Bool`/`Char`/sized ints ≤ 32-bit → `i32`
  *  - `Long`/`ULong`/`Cent`/`UCent` → `i64`     `Real`/`Decimal` → `f64`   `Float` → `f32`
- *  - `String`/`[T]`/pack → `i32` pointer into linear memory. Strings and arrays
+ *  - `String`/`arr[T]`/pack → `i32` pointer into linear memory. Strings and arrays
  *    are laid out as `[len: i32][payload…]`; packs as packed `i32` fields.
  *
  * Printing and string handling go through host imports (`print_i32`, `print_str`,
@@ -266,7 +266,7 @@ class WasmCodegen {
         is IrExpr.Spread -> emitExpr(expr.array)
         is IrExpr.Index -> "(i32.load ${elemAddr(expr.target, expr.index)})"
         is IrExpr.Member -> when (expr.name) {
-            "length" -> "(i32.load ${emitExpr(expr.target)})"
+            "length", "size" -> "(i32.load ${emitExpr(expr.target)})"
             "isEmpty" -> "(i32.eqz (i32.load ${emitExpr(expr.target)}))"
             "isNotEmpty" -> "(i32.ne (i32.load ${emitExpr(expr.target)}) (i32.const 0))"
             else -> "(i32.load ${fieldAddr(expr.target, expr.name)})"

@@ -146,6 +146,7 @@ internal class QualifiedStdRewriter(
         is Expr.IsCheck -> e.copy(expr = expr(e.expr))
         is Expr.SafeMember -> e.copy(target = expr(e.target))
         is Expr.Alloc -> e.copy(value = expr(e.value))
+        is Expr.AllocBuffer -> e.copy(count = expr(e.count))
         is Expr.Deref -> e.copy(target = expr(e.target))
         is Expr.Isolated -> e.copy(value = expr(e.value))
         is Expr.Await -> e.copy(value = expr(e.value))

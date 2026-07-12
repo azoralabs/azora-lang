@@ -1,0 +1,58 @@
+/*
+ * Copyright 2026 AzoraLabs
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ */
+
+@file:experimental
+
+package std.memory
+
+/**
+ * @file Slice
+ *
+ * Bounds-carrying view over a contiguous pointer range.
+ *
+ * @since 0.0.3
+ */
+
+friend zone std {
+    pack Slice<T> {
+        shield var raw: T*
+        shield var count: Int
+    }
+
+    impl oper[] for Slice<T> { ref self, index ->
+        assert index >= 0 && index < self.count { "Slice index out of bounds" }
+        return self.raw[index]
+    }
+
+    impl oper[]= for Slice<T> { mut ref self, index, value ->
+        assert index >= 0 && index < self.count { "Slice index out of bounds" }
+        self.raw[index] = value
+    }
+
+    impl Slice<T> {
+        prop length: Int = count
+        prop isEmpty: Bool = count == 0
+        prop isNotEmpty: Bool = count > 0
+
+        func ptr(): T* { return self.raw }
+
+        func sub(start: Int, count: Int): Slice<T> {
+            assert start >= 0 { "Slice start must be non-negative" }
+            assert count >= 0 { "Slice count must be non-negative" }
+            assert start + count <= self.count { "Slice range out of bounds" }
+            return Slice(self.raw + start, count)
+        }
+    }
+
+    func sliceOf<T>(ptr: T*, length: Int): Slice<T> {
+        return Slice(ptr, length)
+    }
+
+    func ptrSlice<T>(ptr: T*, length: Int): Slice<T> {
+        return sliceOf(ptr, length)
+    }
+}

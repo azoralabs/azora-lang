@@ -21,9 +21,9 @@ package std.container
 use std.convert
 
 /**
- * @file Map
+ * @file MutableMap
  *
- * Generic key-value dictionary collection.
+ * Generic mutable key-value dictionary collection.
  *
  * Provides an associative array backed by parallel pointer arrays,
  * with support for insertion, lookup, removal, and functional iteration.
@@ -36,34 +36,34 @@ friend zone std {
     /**
      * A generic key-value dictionary using parallel pointer arrays.
      *
-     * Map stores associations between keys and values. Keys are unique;
+     * MutableMap stores associations between keys and values. Keys are unique;
      * inserting with an existing key replaces the previous value.
      *
      * @param K The type of keys.
      * @param V The type of values.
      * @since 0.0.1
      */
-    pack Map<K, V> {
+    pack MutableMap<K, V> {
         shield var keys: K* = alloc K[8]
         shield var values: V* = alloc V[8]
         shield var size: Int = 0
         shield var capacity: Int = 8
     }
 
-    func<K, V> emptyMap(): Map<K, V> {
-        return Map<K, V>()
+    func<K, V> mutableMapOf(): MutableMap<K, V> {
+        return MutableMap<K, V>()
     }
 
-    impl oper[] for Map<K, V> { ref self, key ->
+    impl oper[] for MutableMap<K, V> { ref self, key ->
         var i = 0
         while i < size {
             if keys[i] == key { return values[i] }
             i += 1
         }
-        assert false { "Key not found in Map" }
+        assert false { "Key not found in MutableMap" }
     }
 
-    impl oper[]= for Map<K, V> { mut ref self, key, value ->
+    impl oper[]= for MutableMap<K, V> { mut ref self, key, value ->
         var i = 0
         while i < size {
             if keys[i] == key {
@@ -78,7 +78,7 @@ friend zone std {
         self.size = size + 1
     }
 
-    impl Map<K, V> {
+    impl MutableMap<K, V> {
         // --- Properties ---
 
         /** Whether the map contains no entries. */
@@ -148,7 +148,7 @@ friend zone std {
                 if keys[i] == key { return values[i] }
                 i += 1
             }
-            assert false { "Key not found in Map" }
+            assert false { "Key not found in MutableMap" }
         }
 
         /**
@@ -187,7 +187,7 @@ friend zone std {
                 }
                 i += 1
             }
-            assert idx >= 0 { "Key not found in Map" }
+            assert idx >= 0 { "Key not found in MutableMap" }
             fin removed = values[idx]
             var j = idx
             while j < size - 1 {
@@ -301,7 +301,7 @@ friend zone std {
 
     }
 
-    impl Into<String> for Map<K, V> { ref self ->
+    impl Into<String> for MutableMap<K, V> { ref self ->
         var s = "{"
         var i = 0
         while i < size {

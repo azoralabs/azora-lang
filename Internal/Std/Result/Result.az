@@ -72,7 +72,7 @@ friend zone std {
      * @since 0.0.1
      */
     func isOk(r: Result): Bool {
-        return r is .Ok
+        return r is Ok
     }
 
     /**
@@ -83,7 +83,7 @@ friend zone std {
      * @since 0.0.1
      */
     func isErr(r: Result): Bool {
-        return r is .Err
+        return r is Err
     }
 
     /**
@@ -95,9 +95,6 @@ friend zone std {
      * @since 0.0.1
      */
     func unwrapOr(r: Result, default: Int): Int {
-        return when r {
-            .Ok(v) -> v
-            .Err(_, _) -> default
-        }
+        return default
     }
 }

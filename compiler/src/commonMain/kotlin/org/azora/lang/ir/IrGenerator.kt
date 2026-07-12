@@ -185,7 +185,12 @@ class IrGenerator(private val table: SymbolTable) {
                 }
                 is TopLevel.Impl -> item.methods.mapNotNull { method ->
                     if (method.isInline) null
-                    else IrTopLevel.Func(lowerMethod(item.typeName, method))
+                    else {
+                        val saved = currentReceiverType
+                        currentReceiverType = item.typeName
+                        try { IrTopLevel.Func(lowerMethod(item.typeName, method)) }
+                        finally { currentReceiverType = saved }
+                    }
                 }
                 is TopLevel.View -> {
                     val decl = FuncDecl(item.name, item.params, TypeAnnotation.Inferred, item.body, false, emptyList(), item.line, item.column)
@@ -260,6 +265,8 @@ class IrGenerator(private val table: SymbolTable) {
 
     /** The current node type being lowered (for `base` resolution). Null outside a node method. */
     private var currentNodeType: String? = null
+    /** The current impl receiver type (for implicit-self field access: bare `size` → `self.size`). */
+    private var currentReceiverType: String? = null
 
     /** Lowers an impl method into a free function `Type_method(self, ...)`. */
     private fun lowerMethod(typeName: String, method: FuncDecl): IrFunction {
@@ -279,7 +286,8 @@ class IrGenerator(private val table: SymbolTable) {
         pushNameScope()
         val mangledParams = symbol.params.map { (name, type) ->
             val m = registerName(name)
-            table.defineVariable(VariableSymbol(name, type))
+            val mutable = name != "self" || method.receiverModifier != "ref"
+            table.defineVariable(VariableSymbol(name, type, mutable = mutable))
             m to type
         }
         val body = lowerBody(method.body)
@@ -604,12 +612,18 @@ class IrGenerator(private val table: SymbolTable) {
                 fun isPointerish(t: IrType) =
                     t == IrType.String || t == IrType.Any || t is IrType.Array || t is IrType.Map || t is IrType.Set ||
                         t is IrType.Named || t is IrType.Pointer || t is IrType.Nullable || t is IrType.Tuple
+                val innerType = inner.type
                 when {
-                    target == inner.type -> inner
-                    isNumericish(target) && isNumericish(inner.type) -> IrExpr.NumCast(inner, target)
+                    target == innerType -> inner
+                    target == IrType.String && innerType is IrType.Named &&
+                        table.lookupMethod(innerType.name, "asString") != null -> {
+                        val mangled = table.lookupMethod(innerType.name, "asString")!!
+                        IrExpr.Call(mangled, listOf(inner), IrType.String)
+                    }
+                    isNumericish(target) && isNumericish(innerType) -> IrExpr.NumCast(inner, target)
                     // pointer → integer / integer → pointer (FFI)
-                    isNumericish(target) && isPointerish(inner.type) -> IrExpr.NumCast(inner, target)
-                    isPointerish(target) && isNumericish(inner.type) -> IrExpr.NumCast(inner, target)
+                    isNumericish(target) && isPointerish(innerType) -> IrExpr.NumCast(inner, target)
+                    isPointerish(target) && isNumericish(innerType) -> IrExpr.NumCast(inner, target)
                     else -> inner
                 }
             }
@@ -628,8 +642,23 @@ class IrGenerator(private val table: SymbolTable) {
             }
             is Expr.CharLiteral -> IrExpr.CharLiteral(expr.value)
             is Expr.Identifier -> {
-                val sym = table.lookupVariable(expr.name)!!
-                IrExpr.Var(resolveName(expr.name), sym.type)
+                val sym = table.lookupVariable(expr.name)
+                if (sym != null) {
+                    IrExpr.Var(resolveName(expr.name), sym.type)
+                } else {
+                    // Implicit self: bare field name in an impl method → self.field
+                    val field = currentReceiverType?.let { table.lookupStruct(it)?.field(expr.name) }
+                    if (field != null) {
+                        val selfSym = table.lookupVariable("self")
+                        if (selfSym != null) {
+                            IrExpr.Member(IrExpr.Var(resolveName("self"), selfSym.type), expr.name, field.type)
+                        } else {
+                            IrExpr.Var(expr.name, IrType.Any)
+                        }
+                    } else {
+                        IrExpr.Var(expr.name, IrType.Any)
+                    }
+                }
             }
             is Expr.UpperScopeAccess -> {
                 val sym = table.lookupVariableInUpperScope(expr.name, expr.depth)!!
@@ -699,12 +728,17 @@ class IrGenerator(private val table: SymbolTable) {
                 val realCallee = table.aliasMap[expr.callee] ?: expr.callee
                 val struct = table.lookupStruct(realCallee) ?: table.lookupStruct(expr.callee)
                 if (struct != null) {
-                    // Handle named arguments — reorder to field order
+                    // Handle named arguments — reorder to field order; omitted fields use their defaults.
                     val args = if (expr.args.isNotEmpty() && expr.args[0] is Expr.NamedArg) {
                         val namedMap = expr.args.associate { (it as Expr.NamedArg).name to (it as Expr.NamedArg).value }
-                        struct.fields.map { f -> lowerExpr(namedMap[f.name]!!) }
+                        struct.fields.map { f -> lowerExpr(namedMap[f.name] ?: f.default ?: Expr.NullLiteral) }
                     } else {
-                        expr.args.map { lowerExpr(it) }
+                        // Positional — pad omitted trailing fields with their defaults (`Pack<T>()`).
+                        val padded = expr.args.map { lowerExpr(it) }.toMutableList()
+                        for (i in expr.args.size until struct.fields.size) {
+                            padded.add(lowerExpr(struct.fields[i].default ?: Expr.NullLiteral))
+                        }
+                        padded
                     }
                     // Node types: prepend __type and __chain for dynamic dispatch.
                     if (realCallee in table.nodeTypes) {
@@ -795,9 +829,23 @@ class IrGenerator(private val table: SymbolTable) {
                 val pointee = (value.type as? IrType.Array)?.element ?: value.type
                 IrExpr.Call("__alloc", listOf(value), IrType.Pointer(pointee))
             }
+            is Expr.AllocBuffer -> {
+                // alloc T(count) → buffer of `count` T's → T* (C++-style).
+                val count = lowerExpr(expr.count)
+                val elem = if (IrType.isPrimitiveName(expr.typeName)) IrType.fromName(expr.typeName) else IrType.Any
+                IrExpr.Call("__allocBuffer", listOf(count), IrType.Pointer(elem))
+            }
             is Expr.Deref -> {
                 val target = lowerExpr(expr.target)
-                val inner = (target.type as? IrType.Pointer)?.inner ?: IrType.Any
+                val targetType = target.type
+                if (targetType is IrType.Named) {
+                    val mangled = table.lookupMethod(targetType.name, "deref")
+                    if (mangled != null) {
+                        val func = table.lookupFunction(mangled)!!
+                        return IrExpr.Call(mangled, listOf(target), func.returnType)
+                    }
+                }
+                val inner = (targetType as? IrType.Pointer)?.inner ?: IrType.Any
                 IrExpr.Call("__deref", listOf(target), inner)
             }
             is Expr.Isolated -> {
@@ -834,7 +882,9 @@ class IrGenerator(private val table: SymbolTable) {
                 val index = lowerExpr(expr.index)
                 val elemType = when (tt) {
                     is IrType.Array -> tt.element
+                    is IrType.Set -> tt.element
                     is IrType.Map -> tt.value
+                    is IrType.Pointer -> tt.inner
                     else -> IrType.Any
                 }
                 IrExpr.Index(target, index, elemType)
@@ -869,7 +919,7 @@ class IrGenerator(private val table: SymbolTable) {
                     }
                 }
                 val memberType = when {
-                    expr.name == "length" && (target.type is IrType.Array || target.type is IrType.Map || target.type is IrType.Set || target.type == IrType.String) -> IrType.Int
+                    expr.name in setOf("length", "size") && (target.type is IrType.Array || target.type is IrType.Map || target.type is IrType.Set || target.type == IrType.String) -> IrType.Int
                     (expr.name == "isEmpty" || expr.name == "isNotEmpty") && (target.type is IrType.Array || target.type is IrType.Map || target.type is IrType.Set) -> IrType.Bool
                     else -> {
                         val tt = target.type
@@ -977,6 +1027,7 @@ class IrGenerator(private val table: SymbolTable) {
             "add", "insert", "remove" -> IrType.Unit
             "contains", "isEmpty", "isNotEmpty" -> IrType.Bool
             "indexOf" -> IrType.Int
+            "fill" -> receiverType
             else -> IrType.Any
         }
         is IrType.Set -> when (name) {

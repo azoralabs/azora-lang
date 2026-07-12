@@ -24,6 +24,7 @@ import org.azora.lang.frontend.Stmt
 import org.azora.lang.frontend.TokenType
 import org.azora.lang.frontend.TopLevel
 import org.azora.lang.frontend.TypeAnnotation
+import org.azora.lang.frontend.TypeRef
 import org.azora.lang.frontend.Visibility
 import org.azora.lang.ir.IrType
 
@@ -37,11 +38,30 @@ import org.azora.lang.ir.IrType
 class SymbolCollector {
     private fun isImportable(visibility: Visibility): Boolean = visibility != Visibility.CONFINE
 
+    private fun typeMethodSuffix(type: TypeRef): String {
+        val raw = when (type) {
+            is TypeRef.Named -> type.name
+            else -> type.toString()
+        }.filter { it.isLetterOrDigit() }
+        val cleaned = raw.ifEmpty { "Value" }
+        return cleaned[0].uppercaseChar() + cleaned.drop(1)
+    }
+
+    private fun callbackTraitMethodName(traitName: String, traitArgs: List<TypeRef>): String {
+        val suffix = traitArgs.firstOrNull()?.let { typeMethodSuffix(it) } ?: "Value"
+        return when (traitName) {
+            "Into" -> "to$suffix"
+            "From" -> "from$suffix"
+            else -> if (traitName.isEmpty()) "callback" else traitName[0].lowercaseChar() + traitName.drop(1)
+        }
+    }
+
 
     private fun registerBuiltins(table: SymbolTable) {
         // println accepts String — type checker will allow String args
         if (table.lookupFunction("println") == null) {
             table.defineFunction(FunctionSymbol("println", listOf("value" to IrType.String), IrType.Unit))
+            table.defineFunction(FunctionSymbol("toString", listOf("value" to IrType.Any), IrType.String))
         }
         if (table.lookupFunction("channel") == null) {
             // `channel()` — creates a buffered channel for task-to-task communication.
@@ -185,7 +205,7 @@ class SymbolCollector {
                 try {
                     val tpSet = emptySet<String>()
                     val fields = item.fields.map { field ->
-                        StructField(field.name, IrType.resolve(field.type, tpSet), field.mutable, field.visibility)
+                        StructField(field.name, IrType.resolve(field.type, tpSet), field.mutable, field.visibility, field.default)
                     }
                     table.defineStruct(StructType(item.name, fields, emptyList(), item.visibility))
                     // Register methods as Type_method (like impl)
@@ -213,9 +233,9 @@ class SymbolCollector {
                 try {
                     val tpSet = item.typeParams.toSet()
                     val fields = item.fields.map { field ->
-                        StructField(field.name, IrType.resolve(field.type, tpSet), field.mutable, field.visibility)
+                        StructField(field.name, IrType.resolve(field.type, tpSet), field.mutable, field.visibility, field.default)
                     }
-                    table.defineStruct(StructType(item.name, fields, item.typeParams, item.visibility))
+                    table.defineStruct(StructType(item.name, fields, item.typeParams, item.visibility, item.shielded))
                 } catch (e: Exception) {
                     errors.add("line ${item.line}: ${e.message}")
                 }
@@ -334,17 +354,28 @@ class SymbolCollector {
         }
 
         // Register impl methods as functions `Type_method(self, ...)`
+        val localPackNames = program.localPackNames
         for (item in program.items) {
             if (item is TopLevel.Impl) {
+                val struct = table.lookupStruct(item.typeName)
+                if (item.isPackImpl && item.typeName !in localPackNames) {
+                    errors.add("line ${item.line}: 'impl pack ${item.typeName}' is only allowed in the file that declares pack ${item.typeName}")
+                    continue
+                }
+                val tpSet = table.lookupStruct(item.typeName)?.typeParams?.toSet() ?: emptySet()
                 for (method in item.methods) {
                     val mangled = "${item.typeName}_${method.name}"
                     try {
+                        if (item.isExtension && struct != null && struct.fields.none { it.visibility == Visibility.EXPOSE } && method.receiverModifier == "mut ref") {
+                            errors.add("line ${method.line}: pack '${item.typeName}' has no exposed fields, so extension '${method.name}' cannot use mut ref self")
+                            continue
+                        }
                         val selfType = IrType.Named(item.typeName)
                         val params = mutableListOf<Pair<String, IrType>>()
                         params.add("self" to selfType)
-                        for (p in method.params) params.add(p.name to IrType.resolve(p.type))
+                        for (p in method.params) params.add(p.name to IrType.resolve(p.type, tpSet))
                         val returnType = when (val rt = method.returnType) {
-                            is TypeAnnotation.Explicit -> IrType.resolve(rt.ref)
+                            is TypeAnnotation.Explicit -> IrType.resolve(rt.ref, tpSet)
                             is TypeAnnotation.Inferred -> inferReturnType(method, params)
                         }
                         table.defineFunction(FunctionSymbol(mangled, params, returnType, method.isInline, visibility = method.visibility))
@@ -359,7 +390,7 @@ class SymbolCollector {
         // Register spec (trait) declarations
         for (item in program.items) {
             if (item is TopLevel.Spec) {
-                table.defineSpec(item.name, item.methods.map { it.name })
+                table.defineSpec(item.name, item.methods.map { it.name }, item.callback)
             }
         }
 
@@ -374,11 +405,16 @@ class SymbolCollector {
         // Validate impl Trait for Type — all spec methods must be present
         for (item in program.items) {
             if (item is TopLevel.Impl && item.traitName != null) {
-                val required = table.lookupSpec(item.traitName)
-                if (required == null) {
+                val spec = table.lookupSpec(item.traitName)
+                if (spec == null) {
                     errors.add("line ${item.line}: unknown spec '${item.traitName}'")
                 } else {
                     val provided = item.methods.map { it.name }.toSet()
+                    val required = if (spec.callback != null) {
+                        listOf(callbackTraitMethodName(item.traitName, item.traitArgs))
+                    } else {
+                        spec.methodNames
+                    }
                     for (req in required) {
                         if (req !in provided) {
                             errors.add("line ${item.line}: '${item.typeName}' does not implement '${item.traitName}.${req}'")
@@ -566,6 +602,6 @@ class SymbolCollector {
         is Expr.NamedArg -> null
         is Expr.NullLiteral -> IrType.Any
         is Expr.NullCoalesce, is Expr.SafeMember,
-        is Expr.Cast, is Expr.IsCheck, is Expr.Alloc, is Expr.Deref, is Expr.Isolated, is Expr.Await, is Expr.Inject, is Expr.Spread -> null
+        is Expr.Cast, is Expr.IsCheck, is Expr.Alloc, is Expr.AllocBuffer, is Expr.Deref, is Expr.Isolated, is Expr.Await, is Expr.Inject, is Expr.Spread -> null
     }
 }

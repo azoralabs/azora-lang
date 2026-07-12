@@ -3,6 +3,7 @@ package org.azora.lang.codegen
 import org.azora.lang.CompilationResult
 import org.azora.lang.Compiler
 import org.azora.lang.backend.IrInterpreter
+import org.azora.lang.stdlib.StdlibInjector
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -63,6 +64,24 @@ class StdlibInjectionTest {
         assertIs<CompilationResult.Success>(result)
         assertEquals(listOf("main"), result.ir.functions.map { it.name })
     }
+
+    @Test fun stdlibIndexExposesCollectionPacks() {
+        assertEquals("std.container", StdlibInjector.moduleOf("List"))
+        assertEquals("std.container", StdlibInjector.moduleOf("Map"))
+        assertEquals("std.container", StdlibInjector.moduleOf("Set"))
+    }
+
+    @Test fun collectionTypeAnnotationsInjectPacksAndImpls() =
+        assertEquals("3\n2\n2", run("""
+            func main() {
+                var xs: List<Int> = [1, 2, 3]
+                var entries: Map<String, Int> = ["a": 1, "b": 2]
+                var seen: Set<Int> = ![1, 2, 2]
+                println(xs.size)
+                println(entries.size)
+                println(seen.size)
+            }
+        """.trimIndent()))
 
     // ---- if-expressions (new language feature the stdlib relies on) ----
 

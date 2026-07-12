@@ -21,9 +21,9 @@ package std.container
 use std.convert
 
 /**
- * @file List
+ * @file MutableList
  *
- * Generic resizable list collection.
+ * Generic mutable resizable list collection.
  *
  * Provides a dynamic array-backed list with support for element access,
  * modification, search, functional operations, and slicing.
@@ -36,65 +36,20 @@ friend zone std {
     /**
      * A generic, dynamically-sized, ordered collection of elements.
      *
-     * List provides pointer-based array storage that grows as elements are added.
+     * MutableList provides pointer-based array storage that grows as elements are added.
      * Elements are accessed by zero-based integer index.
      *
      * @param T The type of elements stored in this list.
      * @since 0.0.1
      */
-    pack List<T> {
+    pack MutableList<T> {
         shield var data: T* = alloc T[8]
         shield var size: Int = 0
         shield var capacity: Int = 8
     }
 
-    pack EmptyList<T>
-
-    impl EmptyList<T> {
-        prop size: Int = 0
-        prop isEmpty: Bool = true
-        prop isNotEmpty: Bool = false
-
-        func get(index: Int): T { ref self ->
-            assert false { "EmptyList has no elements" }
-        }
-    }
-
-    impl Into<String> for EmptyList<T> { ref self ->
-        return "[]"
-    }
-
-    pack SingletonList<T> {
-        shield var element: T
-    }
-
-    impl SingletonList<T> {
-        prop size: Int = 1
-        prop isEmpty: Bool = false
-        prop isNotEmpty: Bool = true
-
-        func get(index: Int): T { ref self ->
-            assert index == 0 { "SingletonList index out of bounds" }
-            return self.element
-        }
-
-    }
-
-    impl oper[] for SingletonList<T> { ref self, index ->
-        assert index == 0 { "SingletonList index out of bounds" }
-        return self.element
-    }
-
-    impl Into<String> for SingletonList<T> { ref self ->
-        return "[" + toString(self.element) + "]"
-    }
-
-    func<T> emptyList(): List<T> {
-        return List<T>()
-    }
-
-    func<T> listOf(elements: ...T): List<T> {
-        var result = List<T>()
+    func<T> mutableListOf(elements: ...T): MutableList<T> {
+        var result = MutableList<T>()
         var i = 0
         while i < elements.size {
             result.add(elements[i])
@@ -103,32 +58,21 @@ friend zone std {
         return result
     }
 
-    impl oper[] for List<T> { ref self, index ->
+    impl oper[] for MutableList<T> { ref self, index ->
         assert index >= 0 && index < size {
             "List index out of bounds"
         }
         return data[index]
     }
 
-    impl oper[]= for List<T> { mut ref self, index, element ->
+    impl oper[]= for MutableList<T> { mut ref self, index, element ->
         assert index >= 0 && index < size {
             "List index out of bounds"
         }
         data[index] = element
     }
 
-    impl Into<String> for List<T> { ref self ->
-        var s = "["
-        var i = 0
-        while i < size {
-            if i > 0 { s = s + ", " }
-            s = s + toString(data[i])
-            i += 1
-        }
-        return s + "]"
-    }
-
-    impl List<T> {
+    impl MutableList<T> {
         // --- Properties ---
 
         /** Whether the list contains no elements. */
@@ -374,8 +318,8 @@ friend zone std {
          * @return A new list containing the transformed elements.
          * @since 0.0.1
          */
-        func map(transform: (T) -> T): List<T> {
-            var result = List<T>()
+        func map(transform: (T) -> T): MutableList<T> {
+            var result = MutableList<T>()
             var i = 0
             while i < size {
                 result.add(transform(data[i]))
@@ -391,8 +335,8 @@ friend zone std {
          * @return A new list with matching elements in their original order.
          * @since 0.0.1
          */
-        func filter(predicate: (T) -> Bool): List<T> {
-            var result = List<T>()
+        func filter(predicate: (T) -> Bool): MutableList<T> {
+            var result = MutableList<T>()
             var i = 0
             while i < size {
                 if predicate(data[i]) {
@@ -479,11 +423,11 @@ friend zone std {
          * @throws AssertionError if indices are out of bounds or from > to.
          * @since 0.0.1
          */
-        func subList(from: Int, to: Int): List<T> {
+        func subList(from: Int, to: Int): MutableList<T> {
             assert from >= 0 { "subList from must be non-negative" }
             assert to <= size { "subList to out of bounds" }
             assert from <= to { "subList from must be <= to" }
-            var result = List<T>()
+            var result = MutableList<T>()
             var i = from
             while i < to {
                 result.add(data[i])
@@ -514,8 +458,8 @@ friend zone std {
          * @return A reversed copy of this list.
          * @since 0.0.1
          */
-        prop reversed: List<T> {
-            var result = List<T>()
+        prop reversed: MutableList<T> {
+            var result = MutableList<T>()
             var i = size - 1
             while i >= 0 {
                 result.add(data[i])
@@ -524,5 +468,17 @@ friend zone std {
             return result
         }
 
+    }
+
+    impl Into<String> for MutableList<T> { ref self ->
+            var s = "["
+            var i = 0
+            while i < size {
+                if i > 0 { s = s + ", " }
+                s = s + toString(data[i])
+                i += 1
+            }
+            return s + "]"
+        
     }
 }

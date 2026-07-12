@@ -351,9 +351,9 @@ class IrInterpreter {
 
     private suspend fun executeStmt(stmt: IrStmt): Any? {
         when (stmt) {
-            is IrStmt.VarDecl -> defineVar(stmt.name, evalExpr(stmt.initializer))
-            is IrStmt.FinDecl -> defineVar(stmt.name, evalExpr(stmt.initializer))
-            is IrStmt.LetDecl -> defineVar(stmt.name, evalExpr(stmt.initializer))
+            is IrStmt.VarDecl -> defineVar(stmt.name, materializeDeclared(stmt.type, evalExpr(stmt.initializer)))
+            is IrStmt.FinDecl -> defineVar(stmt.name, materializeDeclared(stmt.type, evalExpr(stmt.initializer)))
+            is IrStmt.LetDecl -> defineVar(stmt.name, materializeDeclared(stmt.type, evalExpr(stmt.initializer)))
             is IrStmt.Assignment -> assignVar(stmt.name, evalExpr(stmt.value))
             is IrStmt.Return -> {
                 val value = stmt.value?.let { evalExpr(it) }
@@ -501,12 +501,18 @@ class IrInterpreter {
                         @Suppress("UNCHECKED_CAST")
                         (target as MutableList<Any?>)[(key as Long).toInt()] = value
                     }
+                    is Pointer -> {
+                        target.buffer[target.index + (key as Long).toInt()] = value
+                    }
                     else -> error("Cannot index-assign to $target")
                 }
             }
             is IrStmt.MemberAssign -> {
+                // Auto-deref: assigning through a pointer writes through it (`p.v = x` == `(*p).v = x`).
+                var target = evalExpr(stmt.target)
+                if (target is Pointer) target = target.value
                 @Suppress("UNCHECKED_CAST")
-                val map = evalExpr(stmt.target) as MutableMap<String, Any?>
+                val map = target as MutableMap<String, Any?>
                 map[stmt.name] = evalExpr(stmt.value)
             }
             is IrStmt.When -> {
@@ -626,32 +632,39 @@ class IrInterpreter {
                         @Suppress("UNCHECKED_CAST")
                         (target as MutableList<Any?>)[(key as Long).toInt()]
                     }
+                    is Pointer -> target.buffer[target.index + (key as Long).toInt()]
                     else -> error("Cannot index into $target")
                 }
             }
             is IrExpr.Member -> {
-                val receiver = evalExpr(expr.target)
+                var receiver = evalExpr(expr.target)
+                // Auto-deref: member access on a pointer reads through it (`p.v` == `(*p).v`).
+                if (receiver is Pointer) receiver = receiver.value
                 when (receiver) {
                     is MutableList<*> -> when (expr.name) {
-                        "length" -> receiver.size.toLong()
+                        "length", "size" -> receiver.size.toLong()
                         "isEmpty" -> receiver.isEmpty()
                         "isNotEmpty" -> receiver.isNotEmpty()
                         else -> error("no member '${expr.name}' on array")
                     }
                     is String -> when (expr.name) {
-                        "length" -> receiver.length.toLong()
+                        "length", "size" -> receiver.length.toLong()
                         "isEmpty" -> receiver.isEmpty()
                         "isNotEmpty" -> receiver.isNotEmpty()
                         else -> error("no member '${expr.name}' on string")
                     }
                     is Map<*, *> -> {
+                        val typeName = receiver["__type"] as? String
+                        if (typeName != null && receiver.containsKey(expr.name)) {
+                            @Suppress("UNCHECKED_CAST")
+                            return@evalExpr (receiver as Map<String, Any?>)[expr.name]
+                        }
                         when (expr.name) {
-                            "length" -> return@evalExpr receiver.size.toLong()
+                            "length", "size" -> return@evalExpr receiver.size.toLong()
                             "isEmpty" -> return@evalExpr receiver.isEmpty()
                             "isNotEmpty" -> return@evalExpr receiver.isNotEmpty()
                         }
                         // Check for a computed property (prop): `Type_prop_name` method.
-                        val typeName = receiver["__type"] as? String
                         if (typeName != null) {
                             val propFunc = functions["${typeName}_prop_${expr.name}"]
                             if (propFunc != null) return@evalExpr executeFunction(propFunc, listOf(receiver))
@@ -671,6 +684,7 @@ class IrInterpreter {
             }
             is IrExpr.StructCtor -> {
                 val map = linkedMapOf<String, Any?>()
+                map["__type"] = expr.name
                 for (i in expr.fieldNames.indices) {
                     map[expr.fieldNames[i]] = evalExpr(expr.args[i])
                 }
@@ -804,6 +818,12 @@ class IrInterpreter {
                             "indexOf" -> list.indexOf(args[0]).toLong()
                             "isEmpty" -> list.isEmpty()
                             "isNotEmpty" -> list.isNotEmpty()
+                            "fill" -> {
+                                // `arr().fill(count)` — pre-allocate `count` null slots.
+                                val count = (args[0] as Long).toInt()
+                                repeat(count) { list.add(null) }
+                                list
+                            }
                             else -> error("no method '${expr.name}' on array")
                         }
                     }
@@ -816,6 +836,41 @@ class IrInterpreter {
                     else -> error("no method '${expr.name}' on $receiver")
                 }
             }
+        }
+    }
+
+    private fun materializeDeclared(type: IrType, value: Any?): Any? {
+        val name = (type as? IrType.Named)?.name ?: return value
+        return when {
+            name in setOf("List", "MutableList") && value is MutableList<*> -> {
+                val elements = value.toMutableList()
+                linkedMapOf<String, Any?>(
+                    "__type" to name,
+                    "data" to elements,
+                    "size" to elements.size.toLong(),
+                    "capacity" to maxOf(8, elements.size).toLong(),
+                )
+            }
+            name in setOf("Set", "MutableSet") && value is MutableList<*> -> {
+                val elements = value.distinct().toMutableList()
+                linkedMapOf<String, Any?>(
+                    "__type" to name,
+                    "data" to elements,
+                    "size" to elements.size.toLong(),
+                    "capacity" to maxOf(8, elements.size).toLong(),
+                )
+            }
+            name in setOf("Map", "MutableMap") && value is Map<*, *> -> {
+                val entries = value.entries.toList()
+                linkedMapOf<String, Any?>(
+                    "__type" to name,
+                    "keys" to entries.map { it.key }.toMutableList(),
+                    "values" to entries.map { it.value }.toMutableList(),
+                    "size" to entries.size.toLong(),
+                    "capacity" to maxOf(8, entries.size).toLong(),
+                )
+            }
+            else -> value
         }
     }
 
@@ -925,6 +980,13 @@ class IrInterpreter {
             state().regionAllocations.lastOrNull()?.add(ptr)
             return ptr
         }
+        if (expr.name == "__allocBuffer") {
+            // alloc T(count) — a buffer of `count` zero/null-initialized T's → T* (index 0).
+            val count = (args[0] as Long).toInt()
+            val ptr = Pointer(MutableList(count) { null }, 0)
+            state().regionAllocations.lastOrNull()?.add(ptr)
+            return ptr
+        }
         if (expr.name == "__deref") {
             return (args[0] as Pointer).value
         }
@@ -1017,6 +1079,9 @@ class IrInterpreter {
             azSync(output) { output.appendLine(text) }
             outputListener?.invoke(text)
             return null
+        }
+        if (expr.name == "toString") {
+            return formatValue(args.firstOrNull())
         }
         if (expr.name == "async") {
             val thunk = args.firstOrNull() as? Closure ?: error("async expects a task body")

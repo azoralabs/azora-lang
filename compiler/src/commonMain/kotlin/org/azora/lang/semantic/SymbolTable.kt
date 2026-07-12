@@ -67,6 +67,8 @@ data class StructField(
     val type: IrType,
     val mutable: Boolean,
     val visibility: Visibility = Visibility.EXPOSE,
+    /** Default initializer (for `Pack<T>()` construction with omitted fields). */
+    val default: org.azora.lang.frontend.Expr? = null,
 )
 
 /**
@@ -80,10 +82,17 @@ data class StructType(
     val fields: List<StructField>,
     val typeParams: List<String> = emptyList(),
     val visibility: Visibility = Visibility.EXPOSE,
+    val shielded: Boolean = false,
 ) {
     /** Looks up a field by name. */
     fun field(name: String): StructField? = fields.find { it.name == name }
 }
+
+/** A registered spec signature. Callback specs use compact syntax such as `spec Into<T>: T get { ref self }`. */
+data class SpecSymbol(
+    val methodNames: List<String>,
+    val callback: org.azora.lang.frontend.SpecCallback? = null,
+)
 
 /**
  * Symbol table built in two stages:
@@ -102,7 +111,7 @@ class SymbolTable {
     private val enums = mutableMapOf<String, List<String>>()
     // type name -> (method name -> mangled function name "Type_method")
     private val methods = mutableMapOf<String, MutableMap<String, String>>()
-    private val specs = mutableMapOf<String, List<String>>() // spec name → method names
+    private val specs = mutableMapOf<String, SpecSymbol>() // spec name → method names/callback
     // slot name → list of (variant name → payload types)
     private val slots = mutableMapOf<String, List<Pair<String, List<IrType>>>>()
     /** Node inheritance: child node name → parent node name. */
@@ -199,8 +208,8 @@ class SymbolTable {
 
     // -- Specs (traits) ---------------------------------------------------
 
-    fun defineSpec(name: String, methodNames: List<String>) {
-        specs[name] = methodNames
+    fun defineSpec(name: String, methodNames: List<String>, callback: org.azora.lang.frontend.SpecCallback? = null) {
+        specs[name] = SpecSymbol(methodNames, callback)
     }
 
 
@@ -209,7 +218,7 @@ class SymbolTable {
     fun defineAlias(name: String, type: org.azora.lang.frontend.TypeRef) { aliases[name] = type }
     fun lookupAlias(name: String): org.azora.lang.frontend.TypeRef? = aliases[name]
 
-    fun lookupSpec(name: String): List<String>? = specs[name]
+    fun lookupSpec(name: String): SpecSymbol? = specs[name]
 
     // -- Slots (tagged unions) --------------------------------------------
     fun defineSlot(name: String, variants: List<Pair<String, List<IrType>>>) { slots[name] = variants }

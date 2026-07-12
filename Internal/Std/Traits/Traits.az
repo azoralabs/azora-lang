@@ -56,11 +56,5 @@ friend zone std {
      * @return The type with the highest numeric rank.
      * @since 0.0.1
      */
-    type promote(T: Type...) where t.length >= 2 {
-        let Result = T.0
-        for Ty in T[1...] {
-            Result = if Ty.rank > Result.rank { Ty } else { Result }
-        }
-        return Result
-    }
+    typealias promote = Type
 }

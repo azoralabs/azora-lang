@@ -6,6 +6,7 @@ import org.azora.lang.backend.IrInterpreter
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 class DeferTypeAliasTest {
     private fun run(source: String): String {
@@ -42,6 +43,18 @@ class DeferTypeAliasTest {
                 println(doWork())
             }
         """.trimIndent()))
+    }
+
+    @Test fun deferLowersToJavaScriptRuntimeStack() {
+        val result = Compiler().compile("""
+            func main() {
+                defer { println("cleanup") }
+                println("body")
+            }
+        """.trimIndent(), release = false)
+        assertIs<CompilationResult.Success>(result)
+        assertTrue("__az_defer.push" in result.javascript)
+        assertTrue("finally" in result.javascript)
     }
 
     @Test fun typeAliasInt() {

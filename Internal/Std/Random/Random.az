@@ -75,8 +75,8 @@ friend zone std {
     /**
      * Shuffles an array in-place using Fisher-Yates algorithm.
      */
-    func shuffle<T>(arr: [T], rng: Random): [T] {
-        var result: [T] = [].fill<T>(arr.length)
+    func shuffle<T>(arr: Array<T>, rng: Random): Array<T> {
+        var result: Array<T> = arrayOf().fill<T>(arr.length)
         var i = 0
         while i < arr.length {
             result[i] = arr[i]
@@ -96,11 +96,11 @@ friend zone std {
     /**
      * Returns a random sample of n elements from the array.
      */
-    func sample<T>(arr: [T], count: Int, rng: Random): [T] {
-        var shuffled: [T] = shuffle<T>(arr, rng)
+    func sample<T>(arr: Array<T>, count: Int, rng: Random): Array<T> {
+        var shuffled: Array<T> = shuffle<T>(arr, rng)
         var limit: Int = count
         if limit > shuffled.length { limit = shuffled.length }
-        var result: [T] = [].fill<T>(limit)
+        var result: Array<T> = arrayOf().fill<T>(limit)
         var i = 0
         while i < limit {
             result[i] = shuffled[i]

@@ -1,0 +1,85 @@
+/*
+ * Copyright 2026 AzoraLabs
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+@file:experimental
+
+package std.memory
+
+/**
+ * @file Arc
+ *
+ * An automatically reference-counted pointer (`Arc<T>`).
+ *
+ * `Arc` shares one heap allocation across multiple owners, keeping a count of live references.
+ * `retain()` records a new owner; `release()` drops one and reclaims the allocation when the count
+ * reaches zero. The single-threaded interpreter counts plainly; native backends may use atomics.
+ *
+ * @since 0.0.3
+ */
+
+friend zone std {
+    /**
+     * A reference-counted pointer to a `T`.
+     *
+     * @param T the pointee type.
+     * @since 0.0.3
+     */
+    pack Arc<T> {
+        shield var raw: T*
+        shield var count: Int
+    }
+
+    impl deref for Arc<T> { ref self ->
+        return deref self.raw
+    }
+
+    impl Arc<T> {
+        /** The pointed-to value. */
+        func get(): T { return deref self.raw }
+
+        /** Replaces the pointed-to value without changing ownership. */
+        func set(value: T) { self.raw[0] = value }
+
+        /** Records a new shared owner. Returns the new reference count. */
+        func retain(): Int {
+            self.count = self.count + 1
+            return self.count
+        }
+
+        /** Drops a shared owner; reclaims the allocation when the count reaches zero. */
+        func release(): Int {
+            self.count = self.count - 1
+            if self.count <= 0 {
+                drop self.raw
+            }
+            return self.count
+        }
+
+        /** The current number of live references. */
+        func refCount(): Int { return self.count }
+
+        /** The underlying `T*` (escapes the counting). */
+        func ptr(): T* { return self.raw }
+    }
+
+    func arcOf<T>(value: T): Arc<T> {
+        return Arc(alloc value, 1)
+    }
+
+    func arc<T>(value: T): Arc<T> {
+        return arcOf(value)
+    }
+}

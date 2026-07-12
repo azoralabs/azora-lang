@@ -292,6 +292,7 @@ class AllocDropAnalyzer {
             is Expr.IsCheck -> collectUsedVars(expr.expr, used)
             is Expr.MapLit -> { for ((k, v) in expr.entries) { collectUsedVars(k, used); collectUsedVars(v, used) } }
             is Expr.Alloc -> collectUsedVars(expr.value, used)
+            is Expr.AllocBuffer -> collectUsedVars(expr.count, used)
             is Expr.Deref -> collectUsedVars(expr.target, used)
             is Expr.Isolated -> collectUsedVars(expr.value, used)
             is Expr.Await -> collectUsedVars(expr.value, used)

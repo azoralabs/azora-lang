@@ -41,22 +41,19 @@ friend zone std {
      * @since 0.0.1
      */
     pack Queue<T> {
-        confine var data: [T]* = alloc [T](8)
-        confine var size: Int = 0
-        confine var capacity: Int = 8
+        shield var data: T* = alloc T[8]
+        shield var size: Int = 0
+        shield var capacity: Int = 8
     }
 
-    impl ctor() for Queue<T> { mut self ->
-        self.data = alloc [T](8)
+    impl ctor() for Queue<T> { mut ref self ->
+        self.data = alloc T[8]
         self.size = 0
         self.capacity = 8
     }
 
     impl Queue<T> {
-        // --- Capacity ---
-
-        /** The number of elements in the queue. */
-        prop length: Int = size
+        // --- Properties ---
 
         /** Whether the queue contains no elements. */
         prop isEmpty: Bool = size == 0
@@ -68,10 +65,10 @@ friend zone std {
 
         func growQueue() {
             fin newCap = capacity * 2
-            fin newData = alloc [T](newCap)
+            fin newData = alloc T[newCap]
             var i = 0
             while i < size {
-                (*newData)[i] = (*data)[i]
+                newData[i] = data[i]
                 i += 1
             }
             fin oldData = data
@@ -90,7 +87,7 @@ friend zone std {
          */
         func enqueue(element: T) {
             if size >= capacity { self.growQueue() }
-            (*data)[size] = element
+            data[size] = element
             self.size = size + 1
         }
 
@@ -103,10 +100,10 @@ friend zone std {
          */
         func dequeue(): T {
             assert size > 0 { "Queue is empty" }
-            fin front = (*data)[0]
+            fin front = data[0]
             var i = 0
             while i < size - 1 {
-                (*data)[i] = (*data)[i + 1]
+                data[i] = data[i + 1]
                 i += 1
             }
             self.size = size - 1
@@ -122,7 +119,7 @@ friend zone std {
          */
         func peek(): T {
             assert size > 0 { "Queue is empty" }
-            return (*data)[0]
+            return data[0]
         }
 
         /**
@@ -132,7 +129,7 @@ friend zone std {
          */
         func clear() {
             fin oldData = data
-            self.data = alloc [T](8)
+            self.data = alloc T[8]
             self.size = 0
             self.capacity = 8
             drop oldData
@@ -151,7 +148,7 @@ friend zone std {
             var i = 0
             while i < size {
                 if i > 0 { s = s + ", " }
-                s = s + toString((*data)[i])
+                s = s + toString(data[i])
                 i += 1
             }
             return s + "]"

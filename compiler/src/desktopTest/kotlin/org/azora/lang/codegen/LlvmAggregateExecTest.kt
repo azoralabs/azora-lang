@@ -384,8 +384,22 @@ class LlvmAggregateExecTest {
         "2",
         """
         func main() {
-            var values: ![Int] = ![10, 20]
-            println(values.length)
+            var values: Set<Int> = ![10, 20]
+            println(values.size)
+        }
+        """.trimIndent()
+    )
+
+    @Test fun typedStdlibCollectionLiteralsExposeSize() = check(
+        "3\n2\n2",
+        """
+        func main() {
+            var numbers: List<Int> = [10, 20, 30]
+            var unique: Set<Int> = ![1, 2, 2]
+            var names: Map<String, Int> = ["a": 1, "b": 2]
+            println(numbers.size)
+            println(unique.size)
+            println(names.size)
         }
         """.trimIndent()
     )

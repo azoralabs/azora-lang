@@ -127,7 +127,8 @@ private fun dumpTopLevel(sb: StringBuilder, item: TopLevel, indent: String) {
             sb.appendLine("${indent}Fail(name=${item.name}, variants=[${item.variants.joinToString(", ")}])")
         }
         is TopLevel.Impl -> {
-            val trait = if (item.traitName != null) " for ${item.traitName}" else ""
+            val traitArgs = if (item.traitArgs.isNotEmpty()) "<${item.traitArgs.joinToString(", ")}>" else ""
+            val trait = if (item.traitName != null) " for ${item.traitName}$traitArgs" else ""
             sb.appendLine("${indent}Impl(type=${item.typeName}$trait, methods=[${item.methods.joinToString(", ") { it.name }}])")
         }
         is TopLevel.Bridge -> {
@@ -153,7 +154,8 @@ private fun dumpTopLevel(sb: StringBuilder, item: TopLevel, indent: String) {
             sb.appendLine("${indent}UseImport(${item.imports.joinToString(", ") { (zone, item) -> if (item != null) "$zone::$item" else "$zone::*" }})")
         }
         is TopLevel.Spec -> {
-            sb.appendLine("${indent}Spec(name=${item.name}, methods=[${item.methods.joinToString(", ") { it.name }}])")
+            val callback = item.callback?.let { ", callback=${it.returnType}${if (it.getter) " get" else ""}" } ?: ""
+            sb.appendLine("${indent}Spec(name=${item.name}, methods=[${item.methods.joinToString(", ") { it.name }}]$callback)")
         }
         is TopLevel.TypeAlias -> {
             sb.appendLine("${indent}TypeAlias(${item.name} = ${item.type})")
@@ -341,7 +343,7 @@ private fun dumpStmt(sb: StringBuilder, stmt: Stmt, indent: String) {
             dumpExpr(sb, stmt.value, "$indent        ")
         }
         is Stmt.RemDecl -> {
-            sb.appendLine("${indent}RemDecl(name=${stmt.name})")
+            sb.appendLine("${indent}ReactiveDecl(kind=${stmt.kind}, name=${stmt.name})")
         }
         is Stmt.Effect -> {
             sb.appendLine("${indent}Effect")
@@ -474,6 +476,10 @@ private fun dumpExpr(sb: StringBuilder, expr: Expr, indent: String) {
         is Expr.Alloc -> {
             sb.appendLine("${indent}Alloc")
             dumpExpr(sb, expr.value, "$indent    ")
+        }
+        is Expr.AllocBuffer -> {
+            sb.appendLine("${indent}AllocBuffer(${expr.typeName})")
+            dumpExpr(sb, expr.count, "$indent    ")
         }
         is Expr.Deref -> {
             sb.appendLine("${indent}Deref")

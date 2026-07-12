@@ -1,0 +1,49 @@
+/*
+ * Copyright 2026 AzoraLabs
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ */
+
+@file:experimental
+
+package std.memory
+
+/**
+ * @file Weak
+ *
+ * Non-owning pointer view. It never drops memory; callers must prove the
+ * pointee outlives the weak view.
+ *
+ * @since 0.0.3
+ */
+
+friend zone std {
+    pack Weak<T> {
+        shield var raw: T*
+    }
+
+    impl deref for Weak<T> { ref self ->
+        assert self.raw != null { "Weak pointer is null" }
+        return deref self.raw
+    }
+
+    impl Weak<T> {
+        func get(): T {
+            assert self.raw != null { "Weak pointer is null" }
+            return deref self.raw
+        }
+
+        func ptr(): T* { return self.raw }
+
+        func isNull(): Bool { return self.raw == null }
+    }
+
+    func weakOf<T>(ptr: T*): Weak<T> {
+        return Weak(ptr)
+    }
+
+    func weak<T>(ptr: T*): Weak<T> {
+        return weakOf(ptr)
+    }
+}

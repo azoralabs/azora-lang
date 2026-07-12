@@ -184,7 +184,7 @@ friend zone std {
      * @return An array of substrings.
      * @since 0.0.1
      */
-    func strSplit(s: String, delim: String): [String] {
+    func strSplit(s: String, delim: String): Array<String> {
         return split(s, delim)
     }
 
@@ -195,7 +195,7 @@ friend zone std {
      * @return An array of Char values.
      * @since 0.0.1
      */
-    func strToChars(s: String): [Char] {
+    func strToChars(s: String): Array<Char> {
         return toChars(s)
     }
 
@@ -206,7 +206,7 @@ friend zone std {
      * @return The concatenated string.
      * @since 0.0.1
      */
-    func charsToString(chars: [Char]): String {
+    func charsToString(chars: Array<Char>): String {
         return fromChars(chars)
     }
 
@@ -242,7 +242,7 @@ friend zone std {
     func strReverse(s: String): String {
         fin chars = toChars(s)
         fin len = chars.length
-        var reversed: [Char] = [].fill<Char>(len)
+        var reversed: Array<Char> = arrayOf().fill<Char>(len)
         var i = 0
         while i < len {
             reversed[i] = chars[len - 1 - i]

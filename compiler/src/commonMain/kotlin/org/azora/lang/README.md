@@ -2,8 +2,8 @@
 
 A multi-phase, IR-based compiler for the Azora language: multi-pass semantic
 analysis with compile-time function execution (CTFE), a target-agnostic typed
-IR, and **nine** source-code backends plus an in-memory interpreter — all driven
-from one optimized IR per compile.
+IR, and the active JavaScript, WebAssembly, and LLVM source backends plus an
+in-memory interpreter — all driven from one optimized IR per compile.
 
 Source lives under `compiler/src/commonMain/kotlin/org/azora/lang/`
 (package `org.azora.lang`). A `wasmJs` target also exists so the compiler can
@@ -22,14 +22,14 @@ Source → Lexer → Parser → AST Validator
                   ↓
            IR Generator → IR Optimizer  (release mode only)
                   ↓
-  ┌──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────────┐
-  ↓      ↓      ↓      ↓      ↓      ↓      ↓      ↓      ↓      ↓          ↓
-Kotlin  TS    Swift  Dart   C#    Python Rust   Wasm   LLVM   Interpreter (IR dump)
+  ┌──────┬──────┬──────┬──────────┐
+  ↓      ↓      ↓      ↓          ↓
+  JS    Wasm   LLVM   Interpreter (IR dump)
 ```
 
-Every `Compiler.compile()` lowers the (optimized) IR to **all nine** codegen
-targets in one pass and returns them together. Adding a target = one new file
-under `backend/` plus one field on `CompilationResult.Success`.
+Every `Compiler.compile()` lowers the (optimized) IR to JavaScript,
+WebAssembly, and LLVM IR in one pass and returns them together. Adding a target
+= one new file under `backend/` plus one field on `CompilationResult.Success`.
 
 ### Phase boundaries (see `Compiler.kt`)
 
@@ -37,7 +37,7 @@ under `backend/` plus one field on `CompilationResult.Success`.
 2. **Semantic** — multi-pass: symbol collection → import resolution →
    type-resolution ⇄ CTFE fixed-point loop → alloc/drop → effect checking.
 3. **IR** — AST → typed IR → optimization (constant fold/propagate, DCE, unused-symbol elimination).
-4. **Backend** — IR → Kotlin, TypeScript, Swift, Dart, C#, Python, Rust, Wasm, LLVM (+ interpreter, + IR/AST dump).
+4. **Backend** — IR → JavaScript, WebAssembly, LLVM (+ interpreter, + IR/AST dump).
 
 ---
 
@@ -51,14 +51,14 @@ root `README.md`; this section is a keyword/construct reference for compiler wor
 
 ### Bindings & mutability
 
-| Keyword | Mutability | Kotlin emit |
+| Keyword | Mutability | JS emit |
 |---------|------------|-------------|
-| `var x: Int = 5` | mutable | `var` |
-| `var x = 5` | mutable, inferred | `var` |
-| `let x = 5` | immutable (read-only view) | `val` |
-| `fin x = 5` | deeply immutable | `val` |
-| `threadlocal var x = 0` | per-thread mutable | JVM `ThreadLocal` |
-| `threadlocal fin y = 42` | per-thread constant | JVM `ThreadLocal` |
+| `var x: Int = 5` | mutable | `let` |
+| `var x = 5` | mutable, inferred | `let` |
+| `let x = 5` | immutable (read-only view) | `const` |
+| `fin x = 5` | deeply immutable | `const` |
+| `threadlocal var x = 0` | per-thread mutable | backend runtime slot |
+| `threadlocal fin y = 42` | per-thread constant | backend runtime slot |
 
 Top-level `fin`/`var`/`let`: `fin` (immutable global) is allowed; `var`/`let`
 globals are rejected (not thread-safe).
@@ -88,16 +88,18 @@ kinds: `ref`, `shared ref`, `weak ref` (with optional `mut`).
 
 - **Primitives**: `Int UInt Long ULong Byte UByte Short UShort Cent UCent
   Float Real Decimal Bool Char String Unit`.
-- **Compound**: arrays `[T]`, tuples `(A, B)`, function types `(A) -> B`,
-  maps `["k": v]` (`[K: V]`).
+- **Compound**: fixed arrays `Array<T>`, immutable collections
+  `List<T>`/`Set<T>`/`Map<K, V>`, mutable collections
+  `mut List<T>`/`mut Set<T>`/`mut Map<K, V>`, tuples `(A, B)`,
+  function types `(A) -> B`, map values `mapOf("k": v)`.
 - **User-defined**: `pack` (structs), `enum`, `slot` (tagged unions), `typealias`,
   `fail` (error sets).
 - **Type parameters**: generics `func<T>`, `pack<T>`; **variadic** `func<T...>`.
 - **Nullable**: `T?` with `null`, `??` (coalesce), `?.` (safe access),
   `?=`/`?+=`/… null-conditional assignment family.
-- **Failable**: `T!ErrSet` — a `T` or an error from a declared set (propagated
+- **Failable**: `T!ErrSet` — a `T` or an error from a declared setOf (propagated
   via the existing exception machinery).
-- **Pointer**: `T*` — a heap reference (`alloc`, `*deref`).
+- **Pointer**: `T*` — a heap reference (`alloc`, `deref ptr` / `*ptr`).
 - Integer/float promotion: `2 + 1.5` → `3.5` (auto-widens).
 
 ### Control flow
@@ -113,11 +115,12 @@ checking; `guard cond else { }`; `break`/`continue`.
 
 | Construct | Purpose |
 |-----------|---------|
-| `pack Name { fields }` | struct |
+| `pack Name { fields }` / `pack Empty` | struct; empty packs may omit `{ }` |
 | `enum Color { Red; Green }` | enum |
 | `slot Option { Some(Int); None }` | tagged union |
-| `impl Name { methods }` / `impl Spec for Name` | methods + trait impls |
-| `spec Name { signatures }` | trait |
+| `impl pack Name { methods }` / `impl Spec for Name` | pack methods in the declaring file + trait impls |
+| `func Name.method(args) { ref self -> body }` | extension method outside the declaring file |
+| `spec Name { signatures }` / `spec Into<T>: T get { ref self }` | trait or compact callback spec |
 | `node Name(params) { … }` | inheritable type (base class) |
 | `leaf Name(params) : Parent(args) { repl func … }` | final subclass (single inheritance) |
 | `virt func` / `repl func` / `base.method()` | virtual / override / super-call |
@@ -128,20 +131,39 @@ checking; `guard cond else { }`; `break`/`continue`.
 | `flow name(p): T { … yield v }` | lazy generator |
 | `view Name(params) { body }` | reactive UI component |
 | `bridge target { func sigs }` | FFI extern declarations |
-| `zone Name { … }` | named namespace (`Name::member`) |
+| `zone Name { … }` / `friend zone std::math { … }` | named namespace (`Name::member`) / shared namespace contribution |
 | `test "name" { }` | test declaration |
 
 ### Object-model members (inside `impl`/`node`/`solo` bodies)
 
 `hook name { }` (lifecycle callback), `prop name: T { }` (computed property),
 `ctor(params) { }` (secondary constructor), `dtor { }` (destructor), and
-`flip { } flop { }` (alternating execution). Operator/index overloading via
-`oper[]`/`oper[]=`; extension methods via `infx Type.method(...)`.
+`flip { } flop { }` (alternating execution). Inside ordinary `impl Type { }`
+blocks only `prop`, `func`, `task`, and `flow` members are accepted. Index
+overloading is standalone: `impl oper[] for Type { ref self, index -> ... }`
+and `impl oper[]= for Type { mut ref self, index, value -> ... }`. Extension
+methods use `func Type.method(...) { ref self -> }`, and infix extension
+functions use `infx Type.method(...)`.
+
+### Conversion specs
+
+`std.convert` defines compact callback specs:
+
+```azora
+spec Into<T>: T get { ref self }
+spec From<T>: T get { ref self }
+```
+
+The `: T` is the callback return type, `get` marks property-style access, and
+`{ ref self }` declares the receiver. `impl Into<String> for List<T> { ref self
+-> ... }` generates `.toString` (and the legacy zero-arg `.toString()` call
+continues to work). `impl as String for Type { ref self -> ... }` is separate:
+it is used by `value as String` casts and does not create `.toString`.
 
 ### Memory model
 
 `alloc <expr>` (heap pointer; `alloc [a,b,c]` enables pointer arithmetic),
-`*ptr` deref, `*ptr = v` store, `drop <expr>` (advisory free under GC),
+`deref ptr` / `*ptr` deref, `*ptr = v` store, `drop <expr>` (advisory free under GC),
 `unsafe { }`, `isolated(expr)` (deep copy), `zone alloc { }` /
 `friend zone alloc { }` (scoped arenas). Pointer arithmetic: `ptr + n`,
 `ptr - n`, `ptr1 - ptr2`, `ptr1 == ptr2`.
@@ -161,9 +183,10 @@ task gets isolated execution state), `channel()` + `.send`/`.receive`/`.close`,
 
 ### Reactivity
 
-`rem x: T = init` (reactive state), `effect { }` (side-effect block),
-`view Name() { }` (component). Re-runs run once currently; automatic
-dependency tracking is future work.
+`mem x: T = init` (remembered), `rem x: T = init` (saveable/serializable),
+`ret x: T = init` (retained), `effect { }` (side-effect block), and
+`view Name() { }` (component). Re-runs run once currently; automatic dependency
+tracking is future work.
 
 ### Compile-time execution (CTCE)
 
@@ -191,11 +214,11 @@ string interpolation `"$name"`, `"${expr}"`.
 Reserved words in the language (see `frontend/Token.kt`):
 
 - **Bindings**: `var` `fin` `let` `threadlocal`
-- **Functions/types**: `func` `return` `pack` `enum` `slot` `typealias` `impl` `spec` `node` `leaf` `virt` `repl` `base`
+- **Functions/types**: `func` `return` `pack` `shield` `enum` `slot` `typealias` `impl` `spec` `node` `leaf` `virt` `repl` `base`
 - **Control**: `if` `else` `for` `while` `loop` `in` `by` `reverse` `break` `continue` `when` `guard`
 - **Errors/concurrency**: `throw` `try` `catch` `rescue` `fail` `defer` `flow` `yield` `task` `await` `launch`
 - **Memory/FFI/DI**: `alloc` `drop` `unsafe` `isolated` `bridge` `solo` `wrap` `inject`
-- **Reactivity/object model**: `rem` `effect` `view` `hook` `prop` `ctor` `dtor` `flip` `flop`
+- **Reactivity/object model**: `mem` `rem` `ret` `effect` `view` `hook` `prop` `get` `set` `ctor` `dtor` `flip` `flop`
 - **Metaprogramming**: `inline` `deepinline` `noinline`
 - **Scoping/modules**: `zone` `friend` `package` `module` `use`
 - **Modifiers/visibility**: `mut` `ref` `out` `shared` `weak` `expose` `confine` `protect`
@@ -297,13 +320,7 @@ All backends are thin lowering passes from the same optimized IR.
 
 | File | Target | Notes |
 |------|--------|-------|
-| `KotlinCodegen.kt` | Kotlin/JVM | Full. Wraps non-Unit `main` in `__azora_main`. |
-| `TypeScriptCodegen.kt` | TypeScript | Full. `==`→`===`, appends `main()`. |
-| `SwiftCodegen.kt` | Swift 6.3 | Full. Emits a `main.swift` script. |
-| `DartCodegen.kt` | Dart | Full; all int widths → 64-bit `int`. |
-| `CSharpCodegen.kt` | C# / .NET | Full. Static `Program` class + generated `Main`. |
-| `PythonCodegen.kt` | Python 3 | Full; dynamic (no annotations), truncating div/mod helpers. |
-| `RustCodegen.kt` | Rust | Full; `Option<T>` for nullable, `Vec`/`HashMap`. |
+| `JavaScriptCodegen.kt` | JavaScript | Full. Emits plain JS and appends `main()`. |
 | `WasmCodegen.kt` | WebAssembly (WAT) | Full; folded S-exprs, linear memory + host imports. |
 | `LlvmCodegen.kt` | LLVM IR (`.ll`) | Partial — placeholders for closures, defer, compound types, pointers. `lli`/`clang`/`llc` ready. |
 | `IrInterpreter.kt` | (in-memory) | Full direct execution — drives tests, REPL, and the playground. Concurrency runs on `Dispatchers.Default` with real parallelism. |
@@ -317,13 +334,7 @@ Orchestrates all four phases and returns every generated output at once:
 ```kotlin
 when (val result = Compiler().compile(source, release = true)) {
     is CompilationResult.Success -> {
-        result.kotlin       // generated Kotlin
-        result.typescript   // TypeScript
-        result.swift        // Swift 6.3
-        result.dart         // Dart
-        result.csharp       // C# / .NET
-        result.python       // Python 3
-        result.rust         // Rust
+        result.javascript   // generated JavaScript
         result.wasm         // WebAssembly text (WAT)
         result.llvm         // LLVM IR text
         result.ast          // CTFE-stabilized AST after semantic analysis
@@ -409,13 +420,7 @@ compiler/src/commonMain/kotlin/org/azora/lang/
 │   └── IrOptimizer.kt           Constant fold → propagate → DCE → unused-symbol elim
 │
 └── backend/
-    ├── KotlinCodegen.kt         IR → Kotlin
-    ├── TypeScriptCodegen.kt     IR → TypeScript
-    ├── SwiftCodegen.kt          IR → Swift 6.3
-    ├── DartCodegen.kt           IR → Dart
-    ├── CSharpCodegen.kt         IR → C# / .NET
-    ├── PythonCodegen.kt         IR → Python 3
-    ├── RustCodegen.kt           IR → Rust
+    ├── JavaScriptCodegen.kt     IR → JavaScript
     ├── WasmCodegen.kt           IR → WebAssembly (WAT)
     ├── LlvmCodegen.kt           IR → LLVM IR text
     └── IrInterpreter.kt         IR → direct execution (tests, REPL, playground)

@@ -82,14 +82,14 @@ sealed class IrType {
     /** 128-bit decimal floating-point type. */
     object Decimal : IrType() { override fun toString() = "Decimal" }
 
-    /** Array type `[T]`. */
-    data class Array(val element: IrType) : IrType() { override fun toString() = "[$element]" }
+    /** Fixed array type `Array<T>`. */
+    data class Array(val element: IrType) : IrType() { override fun toString() = "Array<$element>" }
 
-    /** Map type `[K: V]`. */
-    data class Map(val key: IrType, val value: IrType) : IrType() { override fun toString() = "[$key: $value]" }
+    /** Structural map literal type `map[K, V]`. */
+    data class Map(val key: IrType, val value: IrType) : IrType() { override fun toString() = "map[$key, $value]" }
 
-    /** Set type `![T]`. */
-    data class Set(val element: IrType) : IrType() { override fun toString() = "![$element]" }
+    /** Structural set literal type `set[T]`. */
+    data class Set(val element: IrType) : IrType() { override fun toString() = "set[$element]" }
 
     /** Function type `(A, B) -> R`. */
     data class Function(val params: List<IrType>, val ret: IrType) : IrType() { override fun toString() = "(${params.joinToString(", ")}) -> $ret" }
@@ -177,12 +177,9 @@ sealed class IrType {
             is TypeRef.Named -> {
                 if (ref.name in typeParams) Any
                 else if (ref.name in aliases) resolve(aliases[ref.name]!!, typeParams)
-                // Collection type names map to their primitive IR types (constructors are the
-                // `arr()/set()/map()/tup()/var()` sugar; Vec stays a stdlib pack → Named).
-                else if (ref.name == "Arr" && ref.args.size == 1) Array(resolve(ref.args[0], typeParams))
-                else if (ref.name == "Set" && ref.args.size == 1) Set(resolve(ref.args[0], typeParams))
-                else if (ref.name == "Map" && ref.args.size == 2) Map(resolve(ref.args[0], typeParams), resolve(ref.args[1], typeParams))
-                else if (ref.name == "Tup" && ref.args.size >= 2) Tuple(ref.args.map { resolve(it, typeParams) })
+                // `Array<T>` is the source spelling for fixed arrays; std.container
+                // collection pack names stay as Named so their methods resolve normally.
+                else if (ref.name == "Array" && ref.args.size == 1) Array(resolve(ref.args[0], typeParams))
                 else if (ref.name == "Var" && ref.args.size >= 2) Variant(ref.args.map { resolve(it, typeParams) })
                 else if (ref.args.isEmpty() && isPrimitiveName(ref.name)) fromName(ref.name)
                 else Named(ref.name)

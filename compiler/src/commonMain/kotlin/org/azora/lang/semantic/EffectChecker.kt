@@ -251,6 +251,7 @@ class EffectChecker {
             is Expr.IsCheck -> collectCallsFromExpr(expr.expr, calls)
             is Expr.MapLit -> { for ((k, v) in expr.entries) { collectCallsFromExpr(k, calls); collectCallsFromExpr(v, calls) } }
             is Expr.Alloc -> collectCallsFromExpr(expr.value, calls)
+            is Expr.AllocBuffer -> collectCallsFromExpr(expr.count, calls)
             is Expr.Deref -> collectCallsFromExpr(expr.target, calls)
             is Expr.Isolated -> collectCallsFromExpr(expr.value, calls)
             is Expr.Await -> collectCallsFromExpr(expr.value, calls)

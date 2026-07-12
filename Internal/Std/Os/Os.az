@@ -97,20 +97,6 @@ friend zone std {
     }
 
     // ====================================================================
-    // JVM Bridge - AWT/LWJGL
-    // ====================================================================
-
-    bridge .JVM {
-        func jvm_createWindow(width: Int, height: Int, title: String): Int
-        func jvm_destroyWindow(handle: Int)
-        func jvm_isWindowOpen(handle: Int): Bool
-        func jvm_pollEvents(handle: Int)
-        func jvm_getKeyState(handle: Int, keyCode: Int): Bool
-        func jvm_swapBuffers(handle: Int)
-        func jvm_getTime(): Real
-    }
-
-    // ====================================================================
     // Error Types
     // ====================================================================
 
@@ -203,7 +189,7 @@ friend zone std {
     }
 
     impl OsClock {
-        func tick() { mut self ->
+        func tick() {
             fin now = glfwGetTime()
             if lastFrame == 0.0 {
                 self.startTime = now

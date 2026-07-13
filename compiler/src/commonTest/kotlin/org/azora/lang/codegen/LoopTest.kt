@@ -174,4 +174,38 @@ class LoopTest {
         // LLVM backend emits loop labels
         assertTrue("for_cond" in result.llvm || "br label" in result.llvm, "LLVM should emit loop branches, got:\n${result.llvm}")
     }
+
+    @Test
+    fun reverseForRange() {
+        assertEquals("4\n3\n2\n1\n0", run("""
+            func main() {
+                reverse for i in 0..<5 {
+                    println(i)
+                }
+            }
+        """.trimIndent()))
+    }
+
+    @Test
+    fun reverseForInclusiveRange() {
+        assertEquals("5\n4\n3\n2\n1", run("""
+            func main() {
+                reverse for i in 1..5 {
+                    println(i)
+                }
+            }
+        """.trimIndent()))
+    }
+
+    @Test
+    fun reverseFunctionCall() {
+        // `reverse` is a soft keyword usable as a stdlib function name in call position.
+        assertEquals("5\n4\n3\n2\n1", run("""
+            use std.algorithm
+            func main() {
+                fin r = reverse<Int>([1, 2, 3, 4, 5])
+                for x in r { println(x) }
+            }
+        """.trimIndent()))
+    }
 }

@@ -544,6 +544,10 @@ class IrGenerator(private val table: SymbolTable) {
                 IrStmt.When(scrutinee, branches, elseBranch)
             }
             is Stmt.Throw -> IrStmt.Throw(lowerExpr(stmt.value))
+            is Stmt.Panic -> {
+                if (stmt.inlinePanic) error("inline panic should have been resolved by CTFE before IR generation")
+                IrStmt.ExprStmt(IrExpr.Call("__panic", listOf(lowerExpr(stmt.message)), IrType.Unit))
+            }
             is Stmt.Try -> {
                 table.pushScope()
                 pushNameScope()
@@ -800,7 +804,14 @@ class IrGenerator(private val table: SymbolTable) {
                 // Calling a lambda stored in a variable.
                 val v = table.lookupVariable(expr.callee)
                 if (v != null && v.type is IrType.Function) {
-                    val args = expr.args.map { lowerExpr(it) }
+                    // Variadic lambda (`<T...>{ … }`): pack all args into the single `it` array.
+                    val args = if (v.type.variadic) {
+                        val elems = expr.args.map { lowerExpr(it) }
+                        val elemType = if (elems.isEmpty()) IrType.Any else elems.first().type
+                        listOf(IrExpr.ArrayLiteral(elems, IrType.Array(elemType)))
+                    } else {
+                        expr.args.map { lowerExpr(it) }
+                    }
                     return IrExpr.Call(resolveName(expr.callee), args, v.type.ret)
                 }
                 error("undefined function or variable '${expr.callee}'")
@@ -1025,7 +1036,7 @@ class IrGenerator(private val table: SymbolTable) {
                 popNameScope()
                 table.popScope()
                 val retType = body.mapNotNull { (it as? IrStmt.Return)?.value?.type }.firstOrNull() ?: IrType.Unit
-                IrExpr.Lambda(irParams, body, IrType.Function(irParams.map { it.second }, retType))
+                IrExpr.Lambda(irParams, body, IrType.Function(irParams.map { it.second }, retType, variadic = expr.variadic))
             }
         }
     }

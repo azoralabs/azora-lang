@@ -226,6 +226,7 @@ class AllocDropAnalyzer {
                 stmt.elseBranch?.forEach { analyzeStmt(it, defined, used, errors) }
             }
             is Stmt.Throw -> collectUsedVars(stmt.value, used)
+            is Stmt.Panic -> collectUsedVars(stmt.message, used)
             is Stmt.Yield -> collectUsedVars(stmt.value, used)
             is Stmt.Try -> {
                 stmt.body.forEach { analyzeStmt(it, defined, used, errors) }

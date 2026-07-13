@@ -15,13 +15,36 @@ fun Program.dumpTree(): String {
     return sb.toString().trimEnd()
 }
 
+/**
+ * Renders stability decorators (`@experimental(since: "0.0.1")` / `@stable(since: "1.0.0")`)
+ * as a compact suffix for the AST dump, so they surface in compiler output / docs tooling.
+ */
+private fun stabilityNote(annotations: List<Annotation>): String {
+    val parts = mutableListOf<String>()
+    annotations.find { it.name == "experimental" || it.name == "stable" }?.let { a ->
+        val since = (a.namedArgs.firstOrNull { it.first == "since" }?.second as? Expr.StringLiteral)?.value
+        parts.add(a.name + (since?.let { " since=$it" } ?: ""))
+    }
+    annotations.find { it.name == "since" }?.let { a ->
+        val v = (a.args.firstOrNull() as? Expr.StringLiteral)?.value
+        parts.add("since" + (v?.let { "=$it" } ?: ""))
+    }
+    annotations.find { it.name == "deprecated" }?.let { a ->
+        val s = (a.namedArgs.firstOrNull { it.first == "since" }?.second as? Expr.StringLiteral)?.value
+        val r = (a.namedArgs.firstOrNull { it.first == "replacement" }?.second as? Expr.StringLiteral)?.value
+        parts.add("deprecated" + listOfNotNull(s?.let { "since=$it" }, r?.let { "replacement=$it" }).let { if (it.isEmpty()) "" else " (${it.joinToString(", ")})" })
+    }
+    return if (parts.isEmpty()) "" else " [${parts.joinToString(", ")}]"
+}
+
 private fun dumpTopLevel(sb: StringBuilder, item: TopLevel, indent: String) {
     when (item) {
         is TopLevel.Func -> {
             val func = item.decl
             val params = func.params.joinToString(", ") { "${it.name}: ${it.typeName}" }
             val inlineStr = if (func.isInline) ", inline" else ""
-            sb.appendLine("${indent}FuncDecl(name=${func.name}, returnType=${func.returnType}$inlineStr)")
+            val stability = stabilityNote(func.annotations)
+            sb.appendLine("${indent}FuncDecl(name=${func.name}, returnType=${func.returnType}$inlineStr)$stability")
             for (param in func.params) {
                 sb.appendLine("$indent    Param(name=${param.name}, type=${param.typeName})")
             }
@@ -114,7 +137,8 @@ private fun dumpTopLevel(sb: StringBuilder, item: TopLevel, indent: String) {
         }
         is TopLevel.Pack -> {
             val fields = item.fields.joinToString(", ") { "${it.name}: ${it.type}" }
-            sb.appendLine("${indent}Pack(name=${item.name}, fields=[$fields])")
+            val stability = stabilityNote(item.annotations)
+            sb.appendLine("${indent}Pack(name=${item.name}, fields=[$fields])$stability")
         }
         is TopLevel.Deco -> {
             val fields = item.fields.joinToString(", ") { "${it.name}: ${it.type}" }
@@ -366,6 +390,10 @@ private fun dumpStmt(sb: StringBuilder, stmt: Stmt, indent: String) {
         is Stmt.Throw -> {
             sb.appendLine("${indent}Throw")
             dumpExpr(sb, stmt.value, "$indent    ")
+        }
+        is Stmt.Panic -> {
+            sb.appendLine("${indent}Panic(inline=${stmt.inlinePanic})")
+            dumpExpr(sb, stmt.message, "$indent    ")
         }
         is Stmt.Yield -> {
             sb.appendLine("${indent}Yield")

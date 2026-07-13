@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-@file:experimental
-
 package std.result
 
 /**
@@ -33,9 +31,8 @@ package std.result
 friend zone std {
     /**
      * Represents either a success or failure outcome.
-     *
-     * @since 0.0.1
      */
+    @since("0.0.1")
     slot Result {
         Ok(value: Int)
         Err(code: Int, message: String)
@@ -46,8 +43,8 @@ friend zone std {
      *
      * @param value The success value.
      * @return A Result.Ok variant.
-     * @since 0.0.1
      */
+    @since("0.0.1")
     func ok(value: Int): Result {
         return Result.Ok(value: value)
     }
@@ -58,8 +55,8 @@ friend zone std {
      * @param code The error code.
      * @param message The error description.
      * @return A Result.Err variant.
-     * @since 0.0.1
      */
+    @since("0.0.1")
     func err(code: Int, message: String): Result {
         return Result.Err(code: code, message: message)
     }
@@ -71,6 +68,7 @@ friend zone std {
      * @return true if the result is Ok.
      * @since 0.0.1
      */
+    @since("0.0.1")
     func isOk(r: Result): Bool {
         return r is Ok
     }
@@ -82,6 +80,7 @@ friend zone std {
      * @return true if the result is Err.
      * @since 0.0.1
      */
+    @since("0.0.1")
     func isErr(r: Result): Bool {
         return r is Err
     }
@@ -94,7 +93,12 @@ friend zone std {
      * @return The Ok value or the default.
      * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     func unwrapOr(r: Result, default: Int): Int {
+        when r {
+            Result.Ok(v) -> { return v }
+            else -> { return default }
+        }
         return default
     }
 }

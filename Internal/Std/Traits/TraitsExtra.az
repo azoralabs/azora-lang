@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-@file:experimental
-
 package std.traits
 
 /**
@@ -28,53 +26,20 @@ package std.traits
 
 friend zone std {
     /**
-     * Types that have a sensible default/zero value.
-     * Int=0, Real=0.0, String="", Bool=false, Char='\0'.
-     */
-    spec Default
-    impl Default for Int
-    impl Default for Real
-    impl Default for String
-    impl Default for Bool
-    impl Default for Char
-
-    /**
-     * Types that support addition via the + operator.
-     */
-    spec Addable
-    impl Addable for Int
-    impl Addable for Real
-    impl Addable for String
-
-    /**
-     * Types that support multiplication via the * operator.
-     */
-    spec Multipliable
-    impl Multipliable for Int
-    impl Multipliable for Real
-
-    /**
      * Types that can be iterated over.
      */
+    @since("0.0.1")
     spec Iterable
 
     /**
      * An iterator that produces values one at a time.
      */
+    @since("0.0.1")
     spec Iterator
 
     /**
      * Types that can be serialized to/from a string representation.
      */
+    @since("0.0.1")
     spec Serializable
-
-    /**
-     * Types that support deep copying.
-     */
-    spec Cloneable
-    impl Cloneable for Int
-    impl Cloneable for Real
-    impl Cloneable for String
-    impl Cloneable for Char
-    impl Cloneable for Bool
 }

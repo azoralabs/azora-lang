@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-@file:experimental
-
 package std.functional
 
 /**
@@ -35,8 +33,8 @@ friend zone std {
      *
      * @param x The value.
      * @return The same value.
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     func identity<T>(x: T): T = x
 
     /**
@@ -45,10 +43,10 @@ friend zone std {
      * @param arr The source array.
      * @param f The transformation function.
      * @return A new array with transformed elements.
-     * @since 0.0.1
      */
-    func map<T>(arr: Array<T>, f: (T) -> T): Array<T> {
-        var result: Array<T> = arrayOf().fill<T>(arr.length)
+    @experimental(since: "0.0.1")
+    func map<T>(arr: [T], f: (T) -> T): [T] {
+        var result: [T] = [].fill<T>(arr.length)
         var i = 0
         while i < arr.length {
             result[i] = f(arr[i])
@@ -63,10 +61,10 @@ friend zone std {
      * @param arr The source array.
      * @param pred The predicate function.
      * @return A filtered array.
-     * @since 0.0.1
      */
-    func filter<T>(arr: Array<T>, pred: (T) -> Bool): Array<T> {
-        var tmp: Array<T> = arrayOf().fill<T>(arr.length)
+    @experimental(since: "0.0.1")
+    func filter<T>(arr: [T], pred: (T) -> Bool): [T] {
+        var tmp: [T] = [].fill<T>(arr.length)
         var count = 0
         var i = 0
         while i < arr.length {
@@ -76,7 +74,7 @@ friend zone std {
             }
             i += 1
         }
-        var result: Array<T> = arrayOf().fill<T>(count)
+        var result: [T] = [].fill<T>(count)
         var j = 0
         while j < count {
             result[j] = tmp[j]
@@ -92,9 +90,9 @@ friend zone std {
      * @param initial The initial accumulator value.
      * @param f The accumulator function taking (accumulator, element).
      * @return The final accumulated value.
-     * @since 0.0.1
      */
-    func reduce<T>(arr: Array<T>, initial: T, f: (T, T) -> T): T {
+    @experimental(since: "0.0.1")
+    func reduce<T>(arr: [T], initial: T, f: (T, T) -> T): T {
         var acc = initial
         var i = 0
         while i < arr.length {
@@ -109,9 +107,9 @@ friend zone std {
      *
      * @param arr The source array.
      * @param action The function to apply.
-     * @since 0.0.1
      */
-    func forEach<T>(arr: Array<T>, action: (T) -> Unit) {
+    @experimental(since: "0.0.1")
+    func forEach<T>(arr: [T], action: (T) -> Unit) {
         var i = 0
         while i < arr.length {
             action(arr[i])
@@ -125,9 +123,9 @@ friend zone std {
      * @param arr The source array.
      * @param pred The predicate function.
      * @return true if at least one element matches.
-     * @since 0.0.1
      */
-    func any<T>(arr: Array<T>, pred: (T) -> Bool): Bool {
+    @experimental(since: "0.0.1")
+    func any<T>(arr: [T], pred: (T) -> Bool): Bool {
         var i = 0
         while i < arr.length {
             if pred(arr[i]) { return true }
@@ -142,9 +140,9 @@ friend zone std {
      * @param arr The source array.
      * @param pred The predicate function.
      * @return true if every element matches.
-     * @since 0.0.1
      */
-    func all<T>(arr: Array<T>, pred: (T) -> Bool): Bool {
+    @experimental(since: "0.0.1")
+    func all<T>(arr: [T], pred: (T) -> Bool): Bool {
         var i = 0
         while i < arr.length {
             if !pred(arr[i]) { return false }
@@ -159,9 +157,9 @@ friend zone std {
      * @param arr The source array.
      * @param pred The predicate function.
      * @return true if no element matches.
-     * @since 0.0.1
      */
-    func none<T>(arr: Array<T>, pred: (T) -> Bool): Bool {
+    @experimental(since: "0.0.1")
+    func none<T>(arr: [T], pred: (T) -> Bool): Bool {
         var i = 0
         while i < arr.length {
             if pred(arr[i]) { return false }
@@ -176,13 +174,14 @@ friend zone std {
      * @param arr The source array.
      * @param n The number of elements to take.
      * @return A new array with at most n elements.
-     * @since 0.0.1
      */
-    func take<T>(arr: Array<T>, n: Int): Array<T>
-    in { assert n >= 0 { "take count must be non-negative" } }
-    zone {
+    @experimental(since: "0.0.1")
+    func take<T>(arr: [T], n: Int): [T]
+    in {
+        assert n >= 0 { "take count must be non-negative" }
+    } zone {
         fin len = if n < arr.length { n } else { arr.length }
-        var result: Array<T> = arrayOf().fill<T>(len)
+        var result: [T] = [].fill<T>(len)
         var i = 0
         while i < len {
             result[i] = arr[i]
@@ -197,13 +196,14 @@ friend zone std {
      * @param arr The source array.
      * @param n The number of elements to skip.
      * @return A new array without the first n elements.
-     * @since 0.0.1
      */
-    func drop<T>(arr: Array<T>, n: Int): Array<T>
-    in { assert n >= 0 { "drop count must be non-negative" } }
-    zone {
+    @experimental(since: "0.0.1")
+    func drop<T>(arr: [T], n: Int): [T]
+    in {
+        assert n >= 0 { "drop count must be non-negative" }
+    } zone {
         fin start = if n < arr.length { n } else { arr.length }
-        var result: Array<T> = arrayOf().fill<T>(arr.length - start)
+        var result: [T] = [].fill<T>(arr.length - start)
         var i = start
         var j = 0
         while i < arr.length {
@@ -220,11 +220,11 @@ friend zone std {
      * @param a The first array.
      * @param b The second array.
      * @return An array of [a[i], b[i]] pairs, up to the shorter length.
-     * @since 0.0.1
      */
-    func zip<T>(a: Array<T>, b: Array<T>): Array<Array<T>> {
+    @experimental(since: "0.0.1")
+    func zip<T>(a: [T], b: [T]): [T] {
         fin len = if a.length < b.length { a.length } else { b.length }
-        var result: Array<Array<T>> = arrayOf().fill<Array<T>>(len)
+        var result: [T] = [].fill<[T]>(len)
         var i = 0
         while i < len {
             result[i] = arrayOf(a[i], b[i])
@@ -239,12 +239,13 @@ friend zone std {
      * @param value The fill value.
      * @param count The number of elements.
      * @return A new array of count elements, all set to value.
-     * @since 0.0.1
      */
-    func fill<T>(value: T, count: Int): Array<T>
-    in { assert count >= 0 { "fill count must be non-negative" } }
-    zone {
-        var result: Array<T> = arrayOf().fill<T>(count)
+    @experimental(since: "0.0.1")
+    func fill<T>(value: T, count: Int): [T]
+    in {
+        assert count >= 0 { "fill count must be non-negative" }
+    } zone {
+        var result: [T] = [].fill<T>(count)
         var i = 0
         while i < count {
             result[i] = value
@@ -259,10 +260,10 @@ friend zone std {
      * @param count The number of elements.
      * @param f The generator function taking the index.
      * @return A new array of generated elements.
-     * @since 0.0.1
      */
-    func generate<T>(count: T, f: (T) -> T): Array<T> {
-        var result: Array<T> = arrayOf().fill<T>(count)
+    @experimental(since: "0.0.1")
+    func generate<T>(count: T, f: (T) -> T): [T] {
+        var result: [T] = [].fill<T>(count)
         var i = 0
         while i < count {
             result[i] = f(i)
@@ -277,9 +278,9 @@ friend zone std {
      * @param arr The source array.
      * @param pred The predicate function.
      * @return The count of matching elements.
-     * @since 0.0.1
      */
-    func countWhere<T>(arr: Array<T>, pred: (T) -> Bool): Int {
+    @experimental(since: "0.0.1")
+    func countWhere<T>(arr: [T], pred: (T) -> Bool): Int {
         var c = 0
         var i = 0
         while i < arr.length {
@@ -296,9 +297,9 @@ friend zone std {
      * @param pred The predicate function.
      * @param default The default value if no match.
      * @return The first matching element or default.
-     * @since 0.0.1
      */
-    func findOr<T>(arr: Array<T>, pred: (T) -> Bool, default: T): T {
+    @experimental(since: "0.0.1")
+    func findOr<T>(arr: [T], pred: (T) -> Bool, default: T): T {
         var i = 0
         while i < arr.length {
             if pred(arr[i]) { return arr[i] }

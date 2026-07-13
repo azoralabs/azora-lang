@@ -101,10 +101,13 @@ class TypeResolver(private val table: SymbolTable) {
             ?.ref?.let { (it as? TypeRef.Failable)?.errSet }
         val savedUnsafe = unsafeContext
         val savedReceiver = currentReceiverType
+        val savedFuncTypeParams = currentFuncTypeParams
         unsafeContext = func.isUnsafe
         currentReceiverType = null
+        currentFuncTypeParams = func.typeParams.toSet()
         resolveBody(func.body, symbol.returnType)
         currentReceiverType = savedReceiver
+        currentFuncTypeParams = savedFuncTypeParams
         unsafeContext = savedUnsafe
         declaredFailSet = savedFailSet
 
@@ -113,6 +116,9 @@ class TypeResolver(private val table: SymbolTable) {
 
     /** The declared error set of the function currently being resolved (`T!E`'s `E`), or null. */
     private var declaredFailSet: String? = null
+
+    /** Type parameters of the function currently being resolved (erased to `Any` in types). */
+    private var currentFuncTypeParams: Set<String> = emptySet()
 
     private fun canAccessMember(ownerType: String, visibility: Visibility): Boolean = when (visibility) {
         Visibility.EXPOSE -> true
@@ -143,6 +149,13 @@ class TypeResolver(private val table: SymbolTable) {
      * function-parameter type a lambda is passed as). Consumed by `Expr.Lambda` resolution.
      */
     private var expectedItType: IrType? = null
+
+    /**
+     * When non-null, return-value types inside the body being resolved are appended here
+     * (used to infer a lambda's return type from its body, after locals are in scope).
+     * When null, `return` statements are validated against the enclosing function's declared type.
+     */
+    private var lambdaReturnTypes: MutableList<IrType>? = null
 
     /** If [expr] is `ErrSet.Variant`, returns the error-set name; otherwise null. */
     private fun failSetOf(expr: Expr): String? {
@@ -218,7 +231,11 @@ class TypeResolver(private val table: SymbolTable) {
                     }
                 } else {
                     val valueType = resolveExpr(stmt.value) ?: return
-                    if (!isCompatible(returnType, valueType)) {
+                    val capturing = lambdaReturnTypes
+                    if (capturing != null) {
+                        // Inferring a lambda's return type — record it, skip declared-type checking.
+                        capturing.add(valueType)
+                    } else if (!isCompatible(returnType, valueType)) {
                         errors.add("line ${stmt.line}: return type mismatch: expected $returnType but got $valueType")
                     }
                 }
@@ -472,6 +489,7 @@ class TypeResolver(private val table: SymbolTable) {
                     errors.add("line ${stmt.line}: function declares '!$declaredFailSet' but throws error from '$thrownSet'")
                 }
             }
+            is Stmt.Panic -> { resolveExpr(stmt.message) }
             is Stmt.Yield -> { resolveExpr(stmt.value) }
             is Stmt.Try -> {
                 table.pushScope()
@@ -620,6 +638,11 @@ class TypeResolver(private val table: SymbolTable) {
                     val v = table.lookupVariable(expr.callee)
                     if (v != null && v.type is IrType.Function) {
                         val fn = v.type
+                        // A variadic lambda (`<T…>{ … }`) packs all args into its single `it` array.
+                        if (fn.variadic) {
+                            for (arg in expr.args) { resolveExpr(arg) ?: return null }
+                            return fn.ret
+                        }
                         if (expr.args.size != fn.params.size) {
                             errors.add("line ${expr.line}: '${expr.callee}' expects ${fn.params.size} args, got ${expr.args.size}")
                             return null
@@ -1065,13 +1088,15 @@ class TypeResolver(private val table: SymbolTable) {
                 for (i in expr.params.indices) {
                     table.defineVariable(VariableSymbol(expr.params[i].name, paramTypes[i]))
                 }
-                var retType: IrType = IrType.Unit
-                for (s in expr.body) {
-                    if (s is Stmt.Return && s.value != null) { retType = resolveExpr(s.value) ?: IrType.Unit; break }
-                }
-                resolveBody(expr.body, retType)
+                // Resolve the body with locals in scope, capturing return-value types to infer retType.
+                val captured = mutableListOf<IrType>()
+                val savedReturns = lambdaReturnTypes
+                lambdaReturnTypes = captured
+                resolveBody(expr.body, IrType.Unit)
+                lambdaReturnTypes = savedReturns
                 table.popScope()
-                IrType.Function(paramTypes, retType)
+                val retType = captured.firstOrNull() ?: IrType.Unit
+                IrType.Function(paramTypes, retType, variadic = expr.variadic)
             }
         }
     }
@@ -1400,9 +1425,10 @@ class TypeResolver(private val table: SymbolTable) {
 
     private fun tryResolveType(ref: TypeRef, line: Int): IrType? {
         return try {
-            // Inside an impl method, resolve type params (e.g. `T` in `arr[T]`) using the
-            // struct's typeParams so they erase to Any (consistent with the rest of the compiler).
-            val tpSet = currentReceiverType?.let { table.lookupStruct(it)?.typeParams?.toSet() } ?: emptySet()
+            // Type params (e.g. `T`) erase to `Any` — those of the enclosing function
+            // and, inside an impl method, those of the receiver struct.
+            val tpSet = currentFuncTypeParams +
+                (currentReceiverType?.let { table.lookupStruct(it)?.typeParams?.toSet() } ?: emptySet())
             IrType.resolve(ref, tpSet)
         } catch (e: Exception) {
             errors.add("line $line: ${e.message}")

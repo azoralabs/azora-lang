@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-@file:experimental
-
 package std.container
 
 /**
@@ -40,29 +38,38 @@ friend zone std {
      * @param T The type of elements stored in this stack.
      * @since 0.0.1
      */
+    @since("0.0.1")
     pack Stack<T> {
         shield var data: T* = alloc T[8]
         shield var size: Int = 0
         shield var capacity: Int = 8
     }
 
+    /** Constructs an empty `Stack<T>` with default capacity. */
+    @experimental(since: "0.0.1")
     impl ctor() for Stack<T> { mut ref self ->
         self.data = alloc T[8]
         self.size = 0
         self.capacity = 8
     }
 
+    /** Stack operations: push, pop, peek, clear, and string conversion. */
+    @since("0.0.1")
     impl Stack<T> {
         // --- Properties ---
 
         /** Whether the stack contains no elements. */
+        @since("0.0.1")
         prop isEmpty: Bool = size == 0
 
         /** Whether the stack contains at least one element. */
+        @since("0.0.1")
         prop isNotEmpty: Bool = size > 0
 
         // --- Internal ---
 
+        /** Doubles the backing buffer's capacity, copying existing elements. */
+        @experimental(since: "0.0.1")
         func growStack() {
             fin newCap = capacity * 2
             fin newData = alloc T[newCap]
@@ -85,6 +92,7 @@ friend zone std {
          * @param element The element to push.
          * @since 0.0.1
          */
+        @experimental(since: "0.0.1")
         func push(element: T) {
             if size >= capacity { self.growStack() }
             data[size] = element
@@ -98,6 +106,7 @@ friend zone std {
          * @throws AssertionError if the stack is empty.
          * @since 0.0.1
          */
+        @experimental(since: "0.0.1")
         func pop(): T {
             assert size > 0 { "Stack is empty" }
             fin top = data[size - 1]
@@ -112,6 +121,7 @@ friend zone std {
          * @throws AssertionError if the stack is empty.
          * @since 0.0.1
          */
+        @experimental(since: "0.0.1")
         func peek(): T {
             assert size > 0 { "Stack is empty" }
             return data[size - 1]
@@ -122,6 +132,7 @@ friend zone std {
          *
          * @since 0.0.1
          */
+        @experimental(since: "0.0.1")
         func clear() {
             fin oldData = data
             self.data = alloc T[8]
@@ -138,6 +149,7 @@ friend zone std {
          * @return A string in the format "[bottom, ..., top]".
          * @since 0.0.1
          */
+        @experimental(since: "0.0.1")
         func toString(): String {
             var s = "["
             var i = 0

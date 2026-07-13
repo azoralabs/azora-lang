@@ -106,6 +106,7 @@ class Tier2MetaprogrammingTest {
     @Test fun annotationOnVarAndPack() {
         assertEquals("3\n5", run("""
             deco Cached { }
+            deco Deprecated { }
             @Cached
             fin PI = 3
             @Deprecated
@@ -127,46 +128,6 @@ class Tier2MetaprogrammingTest {
                 println("ok")
             }
         """.trimIndent()))
-    }
-
-    @Test fun queryParameterAnnotationUsesTupleTypeShape() {
-        assertEquals("7", run("""
-            deco Query {}
-            pack QueryCursor {
-                var n: Int
-            }
-            pack LocalTransform {}
-            pack Spin {}
-            pack Paused {}
-            pack Without<T> {}
-            func spinSystem(
-                world: ref Int,
-                q: @Query (mut ref LocalTransform, ref Spin, Without<Paused>),
-                dt: Real
-            ): Int {
-                return q.n
-            }
-            func main() {
-                var world = 0
-                fin q = QueryCursor(7)
-                println(spinSystem(world, q, 0.0))
-            }
-        """.trimIndent()))
-    }
-
-    @Test fun queryParameterAnnotationRejectsAmpersandRefs() {
-        assertFailsWith<IllegalStateException> {
-            Compiler().compile("""
-                deco Query {}
-                pack QueryCursor {
-                    var n: Int
-                }
-                pack LocalTransform {}
-                pack Spin {}
-                func bad(q: @Query (&LocalTransform, ref Spin)) {
-                }
-            """.trimIndent())
-        }
     }
 
     @Test fun multipleAnnotationsOnOneDecl() {

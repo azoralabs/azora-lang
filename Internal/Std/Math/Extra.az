@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-@file:experimental
-
 package std.math
 
 /**
@@ -37,13 +35,12 @@ friend zone std {
      * @param value The base value.
      * @param exp The exponent (must be non-negative).
      * @return value raised to the power of exp.
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     func pow<T>(value: T, exp: Int): T
     in {
         assert exp >= 0 { "Exponent must be non-negative" }
-    }
-    zone {
+    } zone {
         if exp == 0 { return 1 }
         var result = value
         var i = 1
@@ -59,8 +56,8 @@ friend zone std {
      *
      * @param n The non-negative integer.
      * @return n! (n factorial).
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     func factorial<T>(n: T): T
     in {
         assert n >= 0 { "Factorial requires non-negative input" }
@@ -83,11 +80,11 @@ friend zone std {
      * @param a The first integer.
      * @param b The second integer.
      * @return The GCD of a and b.
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     func gcd<T>(a: T, b: T): T
     out {
-        r -> assert r >= 0 { "GCD must be non-negative" }
+        assert it >= 0 { "GCD must be non-negative" }
     } zone {
         var x = a
         if x < 0 { x = -x }
@@ -107,11 +104,11 @@ friend zone std {
      * @param a The first integer.
      * @param b The second integer.
      * @return The LCM of a and b.
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     func lcm<T>(a: T, b: T): T
-    out { r ->
-        assert r >= 0 { "LCM must be non-negative" }
+    out {
+        assert it >= 0 { "LCM must be non-negative" }
     } zone {
         if a == 0 || b == 0 { return 0 }
         var absA = a
@@ -126,27 +123,31 @@ friend zone std {
      *
      * @param n The integer to check.
      * @return true if n is even.
-     * @since 0.0.1
      */
-    func isEven<T>(n: T): Bool = n % 2 == 0
+    @experimental(since: "0.0.1")
+    func isEven<T>(n: T): Bool {
+        return n % 2 == 0
+    }
 
     /**
      * Checks if an integer is odd.
      *
      * @param n The integer to check.
      * @return true if n is odd.
-     * @since 0.0.1
      */
-    func isOdd<T>(n: T): Bool = n % 2 != 0
+    @experimental(since: "0.0.1")
+    func isOdd<T>(n: T): Bool {
+        return n % 2 != 0
+    }
 
     /**
      * Computes the sum of an integer array.
      *
      * @param arr The array to sum.
      * @return The sum of all elements.
-     * @since 0.0.1
      */
-    func sum<T>(arr: Array<T>): T {
+    @experimental(since: "0.0.1")
+    func sum<T>(arr: [T]): T {
         var total = 0
         var i = 0
         while i < arr.length {
@@ -161,9 +162,9 @@ friend zone std {
      *
      * @param arr The array to sum.
      * @return The sum of all elements.
-     * @since 0.0.1
      */
-    func sumReal<T>(arr: Array<T>): T {
+    @experimental(since: "0.0.1")
+    func sumReal<T>(arr: [T]): T {
         var total = 0.0
         var i = 0
         while i < arr.length {
@@ -178,9 +179,9 @@ friend zone std {
      *
      * @param arr The array to multiply.
      * @return The product of all elements.
-     * @since 0.0.1
      */
-    func product<T>(arr: Array<T>): T {
+    @experimental(since: "0.0.1")
+    func product<T>(arr: [T]): T {
         if arr.length == 0 { return 0 }
         var result = 1
         var i = 0
@@ -196,13 +197,13 @@ friend zone std {
      *
      * @param n The index (0-based) of the Fibonacci number.
      * @return The Nth Fibonacci number.
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     func fib<T>(n: T): T
     in {
         assert n >= 0 { "Fibonacci requires non-negative input" }
-    } out { r ->
-        assert r >= 0 { "Fibonacci result must be non-negative" }
+    } out {
+        assert it >= 0 { "Fibonacci result must be non-negative" }
     } zone {
         if n == 0 { return 0 }
         if n == 1 { return 1 }
@@ -223,8 +224,8 @@ friend zone std {
      *
      * @param n The number to check (must be non-negative).
      * @return true if n is prime.
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     func isPrime(n: Int): Bool
     in {
         assert n >= 0 { "isPrime requires non-negative input" }
@@ -247,8 +248,8 @@ friend zone std {
      *
      * @param arr The array to average (must be non-empty).
      * @return The average as a real number.
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     func average(arr: Array<Int>): Real
     in {
         assert arr.length > 0 { "Array must not be empty" }
@@ -268,8 +269,8 @@ friend zone std {
      * @param n The total count.
      * @param k The selection count.
      * @return C(n, k).
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     func choose(n: Int, k: Int): Int
     in {
         assert n >= 0 { "n must be non-negative" }
@@ -293,13 +294,13 @@ friend zone std {
      *
      * @param n The non-negative integer.
      * @return The largest integer whose square is <= n.
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     func isqrt(n: Int): Int
     in {
         assert n >= 0 { "isqrt requires non-negative input" }
-    } out { r ->
-        assert r * r <= n { "isqrt result squared must be <= n" }
+    } out {
+        assert it * it <= n { "isqrt result squared must be <= n" }
     } zone {
         if n == 0 { return 0 }
         var x = n

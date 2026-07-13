@@ -423,6 +423,8 @@ class JavaScriptCodegen {
                 "__azoraSpawn(${emitExpr(expr.args.single())})"
             } else if (expr.name == "cancel" && expr.args.size == 1) {
                 "cancel(${emitExpr(expr.args.single())})"
+            } else if (expr.name == "__panic") {
+                "(console.error(${emitExpr(expr.args.single())}), process.exit(1))"
             } else if (expr.type is IrType.Task) {
                 "__azoraSpawn(() => $name(${expr.args.joinToString(", ") { emitExpr(it) }}))"
             } else {

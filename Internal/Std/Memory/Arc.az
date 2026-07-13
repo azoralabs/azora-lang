@@ -79,6 +79,7 @@ friend zone std {
         return Arc(alloc value, 1)
     }
 
+    /** Alias of `arcOf` — allocates a reference-counted `Arc<T>` for [value]. */
     func arc<T>(value: T): Arc<T> {
         return arcOf(value)
     }

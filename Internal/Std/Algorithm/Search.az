@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-@file:experimental
-
 package std.algorithm
 
 /**
@@ -29,21 +27,25 @@ package std.algorithm
  * @since 0.0.1
  */
 
-fail SearchError {
-    NotFound
-    EmptyArray
-}
-
 friend zone std {
+    /**
+     *
+     */
+    @since("0.0.1")
+    fail SearchError {
+        NotFound
+        EmptyArray
+    }
+
     /**
      * Performs a linear search for a target in an array.
      *
      * @param arr The array to search.
      * @param target The element to find.
      * @return The index of the first occurrence, or -1 if not found.
-     * @since 0.0.1
      */
-    func linearSearch<T>(arr: Array<T>, target: T): Int {
+    @experimental(since: "0.0.1")
+    func linearSearch<T>(arr: [T], target: T): Int {
         var i = 0
         while i < arr.length {
             if arr[i] == target { return i }
@@ -60,9 +62,9 @@ friend zone std {
      * @param arr The sorted array to search.
      * @param target The element to find.
      * @return The index of the target, or -1 if not found.
-     * @since 0.0.1
      */
-    func binarySearch<T>(arr: Array<T>, target: T): Int {
+    @experimental(since: "0.0.1")
+    func binarySearch<T>(arr: [T], target: T): Int {
         var lo = 0
         var hi = arr.length - 1
         while lo <= hi {
@@ -82,11 +84,12 @@ friend zone std {
      *
      * @param arr The array to search (must be non-empty).
      * @return The smallest element.
-     * @since 0.0.1
      */
-    func minOf<T>(arr: Array<T>): T
-    in { assert arr.length > 0 { "Array must not be empty" } }
-    zone {
+    @experimental(since: "0.0.1")
+    func minOf<T>(arr: [T]): T
+    in {
+        assert arr.length > 0 { "Array must not be empty" }
+    } zone {
         var result = arr[0]
         var i = 1
         while i < arr.length {
@@ -101,11 +104,12 @@ friend zone std {
      *
      * @param arr The array to search (must be non-empty).
      * @return The largest element.
-     * @since 0.0.1
      */
-    func maxOf<T>(arr: Array<T>): T
-    in { assert arr.length > 0 { "Array must not be empty" } }
-    zone {
+    @experimental(since: "0.0.1")
+    func maxOf<T>(arr: [T]): T
+    in {
+        assert arr.length > 0 { "Array must not be empty" }
+    } zone {
         var result = arr[0]
         var i = 1
         while i < arr.length {
@@ -121,11 +125,12 @@ friend zone std {
      * @param arr The array to search.
      * @param target The element to count.
      * @return The number of times target appears in the array.
-     * @since 0.0.1
      */
-    func count<T>(arr: Array<T>, target: T): Int
-    out { r -> assert r >= 0 { "count must return non-negative" } }
-    zone {
+    @experimental(since: "0.0.1")
+    func count<T>(arr: [T], target: T): Int
+    out {
+        assert it >= 0 { "count must return non-negative" }
+    } zone {
         var c = 0
         var i = 0
         while i < arr.length {
@@ -141,9 +146,9 @@ friend zone std {
      * @param arr The array to search.
      * @param pred The predicate function.
      * @return The index of the first match, or -1 if none found.
-     * @since 0.0.1
      */
-    func findIndex<T>(arr: Array<T>, pred: (T) -> Bool): Int {
+    @experimental(since: "0.0.1")
+    func findIndex<T>(arr: [T], pred: (T) -> Bool): Int {
         var i = 0
         while i < arr.length {
             if pred(arr[i]) { return i }
@@ -158,9 +163,9 @@ friend zone std {
      * @param arr The array to search.
      * @param pred The predicate function.
      * @return The index of the last match, or -1 if none found.
-     * @since 0.0.1
      */
-    func findLastIndex<T>(arr: Array<T>, pred: (T) -> Bool): Int {
+    @experimental(since: "0.0.1")
+    func findLastIndex<T>(arr: [T], pred: (T) -> Bool): Int {
         var result = -1
         var i = 0
         while i < arr.length {
@@ -176,9 +181,9 @@ friend zone std {
      * @param arr The array to search.
      * @param target The element to look for.
      * @return true if the element is found.
-     * @since 0.0.1
      */
-    func arrayContains<T>(arr: Array<T>, target: T): Bool {
+    @experimental(since: "0.0.1")
+    func arrayContains<T>(arr: [T], target: T): Bool {
         return linearSearch<T>(arr, target) >= 0
     }
 }

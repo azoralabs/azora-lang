@@ -206,6 +206,7 @@ class EffectChecker {
                 stmt.elseBranch?.forEach { collectCallsFromStmt(it, calls) }
             }
             is Stmt.Throw -> collectCallsFromExpr(stmt.value, calls)
+            is Stmt.Panic -> collectCallsFromExpr(stmt.message, calls)
             is Stmt.Yield -> collectCallsFromExpr(stmt.value, calls)
             is Stmt.Try -> {
                 stmt.body.forEach { collectCallsFromStmt(it, calls) }

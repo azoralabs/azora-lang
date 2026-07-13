@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-@file:experimental
-
 package std.traits
 
 /**
@@ -35,26 +33,15 @@ friend zone std {
      *
      * Types implementing Numeric can be used with standard math operators
      * and the promote type function.
-     *
-     * @since 0.0.1
      */
+    @since("0.0.1")
     spec Numeric
 
     /** Int satisfies the Numeric spec. */
+    @since("0.0.1")
     impl Numeric for Int
 
     /** Real satisfies the Numeric spec. */
+    @since("0.0.1")
     impl Numeric for Real
-
-    /**
-     * Determines the widest numeric type from a set of types at compile time.
-     *
-     * Given two or more types, returns the type with the highest rank,
-     * enabling safe implicit promotion in mixed-type arithmetic.
-     *
-     * @param T Variadic type parameter pack of types to compare.
-     * @return The type with the highest numeric rank.
-     * @since 0.0.1
-     */
-    typealias promote = Type
 }

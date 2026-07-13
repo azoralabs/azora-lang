@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-@file:experimental
-
 package std.thread
 
 /**
@@ -34,8 +32,8 @@ friend zone std {
      * Suspends the current task for the given number of milliseconds.
      *
      * @param ms The delay in milliseconds.
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     task sleep<T>(ms: T) {
         suspend ms
     }
@@ -45,8 +43,8 @@ friend zone std {
      *
      * @param ms A scheduling hint in milliseconds (pass 0 for immediate).
      * @param action The function to execute.
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     task spawnAsync<T>(ms: T, action: () -> Unit) {
         fin handle = async { action() }
         suspend ms
@@ -58,8 +56,8 @@ friend zone std {
      * Useful for waiting on concurrent operations.
      *
      * @param count The delay in milliseconds.
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     task joinAll<T>(count: T) {
         suspend count
     }

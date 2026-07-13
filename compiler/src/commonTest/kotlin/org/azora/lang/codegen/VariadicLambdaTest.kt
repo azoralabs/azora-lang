@@ -1,0 +1,67 @@
+package org.azora.lang.codegen
+
+import org.azora.lang.Compiler
+import org.azora.lang.CompilationResult
+import org.azora.lang.backend.IrInterpreter
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
+
+class VariadicLambdaTest {
+
+    private fun run(source: String): String {
+        val r = Compiler().compile(source, release = false)
+        assertIs<CompilationResult.Success>(r, "Compile failed: ${(r as? CompilationResult.Failure)?.errors}")
+        return IrInterpreter().interpret(r.ir).trim()
+    }
+
+    @Test fun variadicLambdaLength() {
+        assertEquals("0\n1\n3", run("""
+            func main() {
+                fin len = <T...>{ it.length }
+                println(len())
+                println(len(1))
+                println(len(1, 2, 3))
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun variadicLambdaFirst() {
+        assertEquals("42\n10", run("""
+            func main() {
+                fin first = <T...>{ it[0] }
+                println(first(42))
+                println(first(10, 20, 30))
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun variadicLambdaSum() {
+        // A `for` body inside a lambda now sees the lambda's locals.
+        assertEquals("6\n100", run("""
+            func main() {
+                fin sum = <T...>{
+                    var total = 0
+                    for x in it { total = total + x }
+                    total
+                }
+                println(sum(1, 2, 3))
+                println(sum(10, 20, 30, 40))
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun regularLambdaForLocalScoping() {
+        // Regression: a non-variadic lambda with a for loop + local accumulator.
+        assertEquals("6", run("""
+            func main() {
+                fin f = { xs: [Int] ->
+                    var total = 0
+                    for x in xs { total = total + x }
+                    total
+                }
+                println(f([1, 2, 3]))
+            }
+        """.trimIndent()))
+    }
+}

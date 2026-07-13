@@ -14,18 +14,18 @@
  * limitations under the License.
  */
 
-@file:experimental
-
 package std.convert
 
 friend zone std {
     /**
-     * @since 0.0.3
+     *
      */
+    @experimental(since: "0.0.3")
     spec Into<T>: T get { ref self }
 
     /**
-     * @since 0.0.3
+     *
      */
+    @experimental(since: "0.0.3")
     spec From<T>: T get { ref self }
 }

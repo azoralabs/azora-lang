@@ -241,7 +241,7 @@ sealed class Expr {
      * Lambda `{ params -> body }`. Parameters carry explicit types. The result type is a
      * function type inferred from the body's return value.
      */
-    data class Lambda(val params: List<Param>, val body: List<Stmt>, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+    data class Lambda(val params: List<Param>, val body: List<Stmt>, override val line: Int, override val column: Int = 0, override val length: Int = 0, val variadic: Boolean = false) : Expr()
 
     /** A named argument `name: value` in a call expression. */
     data class NamedArg(val name: String, val value: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
@@ -874,6 +874,13 @@ sealed class Stmt {
     /** `throw value` — raises [value] as a throwable. */
     data class Throw(val value: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Stmt()
 
+    /**
+     * `panic "msg"` — unrecoverable runtime abort with [message].
+     * `inline panic "msg"` ([inlinePanic]) — if reached during compile-time evaluation,
+     * aborts the compiler with [message].
+     */
+    data class Panic(val message: Expr, val inlinePanic: Boolean, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Stmt()
+
     /** `*ptr = value` — store through a pointer. */
     data class DerefAssign(val target: Expr, val value: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Stmt()
 
@@ -1042,8 +1049,6 @@ data class Param(
     val variadic: Boolean = false,
     /** Parameter-level decorators, parsed from `name: @Decorator Type`. */
     val annotations: List<Annotation> = emptyList(),
-    /** Typed query shape from `name: @Query (T, U, Filter<V>)`; erased to QueryCursor at runtime. */
-    val queryShape: TypeRef? = null,
 ) {
     /** Convenience: the type name as written in source (for diagnostics/dumping). */
     val typeName: String get() = type.displayName()
@@ -1151,7 +1156,9 @@ data class Annotation(
     val args: List<Expr> = emptyList(),
     val target: String? = null,
     val line: Int = 0,
-    val column: Int = 0
+    val column: Int = 0,
+    /** Named arguments `@name(key = value)` / `@name(key: value)`, in source order. */
+    val namedArgs: List<Pair<String, Expr>> = emptyList(),
 )
 
 /**
@@ -1386,10 +1393,26 @@ sealed class TopLevel {
      * @property name the enum name
      * @property variants the variant names, in declaration order
      */
-    data class Enum(val name: String, val variants: List<String>, val line: Int, val column: Int = 0) : TopLevel()
+    data class Enum(
+        val name: String,
+        val variants: List<String>,
+        val line: Int,
+        val column: Int = 0,
+        val annotations: List<Annotation> = emptyList(),
+        /** Per-variant annotations, parallel to [variants] (e.g. `Red @deprecated(...)`). */
+        val variantAnnotations: List<List<Annotation>> = emptyList(),
+    ) : TopLevel()
 
     /** `fail ErrSet { V1, V2 }` — an error set (a named set of error variants). */
-    data class Fail(val name: String, val variants: List<String>, val line: Int, val column: Int = 0) : TopLevel()
+    data class Fail(
+        val name: String,
+        val variants: List<String>,
+        val line: Int,
+        val column: Int = 0,
+        val annotations: List<Annotation> = emptyList(),
+        /** Per-variant annotations, parallel to [variants] (e.g. `NotFound @deprecated(...)`). */
+        val variantAnnotations: List<List<Annotation>> = emptyList(),
+    ) : TopLevel()
 
     /**
      * An `impl Type { methods }` block. Each method gets an implicit `self: Type` receiver;

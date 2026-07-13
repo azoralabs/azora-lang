@@ -29,27 +29,32 @@ friend zone std {
     }
 
     impl Unique<T> {
+        /** Returns the owned value (panics if already released). */
         func get(): T {
             assert active { "Unique pointer was released" }
             return deref self.raw
         }
 
+        /** Overwrites the owned value (panics if already released). */
         func set(value: T) {
             assert active { "Unique pointer was released" }
             self.raw[0] = value
         }
 
+        /** Returns the raw `T*` without relinquishing ownership. */
         func ptr(): T* {
             assert active { "Unique pointer was released" }
             return self.raw
         }
 
+        /** Relinquishes ownership and returns the raw `T*` (the value is no longer freed by the Unique). */
         func release(): T* {
             assert active { "Unique pointer was already released" }
             self.active = false
             return self.raw
         }
 
+        /** Frees the owned value now (a no-op if already released/disposed). */
         func dispose() {
             if active {
                 drop self.raw
@@ -58,10 +63,12 @@ friend zone std {
         }
     }
 
+    /** Constructs a `Unique<T>` that takes ownership of a copy of [value]. */
     func uniqueOf<T>(value: T): Unique<T> {
         return Unique(alloc value, true)
     }
 
+    /** Alias of [uniqueOf]. */
     func unique<T>(value: T): Unique<T> {
         return uniqueOf(value)
     }

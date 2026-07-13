@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-@file:experimental
-
 package std.concurrency
 
 /**
@@ -39,8 +37,8 @@ friend zone std {
      * @param ms The timeout in milliseconds.
      * @param action The function to execute.
      * @return true if the action completed, false otherwise.
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     task timeout<T>(ms: T, action: () -> Unit): Bool {
         var completed = false
         fin handle = async {
@@ -61,8 +59,8 @@ friend zone std {
      * @param delayMs The delay between attempts in milliseconds.
      * @param action The function to execute. Should return true on success.
      * @return true if any attempt succeeded, false if all attempts failed.
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     task retry<T>(attempts: T, delayMs: T, action: () -> Bool): Bool {
         var i = 0
         while i < attempts {
@@ -82,8 +80,8 @@ friend zone std {
      * @param tag Unused type tag (pass 0).
      * @param a The first action to execute.
      * @param b The second action to execute.
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     task parallel<T>(tag: T, a: () -> Unit, b: () -> Unit) {
         fin t1 = async { a() }
         fin t2 = async { b() }
@@ -97,8 +95,8 @@ friend zone std {
      * @param tag Unused type tag (pass 0).
      * @param a The first action to execute.
      * @param b The second action to execute.
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     task race<T>(tag: T, a: () -> Unit, b: () -> Unit) {
         var done = false
         fin t1 = async {

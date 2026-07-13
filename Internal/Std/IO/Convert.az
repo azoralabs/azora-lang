@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-@file:experimental
-
 package std.io
 
 /**
@@ -35,8 +33,8 @@ friend zone std {
      *
      * @param n The integer to convert.
      * @return The string representation.
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     func intToString<T>(n: T): String {
         return toString(n)
     }
@@ -46,8 +44,8 @@ friend zone std {
      *
      * @param n The real number to convert.
      * @return The string representation.
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     func realToString<T>(n: T): String {
         return toString(n)
     }
@@ -57,8 +55,8 @@ friend zone std {
      *
      * @param b The boolean to convert.
      * @return "true" or "false".
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     func boolToString<T>(b: T): String {
         return toString(b)
     }
@@ -70,8 +68,8 @@ friend zone std {
      * @param count The number of padding characters to add.
      * @param char The padding character.
      * @return The padded string.
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     func padLeft<T>(s: T, count: Int, char: T): T {
         var result = s
         var i = 0
@@ -89,8 +87,8 @@ friend zone std {
      * @param count The number of padding characters to add.
      * @param char The padding character.
      * @return The padded string.
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     func padRight<T>(s: T, count: Int, char: T): T {
         var result = s
         var i = 0
@@ -107,8 +105,8 @@ friend zone std {
      * @param s The string to repeat.
      * @param count The number of repetitions.
      * @return The repeated string.
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     func repeatString<T>(s: T, count: Int): T {
         var result = ""
         var i = 0
@@ -125,9 +123,9 @@ friend zone std {
      * @param arr The strings to join.
      * @param sep The separator to insert between elements.
      * @return The joined string.
-     * @since 0.0.1
      */
-    func joinArray<T>(arr: Array<T>, sep: T): T {
+    @experimental(since: "0.0.1")
+    func join<T>(arr: [T], sep: T): T {
         if arr.length == 0 { return "" }
         var result = arr[0]
         var i = 1

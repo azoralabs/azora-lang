@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-@file:experimental
-
 package std.algorithm
 
 /**
@@ -30,13 +28,14 @@ friend zone std {
     /**
      * Merge sort - O(n log n) stable sorting algorithm.
      */
-    func mergeSort<T>(arr: Array<T>): Array<T> {
+    @experimental(since: "0.0.1")
+    func mergeSort<T>(arr: [T]): [T] {
         if arr.length <= 1 {
             return arr
         }
         var mid: Int = arr.length / 2
-        var left: Array<T> = arrayOf().fill<T>(mid)
-        var right: Array<T> = arrayOf().fill<T>(arr.length - mid)
+        var left: [T] = [].fill<T>(mid)
+        var right: [T] = [].fill<T>(arr.length - mid)
         var i = 0
         while i < mid {
             left[i] = arr[i]
@@ -48,16 +47,17 @@ friend zone std {
             i += 1
             j += 1
         }
-        var sortedLeft: Array<T> = mergeSort<T>(left)
-        var sortedRight: Array<T> = mergeSort<T>(right)
+        var sortedLeft: [T] = mergeSort<T>(left)
+        var sortedRight: [T] = mergeSort<T>(right)
         return merge<T>(sortedLeft, sortedRight)
     }
 
     /**
      * Merges two sorted arrays into one sorted array.
      */
-    func merge<T>(a: Array<T>, b: Array<T>): Array<T> {
-        var result: Array<T> = arrayOf().fill<T>(a.length + b.length)
+    @experimental(since: "0.0.1")
+    func merge<T>(a: [T], b: [T]): [T] {
+        var result: [T] = [].fill<T>(a.length + b.length)
         var ri = 0
         var ai = 0
         var bi = 0
@@ -88,8 +88,9 @@ friend zone std {
      * Sort by a key function - applies key to each element and sorts by key value.
      * Uses insertion sort on key-value pairs.
      */
-    func sortBy<T>(arr: Array<T>, key: (T) -> T): Array<T> {
-        var result: Array<T> = arrayOf().fill<T>(arr.length)
+    @experimental(since: "0.0.1")
+    func sortBy<T>(arr: [T], key: (T) -> T): [T] {
+        var result: [T] = [].fill<T>(arr.length)
         var i = 0
         while i < arr.length {
             result[i] = arr[i]
@@ -114,9 +115,10 @@ friend zone std {
      * Groups elements by a key function.
      * Returns array of arrays where each sub-array has elements with the same key.
      */
-    func groupBy<T>(arr: Array<T>, key: (T) -> T): Array<Array<T>> {
-        var keys: Array<T> = arrayOf().fill<T>(arr.length)
-        var groups: Array<Array<T>> = arrayOf().fill<T>(arr.length)
+    @experimental(since: "0.0.1")
+    func groupBy<T>(arr: [T], key: (T) -> T): [T] {
+        var keys: [T] = [].fill<T>(arr.length)
+        var groups: [T] = [].fill<T>(arr.length)
         var keyCount = 0
         var i = 0
         while i < arr.length {
@@ -131,17 +133,17 @@ friend zone std {
             }
             if found == -1 {
                 keys[keyCount] = k
-                groups[keyCount] = arrayOf(arr[i])
+                groups[keyCount] = [arr[i]]
                 keyCount += 1
             } else {
-                var g: Array<T> = groups[found]
+                var g: [T] = groups[found]
                 g[g.length] = arr[i]
                 groups[found] = g
             }
             i += 1
         }
         // Trim groups to actual count
-        var trimmed: Array<Array<T>> = arrayOf().fill<Array<T>>(keyCount)
+        var trimmed: [T] = [].fill<[T]>(keyCount)
         var ti = 0
         while ti < keyCount {
             trimmed[ti] = groups[ti]
@@ -153,8 +155,9 @@ friend zone std {
     /**
      * Interleaves two arrays: [a1, b1, a2, b2, ...].
      */
-    func interleave<T>(a: Array<T>, b: Array<T>): Array<T> {
-        var result: Array<T> = arrayOf().fill<T>(a.length + b.length)
+    @experimental(since: "0.0.1")
+    func interleave<T>(a: [T], b: [T]): [T] {
+        var result: [T] = [].fill<T>(a.length + b.length)
         var ri = 0
         var maxLen: Int = a.length
         if b.length > maxLen { maxLen = b.length }
@@ -176,13 +179,14 @@ friend zone std {
     /**
      * Returns a sliding window of given size over the array.
      */
-    func windows<T>(arr: Array<T>, size: Int): Array<Array<T>> {
+    @experimental(since: "0.0.1")
+    func windows<T>(arr: [T], size: Int): [T] {
         fin count = if arr.length >= size { arr.length - size + 1 } else { 0 }
-        var result: Array<Array<T>> = arrayOf().fill<Array<T>>(count)
+        var result: [T] = [].fill<[T]>(count)
         var ri = 0
         var i = 0
         while i + size <= arr.length {
-            var w: Array<T> = arrayOf().fill<T>(size)
+            var w: [T] = [].fill<T>(size)
             var j = 0
             while j < size {
                 w[j] = arr[i + j]
@@ -198,9 +202,10 @@ friend zone std {
     /**
      * Returns array with elements at even indices.
      */
-    func evens<T>(arr: Array<T>): Array<T> {
+    @experimental(since: "0.0.1")
+    func evens<T>(arr: [T]): [T] {
         fin count = (arr.length + 1) / 2
-        var result: Array<T> = arrayOf().fill<T>(count)
+        var result: [T] = [].fill<T>(count)
         var ri = 0
         var i = 0
         while i < arr.length {
@@ -214,9 +219,10 @@ friend zone std {
     /**
      * Returns array with elements at odd indices.
      */
-    func odds<T>(arr: Array<T>): Array<T> {
+    @experimental(since: "0.0.1")
+    func odds<T>(arr: [T]): [T] {
         fin count = arr.length / 2
-        var result: Array<T> = arrayOf().fill<T>(count)
+        var result: [T] = [].fill<T>(count)
         var ri = 0
         var i = 1
         while i < arr.length {

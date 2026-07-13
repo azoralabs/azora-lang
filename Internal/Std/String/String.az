@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-@file:experimental
-
 package std.string
 
 /**
@@ -31,20 +29,24 @@ package std.string
  * @since 0.0.1
  */
 
-fail StringError {
-    IndexOutOfBounds
-    EmptyString
-    InvalidFormat
-}
-
 friend zone std {
+    /**
+     *
+     */
+    @since("0.0.1")
+    fail StringError {
+        IndexOutOfBounds
+        EmptyString
+        InvalidFormat
+    }
+
     /**
      * Returns the length of a string.
      *
      * @param s The string to measure.
      * @return The number of characters.
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     func strLength(s: String): Int {
         return stringLength(s)
     }
@@ -55,11 +57,12 @@ friend zone std {
      * @param s The source string.
      * @param index The zero-based index.
      * @return The character at position index.
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     func strCharAt(s: String, index: Int): Char!StringError
-    in { assert index >= 0 { "Index must be non-negative" } }
-    zone {
+    in {
+        assert index >= 0 { "Index must be non-negative" }
+    } zone {
         if index >= stringLength(s) { fail return .IndexOutOfBounds }
         return charAt(s, index)
     }
@@ -71,14 +74,13 @@ friend zone std {
      * @param start The start index (inclusive).
      * @param end The end index (exclusive).
      * @return The extracted substring.
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     func strSlice(s: String, start: Int, end: Int): String
     in {
         assert start >= 0 { "Start must be non-negative" }
         assert end >= start { "End must be >= start" }
-    }
-    zone {
+    } zone {
         return substring(s, start, end)
     }
 
@@ -88,8 +90,8 @@ friend zone std {
      * @param s The string to check.
      * @param prefix The prefix to look for.
      * @return true if s starts with prefix.
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     func strStartsWith(s: String, prefix: String): Bool {
         return startsWith(s, prefix)
     }
@@ -100,8 +102,8 @@ friend zone std {
      * @param s The string to check.
      * @param suffix The suffix to look for.
      * @return true if s ends with suffix.
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     func strEndsWith(s: String, suffix: String): Bool {
         return endsWith(s, suffix)
     }
@@ -112,8 +114,8 @@ friend zone std {
      * @param s The string to search in.
      * @param sub The substring to find.
      * @return true if s contains sub.
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     func strContains(s: String, sub: String): Bool {
         return contains(s, sub)
     }
@@ -124,8 +126,8 @@ friend zone std {
      * @param s The string to search in.
      * @param sub The substring to find.
      * @return The index of the first occurrence, or -1 if not found.
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     func strIndexOf(s: String, sub: String): Int {
         return indexOf(s, sub)
     }
@@ -135,8 +137,8 @@ friend zone std {
      *
      * @param s The string to trim.
      * @return The trimmed string.
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     func strTrim(s: String): String {
         return trim(s)
     }
@@ -146,8 +148,8 @@ friend zone std {
      *
      * @param s The string to convert.
      * @return The uppercase string.
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     func strToUpper(s: String): String {
         return toUpper(s)
     }
@@ -157,8 +159,8 @@ friend zone std {
      *
      * @param s The string to convert.
      * @return The lowercase string.
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     func strToLower(s: String): String {
         return toLower(s)
     }
@@ -170,8 +172,8 @@ friend zone std {
      * @param old The substring to find.
      * @param new The replacement string.
      * @return The string with replacements applied.
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     func strReplace(s: String, old: String, new: String): String {
         return replace(s, old, new)
     }
@@ -182,8 +184,8 @@ friend zone std {
      * @param s The string to split.
      * @param delim The delimiter string.
      * @return An array of substrings.
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     func strSplit(s: String, delim: String): Array<String> {
         return split(s, delim)
     }
@@ -193,9 +195,9 @@ friend zone std {
      *
      * @param s The string to convert.
      * @return An array of Char values.
-     * @since 0.0.1
      */
-    func strToChars(s: String): Array<Char> {
+    @experimental(since: "0.0.1")
+    func strToChars(s: String): [Char] {
         return toChars(s)
     }
 
@@ -204,9 +206,9 @@ friend zone std {
      *
      * @param chars The character array.
      * @return The concatenated string.
-     * @since 0.0.1
      */
-    func charsToString(chars: Array<Char>): String {
+    @experimental(since: "0.0.1")
+    func charsToString(chars: [Char]): String {
         return fromChars(chars)
     }
 
@@ -215,8 +217,8 @@ friend zone std {
      *
      * @param s The string to check.
      * @return true if the string has zero length.
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     func strIsEmpty(s: String): Bool {
         return stringLength(s) == 0
     }
@@ -226,8 +228,8 @@ friend zone std {
      *
      * @param s The string to check.
      * @return true if the string has non-zero length.
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     func strIsNotEmpty(s: String): Bool {
         return stringLength(s) > 0
     }
@@ -237,12 +239,12 @@ friend zone std {
      *
      * @param s The string to reverse.
      * @return The reversed string.
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     func strReverse(s: String): String {
         fin chars = toChars(s)
         fin len = chars.length
-        var reversed: Array<Char> = arrayOf().fill<Char>(len)
+        var reversed: [Char] = [].fill<Char>(len)
         var i = 0
         while i < len {
             reversed[i] = chars[len - 1 - i]
@@ -257,11 +259,12 @@ friend zone std {
      * @param s The string to repeat.
      * @param n The number of repetitions.
      * @return The repeated string.
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     func strRepeat(s: String, n: Int): String
-    in { assert n >= 0 { "Repetition count must be non-negative" } }
-    zone {
+    in {
+        assert n >= 0 { "Repetition count must be non-negative" }
+    } zone {
         return s * n
     }
 
@@ -270,8 +273,8 @@ friend zone std {
      *
      * @param s The string to check.
      * @return true if every character is a digit.
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     func strIsNumeric(s: String): Bool {
         if stringLength(s) == 0 { return false }
         fin chars = toChars(s)
@@ -288,8 +291,8 @@ friend zone std {
      *
      * @param s The string to check.
      * @return true if every character is a letter.
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     func strIsAlpha(s: String): Bool {
         if stringLength(s) == 0 { return false }
         fin chars = toChars(s)

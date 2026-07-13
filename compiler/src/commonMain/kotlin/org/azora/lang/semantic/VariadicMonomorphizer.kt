@@ -409,6 +409,7 @@ private class MonoContext(
         is Stmt.Return -> s.copy(value = s.value?.let(::rewriteExpr))
         is Stmt.ExprStmt -> s.copy(expr = rewriteExpr(s.expr))
         is Stmt.Throw -> s.copy(value = rewriteExpr(s.value))
+        is Stmt.Panic -> s.copy(message = rewriteExpr(s.message))
         is Stmt.Yield -> s.copy(value = rewriteExpr(s.value))
         is Stmt.Assert -> s.copy(condition = rewriteExpr(s.condition), message = rewriteExpr(s.message))
         is Stmt.InlineAssert -> s.copy(condition = rewriteExpr(s.condition), message = rewriteExpr(s.message))

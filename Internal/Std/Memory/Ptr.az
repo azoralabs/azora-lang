@@ -63,6 +63,7 @@ friend zone std {
         return Ptr(alloc value)
     }
 
+    /** Alias of `ptrOf` — allocates a `Ptr<T>` wrapping a copy of [value]. */
     func ptr<T>(value: T): Ptr<T> {
         return ptrOf(value)
     }

@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-@file:experimental
-
 package std.io
 
 /**
@@ -30,19 +28,17 @@ package std.io
  */
 
 friend zone std {
-    /**
-     * Common formatting character constants.
-     *
-     * @since 0.0.1
-     */
     friend zone fmt {
         /** A newline character. */
+        @since("0.0.1")
         fin newline = "\n"
 
         /** A tab character. */
+        @since("0.0.1")
         fin tab = "\t"
 
         /** A single space character. */
+        @since("0.0.1")
         fin space = " "
     }
 
@@ -52,8 +48,8 @@ friend zone std {
      * @param char The character or string to repeat.
      * @param length The number of times to repeat it.
      * @return A string of the given character repeated length times.
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     func separator(char: String, length: Int): String = char * length
 
     /**
@@ -62,8 +58,8 @@ friend zone std {
      * @param title The header text to display.
      * @param width The width of the separator lines.
      * @return The title string.
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     func header(title: String, width: Int): String {
         var line: String = separator("-", width)
         println(line)

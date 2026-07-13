@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-@file:experimental
-
 package std.container
 
 /**
@@ -28,6 +26,14 @@ package std.container
  */
 
 friend zone std {
+    /**
+     * A double-ended queue: elements can be added and removed from both ends in O(1) amortized.
+     *
+     * Backed by a circular buffer that grows automatically.
+     *
+     * @param T The type of elements stored in this deque.
+     */
+    @since("0.0.1")
     pack Deque<T> {
         shield var data: T* = alloc T[8]
         shield var head: Int = 0
@@ -36,10 +42,19 @@ friend zone std {
         shield var capacity: Int = 8
     }
 
+    /** Deque operations: push/pop at both ends, peek, clear, and string conversion. */
+    @since("0.0.1")
     impl Deque<T> {
-        prop isEmpty: Bool { return self.size == 0 }
-        prop isNotEmpty: Bool { return self.size > 0 }
+        /** `true` when the deque holds no elements. */
+        @since("0.0.1")
+        prop isEmpty: Bool = self.size == 0
 
+        /** `true` when the deque holds at least one element. */
+        @since("0.0.1")
+        prop isNotEmpty: Bool = self.size > 0
+
+        /** Inserts [value] at the front; O(1) amortized. */
+        @experimental(since: "0.0.1")
         func pushFront(value: T): Unit {
             if self.size >= self.capacity {
                 self.growDeque()
@@ -49,6 +64,8 @@ friend zone std {
             self.size += 1
         }
 
+        /** Inserts [value] at the back; O(1) amortized. */
+        @experimental(since: "0.0.1")
         func pushBack(value: T): Unit {
             if self.size >= self.capacity {
                 self.growDeque()
@@ -58,6 +75,8 @@ friend zone std {
             self.size += 1
         }
 
+        /** Removes and returns the front element; O(1). */
+        @experimental(since: "0.0.1")
         func popFront(): T {
             var value: T = (*self.data)[self.head]
             self.head = (self.head + 1) % self.capacity
@@ -65,6 +84,8 @@ friend zone std {
             return value
         }
 
+        /** Removes and returns the back element; O(1). */
+        @experimental(since: "0.0.1")
         func popBack(): T {
             self.tail = (self.tail - 1 + self.capacity) % self.capacity
             var value: T = (*self.data)[self.tail]
@@ -72,21 +93,29 @@ friend zone std {
             return value
         }
 
+        /** Returns the front element without removing it. */
+        @experimental(since: "0.0.1")
         func peekFront(): T {
             return (*self.data)[self.head]
         }
 
+        /** Returns the back element without removing it. */
+        @experimental(since: "0.0.1")
         func peekBack(): T {
             var idx: Int = (self.tail - 1 + self.capacity) % self.capacity
             return (*self.data)[idx]
         }
 
+        /** Removes all elements (capacity is retained). */
+        @since("0.0.1")
         func clear(): Unit {
             self.head = 0
             self.tail = 0
             self.size = 0
         }
 
+        /** Doubles the circular buffer's capacity and re-linearizes it. */
+        @experimental(since: "0.0.1")
         confine func growDeque(): Unit {
             var newCap: Int = self.capacity * 2
             var newData: T* = alloc T[newCap]
@@ -103,6 +132,8 @@ friend zone std {
             self.capacity = newCap
         }
 
+        /** Renders the deque as `Deque[e0, e1, …]` in front-to-back order. */
+        @experimental(since: "0.0.1")
         func toString(): String {
             var result: String = "Deque["
             var i = 0

@@ -94,6 +94,7 @@ object StdlibInjector {
                     is TopLevel.Enum -> register(item.name, item)
                     is TopLevel.Fail -> register(item.name, item)
                     is TopLevel.Spec -> register(item.name, item)
+                    is TopLevel.Slot -> register(item.name, item)
                     is TopLevel.Impl -> {
                         val keys = linkedSetOf(item.typeName, normalizedTypeName(item.typeName))
                         for (key in keys) {
@@ -163,6 +164,7 @@ object StdlibInjector {
                 is TopLevel.Pack -> names.add(item.name)
                 is TopLevel.Enum -> names.add(item.name)
                 is TopLevel.Fail -> names.add(item.name)
+                is TopLevel.Slot -> names.add(item.name)
                 is TopLevel.Bridge -> item.funcs.forEach { names.add(it.name) }
                 else -> {}
             }
@@ -336,6 +338,7 @@ object StdlibInjector {
             is Stmt.Return -> stmt.value?.let { collectNamesFromExpr(it, names) }
             is Stmt.ExprStmt -> collectNamesFromExpr(stmt.expr, names)
             is Stmt.Throw -> collectNamesFromExpr(stmt.value, names)
+            is Stmt.Panic -> collectNamesFromExpr(stmt.message, names)
             is Stmt.Yield -> collectNamesFromExpr(stmt.value, names)
             is Stmt.Assert -> {
                 collectNamesFromExpr(stmt.condition, names)

@@ -437,7 +437,13 @@ class IrInterpreter {
                 val start = evalExpr(stmt.start) as Long
                 val end = evalExpr(stmt.end) as Long
                 val step = (stmt.step?.let { evalExpr(it) as Long } ?: 1L)
-                var i = if (stmt.reverse) end else start
+                // Reverse starts at the last value the forward loop would visit:
+                // the largest reachable value (≤ end inclusive, < end exclusive).
+                fun floorMod(a: Long, b: Long): Long = ((a % b) + b) % b
+                var i = if (stmt.reverse) {
+                    if (stmt.inclusive) end - floorMod(end - start, step)
+                    else end - 1 - floorMod(end - 1 - start, step)
+                } else start
                 while (if (stmt.reverse) i >= start else if (stmt.inclusive) i <= end else i < end) {
                     pushScope()
                     defineVar(stmt.counter, i)
@@ -1110,6 +1116,10 @@ class IrInterpreter {
             outputListener?.invoke(text)
             return null
         }
+        if (expr.name == "__panic") {
+            // Unrecoverable runtime abort.
+            throw AzoraPanicException(formatValue(args.firstOrNull()))
+        }
         if (expr.name == "toString") {
             return formatValue(args.firstOrNull())
         }
@@ -1273,6 +1283,9 @@ class IrInterpreter {
 
     /** A value thrown by `throw`, caught by `try`/`catch`. */
     private class AzoraThrownException(val value: Any?) : RuntimeException(value?.toString())
+
+    /** Unrecoverable runtime `panic` — propagates out of [interpret]. */
+    private class AzoraPanicException(message: String) : RuntimeException("panic: $message")
 
     /** A lambda value capturing its definition environment. */
     private class Closure(

@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-@file:experimental
-
 package std.sync
 
 /**
@@ -38,8 +36,8 @@ friend zone std {
      * are always performed under lock protection.
      *
      * @param T The type of the protected value.
-     * @since 0.0.1
      */
+    @since("0.0.1")
     pack Guard<T> {
         confine var mutex: Mutex = Mutex(0)
         confine var value: T
@@ -50,8 +48,8 @@ friend zone std {
          * Reads the inner value under lock.
          *
          * @param action The function to execute with the current value.
-         * @since 0.0.1
          */
+        @experimental(since: "0.0.1")
         func read(action: (T) -> Unit) {
             mutex.lock()
             action(value)
@@ -62,8 +60,8 @@ friend zone std {
          * Modifies the inner value under lock.
          *
          * @param action The function that receives the current value and returns the new value.
-         * @since 0.0.1
          */
+        @experimental(since: "0.0.1")
         func write(action: (T) -> T) {
             mutex.lock()
             self.value = action(value)
@@ -74,8 +72,8 @@ friend zone std {
          * Returns a snapshot of the current value.
          *
          * @return The current value.
-         * @since 0.0.1
          */
+        @experimental(since: "0.0.1")
         func get(): T {
             mutex.lock()
             fin v = value
@@ -89,8 +87,8 @@ friend zone std {
      * a set of operations completes.
      *
      * @param T The type of the count value.
-     * @since 0.0.1
      */
+    @since("0.0.1")
     pack CountDownLatch<T> {
         var count: T
         confine var atomic: Atomic = Atomic(0)
@@ -99,18 +97,16 @@ friend zone std {
     impl CountDownLatch<T> {
         /**
          * Decrements the latch count by one.
-         *
-         * @since 0.0.1
          */
+        @experimental(since: "0.0.1")
         func countDown() {
             atomic.add(1)
         }
 
         /**
          * Whether the latch count has been reached.
-         *
-         * @since 0.0.1
          */
+        @experimental(since: "0.0.1")
         prop isReached: Bool = atomic.load() >= count
     }
 
@@ -121,8 +117,8 @@ friend zone std {
      * Best suited for very short critical sections.
      *
      * @param T Unused type parameter for template registration.
-     * @since 0.0.1
      */
+    @since("0.0.1")
     pack SpinLock<T> {
         confine var flag: Atomic = Atomic(0)
     }
@@ -130,18 +126,16 @@ friend zone std {
     impl SpinLock<T> {
         /**
          * Acquires the lock, spinning until successful.
-         *
-         * @since 0.0.1
          */
+        @experimental(since: "0.0.1")
         func acquire() {
             while !flag.cas(0, 1) { }
         }
 
         /**
          * Releases the lock.
-         *
-         * @since 0.0.1
          */
+        @experimental(since: "0.0.1")
         func release() {
             flag.store(0)
         }
@@ -150,8 +144,8 @@ friend zone std {
          * Executes an action while holding the lock.
          *
          * @param action The function to execute under lock.
-         * @since 0.0.1
          */
+        @experimental(since: "0.0.1")
         func withLock(action: () -> Unit) {
             self.acquire()
             action()
@@ -164,8 +158,8 @@ friend zone std {
      *
      * @param mutex The mutex to lock.
      * @param action The function to execute while holding the lock.
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     func withMutex<T>(mutex: T, action: () -> Unit) {
         mutex.lock()
         action()

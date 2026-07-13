@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-@file:experimental
-
 package std.traits
 
 /**
@@ -30,107 +28,139 @@ package std.traits
  */
 
 friend zone std {
-    /**
-     * Types that support equality comparison via == and !=.
-     *
-     * @since 0.0.1
-     */
+    /** Types that support equality comparison via == and !=. */
+    @since("0.0.1")
     spec Equatable
 
     /** Int supports equality comparison. */
+    @since("0.0.1")
     impl Equatable for Int
 
     /** Real supports equality comparison. */
+    @since("0.0.1")
     impl Equatable for Real
 
     /** String supports equality comparison. */
+    @since("0.0.1")
     impl Equatable for String
 
     /** Char supports equality comparison. */
+    @since("0.0.1")
     impl Equatable for Char
 
     /** Bool supports equality comparison. */
+    @since("0.0.1")
     impl Equatable for Bool
 
-    /**
-     * Types that support ordering via < and >.
-     *
-     * @since 0.0.1
-     */
+    /** Types that support ordering via < and >. */
+    @since("0.0.1")
     spec Comparable
 
     /** Int supports ordering. */
+    @since("0.0.1")
     impl Comparable for Int
 
     /** Real supports ordering. */
+    @since("0.0.1")
     impl Comparable for Real
 
     /** String supports ordering. */
+    @since("0.0.1")
     impl Comparable for String
 
     /** Char supports ordering. */
+    @since("0.0.1")
     impl Comparable for Char
 
-    /**
-     * Types that have a string representation.
-     *
-     * @since 0.0.1
-     */
-    spec Displayable
+    /** Types that have a string representation. */
+    @since("0.0.1")
+    spec Printable
 
     /** Int has a string representation. */
-    impl Displayable for Int
+    @since("0.0.1")
+    impl Printable for Int
 
     /** Real has a string representation. */
-    impl Displayable for Real
+    @since("0.0.1")
+    impl Printable for Real
 
     /** String has a string representation. */
-    impl Displayable for String
+    @since("0.0.1")
+    impl Printable for String
 
     /** Char has a string representation. */
-    impl Displayable for Char
+    @since("0.0.1")
+    impl Printable for Char
 
     /** Bool has a string representation. */
-    impl Displayable for Bool
+    @since("0.0.1")
+    impl Printable for Bool
 
-    /**
-     * Types that can be hashed.
-     *
-     * @since 0.0.1
-     */
+    /** Types that can be hashed. */
+    @since("0.0.1")
     spec Hashable
 
     /** Int is hashable. */
+    @since("0.0.1")
     impl Hashable for Int
 
     /** String is hashable. */
+    @since("0.0.1")
     impl Hashable for String
 
     /** Char is hashable. */
+    @since("0.0.1")
     impl Hashable for Char
 
     /** Bool is hashable. */
+    @since("0.0.1")
     impl Hashable for Bool
 
-    /**
-     * Types that can be copied.
-     *
-     * @since 0.0.1
-     */
+    /** Types that can be copied. */
+    @since("0.0.1")
     spec Copyable
 
     /** Int is copyable. */
+    @since("0.0.1")
     impl Copyable for Int
 
     /** Real is copyable. */
+    @since("0.0.1")
     impl Copyable for Real
 
     /** String is copyable. */
+    @since("0.0.1")
     impl Copyable for String
 
     /** Char is copyable. */
+    @since("0.0.1")
     impl Copyable for Char
 
     /** Bool is copyable. */
+    @since("0.0.1")
     impl Copyable for Bool
+
+    /** Types that support deep copying. */
+    @since("0.0.1")
+    spec Cloneable
+
+    /** Int is cloneable. */
+    @since("0.0.1")
+    impl Cloneable for Int
+
+    /** Real is cloneable. */
+    @since("0.0.1")
+    impl Cloneable for Real
+
+    /** String is cloneable. */
+    @since("0.0.1")
+    impl Cloneable for String
+
+    /** Char is cloneable. */
+    @since("0.0.1")
+    impl Cloneable for Char
+
+    /** Bool is cloneable. */
+    @since("0.0.1")
+    impl Cloneable for Bool
 }

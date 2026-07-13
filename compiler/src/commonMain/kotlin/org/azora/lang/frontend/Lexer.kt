@@ -58,6 +58,7 @@ class Lexer(private val source: String) {
             "assert" to TokenType.ASSERT,
             "trace" to TokenType.TRACE,
             "mixin" to TokenType.MIXIN,
+            "panic" to TokenType.PANIC,
             "for" to TokenType.FOR,
             "while" to TokenType.WHILE,
             "loop" to TokenType.LOOP,

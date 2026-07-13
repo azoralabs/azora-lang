@@ -34,12 +34,17 @@ friend zone std {
     }
 
     impl Slice<T> {
+        /** Number of elements in the slice. */
         prop length: Int = count
+        /** `true` when the slice has no elements. */
         prop isEmpty: Bool = count == 0
+        /** `true` when the slice has at least one element. */
         prop isNotEmpty: Bool = count > 0
 
+        /** Returns the raw underlying `T*`. */
         func ptr(): T* { return self.raw }
 
+        /** Returns a sub-slice `[start, start+count)`; asserts bounds. */
         func sub(start: Int, count: Int): Slice<T> {
             assert start >= 0 { "Slice start must be non-negative" }
             assert count >= 0 { "Slice count must be non-negative" }
@@ -48,10 +53,12 @@ friend zone std {
         }
     }
 
+    /** Constructs a `Slice<T>` over [length] elements starting at [ptr]. */
     func sliceOf<T>(ptr: T*, length: Int): Slice<T> {
         return Slice(ptr, length)
     }
 
+    /** Alias of [sliceOf]. */
     func ptrSlice<T>(ptr: T*, length: Int): Slice<T> {
         return sliceOf(ptr, length)
     }

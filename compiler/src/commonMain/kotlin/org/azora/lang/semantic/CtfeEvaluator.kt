@@ -465,6 +465,15 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 val (v, c) = foldExpr(stmt.value, program)
                 Pair(listOf(if (c) Stmt.Throw(v, stmt.line, stmt.column, stmt.length) else stmt), c)
             }
+            is Stmt.Panic -> {
+                val (msg, c) = foldExpr(stmt.message, program)
+                // `inline panic` is a compile-time abort: if reached during CTFE, stop the compiler.
+                if (stmt.inlinePanic) {
+                    val text = (msg as? Expr.StringLiteral)?.value ?: msg.toString()
+                    error("inline panic: $text")
+                }
+                Pair(listOf(if (c) Stmt.Panic(msg, false, stmt.line, stmt.column, stmt.length) else stmt), c)
+            }
             is Stmt.Yield -> {
                 val (v, c) = foldExpr(stmt.value, program)
                 Pair(listOf(if (c) Stmt.Yield(v, stmt.line, stmt.column, stmt.length) else stmt), c)
@@ -1159,7 +1168,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 is Stmt.Break, is Stmt.Continue,
                 is Stmt.IndexAssign, is Stmt.MemberAssign,
                 is Stmt.When,
-                is Stmt.Throw, is Stmt.Try,
+                is Stmt.Throw, is Stmt.Try, is Stmt.Panic,
                 is Stmt.Defer -> return null // can't be evaluated at compile time
             }
         }

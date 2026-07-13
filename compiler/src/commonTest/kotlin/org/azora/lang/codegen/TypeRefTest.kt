@@ -125,9 +125,14 @@ class TypeRefTest {
     }
 
     @Test
+    fun bracketCollectionTypesAreAccepted() {
+        // `[T]` (array) and `[K: V]` (map) bracket type syntax is supported.
+        compile("func f(x: [Int]): Int { return x.length }")
+        compile("func f(x: [String: Int]): Int { return x.length }")
+    }
+
+    @Test
     fun removedCollectionTypeSpellingsAreRejected() {
-        assertTrue(expectFailure("func f(x: [Int]): Int { return 0 }").any { "Array<T>" in it })
-        assertTrue(expectFailure("func f(x: [String: Int]): Int { return 0 }").any { "Map<K, V>" in it })
         assertTrue(expectFailure("func f(x: ![Int]): Int { return 0 }").any { "Set<T>" in it })
         assertTrue(expectFailure("func f(x: arr[Int]): Int { return 0 }").any { "Array<T>" in it })
         assertTrue(expectFailure("func f(x: tup(Int, String)): Int { return 0 }").any { "Expected ')' after parameters" in it || "undefined" in it || "tup" in it })

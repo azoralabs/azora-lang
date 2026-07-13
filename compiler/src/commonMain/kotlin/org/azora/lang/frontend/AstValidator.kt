@@ -39,6 +39,9 @@ class AstValidator {
     fun validate(program: Program): List<String> {
         val errors = mutableListOf<String>()
 
+        // Custom decorators declared via `deco Name { … }` are valid annotation names.
+        customDecos = program.items.filterIsInstance<TopLevel.Deco>().map { it.name }.toSet()
+
         // Top-level runtime var/let are not thread-safe — only fin allowed
         for (item in program.items) {
             when (item) {
@@ -50,6 +53,19 @@ class AstValidator {
                 is TopLevel.LetDecl -> errors.add("line ${item.line}: top-level 'let' is not allowed (not thread-safe). Use 'fin' for immutable globals or 'inline let' for compile-time variables")
                 else -> {}
             }
+            // Stability decorators (@experimental / @stable) are mutually exclusive;
+            // their `since` argument, if present, must be a string literal.
+            val anns = when (item) {
+                is TopLevel.Func -> item.decl.annotations
+                is TopLevel.Pack -> item.annotations
+                is TopLevel.VarDecl -> item.annotations
+                is TopLevel.FinDecl -> item.annotations
+                is TopLevel.LetDecl -> item.annotations
+                is TopLevel.Enum -> item.annotations + item.variantAnnotations.flatten()
+                is TopLevel.Fail -> item.annotations + item.variantAnnotations.flatten()
+                else -> emptyList()
+            }
+            validateStability(anns, errors)
         }
 
         // Validate test declarations
@@ -78,6 +94,60 @@ class AstValidator {
         }
 
         return errors
+    }
+
+    /**
+     * Decorator names the compiler recognizes. Any other `@name` is a typo / unknown
+     * decorator and is rejected (catches e.g. `@experiemntal` vs `@experimental`).
+     */
+    private val knownDecorators = setOf(
+        "experimental", "stable", "since", "deprecated", "enforceNumFields", "target",
+    )
+
+    /** Custom decorator names declared via `deco Name { … }` in the current program. */
+    private var customDecos: Set<String> = emptySet()
+
+    /**
+     * Validates the stability decorators: `@experimental` and `@stable` may not
+     * both appear on the same declaration, and when a `since` version is given
+     * (`@experimental(since: "0.0.1")`) it must be a string literal.
+     */
+    private fun validateStability(annotations: List<Annotation>, errors: MutableList<String>) {
+        for (ann in annotations) {
+            if (ann.name !in knownDecorators && ann.name !in customDecos) {
+                errors.add("line ${ann.line}: unknown decorator '@${ann.name}'")
+            }
+        }
+        val experimental = annotations.find { it.name == "experimental" }
+        val stable = annotations.find { it.name == "stable" }
+        val since = annotations.find { it.name == "since" }
+        if (experimental != null && stable != null) {
+            errors.add("line ${stable.line}: a declaration cannot be both @experimental and @stable")
+        }
+        // @experimental/@stable already carry `since`; don't also add a standalone @since.
+        if (since != null && (experimental != null || stable != null)) {
+            errors.add("line ${since.line}: @since is redundant with @experimental(since:)/@stable(since:) — use only one")
+        }
+        for (ann in annotations.filter { it.name == "experimental" || it.name == "stable" }) {
+            val s = ann.namedArgs.firstOrNull { it.first == "since" }?.second
+            if (s != null && s !is Expr.StringLiteral) {
+                errors.add("line ${ann.line}: @${ann.name}(since: ...) requires a string version literal")
+            }
+        }
+        // `@since("0.0.1")` — single positional string argument.
+        since?.let {
+            if (it.args.size != 1 || it.args[0] !is Expr.StringLiteral) {
+                errors.add("line ${it.line}: @since requires a single string version argument")
+            }
+        }
+        // `@deprecated(since: "0.4.0", replacement: "X")` — string named arguments.
+        for (ann in annotations.filter { it.name == "deprecated" }) {
+            for ((key, value) in ann.namedArgs) {
+                if (value !is Expr.StringLiteral) {
+                    errors.add("line ${ann.line}: @deprecated($key: ...) requires a string argument")
+                }
+            }
+        }
     }
 
     private fun validateFunction(func: FuncDecl, errors: MutableList<String>) {
@@ -169,6 +239,7 @@ class AstValidator {
                 stmt.elseBranch?.forEach { validateStmt(it, funcName, errors) }
             }
             is Stmt.Throw -> validateStmt(Stmt.ExprStmt(stmt.value, stmt.line, stmt.column), funcName, errors)
+            is Stmt.Panic -> validateStmt(Stmt.ExprStmt(stmt.message, stmt.line, stmt.column), funcName, errors)
             is Stmt.Try -> {
                 stmt.body.forEach { validateStmt(it, funcName, errors) }
                 stmt.catchBody?.forEach { validateStmt(it, funcName, errors) }

@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-@file:experimental
-
 package std.container
 
 /**
@@ -26,7 +24,7 @@ package std.container
  * A Tuple holds two or more values of potentially different types,
  * accessible by their positional index.
  *
- * @since 0.0.1
+ * @since 0.0.3
  */
 
 friend zone std {
@@ -37,16 +35,18 @@ friend zone std {
      * Tuples require at least two elements.
      *
      * @param T Variadic type parameter pack for the element types.
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.3")
     @enforceNumFields
-    pack Tuple<T...> where T.length >= 2 {
-        inline for Ty in T with index {
+    pack Tuple<T...> where (...T).length >= 2 {
+        inline for Ty in ...T with index {
             mixin "$index: $Ty"
         }
     }
 
-    func<T...> tupleOf(elements: ...T): Tuple<T...> where T.length >= 2 {
+    @experimental(since: "0.0.3")
+    func<T...> tupleOf(elements: ...T): Tuple<...T>
+    where (...T).length >= 2 {
         return Tuple(elements)
     }
 }

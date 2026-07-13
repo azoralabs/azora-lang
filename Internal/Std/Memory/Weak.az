@@ -29,20 +29,25 @@ friend zone std {
     }
 
     impl Weak<T> {
+        /** Returns the referenced value (panics if the pointer is null). */
         func get(): T {
             assert self.raw != null { "Weak pointer is null" }
             return deref self.raw
         }
 
+        /** Returns the raw `T*` (may be null). */
         func ptr(): T* { return self.raw }
 
+        /** `true` when the pointer is null (does not own a reference). */
         func isNull(): Bool { return self.raw == null }
     }
 
+    /** Wraps a raw `T*` as a non-owning `Weak<T>`. */
     func weakOf<T>(ptr: T*): Weak<T> {
         return Weak(ptr)
     }
 
+    /** Alias of [weakOf]. */
     func weak<T>(ptr: T*): Weak<T> {
         return weakOf(ptr)
     }

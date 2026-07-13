@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-@file:experimental
-
 package std.concurrency
 
 /**
@@ -37,8 +35,8 @@ friend zone std {
      *
      * @param ms The delay in milliseconds before executing the action.
      * @param action The function to execute after the delay.
-     * @since 0.0.1
      */
+    @experimental(since: "0.0.1")
     task delayed(ms: Int, action: () -> Unit) {
         suspend ms
         action()

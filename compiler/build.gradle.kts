@@ -51,9 +51,6 @@ val generateStdlib = tasks.register("generateAzStdlib") {
             "Memory/Unique.az",
             "Memory/Weak.az",
             "Memory/Slice.az",
-            "Ui/Ui.az",
-            "Os/Os.az",
-            "Gfx/Gfx.az",
         )
 
         data class AzSource(val baseDir: java.io.File, val relPath: String, val prefix: String)

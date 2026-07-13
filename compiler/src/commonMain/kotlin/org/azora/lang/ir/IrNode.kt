@@ -92,7 +92,7 @@ sealed class IrType {
     data class Set(val element: IrType) : IrType() { override fun toString() = "set[$element]" }
 
     /** Function type `(A, B) -> R`. */
-    data class Function(val params: List<IrType>, val ret: IrType) : IrType() { override fun toString() = "(${params.joinToString(", ")}) -> $ret" }
+    data class Function(val params: List<IrType>, val ret: IrType, val variadic: Boolean = false) : IrType() { override fun toString() = "(${params.joinToString(", ")}) -> $ret" }
 
     /** Handle returned by an asynchronous `task` invocation. */
     data class Task(val result: IrType) : IrType() { override fun toString() = "Task<$result>" }

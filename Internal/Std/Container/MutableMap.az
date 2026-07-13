@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-@file:experimental
-
 package std.container
 
 use std.convert
@@ -43,6 +41,7 @@ friend zone std {
      * @param V The type of values.
      * @since 0.0.1
      */
+    @since("0.0.1")
     pack MutableMap<K, V> {
         shield var keys: K* = alloc K[8]
         shield var values: V* = alloc V[8]
@@ -54,6 +53,7 @@ friend zone std {
         return MutableMap<K, V>()
     }
 
+    @experimental(since: "0.0.1")
     impl oper[] for MutableMap<K, V> { ref self, key ->
         var i = 0
         while i < size {
@@ -63,6 +63,7 @@ friend zone std {
         assert false { "Key not found in MutableMap" }
     }
 
+    @experimental(since: "0.0.1")
     impl oper[]= for MutableMap<K, V> { mut ref self, key, value ->
         var i = 0
         while i < size {
@@ -78,13 +79,16 @@ friend zone std {
         self.size = size + 1
     }
 
+    @since("0.0.1")
     impl MutableMap<K, V> {
         // --- Properties ---
 
         /** Whether the map contains no entries. */
+        @since("0.0.1")
         prop isEmpty: Bool = self.size == 0
 
         /** Whether the map contains at least one entry. */
+        @since("0.0.1")
         prop isNotEmpty: Bool = self.size > 0
 
         // --- Internal ---
@@ -119,6 +123,7 @@ friend zone std {
          * @param value The value to associate with the key.
          * @since 0.0.1
          */
+        @experimental(since: "0.0.1")
         func put(key: K, value: V) {
             var i = 0
             while i < size {
@@ -142,6 +147,7 @@ friend zone std {
          * @throws AssertionError if the key is not found.
          * @since 0.0.1
          */
+        @experimental(since: "0.0.1")
         func get(key: K): V {
             var i = 0
             while i < size {
@@ -159,6 +165,7 @@ friend zone std {
          * @return The associated value or the default.
          * @since 0.0.1
          */
+        @experimental(since: "0.0.1")
         func getOrDefault(key: K, default: V): V {
             var i = 0
             while i < size {
@@ -178,6 +185,7 @@ friend zone std {
          * @throws AssertionError if the key is not found.
          * @since 0.0.1
          */
+        @experimental(since: "0.0.1")
         func remove(key: K): V {
             var idx = -1
             var i = 0
@@ -206,6 +214,7 @@ friend zone std {
          * @return true if the key exists, false otherwise.
          * @since 0.0.1
          */
+        @experimental(since: "0.0.1")
         func containsKey(key: K): Bool {
             var i = 0
             while i < size {
@@ -224,6 +233,7 @@ friend zone std {
          * @return true if the value exists, false otherwise.
          * @since 0.0.1
          */
+        @experimental(since: "0.0.1")
         func containsValue(value: V): Bool {
             var i = 0
             while i < size {
@@ -240,6 +250,7 @@ friend zone std {
          *
          * @since 0.0.1
          */
+        @experimental(since: "0.0.1")
         func clear() {
             fin oldKeys = keys
             fin oldValues = values
@@ -259,6 +270,7 @@ friend zone std {
          * @param action The function to apply to each key and value.
          * @since 0.0.1
          */
+        @experimental(since: "0.0.1")
         func forEach(action: (K, V) -> Unit) {
             var i = 0
             while i < size {
@@ -273,8 +285,9 @@ friend zone std {
          * @return An array containing all keys in insertion order.
          * @since 0.0.1
          */
+        @experimental(since: "0.0.1")
         func keys(): Array<K> {
-            var result: Array<K> = arrayOf().fill<K>(size)
+            var result: Array<K> = [].fill<K>(size)
             var i = 0
             while i < size {
                 result[i] = keys[i]
@@ -289,8 +302,9 @@ friend zone std {
          * @return An array containing all values in insertion order.
          * @since 0.0.1
          */
+        @experimental(since: "0.0.1")
         func values(): Array<V> {
-            var result: Array<V> = arrayOf().fill<V>(size)
+            var result: Array<V> = [].fill<V>(size)
             var i = 0
             while i < size {
                 result[i] = values[i]
@@ -301,6 +315,7 @@ friend zone std {
 
     }
 
+    @experimental(since: "0.0.1")
     impl Into<String> for MutableMap<K, V> { ref self ->
         var s = "{"
         var i = 0

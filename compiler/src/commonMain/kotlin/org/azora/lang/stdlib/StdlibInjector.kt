@@ -28,26 +28,29 @@ import org.azora.lang.putIfAbsentCompat
 /**
  * Injects standard-library declarations into a user compilation unit.
  *
- * Standard-library symbols are **import-gated**: a file sees a module's names
- * only after importing it —
+ * Bundled-library symbols are **import-gated**: a file sees a module's names
+ * only after importing it. With the bundled stdlib that looks like:
  *
  * - `use std.math` — unqualified access to that module (`abs(x)`) plus `math::abs(x)`,
  * - `use std.*` / `use std.{math, concurrency}` — wildcard/grouped module imports,
- * - `use std.math::abs` — selective import of listed names,
+ * - `use std.math.abs` — selective import of listed names,
  * - `use std` / `use zone std` — every stdlib module,
  * - `std::math::abs(x)` / `std::abs(x)` — qualified access needs no import.
  *
- * Only the items actually referenced are appended (functions, constants,
- * packs, enums, plus the extern `bridge` signatures their bodies call),
- * following stdlib-internal references transitively. A user declaration always
- * shadows the stdlib item of the same name, and programs that never touch the
- * stdlib compile exactly as before.
+ * The package root is derived from the loaded library packages; the frontend
+ * import grammar does not special-case `std`. Only the items actually
+ * referenced are appended (functions, constants, packs, enums, plus the extern
+ * `bridge` signatures their bodies call), following bundled-library references
+ * transitively. A user declaration always shadows a library item of the same
+ * name, and programs that never touch the library compile exactly as before.
  */
 object StdlibInjector {
 
     private val implicitCollectionTypes = setOf("List", "MutableList", "Set", "MutableSet", "Map", "MutableMap")
 
     private class Index {
+        /** Library root package names, derived from loaded packages (for example "std"). */
+        val roots = LinkedHashSet<String>()
         /** module ("std.math") → name → the item providing it. */
         val modules = LinkedHashMap<String, LinkedHashMap<String, TopLevel>>()
         /** Flat name → item view (first module wins), for transitive resolution. */
@@ -65,23 +68,28 @@ object StdlibInjector {
     private fun normalizedTypeName(name: String): String =
         name.substringBefore('<').substringAfter("__")
 
-    /** The stdlib module providing [name] ("std.math"), or null — used for error hints. */
+    /** The bundled-library module providing [name] ("std.math"), or null — used for error hints. */
     fun moduleOf(name: String): String? = index.moduleOfName[name]
 
     private fun buildIndex(): Index {
         val idx = Index()
         for (program in AzStdlib.loadPrograms()) {
-            val module = program.packageName ?: "std"
+            val module = program.packageName ?: continue
+            val root = module.substringBefore('.')
+            idx.roots.add(root)
             val moduleItems = idx.modules.getOrPut(module) { LinkedHashMap() }
             fun register(name: String, item: TopLevel) {
                 moduleItems.putIfAbsentCompat(name, item)
                 idx.items.putIfAbsentCompat(name, item)
                 idx.moduleOfName.putIfAbsentCompat(name, module)
-                if (name.startsWith("std__")) {
-                    val shortName = name.substringAfter("__")
-                    moduleItems.putIfAbsentCompat(shortName, item)
-                    idx.items.putIfAbsentCompat(shortName, item)
-                    idx.moduleOfName.putIfAbsentCompat(shortName, module)
+                for (knownRoot in idx.roots) {
+                    val rootPrefix = "${knownRoot}__"
+                    if (name.startsWith(rootPrefix)) {
+                        val shortName = name.removePrefix(rootPrefix)
+                        moduleItems.putIfAbsentCompat(shortName, item)
+                        idx.items.putIfAbsentCompat(shortName, item)
+                        idx.moduleOfName.putIfAbsentCompat(shortName, module)
+                    }
                 }
             }
             for (item in program.items) {
@@ -111,41 +119,67 @@ object StdlibInjector {
         return idx
     }
 
-    /** Names made visible by the program's `use std…` imports. */
+    /** Names made visible by imports of loaded library packages. */
     private fun importedNames(program: Program): Set<String> {
         val visible = mutableSetOf<String>()
         for (item in program.items) {
             if (item !is TopLevel.UseImport) continue
             for ((path, selected) in item.imports) {
-                when {
-                    path == "std" -> index.modules.values.forEach { visible += it.keys }
-                    path.startsWith("std.") -> {
-                        val module = index.modules[path] ?: continue
-                        if (selected != null) {
-                            if (selected in module) visible += selected
-                        } else {
-                            visible += module.keys
-                        }
-                    }
-                }
+                visible += namesVisibleFromImport(path, selected)
             }
         }
         return visible
     }
 
-    /** Short std module aliases made visible by imports (`use std.math` -> `math`). */
-    private fun moduleAliases(program: Program): Set<String> {
-        val aliases = mutableSetOf<String>()
+    private fun namesVisibleFromImport(path: String, selected: String?): Set<String> {
+        if (selected != null) {
+            val module = index.modules[path] ?: return emptySet()
+            return if (selected in module) setOf(selected) else emptySet()
+        }
+        if (path in index.roots) {
+            return index.modules
+                .filterKeys { it == path || it.startsWith("$path.") }
+                .values
+                .flatMapTo(mutableSetOf()) { it.keys }
+        }
+        index.modules[path]?.let { return it.keys }
+        val (moduleName, itemName) = resolveSelectedLibraryPath(path) ?: return emptySet()
+        val module = index.modules[moduleName] ?: return emptySet()
+        return if (itemName in module) setOf(itemName) else emptySet()
+    }
+
+    private fun resolveSelectedLibraryPath(path: String): Pair<String, String>? {
+        val segments = path.split('.')
+        if (segments.size < 2) return null
+        for (itemStart in segments.lastIndex downTo 1) {
+            val module = segments.take(itemStart).joinToString(".")
+            if (module !in index.modules) continue
+            val item = segments.drop(itemStart).joinToString("__")
+            if (index.modules[module]?.containsKey(item) == true) return module to item
+        }
+        return null
+    }
+
+    /** Short module aliases made visible by imports (`use std.math` -> `math`). */
+    private fun moduleAliases(program: Program): Map<String, String> {
+        val aliases = linkedMapOf<String, String>()
+        fun addModuleAlias(module: String) {
+            val root = module.substringBefore('.')
+            val rest = module.removePrefix(root).removePrefix(".")
+            if (rest.isNotEmpty()) {
+                val child = rest.substringBefore('.')
+                if (child !in aliases) aliases[child] = "$root.$child"
+            }
+        }
         for (item in program.items) {
             if (item !is TopLevel.UseImport) continue
             for ((path, selected) in item.imports) {
                 if (selected != null) continue
                 when {
-                    path == "std" -> index.modules.keys
-                        .filter { it.startsWith("std.") }
-                        .forEach { aliases += it.removePrefix("std.").substringBefore('.') }
-                    path.startsWith("std.") && path in index.modules ->
-                        aliases += path.removePrefix("std.").substringBefore('.')
+                    path in index.roots -> index.modules.keys
+                        .filter { it == path || it.startsWith("$path.") }
+                        .forEach(::addModuleAlias)
+                    path in index.modules -> addModuleAlias(path)
                 }
             }
         }
@@ -173,21 +207,24 @@ object StdlibInjector {
     }
 
     /**
-     * Returns [program] with every stdlib item it references appended —
-     * gated by `use std…` imports; qualified `std.` access is rewritten to
-     * plain calls and injected without an import. Returns the program
-     * unchanged when nothing stdlib-related is referenced.
+     * Returns [program] with every bundled-library item it references appended.
+     * Imports are resolved against the loaded package roots; qualified root
+     * access such as `std::math::abs` is rewritten to plain calls and injected
+     * without an import. Returns the program unchanged when nothing
+     * library-related is referenced.
      */
     fun inject(program: Program): Program {
         if (index.items.isEmpty() && index.externs.isEmpty()) return program
 
         val shadowed = userDeclaredNames(program)
 
-        // `std::math::abs(x)` / `std::PI` → plain names, collected as requirements.
+        // Qualified library access (`std::math::abs(x)`, etc.) -> plain names,
+        // collected as requirements.
         val qualified = mutableSetOf<String>()
-        val moduleAliases = moduleAliases(program) - shadowed
-        val rewritten = if ("std" in shadowed) program
-            else QualifiedStdRewriter(index.modules, qualified, moduleAliases).rewrite(program)
+        val activeRoots = index.roots - shadowed
+        val moduleAliases = moduleAliases(program).filterKeys { it !in shadowed }
+        val rewritten = if (activeRoots.isEmpty()) program
+            else QualifiedStdRewriter(index.modules, activeRoots, qualified, moduleAliases).rewrite(program)
 
         val visible = importedNames(rewritten) + qualified
 
@@ -277,7 +314,10 @@ object StdlibInjector {
                 item.methods.forEach { collectNamesFromFunc(it, names) }
             }
             is TopLevel.Spec -> {
-                item.callback?.let { collectNamesFromTypeRef(it.returnType, names) }
+                item.callback?.let {
+                    collectNamesFromTypeRef(it.returnType, names)
+                    it.params.forEach { param -> collectNamesFromTypeRef(param.type, names) }
+                }
                 item.methods.forEach { collectNamesFromFunc(it, names) }
             }
             else -> {}

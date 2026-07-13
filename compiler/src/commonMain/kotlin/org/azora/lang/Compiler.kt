@@ -20,6 +20,7 @@ import org.azora.lang.backend.JavaScriptCodegen
 import org.azora.lang.backend.LlvmCodegen
 import org.azora.lang.backend.WasmCodegen
 import org.azora.lang.frontend.AstValidator
+import org.azora.lang.frontend.CallbackImplNormalizer
 import org.azora.lang.frontend.Lexer
 import org.azora.lang.frontend.DebugInstrumenter
 import org.azora.lang.frontend.Parser
@@ -146,7 +147,7 @@ class Compiler {
 
         // 2b. Standard library: append the stdlib declarations the program
         // actually references (transitively); user definitions shadow stdlib.
-        val injected = StdlibInjector.inject(parsed)
+        val injected = CallbackImplNormalizer.normalize(StdlibInjector.inject(parsed))
 
         // 2c. Monomorphize variadic generics (e.g. `Tuple<T…>` / `tupleOf(…)`)
         // into concrete per-instantiation declarations before semantic analysis.

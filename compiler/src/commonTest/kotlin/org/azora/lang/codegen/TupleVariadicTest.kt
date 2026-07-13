@@ -139,16 +139,16 @@ class TupleVariadicTest {
         assertContains(out.javascript, "__Tuple_Int_Real_String")
     }
 
-    @Test fun useScopeImportsTuple() {
-        // `use scope std` (alias of `use zone std`) appears in the user's TupleTests.az.
+    @Test fun useZoneImportsTuple() {
+        // `use zone std` appears in the user's TupleTests.az.
         val r = Compiler().compile("""
-            use scope std
+            use zone std
             func main() {
                 fin x = tupleOf(1, 2)
                 println(x.0)
             }
         """.trimIndent(), release = false)
-        assertIs<CompilationResult.Success>(r, "use scope std failed: ${(r as? CompilationResult.Failure)?.errors}")
+        assertIs<CompilationResult.Success>(r, "use zone std failed: ${(r as? CompilationResult.Failure)?.errors}")
     }
 
     @Test fun generalMixinConvertsStringToCode() {

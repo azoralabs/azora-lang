@@ -16,7 +16,7 @@
 
 package testing
 
-use scope std
+use zone std
 
 // --- Construction ---
 
@@ -24,6 +24,14 @@ test "Set default construction" {
     var set = Set<Int>()
     assert set.length == 0 { "new set should have length 0" }
     assert set.isEmpty { "new set should be empty" }
+}
+
+test "setOf construction deduplicates" {
+    fin set = setOf(1, 2, 2, 3)
+    assert set.length == 3 { "setOf should keep unique elements only" }
+    assert set.contains(1) { "set should contain 1" }
+    assert set.contains(2) { "set should contain 2" }
+    assert set.contains(3) { "set should contain 3" }
 }
 
 // --- Add ---
@@ -192,5 +200,5 @@ test "Set toArray" {
 
 test "Set toString empty" {
     var set = Set<Int>()
-    assert set.toString() == "{}" { "empty set toString should be {}" }
+    assert set.toString == "{}" { "empty set toString should be {}" }
 }

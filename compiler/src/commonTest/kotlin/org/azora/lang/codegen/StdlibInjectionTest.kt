@@ -6,6 +6,7 @@ import org.azora.lang.backend.IrInterpreter
 import org.azora.lang.stdlib.StdlibInjector
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
@@ -110,9 +111,23 @@ class StdlibInjectionTest {
     }
 
     @Test fun selectiveImportOnlyExposesListedNames() {
-        assertEquals("5", run("use std.math::abs\nfunc main() {\n    println(abs(-5))\n}"))
-        val gated = Compiler().compile("use std.math::abs\nfunc main() {\n    println(min(1, 2))\n}")
+        assertEquals("5", run("use std.math.abs\nfunc main() {\n    println(abs(-5))\n}"))
+        val gated = Compiler().compile("use std.math.abs\nfunc main() {\n    println(min(1, 2))\n}")
         assertIs<CompilationResult.Failure>(gated)
+    }
+
+    @Test fun stdUseImportRejectsDoubleColonSyntax() {
+        val err = assertFailsWith<IllegalStateException> {
+            Compiler().compile("use std.math::abs\nfunc main() {\n    println(abs(-5))\n}")
+        }
+        assertTrue(err.message.orEmpty().contains("Use dotted import paths"), err.message)
+    }
+
+    @Test fun customUseImportRejectsDoubleColonSyntax() {
+        val err = assertFailsWith<IllegalStateException> {
+            Compiler().compile("zone Math {\n    func triple(x: Int): Int { return x * 3 }\n}\nuse Math::triple\nfunc main() {\n    println(triple(1))\n}")
+        }
+        assertTrue(err.message.orEmpty().contains("'::' is for zone access expressions"), err.message)
     }
 
     @Test fun useZoneStdImportsEverything() {

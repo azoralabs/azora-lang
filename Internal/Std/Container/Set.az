@@ -46,11 +46,43 @@ friend zone std {
         shield var capacity: Int = 8
     }
 
+    /**
+     * Creates an empty immutable set.
+     *
+     * @return A new `Set<T>` with no elements.
+     */
     @since("0.0.3")
     func<T> emptySet(): Set<T> {
         return Set<T>()
     }
 
+    /**
+     * Creates an immutable set from the provided elements.
+     *
+     * Duplicate values are ignored, preserving normal set uniqueness rules.
+     *
+     * @param elements Values to insert into the set.
+     * @return A set containing each unique value from `elements`.
+     */
+    @experimental(since: "0.0.3")
+    func<T> setOf(elements: ...T): Set<T> {
+        var result = Set<T>()
+        var i = 0
+        while i < elements.size {
+            result.add(elements[i])
+            i += 1
+        }
+        return result
+    }
+
+    /**
+     * Creates an immutable set from the provided elements.
+     *
+     * Prefer `setOf`; this alias is kept for source compatibility.
+     *
+     * @param elements Values to insert into the set.
+     * @return A set containing each unique value from `elements`.
+     */
     @experimental(since: "0.0.3")
     func<T> setFrom(elements: ...T): Set<T> {
         var result = Set<T>()

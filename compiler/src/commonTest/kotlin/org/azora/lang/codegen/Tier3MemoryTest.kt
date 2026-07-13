@@ -92,10 +92,10 @@ class Tier3MemoryTest {
         assertEquals("41\n42", run("""
             use std.memory
             func main() {
-                var p = ptr(41)
+                var p = ptrOf(41)
                 println(deref p)
                 p.set(42)
-                println(p.get())
+                println(p.get)
             }
         """.trimIndent()))
     }

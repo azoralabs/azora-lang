@@ -896,7 +896,7 @@ class IrInterpreter {
                     "capacity" to maxOf(8, elements.size).toLong(),
                 )
             }
-            name in setOf("Map", "MutableMap") && value is Map<*, *> -> {
+            name in setOf("Map", "MutableMap") && value is Map<*, *> && !value.containsKey("__type") -> {
                 val entries = value.entries.toList()
                 linkedMapOf<String, Any?>(
                     "__type" to name,

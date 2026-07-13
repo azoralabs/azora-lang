@@ -121,7 +121,7 @@ checking; `guard cond else { }`; `break`/`continue`.
 | `slot Option { Some(Int); None }` | tagged union |
 | `impl pack Name { methods }` / `impl Spec for Name` | pack methods in the declaring file + trait impls |
 | `func Name.method(args) { ref self -> body }` | extension method outside the declaring file |
-| `spec Name { signatures }` / `spec Into<T>: T get { ref self }` | trait or compact callback spec |
+| `spec Name { signatures }` / `spec Into<T>: T { ref self } use as "to${T.typeName}"` | trait or compact callback spec |
 | `node Name(params) { … }` | inheritable type (base class) |
 | `leaf Name(params) : Parent(args) { repl func … }` | final subclass (single inheritance) |
 | `virt func` / `repl func` / `base.method()` | virtual / override / super-call |
@@ -169,14 +169,18 @@ tuples.
 `std.convert` defines compact callback specs:
 
 ```azora
-spec Into<T>: T get { ref self }
-spec From<T>: T get { ref self }
+spec Into<T>: T { ref self } use as "to${T.typeName}"
+spec From<T>: T { ref self } use as "from${T.typeName}"
 ```
 
-The `: T` is the callback return type, `get` marks property-style access, and
-`{ ref self }` declares the receiver. `impl Into<String> for List<T> { ref self
--> ... }` generates `.toString` (and the legacy zero-arg `.toString()` call
-continues to work). `impl as String for Type { ref self -> ... }` is separate:
+The `: T` is the callback return type, `{ ref self }` declares the receiver, and
+`use as` declares a generated member name template. It can be any literal member
+name (`use as "render"`) or include type-parameter placeholders such as
+`${T.typeName}`. Without parentheses in the spec header,
+`impl Into<String> for List<T> { ref self -> ... }` generates property-style
+`.toString`. If the spec header includes parentheses, the generated callback
+requires a normal call such as `.toString()`. `impl as String for Type { ref self
+-> ... }` is separate:
 it is used by `value as String` casts and does not create `.toString`.
 
 ### Memory model

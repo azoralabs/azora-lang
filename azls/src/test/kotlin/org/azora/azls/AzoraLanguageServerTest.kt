@@ -178,6 +178,24 @@ class AzoraLanguageServerTest {
     }
 
     @Test
+    fun completesGroupedStdlibImports() {
+        val source = "use std.{math, container}\nfunc main() {\n    ab\n}"
+        val offset = source.indexOf("    ab") + 6
+        val list = completions(source, offset)
+        assertTrue(list.any { it.label == "abs" && it.kind == "function" && "std.math" in it.detail },
+            "grouped std import should expose std.math completions: $list")
+    }
+
+    @Test
+    fun completesSelectiveStdlibImportFromContainingModule() {
+        val source = "use std.math.abs\nfunc main() {\n    ab\n}"
+        val offset = source.indexOf("    ab") + 6
+        val list = completions(source, offset)
+        assertTrue(list.any { it.label == "abs" && it.kind == "function" && "std.math" in it.detail },
+            "selective std import should expose its containing module for completion: $list")
+    }
+
+    @Test
     fun stdlibConstantsComplete() {
         val source = "use std\nfunc main() {\n    P\n}"
         val offset = source.indexOf("    P") + 5

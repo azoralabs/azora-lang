@@ -1,7 +1,7 @@
 package demo_multiplatform
 
 use std.ui
-use scope std
+use zone std
 
 // Counter App - A single-file app that compiles to every UI target.
 // Uses Compose-compatible modifier names so output is identical on all targets.

@@ -18,6 +18,7 @@ package org.azora.lang.semantic
 
 import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.FuncDecl
+import org.azora.lang.frontend.MemberCallStyle
 import org.azora.lang.frontend.NumericSuffix
 import org.azora.lang.frontend.Program
 import org.azora.lang.frontend.Stmt
@@ -859,12 +860,11 @@ class TypeResolver(private val table: SymbolTable) {
                                 field.type
                             }
                         } else {
-                            // Check for a computed property (prop): zero-arg method `Type_name`.
+                            // Check for a computed property/callback member.
                             val mangled = table.lookupMethod(targetType.name, expr.name)
                             if (mangled != null) {
                                 val func = table.lookupFunction(mangled)
-                                // Only treat as a prop if it has exactly 1 param (self).
-                                if (func != null && func.params.size == 1) {
+                                if (func != null && func.params.size == 1 && func.memberCallStyle != MemberCallStyle.METHOD) {
                                     if (!canAccessMember(targetType.name, func.visibility)) {
                                         reportInaccessible(expr.line, "property", targetType.name, expr.name, func.visibility)
                                         null
@@ -872,7 +872,10 @@ class TypeResolver(private val table: SymbolTable) {
                                         func.returnType
                                     }
                                 }
-                                else { errors.add("line ${expr.line}: no field '${expr.name}' on struct ${targetType.name}"); null }
+                                else {
+                                    errors.add("line ${expr.line}: member '${expr.name}' on ${targetType.name} requires a method call")
+                                    null
+                                }
                             } else {
                                 errors.add("line ${expr.line}: no field '${expr.name}' on struct ${targetType.name}")
                                 null
@@ -912,6 +915,10 @@ class TypeResolver(private val table: SymbolTable) {
                     val mangled = table.lookupMethod(targetType.name, expr.name)
                     if (mangled != null) {
                         val func = table.lookupFunction(mangled)!!
+                        if (func.memberCallStyle == MemberCallStyle.PROPERTY) {
+                            errors.add("line ${expr.line}: property '${expr.name}' must be accessed without parentheses")
+                            return null
+                        }
                         if (!canAccessMember(targetType.name, func.visibility)) {
                             reportInaccessible(expr.line, "method", targetType.name, expr.name, func.visibility)
                             return null

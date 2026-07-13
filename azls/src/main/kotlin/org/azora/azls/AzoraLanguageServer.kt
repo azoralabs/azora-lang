@@ -461,9 +461,9 @@ class AzoraLanguageServer {
         "pack ${pack.name}(${pack.fields.joinToString(", ") { "${it.name}: ${it.type.displayName()}" }})"
 
     /**
-     * Module paths imported by the document's `use` lines: `use engine`,
-     * `use std.math`, `use scope std`, `use std.math::abs` (the `::` item part
-     * imports its whole module for completion purposes).
+     * Module paths imported by the document's `use` lines. The reader is
+     * syntax-only: it records paths and lets completion visibility decide what
+     * those paths mean for packaged symbols.
      */
     private fun importsOf(source: String): Set<String> {
         val out = mutableSetOf<String>()
@@ -471,21 +471,74 @@ class AzoraLanguageServer {
             val trimmed = line.trim()
             if (!trimmed.startsWith("use ")) continue
             var rest = trimmed.removePrefix("use ").trim()
-            if (rest.startsWith("scope ")) rest = rest.removePrefix("scope ").trim()
-            for (part in rest.split(",")) {
-                val zone = part.trim().substringBefore("::").trim()
-                if (zone.isNotEmpty() && zone.all { it.isLetterOrDigit() || it == '_' || it == '.' }) {
-                    out.add(zone)
-                }
-            }
+            if (rest.startsWith("zone ")) rest = rest.removePrefix("zone ").trim()
+            for (part in splitUseParts(rest)) addImportPath(part.trim(), out)
         }
         return out
     }
 
+    private fun splitUseParts(text: String): List<String> {
+        val parts = mutableListOf<String>()
+        val current = StringBuilder()
+        var depth = 0
+        for (ch in text) {
+            when {
+                ch == '{' -> {
+                    depth++
+                    current.append(ch)
+                }
+                ch == '}' -> {
+                    if (depth > 0) depth--
+                    current.append(ch)
+                }
+                ch == ',' && depth == 0 -> {
+                    parts.add(current.toString())
+                    current.setLength(0)
+                }
+                else -> current.append(ch)
+            }
+        }
+        parts.add(current.toString())
+        return parts
+    }
+
+    private fun addImportPath(rawPart: String, out: MutableSet<String>) {
+        val part = rawPart.substringBefore("//").trim()
+        if (part.isEmpty() || "::" in part) return
+
+        if (part.endsWith(".*")) {
+            addValidImport(part.removeSuffix(".*"), out)
+            return
+        }
+
+        val groupStart = part.indexOf(".{")
+        if (groupStart >= 0 && part.endsWith("}")) {
+            val base = part.substring(0, groupStart)
+            val inner = part.substring(groupStart + 2, part.length - 1)
+            if (!isValidImportPath(base)) return
+            splitUseParts(inner).map { it.trim() }.filter(::isValidImportName).forEach { out.add("$base.$it") }
+            return
+        }
+
+        addValidImport(part, out)
+    }
+
+    private fun addValidImport(path: String, out: MutableSet<String>) {
+        if (isValidImportPath(path)) out.add(path)
+    }
+
+    private fun isValidImportPath(path: String): Boolean =
+        path.isNotEmpty() && path.split('.').all(::isValidImportName)
+
+    private fun isValidImportName(name: String): Boolean =
+        name.isNotEmpty() && name[0].isIdentStart() && name.all { it.isIdentPart() }
+
     /** A packaged symbol is visible when its module (or a parent) is imported. */
     private fun moduleVisible(origin: String?, imports: Set<String>): Boolean {
         if (origin == null) return true
-        return imports.any { imported -> origin == imported || origin.startsWith("$imported.") }
+        return imports.any { imported ->
+            origin == imported || origin.startsWith("$imported.") || imported.startsWith("$origin.")
+        }
     }
 
     // ----- text helpers -----

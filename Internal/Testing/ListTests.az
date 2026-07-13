@@ -16,7 +16,7 @@
 
 package testing
 
-use scope std
+use zone std
 
 // --- Construction ---
 
@@ -323,12 +323,12 @@ test "List toString" {
     list.add(1)
     list.add(2)
     list.add(3)
-    assert list.toString() == "[1, 2, 3]" { "toString should be [1, 2, 3]" }
+    assert list.toString == "[1, 2, 3]" { "toString should be [1, 2, 3]" }
 }
 
 test "List toString empty" {
     var list = List<Int>()
-    assert list.toString() == "[]" { "empty list toString should be []" }
+    assert list.toString == "[]" { "empty list toString should be []" }
 }
 
 // --- Edge Cases ---

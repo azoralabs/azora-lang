@@ -137,8 +137,7 @@ enum class TokenType {
     // Reactivity: `mem` (remember), `rem` (saveable/serializable), `ret` (retain), `effect { }`, `view Name() { }`.
     MEM, REM, RET, EFFECT, VIEW,
     // Object model: `hook name { }`, `prop name: T { }`, `ctor(params) { }`, `dtor { }`.
-    // `get` and `set` are accessor markers in specs and future property syntax.
-    HOOK, PROP, CTOR, DTOR, GET, SET,
+    HOOK, PROP, CTOR, DTOR,
     // Alternating execution: `flip { } flop { }`.
     FLIP, FLOP,
     // Ownership/reference modifiers: `ref T`, `mut ref T`, `shared ref T`, `weak ref T`.

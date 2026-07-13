@@ -16,7 +16,7 @@
 
 package testing
 
-use scope std
+use zone std
 
 // --- Guard ---
 

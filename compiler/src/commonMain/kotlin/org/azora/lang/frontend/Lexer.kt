@@ -98,8 +98,6 @@ class Lexer(private val source: String) {
             "view" to TokenType.VIEW,
             "hook" to TokenType.HOOK,
             "prop" to TokenType.PROP,
-            "get" to TokenType.GET,
-            "set" to TokenType.SET,
             "ctor" to TokenType.CTOR,
             "dtor" to TokenType.DTOR,
             "flip" to TokenType.FLIP,

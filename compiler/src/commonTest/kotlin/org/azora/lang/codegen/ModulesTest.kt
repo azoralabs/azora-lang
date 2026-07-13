@@ -6,7 +6,7 @@ import org.azora.lang.backend.IrInterpreter
 import kotlin.test.*
 
 /**
- * Tests for modules/packages: `use Zone::Item` imports, `use Zone` wildcard imports,
+ * Tests for modules/packages: `use Zone.Item` imports, `use Zone` wildcard imports,
  * and visibility modifiers (`expose`/`confine`/`protect`).
  */
 class ModulesTest {
@@ -27,8 +27,8 @@ class ModulesTest {
                     return x * 3
                 }
             }
-            use Math::triple
-            use Math::PI
+            use Math.triple
+            use Math.PI
             func main() {
                 println(triple(1))
                 println(PI)
@@ -57,7 +57,7 @@ class ModulesTest {
             zone Const {
                 fin five = 5
             }
-            use Const::*
+            use Const.*
             func main() {
                 println(five)
             }
@@ -100,7 +100,7 @@ class ModulesTest {
                     return x * 3
                 }
             }
-            use Math::{triple, PI}
+            use Math.{triple, PI}
             func main() {
                 println(triple(1))
                 println(PI)
@@ -228,7 +228,7 @@ class ModulesTest {
                     return 1
                 }
             }
-            use Vault::hidden
+            use Vault.hidden
             func main() {
                 println(hidden())
             }

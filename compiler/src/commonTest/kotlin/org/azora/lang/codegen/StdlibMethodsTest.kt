@@ -105,4 +105,17 @@ class StdlibMethodsTest {
             }
         """.trimIndent()))
     }
+
+    @Test fun setOfDeduplicates() {
+        assertEquals("3\ntrue", run("""
+            use zone std
+
+            func main() {
+                fin nums = setOf(1, 2, 2, 3)
+                println(nums.size)
+                println(nums.contains(2))
+            }
+        """.trimIndent()))
+    }
+
 }

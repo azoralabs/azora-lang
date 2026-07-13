@@ -63,6 +63,8 @@ class Parser(private val tokens: List<Token>) {
 
     private var contractResultCounter = 0
 
+    private val callbackSpecs = mutableMapOf<String, SpecCallback>()
+
     private data class ContractClauses(
         val preconditions: List<Stmt> = emptyList(),
         val resultName: String? = null,
@@ -126,7 +128,7 @@ class Parser(private val tokens: List<Token>) {
             }
         }
         val localPackNames = items.filterIsInstance<TopLevel.Pack>().mapTo(mutableSetOf()) { it.name }
-        return Program(packageName, items, localPackNames)
+        return CallbackImplNormalizer.normalize(Program(packageName, items, localPackNames))
     }
 
     /**
@@ -739,27 +741,49 @@ class Parser(private val tokens: List<Token>) {
     }
 
     private fun typeMethodSuffix(type: TypeRef): String {
-        val raw = when (type) {
-            is TypeRef.Named -> type.name
-            else -> type.toString()
-        }.filter { it.isLetterOrDigit() }
-        val cleaned = raw.ifEmpty { "Value" }
-        return cleaned[0].uppercaseChar() + cleaned.drop(1)
+        return UseAsTemplate.typeMemberSuffix(type)
     }
 
     private fun castMethodName(type: TypeRef): String = "as${typeMethodSuffix(type)}"
 
     private fun callbackTraitMethodName(traitName: String, traitArgs: List<TypeRef>): String {
-        val suffix = traitArgs.firstOrNull()?.let { typeMethodSuffix(it) } ?: "Value"
-        return when (traitName) {
-            "Into" -> "to$suffix"
-            "From" -> "from$suffix"
-            else -> if (traitName.isEmpty()) "callback" else traitName[0].lowercaseChar() + traitName.drop(1)
+        return callbackTraitMethodName(traitName, traitArgs, callbackSpecs[traitName])
+    }
+
+    private fun callbackTraitMethodName(traitName: String, traitArgs: List<TypeRef>, callback: SpecCallback?): String {
+        callback?.let {
+            it.useAsTemplate?.let { template -> return UseAsTemplate.expand(template, it.typeParams, traitArgs) }
+        }
+        return if (traitName.isEmpty()) "callback" else traitName[0].lowercaseChar() + traitName.drop(1)
+    }
+
+    private fun callbackTraitReturnType(traitName: String, traitArgs: List<TypeRef>): TypeAnnotation {
+        val callback = callbackSpecs[traitName]
+        return TypeAnnotation.Explicit(substituteCallbackType(callback?.returnType, callback?.typeParams.orEmpty(), traitArgs))
+    }
+
+    private fun callbackTraitParams(traitName: String, traitArgs: List<TypeRef>): List<Param> {
+        val callback = callbackSpecs[traitName] ?: return emptyList()
+        return callbackTraitParams(callback, traitArgs)
+    }
+
+    private fun callbackTraitParams(callback: SpecCallback, traitArgs: List<TypeRef>): List<Param> {
+        return callback.params.map { param ->
+            param.copy(type = substituteCallbackType(param.type, callback.typeParams, traitArgs))
         }
     }
 
-    private fun callbackTraitReturnType(traitArgs: List<TypeRef>): TypeAnnotation =
-        TypeAnnotation.Explicit(traitArgs.firstOrNull() ?: TypeRef.Named("Any"))
+    private fun callbackTraitCallStyle(traitName: String): MemberCallStyle {
+        val callback = callbackSpecs[traitName]
+        return if (callback?.requiresParens == true) MemberCallStyle.METHOD else MemberCallStyle.PROPERTY
+    }
+
+    private fun substituteCallbackType(type: TypeRef?, typeParams: List<String>, traitArgs: List<TypeRef>): TypeRef {
+        val ref = type ?: return traitArgs.firstOrNull() ?: TypeRef.Named("Any")
+        val named = ref as? TypeRef.Named ?: return ref
+        val index = typeParams.indexOf(named.name)
+        return if (index >= 0) traitArgs.getOrElse(index) { named } else named
+    }
 
     /** `impl Type { methods }` or `impl Trait for Type { methods }`. */
     private fun parseImpl(): TopLevel.Impl {
@@ -1019,12 +1043,13 @@ class Parser(private val tokens: List<Token>) {
             consumeNewline()
             val method = FuncDecl(
                 name = callbackTraitMethodName(traitName, traitArgs),
-                params = emptyList(),
-                returnType = callbackTraitReturnType(traitArgs),
+                params = callbackTraitParams(traitName, traitArgs),
+                returnType = callbackTraitReturnType(traitName, traitArgs),
                 body = body,
                 line = start.line,
                 column = start.column,
                 receiverModifier = "ref",
+                memberCallStyle = callbackTraitCallStyle(traitName),
             )
             return TopLevel.Impl(typeName, listOf(method), traitName, start.line, start.column, traitArgs = traitArgs)
         }
@@ -1046,14 +1071,14 @@ class Parser(private val tokens: List<Token>) {
                         // `prop name: T = expr` — expression-body property (returns the expression).
                         val expr = parseExpr()
                         consumeNewline()
-                        methods.add(FuncDecl(propName, emptyList(), propType, listOf(Stmt.Return(expr, expr.line, expr.column)), false, emptyList(), methodStart.line, methodStart.column, annotations = memberAnnotations, visibility = visibility, receiverModifier = "ref"))
+                        methods.add(FuncDecl(propName, emptyList(), propType, listOf(Stmt.Return(expr, expr.line, expr.column)), false, emptyList(), methodStart.line, methodStart.column, annotations = memberAnnotations, visibility = visibility, receiverModifier = "ref", memberCallStyle = MemberCallStyle.PROPERTY))
                     } else {
                         consume(TokenType.L_BRACE, "Expected '{' after prop type")
                         skipNewlines()
                         val propBody = parseBlock()
                         consume(TokenType.R_BRACE, "Expected '}' after prop body")
                         consumeNewline()
-                        methods.add(FuncDecl(propName, emptyList(), propType, propBody, false, emptyList(), methodStart.line, methodStart.column, annotations = memberAnnotations, visibility = visibility, receiverModifier = "ref"))
+                        methods.add(FuncDecl(propName, emptyList(), propType, propBody, false, emptyList(), methodStart.line, methodStart.column, annotations = memberAnnotations, visibility = visibility, receiverModifier = "ref", memberCallStyle = MemberCallStyle.PROPERTY))
                     }
                 }
                 check(TokenType.OPER) -> error("oper[] overloads are only allowed as standalone 'impl oper[] for ${typeName} { ... }' at line ${peek().line}")
@@ -1348,7 +1373,7 @@ class Parser(private val tokens: List<Token>) {
                     val propBody = parseBlock()
                     consume(TokenType.R_BRACE, "Expected '}' after prop body")
                     consumeNewline()
-                    methods.add(FuncDecl(propName, emptyList(), propType, propBody, false, emptyList(), peek().line, peek().column, visibility = memberVisibility, receiverModifier = "ref"))
+                    methods.add(FuncDecl(propName, emptyList(), propType, propBody, false, emptyList(), peek().line, peek().column, visibility = memberVisibility, receiverModifier = "ref", memberCallStyle = MemberCallStyle.PROPERTY))
                 }
                 check(TokenType.CTOR) -> {
                     // `ctor(params) { body }` — secondary constructor. Lowered as `ctor__<type>` function.
@@ -1455,28 +1480,55 @@ class Parser(private val tokens: List<Token>) {
         return TopLevel.Slot(name, variants, start.line, start.column)
     }
 
-    /** `spec Name { func method(params): Ret ... }` — a trait declaration (signatures only). */
+    /** `spec Name { func method(params): Ret ... }` or compact callback `spec Into<T>: T { ref self } use as "..."`. */
     private fun parseSpec(): TopLevel.Spec {
         val start = peek()
         consume(TokenType.SPEC, "Expected 'spec'")
         val name = consume(TokenType.IDENTIFIER, "Expected spec name").lexeme
-        parseTypeParams() // `spec Comparable<T>` — type parameters accepted (erased for now)
+        val typeParams = parseTypeParams() // `spec Comparable<T>` — type parameters accepted (erased for now)
+        val hasCallParens = match(TokenType.L_PAREN)
+        val callbackParams = if (hasCallParens) {
+            val parsed = parseParams()
+            consume(TokenType.R_PAREN, "Expected ')' after spec callback parameters")
+            parsed
+        } else {
+            emptyList()
+        }
         if (match(TokenType.COLON)) {
             val returnType = parseTypeName()
-            val getter = match(TokenType.GET)
             consume(TokenType.L_BRACE, "Expected '{' after spec callback signature")
             skipNewlines()
             val receiverModifier = parseSpecReceiverModifier()
             val receiverName = consumeIdentifierLike("Expected spec callback receiver name")
             consume(TokenType.R_BRACE, "Expected '}' after spec callback receiver")
+            val useAsTemplate = if (check(TokenType.USE) && peekNext()?.type == TokenType.AS) {
+                advance()
+                advance()
+                parseUseAsTemplate()
+            } else {
+                null
+            }
             consumeNewline()
+            val callback = SpecCallback(
+                returnType = returnType,
+                requiresParens = hasCallParens,
+                params = callbackParams,
+                receiverModifier = receiverModifier,
+                receiverName = receiverName,
+                useAsTemplate = useAsTemplate,
+                typeParams = typeParams.names,
+            )
+            callbackSpecs[name] = callback
             return TopLevel.Spec(
                 name,
                 emptyList(),
                 start.line,
                 start.column,
-                callback = SpecCallback(returnType, getter, receiverModifier, receiverName),
+                callback = callback,
             )
+        }
+        if (hasCallParens) {
+            error("Expected ':' after spec callback parameters at line ${peek().line}")
         }
         if (!check(TokenType.L_BRACE)) {
             consumeNewline()
@@ -1715,6 +1767,21 @@ class Parser(private val tokens: List<Token>) {
         }
     }
 
+    private fun parseUseAsTemplate(): String {
+        val tok = peek()
+        return when (tok.type) {
+            TokenType.STRING_LITERAL -> {
+                advance()
+                tok.literal as? String ?: tok.lexeme.trim('"')
+            }
+            TokenType.INTERPOLATED_STRING -> {
+                advance()
+                tok.lexeme.removeSurrounding("\"")
+            }
+            else -> error("Expected string literal after 'use as', got '${tok.lexeme}' (${tok.type}) at line ${tok.line}")
+        }
+    }
+
     /** Parses any `in { ... }` / `out { r -> ... }` contract clauses before a function body. */
     private fun parseContractClauses(): ContractClauses {
         val preconditions = mutableListOf<Stmt>()
@@ -1809,7 +1876,6 @@ class Parser(private val tokens: List<Token>) {
         val t = peek()
         val soft = t.type == TokenType.REVERSE || t.type == TokenType.BASE ||
             t.type == TokenType.TASK || t.type == TokenType.LEAF || t.type == TokenType.PROP ||
-            t.type == TokenType.GET || t.type == TokenType.SET ||
             t.type == TokenType.DROP || t.type == TokenType.MEM || t.type == TokenType.REM || t.type == TokenType.RET ||
             t.type == TokenType.FLIP || t.type == TokenType.FLOP ||
             t.type == TokenType.ALLOC || t.type == TokenType.DEREF || t.type == TokenType.TEST ||
@@ -2551,22 +2617,18 @@ class Parser(private val tokens: List<Token>) {
     }
 
     /**
-     * `use ZoneName` — import all items from a named zone.
-     * `use zone ZoneName` — import all items from a zone.
-     * `use std.*` — import all stdlib modules.
-     * `use std.{math, concurrency}` — import grouped child modules.
-     * `use ZoneName::Item` — import a specific item.
-     * `use ZoneName::*` — import all items (same as bare ZoneName).
-     * `use ZoneName::{Item1, Item2}` — import grouped items.
-     * `use ZoneName::Item1, Item2` — import multiple items.
-     * Stored as a `TopLevel.UseImport` for the SymbolCollector to resolve.
+     * `use path` — import a module/zone path.
+     * `use zone path` — same import form with an explicit namespace marker.
+     * `use path.*` — import all items below a path.
+     * `use path.{child, other}` — import grouped child paths.
+     * `use path.item` — import a dotted path; semantic passes decide whether the
+     * path names a module or a selected item. `::` is only for zone access
+     * expressions, never import syntax.
      */
     private fun parseUse(): TopLevel {
         val start = consume(TokenType.USE, "Expected 'use'")
-        // `use zone std` / `use scope std` — the optional marker reads naturally and is skipped.
+        // `use zone std` — the optional marker reads naturally and is skipped.
         if (check(TokenType.ZONE) && peekNext()?.type == TokenType.IDENTIFIER) {
-            advance()
-        } else if (check(TokenType.IDENTIFIER) && peek().lexeme == "scope" && peekNext()?.type == TokenType.IDENTIFIER) {
             advance()
         }
         val imports = mutableListOf<Pair<String, String?>>() // (zoneName, itemName or null for all)
@@ -2581,7 +2643,8 @@ class Parser(private val tokens: List<Token>) {
                         break@usePath
                     }
                     match(TokenType.L_BRACE) -> {
-                        parseUseGroup { child -> imports.add("${base}.$child" to null) }
+                        val basePath = base.toString()
+                        parseUseGroup { child -> imports.add("$basePath.$child" to null) }
                         completed = true
                         break@usePath
                     }
@@ -2592,25 +2655,17 @@ class Parser(private val tokens: List<Token>) {
 
             val zoneName = base.toString()
             if (match(TokenType.DOUBLE_COLON)) {
-                when {
-                    match(TokenType.STAR) -> imports.add(zoneName to null)
-                    match(TokenType.L_BRACE) -> parseUseGroup { selected -> imports.add(zoneName to selected) }
-                    else -> {
-                        val itemName = consume(TokenType.IDENTIFIER, "Expected item name after '::'").lexeme
-                        imports.add(zoneName to itemName)
-                        // Allow `ZoneName::Item1, Item2` (shorthand for multiple items in same zone).
-                        while (match(TokenType.COMMA) && check(TokenType.IDENTIFIER)) {
-                            val more = consume(TokenType.IDENTIFIER, "Expected item name").lexeme
-                            imports.add(zoneName to more)
-                        }
-                    }
-                }
+                error("Use dotted import paths such as 'use module.item' or 'use module.{a, b}'; '::' is for zone access expressions")
             } else {
-                imports.add(zoneName to null) // bare zone/module name -> import all
+                addDottedUsePath(zoneName, imports)
             }
         } while (match(TokenType.COMMA) && check(TokenType.IDENTIFIER))
         consumeNewline()
         return TopLevel.UseImport(imports, start.line, start.column)
+    }
+
+    private fun addDottedUsePath(path: String, imports: MutableList<Pair<String, String?>>) {
+        imports.add(path to null)
     }
 
     private fun parseUseGroup(add: (String) -> Unit) {
@@ -3527,56 +3582,8 @@ class Parser(private val tokens: List<Token>) {
         return Expr.IfExpr(condition, thenExpr, elseExpr, start.line, start.column)
     }
 
-    private enum class CollectionKind { ARRAY, SET, MAP, VARIANT }
-
-    /** Parses `arrayOf(...)` / `setOf(...)` / `mapOf(...)` / `var(...)` collection constructors.
-     *  `arrayOf/setOf/var` lower to the existing literal AST nodes; `mapOf` parses `key : value` pairs. */
-    private fun parseCollectionCtor(start: Token, kind: CollectionKind): Expr {
-        advance() // the ctor keyword/identifier
-        consume(TokenType.L_PAREN, "Expected '(' after '${start.lexeme}'")
-        if (kind == CollectionKind.MAP) {
-            val entries = mutableListOf<Pair<Expr, Expr>>()
-            if (!check(TokenType.R_PAREN)) {
-                do {
-                    val key = parseExpr()
-                    consume(TokenType.COLON, "Expected ':' between map key and value in map(...)")
-                    entries.add(key to parseExpr())
-                } while (match(TokenType.COMMA))
-            }
-            consume(TokenType.R_PAREN, "Expected ')' after map(...)")
-            return Expr.MapLit(entries, start.line, start.column, start.lexeme.length)
-        }
-        val elements = mutableListOf<Expr>()
-        if (!check(TokenType.R_PAREN)) {
-            do { elements += parseExpr() } while (match(TokenType.COMMA))
-        }
-        consume(TokenType.R_PAREN, "Expected ')' after ${start.lexeme}(...)")
-        return when (kind) {
-            CollectionKind.ARRAY -> Expr.ArrayLiteral(elements, start.line, start.column, start.lexeme.length)
-            CollectionKind.SET -> Expr.SetLiteral(elements, start.line, start.column, start.lexeme.length)
-            CollectionKind.VARIANT -> Expr.VariantLit(elements, start.line, start.column, start.lexeme.length)
-            CollectionKind.MAP -> error("unreachable")
-        }
-    }
-
     private fun parsePrimary(): Expr {
         val tok = peek()
-        // Collection constructor ctors — contextual: an identifier `arrayOf`/`setOf`/`mapOf` is the
-        // collection constructor only when immediately followed by `(` in primary position. They
-        // remain valid identifiers everywhere else (e.g. as method names after `.`).
-        if (tok.type == TokenType.IDENTIFIER && peekNext()?.type == TokenType.L_PAREN) {
-            when (tok.lexeme) {
-                "arrayOf" -> return parseCollectionCtor(tok, CollectionKind.ARRAY)
-                "setOf" -> return parseCollectionCtor(tok, CollectionKind.SET)
-                "mapOf" -> return parseCollectionCtor(tok, CollectionKind.MAP)
-                "arr", "set", "map", "tup" ->
-                    error("'${tok.lexeme}(...)' constructor syntax was removed; use arrayOf(...), setOf(...), mapOf(...), or a tuple literal '(...)' at line ${tok.line}")
-            }
-        }
-        // `var(...)` — variant constructor (`var` is otherwise the declaration keyword).
-        if (tok.type == TokenType.VAR && peekNext()?.type == TokenType.L_PAREN) {
-            return parseCollectionCtor(tok, CollectionKind.VARIANT)
-        }
         // `<T...>{ … }` — variadic lambda (implicit `it` is the packed array of all args).
         if (tok.type == TokenType.LESS && isVariadicLambdaAhead()) {
             advance() // '<'
@@ -3615,7 +3622,7 @@ class Parser(private val tokens: List<Token>) {
             TokenType.TRUE -> { advance(); Expr.BoolLiteral(true, tok.line, tok.column, tok.lexeme.length) }
             TokenType.FALSE -> { advance(); Expr.BoolLiteral(false, tok.line, tok.column, tok.lexeme.length) }
             TokenType.NULL -> { advance(); Expr.NullLiteral }
-            TokenType.IDENTIFIER, TokenType.SHARED, TokenType.WEAK, TokenType.GET, TokenType.SET,
+            TokenType.IDENTIFIER, TokenType.SHARED, TokenType.WEAK,
             TokenType.REVERSE -> {
                 advance()
                 Expr.Identifier(tok.lexeme, tok.line, tok.column, tok.lexeme.length)

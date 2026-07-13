@@ -16,7 +16,7 @@
 
 package testing
 
-use scope std
+use zone std
 
 // --- Construction ---
 
@@ -141,5 +141,5 @@ test "Map toString" {
 
 test "Map toString empty" {
     var map = Map<String, Int>()
-    assert map.toString() == "{}" { "empty map toString should be {}" }
+    assert map.toString == "{}" { "empty map toString should be {}" }
 }

@@ -18,7 +18,7 @@ package testing
 
 use std.container
 
-use scope std
+use zone std
 
 test "tuple2 init" {
     fin tup = tupleOf(1, 2.0)

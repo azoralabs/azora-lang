@@ -2,7 +2,7 @@ package demo_website
 
 use std.ui
 use pages.*
-use scope std
+use zone std
 
 // PawTrack - A pet tracker demo app built with Azora.
 // Showcases views, reactive state, SVG icons, navigation, and component reuse.

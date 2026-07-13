@@ -17,6 +17,7 @@
 package org.azora.lang.semantic
 
 import org.azora.lang.frontend.Visibility
+import org.azora.lang.frontend.MemberCallStyle
 import org.azora.lang.ir.IrType
 
 /**
@@ -39,6 +40,7 @@ data class FunctionSymbol(
     val isTask: Boolean = false,
     val isUnsafe: Boolean = false,
     val visibility: Visibility = Visibility.EXPOSE,
+    val memberCallStyle: MemberCallStyle = MemberCallStyle.NORMAL,
 )
 
 /**
@@ -88,7 +90,7 @@ data class StructType(
     fun field(name: String): StructField? = fields.find { it.name == name }
 }
 
-/** A registered spec signature. Callback specs use compact syntax such as `spec Into<T>: T get { ref self }`. */
+/** A registered spec signature. Callback specs use compact syntax such as `spec Into<T>: T { ref self } use as "to${T.typeName}"`. */
 data class SpecSymbol(
     val methodNames: List<String>,
     val callback: org.azora.lang.frontend.SpecCallback? = null,

@@ -1140,7 +1140,15 @@ data class FuncDecl(
     val variadicParam: String? = null,
     /** Minimum element count from a `where <var>.length >= N` clause, or null if unconstrained. */
     val minVariadicLength: Int? = null,
+    /** How this declaration may be invoked when registered as an impl member. */
+    val memberCallStyle: MemberCallStyle = MemberCallStyle.NORMAL,
 )
+
+enum class MemberCallStyle {
+    NORMAL,
+    PROPERTY,
+    METHOD,
+}
 
 /**
  * A decorator/annotation application: `@Name`, `@Name(args)`, or `@target:Name`.
@@ -1162,18 +1170,21 @@ data class Annotation(
 )
 
 /**
- * Compact callback form for specs such as `spec Into<T>: T get { ref self }`.
+ * Compact callback form for specs such as
+ * `spec Into<T>: T { ref self } use as "to${T.typeName}"`.
  *
  * The spec has no body; implementations provide one callback body directly in
- * `impl Into<String> for X { ref self -> ... }`. `getter` means the generated
- * method is intended to be used as property syntax (`x.toString`) as well as
- * legacy zero-arg call syntax (`x.toString()`).
+ * `impl Into<String> for X { ref self -> ... }`. [requiresParens] is true only
+ * when the spec itself declares a parameter list (`spec Into<T>(): T ...`).
  */
 data class SpecCallback(
     val returnType: TypeRef,
-    val getter: Boolean,
+    val requiresParens: Boolean,
+    val params: List<Param> = emptyList(),
     val receiverModifier: ParamModifier,
     val receiverName: String,
+    val useAsTemplate: String? = null,
+    val typeParams: List<String> = emptyList(),
 )
 
 // ---------------------------------------------------------------------------
@@ -1381,7 +1392,7 @@ sealed class TopLevel {
     data class Hook(val name: String, val body: List<Stmt>, val line: Int, val column: Int = 0) : TopLevel()
 
     /**
-     * `use ZoneName` or `use ZoneName::Item` — imports items from a named zone so they're
+     * `use ZoneName` or `use ZoneName.Item` — imports items from a named zone so they're
      * accessible without the `ZoneName::` prefix. [imports] is a list of (zoneName, itemName)
      * pairs where itemName is null for "import all".
      */
@@ -1435,7 +1446,7 @@ sealed class TopLevel {
         val traitArgs: List<TypeRef> = emptyList(),
     ) : TopLevel()
 
-    /** `spec Name { func method(params): Ret; ... }` or compact callback `spec Name<T>: T get { ref self }`. */
+    /** `spec Name { func method(params): Ret; ... }` or compact callback `spec Name<T>: T { ref self } use as "to${T.typeName}"`. */
     data class Spec(
         val name: String,
         val methods: List<FuncDecl>,

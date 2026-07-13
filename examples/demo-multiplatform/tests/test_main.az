@@ -1,6 +1,6 @@
 package demo_multiplatform.tests
 
-use scope std
+use zone std
 
 test "initial count" {
     fin count = 0

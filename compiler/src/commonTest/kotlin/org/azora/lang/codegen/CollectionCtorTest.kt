@@ -8,7 +8,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 
 /**
- * Verifies collection constructors (`arr/set/map/tup/var(...)`), collection type spellings, and
+ * Verifies stdlib collection factories, tuple literals, variant assignment, and
  * `loop iterable { }`.
  */
 class CollectionCtorTest {
@@ -19,31 +19,9 @@ class CollectionCtorTest {
         return IrInterpreter().interpret(result.ir).trim()
     }
 
-    @Test fun arr_ctor() = assertEquals("10\n30\n3", run("""
-        func main() {
-            fin a = arrayOf(10, 20, 30)
-            println(a[0])
-            println(a[2])
-            println(a.length)
-        }
-    """.trimIndent()))
-
-    @Test fun arr_empty() = assertEquals("1", run("""
-        func main() {
-            fin a = arrayOf(7)
-            println(a.length)
-        }
-    """.trimIndent()))
-
-    @Test fun map_ctor() = assertEquals("1\n20", run("""
-        func main() {
-            fin m = mapOf("x": 1, "y": 20)
-            println(m["x"])
-            println(m["y"])
-        }
-    """.trimIndent()))
-
     @Test fun set_ctor() = assertEquals("true\nfalse", run("""
+        use zone std
+
         func main() {
             fin s = setOf(1, 2, 3)
             println(s.contains(2))
@@ -75,13 +53,6 @@ class CollectionCtorTest {
         }
     """.trimIndent()))
 
-    @Test fun var_ctor_holds_first() = assertEquals("7", run("""
-        func main() {
-            fin v = var(7, 1.5, "hi")
-            println(v)
-        }
-    """.trimIndent()))
-
     @Test fun var_direct_assign_and_when() = assertEquals("int 42", run("""
         func main() {
             var v: Var<Int, Real, String> = 42
@@ -110,30 +81,41 @@ class CollectionCtorTest {
         }
     """.trimIndent()))
 
-    @Test fun explicit_collection_types() = assertEquals("10\n99", run("""
+    @Test fun explicit_set_type() = assertEquals("true", run("""
+        use zone std
+
         func main() {
-            fin a: Array<Int> = arrayOf(10, 20, 30)
-            println(a[0])
-            fin m: Map<String, Int> = mapOf("k": 99)
-            println(m["k"])
+            fin s: Set<Int> = setOf(10, 20, 30)
+            println(s.contains(20))
         }
     """.trimIndent()))
 
-    @Test fun mutable_collection_packs_exist() = assertEquals("8\ntrue\nfalse\n3", run("""
+    @Test fun mutable_list_pack_exists() = assertEquals("8", run("""
         use std.container
         func main() {
             var xs = MutableList<Int>()
             xs.add(7)
             xs[0] = 8
             println(xs[0])
+        }
+    """.trimIndent()))
 
+    @Test fun mutable_set_pack_exists() = assertEquals("true\nfalse", run("""
+        use std.container
+        func main() {
             var seen = MutableSet<Int>()
             seen.add(1)
             seen.add(1)
             println(seen.contains(1))
             println(seen.contains(2))
+        }
+    """.trimIndent()))
 
-            fin scores: MutableMap<String, Int> = mapOf("azora": 3)
+    @Test fun mutable_map_pack_exists() = assertEquals("3", run("""
+        use std.container
+        func main() {
+            var scores = MutableMap<String, Int>()
+            scores.put("azora", 3)
             println(scores["azora"])
         }
     """.trimIndent()))

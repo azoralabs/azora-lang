@@ -148,13 +148,13 @@ class Feature003SyntaxTest {
         """.trimIndent()))
     }
 
-    @Test fun compactConversionSpecsGenerateGetterStyleMethods() {
-        assertEquals("Label(ok)\nLabel(ok)\nLabel(ok)", run("""
+    @Test fun compactConversionSpecsGeneratePropertyStyleMethods() {
+        assertEquals("Label(ok)\nLabel(ok)", run("""
             pack Label {
                 var value: String
             }
-            spec Into<T>: T get { ref self }
-            spec From<T>: T get { ref self }
+            spec Into<T>: T { ref self } use as "to${'$'}{T.typeName}"
+            spec From<T>: T { ref self } use as "from${'$'}{T.typeName}"
             impl Into<String> for Label { ref self ->
                 return "Label(" + self.value + ")"
             }
@@ -164,10 +164,91 @@ class Feature003SyntaxTest {
             func main() {
                 var label = Label("ok")
                 println(label.toString)
-                println(label.toString())
                 println(label.fromString)
             }
         """.trimIndent()))
+    }
+
+    @Test fun compactConversionSpecUseAsWorksBeforeSpecDeclaration() {
+        assertEquals("Label(ok)", run("""
+            pack Label {
+                var value: String
+            }
+            impl Show<String> for Label { ref self ->
+                return "Label(" + self.value + ")"
+            }
+            spec Show<T>: T { ref self } use as "show${'$'}{T.typeName}"
+            func main() {
+                var label = Label("ok")
+                println(label.showString)
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun compactConversionSpecUseAsAcceptsLiteralMemberName() {
+        assertEquals("Label(ok)", run("""
+            pack Label {
+                var value: String
+            }
+            spec Render<T>: T { ref self } use as "render"
+            impl Render<String> for Label { ref self ->
+                return "Label(" + self.value + ")"
+            }
+            func main() {
+                var label = Label("ok")
+                println(label.render)
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun compactConversionSpecsRejectParenthesesWhenSpecHasNoParens() {
+        val result = Compiler().compile("""
+            pack Label {
+                var value: String
+            }
+            spec Into<T>: T { ref self } use as "to${'$'}{T.typeName}"
+            impl Into<String> for Label { ref self ->
+                return self.value
+            }
+            func main() {
+                var label = Label("ok")
+                println(label.toString())
+            }
+        """.trimIndent())
+        assertIs<CompilationResult.Failure>(result)
+        assertTrue(result.errors.any { "without parentheses" in it }, "${'$'}{result.errors}")
+    }
+
+    @Test fun compactConversionSpecsWithParensRequireCallSyntax() {
+        assertEquals("7", run("""
+            pack Box {
+                var value: Int
+            }
+            spec Extract<T>(): T { ref self } use as "extract${'$'}{T.typeName}"
+            impl Extract<Int> for Box { ref self ->
+                return self.value
+            }
+            func main() {
+                var box = Box(7)
+                println(box.extractInt())
+            }
+        """.trimIndent()))
+
+        val result = Compiler().compile("""
+            pack Box {
+                var value: Int
+            }
+            spec Extract<T>(): T { ref self } use as "extract${'$'}{T.typeName}"
+            impl Extract<Int> for Box { ref self ->
+                return self.value
+            }
+            func main() {
+                var box = Box(7)
+                println(box.extractInt)
+            }
+        """.trimIndent())
+        assertIs<CompilationResult.Failure>(result)
+        assertTrue(result.errors.any { "requires a method call" in it }, "${'$'}{result.errors}")
     }
 
     @Test fun implAsStringIsCastOnly() {

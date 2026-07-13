@@ -22,7 +22,7 @@ import org.azora.lang.frontend.Stmt
 import org.azora.lang.frontend.TopLevel
 
 /**
- * Rewrites qualified standard-library access into plain references:
+ * Rewrites qualified bundled-library access into plain references:
  *
  * - `std::math::abs(x)` / `std::abs(x)` → `abs(x)`
  * - `math::abs(x)` after `use std.math` → `abs(x)`
@@ -30,14 +30,15 @@ import org.azora.lang.frontend.TopLevel
  *
  * Every rewritten name is recorded in [required] so [StdlibInjector] injects
  * it without needing a `use` import. Only paths that actually resolve to a
- * known stdlib symbol are rewritten — anything else (e.g. a user's own value
+ * known library symbol are rewritten — anything else (e.g. a user's own value
  * that happens to be named like a module) is left untouched, and the caller
- * skips rewriting entirely when the user declares a top-level `std`.
+ * disables shadowed roots when the user declares a top-level name such as `std`.
  */
 internal class QualifiedStdRewriter(
     private val modules: Map<String, Map<String, TopLevel>>,
+    private val roots: Set<String>,
     private val required: MutableSet<String>,
-    private val moduleAliases: Set<String> = emptySet(),
+    private val moduleAliases: Map<String, String> = emptyMap(),
 ) {
 
     fun rewrite(program: Program): Program = program.copy(
@@ -58,22 +59,24 @@ internal class QualifiedStdRewriter(
         val parts = name.split("__")
         if (parts.size < 2) return null
 
-        if (parts.first() == "std") {
+        val root = parts.first()
+        if (root in roots) {
             if (parts.size == 2) {
                 val item = parts[1]
                 if (modules.values.any { item in it }) return item
             }
             for (itemStart in parts.lastIndex downTo 2) {
-                val module = "std." + parts.subList(1, itemStart).joinToString(".")
+                val module = root + "." + parts.subList(1, itemStart).joinToString(".")
                 val item = parts.subList(itemStart, parts.size).joinToString("__")
                 if (modules[module]?.containsKey(item) == true) return item
             }
             return null
         }
 
-        if (parts.first() !in moduleAliases) return null
+        val aliasModule = moduleAliases[parts.first()] ?: return null
         for (itemStart in parts.lastIndex downTo 1) {
-            val module = "std." + parts.subList(0, itemStart).joinToString(".")
+            val childPath = parts.subList(1, itemStart).joinToString(".")
+            val module = if (childPath.isEmpty()) aliasModule else "$aliasModule.$childPath"
             val item = parts.subList(itemStart, parts.size).joinToString("__")
             if (modules[module]?.containsKey(item) == true) return item
         }

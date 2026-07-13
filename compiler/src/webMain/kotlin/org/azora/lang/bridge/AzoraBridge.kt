@@ -14,10 +14,19 @@
  * limitations under the License.
  */
 
-@file:OptIn(kotlin.js.ExperimentalJsExport::class)
+@file:OptIn(kotlin.js.ExperimentalJsExport::class, kotlin.js.ExperimentalWasmJsInterop::class)
 
 package org.azora.lang.bridge
 
+import kotlin.js.JsReference
+import kotlin.js.JsString
+import kotlin.js.Promise
+import kotlin.js.get
+import kotlin.js.toJsString
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.promise
 import org.azora.lang.CompilationResult
 import org.azora.lang.Compiler
 import org.azora.lang.backend.IrInterpreter
@@ -32,10 +41,13 @@ import org.azora.lang.backend.IrInterpreter
  * The compiler lowers one IR to JavaScript, WebAssembly, and LLVM IR, plus the
  * IR interpreter. Each codegen target has an `azGenerate*` export. Execution
  * (`azInterpret` / `azRunTests`) runs the suspend interpreter
- * ([IrInterpreter.interpretSuspend]); Wasm/JS cannot `runBlocking`, so these are `suspend`
- * exports (the loader `await`s them).
+ * ([IrInterpreter.interpretSuspend]). Wasm/JS cannot `runBlocking`, and exporting `suspend`
+ * functions directly exposes Kotlin's continuation ABI, so the public bridge returns JavaScript
+ * promises that resolve to plain JS strings.
  */
 private const val AZORA_VERSION = "0.0.3"
+
+private val bridgeScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
 private fun json(success: Boolean, output: String, errors: String): String =
     "{\"success\":${success},\"output\":${jsonStr(output)},\"errors\":${jsonStr(errors)}}"
@@ -72,6 +84,12 @@ private suspend fun withCompiledSuspend(source: String, onSuccess: suspend (Comp
     }
 }
 
+@Suppress("UNCHECKED_CAST_TO_EXTERNAL_INTERFACE", "UNCHECKED_CAST")
+private fun promisedJson(block: suspend () -> String): Promise<JsString> =
+    bridgeScope.promise { block() }.then { value ->
+        (value as JsReference<String>).get().toJsString()
+    }
+
 /** Version string shown in the playground. */
 @JsExport
 fun azGetVersion(): String = AZORA_VERSION
@@ -83,17 +101,17 @@ fun azPreprocess(source: String): String =
 
 /** Interprets the source and returns program output (main then tests). */
 @JsExport
-suspend fun azInterpret(source: String): String =
-    withCompiledSuspend(source) {
+fun azInterpret(source: String): Promise<JsString> =
+    promisedJson { withCompiledSuspend(source) {
         try { IrInterpreter().interpretSuspend(it.ir) } catch (e: Throwable) { "Runtime error: ${e.message ?: e.toString()}" }
-    }
+    } }
 
 /** Runs the program's `test` blocks (same path as [azInterpret], which runs tests after main). */
 @JsExport
-suspend fun azRunTests(source: String): String =
-    withCompiledSuspend(source) {
+fun azRunTests(source: String): Promise<JsString> =
+    promisedJson { withCompiledSuspend(source) {
         try { IrInterpreter().interpretSuspend(it.ir) } catch (e: Throwable) { "Runtime error: ${e.message ?: e.toString()}" }
-    }
+    } }
 
 /** Generates JavaScript source. */
 @JsExport

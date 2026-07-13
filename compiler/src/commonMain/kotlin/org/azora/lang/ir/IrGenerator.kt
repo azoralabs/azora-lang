@@ -18,6 +18,7 @@ package org.azora.lang.ir
 
 import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.FuncDecl
+import org.azora.lang.frontend.MemberCallStyle
 import org.azora.lang.frontend.NumericSuffix
 import org.azora.lang.frontend.Program
 import org.azora.lang.frontend.Stmt
@@ -109,7 +110,7 @@ class IrGenerator(private val table: SymbolTable) {
             }
         }
 
-        // Register import aliases in the global name scope so `use Zone::Item` resolves.
+        // Register import aliases in the global name scope so `use Zone.Item` resolves.
         for ((alias, real) in table.aliasMap) {
             nameScopes.last()[alias] = real
         }
@@ -728,7 +729,7 @@ class IrGenerator(private val table: SymbolTable) {
                 IrExpr.Binary(left, op, right, type)
             }
             is Expr.Call -> {
-                // Resolve import aliases (use Zone::Item → Item maps to Zone__Item).
+                // Resolve import aliases (`use Zone.Item` maps Item to Zone__Item).
                 val realCallee = table.aliasMap[expr.callee] ?: expr.callee
                 val struct = table.lookupStruct(realCallee) ?: table.lookupStruct(expr.callee)
                 if (struct != null) {
@@ -917,13 +918,20 @@ class IrGenerator(private val table: SymbolTable) {
                     return IrExpr.StringLiteral(expr.name)
                 }
                 val target = lowerExpr(expr.target)
-                // Check for a computed property (prop): `Type_name` zero-arg method.
                 val tt2 = target.type
                 if (tt2 is IrType.Named) {
+                    // Concrete pack fields win over property-style callbacks. This matters
+                    // for stdlib containers that expose field-backed storage and also define
+                    // methods such as keys()/values().
+                    val field = table.lookupStruct(tt2.name)?.field(expr.name)
+                    if (field != null) {
+                        return IrExpr.Member(target, expr.name, field.type)
+                    }
+                    // Check for a computed property (prop): `Type_name` zero-arg method.
                     val mangled = table.lookupMethod(tt2.name, expr.name)
                     if (mangled != null) {
                         val func = table.lookupFunction(mangled)
-                        if (func != null && func.params.size == 1) {
+                        if (func != null && func.params.size == 1 && func.memberCallStyle != MemberCallStyle.METHOD) {
                             // It's a prop — lower to a method call Type_name(self).
                             return IrExpr.Call(mangled, listOf(target), func.returnType)
                         }
@@ -969,6 +977,9 @@ class IrGenerator(private val table: SymbolTable) {
                     val mangled = table.lookupMethod(tt.name, expr.name)
                     if (mangled != null) {
                         val func = table.lookupFunction(mangled)!!
+                        if (func.memberCallStyle == MemberCallStyle.PROPERTY) {
+                            error("property '${expr.name}' must be accessed without parentheses")
+                        }
                         val args = expr.args.map { lowerExpr(it) }
                         // Node types use dynamic dispatch — keep as MethodCall.
                         if (tt.name in table.nodeTypes) {

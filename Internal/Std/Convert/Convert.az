@@ -18,14 +18,26 @@ package std.convert
 
 friend zone std {
     /**
+     * Declares conversion into `T`.
      *
+     * Implementing `Into<String>` for a type creates a property-style member
+     * named from the `use as` template. For `T = String`, this spec exposes
+     * `.toString` without parentheses.
+     *
+     * @param T target type produced by the conversion.
      */
     @experimental(since: "0.0.3")
-    spec Into<T>: T get { ref self }
+    spec Into<T>: T { ref self } use as "to${T.typeName}"
 
     /**
+     * Declares conversion from `T`.
      *
+     * Implementing `From<String>` for a type creates a property-style member
+     * named from the `use as` template. For `T = String`, this spec exposes
+     * `.fromString` without parentheses.
+     *
+     * @param T source type represented by the conversion.
      */
     @experimental(since: "0.0.3")
-    spec From<T>: T get { ref self }
+    spec From<T>: T { ref self } use as "from${T.typeName}"
 }

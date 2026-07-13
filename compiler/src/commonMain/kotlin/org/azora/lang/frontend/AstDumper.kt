@@ -178,7 +178,11 @@ private fun dumpTopLevel(sb: StringBuilder, item: TopLevel, indent: String) {
             sb.appendLine("${indent}UseImport(${item.imports.joinToString(", ") { (zone, item) -> if (item != null) "$zone::$item" else "$zone::*" }})")
         }
         is TopLevel.Spec -> {
-            val callback = item.callback?.let { ", callback=${it.returnType}${if (it.getter) " get" else ""}" } ?: ""
+            val callback = item.callback?.let {
+                val params = if (it.requiresParens) "(${it.params.joinToString(", ") { p -> p.name + ": " + p.type }})" else ""
+                val useAs = it.useAsTemplate?.let { template -> " use as \"$template\"" } ?: ""
+                ", callback$params:${it.returnType}$useAs"
+            } ?: ""
             sb.appendLine("${indent}Spec(name=${item.name}, methods=[${item.methods.joinToString(", ") { it.name }}]$callback)")
         }
         is TopLevel.TypeAlias -> {

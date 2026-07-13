@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package std.memory
+module std.memory.ptr
 
 /**
  * @file Ptr

@@ -38,7 +38,6 @@ package org.azora.lang.frontend
  * - [LET] -- immutable variable declaration
  * - [FUNC] -- function declaration
  * - [RETURN] -- return statement
- * - [PACKAGE] -- package declaration
  * - [IF] -- conditional branch
  * - [ELSE] -- alternative conditional branch
  * - [INLINE] -- compile-time evaluation marker
@@ -84,7 +83,7 @@ enum class TokenType {
     IDENTIFIER,
 
     // Keywords
-    VAR, FIN, LET, FUNC, RETURN, PACKAGE, IF, ELSE, INLINE, DEEPINLINE, NOINLINE, ZONE, FRIEND,
+    VAR, FIN, LET, FUNC, RETURN, IF, ELSE, INLINE, DEEPINLINE, NOINLINE, ZONE, FRIEND,
     TEST, ASSERT, TRACE, MIXIN, PANIC,
     FOR, WHILE, LOOP, IN, BREAK, CONTINUE,
     PACK, ENUM, WHEN,

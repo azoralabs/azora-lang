@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package testing
+module testing
 
 // --- ref parameter (read-only borrow) ---
 

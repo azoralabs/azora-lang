@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package testing
+module testing
 
 task simpleTask(): Int { suspend 10; return 42 }
 task addAsync(a: Int, b: Int): Int { suspend 5; return a + b }

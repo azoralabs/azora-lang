@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package std.channel
+module std.parallelism.channel
 
 /**
  * @file Channel

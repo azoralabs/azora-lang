@@ -104,8 +104,7 @@ class Parser(private val tokens: List<Token>) {
             skipNewlines()
         }
         val packageName = when {
-            check(TokenType.PACKAGE) -> parsePackage()
-            check(TokenType.MODULE) -> { advance(); consume(TokenType.IDENTIFIER, "Expected module name").lexeme.also { consumeNewline() } }
+            check(TokenType.MODULE) -> parsePackage()
             else -> null
         }
         val items = mutableListOf<TopLevel>()
@@ -1636,12 +1635,12 @@ class Parser(private val tokens: List<Token>) {
         return TopLevel.InlineTrace(message, start.line, start.column)
     }
 
-    private fun parsePackage(): String {
-        consume(TokenType.PACKAGE, "Expected 'package'")
-        // Qualified names are allowed: `package std.math`.
-        val name = StringBuilder(consume(TokenType.IDENTIFIER, "Expected package name").lexeme)
+    private fun parseModule(): String {
+        consume(TokenType.MODULE, "Expected 'module'")
+        // Qualified names are allowed: `module std.math`.
+        val name = StringBuilder(consume(TokenType.IDENTIFIER, "Expected module name").lexeme)
         while (match(TokenType.DOT)) {
-            name.append('.').append(consume(TokenType.IDENTIFIER, "Expected name after '.' in package").lexeme)
+            name.append('.').append(consume(TokenType.IDENTIFIER, "Expected name after '.' in module").lexeme)
         }
         consumeNewline()
         return name.toString()

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package testing
+module testing
 
 func<T> add(a: T, b: T): T {
     return a + b

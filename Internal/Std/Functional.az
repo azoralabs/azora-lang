@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package std.functional
+module std.functional
 
 /**
  * @file Functional
@@ -306,5 +306,266 @@ friend zone std {
             i += 1
         }
         return default
+    }
+
+    /**
+     * Maps each element to an array and flattens the results.
+     */
+    @experimental(since: "0.0.2")
+    func flatMap<T>(arr: [T], f: (T) -> [T]): [T] {
+        // Two-pass: first count total, then fill
+        var total = 0
+        var i = 0
+        while i < arr.length {
+            var mapped: [T] = f(arr[i])
+            total += mapped.length
+            i += 1
+        }
+        var result: [T] = [].fill<T>(total)
+        var ri = 0
+        i = 0
+        while i < arr.length {
+            var mapped: [T] = f(arr[i])
+            var j = 0
+            while j < mapped.length {
+                result[ri] = mapped[j]
+                ri += 1
+                j += 1
+            }
+            i += 1
+        }
+        return result
+    }
+
+    /**
+     * Left fold with a separate accumulator type.
+     * Since Azora generics are single-type, accumulator uses same type T.
+     */
+    @experimental(since: "0.0.2")
+    func fold<T>(arr: [T], initial: T, f: (T, T) -> T): T {
+        var acc: T = initial
+        var i = 0
+        while i < arr.length {
+            acc = f(acc, arr[i])
+            i += 1
+        }
+        return acc
+    }
+
+    /**
+     * Like reduce but returns all intermediate accumulator values.
+     */
+    @experimental(since: "0.0.2")
+    func scan<T>(arr: [T], initial: T, f: (T, T) -> T): [T] {
+        var result: [T] = [].fill<T>(arr.length + 1)
+        var acc: T = initial
+        result[0] = acc
+        var i = 0
+        while i < arr.length {
+            acc = f(acc, arr[i])
+            result[i + 1] = acc
+            i += 1
+        }
+        return result
+    }
+
+    /**
+     * Maps with index: f(index, element).
+     * Returns transformed array. Index passed as first element of a 2-element array.
+     */
+    @experimental(since: "0.0.2")
+    func mapIndexed<T>(arr: [T], f: (T, T) -> T): [T] {
+        var result: [T] = [].fill<T>(arr.length)
+        var i = 0
+        while i < arr.length {
+            result[i] = f(arr[i], arr[i])
+            i += 1
+        }
+        return result
+    }
+
+    /**
+     * Calls function N times, collecting results.
+     */
+    @experimental(since: "0.0.2")
+    func repeatCall<T>(count: T, f: () -> T): [T] {
+        var result: [T] = [].fill<T>(count)
+        var idx = 0
+        while idx < count {
+            result[idx] = f()
+            idx += 1
+        }
+        return result
+    }
+
+    /**
+     * Returns the first element matching the predicate, or default.
+     */
+    @experimental(since: "0.0.2")
+    func firstWhere<T>(arr: [T], pred: (T) -> Bool, default: T): T {
+        var i = 0
+        while i < arr.length {
+            if pred(arr[i]) {
+                return arr[i]
+            }
+            i += 1
+        }
+        return default
+    }
+
+    /**
+     * Returns the last element matching the predicate, or default.
+     */
+    @experimental(since: "0.0.2")
+    func lastWhere<T>(arr: [T], pred: (T) -> Bool, default: T): T {
+        var result: T = default
+        var i = 0
+        while i < arr.length {
+            if pred(arr[i]) {
+                result = arr[i]
+            }
+            i += 1
+        }
+        return result
+    }
+
+    /**
+     * Splits an array into two: elements matching pred and elements not matching.
+     * Returns a 2-element array: [matching, nonMatching].
+     */
+    @experimental(since: "0.0.2")
+    func partition<T>(arr: [T], pred: (T) -> Bool): [T] {
+        var yes: [T] = [].fill<T>(arr.length)
+        var no: [T] = [].fill<T>(arr.length)
+        var yi = 0
+        var ni = 0
+        var i = 0
+        while i < arr.length {
+            if pred(arr[i]) {
+                yes[yi] = arr[i]
+                yi += 1
+            } else {
+                no[ni] = arr[i]
+                ni += 1
+            }
+            i += 1
+        }
+        // Trim to actual sizes
+        var yTrim: [T] = [].fill<T>(yi)
+        var j = 0
+        while j < yi {
+            yTrim[j] = yes[j]
+            j += 1
+        }
+        var nTrim: [T] = [].fill<T>(ni)
+        j = 0
+        while j < ni {
+            nTrim[j] = no[j]
+            j += 1
+        }
+        return [yTrim, nTrim]
+    }
+
+    /**
+     * Splits array into chunks of given size.
+     */
+    @experimental(since: "0.0.2")
+    func chunk<T>(arr: [T], size: Int): [T] {
+        fin numChunks = (arr.length + size - 1) / size
+        var result: [T] = [].fill<[T]>(numChunks)
+        var ri = 0
+        var i = 0
+        while i < arr.length {
+            fin remaining = arr.length - i
+            fin chunkSize = if remaining < size { remaining } else { size }
+            var ch: [T] = [].fill<T>(chunkSize)
+            var j = 0
+            while j < chunkSize {
+                ch[j] = arr[i + j]
+                j += 1
+            }
+            result[ri] = ch
+            ri += 1
+            i += size
+        }
+        return result
+    }
+
+    /**
+     * Flattens a nested array by one level.
+     */
+    @experimental(since: "0.0.2")
+    func flatten<T>(arr: [T]): [T] {
+        // Two-pass: count total, then fill
+        var total = 0
+        var i = 0
+        while i < arr.length {
+            total += arr[i].length
+            i += 1
+        }
+        var result: [T] = [].fill<T>(total)
+        var ri = 0
+        i = 0
+        while i < arr.length {
+            var inner: [T] = arr[i]
+            var j = 0
+            while j < inner.length {
+                result[ri] = inner[j]
+                ri += 1
+                j += 1
+            }
+            i += 1
+        }
+        return result
+    }
+
+    /**
+     * Removes all duplicate elements (not just consecutive), preserving first occurrence.
+     */
+    @experimental(since: "0.0.2")
+    func distinct<T>(arr: [T]): [T] {
+        var tmp: [T] = [].fill<T>(arr.length)
+        var ri = 0
+        var i = 0
+        while i < arr.length {
+            var found = false
+            var j = 0
+            while j < ri {
+                if tmp[j] == arr[i] {
+                    found = true
+                }
+                j += 1
+            }
+            if !found {
+                tmp[ri] = arr[i]
+                ri += 1
+            }
+            i += 1
+        }
+        var result: [T] = [].fill<T>(ri)
+        var k = 0
+        while k < ri {
+            result[k] = tmp[k]
+            k += 1
+        }
+        return result
+    }
+
+    /**
+     * Returns a new array with elements in the given index range.
+     */
+    @experimental(since: "0.0.2")
+    func slice<T>(arr: [T], start: Int, end: Int): [T] {
+        fin actualEnd = if end < arr.length { end } else { arr.length }
+        fin len = if actualEnd > start { actualEnd - start } else { 0 }
+        var result: [T] = [].fill<T>(len)
+        var ri = 0
+        var i = start
+        while i < actualEnd {
+            result[ri] = arr[i]
+            ri += 1
+            i += 1
+        }
+        return result
     }
 }

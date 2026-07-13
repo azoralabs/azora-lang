@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package testing
+module testing
 
 flow range(n: Int): Int {
     for i in 0..n {

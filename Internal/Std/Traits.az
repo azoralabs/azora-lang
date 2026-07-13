@@ -14,20 +14,37 @@
  * limitations under the License.
  */
 
-package std.traits
+module std.traits
 
 /**
- * @file Core
+ * @file Traits
  *
- * Core type specifications.
+ * Core type traits and promotion system.
  *
- * Defines fundamental specifications for type capabilities:
- * equality comparison, ordering, and string representation.
+ * Defines the Numeric spec for arithmetic types and the
+ * compile-time type promotion function for mixed-type expressions.
  *
  * @since 0.0.1
  */
 
 friend zone std {
+    /**
+     * A specification that marks types supporting arithmetic operations.
+     *
+     * Types implementing Numeric can be used with standard math operators
+     * and the promote type function.
+     */
+    @since("0.0.1")
+    spec Numeric
+
+    /** Int satisfies the Numeric spec. */
+    @since("0.0.1")
+    impl Numeric for Int
+
+    /** Real satisfies the Numeric spec. */
+    @since("0.0.1")
+    impl Numeric for Real
+
     /** Types that support equality comparison via == and !=. */
     @since("0.0.1")
     spec Equatable
@@ -163,4 +180,22 @@ friend zone std {
     /** Bool is cloneable. */
     @since("0.0.1")
     impl Cloneable for Bool
+
+    /**
+     * Types that can be iterated over.
+     */
+    @since("0.0.1")
+    spec Iterable
+
+    /**
+     * An iterator that produces values one at a time.
+     */
+    @since("0.0.1")
+    spec Iterator
+
+    /**
+     * Types that can be serialized to/from a string representation.
+     */
+    @since("0.0.1")
+    spec Serializable
 }

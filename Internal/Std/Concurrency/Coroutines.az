@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package std.concurrency
+module std.concurrency.coroutines
 
 /**
  * @file Coroutines

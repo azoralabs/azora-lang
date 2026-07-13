@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package std.result
+module std.result
 
 /**
  * @file Result

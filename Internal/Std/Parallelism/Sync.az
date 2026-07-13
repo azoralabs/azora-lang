@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package std.sync
+module std.pareallelism.sync
 
 /**
  * @file Sync

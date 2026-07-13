@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-@file:experimental
-
 package std.memory
 
 /**
@@ -35,31 +33,36 @@ friend zone std {
      * A reference-counted pointer to a `T`.
      *
      * @param T the pointee type.
-     * @since 0.0.3
      */
+    @since("0.0.3")
     pack Arc<T> {
         shield var raw: T*
         shield var count: Int
     }
 
+    @experimental(since: "0.0.3")
     impl deref for Arc<T> { ref self ->
         return deref self.raw
     }
 
     impl Arc<T> {
         /** The pointed-to value. */
-        func get(): T { return deref self.raw }
+        @since("0.0.3")
+        prop get: T = deref self.raw
 
         /** Replaces the pointed-to value without changing ownership. */
+        @experimental(since: "0.0.3")
         func set(value: T) { self.raw[0] = value }
 
         /** Records a new shared owner. Returns the new reference count. */
+        @experimental(since: "0.0.3")
         func retain(): Int {
             self.count = self.count + 1
             return self.count
         }
 
         /** Drops a shared owner; reclaims the allocation when the count reaches zero. */
+        @experimental(since: "0.0.3")
         func release(): Int {
             self.count = self.count - 1
             if self.count <= 0 {
@@ -69,18 +72,16 @@ friend zone std {
         }
 
         /** The current number of live references. */
-        func refCount(): Int { return self.count }
+        @since("0.0.3")
+        prop refCount: Int = self.count
 
         /** The underlying `T*` (escapes the counting). */
-        func ptr(): T* { return self.raw }
+        @since("0.0.3")
+        prop ptr: T* = self.raw
     }
 
+    @experimental(since: "0.0.3")
     func arcOf<T>(value: T): Arc<T> {
         return Arc(alloc value, 1)
-    }
-
-    /** Alias of `arcOf` — allocates a reference-counted `Arc<T>` for [value]. */
-    func arc<T>(value: T): Arc<T> {
-        return arcOf(value)
     }
 }

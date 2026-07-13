@@ -38,7 +38,6 @@ friend zone std {
      * Elements are stored in insertion order.
      *
      * @param T The type of elements stored in this set.
-     * @since 0.0.1
      */
     @since("0.0.1")
     pack Set<T> {
@@ -47,10 +46,12 @@ friend zone std {
         shield var capacity: Int = 8
     }
 
+    @since("0.0.3")
     func<T> emptySet(): Set<T> {
         return Set<T>()
     }
 
+    @experimental(since: "0.0.3")
     func<T> setFrom(elements: ...T): Set<T> {
         var result = Set<T>()
         var i = 0
@@ -84,7 +85,18 @@ friend zone std {
         self.data[index] = element
     }
 
-    @since("0.0.1")
+    @experimental(since: "0.0.3")
+    impl Into<String> for Set<T> { ref self ->
+        var s = "{"
+        var i = 0
+        while i < size {
+            if i > 0 { s = s + ", " }
+            s = s + toString(data[i])
+            i += 1
+        }
+        return s + "}"
+    }
+
     impl Set<T> {
         // --- Properties ---
 
@@ -120,7 +132,6 @@ friend zone std {
          *
          * @param element The element to add.
          * @return true if the element was added, false if it already existed.
-         * @since 0.0.1
          */
         @experimental(since: "0.0.1")
         func add(element: T): Bool {
@@ -140,7 +151,6 @@ friend zone std {
          *
          * @param element The element to remove.
          * @return true if the element was removed, false if not found.
-         * @since 0.0.1
          */
         @experimental(since: "0.0.1")
         func remove(element: T): Bool {
@@ -165,7 +175,6 @@ friend zone std {
          *
          * @param element The element to search for.
          * @return true if the element is found, false otherwise.
-         * @since 0.0.1
          */
         @experimental(since: "0.0.1")
         func contains(element: T): Bool {
@@ -177,11 +186,7 @@ friend zone std {
             return false
         }
 
-        /**
-         * Removes all elements from the set.
-         *
-         * @since 0.0.1
-         */
+        /** Removes all elements from the set. */
         @experimental(since: "0.0.1")
         func clear() {
             fin oldData = data
@@ -198,7 +203,6 @@ friend zone std {
          *
          * @param other The other set to union with.
          * @return A new set with all unique elements from both sets.
-         * @since 0.0.1
          */
         @experimental(since: "0.0.1")
         func union(other: Set<T>): Set<T> {
@@ -222,7 +226,6 @@ friend zone std {
          *
          * @param other The other set to intersect with.
          * @return A new set with common elements.
-         * @since 0.0.1
          */
         @experimental(since: "0.0.1")
         func intersect(other: Set<T>): Set<T> {
@@ -242,7 +245,6 @@ friend zone std {
          *
          * @param other The set to subtract.
          * @return A new set with elements unique to this set.
-         * @since 0.0.1
          */
         @experimental(since: "0.0.1")
         func difference(other: Set<T>): Set<T> {
@@ -263,7 +265,6 @@ friend zone std {
          * Executes the given action on each element.
          *
          * @param action The function to apply to each element.
-         * @since 0.0.1
          */
         @experimental(since: "0.0.1")
         func forEach(action: (T) -> Unit) {
@@ -279,7 +280,6 @@ friend zone std {
          *
          * @param predicate The function to test each element.
          * @return A new set with matching elements.
-         * @since 0.0.1
          */
         @experimental(since: "0.0.1")
         func filter(predicate: (T) -> Bool): Set<T> {
@@ -299,7 +299,6 @@ friend zone std {
          *
          * @param predicate The function to test each element.
          * @return true if any element matches, false otherwise.
-         * @since 0.0.1
          */
         @experimental(since: "0.0.1")
         func any(predicate: (T) -> Bool): Bool {
@@ -316,7 +315,6 @@ friend zone std {
          *
          * @param predicate The function to test each element.
          * @return true if every element matches, false otherwise.
-         * @since 0.0.1
          */
         @experimental(since: "0.0.1")
         func all(predicate: (T) -> Bool): Bool {
@@ -332,7 +330,6 @@ friend zone std {
          * Copies all elements into a raw array.
          *
          * @return An array containing all elements.
-         * @since 0.0.1
          */
         @experimental(since: "0.0.1")
         func toArray(): [T] {
@@ -344,19 +341,5 @@ friend zone std {
             }
             return result
         }
-
-    }
-
-    @experimental(since: "0.0.1")
-    impl Into<String> for Set<T> { ref self ->
-        var s = "{"
-        var i = 0
-        while i < size {
-                if i > 0 { s = s + ", " }
-                s = s + toString(data[i])
-                i += 1
-            }
-            return s + "}"
-        
     }
 }

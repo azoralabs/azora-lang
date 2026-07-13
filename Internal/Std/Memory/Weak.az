@@ -5,8 +5,6 @@
  * you may not use this file except in compliance with the License.
  */
 
-@file:experimental
-
 package std.memory
 
 /**
@@ -19,10 +17,12 @@ package std.memory
  */
 
 friend zone std {
+    @since("0.0.3")
     pack Weak<T> {
-        shield var raw: T*
+        confine var raw: T*
     }
 
+    @experimental(since: "0.0.3")
     impl deref for Weak<T> { ref self ->
         assert self.raw != null { "Weak pointer is null" }
         return deref self.raw
@@ -30,25 +30,24 @@ friend zone std {
 
     impl Weak<T> {
         /** Returns the referenced value (panics if the pointer is null). */
-        func get(): T {
+        @experimental(since: "0.0.3")
+        prop get: T {
             assert self.raw != null { "Weak pointer is null" }
             return deref self.raw
         }
 
         /** Returns the raw `T*` (may be null). */
-        func ptr(): T* { return self.raw }
+        @since("0.0.3")
+        prop ptr: T* = self.raw
 
         /** `true` when the pointer is null (does not own a reference). */
-        func isNull(): Bool { return self.raw == null }
+        @since("0.0.3")
+        prop isNull: Bool = self.raw == null
     }
 
     /** Wraps a raw `T*` as a non-owning `Weak<T>`. */
+    @experimental(since: "0.0.3")
     func weakOf<T>(ptr: T*): Weak<T> {
         return Weak(ptr)
-    }
-
-    /** Alias of [weakOf]. */
-    func weak<T>(ptr: T*): Weak<T> {
-        return weakOf(ptr)
     }
 }

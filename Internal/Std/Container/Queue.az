@@ -36,7 +36,6 @@ friend zone std {
      * added at the back and removed from the front.
      *
      * @param T The type of elements stored in this queue.
-     * @since 0.0.1
      */
     @since("0.0.1")
     pack Queue<T> {
@@ -54,7 +53,6 @@ friend zone std {
     }
 
     /** Queue operations: enqueue, dequeue, peek, clear, and string conversion. */
-    @since("0.0.1")
     impl Queue<T> {
         // --- Properties ---
 
@@ -90,7 +88,6 @@ friend zone std {
          * Adds an element to the back of the queue.
          *
          * @param element The element to enqueue.
-         * @since 0.0.1
          */
         @experimental(since: "0.0.1")
         func enqueue(element: T) {
@@ -104,7 +101,6 @@ friend zone std {
          *
          * @return The removed front element.
          * @throws AssertionError if the queue is empty.
-         * @since 0.0.1
          */
         @experimental(since: "0.0.1")
         func dequeue(): T {
@@ -124,7 +120,6 @@ friend zone std {
          *
          * @return The front element.
          * @throws AssertionError if the queue is empty.
-         * @since 0.0.1
          */
         @experimental(since: "0.0.1")
         func peek(): T {
@@ -132,11 +127,7 @@ friend zone std {
             return data[0]
         }
 
-        /**
-         * Removes all elements from the queue.
-         *
-         * @since 0.0.1
-         */
+        /** Removes all elements from the queue. */
         @experimental(since: "0.0.1")
         func clear() {
             fin oldData = data
@@ -152,7 +143,6 @@ friend zone std {
          * Returns a string representation of the queue.
          *
          * @return A string in the format "[front, ..., back]".
-         * @since 0.0.1
          */
         @experimental(since: "0.0.1")
         func toString(): String {

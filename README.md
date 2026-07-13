@@ -112,6 +112,7 @@ Adding a new target means one new file under `backend/`.
 - **Extensions** (`func Type.method(...) { ref self -> ... }`): external methods; `shield pack` forces extension receivers to be read-only
 - **Traits** (`spec`): trait declarations with validated implementations (`impl Trait for Type`)
 - **Conversion specs**: compact callback specs such as `spec Into<T>: T get { ref self }`; `impl Into<String> for Type { ref self -> ... }` adds `.toString`, while `impl as String` is cast-only (`value as String`)
+- **Variadic tuples**: `pack Tuple<T...> where (...T).length >= 2 { inline for Ty in ...T with index { mixin "$index: $Ty" } }`; `tupleOf(elements: ...T): Tuple<...T>` preserves each element's static type
 - **Operator overloading**: `plus`, `minus`, `times`, `div`, `mod`, `equals` → `+`, `-`, `*`, `/`, `%`, `==`, `!=`
 - **Index overloading**: standalone `impl oper[] for Type { ref self, index -> ... }` and `impl oper[]= for Type { mut ref self, index, value -> ... }` make user types indexable (`m[i]`, `m[i] = v`)
 - **Infix functions**: `a plus b` syntax (any method callable infix); `infx Type.method(...) { }` declares an extension method usable infix

@@ -192,7 +192,7 @@ class TupleVariadicTest {
     }
 
     @Test fun tupleLengthConstraintRejectsSingleElement() {
-        // `where T.length >= 2` — a 1-element tuple must fail with a clear message.
+        // `where (...T).length >= 2` — a 1-element tuple must fail with a clear message.
         val r = Compiler().compile("""
             use std.container
             func main() {

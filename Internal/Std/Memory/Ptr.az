@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-@file:experimental
-
 package std.memory
 
 /**
@@ -35,36 +33,37 @@ friend zone std {
      * An owning wrapper around a raw `T*`.
      *
      * @param T the pointee type.
-     * @since 0.0.3
      */
+    @since("0.0.3")
     pack Ptr<T> {
-        shield var raw: T*
+        confine var raw: T*
     }
 
+    @experimental(since: "0.0.3")
     impl deref for Ptr<T> { ref self ->
         return deref self.raw
     }
 
     impl Ptr<T> {
         /** The pointed-to value. */
-        func get(): T { return deref self.raw }
+        @since("0.0.3")
+        prop get: T = deref self.raw
 
         /** Replaces the pointed-to value. */
+        @experimental(since: "0.0.3")
         func set(value: T) { self.raw[0] = value }
 
         /** The underlying `T*` (escapes the wrapper). */
-        func ptr(): T* { return self.raw }
+        @since("0.0.3")
+        prop ptr: T* = self.raw
 
         /** Whether this wrapper holds a non-null pointer. */
-        func isNull(): Bool { return self.raw == null }
+        @since("0.0.3")
+        prop isNull: Bool = self.raw == null
     }
 
+    @experimental(since: "0.0.3")
     func ptrOf<T>(value: T): Ptr<T> {
         return Ptr(alloc value)
-    }
-
-    /** Alias of `ptrOf` — allocates a `Ptr<T>` wrapping a copy of [value]. */
-    func ptr<T>(value: T): Ptr<T> {
-        return ptrOf(value)
     }
 }

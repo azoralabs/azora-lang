@@ -244,7 +244,6 @@ friend zone std {
          * Returns a diagnostic summary of arena state.
          *
          * @return A human-readable string with capacity, usage, and allocation count.
-         * @since 0.0.1
          */
         @since("0.0.2")
         func diagnostic(): String {

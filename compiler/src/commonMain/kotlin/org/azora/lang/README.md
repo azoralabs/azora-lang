@@ -116,6 +116,7 @@ checking; `guard cond else { }`; `break`/`continue`.
 | Construct | Purpose |
 |-----------|---------|
 | `pack Name { fields }` / `pack Empty` | struct; empty packs may omit `{ }` |
+| `pack Tuple<T...> where (...T).length >= 2 { inline for Ty in ...T with index { mixin "$index: $Ty" } }` | variadic tuple template |
 | `enum Color { Red; Green }` | enum |
 | `slot Option { Some(Int); None }` | tagged union |
 | `impl pack Name { methods }` / `impl Spec for Name` | pack methods in the declaring file + trait impls |
@@ -144,6 +145,24 @@ overloading is standalone: `impl oper[] for Type { ref self, index -> ... }`
 and `impl oper[]= for Type { mut ref self, index, value -> ... }`. Extension
 methods use `func Type.method(...) { ref self -> }`, and infix extension
 functions use `infx Type.method(...)`.
+
+### Variadic tuples
+
+`Tuple` is a variadic pack template in `std.container`:
+
+```azora
+@enforceNumFields
+pack Tuple<T...> where (...T).length >= 2 {
+    inline for Ty in ...T with index {
+        mixin "$index: $Ty"
+    }
+}
+```
+
+`tupleOf(elements: ...T): Tuple<...T>` creates a tuple while preserving each
+element's static type. The generated fields are numeric (`tuple.0`, `tuple.1`,
+...) and the `where (...T).length >= 2` constraint rejects single-element
+tuples.
 
 ### Conversion specs
 

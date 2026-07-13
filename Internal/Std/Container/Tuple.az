@@ -44,6 +44,16 @@ friend zone std {
         }
     }
 
+    /**
+     * Creates a tuple from two or more values.
+     *
+     * The returned tuple preserves the order and static type of every argument.
+     * Each value can be read with positional access (`tuple.0`, `tuple.1`, ...).
+     *
+     * @param T Variadic type parameter pack inferred from the provided elements.
+     * @param elements Values to store in the tuple.
+     * @return A Tuple whose element types match the provided values.
+     */
     @experimental(since: "0.0.3")
     func<T...> tupleOf(elements: ...T): Tuple<...T>
     where (...T).length >= 2 {

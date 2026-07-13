@@ -66,7 +66,6 @@ friend zone std {
      *
      * @param r The result to check.
      * @return true if the result is Ok.
-     * @since 0.0.1
      */
     @since("0.0.1")
     func isOk(r: Result): Bool {
@@ -78,7 +77,6 @@ friend zone std {
      *
      * @param r The result to check.
      * @return true if the result is Err.
-     * @since 0.0.1
      */
     @since("0.0.1")
     func isErr(r: Result): Bool {
@@ -91,7 +89,6 @@ friend zone std {
      * @param r The result to unwrap.
      * @param default The fallback value.
      * @return The Ok value or the default.
-     * @since 0.0.1
      */
     @experimental(since: "0.0.1")
     func unwrapOr(r: Result, default: Int): Int {

@@ -36,7 +36,6 @@ friend zone std {
      * added and removed from the top.
      *
      * @param T The type of elements stored in this stack.
-     * @since 0.0.1
      */
     @since("0.0.1")
     pack Stack<T> {
@@ -54,7 +53,6 @@ friend zone std {
     }
 
     /** Stack operations: push, pop, peek, clear, and string conversion. */
-    @since("0.0.1")
     impl Stack<T> {
         // --- Properties ---
 
@@ -90,7 +88,6 @@ friend zone std {
          * Pushes an element onto the top of the stack.
          *
          * @param element The element to push.
-         * @since 0.0.1
          */
         @experimental(since: "0.0.1")
         func push(element: T) {
@@ -104,7 +101,6 @@ friend zone std {
          *
          * @return The removed top element.
          * @throws AssertionError if the stack is empty.
-         * @since 0.0.1
          */
         @experimental(since: "0.0.1")
         func pop(): T {
@@ -119,7 +115,6 @@ friend zone std {
          *
          * @return The top element.
          * @throws AssertionError if the stack is empty.
-         * @since 0.0.1
          */
         @experimental(since: "0.0.1")
         func peek(): T {
@@ -127,11 +122,7 @@ friend zone std {
             return data[size - 1]
         }
 
-        /**
-         * Removes all elements from the stack.
-         *
-         * @since 0.0.1
-         */
+        /** Removes all elements from the stack. */
         @experimental(since: "0.0.1")
         func clear() {
             fin oldData = data
@@ -147,7 +138,6 @@ friend zone std {
          * Returns a string representation of the stack.
          *
          * @return A string in the format "[bottom, ..., top]".
-         * @since 0.0.1
          */
         @experimental(since: "0.0.1")
         func toString(): String {

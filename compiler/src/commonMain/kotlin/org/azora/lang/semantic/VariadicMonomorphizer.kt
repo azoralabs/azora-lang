@@ -32,8 +32,8 @@ import org.azora.lang.frontend.VariadicFieldTemplate
 
 /**
  * Monomorphizes variadic generic declarations — packs declared with a type
- * vararg (`pack Tuple<T...> { inline for Ty in T with index { $index: Ty } }`)
- * and functions declared with one (`func<T...> tupleOf(elements: ...T): Tuple<T...>`).
+ * vararg (`pack Tuple<T...> where (...T).length >= 2 { inline for Ty in ...T with index { mixin "$index: $Ty" } }`)
+ * and functions declared with one (`func<T...> tupleOf(elements: ...T): Tuple<...T>`).
  *
  * Azora erases ordinary generics at the IR boundary, but a variadic pack's arity
  * varies per instantiation, so it cannot be erased. Instead every concrete
@@ -157,7 +157,7 @@ private class MonoContext(
         )
     }
 
-    /** Expands `inline for Ty in T with index { … }` over [args] into concrete fields. */
+    /** Expands `inline for Ty in ...T with index { … }` over [args] into concrete fields. */
     private fun expandFields(template: TopLevel.Pack, args: List<TypeRef>): List<PackField> {
         val tpl = template.fieldTemplate
         if (tpl == null) return template.fields.map { it.copy(type = rewriteType(it.type)) }

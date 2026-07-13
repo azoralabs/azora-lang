@@ -580,7 +580,7 @@ class Parser(private val tokens: List<Token>) {
         consume(TokenType.L_BRACE, "Expected '{' after pack name")
         skipNewlines()
         // A variadic pack's body is a field-generating template:
-        // `inline for Ty in T with index { $index: Ty }`.
+        // `inline for Ty in ...T with index { mixin "$index: $Ty" }`.
         val fieldTemplate = if (tp.variadic != null && check(TokenType.INLINE)) parseVariadicFieldTemplate() else null
         val fields = mutableListOf<PackField>()
         if (fieldTemplate == null) {
@@ -615,6 +615,7 @@ class Parser(private val tokens: List<Token>) {
         consume(TokenType.FOR, "Expected 'for'")
         val loopVar = consume(TokenType.IDENTIFIER, "Expected loop type variable").lexeme
         consume(TokenType.IN, "Expected 'in' after loop variable")
+        match(TokenType.ELLIPSIS) // preferred spelling: `inline for Ty in ...T`
         val packVar = consume(TokenType.IDENTIFIER, "Expected variadic pack variable").lexeme
         // Optional `with index` — declares that `$index` interpolates the position.
         if (peek().type == TokenType.IDENTIFIER && peek().lexeme == "with") {
@@ -1866,13 +1867,21 @@ class Parser(private val tokens: List<Token>) {
     }
 
     /**
-     * Optional `where <var>.length >= <N>` constraint on a variadic pack/function.
+     * Optional `where (...T).length >= <N>` constraint on a variadic pack/function.
+     * The older `where T.length >= <N>` spelling is still accepted for existing
+     * source files.
      * Returns the minimum length, or null if no clause is present.
      */
     private fun parseVariadicWhereClause(): Int? {
         if (peek().type != TokenType.IDENTIFIER || peek().lexeme != "where") return null
         advance() // 'where'
-        consume(TokenType.IDENTIFIER, "Expected variadic param name after 'where'").lexeme // pack var
+        if (match(TokenType.L_PAREN)) {
+            match(TokenType.ELLIPSIS)
+            consume(TokenType.IDENTIFIER, "Expected variadic param name after 'where (...'").lexeme
+            consume(TokenType.R_PAREN, "Expected ')' after variadic param in 'where'")
+        } else {
+            consume(TokenType.IDENTIFIER, "Expected variadic param name after 'where'").lexeme
+        }
         consume(TokenType.DOT, "Expected '.' after variadic param in 'where'")
         consume(TokenType.IDENTIFIER, "Expected 'length' after variadic param '.'") // 'length'
         consume(TokenType.GREATER_EQUAL, "Expected '>=' in 'where' length constraint")
@@ -1985,9 +1994,14 @@ class Parser(private val tokens: List<Token>) {
                 val name = advance().lexeme
                 if (match(TokenType.LESS)) {
                     val a = mutableListOf<TypeRef>()
-                    do { a.add(parseTypeName()) } while (match(TokenType.COMMA))
+                    var variadic = false
+                    do {
+                        val prefixVariadic = match(TokenType.ELLIPSIS)
+                        if (prefixVariadic) variadic = true
+                        a.add(parseTypeName())
+                    } while (match(TokenType.COMMA))
                     // `Name<T...>` — the variadic pack expands into this type's args.
-                    val variadic = match(TokenType.ELLIPSIS)
+                    if (match(TokenType.ELLIPSIS)) variadic = true
                     // Accept '>', or '>>' (which closes this and one enclosing generic)
                     when {
                         pendingGreater -> { pendingGreater = false }

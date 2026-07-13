@@ -5,8 +5,6 @@
  * you may not use this file except in compliance with the License.
  */
 
-@file:experimental
-
 package std.memory
 
 /**
@@ -18,33 +16,39 @@ package std.memory
  */
 
 friend zone std {
+    @since("0.0.3")
     pack Slice<T> {
-        shield var raw: T*
+        confine var raw: T*
         shield var count: Int
     }
 
+    @experimental(since: "0.0.3")
     impl oper[] for Slice<T> { ref self, index ->
         assert index >= 0 && index < self.count { "Slice index out of bounds" }
         return self.raw[index]
     }
 
+    @experimental(since: "0.0.3")
     impl oper[]= for Slice<T> { mut ref self, index, value ->
         assert index >= 0 && index < self.count { "Slice index out of bounds" }
         self.raw[index] = value
     }
 
     impl Slice<T> {
-        /** Number of elements in the slice. */
-        prop length: Int = count
         /** `true` when the slice has no elements. */
+        @since("0.0.3")
         prop isEmpty: Bool = count == 0
+
         /** `true` when the slice has at least one element. */
+        @since("0.0.3")
         prop isNotEmpty: Bool = count > 0
 
         /** Returns the raw underlying `T*`. */
-        func ptr(): T* { return self.raw }
+        @since("0.0.3")
+        prop ptr: T* = self.raw
 
         /** Returns a sub-slice `[start, start+count)`; asserts bounds. */
+        @experimental(since: "0.0.3")
         func sub(start: Int, count: Int): Slice<T> {
             assert start >= 0 { "Slice start must be non-negative" }
             assert count >= 0 { "Slice count must be non-negative" }
@@ -54,11 +58,13 @@ friend zone std {
     }
 
     /** Constructs a `Slice<T>` over [length] elements starting at [ptr]. */
+    @experimental(since: "0.0.3")
     func sliceOf<T>(ptr: T*, length: Int): Slice<T> {
         return Slice(ptr, length)
     }
 
     /** Alias of [sliceOf]. */
+    @experimental(since: "0.0.3")
     func ptrSlice<T>(ptr: T*, length: Int): Slice<T> {
         return sliceOf(ptr, length)
     }

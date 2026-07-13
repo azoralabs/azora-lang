@@ -1072,7 +1072,7 @@ data class PackField(
 
 /**
  * Field generator for a variadic pack body, parsed from
- * `inline for <loopVar> in <packVar> with index { <fields and/or mixins> }`.
+ * `inline for <loopVar> in ...<packVar> with index { <fields and/or mixins> }`.
  *
  * At monomorphization, the template is expanded once per concrete type in the
  * variadic pack: `<loopVar>` binds to each element type, and `$index` (in a
@@ -1332,7 +1332,7 @@ sealed class TopLevel {
         val variadicParam: String? = null,
         /** Minimum element count from a `where <var>.length >= N` clause, or null if unconstrained. */
         val minVariadicLength: Int? = null,
-        /** Field generator for a variadic pack body (`inline for Ty in T with index { … }`), or null. */
+        /** Field generator for a variadic pack body (`inline for Ty in ...T with index { … }`), or null. */
         val fieldTemplate: VariadicFieldTemplate? = null,
     ) : TopLevel()
 

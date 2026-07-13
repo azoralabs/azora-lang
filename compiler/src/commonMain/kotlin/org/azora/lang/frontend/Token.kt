@@ -144,7 +144,7 @@ enum class TokenType {
     // Visibility: `expose` (public), `confine` (private), `protect` (protected).
     // `shield` — a pack/field modifier: externally read-only, internally mutable.
     EXPOSE, CONFINE, PROTECT, SHIELD,
-    // Module: `module Name` (alias for package).
+    // Module: `module Name`.
     MODULE,
     // Thread-local storage: `threadlocal var x = 0` / `threadlocal fin y = 42`.
     THREADLOCAL,

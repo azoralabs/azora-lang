@@ -46,7 +46,6 @@ class Lexer(private val source: String) {
             "let" to TokenType.LET,
             "func" to TokenType.FUNC,
             "return" to TokenType.RETURN,
-            "package" to TokenType.PACKAGE,
             "if" to TokenType.IF,
             "else" to TokenType.ELSE,
             "inline" to TokenType.INLINE,

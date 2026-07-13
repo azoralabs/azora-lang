@@ -926,7 +926,7 @@ sealed class Stmt {
  *
  * Variants:
  * - [Named] -- a simple or generic type name: `Int`, `String`, `List<Int>`
- * - [Array] -- fixed array syntax `Array<T>`
+ * - [Array] -- internal fixed-array representation for `[T]` and literals
  * - [Map] -- structural map literal type (kept for backends)
  * - [Set] -- structural set literal type (kept for backends)
  * - [Function] -- `(A, B) -> R`
@@ -946,9 +946,9 @@ sealed class TypeRef {
         override fun toString() = if (args.isEmpty()) name else "$name<${args.joinToString(", ")}>"
     }
 
-    /** Fixed array type `Array<T>`. */
+    /** Fixed array type `[T]`. */
     data class Array(val element: TypeRef) : TypeRef() {
-        override fun toString() = "Array<$element>"
+        override fun toString() = "[$element]"
     }
 
     /** Structural map type `map[K, V]`. */
@@ -1487,11 +1487,11 @@ sealed class TopLevel {
 /**
  * The root of an Azora AST, representing a complete source file.
  *
- * @property packageName the declared package name, or `null` if no `package` declaration is present
+ * @property moduleName the declared module name, or `null` if no `module` declaration is present
  * @property items the list of top-level items (functions and compile-time constructs)
  */
 data class Program(
-    val packageName: String?,
+    val moduleName: String?,
     val items: List<TopLevel>,
     /**
      * Pack names owned by the source unit before stdlib injection. `impl pack`

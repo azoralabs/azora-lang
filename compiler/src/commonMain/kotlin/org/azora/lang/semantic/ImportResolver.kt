@@ -24,7 +24,7 @@ package org.azora.lang.semantic
  * this is a no-op pass. When imports are added, this pass will:
  *
  *  1. Parse `use` declarations from the AST.
- *  2. Locate the referenced modules (files or packages).
+ *  2. Locate the referenced modules (files or directories).
  *  3. Build a dependency graph and detect cycles.
  *  4. Merge exported symbols from dependencies into the [SymbolTable].
  *
@@ -43,7 +43,7 @@ class ImportResolver {
     /**
      * Registers a module's symbol table so other modules can import it.
      *
-     * @param name the module name (e.g. package name)
+     * @param name the module name (e.g. module name)
      * @param table the symbol table containing the module's exported symbols
      */
     fun registerModule(name: String, table: SymbolTable) {
@@ -54,11 +54,11 @@ class ImportResolver {
      * Resolves imports for the given module. Currently a no-op since the
      * minimal language has no `use` keyword.
      *
-     * @param packageName the package name of the module being resolved, or `null`
+     * @param moduleNmae the module name of the module being resolved, or `null`
      * @param table the module's symbol table to merge imported symbols into
      * @return a list of error messages (empty if successful)
      */
-    fun resolve(packageName: String?, table: SymbolTable): List<String> {
+    fun resolve(moduleName: String?, table: SymbolTable): List<String> {
         // No imports in the minimal language — nothing to resolve.
         // When `use` is added:
         //   1. Walk AST for UseDecl nodes

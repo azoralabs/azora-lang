@@ -452,15 +452,15 @@ friend zone std {
     }
 
     /**
-     * Computes the average of an integer array.
+     * Computes the average of an integer sequence.
      *
-     * @param arr The array to average (must be non-empty).
+     * @param arr The values to average (must be non-empty).
      * @return The average as a real number.
      */
     @experimental(since: "0.0.1")
-    func average(arr: Array<Int>): Real
+    func average(arr: [Int]): Real
     in {
-        assert arr.length > 0 { "Array must not be empty" }
+        assert arr.length > 0 { "Input must not be empty" }
     } zone {
         var total = 0
         var i = 0

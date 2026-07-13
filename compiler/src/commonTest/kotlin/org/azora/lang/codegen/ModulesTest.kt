@@ -6,7 +6,7 @@ import org.azora.lang.backend.IrInterpreter
 import kotlin.test.*
 
 /**
- * Tests for modules/packages: `use Zone.Item` imports, `use Zone` wildcard imports,
+ * Tests for modules: `use Zone.Item` imports, `use Zone` wildcard imports,
  * and visibility modifiers (`expose`/`confine`/`protect`).
  */
 class ModulesTest {

@@ -6,8 +6,8 @@ package org.azora.lang.frontend
 fun Program.dumpTree(): String {
     val sb = StringBuilder()
     sb.appendLine("Program")
-    if (packageName != null) {
-        sb.appendLine("    package: $packageName")
+    if (moduleName != null) {
+        sb.appendLine("    module: $moduleName")
     }
     for (item in items) {
         dumpTopLevel(sb, item, "    ")

@@ -280,13 +280,13 @@ friend zone std {
         }
 
         /**
-         * Returns an array of all keys.
+         * Returns all keys.
          *
-         * @return An array containing all keys in insertion order.
+         * @return A sequence containing all keys in insertion order.
          */
         @experimental(since: "0.0.1")
-        func keys(): Array<K> {
-            var result: Array<K> = [].fill<K>(self.size)
+        func keys(): [K] {
+            var result: [K] = [].fill<K>(self.size)
             var i = 0
             while i < self.size {
                 result[i] = self.keys[i]
@@ -296,13 +296,13 @@ friend zone std {
         }
 
         /**
-         * Returns an array of all values.
+         * Returns all values.
          *
-         * @return An array containing all values in insertion order.
+         * @return A sequence containing all values in insertion order.
          */
         @experimental(since: "0.0.1")
-        func values(): Array<V> {
-            var result: Array<V> = [].fill<V>(self.size)
+        func values(): [V] {
+            var result: [V] = [].fill<V>(self.size)
             var i = 0
             while i < self.size {
                 result[i] = self.values[i]

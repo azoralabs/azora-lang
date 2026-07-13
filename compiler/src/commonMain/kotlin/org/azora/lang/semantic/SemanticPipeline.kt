@@ -122,7 +122,7 @@ class SemanticPipeline(
         // Resolve cross-module references. In single-file mode this is
         // a no-op, but the pass slot exists for when modules are added.
         // ---------------------------------------------------------------
-        val importErrors = ImportResolver().resolve(currentProgram.packageName, table)
+        val importErrors = ImportResolver().resolve(currentProgram.moduleName, table)
         allErrors.addAll(importErrors)
         if (importErrors.isNotEmpty()) {
             return SemanticResult(currentProgram, table, emptyList(), allErrors)

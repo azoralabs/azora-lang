@@ -20,7 +20,7 @@ package org.azora.lang.frontend
  * Recursive-descent parser for the minimal Azora language.
  *
  * Grammar (simplified):
- *   program     → package? funcDecl*
+ *   program     → module? funcDecl*
  *   funcDecl    → "func" IDENTIFIER "(" params? ")" ":" type "{" stmt* "}"
  *   stmt        → varDecl | returnStmt | assignment | exprStmt
  *   varDecl     → "var" IDENTIFIER ":" type "=" expr
@@ -82,7 +82,7 @@ class Parser(private val tokens: List<Token>) {
      * Parses the token stream into a [Program] AST.
      *
      * Consumes all tokens from the input list, starting with an optional
-     * `package` declaration followed by zero or more top-level items
+     * `module` declaration followed by zero or more top-level items
      * (function declarations and compile-time constructs).
      *
      * @return the parsed [Program] representing the complete source file
@@ -91,7 +91,7 @@ class Parser(private val tokens: List<Token>) {
     fun parse(): Program {
         skipNewlines()
         // `@file:...` annotations are file-level metadata (e.g. `@file:experimental`)
-        // and may precede the package declaration — consume and discard them.
+        // and may precede the module declaration — consume and discard them.
         while (check(TokenType.AT) && peekNext()?.lexeme == "file") {
             advance() // '@'
             advance() // 'file'
@@ -103,8 +103,8 @@ class Parser(private val tokens: List<Token>) {
             }
             skipNewlines()
         }
-        val packageName = when {
-            check(TokenType.MODULE) -> parsePackage()
+        val moduleName = when {
+            check(TokenType.MODULE) -> parseModule()
             else -> null
         }
         val items = mutableListOf<TopLevel>()
@@ -127,7 +127,7 @@ class Parser(private val tokens: List<Token>) {
             }
         }
         val localPackNames = items.filterIsInstance<TopLevel.Pack>().mapTo(mutableSetOf()) { it.name }
-        return CallbackImplNormalizer.normalize(Program(packageName, items, localPackNames))
+        return CallbackImplNormalizer.normalize(Program(moduleName, items, localPackNames))
     }
 
     /**
@@ -163,7 +163,7 @@ class Parser(private val tokens: List<Token>) {
     /**
      * `friend zone Name { items }` — a shared namespace contribution. Unlike a
      * named `zone`, it does not mangle declarations with [Name]; stdlib modules
-     * use package names for import/qualified lookup, and the friend-zone wrapper
+     * use module names for import/qualified lookup, and the friend-zone wrapper
      * only marks that multiple files may contribute to the same logical zone.
      */
     private fun parseFriendZoneNamespace(): List<TopLevel> {
@@ -1899,7 +1899,7 @@ class Parser(private val tokens: List<Token>) {
             }
             val name = consumeIdentifierLike("Expected parameter name")
             consume(TokenType.COLON, "Expected ':' after parameter name")
-            // `...T` marks the (last) parameter variadic; parseTypeName wraps it in Array<T>.
+            // `...T` marks the (last) parameter variadic; parseTypeName wraps it in the internal array type.
             val isVariadic = check(TokenType.ELLIPSIS)
             val parsedType = parseTypeName()
             val reference = parsedType as? TypeRef.Reference
@@ -1979,7 +1979,7 @@ class Parser(private val tokens: List<Token>) {
         if (match(TokenType.MUT)) {
             return parseMutableTypeName()
         }
-        // `...T` — variadic type (prefix). Wraps the type in an array.
+        // `...T` — variadic type (prefix). Wraps the type in the internal array representation.
         if (match(TokenType.ELLIPSIS)) {
             val inner = parseTypeAtom()
             return TypeRef.Array(inner)
@@ -2010,7 +2010,7 @@ class Parser(private val tokens: List<Token>) {
     /**
      * Parses a structured type reference.
      *
-     * Supports: `Array<T>`, `List<T>`, `Set<T>`, `Map<K, V>` as ordinary generic names,
+     * Supports: `[T]`, `List<T>`, `Set<T>`, `Map<K, V>` as ordinary generic names,
      * `(A, B)` tuples, `(A, B) -> R` functions, `(A)` grouping, and nullable/failable suffixes.
      */
     private fun parseTypeAtom(): TypeRef {
@@ -2054,7 +2054,7 @@ class Parser(private val tokens: List<Token>) {
             }
             check(TokenType.IDENTIFIER) -> {
                 if (peekNext()?.type == TokenType.L_BRACKET && peek().lexeme in setOf("arr", "vec", "set", "map")) {
-                    error("'${peek().lexeme}[...]' type syntax was removed; use Array<T>, List<T>, Set<T>, or Map<K, V> at line ${peek().line}")
+                    error("'${peek().lexeme}[...]' type syntax was removed; use [T], List<T>, Set<T>, or Map<K, V> at line ${peek().line}")
                 }
                 val name = advance().lexeme
                 if (match(TokenType.LESS)) {

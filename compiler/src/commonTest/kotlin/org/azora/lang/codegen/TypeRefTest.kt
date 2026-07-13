@@ -33,15 +33,15 @@ class TypeRefTest {
         compile(source).ir.functions.first { it.name == "f" }.params.first().second
 
     @Test
-    fun arrayTypeAnnotation() {
-        val t = firstParamType("func f(x: Array<Int>): Int { return 0 }")
+    fun bracketArrayTypeAnnotation() {
+        val t = firstParamType("func f(x: [Int]): Int { return 0 }")
         assertIs<IrType.Array>(t)
         assertEquals(IrType.Int, t.element)
     }
 
     @Test
-    fun nestedArrayTypeAnnotation() {
-        val t = firstParamType("func f(x: Array<Array<Int>>): Int { return 0 }")
+    fun nestedBracketArrayTypeAnnotation() {
+        val t = firstParamType("func f(x: [[Int]]): Int { return 0 }")
         assertIs<IrType.Array>(t)
         assertIs<IrType.Array>(t.element)
     }
@@ -118,10 +118,15 @@ class TypeRefTest {
     }
 
     @Test
-    fun arrayTypeLoweredToAllBackends() {
-        val result = compile("func f(x: Array<Int>): Int { return 0 }")
+    fun bracketArrayTypeLoweredToAllBackends() {
+        val result = compile("func f(x: [Int]): Int { return 0 }")
         // JavaScript is untyped, so the array parameter carries no type annotation.
         assertTrue("function f(x)" in result.javascript, "JavaScript backend should emit function f(x), got:\n${result.javascript}")
+    }
+
+    @Test
+    fun arrayGenericNameIsRejected() {
+        assertTrue(expectFailure("func f(x: Array<Int>): Int { return 0 }").any { "Array<T> is not a language type" in it })
     }
 
     @Test
@@ -134,7 +139,7 @@ class TypeRefTest {
     @Test
     fun removedCollectionTypeSpellingsAreRejected() {
         assertTrue(expectFailure("func f(x: ![Int]): Int { return 0 }").any { "Set<T>" in it })
-        assertTrue(expectFailure("func f(x: arr[Int]): Int { return 0 }").any { "Array<T>" in it })
+        assertTrue(expectFailure("func f(x: arr[Int]): Int { return 0 }").any { "[T]" in it })
         assertTrue(expectFailure("func f(x: tup(Int, String)): Int { return 0 }").any { "Expected ')' after parameters" in it || "undefined" in it || "tup" in it })
     }
 }

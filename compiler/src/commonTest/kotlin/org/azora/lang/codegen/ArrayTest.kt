@@ -53,7 +53,7 @@ class ArrayTest {
     fun arrayTypedAnnotation() {
         assertEquals("42", run("""
             func main() {
-                var a: Array<Int> = [7, 42, 13]
+                var a: [Int] = [7, 42, 13]
                 println(a[1])
             }
         """.trimIndent()))
@@ -150,7 +150,7 @@ class ArrayTest {
     @Test
     fun arrayReturnedFromFunction() {
         assertEquals("30", run("""
-            func makeThree(): Array<Int> {
+            func makeThree(): [Int] {
                 return [10, 20, 30]
             }
             func main() {

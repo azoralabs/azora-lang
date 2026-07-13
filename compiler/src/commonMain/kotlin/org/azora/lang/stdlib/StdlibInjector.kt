@@ -37,7 +37,7 @@ import org.azora.lang.putIfAbsentCompat
  * - `use std` / `use zone std` — every stdlib module,
  * - `std::math::abs(x)` / `std::abs(x)` — qualified access needs no import.
  *
- * The package root is derived from the loaded library packages; the frontend
+ * The module root is derived from the loaded library modules; the frontend
  * import grammar does not special-case `std`. Only the items actually
  * referenced are appended (functions, constants, packs, enums, plus the extern
  * `bridge` signatures their bodies call), following bundled-library references
@@ -49,7 +49,7 @@ object StdlibInjector {
     private val implicitCollectionTypes = setOf("List", "MutableList", "Set", "MutableSet", "Map", "MutableMap")
 
     private class Index {
-        /** Library root package names, derived from loaded packages (for example "std"). */
+        /** Library root module names, derived from loaded modules (for example "std"). */
         val roots = LinkedHashSet<String>()
         /** module ("std.math") → name → the item providing it. */
         val modules = LinkedHashMap<String, LinkedHashMap<String, TopLevel>>()
@@ -74,7 +74,7 @@ object StdlibInjector {
     private fun buildIndex(): Index {
         val idx = Index()
         for (program in AzStdlib.loadPrograms()) {
-            val module = program.packageName ?: continue
+            val module = program.moduleName ?: continue
             val root = module.substringBefore('.')
             idx.roots.add(root)
             val moduleItems = idx.modules.getOrPut(module) { LinkedHashMap() }
@@ -119,7 +119,7 @@ object StdlibInjector {
         return idx
     }
 
-    /** Names made visible by imports of loaded library packages. */
+    /** Names made visible by imports of loaded library modules. */
     private fun importedNames(program: Program): Set<String> {
         val visible = mutableSetOf<String>()
         for (item in program.items) {
@@ -208,7 +208,7 @@ object StdlibInjector {
 
     /**
      * Returns [program] with every bundled-library item it references appended.
-     * Imports are resolved against the loaded package roots; qualified root
+     * Imports are resolved against the loaded module roots; qualified root
      * access such as `std::math::abs` is rewritten to plain calls and injected
      * without an import. Returns the program unchanged when nothing
      * library-related is referenced.

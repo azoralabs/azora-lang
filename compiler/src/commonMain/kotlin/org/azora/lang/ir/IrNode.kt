@@ -82,8 +82,8 @@ sealed class IrType {
     /** 128-bit decimal floating-point type. */
     object Decimal : IrType() { override fun toString() = "Decimal" }
 
-    /** Fixed array type `Array<T>`. */
-    data class Array(val element: IrType) : IrType() { override fun toString() = "Array<$element>" }
+    /** Internal fixed-array type for `[T]` annotations and array literals. */
+    data class Array(val element: IrType) : IrType() { override fun toString() = "[$element]" }
 
     /** Structural map literal type `map[K, V]`. */
     data class Map(val key: IrType, val value: IrType) : IrType() { override fun toString() = "map[$key, $value]" }
@@ -177,9 +177,7 @@ sealed class IrType {
             is TypeRef.Named -> {
                 if (ref.name in typeParams) Any
                 else if (ref.name in aliases) resolve(aliases[ref.name]!!, typeParams)
-                // `Array<T>` is the source spelling for fixed arrays; std.container
-                // collection pack names stay as Named so their methods resolve normally.
-                else if (ref.name == "Array" && ref.args.size == 1) Array(resolve(ref.args[0], typeParams))
+                else if (ref.name == "Array") error("Array<T> is not a language type; use [T] or std.container List<T>/MutableList<T>")
                 else if (ref.name == "Var" && ref.args.size >= 2) Variant(ref.args.map { resolve(it, typeParams) })
                 else if (ref.args.isEmpty() && isPrimitiveName(ref.name)) fromName(ref.name)
                 else Named(ref.name)
@@ -878,11 +876,11 @@ sealed class IrTopLevel {
  * Top-level items are stored in source order to preserve interleaving
  * of globals and functions.
  *
- * @property packageName the declared package name, or `null` if no package declaration
+ * @property moduleName the declared module name, or `null` if no module declaration
  * @property items the ordered list of top-level items (globals and functions)
  */
 data class IrProgram(
-    val packageName: String?,
+    val moduleName: String?,
     val items: List<IrTopLevel>
 ) {
     /** Convenience — returns only the global statements. */
@@ -897,8 +895,8 @@ data class IrProgram(
     /** Pretty-prints this program as Azora IR text. */
     fun prettyPrint(): String {
         val sb = StringBuilder()
-        if (packageName != null) {
-            sb.appendLine("package $packageName")
+        if (moduleName != null) {
+            sb.appendLine("module $moduleName")
             sb.appendLine()
         }
         for ((i, item) in items.withIndex()) {
@@ -938,8 +936,8 @@ data class IrProgram(
     fun dumpTree(): String {
         val sb = StringBuilder()
         sb.appendLine("IrProgram")
-        if (packageName != null) {
-            sb.appendLine("    package: $packageName")
+        if (moduleName != null) {
+            sb.appendLine("    module: $moduleName")
         }
         for (item in items) {
             when (item) {

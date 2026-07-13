@@ -88,7 +88,7 @@ kinds: `ref`, `shared ref`, `weak ref` (with optional `mut`).
 
 - **Primitives**: `Int UInt Long ULong Byte UByte Short UShort Cent UCent
   Float Real Decimal Bool Char String Unit`.
-- **Compound**: fixed arrays `Array<T>`, immutable collections
+- **Compound**: fixed arrays `[T]`, immutable collections
   `List<T>`/`Set<T>`/`Map<K, V>`, mutable collections
   `mut List<T>`/`mut Set<T>`/`mut Map<K, V>`, tuples `(A, B)`,
   function types `(A) -> B`, map values `mapOf("k": v)`.
@@ -243,7 +243,7 @@ Reserved words in the language (see `frontend/Token.kt`):
 - **Memory/FFI/DI**: `alloc` `drop` `unsafe` `isolated` `bridge` `solo` `wrap` `inject`
 - **Reactivity/object model**: `mem` `rem` `ret` `effect` `view` `hook` `prop` `get` `set` `ctor` `dtor` `flip` `flop`
 - **Metaprogramming**: `inline` `deepinline` `noinline`
-- **Scoping/modules**: `zone` `friend` `package` `module` `use`
+- **Scoping/modules**: `zone` `friend` `module` `use`
 - **Modifiers/visibility**: `mut` `ref` `out` `shared` `weak` `expose` `confine` `protect`
 - **Operators-as-keywords**: `oper` `infx` `as` `is` `null` `deco`
 - **Testing**: `test` `assert` `trace`

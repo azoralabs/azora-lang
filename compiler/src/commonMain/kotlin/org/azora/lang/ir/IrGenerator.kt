@@ -228,7 +228,7 @@ class IrGenerator(private val table: SymbolTable) {
                 IrTopLevel.Extern(sig.name, params, IrType.resolve(sig.returnType))
             }
         }
-        return IrProgram(program.packageName, items)
+        return IrProgram(program.moduleName, items)
     }
 
     private fun lowerFunction(func: FuncDecl): IrFunction {

@@ -183,10 +183,10 @@ friend zone std {
      *
      * @param s The string to split.
      * @param delim The delimiter string.
-     * @return An array of substrings.
+     * @return A sequence of substrings.
      */
     @experimental(since: "0.0.1")
-    func strSplit(s: String, delim: String): Array<String> {
+    func strSplit(s: String, delim: String): [String] {
         return split(s, delim)
     }
 
@@ -393,7 +393,7 @@ friend zone std {
      */
     @since("0.0.1")
     pack StringBuilder {
-        var parts: Array<String> = [].fill<String>(16)
+        var parts: [String] = [].fill<String>(16)
         var count: Int = 0
     }
 

@@ -17,7 +17,7 @@ class MetaprogrammingTest {
     @Test
     fun inlineFunc_bodySubstitutedAtCallSite() {
         val result = compile("""
-            package playground
+            module playground
 
             inline func a() {
                 println("Hello from A")
@@ -34,7 +34,7 @@ class MetaprogrammingTest {
         """.trimIndent())
 
         val expectedIr = """
-            package playground
+            module playground
 
             func b(): Unit {
                 println("Hello from B")
@@ -49,7 +49,7 @@ class MetaprogrammingTest {
         """.trimIndent()
 
         val expectedOptimizedIr = """
-            package playground
+            module playground
 
             func b(): Unit {
                 println("Hello from B")
@@ -64,7 +64,7 @@ class MetaprogrammingTest {
         """.trimIndent()
 
         val expectedJavaScript = """
-            // package: playground
+            // module: playground
 
             function b() {
                 console.log("Hello from B");
@@ -114,7 +114,7 @@ class MetaprogrammingTest {
     @Test
     fun inlineBlocks_funcInliningRules() {
         val result = compile("""
-            package playground
+            module playground
 
             inline fin x = 2
 
@@ -185,7 +185,7 @@ class MetaprogrammingTest {
     @Test
     fun runtimeGlobals_finSurvivesInIr() {
         val result = compile("""
-            package playground
+            module playground
 
             inline fin x = 2
 
@@ -230,7 +230,7 @@ class MetaprogrammingTest {
     @Test
     fun fullMetaprogramming_allInlineRulesWithGlobals() {
         val result = compile("""
-            package playground
+            module playground
 
             inline fin x = 2
 
@@ -286,7 +286,7 @@ class MetaprogrammingTest {
         """.trimIndent())
 
         val expectedIr = """
-            package playground
+            module playground
 
             fin aa: Int = 2
             fin c1: Int = 0
@@ -317,7 +317,7 @@ class MetaprogrammingTest {
         """.trimIndent()
 
         val expectedJavaScript = """
-            // package: playground
+            // module: playground
 
             function c() {
                 console.log("Hello from C");
@@ -385,7 +385,7 @@ class MetaprogrammingTest {
         """.trimIndent()
 
         val expectedOptimizedIr = """
-            package playground
+            module playground
 
             func c(): Unit {
                 println("Hello from C")

@@ -54,7 +54,7 @@ Adding a new target means one new file under `backend/`.
 
 ### Types
 - **Primitives**: `Int`, `UInt`, `Long`, `ULong`, `Byte`, `UByte`, `Short`, `UShort`, `Cent`, `UCent`, `Float`, `Real`, `Decimal`, `Bool`, `Char`, `String`, `Unit`
-- **Compound**: fixed arrays `Array<T>`, immutable collections `List<T>`/`Set<T>`/`Map<K, V>`, mutable collections `mut List<T>`/`mut Set<T>`/`mut Map<K, V>`, tuples `(A, B)`, function types `(A) -> B`, map values `mapOf("k": v)`
+- **Compound**: fixed arrays `[T]`, immutable collections `List<T>`/`Set<T>`/`Map<K, V>`, mutable collections `mut List<T>`/`mut Set<T>`/`mut Map<K, V>`, tuples `(A, B)`, function types `(A) -> B`, map values `mapOf("k": v)`
 - **User-defined**: `pack` (structs), `enum`, `slot` (tagged unions), `typealias`, `fail` (error sets)
 - **Type parameters**: generics (`func<T>`, `pack<T>`) with call-site inference
 - **Variadic generics**: `func<T...> name(first: Int, rest: T...)` — the last type param can be variadic; `rest: T...` collects remaining call args into an array

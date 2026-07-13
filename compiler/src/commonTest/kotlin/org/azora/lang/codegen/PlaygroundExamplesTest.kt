@@ -20,10 +20,10 @@ class PlaygroundExamplesTest {
         return IrInterpreter().interpret(result.ir).trim()
     }
 
-    @Test fun hello() = assertEquals("Hello, world!", run("""package playground
+    @Test fun hello() = assertEquals("Hello, world!", run("""module playground
 func main() { println("Hello, world!") }"""))
 
-    @Test fun variables() = assertEquals("Hello, Azora!" + "\n" + "count is 6", run("""package playground
+    @Test fun variables() = assertEquals("Hello, Azora!" + "\n" + "count is 6", run("""module playground
 func main() {
     var count = 0
     count = count + 1
@@ -34,7 +34,7 @@ func main() {
     println("count is ${'$'}{count}")
 }"""))
 
-    @Test fun functions() = assertEquals("7" + "\n" + "120", run("""package playground
+    @Test fun functions() = assertEquals("7" + "\n" + "120", run("""module playground
 func add(a: Int, b: Int): Int { return a + b }
 func factorial(n: Int): Int {
     if n <= 1 { return 1 }
@@ -45,7 +45,7 @@ func main() {
     println("${'$'}{factorial(5)}")
 }"""))
 
-    @Test fun controlFlow() = assertEquals("sum 1..10 = 55" + "\n" + "stopped at 7" + "\n" + "even count = 5", run("""package playground
+    @Test fun controlFlow() = assertEquals("sum 1..10 = 55" + "\n" + "stopped at 7" + "\n" + "even count = 5", run("""module playground
 func main() {
     var sum = 0
     for i in 1..10 { sum += i }
@@ -64,7 +64,7 @@ func main() {
     println("even count = ${'$'}{evens}")
 }"""))
 
-    @Test fun arrays() = assertEquals("10" + "\n" + "3" + "\n" + "4" + "\n" + "99" + "\n" + "total = 189", run("""package playground
+    @Test fun arrays() = assertEquals("10" + "\n" + "3" + "\n" + "4" + "\n" + "99" + "\n" + "total = 189", run("""module playground
 func main() {
     var nums = [10, 20, 30]
     println(nums[0])
@@ -78,7 +78,7 @@ func main() {
     println("total = ${'$'}{total}")
 }"""))
 
-    @Test fun strings() = assertEquals("Hello, Azora!" + "\n" + "3 x 3 = 9" + "\n" + "ababab" + "\n" + "length is 5", run("""package playground
+    @Test fun strings() = assertEquals("Hello, Azora!" + "\n" + "3 x 3 = 9" + "\n" + "ababab" + "\n" + "length is 5", run("""module playground
 func main() {
     var name = "Azora"
     var n = 3
@@ -88,7 +88,7 @@ func main() {
     println("length is ${'$'}{name.length}")
 }"""))
 
-    @Test fun structs() = assertEquals("3, 4" + "\n" + "10, 5" + "\n" + "last = 3, 3", run("""package playground
+    @Test fun structs() = assertEquals("3, 4" + "\n" + "10, 5" + "\n" + "last = 3, 3", run("""module playground
 pack Point {
     var x: Int
     var y: Int
@@ -103,7 +103,7 @@ func main() {
     println("last = ${'$'}{points[2].x}, ${'$'}{points[2].y}")
 }"""))
 
-    @Test fun operators() = assertEquals("30" + "\n" + "3" + "\n" + "2" + "\n" + "sum 1..<5 = 10", run("""package playground
+    @Test fun operators() = assertEquals("30" + "\n" + "3" + "\n" + "2" + "\n" + "sum 1..<5 = 10", run("""module playground
 func main() {
     var n = 10
     n += 5
@@ -116,7 +116,7 @@ func main() {
     println("sum 1..<5 = ${'$'}{sum}")
 }"""))
 
-    @Test fun scopes() = assertEquals("inner 2" + "\n" + "outer 1" + "\n" + "after 1", run("""package playground
+    @Test fun scopes() = assertEquals("inner 2" + "\n" + "outer 1" + "\n" + "after 1", run("""module playground
 func main() {
     var x = 1
     zone {
@@ -127,7 +127,7 @@ func main() {
     println("after ${'$'}{x}")
 }"""))
 
-    @Test fun ctce() = assertEquals("size: 8" + "\n" + "squared: 25", run("""package playground
+    @Test fun ctce() = assertEquals("size: 8" + "\n" + "squared: 25", run("""module playground
 inline func square(x: Int): Int { return x * x }
 func main() {
     inline fin SIZE = 8
@@ -135,7 +135,7 @@ func main() {
     println("squared: ${'$'}{square(5)}")
 }"""))
 
-    @Test fun testing() = assertEquals("running tests...", run("""package playground
+    @Test fun testing() = assertEquals("running tests...", run("""module playground
 func factorial(n: Int): Int {
     if n <= 1 { return 1 }
     return n * factorial(n - 1)
@@ -155,7 +155,7 @@ func main() { println("running tests...") }"""))
 
     // ── Modern-language examples (chapters 26–35 era) ───────────────────────
 
-    @Test fun maps() = assertEquals("90\n75\n80", run("""package playground
+    @Test fun maps() = assertEquals("90\n75\n80", run("""module playground
 func main() {
     var scores = ["alice": 90, "bob": 75]
     scores["carol"] = 88
@@ -165,7 +165,7 @@ func main() {
     println(scores["bob"])
 }"""))
 
-    @Test fun taggedUnions() = assertEquals("75\n24\n0", run("""package playground
+    @Test fun taggedUnions() = assertEquals("75\n24\n0", run("""module playground
 slot Shape {
     Circle(Int)
     Rect(Int, Int)
@@ -184,7 +184,7 @@ func main() {
     println(area(Shape.Empty))
 }"""))
 
-    @Test fun inheritance() = assertEquals("Woof", run("""package playground
+    @Test fun inheritance() = assertEquals("Woof", run("""module playground
 node Animal(name: String) {
     func speak(): String { return "..." }
 }
@@ -196,7 +196,7 @@ func main() {
     println(d.speak())
 }"""))
 
-    @Test fun generators() = assertEquals("30", run("""package playground
+    @Test fun generators() = assertEquals("30", run("""module playground
 flow squares(n: Int): Int {
     for i in 0..<n { yield i * i }
 }
@@ -206,7 +206,7 @@ func main() {
     println(sum)
 }"""))
 
-    @Test fun dependencyInjection() = assertEquals("1\n2", run("""package playground
+    @Test fun dependencyInjection() = assertEquals("1\n2", run("""module playground
 solo Counter {
     var n: Int = 0
     func inc(): Int {
@@ -219,7 +219,7 @@ func main() {
     println(inject Counter.inc())
 }"""))
 
-    @Test fun pointers() = assertEquals("10\n20\n99", run("""package playground
+    @Test fun pointers() = assertEquals("10\n20\n99", run("""module playground
 func main() {
     var p: Int* = alloc [10, 20, 30]
     println(*p)
@@ -228,7 +228,7 @@ func main() {
     println(*(p + 2))
 }"""))
 
-    @Test fun variadic() = assertEquals("6\n100", run("""package playground
+    @Test fun variadic() = assertEquals("6\n100", run("""module playground
 func<...T> sumAll(first: Int, rest: ...T): Int {
     var total = first
     for x in rest { total = total + x }

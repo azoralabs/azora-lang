@@ -10,48 +10,16 @@ val generateStdlib = tasks.register("generateAzStdlib") {
     outputs.dir(outputDir)
 
     doLast {
-        val stdFiles = listOf(
-            "Math/Math.az",
-            "Math/Extra.az",
-            "Math/Trig.az",
-            "Convert/Convert.az",
-            "Container/Tuple.az",
-            "Container/List.az",
-            "Container/MutableList.az",
-            "Container/Map.az",
-            "Container/MutableMap.az",
-            "Container/Set.az",
-            "Container/MutableSet.az",
-            "Container/Stack.az",
-            "Container/Queue.az",
-            "Container/Deque.az",
-            "IO/IO.az",
-            "IO/Convert.az",
-            "Traits/Traits.az",
-            "Traits/Core.az",
-            "Traits/TraitsExtra.az",
-            "Algorithm/Sort.az",
-            "Algorithm/Search.az",
-            "Algorithm/AlgorithmExtra.az",
-            "Concurrency/Coroutines.az",
-            "Concurrency/Async.az",
-            "Parallelism/Thread.az",
-            "Parallelism/Sync.az",
-            "Parallelism/Channel.az",
-            "Char/Char.az",
-            "String/String.az",
-            "String/StringExtra.az",
-            "Functional/Functional.az",
-            "Functional/FunctionalExtra.az",
-            "Result/Result.az",
-            "Random/Random.az",
-            "Allocator/Allocator.az",
-            "Memory/Ptr.az",
-            "Memory/Arc.az",
-            "Memory/Unique.az",
-            "Memory/Weak.az",
-            "Memory/Slice.az",
-        )
+        // Discover stdlib sources dynamically: every .az file under Internal/Std
+        // is embedded into AzStdlib. This keeps the build in sync with the source
+        // tree when modules are added, removed, renamed, or flattened — no
+        // hand-maintained list to forget. Mirrors generateAzTests / generateAzCodegenTests.
+        val stdFiles = stdDir.walkTopDown()
+            .filter { it.isFile && it.extension == "az" }
+            .map { it.relativeTo(stdDir).path.replace('\\', '/') }
+            .sorted()
+            .toList()
+        check(stdFiles.isNotEmpty()) { "No .az stdlib sources found in $stdDir" }
 
         data class AzSource(val baseDir: java.io.File, val relPath: String, val prefix: String)
         val azFiles = stdFiles.map { AzSource(stdDir, it, "STD") }

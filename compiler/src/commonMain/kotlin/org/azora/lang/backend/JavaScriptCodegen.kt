@@ -69,8 +69,8 @@ class JavaScriptCodegen {
         usesPointers = false
         usesTasks = program.functions.any { it.isTask }
 
-        if (program.packageName != null) {
-            line("// package: ${program.packageName}")
+        if (program.moduleName != null) {
+            line("// module: ${program.moduleName}")
             line("")
         }
         if (usesTasks) {

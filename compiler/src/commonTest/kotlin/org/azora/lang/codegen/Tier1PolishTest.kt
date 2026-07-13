@@ -413,7 +413,7 @@ class Tier1PolishTest {
     @Test fun operIndexGetAndSet() {
         assertEquals("20\n99", run("""
             pack IntBag {
-                var data: Array<Int>
+                var data: [Int]
             }
             impl oper[] for IntBag { ref self, i: Int ->
                 return self.data[i]

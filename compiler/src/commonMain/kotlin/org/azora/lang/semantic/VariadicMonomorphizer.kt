@@ -200,7 +200,7 @@ private class MonoContext(
     /** Source-level rendering of a [TypeRef] (inverse of parsing), for mixin interpolation. */
     private fun renderType(type: TypeRef): String = when (type) {
         is TypeRef.Named -> type.name + if (type.args.isEmpty()) "" else type.args.joinToString(", ", "<", ">") { renderType(it) }
-        is TypeRef.Array -> "Array<${renderType(type.element)}>"
+        is TypeRef.Array -> "[${renderType(type.element)}]"
         is TypeRef.Map -> "Map<${renderType(type.key)}, ${renderType(type.value)}>"
         is TypeRef.Set -> "Set<${renderType(type.element)}>"
         is TypeRef.Tuple -> type.elements.joinToString(", ", "(", ")") { renderType(it) }

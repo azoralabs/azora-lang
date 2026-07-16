@@ -42,6 +42,7 @@ class CodegenGoldenTest {
 
     /** Program 1 — functions, if/else-if, for, while, interpolation, int division. */
     private val scalarProgram = """
+        import std.io
         func add(a: Int, b: Int): Int {
             return a + b
         }
@@ -57,24 +58,25 @@ class CodegenGoldenTest {
 
         func main() {
             let sum = add(2, 3)
-            println("sum = ${'$'}sum")
+            std::io::println("sum = ${'$'}sum")
             var total = 0
             for i in 1..5 {
                 total = total + i
             }
-            println(total)
+            std::io::println(total)
             while total > 10 {
                 total = total - 4
             }
-            println(total)
-            println(classify(sum))
+            std::io::println(total)
+            std::io::println(classify(sum))
             let half = sum / 2
-            println(half)
+            std::io::println(half)
         }
     """.trimIndent()
 
     /** Program 2 — pack (struct), array literal/index, when with multi-pattern branch. */
     private val aggregateProgram = """
+        import std.io
         pack Point {
             var x: Int
             var y: Int
@@ -83,15 +85,15 @@ class CodegenGoldenTest {
         func main() {
             let p = Point(3, 4)
             p.x = p.x + 1
-            println(p.x)
+            std::io::println(p.x)
             let nums = [10, 20, 30]
             nums[1] = 25
-            println(nums[1])
+            std::io::println(nums[1])
             let grade = 2
             when grade {
-                1 -> { println("one") }
-                2, 3 -> { println("two or three") }
-                else -> { println("other") }
+                1 -> { std::io::println("one") }
+                2, 3 -> { std::io::println("two or three") }
+                else -> { std::io::println("other") }
             }
         }
     """.trimIndent()

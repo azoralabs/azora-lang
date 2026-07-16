@@ -30,40 +30,40 @@ class PrimitiveTypeTest {
 
     @Test
     fun int_defaultLiteral() {
-        val output = run("func main() { println(42) }".trimIndent())
+        val output = run("import std.io\nfunc main() { std::io::println(42) }".trimIndent())
         assertEquals("42", output)
     }
 
     @Test
     fun int_arithmetic() {
-        val output = run("func main() { println(10 + 20) }".trimIndent())
+        val output = run("import std.io\nfunc main() { std::io::println(10 + 20) }".trimIndent())
         assertEquals("30", output)
     }
 
     @Test
     fun int_hexLiteral() {
-        val result = compile("func main() { var x: Int = 0xFF }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x: Int = 0xFF }".trimIndent())
         val ir = result.ir.prettyPrint()
         assertTrue("255" in ir, "0xFF should parse to 255, got:\n$ir")
     }
 
     @Test
     fun int_binaryLiteral() {
-        val result = compile("func main() { var x: Int = 0b1010 }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x: Int = 0b1010 }".trimIndent())
         val ir = result.ir.prettyPrint()
         assertTrue("10" in ir, "0b1010 should parse to 10, got:\n$ir")
     }
 
     @Test
     fun int_octalLiteral() {
-        val result = compile("func main() { var x: Int = 0o77 }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x: Int = 0o77 }".trimIndent())
         val ir = result.ir.prettyPrint()
         assertTrue("63" in ir, "0o77 should parse to 63, got:\n$ir")
     }
 
     @Test
     fun int_underscoreSeparator() {
-        val result = compile("func main() { var x: Int = 1_000_000 }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x: Int = 1_000_000 }".trimIndent())
         val ir = result.ir.prettyPrint()
         assertTrue("1000000" in ir, "1_000_000 should parse to 1000000, got:\n$ir")
     }
@@ -74,33 +74,36 @@ class PrimitiveTypeTest {
 
     @Test
     fun char_simpleLiteral() {
-        val result = compile("func main() { var c: Char = 'a' }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var c: Char = 'a' }".trimIndent())
         val ir = result.ir.prettyPrint()
         assertTrue("'a'" in ir, "Char literal should be 'a', got:\n$ir")
     }
 
     @Test
     fun char_escapedNewline() {
-        val result = compile("""func main() { var c: Char = '\n' }""".trimIndent())
+        val result = compile("""import std.io
+func main() { var c: Char = '\n' }""".trimIndent())
         assertNotNull(result)
     }
 
     @Test
     fun char_escapedBackslash() {
-        val result = compile("""func main() { var c: Char = '\\' }""".trimIndent())
+        val result = compile("""import std.io
+func main() { var c: Char = '\\' }""".trimIndent())
         assertNotNull(result)
     }
 
     @Test
     fun char_unicodeEscape() {
-        val result = compile("""func main() { var c: Char = '\u0041' }""".trimIndent())
+        val result = compile("""import std.io
+func main() { var c: Char = '\u0041' }""".trimIndent())
         val ir = result.ir.prettyPrint()
         assertTrue("'A'" in ir, "\\u0041 should be 'A', got:\n$ir")
     }
 
     @Test
     fun char_javascriptEmit() {
-        val result = compile("func main() { var c: Char = 'z' }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var c: Char = 'z' }".trimIndent())
         assertTrue("\"z\"" in result.javascript, "JavaScript should emit char as string \"z\", got:\n${result.javascript}")
     }
 
@@ -110,7 +113,7 @@ class PrimitiveTypeTest {
 
     @Test
     fun short_suffixLiteral() {
-        val result = compile("func main() { var x: Short = 42s }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x: Short = 42s }".trimIndent())
         val ir = result.ir.prettyPrint()
         assertTrue("Short" in ir, "Type should be Short, got:\n$ir")
     }
@@ -118,10 +121,11 @@ class PrimitiveTypeTest {
     @Test
     fun short_arithmetic() {
         val result = compile("""
+            import std.io
             func main() {
                 var a: Short = 10s
                 var b: Short = 20s
-                println(a + b)
+                std::io::println(a + b)
             }
         """.trimIndent())
         assertNotNull(result)
@@ -133,7 +137,7 @@ class PrimitiveTypeTest {
 
     @Test
     fun ushort_suffixLiteral() {
-        val result = compile("func main() { var x: UShort = 42us }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x: UShort = 42us }".trimIndent())
         val ir = result.ir.prettyPrint()
         assertTrue("UShort" in ir, "Type should be UShort, got:\n$ir")
     }
@@ -144,20 +148,20 @@ class PrimitiveTypeTest {
 
     @Test
     fun long_suffixLiteral() {
-        val result = compile("func main() { var x: Long = 42L }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x: Long = 42L }".trimIndent())
         val ir = result.ir.prettyPrint()
         assertTrue("Long" in ir, "Type should be Long, got:\n$ir")
     }
 
     @Test
     fun long_javascriptEmit() {
-        val result = compile("func main() { var x: Long = 42L }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x: Long = 42L }".trimIndent())
         assertTrue("42n" in result.javascript, "JavaScript should emit 42n (bigint), got:\n${result.javascript}")
     }
 
     @Test
     fun long_llvmEmit() {
-        val result = compile("func main() { var x: Long = 42L }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x: Long = 42L }".trimIndent())
         assertTrue("i64" in result.llvm, "LLVM should use i64 for Long, got:\n${result.llvm}")
     }
 
@@ -167,7 +171,7 @@ class PrimitiveTypeTest {
 
     @Test
     fun ulong_suffixLiteral() {
-        val result = compile("func main() { var x: ULong = 42uL }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x: ULong = 42uL }".trimIndent())
         val ir = result.ir.prettyPrint()
         assertTrue("ULong" in ir, "Type should be ULong, got:\n$ir")
     }
@@ -178,14 +182,14 @@ class PrimitiveTypeTest {
 
     @Test
     fun cent_suffixLiteral() {
-        val result = compile("func main() { var x: Cent = 42c }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x: Cent = 42c }".trimIndent())
         val ir = result.ir.prettyPrint()
         assertTrue("Cent" in ir, "Type should be Cent, got:\n$ir")
     }
 
     @Test
     fun cent_llvmEmit() {
-        val result = compile("func main() { var x: Cent = 42c }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x: Cent = 42c }".trimIndent())
         assertTrue("i128" in result.llvm, "LLVM should use i128 for Cent, got:\n${result.llvm}")
     }
 
@@ -195,7 +199,7 @@ class PrimitiveTypeTest {
 
     @Test
     fun ucent_suffixLiteral() {
-        val result = compile("func main() { var x: UCent = 42uc }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x: UCent = 42uc }".trimIndent())
         val ir = result.ir.prettyPrint()
         assertTrue("UCent" in ir, "Type should be UCent, got:\n$ir")
     }
@@ -206,14 +210,14 @@ class PrimitiveTypeTest {
 
     @Test
     fun float_suffixLiteral() {
-        val result = compile("func main() { var x: Float = 3.14f }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x: Float = 3.14f }".trimIndent())
         val ir = result.ir.prettyPrint()
         assertTrue("Float" in ir, "Type should be Float, got:\n$ir")
     }
 
     @Test
     fun float_llvmEmit() {
-        val result = compile("func main() { var x: Float = 3.14f }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x: Float = 3.14f }".trimIndent())
         assertTrue("float" in result.llvm, "LLVM should use float for Float, got:\n${result.llvm}")
     }
 
@@ -223,14 +227,14 @@ class PrimitiveTypeTest {
 
     @Test
     fun real_defaultLiteral() {
-        val result = compile("func main() { var x: Real = 3.14 }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x: Real = 3.14 }".trimIndent())
         val ir = result.ir.prettyPrint()
         assertTrue("Real" in ir, "Type should be Real, got:\n$ir")
     }
 
     @Test
     fun real_llvmEmit() {
-        val result = compile("func main() { var x: Real = 3.14 }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x: Real = 3.14 }".trimIndent())
         assertTrue("double" in result.llvm, "LLVM should use double for Real, got:\n${result.llvm}")
     }
 
@@ -240,14 +244,14 @@ class PrimitiveTypeTest {
 
     @Test
     fun decimal_suffixLiteral() {
-        val result = compile("func main() { var x: Decimal = 3.14D }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x: Decimal = 3.14D }".trimIndent())
         val ir = result.ir.prettyPrint()
         assertTrue("Decimal" in ir, "Type should be Decimal, got:\n$ir")
     }
 
     @Test
     fun decimal_llvmEmit() {
-        val result = compile("func main() { var x: Decimal = 3.14D }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x: Decimal = 3.14D }".trimIndent())
         assertTrue("fp128" in result.llvm, "LLVM should use fp128 for Decimal, got:\n${result.llvm}")
     }
 
@@ -257,7 +261,7 @@ class PrimitiveTypeTest {
 
     @Test
     fun hex_withLongSuffix() {
-        val result = compile("func main() { var x: Long = 0xFFL }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x: Long = 0xFFL }".trimIndent())
         val ir = result.ir.prettyPrint()
         assertTrue("Long" in ir, "0xFFL should be Long, got:\n$ir")
         assertTrue("255" in ir, "0xFF should be 255, got:\n$ir")
@@ -265,14 +269,14 @@ class PrimitiveTypeTest {
 
     @Test
     fun hex_withShortSuffix() {
-        val result = compile("func main() { var x: Short = 0xFFs }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x: Short = 0xFFs }".trimIndent())
         val ir = result.ir.prettyPrint()
         assertTrue("Short" in ir, "0xFFs should be Short, got:\n$ir")
     }
 
     @Test
     fun hex_noSuffix() {
-        val result = compile("func main() { var x: Int = 0xFF }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x: Int = 0xFF }".trimIndent())
         val ir = result.ir.prettyPrint()
         assertTrue("Int" in ir, "0xFF without suffix should be Int, got:\n$ir")
     }
@@ -283,21 +287,21 @@ class PrimitiveTypeTest {
 
     @Test
     fun binary_literal() {
-        val result = compile("func main() { var x: Int = 0b11111111 }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x: Int = 0b11111111 }".trimIndent())
         val ir = result.ir.prettyPrint()
         assertTrue("255" in ir, "0b11111111 should be 255, got:\n$ir")
     }
 
     @Test
     fun binary_withUnderscore() {
-        val result = compile("func main() { var x: Int = 0b1111_0000 }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x: Int = 0b1111_0000 }".trimIndent())
         val ir = result.ir.prettyPrint()
         assertTrue("240" in ir, "0b1111_0000 should be 240, got:\n$ir")
     }
 
     @Test
     fun octal_literal() {
-        val result = compile("func main() { var x: Int = 0o777 }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x: Int = 0o777 }".trimIndent())
         val ir = result.ir.prettyPrint()
         assertTrue("511" in ir, "0o777 should be 511, got:\n$ir")
     }
@@ -308,25 +312,25 @@ class PrimitiveTypeTest {
 
     @Test
     fun typeMismatch_intToShort() {
-        val errors = expectFailure("func main() { var x: Short = 42 }".trimIndent())
+        val errors = expectFailure("import std.io\nfunc main() { var x: Short = 42 }".trimIndent())
         assertTrue(errors.any { "type mismatch" in it }, "Should get type mismatch, got: $errors")
     }
 
     @Test
     fun typeMismatch_longToInt() {
-        val errors = expectFailure("func main() { var x: Int = 42L }".trimIndent())
+        val errors = expectFailure("import std.io\nfunc main() { var x: Int = 42L }".trimIndent())
         assertTrue(errors.any { "type mismatch" in it }, "Should get type mismatch, got: $errors")
     }
 
     @Test
     fun typeMismatch_floatToReal() {
-        val errors = expectFailure("func main() { var x: Real = 3.14f }".trimIndent())
+        val errors = expectFailure("import std.io\nfunc main() { var x: Real = 3.14f }".trimIndent())
         assertTrue(errors.any { "type mismatch" in it }, "Should get type mismatch, got: $errors")
     }
 
     @Test
     fun typeMismatch_charToInt() {
-        val errors = expectFailure("func main() { var x: Int = 'a' }".trimIndent())
+        val errors = expectFailure("import std.io\nfunc main() { var x: Int = 'a' }".trimIndent())
         assertTrue(errors.any { "type mismatch" in it }, "Should get type mismatch, got: $errors")
     }
 
@@ -336,28 +340,28 @@ class PrimitiveTypeTest {
 
     @Test
     fun inference_shortFromSuffix() {
-        val result = compile("func main() { var x = 42s\n println(x) }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x = 42s\n std::io::println(x) }".trimIndent())
         val ir = result.ir.prettyPrint()
         assertTrue("Short" in ir, "Should infer Short from 42s, got:\n$ir")
     }
 
     @Test
     fun inference_longFromSuffix() {
-        val result = compile("func main() { var x = 42L\n println(x) }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x = 42L\n std::io::println(x) }".trimIndent())
         val ir = result.ir.prettyPrint()
         assertTrue("Long" in ir, "Should infer Long from 42L, got:\n$ir")
     }
 
     @Test
     fun inference_floatFromSuffix() {
-        val result = compile("func main() { var x = 3.14f\n println(x) }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x = 3.14f\n std::io::println(x) }".trimIndent())
         val ir = result.ir.prettyPrint()
         assertTrue("Float" in ir, "Should infer Float from 3.14f, got:\n$ir")
     }
 
     @Test
     fun inference_charFromLiteral() {
-        val result = compile("func main() { var c = 'x'\n println(c) }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var c = 'x'\n std::io::println(c) }".trimIndent())
         val ir = result.ir.prettyPrint()
         assertTrue("Char" in ir, "Should infer Char from 'x', got:\n$ir")
     }

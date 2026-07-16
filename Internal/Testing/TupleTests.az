@@ -16,9 +16,9 @@
 
 module testing
 
-use std.container
+import std.container
 
-use zone std
+import std
 
 test "tuple2 init" {
     fin tup = tupleOf(1, 2.0)

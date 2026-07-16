@@ -25,10 +25,11 @@ class SymbolTest {
     @Test
     fun var_mutableBinding() {
         val result = compile("""
+            import std.io
             func main() {
                 var x = 5
                 x = 10
-                println(x)
+                std::io::println(x)
             }
         """.trimIndent())
         val ir = result.ir.prettyPrint()
@@ -39,9 +40,10 @@ class SymbolTest {
     @Test
     fun var_explicitType() {
         val result = compile("""
+            import std.io
             func main() {
                 var x: Int = 5
-                println(x)
+                std::io::println(x)
             }
         """.trimIndent())
         val ir = result.ir.prettyPrint()
@@ -51,6 +53,7 @@ class SymbolTest {
     @Test
     fun var_typeMismatch() {
         val errors = expectFailure("""
+            import std.io
             func main() {
                 var x: Int = "hello"
             }
@@ -61,6 +64,7 @@ class SymbolTest {
     @Test
     fun var_redeclaration() {
         val errors = expectFailure("""
+            import std.io
             func main() {
                 var x = 5
                 var x = 10
@@ -76,9 +80,10 @@ class SymbolTest {
     @Test
     fun fin_deeplyImmutable() {
         val result = compile("""
+            import std.io
             func main() {
                 fin x = 42
-                println(x)
+                std::io::println(x)
             }
         """.trimIndent())
         val ir = result.ir.prettyPrint()
@@ -88,9 +93,10 @@ class SymbolTest {
     @Test
     fun fin_explicitType() {
         val result = compile("""
+            import std.io
             func main() {
                 fin x: String = "hello"
-                println(x)
+                std::io::println(x)
             }
         """.trimIndent())
         val ir = result.ir.prettyPrint()
@@ -100,6 +106,7 @@ class SymbolTest {
     @Test
     fun fin_reassignmentRejected() {
         val errors = expectFailure("""
+            import std.io
             func main() {
                 fin x = 5
                 x = 10
@@ -111,9 +118,10 @@ class SymbolTest {
     @Test
     fun fin_globalScope() {
         val result = compile("""
+            import std.io
             fin x = 99
             func main() {
-                println(x)
+                std::io::println(x)
             }
         """.trimIndent())
         val ir = result.ir.prettyPrint()
@@ -123,6 +131,7 @@ class SymbolTest {
     @Test
     fun fin_redeclaration() {
         val errors = expectFailure("""
+            import std.io
             func main() {
                 fin x = 1
                 fin x = 2
@@ -138,9 +147,10 @@ class SymbolTest {
     @Test
     fun let_immutableBinding() {
         val result = compile("""
+            import std.io
             func main() {
                 let x = 7
-                println(x)
+                std::io::println(x)
             }
         """.trimIndent())
         val ir = result.ir.prettyPrint()
@@ -150,9 +160,10 @@ class SymbolTest {
     @Test
     fun let_explicitType() {
         val result = compile("""
+            import std.io
             func main() {
                 let x: Bool = true
-                println(x)
+                std::io::println(x)
             }
         """.trimIndent())
         val ir = result.ir.prettyPrint()
@@ -162,6 +173,7 @@ class SymbolTest {
     @Test
     fun let_reassignmentRejected() {
         val errors = expectFailure("""
+            import std.io
             func main() {
                 let x = 5
                 x = 10
@@ -173,6 +185,7 @@ class SymbolTest {
     @Test
     fun let_redeclaration() {
         val errors = expectFailure("""
+            import std.io
             func main() {
                 let x = 1
                 let x = 2
@@ -188,11 +201,12 @@ class SymbolTest {
     @Test
     fun func_explicitReturnType() {
         val result = compile("""
+            import std.io
             func add(a: Int, b: Int): Int {
                 return a + b
             }
             func main() {
-                println(add(3, 4))
+                std::io::println(add(3, 4))
             }
         """.trimIndent())
         val ir = result.ir.prettyPrint()
@@ -202,11 +216,12 @@ class SymbolTest {
     @Test
     fun func_inferredReturnType() {
         val result = compile("""
+            import std.io
             func add(a: Int, b: Int) {
                 return a + b
             }
             func main() {
-                println(add(3, 4))
+                std::io::println(add(3, 4))
             }
         """.trimIndent())
         val ir = result.ir.prettyPrint()
@@ -216,8 +231,9 @@ class SymbolTest {
     @Test
     fun func_inferredUnitReturnType() {
         val result = compile("""
+            import std.io
             func greet() {
-                println("hi")
+                std::io::println("hi")
             }
             func main() {
                 greet()
@@ -230,11 +246,12 @@ class SymbolTest {
     @Test
     fun func_duplicateName() {
         val errors = expectFailure("""
+            import std.io
             func foo() {
-                println("a")
+                std::io::println("a")
             }
             func foo() {
-                println("b")
+                std::io::println("b")
             }
             func main() {
                 foo()
@@ -246,6 +263,7 @@ class SymbolTest {
     @Test
     fun func_undefinedCall() {
         val errors = expectFailure("""
+            import std.io
             func main() {
                 unknown()
             }
@@ -256,11 +274,12 @@ class SymbolTest {
     @Test
     fun func_argCountMismatch() {
         val errors = expectFailure("""
+            import std.io
             func add(a: Int, b: Int): Int {
                 return a + b
             }
             func main() {
-                println(add(1))
+                std::io::println(add(1))
             }
         """.trimIndent())
         assertTrue(errors.any { "expects" in it && "args" in it })
@@ -269,11 +288,12 @@ class SymbolTest {
     @Test
     fun func_returnTypeMismatch() {
         val errors = expectFailure("""
+            import std.io
             func foo(): Int {
                 return "hello"
             }
             func main() {
-                println(foo())
+                std::io::println(foo())
             }
         """.trimIndent())
         assertTrue(errors.any { "return type mismatch" in it })
@@ -282,11 +302,12 @@ class SymbolTest {
     @Test
     fun func_unusedEliminatedInOptimizedIr() {
         val result = compile("""
+            import std.io
             func unused() {
-                println("never called")
+                std::io::println("never called")
             }
             func main() {
-                println("hello")
+                std::io::println("hello")
             }
         """.trimIndent())
         val optimizedFuncs = result.optimizedIr.functions.map { it.name }
@@ -301,17 +322,18 @@ class SymbolTest {
     @Test
     fun scopeResolution_accessesUpperScope() {
         val result = compile("""
+            import std.io
             fin x = 9
             func main() {
                 var x = 2
-                println(x)
-                println(::x)
+                std::io::println(x)
+                std::io::println(::x)
             }
         """.trimIndent())
         val ir = result.ir.prettyPrint()
         // Local x is mangled (shadows global), ::x resolves to global x
         // The two println calls should reference different variable names
-        val lines = ir.lines().filter { it.trim().startsWith("println(") }
+        val lines = ir.lines().filter { it.trim().startsWith("std__io__println(") }
         assertEquals(2, lines.size, "Should have 2 println calls, got: $lines")
         assertNotEquals(lines[0], lines[1], "Local and upper scope should resolve to different names in IR:\n$ir")
     }
@@ -319,11 +341,12 @@ class SymbolTest {
     @Test
     fun scopeResolution_zoneScope() {
         val result = compile("""
+            import std.io
             func main() {
                 var x = 1
                 zone {
                     var x = 2
-                    println(::x)
+                    std::io::println(::x)
                 }
             }
         """.trimIndent())
@@ -336,9 +359,10 @@ class SymbolTest {
     @Test
     fun scopeResolution_undefinedInUpperScope() {
         val errors = expectFailure("""
+            import std.io
             func main() {
                 var x = 5
-                println(::y)
+                std::io::println(::y)
             }
         """.trimIndent())
         assertTrue(errors.any { "not found" in it })
@@ -347,10 +371,11 @@ class SymbolTest {
     @Test
     fun scopeResolution_globalFin() {
         val result = compile("""
+            import std.io
             fin greeting = "hello"
             func main() {
                 var greeting = "bye"
-                println(::greeting)
+                std::io::println(::greeting)
             }
         """.trimIndent())
         val ir = result.ir.prettyPrint()
@@ -365,13 +390,14 @@ class SymbolTest {
     @Test
     fun shadowing_innerScopeAllowed() {
         val result = compile("""
+            import std.io
             func main() {
                 var x = 1
                 zone {
                     var x = 2
-                    println(x)
+                    std::io::println(x)
                 }
-                println(x)
+                std::io::println(x)
             }
         """.trimIndent())
         assertNotNull(result)
@@ -380,12 +406,13 @@ class SymbolTest {
     @Test
     fun shadowing_functionParamShadowsGlobal() {
         val result = compile("""
+            import std.io
             fin x = 99
             func foo(x: Int): Int {
                 return x
             }
             func main() {
-                println(foo(5))
+                std::io::println(foo(5))
             }
         """.trimIndent())
         assertNotNull(result)
@@ -398,9 +425,10 @@ class SymbolTest {
     @Test
     fun topLevel_varRejected() {
         val errors = expectFailure("""
+            import std.io
             var x = 5
             func main() {
-                println(x)
+                std::io::println(x)
             }
         """.trimIndent())
         assertTrue(errors.any { "not allowed" in it && "thread-safe" in it })
@@ -409,9 +437,10 @@ class SymbolTest {
     @Test
     fun topLevel_letRejected() {
         val errors = expectFailure("""
+            import std.io
             let x = 5
             func main() {
-                println(x)
+                std::io::println(x)
             }
         """.trimIndent())
         assertTrue(errors.any { "not allowed" in it && "thread-safe" in it })
@@ -424,9 +453,10 @@ class SymbolTest {
     @Test
     fun unusedLocal_eliminatedInOptimizedIr() {
         val result = compile("""
+            import std.io
             func main() {
                 var unused = 42
-                println("hello")
+                std::io::println("hello")
             }
         """.trimIndent())
         val optimizedIr = result.optimizedIr.prettyPrint()
@@ -437,9 +467,10 @@ class SymbolTest {
     @Test
     fun unusedGlobal_eliminatedInOptimizedIr() {
         val result = compile("""
+            import std.io
             fin unused = 99
             func main() {
-                println("hello")
+                std::io::println("hello")
             }
         """.trimIndent())
         val optimizedIr = result.optimizedIr.prettyPrint()

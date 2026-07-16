@@ -12,9 +12,10 @@ class PanicTest {
 
     @Test fun panicNotReachedRunsNormally() {
         val r = Compiler().compile("""
+            import std.io
             func main() {
                 if false { panic "should not happen" }
-                println("ok")
+                std::io::println("ok")
             }
         """.trimIndent(), release = false)
         assertIs<CompilationResult.Success>(r)
@@ -23,8 +24,9 @@ class PanicTest {
 
     @Test fun runtimePanicAborts() {
         val r = Compiler().compile("""
+            import std.io
             func main() {
-                println("before")
+                std::io::println("before")
                 panic "boom"
             }
         """.trimIndent(), release = false)
@@ -41,6 +43,7 @@ class PanicTest {
         // `inline panic` reached during CTFE aborts the compiler with its message.
         val thrown = org.junit.Assert.assertThrows(RuntimeException::class.java) {
             Compiler().compile("""
+                import std.io
                 func main() {
                     inline {
                         inline panic "compile-time boom"

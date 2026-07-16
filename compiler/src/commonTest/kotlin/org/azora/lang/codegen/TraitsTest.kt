@@ -23,6 +23,7 @@ class TraitsTest {
 
     @Test fun specAndImplFor() {
         assertEquals("Point(3, 4)", run("""
+            import std.io
             pack Point {
                 var x: Int
                 var y: Int
@@ -37,13 +38,14 @@ class TraitsTest {
             }
             func main() {
                 var p = Point(3, 4)
-                println(p.describe())
+                std::io::println(p.describe())
             }
         """.trimIndent()))
     }
 
     @Test fun specWithMultipleMethods() {
         assertEquals("green\n0", run("""
+            import std.io
             pack Light {
                 var color: String
                 var brightness: Int
@@ -62,14 +64,15 @@ class TraitsTest {
             }
             func main() {
                 var l = Light("green", 0)
-                println(l.status())
-                println(l.level())
+                std::io::println(l.status())
+                std::io::println(l.level())
             }
         """.trimIndent()))
     }
 
     @Test fun specMissingMethodFails() {
         val errors = expectFailure("""
+            import std.io
             spec Describable {
                 func describe(): String
                 func detail(): String
@@ -82,13 +85,14 @@ class TraitsTest {
                     return "P"
                 }
             }
-            func main() { println("hi") }
+            func main() { std::io::println("hi") }
         """.trimIndent())
         assertTrue(errors.any { it.contains("detail") }, "Expected missing 'detail' error, got: $errors")
     }
 
     @Test fun unknownSpecFails() {
         val errors = expectFailure("""
+            import std.io
             pack P {
                 var x: Int
             }
@@ -97,13 +101,14 @@ class TraitsTest {
                     return 42
                 }
             }
-            func main() { println("hi") }
+            func main() { std::io::println("hi") }
         """.trimIndent())
         assertTrue(errors.any { it.contains("NonExistent") }, "Expected unknown spec error, got: $errors")
     }
 
     @Test fun implWithoutTraitWorksAsBefore() {
         assertEquals("42", run("""
+            import std.io
             pack P {
                 var x: Int
             }
@@ -114,7 +119,7 @@ class TraitsTest {
             }
             func main() {
                 var p = P(42)
-                println(p.getX())
+                std::io::println(p.getX())
             }
         """.trimIndent()))
     }

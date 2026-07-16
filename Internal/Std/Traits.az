@@ -16,6 +16,8 @@
 
 module std.traits
 
+import std.convert
+
 /**
  * @file Traits
  *
@@ -89,29 +91,25 @@ friend zone std {
     @since("0.0.1")
     impl Comparable for Char
 
-    /** Types that have a string representation. */
-    @since("0.0.1")
-    spec Printable
+    @since("0.0.4")
+    impl Into<String> for Int { ref self ->
+        return cast self as String
+    }
 
-    /** Int has a string representation. */
-    @since("0.0.1")
-    impl Printable for Int
+    @since("0.0.4")
+    impl Into<String> for Real { ref self ->
+        return cast self as String
+    }
 
-    /** Real has a string representation. */
-    @since("0.0.1")
-    impl Printable for Real
+    @since("0.0.4")
+    impl Into<String> for Char { ref self ->
+        return cast self as String
+    }
 
-    /** String has a string representation. */
-    @since("0.0.1")
-    impl Printable for String
-
-    /** Char has a string representation. */
-    @since("0.0.1")
-    impl Printable for Char
-
-    /** Bool has a string representation. */
-    @since("0.0.1")
-    impl Printable for Bool
+    @since("0.0.4")
+    impl Into<String> for Bool { ref self ->
+        return cast self as String
+    }
 
     /** Types that can be hashed. */
     @since("0.0.1")

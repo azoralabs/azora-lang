@@ -15,6 +15,7 @@
  */
 
 module std.allocator
+import std.convert
 
 /**
  * @file Allocator
@@ -247,10 +248,10 @@ friend zone std {
          */
         @since("0.0.2")
         func diagnostic(): String {
-            return "Arena(capacity: " + toString(capacity) +
-                   ", used: " + toString(offset) +
-                   ", peak: " + toString(peakUsage) +
-                   ", allocs: " + toString(allocCount) + ")"
+            return "Arena(capacity: " + std::convert::toString(capacity) +
+                   ", used: " + std::convert::toString(offset) +
+                   ", peak: " + std::convert::toString(peakUsage) +
+                   ", allocs: " + std::convert::toString(allocCount) + ")"
         }
     }
 
@@ -402,11 +403,11 @@ friend zone std {
          */
         @since("0.0.2")
         func diagnostic(): String {
-            return "Pool(slots: " + toString(slotCount) +
-                   ", slotSize: " + toString(slotSize) +
-                   ", inUse: " + toString(acquiredCount) +
-                   ", free: " + toString(freeCount) +
-                   ", peak: " + toString(peakAcquired) + ")"
+            return "Pool(slots: " + std::convert::toString(slotCount) +
+                   ", slotSize: " + std::convert::toString(slotSize) +
+                   ", inUse: " + std::convert::toString(acquiredCount) +
+                   ", free: " + std::convert::toString(freeCount) +
+                   ", peak: " + std::convert::toString(peakAcquired) + ")"
         }
     }
 
@@ -549,10 +550,10 @@ friend zone std {
          */
         @since("0.0.2")
         func diagnostic(): String {
-            return "StackAllocator(capacity: " + toString(capacity) +
-                   ", used: " + toString(offset) +
-                   ", peak: " + toString(peakUsage) +
-                   ", allocs: " + toString(allocCount) + ")"
+            return "StackAllocator(capacity: " + std::convert::toString(capacity) +
+                   ", used: " + std::convert::toString(offset) +
+                   ", peak: " + std::convert::toString(peakUsage) +
+                   ", allocs: " + std::convert::toString(allocCount) + ")"
         }
     }
 

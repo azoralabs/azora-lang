@@ -18,15 +18,13 @@
 
 package org.azora.lang.bridge
 
-import kotlin.js.JsReference
 import kotlin.js.JsString
 import kotlin.js.Promise
-import kotlin.js.get
 import kotlin.js.toJsString
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.promise
+import kotlinx.coroutines.launch
 import org.azora.lang.CompilationResult
 import org.azora.lang.Compiler
 import org.azora.lang.backend.IrInterpreter
@@ -84,10 +82,16 @@ private suspend fun withCompiledSuspend(source: String, onSuccess: suspend (Comp
     }
 }
 
-@Suppress("UNCHECKED_CAST_TO_EXTERNAL_INTERFACE", "UNCHECKED_CAST")
 private fun promisedJson(block: suspend () -> String): Promise<JsString> =
-    bridgeScope.promise { block() }.then { value ->
-        (value as JsReference<String>).get().toJsString()
+    Promise { resolve, _ ->
+        bridgeScope.launch {
+            val result = try {
+                block()
+            } catch (error: Throwable) {
+                json(false, "", error.message ?: error.toString())
+            }
+            resolve(result.toJsString())
+        }
     }
 
 /** Version string shown in the playground. */

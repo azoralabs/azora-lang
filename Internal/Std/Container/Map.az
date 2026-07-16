@@ -16,7 +16,7 @@
 
 module std.container.map
 
-use std.convert
+import std.convert
 
 /**
  * @file Map
@@ -90,7 +90,7 @@ friend zone std {
         var i = 0
         while i < self.size {
             if i > 0 { s = s + ", " }
-            s = s + toString(self.keys[i]) + ": " + toString(self.values[i])
+            s = s + std::convert::toString(self.keys[i]) + ": " + std::convert::toString(self.values[i])
             i += 1
         }
         return s + "}"

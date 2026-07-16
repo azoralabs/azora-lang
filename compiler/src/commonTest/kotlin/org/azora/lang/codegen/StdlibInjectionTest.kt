@@ -11,8 +11,13 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /**
- * Tests for [org.azora.lang.stdlib.StdlibInjector]: standard-library functions
- * are injected on demand and run through the interpreter like user code.
+ * Tests for [org.azora.lang.stdlib.StdlibInjector] under the zone/import model:
+ *
+ * - Library symbols live in zones (`friend zone std::math { ... }`) and are
+ *   name-mangled (`std.math::abs` → `std__math__abs`).
+ * - `import std.math` makes that module's symbols visible; references must use
+ *   the qualified `Zone::name` form. Bare references are rejected.
+ * - Qualified access without the matching import is rejected.
  */
 class StdlibInjectionTest {
 
@@ -22,46 +27,37 @@ class StdlibInjectionTest {
         return IrInterpreter().interpret(result.ir)
     }
 
-    // ---- math ----
+    // ---- qualified math access (requires import) ----
 
-    @Test fun absWorks() =
-        assertEquals("5\n7", run("use std\nfunc main() {\n    println(abs(-5))\n    println(abs(7))\n}"))
+    @Test fun qualifiedMathFunctionsWork() =
+        assertEquals("5\n7", run("import std.io\nimport std.math\nfunc main() {\n    std::io::println(std::math::abs(-5))\n    std::io::println(std::math::abs(7))\n}"))
 
-    @Test fun minMaxWork() =
-        assertEquals("2\n9", run("use std\nfunc main() {\n    println(min(2, 9))\n    println(max(2, 9))\n}"))
+    @Test fun qualifiedMinMaxWork() =
+        assertEquals("2\n9", run("import std.io\nimport std.math\nfunc main() {\n    std::io::println(std::math::min(2, 9))\n    std::io::println(std::math::max(2, 9))\n}"))
 
-    @Test fun clampWorks() =
-        assertEquals("5\n0\n10", run("use std\nfunc main() {\n    println(clamp(5, 0, 10))\n    println(clamp(-3, 0, 10))\n    println(clamp(42, 0, 10))\n}"))
+    @Test fun qualifiedFloorCeilRound() =
+        assertEquals("3\n4\n4", run("import std.io\nimport std.math\nfunc main() {\n    std::io::println(std::math::floor(3.7))\n    std::io::println(std::math::ceil(3.2))\n    std::io::println(std::math::round(3.6))\n}"))
 
-    @Test fun signWorks() =
-        assertEquals("1\n-1\n0", run("use std\nfunc main() {\n    println(sign(9))\n    println(sign(-4))\n    println(sign(0))\n}"))
+    @Test fun qualifiedFactorialGcd() =
+        assertEquals("120\n6", run("import std.io\nimport std.math\nfunc main() {\n    std::io::println(std::math::factorial(5))\n    std::io::println(std::math::gcd(54, 24))\n}"))
 
-    @Test fun piConstantInjects() {
-        val out = run("use std\nfunc main() {\n    println(PI)\n}")
+    @Test fun qualifiedConstantInjects() {
+        val out = run("import std.io\nimport std.math\nfunc main() {\n    std::io::println(std::math::PI)\n}")
         assertTrue(out.startsWith("3.14159"), out)
     }
-
-    @Test fun floorCeilRound() =
-        assertEquals("3\n4\n4", run("use std\nfunc main() {\n    println(floor(3.7))\n    println(ceil(3.2))\n    println(round(3.6))\n}"))
-
-    @Test fun powAndFactorial() =
-        assertEquals("8\n120", run("use std\nfunc main() {\n    println(pow(2, 3))\n    println(factorial(5))\n}"))
-
-    @Test fun gcdWorks() =
-        assertEquals("6", run("use std\nfunc main() {\n    println(gcd(54, 24))\n}"))
 
     // ---- transitive + shadowing ----
 
     @Test fun transitiveStdlibCallsResolve() {
-        // lcm uses gcd internally — both must inject.
-        assertEquals("36", run("use std\nfunc main() {\n    println(lcm(12, 18))\n}"))
+        // std::math::lcm uses std::math::gcd internally — both must inject.
+        assertEquals("36", run("import std.io\nimport std.math\nfunc main() {\n    std::io::println(std::math::lcm(12, 18))\n}"))
     }
 
     @Test fun userDefinitionShadowsStdlib() =
-        assertEquals("99", run("use std.math\nfunc abs(x: Int): Int {\n    return 99\n}\nfunc main() {\n    println(abs(-5))\n}"))
+        assertEquals("99", run("import std.io\nimport std.math\nfunc abs(x: Int): Int {\n    return 99\n}\nfunc main() {\n    std::io::println(abs(-5))\n}"))
 
     @Test fun programsWithoutStdlibAreUntouched() {
-        val result = Compiler().compile("func main() {\n    println(1)\n}")
+        val result = Compiler().compile("func main() {\n    var x = 1\n}")
         assertIs<CompilationResult.Success>(result)
         assertEquals(listOf("main"), result.ir.functions.map { it.name })
     }
@@ -74,94 +70,63 @@ class StdlibInjectionTest {
 
     @Test fun collectionTypeAnnotationsInjectPacksAndImpls() =
         assertEquals("3\n2\n2", run("""
+            import std.io
             func main() {
                 var xs: List<Int> = [1, 2, 3]
                 var entries: Map<String, Int> = ["a": 1, "b": 2]
                 var seen: Set<Int> = ![1, 2, 2]
-                println(xs.size)
-                println(entries.size)
-                println(seen.size)
+                std::io::println(xs.size)
+                std::io::println(entries.size)
+                std::io::println(seen.size)
             }
         """.trimIndent()))
 
-    // ---- if-expressions (new language feature the stdlib relies on) ----
+    // ---- if-expressions (language feature the stdlib relies on) ----
 
     @Test fun ifExpressionInUserCode() =
-        assertEquals("small", run("func main() {\n    let label = if 3 > 10 { \"big\" } else { \"small\" }\n    println(label)\n}"))
+        assertEquals("small", run("import std.io\nfunc main() {\n    let label = if 3 > 10 { \"big\" } else { \"small\" }\n    std::io::println(label)\n}"))
 
     @Test fun ifExpressionElseIfChain() =
-        assertEquals("mid", run("func pick(x: Int): String = if x > 10 { \"big\" } else if x > 3 { \"mid\" } else { \"small\" }\nfunc main() {\n    println(pick(5))\n}"))
+        assertEquals("mid", run("import std.io\nfunc pick(x: Int): String = if x > 10 { \"big\" } else if x > 3 { \"mid\" } else { \"small\" }\nfunc main() {\n    std::io::println(pick(5))\n}"))
 
     @Test fun expressionBodiedFunction() =
-        assertEquals("14", run("func twice(x: Int): Int = x * 2\nfunc main() {\n    println(twice(7))\n}"))
+        assertEquals("14", run("import std.io\nfunc twice(x: Int): Int = x * 2\nfunc main() {\n    std::io::println(twice(7))\n}"))
 
-    // ---- import gating ----
+    // ---- bare access is rejected ----
 
-    @Test fun unimportedStdlibIsInvisible() {
-        val result = Compiler().compile("func main() {\n    println(abs(-5))\n}")
+    @Test fun bareStdlibAccessIsRejected() {
+        val result = Compiler().compile("import std.io\nimport std.math\nfunc main() {\n    std::io::println(abs(-5))\n}")
         assertIs<CompilationResult.Failure>(result)
-        assertTrue(result.errors.any { "use std.math" in it }, "error should hint at the import: ${'$'}{result.errors}")
+        assertTrue(result.errors.any { "undefined" in it && "abs" in it }, "bare access should be rejected: ${'$'}{result.errors}")
     }
 
-    @Test fun moduleImportScopesVisibility() {
-        // std.math imported, std.algorithm not.
-        val result = Compiler().compile("use std.math\nfunc main() {\n    println(abs(-5))\n    println(isSorted([1, 2]))\n}")
+    @Test fun qualifiedAccessWithoutImportIsRejected() {
+        val result = Compiler().compile("import std.io\nfunc main() {\n    std::io::println(std::math::abs(-5))\n}")
         assertIs<CompilationResult.Failure>(result)
-        assertTrue(result.errors.any { "use std.algorithm" in it }, "${'$'}{result.errors}")
+        assertTrue(result.errors.any { "abs" in it }, "qualified access without import should be rejected: ${'$'}{result.errors}")
     }
 
-    @Test fun selectiveImportOnlyExposesListedNames() {
-        assertEquals("5", run("use std.math.abs\nfunc main() {\n    println(abs(-5))\n}"))
-        val gated = Compiler().compile("use std.math.abs\nfunc main() {\n    println(min(1, 2))\n}")
-        assertIs<CompilationResult.Failure>(gated)
+    @Test fun wrongZoneQualificationIsRejected() {
+        // `abs` lives in std.math, not std — `std::abs` must fail.
+        val result = Compiler().compile("import std.io\nimport std.math\nfunc main() {\n    std::io::println(std::abs(-5))\n}")
+        assertIs<CompilationResult.Failure>(result)
     }
 
-    @Test fun stdUseImportRejectsDoubleColonSyntax() {
+    @Test fun importStdExposesAllModules() =
+        assertEquals("5\n9", run("import std.io\nimport std\nfunc main() {\n    std::io::println(std::math::abs(-5))\n    std::io::println(std::math::max(2, 9))\n}"))
+
+    // ---- import syntax errors ----
+
+    @Test fun importRejectsDoubleColonSyntax() {
         val err = assertFailsWith<IllegalStateException> {
-            Compiler().compile("use std.math::abs\nfunc main() {\n    println(abs(-5))\n}")
+            Compiler().compile("import std.io\nimport std.math::abs\nfunc main() {\n    std::io::println(std::math::abs(-5))\n}")
         }
         assertTrue(err.message.orEmpty().contains("Use dotted import paths"), err.message)
     }
 
-    @Test fun customUseImportRejectsDoubleColonSyntax() {
-        val err = assertFailsWith<IllegalStateException> {
-            Compiler().compile("zone Math {\n    func triple(x: Int): Int { return x * 3 }\n}\nuse Math::triple\nfunc main() {\n    println(triple(1))\n}")
-        }
-        assertTrue(err.message.orEmpty().contains("'::' is for zone access expressions"), err.message)
-    }
-
-    @Test fun useZoneStdImportsEverything() {
-        assertEquals("5", run("use zone std\nfunc main() {\n    println(abs(-5))\n}"))
-    }
-
-    @Test fun useStdStarImportsEverything() {
-        assertEquals("5\n9", run("use std.*\nfunc main() {\n    println(abs(-5))\n    println(max(2, 9))\n}"))
-    }
-
-    @Test fun groupedStdModulesImportBareNames() {
-        assertEquals("5\n2", run("use std.{math, concurrency}\nfunc main() {\n    println(abs(-5))\n    println(min(2, 9))\n}"))
-    }
-
-    @Test fun stdModuleImportCreatesShortAlias() {
-        assertEquals("5\n2", run("use std.math\nfunc main() {\n    println(math::abs(-5))\n    println(math::min(2, 9))\n}"))
-    }
-
-    @Test fun stdStarImportCreatesShortModuleAlias() {
-        assertEquals("9", run("use std.*\nfunc main() {\n    println(math::max(2, 9))\n}"))
-    }
-
-    @Test fun qualifiedAccessNeedsNoImport() {
-        assertEquals("5\n2", run("func main() {\n    println(std::math::abs(-5))\n    println(std::min(2, 9))\n}"))
-    }
-
-    @Test fun qualifiedConstantAccess() {
-        val out = run("func main() {\n    println(std::math::PI)\n}")
-        assertTrue(out.startsWith("3.14159"), out)
-    }
-
     @Test fun dottedStdAccessIsNotNamespaceAccess() {
-        val result = Compiler().compile("func main() {\n    println(std.math.abs(-5))\n}")
+        val result = Compiler().compile("import std.io\nfunc main() {\n    std::io::println(std.math.abs(-5))\n}")
         assertIs<CompilationResult.Failure>(result)
-        assertTrue(result.errors.any { "std" in it }, "${result.errors}")
+        assertTrue(result.errors.any { "std" in it }, "${'$'}{result.errors}")
     }
 }

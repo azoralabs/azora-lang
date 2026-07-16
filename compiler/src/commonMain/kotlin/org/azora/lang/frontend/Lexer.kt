@@ -55,6 +55,7 @@ class Lexer(private val source: String) {
             "friend" to TokenType.FRIEND,
             "test" to TokenType.TEST,
             "assert" to TokenType.ASSERT,
+            "cast" to TokenType.CAST,
             "trace" to TokenType.TRACE,
             "mixin" to TokenType.MIXIN,
             "panic" to TokenType.PANIC,
@@ -129,6 +130,7 @@ class Lexer(private val source: String) {
             "is" to TokenType.IS,
             "null" to TokenType.NULL,
             "use" to TokenType.USE,
+            "import" to TokenType.IMPORT,
             "true" to TokenType.TRUE,
             "false" to TokenType.FALSE
         )

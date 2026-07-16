@@ -21,22 +21,23 @@ class ZoneTest {
     @Test
     fun friendZone_sharedScope() {
         val output = run("""
+            import std.io
             fin x = 9
 
             func main() {
                 var x = 2
                 var y = 3
-                println(x)
-                println(::x)
+                std::io::println(x)
+                std::io::println(::x)
                 friend zone {
                     var x = 5
-                    println(x)
-                    println(::x)
-                    println(::_::x)
+                    std::io::println(x)
+                    std::io::println(::x)
+                    std::io::println(::_::x)
                 }
-                println("----")
+                std::io::println("----")
                 friend zone {
-                    println(x)
+                    std::io::println(x)
                 }
             }
         """.trimIndent())
@@ -47,14 +48,15 @@ class ZoneTest {
     @Test
     fun friendZone_multipleDeclarations() {
         val output = run("""
+            import std.io
             func main() {
                 friend zone {
                     var a = 10
                     var b = 20
                 }
                 friend zone {
-                    println(a)
-                    println(b)
+                    std::io::println(a)
+                    std::io::println(b)
                 }
             }
         """.trimIndent())
@@ -65,14 +67,15 @@ class ZoneTest {
     @Test
     fun friendZone_mutation() {
         val output = run("""
+            import std.io
             func main() {
                 friend zone {
                     var x = 1
-                    println(x)
+                    std::io::println(x)
                 }
                 friend zone {
                     x = 99
-                    println(x)
+                    std::io::println(x)
                 }
             }
         """.trimIndent())
@@ -83,12 +86,13 @@ class ZoneTest {
     @Test
     fun friendZone_notVisibleOutside() {
         val output = run("""
+            import std.io
             func main() {
                 var x = 42
                 friend zone {
                     var x = 7
                 }
-                println(x)
+                std::io::println(x)
             }
         """.trimIndent())
 
@@ -99,14 +103,15 @@ class ZoneTest {
     @Test
     fun zone_regularScopesAreIndependent() {
         val output = run("""
+            import std.io
             func main() {
                 var x = 1
                 zone {
                     var x = 2
-                    println(x)
+                    std::io::println(x)
                 }
                 zone {
-                    println(x)
+                    std::io::println(x)
                 }
             }
         """.trimIndent())
@@ -118,19 +123,20 @@ class ZoneTest {
     @Test
     fun scopeResolution_withZonesAndGlobals() {
         val output = run("""
+            import std.io
             fin x = 9
 
             func main() {
                 var x = 2
-                println(x)
-                println(::x)
+                std::io::println(x)
+                std::io::println(::x)
                 zone {
                     var x = 5
-                    println(x)
-                    println(::x)
-                    println(::_::x)
+                    std::io::println(x)
+                    std::io::println(::x)
+                    std::io::println(::_::x)
                 }
-                println("----")
+                std::io::println("----")
             }
         """.trimIndent())
 

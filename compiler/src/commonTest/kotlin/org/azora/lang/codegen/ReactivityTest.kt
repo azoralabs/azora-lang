@@ -18,31 +18,34 @@ class ReactivityTest {
 
     @Test fun remActsAsMutableVar() {
         assertEquals("0\n42", run("""
+            import std.io
             func main() {
                 rem count: Int = 0
-                println(count)
+                std::io::println(count)
                 count = 42
-                println(count)
+                std::io::println(count)
             }
         """.trimIndent()))
     }
 
     @Test fun effectRunsImmediately() {
         assertEquals("hello\ndone", run("""
+            import std.io
             func main() {
                 rem msg: String = "hello"
                 effect {
-                    println(msg)
+                    std::io::println(msg)
                 }
-                println("done")
+                std::io::println("done")
             }
         """.trimIndent()))
     }
 
     @Test fun viewIsCallable() {
         assertEquals("Hello, World!", run("""
+            import std.io
             view Greet(name: String) {
-                println("Hello, " + name + "!")
+                std::io::println("Hello, " + name + "!")
             }
             func main() {
                 Greet("World")
@@ -53,10 +56,11 @@ class ReactivityTest {
     @Test fun viewWithRemAndEffect() {
         // Effect runs once immediately (like the old interpreter; reactive re-runs are future work).
         assertEquals("count=0", run("""
+            import std.io
             view Counter() {
                 rem count: Int = 0
                 effect {
-                    println("count=" + count)
+                    std::io::println("count=" + count)
                 }
             }
             func main() {

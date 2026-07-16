@@ -26,13 +26,14 @@ class PackTest {
     @Test
     fun structConstructionAndFieldAccess() {
         assertEquals("3", run("""
+            import std.io
             pack Point {
                 var x: Int
                 var y: Int
             }
             func main() {
                 var p = Point(3, 4)
-                println(p.x)
+                std::io::println(p.x)
             }
         """.trimIndent()))
     }
@@ -40,13 +41,14 @@ class PackTest {
     @Test
     fun structFieldSum() {
         assertEquals("7", run("""
+            import std.io
             pack Point {
                 var x: Int
                 var y: Int
             }
             func main() {
                 var p = Point(3, 4)
-                println(p.x + p.y)
+                std::io::println(p.x + p.y)
             }
         """.trimIndent()))
     }
@@ -54,6 +56,7 @@ class PackTest {
     @Test
     fun structFieldMutation() {
         assertEquals("10", run("""
+            import std.io
             pack Point {
                 var x: Int
                 var y: Int
@@ -61,7 +64,7 @@ class PackTest {
             func main() {
                 var p = Point(3, 4)
                 p.x = 10
-                println(p.x)
+                std::io::println(p.x)
             }
         """.trimIndent()))
     }
@@ -70,6 +73,7 @@ class PackTest {
     fun structWithImmutableField() {
         // fin field cannot be reassigned
         val errors = expectFailure("""
+            import std.io
             pack Point {
                 fin x: Int
                 var y: Int
@@ -85,6 +89,7 @@ class PackTest {
     @Test
     fun structReturnedFromFunction() {
         assertEquals("9", run("""
+            import std.io
             pack Point {
                 var x: Int
                 var y: Int
@@ -94,7 +99,7 @@ class PackTest {
             }
             func main() {
                 var p = origin()
-                println(p.x + p.y)
+                std::io::println(p.x + p.y)
             }
         """.trimIndent()))
     }
@@ -103,6 +108,7 @@ class PackTest {
     fun structFieldUpdatedThroughCompoundAssign() {
         // p.y += 100  →  4 + 100 = 104
         assertEquals("104", run("""
+            import std.io
             pack Point {
                 var x: Int
                 var y: Int
@@ -110,7 +116,7 @@ class PackTest {
             func main() {
                 var p = Point(3, 4)
                 p.y += 100
-                println(p.y)
+                std::io::println(p.y)
             }
         """.trimIndent()))
     }
@@ -119,13 +125,14 @@ class PackTest {
     fun structStoredInArray() {
         // 10 + 30 = 40
         assertEquals("40", run("""
+            import std.io
             pack Point {
                 var x: Int
                 var y: Int
             }
             func main() {
                 var points = [Point(10, 20), Point(30, 40)]
-                println(points[0].x + points[1].x)
+                std::io::println(points[0].x + points[1].x)
             }
         """.trimIndent()))
     }
@@ -133,13 +140,14 @@ class PackTest {
     @Test
     fun structOperationsSurviveOptimization() {
         assertEquals("7", run("""
+            import std.io
             pack Point {
                 var x: Int
                 var y: Int
             }
             func main() {
                 var p = Point(3, 4)
-                println(p.x + p.y)
+                std::io::println(p.x + p.y)
             }
         """.trimIndent(), release = true))
     }
@@ -147,13 +155,14 @@ class PackTest {
     @Test
     fun structLoweredToAllBackends() {
         val result = Compiler().compile("""
+            import std.io
             pack Point {
                 var x: Int
                 var y: Int
             }
             func main() {
                 var p = Point(1, 2)
-                println(p.x)
+                std::io::println(p.x)
             }
         """.trimIndent())
         assertIs<CompilationResult.Success>(result)

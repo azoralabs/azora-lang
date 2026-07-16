@@ -37,13 +37,13 @@ class LlvmOptimizedExecTest {
         assertEquals(expected, LlvmExec.run(source, optimized = true))
     }
 
-    private fun main(body: String): String = "func main() {\n$body\n}"
+    private fun main(body: String): String = "import std.io\nfunc main() {\n$body\n}"
 
     @Test fun loopMutatedSumIsNotFolded() =
-        check("15", main("var sum = 0\nfor i in 1..5 { sum = sum + i }\nprintln(sum)"))
+        check("15", main("var sum = 0\nfor i in 1..5 { sum = sum + i }\nstd::io::println(sum)"))
 
     @Test fun whileMutatedProductIsNotFolded() =
-        check("24", main("var p = 1\nvar k = 1\nwhile k <= 4 { p = p * k\nk = k + 1 }\nprintln(p)"))
+        check("24", main("var p = 1\nvar k = 1\nwhile k <= 4 { p = p * k\nk = k + 1 }\nstd::io::println(p)"))
 
     @Test fun branchMutatedVariableIsNotFolded() = check(
         "99",
@@ -51,16 +51,16 @@ class LlvmOptimizedExecTest {
             """
             var x = 10
             if 1 < 2 { x = 99 }
-            println(x)
+            std::io::println(x)
             """.trimIndent()
         )
     )
 
     @Test fun loopVariableNotFoldedAfterLoop() =
-        check("5", main("var last = 0\nfor i in 1..5 { last = i }\nprintln(last)"))
+        check("5", main("var last = 0\nfor i in 1..5 { last = i }\nstd::io::println(last)"))
 
     @Test fun constantsStillFoldWhenNotMutated() =
-        check("30", main("let a = 10\nlet b = 20\nprintln(a + b)"))
+        check("30", main("let a = 10\nlet b = 20\nstd::io::println(a + b)"))
 
     @Test fun fizzBuzzOptimized() = check(
         listOf(
@@ -68,16 +68,17 @@ class LlvmOptimizedExecTest {
             "Fizz", "Buzz", "11", "Fizz", "13", "14", "FizzBuzz"
         ).joinToString("\n"),
         """
+        import std.io
         func main() {
             for i in 1..15 {
                 if i % 15 == 0 {
-                    println("FizzBuzz")
+                    std::io::println("FizzBuzz")
                 } else if i % 3 == 0 {
-                    println("Fizz")
+                    std::io::println("Fizz")
                 } else if i % 5 == 0 {
-                    println("Buzz")
+                    std::io::println("Buzz")
                 } else {
-                    println(i)
+                    std::io::println(i)
                 }
             }
         }
@@ -87,11 +88,12 @@ class LlvmOptimizedExecTest {
     @Test fun recursionThroughOptimizer() = check(
         "120",
         """
+        import std.io
         func fact(n: Int): Int {
             if n <= 1 { return 1 }
             return n * fact(n - 1)
         }
-        func main() { println(fact(5)) }
+        func main() { std::io::println(fact(5)) }
         """.trimIndent()
     )
 
@@ -105,7 +107,7 @@ class LlvmOptimizedExecTest {
                     count = count + 1
                 }
             }
-            println(count)
+            std::io::println(count)
             """.trimIndent()
         )
     )

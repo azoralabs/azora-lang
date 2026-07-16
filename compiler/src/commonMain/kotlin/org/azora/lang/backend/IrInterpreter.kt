@@ -67,6 +67,7 @@ class IrInterpreter {
 
     private val output = StringBuilder()
     private val functions = mutableMapOf<String, IrFunction>()
+    private val structs = mutableMapOf<String, IrTopLevel.Struct>()
 
     /**
      * Implementations for extern (`bridge`) functions that the interpreter can run directly.
@@ -139,6 +140,7 @@ class IrInterpreter {
      */
     fun interpret(program: IrProgram): String {
         val mainState = resetFor()
+        registerStructs(program)
         return azRunBlocking(Dispatchers.Default + mainState) {
             coroutineScope = this
             runProgramBody(program)
@@ -153,6 +155,7 @@ class IrInterpreter {
      */
     suspend fun interpretSuspend(program: IrProgram): String {
         val mainState = resetFor()
+        registerStructs(program)
         return kotlinx.coroutines.withContext(Dispatchers.Default + mainState) {
             coroutineScope = this
             runProgramBody(program)
@@ -168,6 +171,7 @@ class IrInterpreter {
      */
     fun runTests(program: IrProgram): List<TestResult> {
         val mainState = resetFor()
+        registerStructs(program)
         return azRunBlocking(Dispatchers.Default + mainState) {
             coroutineScope = this
             val tests = mutableListOf<IrTopLevel.Test>()
@@ -194,11 +198,18 @@ class IrInterpreter {
     private fun resetFor(): ExecState {
         output.clear()
         functions.clear()
+        structs.clear()
         launchedTasks.clear()
         val mainState = ExecState()
         // Global scope
         mainState.scopes.addLast(mutableMapOf("__null" to null))
         return mainState
+    }
+
+    private fun registerStructs(program: IrProgram) {
+        for (item in program.items) {
+            if (item is IrTopLevel.Struct) structs[item.name] = item
+        }
     }
 
     /**
@@ -669,6 +680,7 @@ class IrInterpreter {
                         (target as MutableList<Any?>)[(key as Long).toInt()]
                     }
                     is Pointer -> target.buffer[target.index + (key as Long).toInt()]
+                    is String -> target[(key as Long).toInt()]
                     else -> error("Cannot index into $target")
                 }
             }
@@ -911,6 +923,15 @@ class IrInterpreter {
     }
 
     private suspend fun evalBinary(expr: IrExpr.Binary): Any {
+        // Short-circuit logical operators: the right operand must not be evaluated
+        // when the left already determines the result (matches the codegen backends).
+        if (expr.op == IrBinaryOp.AND) {
+            return (evalExpr(expr.left) as Boolean) && (evalExpr(expr.right) as Boolean)
+        }
+        if (expr.op == IrBinaryOp.OR) {
+            return (evalExpr(expr.left) as Boolean) || (evalExpr(expr.right) as Boolean)
+        }
+
         val left = evalExpr(expr.left)
         val right = evalExpr(expr.right)
 
@@ -1109,7 +1130,7 @@ class IrInterpreter {
             debugHost?.onLine(((args.firstOrNull() as? Long) ?: 0L).toInt(), snapshotLocals())
             return null
         }
-        if (expr.name == "println") {
+        if (expr.name == "std__io__println") {
             val value = args.firstOrNull()
             val text = formatValue(value)
             azSync(output) { output.appendLine(text) }
@@ -1120,7 +1141,7 @@ class IrInterpreter {
             // Unrecoverable runtime abort.
             throw AzoraPanicException(formatValue(args.firstOrNull()))
         }
-        if (expr.name == "toString") {
+        if (expr.name == "std__convert__toString") {
             return formatValue(args.firstOrNull())
         }
         if (expr.name == "async") {
@@ -1128,7 +1149,7 @@ class IrInterpreter {
             val scope = coroutineScope ?: error("async used outside of the interpreter's structured scope")
             return TaskHandle(scope.async(context = childState()) { invokeClosure(thunk) })
         }
-        if (expr.name == "cancel") {
+        if (expr.name == "std__concurrency__cancel") {
             (args.firstOrNull() as? TaskHandle)?.deferred?.cancel()
             return null
         }
@@ -1243,7 +1264,55 @@ class IrInterpreter {
         is Double -> value.toString()
         is Boolean -> value.toString()
         is Char -> value.toString()
+        is Map<*, *> -> formatMapValue(value)
         else -> value.toString()
+    }
+
+    private fun formatMapValue(value: Map<*, *>): String {
+        val internalType = value["__type"] as? String
+        if (internalType?.startsWith("__Tuple_") != true) return value.toString()
+
+        return value.entries.joinToString(", ", "{", "}") { (key, fieldValue) ->
+            val displayedValue = if (key == "__type") tupleTypeName(internalType) else fieldValue
+            "${quoteValue(key.toString())}=${formatStructuredValue(displayedValue)}"
+        }
+    }
+
+    private fun formatStructuredValue(value: Any?): String = when (value) {
+        null -> "null"
+        is String -> quoteValue(value)
+        is Char -> quoteValue(value.toString())
+        is Map<*, *> -> formatMapValue(value)
+        else -> value.toString()
+    }
+
+    private fun quoteValue(value: String): String = buildString {
+        append('"')
+        for (char in value) {
+            when (char) {
+                '\\' -> append("\\\\")
+                '"' -> append("\\\"")
+                '\n' -> append("\\n")
+                '\r' -> append("\\r")
+                '\t' -> append("\\t")
+                else -> append(char)
+            }
+        }
+        append('"')
+    }
+
+    private fun tupleTypeName(internalName: String, visiting: Set<String> = emptySet()): String {
+        if (internalName in visiting) return internalName
+        val struct = structs[internalName] ?: return internalName
+        val nextVisiting = visiting + internalName
+        return struct.fields.joinToString(", ", "Tuple<", ">") { field ->
+            sourceTypeName(field.type, nextVisiting)
+        }
+    }
+
+    private fun sourceTypeName(type: IrType, visiting: Set<String>): String = when (type) {
+        is IrType.Named -> if (type.name.startsWith("__Tuple_")) tupleTypeName(type.name, visiting) else type.name
+        else -> type.toString()
     }
 
     /** Returns an independent deep copy of [value] (for `isolated(…)`). */

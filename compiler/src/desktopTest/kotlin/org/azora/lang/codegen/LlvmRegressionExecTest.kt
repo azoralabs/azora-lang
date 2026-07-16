@@ -37,15 +37,16 @@ class LlvmRegressionExecTest {
         assertEquals(expected, LlvmExec.run(source, optimized = true), "optimized IR")
     }
 
-    private fun main(body: String): String = "func main() {\n$body\n}"
+    private fun main(body: String): String = "import std.io\nfunc main() {\n$body\n}"
 
     @Test fun namedTaskAwaitUsesPayloadAbi() = check(
         "42",
         """
+        import std.io
         task answer(): Int { return 42 }
         task main() {
             fin value = await answer()
-            println(value)
+            std::io::println(value)
         }
         """.trimIndent()
     )
@@ -53,10 +54,11 @@ class LlvmRegressionExecTest {
     @Test fun namedTaskParametersAreCopiedIntoTaskContext() = check(
         "42",
         """
+        import std.io
         task add(a: Int, b: Int): Int { return a + b }
         task main() {
             fin value = await add(19, 23)
-            println(value)
+            std::io::println(value)
         }
         """.trimIndent()
     )
@@ -64,9 +66,10 @@ class LlvmRegressionExecTest {
     @Test fun completedAsyncBlocksRemainValidLlvm() = check(
         "42",
         """
+        import std.io
         task main() {
             fin value = async { 42 }
-            println(await value)
+            std::io::println(await value)
         }
         """.trimIndent()
     )
@@ -74,10 +77,11 @@ class LlvmRegressionExecTest {
     @Test fun asyncBlocksCaptureLocalValuesOnSpawn() = check(
         "42",
         """
+        import std.io
         task main() {
             fin seed = 40
             fin value = async { seed + 2 }
-            println(await value)
+            std::io::println(await value)
         }
         """.trimIndent()
     )
@@ -85,8 +89,9 @@ class LlvmRegressionExecTest {
     @Test fun unawaitedChildTasksJoinAtScopeExit() = check(
         "42",
         """
+        import std.io
         task child(): Int {
-            println(42)
+            std::io::println(42)
             return 0
         }
         task main() {
@@ -98,10 +103,11 @@ class LlvmRegressionExecTest {
     @Test fun taskThreadsInitializeThreadLocalAggregates() = check(
         "42",
         """
+        import std.io
         threadlocal var numbers = [41]
         task read(): Int { return numbers[0] + 1 }
         task main() {
-            println(await read())
+            std::io::println(await read())
         }
         """.trimIndent()
     )
@@ -109,11 +115,12 @@ class LlvmRegressionExecTest {
     @Test fun zoneAllocWaitsForChildTasksBeforeFreeingArena() = check(
         "42",
         """
+        import std.io
         task main() {
             zone alloc {
                 var p: Int* = alloc 41
                 fin value = async { *p + 1 }
-                println(await value)
+                std::io::println(await value)
             }
         }
         """.trimIndent()
@@ -122,11 +129,14 @@ class LlvmRegressionExecTest {
     @Test fun cancelCallsNativeTaskCancellationRuntime() = check(
         "42",
         """
+        import std.io
+        import std.concurrency.async
+
         task answer(): Int { return 42 }
         task main() {
             fin value = answer()
-            println(await value)
-            cancel(value)
+            std::io::println(await value)
+            std::concurrency::cancel(value)
         }
         """.trimIndent()
     )
@@ -134,10 +144,13 @@ class LlvmRegressionExecTest {
     @Test fun cancelLoweringIncludesPthreadCancel() {
         val ir = LlvmExec.compile(
             """
+            import std.io
+            import std.concurrency.async
+
             task answer(): Int { return 42 }
             task main() {
                 fin value = answer()
-                cancel(value)
+                std::concurrency::cancel(value)
             }
             """.trimIndent()
         )
@@ -152,9 +165,9 @@ class LlvmRegressionExecTest {
             """
             let s = "he" + "llo"
             when s {
-                "world" -> { println("W") }
-                "hello" -> { println("H") }
-                else -> { println("?") }
+                "world" -> { std::io::println("W") }
+                "hello" -> { std::io::println("H") }
+                else -> { std::io::println("?") }
             }
             """.trimIndent()
         )
@@ -167,9 +180,9 @@ class LlvmRegressionExecTest {
             var x = 1
             if true {
                 var x = 2
-                println(x)
+                std::io::println(x)
             }
-            println(x)
+            std::io::println(x)
             """.trimIndent()
         )
     )
@@ -182,17 +195,18 @@ class LlvmRegressionExecTest {
             when x {
                 1 -> {
                     var x = 5
-                    println(x)
+                    std::io::println(x)
                 }
-                else -> { println(0) }
+                else -> { std::io::println(0) }
             }
-            println(x)
+            std::io::println(x)
             """.trimIndent()
         )
     )
 
     @Test fun threadLocalAssignmentUsesLlvmTlsStorage() {
         val source = """
+            import std.io
             threadlocal var counter = 0
             func main() {
                 counter = 5
@@ -207,13 +221,14 @@ class LlvmRegressionExecTest {
 
     @Test fun threadLocalAggregatesUseTlsAndRuntimeInitialization() {
         val source = """
+            import std.io
             threadlocal var numbers = [1, 2, 3]
             threadlocal var names = ["first": 10, "second": 20]
             threadlocal var unique = ![1, 2, 2, 3]
             func main() {
-                println(numbers[1])
-                println(names["second"])
-                println(unique.length)
+                std::io::println(numbers[1])
+                std::io::println(names["second"])
+                std::io::println(unique.length)
             }
         """.trimIndent()
         for (optimized in listOf(false, true)) {
@@ -233,13 +248,14 @@ class LlvmRegressionExecTest {
     @Test fun threadLocalStdlibCollectionsInitializeObjects() = check(
         "3\n2\n3",
         """
+        import std.io
         threadlocal var numbers: List<Int> = [1, 2, 3]
         threadlocal var names: Map<String, Int> = ["first": 10, "second": 20]
         threadlocal var unique: Set<Int> = ![1, 2, 2, 3]
         func main() {
-            println(numbers.size)
-            println(names.size)
-            println(unique.size)
+            std::io::println(numbers.size)
+            std::io::println(names.size)
+            std::io::println(unique.size)
         }
         """.trimIndent()
     )
@@ -247,12 +263,13 @@ class LlvmRegressionExecTest {
     @Test fun decimalCollectionsUseExplicitPackedAlignment() {
         val ir = LlvmExec.compile(
             """
+            import std.io
             func main() {
                 var array = [1.5D, 2.5D]
                 var map = ["value": 3.5D]
                 var set = ![1.5D, 2.5D]
                 array[0] = map["value"]
-                println(set.length)
+                std::io::println(set.length)
             }
             """.trimIndent()
         )
@@ -263,6 +280,7 @@ class LlvmRegressionExecTest {
     @Test fun whenOnStringMultiPattern() = check(
         "vowel\nother",
         """
+        import std.io
         func kind(s: String): String {
             when s {
                 "a", "e" -> { return "vowel" }
@@ -271,8 +289,8 @@ class LlvmRegressionExecTest {
             return "unreachable"
         }
         func main() {
-            println(kind("e" + ""))
-            println(kind("z" + ""))
+            std::io::println(kind("e" + ""))
+            std::io::println(kind("z" + ""))
         }
         """.trimIndent()
     )
@@ -283,8 +301,8 @@ class LlvmRegressionExecTest {
             """
             let s = "x" + "y"
             when s {
-                "ab" -> { println("AB") }
-                else -> { println("?") }
+                "ab" -> { std::io::println("AB") }
+                else -> { std::io::println("?") }
             }
             """.trimIndent()
         )
@@ -297,7 +315,7 @@ class LlvmRegressionExecTest {
             """
             var x: UInt = 5u
             x = x - 6u
-            println(x)
+            std::io::println(x)
             """.trimIndent()
         )
     )
@@ -309,7 +327,7 @@ class LlvmRegressionExecTest {
             """
             var y: ULong = 0uL
             y = y - 1uL
-            println(y)
+            std::io::println(y)
             """.trimIndent()
         )
     )
@@ -321,7 +339,7 @@ class LlvmRegressionExecTest {
             """
             var x: UInt = 0u
             x = x - 1u
-            println("v = ${'$'}x")
+            std::io::println("v = ${'$'}x")
             """.trimIndent()
         )
     )
@@ -333,7 +351,7 @@ class LlvmRegressionExecTest {
             """
             var x = 0
             x = x - 6
-            println(x)
+            std::io::println(x)
             """.trimIndent()
         )
     )

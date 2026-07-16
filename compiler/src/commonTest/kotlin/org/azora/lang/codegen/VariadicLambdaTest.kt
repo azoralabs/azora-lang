@@ -17,21 +17,23 @@ class VariadicLambdaTest {
 
     @Test fun variadicLambdaLength() {
         assertEquals("0\n1\n3", run("""
+            import std.io
             func main() {
                 fin len = <T...>{ it.length }
-                println(len())
-                println(len(1))
-                println(len(1, 2, 3))
+                std::io::println(len())
+                std::io::println(len(1))
+                std::io::println(len(1, 2, 3))
             }
         """.trimIndent()))
     }
 
     @Test fun variadicLambdaFirst() {
         assertEquals("42\n10", run("""
+            import std.io
             func main() {
                 fin first = <T...>{ it[0] }
-                println(first(42))
-                println(first(10, 20, 30))
+                std::io::println(first(42))
+                std::io::println(first(10, 20, 30))
             }
         """.trimIndent()))
     }
@@ -39,14 +41,15 @@ class VariadicLambdaTest {
     @Test fun variadicLambdaSum() {
         // A `for` body inside a lambda now sees the lambda's locals.
         assertEquals("6\n100", run("""
+            import std.io
             func main() {
                 fin sum = <T...>{
                     var total = 0
                     for x in it { total = total + x }
                     total
                 }
-                println(sum(1, 2, 3))
-                println(sum(10, 20, 30, 40))
+                std::io::println(sum(1, 2, 3))
+                std::io::println(sum(10, 20, 30, 40))
             }
         """.trimIndent()))
     }
@@ -54,13 +57,14 @@ class VariadicLambdaTest {
     @Test fun regularLambdaForLocalScoping() {
         // Regression: a non-variadic lambda with a for loop + local accumulator.
         assertEquals("6", run("""
+            import std.io
             func main() {
                 fin f = { xs: [Int] ->
                     var total = 0
                     for x in xs { total = total + x }
                     total
                 }
-                println(f([1, 2, 3]))
+                std::io::println(f([1, 2, 3]))
             }
         """.trimIndent()))
     }

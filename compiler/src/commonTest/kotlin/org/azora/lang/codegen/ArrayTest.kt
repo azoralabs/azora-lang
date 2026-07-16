@@ -21,9 +21,10 @@ class ArrayTest {
     @Test
     fun arrayLiteralAndLength() {
         assertEquals("3", run("""
+            import std.io
             func main() {
                 var a = [10, 20, 30]
-                println(a.length)
+                std::io::println(a.length)
             }
         """.trimIndent()))
     }
@@ -31,9 +32,10 @@ class ArrayTest {
     @Test
     fun arrayIndexRead() {
         assertEquals("20", run("""
+            import std.io
             func main() {
                 var a = [10, 20, 30]
-                println(a[1])
+                std::io::println(a[1])
             }
         """.trimIndent()))
     }
@@ -41,10 +43,11 @@ class ArrayTest {
     @Test
     fun arrayIndexWrite() {
         assertEquals("99", run("""
+            import std.io
             func main() {
                 var a = [10, 20, 30]
                 a[0] = 99
-                println(a[0])
+                std::io::println(a[0])
             }
         """.trimIndent()))
     }
@@ -52,9 +55,10 @@ class ArrayTest {
     @Test
     fun arrayTypedAnnotation() {
         assertEquals("42", run("""
+            import std.io
             func main() {
                 var a: [Int] = [7, 42, 13]
-                println(a[1])
+                std::io::println(a[1])
             }
         """.trimIndent()))
     }
@@ -63,13 +67,14 @@ class ArrayTest {
     fun arrayIterationWithFor() {
         // 10 + 20 + 30 = 60
         assertEquals("60", run("""
+            import std.io
             func main() {
                 var a = [10, 20, 30]
                 var sum = 0
                 for i in 0..<a.length {
                     sum = sum + a[i]
                 }
-                println(sum)
+                std::io::println(sum)
             }
         """.trimIndent()))
     }
@@ -77,10 +82,11 @@ class ArrayTest {
     @Test
     fun arrayAddGrows() {
         assertEquals("4", run("""
+            import std.io
             func main() {
                 var a = [1, 2, 3]
                 a.add(4)
-                println(a.length)
+                std::io::println(a.length)
             }
         """.trimIndent()))
     }
@@ -88,10 +94,11 @@ class ArrayTest {
     @Test
     fun arrayAddThenRead() {
         assertEquals("40", run("""
+            import std.io
             func main() {
                 var a = [10, 20, 30]
                 a.add(40)
-                println(a[3])
+                std::io::println(a[3])
             }
         """.trimIndent()))
     }
@@ -99,9 +106,10 @@ class ArrayTest {
     @Test
     fun arrayIsEmpty() {
         assertEquals("false", run("""
+            import std.io
             func main() {
                 var a = [1]
-                println(a.isEmpty)
+                std::io::println(a.isEmpty)
             }
         """.trimIndent()))
     }
@@ -109,9 +117,10 @@ class ArrayTest {
     @Test
     fun arrayIsNotEmpty() {
         assertEquals("true", run("""
+            import std.io
             func main() {
                 var a = [1]
-                println(a.isNotEmpty)
+                std::io::println(a.isNotEmpty)
             }
         """.trimIndent()))
     }
@@ -120,10 +129,11 @@ class ArrayTest {
     fun compoundIndexAssignment() {
         // a[1] += 5  →  20 + 5 = 25
         assertEquals("25", run("""
+            import std.io
             func main() {
                 var a = [10, 20, 30]
                 a[1] += 5
-                println(a[1])
+                std::io::println(a[1])
             }
         """.trimIndent()))
     }
@@ -131,9 +141,10 @@ class ArrayTest {
     @Test
     fun nestedArrays() {
         assertEquals("2", run("""
+            import std.io
             func main() {
                 var m = [[1, 2], [3, 4]]
-                println(m[0][1])
+                std::io::println(m[0][1])
             }
         """.trimIndent()))
     }
@@ -141,8 +152,9 @@ class ArrayTest {
     @Test
     fun stringLength() {
         assertEquals("5", run("""
+            import std.io
             func main() {
-                println("hello".length)
+                std::io::println("hello".length)
             }
         """.trimIndent()))
     }
@@ -150,12 +162,13 @@ class ArrayTest {
     @Test
     fun arrayReturnedFromFunction() {
         assertEquals("30", run("""
+            import std.io
             func makeThree(): [Int] {
                 return [10, 20, 30]
             }
             func main() {
                 var a = makeThree()
-                println(a[2])
+                std::io::println(a[2])
             }
         """.trimIndent()))
     }
@@ -163,13 +176,14 @@ class ArrayTest {
     @Test
     fun arrayOperationsSurviveOptimization() {
         assertEquals("60", run("""
+            import std.io
             func main() {
                 var a = [10, 20, 30]
                 var sum = 0
                 for i in 0..<a.length {
                     sum = sum + a[i]
                 }
-                println(sum)
+                std::io::println(sum)
             }
         """.trimIndent(), release = true))
     }
@@ -177,9 +191,10 @@ class ArrayTest {
     @Test
     fun arrayLoweredToAllBackends() {
         val result = Compiler().compile("""
+            import std.io
             func main() {
                 var a = [1, 2, 3]
-                println(a[0])
+                std::io::println(a[0])
             }
         """.trimIndent())
         assertIs<CompilationResult.Success>(result)

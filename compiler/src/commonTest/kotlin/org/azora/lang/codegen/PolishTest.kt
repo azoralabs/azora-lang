@@ -18,8 +18,9 @@ class PolishTest {
     // Default param values
     @Test fun defaultParamValue() {
         assertEquals("Hello, World!\nHi, World!", run("""
+            import std.io
             func greet(name: String, greeting: String = "Hello") {
-                println(greeting + ", " + name + "!")
+                std::io::println(greeting + ", " + name + "!")
             }
             func main() {
                 greet("World")
@@ -30,13 +31,14 @@ class PolishTest {
 
     @Test fun defaultParamInt() {
         assertEquals("1\n42", run("""
+            import std.io
             func power(val: Int, exp: Int = 0): Int {
                 if exp == 0 { return 1 }
                 return val
             }
             func main() {
-                println(power(0))
-                println(power(42, 1))
+                std::io::println(power(0))
+                std::io::println(power(42, 1))
             }
         """.trimIndent()))
     }
@@ -44,11 +46,12 @@ class PolishTest {
     // Named function arguments
     @Test fun namedFunctionArgs() {
         assertEquals("A:30", run("""
+            import std.io
             func create(label: String, value: Int): String {
                 return label + ":" + value
             }
             func main() {
-                println(create(value: 30, label: "A"))
+                std::io::println(create(value: 30, label: "A"))
             }
         """.trimIndent()))
     }
@@ -56,6 +59,7 @@ class PolishTest {
     // Exhaustiveness checking
     @Test fun exhaustiveWhenEnum() {
         assertEquals("red", run("""
+            import std.io
             enum Color {
                 Red
                 Green
@@ -64,9 +68,9 @@ class PolishTest {
             func main() {
                 fin c = Color.Red
                 when c {
-                    Color.Red -> { println("red") }
-                    Color.Green -> { println("green") }
-                    Color.Blue -> { println("blue") }
+                    Color.Red -> { std::io::println("red") }
+                    Color.Green -> { std::io::println("green") }
+                    Color.Blue -> { std::io::println("blue") }
                 }
             }
         """.trimIndent()))
@@ -74,6 +78,7 @@ class PolishTest {
 
     @Test fun nonExhaustiveWhenErrors() {
         val result = Compiler().compile("""
+            import std.io
             slot Opt {
                 Some(Int)
                 None
@@ -81,7 +86,7 @@ class PolishTest {
             func main() {
                 fin c = Opt.Some(1)
                 when c {
-                    Opt.Some(v) -> { println(v) }
+                    Opt.Some(v) -> { std::io::println(v) }
                 }
             }
         """.trimIndent())

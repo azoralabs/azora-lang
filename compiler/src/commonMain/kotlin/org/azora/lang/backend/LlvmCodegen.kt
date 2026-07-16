@@ -272,8 +272,10 @@ class LlvmCodegen {
             body.appendLine()
         }
 
-        // Functions
+        // Functions (skip runtime intrinsics — their stdlib bodies are dead
+        // placeholders; each call is intercepted and lowered to native code).
         for (item in program.items.filterIsInstance<IrTopLevel.Func>()) {
+            if (item.function.name in org.azora.lang.semantic.CtfeEvaluator.RUNTIME_INTRINSICS) continue
             out.clear()
             if (item.function.isTask && item.function.name != "main") {
                 emitTaskFunction(item.function)
@@ -2681,7 +2683,7 @@ class LlvmCodegen {
     }
 
     private fun emitCall(expr: IrExpr.Call): String {
-        if (expr.name == "println") return emitPrintln(expr)
+        if (expr.name == "std__io__println") return emitPrintln(expr)
         if (expr.name == "print") return emitPrintln(expr, newline = false)
         if (expr.name == "async") {
             val lambda = expr.args.singleOrNull() as? IrExpr.Lambda
@@ -2713,7 +2715,7 @@ class LlvmCodegen {
             emit("  ; drop — advisory for raw pointers; arenas/task scopes own native cleanup")
             return "void"
         }
-        if (expr.name == "cancel") {
+        if (expr.name == "std__concurrency__cancel") {
             usesTaskRuntime = true
             val handle = emitExpr(expr.args.single())
             emit("  call void @__azora_task_cancel(%azora.task* $handle)")
@@ -2723,7 +2725,7 @@ class LlvmCodegen {
         // Coerce arguments to the callee's declared parameter types (numeric
         // widening such as an Int literal passed to a Real/Long parameter).
         val declared = funcParamTypes[expr.name]
-        if (expr.name == "toString" && declared == null && expr.args.size == 1) {
+        if (expr.name == "std__convert__toString" && expr.args.size == 1) {
             emitExpr(expr.args.single())
             emit("  ; erased generic toString — no native generic stringification ABI yet")
             return gepString(addStringConstant(""))

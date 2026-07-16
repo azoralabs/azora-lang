@@ -17,13 +17,14 @@ class SlotsTest {
     @Test fun slotConstructionOnly() {
         // Test just construction — no when matching
         run("""
+            import std.io
             slot Option {
                 Some(Int)
                 None
             }
             func main() {
                 var o = Option.Some(42)
-                println("ok")
+                std::io::println("ok")
             }
         """.trimIndent())
     }
@@ -31,6 +32,7 @@ class SlotsTest {
     @Test fun slotWhenNoBindings() {
         // Test when matching without bindings (no-payload variant)
         assertEquals("nothing", run("""
+            import std.io
             slot Option {
                 Some(Int)
                 None
@@ -38,8 +40,8 @@ class SlotsTest {
             func main() {
                 var o = Option.None
                 when o {
-                    Option.None -> { println("nothing") }
-                    else -> { println("some") }
+                    Option.None -> { std::io::println("nothing") }
+                    else -> { std::io::println("some") }
                 }
             }
         """.trimIndent()))
@@ -47,6 +49,7 @@ class SlotsTest {
 
     @Test fun slotSomeWithPayload() {
         assertEquals("42", run("""
+            import std.io
             slot Option {
                 Some(Int)
                 None
@@ -54,8 +57,8 @@ class SlotsTest {
             func main() {
                 var o = Option.Some(42)
                 when o {
-                    Option.Some(v) -> { println(v) }
-                    Option.None -> { println("nothing") }
+                    Option.Some(v) -> { std::io::println(v) }
+                    Option.None -> { std::io::println("nothing") }
                 }
             }
         """.trimIndent()))
@@ -63,6 +66,7 @@ class SlotsTest {
 
     @Test fun slotMultiplePayloads() {
         assertEquals("7", run("""
+            import std.io
             slot Shape {
                 Circle(Int)
                 Rect(Int, Int)
@@ -71,9 +75,9 @@ class SlotsTest {
             func main() {
                 var s = Shape.Rect(3, 4)
                 when s {
-                    Shape.Circle(r) -> { println(r) }
-                    Shape.Rect(w, h) -> { println(w + h) }
-                    Shape.Point -> { println("0") }
+                    Shape.Circle(r) -> { std::io::println(r) }
+                    Shape.Rect(w, h) -> { std::io::println(w + h) }
+                    Shape.Point -> { std::io::println("0") }
                 }
             }
         """.trimIndent()))
@@ -81,6 +85,7 @@ class SlotsTest {
 
     @Test fun slotNoPayloadVariant() {
         assertEquals("0", run("""
+            import std.io
             slot Shape {
                 Circle(Int)
                 Rect(Int, Int)
@@ -89,9 +94,9 @@ class SlotsTest {
             func main() {
                 var s = Shape.Point
                 when s {
-                    Shape.Circle(r) -> { println(r) }
-                    Shape.Rect(w, h) -> { println(w + h) }
-                    Shape.Point -> { println("0") }
+                    Shape.Circle(r) -> { std::io::println(r) }
+                    Shape.Rect(w, h) -> { std::io::println(w + h) }
+                    Shape.Point -> { std::io::println("0") }
                 }
             }
         """.trimIndent()))

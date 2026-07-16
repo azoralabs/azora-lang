@@ -1,7 +1,8 @@
 package demo_multiplatform
 
-use std.ui
-use zone std
+import std.ui
+import std
+import std.convert
 
 // Counter App - A single-file app that compiles to every UI target.
 // Uses Compose-compatible modifier names so output is identical on all targets.
@@ -38,7 +39,7 @@ view App() {
             verticalArrangement: "spacedBy(8)"
         ) {
             Text(
-                toString(count),
+                std::convert::toString(count),
                 modifier: Modifier()
                     .fontSize(64)
                     .bold()

@@ -19,7 +19,7 @@ class DebugModeTest {
     @Test
     fun lineEventsFireWithLocals() {
         val result = compileDebug(
-            "func main() {\n    var x = 1\n    x = x + 1\n    println(x)\n}"
+            "import std.io\nfunc main() {\n    var x = 1\n    x = x + 1\n    std::io::println(x)\n}"
         )
         val events = mutableListOf<Pair<Int, Map<String, Any?>>>()
         val interpreter = IrInterpreter()
@@ -30,16 +30,16 @@ class DebugModeTest {
         }
         val out = interpreter.interpret(result.ir)
         assertEquals("2", out)
-        assertEquals(listOf(2, 3, 4), events.map { it.first }, "one event per statement line")
-        // At line 3 (x = x + 1) the local x is still 1; at line 4 it is 2.
-        assertEquals(1L, events.first { it.first == 3 }.second["x"])
-        assertEquals(2L, events.first { it.first == 4 }.second["x"])
+        assertEquals(listOf(3, 4, 5), events.map { it.first }, "one event per statement line")
+        // At line 4 (x = x + 1) the local x is still 1; at line 5 it is 2.
+        assertEquals(1L, events.first { it.first == 4 }.second["x"])
+        assertEquals(2L, events.first { it.first == 5 }.second["x"])
     }
 
     @Test
     fun nestedBlocksAreInstrumented() {
         val result = compileDebug(
-            "func main() {\n    for i in 1..2 {\n        println(i)\n    }\n}"
+            "import std.io\nfunc main() {\n    for i in 1..2 {\n        std::io::println(i)\n    }\n}"
         )
         val lines = mutableListOf<Int>()
         val interpreter = IrInterpreter()
@@ -47,18 +47,18 @@ class DebugModeTest {
             override suspend fun onLine(line: Int, locals: Map<String, Any?>) { lines.add(line) }
         }
         interpreter.interpret(result.ir)
-        assertEquals(listOf(2, 3, 3), lines, "loop body line fires per iteration")
+        assertEquals(listOf(3, 4, 4), lines, "loop body line fires per iteration")
     }
 
     @Test
     fun releaseBuildsHaveNoInstrumentation() {
-        val result = Compiler().compile("func main() {\n    println(1)\n}") as CompilationResult.Success
+        val result = Compiler().compile("import std.io\nfunc main() {\n    std::io::println(1)\n}") as CompilationResult.Success
         assertTrue("__dbg" !in result.ir.prettyPrint())
     }
 
     @Test
     fun outputStreamsLive() {
-        val result = compileDebug("func main() {\n    println(\"a\")\n    println(\"b\")\n}")
+        val result = compileDebug("import std.io\nfunc main() {\n    std::io::println(\"a\")\n    std::io::println(\"b\")\n}")
         val streamed = mutableListOf<String>()
         val interpreter = IrInterpreter()
         interpreter.outputListener = { streamed.add(it) }
@@ -68,7 +68,7 @@ class DebugModeTest {
 
     @Test
     fun debugBuildRunsIdenticallyWithoutHost() {
-        val source = "func main() {\n    var total = 0\n    for i in 1..5 {\n        total = total + i\n    }\n    println(total)\n}"
+        val source = "import std.io\nfunc main() {\n    var total = 0\n    for i in 1..5 {\n        total = total + i\n    }\n    std::io::println(total)\n}"
         val debug = compileDebug(source)
         assertEquals("15", IrInterpreter().interpret(debug.ir))
     }

@@ -42,70 +42,70 @@ class LlvmCodegenExecTest {
         assertEquals(expected, LlvmExec.run(source))
     }
 
-    private fun main(body: String): String = "func main() {\n$body\n}"
+    private fun main(body: String): String = "import std.io\nfunc main() {\n$body\n}"
 
     // -----------------------------------------------------------------------
     // Literals & println
     // -----------------------------------------------------------------------
 
     @Test fun printsIntLiteral() =
-        check("42", main("""println(42)"""))
+        check("42", main("""std::io::println(42)"""))
 
     @Test fun printsNegativeInt() =
-        check("-7", main("""println(-7)"""))
+        check("-7", main("""std::io::println(-7)"""))
 
     @Test fun printsStringLiteral() =
-        check("hello", main("""println("hello")"""))
+        check("hello", main("""std::io::println("hello")"""))
 
     @Test fun printsBoolLiterals() =
-        check("true\nfalse", main("println(true)\nprintln(false)"))
+        check("true\nfalse", main("std::io::println(true)\nstd::io::println(false)"))
 
     @Test fun printsChar() =
-        check("Q", main("""println('Q')"""))
+        check("Q", main("""std::io::println('Q')"""))
 
     @Test fun printsReal() =
-        check("3.5", main("""println(3.5)"""))
+        check("3.5", main("""std::io::println(3.5)"""))
 
     @Test fun printsWholeReal() =
-        check("3", main("""println(3.0)"""))
+        check("3", main("""std::io::println(3.0)"""))
 
     // -----------------------------------------------------------------------
     // Integer arithmetic
     // -----------------------------------------------------------------------
 
     @Test fun addition() =
-        check("30", main("""println(10 + 20)"""))
+        check("30", main("""std::io::println(10 + 20)"""))
 
     @Test fun subtraction() =
-        check("8", main("""println(15 - 7)"""))
+        check("8", main("""std::io::println(15 - 7)"""))
 
     @Test fun multiplication() =
-        check("42", main("""println(6 * 7)"""))
+        check("42", main("""std::io::println(6 * 7)"""))
 
     @Test fun integerDivision() =
-        check("3", main("""println(17 / 5)"""))
+        check("3", main("""std::io::println(17 / 5)"""))
 
     @Test fun modulo() =
-        check("2", main("""println(17 % 5)"""))
+        check("2", main("""std::io::println(17 % 5)"""))
 
     @Test fun precedence() =
-        check("14", main("""println(2 + 3 * 4)"""))
+        check("14", main("""std::io::println(2 + 3 * 4)"""))
 
     @Test fun parenthesizedPrecedence() =
-        check("20", main("""println((2 + 3) * 4)"""))
+        check("20", main("""std::io::println((2 + 3) * 4)"""))
 
     @Test fun negationExpression() =
-        check("-15", main("var x = 15\nprintln(-x)"))
+        check("-15", main("var x = 15\nstd::io::println(-x)"))
 
     // -----------------------------------------------------------------------
     // Bitwise & shifts
     // -----------------------------------------------------------------------
 
-    @Test fun bitwiseAnd() = check("2", main("""println(10 & 6)"""))
-    @Test fun bitwiseOr() = check("11", main("""println(10 | 1)"""))
-    @Test fun bitwiseXor() = check("9", main("""println(10 ^ 3)"""))
-    @Test fun shiftLeft() = check("16", main("""println(1 << 4)"""))
-    @Test fun shiftRight() = check("64", main("""println(256 >> 2)"""))
+    @Test fun bitwiseAnd() = check("2", main("""std::io::println(10 & 6)"""))
+    @Test fun bitwiseOr() = check("11", main("""std::io::println(10 | 1)"""))
+    @Test fun bitwiseXor() = check("9", main("""std::io::println(10 ^ 3)"""))
+    @Test fun shiftLeft() = check("16", main("""std::io::println(1 << 4)"""))
+    @Test fun shiftRight() = check("64", main("""std::io::println(256 >> 2)"""))
 
     // -----------------------------------------------------------------------
     // Comparisons & booleans
@@ -115,10 +115,10 @@ class LlvmCodegenExecTest {
         "true\nfalse\ntrue\nfalse",
         main(
             """
-            println(3 > 2)
-            println(3 < 2)
-            println(2 <= 2)
-            println(2 != 2)
+            std::io::println(3 > 2)
+            std::io::println(3 < 2)
+            std::io::println(2 <= 2)
+            std::io::println(2 != 2)
             """.trimIndent()
         )
     )
@@ -127,8 +127,8 @@ class LlvmCodegenExecTest {
         "false\ntrue",
         main(
             """
-            println(1 > 2 && 3 > 0)
-            println(1 < 2 && 3 > 0)
+            std::io::println(1 > 2 && 3 > 0)
+            std::io::println(1 < 2 && 3 > 0)
             """.trimIndent()
         )
     )
@@ -137,23 +137,23 @@ class LlvmCodegenExecTest {
         "true\nfalse",
         main(
             """
-            println(1 > 2 || 3 > 0)
-            println(1 > 2 || 3 < 0)
+            std::io::println(1 > 2 || 3 > 0)
+            std::io::println(1 > 2 || 3 < 0)
             """.trimIndent()
         )
     )
 
-    @Test fun logicalNot() = check("false", main("""println(!(1 < 2))"""))
+    @Test fun logicalNot() = check("false", main("""std::io::println(!(1 < 2))"""))
 
     // -----------------------------------------------------------------------
     // Variables
     // -----------------------------------------------------------------------
 
     @Test fun variableDeclarationAndUse() =
-        check("25", main("var x = 5\nprintln(x * x)"))
+        check("25", main("var x = 5\nstd::io::println(x * x)"))
 
     @Test fun reassignment() =
-        check("100", main("var x = 5\nx = 100\nprintln(x)"))
+        check("100", main("var x = 5\nx = 100\nstd::io::println(x)"))
 
     @Test fun letAndFinBindings() = check(
         "7",
@@ -161,7 +161,7 @@ class LlvmCodegenExecTest {
             """
             let a = 3
             fin b = 4
-            println(a + b)
+            std::io::println(a + b)
             """.trimIndent()
         )
     )
@@ -171,13 +171,13 @@ class LlvmCodegenExecTest {
     // -----------------------------------------------------------------------
 
     @Test fun ifTrueBranch() =
-        check("yes", main("""if 5 > 3 { println("yes") } else { println("no") }"""))
+        check("yes", main("""if 5 > 3 { std::io::println("yes") } else { std::io::println("no") }"""))
 
     @Test fun ifFalseBranch() =
-        check("no", main("""if 1 > 3 { println("yes") } else { println("no") }"""))
+        check("no", main("""if 1 > 3 { std::io::println("yes") } else { std::io::println("no") }"""))
 
     @Test fun ifWithoutElse() =
-        check("hit", main("""if true { println("hit") }"""))
+        check("hit", main("""if true { std::io::println("hit") }"""))
 
     @Test fun elseIfChain() = check(
         "Buzz",
@@ -185,13 +185,13 @@ class LlvmCodegenExecTest {
             """
             let n = 10
             if n % 15 == 0 {
-                println("FizzBuzz")
+                std::io::println("FizzBuzz")
             } else if n % 3 == 0 {
-                println("Fizz")
+                std::io::println("Fizz")
             } else if n % 5 == 0 {
-                println("Buzz")
+                std::io::println("Buzz")
             } else {
-                println(n)
+                std::io::println(n)
             }
             """.trimIndent()
         )
@@ -202,19 +202,19 @@ class LlvmCodegenExecTest {
     // -----------------------------------------------------------------------
 
     @Test fun forInclusiveRange() =
-        check("15", main("var s = 0\nfor i in 1..5 { s = s + i }\nprintln(s)"))
+        check("15", main("var s = 0\nfor i in 1..5 { s = s + i }\nstd::io::println(s)"))
 
     @Test fun forExclusiveRange() =
-        check("10", main("var s = 0\nfor i in 0..<5 { s = s + i }\nprintln(s)"))
+        check("10", main("var s = 0\nfor i in 0..<5 { s = s + i }\nstd::io::println(s)"))
 
     @Test fun whileLoop() =
-        check("120", main("var f = 1\nvar i = 1\nwhile i <= 5 { f = f * i\ni = i + 1 }\nprintln(f)"))
+        check("120", main("var f = 1\nvar i = 1\nwhile i <= 5 { f = f * i\ni = i + 1 }\nstd::io::println(f)"))
 
     @Test fun loopWithBreak() =
-        check("3", main("var i = 0\nloop { i = i + 1\nif i == 3 { break } }\nprintln(i)"))
+        check("3", main("var i = 0\nloop { i = i + 1\nif i == 3 { break } }\nstd::io::println(i)"))
 
     @Test fun forWithContinue() =
-        check("8", main("var s = 0\nfor i in 0..<5 { if i == 2 { continue }\ns = s + i }\nprintln(s)"))
+        check("8", main("var s = 0\nfor i in 0..<5 { if i == 2 { continue }\ns = s + i }\nstd::io::println(s)"))
 
     @Test fun nestedLoops() = check(
         "9",
@@ -226,7 +226,7 @@ class LlvmCodegenExecTest {
                     count = count + 1
                 }
             }
-            println(count)
+            std::io::println(count)
             """.trimIndent()
         )
     )
@@ -242,7 +242,7 @@ class LlvmCodegenExecTest {
                     count = count + 1
                 }
             }
-            println(count)
+            std::io::println(count)
             """.trimIndent()
         )
     )
@@ -254,36 +254,40 @@ class LlvmCodegenExecTest {
     @Test fun simpleFunction() = check(
         "7",
         """
+        import std.io
         func add(a: Int, b: Int): Int { return a + b }
-        func main() { println(add(3, 4)) }
+        func main() { std::io::println(add(3, 4)) }
         """.trimIndent()
     )
 
     @Test fun factorialRecursion() = check(
         "120",
         """
+        import std.io
         func fact(n: Int): Int {
             if n <= 1 { return 1 }
             return n * fact(n - 1)
         }
-        func main() { println(fact(5)) }
+        func main() { std::io::println(fact(5)) }
         """.trimIndent()
     )
 
     @Test fun fibonacciRecursion() = check(
         "55",
         """
+        import std.io
         func fib(n: Int): Int {
             if n < 2 { return n }
             return fib(n - 1) + fib(n - 2)
         }
-        func main() { println(fib(10)) }
+        func main() { std::io::println(fib(10)) }
         """.trimIndent()
     )
 
     @Test fun mutualRecursion() = check(
         "true\ntrue",
         """
+        import std.io
         func isEven(n: Int): Bool {
             if n == 0 { return true }
             return isOdd(n - 1)
@@ -293,8 +297,8 @@ class LlvmCodegenExecTest {
             return isEven(n - 1)
         }
         func main() {
-            println(isEven(10))
-            println(isOdd(7))
+            std::io::println(isEven(10))
+            std::io::println(isOdd(7))
         }
         """.trimIndent()
     )
@@ -302,20 +306,22 @@ class LlvmCodegenExecTest {
     @Test fun earlyReturnInsideLoop() = check(
         "4",
         """
+        import std.io
         func firstAt(limit: Int): Int {
             for i in 0..<limit {
                 if i == 4 { return i }
             }
             return -1
         }
-        func main() { println(firstAt(10)) }
+        func main() { std::io::println(firstAt(10)) }
         """.trimIndent()
     )
 
     @Test fun voidFunctionWithSideEffect() = check(
         "hi\nhi",
         """
-        func greet() { println("hi") }
+        import std.io
+        func greet() { std::io::println("hi") }
         func main() { greet()
         greet() }
         """.trimIndent()
@@ -326,33 +332,33 @@ class LlvmCodegenExecTest {
     // -----------------------------------------------------------------------
 
     @Test fun stringConcatenation() =
-        check("Hello, World!", main("""println("Hello, " + "World" + "!")"""))
+        check("Hello, World!", main("""std::io::println("Hello, " + "World" + "!")"""))
 
     @Test fun stringConcatVariable() = check(
         "Hello, Azora!",
         main(
             """
             let name = "Azora"
-            println("Hello, " + name + "!")
+            std::io::println("Hello, " + name + "!")
             """.trimIndent()
         )
     )
 
     @Test fun stringRepetition() =
-        check("ababab", main("""println("ab" * 3)"""))
+        check("ababab", main("""std::io::println("ab" * 3)"""))
 
     @Test fun stringEquality() = check(
         "true\nfalse",
         main(
             """
-            println("abc" == "abc")
-            println("abc" == "xyz")
+            std::io::println("abc" == "abc")
+            std::io::println("abc" == "xyz")
             """.trimIndent()
         )
     )
 
     @Test fun stringInequality() =
-        check("true", main("""println("abc" != "xyz")"""))
+        check("true", main("""std::io::println("abc" != "xyz")"""))
 
     // -----------------------------------------------------------------------
     // String interpolation
@@ -360,27 +366,27 @@ class LlvmCodegenExecTest {
 
     @Test fun interpolateInt() = check(
         "n = 42",
-        main("let n = 42\nprintln(\"n = \$n\")")
+        main("let n = 42\nstd::io::println(\"n = \$n\")")
     )
 
     @Test fun interpolateExpression() = check(
         "double is 84",
-        main("let n = 42\nprintln(\"double is \${n * 2}\")")
+        main("let n = 42\nstd::io::println(\"double is \${n * 2}\")")
     )
 
     @Test fun interpolateBool() = check(
         "flag: true",
-        main("let f = 1 < 2\nprintln(\"flag: \$f\")")
+        main("let f = 1 < 2\nstd::io::println(\"flag: \$f\")")
     )
 
     @Test fun interpolateChar() = check(
         "letter Z",
-        main("println(\"letter \${'Z'}\")")
+        main("std::io::println(\"letter \${'Z'}\")")
     )
 
     @Test fun interpolateMultiple() = check(
         "a=1 b=2 sum=3",
-        main("let a = 1\nlet b = 2\nprintln(\"a=\$a b=\$b sum=\${a + b}\")")
+        main("let a = 1\nlet b = 2\nstd::io::println(\"a=\$a b=\$b sum=\${a + b}\")")
     )
 
     // -----------------------------------------------------------------------
@@ -390,6 +396,7 @@ class LlvmCodegenExecTest {
     @Test fun whenSingleMatch() = check(
         "mid",
         """
+        import std.io
         func grade(n: Int): String {
             when n {
                 1 -> { return "low" }
@@ -398,13 +405,14 @@ class LlvmCodegenExecTest {
             }
             return "?"
         }
-        func main() { println(grade(2)) }
+        func main() { std::io::println(grade(2)) }
         """.trimIndent()
     )
 
     @Test fun whenMultiPattern() = check(
         "low\nlow\nhigh",
         """
+        import std.io
         func grade(n: Int): String {
             when n {
                 1, 2, 3 -> { return "low" }
@@ -413,9 +421,9 @@ class LlvmCodegenExecTest {
             return "?"
         }
         func main() {
-            println(grade(1))
-            println(grade(3))
-            println(grade(9))
+            std::io::println(grade(1))
+            std::io::println(grade(3))
+            std::io::println(grade(9))
         }
         """.trimIndent()
     )
@@ -426,9 +434,9 @@ class LlvmCodegenExecTest {
             """
             let x = 99
             when x {
-                1 -> { println("one") }
-                2 -> { println("two") }
-                else -> { println("other") }
+                1 -> { std::io::println("one") }
+                2 -> { std::io::println("two") }
+                else -> { std::io::println("other") }
             }
             """.trimIndent()
         )
@@ -440,17 +448,17 @@ class LlvmCodegenExecTest {
 
     @Test fun longArithmetic() = check(
         "10000000002",
-        main("let big: Long = 10000000000L\nprintln(big + 2L)")
+        main("let big: Long = 10000000000L\nstd::io::println(big + 2L)")
     )
 
     @Test fun realArithmetic() =
-        check("7", main("""println(3.5 * 2.0)"""))
+        check("7", main("""std::io::println(3.5 * 2.0)"""))
 
     @Test fun realDivision() =
-        check("2.5", main("""println(5.0 / 2.0)"""))
+        check("2.5", main("""std::io::println(5.0 / 2.0)"""))
 
     @Test fun mixedRealExpression() =
-        check("6.28", main("let pi = 3.14\nprintln(pi * 2.0)"))
+        check("6.28", main("let pi = 3.14\nstd::io::println(pi * 2.0)"))
 
     // -----------------------------------------------------------------------
     // assert / trace
@@ -461,7 +469,7 @@ class LlvmCodegenExecTest {
         main(
             """
             assert 1 + 1 == 2 { "math is broken" }
-            println("after")
+            std::io::println("after")
             """.trimIndent()
         )
     )
@@ -481,16 +489,17 @@ class LlvmCodegenExecTest {
             "Fizz", "Buzz", "11", "Fizz", "13", "14", "FizzBuzz"
         ).joinToString("\n"),
         """
+        import std.io
         func main() {
             for i in 1..15 {
                 if i % 15 == 0 {
-                    println("FizzBuzz")
+                    std::io::println("FizzBuzz")
                 } else if i % 3 == 0 {
-                    println("Fizz")
+                    std::io::println("Fizz")
                 } else if i % 5 == 0 {
-                    println("Buzz")
+                    std::io::println("Buzz")
                 } else {
-                    println(i)
+                    std::io::println(i)
                 }
             }
         }
@@ -500,13 +509,14 @@ class LlvmCodegenExecTest {
     @Test fun sumOfSquares() = check(
         "55",
         """
+        import std.io
         func square(x: Int): Int { return x * x }
         func main() {
             var total = 0
             for i in 1..5 {
                 total = total + square(i)
             }
-            println(total)
+            std::io::println(total)
         }
         """.trimIndent()
     )
@@ -514,6 +524,7 @@ class LlvmCodegenExecTest {
     @Test fun gcdAlgorithm() = check(
         "14",
         """
+        import std.io
         func gcd(a: Int, b: Int): Int {
             var x = a
             var y = b
@@ -524,7 +535,7 @@ class LlvmCodegenExecTest {
             }
             return x
         }
-        func main() { println(gcd(42, 56)) }
+        func main() { std::io::println(gcd(42, 56)) }
         """.trimIndent()
     )
 }

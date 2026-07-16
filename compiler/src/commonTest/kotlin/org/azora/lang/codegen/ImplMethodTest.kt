@@ -17,6 +17,7 @@ class ImplMethodTest {
 
     @Test fun methodReturnsField() {
         assertEquals("3", run("""
+            import std.io
             pack Point {
                 var x: Int
                 var y: Int
@@ -28,13 +29,14 @@ class ImplMethodTest {
             }
             func main() {
                 fin p = Point(3, 4)
-                println(p.getX())
+                std::io::println(p.getX())
             }
         """.trimIndent()))
     }
 
     @Test fun methodComputes() {
         assertEquals("25", run("""
+            import std.io
             pack Point {
                 var x: Int
                 var y: Int
@@ -46,13 +48,14 @@ class ImplMethodTest {
             }
             func main() {
                 fin p = Point(3, 4)
-                println(p.lengthSquared())
+                std::io::println(p.lengthSquared())
             }
         """.trimIndent()))
     }
 
     @Test fun methodMutatesSelf() {
         assertEquals("13\n37", run("""
+            import std.io
             pack Point {
                 var x: Int
                 var y: Int
@@ -69,14 +72,15 @@ class ImplMethodTest {
             func main() {
                 var p = Point(3, 4)
                 p.moveBy(10, 20)
-                println(p.x)
-                println(p.sum())
+                std::io::println(p.x)
+                std::io::println(p.sum())
             }
         """.trimIndent()))
     }
 
     @Test fun methodInInterpolation() {
         assertEquals("len=25", run("""
+            import std.io
             pack Point {
                 var x: Int
                 var y: Int
@@ -88,13 +92,14 @@ class ImplMethodTest {
             }
             func main() {
                 fin p = Point(3, 4)
-                println("len=${'$'}{p.lengthSquared()}")
+                std::io::println("len=${'$'}{p.lengthSquared()}")
             }
         """.trimIndent()))
     }
 
     @Test fun methodOnStructInArray() {
         assertEquals("25", run("""
+            import std.io
             pack Point {
                 var x: Int
                 var y: Int
@@ -106,13 +111,14 @@ class ImplMethodTest {
             }
             func main() {
                 fin pts = [Point(1, 1), Point(3, 4), Point(5, 5)]
-                println(pts[1].lengthSquared())
+                std::io::println(pts[1].lengthSquared())
             }
         """.trimIndent()))
     }
 
     @Test fun methodLoweredToBackends() {
         val result = Compiler().compile("""
+            import std.io
             pack Point {
                 var x: Int
                 var y: Int
@@ -124,7 +130,7 @@ class ImplMethodTest {
             }
             func main() {
                 fin p = Point(3, 4)
-                println(p.lengthSquared())
+                std::io::println(p.lengthSquared())
             }
         """.trimIndent())
         assertIs<CompilationResult.Success>(result)

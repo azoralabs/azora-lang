@@ -14,11 +14,8 @@
  * limitations under the License.
  */
 
-module programs.main1
+module std.time
 
-import std.math
+friend zone std {
 
-func main() {
-    trace { "$PI" } // this should error as PI is not recognizes
-    trace { "${std::math::PI}" } // this works ok because we specify the namespaces (zones) - full path
 }

@@ -16,6 +16,7 @@ class InfixFunctionsTest {
 
     @Test fun basicInfixCall() {
         assertEquals("5", run("""
+            import std.io
             pack Calc {
                 var v: Int
             }
@@ -28,13 +29,14 @@ class InfixFunctionsTest {
                 var a = Calc(2)
                 var b = Calc(3)
                 var c = a plus b
-                println(c.v)
+                std::io::println(c.v)
             }
         """.trimIndent()))
     }
 
     @Test fun infixWithArithmetic() {
         assertEquals("11", run("""
+            import std.io
             pack Calc {
                 var v: Int
             }
@@ -52,13 +54,14 @@ class InfixFunctionsTest {
                 var c = Calc(5)
                 // arithmetic binds tighter than infix: (a * b) plus c = 6 + 5 = 11
                 var result = a times b plus c
-                println(result.v)
+                std::io::println(result.v)
             }
         """.trimIndent()))
     }
 
     @Test fun infixChained() {
         assertEquals("10", run("""
+            import std.io
             pack Calc {
                 var v: Int
             }
@@ -74,13 +77,14 @@ class InfixFunctionsTest {
                 var d = Calc(4)
                 // Left-associative: ((a plus b) plus c) plus d
                 var result = a plus b plus c plus d
-                println(result.v)
+                std::io::println(result.v)
             }
         """.trimIndent()))
     }
 
     @Test fun infixWithComparison() {
         assertEquals("true", run("""
+            import std.io
             pack Box {
                 var v: Int
             }
@@ -94,7 +98,7 @@ class InfixFunctionsTest {
                 var b = Box(3)
                 // (a plus b).v == 5
                 var c = a plus b
-                println(c.v == 5)
+                std::io::println(c.v == 5)
             }
         """.trimIndent()))
     }

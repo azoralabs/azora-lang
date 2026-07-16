@@ -23,6 +23,7 @@ class ContractsTest {
     @Test
     fun inOutZoneContractsRunOnSuccess() {
         assertEquals("0\n5\n10", run("""
+            import std.io
             func clamp(x: Int, lo: Int, hi: Int): Int
             in {
                 assert lo <= hi { "lo must be <= hi" }
@@ -36,9 +37,9 @@ class ContractsTest {
             }
 
             func main() {
-                println(clamp(-5, 0, 10))
-                println(clamp(5, 0, 10))
-                println(clamp(50, 0, 10))
+                std::io::println(clamp(-5, 0, 10))
+                std::io::println(clamp(5, 0, 10))
+                std::io::println(clamp(50, 0, 10))
             }
         """.trimIndent()))
     }
@@ -47,13 +48,14 @@ class ContractsTest {
     fun preconditionFailureStopsBeforeBody() {
         val failure = assertFailsWith<IllegalStateException> {
             run("""
+                import std.io
                 func value(x: Int): Int
                 in {
                     assert x > 0 { "x must be positive" }
                 } zone {
                     return x
                 }
-                func main() { println(value(0)) }
+                func main() { std::io::println(value(0)) }
             """.trimIndent())
         }
         assertTrue(failure.message.orEmpty().contains("x must be positive"))
@@ -63,13 +65,14 @@ class ContractsTest {
     fun postconditionFailureSeesResultValue() {
         val failure = assertFailsWith<IllegalStateException> {
             run("""
+                import std.io
                 func value(): Int
                 out { r ->
                     assert r > 10 { "result too small" }
                 } zone {
                     return 3
                 }
-                func main() { println(value()) }
+                func main() { std::io::println(value()) }
             """.trimIndent())
         }
         assertTrue(failure.message.orEmpty().contains("result too small"))
@@ -78,6 +81,7 @@ class ContractsTest {
     @Test
     fun postconditionRunsForNestedBranchReturns() {
         assertEquals("12\n20", run("""
+            import std.io
             func choose(flag: Bool): Int
             out { r ->
                 assert r >= 10 { "branch result too small" }
@@ -89,8 +93,8 @@ class ContractsTest {
                 }
             }
             func main() {
-                println(choose(true))
-                println(choose(false))
+                std::io::println(choose(true))
+                std::io::println(choose(false))
             }
         """.trimIndent()))
     }

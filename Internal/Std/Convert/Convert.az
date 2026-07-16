@@ -18,6 +18,20 @@ module std.convert
 
 friend zone std {
     /**
+     * Convert intrinsics.
+     *
+     * Real, importable std symbols whose bodies are never emitted — each
+     * backend and the interpreter intercepts the call by its zone-mangled
+     * name and lowers it to the native stringification. Reach as
+     * `std::convert::toString` after `import std.convert`.
+     */
+    friend zone convert {
+        /** Converts any value to its string representation. */
+        @since("0.0.1")
+        func toString(value: Any): String { return "" }
+    }
+
+    /**
      * Declares conversion into `T`.
      *
      * Implementing `Into<String>` for a type creates a property-style member

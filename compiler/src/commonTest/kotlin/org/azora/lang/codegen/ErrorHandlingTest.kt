@@ -18,11 +18,12 @@ class ErrorHandlingTest {
 
     @Test fun tryCatchCatchesThrow() {
         assertEquals("caught: boom", run("""
+            import std.io
             func main() {
                 try {
                     throw "boom"
                 } catch { e ->
-                    println("caught: " + e)
+                    std::io::println("caught: " + e)
                 }
             }
         """.trimIndent()))
@@ -30,11 +31,12 @@ class ErrorHandlingTest {
 
     @Test fun noThrowRunsBody() {
         assertEquals("ok", run("""
+            import std.io
             func main() {
                 try {
-                    println("ok")
+                    std::io::println("ok")
                 } catch { e ->
-                    println("error")
+                    std::io::println("error")
                 }
             }
         """.trimIndent()))
@@ -42,11 +44,12 @@ class ErrorHandlingTest {
 
     @Test fun catchWithoutBinding() {
         assertEquals("recovered", run("""
+            import std.io
             func main() {
                 try {
                     throw "anything"
                 } catch {
-                    println("recovered")
+                    std::io::println("recovered")
                 }
             }
         """.trimIndent()))
@@ -54,30 +57,33 @@ class ErrorHandlingTest {
 
     @Test fun catchExprFallback() {
         assertEquals("-1", run("""
+            import std.io
             func safeDiv(a: Int, b: Int): Int {
                 if b == 0 { throw "div0" }
                 return a / b
             }
             func main() {
-                println(safeDiv(10, 0) catch -1)
+                std::io::println(safeDiv(10, 0) catch -1)
             }
         """.trimIndent()))
     }
 
     @Test fun catchExprSuccess() {
         assertEquals("5", run("""
+            import std.io
             func safeDiv(a: Int, b: Int): Int {
                 if b == 0 { throw "div0" }
                 return a / b
             }
             func main() {
-                println(safeDiv(10, 2) catch -1)
+                std::io::println(safeDiv(10, 2) catch -1)
             }
         """.trimIndent()))
     }
 
     @Test fun throwEscapesUncaught() {
         val result = Compiler().compile("""
+            import std.io
             func main() {
                 throw "uncaught"
             }

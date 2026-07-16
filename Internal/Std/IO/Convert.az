@@ -16,6 +16,8 @@
 
 module std.io.convert
 
+import std.convert
+
 /**
  * @file Convert
  *
@@ -36,7 +38,7 @@ friend zone std {
      */
     @experimental(since: "0.0.1")
     func intToString<T>(n: T): String {
-        return toString(n)
+        return std::convert::toString(n)
     }
 
     /**
@@ -47,7 +49,7 @@ friend zone std {
      */
     @experimental(since: "0.0.1")
     func realToString<T>(n: T): String {
-        return toString(n)
+        return std::convert::toString(n)
     }
 
     /**
@@ -58,7 +60,7 @@ friend zone std {
      */
     @experimental(since: "0.0.1")
     func boolToString<T>(b: T): String {
-        return toString(b)
+        return std::convert::toString(b)
     }
 
     /**

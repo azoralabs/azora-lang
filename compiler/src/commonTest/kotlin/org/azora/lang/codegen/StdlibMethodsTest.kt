@@ -16,10 +16,11 @@ class StdlibMethodsTest {
 
     @Test fun forInArray() {
         assertEquals("apple\nbanana\ncherry", run("""
+            import std.io
             func main() {
                 var fruits = ["apple", "banana", "cherry"]
                 for fruit in fruits {
-                    println(fruit)
+                    std::io::println(fruit)
                 }
             }
         """.trimIndent()))
@@ -27,61 +28,68 @@ class StdlibMethodsTest {
 
     @Test fun forInArraySum() {
         assertEquals("6", run("""
+            import std.io
             func main() {
                 var nums = [1, 2, 3]
                 var sum = 0
                 for n in nums {
                     sum = sum + n
                 }
-                println(sum)
+                std::io::println(sum)
             }
         """.trimIndent()))
     }
 
     @Test fun stringToUpperCase() {
         assertEquals("HELLO", run("""
+            import std.io
             func main() {
-                println("hello".toUpperCase())
+                std::io::println("hello".toUpperCase())
             }
         """.trimIndent()))
     }
 
     @Test fun stringContains() {
         assertEquals("true\nfalse", run("""
+            import std.io
             func main() {
-                println("hello world".contains("world"))
-                println("hello world".contains("xyz"))
+                std::io::println("hello world".contains("world"))
+                std::io::println("hello world".contains("xyz"))
             }
         """.trimIndent()))
     }
 
     @Test fun stringStartsEndsWith() {
         assertEquals("true\ntrue", run("""
+            import std.io
             func main() {
-                println("hello".startsWith("he"))
-                println("hello".endsWith("lo"))
+                std::io::println("hello".startsWith("he"))
+                std::io::println("hello".endsWith("lo"))
             }
         """.trimIndent()))
     }
 
     @Test fun stringTrim() {
         assertEquals("hi", run("""
+            import std.io
             func main() {
-                println("  hi  ".trim())
+                std::io::println("  hi  ".trim())
             }
         """.trimIndent()))
     }
 
     @Test fun stringReplace() {
         assertEquals("hxllo", run("""
+            import std.io
             func main() {
-                println("hello".replace("e", "x"))
+                std::io::println("hello".replace("e", "x"))
             }
         """.trimIndent()))
     }
 
     @Test fun arrayInsertRemove() {
         assertEquals("[b, x, c]", run("""
+            import std.io
             func main() {
                 var items = ["a", "b", "c"]
                 items.insert(2, "x")
@@ -91,29 +99,31 @@ class StdlibMethodsTest {
                     if i > 0 { result = result + ", " }
                     result = result + items[i]
                 }
-                println("[" + result + "]")
+                std::io::println("[" + result + "]")
             }
         """.trimIndent()))
     }
 
     @Test fun arrayContains() {
         assertEquals("true\nfalse", run("""
+            import std.io
             func main() {
                 var nums = [1, 2, 3]
-                println(nums.contains(2))
-                println(nums.contains(9))
+                std::io::println(nums.contains(2))
+                std::io::println(nums.contains(9))
             }
         """.trimIndent()))
     }
 
     @Test fun setOfDeduplicates() {
         assertEquals("3\ntrue", run("""
-            use zone std
+            import std.io
+            import std
 
             func main() {
-                fin nums = setOf(1, 2, 2, 3)
-                println(nums.size)
-                println(nums.contains(2))
+                fin nums = std::setOf(1, 2, 2, 3)
+                std::io::println(nums.size)
+                std::io::println(nums.contains(2))
             }
         """.trimIndent()))
     }

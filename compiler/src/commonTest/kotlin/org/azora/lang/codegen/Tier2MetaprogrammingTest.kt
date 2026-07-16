@@ -20,9 +20,10 @@ class Tier2MetaprogrammingTest {
 
     @Test fun inlineForUnrollsExclusiveRange() {
         assertEquals("0\n1\n2", run("""
+            import std.io
             func main() {
                 inline for x in 0..<3 {
-                    println(x)
+                    std::io::println(x)
                 }
             }
         """.trimIndent()))
@@ -30,9 +31,10 @@ class Tier2MetaprogrammingTest {
 
     @Test fun inlineForUnrollsInclusiveRange() {
         assertEquals("1\n2\n3\n4", run("""
+            import std.io
             func main() {
                 inline for x in 1..4 {
-                    println(x)
+                    std::io::println(x)
                 }
             }
         """.trimIndent()))
@@ -40,12 +42,13 @@ class Tier2MetaprogrammingTest {
 
     @Test fun inlineForAccumulatesIntoRuntimeVar() {
         assertEquals("10", run("""
+            import std.io
             func main() {
                 var sum = 0
                 inline for x in 1..4 {
                     sum = sum + x
                 }
-                println(sum)
+                std::io::println(sum)
             }
         """.trimIndent()))
     }
@@ -53,10 +56,11 @@ class Tier2MetaprogrammingTest {
     @Test fun inlineFromBodyUsesLoopVarInCompileTimeExpr() {
         // The loop var feeds an `inline fin`, which is folded per iteration.
         assertEquals("2\n4\n6", run("""
+            import std.io
             func main() {
                 inline for x in 1..3 {
                     inline fin doubled = x * 2
-                    println(doubled)
+                    std::io::println(doubled)
                 }
             }
         """.trimIndent()))
@@ -64,10 +68,11 @@ class Tier2MetaprogrammingTest {
 
     @Test fun inlineForBoundsFromCompileTimeVar() {
         assertEquals("0\n1\n2\n3\n4", run("""
+            import std.io
             func main() {
                 inline fin count = 5
                 inline for x in 0..<count {
-                    println(x)
+                    std::io::println(x)
                 }
             }
         """.trimIndent()))
@@ -76,12 +81,13 @@ class Tier2MetaprogrammingTest {
     @Test fun inlineForDoesNotLeakLoopVar() {
         // After the unrolled loop, `x` must not be substituted into later code.
         assertEquals("0\n1\n2\n99", run("""
+            import std.io
             func main() {
                 inline for x in 0..<3 {
-                    println(x)
+                    std::io::println(x)
                 }
                 var x = 99
-                println(x)
+                std::io::println(x)
             }
         """.trimIndent()))
     }
@@ -90,6 +96,7 @@ class Tier2MetaprogrammingTest {
 
     @Test fun decoDeclarationAndAnnotatedFunc() {
         assertEquals("hi", run("""
+            import std.io
             deco Log {
                 msg: String
             }
@@ -98,13 +105,14 @@ class Tier2MetaprogrammingTest {
                 return "hi"
             }
             func main() {
-                println(greet())
+                std::io::println(greet())
             }
         """.trimIndent()))
     }
 
     @Test fun annotationOnVarAndPack() {
         assertEquals("3\n5", run("""
+            import std.io
             deco Cached { }
             deco Deprecated { }
             @Cached
@@ -114,24 +122,26 @@ class Tier2MetaprogrammingTest {
                 var x: Int
             }
             func main() {
-                println(PI)
+                std::io::println(PI)
                 var p = P(5)
-                println(p.x)
+                std::io::println(p.x)
             }
         """.trimIndent()))
     }
 
     @Test fun annotationWithUseSiteTarget() {
         assertEquals("ok", run("""
+            import std.io
             @file:experimental
             func main() {
-                println("ok")
+                std::io::println("ok")
             }
         """.trimIndent()))
     }
 
     @Test fun multipleAnnotationsOnOneDecl() {
         assertEquals("done", run("""
+            import std.io
             deco A { }
             deco B { }
             @A
@@ -140,7 +150,7 @@ class Tier2MetaprogrammingTest {
                 return "done"
             }
             func main() {
-                println(run())
+                std::io::println(run())
             }
         """.trimIndent()))
     }
@@ -149,6 +159,7 @@ class Tier2MetaprogrammingTest {
 
     @Test fun namedZoneNamespaceConstAndFunc() {
         assertEquals("314\n10", run("""
+            import std.io
             zone Math {
                 fin PI = 314
                 func double(x: Int): Int {
@@ -156,27 +167,29 @@ class Tier2MetaprogrammingTest {
                 }
             }
             func main() {
-                println(Math::PI)
-                println(Math::double(5))
+                std::io::println(Math::PI)
+                std::io::println(Math::double(5))
             }
         """.trimIndent()))
     }
 
     @Test fun nestedNamedZones() {
         assertEquals("42", run("""
+            import std.io
             zone Outer {
                 zone Inner {
                     fin VALUE = 42
                 }
             }
             func main() {
-                println(Outer::Inner::VALUE)
+                std::io::println(Outer::Inner::VALUE)
             }
         """.trimIndent()))
     }
 
     @Test fun namedZoneMemberReferencesAnotherMember() {
         assertEquals("25", run("""
+            import std.io
             zone Geom {
                 fin R = 5
                 func area(): Int {
@@ -184,7 +197,7 @@ class Tier2MetaprogrammingTest {
                 }
             }
             func main() {
-                println(Geom::area())
+                std::io::println(Geom::area())
             }
         """.trimIndent()))
     }
@@ -192,13 +205,14 @@ class Tier2MetaprogrammingTest {
     @Test fun anonymousZoneStillBlockScopes() {
         // Anonymous `zone { … }` keeps its existing block-scope meaning.
         assertEquals("7", run("""
+            import std.io
             func main() {
                 var x = 5
                 zone {
                     var y = 2
                     x = x + y
                 }
-                println(x)
+                std::io::println(x)
             }
         """.trimIndent()))
     }

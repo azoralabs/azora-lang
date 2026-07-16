@@ -87,16 +87,25 @@ class JavaScriptCodegen {
             line("")
         }
 
+        // Trailing blank separators go before the last item that actually emits
+        // output, so skipped runtime intrinsics don't leave a dangling blank.
+        val lastEmittedIndex = program.items.indices.lastOrNull { idx ->
+            val it2 = program.items[idx]
+            it2 !is IrTopLevel.Func || it2.function.name !in org.azora.lang.semantic.CtfeEvaluator.RUNTIME_INTRINSICS
+        } ?: -1
+
         for ((i, item) in program.items.withIndex()) {
             when (item) {
                 is IrTopLevel.Global -> emitStmt(item.stmt)
                 is IrTopLevel.Func -> {
+                    // Skip runtime intrinsics — their stdlib bodies are dead placeholders.
+                    if (item.function.name in org.azora.lang.semantic.CtfeEvaluator.RUNTIME_INTRINSICS) continue
                     emitFunction(item.function)
-                    if (i < program.items.lastIndex) line("")
+                    if (i < lastEmittedIndex) line("")
                 }
                 is IrTopLevel.Test -> {
                     emitTest(item)
-                    if (i < program.items.lastIndex) line("")
+                    if (i < lastEmittedIndex) line("")
                 }
                 is IrTopLevel.Struct -> {
                     line("class ${item.name} {")
@@ -114,14 +123,14 @@ class JavaScriptCodegen {
                     line("}")
                     indent--
                     line("}")
-                    if (i < program.items.lastIndex) line("")
+                    if (i < lastEmittedIndex) line("")
                 }
                 is IrTopLevel.Extern -> {
                     // JavaScript has no declarations; the extern is expected to be
                     // provided by the host. Emit a documentation comment.
                     val params = item.params.joinToString(", ") { (n, _) -> n }
                     line("// extern function ${item.name}($params)")
-                    if (i < program.items.lastIndex) line("")
+                    if (i < lastEmittedIndex) line("")
                 }
             }
         }
@@ -418,10 +427,14 @@ class JavaScriptCodegen {
         }
         is IrExpr.Call -> {
             if (expr.name in POINTER_RUNTIME) usesPointers = true
-            val name = if (expr.name == "println") "console.log" else expr.name
+            val name = when (expr.name) {
+                "std__io__println" -> "console.log"
+                "std__convert__toString" -> "String"
+                else -> expr.name
+            }
             if (expr.name == "async" && expr.args.size == 1) {
                 "__azoraSpawn(${emitExpr(expr.args.single())})"
-            } else if (expr.name == "cancel" && expr.args.size == 1) {
+            } else if (expr.name == "std__concurrency__cancel" && expr.args.size == 1) {
                 "cancel(${emitExpr(expr.args.single())})"
             } else if (expr.name == "__panic") {
                 "(console.error(${emitExpr(expr.args.single())}), process.exit(1))"

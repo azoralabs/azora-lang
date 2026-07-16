@@ -15,6 +15,7 @@
  */
 
 module std.container.stack
+import std.convert
 
 /**
  * @file Stack
@@ -145,7 +146,7 @@ friend zone std {
             var i = 0
             while i < size {
                 if i > 0 { s = s + ", " }
-                s = s + toString(data[i])
+                s = s + std::convert::toString(data[i])
                 i += 1
             }
             return s + "]"

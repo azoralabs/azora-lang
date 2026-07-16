@@ -101,13 +101,14 @@ enum class TokenType {
     PLUS_EQUAL, MINUS_EQUAL, STAR_EQUAL, SLASH_EQUAL, PERCENT_EQUAL,
     PLUS_PLUS, MINUS_MINUS,
     AMP, PIPE, CARET, TILDE, SHIFT_LEFT, SHIFT_RIGHT,
-    AS, GUARD, IS,
+    AS, GUARD, IS, CAST,
     QMARK, QMARK_QMARK, QMARK_DOT, QMARK_EQUAL,
     // Null-conditional compound assignment / inc-dec: ?+= ?-= ?*= ?/= ?%= ?++ ?--
     QMARK_PLUS_EQUAL, QMARK_MINUS_EQUAL, QMARK_STAR_EQUAL, QMARK_SLASH_EQUAL, QMARK_PERCENT_EQUAL,
     QMARK_PLUS_PLUS, QMARK_MINUS_MINUS,
     NULL,
     USE,
+    IMPORT,
     // `for x by N in ...` (step) and `reverse for` / `for x in reverse ...`
     BY,
     REVERSE,

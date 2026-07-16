@@ -16,64 +16,70 @@ class LambdaTest {
 
     @Test fun lambdaAssignedAndCalled() {
         assertEquals("10", run("""
+            import std.io
             func main() {
                 var double = { x: Int -> x * 2 }
-                println(double(5))
+                std::io::println(double(5))
             }
         """.trimIndent()))
     }
 
     @Test fun higherOrderFunction() {
         assertEquals("16", run("""
+            import std.io
             func apply(f: (Int) -> Int, x: Int): Int {
                 return f(x)
             }
             func main() {
-                println(apply({ x: Int -> x * x }, 4))
+                std::io::println(apply({ x: Int -> x * x }, 4))
             }
         """.trimIndent()))
     }
 
     @Test fun closureCapturesParameter() {
         assertEquals("15", run("""
+            import std.io
             func makeAdder(n: Int): (Int) -> Int {
                 return { x: Int -> x + n }
             }
             func main() {
                 var add5 = makeAdder(5)
-                println(add5(10))
+                std::io::println(add5(10))
             }
         """.trimIndent()))
     }
 
     @Test fun closureCapturesLocalVar() {
         assertEquals("7", run("""
+            import std.io
             func main() {
                 var offset = 3
                 var add = { x: Int -> x + offset }
-                println(add(4))
+                std::io::println(add(4))
             }
         """.trimIndent()))
     }
 
     @Test fun lambdaInInterpolation() {
         assertEquals("25", run("""
+            import std.io
             func apply(f: (Int) -> Int, x: Int): Int {
                 return f(x)
             }
             func main() {
-                println("${'$'}{apply({ x: Int -> x * x }, 5)}")
+                std::io::println("${'$'}{apply({ x: Int -> x * x }, 5)}")
             }
         """.trimIndent()))
     }
 
     @Test fun noParamLambda() {
         assertEquals("hi", run("""
+            import std.io
             func run(g: () -> String): String {
                 return g()
             }
             func main() {
-                println(run({ -> "hi" }))
+                std::io::println(run({ -> "hi" }))
             }
         """.trimIndent()))
     }

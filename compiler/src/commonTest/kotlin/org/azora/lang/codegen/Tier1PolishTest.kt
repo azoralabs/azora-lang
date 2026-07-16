@@ -27,11 +27,12 @@ class Tier1PolishTest {
 
     @Test fun isNotTrueBranch() {
         assertEquals("yes", run("""
+            import std.io
             func main() {
                 var x = 5
                 var y = "hello"
                 if (x is Int && y is! Int) {
-                    println("yes")
+                    std::io::println("yes")
                 }
             }
         """.trimIndent()))
@@ -39,10 +40,11 @@ class Tier1PolishTest {
 
     @Test fun isNotFalseBranch() {
         assertEquals("not int", run("""
+            import std.io
             func main() {
                 var s = "hello"
                 if (s is! Int) {
-                    println("not int")
+                    std::io::println("not int")
                 }
             }
         """.trimIndent()))
@@ -52,11 +54,12 @@ class Tier1PolishTest {
 
     @Test fun doWhileRepeatsWhileConditionHolds() {
         assertEquals("1\n2\n3", run("""
+            import std.io
             func main() {
                 var i = 0
                 loop {
                     i++
-                    println(i)
+                    std::io::println(i)
                 } while i < 3
             }
         """.trimIndent()))
@@ -64,10 +67,11 @@ class Tier1PolishTest {
 
     @Test fun doWhileRunsBodyAtLeastOnce() {
         assertEquals("once", run("""
+            import std.io
             func main() {
                 var i = 10
                 loop {
-                    println("once")
+                    std::io::println("once")
                 } while i < 5
             }
         """.trimIndent()))
@@ -77,20 +81,22 @@ class Tier1PolishTest {
 
     @Test fun nullCoalescingAssignSetsWhenNull() {
         assertEquals("10", run("""
+            import std.io
             func main() {
                 var x: Int? = null
                 x ?= 10
-                println(x)
+                std::io::println(x)
             }
         """.trimIndent()))
     }
 
     @Test fun nullCoalescingAssignKeepsWhenNonNull() {
         assertEquals("5", run("""
+            import std.io
             func main() {
                 var y: Int? = 5
                 y ?= 99
-                println(y)
+                std::io::println(y)
             }
         """.trimIndent()))
     }
@@ -99,39 +105,42 @@ class Tier1PolishTest {
 
     @Test fun nullConditionalPlusEqualsWhenNonNull() {
         assertEquals("15", run("""
+            import std.io
             func main() {
                 var x: Int? = 5
                 x ?+= 10
-                println(x)
+                std::io::println(x)
             }
         """.trimIndent()))
     }
 
     @Test fun nullConditionalPlusEqualsWhenNullIsNoOp() {
         assertEquals("null", run("""
+            import std.io
             func main() {
                 var y: Int? = null
                 y ?+= 10
-                println(y)
+                std::io::println(y)
             }
         """.trimIndent()))
     }
 
     @Test fun nullConditionalCompoundOps() {
         assertEquals("8\n4\n16\n2", run("""
+            import std.io
             func main() {
                 var a: Int? = 4
                 a ?+= 4
-                println(a)
+                std::io::println(a)
                 var b: Int? = 8
                 b ?-= 4
-                println(b)
+                std::io::println(b)
                 var c: Int? = 4
                 c ?*= 4
-                println(c)
+                std::io::println(c)
                 var d: Int? = 8
                 d ?/= 4
-                println(d)
+                std::io::println(d)
             }
         """.trimIndent()))
     }
@@ -140,20 +149,22 @@ class Tier1PolishTest {
 
     @Test fun nullConditionalIncrementWhenNonNull() {
         assertEquals("6", run("""
+            import std.io
             func main() {
                 var x: Int? = 5
                 x ?++
-                println(x)
+                std::io::println(x)
             }
         """.trimIndent()))
     }
 
     @Test fun nullConditionalDecrementWhenNullIsNoOp() {
         assertEquals("null", run("""
+            import std.io
             func main() {
                 var y: Int? = null
                 y ?--
-                println(y)
+                std::io::println(y)
             }
         """.trimIndent()))
     }
@@ -161,12 +172,12 @@ class Tier1PolishTest {
     // -- raw triple-quoted strings -----------------------------------------
 
     @Test fun rawStringPreservesNewlines() {
-        val src = "func main() {\n    var s = \"\"\"line1\nline2\nline3\"\"\"\n    println(s)\n}\n"
+        val src = "import std.io\nfunc main() {\n    var s = \"\"\"line1\nline2\nline3\"\"\"\n    std::io::println(s)\n}\n"
         assertEquals("line1\nline2\nline3", run(src))
     }
 
     @Test fun rawStringKeepsQuotesAndBackslashesLiteral() {
-        val src = "func main() {\n    var s = \"\"\"a \"quote\" and a back\\slash\"\"\"\n    println(s)\n}\n"
+        val src = "import std.io\nfunc main() {\n    var s = \"\"\"a \"quote\" and a back\\slash\"\"\"\n    std::io::println(s)\n}\n"
         assertEquals("a \"quote\" and a back\\slash", run(src))
     }
 
@@ -174,9 +185,10 @@ class Tier1PolishTest {
 
     @Test fun forWithStep() {
         assertEquals("0\n2\n4", run("""
+            import std.io
             func main() {
                 for x by 2 in 0..<6 {
-                    println(x)
+                    std::io::println(x)
                 }
             }
         """.trimIndent()))
@@ -184,9 +196,10 @@ class Tier1PolishTest {
 
     @Test fun forWithStepInclusive() {
         assertEquals("0\n2\n4\n6\n8\n10", run("""
+            import std.io
             func main() {
                 for x by 2 in 0..10 {
-                    println(x)
+                    std::io::println(x)
                 }
             }
         """.trimIndent()))
@@ -194,9 +207,10 @@ class Tier1PolishTest {
 
     @Test fun reverseFor() {
         assertEquals("4\n3\n2\n1", run("""
+            import std.io
             func main() {
                 reverse for x in 1..4 {
-                    println(x)
+                    std::io::println(x)
                 }
             }
         """.trimIndent()))
@@ -204,9 +218,10 @@ class Tier1PolishTest {
 
     @Test fun reverseForWithStep() {
         assertEquals("6\n4\n2\n0", run("""
+            import std.io
             func main() {
                 reverse for x by 2 in 0..6 {
-                    println(x)
+                    std::io::println(x)
                 }
             }
         """.trimIndent()))
@@ -214,12 +229,13 @@ class Tier1PolishTest {
 
     @Test fun forStepContinueDoesNotSkipIncrement() {
         assertEquals("0\n2\n6\n8\n10", run("""
+            import std.io
             func main() {
                 for x by 2 in 0..10 {
                     if x == 4 {
                         continue
                     }
-                    println(x)
+                    std::io::println(x)
                 }
             }
         """.trimIndent()))
@@ -229,12 +245,13 @@ class Tier1PolishTest {
 
     @Test fun whileElseRunsWhenLoopCompletes() {
         assertEquals("done", run("""
+            import std.io
             func main() {
                 var i = 0
                 while i < 3 {
                     i++
                 } else {
-                    println("done")
+                    std::io::println("done")
                 }
             }
         """.trimIndent()))
@@ -242,16 +259,17 @@ class Tier1PolishTest {
 
     @Test fun whileElseSkippedOnBreak() {
         assertEquals("0\n1", run("""
+            import std.io
             func main() {
                 var i = 0
                 while i < 10 {
                     if i == 2 {
                         break
                     }
-                    println(i)
+                    std::io::println(i)
                     i++
                 } else {
-                    println("else")
+                    std::io::println("else")
                 }
             }
         """.trimIndent()))
@@ -259,11 +277,12 @@ class Tier1PolishTest {
 
     @Test fun forElseRunsWhenNoBreak() {
         assertEquals("0\n1\n2\nfordone", run("""
+            import std.io
             func main() {
                 for x in 0..<3 {
-                    println(x)
+                    std::io::println(x)
                 } else {
-                    println("fordone")
+                    std::io::println("fordone")
                 }
             }
         """.trimIndent()))
@@ -271,14 +290,15 @@ class Tier1PolishTest {
 
     @Test fun forElseBreakInsideIfIsCounted() {
         assertEquals("0\n1", run("""
+            import std.io
             func main() {
                 for x in 0..<5 {
                     if x == 2 {
                         break
                     }
-                    println(x)
+                    std::io::println(x)
                 } else {
-                    println("else")
+                    std::io::println("else")
                 }
             }
         """.trimIndent()))
@@ -286,13 +306,14 @@ class Tier1PolishTest {
 
     @Test fun forElseIgnoresBreakInNestedLoop() {
         assertEquals("outer completed", run("""
+            import std.io
             func main() {
                 for x in 0..<3 {
                     for y in 0..<3 {
                         break
                     }
                 } else {
-                    println("outer completed")
+                    std::io::println("outer completed")
                 }
             }
         """.trimIndent()))
@@ -302,6 +323,7 @@ class Tier1PolishTest {
 
     @Test fun labeledBreakExitsOuterLoop() {
         assertEquals("4", run("""
+            import std.io
             func main() {
                 var count = 0
                 @outer for x in 0..<3 {
@@ -312,13 +334,14 @@ class Tier1PolishTest {
                         count++
                     }
                 }
-                println(count)
+                std::io::println(count)
             }
         """.trimIndent()))
     }
 
     @Test fun labeledContinueSkipsToOuterLoop() {
         assertEquals("10", run("""
+            import std.io
             func main() {
                 var total = 0
                 @outer for x in 0..<4 {
@@ -329,13 +352,14 @@ class Tier1PolishTest {
                         total = total + 1
                     }
                 }
-                println(total)
+                std::io::println(total)
             }
         """.trimIndent()))
     }
 
     @Test fun unlabeledBreakAndContinueStillWork() {
         assertEquals("12", run("""
+            import std.io
             func main() {
                 var i = 0
                 var sum = 0
@@ -349,7 +373,7 @@ class Tier1PolishTest {
                     }
                     sum = sum + i
                 }
-                println(sum)
+                std::io::println(sum)
             }
         """.trimIndent()))
     }
@@ -358,6 +382,7 @@ class Tier1PolishTest {
 
     @Test fun infxMethodCalledInfix() {
         assertEquals("15", run("""
+            import std.io
             pack Box {
                 var v: Int
             }
@@ -367,13 +392,14 @@ class Tier1PolishTest {
             func main() {
                 var a = Box(3)
                 var b = Box(5)
-                println(a combine b)
+                std::io::println(a combine b)
             }
         """.trimIndent()))
     }
 
     @Test fun infxMethodReturnsStruct() {
         assertEquals("4\n6", run("""
+            import std.io
             pack Vec {
                 var x: Int
                 var y: Int
@@ -385,14 +411,15 @@ class Tier1PolishTest {
                 var a = Vec(1, 2)
                 var b = Vec(3, 4)
                 var c = a add b
-                println(c.x)
-                println(c.y)
+                std::io::println(c.x)
+                std::io::println(c.y)
             }
         """.trimIndent()))
     }
 
     @Test fun infxMethodAlsoCallableWithDotSyntax() {
         assertEquals("8", run("""
+            import std.io
             pack Pair {
                 var a: Int
                 var b: Int
@@ -403,7 +430,7 @@ class Tier1PolishTest {
             func main() {
                 var p = Pair(2, 3)
                 var q = Pair(5, 6)
-                println(p.merged(q))
+                std::io::println(p.merged(q))
             }
         """.trimIndent()))
     }
@@ -412,6 +439,7 @@ class Tier1PolishTest {
 
     @Test fun operIndexGetAndSet() {
         assertEquals("20\n99", run("""
+            import std.io
             pack IntBag {
                 var data: [Int]
             }
@@ -423,9 +451,9 @@ class Tier1PolishTest {
             }
             func main() {
                 var b = IntBag([10, 20, 30])
-                println(b[1])
+                std::io::println(b[1])
                 b[1] = 99
-                println(b[1])
+                std::io::println(b[1])
             }
         """.trimIndent()))
     }
@@ -434,22 +462,24 @@ class Tier1PolishTest {
 
     @Test fun itTypeInferredFromExpectedFunctionType() {
         assertEquals("6", run("""
+            import std.io
             func apply(f: (Int) -> Int, x: Int): Int {
                 return f(x)
             }
             func main() {
-                println(apply({ it + 1 }, 5))
+                std::io::println(apply({ it + 1 }, 5))
             }
         """.trimIndent()))
     }
 
     @Test fun itInferenceComposes() {
         assertEquals("12", run("""
+            import std.io
             func twice(f: (Int) -> Int, x: Int): Int {
                 return f(f(x))
             }
             func main() {
-                println(twice({ it * 2 }, 3))
+                std::io::println(twice({ it * 2 }, 3))
             }
         """.trimIndent()))
     }
@@ -458,31 +488,34 @@ class Tier1PolishTest {
 
     @Test fun mapLiteralAndAccessWithStringKeys() {
         assertEquals("1\n3\n99", run("""
+            import std.io
             func main() {
                 var m = ["a": 1, "b": 2, "c": 3]
-                println(m["a"])
-                println(m["c"])
+                std::io::println(m["a"])
+                std::io::println(m["c"])
                 m["b"] = 99
-                println(m["b"])
+                std::io::println(m["b"])
             }
         """.trimIndent()))
     }
 
     @Test fun mapLiteralWithIntKeys() {
         assertEquals("one\ntwo", run("""
+            import std.io
             func main() {
                 var m = [1: "one", 2: "two"]
-                println(m[1])
-                println(m[2])
+                std::io::println(m[1])
+                std::io::println(m[2])
             }
         """.trimIndent()))
     }
 
     @Test fun mapWithExplicitTypeAnnotation() {
         assertEquals("red", run("""
+            import std.io
             func main() {
                 var colors: Map<Int, String> = [1: "red", 2: "green"]
-                println(colors[1])
+                std::io::println(colors[1])
             }
         """.trimIndent()))
     }

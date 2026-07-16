@@ -1045,6 +1045,12 @@ class CtfeEvaluator(private val table: SymbolTable) {
         // Tasks/flows are execution boundaries, not pure value expressions. Folding
         // them would erase scheduling, cancellation, and Task<T> from the type graph.
         if (funcDecl.isTask || funcDecl.isFlow || funcDecl.isUnsafe) return null
+        // Runtime intrinsics now live in std (std::io::println, std::convert::toString,
+        // std::concurrency::async/channel/cancel). Their .az bodies are dead placeholders
+        // (each backend/interpreter intercepts the call by mangled name); folding them at
+        // compile time would either infinite-recurse (channel/async call themselves) or
+        // silently substitute the placeholder result (toString -> ""). Never CTFE them.
+        if (name in RUNTIME_INTRINSICS) return null
         if (args.size != funcDecl.params.size) return null // arg count mismatch — let TypeResolver report it
 
         // Build a compile-time environment: param name → constant value
@@ -1214,5 +1220,20 @@ class CtfeEvaluator(private val table: SymbolTable) {
             is Expr.MapLit -> null
             is Expr.Alloc, is Expr.AllocBuffer, is Expr.Deref, is Expr.Isolated, is Expr.Await, is Expr.Inject, is Expr.Spread -> null // runtime ops, not CTFE-evaluable
         }
+    }
+
+    companion object {
+        /**
+         * Functions declared in std whose real behaviour is supplied by the
+         * backends/interpreter (call interception by mangled name). Their stdlib
+         * bodies are placeholders and must never be compile-time evaluated.
+         */
+        val RUNTIME_INTRINSICS = setOf(
+            "std__io__println",
+            "std__convert__toString",
+            "std__concurrency__async",
+            "std__concurrency__channel",
+            "std__concurrency__cancel",
+        )
     }
 }

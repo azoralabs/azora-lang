@@ -136,13 +136,13 @@ object StdlibInjector {
             val module = index.modules[path] ?: return emptySet()
             return if (selected in module) setOf(selected) else emptySet()
         }
-        if (path in index.roots) {
-            return index.modules
-                .filterKeys { it == path || it.startsWith("$path.") }
-                .values
-                .flatMapTo(mutableSetOf()) { it.keys }
-        }
         index.modules[path]?.let { return it.keys }
+        val descendants = index.modules
+            .filterKeys { it.startsWith("$path.") }
+            .values
+        if (descendants.isNotEmpty()) {
+            return descendants.flatMapTo(mutableSetOf()) { it.keys }
+        }
         val (moduleName, itemName) = resolveSelectedLibraryPath(path) ?: return emptySet()
         val module = index.modules[moduleName] ?: return emptySet()
         return if (itemName in module) setOf(itemName) else emptySet()
@@ -158,32 +158,6 @@ object StdlibInjector {
             if (index.modules[module]?.containsKey(item) == true) return module to item
         }
         return null
-    }
-
-    /** Short module aliases made visible by imports (`use std.math` -> `math`). */
-    private fun moduleAliases(program: Program): Map<String, String> {
-        val aliases = linkedMapOf<String, String>()
-        fun addModuleAlias(module: String) {
-            val root = module.substringBefore('.')
-            val rest = module.removePrefix(root).removePrefix(".")
-            if (rest.isNotEmpty()) {
-                val child = rest.substringBefore('.')
-                if (child !in aliases) aliases[child] = "$root.$child"
-            }
-        }
-        for (item in program.items) {
-            if (item !is TopLevel.UseImport) continue
-            for ((path, selected) in item.imports) {
-                if (selected != null) continue
-                when {
-                    path in index.roots -> index.modules.keys
-                        .filter { it == path || it.startsWith("$path.") }
-                        .forEach(::addModuleAlias)
-                    path in index.modules -> addModuleAlias(path)
-                }
-            }
-        }
-        return aliases
     }
 
     /** Names declared at the top level of the user [program] (these shadow the stdlib). */
@@ -208,31 +182,26 @@ object StdlibInjector {
 
     /**
      * Returns [program] with every bundled-library item it references appended.
-     * Imports are resolved against the loaded module roots; qualified root
-     * access such as `std::math::abs` is rewritten to plain calls and injected
-     * without an import. Returns the program unchanged when nothing
-     * library-related is referenced.
+     *
+     * Visibility is granted only by explicit `import` declarations. Zone
+     * members are name-mangled at parse time (`std.math::abs` → `std__math__abs`),
+     * so [importedNames] returns the mangled item names exported by imported
+     * modules. A reference resolves only if it is both mangled (written as a
+     * qualified `Zone::name` path) and visible (its module was imported). Bare
+     * references never match a mangled name, so bare access to library symbols
+     * is rejected. Returns the program unchanged when nothing is referenced.
      */
     fun inject(program: Program): Program {
         if (index.items.isEmpty() && index.externs.isEmpty()) return program
 
         val shadowed = userDeclaredNames(program)
 
-        // Qualified library access (`std::math::abs(x)`, etc.) -> plain names,
-        // collected as requirements.
-        val qualified = mutableSetOf<String>()
-        val activeRoots = index.roots - shadowed
-        val moduleAliases = moduleAliases(program).filterKeys { it !in shadowed }
-        val rewritten = if (activeRoots.isEmpty()) program
-            else QualifiedStdRewriter(index.modules, activeRoots, qualified, moduleAliases).rewrite(program)
-
-        val visible = importedNames(rewritten) + qualified
+        val visible = importedNames(program)
 
         val referenced = mutableSetOf<String>()
-        for (item in rewritten.items) collectNamesFromItem(item, referenced)
+        for (item in program.items) collectNamesFromItem(item, referenced)
         val implicitReferenced = referenced.filterTo(mutableSetOf()) { it in implicitCollectionTypes }
         referenced.retainAll(visible)
-        referenced += qualified
         referenced += implicitReferenced
 
         val injected = LinkedHashMap<String, TopLevel>()
@@ -259,8 +228,8 @@ object StdlibInjector {
             frontier = next
         }
 
-        if (injected.isEmpty() && injectedExterns.isEmpty()) return rewritten
-        return rewritten.copy(items = rewritten.items + injected.values + injectedExterns.values)
+        if (injected.isEmpty() && injectedExterns.isEmpty()) return program
+        return program.copy(items = program.items + injected.values + injectedExterns.values)
     }
 
     private fun attachImplsForType(
@@ -320,6 +289,19 @@ object StdlibInjector {
                 }
                 item.methods.forEach { collectNamesFromFunc(it, names) }
             }
+            is TopLevel.InlineIf -> {
+                collectNamesFromExpr(item.condition, names)
+                item.thenBranch.forEach { collectNamesFromItem(it, names) }
+                item.elseBranch?.forEach { collectNamesFromItem(it, names) }
+            }
+            is TopLevel.DeepInlineIf -> {
+                collectNamesFromExpr(item.condition, names)
+                item.thenBranch.forEach { collectNamesFromItem(it, names) }
+                item.elseBranch?.forEach { collectNamesFromItem(it, names) }
+            }
+            is TopLevel.InlineBlock -> item.body.forEach { collectNamesFromItem(it, names) }
+            is TopLevel.DeepInlineBlock -> item.body.forEach { collectNamesFromItem(it, names) }
+            is TopLevel.View -> item.body.forEach { collectNamesFromStmt(it, names) }
             else -> {}
         }
     }

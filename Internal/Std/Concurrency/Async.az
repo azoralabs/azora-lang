@@ -111,4 +111,24 @@ friend zone std {
             suspend 1
         }
     }
+
+    /**
+     * Concurrency intrinsics.
+     *
+     * These are real, importable std symbols (so they participate in the
+     * zone/import model like every other library function) whose bodies are
+     * never emitted: each backend and the interpreter intercepts the call by
+     * its zone-mangled name and lowers it to the native runtime operation.
+     * Reach them as `std::concurrency::cancel`, etc., after
+     * `import std.concurrency`.
+     */
+    friend zone concurrency {
+        /**
+         * Requests cancellation of a task handle.
+         *
+         * @param task The task handle to cancel.
+         */
+        @since("0.0.3")
+        func cancel(task: Any): Unit { }
+    }
 }

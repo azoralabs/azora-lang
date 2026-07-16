@@ -13,11 +13,12 @@ class TupleVariadicLlvmExecTest {
     @Test fun tupleOfInferredRunsViaLli() {
         if (!LlvmExec.available) return
         assertEquals("1\n2", LlvmExec.run("""
-            use std.container
+            import std.io
+            import std.container
             func main() {
                 fin x = tupleOf(1, 2)
-                println(x.0)
-                println(x.1)
+                std::io::println(x.0)
+                std::io::println(x.1)
             }
         """.trimIndent()))
     }
@@ -25,12 +26,13 @@ class TupleVariadicLlvmExecTest {
     @Test fun tupleOfThreeElementsRunsViaLli() {
         if (!LlvmExec.available) return
         assertEquals("1\n2\n3", LlvmExec.run("""
-            use std.container
+            import std.io
+            import std.container
             func main() {
                 fin t = tupleOf(1, 2, 3)
-                println(t.0)
-                println(t.1)
-                println(t.2)
+                std::io::println(t.0)
+                std::io::println(t.1)
+                std::io::println(t.2)
             }
         """.trimIndent()))
     }
@@ -38,10 +40,11 @@ class TupleVariadicLlvmExecTest {
     @Test fun llvmEmitsMonomorphizedStruct() {
         if (!LlvmExec.available) return
         val ir = LlvmExec.compile("""
-            use std.container
+            import std.io
+            import std.container
             func main() {
                 fin x = tupleOf(1, 2)
-                println(x.0)
+                std::io::println(x.0)
             }
         """.trimIndent())
         // The monomorphized struct must be emitted and referenced by name.

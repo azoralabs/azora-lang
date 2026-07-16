@@ -16,28 +16,30 @@ class NamedArgsTest {
 
     @Test fun namedArgsReordered() {
         assertEquals("3\n4", run("""
+            import std.io
             pack Point {
                 var x: Int
                 var y: Int
             }
             func main() {
                 var p = Point(y: 4, x: 3)
-                println(p.x)
-                println(p.y)
+                std::io::println(p.x)
+                std::io::println(p.y)
             }
         """.trimIndent()))
     }
 
     @Test fun namedArgsInOrder() {
         assertEquals("1\n2", run("""
+            import std.io
             pack Point {
                 var x: Int
                 var y: Int
             }
             func main() {
                 var p = Point(x: 1, y: 2)
-                println(p.x)
-                println(p.y)
+                std::io::println(p.x)
+                std::io::println(p.y)
             }
         """.trimIndent()))
     }

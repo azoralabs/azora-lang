@@ -23,6 +23,7 @@ class Tier3ErrorModelTest {
 
     @Test fun failableFunctionThrowsAndCaught() {
         assertEquals("Bad", run("""
+            import std.io
             fail E {
                 Bad
             }
@@ -32,9 +33,9 @@ class Tier3ErrorModelTest {
             }
             func main() {
                 try {
-                    println(f())
+                    std::io::println(f())
                 } catch {
-                    e -> println(e)
+                    e -> std::io::println(e)
                 }
             }
         """.trimIndent()))
@@ -42,6 +43,7 @@ class Tier3ErrorModelTest {
 
     @Test fun failableFunctionSucceedsNormally() {
         assertEquals("10", run("""
+            import std.io
             fail E {
                 Bad
             }
@@ -52,13 +54,14 @@ class Tier3ErrorModelTest {
                 return x * 2
             }
             func main() {
-                println(g(5))
+                std::io::println(g(5))
             }
         """.trimIndent()))
     }
 
     @Test fun catchFallbackExpression() {
         assertEquals("-1\n5", run("""
+            import std.io
             fail MathError {
                 DivByZero
             }
@@ -69,11 +72,11 @@ class Tier3ErrorModelTest {
                 return a / b
             }
             func main() {
-                println(divide(10, 0) catch -1)
+                std::io::println(divide(10, 0) catch -1)
                 try {
-                    println(divide(10, 2))
+                    std::io::println(divide(10, 2))
                 } catch {
-                    e -> println(e)
+                    e -> std::io::println(e)
                 }
             }
         """.trimIndent()))
@@ -81,6 +84,7 @@ class Tier3ErrorModelTest {
 
     @Test fun errorVariantAccessibleAsString() {
         assertEquals("NotFound", run("""
+            import std.io
             fail Lookup {
                 NotFound
                 OutOfRange
@@ -89,7 +93,7 @@ class Tier3ErrorModelTest {
                 try {
                     fail Lookup.NotFound
                 } catch {
-                    e -> println(e)
+                    e -> std::io::println(e)
                 }
             }
         """.trimIndent()))
@@ -97,12 +101,13 @@ class Tier3ErrorModelTest {
 
     @Test fun failDeferRunsOnlyOnError() {
         assertEquals("only on fail\nalways\nBad", run("""
+            import std.io
             fail E {
                 Bad
             }
             func risky(): Int!E {
-                defer { println("always") }
-                fail defer { println("only on fail") }
+                defer { std::io::println("always") }
+                fail defer { std::io::println("only on fail") }
                 fail E.Bad
                 return 0
             }
@@ -110,7 +115,7 @@ class Tier3ErrorModelTest {
                 try {
                     risky()
                 } catch {
-                    e -> println(e)
+                    e -> std::io::println(e)
                 }
             }
         """.trimIndent()))
@@ -118,16 +123,17 @@ class Tier3ErrorModelTest {
 
     @Test fun failDeferSkippedOnNormalReturn() {
         assertEquals("always\n5", run("""
+            import std.io
             fail E {
                 Bad
             }
             func ok(): Int!E {
-                defer { println("always") }
-                fail defer { println("only on fail") }
+                defer { std::io::println("always") }
+                fail defer { std::io::println("only on fail") }
                 return 5
             }
             func main() {
-                println(ok())
+                std::io::println(ok())
             }
         """.trimIndent()))
     }
@@ -135,6 +141,7 @@ class Tier3ErrorModelTest {
     @Test fun tFlagEnforcementRejectsWrongErrorSet() {
         // A `T!E` function may only fail with errors from set E.
         val result = Compiler().compile("""
+            import std.io
             fail E {
                 Bad
             }
@@ -155,6 +162,7 @@ class Tier3ErrorModelTest {
 
     @Test fun tFlagEnforcementAcceptsMatchingErrorSet() {
         assertEquals("ok", run("""
+            import std.io
             fail E {
                 Bad
             }
@@ -166,7 +174,7 @@ class Tier3ErrorModelTest {
                 try {
                     good()
                 } catch {
-                    e -> println("ok")
+                    e -> std::io::println("ok")
                 }
             }
         """.trimIndent()))
@@ -174,16 +182,17 @@ class Tier3ErrorModelTest {
 
     @Test fun rescueSuppressesErrorAndContinues() {
         assertEquals("rescued!\nok", run("""
+            import std.io
             fail E {
                 Bad
             }
             func risky() {
-                rescue { println("rescued!") }
+                rescue { std::io::println("rescued!") }
                 fail E.Bad
             }
             func main() {
                 risky()
-                println("ok")
+                std::io::println("ok")
             }
         """.trimIndent()))
     }

@@ -18,6 +18,7 @@ class InheritanceTest {
 
     @Test fun nodeBasicMethodsAndFields() {
         assertEquals("Rex\n...", run("""
+            import std.io
             node Animal(name: String) {
                 func speak(): String {
                     return "..."
@@ -28,14 +29,15 @@ class InheritanceTest {
             }
             func main() {
                 var a = Animal("Rex")
-                println(a.describe())
-                println(a.speak())
+                std::io::println(a.describe())
+                std::io::println(a.speak())
             }
         """.trimIndent()))
     }
 
     @Test fun nodeInheritanceInheritsFields() {
         assertEquals("Rex", run("""
+            import std.io
             node Animal(name: String) {
                 func speak(): String {
                     return "generic"
@@ -48,13 +50,14 @@ class InheritanceTest {
             }
             func main() {
                 var d = Dog("Rex")
-                println(d.name)
+                std::io::println(d.name)
             }
         """.trimIndent()))
     }
 
     @Test fun nodeDynamicDispatch() {
         assertEquals("Woof", run("""
+            import std.io
             node Animal(name: String) {
                 func speak(): String {
                     return "generic"
@@ -67,13 +70,14 @@ class InheritanceTest {
             }
             func main() {
                 var a: Animal = Dog("Rex")
-                println(a.speak())
+                std::io::println(a.speak())
             }
         """.trimIndent()))
     }
 
     @Test fun nodeInheritedMethodCallsOverride() {
         assertEquals("Rex says Woof", run("""
+            import std.io
             node Animal(name: String) {
                 func speak(): String {
                     return "generic"
@@ -89,13 +93,14 @@ class InheritanceTest {
             }
             func main() {
                 var a: Animal = Dog("Rex")
-                println(a.describe())
+                std::io::println(a.describe())
             }
         """.trimIndent()))
     }
 
     @Test fun nodeDispatchOnTwoInstances() {
         assertEquals("Woof\nMeow", run("""
+            import std.io
             node Animal(name: String) {
                 func speak(): String {
                     return "generic"
@@ -114,14 +119,15 @@ class InheritanceTest {
             func main() {
                 var a: Animal = Dog("Rex")
                 var b: Animal = Cat("Whiskers")
-                println(a.speak())
-                println(b.speak())
+                std::io::println(a.speak())
+                std::io::println(b.speak())
             }
         """.trimIndent()))
     }
 
     @Test fun baseCallsParentMethod() {
         assertEquals("animal (overridden)", run("""
+            import std.io
             node Animal(name: String) {
                 func speak(): String {
                     return "animal"
@@ -134,13 +140,14 @@ class InheritanceTest {
             }
             func main() {
                 var a: Animal = Dog("Rex")
-                println(a.speak())
+                std::io::println(a.speak())
             }
         """.trimIndent()))
     }
 
     @Test fun leafWithoutNodeKeyword() {
         assertEquals("42", run("""
+            import std.io
             node Base(x: Int) {
                 func get(): Int { return self.x }
             }
@@ -149,13 +156,14 @@ class InheritanceTest {
             }
             func main() {
                 var d: Base = Derived(41)
-                println(d.get())
+                std::io::println(d.get())
             }
         """.trimIndent()))
     }
 
     @Test fun virtFuncInNode() {
         assertEquals("hello\nHELLO", run("""
+            import std.io
             node Greeter(msg: String) {
                 virt func greet(): String {
                     return self.msg
@@ -171,9 +179,9 @@ class InheritanceTest {
             }
             func main() {
                 var g = Greeter("hello")
-                println(g.greet())
+                std::io::println(g.greet())
                 var l: Greeter = LoudGreeter("hello")
-                println(l.shout())
+                std::io::println(l.shout())
             }
         """.trimIndent()))
     }

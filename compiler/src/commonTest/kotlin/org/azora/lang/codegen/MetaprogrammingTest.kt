@@ -17,14 +17,14 @@ class MetaprogrammingTest {
     @Test
     fun inlineFunc_bodySubstitutedAtCallSite() {
         val result = compile("""
-            module playground
-
+            module playground            
+            import std.io
             inline func a() {
-                println("Hello from A")
+                std::io::println("Hello from A")
             }
 
             func b() {
-                println("Hello from B")
+                std::io::println("Hello from B")
             }
 
             func main() {
@@ -37,12 +37,12 @@ class MetaprogrammingTest {
             module playground
 
             func b(): Unit {
-                println("Hello from B")
+                std__io__println("Hello from B")
             }
 
             func main(): Unit {
                 zone {
-                    println("Hello from A")
+                    std__io__println("Hello from A")
                 }
                 b()
             }
@@ -52,12 +52,12 @@ class MetaprogrammingTest {
             module playground
 
             func b(): Unit {
-                println("Hello from B")
+                std__io__println("Hello from B")
             }
 
             func main(): Unit {
                 zone {
-                    println("Hello from A")
+                    std__io__println("Hello from A")
                 }
                 b()
             }
@@ -114,15 +114,15 @@ class MetaprogrammingTest {
     @Test
     fun inlineBlocks_funcInliningRules() {
         val result = compile("""
-            module playground
-
+            module playground            
+            import std.io
             inline fin x = 2
 
             inline {
                 fin a1 = 0
 
                 func a() {
-                    println("Hello from A")
+                    std::io::println("Hello from A")
                 }
             }
 
@@ -130,25 +130,25 @@ class MetaprogrammingTest {
                 fin b1 = 0
 
                 func b() {
-                    println("Hello from B")
+                    std::io::println("Hello from B")
                 }
             }
 
             inline if x == 2 {
                 func c() {
-                    println("Hello from C")
+                    std::io::println("Hello from C")
                 }
             }
 
             deepinline if x == 2 {
                 func d() {
-                    println("Hello from D")
+                    std::io::println("Hello from D")
                 }
             }
 
             deepinline if x == 2 {
                 noinline func e() {
-                    println("Hello from E")
+                    std::io::println("Hello from E")
                 }
             }
 
@@ -169,7 +169,7 @@ class MetaprogrammingTest {
         assertTrue("c" in irFuncNames, "inline if { func c() } should be in IR")
         assertFalse("d" in irFuncNames, "deepinline if { func d() } should not be in IR")
         assertTrue("e" in irFuncNames, "noinline func e() should be in IR")
-        assertTrue("main" in irFuncNames, "func main() should be in IR")
+        assertTrue("main" in irFuncNames, "import std.io\nfunc main() should be in IR")
 
         // main() should have a, b, d inlined as zone blocks, and call c, e directly
         val mainBody = result.ir.functions.first { it.name == "main" }.body
@@ -185,15 +185,15 @@ class MetaprogrammingTest {
     @Test
     fun runtimeGlobals_finSurvivesInIr() {
         val result = compile("""
-            module playground
-
+            module playground            
+            import std.io
             inline fin x = 2
 
             inline if x == 2 {
                 fin c1 = 0
 
                 func c() {
-                    println("Hello from C")
+                    std::io::println("Hello from C")
                 }
             }
 
@@ -201,7 +201,7 @@ class MetaprogrammingTest {
                 noinline fin e1 = 0
 
                 noinline func e() {
-                    println("Hello from E")
+                    std::io::println("Hello from E")
                 }
             }
 
@@ -230,8 +230,8 @@ class MetaprogrammingTest {
     @Test
     fun fullMetaprogramming_allInlineRulesWithGlobals() {
         val result = compile("""
-            module playground
-
+            module playground            
+            import std.io
             inline fin x = 2
 
             fin aa = 2
@@ -240,7 +240,7 @@ class MetaprogrammingTest {
                 fin a1 = 0
 
                 func a() {
-                    println("Hello from A")
+                    std::io::println("Hello from A")
                 }
             }
 
@@ -248,7 +248,7 @@ class MetaprogrammingTest {
                 fin b1 = 0
 
                 func b() {
-                    println("Hello from B")
+                    std::io::println("Hello from B")
                 }
             }
 
@@ -256,7 +256,7 @@ class MetaprogrammingTest {
                 fin c1 = 0
 
                 func c() {
-                    println("Hello from C")
+                    std::io::println("Hello from C")
                 }
             }
 
@@ -264,7 +264,7 @@ class MetaprogrammingTest {
                 fin d1 = 0
 
                 func d() {
-                    println("Hello from D")
+                    std::io::println("Hello from D")
                 }
             }
 
@@ -272,7 +272,7 @@ class MetaprogrammingTest {
                 noinline fin e1 = 0
 
                 noinline func e() {
-                    println("Hello from E")
+                    std::io::println("Hello from E")
                 }
             }
 
@@ -292,25 +292,25 @@ class MetaprogrammingTest {
             fin c1: Int = 0
 
             func c(): Unit {
-                println("Hello from C")
+                std__io__println("Hello from C")
             }
 
             fin e1: Int = 0
 
             func e(): Unit {
-                println("Hello from E")
+                std__io__println("Hello from E")
             }
 
             func main(): Unit {
                 zone {
-                    println("Hello from A")
+                    std__io__println("Hello from A")
                 }
                 zone {
-                    println("Hello from B")
+                    std__io__println("Hello from B")
                 }
                 c()
                 zone {
-                    println("Hello from D")
+                    std__io__println("Hello from D")
                 }
                 e()
             }
@@ -388,23 +388,23 @@ class MetaprogrammingTest {
             module playground
 
             func c(): Unit {
-                println("Hello from C")
+                std__io__println("Hello from C")
             }
 
             func e(): Unit {
-                println("Hello from E")
+                std__io__println("Hello from E")
             }
 
             func main(): Unit {
                 zone {
-                    println("Hello from A")
+                    std__io__println("Hello from A")
                 }
                 zone {
-                    println("Hello from B")
+                    std__io__println("Hello from B")
                 }
                 c()
                 zone {
-                    println("Hello from D")
+                    std__io__println("Hello from D")
                 }
                 e()
             }

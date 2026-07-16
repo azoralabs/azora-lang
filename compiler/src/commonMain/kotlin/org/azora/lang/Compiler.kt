@@ -117,13 +117,13 @@ class Compiler {
      */
     /**
      * When an unknown-symbol error names something the standard library
-     * provides, point at the missing import ("add 'use std.math'").
+     * provides, point at the missing import ("add 'import std.math'").
      */
     private fun withStdlibHint(message: String): String {
         val match = Regex("(?:undefined function|undefined variable) '([A-Za-z_][A-Za-z0-9_]*)'").find(message)
             ?: return message
         val module = StdlibInjector.moduleOf(match.groupValues[1]) ?: return message
-        return "$message — '${match.groupValues[1]}' is in the standard library: add 'use $module'"
+        return "$message — '${match.groupValues[1]}' is in the standard library: add 'import $module'"
     }
 
     fun compile(source: String, warningsAsErrors: Boolean = false, release: Boolean = true, debug: Boolean = false): CompilationResult {

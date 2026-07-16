@@ -18,40 +18,43 @@ class ParamModifiersTest {
 
     @Test fun mutParamCanBeReassigned() {
         assertEquals("20", run("""
+            import std.io
             func increment(mut n: Int): Int {
                 n = n + 10
                 return n
             }
             func main() {
-                println(increment(10))
+                std::io::println(increment(10))
             }
         """.trimIndent()))
     }
 
     @Test fun refParamPropagatesBack() {
         assertEquals("10\n99", run("""
+            import std.io
             func modify(ref x: Int) {
                 x = 99
             }
             func main() {
                 var v = 10
-                println(v)
+                std::io::println(v)
                 modify(v)
-                println(v)
+                std::io::println(v)
             }
         """.trimIndent()))
     }
 
     @Test fun outParamSetsValue() {
         assertEquals("hello\n42", run("""
+            import std.io
             func produce(out result: Int) {
                 result = 42
             }
             func main() {
                 var r = 0
-                println("hello")
+                std::io::println("hello")
                 produce(r)
-                println(r)
+                std::io::println(r)
             }
         """.trimIndent()))
     }
@@ -59,6 +62,7 @@ class ParamModifiersTest {
     @Test fun multipleRefParams() {
         // Swap two variables via ref params.
         assertEquals("70\n30", run("""
+            import std.io
             func swap(ref a: Int, ref b: Int) {
                 var tmp = a
                 a = b
@@ -68,8 +72,8 @@ class ParamModifiersTest {
                 var x = 30
                 var y = 70
                 swap(x, y)
-                println(x)
-                println(y)
+                std::io::println(x)
+                std::io::println(y)
             }
         """.trimIndent()))
     }

@@ -18,19 +18,21 @@ class EnumWhenTest {
 
     @Test fun enumValuePrints() {
         assertEquals("Red", run("""
+            import std.io
             enum Color {
                 Red
                 Green
                 Blue
             }
             func main() {
-                println(Color.Red)
+                std::io::println(Color.Red)
             }
         """.trimIndent()))
     }
 
     @Test fun enumEquality() {
         assertEquals("true\nfalse", run("""
+            import std.io
             enum Color {
                 Red
                 Green
@@ -38,14 +40,15 @@ class EnumWhenTest {
             }
             func main() {
                 fin c = Color.Green
-                println(c == Color.Green)
-                println(c == Color.Red)
+                std::io::println(c == Color.Green)
+                std::io::println(c == Color.Red)
             }
         """.trimIndent()))
     }
 
     @Test fun whenMatchesEnum() {
         assertEquals("stop", run("""
+            import std.io
             enum Light {
                 Red
                 Yellow
@@ -54,10 +57,10 @@ class EnumWhenTest {
             func main() {
                 fin l = Light.Red
                 when l {
-                    Light.Red -> { println("stop") }
-                    Light.Green -> { println("go") }
-                    Light.Yellow -> { println("slow") }
-                    else -> { println("unknown") }
+                    Light.Red -> { std::io::println("stop") }
+                    Light.Green -> { std::io::println("go") }
+                    Light.Yellow -> { std::io::println("slow") }
+                    else -> { std::io::println("unknown") }
                 }
             }
         """.trimIndent()))
@@ -65,6 +68,7 @@ class EnumWhenTest {
 
     @Test fun whenMatchesEnumClean() {
         assertEquals("slow", run("""
+            import std.io
             enum Light {
                 Red
                 Yellow
@@ -73,10 +77,10 @@ class EnumWhenTest {
             func main() {
                 fin l = Light.Yellow
                 when l {
-                    Light.Red -> { println("stop") }
-                    Light.Green -> { println("go") }
-                    Light.Yellow -> { println("slow") }
-                    else -> { println("unknown") }
+                    Light.Red -> { std::io::println("stop") }
+                    Light.Green -> { std::io::println("go") }
+                    Light.Yellow -> { std::io::println("slow") }
+                    else -> { std::io::println("unknown") }
                 }
             }
         """.trimIndent()))
@@ -84,6 +88,7 @@ class EnumWhenTest {
 
     @Test fun whenElseFallback() {
         assertEquals("unknown", run("""
+            import std.io
             enum E {
                 A
                 B
@@ -91,8 +96,8 @@ class EnumWhenTest {
             func main() {
                 fin x = E.A
                 when x {
-                    E.B -> { println("b") }
-                    else -> { println("unknown") }
+                    E.B -> { std::io::println("b") }
+                    else -> { std::io::println("unknown") }
                 }
             }
         """.trimIndent()))
@@ -100,6 +105,7 @@ class EnumWhenTest {
 
     @Test fun enumWhenExhaustiveNoElse() {
         assertEquals("a", run("""
+            import std.io
             enum E {
                 A
                 B
@@ -108,9 +114,9 @@ class EnumWhenTest {
             func main() {
                 fin x = E.A
                 when x {
-                    E.A -> { println("a") }
-                    E.B -> { println("b") }
-                    E.C -> { println("c") }
+                    E.A -> { std::io::println("a") }
+                    E.B -> { std::io::println("b") }
+                    E.C -> { std::io::println("c") }
                 }
             }
         """.trimIndent()))
@@ -118,6 +124,7 @@ class EnumWhenTest {
 
     @Test fun enumWhenNonExhaustiveErrors() {
         val result = Compiler().compile("""
+            import std.io
             enum E {
                 A
                 B
@@ -126,8 +133,8 @@ class EnumWhenTest {
             func main() {
                 fin x = E.A
                 when x {
-                    E.A -> { println("a") }
-                    E.B -> { println("b") }
+                    E.A -> { std::io::println("a") }
+                    E.B -> { std::io::println("b") }
                 }
             }
         """.trimIndent())
@@ -138,13 +145,14 @@ class EnumWhenTest {
 
     @Test fun whenMatchesInteger() {
         assertEquals("two", run("""
+            import std.io
             func main() {
                 var n = 2
                 when n {
-                    1 -> { println("one") }
-                    2 -> { println("two") }
-                    3 -> { println("three") }
-                    else -> { println("other") }
+                    1 -> { std::io::println("one") }
+                    2 -> { std::io::println("two") }
+                    3 -> { std::io::println("three") }
+                    else -> { std::io::println("other") }
                 }
             }
         """.trimIndent()))
@@ -152,11 +160,12 @@ class EnumWhenTest {
 
     @Test fun whenMultiPattern() {
         assertEquals("small", run("""
+            import std.io
             func main() {
                 var n = 2
                 when n {
-                    0, 1, 2, 3 -> { println("small") }
-                    else -> { println("big") }
+                    0, 1, 2, 3 -> { std::io::println("small") }
+                    else -> { std::io::println("big") }
                 }
             }
         """.trimIndent()))
@@ -164,6 +173,7 @@ class EnumWhenTest {
 
     @Test fun enumPassedToFunction() {
         assertEquals("go", run("""
+            import std.io
             enum Light {
                 Red
                 Yellow
@@ -177,13 +187,14 @@ class EnumWhenTest {
                 }
             }
             func main() {
-                println(action(Light.Green))
+                std::io::println(action(Light.Green))
             }
         """.trimIndent()))
     }
 
     @Test fun enumWhenSurvivesOptimization() {
         assertEquals("stop", run("""
+            import std.io
             enum Light {
                 Red
                 Yellow
@@ -192,9 +203,9 @@ class EnumWhenTest {
             func main() {
                 fin l = Light.Red
                 when l {
-                    Light.Red -> { println("stop") }
-                    Light.Green -> { println("go") }
-                    else -> { println("unknown") }
+                    Light.Red -> { std::io::println("stop") }
+                    Light.Green -> { std::io::println("go") }
+                    else -> { std::io::println("unknown") }
                 }
             }
         """.trimIndent(), release = true))
@@ -202,6 +213,7 @@ class EnumWhenTest {
 
     @Test fun enumLoweredToBackends() {
         val result = Compiler().compile("""
+            import std.io
             enum Color {
                 Red
                 Green
@@ -209,8 +221,8 @@ class EnumWhenTest {
             func main() {
                 fin c = Color.Red
                 when c {
-                    Color.Red -> { println("r") }
-                    else -> { println("o") }
+                    Color.Red -> { std::io::println("r") }
+                    else -> { std::io::println("o") }
                 }
             }
         """.trimIndent())

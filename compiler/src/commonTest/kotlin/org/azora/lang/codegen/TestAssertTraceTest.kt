@@ -31,11 +31,12 @@ class TestAssertTraceTest {
     @Test
     fun test_basicDeclaration() {
         val result = compile("""
+            import std.io
             test "addition" {
                 assert 1 + 1 == 2 { "math is broken" }
             }
             func main() {
-                println("hello")
+                std::io::println("hello")
             }
         """.trimIndent())
         assertTrue(result.ir.tests.isNotEmpty(), "Should have tests in IR")
@@ -44,11 +45,12 @@ class TestAssertTraceTest {
     @Test
     fun test_interpreterRunsTests() {
         val output = run("""
+            import std.io
             test "greet test" {
                 trace { "inside test" }
             }
             func main() {
-                println("main")
+                std::io::println("main")
             }
         """.trimIndent())
         assertTrue("main" in output)
@@ -58,6 +60,7 @@ class TestAssertTraceTest {
     @Test
     fun test_javascriptEmit() {
         val result = compile("""
+            import std.io
             test "my test" {
                 assert 1 == 1 { "fail" }
             }
@@ -70,6 +73,7 @@ class TestAssertTraceTest {
     @Test
     fun test_llvmEmit() {
         val result = compile("""
+            import std.io
             test "my test" {
                 assert 1 == 1 { "fail" }
             }
@@ -85,9 +89,10 @@ class TestAssertTraceTest {
     @Test
     fun assert_passingCondition() {
         val output = run("""
+            import std.io
             func main() {
                 assert 1 + 1 == 2 { "math broken" }
-                println("ok")
+                std::io::println("ok")
             }
         """.trimIndent())
         assertEquals("ok", output)
@@ -96,6 +101,7 @@ class TestAssertTraceTest {
     @Test
     fun assert_failingConditionThrows() {
         val result = compile("""
+            import std.io
             func main() {
                 assert 1 == 2 { "bad math" }
             }
@@ -111,6 +117,7 @@ class TestAssertTraceTest {
     @Test
     fun assert_conditionMustBeBool() {
         val errors = expectFailure("""
+            import std.io
             func main() {
                 assert 42 { "not bool" }
             }
@@ -121,6 +128,7 @@ class TestAssertTraceTest {
     @Test
     fun assert_messageMustBeString() {
         val errors = expectFailure("""
+            import std.io
             func main() {
                 assert true { 42 }
             }
@@ -131,6 +139,7 @@ class TestAssertTraceTest {
     @Test
     fun assert_javascriptEmit() {
         val result = compile("""
+            import std.io
             func main() {
                 assert 1 == 1 { "ok" }
             }
@@ -141,6 +150,7 @@ class TestAssertTraceTest {
     @Test
     fun assert_llvmEmit() {
         val result = compile("""
+            import std.io
             func main() {
                 assert 1 == 1 { "ok" }
             }
@@ -156,9 +166,10 @@ class TestAssertTraceTest {
     @Test
     fun trace_printsMessage() {
         val output = run("""
+            import std.io
             func main() {
                 trace { "hello from trace" }
-                println("done")
+                std::io::println("done")
             }
         """.trimIndent())
         assertTrue("[TRACE] hello from trace" in output)
@@ -168,6 +179,7 @@ class TestAssertTraceTest {
     @Test
     fun trace_javascriptEmit() {
         val result = compile("""
+            import std.io
             func main() {
                 trace { "debug" }
             }
@@ -179,6 +191,7 @@ class TestAssertTraceTest {
     @Test
     fun trace_llvmEmit() {
         val result = compile("""
+            import std.io
             func main() {
                 trace { "debug" }
             }
@@ -193,10 +206,11 @@ class TestAssertTraceTest {
     @Test
     fun inlineAssert_passingCondition() {
         val result = compile("""
+            import std.io
             inline fin X = 5
             inline assert X > 0 { "X must be positive" }
             func main() {
-                println("ok")
+                std::io::println("ok")
             }
         """.trimIndent())
         assertNotNull(result, "Passing inline assert should compile")
@@ -205,6 +219,7 @@ class TestAssertTraceTest {
     @Test
     fun inlineAssert_failingCondition() {
         val errors = expectFailure("""
+            import std.io
             inline fin X = -1
             inline assert X > 0 { "X must be positive" }
             func main() {}
@@ -215,10 +230,11 @@ class TestAssertTraceTest {
     @Test
     fun inlineAssert_insideFunctionBody() {
         val result = compile("""
+            import std.io
             func main() {
                 inline fin x = 5
                 inline assert x > 0 { "x must be positive" }
-                println("ok")
+                std::io::println("ok")
             }
         """.trimIndent())
         assertNotNull(result)
@@ -227,10 +243,11 @@ class TestAssertTraceTest {
     @Test
     fun inlineAssert_removedFromIr() {
         val result = compile("""
+            import std.io
             inline fin X = 5
             inline assert X > 0 { "ok" }
             func main() {
-                println("hello")
+                std::io::println("hello")
             }
         """.trimIndent())
         val ir = result.ir.prettyPrint()
@@ -244,9 +261,10 @@ class TestAssertTraceTest {
     @Test
     fun inlineTrace_producesWarning() {
         val result = compile("""
+            import std.io
             inline trace { "compiling module" }
             func main() {
-                println("ok")
+                std::io::println("ok")
             }
         """.trimIndent())
         assertTrue(result.warnings.any { "TRACE" in it && "compiling module" in it },
@@ -256,9 +274,10 @@ class TestAssertTraceTest {
     @Test
     fun inlineTrace_insideFunctionBody() {
         val result = compile("""
+            import std.io
             func main() {
                 inline trace { "in main" }
-                println("ok")
+                std::io::println("ok")
             }
         """.trimIndent())
         assertTrue(result.warnings.any { "TRACE" in it && "in main" in it },
@@ -268,9 +287,10 @@ class TestAssertTraceTest {
     @Test
     fun inlineTrace_removedFromIr() {
         val result = compile("""
+            import std.io
             inline trace { "debug" }
             func main() {
-                println("hello")
+                std::io::println("hello")
             }
         """.trimIndent())
         val ir = result.ir.prettyPrint()
@@ -287,8 +307,9 @@ class TestAssertTraceTest {
         // at the top level only, putting it inside a function would be a parse error.
         // We verify test works at top level (already tested above).
         val result = compile("""
+            import std.io
             test "works at top level" {
-                println("ok")
+                std::io::println("ok")
             }
             func main() {}
         """.trimIndent())

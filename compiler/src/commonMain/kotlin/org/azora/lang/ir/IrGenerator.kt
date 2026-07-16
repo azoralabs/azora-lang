@@ -119,7 +119,11 @@ class IrGenerator(private val table: SymbolTable) {
         val items = program.items.flatMap { item ->
             when (item) {
                 is TopLevel.Func -> {
-                    if (item.decl.isInline) emptyList()
+                    // Runtime intrinsics (std::io::println, …) are intercepted by name in
+                    // each backend/interpreter; their stdlib bodies are dead placeholders,
+                    // so they are kept out of the IR (the symbol is already collected for
+                    // type-checking). This keeps emitted IR / golden output clean.
+                    if (item.decl.isInline || item.decl.name in org.azora.lang.semantic.CtfeEvaluator.RUNTIME_INTRINSICS) emptyList()
                     else listOf(IrTopLevel.Func(lowerFunction(item.decl)))
                 }
                 is TopLevel.FinDecl -> {
@@ -619,6 +623,11 @@ class IrGenerator(private val table: SymbolTable) {
                         t is IrType.Named || t is IrType.Pointer || t is IrType.Nullable || t is IrType.Tuple
                 val innerType = inner.type
                 when {
+                    // `cast x as String` — converting cast: stringify the value by
+                    // routing through the single-part string-template machinery
+                    // (equivalent to "${x}"), which every backend already supports.
+                    expr.convert && target == IrType.String ->
+                        IrExpr.StringTemplate(listOf(IrExpr.IrTemplatePart.Expr(inner)))
                     target == innerType -> inner
                     target == IrType.String && innerType is IrType.Named &&
                         table.lookupMethod(innerType.name, "asString") != null -> {
@@ -897,6 +906,7 @@ class IrGenerator(private val table: SymbolTable) {
                     is IrType.Set -> tt.element
                     is IrType.Map -> tt.value
                     is IrType.Pointer -> tt.inner
+                    IrType.String -> IrType.Char
                     else -> IrType.Any
                 }
                 IrExpr.Index(target, index, elemType)

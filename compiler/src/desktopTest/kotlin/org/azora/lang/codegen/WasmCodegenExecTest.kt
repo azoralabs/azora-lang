@@ -37,55 +37,56 @@ class WasmCodegenExecTest {
         assertEquals(expected, WasmExec.run(source))
     }
 
-    private fun main(body: String): String = "func main() {\n$body\n}"
+    private fun main(body: String): String = "import std.io\nfunc main() {\n$body\n}"
 
-    @Test fun printsHello() = check("hello", main("""println("hello")"""))
-    @Test fun arithmetic() = check("14", main("""println(2 + 3 * 4)"""))
+    @Test fun printsHello() = check("hello", main("""std::io::println("hello")"""))
+    @Test fun arithmetic() = check("14", main("""std::io::println(2 + 3 * 4)"""))
 
     @Test fun integerDivisionTruncates() = check(
-        "3", main("var total = 0\nfor i in 1..17 {\ntotal = total + 1\n}\nprintln(total / 5)")
+        "3", main("var total = 0\nfor i in 1..17 {\ntotal = total + 1\n}\nstd::io::println(total / 5)")
     )
 
     @Test fun negativeIntegerDivisionTruncatesTowardZero() = check(
-        "-3", main("var n = 0\nwhile n > -7 {\nn = n - 1\n}\nprintln(n / 2)")
+        "-3", main("var n = 0\nwhile n > -7 {\nn = n - 1\n}\nstd::io::println(n / 2)")
     )
 
-    @Test fun realDivision() = check("3.5", main("var x = 7.0\nprintln(x / 2.0)"))
-    @Test fun modulo() = check("2", main("var n = 17\nprintln(n % 5)"))
+    @Test fun realDivision() = check("3.5", main("var x = 7.0\nstd::io::println(x / 2.0)"))
+    @Test fun modulo() = check("2", main("var n = 17\nstd::io::println(n % 5)"))
 
     @Test fun bitwiseOps() = check(
         "2\n11\n9\n16\n64\n-11",
-        main("var a = 10\nprintln(a & 6)\nprintln(a | 1)\nprintln(a ^ 3)\nprintln(1 << 4)\nprintln(256 >> 2)\nprintln(~a)")
+        main("var a = 10\nstd::io::println(a & 6)\nstd::io::println(a | 1)\nstd::io::println(a ^ 3)\nstd::io::println(1 << 4)\nstd::io::println(256 >> 2)\nstd::io::println(~a)")
     )
 
     @Test fun stringConcatAndInterpolation() = check(
-        "n = 5!", main("var n = 5\nprintln(\"n = \" + \"${'$'}n\" + \"!\")")
+        "n = 5!", main("var n = 5\nstd::io::println(\"n = \" + \"${'$'}n\" + \"!\")")
     )
 
-    @Test fun stringRepeat() = check("ababab", main("var s = \"ab\"\nprintln(s * 3)"))
+    @Test fun stringRepeat() = check("ababab", main("var s = \"ab\"\nstd::io::println(s * 3)"))
 
     @Test fun stringEquality() = check(
-        "true\nfalse", main("var s = \"he\" + \"llo\"\nprintln(s == \"hello\")\nprintln(s == \"world\")")
+        "true\nfalse", main("var s = \"he\" + \"llo\"\nstd::io::println(s == \"hello\")\nstd::io::println(s == \"world\")")
     )
 
     @Test fun ifElseChain() = check(
         "positive",
         """
+        import std.io
         func classify(n: Int): String {
             if n < 0 { return "negative" } else if n == 0 { return "zero" }
             return "positive"
         }
         func main() { var n = 3
-            println(classify(n)) }
+            std::io::println(classify(n)) }
         """.trimIndent()
     )
 
-    @Test fun forLoopSum() = check("15", main("var total = 0\nfor i in 1..5 {\ntotal = total + i\n}\nprintln(total)"))
-    @Test fun whileLoop() = check("8", main("var x = 20\nwhile x > 10 {\nx = x - 4\n}\nprintln(x)"))
+    @Test fun forLoopSum() = check("15", main("var total = 0\nfor i in 1..5 {\ntotal = total + i\n}\nstd::io::println(total)"))
+    @Test fun whileLoop() = check("8", main("var x = 20\nwhile x > 10 {\nx = x - 4\n}\nstd::io::println(x)"))
 
     @Test fun loopBreakContinue() = check(
         "1\n2\n4",
-        main("var i = 0\nloop {\ni = i + 1\nif i == 3 { continue }\nif i > 4 { break }\nprintln(i)\n}")
+        main("var i = 0\nloop {\ni = i + 1\nif i == 3 { continue }\nif i > 4 { break }\nstd::io::println(i)\n}")
     )
 
     @Test fun whenBranches() = check(
@@ -94,9 +95,9 @@ class WasmCodegenExecTest {
             """
             var grade = 2
             when grade {
-                1 -> { println("one") }
-                2, 3 -> { println("two or three") }
-                else -> { println("other") }
+                1 -> { std::io::println("one") }
+                2, 3 -> { std::io::println("two or three") }
+                else -> { std::io::println("other") }
             }
             """.trimIndent()
         )
@@ -105,36 +106,39 @@ class WasmCodegenExecTest {
     @Test fun recursion() = check(
         "120",
         """
+        import std.io
         func fact(n: Int): Int {
             if n <= 1 { return 1 }
             return n * fact(n - 1)
         }
-        func main() { println(fact(5)) }
+        func main() { std::io::println(fact(5)) }
         """.trimIndent()
     )
 
     @Test fun structFieldMutation() = check(
         "4\n7",
         """
+        import std.io
         pack Point { var x: Int
             var y: Int }
         func main() { let p = Point(3, 4)
             p.x = p.x + 1
-            println(p.x)
-            println(p.x + p.y - 1) }
+            std::io::println(p.x)
+            std::io::println(p.x + p.y - 1) }
         """.trimIndent()
     )
 
     @Test fun arrayIndexAndLength() = check(
-        "25\n3", main("let nums = [10, 20, 30]\nnums[1] = 25\nprintln(nums[1])\nprintln(nums.length)")
+        "25\n3", main("let nums = [10, 20, 30]\nnums[1] = 25\nstd::io::println(nums[1])\nstd::io::println(nums.length)")
     )
 
     @Test fun functionCalls() = check(
         "25",
         """
+        import std.io
         func square(n: Int): Int { return n * n }
         func main() { var n = 5
-            println(square(n)) }
+            std::io::println(square(n)) }
         """.trimIndent()
     )
 }

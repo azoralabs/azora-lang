@@ -28,8 +28,7 @@ module std.math
  * @since 0.0.1
  */
 
-friend zone std {
-    friend zone math {
+friend zone std::math {
         /**
          * The ratio of a circle's circumference to its diameter.
          */
@@ -71,7 +70,6 @@ friend zone std {
          */
         @since("0.0.1")
         fin EPSILON: Real = 0.00000000000001
-    }
 
     /**
      * Returns the absolute value of the given number.

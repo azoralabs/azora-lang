@@ -691,7 +691,6 @@ class TypeResolver(private val table: SymbolTable) {
                         return null
                     }
                 }
-                val isBuiltin = expr.callee == "println"
                 val isGeneric = func.typeParams.isNotEmpty()
                 val argTypes = mutableListOf<IrType>()
                 for (i in effectiveArgs.indices) {
@@ -706,7 +705,7 @@ class TypeResolver(private val table: SymbolTable) {
                     val argType = resolveExpr(arg) ?: run { expectedItType = prevIt; return null }
                     expectedItType = prevIt
                     argTypes.add(argType)
-                    if (!isBuiltin && !isGeneric) {
+                    if (!isGeneric) {
                         val paramType = func.params[i].second
                         if (!isCompatible(paramType, argType)) {
                             errors.add("line ${expr.line}: arg ${i + 1} of '${expr.callee}': expected $paramType, got $argType")
@@ -794,6 +793,15 @@ class TypeResolver(private val table: SymbolTable) {
                 if (targetType is IrType.Pointer) {
                     resolveExpr(expr.index) ?: return null
                     return targetType.inner
+                }
+                // String indexing: `s[i]` → the i-th character.
+                if (targetType == IrType.String) {
+                    val idxType = resolveExpr(expr.index) ?: return null
+                    if (idxType != IrType.Int) {
+                        errors.add("line ${expr.line}: string index must be Int, got $idxType")
+                        return null
+                    }
+                    return IrType.Char
                 }
                 // Named types (packs like Set/Map without injected oper[], or any struct):
                 // allow indexing with any key type, returning Any (the runtime value may be indexable).

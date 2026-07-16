@@ -6,8 +6,13 @@ import org.azora.lang.backend.IrInterpreter
 import kotlin.test.*
 
 /**
- * Tests for modules: `use Zone.Item` imports, `use Zone` wildcard imports,
- * and visibility modifiers (`expose`/`confine`/`protect`).
+ * Tests for zones and visibility under the zone/import model:
+ *
+ * - A named `zone X { ... }` namespaces its members (`X::member`). Members are
+ *   reached via the qualified `X::name` path; bare access is rejected.
+ * - `friend zone X { ... }` may be declared in multiple blocks (and across
+ *   modules); the contributions merge into one logical zone.
+ * - Visibility modifiers (`expose`/`confine`/`protect`) still constrain access.
  */
 class ModulesTest {
 
@@ -17,99 +22,73 @@ class ModulesTest {
         return IrInterpreter().interpret(result.ir).trim()
     }
 
-    // -- use imports --------------------------------------------------------
+    // -- qualified zone access (no bare aliases) ----
 
-    @Test fun useImportSpecificItem() {
+    @Test fun qualifiedZoneFunctionAndConstant() {
         assertEquals("3\n14159", run("""
+            import std.io
             zone Math {
                 fin PI = 14159
                 func triple(x: Int): Int {
                     return x * 3
                 }
             }
-            use Math.triple
-            use Math.PI
             func main() {
-                println(triple(1))
-                println(PI)
+                std::io::println(Math::triple(1))
+                std::io::println(Math::PI)
             }
         """.trimIndent()))
     }
 
-    @Test fun useImportAllItems() {
+    @Test fun qualifiedZoneAccessForFuncsAndFins() {
         assertEquals("hello\n42", run("""
+            import std.io
             zone Utils {
                 func greet(): String {
                     return "hello"
                 }
                 fin answer = 42
             }
-            use Utils
             func main() {
-                println(greet())
-                println(answer)
+                std::io::println(Utils::greet())
+                std::io::println(Utils::answer)
             }
         """.trimIndent()))
     }
 
-    @Test fun useImportStarWildcard() {
-        assertEquals("5", run("""
+    @Test fun bareZoneAccessIsRejected() {
+        val result = Compiler().compile("""
+            import std.io
             zone Const {
                 fin five = 5
             }
-            use Const.*
             func main() {
-                println(five)
+                std::io::println(five)
             }
-        """.trimIndent()))
+        """.trimIndent())
+        assertIs<CompilationResult.Failure>(result)
+        assertTrue(result.errors.any { "five" in it }, "bare zone access should be rejected: ${'$'}{result.errors}")
     }
 
-    @Test fun useImportDotStarWildcard() {
-        assertEquals("5", run("""
+    @Test fun importDoesNotCreateBareAlias() {
+        // `import Const` is a no-op for user zones; bare `five` must still be rejected.
+        val result = Compiler().compile("""
+            import std.io
             zone Const {
                 fin five = 5
             }
-            use Const.*
+            import Const
             func main() {
-                println(five)
+                std::io::println(five)
             }
-        """.trimIndent()))
+        """.trimIndent())
+        assertIs<CompilationResult.Failure>(result)
+        assertTrue(result.errors.any { "five" in it }, "${'$'}{result.errors}")
     }
 
-    @Test fun useZoneAliasImportsZone() {
-        assertEquals("hello\n42", run("""
-            zone Utils {
-                func greet(): String {
-                    return "hello"
-                }
-                fin answer = 42
-            }
-            use zone Utils
-            func main() {
-                println(greet())
-                println(answer)
-            }
-        """.trimIndent()))
-    }
-
-    @Test fun useImportGroupedItems() {
-        assertEquals("3\n14159", run("""
-            zone Math {
-                fin PI = 14159
-                func triple(x: Int): Int {
-                    return x * 3
-                }
-            }
-            use Math.{triple, PI}
-            func main() {
-                println(triple(1))
-                println(PI)
-            }
-        """.trimIndent()))
-    }
-
-    @Test fun friendZoneNamespaceCanBeSharedAcrossBlocks() {
+    @Test fun friendZoneMergesAcrossBlocks() {
         assertEquals("3\n42", run("""
+            import std.io
             friend zone std {
                 func triple(x: Int): Int {
                     return x * 3
@@ -119,22 +98,42 @@ class ModulesTest {
                 fin answer = 42
             }
             func main() {
-                println(triple(1))
-                println(answer)
+                std::io::println(std::triple(1))
+                std::io::println(std::answer)
             }
         """.trimIndent()))
+    }
+
+    @Test fun nonFriendZoneRedeclarationIsRejected() {
+        // A non-friend `zone X` is exclusive: two declarations collide. The fix
+        // is to make both `friend zone X` so they merge.
+        val err = assertFailsWith<IllegalStateException> {
+            Compiler().compile("""
+                import std.io
+                zone x {
+                    func a(): Int { return 1 }
+                }
+                zone x {
+                    func b(): Int { return 2 }
+                }
+                func main() { std::io::println(1) }
+            """.trimIndent())
+        }
+        assertTrue(err.message.orEmpty().contains("zone 'x' is declared more than once"), err.message)
     }
 
     @Test fun scopeIsJustAnIdentifierNotANamespaceKeyword() {
         assertEquals("7", run("""
+            import std.io
             func main() {
                 var scope = 7
-                println(scope)
+                std::io::println(scope)
             }
         """.trimIndent()))
 
         assertFailsWith<IllegalStateException> {
             Compiler().compile("""
+                import std.io
                 scope Old {
                     func nope(): Int {
                         return 1
@@ -148,28 +147,31 @@ class ModulesTest {
 
     @Test fun exposeFuncWorks() {
         assertEquals("ok", run("""
+            import std.io
             expose func helper(): String {
                 return "ok"
             }
             func main() {
-                println(helper())
+                std::io::println(helper())
             }
         """.trimIndent()))
     }
 
     @Test fun confineFuncWorksInSameFile() {
         assertEquals("private", run("""
+            import std.io
             confine func secret(): String {
                 return "private"
             }
             func main() {
-                println(secret())
+                std::io::println(secret())
             }
         """.trimIndent()))
     }
 
     @Test fun protectedMethodWorksThroughExposedMethod() {
         assertEquals("protected", run("""
+            import std.io
             node Base(x: Int) {
                 protected func internal(): String {
                     return "protected"
@@ -180,13 +182,14 @@ class ModulesTest {
             }
             func main() {
                 var b = Base(1)
-                println(b.reveal())
+                std::io::println(b.reveal())
             }
         """.trimIndent()))
     }
 
     @Test fun protectedMethodCannotBeCalledExternally() {
         val result = Compiler().compile("""
+            import std.io
             node Base(x: Int) {
                 protected func internal(): String {
                     return "protected"
@@ -194,57 +197,22 @@ class ModulesTest {
             }
             func main() {
                 var b = Base(1)
-                println(b.internal())
+                std::io::println(b.internal())
             }
         """.trimIndent())
         assertIs<CompilationResult.Failure>(result)
         assertTrue(result.errors.any { "protected method 'internal'" in it }, "${result.errors}")
     }
 
-    @Test fun confineZoneMemberIsNotImportedByWildcard() {
-        val result = Compiler().compile("""
-            zone Vault {
-                confine func hidden(): Int {
-                    return 1
-                }
-                expose func shown(): Int {
-                    return 2
-                }
-            }
-            use Vault
-            func main() {
-                println(shown())
-                println(hidden())
-            }
-        """.trimIndent())
-        assertIs<CompilationResult.Failure>(result)
-        assertTrue(result.errors.any { "hidden" in it }, "${result.errors}")
-    }
-
-    @Test fun confineZoneMemberCannotBeImportedDirectly() {
-        val result = Compiler().compile("""
-            zone Vault {
-                confine func hidden(): Int {
-                    return 1
-                }
-            }
-            use Vault.hidden
-            func main() {
-                println(hidden())
-            }
-        """.trimIndent())
-        assertIs<CompilationResult.Failure>(result)
-        assertTrue(result.errors.any { "confined function 'Vault::hidden'" in it }, "${result.errors}")
-    }
-
     @Test fun confinePackFieldCannotBeReadExternally() {
         val result = Compiler().compile("""
+            import std.io
             pack Secret {
                 confine var value: Int
             }
             func main() {
                 var s = Secret(7)
-                println(s.value)
+                std::io::println(s.value)
             }
         """.trimIndent())
         assertIs<CompilationResult.Failure>(result)
@@ -254,20 +222,22 @@ class ModulesTest {
     @Test fun moduleKeywordAsPackageAlias() {
         assertEquals("ok", run("""
             module myapp
+            import std.io
             func main() {
-                println("ok")
+                std::io::println("ok")
             }
         """.trimIndent()))
     }
 
     @Test fun visibilityOnPack() {
         assertEquals("42", run("""
+            import std.io
             expose pack Container {
                 var v: Int
             }
             func main() {
                 var c = Container(42)
-                println(c.v)
+                std::io::println(c.v)
             }
         """.trimIndent()))
     }

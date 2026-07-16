@@ -37,88 +37,6 @@ import org.azora.lang.ir.IrType
  * happens in [TypeResolver] (Pass 2).
  */
 class SymbolCollector {
-    private fun isImportable(visibility: Visibility): Boolean = visibility != Visibility.CONFINE
-
-    private fun zoneMangle(path: String): String = path.split('.').joinToString("__")
-
-    private fun splitSelectedImport(path: String): Pair<String, String>? {
-        val dot = path.lastIndexOf('.')
-        if (dot <= 0 || dot == path.lastIndex) return null
-        return path.substring(0, dot) to path.substring(dot + 1)
-    }
-
-    private fun importSelectedZoneItem(
-        table: SymbolTable,
-        errors: MutableList<String>,
-        line: Int,
-        zonePath: String,
-        itemName: String,
-    ): Boolean {
-        var imported = false
-        val mangledZone = zoneMangle(zonePath)
-        val mangled = "${mangledZone}__${itemName}"
-        val display = zonePath.split('.').joinToString("::")
-        val func = table.lookupFunction(mangled)
-        if (func != null) {
-            imported = true
-            if (isImportable(func.visibility)) {
-                table.aliasMap[itemName] = mangled
-                table.defineFunction(func.copy(name = itemName))
-            } else {
-                errors.add("line $line: cannot import confined function '$display::$itemName'")
-            }
-        }
-        val struct = table.lookupStruct(mangled)
-        if (struct != null) {
-            imported = true
-            if (isImportable(struct.visibility)) {
-                table.aliasMap[itemName] = mangled
-                table.defineStruct(struct.copy(name = itemName))
-            } else {
-                errors.add("line $line: cannot import confined type '$display::$itemName'")
-            }
-        }
-        val variable = table.lookupVariable(mangled)
-        if (variable != null) {
-            imported = true
-            if (isImportable(variable.visibility)) {
-                table.aliasMap[itemName] = mangled
-                table.defineVariable(VariableSymbol(itemName, variable.type, variable.mutable, variable.visibility))
-            } else {
-                errors.add("line $line: cannot import confined variable '$display::$itemName'")
-            }
-        }
-        return imported
-    }
-
-    private fun importZonePath(table: SymbolTable, path: String) {
-        val mangledPath = zoneMangle(path)
-        val prefix = "${mangledPath}__"
-        val knownFuncs = table.allFunctionNames().filter { it.startsWith(prefix) }
-        for (fn in knownFuncs) {
-            val alias = fn.removePrefix(prefix).substringAfterLast("__")
-            val func = table.lookupFunction(fn)!!
-            if (!isImportable(func.visibility)) continue
-            table.aliasMap[alias] = fn
-            table.defineFunction(func.copy(name = alias))
-        }
-        val knownStructs = table.allStructNames().filter { it.startsWith(prefix) }
-        for (st in knownStructs) {
-            val alias = st.removePrefix(prefix).substringAfterLast("__")
-            val struct = table.lookupStruct(st)!!
-            if (!isImportable(struct.visibility)) continue
-            table.aliasMap[alias] = st
-            table.defineStruct(struct.copy(name = alias))
-        }
-        val knownVars = table.allVariableNames().filter { it.startsWith(prefix) }
-        for (vn in knownVars) {
-            val alias = vn.removePrefix(prefix).substringAfterLast("__")
-            val variable = table.lookupVariable(vn)!!
-            if (!isImportable(variable.visibility)) continue
-            table.aliasMap[alias] = vn
-            table.defineVariable(VariableSymbol(alias, variable.type, variable.mutable, variable.visibility))
-        }
-    }
 
     private fun callbackTraitMethodName(traitName: String, traitArgs: List<TypeRef>, callback: org.azora.lang.frontend.SpecCallback? = null): String {
         callback?.useAsTemplate?.let { template ->
@@ -130,12 +48,15 @@ class SymbolCollector {
 
     private fun registerBuiltins(table: SymbolTable) {
         // println accepts String — type checker will allow String args
-        if (table.lookupFunction("println") == null) {
-            table.defineFunction(FunctionSymbol("println", listOf("value" to IrType.String), IrType.Unit))
-            table.defineFunction(FunctionSymbol("toString", listOf("value" to IrType.Any), IrType.String))
-        }
+        // `toString` lives in std as `std::convert::toString` (see
+        // Internal/Std/Convert/Convert.az); it is no longer a free builtin.
+        // `println` lives in std as `std::io::println` (see Internal/Std/IO/IO.az);
+        // it is no longer a free builtin.
         if (table.lookupFunction("channel") == null) {
             // `channel()` — creates a buffered channel for task-to-task communication.
+            // NOTE: still a builtin — relocation to std::concurrency::channel is blocked
+            // until Channel.az's Mutex/Queue dependencies are restored (Mutex is currently
+            // undefined in the stdlib).
             table.defineFunction(FunctionSymbol("channel", emptyList(), IrType.Named("Channel")))
         }
         if (table.lookupFunction("__dbg") == null) {
@@ -155,9 +76,8 @@ class SymbolCollector {
         if (table.lookupFunction("async") == null) {
             table.defineFunction(FunctionSymbol("async", listOf("thunk" to IrType.Any), IrType.Task(IrType.Any)))
         }
-        if (table.lookupFunction("cancel") == null) {
-            table.defineFunction(FunctionSymbol("cancel", listOf("task" to IrType.Any), IrType.Unit))
-        }
+        // `cancel` lives in std as `std::concurrency::cancel` (see
+        // Internal/Std/Concurrency/Async.az); it is no longer a free builtin.
     }
 
     /**
@@ -441,7 +361,10 @@ class SymbolCollector {
                             errors.add("line ${method.line}: pack '${item.typeName}' has no exposed fields, so extension '${method.name}' cannot use mut ref self")
                             continue
                         }
-                        val selfType = IrType.Named(item.typeName)
+                        // Resolve so primitive impl targets (Int/Real/Char/Bool/…)
+                        // lower to their native IR type (e.g. i32), not an erased
+                        // Named/pointer type. Struct targets stay Named(<Type>).
+                        val selfType = IrType.resolve(TypeRef.Named(item.typeName))
                         val params = mutableListOf<Pair<String, IrType>>()
                         params.add("self" to selfType)
                         for (p in method.params) params.add(p.name to IrType.resolve(p.type, tpSet))
@@ -495,20 +418,11 @@ class SymbolCollector {
             }
         }
 
-        // Resolve `use` imports — create aliases so zone items are accessible without prefix.
-        for (item in program.items) {
-            if (item !is TopLevel.UseImport) continue
-            for ((zoneName, itemName) in item.imports) {
-                if (itemName != null) {
-                    importSelectedZoneItem(table, errors, item.line, zoneName, itemName)
-                } else {
-                    importZonePath(table, zoneName)
-                    splitSelectedImport(zoneName)?.let { (path, selected) ->
-                        importSelectedZoneItem(table, errors, item.line, path, selected)
-                    }
-                }
-            }
-        }
+        // `import` declarations act only as visibility gates for bundled-library
+        // injection (read by StdlibInjector). They no longer create bare aliases:
+        // zone members are reached via their qualified `Zone::name` path, which
+        // the parser flattens to the mangled name (`std.math::abs` →
+        // `std__math__abs`) registered for the injected item.
 
         return errors
     }

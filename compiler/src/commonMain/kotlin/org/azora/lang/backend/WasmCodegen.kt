@@ -86,6 +86,7 @@ class WasmCodegen {
         for (item in program.items) if (item is IrTopLevel.Struct) structs[item.name] = item.fields
 
         val funcs = program.items.filterIsInstance<IrTopLevel.Func>().map { it.function }
+            .filter { it.name !in org.azora.lang.semantic.CtfeEvaluator.RUNTIME_INTRINSICS }
 
         // Emit function bodies first (interns strings, sets runtime flags).
         val funcText = StringBuilder()
@@ -328,7 +329,7 @@ class WasmCodegen {
     }
 
     private fun emitCall(expr: IrExpr.Call): String {
-        if ((expr.name == "println" || expr.name == "print") && expr.args.size == 1) {
+        if ((expr.name == "std__io__println" || expr.name == "print") && expr.args.size == 1) {
             val arg = expr.args.single()
             val fn = when {
                 arg.type == IrType.String -> "print_str"

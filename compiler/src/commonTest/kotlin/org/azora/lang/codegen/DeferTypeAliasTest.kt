@@ -17,39 +17,42 @@ class DeferTypeAliasTest {
 
     @Test fun deferRunsAtFunctionExit() {
         assertEquals("start\nend\ncleanup1\ncleanup2", run("""
+            import std.io
             func main() {
-                println("start")
+                std::io::println("start")
                 defer {
-                    println("cleanup2")
+                    std::io::println("cleanup2")
                 }
                 defer {
-                    println("cleanup1")
+                    std::io::println("cleanup1")
                 }
-                println("end")
+                std::io::println("end")
             }
         """.trimIndent()))
     }
 
     @Test fun deferRunsAfterReturn() {
         assertEquals("work\ncleanup\n42", run("""
+            import std.io
             func doWork(): Int {
                 defer {
-                    println("cleanup")
+                    std::io::println("cleanup")
                 }
-                println("work")
+                std::io::println("work")
                 return 42
             }
             func main() {
-                println(doWork())
+                std::io::println(doWork())
             }
         """.trimIndent()))
     }
 
     @Test fun deferLowersToJavaScriptRuntimeStack() {
         val result = Compiler().compile("""
+            import std.io
             func main() {
-                defer { println("cleanup") }
-                println("body")
+                defer { std::io::println("cleanup") }
+                std::io::println("body")
             }
         """.trimIndent(), release = false)
         assertIs<CompilationResult.Success>(result)
@@ -59,20 +62,22 @@ class DeferTypeAliasTest {
 
     @Test fun typeAliasInt() {
         assertEquals("42", run("""
+            import std.io
             typealias UserId = Int
             func main() {
                 var id: UserId = 42
-                println(id)
+                std::io::println(id)
             }
         """.trimIndent()))
     }
 
     @Test fun typeAliasString() {
         assertEquals("hello", run("""
+            import std.io
             typealias Name = String
             func main() {
                 var n: Name = "hello"
-                println(n)
+                std::io::println(n)
             }
         """.trimIndent()))
     }

@@ -31,8 +31,9 @@ class ProgramTest {
     @Test
     fun helloWorld() {
         val result = compile("""
+            import std.io
             func main() {
-                println("Hello, world!")
+                std::io::println("Hello, world!")
             }
         """.trimIndent())
 
@@ -52,8 +53,9 @@ class ProgramTest {
     @Test
     fun helloWorldWithReturn() {
         val result = compile("""
+            import std.io
             func main(): Int {
-                println("Hello")
+                std::io::println("Hello")
                 return 0
             }
         """.trimIndent())
@@ -72,14 +74,15 @@ class ProgramTest {
     @Test
     fun arithmeticAndVariables() {
         val output = run("""
+            import std.io
             func main() {
                 var x = 10
                 fin y = 3
                 let z = x + y
-                println(z)
+                std::io::println(z)
                 x = x * 2
-                println(x)
-                println(x - y)
+                std::io::println(x)
+                std::io::println(x - y)
             }
         """.trimIndent())
 
@@ -93,6 +96,7 @@ class ProgramTest {
     @Test
     fun functionCalls() {
         val output = run("""
+            import std.io
             func double(n: Int): Int {
                 return n * 2
             }
@@ -102,8 +106,8 @@ class ProgramTest {
             }
 
             func main() {
-                println(double(5))
-                println(addOne(double(3)))
+                std::io::println(double(5))
+                std::io::println(addOne(double(3)))
             }
         """.trimIndent())
 
@@ -117,6 +121,7 @@ class ProgramTest {
     @Test
     fun ifElse() {
         val output = run("""
+            import std.io
             func abs(n: Int): Int {
                 if n < 0 {
                     return 0 - n
@@ -126,8 +131,8 @@ class ProgramTest {
             }
 
             func main() {
-                println(abs(5))
-                println(abs(-3))
+                std::io::println(abs(5))
+                std::io::println(abs(-3))
             }
         """.trimIndent())
 
@@ -141,10 +146,11 @@ class ProgramTest {
     @Test
     fun stringOperations() {
         val output = run("""
+            import std.io
             func main() {
                 fin greeting = "Hello"
                 fin name = "World"
-                println(greeting + ", " + name + "!")
+                std::io::println(greeting + ", " + name + "!")
             }
         """.trimIndent())
 
@@ -158,10 +164,11 @@ class ProgramTest {
     @Test
     fun globalFin() {
         val output = run("""
+            import std.io
             fin x = 9
 
             func main() {
-                println(x)
+                std::io::println(x)
             }
         """.trimIndent())
 
@@ -175,17 +182,18 @@ class ProgramTest {
     @Test
     fun scopeResolution() {
         val output = run("""
+            import std.io
             fin x = 9
 
             func main() {
                 var x = 2
-                println(x)
-                println(::x)
+                std::io::println(x)
+                std::io::println(::x)
                 zone {
                     var x = 5
-                    println(x)
-                    println(::x)
-                    println(::_::x)
+                    std::io::println(x)
+                    std::io::println(::x)
+                    std::io::println(::_::x)
                 }
             }
         """.trimIndent())
@@ -200,14 +208,15 @@ class ProgramTest {
     @Test
     fun friendZone() {
         val output = run("""
+            import std.io
             func main() {
                 friend zone {
                     var shared = 10
-                    println(shared)
+                    std::io::println(shared)
                 }
                 friend zone {
                     shared = shared + 5
-                    println(shared)
+                    std::io::println(shared)
                 }
             }
         """.trimIndent())
@@ -222,12 +231,13 @@ class ProgramTest {
     @Test
     fun releaseVsDebug() {
         val source = """
+            import std.io
             func unused() {
-                println("never called")
+                std::io::println("never called")
             }
 
             func main() {
-                println("hello")
+                std::io::println("hello")
             }
         """.trimIndent()
 
@@ -251,9 +261,10 @@ class ProgramTest {
     @Test
     fun topLevelVarRejected() {
         val errors = expectFailure("""
+            import std.io
             var x = 5
             func main() {
-                println(x)
+                std::io::println(x)
             }
         """.trimIndent())
         assertTrue(errors.any { "not allowed" in it && "thread-safe" in it },
@@ -267,6 +278,7 @@ class ProgramTest {
     @Test
     fun redeclarationRejected() {
         val errors = expectFailure("""
+            import std.io
             func main() {
                 var x = 1
                 var x = 2

@@ -61,10 +61,18 @@ internal object VariadicMonomorphizer {
     fun monomorphize(program: Program): Program {
         val packTemplates = linkedMapOf<String, TopLevel.Pack>()
         val funcTemplates = linkedMapOf<String, TopLevel.Func>()
+        val constructibleTypes = linkedMapOf<String, List<String>>()
+        val functionReturns = linkedMapOf<String, CallableReturn>()
         for (item in program.items) {
             when (item) {
-                is TopLevel.Pack -> if (item.variadicParam != null) packTemplates[item.name] = item
+                is TopLevel.Pack -> {
+                    constructibleTypes[item.name] = item.typeParams
+                    if (item.variadicParam != null) packTemplates[item.name] = item
+                }
                 is TopLevel.Func -> {
+                    explicitReturnType(item.decl)?.let {
+                        functionReturns[item.decl.name] = CallableReturn(item.decl.typeParams, it)
+                    }
                     // Only a variadic function that RETURNS a variadic pack (`Tuple<T…>`)
                     // is a monomorphization template. Plain variadic functions that just
                     // collect args into an array (`args: …T`) are left as runtime variadics.
@@ -73,15 +81,48 @@ internal object VariadicMonomorphizer {
                         funcTemplates[decl.name] = item
                     }
                 }
+                is TopLevel.Solo -> constructibleTypes[item.name] = emptyList()
+                is TopLevel.Node -> constructibleTypes[item.name] = emptyList()
                 else -> {}
             }
         }
         if (packTemplates.isEmpty() && funcTemplates.isEmpty()) return program
 
-        val ctx = MonoContext(packTemplates, funcTemplates)
+        val methodReturns = linkedMapOf<Pair<String, String>, CallableReturn>()
+        for (item in program.items) {
+            val owner = when (item) {
+                is TopLevel.Impl -> item.typeName.substringBefore('<')
+                is TopLevel.Solo -> item.name
+                is TopLevel.Node -> item.name
+                else -> null
+            } ?: continue
+            val ownerTypeParams = constructibleTypes[owner].orEmpty()
+            val methods = when (item) {
+                is TopLevel.Impl -> item.methods
+                is TopLevel.Solo -> item.methods
+                is TopLevel.Node -> item.methods
+                else -> emptyList()
+            }
+            for (method in methods) {
+                explicitReturnType(method)?.let {
+                    methodReturns[owner to method.name] = CallableReturn(ownerTypeParams + method.typeParams, it)
+                }
+            }
+        }
+
+        val ctx = MonoContext(
+            packTemplates,
+            funcTemplates,
+            constructibleTypes,
+            functionReturns,
+            methodReturns,
+        )
         val rewritten = program.items.mapNotNull { ctx.rewriteTopLevel(it) }
         return program.copy(items = rewritten + ctx.packs.values + ctx.funcs.values)
     }
+
+    private fun explicitReturnType(decl: FuncDecl): TypeRef? =
+        (decl.returnType as? TypeAnnotation.Explicit)?.ref
 
     /** The name of the variadic pack a function template returns (`Tuple<T…>` → "Tuple"). */
     private fun returnedVariadicPackName(decl: FuncDecl): String? {
@@ -90,9 +131,17 @@ internal object VariadicMonomorphizer {
     }
 }
 
+private data class CallableReturn(
+    val typeParams: List<String>,
+    val returnType: TypeRef,
+)
+
 private class MonoContext(
     private val packTemplates: Map<String, TopLevel.Pack>,
     private val funcTemplates: Map<String, TopLevel.Func>,
+    private val constructibleTypes: Map<String, List<String>>,
+    private val functionReturns: Map<String, CallableReturn>,
+    private val methodReturns: Map<Pair<String, String>, CallableReturn>,
 ) {
     val packs = linkedMapOf<String, TopLevel.Pack>()
     val funcs = linkedMapOf<String, TopLevel.Func>()
@@ -369,15 +418,50 @@ private class MonoContext(
         is Expr.Grouping -> inferExprType(e.expr)
         is Expr.TupleAccess -> inferExprType(e.target)?.let { tupleElementType(it, e.index) }
         is Expr.Call -> {
-            val ets = resolveElementTypes(e)
             when {
-                ets == null -> null
-                e.callee in funcTemplates -> TypeRef.Named(returnedVariadicPackName(funcTemplates[e.callee]!!.decl) ?: e.callee, ets)
-                e.callee in packTemplates -> TypeRef.Named(e.callee, ets)
-                else -> null
+                e.callee in funcTemplates -> resolveElementTypes(e)?.let { elementTypes ->
+                    TypeRef.Named(returnedVariadicPackName(funcTemplates[e.callee]!!.decl) ?: e.callee, elementTypes)
+                }
+                e.callee in packTemplates -> resolveElementTypes(e)?.let { TypeRef.Named(e.callee, it) }
+                e.callee in constructibleTypes -> TypeRef.Named(e.callee, e.typeArgs)
+                else -> functionReturns[e.callee]?.let { resolveCallableReturn(it, e.typeArgs) }
             }
         }
+        is Expr.MethodCall -> {
+            val receiver = inferExprType(e.target) as? TypeRef.Named
+            receiver?.let {
+                methodReturns[it.name.substringBefore('<') to e.name]?.let { callable ->
+                    resolveCallableReturn(callable, it.args)
+                }
+            }
+        }
+        is Expr.StringTemplate -> TypeRef.Named("String")
         else -> null
+    }
+
+    private fun resolveCallableReturn(callable: CallableReturn, typeArgs: List<TypeRef>): TypeRef {
+        if (callable.typeParams.isEmpty() || typeArgs.isEmpty()) return callable.returnType
+        val substitutions = callable.typeParams.zip(typeArgs).toMap()
+        return substituteTypeParams(callable.returnType, substitutions)
+    }
+
+    private fun substituteTypeParams(type: TypeRef, substitutions: Map<String, TypeRef>): TypeRef = when (type) {
+        is TypeRef.Named -> substitutions[type.name] ?: type.copy(args = type.args.map { substituteTypeParams(it, substitutions) })
+        is TypeRef.Array -> type.copy(element = substituteTypeParams(type.element, substitutions))
+        is TypeRef.Map -> type.copy(
+            key = substituteTypeParams(type.key, substitutions),
+            value = substituteTypeParams(type.value, substitutions),
+        )
+        is TypeRef.Set -> type.copy(element = substituteTypeParams(type.element, substitutions))
+        is TypeRef.Function -> type.copy(
+            params = type.params.map { substituteTypeParams(it, substitutions) },
+            ret = substituteTypeParams(type.ret, substitutions),
+        )
+        is TypeRef.Tuple -> type.copy(elements = type.elements.map { substituteTypeParams(it, substitutions) })
+        is TypeRef.Nullable -> type.copy(inner = substituteTypeParams(type.inner, substitutions))
+        is TypeRef.Failable -> type.copy(ok = substituteTypeParams(type.ok, substitutions))
+        is TypeRef.Pointer -> type.copy(inner = substituteTypeParams(type.inner, substitutions))
+        is TypeRef.Reference -> type.copy(inner = substituteTypeParams(type.inner, substitutions))
     }
 
     /** Element [index] of a tuple-typed [type] (structural `Tuple` or a variadic pack ref). */

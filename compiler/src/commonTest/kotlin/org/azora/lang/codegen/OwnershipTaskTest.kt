@@ -28,6 +28,7 @@ class OwnershipTaskTest {
     @Test
     fun namedTasksStartAndAwaitInTaskMain() {
         val source = """
+            import std.io
             task loadUser(): Int { return 20 }
             task loadPosts(): Int { return 22 }
             task main() {
@@ -35,7 +36,7 @@ class OwnershipTaskTest {
                 fin posts = loadPosts()
                 fin userValue = await user
                 fin postValue = await posts
-                println(userValue + postValue)
+                std::io::println(userValue + postValue)
             }
         """.trimIndent()
 
@@ -51,10 +52,11 @@ class OwnershipTaskTest {
     @Test
     fun directAwaitOfTaskCall() {
         assertEquals("42", run("""
+            import std.io
             task answer(): Int { return 42 }
             task main() {
                 fin value = await answer()
-                println(value)
+                std::io::println(value)
             }
         """.trimIndent()))
     }
@@ -62,12 +64,13 @@ class OwnershipTaskTest {
     @Test
     fun asyncBlockProducesTaskHandle() {
         val source = """
+            import std.io
             task main() {
                 fin left = async { 19 }
                 fin right = async { 23 }
                 fin a = await left
                 fin b = await right
-                println(a + b)
+                std::io::println(a + b)
             }
         """.trimIndent()
 
@@ -79,8 +82,9 @@ class OwnershipTaskTest {
     @Test
     fun taskAndUnsafeFlagsSurviveIntoIr() {
         val result = compile("""
+            import std.io
             unsafe task compute(): Int { return 7 }
-            task main() { println(7) }
+            task main() { std::io::println(7) }
         """.trimIndent())
 
         val compute = result.ir.functions.first { it.name == "compute" }
@@ -92,16 +96,18 @@ class OwnershipTaskTest {
     @Test
     fun unsafeCallsRequireExplicitBoundary() {
         val rejected = Compiler().compile("""
+            import std.io
             unsafe func raw(): Int { return 7 }
-            func main() { println(raw()) }
+            func main() { std::io::println(raw()) }
         """.trimIndent())
         assertIs<CompilationResult.Failure>(rejected)
         assertTrue(rejected.errors.any { "requires an unsafe block" in it })
 
         assertEquals("7", run("""
+            import std.io
             unsafe func raw(): Int { return 7 }
             func main() {
-                unsafe { println(raw()) }
+                unsafe { std::io::println(raw()) }
             }
         """.trimIndent()))
     }
@@ -109,9 +115,10 @@ class OwnershipTaskTest {
     @Test
     fun safeTaskRejectsBorrowAcrossSuspensionBoundary() {
         val result = Compiler().compile("""
+            import std.io
             pack Buffer { var value: Int }
             task inspect(input: ref Buffer): Int { return input.value }
-            task main() { println(0) }
+            task main() { std::io::println(0) }
         """.trimIndent())
 
         assertIs<CompilationResult.Failure>(result)
@@ -121,6 +128,7 @@ class OwnershipTaskTest {
     @Test
     fun referenceParameterSpellingsAreNormalized() {
         val result = compile("""
+            import std.io
             pack Buffer { var value: Int }
             func read(a: ref Buffer, b: shared ref Buffer, c: weak ref Buffer): Int {
                 return a.value
@@ -131,7 +139,7 @@ class OwnershipTaskTest {
             func main() {
                 var buffer = Buffer(1)
                 update(buffer)
-                println(buffer.value)
+                std::io::println(buffer.value)
             }
         """.trimIndent())
 
@@ -145,6 +153,7 @@ class OwnershipTaskTest {
     @Test
     fun referenceDeclarationAnnotationsRetainOwnershipKind() {
         val result = compile("""
+            import std.io
             pack Buffer { var value: Int }
             func main() {
                 var owned: Buffer = Buffer(1)
@@ -152,7 +161,7 @@ class OwnershipTaskTest {
                 var exclusive: mut ref Buffer = owned
                 fin shared: shared ref Buffer = owned
                 fin weakRef: weak ref Buffer = owned
-                println(borrowed.value + exclusive.value + shared.value + weakRef.value)
+                std::io::println(borrowed.value + exclusive.value + shared.value + weakRef.value)
             }
         """.trimIndent())
 

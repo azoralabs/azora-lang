@@ -15,6 +15,7 @@
  */
 
 module std.container.deque
+import std.convert
 
 /**
  * @file Deque
@@ -140,7 +141,7 @@ friend zone std {
             while i < self.size {
                 if i > 0 { result = result + ", " }
                 var idx: Int = (self.head + i) % self.capacity
-                result = result + toString((*self.data)[idx])
+                result = result + std::convert::toString((*self.data)[idx])
                 i += 1
             }
             return result + "]"

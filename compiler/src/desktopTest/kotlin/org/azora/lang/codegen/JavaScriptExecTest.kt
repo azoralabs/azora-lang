@@ -37,18 +37,19 @@ class JavaScriptExecTest {
         assertEquals(expected, NodeExec.run(source))
     }
 
-    private fun main(body: String): String = "func main() {\n$body\n}"
+    private fun main(body: String): String = "import std.io\nfunc main() {\n$body\n}"
 
     @Test fun structuredTasksAndAsyncBlocks() = check(
         "42",
         """
+        import std.io
         task left(): Int { return 19 }
         task main() {
             fin a = left()
             fin b = async { 23 }
             fin av = await a
             fin bv = await b
-            println(av + bv)
+            std::io::println(av + bv)
         }
         """.trimIndent()
     )
@@ -56,10 +57,11 @@ class JavaScriptExecTest {
     @Test fun taskMainJoinsUnawaitedChildren() = check(
         "main\nchild",
         """
-        task child() { println("child") }
+        import std.io
+        task child() { std::io::println("child") }
         task main() {
             child()
-            println("main")
+            std::io::println("main")
         }
         """.trimIndent()
     )
@@ -69,10 +71,10 @@ class JavaScriptExecTest {
     // -----------------------------------------------------------------------
 
     @Test fun printsHello() =
-        check("hello", main("""println("hello")"""))
+        check("hello", main("""std::io::println("hello")"""))
 
     @Test fun arithmetic() =
-        check("14", main("""println(2 + 3 * 4)"""))
+        check("14", main("""std::io::println(2 + 3 * 4)"""))
 
     /** Integer division must truncate (JS `/` would print 3.4). */
     @Test fun integerDivisionTruncates() = check(
@@ -83,7 +85,7 @@ class JavaScriptExecTest {
             for i in 1..17 {
                 total = total + 1
             }
-            println(total / 5)
+            std::io::println(total / 5)
             """.trimIndent()
         )
     )
@@ -97,7 +99,7 @@ class JavaScriptExecTest {
             while n > -7 {
                 n = n - 1
             }
-            println(n / 2)
+            std::io::println(n / 2)
             """.trimIndent()
         )
     )
@@ -107,7 +109,7 @@ class JavaScriptExecTest {
         main(
             """
             var x = 7.0
-            println(x / 2.0)
+            std::io::println(x / 2.0)
             """.trimIndent()
         )
     )
@@ -117,7 +119,7 @@ class JavaScriptExecTest {
         main(
             """
             var n = 17
-            println(n % 5)
+            std::io::println(n % 5)
             """.trimIndent()
         )
     )
@@ -127,12 +129,12 @@ class JavaScriptExecTest {
         main(
             """
             var a = 10
-            println(a & 6)
-            println(a | 1)
-            println(a ^ 3)
-            println(1 << 4)
-            println(256 >> 2)
-            println(~a)
+            std::io::println(a & 6)
+            std::io::println(a | 1)
+            std::io::println(a ^ 3)
+            std::io::println(1 << 4)
+            std::io::println(256 >> 2)
+            std::io::println(~a)
             """.trimIndent()
         )
     )
@@ -146,7 +148,7 @@ class JavaScriptExecTest {
         main(
             """
             var n = 5
-            println("n = " + "${'$'}n" + "!")
+            std::io::println("n = " + "${'$'}n" + "!")
             """.trimIndent()
         )
     )
@@ -156,7 +158,7 @@ class JavaScriptExecTest {
         main(
             """
             var s = "ab"
-            println(s * 3)
+            std::io::println(s * 3)
             """.trimIndent()
         )
     )
@@ -166,8 +168,8 @@ class JavaScriptExecTest {
         main(
             """
             var s = "he" + "llo"
-            println(s == "hello")
-            println(s == "world")
+            std::io::println(s == "hello")
+            std::io::println(s == "world")
             """.trimIndent()
         )
     )
@@ -179,6 +181,7 @@ class JavaScriptExecTest {
     @Test fun ifElseChain() = check(
         "positive",
         """
+        import std.io
         func classify(n: Int): String {
             if n < 0 {
                 return "negative"
@@ -189,7 +192,7 @@ class JavaScriptExecTest {
         }
         func main() {
             var n = 3
-            println(classify(n))
+            std::io::println(classify(n))
         }
         """.trimIndent()
     )
@@ -202,7 +205,7 @@ class JavaScriptExecTest {
             for i in 1..5 {
                 total = total + i
             }
-            println(total)
+            std::io::println(total)
             """.trimIndent()
         )
     )
@@ -215,7 +218,7 @@ class JavaScriptExecTest {
             while x > 10 {
                 x = x - 4
             }
-            println(x)
+            std::io::println(x)
             """.trimIndent()
         )
     )
@@ -233,7 +236,7 @@ class JavaScriptExecTest {
                 if i > 4 {
                     break
                 }
-                println(i)
+                std::io::println(i)
             }
             """.trimIndent()
         )
@@ -248,15 +251,15 @@ class JavaScriptExecTest {
             when grade {
                 1 -> {
                     let msg = "one"
-                    println(msg)
+                    std::io::println(msg)
                 }
                 2, 3 -> {
                     let msg = "two or three"
-                    println(msg)
+                    std::io::println(msg)
                 }
                 else -> {
                     let msg = "other"
-                    println(msg)
+                    std::io::println(msg)
                 }
             }
             """.trimIndent()
@@ -270,6 +273,7 @@ class JavaScriptExecTest {
     @Test fun structFieldMutation() = check(
         "4\n7",
         """
+        import std.io
         pack Point {
             var x: Int
             var y: Int
@@ -277,8 +281,8 @@ class JavaScriptExecTest {
         func main() {
             let p = Point(3, 4)
             p.x = p.x + 1
-            println(p.x)
-            println(p.x + p.y - 1)
+            std::io::println(p.x)
+            std::io::println(p.x + p.y - 1)
         }
         """.trimIndent()
     )
@@ -289,8 +293,8 @@ class JavaScriptExecTest {
             """
             let nums = [10, 20, 30]
             nums[1] = 25
-            println(nums[1])
-            println(nums.length)
+            std::io::println(nums[1])
+            std::io::println(nums.length)
             """.trimIndent()
         )
     )
@@ -302,12 +306,13 @@ class JavaScriptExecTest {
     @Test fun functionCalls() = check(
         "25",
         """
+        import std.io
         func square(n: Int): Int {
             return n * n
         }
         func main() {
             var n = 5
-            println(square(n))
+            std::io::println(square(n))
         }
         """.trimIndent()
     )
@@ -317,7 +322,7 @@ class JavaScriptExecTest {
         main(
             """
             var double = { x: Int -> x * 2 }
-            println(double(5))
+            std::io::println(double(5))
             """.trimIndent()
         )
     )
@@ -325,11 +330,12 @@ class JavaScriptExecTest {
     @Test fun higherOrderFunction() = check(
         "16",
         """
+        import std.io
         func apply(f: (Int) -> Int, x: Int): Int {
             return f(x)
         }
         func main() {
-            println(apply({ x: Int -> x * x }, 4))
+            std::io::println(apply({ x: Int -> x * x }, 4))
         }
         """.trimIndent()
     )
@@ -344,11 +350,11 @@ class JavaScriptExecTest {
             """
             try {
                 throw "boom"
-                println("unreachable")
+                std::io::println("unreachable")
             } catch { e ->
-                println("caught: ${'$'}e")
+                std::io::println("caught: ${'$'}e")
             }
-            println("after")
+            std::io::println("after")
             """.trimIndent()
         )
     )

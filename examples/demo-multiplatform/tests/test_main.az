@@ -1,6 +1,6 @@
 package demo_multiplatform.tests
 
-use zone std
+import std
 
 test "initial count" {
     fin count = 0

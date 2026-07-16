@@ -46,6 +46,14 @@ class Parser(private val tokens: List<Token>) {
      */
     private val aliasWrappers = mutableListOf<TopLevel>()
 
+    /**
+     * Non-friend `zone X` declarations seen in this program (name -> count).
+     * A non-friend zone is exclusive: declaring `zone X` twice (even across
+     * concatenated modules) is a redeclaration. `friend zone X` is exempt (it
+     * merges across blocks/modules). Checked at the end of [parse].
+     */
+    private val namedZoneDeclarations = mutableMapOf<String, Int>()
+
     /** `func sin as az_sin(x: Real): Real` → wrapper `func sin(x) { return az_sin(x) }`. */
     private fun makeBridgeWrapper(name: String, externName: String, params: List<Param>, returnType: TypeRef, line: Int) {
         val args = params.map { Expr.Identifier(it.name, line) }
@@ -126,8 +134,12 @@ class Parser(private val tokens: List<Token>) {
                 aliasWrappers.clear()
             }
         }
+        namedZoneDeclarations.entries.firstOrNull { it.value > 1 }?.let { (name, _) ->
+            error("zone '$name' is declared more than once; use 'friend zone $name' to merge the same zone across blocks/modules")
+        }
         val localPackNames = items.filterIsInstance<TopLevel.Pack>().mapTo(mutableSetOf()) { it.name }
-        return CallbackImplNormalizer.normalize(Program(moduleName, items, localPackNames))
+        val normalized = CallbackImplNormalizer.normalize(Program(moduleName, items, localPackNames))
+        return IntraZoneRewriter.rewrite(normalized)
     }
 
     /**
@@ -139,6 +151,7 @@ class Parser(private val tokens: List<Token>) {
     private fun parseNamedZone(): List<TopLevel> {
         consume(TokenType.ZONE, "Expected 'zone'")
         val name = consume(TokenType.IDENTIFIER, "Expected zone name").lexeme
+        namedZoneDeclarations.merge(name, 1) { a, b -> a + b }
         consume(TokenType.L_BRACE, "Expected '{' after zone name")
         skipNewlines()
         val items = parseZoneBody(name)
@@ -161,34 +174,26 @@ class Parser(private val tokens: List<Token>) {
     }
 
     /**
-     * `friend zone Name { items }` — a shared namespace contribution. Unlike a
-     * named `zone`, it does not mangle declarations with [Name]; stdlib modules
-     * use module names for import/qualified lookup, and the friend-zone wrapper
-     * only marks that multiple files may contribute to the same logical zone.
+     * `friend zone Name (:: Name)* { items }` — a shared namespace contribution.
+     * Like a named `zone`, it mangles each member with the zone path
+     * (`friend zone std { friend zone math { fin PI } }` → `std__math__PI`, reached
+     * as `std::math::PI`). Unlike a named `zone`, the same zone path may be
+     * declared across multiple modules and the contributions merge (the
+     * "friend" grant); the exclusivity check lives in semantic analysis.
      */
-    private fun parseFriendZoneNamespace(): List<TopLevel> {
+    private fun parseFriendZoneNamespace(outerPrefix: String = ""): List<TopLevel> {
         consume(TokenType.FRIEND, "Expected 'friend'")
         consume(TokenType.ZONE, "Expected 'zone' after 'friend'")
-        consume(TokenType.IDENTIFIER, "Expected zone name after 'friend zone'")
-        while (match(TokenType.DOUBLE_COLON)) {
-            consume(TokenType.IDENTIFIER, "Expected zone name after '::' in friend zone path")
-        }
+        val first = consume(TokenType.IDENTIFIER, "Expected zone name after 'friend zone'").lexeme
+        val friendPath = StringBuilder(first).apply {
+            while (match(TokenType.DOUBLE_COLON)) {
+                append("__").append(consume(TokenType.IDENTIFIER, "Expected zone name after '::' in friend zone path").lexeme)
+            }
+        }.toString()
+        val prefix = if (outerPrefix.isEmpty()) friendPath else "${outerPrefix}__$friendPath"
         consume(TokenType.L_BRACE, "Expected '{' after friend zone name")
         skipNewlines()
-        val items = mutableListOf<TopLevel>()
-        while (!check(TokenType.R_BRACE) && !isAtEnd()) {
-            skipNewlines()
-            if (check(TokenType.R_BRACE)) break
-            when {
-                isFriendZoneNamespaceAhead() -> items.addAll(parseFriendZoneNamespace())
-                check(TokenType.ZONE) && peekNext()?.type == TokenType.IDENTIFIER -> items.addAll(parseNamedZone())
-                else -> items.add(parseTopLevel())
-            }
-            if (aliasWrappers.isNotEmpty()) {
-                items.addAll(aliasWrappers)
-                aliasWrappers.clear()
-            }
-        }
+        val items = parseZoneBody(prefix)
         consume(TokenType.R_BRACE, "Expected '}' after friend zone")
         consumeNewline()
         return items
@@ -199,16 +204,24 @@ class Parser(private val tokens: List<Token>) {
         while (!check(TokenType.R_BRACE) && !isAtEnd()) {
             skipNewlines()
             if (check(TokenType.R_BRACE)) break
-            if (check(TokenType.ZONE) && peekNext()?.type == TokenType.IDENTIFIER) {
-                consume(TokenType.ZONE, "Expected 'zone'")
-                val inner = consume(TokenType.IDENTIFIER, "Expected zone name").lexeme
-                consume(TokenType.L_BRACE, "Expected '{' after zone name")
-                skipNewlines()
-                result.addAll(parseZoneBody("${prefix}__$inner"))
-                consume(TokenType.R_BRACE, "Expected '}' after nested zone")
-                skipNewlines()
-            } else {
-                result.add(mangleTopLevel(parseTopLevel(), prefix))
+            when {
+                isFriendZoneNamespaceAhead() -> result.addAll(parseFriendZoneNamespace(prefix))
+                check(TokenType.ZONE) && peekNext()?.type == TokenType.IDENTIFIER -> {
+                    consume(TokenType.ZONE, "Expected 'zone'")
+                    val inner = consume(TokenType.IDENTIFIER, "Expected zone name").lexeme
+                    consume(TokenType.L_BRACE, "Expected '{' after zone name")
+                    skipNewlines()
+                    result.addAll(parseZoneBody("${prefix}__$inner"))
+                    consume(TokenType.R_BRACE, "Expected '}' after nested zone")
+                    skipNewlines()
+                }
+                else -> {
+                    result.add(mangleTopLevel(parseTopLevel(), prefix))
+                    if (aliasWrappers.isNotEmpty()) {
+                        result.addAll(aliasWrappers)
+                        aliasWrappers.clear()
+                    }
+                }
             }
         }
         return result
@@ -273,7 +286,7 @@ class Parser(private val tokens: List<Token>) {
             check(TokenType.SPEC) -> parseSpec()
             check(TokenType.SLOT) -> parseSlot()
             check(TokenType.TYPEALIAS) -> parseTypeAlias()
-            check(TokenType.USE) -> parseUse()
+            check(TokenType.IMPORT) -> parseImport()
             check(TokenType.FIN) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseExpr(); consumeNewline(); TopLevel.FinDecl(name, type, init, start.line, start.column, annotations, visibility = visibility) }
             check(TokenType.VAR) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseExpr(); consumeNewline(); TopLevel.VarDecl(name, type, init, start.line, start.column, annotations, visibility = visibility) }
             check(TokenType.LET) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseExpr(); consumeNewline(); TopLevel.LetDecl(name, type, init, start.line, start.column, annotations, visibility) }
@@ -1040,9 +1053,14 @@ class Parser(private val tokens: List<Token>) {
             }
             consume(TokenType.R_BRACE, "Expected '}' after spec callback impl body")
             consumeNewline()
+            // The callback's declared `ref self` would type `self` as the spec's
+            // (erased) self type. Drop it so SymbolCollector injects `self` with the
+            // impl's concrete type (e.g. Int), matching the oper/cast impl convention.
+            val callbackParams = callbackTraitParams(traitName, traitArgs).toMutableList()
+            if (callbackParams.firstOrNull()?.name == "self") callbackParams.removeAt(0)
             val method = FuncDecl(
                 name = callbackTraitMethodName(traitName, traitArgs),
-                params = callbackTraitParams(traitName, traitArgs),
+                params = callbackParams,
                 returnType = callbackTraitReturnType(traitName, traitArgs),
                 body = body,
                 line = start.line,
@@ -1637,10 +1655,11 @@ class Parser(private val tokens: List<Token>) {
 
     private fun parseModule(): String {
         consume(TokenType.MODULE, "Expected 'module'")
-        // Qualified names are allowed: `module std.math`.
-        val name = StringBuilder(consume(TokenType.IDENTIFIER, "Expected module name").lexeme)
+        // Qualified names are allowed: `module std.math`. Segments use
+        // [consumeIdentifierLike] so soft keywords (e.g. `weak`) are accepted.
+        val name = StringBuilder(consumeIdentifierLike("Expected module name"))
         while (match(TokenType.DOT)) {
-            name.append('.').append(consume(TokenType.IDENTIFIER, "Expected name after '.' in module").lexeme)
+            name.append('.').append(consumeIdentifierLike("Expected name after '.' in module"))
         }
         consumeNewline()
         return name.toString()
@@ -2616,23 +2635,23 @@ class Parser(private val tokens: List<Token>) {
     }
 
     /**
-     * `use path` — import a module/zone path.
-     * `use zone path` — same import form with an explicit namespace marker.
-     * `use path.*` — import all items below a path.
-     * `use path.{child, other}` — import grouped child paths.
-     * `use path.item` — import a dotted path; semantic passes decide whether the
+     * `import path` — import a module/zone path.
+     * `import zone path` — same import form with an explicit namespace marker.
+     * `import path.*` — import all items below a path.
+     * `import path.{child, other}` — import grouped child paths.
+     * `import path.item` — import a dotted path; semantic passes decide whether the
      * path names a module or a selected item. `::` is only for zone access
      * expressions, never import syntax.
      */
-    private fun parseUse(): TopLevel {
-        val start = consume(TokenType.USE, "Expected 'use'")
-        // `use zone std` — the optional marker reads naturally and is skipped.
+    private fun parseImport(): TopLevel {
+        val start = consume(TokenType.IMPORT, "Expected 'import'")
+        // `import zone std` — the optional marker reads naturally and is skipped.
         if (check(TokenType.ZONE) && peekNext()?.type == TokenType.IDENTIFIER) {
             advance()
         }
         val imports = mutableListOf<Pair<String, String?>>() // (zoneName, itemName or null for all)
         do {
-            val base = StringBuilder(consume(TokenType.IDENTIFIER, "Expected zone name after 'use'").lexeme)
+            val base = StringBuilder(consumeIdentifierLike("Expected zone name after 'import'"))
             var completed = false
             usePath@ while (match(TokenType.DOT)) {
                 when {
@@ -2643,18 +2662,18 @@ class Parser(private val tokens: List<Token>) {
                     }
                     match(TokenType.L_BRACE) -> {
                         val basePath = base.toString()
-                        parseUseGroup { child -> imports.add("$basePath.$child" to null) }
+                        parseImportGroup { child -> imports.add("$basePath.$child" to null) }
                         completed = true
                         break@usePath
                     }
-                    else -> base.append('.').append(consume(TokenType.IDENTIFIER, "Expected name after '.'").lexeme)
+                    else -> base.append('.').append(consumeIdentifierLike("Expected name after '.'"))
                 }
             }
             if (completed) continue
 
             val zoneName = base.toString()
             if (match(TokenType.DOUBLE_COLON)) {
-                error("Use dotted import paths such as 'use module.item' or 'use module.{a, b}'; '::' is for zone access expressions")
+                error("Use dotted import paths such as 'import module.item' or 'import module.{a, b}'; '::' is for zone access expressions")
             } else {
                 addDottedUsePath(zoneName, imports)
             }
@@ -2667,17 +2686,17 @@ class Parser(private val tokens: List<Token>) {
         imports.add(path to null)
     }
 
-    private fun parseUseGroup(add: (String) -> Unit) {
+    private fun parseImportGroup(add: (String) -> Unit) {
         if (check(TokenType.R_BRACE)) {
-            error("Expected at least one name inside use group at line ${peek().line}")
+            error("Expected at least one name inside import group at line ${peek().line}")
         }
         do {
             skipNewlines()
             if (check(TokenType.R_BRACE)) break
-            add(consume(TokenType.IDENTIFIER, "Expected name in use group").lexeme)
+            add(consume(TokenType.IDENTIFIER, "Expected name in import group").lexeme)
             skipNewlines()
         } while (match(TokenType.COMMA))
-        consume(TokenType.R_BRACE, "Expected '}' after use group")
+        consume(TokenType.R_BRACE, "Expected '}' after import group")
     }
 
     private fun parseTypeAlias(): TopLevel.TypeAlias {
@@ -3214,7 +3233,7 @@ class Parser(private val tokens: List<Token>) {
             val op = advance()
             if (op.type == TokenType.AS) {
                 val targetType = parseTypeName()
-                e = Expr.Cast(e, targetType, e.line)
+                e = Expr.Cast(e, targetType, convert = false, line = e.line)
             } else {
                 // `is` — optionally negated with `!`: `expr is! Type`
                 val negated = match(TokenType.BANG)
@@ -3371,6 +3390,16 @@ class Parser(private val tokens: List<Token>) {
                 return Expr.AllocBuffer(operand.target.name, operand.index, at.line, at.column, at.lexeme.length)
             }
             return Expr.Alloc(operand, at.line, at.column, at.lexeme.length)
+        }
+        // `cast <expr> as <Type>` — a converting cast (Int→String stringification,
+        // numeric widening/narrowing, etc.). Unlike `expr as T` (a representation
+        // cast that does not convert), `cast` actively converts the value.
+        if (check(TokenType.CAST)) {
+            val at = advance()
+            val operand = parseUnary()
+            consume(TokenType.AS, "Expected 'as' after 'cast <expr>'")
+            val targetType = parseTypeName()
+            return Expr.Cast(operand, targetType, convert = true, at.line, at.column, at.lexeme.length)
         }
         // `isolated(expr)` — explicit deep copy.
         if (check(TokenType.ISOLATED)) {

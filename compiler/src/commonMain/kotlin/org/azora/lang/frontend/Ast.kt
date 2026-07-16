@@ -260,7 +260,7 @@ sealed class Expr {
     data class SafeMember(val target: Expr, val name: String, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 
     /** `expr as Type` — type cast. */
-    data class Cast(val expr: Expr, val targetType: TypeRef, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+    data class Cast(val expr: Expr, val targetType: TypeRef, val convert: Boolean = false, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 
     /** `expr is Type` — runtime type check, returns Bool. */
     data class IsCheck(val expr: Expr, val typeName: String, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()

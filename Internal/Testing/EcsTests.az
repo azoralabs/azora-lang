@@ -16,7 +16,7 @@
 
 module testing
 
-use zone std
+import std
 
 // =====================================================================
 // Component types for testing

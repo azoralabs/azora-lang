@@ -16,42 +16,46 @@ class TupleTest {
 
     @Test fun tupleLiteralAndAccess() {
         assertEquals("1\nhello", run("""
+            import std.io
             func main() {
                 fin p = (1, "hello")
-                println(p.0)
-                println(p.1)
+                std::io::println(p.0)
+                std::io::println(p.1)
             }
         """.trimIndent()))
     }
 
     @Test fun tupleFromFunction() {
         assertEquals("3\n2", run("""
+            import std.io
             func divmod(a: Int, b: Int): (Int, Int) {
                 return (a / b, a % b)
             }
             func main() {
                 fin r = divmod(17, 5)
-                println(r.0)
-                println(r.1)
+                std::io::println(r.0)
+                std::io::println(r.1)
             }
         """.trimIndent()))
     }
 
     @Test fun nestedTuple() {
         assertEquals("2", run("""
+            import std.io
             func main() {
                 fin t = (1, (2, 3), "end")
                 fin inner = t.1
-                println(inner.0)
+                std::io::println(inner.0)
             }
         """.trimIndent()))
     }
 
     @Test fun tupleInInterpolation() {
         assertEquals("1 + hello", run("""
+            import std.io
             func main() {
                 fin p = (1, "hello")
-                println("${'$'}{p.0} + ${'$'}{p.1}")
+                std::io::println("${'$'}{p.0} + ${'$'}{p.1}")
             }
         """.trimIndent()))
     }

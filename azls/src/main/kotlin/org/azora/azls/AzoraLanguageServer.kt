@@ -628,7 +628,7 @@ internal class SymbolIndex {
     private val topLevelVarLines = mutableMapOf<String, Int>()
 
     fun addProgram(program: Program, moduleOverride: String? = null) {
-        val module = moduleOverride ?: program.packageName
+        val module = moduleOverride ?: program.moduleName
         fun origin(name: String) {
             if (module != null) origins.putIfAbsent(name, module)
         }

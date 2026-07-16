@@ -44,7 +44,7 @@ friend zone std {
     /**
      * Errors that can occur during memory allocation or deallocation.
      */
-    @since("0.0.2")
+    @Since("0.0.2")
     fail AllocError {
         OutOfMemory,
         InvalidSize,
@@ -67,7 +67,7 @@ friend zone std {
      *     var arena = Arena(1024)
      *     var p = alloc Point(1.0, 2.0) in arena
      */
-    @since("0.0.2")
+    @Since("0.0.2")
     spec Allocator
 
     // -----------------------------------------------------------------------
@@ -104,7 +104,7 @@ friend zone std {
      *     }
      *     // everything freed here
      */
-    @since("0.0.2")
+    @Since("0.0.2")
     pack Arena {
         shield var capacity: Int = 0,
         shield var offset: Int = 0,
@@ -120,7 +120,7 @@ friend zone std {
      *
      * @param capacity The size of the arena in bytes. Must be positive.
      */
-    @experimental(since: "0.0.2")
+    @Experimental(since: "0.0.2")
     impl ctor(capacity: Int) for Arena
     in {
         assert capacity > 0 { "Arena capacity must be positive" }
@@ -136,19 +136,19 @@ friend zone std {
         /**
          * The number of bytes remaining in the arena.
          */
-        @since("0.0.2")
+        @Since("0.0.2")
         prop remaining: Int = capacity - offset
 
         /**
          * The number of bytes currently in use.
          */
-        @since("0.0.2")
+        @Since("0.0.2")
         prop used: Int = offset
 
         /**
          * Whether the arena has no allocations.
          */
-        @since("0.0.2")
+        @Since("0.0.2")
         prop isEmpty: Bool = offset == 0
 
         /**
@@ -160,7 +160,7 @@ friend zone std {
          * @param size The number of bytes to allocate. Must be positive.
          * @return The byte offset of the allocated region.
          */
-        @experimental(since: "0.0.2")
+        @Experimental(since: "0.0.2")
         func alloc(size: Int): Int!AllocError
         in {
             assert size > 0 { "Allocation size must be positive" }
@@ -188,7 +188,7 @@ friend zone std {
          * @param alignment The alignment boundary (must be a power of two).
          * @return The byte offset of the aligned allocation.
          */
-        @experimental(since: "0.0.2")
+        @Experimental(since: "0.0.2")
         func allocAligned(size: Int, alignment: Int): Int!AllocError
         in {
             assert size > 0 { "Allocation size must be positive" }
@@ -215,7 +215,7 @@ friend zone std {
          * @param size The number of bytes to check.
          * @return true if sufficient space remains.
          */
-        @since("0.0.2")
+        @Since("0.0.2")
         func canAlloc(size: Int): Bool = offset + size <= capacity
 
         /**
@@ -224,7 +224,7 @@ friend zone std {
          * After reset, the arena's full capacity is available again.
          * All pointers obtained from previous allocations become invalid.
          */
-        @since("0.0.2")
+        @Since("0.0.2")
         func reset() {
             self.offset = 0
             self.allocCount = 0
@@ -233,7 +233,7 @@ friend zone std {
         /**
          * Resets the arena and zeroes the peak usage counter.
          */
-        @since("0.0.2")
+        @Since("0.0.2")
         func resetAll() {
             self.offset = 0
             self.allocCount = 0
@@ -246,7 +246,7 @@ friend zone std {
          *
          * @return A human-readable string with capacity, usage, and allocation count.
          */
-        @since("0.0.2")
+        @Since("0.0.2")
         func diagnostic(): String {
             return "Arena(capacity: " + std::convert::toString(capacity) +
                    ", used: " + std::convert::toString(offset) +
@@ -280,7 +280,7 @@ friend zone std {
      *     pool.release(slot1)     // slot1 returned to pool
      *     fin slot3 = try pool.acquire()  // reuses slot1's memory
      */
-    @since("0.0.2")
+    @Since("0.0.2")
     pack Pool {
         shield var slotSize: Int = 0
         shield var slotCount: Int = 0
@@ -290,7 +290,7 @@ friend zone std {
         shield var peakAcquired: Int = 0
     }
 
-    @since("0.0.2")
+    @Since("0.0.2")
     impl Allocator for Pool
 
     /**
@@ -299,7 +299,7 @@ friend zone std {
      * @param slotSize The size of each slot in bytes. Must be positive.
      * @param slotCount The number of slots to pre-allocate. Must be positive.
      */
-    @experimental(since: "0.0.2")
+    @Experimental(since: "0.0.2")
     impl ctor(slotSize: Int, slotCount: Int) for Pool
     in {
         assert slotSize > 0 { "Slot size must be positive" }
@@ -318,7 +318,7 @@ friend zone std {
         }
     }
 
-    @experimental(since: "0.0.2")
+    @Experimental(since: "0.0.2")
     impl dtor() for Pool {
         ref self -> drop self.freeStack
     }
@@ -327,19 +327,19 @@ friend zone std {
         /**
          * Whether the pool is completely exhausted.
          */
-        @since("0.0.2")
+        @Since("0.0.2")
         prop isFull: Bool = freeCount == 0
 
         /**
          * Whether the pool has no acquired slots.
          */
-        @since("0.0.2")
+        @Since("0.0.2")
         prop isEmpty: Bool = acquiredCount == 0
 
         /**
          * Whether a slot can be acquired without failing.
          */
-        @since("0.0.2")
+        @Since("0.0.2")
         prop canAcquire: Bool = freeCount > 0
 
         /**
@@ -350,7 +350,7 @@ friend zone std {
          *
          * @return The index of the acquired slot.
          */
-        @experimental(since: "0.0.2")
+        @Experimental(since: "0.0.2")
         func acquire(): Int!AllocError {
             if freeCount == 0 {
                 fail return .PoolExhausted
@@ -370,7 +370,7 @@ friend zone std {
          * @param slot The index of the slot to release. Must have been
          *             previously acquired.
          */
-        @experimental(since: "0.0.2")
+        @Experimental(since: "0.0.2")
         func release(slotIndex: Int)
         in {
             assert slotIndex >= 0 && slotIndex < slotCount { "Invalid slot index" }
@@ -385,7 +385,7 @@ friend zone std {
          *
          * All previously acquired slots become invalid.
          */
-        @experimental(since: "0.0.2")
+        @Experimental(since: "0.0.2")
         func reset() {
             var i = 0
             while i < slotCount {
@@ -401,7 +401,7 @@ friend zone std {
          *
          * @return A human-readable string with slot info and usage stats.
          */
-        @since("0.0.2")
+        @Since("0.0.2")
         func diagnostic(): String {
             return "Pool(slots: " + std::convert::toString(slotCount) +
                    ", slotSize: " + std::convert::toString(slotSize) +
@@ -434,7 +434,7 @@ friend zone std {
      *     stack.free(128)  // frees b
      *     stack.free(64)   // frees a
      */
-    @since("0.0.2")
+    @Since("0.0.2")
     pack StackAllocator {
         shield var capacity: Int = 0
         shield var offset: Int = 0
@@ -442,7 +442,7 @@ friend zone std {
         shield var peakUsage: Int = 0
     }
 
-    @since("0.0.2")
+    @Since("0.0.2")
     impl Allocator for StackAllocator
 
     /**
@@ -450,7 +450,7 @@ friend zone std {
      *
      * @param capacity The total size in bytes. Must be positive.
      */
-    @experimental(since: "0.0.2")
+    @Experimental(since: "0.0.2")
     impl ctor(capacity: Int) for StackAllocator
     in {
         assert capacity > 0 { "StackAllocator capacity must be positive" }
@@ -465,13 +465,13 @@ friend zone std {
         /**
          * The number of bytes remaining.
          */
-        @since("0.0.2")
+        @Since("0.0.2")
         prop remaining: Int = capacity - offset
 
         /**
          * Whether the stack has no allocations.
          */
-        @since("0.0.2")
+        @Since("0.0.2")
         prop isEmpty: Bool = offset == 0
 
         /**
@@ -480,7 +480,7 @@ friend zone std {
          * @param size The number of bytes to allocate. Must be positive.
          * @return The byte offset of the allocation.
          */
-        @experimental(since: "0.0.2")
+        @Experimental(since: "0.0.2")
         func alloc(size: Int): Int!AllocError
         in {
             assert size > 0 { "Allocation size must be positive" }
@@ -505,7 +505,7 @@ friend zone std {
          * @param size The number of bytes to free. Must match the most
          *             recent allocation.
          */
-        @experimental(since: "0.0.2")
+        @Experimental(since: "0.0.2")
         func free(size: Int)
         in {
             assert size > 0 { "Free size must be positive" }
@@ -521,13 +521,13 @@ friend zone std {
          * @param size The number of bytes to check.
          * @return true if sufficient space remains.
          */
-        @since("0.0.2")
+        @Since("0.0.2")
         func canAlloc(size: Int): Bool = offset + size <= capacity
 
         /**
          * Resets the stack, freeing all allocations.
          */
-        @since("0.0.2")
+        @Since("0.0.2")
         func reset() {
             self.offset = 0
             self.allocCount = 0
@@ -536,7 +536,7 @@ friend zone std {
         /**
          * Resets the stack and clears peak tracking.
          */
-        @since("0.0.2")
+        @Since("0.0.2")
         func resetAll() {
             self.offset = 0
             self.allocCount = 0
@@ -548,7 +548,7 @@ friend zone std {
          *
          * @return A human-readable string with capacity, usage, and stats.
          */
-        @since("0.0.2")
+        @Since("0.0.2")
         func diagnostic(): String {
             return "StackAllocator(capacity: " + std::convert::toString(capacity) +
                    ", used: " + std::convert::toString(offset) +
@@ -577,7 +577,7 @@ friend zone std {
          * @param size The size of the arena in bytes.
          * @return A new Arena allocator.
          */
-        @experimental(since: "0.0.2")
+        @Experimental(since: "0.0.2")
         func arena(size: Int): Arena
         in {
             assert size > 0 { "Arena size must be positive" }
@@ -592,7 +592,7 @@ friend zone std {
          * @param count The number of pre-allocated slots.
          * @return A new Pool allocator.
          */
-        @experimental(since: "0.0.2")
+        @Experimental(since: "0.0.2")
         func pool(slotSize: Int, count: Int): Pool
         in {
             assert slotSize > 0 { "Slot size must be positive" }
@@ -607,7 +607,7 @@ friend zone std {
          * @param size The size of the stack in bytes.
          * @return A new StackAllocator.
          */
-        @experimental(since: "0.0.2")
+        @Experimental(since: "0.0.2")
         func stack(size: Int): StackAllocator
         in {
             assert size > 0 { "Stack size must be positive" }

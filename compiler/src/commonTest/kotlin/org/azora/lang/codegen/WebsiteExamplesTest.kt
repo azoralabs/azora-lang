@@ -686,7 +686,7 @@ func main() { std::io::println("Hello, Azora!") }"""))
 
     @Test fun ch35_deco() = assertEquals("hi", run("""
         import std.io
-        deco Log { msg: String }
+        deco Log { fin msg: String }
         @Log("entry")
         func greet(): String { return "hi" }
         func main() {

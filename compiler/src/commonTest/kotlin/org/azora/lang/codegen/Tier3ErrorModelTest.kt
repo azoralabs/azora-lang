@@ -3,6 +3,15 @@ package org.azora.lang.codegen
 import org.azora.lang.CompilationResult
 import org.azora.lang.Compiler
 import org.azora.lang.backend.IrInterpreter
+import org.azora.lang.frontend.Expr
+import org.azora.lang.frontend.Lexer
+import org.azora.lang.frontend.Parser
+import org.azora.lang.frontend.Stmt
+import org.azora.lang.frontend.TopLevel
+import org.azora.lang.ir.IrExpr
+import org.azora.lang.ir.IrGenerator
+import org.azora.lang.ir.IrStmt
+import org.azora.lang.semantic.SemanticPipeline
 import kotlin.test.*
 
 /**
@@ -57,6 +66,35 @@ class Tier3ErrorModelTest {
                 std::io::println(g(5))
             }
         """.trimIndent()))
+    }
+
+    @Test fun tryExpressionPropagatesFailureToCaller() {
+        val program = Parser(Lexer("""
+            fail E {
+                Bad
+            }
+            func inner(): Int!E {
+                fail E.Bad
+                return 0
+            }
+            func outer(): Int!E {
+                return try inner()
+            }
+            func main() {}
+        """.trimIndent()).tokenize())
+            .parse()
+
+        val outerAst = program.items.filterIsInstance<TopLevel.Func>().single { it.decl.name == "outer" }
+        val returned = outerAst.decl.body.filterIsInstance<Stmt.Return>().single().value
+        assertIs<Expr.TryPropagate>(returned)
+
+        val semantic = SemanticPipeline().analyze(program)
+        assertTrue(semantic.errors.isEmpty(), semantic.errors.toString())
+        val ir = IrGenerator(semantic.symbolTable).generate(semantic.program)
+        val outerIr = ir.functions.single { it.name == "outer" }
+        val call = outerIr.body.filterIsInstance<IrStmt.Return>().single().value
+        assertIs<IrExpr.Call>(call)
+        assertEquals("inner", call.name)
     }
 
     @Test fun catchFallbackExpression() {
@@ -178,6 +216,49 @@ class Tier3ErrorModelTest {
                 }
             }
         """.trimIndent()))
+    }
+
+    @Test fun bracketedErrorSetAcceptsEveryDeclaredSet() {
+        assertEquals("Q\nS", run("""
+            import std.io
+            fail A { Q W E }
+            fail B { S D F }
+
+            func choose(first: Bool): Unit![A, B] {
+                if first { fail A.Q }
+                fail B.S
+            }
+
+            func main() {
+                try { choose(true) } catch { error -> std::io::println(error) }
+                try { choose(false) } catch { error -> std::io::println(error) }
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun bracketedErrorSetRejectsUndeclaredSet() {
+        val result = Compiler().compile("""
+            fail A { Q }
+            fail B { S }
+            fail C { Z }
+
+            func invalid(): Unit![A, B] {
+                fail C.Z
+            }
+        """.trimIndent())
+
+        assertIs<CompilationResult.Failure>(result)
+        assertTrue(result.errors.any { "![A, B]" in it && "C" in it }, result.errors.toString())
+    }
+
+    @Test fun duplicateErrorSetInBracketListIsRejected() {
+        val result = Compiler().compile("""
+            fail A { Q }
+            func invalid(): Unit![A, A] {}
+        """.trimIndent())
+
+        assertIs<CompilationResult.Failure>(result)
+        assertTrue(result.errors.any { "Duplicate error set" in it }, result.errors.toString())
     }
 
     @Test fun rescueSuppressesErrorAndContinues() {

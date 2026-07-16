@@ -143,6 +143,7 @@ internal object IntraZoneRewriter {
             is Expr.StringTemplate -> e.parts.forEach { p -> if (p is Expr.StringTemplatePart.Expr) collectExprNames(p.expr, names) }
             is Expr.NamedArg -> collectExprNames(e.value, names)
             is Expr.CatchExpr -> { collectExprNames(e.expr, names); collectExprNames(e.fallback, names) }
+            is Expr.TryPropagate -> collectExprNames(e.expr, names)
             is Expr.IfExpr -> { collectExprNames(e.condition, names); collectExprNames(e.thenExpr, names); collectExprNames(e.elseExpr, names) }
             is Expr.NullCoalesce -> { collectExprNames(e.left, names); collectExprNames(e.right, names) }
             is Expr.Cast -> collectExprNames(e.expr, names)
@@ -220,6 +221,7 @@ internal object IntraZoneRewriter {
         is Expr.Lambda -> e.copy(body = e.body.map { stmt(it, prefix, mangled, shadowed) })
         is Expr.NamedArg -> e.copy(value = expr(e.value, prefix, mangled, shadowed))
         is Expr.CatchExpr -> e.copy(expr = expr(e.expr, prefix, mangled, shadowed), fallback = expr(e.fallback, prefix, mangled, shadowed))
+        is Expr.TryPropagate -> e.copy(expr = expr(e.expr, prefix, mangled, shadowed))
         is Expr.IfExpr -> e.copy(condition = expr(e.condition, prefix, mangled, shadowed), thenExpr = expr(e.thenExpr, prefix, mangled, shadowed), elseExpr = expr(e.elseExpr, prefix, mangled, shadowed))
         is Expr.NullCoalesce -> e.copy(left = expr(e.left, prefix, mangled, shadowed), right = expr(e.right, prefix, mangled, shadowed))
         is Expr.Cast -> e.copy(expr = expr(e.expr, prefix, mangled, shadowed))

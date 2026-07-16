@@ -16,6 +16,8 @@
 
 module std.container.map
 
+import std.serializer
+
 import std.convert
 
 /**
@@ -40,7 +42,8 @@ friend zone std {
      * @param K The type of keys.
      * @param V The type of values.
      */
-    @since("0.0.1")
+    @Since("0.0.1")
+    @Serializable
     pack Map<K, V> {
         shield var keys: K* = alloc K[8]
         shield var values: V* = alloc V[8]
@@ -53,12 +56,12 @@ friend zone std {
      *
      * @return A new `Map<K, V>` with no entries.
      */
-    @experimental(since: "0.0.3")
+    @Experimental(since: "0.0.3")
     func<K, V> emptyMap(): Map<K, V> {
         return Map<K, V>()
     }
 
-    @experimental(since: "0.0.1")
+    @Experimental(since: "0.0.1")
     impl oper[] for Map<K, V> { ref self, key ->
         var i = 0
         while i < self.size {
@@ -68,7 +71,7 @@ friend zone std {
         assert false { "Key not found in Map" }
     }
 
-    @experimental(since: "0.0.1")
+    @Experimental(since: "0.0.1")
     impl oper[]= for Map<K, V> { mut ref self, key, value ->
         var i = 0
         while i < self.size {
@@ -84,7 +87,7 @@ friend zone std {
         self.size = self.size + 1
     }
 
-    @experimental(since: "0.0.3")
+    @Experimental(since: "0.0.3")
     impl Into<String> for Map<K, V> { ref self ->
         var s = "{"
         var i = 0
@@ -96,16 +99,16 @@ friend zone std {
         return s + "}"
     }
 
-    @since("0.0.1")
+    @Since("0.0.1")
     impl Map<K, V> {
         // --- Properties ---
 
         /** Whether the map contains no entries. */
-        @since("0.0.1")
+        @Since("0.0.1")
         prop isEmpty: Bool = self.size == 0
 
         /** Whether the map contains at least one entry. */
-        @since("0.0.1")
+        @Since("0.0.1")
         prop isNotEmpty: Bool = self.size > 0
 
         // --- Internal ---
@@ -139,7 +142,7 @@ friend zone std {
          * @param key The key to insert or update.
          * @param value The value to associate with the key.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func put(key: K, value: V) {
             var i = 0
             while i < self.size {
@@ -162,7 +165,7 @@ friend zone std {
          * @return The associated value.
          * @throws AssertionError if the key is not found.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func get(key: K): V {
             var i = 0
             while i < self.size {
@@ -179,7 +182,7 @@ friend zone std {
          * @param default The fallback value.
          * @return The associated value or the default.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func getOrDefault(key: K, default: V): V {
             var i = 0
             while i < self.size {
@@ -198,7 +201,7 @@ friend zone std {
          * @return The removed value.
          * @throws AssertionError if the key is not found.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func remove(key: K): V {
             var idx = -1
             var i = 0
@@ -226,7 +229,7 @@ friend zone std {
          * @param key The key to search for.
          * @return true if the key exists, false otherwise.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func containsKey(key: K): Bool {
             var i = 0
             while i < self.size {
@@ -244,7 +247,7 @@ friend zone std {
          * @param value The value to search for.
          * @return true if the value exists, false otherwise.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func containsValue(value: V): Bool {
             var i = 0
             while i < self.size {
@@ -257,7 +260,7 @@ friend zone std {
         }
 
         /** Removes all entries from the map. */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func clear() {
             fin oldKeys = self.keys
             fin oldValues = self.values
@@ -276,7 +279,7 @@ friend zone std {
          *
          * @param action The function to apply to each key and value.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func forEach(action: (K, V) -> Unit) {
             var i = 0
             while i < self.size {
@@ -290,7 +293,7 @@ friend zone std {
          *
          * @return A sequence containing all keys in insertion order.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func keys(): [K] {
             var result: [K] = [].fill<K>(self.size)
             var i = 0
@@ -306,7 +309,7 @@ friend zone std {
          *
          * @return A sequence containing all values in insertion order.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func values(): [V] {
             var result: [V] = [].fill<V>(self.size)
             var i = 0
@@ -318,3 +321,75 @@ friend zone std {
         }
     }
 }
+
+test "map starts empty" {
+    fin value = std::emptyMap<String, Int>()
+    assert value.size == 0 && value.isEmpty { "emptyMap must contain no entries" }
+}
+
+test "map put inserts and replaces" {
+    var value = Map<String, Int>()
+    value.put("a", 1)
+    value.put("b", 2)
+    value.put("a", 3)
+    assert value.size == 2 { "replacing a key must not change size" }
+    assert value["a"] == 3 && value.get("b") == 2 { "map lookup returned the wrong value" }
+}
+
+test "map index assignment inserts and replaces" {
+    var value = Map<String, Int>()
+    value["x"] = 4
+    value["x"] = 5
+    assert value.size == 1 && value["x"] == 5 { "index assignment must obey key uniqueness" }
+}
+
+test "map fallback does not insert" {
+    var value = Map<String, Int>()
+    fin fallback = value.getOrDefault("missing", 9)
+    assert fallback == 9 && value.size == 0 { "getOrDefault must not mutate the map" }
+}
+
+test "map remove compacts entries" {
+    var value = Map<String, Int>()
+    value.put("a", 1)
+    value.put("b", 2)
+    value.put("c", 3)
+    assert value.remove("b") == 2 { "remove must return the previous value" }
+    assert value.size == 2 && value["c"] == 3 { "remove must preserve later entries" }
+}
+
+test "map membership distinguishes keys and values" {
+    var value = Map<String, Int>()
+    value.put("answer", 42)
+    assert value.containsKey("answer") && !value.containsKey("42") { "key membership changed" }
+    assert value.containsValue(42) && !value.containsValue(7) { "value membership changed" }
+}
+
+test "map key and value snapshots preserve storage order" {
+    var value = Map<String, Int>()
+    value.put("a", 1)
+    value.put("b", 2)
+    fin keys = value.keys()
+    fin values = value.values()
+    assert keys.length == 2 && keys[0] == "a" && keys[1] == "b" { "key snapshot order changed" }
+    assert values.length == 2 && values[0] == 1 && values[1] == 2 { "value snapshot order changed" }
+}
+
+test "map grows and clears safely" {
+    var value = Map<Int, Int>()
+    var i = 0
+    while i < 20 {
+        value.put(i, i * i)
+        i += 1
+    }
+    assert value.size == 20 && value[19] == 361 { "map growth lost an entry" }
+    value.clear()
+    value.put(1, 2)
+    assert value.size == 1 && value[1] == 2 { "cleared maps must remain reusable" }
+}
+
+test "map serialization metadata is declared" {
+    inline assert (reflect Map).hasDeco<Serializable> { "Map must carry Serializable metadata" }
+}
+
+test .All "map"

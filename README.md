@@ -231,12 +231,26 @@ referenced are injected (transitively) — so a program that never touches the s
 compiles exactly as before. User declarations always shadow stdlib items.
 
 ```
-use std.math              // unqualified: abs(x), plus math::abs(x)
-use std.{math, string}    // grouped
-use std.*                 // wildcard
-use std.math.abs          // selective
+import std.math              // unqualified: abs(x), plus math::abs(x)
+import std.{math, string}    // grouped
+import std.*                 // wildcard
+import std.math.abs          // selective
 std::math::abs(x)         // fully qualified — no import needed
 ```
+
+Decorator implementations may target pack fields individually, as a list, or
+with a pack-field wildcard. Decorator and target lists form a cross-product:
+
+```azora
+impl SerialName(value: "login") for User::name
+impl [SerialName, SerialRequired] for [User::name, User::password]
+impl SerialIgnore for User::*
+```
+
+Serialization decorators generate typed value-tree, JSON, and AZON methods.
+Field names, ignored/required fields, unknown-field handling, and default
+encoding are resolved at compile time and lowered through the shared IR for all
+backends.
 
 ### Tooling
 - **`azls`** — language server (`azls.jar`): error-tolerant syntax highlighting,

@@ -110,7 +110,7 @@ class JavaScriptCodegen {
                 is IrTopLevel.Struct -> {
                     line("class ${item.name} {")
                     indent++
-                    // Numeric field names (e.g. `0`, `1` on `@enforceNumFields` tuples) are
+                    // Numeric field names (e.g. `0`, `1` on `@EnforceNumFields` tuples) are
                     // not valid JS identifiers — use positional param names and bracket access.
                     val params = item.fields.mapIndexed { idx, f -> if (isNumericFieldName(f.name)) "_$idx" else f.name }.joinToString(", ")
                     line("constructor($params) {")
@@ -427,21 +427,31 @@ class JavaScriptCodegen {
         }
         is IrExpr.Call -> {
             if (expr.name in POINTER_RUNTIME) usesPointers = true
-            val name = when (expr.name) {
-                "std__io__println" -> "console.log"
-                "std__convert__toString" -> "String"
-                else -> expr.name
-            }
-            if (expr.name == "async" && expr.args.size == 1) {
-                "__azoraSpawn(${emitExpr(expr.args.single())})"
-            } else if (expr.name == "std__concurrency__cancel" && expr.args.size == 1) {
-                "cancel(${emitExpr(expr.args.single())})"
-            } else if (expr.name == "__panic") {
-                "(console.error(${emitExpr(expr.args.single())}), process.exit(1))"
-            } else if (expr.type is IrType.Task) {
-                "__azoraSpawn(() => $name(${expr.args.joinToString(", ") { emitExpr(it) }}))"
-            } else {
-                "$name(${expr.args.joinToString(", ") { emitExpr(it) }})"
+            when (expr.name) {
+                "stringLength" -> "${emitExpr(expr.args[0])}.length"
+                "charAt" -> "${emitExpr(expr.args[0])}[${emitExpr(expr.args[1])}]"
+                "substring" -> "${emitExpr(expr.args[0])}.slice(${emitExpr(expr.args[1])}, ${emitExpr(expr.args[2])})"
+                "ord" -> "${emitExpr(expr.args[0])}.codePointAt(0)"
+                "chr" -> "String.fromCodePoint(${emitExpr(expr.args[0])})"
+                "isDigit" -> emitExpr(expr.args[0]).let { "($it >= '0' && $it <= '9')" }
+                else -> {
+                    val name = when (expr.name) {
+                        "std__io__println" -> "console.log"
+                        "std__convert__toString" -> "String"
+                        else -> expr.name
+                    }
+                    if (expr.name == "async" && expr.args.size == 1) {
+                        "__azoraSpawn(${emitExpr(expr.args.single())})"
+                    } else if (expr.name == "std__concurrency__cancel" && expr.args.size == 1) {
+                        "cancel(${emitExpr(expr.args.single())})"
+                    } else if (expr.name == "__panic") {
+                        "(console.error(${emitExpr(expr.args.single())}), process.exit(1))"
+                    } else if (expr.type is IrType.Task) {
+                        "__azoraSpawn(() => $name(${expr.args.joinToString(", ") { emitExpr(it) }}))"
+                    } else {
+                        "$name(${expr.args.joinToString(", ") { emitExpr(it) }})"
+                    }
+                }
             }
         }
         is IrExpr.Await -> "await ${emitExpr(expr.value)}"
@@ -569,7 +579,7 @@ class JavaScriptCodegen {
         out.appendLine(text)
     }
 
-    /** `@enforceNumFields` packs may have purely-numeric field names (`0`, `1`, …). */
+    /** `@EnforceNumFields` packs may have purely-numeric field names (`0`, `1`, …). */
     private fun isNumericFieldName(name: String): Boolean = name.isNotEmpty() && name[0].isDigit()
 
     /** JS property access for a field name: bracket for numeric names, dot otherwise. */

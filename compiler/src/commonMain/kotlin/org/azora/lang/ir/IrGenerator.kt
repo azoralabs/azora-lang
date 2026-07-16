@@ -22,6 +22,7 @@ import org.azora.lang.frontend.MemberCallStyle
 import org.azora.lang.frontend.NumericSuffix
 import org.azora.lang.frontend.Program
 import org.azora.lang.frontend.Stmt
+import org.azora.lang.frontend.TestMethod
 import org.azora.lang.frontend.TokenType
 import org.azora.lang.frontend.TopLevel
 import org.azora.lang.frontend.TypeAnnotation
@@ -110,9 +111,23 @@ class IrGenerator(private val table: SymbolTable) {
             }
         }
 
-        // Register import aliases in the global name scope so `use Zone.Item` resolves.
+        // Register import aliases in the global name scope so `import Zone.Item` resolves.
         for ((alias, real) in table.aliasMap) {
             nameScopes.last()[alias] = real
+        }
+
+        val sourceTests = program.tests
+        val hasAllTest = sourceTests.any { it.method == TestMethod.All }
+
+        fun lowerTestBody(body: List<Stmt>): List<IrStmt> {
+            table.pushScope()
+            pushNameScope()
+            return try {
+                lowerBody(body)
+            } finally {
+                popNameScope()
+                table.popScope()
+            }
         }
 
         // Lower top-level items in source order to preserve interleaving
@@ -144,12 +159,17 @@ class IrGenerator(private val table: SymbolTable) {
                     listOf(IrTopLevel.Global(IrStmt.VarDecl(irName, type, init)))
                 }
                 is TopLevel.Test -> {
-                    table.pushScope()
-                    pushNameScope()
-                    val body = lowerBody(item.body)
-                    popNameScope()
-                    table.popScope()
-                    listOf(IrTopLevel.Test(item.name, body))
+                    when {
+                        hasAllTest && item.method == TestMethod.This -> emptyList()
+                        item.method == TestMethod.All -> {
+                            val ownBody = lowerTestBody(item.body)
+                            val children = sourceTests
+                                .filter { it.method == TestMethod.This }
+                                .map { IrStmt.Zone(lowerTestBody(it.body)) }
+                            listOf(IrTopLevel.Test(item.name, ownBody + children))
+                        }
+                        else -> listOf(IrTopLevel.Test(item.name, lowerTestBody(item.body)))
+                    }
                 }
                 is TopLevel.Pack -> {
                     val tpSet = item.typeParams.toSet()
@@ -738,7 +758,7 @@ class IrGenerator(private val table: SymbolTable) {
                 IrExpr.Binary(left, op, right, type)
             }
             is Expr.Call -> {
-                // Resolve import aliases (`use Zone.Item` maps Item to Zone__Item).
+                // Resolve import aliases (`import Zone.Item` maps Item to Zone__Item).
                 val realCallee = table.aliasMap[expr.callee] ?: expr.callee
                 val struct = table.lookupStruct(realCallee) ?: table.lookupStruct(expr.callee)
                 if (struct != null) {
@@ -809,7 +829,7 @@ class IrGenerator(private val table: SymbolTable) {
                         func.isTask -> IrType.Task(func.returnType)
                         else -> func.returnType
                     }
-                    return IrExpr.Call(table.aliasMap[expr.callee] ?: expr.callee, effectiveArgs, callType)
+                    return IrExpr.Call(func.name, effectiveArgs, callType)
                 }
                 // Calling a lambda stored in a variable.
                 val v = table.lookupVariable(expr.callee)
@@ -1044,6 +1064,8 @@ class IrGenerator(private val table: SymbolTable) {
                 val f = lowerExpr(expr.fallback)
                 IrExpr.CatchExpr(e, f, e.type)
             }
+            // Runtime failure transport already propagates when uncaught.
+            is Expr.TryPropagate -> lowerExpr(expr.expr)
             is Expr.Lambda -> {
                 table.pushScope()
                 pushNameScope()

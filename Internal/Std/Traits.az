@@ -36,164 +36,158 @@ friend zone std {
      * Types implementing Numeric can be used with standard math operators
      * and the promote type function.
      */
-    @since("0.0.1")
+    @Since("0.0.1")
     spec Numeric
 
     /** Int satisfies the Numeric spec. */
-    @since("0.0.1")
+    @Since("0.0.1")
     impl Numeric for Int
 
     /** Real satisfies the Numeric spec. */
-    @since("0.0.1")
+    @Since("0.0.1")
     impl Numeric for Real
 
     /** Types that support equality comparison via == and !=. */
-    @since("0.0.1")
+    @Since("0.0.1")
     spec Equatable
 
     /** Int supports equality comparison. */
-    @since("0.0.1")
+    @Since("0.0.1")
     impl Equatable for Int
 
     /** Real supports equality comparison. */
-    @since("0.0.1")
+    @Since("0.0.1")
     impl Equatable for Real
 
     /** String supports equality comparison. */
-    @since("0.0.1")
+    @Since("0.0.1")
     impl Equatable for String
 
     /** Char supports equality comparison. */
-    @since("0.0.1")
+    @Since("0.0.1")
     impl Equatable for Char
 
     /** Bool supports equality comparison. */
-    @since("0.0.1")
+    @Since("0.0.1")
     impl Equatable for Bool
 
     /** Types that support ordering via < and >. */
-    @since("0.0.1")
+    @Since("0.0.1")
     spec Comparable
 
     /** Int supports ordering. */
-    @since("0.0.1")
+    @Since("0.0.1")
     impl Comparable for Int
 
     /** Real supports ordering. */
-    @since("0.0.1")
+    @Since("0.0.1")
     impl Comparable for Real
 
     /** String supports ordering. */
-    @since("0.0.1")
+    @Since("0.0.1")
     impl Comparable for String
 
     /** Char supports ordering. */
-    @since("0.0.1")
+    @Since("0.0.1")
     impl Comparable for Char
 
-    @since("0.0.4")
+    @Since("0.0.4")
     impl Into<String> for Int { ref self ->
         return cast self as String
     }
 
-    @since("0.0.4")
+    @Since("0.0.4")
     impl Into<String> for Real { ref self ->
         return cast self as String
     }
 
-    @since("0.0.4")
+    @Since("0.0.4")
     impl Into<String> for Char { ref self ->
         return cast self as String
     }
 
-    @since("0.0.4")
+    @Since("0.0.4")
     impl Into<String> for Bool { ref self ->
         return cast self as String
     }
 
     /** Types that can be hashed. */
-    @since("0.0.1")
+    @Since("0.0.1")
     spec Hashable
 
     /** Int is hashable. */
-    @since("0.0.1")
+    @Since("0.0.1")
     impl Hashable for Int
 
     /** String is hashable. */
-    @since("0.0.1")
+    @Since("0.0.1")
     impl Hashable for String
 
     /** Char is hashable. */
-    @since("0.0.1")
+    @Since("0.0.1")
     impl Hashable for Char
 
     /** Bool is hashable. */
-    @since("0.0.1")
+    @Since("0.0.1")
     impl Hashable for Bool
 
     /** Types that can be copied. */
-    @since("0.0.1")
+    @Since("0.0.1")
     spec Copyable
 
     /** Int is copyable. */
-    @since("0.0.1")
+    @Since("0.0.1")
     impl Copyable for Int
 
     /** Real is copyable. */
-    @since("0.0.1")
+    @Since("0.0.1")
     impl Copyable for Real
 
     /** String is copyable. */
-    @since("0.0.1")
+    @Since("0.0.1")
     impl Copyable for String
 
     /** Char is copyable. */
-    @since("0.0.1")
+    @Since("0.0.1")
     impl Copyable for Char
 
     /** Bool is copyable. */
-    @since("0.0.1")
+    @Since("0.0.1")
     impl Copyable for Bool
 
     /** Types that support deep copying. */
-    @since("0.0.1")
+    @Since("0.0.1")
     spec Cloneable
 
     /** Int is cloneable. */
-    @since("0.0.1")
+    @Since("0.0.1")
     impl Cloneable for Int
 
     /** Real is cloneable. */
-    @since("0.0.1")
+    @Since("0.0.1")
     impl Cloneable for Real
 
     /** String is cloneable. */
-    @since("0.0.1")
+    @Since("0.0.1")
     impl Cloneable for String
 
     /** Char is cloneable. */
-    @since("0.0.1")
+    @Since("0.0.1")
     impl Cloneable for Char
 
     /** Bool is cloneable. */
-    @since("0.0.1")
+    @Since("0.0.1")
     impl Cloneable for Bool
 
     /**
      * Types that can be iterated over.
      */
-    @since("0.0.1")
+    @Since("0.0.1")
     spec Iterable
 
     /**
      * An iterator that produces values one at a time.
      */
-    @since("0.0.1")
+    @Since("0.0.1")
     spec Iterator
-
-    /**
-     * Types that can be serialized to/from a string representation.
-     */
-    @since("0.0.1")
-    spec Serializable
 }

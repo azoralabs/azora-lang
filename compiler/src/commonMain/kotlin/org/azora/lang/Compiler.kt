@@ -32,6 +32,7 @@ import org.azora.lang.ir.IrProgram
 import org.azora.lang.ir.IrType
 import org.azora.lang.semantic.EffectChecker
 import org.azora.lang.semantic.SemanticPipeline
+import org.azora.lang.semantic.SerializationDeriver
 import org.azora.lang.semantic.VariadicMonomorphizer
 
 /**
@@ -115,15 +116,12 @@ class Compiler {
      * @return a [CompilationResult.Success] with all generated outputs, or a
      *   [CompilationResult.Failure] with error messages
      */
-    /**
-     * When an unknown-symbol error names something the standard library
-     * provides, point at the missing import ("add 'import std.math'").
-     */
-    private fun withStdlibHint(message: String): String {
+    /** Points unknown symbols at the loaded library module that provides them. */
+    private fun withLibraryHint(message: String): String {
         val match = Regex("(?:undefined function|undefined variable) '([A-Za-z_][A-Za-z0-9_]*)'").find(message)
             ?: return message
         val module = StdlibInjector.moduleOf(match.groupValues[1]) ?: return message
-        return "$message — '${match.groupValues[1]}' is in the standard library: add 'import $module'"
+        return "$message — '${match.groupValues[1]}' is provided by '$module': add 'import $module'"
     }
 
     fun compile(source: String, warningsAsErrors: Boolean = false, release: Boolean = true, debug: Boolean = false): CompilationResult {
@@ -135,11 +133,15 @@ class Compiler {
         // Phase 1 — Frontend
         // ===============================================================
 
-        // 1. Lexer: source → tokens
-        val tokens = Lexer(source).tokenize()
-
-        // 2. Parser: tokens → raw AST
-        val rawAst = Parser(tokens).parse()
+        // 1-2. Lexer and parser: malformed source is a compilation failure, never
+        // an exception that can crash an editor, build tool, or playground host.
+        val rawAst = try {
+            Parser(Lexer(source).tokenize()).parse()
+        } catch (error: IllegalStateException) {
+            return CompilationResult.Failure(listOf(error.message ?: "frontend parsing failed"))
+        } catch (error: IllegalArgumentException) {
+            return CompilationResult.Failure(listOf(error.message ?: "frontend parsing failed"))
+        }
 
         // 2a. Debug builds: instrument statements with `__dbg(line)` markers so a
         // debugger can pause at breakpoints (stdlib, injected below, stays clean).
@@ -147,7 +149,16 @@ class Compiler {
 
         // 2b. Standard library: append the stdlib declarations the program
         // actually references (transitively); user definitions shadow stdlib.
-        val injected = CallbackImplNormalizer.normalize(StdlibInjector.inject(parsed))
+        val initiallyInjected = CallbackImplNormalizer.normalize(StdlibInjector.inject(parsed))
+
+        // Decorator derives produce ordinary checked AST methods. Run injection
+        // once more afterwards so helper functions referenced by generated
+        // methods are loaded transitively from their defining library module.
+        val serialization = SerializationDeriver.derive(initiallyInjected)
+        if (serialization.errors.isNotEmpty()) {
+            return CompilationResult.Failure(serialization.errors)
+        }
+        val injected = CallbackImplNormalizer.normalize(StdlibInjector.inject(serialization.program))
 
         // 2c. Monomorphize variadic generics (e.g. `Tuple<T…>` / `tupleOf(…)`)
         // into concrete per-instantiation declarations before semantic analysis.
@@ -174,7 +185,7 @@ class Compiler {
         val errors = semantic.errors.filter { !it.startsWith("warning:") }
 
         if (errors.isNotEmpty()) {
-            return CompilationResult.Failure(semantic.errors.map { withStdlibHint(it) })
+            return CompilationResult.Failure(semantic.errors.map { withLibraryHint(it) })
         }
         if (warningsAsErrors && warnings.isNotEmpty()) {
             return CompilationResult.Failure(semantic.errors)

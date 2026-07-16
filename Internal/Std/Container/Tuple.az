@@ -16,6 +16,9 @@
 
 module std.container.tuple
 
+import std.serializer
+import std.convert
+
 /**
  * @file Tuple
  *
@@ -36,8 +39,9 @@ friend zone std {
      *
      * @param T Variadic type parameter pack for the element types.
      */
-    @experimental(since: "0.0.3")
-    @enforceNumFields
+    @Experimental(since: "0.0.3")
+    @EnforceNumFields
+    @Serializable
     pack Tuple<T...> where (...T).length >= 2 {
         inline for Ty in ...T with index {
             mixin "$index: $Ty"
@@ -54,9 +58,36 @@ friend zone std {
      * @param elements Values to store in the tuple.
      * @return A Tuple whose element types match the provided values.
      */
-    @experimental(since: "0.0.3")
+    @Experimental(since: "0.0.3")
     func<T...> tupleOf(elements: ...T): Tuple<...T>
     where (...T).length >= 2 {
         return Tuple(elements)
     }
 }
+
+test "tupleOf preserves heterogeneous values" {
+    fin value = std::tupleOf(1, "two", 3.0)
+    assert value.0 == 1 { "tuple first value changed" }
+    assert value.1 == "two" { "tuple second value changed" }
+    assert value.2 == 3.0 { "tuple third value changed" }
+}
+
+test "tupleOf supports nested tuples" {
+    fin value = std::tupleOf(std::tupleOf(1, 2), "end")
+    assert value.0.0 == 1 && value.0.1 == 2 { "nested tuple values changed" }
+    assert value.1 == "end" { "outer tuple value changed" }
+}
+
+test "tuple fields are fixed positional members" {
+    fin value: Tuple<Int, String> = std::tupleOf(7, "seven")
+    assert value.0 == 7 && value.1 == "seven" { "explicit Tuple type changed" }
+}
+
+test "tuple string representation includes type and fields" {
+    fin value = std::tupleOf("a", "b")
+    assert std::convert::toString(value) == "{\"__type\"=\"Tuple<String, String>\", \"0\"=\"a\", \"1\"=\"b\"}" {
+        "tuple diagnostic representation changed"
+    }
+}
+
+test .All "tuple"

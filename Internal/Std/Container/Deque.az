@@ -15,6 +15,8 @@
  */
 
 module std.container.deque
+
+import std.serializer
 import std.convert
 
 /**
@@ -34,7 +36,8 @@ friend zone std {
      *
      * @param T The type of elements stored in this deque.
      */
-    @since("0.0.1")
+    @Since("0.0.1")
+    @Serializable
     pack Deque<T> {
         shield var data: T* = alloc T[8]
         shield var head: Int = 0
@@ -44,71 +47,71 @@ friend zone std {
     }
 
     /** Deque operations: push/pop at both ends, peek, clear, and string conversion. */
-    @since("0.0.1")
+    @Since("0.0.1")
     impl Deque<T> {
         /** `true` when the deque holds no elements. */
-        @since("0.0.1")
+        @Since("0.0.1")
         prop isEmpty: Bool = self.size == 0
 
         /** `true` when the deque holds at least one element. */
-        @since("0.0.1")
+        @Since("0.0.1")
         prop isNotEmpty: Bool = self.size > 0
 
         /** Inserts [value] at the front; O(1) amortized. */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func pushFront(value: T): Unit {
             if self.size >= self.capacity {
                 self.growDeque()
             }
             self.head = (self.head - 1 + self.capacity) % self.capacity
-            (*self.data)[self.head] = value
+            self.data[self.head] = value
             self.size += 1
         }
 
         /** Inserts [value] at the back; O(1) amortized. */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func pushBack(value: T): Unit {
             if self.size >= self.capacity {
                 self.growDeque()
             }
-            (*self.data)[self.tail] = value
+            self.data[self.tail] = value
             self.tail = (self.tail + 1) % self.capacity
             self.size += 1
         }
 
         /** Removes and returns the front element; O(1). */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func popFront(): T {
-            var value: T = (*self.data)[self.head]
+            var value: T = self.data[self.head]
             self.head = (self.head + 1) % self.capacity
             self.size -= 1
             return value
         }
 
         /** Removes and returns the back element; O(1). */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func popBack(): T {
             self.tail = (self.tail - 1 + self.capacity) % self.capacity
-            var value: T = (*self.data)[self.tail]
+            var value: T = self.data[self.tail]
             self.size -= 1
             return value
         }
 
         /** Returns the front element without removing it. */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func peekFront(): T {
-            return (*self.data)[self.head]
+            return self.data[self.head]
         }
 
         /** Returns the back element without removing it. */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func peekBack(): T {
             var idx: Int = (self.tail - 1 + self.capacity) % self.capacity
-            return (*self.data)[idx]
+            return self.data[idx]
         }
 
         /** Removes all elements (capacity is retained). */
-        @since("0.0.1")
+        @Since("0.0.1")
         func clear(): Unit {
             self.head = 0
             self.tail = 0
@@ -116,14 +119,14 @@ friend zone std {
         }
 
         /** Doubles the circular buffer's capacity and re-linearizes it. */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         confine func growDeque(): Unit {
             var newCap: Int = self.capacity * 2
             var newData: T* = alloc T[newCap]
             var i = 0
             while i < self.size {
                 var idx: Int = (self.head + i) % self.capacity
-                newData[i] = (*self.data)[idx]
+                newData[i] = self.data[idx]
                 i += 1
             }
             drop self.data
@@ -134,17 +137,62 @@ friend zone std {
         }
 
         /** Renders the deque as `Deque[e0, e1, …]` in front-to-back order. */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func toString(): String {
             var result: String = "Deque["
             var i = 0
             while i < self.size {
                 if i > 0 { result = result + ", " }
                 var idx: Int = (self.head + i) % self.capacity
-                result = result + std::convert::toString((*self.data)[idx])
+                result = result + std::convert::toString(self.data[idx])
                 i += 1
             }
             return result + "]"
         }
     }
 }
+
+test "deque starts empty" {
+    fin value = Deque<Int>()
+    assert value.size == 0 && value.isEmpty { "new deque must be empty" }
+}
+
+test "deque supports both ends" {
+    var value = Deque<Int>()
+    value.pushBack(2)
+    value.pushFront(1)
+    value.pushBack(3)
+    assert value.peekFront() == 1 && value.peekBack() == 3 { "deque peeks changed" }
+    assert value.popFront() == 1 && value.popBack() == 3 { "deque end removal changed" }
+    assert value.size == 1 && value.peekFront() == 2 { "deque middle value changed" }
+}
+
+test "deque wraps and grows without reordering" {
+    var value = Deque<Int>()
+    var i = 0
+    while i < 8 {
+        value.pushBack(i)
+        i += 1
+    }
+    assert value.popFront() == 0 && value.popFront() == 1 { "deque prefix removal changed" }
+    value.pushBack(8)
+    value.pushBack(9)
+    value.pushBack(10)
+    assert value.size == 9 { "deque growth size changed" }
+    assert value.popFront() == 2 && value.popBack() == 10 { "deque growth must preserve order" }
+}
+
+test "deque clear resets both ends" {
+    var value = Deque<Int>()
+    value.pushFront(1)
+    value.pushBack(2)
+    value.clear()
+    value.pushBack(7)
+    assert value.size == 1 && value.peekFront() == 7 && value.peekBack() == 7 { "cleared deque must be reusable" }
+}
+
+test "deque serialization metadata is declared" {
+    inline assert (reflect Deque).hasDeco<Serializable> { "Deque must carry Serializable metadata" }
+}
+
+test .All "deque"

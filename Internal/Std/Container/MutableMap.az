@@ -16,6 +16,8 @@
 
 module std.container.mutable_map
 
+import std.serializer
+
 import std.convert
 
 /**
@@ -40,7 +42,8 @@ friend zone std {
      * @param K The type of keys.
      * @param V The type of values.
      */
-    @since("0.0.1")
+    @Since("0.0.1")
+    @Serializable
     pack MutableMap<K, V> {
         shield var keys: K* = alloc K[8]
         shield var values: V* = alloc V[8]
@@ -48,12 +51,12 @@ friend zone std {
         shield var capacity: Int = 8
     }
 
-    @experimental(since: "0.0.3")
+    @Experimental(since: "0.0.3")
     func<K, V> mutableMapOf(): MutableMap<K, V> {
         return MutableMap<K, V>()
     }
 
-    @experimental(since: "0.0.1")
+    @Experimental(since: "0.0.1")
     impl oper[] for MutableMap<K, V> { ref self, key ->
         var i = 0
         while i < self.size {
@@ -63,7 +66,7 @@ friend zone std {
         assert false { "Key not found in MutableMap" }
     }
 
-    @experimental(since: "0.0.1")
+    @Experimental(since: "0.0.1")
     impl oper[]= for MutableMap<K, V> { mut ref self, key, value ->
         var i = 0
         while i < self.size {
@@ -79,7 +82,7 @@ friend zone std {
         self.size = self.size + 1
     }
 
-    @experimental(since: "0.0.3")
+    @Experimental(since: "0.0.3")
     impl Into<String> for MutableMap<K, V> { ref self ->
         var s = "{"
         var i = 0
@@ -95,11 +98,11 @@ friend zone std {
         // --- Properties ---
 
         /** Whether the map contains no entries. */
-        @since("0.0.1")
+        @Since("0.0.1")
         prop isEmpty: Bool = self.size == 0
 
         /** Whether the map contains at least one entry. */
-        @since("0.0.1")
+        @Since("0.0.1")
         prop isNotEmpty: Bool = self.size > 0
 
         // --- Internal ---
@@ -133,7 +136,7 @@ friend zone std {
          * @param key The key to insert or update.
          * @param value The value to associate with the key.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func put(key: K, value: V) {
             var i = 0
             while i < self.size {
@@ -156,7 +159,7 @@ friend zone std {
          * @return The associated value.
          * @throws AssertionError if the key is not found.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func get(key: K): V {
             var i = 0
             while i < self.size {
@@ -173,7 +176,7 @@ friend zone std {
          * @param default The fallback value.
          * @return The associated value or the default.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func getOrDefault(key: K, default: V): V {
             var i = 0
             while i < self.size {
@@ -192,7 +195,7 @@ friend zone std {
          * @return The removed value.
          * @throws AssertionError if the key is not found.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func remove(key: K): V {
             var idx = -1
             var i = 0
@@ -220,7 +223,7 @@ friend zone std {
          * @param key The key to search for.
          * @return true if the key exists, false otherwise.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func containsKey(key: K): Bool {
             var i = 0
             while i < self.size {
@@ -238,7 +241,7 @@ friend zone std {
          * @param value The value to search for.
          * @return true if the value exists, false otherwise.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func containsValue(value: V): Bool {
             var i = 0
             while i < self.size {
@@ -251,7 +254,7 @@ friend zone std {
         }
 
         /** Removes all entries from the map. */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func clear() {
             fin oldKeys = self.keys
             fin oldValues = self.values
@@ -270,7 +273,7 @@ friend zone std {
          *
          * @param action The function to apply to each key and value.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func forEach(action: (K, V) -> Unit) {
             var i = 0
             while i < self.size {
@@ -284,7 +287,7 @@ friend zone std {
          *
          * @return A sequence containing all keys in insertion order.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func keys(): [K] {
             var result: [K] = [].fill<K>(self.size)
             var i = 0
@@ -300,7 +303,7 @@ friend zone std {
          *
          * @return A sequence containing all values in insertion order.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func values(): [V] {
             var result: [V] = [].fill<V>(self.size)
             var i = 0
@@ -312,3 +315,59 @@ friend zone std {
         }
     }
 }
+
+test "mutable map starts empty" {
+    fin value = std::mutableMapOf<String, Int>()
+    assert value.size == 0 && value.isEmpty { "mutableMapOf must start empty" }
+}
+
+test "mutable map inserts and replaces keys" {
+    var value = MutableMap<String, Int>()
+    value.put("a", 1)
+    value["b"] = 2
+    value["a"] = 3
+    assert value.size == 2 && value["a"] == 3 && value["b"] == 2 { "mutable map replacement changed" }
+}
+
+test "mutable map fallback and membership are non-mutating" {
+    var value = MutableMap<String, Int>()
+    value.put("answer", 42)
+    assert value.getOrDefault("missing", 7) == 7 { "mutable map fallback changed" }
+    assert value.size == 1 && value.containsKey("answer") && value.containsValue(42) { "membership must not mutate" }
+}
+
+test "mutable map remove compacts entries" {
+    var value = MutableMap<String, Int>()
+    value.put("a", 1)
+    value.put("b", 2)
+    value.put("c", 3)
+    assert value.remove("b") == 2 { "mutable map remove result changed" }
+    assert value.size == 2 && value["c"] == 3 { "mutable map remove lost later entries" }
+}
+
+test "mutable map snapshots and growth preserve order" {
+    var value = MutableMap<Int, Int>()
+    var i = 0
+    while i < 20 {
+        value.put(i, i + 1)
+        i += 1
+    }
+    fin keys = value.keys()
+    fin values = value.values()
+    assert keys.length == 20 && keys[19] == 19 { "mutable map keys changed" }
+    assert values[0] == 1 && values[19] == 20 { "mutable map values changed" }
+}
+
+test "mutable map clear permits reuse" {
+    var value = MutableMap<Int, Int>()
+    value.put(1, 2)
+    value.clear()
+    value.put(3, 4)
+    assert value.size == 1 && value[3] == 4 { "cleared mutable maps must be reusable" }
+}
+
+test "mutable map serialization metadata is declared" {
+    inline assert (reflect MutableMap).hasDeco<Serializable> { "MutableMap must carry Serializable metadata" }
+}
+
+test .All "mutable map"

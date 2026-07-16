@@ -31,10 +31,10 @@ import org.azora.lang.putIfAbsentCompat
  * Bundled-library symbols are **import-gated**: a file sees a module's names
  * only after importing it. With the bundled stdlib that looks like:
  *
- * - `use std.math` — unqualified access to that module (`abs(x)`) plus `math::abs(x)`,
- * - `use std.*` / `use std.{math, concurrency}` — wildcard/grouped module imports,
- * - `use std.math.abs` — selective import of listed names,
- * - `use std` / `use zone std` — every stdlib module,
+ * - `import std.math` — unqualified access to that module (`abs(x)`) plus `math::abs(x)`,
+ * - `import std.*` / `import std.{math, concurrency}` — wildcard/grouped module imports,
+ * - `import std.math.abs` — selective import of listed names,
+ * - `import std` / `import zone std` — every stdlib module,
  * - `std::math::abs(x)` / `std::abs(x)` — qualified access needs no import.
  *
  * The module root is derived from the loaded library modules; the frontend
@@ -57,6 +57,8 @@ object StdlibInjector {
         val items = LinkedHashMap<String, TopLevel>()
         /** name → module that provides it, for import hints. */
         val moduleOfName = LinkedHashMap<String, String>()
+        /** Items from a library's conventional `<root>.root` module. */
+        val implicitRootItems = LinkedHashMap<String, TopLevel>()
         /** extern name → single-signature bridge declaring it. */
         val externs = LinkedHashMap<String, TopLevel.Bridge>()
         /** struct/pack name → its `impl` blocks (methods/oper overloads), injected alongside the pack. */
@@ -102,9 +104,11 @@ object StdlibInjector {
                     is TopLevel.Enum -> register(item.name, item)
                     is TopLevel.Fail -> register(item.name, item)
                     is TopLevel.Spec -> register(item.name, item)
+                    is TopLevel.Deco -> register(item.name, item)
                     is TopLevel.Slot -> register(item.name, item)
                     is TopLevel.Impl -> {
-                        val keys = linkedSetOf(item.typeName, normalizedTypeName(item.typeName))
+                        val owner = item.typeName.substringBefore('.')
+                        val keys = linkedSetOf(item.typeName, normalizedTypeName(item.typeName), owner)
                         for (key in keys) {
                             idx.implsByType.getOrPut(key) { mutableListOf() }.add(item)
                         }
@@ -115,37 +119,53 @@ object StdlibInjector {
                     else -> {}
                 }
             }
+            if (module.substringAfterLast('.') == "root") {
+                moduleItems.forEach { (name, item) -> idx.implicitRootItems.putIfAbsentCompat(name, item) }
+            }
         }
         return idx
     }
 
-    /** Names made visible by imports of loaded library modules. */
-    private fun importedNames(program: Program): Set<String> {
-        val visible = mutableSetOf<String>()
+    /**
+     * Declarations made visible by imports of loaded library modules.
+     *
+     * Keeping the declaration, rather than only its name, is important when
+     * independent modules export the same short name. An exact module import
+     * must select that module's declaration instead of the flat index's first
+     * match.
+     */
+    private fun importedItems(program: Program): Map<String, TopLevel> {
+        val visible = LinkedHashMap<String, TopLevel>()
         for (item in program.items) {
             if (item !is TopLevel.UseImport) continue
             for ((path, selected) in item.imports) {
-                visible += namesVisibleFromImport(path, selected)
+                for ((name, declaration) in itemsVisibleFromImport(path, selected)) {
+                    visible.putIfAbsentCompat(name, declaration)
+                }
             }
         }
         return visible
     }
 
-    private fun namesVisibleFromImport(path: String, selected: String?): Set<String> {
+    private fun itemsVisibleFromImport(path: String, selected: String?): Map<String, TopLevel> {
         if (selected != null) {
-            val module = index.modules[path] ?: return emptySet()
-            return if (selected in module) setOf(selected) else emptySet()
+            val module = index.modules[path] ?: return emptyMap()
+            return module[selected]?.let { mapOf(selected to it) } ?: emptyMap()
         }
-        index.modules[path]?.let { return it.keys }
+        index.modules[path]?.let { return it }
         val descendants = index.modules
             .filterKeys { it.startsWith("$path.") }
             .values
         if (descendants.isNotEmpty()) {
-            return descendants.flatMapTo(mutableSetOf()) { it.keys }
+            val result = LinkedHashMap<String, TopLevel>()
+            descendants.forEach { module ->
+                module.forEach { (name, declaration) -> result.putIfAbsentCompat(name, declaration) }
+            }
+            return result
         }
-        val (moduleName, itemName) = resolveSelectedLibraryPath(path) ?: return emptySet()
-        val module = index.modules[moduleName] ?: return emptySet()
-        return if (itemName in module) setOf(itemName) else emptySet()
+        val (moduleName, itemName) = resolveSelectedLibraryPath(path) ?: return emptyMap()
+        val declaration = index.modules[moduleName]?.get(itemName) ?: return emptyMap()
+        return mapOf(itemName to declaration)
     }
 
     private fun resolveSelectedLibraryPath(path: String): Pair<String, String>? {
@@ -172,6 +192,8 @@ object StdlibInjector {
                 is TopLevel.Pack -> names.add(item.name)
                 is TopLevel.Enum -> names.add(item.name)
                 is TopLevel.Fail -> names.add(item.name)
+                is TopLevel.Deco -> names.add(item.name)
+                is TopLevel.Spec -> names.add(item.name)
                 is TopLevel.Slot -> names.add(item.name)
                 is TopLevel.Bridge -> item.funcs.forEach { names.add(it.name) }
                 else -> {}
@@ -185,7 +207,7 @@ object StdlibInjector {
      *
      * Visibility is granted only by explicit `import` declarations. Zone
      * members are name-mangled at parse time (`std.math::abs` → `std__math__abs`),
-     * so [importedNames] returns the mangled item names exported by imported
+     * so [importedItems] returns the mangled items exported by imported
      * modules. A reference resolves only if it is both mangled (written as a
      * qualified `Zone::name` path) and visible (its module was imported). Bare
      * references never match a mangled name, so bare access to library symbols
@@ -196,13 +218,17 @@ object StdlibInjector {
 
         val shadowed = userDeclaredNames(program)
 
-        val visible = importedNames(program)
+        val visible = LinkedHashMap<String, TopLevel>().apply {
+            putAll(index.implicitRootItems)
+            putAll(importedItems(program))
+        }
 
         val referenced = mutableSetOf<String>()
         for (item in program.items) collectNamesFromItem(item, referenced)
         val implicitReferenced = referenced.filterTo(mutableSetOf()) { it in implicitCollectionTypes }
-        referenced.retainAll(visible)
+        referenced.retainAll(visible.keys)
         referenced += implicitReferenced
+        referenced += index.implicitRootItems.keys
 
         val injected = LinkedHashMap<String, TopLevel>()
         val injectedExterns = LinkedHashMap<String, TopLevel>()
@@ -211,7 +237,7 @@ object StdlibInjector {
             val next = mutableListOf<String>()
             for (name in frontier) {
                 if (name in shadowed || name in injected) continue
-                val item = index.items[name]
+                val item = visible[name] ?: index.items[name]
                 if (item != null) {
                     injected[name] = item
                     attachImplsForType(name, injected, next)
@@ -229,7 +255,29 @@ object StdlibInjector {
         }
 
         if (injected.isEmpty() && injectedExterns.isEmpty()) return program
-        return program.copy(items = program.items + injected.values + injectedExterns.values)
+        // One declaration can be indexed by both its qualified and short export
+        // names. Preserve discovery order while appending each AST item once.
+        val existingIdentities = program.items.mapTo(mutableSetOf()) { itemIdentity(it) }
+        val declarations = injected.values.distinct().filter { existingIdentities.add(itemIdentity(it)) }
+        val externDeclarations = injectedExterns.values.distinct().filter { existingIdentities.add(itemIdentity(it)) }
+        if (declarations.isEmpty() && externDeclarations.isEmpty()) return program
+        return program.copy(items = program.items + declarations + externDeclarations)
+    }
+
+    private fun itemIdentity(item: TopLevel): String = when (item) {
+        is TopLevel.Func -> "func:${item.decl.name}"
+        is TopLevel.FinDecl -> "fin:${item.name}"
+        is TopLevel.LetDecl -> "let:${item.name}"
+        is TopLevel.VarDecl -> "var:${item.name}"
+        is TopLevel.Pack -> "pack:${item.name}"
+        is TopLevel.Enum -> "enum:${item.name}"
+        is TopLevel.Fail -> "fail:${item.name}"
+        is TopLevel.Spec -> "spec:${item.name}"
+        is TopLevel.Deco -> "deco:${item.name}"
+        is TopLevel.Slot -> "slot:${item.name}"
+        is TopLevel.Impl -> "impl:${item.typeName}:${item.traitName.orEmpty()}:${item.line}:${item.column}"
+        is TopLevel.Bridge -> "bridge:${item.target}:${item.funcs.joinToString(",") { it.name }}"
+        else -> item.toString()
     }
 
     private fun attachImplsForType(
@@ -240,7 +288,7 @@ object StdlibInjector {
         val keys = linkedSetOf(typeName, normalizedTypeName(typeName))
         for (keyName in keys) {
             index.implsByType[keyName]?.forEach { impl ->
-                val key = "impl::${normalizedTypeName(impl.typeName)}::${impl.line}:${impl.column}"
+                val key = "impl::${normalizedTypeName(impl.typeName)}::${impl.traitName.orEmpty()}::${impl.line}:${impl.column}"
                 if (key !in injected) {
                     injected[key] = impl
                     val names = mutableSetOf<String>()
@@ -257,29 +305,64 @@ object StdlibInjector {
 
     private fun collectNamesFromItem(item: TopLevel, names: MutableSet<String>) {
         when (item) {
-            is TopLevel.Func -> collectNamesFromFunc(item.decl, names)
+            is TopLevel.Func -> {
+                collectNamesFromAnnotations(item.decl.annotations, names)
+                collectNamesFromFunc(item.decl, names)
+            }
             is TopLevel.FinDecl -> {
+                collectNamesFromAnnotations(item.annotations, names)
                 item.type?.let { collectNamesFromTypeRef(it, names) }
                 collectNamesFromExpr(item.initializer, names)
             }
             is TopLevel.LetDecl -> {
+                collectNamesFromAnnotations(item.annotations, names)
                 item.type?.let { collectNamesFromTypeRef(it, names) }
                 collectNamesFromExpr(item.initializer, names)
             }
             is TopLevel.VarDecl -> {
+                collectNamesFromAnnotations(item.annotations, names)
                 item.type?.let { collectNamesFromTypeRef(it, names) }
                 collectNamesFromExpr(item.initializer, names)
             }
-            is TopLevel.Test -> item.body.forEach { collectNamesFromStmt(it, names) }
-            is TopLevel.Pack -> item.fields.forEach { field ->
-                collectNamesFromTypeAnnotation(TypeAnnotation.Explicit(field.type), names)
-                field.default?.let { collectNamesFromExpr(it, names) }
+            is TopLevel.Test -> {
+                collectNamesFromAnnotations(item.annotations, names)
+                item.body.forEach { collectNamesFromStmt(it, names) }
             }
-            is TopLevel.Solo -> item.methods.forEach { collectNamesFromFunc(it, names) }
+            is TopLevel.Pack -> {
+                collectNamesFromAnnotations(item.annotations, names)
+                item.fields.forEach { field ->
+                    collectNamesFromAnnotations(field.annotations, names)
+                    collectNamesFromTypeAnnotation(TypeAnnotation.Explicit(field.type), names)
+                    field.default?.let { collectNamesFromExpr(it, names) }
+                }
+            }
+            is TopLevel.Enum -> collectNamesFromAnnotations(item.annotations + item.variantAnnotations.flatten(), names)
+            is TopLevel.Fail -> collectNamesFromAnnotations(item.annotations + item.variantAnnotations.flatten(), names)
+            is TopLevel.Solo -> {
+                collectNamesFromAnnotations(item.annotations, names)
+                item.fields.forEach { field ->
+                    collectNamesFromAnnotations(field.annotations, names)
+                    collectNamesFromTypeRef(field.type, names)
+                    field.default?.let { collectNamesFromExpr(it, names) }
+                }
+                item.methods.forEach { collectNamesFromFunc(it, names) }
+            }
+            is TopLevel.Node -> {
+                collectNamesFromAnnotations(item.annotations, names)
+                item.params.forEach { collectNamesFromTypeRef(it.type, names) }
+                item.extraFields.forEach { field ->
+                    collectNamesFromAnnotations(field.annotations, names)
+                    collectNamesFromTypeRef(field.type, names)
+                    field.default?.let { collectNamesFromExpr(it, names) }
+                }
+                item.methods.forEach { collectNamesFromFunc(it, names) }
+            }
             is TopLevel.Impl -> {
                 names.add(item.typeName)
                 item.traitName?.let { names.add(it) }
                 item.traitArgs.forEach { collectNamesFromTypeRef(it, names) }
+                item.decoratorArgs.forEach { collectNamesFromExpr(it, names) }
+                item.decoratorNamedArgs.forEach { (_, value) -> collectNamesFromExpr(value, names) }
                 item.methods.forEach { collectNamesFromFunc(it, names) }
             }
             is TopLevel.Spec -> {
@@ -288,6 +371,18 @@ object StdlibInjector {
                     it.params.forEach { param -> collectNamesFromTypeRef(param.type, names) }
                 }
                 item.methods.forEach { collectNamesFromFunc(it, names) }
+            }
+            is TopLevel.Deco -> {
+                collectNamesFromAnnotations(item.annotations, names)
+                item.fields.forEach { field ->
+                    collectNamesFromAnnotations(field.annotations, names)
+                    collectNamesFromTypeRef(field.type, names)
+                    field.default?.let { collectNamesFromExpr(it, names) }
+                }
+                item.bindings.forEach { binding ->
+                    names.add(binding.name)
+                    binding.trailingTypeArgs.forEach { collectNamesFromTypeRef(it, names) }
+                }
             }
             is TopLevel.InlineIf -> {
                 collectNamesFromExpr(item.condition, names)
@@ -301,15 +396,44 @@ object StdlibInjector {
             }
             is TopLevel.InlineBlock -> item.body.forEach { collectNamesFromItem(it, names) }
             is TopLevel.DeepInlineBlock -> item.body.forEach { collectNamesFromItem(it, names) }
-            is TopLevel.View -> item.body.forEach { collectNamesFromStmt(it, names) }
+            is TopLevel.View -> {
+                collectNamesFromAnnotations(item.annotations, names)
+                item.params.forEach {
+                    collectNamesFromAnnotations(it.annotations, names)
+                    collectNamesFromTypeRef(it.type, names)
+                }
+                item.body.forEach { collectNamesFromStmt(it, names) }
+            }
+            is TopLevel.Hook -> {
+                collectNamesFromAnnotations(item.annotations, names)
+                item.body.forEach { collectNamesFromStmt(it, names) }
+            }
+            is TopLevel.Slot -> collectNamesFromAnnotations(item.annotations, names)
+            is TopLevel.TypeAlias -> {
+                collectNamesFromAnnotations(item.annotations, names)
+                collectNamesFromTypeRef(item.type, names)
+            }
+            is TopLevel.Bridge -> collectNamesFromAnnotations(item.annotations, names)
             else -> {}
         }
     }
 
     private fun collectNamesFromFunc(func: FuncDecl, names: MutableSet<String>) {
-        func.params.forEach { collectNamesFromTypeAnnotation(TypeAnnotation.Explicit(it.type), names) }
+        collectNamesFromAnnotations(func.annotations, names)
+        func.params.forEach {
+            collectNamesFromAnnotations(it.annotations, names)
+            collectNamesFromTypeAnnotation(TypeAnnotation.Explicit(it.type), names)
+        }
         collectNamesFromTypeAnnotation(func.returnType, names)
         func.body.forEach { collectNamesFromStmt(it, names) }
+    }
+
+    private fun collectNamesFromAnnotations(annotations: List<org.azora.lang.frontend.Annotation>, names: MutableSet<String>) {
+        annotations.forEach { annotation ->
+            names.add(annotation.name)
+            annotation.args.forEach { collectNamesFromExpr(it, names) }
+            annotation.namedArgs.forEach { (_, value) -> collectNamesFromExpr(value, names) }
+        }
     }
 
     private fun collectNamesFromStmt(stmt: Stmt, names: MutableSet<String>) {
@@ -474,6 +598,7 @@ object StdlibInjector {
                 collectNamesFromExpr(expr.expr, names)
                 collectNamesFromExpr(expr.fallback, names)
             }
+            is Expr.TryPropagate -> collectNamesFromExpr(expr.expr, names)
             is Expr.IfExpr -> {
                 collectNamesFromExpr(expr.condition, names)
                 collectNamesFromExpr(expr.thenExpr, names)
@@ -533,7 +658,7 @@ object StdlibInjector {
             is TypeRef.Nullable -> collectNamesFromTypeRef(ref.inner, names)
             is TypeRef.Failable -> {
                 collectNamesFromTypeRef(ref.ok, names)
-                names.add(ref.errSet)
+                names.addAll(ref.errSets)
             }
             is TypeRef.Pointer -> collectNamesFromTypeRef(ref.inner, names)
             is TypeRef.Reference -> collectNamesFromTypeRef(ref.inner, names)

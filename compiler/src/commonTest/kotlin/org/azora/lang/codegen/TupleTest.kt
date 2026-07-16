@@ -6,57 +6,66 @@ import org.azora.lang.backend.IrInterpreter
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 class TupleTest {
-    private fun run(source: String): String {
-        val result = Compiler().compile(source, release = false)
+    @Test fun tupleOfAndTupleTypeRemainSupported() {
+        val result = Compiler().compile("""
+            import std.io
+            import std.container.tuple
+            import std
+
+            func swap(value: Tuple<Int, String>): Tuple<String, Int> {
+                return std::tupleOf(value.1, value.0)
+            }
+
+            func main() {
+                fin result = swap(std::tupleOf(7, "ready"))
+                std::io::println(result.0)
+                std::io::println(result.1)
+            }
+        """.trimIndent(), release = false)
+
         assertIs<CompilationResult.Success>(result, "Compilation failed: ${(result as? CompilationResult.Failure)?.errors}")
-        return IrInterpreter().interpret(result.ir).trim()
+        assertEquals("ready\n7", IrInterpreter().interpret(result.ir).trim())
     }
 
-    @Test fun tupleLiteralAndAccess() {
-        assertEquals("1\nhello", run("""
-            import std.io
+    @Test fun tupleLiteralSyntaxIsRejectedWithMigration() {
+        val result = Compiler().compile("""
             func main() {
-                fin p = (1, "hello")
-                std::io::println(p.0)
-                std::io::println(p.1)
+                fin pair = (1, "hello")
             }
-        """.trimIndent()))
+        """.trimIndent(), release = false)
+
+        assertIs<CompilationResult.Failure>(result)
+        assertTrue(result.errors.any { "tupleOf(a, b)" in it }, result.errors.toString())
     }
 
-    @Test fun tupleFromFunction() {
-        assertEquals("3\n2", run("""
-            import std.io
-            func divmod(a: Int, b: Int): (Int, Int) {
-                return (a / b, a % b)
+    @Test fun tupleTypeSyntaxIsRejectedWithMigration() {
+        val result = Compiler().compile("""
+            func pair(): (Int, String) {
+                return tupleOf(1, "hello")
             }
-            func main() {
-                fin r = divmod(17, 5)
-                std::io::println(r.0)
-                std::io::println(r.1)
-            }
-        """.trimIndent()))
+        """.trimIndent(), release = false)
+
+        assertIs<CompilationResult.Failure>(result)
+        assertTrue(result.errors.any { "Tuple<A, B>" in it }, result.errors.toString())
     }
 
-    @Test fun nestedTuple() {
-        assertEquals("2", run("""
+    @Test fun groupingAndFunctionTypesAreNotTupleSyntax() {
+        val result = Compiler().compile("""
             import std.io
-            func main() {
-                fin t = (1, (2, 3), "end")
-                fin inner = t.1
-                std::io::println(inner.0)
-            }
-        """.trimIndent()))
-    }
 
-    @Test fun tupleInInterpolation() {
-        assertEquals("1 + hello", run("""
-            import std.io
-            func main() {
-                fin p = (1, "hello")
-                std::io::println("${'$'}{p.0} + ${'$'}{p.1}")
+            func apply(value: Int, transform: (Int) -> Int): Int {
+                return transform((value))
             }
-        """.trimIndent()))
+
+            func main() {
+                std::io::println((20) + 22)
+            }
+        """.trimIndent(), release = false)
+
+        assertIs<CompilationResult.Success>(result, "Compilation failed: ${(result as? CompilationResult.Failure)?.errors}")
+        assertEquals("42", IrInterpreter().interpret(result.ir).trim())
     }
 }

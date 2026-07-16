@@ -98,7 +98,7 @@ class Tier2MetaprogrammingTest {
         assertEquals("hi", run("""
             import std.io
             deco Log {
-                msg: String
+                fin msg: String
             }
             @Log("entry")
             func greet(): String {

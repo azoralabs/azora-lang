@@ -15,6 +15,8 @@
  */
 
 module std.container.stack
+
+import std.serializer
 import std.convert
 
 /**
@@ -38,7 +40,8 @@ friend zone std {
      *
      * @param T The type of elements stored in this stack.
      */
-    @since("0.0.1")
+    @Since("0.0.1")
+    @Serializable
     pack Stack<T> {
         shield var data: T* = alloc T[8]
         shield var size: Int = 0
@@ -46,7 +49,7 @@ friend zone std {
     }
 
     /** Constructs an empty `Stack<T>` with default capacity. */
-    @experimental(since: "0.0.1")
+    @Experimental(since: "0.0.1")
     impl ctor() for Stack<T> { mut ref self ->
         self.data = alloc T[8]
         self.size = 0
@@ -58,17 +61,17 @@ friend zone std {
         // --- Properties ---
 
         /** Whether the stack contains no elements. */
-        @since("0.0.1")
+        @Since("0.0.1")
         prop isEmpty: Bool = size == 0
 
         /** Whether the stack contains at least one element. */
-        @since("0.0.1")
+        @Since("0.0.1")
         prop isNotEmpty: Bool = size > 0
 
         // --- Internal ---
 
         /** Doubles the backing buffer's capacity, copying existing elements. */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func growStack() {
             fin newCap = capacity * 2
             fin newData = alloc T[newCap]
@@ -90,7 +93,7 @@ friend zone std {
          *
          * @param element The element to push.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func push(element: T) {
             if size >= capacity { self.growStack() }
             data[size] = element
@@ -103,7 +106,7 @@ friend zone std {
          * @return The removed top element.
          * @throws AssertionError if the stack is empty.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func pop(): T {
             assert size > 0 { "Stack is empty" }
             fin top = data[size - 1]
@@ -117,14 +120,14 @@ friend zone std {
          * @return The top element.
          * @throws AssertionError if the stack is empty.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func peek(): T {
             assert size > 0 { "Stack is empty" }
             return data[size - 1]
         }
 
         /** Removes all elements from the stack. */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func clear() {
             fin oldData = data
             self.data = alloc T[8]
@@ -140,7 +143,7 @@ friend zone std {
          *
          * @return A string in the format "[bottom, ..., top]".
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func toString(): String {
             var s = "["
             var i = 0
@@ -153,3 +156,47 @@ friend zone std {
         }
     }
 }
+
+test "stack starts empty" {
+    fin value = Stack<Int>()
+    assert value.size == 0 && value.isEmpty { "new stack must be empty" }
+}
+
+test "stack is LIFO" {
+    var value = Stack<Int>()
+    value.push(1)
+    value.push(2)
+    value.push(3)
+    assert value.peek() == 3 { "stack peek must return the newest value" }
+    assert value.pop() == 3 && value.pop() == 2 && value.pop() == 1 { "stack order must be LIFO" }
+    assert value.isEmpty { "stack must be empty after all pops" }
+}
+
+test "stack grows without losing order" {
+    var value = Stack<Int>()
+    var i = 0
+    while i < 20 {
+        value.push(i)
+        i += 1
+    }
+    i = 19
+    while i >= 0 {
+        assert value.pop() == i { "stack growth reordered an element" }
+        i -= 1
+    }
+}
+
+test "stack clear permits reuse" {
+    var value = Stack<Int>()
+    value.push(1)
+    value.push(2)
+    value.clear()
+    value.push(8)
+    assert value.size == 1 && value.pop() == 8 { "cleared stack must be reusable" }
+}
+
+test "stack serialization metadata is declared" {
+    inline assert (reflect Stack).hasDeco<Serializable> { "Stack must carry Serializable metadata" }
+}
+
+test .All "stack"

@@ -231,6 +231,9 @@ sealed class Expr {
     /** `expr catch fallback` — evaluates [expr]; if it throws, evaluates [fallback]. */
     data class CatchExpr(val expr: Expr, val fallback: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 
+    /** `try expr` — evaluates [expr] and propagates any failure to the caller. */
+    data class TryPropagate(val expr: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+
     /**
      * If-expression `if cond { a } else { b }` — both branches are single
      * expressions and one of them becomes the value of the whole expression.
@@ -976,9 +979,22 @@ sealed class TypeRef {
         override fun toString() = "$inner?"
     }
 
-    /** Failable type `T!ErrSet` — a value of [ok] or an error from set [errSet]. */
-    data class Failable(val ok: TypeRef, val errSet: String) : TypeRef() {
-        override fun toString() = "$ok!$errSet"
+    /** Failable type `T!Error` or `T![A, B]`. */
+    data class Failable(val ok: TypeRef, val errSets: List<String>) : TypeRef() {
+        init {
+            require(errSets.isNotEmpty()) { "A failable type requires at least one error set" }
+            require(errSets.distinct().size == errSets.size) { "A failable type cannot repeat an error set" }
+        }
+
+        constructor(ok: TypeRef, errSet: String) : this(ok, listOf(errSet))
+
+        val errSet: String get() = errSets.single()
+
+        override fun toString(): String = if (errSets.size == 1) {
+            "$ok!${errSets.single()}"
+        } else {
+            "$ok![${errSets.joinToString(", ")}]"
+        }
     }
 
     /** Pointer type `T*` — a reference to a heap value of [inner]. */
@@ -1037,6 +1053,9 @@ enum class Visibility { EXPOSE, PROTECT, CONFINE, SHIELD }
 
 enum class ReactiveKind { MEM, REM, RET }
 
+/** Test execution mode mirrored by the compiler-predefined `TestMethod` enum. */
+enum class TestMethod { This, All }
+
 /** Parameter modifier: `""` (default), `"ref"` (by-reference), `"out"` (output), `"mut"` (mutable). */
 typealias ParamModifier = String
 
@@ -1068,6 +1087,7 @@ data class PackField(
     val mutable: Boolean,
     val default: Expr?,
     val visibility: Visibility = Visibility.EXPOSE,
+    val annotations: List<Annotation> = emptyList(),
 )
 
 /**
@@ -1167,6 +1187,26 @@ data class Annotation(
     val column: Int = 0,
     /** Named arguments `@name(key = value)` / `@name(key: value)`, in source order. */
     val namedArgs: List<Pair<String, Expr>> = emptyList(),
+)
+
+/**
+ * A decorator-to-spec binding declared by `deco D bind Spec<Args...>`.
+ *
+ * The decorated declaration's type is inserted as the bound spec's first
+ * generic argument. [trailingTypeArgs] supply any remaining generic arguments.
+ */
+/** Declaration categories accepted by decorator and binding `for` clauses. */
+enum class DecoTarget {
+    Pack, Func, Prop, Task, Flow, Node, Solo, Slot, Enum, EnumValue, Deco,
+    Fail, FailValue, Field, Param, Var, Fin, Let, Test, View, Hook,
+    Ctor, Dtor, TypeAlias, Bridge,
+}
+
+data class DecoratorBinding(
+    val name: String,
+    val trailingTypeArgs: List<TypeRef> = emptyList(),
+    /** Empty means the binding is active for every decorator target. */
+    val targets: Set<DecoTarget> = emptySet(),
 )
 
 /**
@@ -1320,8 +1360,16 @@ sealed class TopLevel {
      * @property body the test body statements
      * @property line 1-based source line
      * @property column 1-based source column
+     * @property method whether this is one test or a file-level aggregate suite
      */
-    data class Test(val name: String, val body: List<Stmt>, val line: Int, val column: Int = 0) : TopLevel()
+    data class Test(
+        val name: String,
+        val body: List<Stmt>,
+        val line: Int,
+        val column: Int = 0,
+        val annotations: List<Annotation> = emptyList(),
+        val method: TestMethod = TestMethod.This,
+    ) : TopLevel()
 
     /**
      * A `pack` (struct) declaration: `pack Name { fin x: Int, var y: Int = 0 }`.
@@ -1347,17 +1395,26 @@ sealed class TopLevel {
         val fieldTemplate: VariadicFieldTemplate? = null,
     ) : TopLevel()
 
-    /** `deco Name { fields }` — declares a decorator/annotation type. Parsed and stored; not yet enforced. */
-    data class Deco(val name: String, val fields: List<PackField>, val line: Int, val column: Int = 0) : TopLevel()
+    /** `deco Name [bind Spec] { fields }` — an annotation type and optional derived spec contract. */
+    data class Deco(
+        val name: String,
+        val fields: List<PackField>,
+        val line: Int,
+        val column: Int = 0,
+        val annotations: List<Annotation> = emptyList(),
+        /** Empty means this decorator may be applied to every supported target. */
+        val targets: Set<DecoTarget> = emptySet(),
+        val bindings: List<DecoratorBinding> = emptyList(),
+    ) : TopLevel()
 
     /** An extern function signature inside a `bridge` block: `func sin(x: Real): Real` (no body). */
     data class BridgeSig(val name: String, val params: List<Param>, val returnType: TypeRef, val line: Int, val column: Int = 0)
 
     /** `bridge <target> { func sigs }` — declares extern functions for active FFI targets (C/LLVM, JS/WASM). */
-    data class Bridge(val target: String, val funcs: List<BridgeSig>, val line: Int, val column: Int = 0) : TopLevel()
+    data class Bridge(val target: String, val funcs: List<BridgeSig>, val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList()) : TopLevel()
 
     /** `solo Name { fields; methods }` — declares a singleton struct with one lazily-created shared instance. */
-    data class Solo(val name: String, val fields: List<PackField>, val methods: List<FuncDecl>, val line: Int, val column: Int = 0, val visibility: Visibility = Visibility.EXPOSE) : TopLevel()
+    data class Solo(val name: String, val fields: List<PackField>, val methods: List<FuncDecl>, val line: Int, val column: Int = 0, val visibility: Visibility = Visibility.EXPOSE, val annotations: List<Annotation> = emptyList()) : TopLevel()
 
     /** A constructor parameter for a `node`: `var name: Type` or `fin name: Type`. Stored as a field. */
     data class NodeParam(val name: String, val type: TypeRef, val mutable: Boolean)
@@ -1377,6 +1434,7 @@ sealed class TopLevel {
         val line: Int,
         val column: Int = 0,
         val visibility: Visibility = Visibility.EXPOSE,
+        val annotations: List<Annotation> = emptyList(),
     ) : TopLevel()
 
     /** A singleton registration inside a `wrap` block: `solo Type(args) [bind Spec]`. */
@@ -1386,13 +1444,13 @@ sealed class TopLevel {
     data class Wrap(val name: String, val registrations: List<WrapReg>, val line: Int, val column: Int = 0) : TopLevel()
 
     /** `view Name(params) { body }` — a reactive UI component (like a function but with reactive semantics). */
-    data class View(val name: String, val params: List<Param>, val body: List<Stmt>, val line: Int, val column: Int = 0) : TopLevel()
+    data class View(val name: String, val params: List<Param>, val body: List<Stmt>, val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList()) : TopLevel()
 
     /** `hook name { body }` — a lifecycle callback (start/stop/etc). Called by the runtime. */
-    data class Hook(val name: String, val body: List<Stmt>, val line: Int, val column: Int = 0) : TopLevel()
+    data class Hook(val name: String, val body: List<Stmt>, val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList()) : TopLevel()
 
     /**
-     * `use ZoneName` or `use ZoneName.Item` — imports items from a named zone so they're
+     * `import ZoneName` or `import ZoneName.Item` — imports items from a named zone so they're
      * accessible without the `ZoneName::` prefix. [imports] is a list of (zoneName, itemName)
      * pairs where itemName is null for "import all".
      */
@@ -1410,7 +1468,7 @@ sealed class TopLevel {
         val line: Int,
         val column: Int = 0,
         val annotations: List<Annotation> = emptyList(),
-        /** Per-variant annotations, parallel to [variants] (e.g. `Red @deprecated(...)`). */
+        /** Per-variant annotations, parallel to [variants] (e.g. `Red @Deprecated(...)`). */
         val variantAnnotations: List<List<Annotation>> = emptyList(),
     ) : TopLevel()
 
@@ -1421,7 +1479,7 @@ sealed class TopLevel {
         val line: Int,
         val column: Int = 0,
         val annotations: List<Annotation> = emptyList(),
-        /** Per-variant annotations, parallel to [variants] (e.g. `NotFound @deprecated(...)`). */
+        /** Per-variant annotations, parallel to [variants] (e.g. `NotFound @Deprecated(...)`). */
         val variantAnnotations: List<List<Annotation>> = emptyList(),
     ) : TopLevel()
 
@@ -1429,7 +1487,8 @@ sealed class TopLevel {
      * An `impl Type { methods }` block. Each method gets an implicit `self: Type` receiver;
      * calls desugar to `Type_method(self, ...)`.
      *
-     * @property typeName the struct the methods extend
+     * @property typeName the declaration site being implemented. Decorator-only
+     * member targets use `Owner.member`; `Owner.*` selects every pack field.
      * @property methods the method declarations (without an explicit `self` parameter)
      */
     data class Impl(
@@ -1444,6 +1503,10 @@ sealed class TopLevel {
         val isExtension: Boolean = false,
         /** Generic arguments on the implemented spec, e.g. `String` in `Into<String>`. */
         val traitArgs: List<TypeRef> = emptyList(),
+        /** Positional compile-time metadata values on `impl Decorator(...) for Type`. */
+        val decoratorArgs: List<Expr> = emptyList(),
+        /** Named compile-time metadata values on `impl Decorator(field: value) for Type`. */
+        val decoratorNamedArgs: List<Pair<String, Expr>> = emptyList(),
     ) : TopLevel()
 
     /** `spec Name { func method(params): Ret; ... }` or compact callback `spec Name<T>: T { ref self } use as "to${T.typeName}"`. */
@@ -1453,16 +1516,17 @@ sealed class TopLevel {
         val line: Int,
         val column: Int = 0,
         val callback: SpecCallback? = null,
+        val typeParams: List<String> = emptyList(),
     ) : TopLevel()
 
     /** `typealias Name = Type` — a type alias. */
-    data class TypeAlias(val name: String, val type: TypeRef, val line: Int, val column: Int = 0) : TopLevel()
+    data class TypeAlias(val name: String, val type: TypeRef, val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList()) : TopLevel()
 
     /** A variant of a `slot` (tagged union): `VariantName(Type1, Type2)` or `VariantName` (no payload). */
     data class SlotVariant(val name: String, val payloadTypes: List<TypeRef>)
 
     /** `slot Name { Variant(Type); Variant2(Type1, Type2); Variant3 }` — a tagged union. */
-    data class Slot(val name: String, val variants: List<SlotVariant>, val line: Int, val column: Int = 0) : TopLevel()
+    data class Slot(val name: String, val variants: List<SlotVariant>, val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList()) : TopLevel()
 
     /**
      * A top-level compile-time assertion (`inline assert condition { "message" }`).

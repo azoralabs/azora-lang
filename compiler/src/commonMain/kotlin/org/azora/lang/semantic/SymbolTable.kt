@@ -18,6 +18,7 @@ package org.azora.lang.semantic
 
 import org.azora.lang.frontend.Visibility
 import org.azora.lang.frontend.MemberCallStyle
+import org.azora.lang.frontend.DecoTarget
 import org.azora.lang.ir.IrType
 
 /**
@@ -94,6 +95,19 @@ data class StructType(
 data class SpecSymbol(
     val methodNames: List<String>,
     val callback: org.azora.lang.frontend.SpecCallback? = null,
+    /** Decorators are marker contracts and therefore never require methods. */
+    val isDecorator: Boolean = false,
+    val typeParams: List<String> = emptyList(),
+    val decoratorTargets: Set<DecoTarget> = emptySet(),
+    val decoratorBindings: List<org.azora.lang.frontend.DecoratorBinding> = emptyList(),
+)
+
+/** A validated `impl Contract for Type` conformance. */
+data class TraitConformance(
+    val typeName: String,
+    val contractName: String,
+    val typeArgs: List<org.azora.lang.frontend.TypeRef> = emptyList(),
+    val isDecorator: Boolean = false,
 )
 
 /**
@@ -114,6 +128,7 @@ class SymbolTable {
     // type name -> (method name -> mangled function name "Type_method")
     private val methods = mutableMapOf<String, MutableMap<String, String>>()
     private val specs = mutableMapOf<String, SpecSymbol>() // spec name → method names/callback
+    private val conformances = mutableListOf<TraitConformance>()
     // slot name → list of (variant name → payload types)
     private val slots = mutableMapOf<String, List<Pair<String, List<IrType>>>>()
     /** Node inheritance: child node name → parent node name. */
@@ -138,6 +153,14 @@ class SymbolTable {
             error("Function '${symbol.name}' already defined")
         }
         functions[symbol.name] = symbol
+    }
+
+    /** Registers an additional lookup name while preserving the emitted symbol name. */
+    fun defineFunctionAlias(alias: String, symbol: FunctionSymbol) {
+        if (functions.containsKey(alias)) {
+            error("Function '$alias' already defined")
+        }
+        functions[alias] = symbol
     }
 
     /**
@@ -210,9 +233,52 @@ class SymbolTable {
 
     // -- Specs (traits) ---------------------------------------------------
 
-    fun defineSpec(name: String, methodNames: List<String>, callback: org.azora.lang.frontend.SpecCallback? = null) {
-        specs[name] = SpecSymbol(methodNames, callback)
+    fun defineSpec(
+        name: String,
+        methodNames: List<String>,
+        callback: org.azora.lang.frontend.SpecCallback? = null,
+        typeParams: List<String> = emptyList(),
+    ) {
+        specs[name] = SpecSymbol(methodNames, callback, isDecorator = false, typeParams = typeParams)
     }
+
+    /** Registers a `deco` as a marker contract usable by `impl Deco for Type`. */
+    fun defineDecorator(
+        name: String,
+        targets: Set<DecoTarget> = emptySet(),
+        bindings: List<org.azora.lang.frontend.DecoratorBinding> = emptyList(),
+    ) {
+        specs[name] = SpecSymbol(
+            emptyList(),
+            isDecorator = true,
+            decoratorTargets = targets,
+            decoratorBindings = bindings,
+        )
+    }
+
+    /** Records a validated conformance for semantic consumers and future derives. */
+    fun defineConformance(conformance: TraitConformance): Boolean {
+        if (conformances.any {
+                it.typeName == conformance.typeName &&
+                    it.contractName == conformance.contractName &&
+                    it.typeArgs == conformance.typeArgs
+            }
+        ) return false
+        conformances.add(conformance)
+        return true
+    }
+
+    /** Returns whether [typeName] implements the requested spec or decorator contract. */
+    fun implements(
+        typeName: String,
+        contractName: String,
+        typeArgs: List<org.azora.lang.frontend.TypeRef> = emptyList(),
+    ): Boolean = conformances.any {
+        it.typeName == typeName && it.contractName == contractName && it.typeArgs == typeArgs
+    }
+
+    /** Returns all validated conformances. */
+    fun allConformances(): List<TraitConformance> = conformances.toList()
 
 
     // -- Type aliases -----------------------------------------------------

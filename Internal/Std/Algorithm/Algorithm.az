@@ -28,7 +28,7 @@ friend zone std {
     /**
      * Merge sort - O(n log n) stable sorting algorithm.
      */
-    @experimental(since: "0.0.1")
+    @Experimental(since: "0.0.1")
     func mergeSort<T>(arr: [T]): [T] {
         if arr.length <= 1 {
             return arr
@@ -55,7 +55,7 @@ friend zone std {
     /**
      * Merges two sorted arrays into one sorted array.
      */
-    @experimental(since: "0.0.1")
+    @Experimental(since: "0.0.1")
     func merge<T>(a: [T], b: [T]): [T] {
         var result: [T] = [].fill<T>(a.length + b.length)
         var ri = 0
@@ -88,7 +88,7 @@ friend zone std {
      * Sort by a key function - applies key to each element and sorts by key value.
      * Uses insertion sort on key-value pairs.
      */
-    @experimental(since: "0.0.1")
+    @Experimental(since: "0.0.1")
     func sortBy<T>(arr: [T], key: (T) -> T): [T] {
         var result: [T] = [].fill<T>(arr.length)
         var i = 0
@@ -115,7 +115,7 @@ friend zone std {
      * Groups elements by a key function.
      * Returns array of arrays where each sub-array has elements with the same key.
      */
-    @experimental(since: "0.0.1")
+    @Experimental(since: "0.0.1")
     func groupBy<T>(arr: [T], key: (T) -> T): [T] {
         var keys: [T] = [].fill<T>(arr.length)
         var groups: [T] = [].fill<T>(arr.length)
@@ -155,7 +155,7 @@ friend zone std {
     /**
      * Interleaves two arrays: [a1, b1, a2, b2, ...].
      */
-    @experimental(since: "0.0.1")
+    @Experimental(since: "0.0.1")
     func interleave<T>(a: [T], b: [T]): [T] {
         var result: [T] = [].fill<T>(a.length + b.length)
         var ri = 0
@@ -179,7 +179,7 @@ friend zone std {
     /**
      * Returns a sliding window of given size over the array.
      */
-    @experimental(since: "0.0.1")
+    @Experimental(since: "0.0.1")
     func windows<T>(arr: [T], size: Int): [T] {
         fin count = if arr.length >= size { arr.length - size + 1 } else { 0 }
         var result: [T] = [].fill<[T]>(count)
@@ -202,7 +202,7 @@ friend zone std {
     /**
      * Returns array with elements at even indices.
      */
-    @experimental(since: "0.0.1")
+    @Experimental(since: "0.0.1")
     func evens<T>(arr: [T]): [T] {
         fin count = (arr.length + 1) / 2
         var result: [T] = [].fill<T>(count)
@@ -219,7 +219,7 @@ friend zone std {
     /**
      * Returns array with elements at odd indices.
      */
-    @experimental(since: "0.0.1")
+    @Experimental(since: "0.0.1")
     func odds<T>(arr: [T]): [T] {
         fin count = arr.length / 2
         var result: [T] = [].fill<T>(count)

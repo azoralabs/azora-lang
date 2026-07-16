@@ -70,10 +70,12 @@ class Lexer(private val source: String) {
             "infx" to TokenType.INFX,
             "oper" to TokenType.OPER,
             "deco" to TokenType.DECO,
+            "bind" to TokenType.BIND,
             "fail" to TokenType.FAIL,
             "alloc" to TokenType.ALLOC,
             "drop" to TokenType.DROP,
             "deref" to TokenType.DEREF,
+            "reflect" to TokenType.REFLECT,
             "unsafe" to TokenType.UNSAFE,
             "isolated" to TokenType.ISOLATED,
             "flow" to TokenType.FLOW,
@@ -295,14 +297,18 @@ class Lexer(private val source: String) {
             when {
                 peek() == '\\' -> {
                     advance() // consume backslash
-                    when (if (!isAtEnd()) advance() else ' ') {
+                    when (val escaped = if (!isAtEnd()) advance() else ' ') {
+                        'b' -> sb.append('\b')
+                        'f' -> sb.append('\u000C')
                         'n' -> sb.append('\n')
                         't' -> sb.append('\t')
                         'r' -> sb.append('\r')
+                        '0' -> sb.append('\u0000')
                         '\\' -> sb.append('\\')
                         '"' -> sb.append('"')
+                        '/' -> sb.append('/')
                         '$' -> sb.append('$')
-                        else -> sb.append('?')
+                        else -> error("Unknown escape sequence '\\$escaped' in string literal at line $line")
                     }
                 }
                 peek() == '$' -> {
@@ -405,11 +411,15 @@ class Lexer(private val source: String) {
             advance() // consume '\'
             if (isAtEnd()) error("Unterminated character literal at line $line")
             ch = when (val esc = advance()) {
+                'b' -> '\b'
+                'f' -> '\u000C'
                 'n' -> '\n'
                 't' -> '\t'
                 'r' -> '\r'
                 '\\' -> '\\'
                 '\'' -> '\''
+                '"' -> '"'
+                '/' -> '/'
                 '0' -> '\u0000'
                 'u' -> {
                     val hex = StringBuilder()

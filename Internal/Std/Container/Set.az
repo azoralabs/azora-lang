@@ -16,6 +16,8 @@
 
 module std.container.set
 
+import std.serializer
+
 import std.convert
 
 /**
@@ -39,7 +41,8 @@ friend zone std {
      *
      * @param T The type of elements stored in this set.
      */
-    @since("0.0.1")
+    @Since("0.0.1")
+    @Serializable
     pack Set<T> {
         shield var data: T* = alloc T[8]
         shield var size: Int = 0
@@ -51,7 +54,7 @@ friend zone std {
      *
      * @return A new `Set<T>` with no elements.
      */
-    @since("0.0.3")
+    @Since("0.0.3")
     func<T> emptySet(): Set<T> {
         return Set<T>()
     }
@@ -64,7 +67,7 @@ friend zone std {
      * @param elements Values to insert into the set.
      * @return A set containing each unique value from `elements`.
      */
-    @experimental(since: "0.0.3")
+    @Experimental(since: "0.0.3")
     func<T> setOf(elements: ...T): Set<T> {
         var result = Set<T>()
         var i = 0
@@ -83,7 +86,7 @@ friend zone std {
      * @param elements Values to insert into the set.
      * @return A set containing each unique value from `elements`.
      */
-    @experimental(since: "0.0.3")
+    @Experimental(since: "0.0.3")
     func<T> setFrom(elements: ...T): Set<T> {
         var result = Set<T>()
         var i = 0
@@ -94,7 +97,7 @@ friend zone std {
         return result
     }
 
-    @experimental(since: "0.0.1")
+    @Experimental(since: "0.0.1")
     impl oper[] for Set<T> { ref self, index ->
         assert index >= 0 && index < self.size {
             "Set index out of bounds"
@@ -102,7 +105,7 @@ friend zone std {
         return self.data[index]
     }
 
-    @experimental(since: "0.0.1")
+    @Experimental(since: "0.0.1")
     impl oper[]= for Set<T> { mut ref self, index, element ->
         assert index >= 0 && index < self.size { 
             "Set index out of bounds"
@@ -117,7 +120,7 @@ friend zone std {
         self.data[index] = element
     }
 
-    @experimental(since: "0.0.3")
+    @Experimental(since: "0.0.3")
     impl Into<String> for Set<T> { ref self ->
         var s = "{"
         var i = 0
@@ -133,16 +136,16 @@ friend zone std {
         // --- Properties ---
 
         /** Whether the set contains no elements. */
-        @since("0.0.1")
+        @Since("0.0.1")
         prop isEmpty: Bool = self.size == 0
 
         /** Whether the set contains at least one element. */
-        @since("0.0.1")
+        @Since("0.0.1")
         prop isNotEmpty: Bool = self.size > 0
 
         // --- Internal ---
 
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func growSet() {
             fin newCap = capacity * 2
             fin newData = alloc T[newCap]
@@ -165,7 +168,7 @@ friend zone std {
          * @param element The element to add.
          * @return true if the element was added, false if it already existed.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func add(element: T): Bool {
             var i = 0
             while i < size {
@@ -184,7 +187,7 @@ friend zone std {
          * @param element The element to remove.
          * @return true if the element was removed, false if not found.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func remove(element: T): Bool {
             var idx = -1
             var i = 0
@@ -208,7 +211,7 @@ friend zone std {
          * @param element The element to search for.
          * @return true if the element is found, false otherwise.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func contains(element: T): Bool {
             var i = 0
             while i < size {
@@ -219,7 +222,7 @@ friend zone std {
         }
 
         /** Removes all elements from the set. */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func clear() {
             fin oldData = data
             self.data = alloc T[8]
@@ -236,7 +239,7 @@ friend zone std {
          * @param other The other set to union with.
          * @return A new set with all unique elements from both sets.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func union(other: Set<T>): Set<T> {
             var result = Set<T>()
             var i = 0
@@ -259,7 +262,7 @@ friend zone std {
          * @param other The other set to intersect with.
          * @return A new set with common elements.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func intersect(other: Set<T>): Set<T> {
             var result = Set<T>()
             var i = 0
@@ -278,7 +281,7 @@ friend zone std {
          * @param other The set to subtract.
          * @return A new set with elements unique to this set.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func difference(other: Set<T>): Set<T> {
             var result = Set<T>()
             var i = 0
@@ -298,7 +301,7 @@ friend zone std {
          *
          * @param action The function to apply to each element.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func forEach(action: (T) -> Unit) {
             var i = 0
             while i < size {
@@ -313,7 +316,7 @@ friend zone std {
          * @param predicate The function to test each element.
          * @return A new set with matching elements.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func filter(predicate: (T) -> Bool): Set<T> {
             var result = Set<T>()
             var i = 0
@@ -332,7 +335,7 @@ friend zone std {
          * @param predicate The function to test each element.
          * @return true if any element matches, false otherwise.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func any(predicate: (T) -> Bool): Bool {
             var i = 0
             while i < size {
@@ -348,7 +351,7 @@ friend zone std {
          * @param predicate The function to test each element.
          * @return true if every element matches, false otherwise.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func all(predicate: (T) -> Bool): Bool {
             var i = 0
             while i < size {
@@ -363,7 +366,7 @@ friend zone std {
          *
          * @return An array containing all elements.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func toArray(): [T] {
             var result: [T] = [].fill<T>(size)
             var i = 0
@@ -375,3 +378,70 @@ friend zone std {
         }
     }
 }
+
+test "set starts empty" {
+    fin value = std::emptySet<Int>()
+    assert value.size == 0 && value.isEmpty { "emptySet must contain no values" }
+}
+
+test "setOf removes duplicates" {
+    fin value = std::setOf(1, 2, 1, 3, 2)
+    assert value.size == 3 { "setOf must retain unique values only" }
+    assert value[0] == 1 && value[1] == 2 && value[2] == 3 { "set insertion order changed" }
+}
+
+test "set add reports whether membership changed" {
+    var value = std::setOf(1)
+    assert !value.add(1) { "adding a duplicate must be a no-op" }
+    assert value.add(2) { "adding a new value must report a change" }
+    assert value.size == 2 { "set size must count unique values" }
+}
+
+test "set index assignment cannot create duplicates" {
+    var value = std::setOf(1, 2, 3)
+    value[0] = 2
+    assert value[0] == 1 && value.size == 3 { "duplicate replacement must be skipped" }
+    value[0] = 4
+    assert value[0] == 4 { "unique replacement must be accepted" }
+}
+
+test "set remove preserves remaining membership" {
+    var value = std::setOf(1, 2, 3)
+    assert value.remove(2) { "remove must report an existing value" }
+    assert !value.remove(9) { "remove must report a missing value" }
+    assert value.size == 2 && !value.contains(2) { "removed values must disappear" }
+}
+
+test "set algebra produces unique results" {
+    fin left = std::setOf(1, 2, 3)
+    fin right = std::setOf(3, 4)
+    fin union = left.union(right)
+    fin common = left.intersect(right)
+    fin difference = left.difference(right)
+    assert union.size == 4 && union.contains(4) { "union must contain both memberships" }
+    assert common.size == 1 && common.contains(3) { "intersection must contain shared values" }
+    assert difference.size == 2 && difference.contains(1) && difference.contains(2) { "difference must exclude right values" }
+}
+
+test "set grows without losing uniqueness" {
+    var value = Set<Int>()
+    var i = 0
+    while i < 20 {
+        value.add(i % 10)
+        i += 1
+    }
+    assert value.size == 10 && value.contains(9) { "growth must preserve ten unique values" }
+}
+
+test "set clear permits reuse" {
+    var value = std::setOf(1, 2)
+    value.clear()
+    value.add(7)
+    assert value.size == 1 && value.contains(7) { "cleared sets must remain reusable" }
+}
+
+test "set serialization metadata is declared" {
+    inline assert (reflect Set).hasDeco<Serializable> { "Set must carry Serializable metadata" }
+}
+
+test .All "set"

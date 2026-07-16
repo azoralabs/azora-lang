@@ -16,7 +16,7 @@ run in the browser (the playground builds it to WASM).
 ```
 Source → Lexer → Parser → AST Validator
                   ↓
-           Stdlib Injection (only modules you `use`, transitively)
+           Stdlib Injection (only modules you `import`, transitively)
                   ↓
            Symbol Collection → Type Resolution ⇄ CTFE (fixed point) → Alloc/Drop → Effects
                   ↓
@@ -127,13 +127,19 @@ checking; `guard cond else { }`; `break`/`continue`.
 | `virt func` / `repl func` / `base.method()` | virtual / override / super-call |
 | `typealias T = U` | type alias |
 | `fail ErrSet { V1, V2 }` | error-set declaration |
-| `deco Name { fields }` | decorator/annotation type; `@Name`, `@target:Name` |
+| `deco Name { fin field: Type }` | decorator/annotation type; metadata fields must be explicitly immutable |
+| `impl Decorator for Type` | implements a decorator as a bodyless marker contract |
+| `impl Decorator(field: value) for Type` | implements a decorator with immutable compile-time metadata |
+| `impl Decorator for Type::field` / `impl Decorator for Type::*` | decorates one field / every declared pack field |
+| `impl [A, B] for [Type::x, Type::y]` | applies the decorator/target cross-product |
+| `deco Name bind Spec { fields }` | binds a decorator to a spec; the decorated type becomes generic argument zero |
+| `deco Name for [.Pack, .Node] bind [X for .Pack, Y for .Node]` | constrains decorator applications and individual transitive bindings by target |
 | `solo Name { … }` / `wrap Name { … }` / `inject Type` | DI singleton / container / resolve |
 | `flow name(p): T { … yield v }` | lazy generator |
 | `view Name(params) { body }` | reactive UI component |
 | `bridge target { func sigs }` | FFI extern declarations |
 | `zone Name { … }` / `friend zone std::math { … }` | named namespace (`Name::member`) / shared namespace contribution |
-| `test "name" { }` | test declaration |
+| `test "name" { }` / `test .All "suite"` | one test / bodyless file-level aggregate suite |
 
 ### Object-model members (inside `impl`/`node`/`solo` bodies)
 
@@ -201,6 +207,7 @@ task gets isolated execution state), `channel()` + `.send`/`.receive`/`.close`,
 ### Error handling
 
 `throw value`; `try { } catch { name -> body }`; `expr catch fallback`;
+`try expr` (propagate a failable expression to the current failable function);
 `rescue { }` (catch-and-suppress); `fail ErrSet.V` (raise an error);
 `fail defer { }` (runs only on error exit); `defer { }` (LIFO cleanup).
 
@@ -219,10 +226,96 @@ tracking is future work.
 `inline func` (call-site substitution), `inline assert` / `inline trace`.
 Constant folding, propagation, and dead-code elimination run in the IR optimizer.
 
+Decorator metadata is part of CTFE. `(reflect value).hasDeco<D>` tests direct and
+transitively bound decorators on values, types, packs, functions, properties,
+fields, parameters, and the other `DecoTarget` declaration categories.
+`(reflect value).decoMeta<D>.field` reads a decorator's named, positional, or default `fin`
+field value. Both properties are compile-time-only and must occur in an
+`inline` expression:
+
+```azora
+deco Persisted for .Pack {
+    fin ignoreUnknownFields: Bool = false
+}
+
+@Persisted(ignoreUnknownFields: true)
+pack User
+
+inline if (reflect User).hasDeco<Persisted> {
+    inline assert (reflect User).decoMeta<Persisted>.ignoreUnknownFields
+}
+```
+
+`Root`, `DecoTarget`, `HasDeco`, `DecoMetadata`, and `derive` are compiler-predefined in
+`Root.az` and injected into every module without an `import` declaration.
+
+`@derive(generator: "name", role: "role", provider: "zone",
+providerModule: "module")` connects a library decorator to an installed compiler
+derive generator. Optional conversion-provider fields work the same way. The
+generator reads these roles and provider metadata rather than embedding library
+module paths or decorator names, so libraries can relocate, rename, or define
+their own participating decorators. Generated dependency imports are internal
+and limited to the modules named by that metadata.
+
+### Serialization contracts
+
+`std.serializer` separates the lossless `SerialValue` tree from text formats.
+`Serializer<T>` converts typed values to and from that tree,
+`JsonSerializer<T>` owns JSON text conversion, and `AzonSerializer<T>` owns
+AZON text conversion. `@Serializable` binds all three contracts;
+`@JsonSerializable` and `@AzonSerializable` opt into one text format. Their
+`ignoreUnknownFields` and `encodeDefaults` values are immutable decorator
+metadata and are available to generated inline code through `decoMeta<D>`.
+Bodyless decorator implementations may configure those fields directly; omitted
+fields use the defaults declared by the decorator:
+
+```azora
+impl Serializable(
+    ignoreUnknownFields: true,
+    encodeDefaults: false
+) for User
+```
+
+The compiler applies the same field-name, duplicate-argument, required-field,
+and type validation used by `@Serializable(...)`. Value arguments are rejected
+on ordinary spec implementations because only decorators define metadata.
+
+Decorator implementations can also select pack fields. Lists are normalized to
+one application for every decorator/target pair, and `Pack::*` selects only the
+fields declared by that pack:
+
+```azora
+impl SerialName(value: "login") for User::name
+impl [SerialName, SerialRequired] for User::name
+impl SerialIgnore for [User::name, User::password]
+impl [SerialName, SerialRequired] for User::*
+```
+
+Member selectors and wildcards are decorator-only and bodyless. Unknown fields,
+non-pack wildcard owners, invalid decorator targets, and applications repeated
+through overlapping explicit/wildcard selectors are compile errors.
+
+The serializer derive emits checked `toSerialValue`/`fromSerialValue` methods
+and the selected JSON/AZON methods before IR generation. `SerialName` controls
+both encoded and decoded keys, `SerialIgnore` omits a field and restores its
+declared default, and `SerialRequired` forces encoding and rejects absence.
+`ignoreUnknownFields` controls unknown-key rejection; `encodeDefaults` controls
+default omission except for required fields. Duplicate wire names,
+ignore/required conflicts, ignored fields without defaults, duplicate input
+keys, unsupported types, and numeric overflow are diagnosed.
+
+Generated value-tree codecs currently cover scalar primitives, nullable scalar
+primitives, nested serializable packs, `List<T>`/`Set<T>` with primitive
+elements, and `Map<String, V>` with primitive values. The methods become normal
+typed IR and therefore share behavior across the interpreter, JavaScript,
+WebAssembly, and LLVM backends.
+
 ### Testing & debugging
 
-`test "name" { }` (runs after `main`), `assert cond { "msg" }`,
-`trace { "msg" }`, plus their `inline` (compile-time) variants.
+`test "name" { }` defaults to `TestMethod.This`. `test .All "suite"` may omit
+its body and groups every `This` test in that source file into one isolated
+suite. `assert cond { "msg" }`, `trace { "msg" }`, plus their `inline`
+(compile-time) variants are available inside tests.
 
 ### Operators
 
@@ -241,9 +334,9 @@ Reserved words in the language (see `frontend/Token.kt`):
 - **Control**: `if` `else` `for` `while` `loop` `in` `by` `reverse` `break` `continue` `when` `guard`
 - **Errors/concurrency**: `throw` `try` `catch` `rescue` `fail` `defer` `flow` `yield` `task` `await` `launch`
 - **Memory/FFI/DI**: `alloc` `drop` `unsafe` `isolated` `bridge` `solo` `wrap` `inject`
-- **Reactivity/object model**: `mem` `rem` `ret` `effect` `view` `hook` `prop` `get` `set` `ctor` `dtor` `flip` `flop`
+- **Reactivity/object model**: `mem` `rem` `ret` `effect` `view` `hook` `prop` `ctor` `dtor` `flip` `flop`
 - **Metaprogramming**: `inline` `deepinline` `noinline`
-- **Scoping/modules**: `zone` `friend` `module` `use`
+- **Scoping/modules**: `zone` `friend` `module` `import`
 - **Modifiers/visibility**: `mut` `ref` `out` `shared` `weak` `expose` `confine` `protect`
 - **Operators-as-keywords**: `oper` `infx` `as` `is` `null` `deco`
 - **Testing**: `test` `assert` `trace`

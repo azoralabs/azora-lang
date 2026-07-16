@@ -3,7 +3,13 @@ package org.azora.lang.codegen
 import org.azora.lang.CompilationResult
 import org.azora.lang.Compiler
 import org.azora.lang.backend.IrInterpreter
+import org.azora.lang.frontend.AstValidator
+import org.azora.lang.frontend.Lexer
+import org.azora.lang.frontend.Parser
+import org.azora.lang.frontend.TopLevel
+import org.azora.lang.stdlib.AzStdlib
 import org.azora.lang.stdlib.StdlibInjector
+import org.azora.lang.semantic.SerializationDeriver
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -62,10 +68,114 @@ class StdlibInjectionTest {
         assertEquals(listOf("main"), result.ir.functions.map { it.name })
     }
 
+    @Test fun rootModuleContainsCompilerPredefinedDeclarations() {
+        val source = AzStdlib.sources.single { "module std.root" in it }
+        val root = Parser(Lexer(source).tokenize()).parse()
+
+        assertTrue(root.items.any { it is TopLevel.Pack && it.name == "Root" })
+        assertTrue(root.items.any { it is TopLevel.Enum && it.name == "DecoTarget" })
+        assertTrue(root.items.any { it is TopLevel.Enum && it.name == "TestMethod" })
+        assertTrue(root.items.any { it is TopLevel.Spec && it.name == "HasDeco" })
+        assertTrue(root.items.any { it is TopLevel.Spec && it.name == "DecoMetadata" })
+        assertTrue(root.items.any { it is TopLevel.Deco && it.name == "Derive" })
+    }
+
+    @Test fun serializerSourceAndEmbeddedUnitTestsParse() {
+        val source = AzStdlib.sources.single { "module std.serializer" in it }
+        val serializer = Parser(Lexer(source).tokenize()).parse()
+        val validationErrors = AstValidator().validate(serializer)
+
+        assertTrue(validationErrors.isEmpty(), validationErrors.toString())
+        assertEquals(59, serializer.items.count { it is TopLevel.Test })
+        assertEquals(1, serializer.items.filterIsInstance<TopLevel.Test>().count { it.method.name == "All" })
+        assertTrue(
+            serializer.items.filterIsInstance<TopLevel.Deco>()
+                .flatMap { it.fields }
+                .all { !it.mutable }
+        )
+    }
+
+    @Test fun serializerFixturesProduceGeneratedCodecMethods() {
+        val source = AzStdlib.sources.single { "module std.serializer" in it }
+        val serializer = Parser(Lexer(source).tokenize()).parse()
+        val derived = SerializationDeriver.derive(serializer)
+
+        assertTrue(derived.errors.isEmpty(), derived.errors.toString())
+        val generated = derived.program.items.filterIsInstance<TopLevel.Impl>()
+            .single { it.typeName == "SerializerMetadataFixture" && it.methods.isNotEmpty() }
+        assertEquals(
+            setOf("toSerialValue", "fromSerialValue", "toJson", "fromJson", "toAzon", "fromAzon"),
+            generated.methods.mapTo(mutableSetOf()) { it.name },
+        )
+        val deriveImports = derived.program.items.filterIsInstance<TopLevel.UseImport>()
+            .flatMap { it.imports }
+            .mapTo(mutableSetOf()) { it.first }
+        assertTrue("std.serializer" in deriveImports)
+        assertTrue("std.convert" in deriveImports)
+    }
+
     @Test fun stdlibIndexExposesCollectionPacks() {
         assertEquals("std.container", StdlibInjector.moduleOf("List"))
         assertEquals("std.container", StdlibInjector.moduleOf("Map"))
         assertEquals("std.container", StdlibInjector.moduleOf("Set"))
+    }
+
+    @Test fun serializerImportSelectsDecoratorMarker() {
+        val result = Compiler().compile("""
+            module serializer_marker_test
+            import std.serializer
+
+            pack UserId {
+                fin value: Long
+            }
+
+            impl Serializable for UserId
+
+            func main() {}
+        """.trimIndent())
+        assertIs<CompilationResult.Success>(result, (result as? CompilationResult.Failure)?.errors.toString())
+        assertTrue(result.ast.items.any { it is org.azora.lang.frontend.TopLevel.Deco && it.name == "Serializable" })
+    }
+
+    @Test fun importedSerializerDecoratorCanBeAppliedToPack() {
+        val result = Compiler().compile("""
+            module serializer_decorator_test
+            import std.serializer
+
+            @Serializable
+            pack UserId {
+                fin value: Long
+            }
+
+            func main() {}
+        """.trimIndent())
+        assertIs<CompilationResult.Success>(result, (result as? CompilationResult.Failure)?.errors.toString())
+        assertTrue(result.ast.items.any {
+            it is org.azora.lang.frontend.TopLevel.Deco && it.bindings.any { binding -> binding.name == "Serializer" }
+        })
+    }
+
+    @Test fun importedPackCarriesItsFieldDecoratorImplementations() {
+        val result = Compiler().compile("""
+            module serializer_field_impl_test
+            import std.serializer
+
+            func decorated(): Int {
+                inline if (reflect DirectFieldDecoratorFixture::name).hasDeco<SerialName> {
+                    return 1
+                } else {
+                    return 0
+                }
+            }
+
+            func main() {}
+        """.trimIndent())
+
+        assertIs<CompilationResult.Success>(result, (result as? CompilationResult.Failure)?.errors.toString())
+        val fieldImpl = result.ast.items.filterIsInstance<TopLevel.Impl>().any {
+            it.typeName == "DirectFieldDecoratorFixture.name" && it.traitName == "SerialName"
+        }
+        assertTrue(fieldImpl, "field decorator implementations must be injected with their owning pack")
     }
 
     @Test fun collectionTypeAnnotationsInjectPacksAndImpls() =

@@ -16,6 +16,8 @@
 
 module std.container.list
 
+import std.serializer
+
 import std.convert
 
 /**
@@ -39,7 +41,8 @@ friend zone std {
      *
      * @param T The type of elements stored in this list.
      */
-    @since("0.0.1")
+    @Since("0.0.1")
+    @Serializable
     pack List<T> {
         shield var data: T* = alloc T[8]
         shield var size: Int = 0
@@ -47,55 +50,57 @@ friend zone std {
     }
 
     /** The empty `List<T>` — a zero-allocation sentinel returned by `[]` and `empty()`. */
-    @since("0.0.3")
+    @Since("0.0.3")
+    @Serializable
     pack EmptyList<T>
 
     impl EmptyList<T> {
         /** Always 0. */
-        @since("0.0.3")
+        @Since("0.0.3")
         prop size: Int = 0
 
         /** Always `true`. */
-        @since("0.0.3")
+        @Since("0.0.3")
         prop isEmpty: Bool = true
 
         /** Always `false`. */
-        @since("0.0.3")
+        @Since("0.0.3")
         prop isNotEmpty: Bool = false
 
         /** Always panics — an `EmptyList` has no elements to access. */
-        @experimental(since: "0.0.3")
+        @Experimental(since: "0.0.3")
         func get(index: Int): T { ref self ->
             panic { "EmptyList has no elements" }
         }
     }
 
-    @since("0.0.3")
+    @Since("0.0.3")
     impl Into<String> for EmptyList<T> { ref self ->
         return "[]"
     }
 
     /** A `List<T>` holding exactly one element, without an underlying buffer. */
-    @since("0.0.3")
+    @Since("0.0.3")
+    @Serializable
     pack SingletonList<T> {
         shield var element: T
     }
 
     impl SingletonList<T> {
         /** Always 1. */
-        @since("0.0.3")
+        @Since("0.0.3")
         prop size: Int = 1
 
         /** Always `false`. */
-        @since("0.0.3")
+        @Since("0.0.3")
         prop isEmpty: Bool = false
 
         /** Always `true`. */
-        @since("0.0.3")
+        @Since("0.0.3")
         prop isNotEmpty: Bool = true
 
         /** Returns the single element; any index other than 0 is out of bounds. */
-        @experimental(since: "0.0.3")
+        @Experimental(since: "0.0.3")
         func get(index: Int): T { ref self ->
             assert index == 0 { "SingletonList index out of bounds" }
             return self.element
@@ -103,23 +108,23 @@ friend zone std {
 
     }
 
-    @experimental(since: "0.0.3")
+    @Experimental(since: "0.0.3")
     impl oper[] for SingletonList<T> { ref self, index ->
         assert index == 0 { "SingletonList index out of bounds" }
         return self.element
     }
 
-    @experimental(since: "0.0.3")
+    @Experimental(since: "0.0.3")
     impl Into<String> for SingletonList<T> { ref self ->
         return "[" + std::convert::toString(self.element) + "]"
     }
 
-    @since("0.0.3")
+    @Since("0.0.3")
     func<T> emptyList(): List<T> {
         return List<T>()
     }
 
-    @experimental(since: "0.0.3")
+    @Experimental(since: "0.0.3")
     func<T> listOf(elements: ...T): List<T> {
         var result = List<T>()
         var i = 0
@@ -130,7 +135,7 @@ friend zone std {
         return result
     }
 
-    @experimental(since: "0.0.1")
+    @Experimental(since: "0.0.1")
     impl oper[] for List<T> { ref self, index ->
         assert index >= 0 && index < size {
             "List index out of bounds"
@@ -138,7 +143,7 @@ friend zone std {
         return data[index]
     }
 
-    @experimental(since: "0.0.1")
+    @Experimental(since: "0.0.1")
     impl oper[]= for List<T> { mut ref self, index, element ->
         assert index >= 0 && index < size {
             "List index out of bounds"
@@ -146,7 +151,7 @@ friend zone std {
         data[index] = element
     }
 
-    @experimental(since: "0.0.3")
+    @Experimental(since: "0.0.3")
     impl Into<String> for List<T> { ref self ->
         var s = "["
         var i = 0
@@ -162,16 +167,16 @@ friend zone std {
         // --- Properties ---
 
         /** Whether the list contains no elements. */
-        @since("0.0.1")
+        @Since("0.0.1")
         prop isEmpty: Bool = self.size == 0
 
         /** Whether the list contains at least one element. */
-        @since("0.0.1")
+        @Since("0.0.1")
         prop isNotEmpty: Bool = self.size > 0
 
         // --- Internal ---
 
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func grow() {
             fin newCap = capacity * 2
             fin newData = alloc T[newCap]
@@ -195,7 +200,7 @@ friend zone std {
          * @return The element at the specified position.
          * @throws AssertionError if index is negative or out of bounds.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func get(index: Int): T {
             assert index >= 0 { "List index must be non-negative" }
             assert index < size { "List index out of bounds" }
@@ -207,7 +212,7 @@ friend zone std {
          *
          * @throws AssertionError if the list is empty.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         prop first: T {
             assert size > 0 { "List is empty" }
             return data[0]
@@ -218,7 +223,7 @@ friend zone std {
          *
          * @throws AssertionError if the list is empty.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         prop last: T {
             assert size > 0 { "List is empty" }
             return data[size - 1]
@@ -231,7 +236,7 @@ friend zone std {
          *
          * @param element The element to add.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func add(element: T) {
             if size >= capacity { self.grow() }
             data[size] = element
@@ -245,7 +250,7 @@ friend zone std {
          * @param element The element to insert.
          * @throws AssertionError if index is negative or greater than size.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func insert(index: Int, element: T) {
             assert index >= 0 { "Insert index must be non-negative" }
             assert index <= size { "Insert index out of bounds" }
@@ -266,7 +271,7 @@ friend zone std {
          * @param element The new element to store at the position.
          * @throws AssertionError if index is negative or out of bounds.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func set(index: Int, element: T) {
             assert index >= 0 { "Set index must be non-negative" }
             assert index < size { "Set index out of bounds" }
@@ -280,7 +285,7 @@ friend zone std {
          * @return The removed element.
          * @throws AssertionError if index is negative or out of bounds.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func removeAt(index: Int): T {
             assert index >= 0 { "Remove index must be non-negative" }
             assert index < size { "Remove index out of bounds" }
@@ -300,7 +305,7 @@ friend zone std {
          * @return The removed first element.
          * @throws AssertionError if the list is empty.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func removeFirst(): T {
             assert size > 0 { "List is empty" }
             return self.removeAt(0)
@@ -312,7 +317,7 @@ friend zone std {
          * @return The removed last element.
          * @throws AssertionError if the list is empty.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func removeLast(): T {
             assert size > 0 { "List is empty" }
             fin removed = data[size - 1]
@@ -323,7 +328,7 @@ friend zone std {
         /**
          * Removes all elements from the list.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func clear() {
             fin oldData = data
             self.data = alloc T[8]
@@ -340,7 +345,7 @@ friend zone std {
          * @param element The element to search for.
          * @return true if the element is found, false otherwise.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func contains(element: T): Bool {
             var i = 0
             while i < size {
@@ -356,7 +361,7 @@ friend zone std {
          * @param element The element to search for.
          * @return The zero-based index, or -1 if not found.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func indexOf(element: T): Int {
             var i = 0
             while i < size {
@@ -372,7 +377,7 @@ friend zone std {
          * @param element The element to search for.
          * @return The zero-based index, or -1 if not found.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func lastIndexOf(element: T): Int {
             var result = -1
             var i = 0
@@ -390,7 +395,7 @@ friend zone std {
          *
          * @param action The function to apply to each element.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func forEach(action: (T) -> Unit) {
             var i = 0
             while i < size {
@@ -405,7 +410,7 @@ friend zone std {
          * @param transform The mapping function to apply to each element.
          * @return A new list containing the transformed elements.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func map(transform: (T) -> T): List<T> {
             var result = List<T>()
             var i = 0
@@ -422,7 +427,7 @@ friend zone std {
          * @param predicate The function to test each element.
          * @return A new list with matching elements in their original order.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func filter(predicate: (T) -> Bool): List<T> {
             var result = List<T>()
             var i = 0
@@ -441,7 +446,7 @@ friend zone std {
          * @param predicate The function to test each element.
          * @return true if any element matches, false otherwise.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func any(predicate: (T) -> Bool): Bool {
             var i = 0
             while i < size {
@@ -457,7 +462,7 @@ friend zone std {
          * @param predicate The function to test each element.
          * @return true if every element matches, false otherwise.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func all(predicate: (T) -> Bool): Bool {
             var i = 0
             while i < size {
@@ -473,7 +478,7 @@ friend zone std {
          * @param predicate The function to test each element.
          * @return true if no element matches, false otherwise.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func none(predicate: (T) -> Bool): Bool {
             var i = 0
             while i < size {
@@ -489,7 +494,7 @@ friend zone std {
          * @param predicate The function to test each element.
          * @return The count of matching elements.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func count(predicate: (T) -> Bool): Int {
             var c = 0
             var i = 0
@@ -510,7 +515,7 @@ friend zone std {
          * @return A new list with the specified sub-range of elements.
          * @throws AssertionError if indices are out of bounds or from > to.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func subList(from: Int, to: Int): List<T> {
             assert from >= 0 { "subList from must be non-negative" }
             assert to <= size { "subList to out of bounds" }
@@ -529,7 +534,7 @@ friend zone std {
          *
          * @return An array containing all elements in order.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         func toArray(): [T] {
             var result: [T] = [].fill<T>(size)
             var i = 0
@@ -545,7 +550,7 @@ friend zone std {
          *
          * @return A reversed copy of this list.
          */
-        @experimental(since: "0.0.1")
+        @Experimental(since: "0.0.1")
         prop reversed: List<T> {
             var result = List<T>()
             var i = size - 1
@@ -558,3 +563,81 @@ friend zone std {
 
     }
 }
+
+test "list starts empty" {
+    fin value = std::emptyList<Int>()
+    assert value.size == 0 && value.isEmpty { "emptyList must contain no elements" }
+}
+
+test "listOf preserves order" {
+    fin value = std::listOf(3, 1, 2)
+    assert value.size == 3 { "listOf size changed" }
+    assert value[0] == 3 && value[1] == 1 && value[2] == 2 { "listOf must preserve argument order" }
+}
+
+test "list grows beyond initial capacity" {
+    var value = List<Int>()
+    var i = 0
+    while i < 20 {
+        value.add(i)
+        i += 1
+    }
+    assert value.size == 20 && value[19] == 19 { "list growth must preserve every element" }
+}
+
+test "list insert shifts following elements" {
+    var value = std::listOf(1, 3)
+    value.insert(1, 2)
+    assert value.size == 3 && value[1] == 2 && value[2] == 3 { "insert must shift the suffix" }
+}
+
+test "list set and index assignment replace in place" {
+    var value = std::listOf(1, 2, 3)
+    value.set(0, 4)
+    value[2] = 6
+    assert value.size == 3 && value[0] == 4 && value[2] == 6 { "replacement must not change size" }
+}
+
+test "list removals retain order" {
+    var value = std::listOf(1, 2, 3, 4)
+    assert value.removeAt(1) == 2 { "removeAt must return the removed value" }
+    assert value.removeFirst() == 1 { "removeFirst must return the first value" }
+    assert value.removeLast() == 4 { "removeLast must return the last value" }
+    assert value.size == 1 && value[0] == 3 { "removals must preserve the remaining order" }
+}
+
+test "list search reports first and last positions" {
+    fin value = std::listOf(4, 7, 4)
+    assert value.contains(7) { "contains must find present values" }
+    assert value.indexOf(4) == 0 && value.lastIndexOf(4) == 2 { "search positions changed" }
+    assert value.indexOf(9) == -1 { "missing values must report -1" }
+}
+
+test "list slices and reversal return independent orderings" {
+    fin value = std::listOf(1, 2, 3, 4)
+    fin middle = value.subList(1, 3)
+    fin reversed = value.reversed
+    assert middle.size == 2 && middle[0] == 2 && middle[1] == 3 { "subList bounds are half-open" }
+    assert reversed[0] == 4 && reversed[3] == 1 { "reversed order changed" }
+    assert value[0] == 1 { "derived lists must not mutate the source" }
+}
+
+test "list clear permits reuse" {
+    var value = std::listOf(1, 2)
+    value.clear()
+    value.add(9)
+    assert value.size == 1 && value[0] == 9 { "cleared lists must remain reusable" }
+}
+
+test "list singleton exposes exactly one element" {
+    fin value = SingletonList<Int>(42)
+    assert value.size == 1 && value[0] == 42 { "SingletonList contract changed" }
+}
+
+test "list serialization metadata is declared" {
+    inline assert (reflect List).hasDeco<Serializable> { "List must carry Serializable metadata" }
+    inline assert (reflect EmptyList).hasDeco<Serializable> { "EmptyList must carry Serializable metadata" }
+    inline assert (reflect SingletonList).hasDeco<Serializable> { "SingletonList must carry Serializable metadata" }
+}
+
+test .All "list"

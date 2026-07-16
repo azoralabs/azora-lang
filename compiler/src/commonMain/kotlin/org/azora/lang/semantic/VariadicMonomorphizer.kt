@@ -40,7 +40,7 @@ import org.azora.lang.frontend.VariadicFieldTemplate
  * instantiation is materialized as a distinct declaration:
  *
  * - `Tuple(Int, String)` (i.e. `Tuple<Int, String>`) →
- *   `pack __Tuple_Int_String { 0: Int; 1: String }` (annotated `@enforceNumFields`
+ *   `pack __Tuple_Int_String { 0: Int; 1: String }` (annotated `@EnforceNumFields`
  *   so numeric field names are permitted).
  * - `tupleOf<Int, String>(a, b)` → a real monomorphized function
  *   `__tupleOf_Int_String(_0: Int, _1: String): __Tuple_Int_String` whose body is
@@ -192,7 +192,7 @@ private class MonoContext(
     }
 
     private fun expandPack(mangled: String, template: TopLevel.Pack, args: List<TypeRef>): TopLevel.Pack {
-        val enforce = template.annotations.any { it.name == "enforceNumFields" }
+        val enforce = template.annotations.any { it.name == "EnforceNumFields" }
         val fields = expandFields(template, args)
         return TopLevel.Pack(
             name = mangled,
@@ -200,7 +200,7 @@ private class MonoContext(
             typeParams = emptyList(),
             line = template.line,
             column = template.column,
-            annotations = if (enforce) listOf(Annotation("enforceNumFields")) else template.annotations,
+            annotations = if (enforce) listOf(Annotation("EnforceNumFields")) else template.annotations,
             visibility = template.visibility,
             shielded = template.shielded,
         )
@@ -256,13 +256,17 @@ private class MonoContext(
         is TypeRef.Nullable -> "${renderType(type.inner)}?"
         is TypeRef.Pointer -> "${renderType(type.inner)}*"
         is TypeRef.Function -> "${type.params.joinToString(", ", "(", ")") { renderType(it) }} -> ${renderType(type.ret)}"
-        is TypeRef.Failable -> "${renderType(type.ok)}!${type.errSet}"
+        is TypeRef.Failable -> if (type.errSets.size == 1) {
+            "${renderType(type.ok)}!${type.errSets.single()}"
+        } else {
+            "${renderType(type.ok)}![${type.errSets.joinToString(", ")}]"
+        }
         is TypeRef.Reference -> "${type.kind.spelling} ${renderType(type.inner)}"
     }
 
     /** Parses a rendered mixin string (e.g. `0: Int`) as a pack [PackField]. */
     private fun parseMixinField(rendered: String): PackField {
-        val src = "@enforceNumFields\npack __mixin { $rendered }"
+        val src = "@EnforceNumFields\npack __mixin { $rendered }"
         val program = Parser(Lexer(src).tokenize()).parse()
         val pack = program.items.filterIsInstance<TopLevel.Pack>().firstOrNull()
             ?: error("mixin '$rendered' did not produce a field")
@@ -310,6 +314,12 @@ private class MonoContext(
             else item.copy(fields = item.fields.map { it.copy(type = rewriteType(it.type)) })
         is TopLevel.Func -> if (item.decl.name in funcTemplates) null
             else item.copy(decl = rewriteFuncDecl(item.decl))
+        is TopLevel.Impl -> item.copy(
+            traitArgs = item.traitArgs.map(::rewriteType),
+            decoratorArgs = item.decoratorArgs.map(::rewriteExpr),
+            decoratorNamedArgs = item.decoratorNamedArgs.map { (name, value) -> name to rewriteExpr(value) },
+            methods = item.methods.map(::rewriteFuncDecl),
+        )
         is TopLevel.Test -> item.copy(body = item.body.map(::rewriteStmt))
         is TopLevel.VarDecl -> item.copy(type = item.type?.let(::rewriteType), initializer = rewriteExpr(item.initializer))
         is TopLevel.LetDecl -> item.copy(type = item.type?.let(::rewriteType), initializer = rewriteExpr(item.initializer))
@@ -367,6 +377,7 @@ private class MonoContext(
         is Expr.VariantLit -> e.copy(elements = e.elements.map(::rewriteExpr))
         is Expr.TupleAccess -> e.copy(target = rewriteExpr(e.target))
         is Expr.CatchExpr -> e.copy(expr = rewriteExpr(e.expr), fallback = rewriteExpr(e.fallback))
+        is Expr.TryPropagate -> e.copy(expr = rewriteExpr(e.expr))
         is Expr.IfExpr -> e.copy(condition = rewriteExpr(e.condition), thenExpr = rewriteExpr(e.thenExpr), elseExpr = rewriteExpr(e.elseExpr))
         is Expr.Lambda -> e.copy(params = e.params.map { it.copy(type = rewriteType(it.type)) }, body = e.body.map(::rewriteStmt))
         is Expr.NamedArg -> e.copy(value = rewriteExpr(e.value))

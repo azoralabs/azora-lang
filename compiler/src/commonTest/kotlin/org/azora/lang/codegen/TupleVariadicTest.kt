@@ -205,7 +205,8 @@ class TupleVariadicTest {
     @Test fun tuplePassedToAndReturnedFromFunction() {
         val src = """
             import std.io
-            import std.container
+            import std.container.tuple
+            import std
             func swap(t: Tuple<Int, Real>): Tuple<Real, Int> {
                 return std::tupleOf(t.1, t.0)
             }

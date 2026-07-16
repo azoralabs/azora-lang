@@ -56,8 +56,16 @@ class AstValidator {
             // Stability decorators (@experimental / @stable) are mutually exclusive;
             // their `since` argument, if present, must be a string literal.
             val anns = when (item) {
-                is TopLevel.Func -> item.decl.annotations
-                is TopLevel.Pack -> item.annotations
+                is TopLevel.Pack -> item.annotations + item.fields.flatMap { it.annotations }
+                is TopLevel.Deco -> item.annotations + item.fields.flatMap { it.annotations }
+                is TopLevel.Node -> item.annotations + item.extraFields.flatMap { it.annotations }
+                is TopLevel.Solo -> item.annotations + item.fields.flatMap { it.annotations }
+                is TopLevel.Slot -> item.annotations
+                is TopLevel.Test -> item.annotations
+                is TopLevel.View -> item.annotations + item.params.flatMap { it.annotations }
+                is TopLevel.Hook -> item.annotations
+                is TopLevel.Bridge -> item.annotations
+                is TopLevel.TypeAlias -> item.annotations
                 is TopLevel.VarDecl -> item.annotations
                 is TopLevel.FinDecl -> item.annotations
                 is TopLevel.LetDecl -> item.annotations
@@ -89,7 +97,13 @@ class AstValidator {
             }
         }
 
-        for (func in program.functions) {
+        val allFunctions = buildList {
+            addAll(program.functions)
+            program.items.filterIsInstance<TopLevel.Impl>().forEach { addAll(it.methods) }
+            program.items.filterIsInstance<TopLevel.Node>().forEach { addAll(it.methods) }
+            program.items.filterIsInstance<TopLevel.Solo>().forEach { addAll(it.methods) }
+        }
+        for (func in allFunctions) {
             validateFunction(func, errors)
         }
 
@@ -101,7 +115,7 @@ class AstValidator {
      * decorator and is rejected (catches e.g. `@experiemntal` vs `@experimental`).
      */
     private val knownDecorators = setOf(
-        "experimental", "stable", "since", "deprecated", "enforceNumFields", "target",
+        "Experimental", "Stable", "Since", "Deprecated", "EnforceNumFields", "Target", "Derive",
     )
 
     /** Custom decorator names declared via `deco Name { … }` in the current program. */
@@ -110,7 +124,7 @@ class AstValidator {
     /**
      * Validates the stability decorators: `@experimental` and `@stable` may not
      * both appear on the same declaration, and when a `since` version is given
-     * (`@experimental(since: "0.0.1")`) it must be a string literal.
+     * (`@Experimental(since: "0.0.1")`) it must be a string literal.
      */
     private fun validateStability(annotations: List<Annotation>, errors: MutableList<String>) {
         for (ann in annotations) {
@@ -118,39 +132,40 @@ class AstValidator {
                 errors.add("line ${ann.line}: unknown decorator '@${ann.name}'")
             }
         }
-        val experimental = annotations.find { it.name == "experimental" }
-        val stable = annotations.find { it.name == "stable" }
-        val since = annotations.find { it.name == "since" }
+        val experimental = annotations.find { it.name == "Experimental" }
+        val stable = annotations.find { it.name == "Stable" }
+        val since = annotations.find { it.name == "Since" }
         if (experimental != null && stable != null) {
             errors.add("line ${stable.line}: a declaration cannot be both @experimental and @stable")
         }
         // @experimental/@stable already carry `since`; don't also add a standalone @since.
         if (since != null && (experimental != null || stable != null)) {
-            errors.add("line ${since.line}: @since is redundant with @experimental(since:)/@stable(since:) — use only one")
+            errors.add("line ${since.line}: @since is redundant with @Experimental(since:)/@Stable(since:) — use only one")
         }
-        for (ann in annotations.filter { it.name == "experimental" || it.name == "stable" }) {
+        for (ann in annotations.filter { it.name == "Experimental" || it.name == "Stable" }) {
             val s = ann.namedArgs.firstOrNull { it.first == "since" }?.second
             if (s != null && s !is Expr.StringLiteral) {
                 errors.add("line ${ann.line}: @${ann.name}(since: ...) requires a string version literal")
             }
         }
-        // `@since("0.0.1")` — single positional string argument.
+        // `@Since("0.0.1")` — single positional string argument.
         since?.let {
             if (it.args.size != 1 || it.args[0] !is Expr.StringLiteral) {
                 errors.add("line ${it.line}: @since requires a single string version argument")
             }
         }
-        // `@deprecated(since: "0.4.0", replacement: "X")` — string named arguments.
-        for (ann in annotations.filter { it.name == "deprecated" }) {
+        // `@Deprecated(since: "0.4.0", replacement: "X")` — string named arguments.
+        for (ann in annotations.filter { it.name == "Deprecated" }) {
             for ((key, value) in ann.namedArgs) {
                 if (value !is Expr.StringLiteral) {
-                    errors.add("line ${ann.line}: @deprecated($key: ...) requires a string argument")
+                    errors.add("line ${ann.line}: @Deprecated($key: ...) requires a string argument")
                 }
             }
         }
     }
 
     private fun validateFunction(func: FuncDecl, errors: MutableList<String>) {
+        validateStability(func.annotations + func.params.flatMap { it.annotations }, errors)
         // Duplicate parameter names
         val paramNames = mutableSetOf<String>()
         for (param in func.params) {
@@ -162,7 +177,10 @@ class AstValidator {
         // Non-Unit functions must have at least one return on every path
         // (simplified: check that at least one return exists in the body tree).
         // A `flow` generator produces values via `yield`, not `return`, so it's exempt.
-        if (!func.isFlow && func.returnType is TypeAnnotation.Explicit && func.returnType.name != "Unit") {
+        val declaredReturn = (func.returnType as? TypeAnnotation.Explicit)?.ref
+        val successReturn = (declaredReturn as? TypeRef.Failable)?.ok ?: declaredReturn
+        val returnsUnit = successReturn is TypeRef.Named && successReturn.name == "Unit"
+        if (!func.isFlow && declaredReturn != null && !returnsUnit) {
             if (!hasReturnInBody(func.body)) {
                 errors.add("line ${func.line}: function '${func.name}' declares return type " +
                         "'${func.returnType}' but has no return statement")

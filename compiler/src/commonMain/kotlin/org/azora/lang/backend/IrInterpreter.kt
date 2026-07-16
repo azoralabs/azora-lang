@@ -1144,6 +1144,14 @@ class IrInterpreter {
         if (expr.name == "std__convert__toString") {
             return formatValue(args.firstOrNull())
         }
+        if (expr.name == "stringLength") return (args[0] as String).length.toLong()
+        if (expr.name == "charAt") return (args[0] as String)[(args[1] as Number).toInt()]
+        if (expr.name == "substring") {
+            return (args[0] as String).substring((args[1] as Number).toInt(), (args[2] as Number).toInt())
+        }
+        if (expr.name == "ord") return (args[0] as Char).code.toLong()
+        if (expr.name == "chr") return (args[0] as Number).toInt().toChar()
+        if (expr.name == "isDigit") return (args[0] as Char) in '0'..'9'
         if (expr.name == "async") {
             val thunk = args.firstOrNull() as? Closure ?: error("async expects a task body")
             val scope = coroutineScope ?: error("async used outside of the interpreter's structured scope")

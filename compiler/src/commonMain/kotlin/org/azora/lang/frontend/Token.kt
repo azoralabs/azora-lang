@@ -121,7 +121,7 @@ enum class TokenType {
     // `fail ErrSet { … }` — error-set declaration; also `fail <expr>` throw sugar.
     FAIL,
     // Memory model: `alloc <expr>`, `drop <expr>`, `deref <expr>`, `unsafe { }`, `isolated(expr)`.
-    ALLOC, DROP, DEREF, UNSAFE, ISOLATED,
+    ALLOC, DROP, DEREF, REFLECT, UNSAFE, ISOLATED,
     // Concurrency: `flow name(...) { … yield v }` generators, `task { }` / `await`, `launch { }`.
     FLOW, YIELD, TASK, AWAIT, LAUNCH,
     // FFI: `bridge <target> { func sigs }` — extern function declarations.
@@ -149,8 +149,8 @@ enum class TokenType {
     MODULE,
     // Thread-local storage: `threadlocal var x = 0` / `threadlocal fin y = 42`.
     THREADLOCAL,
-    // `deco Name { fields }` — decorator/annotation declaration.
-    DECO,
+    // `deco Name [bind Spec] { fields }` — decorator/annotation declaration.
+    DECO, BIND,
 
     // Delimiters
     L_PAREN, R_PAREN, L_BRACE, R_BRACE,

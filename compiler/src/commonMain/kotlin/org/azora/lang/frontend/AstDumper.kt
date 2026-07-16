@@ -16,20 +16,20 @@ fun Program.dumpTree(): String {
 }
 
 /**
- * Renders stability decorators (`@experimental(since: "0.0.1")` / `@stable(since: "1.0.0")`)
+ * Renders stability decorators (`@Experimental(since: "0.0.1")` / `@Stable(since: "1.0.0")`)
  * as a compact suffix for the AST dump, so they surface in compiler output / docs tooling.
  */
 private fun stabilityNote(annotations: List<Annotation>): String {
     val parts = mutableListOf<String>()
-    annotations.find { it.name == "experimental" || it.name == "stable" }?.let { a ->
+    annotations.find { it.name == "Experimental" || it.name == "Stable" }?.let { a ->
         val since = (a.namedArgs.firstOrNull { it.first == "since" }?.second as? Expr.StringLiteral)?.value
         parts.add(a.name + (since?.let { " since=$it" } ?: ""))
     }
-    annotations.find { it.name == "since" }?.let { a ->
+    annotations.find { it.name == "Since" }?.let { a ->
         val v = (a.args.firstOrNull() as? Expr.StringLiteral)?.value
         parts.add("since" + (v?.let { "=$it" } ?: ""))
     }
-    annotations.find { it.name == "deprecated" }?.let { a ->
+    annotations.find { it.name == "Deprecated" }?.let { a ->
         val s = (a.namedArgs.firstOrNull { it.first == "since" }?.second as? Expr.StringLiteral)?.value
         val r = (a.namedArgs.firstOrNull { it.first == "replacement" }?.second as? Expr.StringLiteral)?.value
         parts.add("deprecated" + listOfNotNull(s?.let { "since=$it" }, r?.let { "replacement=$it" }).let { if (it.isEmpty()) "" else " (${it.joinToString(", ")})" })
@@ -119,7 +119,7 @@ private fun dumpTopLevel(sb: StringBuilder, item: TopLevel, indent: String) {
             }
         }
         is TopLevel.Test -> {
-            sb.appendLine("${indent}Test(name=\"${item.name}\")")
+            sb.appendLine("${indent}Test(name=\"${item.name}\", method=${item.method})")
             sb.appendLine("$indent    body:")
             for (s in item.body) dumpStmt(sb, s, "$indent        ")
         }
@@ -142,7 +142,14 @@ private fun dumpTopLevel(sb: StringBuilder, item: TopLevel, indent: String) {
         }
         is TopLevel.Deco -> {
             val fields = item.fields.joinToString(", ") { "${it.name}: ${it.type}" }
-            sb.appendLine("${indent}Deco(name=${item.name}, fields=[$fields])")
+            val targets = if (item.targets.isEmpty()) "" else ", targets=[${item.targets.joinToString(", ")}]"
+            val bindings = if (item.bindings.isEmpty()) "" else item.bindings.joinToString(", ", prefix = ", bindings=[", postfix = "]") {
+                val args = if (it.trailingTypeArgs.isEmpty()) "" else "<${it.trailingTypeArgs.joinToString(", ")}>"
+                val bindingTargets = if (it.targets.isEmpty()) "" else " for [${it.targets.joinToString(", ")}]"
+                "${it.name}$args$bindingTargets"
+            }
+            val stability = stabilityNote(item.annotations)
+            sb.appendLine("${indent}Deco(name=${item.name}, fields=[$fields]$targets$bindings)$stability")
         }
         is TopLevel.Enum -> {
             sb.appendLine("${indent}Enum(name=${item.name}, variants=[${item.variants.joinToString(", ")}])")
@@ -152,8 +159,13 @@ private fun dumpTopLevel(sb: StringBuilder, item: TopLevel, indent: String) {
         }
         is TopLevel.Impl -> {
             val traitArgs = if (item.traitArgs.isNotEmpty()) "<${item.traitArgs.joinToString(", ")}>" else ""
-            val trait = if (item.traitName != null) " for ${item.traitName}$traitArgs" else ""
-            sb.appendLine("${indent}Impl(type=${item.typeName}$trait, methods=[${item.methods.joinToString(", ") { it.name }}])")
+            val values = (item.decoratorArgs.map { "positional" } + item.decoratorNamedArgs.map { it.first })
+                .takeIf { it.isNotEmpty() }
+                ?.joinToString(prefix = "(", postfix = ")")
+                .orEmpty()
+            val trait = if (item.traitName != null) " for ${item.traitName}$traitArgs$values" else ""
+            val target = item.typeName.replace(".", "::")
+            sb.appendLine("${indent}Impl(type=$target$trait, methods=[${item.methods.joinToString(", ") { it.name }}])")
         }
         is TopLevel.Bridge -> {
             sb.appendLine("${indent}Bridge(target=${item.target}, funcs=[${item.funcs.joinToString(", ") { it.name }}])")
@@ -178,12 +190,13 @@ private fun dumpTopLevel(sb: StringBuilder, item: TopLevel, indent: String) {
             sb.appendLine("${indent}UseImport(${item.imports.joinToString(", ") { (zone, item) -> if (item != null) "$zone::$item" else "$zone::*" }})")
         }
         is TopLevel.Spec -> {
+            val typeParams = if (item.typeParams.isEmpty()) "" else "<${item.typeParams.joinToString(", ")}>"
             val callback = item.callback?.let {
                 val params = if (it.requiresParens) "(${it.params.joinToString(", ") { p -> p.name + ": " + p.type }})" else ""
                 val useAs = it.useAsTemplate?.let { template -> " use as \"$template\"" } ?: ""
                 ", callback$params:${it.returnType}$useAs"
             } ?: ""
-            sb.appendLine("${indent}Spec(name=${item.name}, methods=[${item.methods.joinToString(", ") { it.name }}]$callback)")
+            sb.appendLine("${indent}Spec(name=${item.name}$typeParams, methods=[${item.methods.joinToString(", ") { it.name }}]$callback)")
         }
         is TopLevel.TypeAlias -> {
             sb.appendLine("${indent}TypeAlias(${item.name} = ${item.type})")
@@ -468,6 +481,10 @@ private fun dumpExpr(sb: StringBuilder, expr: Expr, indent: String) {
             sb.appendLine("${indent}CatchExpr")
             dumpExpr(sb, expr.expr, "$indent    ")
             dumpExpr(sb, expr.fallback, "$indent    ")
+        }
+        is Expr.TryPropagate -> {
+            sb.appendLine("${indent}TryPropagate")
+            dumpExpr(sb, expr.expr, "$indent    ")
         }
         is Expr.IfExpr -> {
             sb.appendLine("${indent}IfExpr")

@@ -21,6 +21,8 @@ import org.azora.lang.frontend.Program
 import org.azora.lang.frontend.Stmt
 import org.azora.lang.frontend.TokenType
 import org.azora.lang.frontend.TopLevel
+import org.azora.lang.frontend.TypeAnnotation
+import org.azora.lang.frontend.TypeRef
 import org.azora.lang.ir.IrType
 
 /**
@@ -60,6 +62,18 @@ class CtfeEvaluator(private val table: SymbolTable) {
 
     /** Compile-time bindings from `inline fin` declarations. */
     private val inlineEnv = mutableMapOf<String, Expr>()
+    private val reflectionTypes = mutableMapOf<String, String>()
+    private var compileTimeDepth = 0
+    private var activeErrors: MutableList<String>? = null
+
+    private fun foldCompileTimeExpr(expr: Expr, program: Program): Pair<Expr, Boolean> {
+        compileTimeDepth++
+        return try {
+            foldExpr(expr, program)
+        } finally {
+            compileTimeDepth--
+        }
+    }
 
     /**
      * Phase 0: Resolves only top-level inline items.
@@ -73,6 +87,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
     fun evaluateTopLevel(program: Program): CtfeResult {
         inlineEnv.clear()
         val errors = mutableListOf<String>()
+        activeErrors = errors
         val (resolvedItems, changed) = resolveTopLevelItems(program.items, program, errors)
         return CtfeResult(program.copy(items = resolvedItems), changed, errors)
     }
@@ -90,6 +105,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
     fun evaluate(program: Program): CtfeResult {
         var changed = false
         val errors = mutableListOf<String>()
+        activeErrors = errors
 
         // Phase A: Resolve top-level inline items
         inlineEnv.clear()
@@ -100,6 +116,8 @@ class CtfeEvaluator(private val table: SymbolTable) {
         val newItems = resolvedItems.map { item ->
             if (item is TopLevel.Func) {
                 inlineEnv.clear()
+                reflectionTypes.clear()
+                item.decl.params.forEach { reflectionTypes[it.name] = it.type.displayName() }
                 val (newBody, bodyChanged) = foldBody(item.decl.body, program, errors)
                 if (bodyChanged) changed = true
                 TopLevel.Func(item.decl.copy(body = newBody))
@@ -152,17 +170,17 @@ class CtfeEvaluator(private val table: SymbolTable) {
         is TopLevel.TypeAlias -> Pair(listOf(item), false)
         is TopLevel.Slot -> Pair(listOf(item), false)
         is TopLevel.InlineVar -> {
-            val (folded, _) = foldExpr(item.initializer, program)
+            val (folded, _) = foldCompileTimeExpr(item.initializer, program)
             if (isConstant(folded)) { inlineEnv[item.name] = folded; Pair(emptyList(), true) }
             else Pair(listOf(item), false)
         }
         is TopLevel.InlineFin -> {
-            val (folded, _) = foldExpr(item.initializer, program)
+            val (folded, _) = foldCompileTimeExpr(item.initializer, program)
             if (isConstant(folded)) { inlineEnv[item.name] = folded; Pair(emptyList(), true) }
             else Pair(listOf(item), false)
         }
         is TopLevel.InlineLet -> {
-            val (folded, _) = foldExpr(item.initializer, program)
+            val (folded, _) = foldCompileTimeExpr(item.initializer, program)
             if (isConstant(folded)) { inlineEnv[item.name] = folded; Pair(emptyList(), true) }
             else Pair(listOf(item), false)
         }
@@ -171,13 +189,13 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 errors.add("line ${item.line}: inline assignment to undefined inline variable '${item.name}'")
                 Pair(emptyList(), false)
             } else {
-                val (folded, _) = foldExpr(item.value, program)
+                val (folded, _) = foldCompileTimeExpr(item.value, program)
                 if (isConstant(folded)) { inlineEnv[item.name] = folded; Pair(emptyList(), true) }
                 else Pair(listOf(item), false)
             }
         }
         is TopLevel.InlineIf -> {
-            val (foldedCond, _) = foldExpr(item.condition, program)
+            val (foldedCond, _) = foldCompileTimeExpr(item.condition, program)
             if (foldedCond is Expr.BoolLiteral) {
                 val branch = if (foldedCond.value) item.thenBranch else (item.elseBranch ?: emptyList())
                 val (resolved, _) = resolveTopLevelItems(branch, program, errors)
@@ -195,7 +213,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
             Pair(resolved, true)
         }
         is TopLevel.DeepInlineIf -> {
-            val (foldedCond, _) = foldExpr(item.condition, program)
+            val (foldedCond, _) = foldCompileTimeExpr(item.condition, program)
             if (foldedCond is Expr.BoolLiteral) {
                 val branch = if (foldedCond.value) item.thenBranch else (item.elseBranch ?: emptyList())
                 val (resolved, _) = resolveTopLevelDeepInlineBlock(branch, program, errors)
@@ -206,7 +224,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
         }
         is TopLevel.Test -> Pair(listOf(item), false)
         is TopLevel.InlineAssert -> {
-            val (foldedCond, _) = foldExpr(item.condition, program)
+            val (foldedCond, _) = foldCompileTimeExpr(item.condition, program)
             if (foldedCond is Expr.BoolLiteral) {
                 if (!foldedCond.value) {
                     val (foldedMsg, _) = foldExpr(item.message, program)
@@ -312,6 +330,23 @@ class CtfeEvaluator(private val table: SymbolTable) {
         return Pair(result, changed)
     }
 
+    private fun foldScopedBody(
+        body: List<Stmt>,
+        program: Program,
+        errors: MutableList<String>,
+    ): Pair<List<Stmt>, Boolean> {
+        val savedInline = inlineEnv.toMap()
+        val savedReflectionTypes = reflectionTypes.toMap()
+        return try {
+            foldBody(body, program, errors)
+        } finally {
+            inlineEnv.clear()
+            inlineEnv.putAll(savedInline)
+            reflectionTypes.clear()
+            reflectionTypes.putAll(savedReflectionTypes)
+        }
+    }
+
     // -- Statement-level folding --------------------------------------------
 
     /**
@@ -332,21 +367,24 @@ class CtfeEvaluator(private val table: SymbolTable) {
             is Stmt.InlineAssignment -> foldInlineAssignment(stmt, program, errors)
             is Stmt.If -> {
                 val (newCond, condChanged) = foldExpr(stmt.condition, program)
-                val (newThen, thenChanged) = foldBody(stmt.thenBranch, program, errors)
+                val (newThen, thenChanged) = foldScopedBody(stmt.thenBranch, program, errors)
                 val (newElse, elseChanged) = if (stmt.elseBranch != null)
-                    foldBody(stmt.elseBranch, program, errors) else Pair(null, false)
+                    foldScopedBody(stmt.elseBranch, program, errors) else Pair(null, false)
                 val changed = condChanged || thenChanged || elseChanged
                 Pair(listOf(stmt.copy(condition = newCond, thenBranch = newThen, elseBranch = newElse)), changed)
             }
             is Stmt.VarDecl -> {
+                recordReflectionType(stmt.name, stmt.type, stmt.initializer)
                 val (newInit, changed) = foldExpr(stmt.initializer, program)
                 Pair(listOf(stmt.copy(initializer = newInit)), changed)
             }
             is Stmt.FinDecl -> {
+                recordReflectionType(stmt.name, stmt.type, stmt.initializer)
                 val (newInit, changed) = foldExpr(stmt.initializer, program)
                 Pair(listOf(stmt.copy(initializer = newInit)), changed)
             }
             is Stmt.LetDecl -> {
+                recordReflectionType(stmt.name, stmt.type, stmt.initializer)
                 val (newInit, changed) = foldExpr(stmt.initializer, program)
                 Pair(listOf(stmt.copy(initializer = newInit)), changed)
             }
@@ -371,11 +409,11 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 Pair(listOf(stmt.copy(expr = newExpr)), changed)
             }
             is Stmt.Zone -> {
-                val (newBody, changed) = foldBody(stmt.body, program, errors)
+                val (newBody, changed) = foldScopedBody(stmt.body, program, errors)
                 Pair(listOf(stmt.copy(body = newBody)), changed)
             }
             is Stmt.FriendZone -> {
-                val (newBody, changed) = foldBody(stmt.body, program, errors)
+                val (newBody, changed) = foldScopedBody(stmt.body, program, errors)
                 Pair(listOf(stmt.copy(body = newBody)), changed)
             }
             is Stmt.Assert -> {
@@ -388,7 +426,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 Pair(listOf(stmt.copy(message = newMsg)), changed)
             }
             is Stmt.InlineAssert -> {
-                val (foldedCond, _) = foldExpr(stmt.condition, program)
+                val (foldedCond, _) = foldCompileTimeExpr(stmt.condition, program)
                 if (foldedCond is Expr.BoolLiteral) {
                     if (!foldedCond.value) {
                         val (foldedMsg, _) = foldExpr(stmt.message, program)
@@ -411,18 +449,18 @@ class CtfeEvaluator(private val table: SymbolTable) {
             }
             is Stmt.While -> {
                 val (newCond, condChanged) = foldExpr(stmt.condition, program)
-                val (newBody, bodyChanged) = foldBody(stmt.body, program, errors)
+                val (newBody, bodyChanged) = foldScopedBody(stmt.body, program, errors)
                 val changed = condChanged || bodyChanged
                 Pair(listOf(if (changed) stmt.copy(condition = newCond, body = newBody) else stmt), changed)
             }
             is Stmt.For -> {
                 val (newIter, iterChanged) = foldExpr(stmt.iterable, program)
-                val (newBody, bodyChanged) = foldBody(stmt.body, program, errors)
+                val (newBody, bodyChanged) = foldScopedBody(stmt.body, program, errors)
                 val changed = iterChanged || bodyChanged
                 Pair(listOf(if (changed) stmt.copy(iterable = newIter, body = newBody) else stmt), changed)
             }
             is Stmt.Loop -> {
-                val (newBody, changed) = foldBody(stmt.body, program, errors)
+                val (newBody, changed) = foldScopedBody(stmt.body, program, errors)
                 Pair(listOf(if (changed) stmt.copy(body = newBody) else stmt), changed)
             }
             is Stmt.Break -> Pair(listOf(stmt), false)
@@ -453,11 +491,11 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 val newBranches = stmt.branches.map { b ->
                     val newPats = b.patterns.map { foldExpr(it, program) }
                     if (newPats.any { it.second }) changed = true
-                    val (newBody, bc) = foldBody(b.body, program, errors)
+                    val (newBody, bc) = foldScopedBody(b.body, program, errors)
                     if (bc) changed = true
                     Stmt.WhenBranch(newPats.map { it.first }, newBody, b.line, b.column)
                 }
-                val (newElse, ec) = if (stmt.elseBranch != null) foldBody(stmt.elseBranch, program, errors) else Pair(null, false)
+                val (newElse, ec) = if (stmt.elseBranch != null) foldScopedBody(stmt.elseBranch, program, errors) else Pair(null, false)
                 if (ec) changed = true
                 Pair(listOf(if (changed) Stmt.When(newScrut, newBranches, newElse, stmt.line, stmt.column, stmt.length) else stmt), changed)
             }
@@ -483,19 +521,19 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 Pair(listOf(stmt.copy(initializer = newInit)), changed)
             }
             is Stmt.Effect -> {
-                val (newBody, changed) = foldBody(stmt.body, program, errors)
+                val (newBody, changed) = foldScopedBody(stmt.body, program, errors)
                 Pair(listOf(stmt.copy(body = newBody)), changed)
             }
             is Stmt.Try -> {
                 var changed = false
-                val (newBody, bc) = foldBody(stmt.body, program, errors)
+                val (newBody, bc) = foldScopedBody(stmt.body, program, errors)
                 if (bc) changed = true
-                val (newCatch, cc) = if (stmt.catchBody != null) foldBody(stmt.catchBody, program, errors) else Pair(null, false)
+                val (newCatch, cc) = if (stmt.catchBody != null) foldScopedBody(stmt.catchBody, program, errors) else Pair(null, false)
                 if (cc) changed = true
                 Pair(listOf(if (changed) Stmt.Try(newBody, stmt.catchName, newCatch, stmt.line, stmt.column, stmt.length) else stmt), changed)
             }
             is Stmt.Defer -> {
-                val (newBody, changed) = foldBody(stmt.body, program, errors)
+                val (newBody, changed) = foldScopedBody(stmt.body, program, errors)
                 Pair(listOf(if (changed) Stmt.Defer(newBody, stmt.line, stmt.column, stmt.length) else stmt), changed)
             }
         }
@@ -672,7 +710,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
     }
 
     private fun foldInlineConst(name: String, initializer: Expr, program: Program, errors: MutableList<String>): Pair<List<Stmt>, Boolean> {
-        val (foldedInit, _) = foldExpr(initializer, program)
+        val (foldedInit, _) = foldCompileTimeExpr(initializer, program)
 
         if (!isConstant(foldedInit)) {
             return Pair(emptyList(), false)
@@ -694,7 +732,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
             return Pair(emptyList(), false)
         }
 
-        val (foldedValue, _) = foldExpr(stmt.value, program)
+        val (foldedValue, _) = foldCompileTimeExpr(stmt.value, program)
 
         if (!isConstant(foldedValue)) {
             errors.add("line ${stmt.line}: inline assignment value must be a compile-time constant")
@@ -756,6 +794,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
         )
         is Expr.Unary -> expr.copy(operand = substituteInExpr(expr.operand, paramMap))
         is Expr.Call -> expr.copy(args = expr.args.map { substituteInExpr(it, paramMap) })
+        is Expr.TryPropagate -> expr.copy(expr = substituteInExpr(expr.expr, paramMap))
         is Expr.Grouping -> expr.copy(expr = substituteInExpr(expr.expr, paramMap))
         else -> expr
     }
@@ -774,7 +813,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
      * deep-inlines the taken branch (all nested statements become compile-time).
      */
     private fun foldDeepInlineIf(stmt: Stmt.DeepInlineIf, program: Program, errors: MutableList<String>): Pair<List<Stmt>, Boolean> {
-        val (foldedCond, _) = foldExpr(stmt.condition, program)
+        val (foldedCond, _) = foldCompileTimeExpr(stmt.condition, program)
 
         if (foldedCond !is Expr.BoolLiteral) {
             return Pair(listOf(stmt.copy(condition = foldedCond)), false)
@@ -792,7 +831,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
 
     private fun foldInlineIf(stmt: Stmt.InlineIf, program: Program, errors: MutableList<String>): Pair<List<Stmt>, Boolean> {
         // First, try to fold the condition to a constant
-        val (foldedCond, _) = foldExpr(stmt.condition, program)
+        val (foldedCond, _) = foldCompileTimeExpr(stmt.condition, program)
 
         if (foldedCond !is Expr.BoolLiteral) {
             // Condition is not (yet) a compile-time constant.
@@ -826,8 +865,8 @@ class CtfeEvaluator(private val table: SymbolTable) {
             errors.add("line ${stmt.line}: inline for requires a literal range, got ${stmt.iterable::class.simpleName}")
             return Pair(emptyList(), false)
         }
-        val (startExpr, _) = foldExpr(range.from, program)
-        val (endExpr, _) = foldExpr(range.to, program)
+        val (startExpr, _) = foldCompileTimeExpr(range.from, program)
+        val (endExpr, _) = foldCompileTimeExpr(range.to, program)
         val start = (startExpr as? Expr.IntLiteral)?.value
         val end = (endExpr as? Expr.IntLiteral)?.value
         if (start == null || end == null) {
@@ -835,6 +874,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
             return Pair(listOf(stmt), false)
         }
         val savedEnv = inlineEnv.toMap()
+        val savedReflectionTypes = reflectionTypes.toMap()
         val result = mutableListOf<Stmt>()
         var i = start
         while (if (range.inclusive) i <= end else i < end) {
@@ -847,10 +887,22 @@ class CtfeEvaluator(private val table: SymbolTable) {
         // bindings local to the body so they don't leak past the unrolled loop.
         inlineEnv.clear()
         inlineEnv.putAll(savedEnv)
+        reflectionTypes.clear()
+        reflectionTypes.putAll(savedReflectionTypes)
         return Pair(result, true)
     }
 
     // -- Expression-level folding -------------------------------------------
+
+    private fun recordReflectionType(name: String, annotation: TypeAnnotation, initializer: Expr) {
+        val explicit = (annotation as? TypeAnnotation.Explicit)?.ref
+        val type = when (explicit) {
+            is TypeRef.Reference -> explicit.inner.displayName()
+            null -> (initializer as? Expr.Call)?.callee
+            else -> explicit.displayName()
+        }
+        if (type != null) reflectionTypes[name] = type
+    }
 
     private fun foldExpr(expr: Expr, program: Program): Pair<Expr, Boolean> {
         return when (expr) {
@@ -872,6 +924,26 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 Pair(expr.copy(elements = folded.map { it.first }), folded.any { it.second })
             }
             is Expr.Call -> {
+                if (compileTimeDepth > 0 && expr.callee == "__hasDeco") {
+                    val decoratorName = expr.typeArgs.singleOrNull()?.displayName()
+                    val receiver = expr.args.singleOrNull()
+                    if (decoratorName == null || receiver == null) {
+                        activeErrors?.add("line ${expr.line}: hasDeco requires exactly one receiver and decorator type")
+                        return Pair(Expr.BoolLiteral(false, expr.line, expr.column), true)
+                    }
+                    val site = DecoratorMetadata.findSite(receiver, reflectionTypes, program)
+                    if (site == null) {
+                        activeErrors?.add("line ${expr.line}: hasDeco receiver is not compile-time declaration metadata")
+                        return Pair(Expr.BoolLiteral(false, expr.line, expr.column), true)
+                    }
+                    val knownDecorator = program.items.filterIsInstance<TopLevel.Deco>().any { it.name == decoratorName }
+                    if (!knownDecorator) {
+                        activeErrors?.add("line ${expr.line}: unknown decorator '$decoratorName' in hasDeco")
+                        return Pair(Expr.BoolLiteral(false, expr.line, expr.column), true)
+                    }
+                    val applied = DecoratorMetadata.findApplied(site, decoratorName, program) != null
+                    return Pair(Expr.BoolLiteral(applied, expr.line, expr.column), true)
+                }
                 val foldedArgs = expr.args.map { foldExpr(it, program) }
                 val anyChanged = foldedArgs.any { it.second }
                 val newArgs = foldedArgs.map { it.first }
@@ -915,6 +987,10 @@ class CtfeEvaluator(private val table: SymbolTable) {
             }
             is Expr.CatchExpr, is Expr.Lambda,
             is Expr.NamedArg, is Expr.NullLiteral, is Expr.NullCoalesce, is Expr.Cast, is Expr.IsCheck, is Expr.MapLit, is Expr.SafeMember, is Expr.Alloc, is Expr.AllocBuffer, is Expr.Deref, is Expr.Isolated, is Expr.Await, is Expr.Inject, is Expr.Spread -> Pair(expr, false)
+            is Expr.TryPropagate -> {
+                val (inner, changed) = foldExpr(expr.expr, program)
+                Pair(if (changed) expr.copy(expr = inner) else expr, changed)
+            }
             is Expr.Range -> {
                 val (from, fc) = foldExpr(expr.from, program)
                 val (to, tc) = foldExpr(expr.to, program)
@@ -933,6 +1009,26 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 Pair(if (changed) expr.copy(target = t, index = i) else expr, changed)
             }
             is Expr.Member -> {
+                val metadataQuery = expr.target as? Expr.Call
+                if (compileTimeDepth > 0 && metadataQuery?.callee == "__decoMeta") {
+                    val decoratorName = metadataQuery.typeArgs.singleOrNull()?.displayName()
+                    val receiver = metadataQuery.args.singleOrNull()
+                    val site = receiver?.let { DecoratorMetadata.findSite(it, reflectionTypes, program) }
+                    val applied = if (site != null && decoratorName != null) {
+                        DecoratorMetadata.findApplied(site, decoratorName, program)
+                    } else null
+                    if (applied == null) {
+                        activeErrors?.add("line ${expr.line}: decorator '$decoratorName' is not applied to this declaration")
+                        return Pair(Expr.BoolLiteral(false, expr.line, expr.column), true)
+                    }
+                    val value = DecoratorMetadata.fieldValue(applied, expr.name)
+                    if (value == null) {
+                        activeErrors?.add("line ${expr.line}: decorator '$decoratorName' has no field '${expr.name}' or the field has no value")
+                        return Pair(Expr.BoolLiteral(false, expr.line, expr.column), true)
+                    }
+                    val (foldedValue, _) = foldCompileTimeExpr(value, program)
+                    return Pair(foldedValue, true)
+                }
                 val (t, tc) = foldExpr(expr.target, program)
                 Pair(if (tc) expr.copy(target = t) else expr, tc)
             }
@@ -1194,6 +1290,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
             is Expr.StringTemplate -> null // not CTFE-evaluable
             is Expr.TupleLit, is Expr.TupleAccess, is Expr.VariantLit -> null // not CTFE-evaluable
             is Expr.CatchExpr -> null // not CTFE-evaluable
+            is Expr.TryPropagate -> evalExpr(expr.expr, env, program)
             is Expr.IfExpr -> {
                 val condition = evalExpr(expr.condition, env, program) ?: return null
                 if (condition !is Expr.BoolLiteral) return null

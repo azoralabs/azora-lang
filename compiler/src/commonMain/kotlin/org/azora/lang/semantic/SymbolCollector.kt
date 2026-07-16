@@ -45,7 +45,6 @@ class SymbolCollector {
         return if (traitName.isEmpty()) "callback" else traitName[0].lowercaseChar() + traitName.drop(1)
     }
 
-
     private fun registerBuiltins(table: SymbolTable) {
         // println accepts String — type checker will allow String args
         // `toString` lives in std as `std::convert::toString` (see
@@ -143,21 +142,28 @@ class SymbolCollector {
                 // Variadic only when declared with the `...T` syntax — a plain
                 // trailing `[T]` parameter takes an array argument as-is.
                 val isVariadic = func.params.lastOrNull()?.variadic == true
-                table.defineFunction(
-                    FunctionSymbol(
-                        name = func.name,
-                        params = params,
-                        returnType = callReturnType,
-                        isInline = func.isInline,
-                        typeParams = func.typeParams,
-                        paramNames = paramNames,
-                        defaults = defaults,
-                        isVariadic = isVariadic,
-                        isTask = func.isTask,
-                        isUnsafe = func.isUnsafe,
-                        visibility = func.visibility,
-                    )
+                val symbol = FunctionSymbol(
+                    name = func.name,
+                    params = params,
+                    returnType = callReturnType,
+                    isInline = func.isInline,
+                    typeParams = func.typeParams,
+                    paramNames = paramNames,
+                    defaults = defaults,
+                    isVariadic = isVariadic,
+                    isTask = func.isTask,
+                    isUnsafe = func.isUnsafe,
+                    visibility = func.visibility,
                 )
+                table.defineFunction(symbol)
+                // Injected friend-zone declarations retain their qualified symbol
+                // name (`root__zone__member`). Their module bodies, however, use
+                // imported short names. The injector is import-gated, so exposing
+                // an alias here cannot make an unimported library symbol visible.
+                val shortName = func.name.substringAfterLast("__")
+                if (shortName != func.name && table.lookupFunction(shortName) == null) {
+                    table.defineFunctionAlias(shortName, symbol)
+                }
             } catch (e: Exception) {
                 errors.add("line ${func.line}: ${e.message}")
             }
@@ -381,10 +387,21 @@ class SymbolCollector {
             }
         }
 
-        // Register spec (trait) declarations
-        for (item in program.items) {
-            if (item is TopLevel.Spec) {
-                table.defineSpec(item.name, item.methods.map { it.name }, item.callback)
+        // Specs are registered before decorators so bindings support forward
+        // references regardless of declaration order.
+        val contractNames = mutableSetOf<String>()
+        for (item in program.items.filterIsInstance<TopLevel.Spec>()) {
+            if (!contractNames.add(item.name)) {
+                errors.add("line ${item.line}: duplicate spec or decorator '${item.name}'")
+            } else {
+                table.defineSpec(item.name, item.methods.map { it.name }, item.callback, item.typeParams)
+            }
+        }
+        for (item in program.items.filterIsInstance<TopLevel.Deco>()) {
+            if (!contractNames.add(item.name)) {
+                errors.add("line ${item.line}: duplicate spec or decorator '${item.name}'")
+            } else {
+                table.defineDecorator(item.name, item.targets, item.bindings)
             }
         }
 
@@ -396,27 +413,54 @@ class SymbolCollector {
             }
         }
 
-        // Validate impl Trait for Type — all spec methods must be present
+        // Validate impl Contract for Type. Specs require their declared methods;
+        // decorators are marker contracts and must use the bodyless form.
         for (item in program.items) {
             if (item is TopLevel.Impl && item.traitName != null) {
-                val spec = table.lookupSpec(item.traitName)
-                if (spec == null) {
-                    errors.add("line ${item.line}: unknown spec '${item.traitName}'")
+                val contract = table.lookupSpec(item.traitName)
+                if (contract == null) {
+                    errors.add("line ${item.line}: unknown spec or decorator '${item.traitName}'")
+                } else if (contract.isDecorator) {
+                    // Decorator impls are validated and expanded by DecoratorResolver.
+                    continue
                 } else {
-                    val provided = item.methods.map { it.name }.toSet()
-                    val required = if (spec.callback != null) {
-                        listOf(callbackTraitMethodName(item.traitName, item.traitArgs, spec.callback))
-                    } else {
-                        spec.methodNames
+                    if ('.' in item.typeName) {
+                        errors.add(
+                            "line ${item.line}: member and wildcard implementation targets are only allowed for decorators"
+                        )
+                        continue
                     }
+                    if (item.decoratorArgs.isNotEmpty() || item.decoratorNamedArgs.isNotEmpty()) {
+                        errors.add(
+                            "line ${item.line}: implementation values are only allowed for decorators; " +
+                                "'${item.traitName}' is a spec"
+                        )
+                        continue
+                    }
+                    val provided = item.methods.map { it.name }.toSet()
+                    val required = if (contract.callback != null) {
+                        listOf(callbackTraitMethodName(item.traitName, item.traitArgs, contract.callback))
+                    } else {
+                        contract.methodNames
+                    }
+                    var complete = true
                     for (req in required) {
                         if (req !in provided) {
+                            complete = false
                             errors.add("line ${item.line}: '${item.typeName}' does not implement '${item.traitName}.${req}'")
                         }
+                    }
+                    if (complete && !table.defineConformance(
+                            TraitConformance(item.typeName, item.traitName, item.traitArgs, contract.isDecorator)
+                        )
+                    ) {
+                        errors.add("line ${item.line}: duplicate implementation of '${item.traitName}' for '${item.typeName}'")
                     }
                 }
             }
         }
+
+        errors.addAll(DecoratorResolver().resolve(program, table))
 
         // `import` declarations act only as visibility gates for bundled-library
         // injection (read by StdlibInjector). They no longer create bare aliases:
@@ -532,6 +576,7 @@ class SymbolCollector {
         is Expr.StringTemplate -> IrType.String
         is Expr.TupleLit, is Expr.TupleAccess, is Expr.VariantLit -> null
         is Expr.CatchExpr -> null
+        is Expr.TryPropagate -> inferExprType(expr.expr, env)
         is Expr.IfExpr -> inferExprType(expr.thenExpr, env)
         is Expr.Lambda -> null
         is Expr.NamedArg -> null

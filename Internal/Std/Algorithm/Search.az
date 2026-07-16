@@ -31,7 +31,7 @@ friend zone std {
     /**
      *
      */
-    @since("0.0.1")
+    @Since("0.0.1")
     fail SearchError {
         NotFound
         EmptyArray
@@ -44,7 +44,7 @@ friend zone std {
      * @param target The element to find.
      * @return The index of the first occurrence, or -1 if not found.
      */
-    @experimental(since: "0.0.1")
+    @Experimental(since: "0.0.1")
     func linearSearch<T>(arr: [T], target: T): Int {
         var i = 0
         while i < arr.length {
@@ -63,7 +63,7 @@ friend zone std {
      * @param target The element to find.
      * @return The index of the target, or -1 if not found.
      */
-    @experimental(since: "0.0.1")
+    @Experimental(since: "0.0.1")
     func binarySearch<T>(arr: [T], target: T): Int {
         var lo = 0
         var hi = arr.length - 1
@@ -85,7 +85,7 @@ friend zone std {
      * @param arr The array to search (must be non-empty).
      * @return The smallest element.
      */
-    @experimental(since: "0.0.1")
+    @Experimental(since: "0.0.1")
     func minOf<T>(arr: [T]): T
     in {
         assert arr.length > 0 { "Input must not be empty" }
@@ -105,7 +105,7 @@ friend zone std {
      * @param arr The array to search (must be non-empty).
      * @return The largest element.
      */
-    @experimental(since: "0.0.1")
+    @Experimental(since: "0.0.1")
     func maxOf<T>(arr: [T]): T
     in {
         assert arr.length > 0 { "Input must not be empty" }
@@ -126,7 +126,7 @@ friend zone std {
      * @param target The element to count.
      * @return The number of times target appears in the array.
      */
-    @experimental(since: "0.0.1")
+    @Experimental(since: "0.0.1")
     func count<T>(arr: [T], target: T): Int
     out {
         assert it >= 0 { "count must return non-negative" }
@@ -147,7 +147,7 @@ friend zone std {
      * @param pred The predicate function.
      * @return The index of the first match, or -1 if none found.
      */
-    @experimental(since: "0.0.1")
+    @Experimental(since: "0.0.1")
     func findIndex<T>(arr: [T], pred: (T) -> Bool): Int {
         var i = 0
         while i < arr.length {
@@ -164,7 +164,7 @@ friend zone std {
      * @param pred The predicate function.
      * @return The index of the last match, or -1 if none found.
      */
-    @experimental(since: "0.0.1")
+    @Experimental(since: "0.0.1")
     func findLastIndex<T>(arr: [T], pred: (T) -> Bool): Int {
         var result = -1
         var i = 0
@@ -182,7 +182,7 @@ friend zone std {
      * @param target The element to look for.
      * @return true if the element is found.
      */
-    @experimental(since: "0.0.1")
+    @Experimental(since: "0.0.1")
     func arrayContains<T>(arr: [T], target: T): Bool {
         return linearSearch<T>(arr, target) >= 0
     }

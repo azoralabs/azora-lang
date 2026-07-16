@@ -40,11 +40,11 @@ package org.azora.lang.frontend
 class Parser(private val tokens: List<Token>) {
 
     /**
-     * Extra top-level items synthesized while parsing another declaration
-     * (currently: azora-facing wrappers for aliased bridge signatures).
+     * Extra top-level items synthesized while parsing another declaration:
+     * bridge alias wrappers and normalized decorator/target list applications.
      * Drained into the item list after each declaration completes.
      */
-    private val aliasWrappers = mutableListOf<TopLevel>()
+    private val pendingTopLevels = mutableListOf<TopLevel>()
 
     /**
      * Non-friend `zone X` declarations seen in this program (name -> count).
@@ -61,7 +61,7 @@ class Parser(private val tokens: List<Token>) {
         val body: List<Stmt> =
             if ((returnType as? TypeRef.Named)?.name == "Unit") listOf(Stmt.ExprStmt(call, line))
             else listOf(Stmt.Return(call, line))
-        aliasWrappers.add(TopLevel.Func(FuncDecl(name, params, TypeAnnotation.Explicit(returnType), body, line = line)))
+        pendingTopLevels.add(TopLevel.Func(FuncDecl(name, params, TypeAnnotation.Explicit(returnType), body, line = line)))
     }
 
     private var current = 0
@@ -129,9 +129,9 @@ class Parser(private val tokens: List<Token>) {
             } else {
                 items.add(parseTopLevel())
             }
-            if (aliasWrappers.isNotEmpty()) {
-                items.addAll(aliasWrappers)
-                aliasWrappers.clear()
+            if (pendingTopLevels.isNotEmpty()) {
+                items.addAll(pendingTopLevels)
+                pendingTopLevels.clear()
             }
         }
         namedZoneDeclarations.entries.firstOrNull { it.value > 1 }?.let { (name, _) ->
@@ -151,7 +151,7 @@ class Parser(private val tokens: List<Token>) {
     private fun parseNamedZone(): List<TopLevel> {
         consume(TokenType.ZONE, "Expected 'zone'")
         val name = consume(TokenType.IDENTIFIER, "Expected zone name").lexeme
-        namedZoneDeclarations.merge(name, 1) { a, b -> a + b }
+        namedZoneDeclarations[name] = (namedZoneDeclarations[name] ?: 0) + 1
         consume(TokenType.L_BRACE, "Expected '{' after zone name")
         skipNewlines()
         val items = parseZoneBody(name)
@@ -217,9 +217,9 @@ class Parser(private val tokens: List<Token>) {
                 }
                 else -> {
                     result.add(mangleTopLevel(parseTopLevel(), prefix))
-                    if (aliasWrappers.isNotEmpty()) {
-                        result.addAll(aliasWrappers)
-                        aliasWrappers.clear()
+                    if (pendingTopLevels.isNotEmpty()) {
+                        result.addAll(pendingTopLevels)
+                        pendingTopLevels.clear()
                     }
                 }
             }
@@ -268,24 +268,24 @@ class Parser(private val tokens: List<Token>) {
             check(TokenType.FLOW) -> TopLevel.Func(parseFuncDecl(annotations = annotations, isFlow = true, visibility = visibility))
             check(TokenType.INLINE) -> parseTopLevelInline()
             check(TokenType.DEEPINLINE) -> parseTopLevelDeepInline()
-            check(TokenType.TEST) -> parseTestDecl()
-            check(TokenType.DECO) -> parseDeco()
+            check(TokenType.TEST) -> parseTestDecl(annotations)
+            check(TokenType.DECO) -> parseDeco(annotations)
             check(TokenType.PACK) -> parsePack(annotations, visibility)
             check(TokenType.ENUM) -> parseEnumDecl(annotations)
             check(TokenType.FAIL) -> parseFailDecl(annotations)
             check(TokenType.IMPL) -> parseImpl()
             check(TokenType.INFX) -> parseInfx()
-            check(TokenType.BRIDGE) -> parseBridge()
-            check(TokenType.SOLO) -> parseSolo(visibility)
+            check(TokenType.BRIDGE) -> parseBridge(annotations)
+            check(TokenType.SOLO) -> parseSolo(visibility, annotations)
             check(TokenType.WRAP) -> parseWrap()
-            check(TokenType.NODE) -> parseNode(visibility = visibility)
-            check(TokenType.LEAF) -> parseNode(isLeaf = true, visibility = visibility)
-            check(TokenType.VIEW) -> parseView()
-            check(TokenType.HOOK) -> parseHook()
+            check(TokenType.NODE) -> parseNode(visibility = visibility, annotations = annotations)
+            check(TokenType.LEAF) -> parseNode(isLeaf = true, visibility = visibility, annotations = annotations)
+            check(TokenType.VIEW) -> parseView(annotations)
+            check(TokenType.HOOK) -> parseHook(annotations)
             check(TokenType.THREADLOCAL) -> parseThreadLocal(visibility)
             check(TokenType.SPEC) -> parseSpec()
-            check(TokenType.SLOT) -> parseSlot()
-            check(TokenType.TYPEALIAS) -> parseTypeAlias()
+            check(TokenType.SLOT) -> parseSlot(annotations)
+            check(TokenType.TYPEALIAS) -> parseTypeAlias(annotations)
             check(TokenType.IMPORT) -> parseImport()
             check(TokenType.FIN) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseExpr(); consumeNewline(); TopLevel.FinDecl(name, type, init, start.line, start.column, annotations, visibility = visibility) }
             check(TokenType.VAR) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseExpr(); consumeNewline(); TopLevel.VarDecl(name, type, init, start.line, start.column, annotations, visibility = visibility) }
@@ -310,54 +310,107 @@ class Parser(private val tokens: List<Token>) {
             } else {
                 null to first
             }
-            val (args, namedArgs) = if (match(TokenType.L_PAREN)) {
-                val positional = mutableListOf<Expr>()
-                val named = mutableListOf<Pair<String, Expr>>()
-                if (!check(TokenType.R_PAREN)) {
-                    do {
-                        // `.Native` — dotted member shorthand used in annotation
-                        // arguments (`@target(.Native)`); recorded as an identifier.
-                        if (check(TokenType.DOT) && peekNext()?.type == TokenType.IDENTIFIER) {
-                            val dot = advance()
-                            val member = advance().lexeme
-                            positional.add(Expr.Identifier(".$member", dot.line, dot.column))
-                        } else if (check(TokenType.IDENTIFIER) && peekNext()?.type in setOf(TokenType.COLON, TokenType.EQUAL)) {
-                            // Named argument: `key: value` or `key = value` (e.g. `@experimental(since: "0.0.1")`).
-                            val key = advance().lexeme
-                            advance() // ':' or '='
-                            named.add(key to parseExpr())
-                        } else {
-                            positional.add(parseExpr())
-                        }
-                    } while (match(TokenType.COMMA))
-                }
-                consume(TokenType.R_PAREN, "Expected ')' after annotation arguments")
-                positional to named
-            } else emptyList<Expr>() to emptyList<Pair<String, Expr>>()
+            if (name.firstOrNull()?.isUpperCase() != true) {
+                error("Decorator names must start with an uppercase letter: use '@${name.replaceFirstChar { it.uppercase() }}' at line ${at.line}")
+            }
+            val (args, namedArgs) = if (check(TokenType.L_PAREN)) parseDecoratorArguments()
+            else emptyList<Expr>() to emptyList<Pair<String, Expr>>()
             result.add(Annotation(name, args, target, at.line, at.column, namedArgs = namedArgs))
             skipNewlines()
         }
         return result
     }
 
-    /** `deco Name { fields }` — declares a decorator/annotation type. */
-    private fun parseDeco(): TopLevel.Deco {
+    private fun parseDecoratorArguments(): Pair<List<Expr>, List<Pair<String, Expr>>> {
+        consume(TokenType.L_PAREN, "Expected '('")
+        val positional = mutableListOf<Expr>()
+        val named = mutableListOf<Pair<String, Expr>>()
+        if (!check(TokenType.R_PAREN)) {
+            do {
+                // `.Native` shorthand is retained for built-in decorator arguments.
+                if (check(TokenType.DOT) && peekNext()?.type == TokenType.IDENTIFIER) {
+                    val dot = advance()
+                    val member = advance().lexeme
+                    positional.add(Expr.Identifier(".$member", dot.line, dot.column))
+                } else if (check(TokenType.IDENTIFIER) && peekNext()?.type in setOf(TokenType.COLON, TokenType.EQUAL)) {
+                    val key = advance().lexeme
+                    advance() // ':' or '='
+                    named.add(key to parseExpr())
+                } else {
+                    positional.add(parseExpr())
+                }
+            } while (match(TokenType.COMMA))
+        }
+        consume(TokenType.R_PAREN, "Expected ')' after decorator arguments")
+        return positional to named
+    }
+
+    private fun parseDecoTargets(): Set<DecoTarget> {
+        val targets = linkedSetOf<DecoTarget>()
+        fun parseOne() {
+            consume(TokenType.DOT, "Expected '.' before decorator target")
+            val token = advance()
+            val target = DecoTarget.entries.firstOrNull { it.name == token.lexeme }
+                ?: error("Unknown decorator target '.${token.lexeme}' at line ${token.line}")
+            if (!targets.add(target)) {
+                error("Duplicate decorator target '.${target.name}' at line ${token.line}")
+            }
+        }
+        if (match(TokenType.L_BRACKET)) {
+            if (check(TokenType.R_BRACKET)) error("Expected at least one decorator target at line ${peek().line}")
+            do { parseOne() } while (match(TokenType.COMMA))
+            consume(TokenType.R_BRACKET, "Expected ']' after decorator targets")
+        } else {
+            parseOne()
+        }
+        return targets
+    }
+
+    private fun parseDecoratorBinding(): DecoratorBinding {
+        val name = consume(TokenType.IDENTIFIER, "Expected spec or decorator name after 'bind'").lexeme
+        val typeArgs = parseGenericTypeArgsIfPresent()
+        val targets = if (match(TokenType.FOR)) parseDecoTargets() else emptySet()
+        return DecoratorBinding(name, typeArgs, targets)
+    }
+
+    /** Parses every `deco` target/binding combination into a normalized declaration. */
+    private fun parseDeco(annotations: List<Annotation>): TopLevel.Deco {
         val start = peek()
         consume(TokenType.DECO, "Expected 'deco'")
         val name = consume(TokenType.IDENTIFIER, "Expected decorator name").lexeme
-        consume(TokenType.L_BRACE, "Expected '{' after deco name")
+        if (name.firstOrNull()?.isUpperCase() != true) {
+            error("Decorator names must start with an uppercase letter: use '${name.replaceFirstChar { it.uppercase() }}' at line ${start.line}")
+        }
+        val targets = if (match(TokenType.FOR)) parseDecoTargets() else emptySet()
+        val bindings = if (match(TokenType.BIND)) {
+            if (match(TokenType.L_BRACKET)) {
+                val result = mutableListOf<DecoratorBinding>()
+                if (check(TokenType.R_BRACKET)) error("Expected at least one decorator binding at line ${peek().line}")
+                do { result.add(parseDecoratorBinding()) } while (match(TokenType.COMMA))
+                consume(TokenType.R_BRACKET, "Expected ']' after decorator bindings")
+                result
+            } else {
+                listOf(parseDecoratorBinding())
+            }
+        } else emptyList()
+
+        if (!check(TokenType.L_BRACE)) {
+            consumeNewline()
+            return TopLevel.Deco(name, emptyList(), start.line, start.column, annotations, targets, bindings)
+        }
+        consume(TokenType.L_BRACE, "Expected '{' after decorator declaration")
         skipNewlines()
         val fields = mutableListOf<PackField>()
         while (!check(TokenType.R_BRACE) && !isAtEnd()) {
             skipNewlines()
             if (check(TokenType.R_BRACE)) break
-            fields.add(parsePackField())
+            fields.add(parsePackField(requireFin = true))
             match(TokenType.COMMA)
             skipNewlines()
         }
         consume(TokenType.R_BRACE, "Expected '}' after deco fields")
         consumeNewline()
-        return TopLevel.Deco(name, fields, start.line, start.column)
+        return TopLevel.Deco(name, fields, start.line, start.column, annotations, targets, bindings)
     }
 
     private fun parseTopLevelInline(): TopLevel {
@@ -548,16 +601,30 @@ class Parser(private val tokens: List<Token>) {
         }
     }
 
-    private fun parseTestDecl(): TopLevel.Test {
+    private fun parseTestDecl(annotations: List<Annotation> = emptyList()): TopLevel.Test {
         val start = peek()
         consume(TokenType.TEST, "Expected 'test'")
+        val method = if (match(TokenType.DOT)) {
+            val token = consume(TokenType.IDENTIFIER, "Expected 'This' or 'All' after 'test .'")
+            TestMethod.entries.firstOrNull { it.name == token.lexeme }
+                ?: error("Unknown test method '.${token.lexeme}' at line ${token.line}; expected '.This' or '.All'")
+        } else {
+            TestMethod.This
+        }
         val name = consume(TokenType.STRING_LITERAL, "Expected test name string").literal as String
-        consume(TokenType.L_BRACE, "Expected '{' after test name")
-        skipNewlines()
-        val body = parseBlock()
-        consume(TokenType.R_BRACE, "Expected '}' after test body")
+        val body = if (match(TokenType.L_BRACE)) {
+            skipNewlines()
+            val parsed = parseBlock()
+            consume(TokenType.R_BRACE, "Expected '}' after test body")
+            parsed
+        } else {
+            if (method != TestMethod.All) {
+                error("Expected '{' after test name; only 'test .All' may omit its body at line ${start.line}")
+            }
+            emptyList()
+        }
         consumeNewline()
-        return TopLevel.Test(name, body, start.line, start.column)
+        return TopLevel.Test(name, body, start.line, start.column, annotations, method)
     }
 
     /**
@@ -573,7 +640,7 @@ class Parser(private val tokens: List<Token>) {
         val name = consume(TokenType.IDENTIFIER, "Expected pack name").lexeme
         val tp = parseTypeParams()
         val minLen = parseVariadicWhereClause()
-        val enforceNumFields = annotations.any { it.name == "enforceNumFields" }
+        val enforceNumFields = annotations.any { it.name == "EnforceNumFields" }
         val effectiveVisibility = if (visibility == Visibility.SHIELD) Visibility.EXPOSE else visibility
         if (!check(TokenType.L_BRACE)) {
             consumeNewline()
@@ -664,8 +731,17 @@ class Parser(private val tokens: List<Token>) {
         return VariadicFieldTemplate(loopVar, packVar, tplFields, mixins)
     }
 
-    private fun parsePackField(preparsedVisibility: Visibility? = null, enforceNumFields: Boolean = false): PackField {
+    private fun parsePackField(
+        preparsedVisibility: Visibility? = null,
+        enforceNumFields: Boolean = false,
+        preparsedAnnotations: List<Annotation>? = null,
+        requireFin: Boolean = false,
+    ): PackField {
+        val annotations = preparsedAnnotations ?: parseAnnotations()
         val visibility = preparsedVisibility ?: parseVisibility()
+        if (requireFin && !check(TokenType.FIN)) {
+            error("Decorator fields must be declared with 'fin' at line ${peek().line}")
+        }
         val mutable = when {
             check(TokenType.VAR) -> { advance(); true }
             check(TokenType.FIN) -> { advance(); false }
@@ -680,7 +756,7 @@ class Parser(private val tokens: List<Token>) {
         val type = parseTypeName()
         val default = if (match(TokenType.EQUAL)) parseExpr() else null
         consumeNewline()
-        return PackField(name, type, mutable, default, visibility)
+        return PackField(name, type, mutable, default, visibility, annotations)
     }
 
     /** `enum Name { Var1; Var2; ... }` — variants one per line, each optionally with trailing annotations. */
@@ -795,6 +871,55 @@ class Parser(private val tokens: List<Token>) {
         val named = ref as? TypeRef.Named ?: return ref
         val index = typeParams.indexOf(named.name)
         return if (index >= 0) traitArgs.getOrElse(index) { named } else named
+    }
+
+    /** Parses `Type`, `Type::member`, or `Type::*` into the semantic site identity. */
+    private fun parseImplTarget(): String {
+        val owner = consume(TokenType.IDENTIFIER, "Expected implementation target").lexeme
+        if (!match(TokenType.DOUBLE_COLON)) {
+            skipGenericTypeArgs()
+            return owner
+        }
+        val member = when {
+            match(TokenType.STAR) -> "*"
+            else -> consume(TokenType.IDENTIFIER, "Expected member name or '*' after '::'").lexeme
+        }
+        return "$owner.$member"
+    }
+
+    /** Parses one implementation target or `[Target, Other::member]`. */
+    private fun parseImplTargets(): List<String> {
+        if (!match(TokenType.L_BRACKET)) return listOf(parseImplTarget())
+        if (check(TokenType.R_BRACKET)) error("Expected at least one implementation target at line ${peek().line}")
+        val targets = mutableListOf<String>()
+        do { targets.add(parseImplTarget()) } while (match(TokenType.COMMA))
+        consume(TokenType.R_BRACKET, "Expected ']' after implementation targets")
+        return targets
+    }
+
+    private fun queueBodylessImpls(
+        traits: List<Pair<String, List<TypeRef>>>,
+        targets: List<String>,
+        start: Token,
+        args: List<Expr>,
+        namedArgs: List<Pair<String, Expr>>,
+    ): TopLevel.Impl {
+        val implementations = targets.flatMap { target ->
+            traits.map { (trait, traitArgs) ->
+                TopLevel.Impl(
+                    typeName = target,
+                    methods = emptyList(),
+                    traitName = trait,
+                    line = start.line,
+                    column = start.column,
+                    traitArgs = traitArgs,
+                    decoratorArgs = args,
+                    decoratorNamedArgs = namedArgs,
+                )
+            }
+        }
+        pendingTopLevels.addAll(implementations.drop(1))
+        return implementations.first()
     }
 
     /** `impl Type { methods }` or `impl Trait for Type { methods }`. */
@@ -1019,21 +1144,64 @@ class Parser(private val tokens: List<Token>) {
             )
         }
         val isPackImpl = match(TokenType.PACK)
-        val first = consume(TokenType.IDENTIFIER, "Expected type or trait name after 'impl'").lexeme
-        val firstArgs = parseGenericTypeArgsIfPresent()
+        val traitHeads = if (match(TokenType.L_BRACKET)) {
+            if (check(TokenType.R_BRACKET)) error("Expected at least one decorator after 'impl [' at line ${peek().line}")
+            val names = mutableListOf<Pair<String, List<TypeRef>>>()
+            do {
+                val name = consume(TokenType.IDENTIFIER, "Expected decorator name in implementation list").lexeme
+                if (check(TokenType.LESS)) {
+                    error("Generic arguments are not supported inside decorator implementation lists at line ${peek().line}")
+                }
+                names.add(name to emptyList())
+            } while (match(TokenType.COMMA))
+            consume(TokenType.R_BRACKET, "Expected ']' after decorator implementation list")
+            names
+        } else {
+            val name = consume(TokenType.IDENTIFIER, "Expected type or trait name after 'impl'").lexeme
+            listOf(name to parseGenericTypeArgsIfPresent())
+        }
+        val (first, firstArgs) = traitHeads.first()
+        val (decoratorArgs, decoratorNamedArgs) = if (check(TokenType.L_PAREN)) parseDecoratorArguments()
+        else emptyList<Expr>() to emptyList<Pair<String, Expr>>()
+        if (traitHeads.size > 1 && (decoratorArgs.isNotEmpty() || decoratorNamedArgs.isNotEmpty())) {
+            error("Decorator implementation values require a single decorator at line ${start.line}")
+        }
         var typeName = first
         var traitName: String? = null
         var traitArgs = emptyList<TypeRef>()
+        var implementationTargets = listOf(first)
         if (match(TokenType.FOR)) {
             if (isPackImpl) error("'impl pack' cannot be used for spec implementations at line ${peek().line}")
             traitName = first
             traitArgs = firstArgs
-            typeName = consume(TokenType.IDENTIFIER, "Expected type name after 'for'").lexeme
-            skipGenericTypeArgs() // `… for Type<T>` — discard erased type args on the type name
+            implementationTargets = parseImplTargets()
+            typeName = implementationTargets.first()
+        } else if (traitHeads.size > 1) {
+            error("Decorator implementation lists require 'for Target' at line ${start.line}")
+        } else if (decoratorArgs.isNotEmpty() || decoratorNamedArgs.isNotEmpty()) {
+            error("Decorator implementation arguments require 'for Type' at line ${start.line}")
         }
         if (!check(TokenType.L_BRACE)) {
             consumeNewline()
-            return TopLevel.Impl(typeName, emptyList(), traitName, start.line, start.column, isPackImpl = isPackImpl, traitArgs = traitArgs)
+            if (traitName != null && (traitHeads.size > 1 || implementationTargets.size > 1)) {
+                return queueBodylessImpls(
+                    traitHeads,
+                    implementationTargets,
+                    start,
+                    decoratorArgs,
+                    decoratorNamedArgs,
+                )
+            }
+            return TopLevel.Impl(
+                typeName, emptyList(), traitName, start.line, start.column,
+                isPackImpl = isPackImpl,
+                traitArgs = traitArgs,
+                decoratorArgs = decoratorArgs,
+                decoratorNamedArgs = decoratorNamedArgs,
+            )
+        }
+        if (traitHeads.size > 1 || implementationTargets.size > 1 || typeName.contains('.')) {
+            error("Grouped and member-target implementations must be bodyless at line ${start.line}")
         }
         consume(TokenType.L_BRACE, "Expected '{' after impl type")
         skipNewlines()
@@ -1068,7 +1236,12 @@ class Parser(private val tokens: List<Token>) {
                 receiverModifier = "ref",
                 memberCallStyle = callbackTraitCallStyle(traitName),
             )
-            return TopLevel.Impl(typeName, listOf(method), traitName, start.line, start.column, traitArgs = traitArgs)
+            return TopLevel.Impl(
+                typeName, listOf(method), traitName, start.line, start.column,
+                traitArgs = traitArgs,
+                decoratorArgs = decoratorArgs,
+                decoratorNamedArgs = decoratorNamedArgs,
+            )
         }
         val methods = mutableListOf<FuncDecl>()
         while (!check(TokenType.R_BRACE) && !isAtEnd()) {
@@ -1108,7 +1281,13 @@ class Parser(private val tokens: List<Token>) {
         }
         consume(TokenType.R_BRACE, "Expected '}' after impl methods")
         consumeNewline()
-        return TopLevel.Impl(typeName, methods, traitName, start.line, start.column, isPackImpl = isPackImpl, traitArgs = traitArgs)
+        return TopLevel.Impl(
+            typeName, methods, traitName, start.line, start.column,
+            isPackImpl = isPackImpl,
+            traitArgs = traitArgs,
+            decoratorArgs = decoratorArgs,
+            decoratorNamedArgs = decoratorNamedArgs,
+        )
     }
 
     /**
@@ -1268,7 +1447,7 @@ class Parser(private val tokens: List<Token>) {
      * `bridge <target> { func sigs }` — declares extern functions for FFI.
      * Each signature is `func name(params): RetType` (no body).
      */
-    private fun parseBridge(): TopLevel.Bridge {
+    private fun parseBridge(annotations: List<Annotation> = emptyList()): TopLevel.Bridge {
         val start = consume(TokenType.BRIDGE, "Expected 'bridge'")
         match(TokenType.DOT) // `bridge .C { … }` — the leading dot is optional
         val target = consume(TokenType.IDENTIFIER, "Expected bridge target (e.g. C, JS)").lexeme
@@ -1297,11 +1476,11 @@ class Parser(private val tokens: List<Token>) {
         }
         consume(TokenType.R_BRACE, "Expected '}' after bridge functions")
         consumeNewline()
-        return TopLevel.Bridge(target, funcs, start.line, start.column)
+        return TopLevel.Bridge(target, funcs, start.line, start.column, annotations)
     }
 
     /** `solo Name { fields; methods }` — a singleton struct with one shared instance. */
-    private fun parseSolo(visibility: Visibility = Visibility.EXPOSE): TopLevel.Solo {
+    private fun parseSolo(visibility: Visibility = Visibility.EXPOSE, annotations: List<Annotation> = emptyList()): TopLevel.Solo {
         val start = consume(TokenType.SOLO, "Expected 'solo'")
         val name = consume(TokenType.IDENTIFIER, "Expected solo name").lexeme
         consume(TokenType.L_BRACE, "Expected '{' after solo name")
@@ -1311,24 +1490,29 @@ class Parser(private val tokens: List<Token>) {
         while (!check(TokenType.R_BRACE) && !isAtEnd()) {
             skipNewlines()
             if (check(TokenType.R_BRACE)) break
+            val memberAnnotations = parseAnnotations()
             val memberVisibility = parseVisibility()
             if (check(TokenType.FUNC)) {
-                methods.add(parseFuncDecl(visibility = memberVisibility))
+                methods.add(parseFuncDecl(annotations = memberAnnotations, visibility = memberVisibility))
             } else {
-                fields.add(parsePackField(memberVisibility))
+                fields.add(parsePackField(memberVisibility, preparsedAnnotations = memberAnnotations))
             }
             skipNewlines()
         }
         consume(TokenType.R_BRACE, "Expected '}' after solo body")
         consumeNewline()
-        return TopLevel.Solo(name, fields, methods, start.line, start.column, visibility)
+        return TopLevel.Solo(name, fields, methods, start.line, start.column, visibility, annotations)
     }
 
     /**
      * `[leaf] node Name(var|fin param: Type, ...) [: Parent(args)] { methods; fields }`
      * — an inheritable type. Ctor params are fields. `repl func` marks overrides.
      */
-    private fun parseNode(isLeaf: Boolean = false, visibility: Visibility = Visibility.EXPOSE): TopLevel.Node {
+    private fun parseNode(
+        isLeaf: Boolean = false,
+        visibility: Visibility = Visibility.EXPOSE,
+        annotations: List<Annotation> = emptyList(),
+    ): TopLevel.Node {
         val start = peek()
         if (isLeaf) consume(TokenType.LEAF, "Expected 'leaf'")
         match(TokenType.NODE) // `leaf Name` or `leaf node Name` — node is optional
@@ -1372,12 +1556,13 @@ class Parser(private val tokens: List<Token>) {
         while (!check(TokenType.R_BRACE) && !isAtEnd()) {
             skipNewlines()
             if (check(TokenType.R_BRACE)) break
+            val memberAnnotations = parseAnnotations()
             val isRepl = match(TokenType.REPL)
             val isVirt = match(TokenType.VIRT)
             val memberVisibility = parseVisibility()
             when {
                 check(TokenType.FUNC) -> {
-                    val method = parseFuncDecl(isOverride = isRepl, isVirtual = isVirt || isRepl, visibility = memberVisibility)
+                    val method = parseFuncDecl(annotations = memberAnnotations, isOverride = isRepl, isVirtual = isVirt || isRepl, visibility = memberVisibility)
                     methods.add(method)
                 }
                 check(TokenType.PROP) -> {
@@ -1390,7 +1575,7 @@ class Parser(private val tokens: List<Token>) {
                     val propBody = parseBlock()
                     consume(TokenType.R_BRACE, "Expected '}' after prop body")
                     consumeNewline()
-                    methods.add(FuncDecl(propName, emptyList(), propType, propBody, false, emptyList(), peek().line, peek().column, visibility = memberVisibility, receiverModifier = "ref", memberCallStyle = MemberCallStyle.PROPERTY))
+                    methods.add(FuncDecl(propName, emptyList(), propType, propBody, false, emptyList(), peek().line, peek().column, annotations = memberAnnotations, visibility = memberVisibility, receiverModifier = "ref", memberCallStyle = MemberCallStyle.PROPERTY))
                 }
                 check(TokenType.CTOR) -> {
                     // `ctor(params) { body }` — secondary constructor. Lowered as `ctor__<type>` function.
@@ -1416,7 +1601,7 @@ class Parser(private val tokens: List<Token>) {
                     methods.add(FuncDecl("dtor", emptyList(), TypeAnnotation.Inferred, dtorBody, false, emptyList(), peek().line, peek().column, visibility = memberVisibility))
                 }
                 check(TokenType.VAR) || check(TokenType.FIN) || check(TokenType.LET) -> {
-                    extraFields.add(parsePackField(memberVisibility))
+                    extraFields.add(parsePackField(memberVisibility, preparsedAnnotations = memberAnnotations))
                 }
                 else -> error("Expected 'func', 'repl func', 'virt func', 'prop', 'ctor', 'dtor', or field in node body at line ${peek().line}")
             }
@@ -1424,7 +1609,7 @@ class Parser(private val tokens: List<Token>) {
         }
         consume(TokenType.R_BRACE, "Expected '}' after node body")
         consumeNewline()
-        return TopLevel.Node(name, params, methods, parent, parentArgs, isLeaf, extraFields, start.line, start.column, visibility)
+        return TopLevel.Node(name, params, methods, parent, parentArgs, isLeaf, extraFields, start.line, start.column, visibility, annotations)
     }
 
     /**
@@ -1463,7 +1648,7 @@ class Parser(private val tokens: List<Token>) {
     }
 
     /** `slot Name { Variant(Type); Variant2(Type1, Type2); Variant3 }` — a tagged union. */
-    private fun parseSlot(): TopLevel.Slot {
+    private fun parseSlot(annotations: List<Annotation> = emptyList()): TopLevel.Slot {
         val start = peek()
         consume(TokenType.SLOT, "Expected 'slot'")
         val name = consume(TokenType.IDENTIFIER, "Expected slot name").lexeme
@@ -1494,7 +1679,7 @@ class Parser(private val tokens: List<Token>) {
         }
         consume(TokenType.R_BRACE, "Expected '}' after slot variants")
         consumeNewline()
-        return TopLevel.Slot(name, variants, start.line, start.column)
+        return TopLevel.Slot(name, variants, start.line, start.column, annotations)
     }
 
     /** `spec Name { func method(params): Ret ... }` or compact callback `spec Into<T>: T { ref self } use as "..."`. */
@@ -1542,6 +1727,7 @@ class Parser(private val tokens: List<Token>) {
                 start.line,
                 start.column,
                 callback = callback,
+                typeParams = typeParams.names,
             )
         }
         if (hasCallParens) {
@@ -1549,7 +1735,7 @@ class Parser(private val tokens: List<Token>) {
         }
         if (!check(TokenType.L_BRACE)) {
             consumeNewline()
-            return TopLevel.Spec(name, emptyList(), start.line, start.column)
+            return TopLevel.Spec(name, emptyList(), start.line, start.column, typeParams = typeParams.names)
         }
         consume(TokenType.L_BRACE, "Expected '{' after spec name")
         skipNewlines()
@@ -1572,7 +1758,7 @@ class Parser(private val tokens: List<Token>) {
         }
         consume(TokenType.R_BRACE, "Expected '}' after spec methods")
         consumeNewline()
-        return TopLevel.Spec(name, methods, start.line, start.column)
+        return TopLevel.Spec(name, methods, start.line, start.column, typeParams = typeParams.names)
     }
 
     /** `when scrutinee { patterns -> { body } ... else -> { body } }`. */
@@ -1918,6 +2104,7 @@ class Parser(private val tokens: List<Token>) {
             }
             val name = consumeIdentifierLike("Expected parameter name")
             consume(TokenType.COLON, "Expected ':' after parameter name")
+            val annotations = parseAnnotations()
             // `...T` marks the (last) parameter variadic; parseTypeName wraps it in the internal array type.
             val isVariadic = check(TokenType.ELLIPSIS)
             val parsedType = parseTypeName()
@@ -1925,7 +2112,7 @@ class Parser(private val tokens: List<Token>) {
             val type = reference?.inner ?: parsedType
             val normalizedModifier = reference?.kind?.spelling ?: modifier
             val default = if (match(TokenType.EQUAL)) parseExpr() else null
-            params.add(Param(name, type, default, normalizedModifier, variadic = isVariadic))
+            params.add(Param(name, type, default, normalizedModifier, variadic = isVariadic, annotations = annotations))
         } while (match(TokenType.COMMA))
         return params
     }
@@ -2011,15 +2198,27 @@ class Parser(private val tokens: List<Token>) {
 
     private fun parseTypeSuffixes(start: TypeRef): TypeRef {
         var base = start
-        // Suffix type modifiers: `T?` (nullable) and `T!ErrSet` (failable), in any order.
+        // Suffix type modifiers: `T?`, `T!Error`, and `T![A, B]`, in any order.
         while (true) {
             base = when {
                 match(TokenType.QMARK) -> TypeRef.Nullable(base)
                 check(TokenType.STAR) -> { advance(); TypeRef.Pointer(base) }
-                check(TokenType.BANG) && peekNext()?.type == TokenType.IDENTIFIER -> {
+                check(TokenType.BANG) && peekNext()?.type in setOf(TokenType.IDENTIFIER, TokenType.L_BRACKET) -> {
                     advance() // '!'
-                    val errSet = consume(TokenType.IDENTIFIER, "Expected error-set name after '!'").lexeme
-                    TypeRef.Failable(base, errSet)
+                    val errSets = if (match(TokenType.L_BRACKET)) {
+                        val names = mutableListOf<String>()
+                        do {
+                            names.add(consume(TokenType.IDENTIFIER, "Expected error-set name in failable type").lexeme)
+                        } while (match(TokenType.COMMA))
+                        consume(TokenType.R_BRACKET, "Expected ']' after error-set list")
+                        if (names.distinct().size != names.size) {
+                            error("Duplicate error set in failable type at line ${peek().line}")
+                        }
+                        names
+                    } else {
+                        listOf(consume(TokenType.IDENTIFIER, "Expected error-set name after '!'").lexeme)
+                    }
+                    TypeRef.Failable(base, errSets)
                 }
                 else -> return base
             }
@@ -2059,7 +2258,7 @@ class Parser(private val tokens: List<Token>) {
                 if (!check(TokenType.R_PAREN)) {
                     do { elements.add(parseTypeName()) } while (match(TokenType.COMMA))
                 }
-                consume(TokenType.R_PAREN, "Expected ')' in function or tuple type")
+                consume(TokenType.R_PAREN, "Expected ')' in grouped or function type")
                 if (match(TokenType.ARROW)) {
                     val ret = parseTypeName()
                     TypeRef.Function(elements, ret)
@@ -2067,7 +2266,7 @@ class Parser(private val tokens: List<Token>) {
                     when (elements.size) {
                         0 -> error("Empty type '()' at line ${peek().line}")
                         1 -> elements[0] // grouping
-                        else -> TypeRef.Tuple(elements)
+                        else -> error("Tuple type syntax '(A, B)' was removed; use 'Tuple<A, B>' at line ${peek().line}")
                     }
                 }
             }
@@ -2139,7 +2338,7 @@ class Parser(private val tokens: List<Token>) {
             check(TokenType.UNSAFE) -> parseUnsafe()
             check(TokenType.DROP) -> parseDrop()
             check(TokenType.YIELD) -> parseYield()
-            check(TokenType.TRY) -> parseTry()
+            check(TokenType.TRY) && peekNext()?.type == TokenType.L_BRACE -> parseTry()
             check(TokenType.DEFER) -> parseDefer()
             check(TokenType.RESCUE) -> parseRescue()
             check(TokenType.MEM) -> parseReactiveDecl(ReactiveKind.MEM)
@@ -2511,7 +2710,7 @@ class Parser(private val tokens: List<Token>) {
     }
 
     /** `view Name(params) { body }` — a reactive UI component. */
-    private fun parseView(): TopLevel.View {
+    private fun parseView(annotations: List<Annotation> = emptyList()): TopLevel.View {
         val start = peek()
         consume(TokenType.VIEW, "Expected 'view'")
         val name = consume(TokenType.IDENTIFIER, "Expected view name").lexeme
@@ -2527,11 +2726,11 @@ class Parser(private val tokens: List<Token>) {
         }
         consume(TokenType.R_BRACE, "Expected '}' after view body")
         consumeNewline()
-        return TopLevel.View(name, params, body, start.line, start.column)
+        return TopLevel.View(name, params, body, start.line, start.column, annotations)
     }
 
     /** `hook name { body }` — a lifecycle callback. */
-    private fun parseHook(): TopLevel.Hook {
+    private fun parseHook(annotations: List<Annotation> = emptyList()): TopLevel.Hook {
         val start = consume(TokenType.HOOK, "Expected 'hook'")
         val name = consume(TokenType.IDENTIFIER, "Expected hook name").lexeme
         consume(TokenType.L_BRACE, "Expected '{' after hook name")
@@ -2543,7 +2742,7 @@ class Parser(private val tokens: List<Token>) {
         }
         consume(TokenType.R_BRACE, "Expected '}' after hook body")
         consumeNewline()
-        return TopLevel.Hook(name, body, start.line, start.column)
+        return TopLevel.Hook(name, body, start.line, start.column, annotations)
     }
 
     /**
@@ -2699,14 +2898,14 @@ class Parser(private val tokens: List<Token>) {
         consume(TokenType.R_BRACE, "Expected '}' after import group")
     }
 
-    private fun parseTypeAlias(): TopLevel.TypeAlias {
+    private fun parseTypeAlias(annotations: List<Annotation> = emptyList()): TopLevel.TypeAlias {
         val start = peek()
         consume(TokenType.TYPEALIAS, "Expected 'typealias'")
         val name = consume(TokenType.IDENTIFIER, "Expected type alias name").lexeme
         consume(TokenType.EQUAL, "Expected '=' in typealias")
         val type = parseTypeName()
         consumeNewline()
-        return TopLevel.TypeAlias(name, type, start.line, start.column)
+        return TopLevel.TypeAlias(name, type, start.line, start.column, annotations)
     }
 
     private fun parseTry(): Stmt.Try {
@@ -3381,6 +3580,14 @@ class Parser(private val tokens: List<Token>) {
     }
 
     private fun parseUnary(): Expr {
+        if (check(TokenType.REFLECT)) {
+            val at = advance()
+            return Expr.Call("__reflect", listOf(parseUnary()), at.line, at.column, at.lexeme.length)
+        }
+        if (check(TokenType.TRY)) {
+            val at = advance()
+            return Expr.TryPropagate(parseUnary(), at.line, at.column, at.lexeme.length)
+        }
         // `alloc <expr>` — heap-allocate a single value (e.g. `alloc P(10)`, `alloc 42`).
         // `alloc T[N]` — allocate a buffer of N T's → T* (C++ `new T[N]`-style).
         if (check(TokenType.ALLOC)) {
@@ -3461,7 +3668,7 @@ class Parser(private val tokens: List<Token>) {
                     val dot = advance()
                     if (check(TokenType.INT_LITERAL)) {
                         val idx = (advance().literal as NumericLiteral).value as Long
-                        expr = Expr.TupleAccess(expr, idx.toInt(), expr.line, expr.column)
+                        expr = Expr.Member(expr, idx.toString(), expr.line, expr.column, dot.lexeme.length + idx.toString().length)
                     } else {
                         val name = consumeIdentifierLike("Expected member name after '.'")
                         expr = Expr.Member(expr, name, expr.line, expr.column, dot.lexeme.length + name.length)
@@ -3486,6 +3693,22 @@ class Parser(private val tokens: List<Token>) {
                     val index = parseExpr()
                     consume(TokenType.R_BRACKET, "Expected ']' after index")
                     expr = Expr.Index(expr, index, expr.line, expr.column)
+                }
+                check(TokenType.LESS) && expr is Expr.Member && expr.name in setOf("hasDeco", "decoMeta") -> {
+                    val reflected = when (val target = expr.target) {
+                        is Expr.Call -> target.takeIf { it.callee == "__reflect" }
+                        is Expr.Grouping -> (target.expr as? Expr.Call)?.takeIf { it.callee == "__reflect" }
+                        else -> null
+                    } ?: error("'${expr.name}' requires an explicit reflect receiver, for example '(reflect Type).${expr.name}<Decorator>' at line ${expr.line}")
+                    if (reflected.args.singleOrNull() is Expr.Member) {
+                        error("Reflected declaration members use '::', for example '(reflect Type::field)' at line ${expr.line}")
+                    }
+                    val typeArgs = parseGenericTypeArgsIfPresent()
+                    if (typeArgs.size != 1) {
+                        error("'${expr.name}' expects exactly one decorator type argument at line ${expr.line}")
+                    }
+                    val intrinsic = if (expr.name == "hasDeco") "__hasDeco" else "__decoMeta"
+                    expr = Expr.Call(intrinsic, reflected.args, expr.line, expr.column, expr.length, typeArgs)
                 }
                 check(TokenType.LESS) && isGenericCallAhead() -> {
                     // `f<T, U>(args)` — capture explicit type arguments for the call
@@ -3676,10 +3899,7 @@ class Parser(private val tokens: List<Token>) {
                 advance()
                 val first = parseExpr()
                 if (match(TokenType.COMMA)) {
-                    val elements = mutableListOf(first)
-                    do { elements.add(parseExpr()) } while (match(TokenType.COMMA))
-                    consume(TokenType.R_PAREN, "Expected ')' after tuple")
-                    Expr.TupleLit(elements, tok.line, tok.column)
+                    error("Tuple literal syntax '(a, b)' was removed; use 'tupleOf(a, b)' at line ${tok.line}")
                 } else {
                     consume(TokenType.R_PAREN, "Expected ')'")
                     Expr.Grouping(first, tok.line, tok.column)

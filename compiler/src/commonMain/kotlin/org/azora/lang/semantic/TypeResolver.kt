@@ -97,9 +97,9 @@ class TypeResolver(private val table: SymbolTable) {
 
         // `T!ErrSet` enforcement: track the function's declared error set so that
         // `fail`/`throw` of an error variant can be checked against it.
-        val savedFailSet = declaredFailSet
-        declaredFailSet = (func.returnType as? TypeAnnotation.Explicit)
-            ?.ref?.let { (it as? TypeRef.Failable)?.errSet }
+        val savedFailSets = declaredFailSets
+        declaredFailSets = (func.returnType as? TypeAnnotation.Explicit)
+            ?.ref?.let { (it as? TypeRef.Failable)?.errSets }
         val savedUnsafe = unsafeContext
         val savedReceiver = currentReceiverType
         val savedFuncTypeParams = currentFuncTypeParams
@@ -110,13 +110,13 @@ class TypeResolver(private val table: SymbolTable) {
         currentReceiverType = savedReceiver
         currentFuncTypeParams = savedFuncTypeParams
         unsafeContext = savedUnsafe
-        declaredFailSet = savedFailSet
+        declaredFailSets = savedFailSets
 
         table.popScope()
     }
 
-    /** The declared error set of the function currently being resolved (`T!E`'s `E`), or null. */
-    private var declaredFailSet: String? = null
+    /** Error sets declared by the function currently being resolved. */
+    private var declaredFailSets: List<String>? = null
 
     /** Type parameters of the function currently being resolved (erased to `Any` in types). */
     private var currentFuncTypeParams: Set<String> = emptySet()
@@ -486,8 +486,11 @@ class TypeResolver(private val table: SymbolTable) {
                 resolveExpr(stmt.value)
                 // `T!E` enforcement: a thrown error variant must belong to the declared set E.
                 val thrownSet = failSetOf(stmt.value)
-                if (thrownSet != null && declaredFailSet != null && thrownSet != declaredFailSet) {
-                    errors.add("line ${stmt.line}: function declares '!$declaredFailSet' but throws error from '$thrownSet'")
+                if (thrownSet != null && declaredFailSets != null && thrownSet !in declaredFailSets.orEmpty()) {
+                    val declared = declaredFailSets.orEmpty().let {
+                        if (it.size == 1) "!${it.single()}" else "![${it.joinToString(", ")}]"
+                    }
+                    errors.add("line ${stmt.line}: function declares '$declared' but throws error from '$thrownSet'")
                 }
             }
             is Stmt.Panic -> { resolveExpr(stmt.message) }
@@ -595,6 +598,14 @@ class TypeResolver(private val table: SymbolTable) {
                 resolveBinaryType(expr.op, leftType, rightType, expr.line)
             }
             is Expr.Call -> {
+                if (expr.callee == "__reflect") {
+                    errors.add("line ${expr.line}: reflect is compile-time-only and must be followed by .hasDeco<D> or .decoMeta<D>")
+                    return null
+                }
+                if (expr.callee == "__hasDeco" || expr.callee == "__decoMeta") {
+                    errors.add("line ${expr.line}: '${if (expr.callee == "__hasDeco") "hasDeco" else "decoMeta"}' is a compile-time-only property and must be used inside inline code")
+                    return null
+                }
                 // Struct construction: `Name(args)` where Name is a pack.
                 val struct = table.lookupStruct(expr.callee)
                 if (struct != null) {
@@ -990,7 +1001,7 @@ class TypeResolver(private val table: SymbolTable) {
                     }
                     is IrType.Named -> {
                         // Nominal tuple pack (`__Tuple_<types>`): `.0`/`.1` access a
-                        // numeric-named field, permitted via `@enforceNumFields`.
+                        // numeric-named field, permitted via `@EnforceNumFields`.
                         val field = table.lookupStruct(targetType.name)?.field(expr.index.toString())
                         if (field != null) {
                             field.type
@@ -1010,6 +1021,7 @@ class TypeResolver(private val table: SymbolTable) {
                 resolveExpr(expr.fallback) ?: return null
                 t1
             }
+            is Expr.TryPropagate -> resolveExpr(expr.expr)
             is Expr.IfExpr -> {
                 resolveExpr(expr.condition) ?: return null
                 val t1 = resolveExpr(expr.thenExpr) ?: return null

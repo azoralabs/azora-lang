@@ -123,4 +123,44 @@ class TraitsTest {
             }
         """.trimIndent()))
     }
+
+    @Test fun decoratorCanBeImplementedAsMarkerTrait() {
+        assertEquals("", run("""
+            deco Serializable {}
+            pack UserId {
+                fin value: Long
+            }
+            impl Serializable for UserId
+            func main() {}
+        """.trimIndent()))
+    }
+
+    @Test fun decoratorMarkerImplementationCannotDeclareMethods() {
+        val errors = expectFailure("""
+            deco Serializable {}
+            pack UserId {
+                fin value: Long
+            }
+            impl Serializable for UserId {
+                func generated(): Unit { ref self ->
+                    return
+                }
+            }
+            func main() {}
+        """.trimIndent())
+        assertTrue(errors.any { it.contains("marker contract") && it.contains("without a body") }, errors.toString())
+    }
+
+    @Test fun duplicateDecoratorImplementationFails() {
+        val errors = expectFailure("""
+            deco Serializable {}
+            pack UserId {
+                fin value: Long
+            }
+            impl Serializable for UserId
+            impl Serializable for UserId
+            func main() {}
+        """.trimIndent())
+        assertTrue(errors.any { it.contains("duplicate implementation") }, errors.toString())
+    }
 }

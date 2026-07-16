@@ -27,7 +27,7 @@ friend zone std {
      */
     friend zone convert {
         /** Converts any value to its string representation. */
-        @since("0.0.1")
+        @Since("0.0.1")
         func toString(value: Any): String { return "" }
     }
 
@@ -40,7 +40,7 @@ friend zone std {
      *
      * @param T target type produced by the conversion.
      */
-    @experimental(since: "0.0.3")
+    @Experimental(since: "0.0.3")
     spec Into<T>: T { ref self } use as "to${T.typeName}"
 
     /**
@@ -52,6 +52,6 @@ friend zone std {
      *
      * @param T source type represented by the conversion.
      */
-    @experimental(since: "0.0.3")
+    @Experimental(since: "0.0.3")
     spec From<T>: T { ref self } use as "from${T.typeName}"
 }

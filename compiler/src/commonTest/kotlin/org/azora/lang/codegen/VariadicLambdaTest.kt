@@ -19,10 +19,10 @@ class VariadicLambdaTest {
         assertEquals("0\n1\n3", run("""
             import std.io
             func main() {
-                fin len = <T...>{ it.length }
-                std::io::println(len())
-                std::io::println(len(1))
-                std::io::println(len(1, 2, 3))
+                fin len = <...T>{ it.length }
+                std::println(len())
+                std::println(len(1))
+                std::println(len(1, 2, 3))
             }
         """.trimIndent()))
     }
@@ -31,9 +31,9 @@ class VariadicLambdaTest {
         assertEquals("42\n10", run("""
             import std.io
             func main() {
-                fin first = <T...>{ it[0] }
-                std::io::println(first(42))
-                std::io::println(first(10, 20, 30))
+                fin first = <...T>{ it[0] }
+                std::println(first(42))
+                std::println(first(10, 20, 30))
             }
         """.trimIndent()))
     }
@@ -43,13 +43,13 @@ class VariadicLambdaTest {
         assertEquals("6\n100", run("""
             import std.io
             func main() {
-                fin sum = <T...>{
+                fin sum = <...T>{
                     var total = 0
                     for x in it { total = total + x }
                     total
                 }
-                std::io::println(sum(1, 2, 3))
-                std::io::println(sum(10, 20, 30, 40))
+                std::println(sum(1, 2, 3))
+                std::println(sum(10, 20, 30, 40))
             }
         """.trimIndent()))
     }
@@ -64,7 +64,7 @@ class VariadicLambdaTest {
                     for x in xs { total = total + x }
                     total
                 }
-                std::io::println(f([1, 2, 3]))
+                std::println(f([1, 2, 3]))
             }
         """.trimIndent()))
     }

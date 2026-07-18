@@ -191,8 +191,11 @@ class SymbolTable {
         structs[struct.name] = struct
     }
 
-    /** Looks up a struct by name. */
-    fun lookupStruct(name: String): StructType? = structs[name]
+    /** Looks up a struct by name. Accepts a zone-qualified name (`std::Deque`
+     *  lowers to `std__Deque`); types are not zone-mangled, so fall back to the
+     *  final segment when the mangled form is not found. */
+    fun lookupStruct(name: String): StructType? =
+        structs[name] ?: if ("__" in name) structs[name.substringAfterLast("__")] else null
 
     /** Returns all registered struct names (for import resolution). */
     fun allStructNames(): Set<String> = structs.keys.toSet()

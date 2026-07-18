@@ -38,7 +38,7 @@ friend zone std {
      */
     @Since("0.0.1")
     @Serializable
-    pack Deque<T> {
+    pack<T> Deque {
         shield var data: T* = alloc T[8]
         shield var head: Int = 0
         shield var tail: Int = 0
@@ -192,7 +192,7 @@ test "deque clear resets both ends" {
 }
 
 test "deque serialization metadata is declared" {
-    inline assert (reflect Deque).hasDeco<Serializable> { "Deque must carry Serializable metadata" }
+    inline assert (std::reflect<Deque>).hasDeco<Serializable> { "Deque must carry Serializable metadata" }
 }
 
 test .All "deque"

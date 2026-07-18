@@ -522,69 +522,69 @@ friend zone std::math {
 @Target(.Native)
 bridge .C {
     /** Foreign binding: C `sin` (sine). */
-    func sin as az_sin(x: Real): Real
+    func sin use as az_sin(x: Real): Real
     /** Foreign binding: C `cos` (cosine). */
-    func cos as az_cos(x: Real): Real
+    func cos use as az_cos(x: Real): Real
     /** Foreign binding: C `tan` (tangent). */
-    func tan as az_tan(x: Real): Real
+    func tan use as az_tan(x: Real): Real
     /** Foreign binding: C `asin` (arc sine). */
-    func asin as az_asin(x: Real): Real
+    func asin use as az_asin(x: Real): Real
     /** Foreign binding: C `acos` (arc cosine). */
-    func acos as az_acos(x: Real): Real
+    func acos use as az_acos(x: Real): Real
     /** Foreign binding: C `atan` (arc tangent). */
-    func atan as az_atan(x: Real): Real
+    func atan use as az_atan(x: Real): Real
     /** Foreign binding: C `atan2` (2-arg arc tangent). */
-    func atan2 as az_atan2(y: Real, x: Real): Real
+    func atan2 use as az_atan2(y: Real, x: Real): Real
     /** Foreign binding: C `sqrt` (square root). */
-    func sqrt as az_sqrt(x: Real): Real
+    func sqrt use as az_sqrt(x: Real): Real
     /** Foreign binding: C `cbrt` (cube root). */
-    func cbrt as az_cbrt(x: Real): Real
+    func cbrt use as az_cbrt(x: Real): Real
     /** Foreign binding: C `log` (natural logarithm). */
-    func log as az_log(x: Real): Real
+    func log use as az_log(x: Real): Real
     /** Foreign binding: C `log2` (base-2 logarithm). */
-    func log2 as az_log2(x: Real): Real
+    func log2 use as az_log2(x: Real): Real
     /** Foreign binding: C `log10` (base-10 logarithm). */
-    func log10 as az_log10(x: Real): Real
+    func log10 use as az_log10(x: Real): Real
     /** Foreign binding: C `exp` (e^x). */
-    func exp as az_exp(x: Real): Real
+    func exp use as az_exp(x: Real): Real
     /** Foreign binding: C `exp2` (2^x). */
-    func exp2 as az_exp2(x: Real): Real
+    func exp2 use as az_exp2(x: Real): Real
     /** Foreign binding: C `hypot` (sqrt(x*x + y*y)). */
-    func hypot as az_hypot(x: Real, y: Real): Real
+    func hypot use as az_hypot(x: Real, y: Real): Real
 }
 
 @Target(.WebJs, .WebWasm)
 bridge .JS {
     /** Foreign binding: JS `Math.sin` (sine). */
-    func Math.sin as az_sin(x: Real): Real
+    func Math.sin use as az_sin(x: Real): Real
     /** Foreign binding: JS `Math.cos` (cosine). */
-    func Math.cos as az_cos(x: Real): Real
+    func Math.cos use as az_cos(x: Real): Real
     /** Foreign binding: JS `Math.tan` (tangent). */
-    func Math.tan as az_tan(x: Real): Real
+    func Math.tan use as az_tan(x: Real): Real
     /** Foreign binding: JS `Math.asin` (arc sine). */
-    func Math.asin as az_asin(x: Real): Real
+    func Math.asin use as az_asin(x: Real): Real
     /** Foreign binding: JS `Math.acos` (arc cosine). */
-    func Math.acos as az_acos(x: Real): Real
+    func Math.acos use as az_acos(x: Real): Real
     /** Foreign binding: JS `Math.atan` (arc tangent). */
-    func Math.atan as az_atan(x: Real): Real
+    func Math.atan use as az_atan(x: Real): Real
     /** Foreign binding: JS `Math.atan2` (2-arg arc tangent). */
-    func Math.atan2 as az_atan2(y: Real, x: Real): Real
+    func Math.atan2 use as az_atan2(y: Real, x: Real): Real
     /** Foreign binding: JS `Math.sqrt` (square root). */
-    func Math.sqrt as az_sqrt(x: Real): Real
+    func Math.sqrt use as az_sqrt(x: Real): Real
     /** Foreign binding: JS `Math.cbrt` (cube root). */
-    func Math.cbrt as az_cbrt(x: Real): Real
+    func Math.cbrt use as az_cbrt(x: Real): Real
     /** Foreign binding: JS `Math.log` (natural logarithm). */
-    func Math.log as az_log(x: Real): Real
+    func Math.log use as az_log(x: Real): Real
     /** Foreign binding: JS `Math.log2` (base-2 logarithm). */
-    func Math.log2 as az_log2(x: Real): Real
+    func Math.log2 use as az_log2(x: Real): Real
     /** Foreign binding: JS `Math.log10` (base-10 logarithm). */
-    func Math.log10 as az_log10(x: Real): Real
+    func Math.log10 use as az_log10(x: Real): Real
     /** Foreign binding: JS `Math.exp` (e^x). */
-    func Math.exp as az_exp(x: Real): Real
+    func Math.exp use as az_exp(x: Real): Real
     /** Foreign binding: JS `Math.pow` (base^exp; backs `exp2`). */
-    func Math.pow as az_exp2(x: Real, y: Real): Real
+    func Math.pow use as az_exp2(x: Real, y: Real): Real
     /** Foreign binding: JS `Math.hypot` (sqrt(x*x + y*y)). */
-    func Math.hypot as az_hypot(x: Real, y: Real): Real
+    func Math.hypot use as az_hypot(x: Real, y: Real): Real
 }
 
 friend zone std::math {

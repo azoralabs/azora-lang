@@ -44,7 +44,7 @@ friend zone std {
      */
     @Since("0.0.1")
     @Serializable
-    pack Map<K, V> {
+    pack<K, V> Map {
         shield var keys: K* = alloc K[8]
         shield var values: V* = alloc V[8]
         shield var size: Int = 0
@@ -389,7 +389,7 @@ test "map grows and clears safely" {
 }
 
 test "map serialization metadata is declared" {
-    inline assert (reflect Map).hasDeco<Serializable> { "Map must carry Serializable metadata" }
+    inline assert (std::reflect<Map>).hasDeco<Serializable> { "Map must carry Serializable metadata" }
 }
 
 test .All "map"

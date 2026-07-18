@@ -27,8 +27,8 @@ class Tier3FfiTest {
                 func sin(x: Real): Real
             }
             func main() {
-                std::io::println(sqrt(16.0))
-                std::io::println(sin(0.0))
+                std::println(sqrt(16.0))
+                std::println(sin(0.0))
             }
         """.trimIndent()))
     }
@@ -40,7 +40,7 @@ class Tier3FfiTest {
                 func pow(val: Real, exp: Real): Real
             }
             func main() {
-                std::io::println(pow(2.0, 10.0))
+                std::println(pow(2.0, 10.0))
             }
         """.trimIndent()))
     }
@@ -52,7 +52,7 @@ class Tier3FfiTest {
                 func sqrt(x: Real): Real
             }
             func main() {
-                std::io::println(sqrt(16.0))
+                std::println(sqrt(16.0))
             }
         """.trimIndent())
         assertIs<CompilationResult.Success>(result)

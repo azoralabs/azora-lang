@@ -23,7 +23,7 @@ class ErrorHandlingTest {
                 try {
                     throw "boom"
                 } catch { e ->
-                    std::io::println("caught: " + e)
+                    std::println("caught: " + e)
                 }
             }
         """.trimIndent()))
@@ -34,9 +34,9 @@ class ErrorHandlingTest {
             import std.io
             func main() {
                 try {
-                    std::io::println("ok")
+                    std::println("ok")
                 } catch { e ->
-                    std::io::println("error")
+                    std::println("error")
                 }
             }
         """.trimIndent()))
@@ -49,7 +49,7 @@ class ErrorHandlingTest {
                 try {
                     throw "anything"
                 } catch {
-                    std::io::println("recovered")
+                    std::println("recovered")
                 }
             }
         """.trimIndent()))
@@ -63,7 +63,7 @@ class ErrorHandlingTest {
                 return a / b
             }
             func main() {
-                std::io::println(safeDiv(10, 0) catch -1)
+                std::println(safeDiv(10, 0) catch -1)
             }
         """.trimIndent()))
     }
@@ -76,7 +76,7 @@ class ErrorHandlingTest {
                 return a / b
             }
             func main() {
-                std::io::println(safeDiv(10, 2) catch -1)
+                std::println(safeDiv(10, 2) catch -1)
             }
         """.trimIndent()))
     }

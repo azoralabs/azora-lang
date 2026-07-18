@@ -23,7 +23,7 @@ class Tier2MetaprogrammingTest {
             import std.io
             func main() {
                 inline for x in 0..<3 {
-                    std::io::println(x)
+                    std::println(x)
                 }
             }
         """.trimIndent()))
@@ -34,7 +34,7 @@ class Tier2MetaprogrammingTest {
             import std.io
             func main() {
                 inline for x in 1..4 {
-                    std::io::println(x)
+                    std::println(x)
                 }
             }
         """.trimIndent()))
@@ -48,7 +48,7 @@ class Tier2MetaprogrammingTest {
                 inline for x in 1..4 {
                     sum = sum + x
                 }
-                std::io::println(sum)
+                std::println(sum)
             }
         """.trimIndent()))
     }
@@ -60,7 +60,7 @@ class Tier2MetaprogrammingTest {
             func main() {
                 inline for x in 1..3 {
                     inline fin doubled = x * 2
-                    std::io::println(doubled)
+                    std::println(doubled)
                 }
             }
         """.trimIndent()))
@@ -72,7 +72,7 @@ class Tier2MetaprogrammingTest {
             func main() {
                 inline fin count = 5
                 inline for x in 0..<count {
-                    std::io::println(x)
+                    std::println(x)
                 }
             }
         """.trimIndent()))
@@ -84,10 +84,10 @@ class Tier2MetaprogrammingTest {
             import std.io
             func main() {
                 inline for x in 0..<3 {
-                    std::io::println(x)
+                    std::println(x)
                 }
                 var x = 99
-                std::io::println(x)
+                std::println(x)
             }
         """.trimIndent()))
     }
@@ -105,7 +105,7 @@ class Tier2MetaprogrammingTest {
                 return "hi"
             }
             func main() {
-                std::io::println(greet())
+                std::println(greet())
             }
         """.trimIndent()))
     }
@@ -122,9 +122,9 @@ class Tier2MetaprogrammingTest {
                 var x: Int
             }
             func main() {
-                std::io::println(PI)
+                std::println(PI)
                 var p = P(5)
-                std::io::println(p.x)
+                std::println(p.x)
             }
         """.trimIndent()))
     }
@@ -134,7 +134,7 @@ class Tier2MetaprogrammingTest {
             import std.io
             @file:experimental
             func main() {
-                std::io::println("ok")
+                std::println("ok")
             }
         """.trimIndent()))
     }
@@ -150,7 +150,7 @@ class Tier2MetaprogrammingTest {
                 return "done"
             }
             func main() {
-                std::io::println(run())
+                std::println(run())
             }
         """.trimIndent()))
     }
@@ -167,8 +167,8 @@ class Tier2MetaprogrammingTest {
                 }
             }
             func main() {
-                std::io::println(Math::PI)
-                std::io::println(Math::double(5))
+                std::println(Math::PI)
+                std::println(Math::double(5))
             }
         """.trimIndent()))
     }
@@ -182,7 +182,7 @@ class Tier2MetaprogrammingTest {
                 }
             }
             func main() {
-                std::io::println(Outer::Inner::VALUE)
+                std::println(Outer::Inner::VALUE)
             }
         """.trimIndent()))
     }
@@ -197,7 +197,7 @@ class Tier2MetaprogrammingTest {
                 }
             }
             func main() {
-                std::io::println(Geom::area())
+                std::println(Geom::area())
             }
         """.trimIndent()))
     }
@@ -212,7 +212,7 @@ class Tier2MetaprogrammingTest {
                     var y = 2
                     x = x + y
                 }
-                std::io::println(x)
+                std::println(x)
             }
         """.trimIndent()))
     }

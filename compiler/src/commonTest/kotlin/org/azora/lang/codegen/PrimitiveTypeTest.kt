@@ -30,13 +30,13 @@ class PrimitiveTypeTest {
 
     @Test
     fun int_defaultLiteral() {
-        val output = run("import std.io\nfunc main() { std::io::println(42) }".trimIndent())
+        val output = run("import std.io\nfunc main() { std::println(42) }".trimIndent())
         assertEquals("42", output)
     }
 
     @Test
     fun int_arithmetic() {
-        val output = run("import std.io\nfunc main() { std::io::println(10 + 20) }".trimIndent())
+        val output = run("import std.io\nfunc main() { std::println(10 + 20) }".trimIndent())
         assertEquals("30", output)
     }
 
@@ -125,7 +125,7 @@ func main() { var c: Char = '\u0041' }""".trimIndent())
             func main() {
                 var a: Short = 10s
                 var b: Short = 20s
-                std::io::println(a + b)
+                std::println(a + b)
             }
         """.trimIndent())
         assertNotNull(result)
@@ -340,28 +340,28 @@ func main() { var c: Char = '\u0041' }""".trimIndent())
 
     @Test
     fun inference_shortFromSuffix() {
-        val result = compile("import std.io\nfunc main() { var x = 42s\n std::io::println(x) }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x = 42s\n std::println(x) }".trimIndent())
         val ir = result.ir.prettyPrint()
         assertTrue("Short" in ir, "Should infer Short from 42s, got:\n$ir")
     }
 
     @Test
     fun inference_longFromSuffix() {
-        val result = compile("import std.io\nfunc main() { var x = 42L\n std::io::println(x) }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x = 42L\n std::println(x) }".trimIndent())
         val ir = result.ir.prettyPrint()
         assertTrue("Long" in ir, "Should infer Long from 42L, got:\n$ir")
     }
 
     @Test
     fun inference_floatFromSuffix() {
-        val result = compile("import std.io\nfunc main() { var x = 3.14f\n std::io::println(x) }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x = 3.14f\n std::println(x) }".trimIndent())
         val ir = result.ir.prettyPrint()
         assertTrue("Float" in ir, "Should infer Float from 3.14f, got:\n$ir")
     }
 
     @Test
     fun inference_charFromLiteral() {
-        val result = compile("import std.io\nfunc main() { var c = 'x'\n std::io::println(c) }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var c = 'x'\n std::println(c) }".trimIndent())
         val ir = result.ir.prettyPrint()
         assertTrue("Char" in ir, "Should infer Char from 'x', got:\n$ir")
     }

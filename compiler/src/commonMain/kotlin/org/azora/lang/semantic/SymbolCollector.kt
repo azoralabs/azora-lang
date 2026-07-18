@@ -49,7 +49,7 @@ class SymbolCollector {
         // println accepts String — type checker will allow String args
         // `toString` lives in std as `std::convert::toString` (see
         // Internal/Std/Convert/Convert.az); it is no longer a free builtin.
-        // `println` lives in std as `std::io::println` (see Internal/Std/IO/IO.az);
+        // `println` lives in std as `std::println` (see Internal/Std/IO/IO.az);
         // it is no longer a free builtin.
         if (table.lookupFunction("channel") == null) {
             // `channel()` — creates a buffered channel for task-to-task communication.

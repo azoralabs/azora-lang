@@ -160,7 +160,7 @@ friend zone std {
             normalizedSeconds -= 1L
             normalizedNanos += 1000000000L
         }
-        return Duration(normalizedSeconds, cast normalizedNanos as Int)
+        return Duration(normalizedSeconds, normalizedNanos as Int)
     }
 
     /** Creates a duration measured in whole nanoseconds. */
@@ -199,18 +199,18 @@ friend zone std {
         prop isNegative: Bool = self.seconds < 0L
 
         /** Whole milliseconds truncated toward negative infinity. */
-        prop inWholeMilliseconds: Long = self.seconds * 1000L + cast (self.nanosecondAdjustment / 1000000) as Long
+        prop inWholeMilliseconds: Long = self.seconds * 1000L + (self.nanosecondAdjustment / 1000000) as Long
 
         /** Returns the magnitude with its sign reversed. */
         func negated(): Duration { ref self ->
-            return duration(0L - self.seconds, 0L - cast self.nanosecondAdjustment as Long)
+            return duration(0L - self.seconds, 0L - self.nanosecondAdjustment as Long)
         }
 
         /** Adds another exact duration. */
         func plus(other: ref Duration): Duration { ref self ->
             return duration(
                 self.seconds + other.seconds,
-                cast self.nanosecondAdjustment as Long + cast other.nanosecondAdjustment as Long
+                self.nanosecondAdjustment as Long + other.nanosecondAdjustment as Long
             )
         }
 
@@ -243,13 +243,13 @@ friend zone std {
 
     impl Instant {
         /** Whole Unix milliseconds, truncated toward negative infinity. */
-        prop epochMilliseconds: Long = self.epochSecond * 1000L + cast (self.nanosecond / 1000000) as Long
+        prop epochMilliseconds: Long = self.epochSecond * 1000L + (self.nanosecond / 1000000) as Long
 
         /** Adds an exact duration while retaining the normalized representation. */
         func plus(value: ref Duration): Instant { ref self ->
             return instant(
                 self.epochSecond + value.seconds,
-                cast self.nanosecond as Long + cast value.nanosecondAdjustment as Long
+                self.nanosecond as Long + value.nanosecondAdjustment as Long
             )
         }
 
@@ -262,7 +262,7 @@ friend zone std {
         func durationSince(earlier: ref Instant): Duration { ref self ->
             return duration(
                 self.epochSecond - earlier.epochSecond,
-                cast self.nanosecond as Long - cast earlier.nanosecond as Long
+                self.nanosecond as Long - earlier.nanosecond as Long
             )
         }
 
@@ -368,22 +368,22 @@ friend zone std {
     func toInstant(value: ref DateTime): Instant {
         fin epochDay = daysFromCivil(value.date.year, value.date.month, value.date.day)
         fin localSecond = epochDay * 86400L +
-            (cast value.time.hour as Long) * 3600L +
-            (cast value.time.minute as Long) * 60L +
-            (cast value.time.second as Long)
-        return instant(localSecond - (cast value.offset.totalSeconds as Long), cast value.time.nanosecond as Long)
+            (value.time.hour as Long) * 3600L +
+            (value.time.minute as Long) * 60L +
+            (value.time.second as Long)
+        return instant(localSecond - (value.offset.totalSeconds as Long), value.time.nanosecond as Long)
     }
 
     /** Converts an instant to a date-time at the requested fixed offset. */
     @Experimental(since: "0.0.4")
     func atOffset(value: ref Instant, offset: UtcOffset): DateTime {
-        fin localSecond = value.epochSecond + cast offset.totalSeconds as Long
+        fin localSecond = value.epochSecond + offset.totalSeconds as Long
         fin epochDay = floorDiv(localSecond, 86400L)
         fin secondOfDay = localSecond - epochDay * 86400L
         fin date = civilFromDays(epochDay)
-        fin hour = cast (secondOfDay / 3600L) as Int
-        fin minute = cast ((secondOfDay % 3600L) / 60L) as Int
-        fin second = cast (secondOfDay % 60L) as Int
+        fin hour = (secondOfDay / 3600L) as Int
+        fin minute = ((secondOfDay % 3600L) / 60L) as Int
+        fin second = (secondOfDay % 60L) as Int
         return DateTime(date, LocalTime(hour, minute, second, value.nanosecond), offset)
     }
 
@@ -391,7 +391,7 @@ friend zone std {
     @Experimental(since: "0.0.4")
     func weekday(value: ref LocalDate): Weekday {
         fin epochDay = daysFromCivil(value.year, value.month, value.day)
-        fin index = cast floorMod(epochDay + 3L, 7L) as Int
+        fin index = floorMod(epochDay + 3L, 7L) as Int
         if index == 0 { return Weekday.Monday }
         if index == 1 { return Weekday.Tuesday }
         if index == 2 { return Weekday.Wednesday }
@@ -577,7 +577,7 @@ friend zone std {
                 SerialValue.Number(secondsText) -> {
                     when nanosValue {
                         SerialValue.Number(nanosText) -> {
-                            return duration(try parseLong(secondsText), cast try parseLong(nanosText) as Long)
+                            return duration(try parseLong(secondsText), try parseLong(nanosText) as Long)
                         }
                         else -> { fail return .UnexpectedType }
                     }
@@ -599,14 +599,14 @@ friend zone std {
     }
 
     confine func daysFromCivil(year: Int, month: Int, day: Int): Long {
-        var y = cast year as Long
-        fin m = cast month as Long
+        var y = year as Long
+        fin m = month as Long
         if m <= 2L { y -= 1L }
         fin era = floorDiv(y, 400L)
         fin yearOfEra = y - era * 400L
         var adjustedMonth = m - 3L
         if m <= 2L { adjustedMonth = m + 9L }
-        fin dayOfYear = (153L * adjustedMonth + 2L) / 5L + cast day as Long - 1L
+        fin dayOfYear = (153L * adjustedMonth + 2L) / 5L + day as Long - 1L
         fin dayOfEra = yearOfEra * 365L + yearOfEra / 4L - yearOfEra / 100L + dayOfYear
         return era * 146097L + dayOfEra - 719468L
     }
@@ -623,7 +623,7 @@ friend zone std {
         var month = monthPrime + 3L
         if monthPrime >= 10L { month = monthPrime - 9L }
         if month <= 2L { year += 1L }
-        return LocalDate(cast year as Int, cast month as Int, cast day as Int)
+        return LocalDate(year as Int, month as Int, day as Int)
     }
 
     confine func pad2(value: Int): String {
@@ -681,7 +681,7 @@ friend zone std {
         while index < stringLength(value) {
             fin c = charAt(value, index)
             if !charIsDigit(c) { fail return .InvalidNumber }
-            result = result * 10L + cast (charToCode(c) - 48) as Long
+            result = result * 10L + (charToCode(c) - 48) as Long
             index += 1
         }
         return result * sign
@@ -892,16 +892,16 @@ test "duration serializer preserves normalized fields" {
 }
 
 test "serializable metadata is present on portable time values" {
-    inline assert (reflect Duration).hasDeco<Serializable> { "Duration must be serializable" }
-    inline assert (reflect Instant).hasDeco<Serializable> { "Instant must be serializable" }
-    inline assert (reflect LocalDate).hasDeco<Serializable> { "LocalDate must be serializable" }
-    inline assert (reflect LocalTime).hasDeco<Serializable> { "LocalTime must be serializable" }
-    inline assert (reflect UtcOffset).hasDeco<Serializable> { "UtcOffset must be serializable" }
-    inline assert (reflect DateTime).hasDeco<Serializable> { "DateTime must be serializable" }
+    inline assert (std::reflect<Duration>).hasDeco<Serializable> { "Duration must be serializable" }
+    inline assert (std::reflect<Instant>).hasDeco<Serializable> { "Instant must be serializable" }
+    inline assert (std::reflect<LocalDate>).hasDeco<Serializable> { "LocalDate must be serializable" }
+    inline assert (std::reflect<LocalTime>).hasDeco<Serializable> { "LocalTime must be serializable" }
+    inline assert (std::reflect<UtcOffset>).hasDeco<Serializable> { "UtcOffset must be serializable" }
+    inline assert (std::reflect<DateTime>).hasDeco<Serializable> { "DateTime must be serializable" }
 }
 
 test "monotonic readings are intentionally not serializable" {
-    inline assert !(reflect MonotonicInstant).hasDeco<Serializable> {
+    inline assert !(std::reflect<MonotonicInstant>).hasDeco<Serializable> {
         "process-local monotonic readings must never become persisted timestamps"
     }
 }
@@ -911,17 +911,17 @@ test .All "time"
 @Target(.Native)
 bridge .C {
     /** Host runtime hook returning Unix time as signed nanoseconds. */
-    func azora_time_unix_nanoseconds as az_time_unix_nanoseconds(): Long
+    func azora_time_unix_nanoseconds use as az_time_unix_nanoseconds(): Long
 
     /** Host runtime hook returning a process-monotonic signed nanosecond reading. */
-    func azora_time_monotonic_nanoseconds as az_time_monotonic_nanoseconds(): Long
+    func azora_time_monotonic_nanoseconds use as az_time_monotonic_nanoseconds(): Long
 }
 
 @Target(.WebJs, .WebWasm)
 bridge .JS {
     /** Browser/runtime adapter returning Unix time as signed nanoseconds. */
-    func AzoraRuntime.timeUnixNanoseconds as az_time_unix_nanoseconds(): Long
+    func AzoraRuntime.timeUnixNanoseconds use as az_time_unix_nanoseconds(): Long
 
     /** Browser/runtime adapter returning a monotonic signed nanosecond reading. */
-    func AzoraRuntime.timeMonotonicNanoseconds as az_time_monotonic_nanoseconds(): Long
+    func AzoraRuntime.timeMonotonicNanoseconds use as az_time_monotonic_nanoseconds(): Long
 }

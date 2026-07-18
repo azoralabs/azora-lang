@@ -21,7 +21,7 @@ class ThreadLocalTest {
             import std.io
             threadlocal fin answer = 42
             func main() {
-                std::io::println(answer)
+                std::println(answer)
             }
         """.trimIndent()))
     }
@@ -32,7 +32,7 @@ class ThreadLocalTest {
             threadlocal var counter = 0
             func main() {
                 counter = 5
-                std::io::println(counter)
+                std::println(counter)
             }
         """.trimIndent())
         when (result) {
@@ -52,14 +52,14 @@ class ThreadLocalTest {
             threadlocal var counter = 0
             func main() {
                 var t1 = task {
-                    std::io::println(counter)
+                    std::println(counter)
                     counter = 5
-                    std::io::println(counter)
+                    std::println(counter)
                 }
                 var t2 = task {
-                    std::io::println(counter)
+                    std::println(counter)
                     counter = 5
-                    std::io::println(counter)
+                    std::println(counter)
                 }
                 await t1
                 await t2
@@ -74,7 +74,7 @@ class ThreadLocalTest {
             import std.io
             threadlocal var msg: String = "hello"
             func main() {
-                std::io::println(msg)
+                std::println(msg)
             }
         """.trimIndent()))
     }

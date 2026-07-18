@@ -21,7 +21,7 @@ class GenericsTest {
                 return x
             }
             func main() {
-                std::io::println(identity(5))
+                std::println(identity(5))
             }
         """.trimIndent()))
     }
@@ -33,7 +33,7 @@ class GenericsTest {
                 return x
             }
             func main() {
-                std::io::println(identity("hello"))
+                std::println(identity("hello"))
             }
         """.trimIndent()))
     }
@@ -45,7 +45,7 @@ class GenericsTest {
                 return a
             }
             func main() {
-                std::io::println(first(10, "hello"))
+                std::println(first(10, "hello"))
             }
         """.trimIndent()))
     }
@@ -53,12 +53,12 @@ class GenericsTest {
     @Test fun genericStruct() {
         assertEquals("42", run("""
             import std.io
-            pack Box<T> {
+            pack<T> Box {
                 var value: T
             }
             func main() {
                 var b = Box(42)
-                std::io::println(b.value)
+                std::println(b.value)
             }
         """.trimIndent()))
     }
@@ -66,12 +66,12 @@ class GenericsTest {
     @Test fun genericStructString() {
         assertEquals("hello", run("""
             import std.io
-            pack Box<T> {
+            pack<T> Box {
                 var value: T
             }
             func main() {
                 var b = Box("hello")
-                std::io::println(b.value)
+                std::println(b.value)
             }
         """.trimIndent()))
     }
@@ -84,7 +84,7 @@ class GenericsTest {
             }
             func main() {
                 var x = identity(42)
-                std::io::println(x + 1)
+                std::println(x + 1)
             }
         """.trimIndent()))
     }

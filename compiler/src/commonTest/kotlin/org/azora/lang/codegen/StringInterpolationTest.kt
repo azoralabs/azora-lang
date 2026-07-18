@@ -22,7 +22,7 @@ class StringInterpolationTest {
             import std.io
             func main() {
                 var name = "Azora"
-                std::io::println("hello ${'$'}name")
+                std::println("hello ${'$'}name")
             }
         """.trimIndent()))
     }
@@ -33,7 +33,7 @@ class StringInterpolationTest {
             import std.io
             func main() {
                 var n = 5
-                std::io::println("n+1 = ${'$'}{n + 1}")
+                std::println("n+1 = ${'$'}{n + 1}")
             }
         """.trimIndent()))
     }
@@ -45,7 +45,7 @@ class StringInterpolationTest {
             func main() {
                 var x = 3
                 var y = 4
-                std::io::println("${'$'}x + ${'$'}y = ${'$'}{x + y}")
+                std::println("${'$'}x + ${'$'}y = ${'$'}{x + y}")
             }
         """.trimIndent()))
     }
@@ -55,7 +55,7 @@ class StringInterpolationTest {
         assertEquals("count: 100", run("""
             import std.io
             func main() {
-                std::io::println("count: ${'$'}{10 * 10}")
+                std::println("count: ${'$'}{10 * 10}")
             }
         """.trimIndent()))
     }
@@ -70,7 +70,7 @@ class StringInterpolationTest {
             }
             func main() {
                 var p = Point(3, 4)
-                std::io::println("point x = ${'$'}{p.x}")
+                std::println("point x = ${'$'}{p.x}")
             }
         """.trimIndent()))
     }
@@ -81,7 +81,7 @@ class StringInterpolationTest {
             import std.io
             func main() {
                 var a = [10, 20, 30]
-                std::io::println("first = ${'$'}{a[0]}")
+                std::println("first = ${'$'}{a[0]}")
             }
         """.trimIndent()))
     }
@@ -91,7 +91,7 @@ class StringInterpolationTest {
         assertEquals("just text", run("""
             import std.io
             func main() {
-                std::io::println("just text")
+                std::println("just text")
             }
         """.trimIndent()))
     }
@@ -101,7 +101,7 @@ class StringInterpolationTest {
         assertEquals("price is $5", run("""
             import std.io
             func main() {
-                std::io::println("price is ${'$'}${'$'}5")
+                std::println("price is ${'$'}${'$'}5")
             }
         """.trimIndent()))
     }
@@ -113,7 +113,7 @@ class StringInterpolationTest {
             func main() {
                 var x = 3
                 var y = 4
-                std::io::println("${'$'}x + ${'$'}y = ${'$'}{x + y}")
+                std::println("${'$'}x + ${'$'}y = ${'$'}{x + y}")
             }
         """.trimIndent(), release = true))
     }
@@ -124,7 +124,7 @@ class StringInterpolationTest {
             import std.io
             func main() {
                 var name = "Azora"
-                std::io::println("hello ${'$'}name")
+                std::println("hello ${'$'}name")
             }
         """.trimIndent())
         assertIs<CompilationResult.Success>(result)

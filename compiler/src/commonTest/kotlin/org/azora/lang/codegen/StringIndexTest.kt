@@ -23,7 +23,7 @@ class StringIndexTest {
             import std.io
             func main() {
                 let s = "hello"
-                std::io::println("${'$'}{s[1]}")
+                std::println("${'$'}{s[1]}")
             }
         """.trimIndent()))
     }
@@ -43,7 +43,7 @@ class StringIndexTest {
                     if isDigit(s[i]) { n = n + 1 }
                     i = i + 1
                 }
-                std::io::println("digits=${'$'}n")
+                std::println("digits=${'$'}n")
             }
         """.trimIndent()))
     }
@@ -62,7 +62,7 @@ class StringIndexTest {
                     if i + 1 < s.length && s[i + 1] == 'b' { hits = hits + 1 }
                     i = i + 1
                 }
-                std::io::println("hits=${'$'}hits")
+                std::println("hits=${'$'}hits")
             }
         """.trimIndent()))
     }
@@ -74,7 +74,7 @@ class StringIndexTest {
             import std.io
             func main() {
                 let s = "hi"
-                std::io::println("${'$'}{s[0]}")
+                std::println("${'$'}{s[0]}")
             }
             """.trimIndent(),
             release = true,

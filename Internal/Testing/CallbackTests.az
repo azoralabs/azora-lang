@@ -112,7 +112,7 @@ test "Lambda with string operations" {
 // --- Variadic Lambda Tests ---
 
 test "Variadic lambda sum with for iteration" {
-    var sum = <T...>{
+    var sum = <...T>{
         var total = 0
         for x in it {
             total += x
@@ -124,20 +124,20 @@ test "Variadic lambda sum with for iteration" {
 }
 
 test "Variadic lambda it.length" {
-    var len = <T...>{ it.length }
+    var len = <...T>{ it.length }
     assert len() == 0 { "variadic len() should be 0" }
     assert len(1) == 1 { "variadic len(1) should be 1" }
     assert len(1, 2, 3) == 3 { "variadic len(1,2,3) should be 3" }
 }
 
 test "Variadic lambda index access" {
-    var first = <T...>{ it[0] }
+    var first = <...T>{ it[0] }
     assert first(42) == 42 { "variadic first(42) should be 42" }
     assert first(10, 20, 30) == 10 { "variadic first(10,20,30) should be 10" }
 }
 
 test "Variadic lambda for with index" {
-    var indexSum = <T...>{
+    var indexSum = <...T>{
         var total = 0
         for x in it with i {
             total += i
@@ -148,7 +148,7 @@ test "Variadic lambda for with index" {
 }
 
 test "Variadic lambda inline for with index" {
-    var indexSum = <T...>{
+    var indexSum = <...T>{
         inline var $total = 0
         inline for _ in $it with $i {
             $total += $i
@@ -159,13 +159,13 @@ test "Variadic lambda inline for with index" {
 }
 
 test "Variadic lambda typename" {
-    var f = <T...>{ it }
+    var f = <...T>{ it }
     assert f.typename == "Callback" { "variadic lambda typename should be Callback" }
 }
 
 test "Variadic lambda closure capture" {
     var base = 100
-    var addBase = <T...>{
+    var addBase = <...T>{
         var total = base
         for x in it {
             total += x
@@ -176,12 +176,12 @@ test "Variadic lambda closure capture" {
 }
 
 test "Variadic lambda empty args" {
-    var empty = <T...>{ it.length }
+    var empty = <...T>{ it.length }
     assert empty() == 0 { "variadic with no args should have length 0" }
 }
 
 test "Variadic lambda where constraint" {
-    var needsThree = <T...> where T.length >= 3 {
+    var needsThree = <...T> where T.length >= 3 {
         it[0] + it[1] + it[2]
     }
     assert needsThree(1, 2, 3) == 6 { "where constraint satisfied: 1+2+3=6" }

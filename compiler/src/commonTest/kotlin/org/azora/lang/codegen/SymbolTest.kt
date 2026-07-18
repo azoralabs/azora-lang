@@ -29,7 +29,7 @@ class SymbolTest {
             func main() {
                 var x = 5
                 x = 10
-                std::io::println(x)
+                std::println(x)
             }
         """.trimIndent())
         val ir = result.ir.prettyPrint()
@@ -43,7 +43,7 @@ class SymbolTest {
             import std.io
             func main() {
                 var x: Int = 5
-                std::io::println(x)
+                std::println(x)
             }
         """.trimIndent())
         val ir = result.ir.prettyPrint()
@@ -83,7 +83,7 @@ class SymbolTest {
             import std.io
             func main() {
                 fin x = 42
-                std::io::println(x)
+                std::println(x)
             }
         """.trimIndent())
         val ir = result.ir.prettyPrint()
@@ -96,7 +96,7 @@ class SymbolTest {
             import std.io
             func main() {
                 fin x: String = "hello"
-                std::io::println(x)
+                std::println(x)
             }
         """.trimIndent())
         val ir = result.ir.prettyPrint()
@@ -121,7 +121,7 @@ class SymbolTest {
             import std.io
             fin x = 99
             func main() {
-                std::io::println(x)
+                std::println(x)
             }
         """.trimIndent())
         val ir = result.ir.prettyPrint()
@@ -150,7 +150,7 @@ class SymbolTest {
             import std.io
             func main() {
                 let x = 7
-                std::io::println(x)
+                std::println(x)
             }
         """.trimIndent())
         val ir = result.ir.prettyPrint()
@@ -163,7 +163,7 @@ class SymbolTest {
             import std.io
             func main() {
                 let x: Bool = true
-                std::io::println(x)
+                std::println(x)
             }
         """.trimIndent())
         val ir = result.ir.prettyPrint()
@@ -206,7 +206,7 @@ class SymbolTest {
                 return a + b
             }
             func main() {
-                std::io::println(add(3, 4))
+                std::println(add(3, 4))
             }
         """.trimIndent())
         val ir = result.ir.prettyPrint()
@@ -221,7 +221,7 @@ class SymbolTest {
                 return a + b
             }
             func main() {
-                std::io::println(add(3, 4))
+                std::println(add(3, 4))
             }
         """.trimIndent())
         val ir = result.ir.prettyPrint()
@@ -233,7 +233,7 @@ class SymbolTest {
         val result = compile("""
             import std.io
             func greet() {
-                std::io::println("hi")
+                std::println("hi")
             }
             func main() {
                 greet()
@@ -248,10 +248,10 @@ class SymbolTest {
         val errors = expectFailure("""
             import std.io
             func foo() {
-                std::io::println("a")
+                std::println("a")
             }
             func foo() {
-                std::io::println("b")
+                std::println("b")
             }
             func main() {
                 foo()
@@ -279,7 +279,7 @@ class SymbolTest {
                 return a + b
             }
             func main() {
-                std::io::println(add(1))
+                std::println(add(1))
             }
         """.trimIndent())
         assertTrue(errors.any { "expects" in it && "args" in it })
@@ -293,7 +293,7 @@ class SymbolTest {
                 return "hello"
             }
             func main() {
-                std::io::println(foo())
+                std::println(foo())
             }
         """.trimIndent())
         assertTrue(errors.any { "return type mismatch" in it })
@@ -304,10 +304,10 @@ class SymbolTest {
         val result = compile("""
             import std.io
             func unused() {
-                std::io::println("never called")
+                std::println("never called")
             }
             func main() {
-                std::io::println("hello")
+                std::println("hello")
             }
         """.trimIndent())
         val optimizedFuncs = result.optimizedIr.functions.map { it.name }
@@ -326,14 +326,14 @@ class SymbolTest {
             fin x = 9
             func main() {
                 var x = 2
-                std::io::println(x)
-                std::io::println(::x)
+                std::println(x)
+                std::println(::x)
             }
         """.trimIndent())
         val ir = result.ir.prettyPrint()
         // Local x is mangled (shadows global), ::x resolves to global x
         // The two println calls should reference different variable names
-        val lines = ir.lines().filter { it.trim().startsWith("std__io__println(") }
+        val lines = ir.lines().filter { it.trim().startsWith("std__println(") }
         assertEquals(2, lines.size, "Should have 2 println calls, got: $lines")
         assertNotEquals(lines[0], lines[1], "Local and upper scope should resolve to different names in IR:\n$ir")
     }
@@ -346,7 +346,7 @@ class SymbolTest {
                 var x = 1
                 zone {
                     var x = 2
-                    std::io::println(::x)
+                    std::println(::x)
                 }
             }
         """.trimIndent())
@@ -362,7 +362,7 @@ class SymbolTest {
             import std.io
             func main() {
                 var x = 5
-                std::io::println(::y)
+                std::println(::y)
             }
         """.trimIndent())
         assertTrue(errors.any { "not found" in it })
@@ -375,7 +375,7 @@ class SymbolTest {
             fin greeting = "hello"
             func main() {
                 var greeting = "bye"
-                std::io::println(::greeting)
+                std::println(::greeting)
             }
         """.trimIndent())
         val ir = result.ir.prettyPrint()
@@ -395,9 +395,9 @@ class SymbolTest {
                 var x = 1
                 zone {
                     var x = 2
-                    std::io::println(x)
+                    std::println(x)
                 }
-                std::io::println(x)
+                std::println(x)
             }
         """.trimIndent())
         assertNotNull(result)
@@ -412,7 +412,7 @@ class SymbolTest {
                 return x
             }
             func main() {
-                std::io::println(foo(5))
+                std::println(foo(5))
             }
         """.trimIndent())
         assertNotNull(result)
@@ -428,7 +428,7 @@ class SymbolTest {
             import std.io
             var x = 5
             func main() {
-                std::io::println(x)
+                std::println(x)
             }
         """.trimIndent())
         assertTrue(errors.any { "not allowed" in it && "thread-safe" in it })
@@ -440,7 +440,7 @@ class SymbolTest {
             import std.io
             let x = 5
             func main() {
-                std::io::println(x)
+                std::println(x)
             }
         """.trimIndent())
         assertTrue(errors.any { "not allowed" in it && "thread-safe" in it })
@@ -456,7 +456,7 @@ class SymbolTest {
             import std.io
             func main() {
                 var unused = 42
-                std::io::println("hello")
+                std::println("hello")
             }
         """.trimIndent())
         val optimizedIr = result.optimizedIr.prettyPrint()
@@ -470,7 +470,7 @@ class SymbolTest {
             import std.io
             fin unused = 99
             func main() {
-                std::io::println("hello")
+                std::println("hello")
             }
         """.trimIndent())
         val optimizedIr = result.optimizedIr.prettyPrint()

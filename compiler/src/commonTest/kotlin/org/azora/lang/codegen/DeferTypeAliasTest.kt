@@ -19,14 +19,14 @@ class DeferTypeAliasTest {
         assertEquals("start\nend\ncleanup1\ncleanup2", run("""
             import std.io
             func main() {
-                std::io::println("start")
+                std::println("start")
                 defer {
-                    std::io::println("cleanup2")
+                    std::println("cleanup2")
                 }
                 defer {
-                    std::io::println("cleanup1")
+                    std::println("cleanup1")
                 }
-                std::io::println("end")
+                std::println("end")
             }
         """.trimIndent()))
     }
@@ -36,13 +36,13 @@ class DeferTypeAliasTest {
             import std.io
             func doWork(): Int {
                 defer {
-                    std::io::println("cleanup")
+                    std::println("cleanup")
                 }
-                std::io::println("work")
+                std::println("work")
                 return 42
             }
             func main() {
-                std::io::println(doWork())
+                std::println(doWork())
             }
         """.trimIndent()))
     }
@@ -51,8 +51,8 @@ class DeferTypeAliasTest {
         val result = Compiler().compile("""
             import std.io
             func main() {
-                defer { std::io::println("cleanup") }
-                std::io::println("body")
+                defer { std::println("cleanup") }
+                std::println("body")
             }
         """.trimIndent(), release = false)
         assertIs<CompilationResult.Success>(result)
@@ -66,7 +66,7 @@ class DeferTypeAliasTest {
             typealias UserId = Int
             func main() {
                 var id: UserId = 42
-                std::io::println(id)
+                std::println(id)
             }
         """.trimIndent()))
     }
@@ -77,7 +77,7 @@ class DeferTypeAliasTest {
             typealias Name = String
             func main() {
                 var n: Name = "hello"
-                std::io::println(n)
+                std::println(n)
             }
         """.trimIndent()))
     }

@@ -436,7 +436,7 @@ class JavaScriptCodegen {
                 "isDigit" -> emitExpr(expr.args[0]).let { "($it >= '0' && $it <= '9')" }
                 else -> {
                     val name = when (expr.name) {
-                        "std__io__println" -> "console.log"
+                        "std__println" -> "console.log"
                         "std__convert__toString" -> "String"
                         else -> expr.name
                     }

@@ -101,7 +101,7 @@ enum class TokenType {
     PLUS_EQUAL, MINUS_EQUAL, STAR_EQUAL, SLASH_EQUAL, PERCENT_EQUAL,
     PLUS_PLUS, MINUS_MINUS,
     AMP, PIPE, CARET, TILDE, SHIFT_LEFT, SHIFT_RIGHT,
-    AS, GUARD, IS, CAST,
+    AS, GUARD, IS,
     QMARK, QMARK_QMARK, QMARK_DOT, QMARK_EQUAL,
     // Null-conditional compound assignment / inc-dec: ?+= ?-= ?*= ?/= ?%= ?++ ?--
     QMARK_PLUS_EQUAL, QMARK_MINUS_EQUAL, QMARK_STAR_EQUAL, QMARK_SLASH_EQUAL, QMARK_PERCENT_EQUAL,
@@ -121,7 +121,7 @@ enum class TokenType {
     // `fail ErrSet { … }` — error-set declaration; also `fail <expr>` throw sugar.
     FAIL,
     // Memory model: `alloc <expr>`, `drop <expr>`, `deref <expr>`, `unsafe { }`, `isolated(expr)`.
-    ALLOC, DROP, DEREF, REFLECT, UNSAFE, ISOLATED,
+    ALLOC, DROP, DEREF, UNSAFE, ISOLATED,
     // Concurrency: `flow name(...) { … yield v }` generators, `task { }` / `await`, `launch { }`.
     FLOW, YIELD, TASK, AWAIT, LAUNCH,
     // FFI: `bridge <target> { func sigs }` — extern function declarations.
@@ -142,11 +142,13 @@ enum class TokenType {
     FLIP, FLOP,
     // Ownership/reference modifiers: `ref T`, `mut ref T`, `shared ref T`, `weak ref T`.
     REF, OUT, MUT, SHARED, WEAK,
-    // Visibility: `expose` (public), `confine` (private), `protect` (protected).
-    // `shield` — a pack/field modifier: externally read-only, internally mutable.
-    EXPOSE, CONFINE, PROTECT, SHIELD,
-    // Module: `module Name`.
-    MODULE,
+    // Visibility: `expose` (public), `confine` (private), `protect` (protected),
+    // `intern` (library-scoped). `shield` — a pack/field modifier: externally
+    // read-only, internally mutable.
+    EXPOSE, CONFINE, PROTECT, SHIELD, INTERN,
+    // Module: `module Name`. `export module Name` publishes the module so that
+    // its declarations are auto-imported into every unit (like `std.root`).
+    MODULE, EXPORT,
     // Thread-local storage: `threadlocal var x = 0` / `threadlocal fin y = 42`.
     THREADLOCAL,
     // `deco Name [bind Spec] { fields }` — decorator/annotation declaration.

@@ -18,6 +18,7 @@ package org.azora.lang.stdlib
 
 import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.FuncDecl
+import org.azora.lang.frontend.ModuleVisibility
 import org.azora.lang.frontend.Program
 import org.azora.lang.frontend.Stmt
 import org.azora.lang.frontend.TopLevel
@@ -57,8 +58,18 @@ object StdlibInjector {
         val items = LinkedHashMap<String, TopLevel>()
         /** name → module that provides it, for import hints. */
         val moduleOfName = LinkedHashMap<String, String>()
+        /** module → its declared visibility, for import gating. */
+        val moduleVisibility = LinkedHashMap<String, ModuleVisibility>()
         /** Items from a library's conventional `<root>.root` module. */
         val implicitRootItems = LinkedHashMap<String, TopLevel>()
+        /**
+         * Top-level items that must be injected into every unit unconditionally,
+         * gathered from `export module …` declarations (and the conventional
+         * `<root>.root` module). Kept as raw items — in particular a `deepinline
+         * zone { … }` block is injected whole so CTFE flattens it downstream,
+         * exactly as it would inside its own module.
+         */
+        val alwaysInjectedItems = mutableListOf<TopLevel>()
         /** extern name → single-signature bridge declaring it. */
         val externs = LinkedHashMap<String, TopLevel.Bridge>()
         /** struct/pack name → its `impl` blocks (methods/oper overloads), injected alongside the pack. */
@@ -79,6 +90,7 @@ object StdlibInjector {
             val module = program.moduleName ?: continue
             val root = module.substringBefore('.')
             idx.roots.add(root)
+            idx.moduleVisibility.putIfAbsentCompat(module, program.moduleVisibility)
             val moduleItems = idx.modules.getOrPut(module) { LinkedHashMap() }
             fun register(name: String, item: TopLevel) {
                 moduleItems.putIfAbsentCompat(name, item)
@@ -94,12 +106,24 @@ object StdlibInjector {
                     }
                 }
             }
+            // A module is auto-imported into downstream/user units when it is
+            // declared `export expose module …` (the default visibility) or follows
+            // the conventional `<root>.root` naming. `export intern`/`export protect`
+            // auto-import only within the library/folder, so they are not injected
+            // into external units here; `export confine` is rejected at parse time.
+            val alwaysOn = (program.isExported && program.moduleVisibility == ModuleVisibility.EXPOSE) ||
+                module.substringAfterLast('.') == "root"
             for (item in program.items) {
                 when (item) {
                     is TopLevel.Func -> register(item.decl.name, item)
                     is TopLevel.FinDecl -> register(item.name, item)
                     is TopLevel.LetDecl -> register(item.name, item)
                     is TopLevel.VarDecl -> register(item.name, item)
+                    // Compile-time constants from `impl zone` / inline blocks (e.g.
+                    // `Int::MAX_VALUE`). Folded away by CTFE once injected.
+                    is TopLevel.InlineFin -> register(item.name, item)
+                    is TopLevel.InlineLet -> register(item.name, item)
+                    is TopLevel.InlineVar -> register(item.name, item)
                     is TopLevel.Pack -> register(item.name, item)
                     is TopLevel.Enum -> register(item.name, item)
                     is TopLevel.Fail -> register(item.name, item)
@@ -116,10 +140,17 @@ object StdlibInjector {
                     is TopLevel.Bridge -> for (sig in item.funcs) {
                         idx.externs.putIfAbsentCompat(sig.name, TopLevel.Bridge(item.target, listOf(sig), item.line, item.column))
                     }
+                    // `deepinline zone { … }` and similar compile-time blocks (e.g.
+                    // `std.config`) carry their declarations opaquely; inject them
+                    // whole so CTFE flattens them downstream just as it would in
+                    // the module itself, rather than lifting each nested constant.
+                    is TopLevel.InlineBlock, is TopLevel.DeepInlineBlock,
+                    is TopLevel.InlineIf, is TopLevel.DeepInlineIf ->
+                        if (alwaysOn) idx.alwaysInjectedItems.add(item)
                     else -> {}
                 }
             }
-            if (module.substringAfterLast('.') == "root") {
+            if (alwaysOn) {
                 moduleItems.forEach { (name, item) -> idx.implicitRootItems.putIfAbsentCompat(name, item) }
             }
         }
@@ -147,14 +178,25 @@ object StdlibInjector {
         return visible
     }
 
+    /**
+     * Whether a bundled-library [module] may be imported by an external unit
+     * (user code / a downstream library). Only `expose` modules are; `intern`,
+     * `protect`, and `confine` modules are visible solely within the library or
+     * folder that declares them, so importing them from user code fails as if
+     * the module did not exist.
+     */
+    private fun isExternallyImportable(module: String): Boolean =
+        index.moduleVisibility[module]?.let { it == ModuleVisibility.EXPOSE } ?: true
+
     private fun itemsVisibleFromImport(path: String, selected: String?): Map<String, TopLevel> {
         if (selected != null) {
+            if (!isExternallyImportable(path)) return emptyMap()
             val module = index.modules[path] ?: return emptyMap()
             return module[selected]?.let { mapOf(selected to it) } ?: emptyMap()
         }
-        index.modules[path]?.let { return it }
+        if (index.modules[path] != null && isExternallyImportable(path)) return index.modules[path]!!
         val descendants = index.modules
-            .filterKeys { it.startsWith("$path.") }
+            .filterKeys { it.startsWith("$path.") && isExternallyImportable(it) }
             .values
         if (descendants.isNotEmpty()) {
             val result = LinkedHashMap<String, TopLevel>()
@@ -164,6 +206,7 @@ object StdlibInjector {
             return result
         }
         val (moduleName, itemName) = resolveSelectedLibraryPath(path) ?: return emptyMap()
+        if (!isExternallyImportable(moduleName)) return emptyMap()
         val declaration = index.modules[moduleName]?.get(itemName) ?: return emptyMap()
         return mapOf(itemName to declaration)
     }
@@ -225,6 +268,8 @@ object StdlibInjector {
 
         val referenced = mutableSetOf<String>()
         for (item in program.items) collectNamesFromItem(item, referenced)
+        // Exported/root blocks are always injected; pull in whatever they reference.
+        for (item in index.alwaysInjectedItems) collectNamesFromItem(item, referenced)
         val implicitReferenced = referenced.filterTo(mutableSetOf()) { it in implicitCollectionTypes }
         referenced.retainAll(visible.keys)
         referenced += implicitReferenced
@@ -254,14 +299,16 @@ object StdlibInjector {
             frontier = next
         }
 
-        if (injected.isEmpty() && injectedExterns.isEmpty()) return program
+        if (injected.isEmpty() && injectedExterns.isEmpty() && index.alwaysInjectedItems.isEmpty()) return program
         // One declaration can be indexed by both its qualified and short export
         // names. Preserve discovery order while appending each AST item once.
         val existingIdentities = program.items.mapTo(mutableSetOf()) { itemIdentity(it) }
         val declarations = injected.values.distinct().filter { existingIdentities.add(itemIdentity(it)) }
         val externDeclarations = injectedExterns.values.distinct().filter { existingIdentities.add(itemIdentity(it)) }
-        if (declarations.isEmpty() && externDeclarations.isEmpty()) return program
-        return program.copy(items = program.items + declarations + externDeclarations)
+        // Exported/root compile-time blocks are injected unconditionally.
+        val alwaysDeclarations = index.alwaysInjectedItems.filter { existingIdentities.add(itemIdentity(it)) }
+        if (declarations.isEmpty() && externDeclarations.isEmpty() && alwaysDeclarations.isEmpty()) return program
+        return program.copy(items = program.items + declarations + externDeclarations + alwaysDeclarations)
     }
 
     private fun itemIdentity(item: TopLevel): String = when (item) {
@@ -319,6 +366,9 @@ object StdlibInjector {
                 item.type?.let { collectNamesFromTypeRef(it, names) }
                 collectNamesFromExpr(item.initializer, names)
             }
+            is TopLevel.InlineFin -> collectNamesFromExpr(item.initializer, names)
+            is TopLevel.InlineLet -> collectNamesFromExpr(item.initializer, names)
+            is TopLevel.InlineVar -> collectNamesFromExpr(item.initializer, names)
             is TopLevel.VarDecl -> {
                 collectNamesFromAnnotations(item.annotations, names)
                 item.type?.let { collectNamesFromTypeRef(it, names) }

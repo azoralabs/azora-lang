@@ -38,7 +38,7 @@ class TraitsTest {
             }
             func main() {
                 var p = Point(3, 4)
-                std::io::println(p.describe())
+                std::println(p.describe())
             }
         """.trimIndent()))
     }
@@ -64,8 +64,8 @@ class TraitsTest {
             }
             func main() {
                 var l = Light("green", 0)
-                std::io::println(l.status())
-                std::io::println(l.level())
+                std::println(l.status())
+                std::println(l.level())
             }
         """.trimIndent()))
     }
@@ -85,7 +85,7 @@ class TraitsTest {
                     return "P"
                 }
             }
-            func main() { std::io::println("hi") }
+            func main() { std::println("hi") }
         """.trimIndent())
         assertTrue(errors.any { it.contains("detail") }, "Expected missing 'detail' error, got: $errors")
     }
@@ -101,7 +101,7 @@ class TraitsTest {
                     return 42
                 }
             }
-            func main() { std::io::println("hi") }
+            func main() { std::println("hi") }
         """.trimIndent())
         assertTrue(errors.any { it.contains("NonExistent") }, "Expected unknown spec error, got: $errors")
     }
@@ -119,7 +119,7 @@ class TraitsTest {
             }
             func main() {
                 var p = P(42)
-                std::io::println(p.getX())
+                std::println(p.getX())
             }
         """.trimIndent()))
     }

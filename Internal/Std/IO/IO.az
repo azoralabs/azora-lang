@@ -43,19 +43,17 @@ friend zone std {
     }
 
     /**
-     * I/O intrinsics.
+     * Console output intrinsic.
      *
-     * Real, importable std symbols whose bodies are never emitted — each
-     * backend and the interpreter intercepts the call by its zone-mangled
-     * name and lowers it to the native runtime operation. Reach as
-     * `std::io::println` after `import std.io`. Accepts `Any` so it prints
-     * every type; the backend dispatches on the argument's concrete type.
+     * A real, importable std symbol whose body is never emitted — each backend
+     * and the interpreter intercepts the call by its zone-mangled name and
+     * lowers it to the native runtime operation. Reach as `std::println` after
+     * `import std.io`. Accepts `Any` so it prints every type; the backend
+     * dispatches on the argument's concrete type.
      */
-    friend zone io {
-        /** Prints `value` followed by a newline. */
-        @Since("0.0.1")
-        func println(value: Any): Unit { }
-    }
+    /** Prints `value` followed by a newline. */
+    @Since("0.0.1")
+    func println(value: Any): Unit { }
 
     /**
      * Creates a separator string by repeating a character.
@@ -77,9 +75,9 @@ friend zone std {
     @Experimental(since: "0.0.1")
     func header(title: String, width: Int): String {
         var line: String = separator("-", width)
-        std::io::println(line)
-        std::io::println(title)
-        std::io::println(line)
+        std::println(line)
+        std::println(title)
+        std::println(line)
         return title
     }
 }

@@ -44,7 +44,7 @@ friend zone std {
      */
     @Since("0.0.1")
     @Serializable
-    pack MutableMap<K, V> {
+    pack<K, V> MutableMap {
         shield var keys: K* = alloc K[8]
         shield var values: V* = alloc V[8]
         shield var size: Int = 0
@@ -367,7 +367,7 @@ test "mutable map clear permits reuse" {
 }
 
 test "mutable map serialization metadata is declared" {
-    inline assert (reflect MutableMap).hasDeco<Serializable> { "MutableMap must carry Serializable metadata" }
+    inline assert (std::reflect<MutableMap>).hasDeco<Serializable> { "MutableMap must carry Serializable metadata" }
 }
 
 test .All "mutable map"

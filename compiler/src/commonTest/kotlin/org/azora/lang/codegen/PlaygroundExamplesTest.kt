@@ -22,7 +22,7 @@ class PlaygroundExamplesTest {
 
     @Test fun hello() = assertEquals("Hello, world!", run("""module playground
 import std.io
-func main() { std::io::println("Hello, world!") }"""))
+func main() { std::println("Hello, world!") }"""))
 
     @Test fun variables() = assertEquals("Hello, Azora!" + "\n" + "count is 6", run("""module playground
 import std.io
@@ -32,8 +32,8 @@ func main() {
     count += 5
     fin name = "Azora"
     let greeting = "Hello, ${'$'}{name}!"
-    std::io::println(greeting)
-    std::io::println("count is ${'$'}{count}")
+    std::println(greeting)
+    std::println("count is ${'$'}{count}")
 }"""))
 
     @Test fun functions() = assertEquals("7" + "\n" + "120", run("""module playground
@@ -44,8 +44,8 @@ func factorial(n: Int): Int {
     return n * factorial(n - 1)
 }
 func main() {
-    std::io::println("${'$'}{add(3, 4)}")
-    std::io::println("${'$'}{factorial(5)}")
+    std::println("${'$'}{add(3, 4)}")
+    std::println("${'$'}{factorial(5)}")
 }"""))
 
     @Test fun controlFlow() = assertEquals("sum 1..10 = 55" + "\n" + "stopped at 7" + "\n" + "even count = 5", run("""module playground
@@ -53,34 +53,34 @@ import std.io
 func main() {
     var sum = 0
     for i in 1..10 { sum += i }
-    std::io::println("sum 1..10 = ${'$'}{sum}")
+    std::println("sum 1..10 = ${'$'}{sum}")
     var i = 0
     loop {
         i += 1
         if i == 7 { break }
     }
-    std::io::println("stopped at ${'$'}{i}")
+    std::println("stopped at ${'$'}{i}")
     var evens = 0
     for n in 0..<10 {
         if n % 2 != 0 { continue }
         evens += 1
     }
-    std::io::println("even count = ${'$'}{evens}")
+    std::println("even count = ${'$'}{evens}")
 }"""))
 
     @Test fun arrays() = assertEquals("10" + "\n" + "3" + "\n" + "4" + "\n" + "99" + "\n" + "total = 189", run("""module playground
 import std.io
 func main() {
     var nums = [10, 20, 30]
-    std::io::println(nums[0])
-    std::io::println(nums.length)
+    std::println(nums[0])
+    std::println(nums.length)
     nums.add(40)
     nums[0] = 99
-    std::io::println(nums.length)
-    std::io::println(nums[0])
+    std::println(nums.length)
+    std::println(nums[0])
     var total = 0
     for i in 0..<nums.length { total += nums[i] }
-    std::io::println("total = ${'$'}{total}")
+    std::println("total = ${'$'}{total}")
 }"""))
 
     @Test fun strings() = assertEquals("Hello, Azora!" + "\n" + "3 x 3 = 9" + "\n" + "ababab" + "\n" + "length is 5", run("""module playground
@@ -88,10 +88,10 @@ import std.io
 func main() {
     var name = "Azora"
     var n = 3
-    std::io::println("Hello, ${'$'}name!")
-    std::io::println("${'$'}{n} x ${'$'}{n} = ${'$'}{n * n}")
-    std::io::println("ab" * 3)
-    std::io::println("length is ${'$'}{name.length}")
+    std::println("Hello, ${'$'}name!")
+    std::println("${'$'}{n} x ${'$'}{n} = ${'$'}{n * n}")
+    std::println("ab" * 3)
+    std::println("length is ${'$'}{name.length}")
 }"""))
 
     @Test fun structs() = assertEquals("3, 4" + "\n" + "10, 5" + "\n" + "last = 3, 3", run("""module playground
@@ -102,12 +102,12 @@ pack Point {
 }
 func main() {
     var p = Point(3, 4)
-    std::io::println("${'$'}{p.x}, ${'$'}{p.y}")
+    std::println("${'$'}{p.x}, ${'$'}{p.y}")
     p.x = 10
     p.y += 1
-    std::io::println("${'$'}{p.x}, ${'$'}{p.y}")
+    std::println("${'$'}{p.x}, ${'$'}{p.y}")
     var points = [Point(1, 1), Point(2, 2), Point(3, 3)]
-    std::io::println("last = ${'$'}{points[2].x}, ${'$'}{points[2].y}")
+    std::println("last = ${'$'}{points[2].x}, ${'$'}{points[2].y}")
 }"""))
 
     @Test fun operators() = assertEquals("30" + "\n" + "3" + "\n" + "2" + "\n" + "sum 1..<5 = 10", run("""module playground
@@ -116,12 +116,12 @@ func main() {
     var n = 10
     n += 5
     n *= 2
-    std::io::println(n)
-    std::io::println(17 / 5)
-    std::io::println(17 % 5)
+    std::println(n)
+    std::println(17 / 5)
+    std::println(17 % 5)
     var sum = 0
     for i in 1..<5 { sum += i }
-    std::io::println("sum 1..<5 = ${'$'}{sum}")
+    std::println("sum 1..<5 = ${'$'}{sum}")
 }"""))
 
     @Test fun scopes() = assertEquals("inner 2" + "\n" + "outer 1" + "\n" + "after 1", run("""module playground
@@ -130,10 +130,10 @@ func main() {
     var x = 1
     zone {
         var x = 2
-        std::io::println("inner ${'$'}{x}")
-        std::io::println("outer ${'$'}{::x}")
+        std::println("inner ${'$'}{x}")
+        std::println("outer ${'$'}{::x}")
     }
-    std::io::println("after ${'$'}{x}")
+    std::println("after ${'$'}{x}")
 }"""))
 
     @Test fun ctce() = assertEquals("size: 8" + "\n" + "squared: 25", run("""module playground
@@ -141,8 +141,8 @@ import std.io
 inline func square(x: Int): Int { return x * x }
 func main() {
     inline fin SIZE = 8
-    std::io::println("size: ${'$'}{SIZE}")
-    std::io::println("squared: ${'$'}{square(5)}")
+    std::println("size: ${'$'}{SIZE}")
+    std::println("squared: ${'$'}{square(5)}")
 }"""))
 
     @Test fun testing() = assertEquals("running tests...", run("""module playground
@@ -153,11 +153,11 @@ func factorial(n: Int): Int {
 }
 test "factorial of 5 is 120" { assert factorial(5) == 120 { "5! should be 120" } }
 test "factorial of 0 is 1" { assert factorial(0) == 1 { "0! should be 1" } }
-func main() { std::io::println("running tests...") }"""))
+func main() { std::println("running tests...") }"""))
 
     @Test fun codegenWorks() {
         // The bundle's generateJavaScript/generateLlvmIr/generateWasm wrap these.
-        val r = Compiler().compile("import std.io\nfunc main() { std::io::println(42) }", release = false)
+        val r = Compiler().compile("import std.io\nfunc main() { std::println(42) }", release = false)
         assertIs<CompilationResult.Success>(r)
         assertTrue("function main()" in r.javascript, r.javascript)
         assertTrue("console.log" in r.javascript, r.javascript)
@@ -171,10 +171,10 @@ import std.io
 func main() {
     var scores = ["alice": 90, "bob": 75]
     scores["carol"] = 88
-    std::io::println(scores["alice"])
-    std::io::println(scores["bob"])
+    std::println(scores["alice"])
+    std::println(scores["bob"])
     scores["bob"] = 80
-    std::io::println(scores["bob"])
+    std::println(scores["bob"])
 }"""))
 
     @Test fun taggedUnions() = assertEquals("75\n24\n0", run("""module playground
@@ -192,9 +192,9 @@ func area(s: Shape): Int {
     }
 }
 func main() {
-    std::io::println(area(Shape.Circle(5)))
-    std::io::println(area(Shape.Rect(4, 6)))
-    std::io::println(area(Shape.Empty))
+    std::println(area(Shape.Circle(5)))
+    std::println(area(Shape.Rect(4, 6)))
+    std::println(area(Shape.Empty))
 }"""))
 
     @Test fun inheritance() = assertEquals("Woof", run("""module playground
@@ -207,7 +207,7 @@ leaf Dog(name: String) : Animal(name) {
 }
 func main() {
     var d: Animal = Dog("Rex")
-    std::io::println(d.speak())
+    std::println(d.speak())
 }"""))
 
     @Test fun generators() = assertEquals("30", run("""module playground
@@ -218,7 +218,7 @@ flow squares(n: Int): Int {
 func main() {
     var sum = 0
     for x in squares(5) { sum += x }
-    std::io::println(sum)
+    std::println(sum)
 }"""))
 
     @Test fun dependencyInjection() = assertEquals("1\n2", run("""module playground
@@ -231,18 +231,18 @@ solo Counter {
     }
 }
 func main() {
-    std::io::println(inject Counter.inc())
-    std::io::println(inject Counter.inc())
+    std::println(inject Counter.inc())
+    std::println(inject Counter.inc())
 }"""))
 
     @Test fun pointers() = assertEquals("10\n20\n99", run("""module playground
 import std.io
 func main() {
     var p: Int* = alloc [10, 20, 30]
-    std::io::println(*p)
-    std::io::println(*(p + 1))
+    std::println(*p)
+    std::println(*(p + 1))
     *(p + 2) = 99
-    std::io::println(*(p + 2))
+    std::println(*(p + 2))
 }"""))
 
     @Test fun variadic() = assertEquals("6\n100", run("""module playground
@@ -253,7 +253,7 @@ func<...T> sumAll(first: Int, rest: ...T): Int {
     return total
 }
 func main() {
-    std::io::println(sumAll(1, 2, 3))
-    std::io::println(sumAll(10, 20, 30, 40))
+    std::println(sumAll(1, 2, 3))
+    std::println(sumAll(10, 20, 30, 40))
 }"""))
 }

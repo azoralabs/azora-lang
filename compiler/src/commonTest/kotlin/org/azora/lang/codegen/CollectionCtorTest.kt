@@ -25,8 +25,8 @@ class CollectionCtorTest {
 
         func main() {
             fin s = std::setOf(1, 2, 3)
-            std::io::println(s.contains(2))
-            std::io::println(s.contains(9))
+            std::println(s.contains(2))
+            std::println(s.contains(9))
         }
     """.trimIndent()))
 
@@ -39,11 +39,11 @@ class CollectionCtorTest {
             s.add(2)
             s.add(3)
             s[0] = 4
-            std::io::println(s[0])
+            std::println(s[0])
             s[0] = 2
-            std::io::println(s[0])
-            std::io::println(s.contains(4))
-            std::io::println(s.contains(1))
+            std::println(s[0])
+            std::println(s.contains(4))
+            std::println(s.contains(1))
         }
     """.trimIndent()))
 
@@ -51,8 +51,8 @@ class CollectionCtorTest {
         import std.io
         func main() {
             fin t = (1, "a", 2.5)
-            std::io::println(t.0)
-            std::io::println(t.1)
+            std::println(t.0)
+            std::println(t.1)
         }
     """.trimIndent()))
 
@@ -61,9 +61,9 @@ class CollectionCtorTest {
         func main() {
             var v: Var<Int, Real, String> = 42
             when v {
-                is Int -> { std::io::println("int " + v) }
-                is Real -> { std::io::println("real " + v) }
-                is String -> { std::io::println("str " + v) }
+                is Int -> { std::println("int " + v) }
+                is Real -> { std::println("real " + v) }
+                is String -> { std::println("str " + v) }
             }
         }
     """.trimIndent()))
@@ -81,8 +81,8 @@ class CollectionCtorTest {
         func main() {
             var a: Var<Int, Real, String> = 2.5
             var b: Var<Int, Real, String> = "hi"
-            std::io::println(describe(a))
-            std::io::println(describe(b))
+            std::println(describe(a))
+            std::println(describe(b))
         }
     """.trimIndent()))
 
@@ -92,7 +92,7 @@ class CollectionCtorTest {
 
         func main() {
             fin s: Set<Int> = std::setOf(10, 20, 30)
-            std::io::println(s.contains(20))
+            std::println(s.contains(20))
         }
     """.trimIndent()))
 
@@ -103,7 +103,7 @@ class CollectionCtorTest {
             var xs = MutableList<Int>()
             xs.add(7)
             xs[0] = 8
-            std::io::println(xs[0])
+            std::println(xs[0])
         }
     """.trimIndent()))
 
@@ -114,8 +114,8 @@ class CollectionCtorTest {
             var seen = MutableSet<Int>()
             seen.add(1)
             seen.add(1)
-            std::io::println(seen.contains(1))
-            std::io::println(seen.contains(2))
+            std::println(seen.contains(1))
+            std::println(seen.contains(2))
         }
     """.trimIndent()))
 
@@ -125,7 +125,7 @@ class CollectionCtorTest {
         func main() {
             var scores = MutableMap<String, Int>()
             scores.put("azora", 3)
-            std::io::println(scores["azora"])
+            std::println(scores["azora"])
         }
     """.trimIndent()))
 
@@ -148,7 +148,7 @@ class CollectionCtorTest {
             var r = Range(0, 3)
             var sum = 0
             loop r { sum += r.next() }
-            std::io::println(sum)
+            std::println(sum)
         }
     """.trimIndent()))
 
@@ -174,7 +174,7 @@ class CollectionCtorTest {
         }
         func main() {
             var q = Query(0, 4)
-            std::io::println(run(q))
+            std::println(run(q))
         }
     """.trimIndent()))
 
@@ -185,10 +185,10 @@ class CollectionCtorTest {
             p[0] = 10
             p[1] = 20
             p[2] = 30
-            std::io::println(p[0])
-            std::io::println(p[2])
+            std::println(p[0])
+            std::println(p[2])
             p[1] = 99
-            std::io::println(p[1])
+            std::println(p[1])
         }
     """.trimIndent()))
 }

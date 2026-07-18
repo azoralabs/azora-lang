@@ -19,7 +19,7 @@ class NullableTest {
             import std.io
             func main() {
                 var x: Int? = null
-                std::io::println(x ?? 5)
+                std::println(x ?? 5)
             }
         """.trimIndent()))
     }
@@ -29,7 +29,7 @@ class NullableTest {
             import std.io
             func main() {
                 var x: Int? = 10
-                std::io::println(x ?? 5)
+                std::println(x ?? 5)
             }
         """.trimIndent()))
     }
@@ -40,7 +40,7 @@ class NullableTest {
             func main() {
                 var a: String? = null
                 var b: String? = null
-                std::io::println(a ?? b ?? "default")
+                std::println(a ?? b ?? "default")
             }
         """.trimIndent()))
     }
@@ -54,7 +54,7 @@ class NullableTest {
             }
             func main() {
                 var p: Point? = null
-                std::io::println(p?.x ?? 0)
+                std::println(p?.x ?? 0)
             }
         """.trimIndent()))
     }
@@ -68,7 +68,7 @@ class NullableTest {
             }
             func main() {
                 var p: Point? = Point(3, 4)
-                std::io::println(p?.x ?? 0)
+                std::println(p?.x ?? 0)
             }
         """.trimIndent()))
     }
@@ -80,7 +80,7 @@ class NullableTest {
                 return x ?? fallback
             }
             func main() {
-                std::io::println(defaultIfNull(null, 42))
+                std::println(defaultIfNull(null, 42))
             }
         """.trimIndent()))
     }

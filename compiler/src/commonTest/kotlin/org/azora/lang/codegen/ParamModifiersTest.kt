@@ -24,7 +24,7 @@ class ParamModifiersTest {
                 return n
             }
             func main() {
-                std::io::println(increment(10))
+                std::println(increment(10))
             }
         """.trimIndent()))
     }
@@ -37,9 +37,9 @@ class ParamModifiersTest {
             }
             func main() {
                 var v = 10
-                std::io::println(v)
+                std::println(v)
                 modify(v)
-                std::io::println(v)
+                std::println(v)
             }
         """.trimIndent()))
     }
@@ -52,9 +52,9 @@ class ParamModifiersTest {
             }
             func main() {
                 var r = 0
-                std::io::println("hello")
+                std::println("hello")
                 produce(r)
-                std::io::println(r)
+                std::println(r)
             }
         """.trimIndent()))
     }
@@ -72,8 +72,8 @@ class ParamModifiersTest {
                 var x = 30
                 var y = 70
                 swap(x, y)
-                std::io::println(x)
-                std::io::println(y)
+                std::println(x)
+                std::println(y)
             }
         """.trimIndent()))
     }

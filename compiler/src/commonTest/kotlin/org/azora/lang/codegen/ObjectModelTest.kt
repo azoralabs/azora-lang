@@ -20,13 +20,13 @@ class ObjectModelTest {
         assertEquals("main done\nhook:start\nhook:stop", run("""
             import std.io
             hook start {
-                std::io::println("hook:start")
+                std::println("hook:start")
             }
             hook stop {
-                std::io::println("hook:stop")
+                std::println("hook:stop")
             }
             func main() {
-                std::io::println("main done")
+                std::println("main done")
             }
         """.trimIndent()))
     }
@@ -44,7 +44,7 @@ class ObjectModelTest {
             }
             func main() {
                 var b = Box(5)
-                std::io::println(b.doubled)
+                std::println(b.doubled)
             }
         """.trimIndent()))
     }
@@ -59,8 +59,8 @@ class ObjectModelTest {
             }
             func main() {
                 var c = Container(42)
-                std::io::println(c.v)
-                std::io::println(c.doubled)
+                std::println(c.v)
+                std::println(c.doubled)
             }
         """.trimIndent()))
     }
@@ -70,14 +70,14 @@ class ObjectModelTest {
             import std.io
             node Resource(name: String) {
                 dtor {
-                    std::io::println("destroyed")
+                    std::println("destroyed")
                 }
             }
             func main() {
                 var r = Resource("test")
-                std::io::println("created")
+                std::println("created")
                 drop r
-                std::io::println("dropped")
+                std::println("dropped")
             }
         """.trimIndent()))
     }
@@ -87,7 +87,7 @@ class ObjectModelTest {
             import std.io
             func main() {
                 for i in 0..<5 {
-                    flip { std::io::println("A") } flop { std::io::println("B") }
+                    flip { std::println("A") } flop { std::println("B") }
                 }
             }
         """.trimIndent()))
@@ -98,7 +98,7 @@ class ObjectModelTest {
             import std.io
             func main() {
                 for i in 0..<4 {
-                    flip { std::io::println("on") } flop { std::io::println("off") }
+                    flip { std::println("on") } flop { std::println("off") }
                 }
             }
         """.trimIndent()))
@@ -109,7 +109,7 @@ class ObjectModelTest {
         assertEquals("tick\ntock\ntick\ntock", run("""
             import std.io
             func metronome() {
-                flip { std::io::println("tick") } flop { std::io::println("tock") }
+                flip { std::println("tick") } flop { std::println("tock") }
             }
             func main() {
                 metronome()
@@ -126,7 +126,7 @@ class ObjectModelTest {
             import std.io
             func main() {
                 @a for i in 0..<3 {
-                    flip@a { std::io::println("A") } flop@a { std::io::println("B") }
+                    flip@a { std::println("A") } flop@a { std::println("B") }
                 }
             }
         """.trimIndent()))
@@ -138,10 +138,10 @@ class ObjectModelTest {
             import std.io
             func main() {
                 @a for i in 0..<2 {
-                    flip@a { std::io::println("A") } flop@a { std::io::println("B") }
+                    flip@a { std::println("A") } flop@a { std::println("B") }
                 }
                 @b for j in 0..<2 {
-                    flip@b { std::io::println("X") } flop@b { std::io::println("Y") }
+                    flip@b { std::println("X") } flop@b { std::println("Y") }
                 }
             }
         """.trimIndent()))
@@ -154,7 +154,7 @@ class ObjectModelTest {
             func main() {
                 @a for i in 0..<2 {
                     @b for j in 0..<2 {
-                        flip@b { std::io::println("AiBi") } flop@b { std::io::println("AjBj") }
+                        flip@b { std::println("AiBi") } flop@b { std::println("AjBj") }
                     }
                 }
             }

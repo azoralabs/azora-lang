@@ -93,22 +93,22 @@ friend zone std {
 
     @Since("0.0.4")
     impl Into<String> for Int { ref self ->
-        return cast self as String
+        return self as String
     }
 
     @Since("0.0.4")
     impl Into<String> for Real { ref self ->
-        return cast self as String
+        return self as String
     }
 
     @Since("0.0.4")
     impl Into<String> for Char { ref self ->
-        return cast self as String
+        return self as String
     }
 
     @Since("0.0.4")
     impl Into<String> for Bool { ref self ->
-        return cast self as String
+        return self as String
     }
 
     /** Types that can be hashed. */

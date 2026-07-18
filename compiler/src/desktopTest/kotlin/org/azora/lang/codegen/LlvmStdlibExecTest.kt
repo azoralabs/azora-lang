@@ -17,11 +17,11 @@ class LlvmStdlibExecTest {
 
     @Test fun floorCeilRoundNative() = check(
         "3\n4\n4",
-        "import std.io\nimport std.math\nfunc main() {\n    std::io::println(floor(3.7))\n    std::io::println(ceil(3.2))\n    std::io::println(round(3.6))\n}"
+        "import std.io\nimport std.math\nfunc main() {\n    std::println(floor(3.7))\n    std::println(ceil(3.2))\n    std::println(round(3.6))\n}"
     )
 
     @Test fun ifExpressionNative() = check(
         "small\n99",
-        "import std.io\nfunc pick(x: Int): Int = if x > 10 { x } else { 99 }\nfunc main() {\n    std::io::println(if 3 > 10 { \"big\" } else { \"small\" })\n    std::io::println(pick(5))\n}"
+        "import std.io\nfunc pick(x: Int): Int = if x > 10 { x } else { 99 }\nfunc main() {\n    std::println(if 3 > 10 { \"big\" } else { \"small\" })\n    std::println(pick(5))\n}"
     )
 }

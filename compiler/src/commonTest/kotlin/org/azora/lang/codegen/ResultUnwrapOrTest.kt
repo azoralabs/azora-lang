@@ -20,7 +20,7 @@ class ResultUnwrapOrTest {
             import std.result
             func main() {
                 fin r = std::ok(42)
-                std::io::println(std::unwrapOr(r, 0))
+                std::println(std::unwrapOr(r, 0))
             }
         """.trimIndent()))
     }
@@ -31,7 +31,7 @@ class ResultUnwrapOrTest {
             import std.result
             func main() {
                 fin r = std::err(1, "boom")
-                std::io::println(std::unwrapOr(r, 0))
+                std::println(std::unwrapOr(r, 0))
             }
         """.trimIndent()))
     }

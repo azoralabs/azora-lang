@@ -43,7 +43,7 @@ friend zone std {
      */
     @Since("0.0.1")
     @Serializable
-    pack MutableSet<T> {
+    pack<T> MutableSet {
         shield var data: T* = alloc T[8]
         shield var size: Int = 0
         shield var capacity: Int = 8
@@ -385,7 +385,7 @@ test "mutable set grows clears and reuses storage" {
 }
 
 test "mutable set serialization metadata is declared" {
-    inline assert (reflect MutableSet).hasDeco<Serializable> { "MutableSet must carry Serializable metadata" }
+    inline assert (std::reflect<MutableSet>).hasDeco<Serializable> { "MutableSet must carry Serializable metadata" }
 }
 
 test .All "mutable set"

@@ -383,8 +383,8 @@ object SerializationDeriver {
             appendLine("        var $indexName = 0")
             appendLine("        while $indexName < $keysName.length {")
             val keyName = "__key_${plan.field.name}"
-            appendLine("            fin $keyName = cast $keysName[$indexName] as String")
-            val mapValue = "cast value.${plan.field.name}[$keyName] as ${renderType(valueType)}"
+            appendLine("            fin $keyName = $keysName[$indexName] as String")
+            val mapValue = "value.${plan.field.name}[$keyName] as ${renderType(valueType)}"
             appendLine("            $fieldsName.add(SerialField($keyName, ${encodeExpr(mapValue, valueType, helpers)}))")
             appendLine("            $indexName += 1")
             appendLine("        }")
@@ -399,7 +399,7 @@ object SerializationDeriver {
         appendLine("        var $valuesName = List()")
         appendLine("        var $indexName = 0")
         appendLine("        while $indexName < value.${plan.field.name}.size {")
-        val elementValue = "cast value.${plan.field.name}[$indexName] as ${renderType(element)}"
+        val elementValue = "value.${plan.field.name}[$indexName] as ${renderType(element)}"
         appendLine("            $valuesName.add(${encodeExpr(elementValue, element, helpers)})")
         appendLine("            $indexName += 1")
         appendLine("        }")
@@ -473,7 +473,7 @@ object SerializationDeriver {
     private fun encodeExpr(value: String, type: TypeRef, helpers: Helpers): String {
         if (type is TypeRef.Nullable) {
             val inner = type.inner
-            val present = "cast $value as ${renderType(inner)}"
+            val present = "$value as ${renderType(inner)}"
             return "if $value == null { SerialValue.Null } else { ${encodeExpr(present, inner, helpers)} }"
         }
         val named = type as TypeRef.Named
@@ -496,7 +496,7 @@ object SerializationDeriver {
             "Bool" -> "try ${qualified(helpers.provider, "serialAsBool")}($raw)"
             "Char" -> "try ${qualified(helpers.provider, "serialAsChar")}($raw)"
             in integerTypes -> "try ${qualified(helpers.provider, "serialAs${named.name}")}($raw)"
-            in realTypes -> "cast try ${qualified(helpers.provider, "serialAsReal")}($raw) as ${named.name}"
+            in realTypes -> "try ${qualified(helpers.provider, "serialAsReal")}($raw) as ${named.name}"
             else -> "try $receiverValue.fromSerialValue($raw)"
         }
     }

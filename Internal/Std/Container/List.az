@@ -17,7 +17,6 @@
 module std.container.list
 
 import std.serializer
-
 import std.convert
 
 /**
@@ -43,7 +42,7 @@ friend zone std {
      */
     @Since("0.0.1")
     @Serializable
-    pack List<T> {
+    pack<T> List {
         shield var data: T* = alloc T[8]
         shield var size: Int = 0
         shield var capacity: Int = 8
@@ -52,7 +51,7 @@ friend zone std {
     /** The empty `List<T>` — a zero-allocation sentinel returned by `[]` and `empty()`. */
     @Since("0.0.3")
     @Serializable
-    pack EmptyList<T>
+    pack<T> EmptyList
 
     impl EmptyList<T> {
         /** Always 0. */
@@ -82,7 +81,7 @@ friend zone std {
     /** A `List<T>` holding exactly one element, without an underlying buffer. */
     @Since("0.0.3")
     @Serializable
-    pack SingletonList<T> {
+    pack<T> SingletonList {
         shield var element: T
     }
 
@@ -635,9 +634,9 @@ test "list singleton exposes exactly one element" {
 }
 
 test "list serialization metadata is declared" {
-    inline assert (reflect List).hasDeco<Serializable> { "List must carry Serializable metadata" }
-    inline assert (reflect EmptyList).hasDeco<Serializable> { "EmptyList must carry Serializable metadata" }
-    inline assert (reflect SingletonList).hasDeco<Serializable> { "SingletonList must carry Serializable metadata" }
+    inline assert (std::reflect<List>).hasDeco<Serializable> { "List must carry Serializable metadata" }
+    inline assert (std::reflect<EmptyList>).hasDeco<Serializable> { "EmptyList must carry Serializable metadata" }
+    inline assert (std::reflect<SingletonList>).hasDeco<Serializable> { "SingletonList must carry Serializable metadata" }
 }
 
 test .All "list"

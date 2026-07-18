@@ -19,7 +19,7 @@ class DebugModeTest {
     @Test
     fun lineEventsFireWithLocals() {
         val result = compileDebug(
-            "import std.io\nfunc main() {\n    var x = 1\n    x = x + 1\n    std::io::println(x)\n}"
+            "import std.io\nfunc main() {\n    var x = 1\n    x = x + 1\n    std::println(x)\n}"
         )
         val events = mutableListOf<Pair<Int, Map<String, Any?>>>()
         val interpreter = IrInterpreter()
@@ -39,7 +39,7 @@ class DebugModeTest {
     @Test
     fun nestedBlocksAreInstrumented() {
         val result = compileDebug(
-            "import std.io\nfunc main() {\n    for i in 1..2 {\n        std::io::println(i)\n    }\n}"
+            "import std.io\nfunc main() {\n    for i in 1..2 {\n        std::println(i)\n    }\n}"
         )
         val lines = mutableListOf<Int>()
         val interpreter = IrInterpreter()
@@ -52,13 +52,13 @@ class DebugModeTest {
 
     @Test
     fun releaseBuildsHaveNoInstrumentation() {
-        val result = Compiler().compile("import std.io\nfunc main() {\n    std::io::println(1)\n}") as CompilationResult.Success
+        val result = Compiler().compile("import std.io\nfunc main() {\n    std::println(1)\n}") as CompilationResult.Success
         assertTrue("__dbg" !in result.ir.prettyPrint())
     }
 
     @Test
     fun outputStreamsLive() {
-        val result = compileDebug("import std.io\nfunc main() {\n    std::io::println(\"a\")\n    std::io::println(\"b\")\n}")
+        val result = compileDebug("import std.io\nfunc main() {\n    std::println(\"a\")\n    std::println(\"b\")\n}")
         val streamed = mutableListOf<String>()
         val interpreter = IrInterpreter()
         interpreter.outputListener = { streamed.add(it) }
@@ -68,7 +68,7 @@ class DebugModeTest {
 
     @Test
     fun debugBuildRunsIdenticallyWithoutHost() {
-        val source = "import std.io\nfunc main() {\n    var total = 0\n    for i in 1..5 {\n        total = total + i\n    }\n    std::io::println(total)\n}"
+        val source = "import std.io\nfunc main() {\n    var total = 0\n    for i in 1..5 {\n        total = total + i\n    }\n    std::println(total)\n}"
         val debug = compileDebug(source)
         assertEquals("15", IrInterpreter().interpret(debug.ir))
     }

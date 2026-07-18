@@ -20,7 +20,7 @@ class StdlibMethodsTest {
             func main() {
                 var fruits = ["apple", "banana", "cherry"]
                 for fruit in fruits {
-                    std::io::println(fruit)
+                    std::println(fruit)
                 }
             }
         """.trimIndent()))
@@ -35,7 +35,7 @@ class StdlibMethodsTest {
                 for n in nums {
                     sum = sum + n
                 }
-                std::io::println(sum)
+                std::println(sum)
             }
         """.trimIndent()))
     }
@@ -44,7 +44,7 @@ class StdlibMethodsTest {
         assertEquals("HELLO", run("""
             import std.io
             func main() {
-                std::io::println("hello".toUpperCase())
+                std::println("hello".toUpperCase())
             }
         """.trimIndent()))
     }
@@ -53,8 +53,8 @@ class StdlibMethodsTest {
         assertEquals("true\nfalse", run("""
             import std.io
             func main() {
-                std::io::println("hello world".contains("world"))
-                std::io::println("hello world".contains("xyz"))
+                std::println("hello world".contains("world"))
+                std::println("hello world".contains("xyz"))
             }
         """.trimIndent()))
     }
@@ -63,8 +63,8 @@ class StdlibMethodsTest {
         assertEquals("true\ntrue", run("""
             import std.io
             func main() {
-                std::io::println("hello".startsWith("he"))
-                std::io::println("hello".endsWith("lo"))
+                std::println("hello".startsWith("he"))
+                std::println("hello".endsWith("lo"))
             }
         """.trimIndent()))
     }
@@ -73,7 +73,7 @@ class StdlibMethodsTest {
         assertEquals("hi", run("""
             import std.io
             func main() {
-                std::io::println("  hi  ".trim())
+                std::println("  hi  ".trim())
             }
         """.trimIndent()))
     }
@@ -82,7 +82,7 @@ class StdlibMethodsTest {
         assertEquals("hxllo", run("""
             import std.io
             func main() {
-                std::io::println("hello".replace("e", "x"))
+                std::println("hello".replace("e", "x"))
             }
         """.trimIndent()))
     }
@@ -99,7 +99,7 @@ class StdlibMethodsTest {
                     if i > 0 { result = result + ", " }
                     result = result + items[i]
                 }
-                std::io::println("[" + result + "]")
+                std::println("[" + result + "]")
             }
         """.trimIndent()))
     }
@@ -109,8 +109,8 @@ class StdlibMethodsTest {
             import std.io
             func main() {
                 var nums = [1, 2, 3]
-                std::io::println(nums.contains(2))
-                std::io::println(nums.contains(9))
+                std::println(nums.contains(2))
+                std::println(nums.contains(9))
             }
         """.trimIndent()))
     }
@@ -122,8 +122,8 @@ class StdlibMethodsTest {
 
             func main() {
                 fin nums = std::setOf(1, 2, 2, 3)
-                std::io::println(nums.size)
-                std::io::println(nums.contains(2))
+                std::println(nums.size)
+                std::println(nums.contains(2))
             }
         """.trimIndent()))
     }

@@ -29,8 +29,8 @@ class InheritanceTest {
             }
             func main() {
                 var a = Animal("Rex")
-                std::io::println(a.describe())
-                std::io::println(a.speak())
+                std::println(a.describe())
+                std::println(a.speak())
             }
         """.trimIndent()))
     }
@@ -50,7 +50,7 @@ class InheritanceTest {
             }
             func main() {
                 var d = Dog("Rex")
-                std::io::println(d.name)
+                std::println(d.name)
             }
         """.trimIndent()))
     }
@@ -70,7 +70,7 @@ class InheritanceTest {
             }
             func main() {
                 var a: Animal = Dog("Rex")
-                std::io::println(a.speak())
+                std::println(a.speak())
             }
         """.trimIndent()))
     }
@@ -93,7 +93,7 @@ class InheritanceTest {
             }
             func main() {
                 var a: Animal = Dog("Rex")
-                std::io::println(a.describe())
+                std::println(a.describe())
             }
         """.trimIndent()))
     }
@@ -119,8 +119,8 @@ class InheritanceTest {
             func main() {
                 var a: Animal = Dog("Rex")
                 var b: Animal = Cat("Whiskers")
-                std::io::println(a.speak())
-                std::io::println(b.speak())
+                std::println(a.speak())
+                std::println(b.speak())
             }
         """.trimIndent()))
     }
@@ -140,7 +140,7 @@ class InheritanceTest {
             }
             func main() {
                 var a: Animal = Dog("Rex")
-                std::io::println(a.speak())
+                std::println(a.speak())
             }
         """.trimIndent()))
     }
@@ -156,7 +156,7 @@ class InheritanceTest {
             }
             func main() {
                 var d: Base = Derived(41)
-                std::io::println(d.get())
+                std::println(d.get())
             }
         """.trimIndent()))
     }
@@ -179,9 +179,9 @@ class InheritanceTest {
             }
             func main() {
                 var g = Greeter("hello")
-                std::io::println(g.greet())
+                std::println(g.greet())
                 var l: Greeter = LoudGreeter("hello")
-                std::io::println(l.shout())
+                std::println(l.shout())
             }
         """.trimIndent()))
     }

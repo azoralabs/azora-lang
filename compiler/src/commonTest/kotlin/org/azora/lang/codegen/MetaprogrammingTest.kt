@@ -20,11 +20,11 @@ class MetaprogrammingTest {
             module playground            
             import std.io
             inline func a() {
-                std::io::println("Hello from A")
+                std::println("Hello from A")
             }
 
             func b() {
-                std::io::println("Hello from B")
+                std::println("Hello from B")
             }
 
             func main() {
@@ -37,12 +37,12 @@ class MetaprogrammingTest {
             module playground
 
             func b(): Unit {
-                std__io__println("Hello from B")
+                std__println("Hello from B")
             }
 
             func main(): Unit {
                 zone {
-                    std__io__println("Hello from A")
+                    std__println("Hello from A")
                 }
                 b()
             }
@@ -52,12 +52,12 @@ class MetaprogrammingTest {
             module playground
 
             func b(): Unit {
-                std__io__println("Hello from B")
+                std__println("Hello from B")
             }
 
             func main(): Unit {
                 zone {
-                    std__io__println("Hello from A")
+                    std__println("Hello from A")
                 }
                 b()
             }
@@ -122,7 +122,7 @@ class MetaprogrammingTest {
                 fin a1 = 0
 
                 func a() {
-                    std::io::println("Hello from A")
+                    std::println("Hello from A")
                 }
             }
 
@@ -130,25 +130,25 @@ class MetaprogrammingTest {
                 fin b1 = 0
 
                 func b() {
-                    std::io::println("Hello from B")
+                    std::println("Hello from B")
                 }
             }
 
             inline if x == 2 {
                 func c() {
-                    std::io::println("Hello from C")
+                    std::println("Hello from C")
                 }
             }
 
             deepinline if x == 2 {
                 func d() {
-                    std::io::println("Hello from D")
+                    std::println("Hello from D")
                 }
             }
 
             deepinline if x == 2 {
                 noinline func e() {
-                    std::io::println("Hello from E")
+                    std::println("Hello from E")
                 }
             }
 
@@ -193,7 +193,7 @@ class MetaprogrammingTest {
                 fin c1 = 0
 
                 func c() {
-                    std::io::println("Hello from C")
+                    std::println("Hello from C")
                 }
             }
 
@@ -201,7 +201,7 @@ class MetaprogrammingTest {
                 noinline fin e1 = 0
 
                 noinline func e() {
-                    std::io::println("Hello from E")
+                    std::println("Hello from E")
                 }
             }
 
@@ -240,7 +240,7 @@ class MetaprogrammingTest {
                 fin a1 = 0
 
                 func a() {
-                    std::io::println("Hello from A")
+                    std::println("Hello from A")
                 }
             }
 
@@ -248,7 +248,7 @@ class MetaprogrammingTest {
                 fin b1 = 0
 
                 func b() {
-                    std::io::println("Hello from B")
+                    std::println("Hello from B")
                 }
             }
 
@@ -256,7 +256,7 @@ class MetaprogrammingTest {
                 fin c1 = 0
 
                 func c() {
-                    std::io::println("Hello from C")
+                    std::println("Hello from C")
                 }
             }
 
@@ -264,7 +264,7 @@ class MetaprogrammingTest {
                 fin d1 = 0
 
                 func d() {
-                    std::io::println("Hello from D")
+                    std::println("Hello from D")
                 }
             }
 
@@ -272,7 +272,7 @@ class MetaprogrammingTest {
                 noinline fin e1 = 0
 
                 noinline func e() {
-                    std::io::println("Hello from E")
+                    std::println("Hello from E")
                 }
             }
 
@@ -292,25 +292,25 @@ class MetaprogrammingTest {
             fin c1: Int = 0
 
             func c(): Unit {
-                std__io__println("Hello from C")
+                std__println("Hello from C")
             }
 
             fin e1: Int = 0
 
             func e(): Unit {
-                std__io__println("Hello from E")
+                std__println("Hello from E")
             }
 
             func main(): Unit {
                 zone {
-                    std__io__println("Hello from A")
+                    std__println("Hello from A")
                 }
                 zone {
-                    std__io__println("Hello from B")
+                    std__println("Hello from B")
                 }
                 c()
                 zone {
-                    std__io__println("Hello from D")
+                    std__println("Hello from D")
                 }
                 e()
             }
@@ -388,23 +388,23 @@ class MetaprogrammingTest {
             module playground
 
             func c(): Unit {
-                std__io__println("Hello from C")
+                std__println("Hello from C")
             }
 
             func e(): Unit {
-                std__io__println("Hello from E")
+                std__println("Hello from E")
             }
 
             func main(): Unit {
                 zone {
-                    std__io__println("Hello from A")
+                    std__println("Hello from A")
                 }
                 zone {
-                    std__io__println("Hello from B")
+                    std__println("Hello from B")
                 }
                 c()
                 zone {
-                    std__io__println("Hello from D")
+                    std__println("Hello from D")
                 }
                 e()
             }

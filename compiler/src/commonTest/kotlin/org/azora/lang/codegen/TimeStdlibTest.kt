@@ -34,7 +34,7 @@ class TimeStdlibTest {
 
             func main() {
                 fin value = std::parseIsoInstant("1970-01-01T00:00:00Z") catch Instant(-1L)
-                std::io::println(value.epochSecond)
+                std::println(value.epochSecond)
             }
         """.trimIndent())
 
@@ -51,13 +51,13 @@ class TimeStdlibTest {
             func main() {
                 fin source = DateTime(LocalDate(2026, 7, 16), LocalTime(9, 5, 7, 123000000), UtcOffset(10800))
                 fin encoded = std::formatIsoDateTime(source)
-                std::io::println(encoded)
+                std::println(encoded)
                 try {
                     fin decoded = std::parseIsoDateTime(encoded)
-                    std::io::println(decoded.date.year)
-                    std::io::println(decoded.offset.totalSeconds)
+                    std::println(decoded.date.year)
+                    std::println(decoded.offset.totalSeconds)
                 } catch { error ->
-                    std::io::println("error:" + error)
+                    std::println("error:" + error)
                 }
             }
         """.trimIndent())
@@ -77,7 +77,7 @@ class TimeStdlibTest {
             func main() {
                 fin fallback = DateTime(LocalDate(-1, 1, 1), LocalTime(0, 0, 0), UtcOffset(0))
                 fin value = std::parseIsoDateTime("2026-07-16T09:05:07+01:99") catch fallback
-                std::io::println(value.date.year)
+                std::println(value.date.year)
             }
         """.trimIndent())
 

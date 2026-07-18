@@ -27,7 +27,7 @@ class LoopTest {
                 for i in 1..5 {
                     sum = sum + i
                 }
-                std::io::println(sum)
+                std::println(sum)
             }
         """.trimIndent()))
     }
@@ -42,7 +42,7 @@ class LoopTest {
                 for i in 0..<5 {
                     sum = sum + i
                 }
-                std::io::println(sum)
+                std::println(sum)
             }
         """.trimIndent()))
     }
@@ -58,7 +58,7 @@ class LoopTest {
                     sum = sum + i
                     i = i + 1
                 }
-                std::io::println(sum)
+                std::println(sum)
             }
         """.trimIndent()))
     }
@@ -75,7 +75,7 @@ class LoopTest {
                         break
                     }
                 }
-                std::io::println(i)
+                std::println(i)
             }
         """.trimIndent()))
     }
@@ -93,7 +93,7 @@ class LoopTest {
                     }
                     sum = sum + i
                 }
-                std::io::println(sum)
+                std::println(sum)
             }
         """.trimIndent()))
     }
@@ -111,7 +111,7 @@ class LoopTest {
                     }
                     sum = sum + i
                 }
-                std::io::println(sum)
+                std::println(sum)
             }
         """.trimIndent()))
     }
@@ -128,7 +128,7 @@ class LoopTest {
                         count = count + 1
                     }
                 }
-                std::io::println(count)
+                std::println(count)
             }
         """.trimIndent()))
     }
@@ -148,7 +148,7 @@ class LoopTest {
                 return 0
             }
             func main() {
-                std::io::println(firstAt(10))
+                std::println(firstAt(10))
             }
         """.trimIndent()))
     }
@@ -163,7 +163,7 @@ class LoopTest {
                 for i in 1..5 {
                     sum = sum + i
                 }
-                std::io::println(sum)
+                std::println(sum)
             }
         """.trimIndent(), release = true))
     }
@@ -174,7 +174,7 @@ class LoopTest {
             import std.io
             func main() {
                 for i in 0..<3 {
-                    std::io::println(i)
+                    std::println(i)
                 }
             }
         """.trimIndent())
@@ -191,7 +191,7 @@ class LoopTest {
             import std.io
             func main() {
                 reverse for i in 0..<5 {
-                    std::io::println(i)
+                    std::println(i)
                 }
             }
         """.trimIndent()))
@@ -203,7 +203,7 @@ class LoopTest {
             import std.io
             func main() {
                 reverse for i in 1..5 {
-                    std::io::println(i)
+                    std::println(i)
                 }
             }
         """.trimIndent()))
@@ -217,7 +217,7 @@ class LoopTest {
             import std.algorithm
             func main() {
                 fin r = reverse<Int>([1, 2, 3, 4, 5])
-                for x in r { std::io::println(x) }
+                for x in r { std::println(x) }
             }
         """.trimIndent()))
     }

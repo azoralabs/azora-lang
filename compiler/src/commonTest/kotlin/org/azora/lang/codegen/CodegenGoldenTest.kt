@@ -58,19 +58,19 @@ class CodegenGoldenTest {
 
         func main() {
             let sum = add(2, 3)
-            std::io::println("sum = ${'$'}sum")
+            std::println("sum = ${'$'}sum")
             var total = 0
             for i in 1..5 {
                 total = total + i
             }
-            std::io::println(total)
+            std::println(total)
             while total > 10 {
                 total = total - 4
             }
-            std::io::println(total)
-            std::io::println(classify(sum))
+            std::println(total)
+            std::println(classify(sum))
             let half = sum / 2
-            std::io::println(half)
+            std::println(half)
         }
     """.trimIndent()
 
@@ -85,15 +85,15 @@ class CodegenGoldenTest {
         func main() {
             let p = Point(3, 4)
             p.x = p.x + 1
-            std::io::println(p.x)
+            std::println(p.x)
             let nums = [10, 20, 30]
             nums[1] = 25
-            std::io::println(nums[1])
+            std::println(nums[1])
             let grade = 2
             when grade {
-                1 -> { std::io::println("one") }
-                2, 3 -> { std::io::println("two or three") }
-                else -> { std::io::println("other") }
+                1 -> { std::println("one") }
+                2, 3 -> { std::println("two or three") }
+                else -> { std::println("other") }
             }
         }
     """.trimIndent()

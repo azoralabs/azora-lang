@@ -29,7 +29,7 @@ class InfixFunctionsTest {
                 var a = Calc(2)
                 var b = Calc(3)
                 var c = a plus b
-                std::io::println(c.v)
+                std::println(c.v)
             }
         """.trimIndent()))
     }
@@ -54,7 +54,7 @@ class InfixFunctionsTest {
                 var c = Calc(5)
                 // arithmetic binds tighter than infix: (a * b) plus c = 6 + 5 = 11
                 var result = a times b plus c
-                std::io::println(result.v)
+                std::println(result.v)
             }
         """.trimIndent()))
     }
@@ -77,7 +77,7 @@ class InfixFunctionsTest {
                 var d = Calc(4)
                 // Left-associative: ((a plus b) plus c) plus d
                 var result = a plus b plus c plus d
-                std::io::println(result.v)
+                std::println(result.v)
             }
         """.trimIndent()))
     }
@@ -98,7 +98,7 @@ class InfixFunctionsTest {
                 var b = Box(3)
                 // (a plus b).v == 5
                 var c = a plus b
-                std::io::println(c.v == 5)
+                std::println(c.v == 5)
             }
         """.trimIndent()))
     }

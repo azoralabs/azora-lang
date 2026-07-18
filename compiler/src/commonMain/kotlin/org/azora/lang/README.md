@@ -73,11 +73,11 @@ top-level declarations and members.
 ```
 func add(a: Int, b: Int): Int { return a + b }
 func<T> identity(x: T): T { return x }                 // generics, call-site inference
-func<T...> sprintf(fmt: String, rest: T...) { ... }    // variadic generics (last type param)
+func<...T> sprintf(fmt: String, rest: ...T) { ... }    // variadic generics (last type param)
 inline func square(x: Int): Int { return x * x }        // body substituted at call sites
 func f(x: Int = 0, mut m: List, ref r: Int, out o: Int) // defaults + param modifiers
 create(value: 30, label: "A")                            // named arguments
-f(arr...)                                                // spread array into call args
+f(...arr)                                                // spread array into call args
 ```
 
 Parameter modifiers: `mut` (mutable param), `ref` (by-reference — mutations
@@ -94,7 +94,7 @@ kinds: `ref`, `shared ref`, `weak ref` (with optional `mut`).
   function types `(A) -> B`, map values `mapOf("k": v)`.
 - **User-defined**: `pack` (structs), `enum`, `slot` (tagged unions), `typealias`,
   `fail` (error sets).
-- **Type parameters**: generics `func<T>`, `pack<T>`; **variadic** `func<T...>`.
+- **Type parameters**: generics `func<T>`, `pack<T>`; **variadic** `func<...T>`.
 - **Nullable**: `T?` with `null`, `??` (coalesce), `?.` (safe access),
   `?=`/`?+=`/… null-conditional assignment family.
 - **Failable**: `T!ErrSet` — a `T` or an error from a declared setOf (propagated
@@ -116,7 +116,7 @@ checking; `guard cond else { }`; `break`/`continue`.
 | Construct | Purpose |
 |-----------|---------|
 | `pack Name { fields }` / `pack Empty` | struct; empty packs may omit `{ }` |
-| `pack Tuple<T...> where (...T).length >= 2 { inline for Ty in ...T with index { mixin "$index: $Ty" } }` | variadic tuple template |
+| `pack Tuple<...T> where (...T).length >= 2 { inline for Ty in ...T with index { mixin "$index: $Ty" } }` | variadic tuple template |
 | `enum Color { Red; Green }` | enum |
 | `slot Option { Some(Int); None }` | tagged union |
 | `impl pack Name { methods }` / `impl Spec for Name` | pack methods in the declaring file + trait impls |
@@ -158,7 +158,7 @@ functions use `infx Type.method(...)`.
 
 ```azora
 @enforceNumFields
-pack Tuple<T...> where (...T).length >= 2 {
+pack Tuple<...T> where (...T).length >= 2 {
     inline for Ty in ...T with index {
         mixin "$index: $Ty"
     }

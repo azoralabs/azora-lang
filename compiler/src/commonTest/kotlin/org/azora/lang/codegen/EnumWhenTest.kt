@@ -25,7 +25,7 @@ class EnumWhenTest {
                 Blue
             }
             func main() {
-                std::io::println(Color.Red)
+                std::println(Color.Red)
             }
         """.trimIndent()))
     }
@@ -40,8 +40,8 @@ class EnumWhenTest {
             }
             func main() {
                 fin c = Color.Green
-                std::io::println(c == Color.Green)
-                std::io::println(c == Color.Red)
+                std::println(c == Color.Green)
+                std::println(c == Color.Red)
             }
         """.trimIndent()))
     }
@@ -57,10 +57,10 @@ class EnumWhenTest {
             func main() {
                 fin l = Light.Red
                 when l {
-                    Light.Red -> { std::io::println("stop") }
-                    Light.Green -> { std::io::println("go") }
-                    Light.Yellow -> { std::io::println("slow") }
-                    else -> { std::io::println("unknown") }
+                    Light.Red -> { std::println("stop") }
+                    Light.Green -> { std::println("go") }
+                    Light.Yellow -> { std::println("slow") }
+                    else -> { std::println("unknown") }
                 }
             }
         """.trimIndent()))
@@ -77,10 +77,10 @@ class EnumWhenTest {
             func main() {
                 fin l = Light.Yellow
                 when l {
-                    Light.Red -> { std::io::println("stop") }
-                    Light.Green -> { std::io::println("go") }
-                    Light.Yellow -> { std::io::println("slow") }
-                    else -> { std::io::println("unknown") }
+                    Light.Red -> { std::println("stop") }
+                    Light.Green -> { std::println("go") }
+                    Light.Yellow -> { std::println("slow") }
+                    else -> { std::println("unknown") }
                 }
             }
         """.trimIndent()))
@@ -96,8 +96,8 @@ class EnumWhenTest {
             func main() {
                 fin x = E.A
                 when x {
-                    E.B -> { std::io::println("b") }
-                    else -> { std::io::println("unknown") }
+                    E.B -> { std::println("b") }
+                    else -> { std::println("unknown") }
                 }
             }
         """.trimIndent()))
@@ -114,9 +114,9 @@ class EnumWhenTest {
             func main() {
                 fin x = E.A
                 when x {
-                    E.A -> { std::io::println("a") }
-                    E.B -> { std::io::println("b") }
-                    E.C -> { std::io::println("c") }
+                    E.A -> { std::println("a") }
+                    E.B -> { std::println("b") }
+                    E.C -> { std::println("c") }
                 }
             }
         """.trimIndent()))
@@ -133,8 +133,8 @@ class EnumWhenTest {
             func main() {
                 fin x = E.A
                 when x {
-                    E.A -> { std::io::println("a") }
-                    E.B -> { std::io::println("b") }
+                    E.A -> { std::println("a") }
+                    E.B -> { std::println("b") }
                 }
             }
         """.trimIndent())
@@ -149,10 +149,10 @@ class EnumWhenTest {
             func main() {
                 var n = 2
                 when n {
-                    1 -> { std::io::println("one") }
-                    2 -> { std::io::println("two") }
-                    3 -> { std::io::println("three") }
-                    else -> { std::io::println("other") }
+                    1 -> { std::println("one") }
+                    2 -> { std::println("two") }
+                    3 -> { std::println("three") }
+                    else -> { std::println("other") }
                 }
             }
         """.trimIndent()))
@@ -164,8 +164,8 @@ class EnumWhenTest {
             func main() {
                 var n = 2
                 when n {
-                    0, 1, 2, 3 -> { std::io::println("small") }
-                    else -> { std::io::println("big") }
+                    0, 1, 2, 3 -> { std::println("small") }
+                    else -> { std::println("big") }
                 }
             }
         """.trimIndent()))
@@ -187,7 +187,7 @@ class EnumWhenTest {
                 }
             }
             func main() {
-                std::io::println(action(Light.Green))
+                std::println(action(Light.Green))
             }
         """.trimIndent()))
     }
@@ -203,9 +203,9 @@ class EnumWhenTest {
             func main() {
                 fin l = Light.Red
                 when l {
-                    Light.Red -> { std::io::println("stop") }
-                    Light.Green -> { std::io::println("go") }
-                    else -> { std::io::println("unknown") }
+                    Light.Red -> { std::println("stop") }
+                    Light.Green -> { std::println("go") }
+                    else -> { std::println("unknown") }
                 }
             }
         """.trimIndent(), release = true))
@@ -221,8 +221,8 @@ class EnumWhenTest {
             func main() {
                 fin c = Color.Red
                 when c {
-                    Color.Red -> { std::io::println("r") }
-                    else -> { std::io::println("o") }
+                    Color.Red -> { std::println("r") }
+                    else -> { std::println("o") }
                 }
             }
         """.trimIndent())

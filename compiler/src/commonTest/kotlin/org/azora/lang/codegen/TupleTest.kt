@@ -21,8 +21,8 @@ class TupleTest {
 
             func main() {
                 fin result = swap(std::tupleOf(7, "ready"))
-                std::io::println(result.0)
-                std::io::println(result.1)
+                std::println(result.0)
+                std::println(result.1)
             }
         """.trimIndent(), release = false)
 
@@ -61,7 +61,7 @@ class TupleTest {
             }
 
             func main() {
-                std::io::println((20) + 22)
+                std::println((20) + 22)
             }
         """.trimIndent(), release = false)
 

@@ -239,7 +239,7 @@ class SerializationDeriverTest {
                 Azon
             }
             pack SerializerOptions
-            pack List<T> {
+            pack<T> List {
                 shield var data: T* = alloc T[16]
                 shield var size: Int = 0
             }
@@ -250,7 +250,7 @@ class SerializationDeriverTest {
                 }
             }
             impl oper[] for List<T> { ref self, index -> return self.data[index] }
-            pack Set<T> {
+            pack<T> Set {
                 shield var data: T* = alloc T[16]
                 shield var size: Int = 0
             }
@@ -262,7 +262,7 @@ class SerializationDeriverTest {
                 }
             }
             impl oper[] for Set<T> { ref self, index -> return self.data[index] }
-            pack Map<K, V> {
+            pack<K, V> Map {
                 shield var keysData: K* = alloc K[16]
                 shield var valuesData: V* = alloc V[16]
                 shield var size: Int = 0
@@ -328,7 +328,7 @@ class SerializationDeriverTest {
             func std__convert__toString(value: Any): String { return "" }
             func std__encodeSerialValue(value: ref SerialValue, format: SerializationFormat, options: ref SerializerOptions): String!SerializationError { return "" }
             func std__decodeSerialValue(input: String, format: SerializationFormat, options: ref SerializerOptions): SerialValue!SerializationError { return SerialValue.Null }
-            func std__io__println(value: Any): Unit {}
+            func std__println(value: Any): Unit {}
 
             @Serializable
             pack Address { fin city: String = "" }
@@ -361,15 +361,15 @@ class SerializationDeriverTest {
                 fin tree = prototype.toSerialValue(value) catch SerialValue.Null
                 when tree {
                     SerialValue.Object(fields) -> {
-                        std__io__println(std__serialFieldCount(fields))
+                        std__println(std__serialFieldCount(fields))
                         fin first = std__serialFieldAt(fields, 0)
-                        std__io__println(first.name)
+                        std__println(first.name)
                         when first.value {
-                            SerialValue.Text(text) -> { std__io__println(text) }
-                            else -> { std__io__println("wrong-value") }
+                            SerialValue.Text(text) -> { std__println(text) }
+                            else -> { std__println("wrong-value") }
                         }
                     }
-                    else -> { std__io__println("wrong-tree") }
+                    else -> { std__println("wrong-tree") }
                 }
 
                 var validFields = List()
@@ -390,31 +390,31 @@ class SerializationDeriverTest {
                 encodedAddress.add(SerialField("city", SerialValue.Text("Cluj")))
                 validFields.add(SerialField("address", SerialValue.Object(encodedAddress)))
                 fin decoded = prototype.fromSerialValue(SerialValue.Object(validFields)) catch User("decode-error", -1, false, List(), Set(), Map(), null, Address(), "fallback")
-                std__io__println(decoded.name)
-                std__io__println(decoded.age)
-                std__io__println(decoded.enabled)
-                std__io__println(decoded.tags.size)
-                std__io__println(decoded.scores.size)
-                std__io__println(decoded.metrics.size)
-                std__io__println(decoded.nickname)
-                std__io__println(decoded.address.city)
-                std__io__println(decoded.password)
+                std__println(decoded.name)
+                std__println(decoded.age)
+                std__println(decoded.enabled)
+                std__println(decoded.tags.size)
+                std__println(decoded.scores.size)
+                std__println(decoded.metrics.size)
+                std__println(decoded.nickname)
+                std__println(decoded.address.city)
+                std__println(decoded.password)
 
                 validFields.add(SerialField("extra", SerialValue.Text("no")))
                 fin rejected = prototype.fromSerialValue(SerialValue.Object(validFields)) catch User("unknown-rejected", -1, false, List(), Set(), Map(), null, Address(), "fallback")
-                std__io__println(rejected.name)
+                std__println(rejected.name)
 
                 var missingFields = List()
                 missingFields.add(SerialField("display_name", SerialValue.Text("No flag")))
                 fin missing = prototype.fromSerialValue(SerialValue.Object(missingFields)) catch User("required-missing", -1, false, List(), Set(), Map(), null, Address(), "fallback")
-                std__io__println(missing.name)
+                std__println(missing.name)
 
                 fin lenientPrototype = LenientUser()
                 var lenientFields = List()
                 lenientFields.add(SerialField("name", SerialValue.Text("Accepted")))
                 lenientFields.add(SerialField("extra", SerialValue.Text("ignored")))
                 fin lenient = lenientPrototype.fromSerialValue(SerialValue.Object(lenientFields)) catch LenientUser("lenient-error")
-                std__io__println(lenient.name)
+                std__println(lenient.name)
             }
         """.trimIndent()
         val parsed = Parser(Lexer(source).tokenize()).parse()

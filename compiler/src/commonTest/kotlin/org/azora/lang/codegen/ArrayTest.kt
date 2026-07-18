@@ -24,7 +24,7 @@ class ArrayTest {
             import std.io
             func main() {
                 var a = [10, 20, 30]
-                std::io::println(a.length)
+                std::println(a.length)
             }
         """.trimIndent()))
     }
@@ -35,7 +35,7 @@ class ArrayTest {
             import std.io
             func main() {
                 var a = [10, 20, 30]
-                std::io::println(a[1])
+                std::println(a[1])
             }
         """.trimIndent()))
     }
@@ -47,7 +47,7 @@ class ArrayTest {
             func main() {
                 var a = [10, 20, 30]
                 a[0] = 99
-                std::io::println(a[0])
+                std::println(a[0])
             }
         """.trimIndent()))
     }
@@ -58,7 +58,7 @@ class ArrayTest {
             import std.io
             func main() {
                 var a: [Int] = [7, 42, 13]
-                std::io::println(a[1])
+                std::println(a[1])
             }
         """.trimIndent()))
     }
@@ -74,7 +74,7 @@ class ArrayTest {
                 for i in 0..<a.length {
                     sum = sum + a[i]
                 }
-                std::io::println(sum)
+                std::println(sum)
             }
         """.trimIndent()))
     }
@@ -86,7 +86,7 @@ class ArrayTest {
             func main() {
                 var a = [1, 2, 3]
                 a.add(4)
-                std::io::println(a.length)
+                std::println(a.length)
             }
         """.trimIndent()))
     }
@@ -98,7 +98,7 @@ class ArrayTest {
             func main() {
                 var a = [10, 20, 30]
                 a.add(40)
-                std::io::println(a[3])
+                std::println(a[3])
             }
         """.trimIndent()))
     }
@@ -109,7 +109,7 @@ class ArrayTest {
             import std.io
             func main() {
                 var a = [1]
-                std::io::println(a.isEmpty)
+                std::println(a.isEmpty)
             }
         """.trimIndent()))
     }
@@ -120,7 +120,7 @@ class ArrayTest {
             import std.io
             func main() {
                 var a = [1]
-                std::io::println(a.isNotEmpty)
+                std::println(a.isNotEmpty)
             }
         """.trimIndent()))
     }
@@ -133,7 +133,7 @@ class ArrayTest {
             func main() {
                 var a = [10, 20, 30]
                 a[1] += 5
-                std::io::println(a[1])
+                std::println(a[1])
             }
         """.trimIndent()))
     }
@@ -144,7 +144,7 @@ class ArrayTest {
             import std.io
             func main() {
                 var m = [[1, 2], [3, 4]]
-                std::io::println(m[0][1])
+                std::println(m[0][1])
             }
         """.trimIndent()))
     }
@@ -154,7 +154,7 @@ class ArrayTest {
         assertEquals("5", run("""
             import std.io
             func main() {
-                std::io::println("hello".length)
+                std::println("hello".length)
             }
         """.trimIndent()))
     }
@@ -168,7 +168,7 @@ class ArrayTest {
             }
             func main() {
                 var a = makeThree()
-                std::io::println(a[2])
+                std::println(a[2])
             }
         """.trimIndent()))
     }
@@ -183,7 +183,7 @@ class ArrayTest {
                 for i in 0..<a.length {
                     sum = sum + a[i]
                 }
-                std::io::println(sum)
+                std::println(sum)
             }
         """.trimIndent(), release = true))
     }
@@ -194,7 +194,7 @@ class ArrayTest {
             import std.io
             func main() {
                 var a = [1, 2, 3]
-                std::io::println(a[0])
+                std::println(a[0])
             }
         """.trimIndent())
         assertIs<CompilationResult.Success>(result)

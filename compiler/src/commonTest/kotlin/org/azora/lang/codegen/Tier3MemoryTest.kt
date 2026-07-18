@@ -26,9 +26,9 @@ class Tier3MemoryTest {
             import std.io
             func main() {
                 var p = alloc 5
-                std::io::println(*p)
+                std::println(*p)
                 *p = 99
-                std::io::println(*p)
+                std::println(*p)
             }
         """.trimIndent()))
     }
@@ -41,9 +41,9 @@ class Tier3MemoryTest {
             }
             func main() {
                 var p = alloc P(10)
-                std::io::println((*p).v)
+                std::println((*p).v)
                 (*p).v = 20
-                std::io::println((*p).v)
+                std::println((*p).v)
             }
         """.trimIndent()))
     }
@@ -56,7 +56,7 @@ class Tier3MemoryTest {
                 unsafe {
                     x = x + 10
                 }
-                std::io::println(x)
+                std::println(x)
             }
         """.trimIndent()))
     }
@@ -67,7 +67,7 @@ class Tier3MemoryTest {
             func main() {
                 var p = alloc 5
                 drop p
-                std::io::println(*p)
+                std::println(*p)
             }
         """.trimIndent()))
     }
@@ -77,7 +77,7 @@ class Tier3MemoryTest {
             import std.io
             func main() {
                 var p: Int* = alloc 42
-                std::io::println(*p)
+                std::println(*p)
             }
         """.trimIndent()))
     }
@@ -87,9 +87,9 @@ class Tier3MemoryTest {
             import std.io
             func main() {
                 var p = alloc 5
-                std::io::println(deref p)
+                std::println(deref p)
                 deref p = 12
-                std::io::println(deref p)
+                std::println(deref p)
             }
         """.trimIndent()))
     }
@@ -100,9 +100,9 @@ class Tier3MemoryTest {
             import std.memory
             func main() {
                 var p = std::ptrOf(41)
-                std::io::println(deref p)
+                std::println(deref p)
                 p.set(42)
-                std::io::println(p.get)
+                std::println(p.get)
             }
         """.trimIndent()))
     }
@@ -117,9 +117,9 @@ class Tier3MemoryTest {
                 p[1] = 8
                 p[2] = 9
                 var s = std::ptrSlice(p, 3)
-                std::io::println(s[2])
+                std::println(s[2])
                 s[2] = 4
-                std::io::println(p[2])
+                std::println(p[2])
             }
         """.trimIndent()))
     }
@@ -132,8 +132,8 @@ class Tier3MemoryTest {
                 var a = [1, 2, 3]
                 var b = isolated(a)
                 b.add(99)
-                std::io::println(a)
-                std::io::println(b)
+                std::println(a)
+                std::println(b)
             }
         """.trimIndent()))
     }
@@ -148,8 +148,8 @@ class Tier3MemoryTest {
                 var original = Box(1)
                 var copy = isolated(original)
                 copy.v = 7
-                std::io::println(copy.v)
-                std::io::println(original.v)
+                std::println(copy.v)
+                std::println(original.v)
             }
         """.trimIndent()))
     }
@@ -160,7 +160,7 @@ class Tier3MemoryTest {
             func main() {
                 var p = alloc 5
                 *p = 99
-                std::io::println(*p)
+                std::println(*p)
             }
         """.trimIndent())
         assertIs<CompilationResult.Success>(result)
@@ -177,9 +177,9 @@ class Tier3MemoryTest {
                 var p: Int* = alloc 0
                 zone alloc {
                     p = alloc 5
-                    std::io::println(*p)
+                    std::println(*p)
                 }
-                std::io::println(*p)
+                std::println(*p)
             }
         """.trimIndent()))
     }
@@ -192,9 +192,9 @@ class Tier3MemoryTest {
                 var q: Int* = alloc 0
                 friend zone alloc {
                     q = alloc 7
-                    std::io::println(*q)
+                    std::println(*q)
                 }
-                std::io::println(*q)
+                std::println(*q)
             }
         """.trimIndent()))
     }
@@ -204,10 +204,10 @@ class Tier3MemoryTest {
             import std.io
             func main() {
                 var p: Int* = alloc [10, 20, 30]
-                std::io::println(*p)
+                std::println(*p)
                 var p1 = p + 1
-                std::io::println(*p1)
-                std::io::println(*(p + 2))
+                std::println(*p1)
+                std::println(*(p + 2))
             }
         """.trimIndent()))
     }
@@ -218,9 +218,9 @@ class Tier3MemoryTest {
             func main() {
                 var p: Int* = alloc [10, 20, 30]
                 var end = p + 2
-                std::io::println(*end)
+                std::println(*end)
                 var back = end - 1
-                std::io::println(*back)
+                std::println(*back)
             }
         """.trimIndent()))
     }
@@ -231,7 +231,7 @@ class Tier3MemoryTest {
             func main() {
                 var p: Int* = alloc [10, 20, 30]
                 *(p + 1) = 99
-                std::io::println(*(p + 1))
+                std::println(*(p + 1))
             }
         """.trimIndent()))
     }
@@ -242,7 +242,7 @@ class Tier3MemoryTest {
             func main() {
                 var p: Int* = alloc [10, 20, 30, 40]
                 var q = p + 3
-                std::io::println(q - p)
+                std::println(q - p)
             }
         """.trimIndent()))
     }

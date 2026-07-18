@@ -42,7 +42,7 @@ friend zone std {
      */
     @Since("0.0.1")
     @Serializable
-    pack Stack<T> {
+    pack<T> Stack {
         shield var data: T* = alloc T[8]
         shield var size: Int = 0
         shield var capacity: Int = 8
@@ -196,7 +196,7 @@ test "stack clear permits reuse" {
 }
 
 test "stack serialization metadata is declared" {
-    inline assert (reflect Stack).hasDeco<Serializable> { "Stack must carry Serializable metadata" }
+    inline assert (std::reflect<Stack>).hasDeco<Serializable> { "Stack must carry Serializable metadata" }
 }
 
 test .All "stack"

@@ -20,7 +20,7 @@ class PolishTest {
         assertEquals("Hello, World!\nHi, World!", run("""
             import std.io
             func greet(name: String, greeting: String = "Hello") {
-                std::io::println(greeting + ", " + name + "!")
+                std::println(greeting + ", " + name + "!")
             }
             func main() {
                 greet("World")
@@ -37,8 +37,8 @@ class PolishTest {
                 return val
             }
             func main() {
-                std::io::println(power(0))
-                std::io::println(power(42, 1))
+                std::println(power(0))
+                std::println(power(42, 1))
             }
         """.trimIndent()))
     }
@@ -51,7 +51,7 @@ class PolishTest {
                 return label + ":" + value
             }
             func main() {
-                std::io::println(create(value: 30, label: "A"))
+                std::println(create(value: 30, label: "A"))
             }
         """.trimIndent()))
     }
@@ -68,9 +68,9 @@ class PolishTest {
             func main() {
                 fin c = Color.Red
                 when c {
-                    Color.Red -> { std::io::println("red") }
-                    Color.Green -> { std::io::println("green") }
-                    Color.Blue -> { std::io::println("blue") }
+                    Color.Red -> { std::println("red") }
+                    Color.Green -> { std::println("green") }
+                    Color.Blue -> { std::println("blue") }
                 }
             }
         """.trimIndent()))
@@ -86,7 +86,7 @@ class PolishTest {
             func main() {
                 fin c = Opt.Some(1)
                 when c {
-                    Opt.Some(v) -> { std::io::println(v) }
+                    Opt.Some(v) -> { std::println(v) }
                 }
             }
         """.trimIndent())

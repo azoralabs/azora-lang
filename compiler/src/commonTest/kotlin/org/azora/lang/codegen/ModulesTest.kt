@@ -34,8 +34,8 @@ class ModulesTest {
                 }
             }
             func main() {
-                std::io::println(Math::triple(1))
-                std::io::println(Math::PI)
+                std::println(Math::triple(1))
+                std::println(Math::PI)
             }
         """.trimIndent()))
     }
@@ -50,8 +50,8 @@ class ModulesTest {
                 fin answer = 42
             }
             func main() {
-                std::io::println(Utils::greet())
-                std::io::println(Utils::answer)
+                std::println(Utils::greet())
+                std::println(Utils::answer)
             }
         """.trimIndent()))
     }
@@ -63,7 +63,7 @@ class ModulesTest {
                 fin five = 5
             }
             func main() {
-                std::io::println(five)
+                std::println(five)
             }
         """.trimIndent())
         assertIs<CompilationResult.Failure>(result)
@@ -79,7 +79,7 @@ class ModulesTest {
             }
             import Const
             func main() {
-                std::io::println(five)
+                std::println(five)
             }
         """.trimIndent())
         assertIs<CompilationResult.Failure>(result)
@@ -98,8 +98,8 @@ class ModulesTest {
                 fin answer = 42
             }
             func main() {
-                std::io::println(std::triple(1))
-                std::io::println(std::answer)
+                std::println(std::triple(1))
+                std::println(std::answer)
             }
         """.trimIndent()))
     }
@@ -116,7 +116,7 @@ class ModulesTest {
                 zone x {
                     func b(): Int { return 2 }
                 }
-                func main() { std::io::println(1) }
+                func main() { std::println(1) }
             """.trimIndent())
         }
         assertTrue(err.message.orEmpty().contains("zone 'x' is declared more than once"), err.message)
@@ -127,7 +127,7 @@ class ModulesTest {
             import std.io
             func main() {
                 var scope = 7
-                std::io::println(scope)
+                std::println(scope)
             }
         """.trimIndent()))
 
@@ -152,7 +152,7 @@ class ModulesTest {
                 return "ok"
             }
             func main() {
-                std::io::println(helper())
+                std::println(helper())
             }
         """.trimIndent()))
     }
@@ -164,7 +164,7 @@ class ModulesTest {
                 return "private"
             }
             func main() {
-                std::io::println(secret())
+                std::println(secret())
             }
         """.trimIndent()))
     }
@@ -182,7 +182,7 @@ class ModulesTest {
             }
             func main() {
                 var b = Base(1)
-                std::io::println(b.reveal())
+                std::println(b.reveal())
             }
         """.trimIndent()))
     }
@@ -197,7 +197,7 @@ class ModulesTest {
             }
             func main() {
                 var b = Base(1)
-                std::io::println(b.internal())
+                std::println(b.internal())
             }
         """.trimIndent())
         assertIs<CompilationResult.Failure>(result)
@@ -212,7 +212,7 @@ class ModulesTest {
             }
             func main() {
                 var s = Secret(7)
-                std::io::println(s.value)
+                std::println(s.value)
             }
         """.trimIndent())
         assertIs<CompilationResult.Failure>(result)
@@ -224,7 +224,7 @@ class ModulesTest {
             module myapp
             import std.io
             func main() {
-                std::io::println("ok")
+                std::println("ok")
             }
         """.trimIndent()))
     }
@@ -237,7 +237,7 @@ class ModulesTest {
             }
             func main() {
                 var c = Container(42)
-                std::io::println(c.v)
+                std::println(c.v)
             }
         """.trimIndent()))
     }

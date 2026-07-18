@@ -33,7 +33,7 @@ class PackTest {
             }
             func main() {
                 var p = Point(3, 4)
-                std::io::println(p.x)
+                std::println(p.x)
             }
         """.trimIndent()))
     }
@@ -48,7 +48,7 @@ class PackTest {
             }
             func main() {
                 var p = Point(3, 4)
-                std::io::println(p.x + p.y)
+                std::println(p.x + p.y)
             }
         """.trimIndent()))
     }
@@ -64,7 +64,7 @@ class PackTest {
             func main() {
                 var p = Point(3, 4)
                 p.x = 10
-                std::io::println(p.x)
+                std::println(p.x)
             }
         """.trimIndent()))
     }
@@ -99,7 +99,7 @@ class PackTest {
             }
             func main() {
                 var p = origin()
-                std::io::println(p.x + p.y)
+                std::println(p.x + p.y)
             }
         """.trimIndent()))
     }
@@ -116,7 +116,7 @@ class PackTest {
             func main() {
                 var p = Point(3, 4)
                 p.y += 100
-                std::io::println(p.y)
+                std::println(p.y)
             }
         """.trimIndent()))
     }
@@ -132,7 +132,7 @@ class PackTest {
             }
             func main() {
                 var points = [Point(10, 20), Point(30, 40)]
-                std::io::println(points[0].x + points[1].x)
+                std::println(points[0].x + points[1].x)
             }
         """.trimIndent()))
     }
@@ -147,7 +147,7 @@ class PackTest {
             }
             func main() {
                 var p = Point(3, 4)
-                std::io::println(p.x + p.y)
+                std::println(p.x + p.y)
             }
         """.trimIndent(), release = true))
     }
@@ -162,7 +162,7 @@ class PackTest {
             }
             func main() {
                 var p = Point(1, 2)
-                std::io::println(p.x)
+                std::println(p.x)
             }
         """.trimIndent())
         assertIs<CompilationResult.Success>(result)

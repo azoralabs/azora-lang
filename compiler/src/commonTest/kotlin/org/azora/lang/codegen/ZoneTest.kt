@@ -27,17 +27,17 @@ class ZoneTest {
             func main() {
                 var x = 2
                 var y = 3
-                std::io::println(x)
-                std::io::println(::x)
+                std::println(x)
+                std::println(::x)
                 friend zone {
                     var x = 5
-                    std::io::println(x)
-                    std::io::println(::x)
-                    std::io::println(::_::x)
+                    std::println(x)
+                    std::println(::x)
+                    std::println(::_::x)
                 }
-                std::io::println("----")
+                std::println("----")
                 friend zone {
-                    std::io::println(x)
+                    std::println(x)
                 }
             }
         """.trimIndent())
@@ -55,8 +55,8 @@ class ZoneTest {
                     var b = 20
                 }
                 friend zone {
-                    std::io::println(a)
-                    std::io::println(b)
+                    std::println(a)
+                    std::println(b)
                 }
             }
         """.trimIndent())
@@ -71,11 +71,11 @@ class ZoneTest {
             func main() {
                 friend zone {
                     var x = 1
-                    std::io::println(x)
+                    std::println(x)
                 }
                 friend zone {
                     x = 99
-                    std::io::println(x)
+                    std::println(x)
                 }
             }
         """.trimIndent())
@@ -92,7 +92,7 @@ class ZoneTest {
                 friend zone {
                     var x = 7
                 }
-                std::io::println(x)
+                std::println(x)
             }
         """.trimIndent())
 
@@ -108,10 +108,10 @@ class ZoneTest {
                 var x = 1
                 zone {
                     var x = 2
-                    std::io::println(x)
+                    std::println(x)
                 }
                 zone {
-                    std::io::println(x)
+                    std::println(x)
                 }
             }
         """.trimIndent())
@@ -128,15 +128,15 @@ class ZoneTest {
 
             func main() {
                 var x = 2
-                std::io::println(x)
-                std::io::println(::x)
+                std::println(x)
+                std::println(::x)
                 zone {
                     var x = 5
-                    std::io::println(x)
-                    std::io::println(::x)
-                    std::io::println(::_::x)
+                    std::println(x)
+                    std::println(::x)
+                    std::println(::_::x)
                 }
-                std::io::println("----")
+                std::println("----")
             }
         """.trimIndent())
 

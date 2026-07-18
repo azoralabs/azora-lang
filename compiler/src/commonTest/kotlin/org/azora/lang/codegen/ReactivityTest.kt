@@ -21,9 +21,9 @@ class ReactivityTest {
             import std.io
             func main() {
                 rem count: Int = 0
-                std::io::println(count)
+                std::println(count)
                 count = 42
-                std::io::println(count)
+                std::println(count)
             }
         """.trimIndent()))
     }
@@ -34,9 +34,9 @@ class ReactivityTest {
             func main() {
                 rem msg: String = "hello"
                 effect {
-                    std::io::println(msg)
+                    std::println(msg)
                 }
-                std::io::println("done")
+                std::println("done")
             }
         """.trimIndent()))
     }
@@ -45,7 +45,7 @@ class ReactivityTest {
         assertEquals("Hello, World!", run("""
             import std.io
             view Greet(name: String) {
-                std::io::println("Hello, " + name + "!")
+                std::println("Hello, " + name + "!")
             }
             func main() {
                 Greet("World")
@@ -60,7 +60,7 @@ class ReactivityTest {
             view Counter() {
                 rem count: Int = 0
                 effect {
-                    std::io::println("count=" + count)
+                    std::println("count=" + count)
                 }
             }
             func main() {

@@ -42,9 +42,9 @@ class Tier3ErrorModelTest {
             }
             func main() {
                 try {
-                    std::io::println(f())
+                    std::println(f())
                 } catch {
-                    e -> std::io::println(e)
+                    e -> std::println(e)
                 }
             }
         """.trimIndent()))
@@ -63,7 +63,7 @@ class Tier3ErrorModelTest {
                 return x * 2
             }
             func main() {
-                std::io::println(g(5))
+                std::println(g(5))
             }
         """.trimIndent()))
     }
@@ -110,11 +110,11 @@ class Tier3ErrorModelTest {
                 return a / b
             }
             func main() {
-                std::io::println(divide(10, 0) catch -1)
+                std::println(divide(10, 0) catch -1)
                 try {
-                    std::io::println(divide(10, 2))
+                    std::println(divide(10, 2))
                 } catch {
-                    e -> std::io::println(e)
+                    e -> std::println(e)
                 }
             }
         """.trimIndent()))
@@ -131,7 +131,7 @@ class Tier3ErrorModelTest {
                 try {
                     fail Lookup.NotFound
                 } catch {
-                    e -> std::io::println(e)
+                    e -> std::println(e)
                 }
             }
         """.trimIndent()))
@@ -144,8 +144,8 @@ class Tier3ErrorModelTest {
                 Bad
             }
             func risky(): Int!E {
-                defer { std::io::println("always") }
-                fail defer { std::io::println("only on fail") }
+                defer { std::println("always") }
+                fail defer { std::println("only on fail") }
                 fail E.Bad
                 return 0
             }
@@ -153,7 +153,7 @@ class Tier3ErrorModelTest {
                 try {
                     risky()
                 } catch {
-                    e -> std::io::println(e)
+                    e -> std::println(e)
                 }
             }
         """.trimIndent()))
@@ -166,12 +166,12 @@ class Tier3ErrorModelTest {
                 Bad
             }
             func ok(): Int!E {
-                defer { std::io::println("always") }
-                fail defer { std::io::println("only on fail") }
+                defer { std::println("always") }
+                fail defer { std::println("only on fail") }
                 return 5
             }
             func main() {
-                std::io::println(ok())
+                std::println(ok())
             }
         """.trimIndent()))
     }
@@ -212,7 +212,7 @@ class Tier3ErrorModelTest {
                 try {
                     good()
                 } catch {
-                    e -> std::io::println("ok")
+                    e -> std::println("ok")
                 }
             }
         """.trimIndent()))
@@ -230,8 +230,8 @@ class Tier3ErrorModelTest {
             }
 
             func main() {
-                try { choose(true) } catch { error -> std::io::println(error) }
-                try { choose(false) } catch { error -> std::io::println(error) }
+                try { choose(true) } catch { error -> std::println(error) }
+                try { choose(false) } catch { error -> std::println(error) }
             }
         """.trimIndent()))
     }
@@ -268,12 +268,12 @@ class Tier3ErrorModelTest {
                 Bad
             }
             func risky() {
-                rescue { std::io::println("rescued!") }
+                rescue { std::println("rescued!") }
                 fail E.Bad
             }
             func main() {
                 risky()
-                std::io::println("ok")
+                std::println("ok")
             }
         """.trimIndent()))
     }

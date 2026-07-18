@@ -19,7 +19,7 @@ class LambdaTest {
             import std.io
             func main() {
                 var double = { x: Int -> x * 2 }
-                std::io::println(double(5))
+                std::println(double(5))
             }
         """.trimIndent()))
     }
@@ -31,7 +31,7 @@ class LambdaTest {
                 return f(x)
             }
             func main() {
-                std::io::println(apply({ x: Int -> x * x }, 4))
+                std::println(apply({ x: Int -> x * x }, 4))
             }
         """.trimIndent()))
     }
@@ -44,7 +44,7 @@ class LambdaTest {
             }
             func main() {
                 var add5 = makeAdder(5)
-                std::io::println(add5(10))
+                std::println(add5(10))
             }
         """.trimIndent()))
     }
@@ -55,7 +55,7 @@ class LambdaTest {
             func main() {
                 var offset = 3
                 var add = { x: Int -> x + offset }
-                std::io::println(add(4))
+                std::println(add(4))
             }
         """.trimIndent()))
     }
@@ -67,7 +67,7 @@ class LambdaTest {
                 return f(x)
             }
             func main() {
-                std::io::println("${'$'}{apply({ x: Int -> x * x }, 5)}")
+                std::println("${'$'}{apply({ x: Int -> x * x }, 5)}")
             }
         """.trimIndent()))
     }
@@ -79,7 +79,7 @@ class LambdaTest {
                 return g()
             }
             func main() {
-                std::io::println(run({ -> "hi" }))
+                std::println(run({ -> "hi" }))
             }
         """.trimIndent()))
     }

@@ -29,7 +29,7 @@ class Tier4ConcurrencyTest {
             }
             func main() {
                 for x in squares(4) {
-                    std::io::println(x)
+                    std::println(x)
                 }
             }
         """.trimIndent()))
@@ -51,7 +51,7 @@ class Tier4ConcurrencyTest {
                 for x in upto(3) {
                     count++
                 }
-                std::io::println(count)
+                std::println(count)
             }
         """.trimIndent()))
     }
@@ -70,7 +70,7 @@ class Tier4ConcurrencyTest {
             }
             func main() {
                 for x in naturals() {
-                    std::io::println(x)
+                    std::println(x)
                     break
                 }
             }
@@ -89,7 +89,7 @@ class Tier4ConcurrencyTest {
             }
             func main() {
                 for x in evens() {
-                    std::io::println(x)
+                    std::println(x)
                 }
             }
         """.trimIndent()))
@@ -105,7 +105,7 @@ class Tier4ConcurrencyTest {
             }
             func main() {
                 for x in rangeFrom(3, 6) {
-                    std::io::println(x)
+                    std::println(x)
                 }
             }
         """.trimIndent()))
@@ -118,7 +118,7 @@ class Tier4ConcurrencyTest {
                 var t = task {
                     42
                 }
-                std::io::println(await t)
+                std::println(await t)
             }
         """.trimIndent()))
     }
@@ -133,7 +133,7 @@ class Tier4ConcurrencyTest {
                 var t = task {
                     compute(5, 6)
                 }
-                std::io::println(await t)
+                std::println(await t)
             }
         """.trimIndent()))
     }
@@ -144,8 +144,8 @@ class Tier4ConcurrencyTest {
             func main() {
                 var t1 = task { 10 }
                 var t2 = task { 20 }
-                std::io::println(await t1)
-                std::io::println(await t2)
+                std::println(await t1)
+                std::println(await t2)
             }
         """.trimIndent()))
     }
@@ -157,8 +157,8 @@ class Tier4ConcurrencyTest {
                 var ch = channel()
                 ch.send(1)
                 ch.send(2)
-                std::io::println(ch.receive())
-                std::io::println(ch.receive())
+                std::println(ch.receive())
+                std::println(ch.receive())
             }
         """.trimIndent()))
     }
@@ -179,8 +179,8 @@ class Tier4ConcurrencyTest {
                     produce(ch)
                 }
                 await p
-                std::io::println(ch.receive())
-                std::io::println(ch.receive())
+                std::println(ch.receive())
+                std::println(ch.receive())
             }
         """.trimIndent()))
     }
@@ -192,9 +192,9 @@ class Tier4ConcurrencyTest {
         val output = run("""
             import std.io
             func main() {
-                std::io::println("main")
+                std::println("main")
                 launch {
-                    std::io::println("launched")
+                    std::println("launched")
                 }
             }
         """.trimIndent())
@@ -213,8 +213,8 @@ class Tier4ConcurrencyTest {
                     ch.send(2)
                     ch.close()
                 }
-                std::io::println(ch.receive())
-                std::io::println(ch.receive())
+                std::println(ch.receive())
+                std::println(ch.receive())
             }
         """.trimIndent()))
     }
@@ -227,7 +227,7 @@ class Tier4ConcurrencyTest {
             func main() {
                 var t1 = task { 100 }
                 var t2 = task { 200 }
-                std::io::println(await t1 + await t2)
+                std::println(await t1 + await t2)
             }
         """.trimIndent()))
     }

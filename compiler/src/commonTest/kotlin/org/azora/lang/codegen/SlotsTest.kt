@@ -24,7 +24,7 @@ class SlotsTest {
             }
             func main() {
                 var o = Option.Some(42)
-                std::io::println("ok")
+                std::println("ok")
             }
         """.trimIndent())
     }
@@ -40,8 +40,8 @@ class SlotsTest {
             func main() {
                 var o = Option.None
                 when o {
-                    Option.None -> { std::io::println("nothing") }
-                    else -> { std::io::println("some") }
+                    Option.None -> { std::println("nothing") }
+                    else -> { std::println("some") }
                 }
             }
         """.trimIndent()))
@@ -57,8 +57,8 @@ class SlotsTest {
             func main() {
                 var o = Option.Some(42)
                 when o {
-                    Option.Some(v) -> { std::io::println(v) }
-                    Option.None -> { std::io::println("nothing") }
+                    Option.Some(v) -> { std::println(v) }
+                    Option.None -> { std::println("nothing") }
                 }
             }
         """.trimIndent()))
@@ -75,9 +75,9 @@ class SlotsTest {
             func main() {
                 var s = Shape.Rect(3, 4)
                 when s {
-                    Shape.Circle(r) -> { std::io::println(r) }
-                    Shape.Rect(w, h) -> { std::io::println(w + h) }
-                    Shape.Point -> { std::io::println("0") }
+                    Shape.Circle(r) -> { std::println(r) }
+                    Shape.Rect(w, h) -> { std::println(w + h) }
+                    Shape.Point -> { std::println("0") }
                 }
             }
         """.trimIndent()))
@@ -94,9 +94,9 @@ class SlotsTest {
             func main() {
                 var s = Shape.Point
                 when s {
-                    Shape.Circle(r) -> { std::io::println(r) }
-                    Shape.Rect(w, h) -> { std::io::println(w + h) }
-                    Shape.Point -> { std::io::println("0") }
+                    Shape.Circle(r) -> { std::println(r) }
+                    Shape.Rect(w, h) -> { std::println(w + h) }
+                    Shape.Point -> { std::println("0") }
                 }
             }
         """.trimIndent()))

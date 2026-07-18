@@ -30,7 +30,7 @@ class Feature003SyntaxTest {
             }
             func main() {
                 var c = Counter(7)
-                std::io::println(c.peek())
+                std::println(c.peek())
             }
         """.trimIndent()))
     }
@@ -70,7 +70,7 @@ class Feature003SyntaxTest {
             func main() {
                 var c = Counter(1)
                 c.bump()
-                std::io::println(c.peek())
+                std::println(c.peek())
             }
         """.trimIndent()))
     }
@@ -133,9 +133,9 @@ class Feature003SyntaxTest {
             func main() {
                 var it = Iter(1, 0)
                 loop it continue {
-                    std::io::println(it.next())
+                    std::println(it.next())
                 }
-                std::io::println(it.resets)
+                std::println(it.resets)
             }
         """.trimIndent()))
     }
@@ -150,7 +150,7 @@ class Feature003SyntaxTest {
                 a = 4
                 b = 5
                 c = 6
-                std::io::println(a + b + c)
+                std::println(a + b + c)
             }
         """.trimIndent()))
     }
@@ -171,8 +171,8 @@ class Feature003SyntaxTest {
             }
             func main() {
                 var label = Label("ok")
-                std::io::println(label.toString)
-                std::io::println(label.fromString)
+                std::println(label.toString)
+                std::println(label.fromString)
             }
         """.trimIndent()))
     }
@@ -189,7 +189,7 @@ class Feature003SyntaxTest {
             spec Show<T>: T { ref self } use as "show${'$'}{T.typeName}"
             func main() {
                 var label = Label("ok")
-                std::io::println(label.showString)
+                std::println(label.showString)
             }
         """.trimIndent()))
     }
@@ -206,7 +206,7 @@ class Feature003SyntaxTest {
             }
             func main() {
                 var label = Label("ok")
-                std::io::println(label.render)
+                std::println(label.render)
             }
         """.trimIndent()))
     }
@@ -223,7 +223,7 @@ class Feature003SyntaxTest {
             }
             func main() {
                 var label = Label("ok")
-                std::io::println(label.toString())
+                std::println(label.toString())
             }
         """.trimIndent())
         assertIs<CompilationResult.Failure>(result)
@@ -242,7 +242,7 @@ class Feature003SyntaxTest {
             }
             func main() {
                 var box = Box(7)
-                std::io::println(box.extractInt())
+                std::println(box.extractInt())
             }
         """.trimIndent()))
 
@@ -257,7 +257,7 @@ class Feature003SyntaxTest {
             }
             func main() {
                 var box = Box(7)
-                std::io::println(box.extractInt)
+                std::println(box.extractInt)
             }
         """.trimIndent())
         assertIs<CompilationResult.Failure>(result)
@@ -275,7 +275,7 @@ class Feature003SyntaxTest {
             }
             func main() {
                 var label = Label("x")
-                std::io::println(label as String)
+                std::println(label as String)
             }
         """.trimIndent()))
     }
@@ -291,7 +291,7 @@ class Feature003SyntaxTest {
             }
             func main() {
                 var label = Label("x")
-                std::io::println(label.toString)
+                std::println(label.toString)
             }
         """.trimIndent())
         assertIs<CompilationResult.Failure>(result)
@@ -308,7 +308,7 @@ class Feature003SyntaxTest {
                 }
             }
             func main() {
-                std::io::println(std::math::abs(-3))
+                std::println(std::math::abs(-3))
             }
         """.trimIndent()))
     }
@@ -319,7 +319,7 @@ class Feature003SyntaxTest {
             pack Marker
             func main() {
                 var marker = Marker()
-                std::io::println("ok")
+                std::println("ok")
             }
         """.trimIndent()))
     }
@@ -333,7 +333,7 @@ class Feature003SyntaxTest {
             }
             func main() {
                 var accessors = Accessors(3, 4)
-                std::io::println(accessors.get + accessors.set)
+                std::println(accessors.get + accessors.set)
             }
         """.trimIndent()))
     }
@@ -352,7 +352,7 @@ class Feature003SyntaxTest {
             }
             func main() {
                 var box = Box(1)
-                std::io::println(box[0])
+                std::println(box[0])
             }
             """.trimIndent())
         }
@@ -377,7 +377,7 @@ class Feature003SyntaxTest {
                 mem label: String = "value="
                 var c = Counter(40)
                 c.bump()
-                std::io::println(label + c.peek())
+                std::println(label + c.peek())
             }
         """.trimIndent())
         val success = assertIs<CompilationResult.Success>(result, "Compilation failed: ${(result as? CompilationResult.Failure)?.errors}")

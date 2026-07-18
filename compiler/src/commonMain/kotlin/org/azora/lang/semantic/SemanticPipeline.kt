@@ -105,6 +105,11 @@ class SemanticPipeline(
             return SemanticResult(currentProgram, table, emptyList(), allErrors)
         }
         currentProgram = topResult.program
+        // Top-level compile-time constants are folded out of the AST here (before
+        // symbol collection). Preserve them so the fixed-point CTFE pass can make
+        // them visible inside function bodies — this is what lets exported
+        // `std.config` flags be read anywhere without an import.
+        val topLevelConstants = topLevelCtfe.topLevelConstants
 
         // ---------------------------------------------------------------
         // Pass 1: Symbol Collection
@@ -150,7 +155,9 @@ class SemanticPipeline(
             iteration++
 
             // CTFE — evaluate compile-time expressions and fold into AST
-            val ctfeResult = CtfeEvaluator(table).evaluate(currentProgram)
+            val ctfeResult = CtfeEvaluator(table)
+                .apply { seedConstants = topLevelConstants }
+                .evaluate(currentProgram)
             allErrors.addAll(ctfeResult.errors)
             val ctfeRealErrors = ctfeResult.errors.filter { !it.startsWith("warning:") }
             if (ctfeRealErrors.isNotEmpty()) {

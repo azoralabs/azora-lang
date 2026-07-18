@@ -30,8 +30,8 @@ class OperatorOverloadingTest {
                 var a = Vec2(1, 2)
                 var b = Vec2(3, 4)
                 var c = a + b
-                std::io::println(c.x)
-                std::io::println(c.y)
+                std::println(c.x)
+                std::println(c.y)
             }
         """.trimIndent()))
     }
@@ -52,8 +52,8 @@ class OperatorOverloadingTest {
                 var a = Vec2(5, 6)
                 var b = Vec2(3, 4)
                 var c = a - b
-                std::io::println(c.x)
-                std::io::println(c.y)
+                std::println(c.x)
+                std::println(c.y)
             }
         """.trimIndent()))
     }
@@ -74,8 +74,8 @@ class OperatorOverloadingTest {
                 var a = Vec2(1, 2)
                 var b = Vec2(3, 3)
                 var c = a * b
-                std::io::println(c.x)
-                std::io::println(c.y)
+                std::println(c.x)
+                std::println(c.y)
             }
         """.trimIndent()))
     }
@@ -96,8 +96,8 @@ class OperatorOverloadingTest {
                 var a = Vec2(1, 2)
                 var b = Vec2(1, 2)
                 var c = Vec2(3, 4)
-                std::io::println(a == b)
-                std::io::println(a == c)
+                std::println(a == b)
+                std::println(a == c)
             }
         """.trimIndent()))
     }
@@ -118,8 +118,8 @@ class OperatorOverloadingTest {
                 var a = Vec2(1, 2)
                 var b = Vec2(1, 2)
                 var c = Vec2(3, 4)
-                std::io::println(a != b)
-                std::io::println(a != c)
+                std::println(a != b)
+                std::println(a != c)
             }
         """.trimIndent()))
     }
@@ -141,7 +141,7 @@ class OperatorOverloadingTest {
                 var b = Vec2(2, 2)
                 var c = Vec2(3, 3)
                 var d = a + b + c
-                std::io::println(d.x)
+                std::println(d.x)
             }
         """.trimIndent()))
     }

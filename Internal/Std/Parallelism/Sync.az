@@ -38,7 +38,7 @@ friend zone std {
      * @param T The type of the protected value.
      */
     @Since("0.0.1")
-    pack Guard<T> {
+    pack<T> Guard {
         confine var mutex: Mutex = Mutex(0)
         confine var value: T
     }
@@ -89,7 +89,7 @@ friend zone std {
      * @param T The type of the count value.
      */
     @Since("0.0.1")
-    pack CountDownLatch<T> {
+    pack<T> CountDownLatch {
         var count: T
         confine var atomic: Atomic = Atomic(0)
     }
@@ -119,7 +119,7 @@ friend zone std {
      * @param T Unused type parameter for template registration.
      */
     @Since("0.0.1")
-    pack SpinLock<T> {
+    pack<T> SpinLock {
         confine var flag: Atomic = Atomic(0)
     }
 

@@ -23,8 +23,8 @@ class NamedArgsTest {
             }
             func main() {
                 var p = Point(y: 4, x: 3)
-                std::io::println(p.x)
-                std::io::println(p.y)
+                std::println(p.x)
+                std::println(p.y)
             }
         """.trimIndent()))
     }
@@ -38,8 +38,8 @@ class NamedArgsTest {
             }
             func main() {
                 var p = Point(x: 1, y: 2)
-                std::io::println(p.x)
-                std::io::println(p.y)
+                std::println(p.x)
+                std::println(p.y)
             }
         """.trimIndent()))
     }

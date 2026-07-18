@@ -36,7 +36,7 @@ class TestAssertTraceTest {
                 assert 1 + 1 == 2 { "math is broken" }
             }
             func main() {
-                std::io::println("hello")
+                std::println("hello")
             }
         """.trimIndent())
         assertTrue(result.ir.tests.isNotEmpty(), "Should have tests in IR")
@@ -50,7 +50,7 @@ class TestAssertTraceTest {
                 trace { "inside test" }
             }
             func main() {
-                std::io::println("main")
+                std::println("main")
             }
         """.trimIndent())
         assertTrue("main" in output)
@@ -92,7 +92,7 @@ class TestAssertTraceTest {
             import std.io
             func main() {
                 assert 1 + 1 == 2 { "math broken" }
-                std::io::println("ok")
+                std::println("ok")
             }
         """.trimIndent())
         assertEquals("ok", output)
@@ -169,7 +169,7 @@ class TestAssertTraceTest {
             import std.io
             func main() {
                 trace { "hello from trace" }
-                std::io::println("done")
+                std::println("done")
             }
         """.trimIndent())
         assertTrue("[TRACE] hello from trace" in output)
@@ -210,7 +210,7 @@ class TestAssertTraceTest {
             inline fin X = 5
             inline assert X > 0 { "X must be positive" }
             func main() {
-                std::io::println("ok")
+                std::println("ok")
             }
         """.trimIndent())
         assertNotNull(result, "Passing inline assert should compile")
@@ -234,7 +234,7 @@ class TestAssertTraceTest {
             func main() {
                 inline fin x = 5
                 inline assert x > 0 { "x must be positive" }
-                std::io::println("ok")
+                std::println("ok")
             }
         """.trimIndent())
         assertNotNull(result)
@@ -247,7 +247,7 @@ class TestAssertTraceTest {
             inline fin X = 5
             inline assert X > 0 { "ok" }
             func main() {
-                std::io::println("hello")
+                std::println("hello")
             }
         """.trimIndent())
         val ir = result.ir.prettyPrint()
@@ -264,7 +264,7 @@ class TestAssertTraceTest {
             import std.io
             inline trace { "compiling module" }
             func main() {
-                std::io::println("ok")
+                std::println("ok")
             }
         """.trimIndent())
         assertTrue(result.warnings.any { "TRACE" in it && "compiling module" in it },
@@ -277,7 +277,7 @@ class TestAssertTraceTest {
             import std.io
             func main() {
                 inline trace { "in main" }
-                std::io::println("ok")
+                std::println("ok")
             }
         """.trimIndent())
         assertTrue(result.warnings.any { "TRACE" in it && "in main" in it },
@@ -290,7 +290,7 @@ class TestAssertTraceTest {
             import std.io
             inline trace { "debug" }
             func main() {
-                std::io::println("hello")
+                std::println("hello")
             }
         """.trimIndent())
         val ir = result.ir.prettyPrint()
@@ -309,7 +309,7 @@ class TestAssertTraceTest {
         val result = compile("""
             import std.io
             test "works at top level" {
-                std::io::println("ok")
+                std::println("ok")
             }
             func main() {}
         """.trimIndent())

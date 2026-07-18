@@ -29,7 +29,7 @@ class ImplMethodTest {
             }
             func main() {
                 fin p = Point(3, 4)
-                std::io::println(p.getX())
+                std::println(p.getX())
             }
         """.trimIndent()))
     }
@@ -48,7 +48,7 @@ class ImplMethodTest {
             }
             func main() {
                 fin p = Point(3, 4)
-                std::io::println(p.lengthSquared())
+                std::println(p.lengthSquared())
             }
         """.trimIndent()))
     }
@@ -72,8 +72,8 @@ class ImplMethodTest {
             func main() {
                 var p = Point(3, 4)
                 p.moveBy(10, 20)
-                std::io::println(p.x)
-                std::io::println(p.sum())
+                std::println(p.x)
+                std::println(p.sum())
             }
         """.trimIndent()))
     }
@@ -92,7 +92,7 @@ class ImplMethodTest {
             }
             func main() {
                 fin p = Point(3, 4)
-                std::io::println("len=${'$'}{p.lengthSquared()}")
+                std::println("len=${'$'}{p.lengthSquared()}")
             }
         """.trimIndent()))
     }
@@ -111,7 +111,7 @@ class ImplMethodTest {
             }
             func main() {
                 fin pts = [Point(1, 1), Point(3, 4), Point(5, 5)]
-                std::io::println(pts[1].lengthSquared())
+                std::println(pts[1].lengthSquared())
             }
         """.trimIndent()))
     }
@@ -130,7 +130,7 @@ class ImplMethodTest {
             }
             func main() {
                 fin p = Point(3, 4)
-                std::io::println(p.lengthSquared())
+                std::println(p.lengthSquared())
             }
         """.trimIndent())
         assertIs<CompilationResult.Success>(result)

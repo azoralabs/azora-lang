@@ -16,11 +16,11 @@ class CastIsLambdaTest {
 
     // as casts
     @Test fun asCastInt() {
-        assertEquals("42", run("import std.io\nfunc main() { var x: Any = 42\n std::io::println(x as Int) }"))
+        assertEquals("42", run("import std.io\nfunc main() { var x: Any = 42\n std::println(x as Int) }"))
     }
 
     @Test fun asCastString() {
-        assertEquals("hello", run("import std.io\nfunc main() { var x: Any = \"hello\"\n std::io::println(x as String) }"))
+        assertEquals("hello", run("import std.io\nfunc main() { var x: Any = \"hello\"\n std::println(x as String) }"))
     }
 
     // is checks
@@ -29,8 +29,8 @@ class CastIsLambdaTest {
             import std.io
             func main() {
                 var x: Any = 42
-                std::io::println(x is Int)
-                std::io::println(x is String)
+                std::println(x is Int)
+                std::println(x is String)
             }
         """.trimIndent()))
     }
@@ -40,7 +40,7 @@ class CastIsLambdaTest {
             import std.io
             func main() {
                 var x: Any = "hello"
-                std::io::println(x is String)
+                std::println(x is String)
             }
         """.trimIndent()))
     }
@@ -52,7 +52,7 @@ class CastIsLambdaTest {
                 if x is Int { return "number" }
                 return "other"
             }
-            func main() { std::io::println(describe(42)) }
+            func main() { std::println(describe(42)) }
         """.trimIndent()))
     }
 
@@ -64,7 +64,7 @@ class CastIsLambdaTest {
                 return f(x)
             }
             func main() {
-                std::io::println(apply({ x: Int -> x * 2 }, 3))
+                std::println(apply({ x: Int -> x * 2 }, 3))
             }
         """.trimIndent()))
     }
@@ -77,7 +77,7 @@ class CastIsLambdaTest {
                 return f(x)
             }
             func main() {
-                std::io::println(apply({ it }, 3))
+                std::println(apply({ it }, 3))
             }
         """.trimIndent()))
     }

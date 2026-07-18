@@ -23,7 +23,7 @@ class WebsiteExamplesTest {
     private fun run(source: String): String = IrInterpreter().interpret(compile(source).ir).trim()
 
     @Test fun ch1_hello() = assertEquals("Hello, Azora!", run("""import std.io
-func main() { std::io::println("Hello, Azora!") }"""))
+func main() { std::println("Hello, Azora!") }"""))
 
     @Test fun ch2_program() = assertEquals("Hello, Azora!\nversion 1.0.0", run("""
         import std.io
@@ -32,8 +32,8 @@ func main() { std::io::println("Hello, Azora!") }"""))
             return "Hello, " + name + "!"
         }
         func main() {
-            std::io::println(greet("Azora"))
-            std::io::println("version " + VERSION)
+            std::println(greet("Azora"))
+            std::println("version " + VERSION)
         }
     """.trimIndent()))
 
@@ -43,23 +43,23 @@ func main() { std::io::println("Hello, Azora!") }"""))
             var count = 0
             count = 10
             count = count + 5
-            std::io::println(count)
+            std::println(count)
             let limit = 100
-            std::io::println(limit)
+            std::println(limit)
             fin pi = 3
-            std::io::println(pi)
+            std::println(pi)
         }
     """.trimIndent()))
 
     @Test fun ch4_literals() = assertEquals("255\n63\n10\n1000000\n3.14\n1500.0", run("""
         import std.io
         func main() {
-            std::io::println(0xFF)
-            std::io::println(0o77)
-            std::io::println(0b1010)
-            std::io::println(1_000_000)
-            std::io::println(3.14)
-            std::io::println(1.5e3)
+            std::println(0xFF)
+            std::println(0o77)
+            std::println(0b1010)
+            std::println(1_000_000)
+            std::println(3.14)
+            std::println(1.5e3)
         }
     """.trimIndent()))
 
@@ -67,28 +67,28 @@ func main() { std::io::println("Hello, Azora!") }"""))
         import std.io
         func main() {
             fin grade = 'A'
-            std::io::println(grade == 'A')
-            std::io::println('a' < 'z')
+            std::println(grade == 'A')
+            std::println('a' < 'z')
         }
     """.trimIndent()))
 
     @Test fun ch5_arithmetic() = assertEquals("5\n6\n20\n3\n2\n-7", run("""
         import std.io
         func main() {
-            std::io::println(2 + 3)
-            std::io::println(10 - 4)
-            std::io::println(4 * 5)
-            std::io::println(17 / 5)
-            std::io::println(17 % 5)
-            std::io::println(-7)
+            std::println(2 + 3)
+            std::println(10 - 4)
+            std::println(4 * 5)
+            std::println(17 / 5)
+            std::println(17 % 5)
+            std::println(-7)
         }
     """.trimIndent()))
 
     @Test fun ch5_string_ops() = assertEquals("hello world\nababab", run("""
         import std.io
         func main() {
-            std::io::println("hello " + "world")
-            std::io::println("ab" * 3)
+            std::println("hello " + "world")
+            std::println("ab" * 3)
         }
     """.trimIndent()))
 
@@ -101,7 +101,7 @@ func main() { std::io::println("Hello, Azora!") }"""))
             n *= 3
             n /= 3
             n %= 5
-            std::io::println(n)
+            std::println(n)
         }
     """.trimIndent()))
 
@@ -110,10 +110,10 @@ func main() { std::io::println("Hello, Azora!") }"""))
         func main() {
             var sum = 0
             for i in 1..5 { sum += i }
-            std::io::println(sum)
+            std::println(sum)
             var count = 0
             for i in 0..<5 { count += 1 }
-            std::io::println(count)
+            std::println(count)
         }
     """.trimIndent()))
 
@@ -121,13 +121,13 @@ func main() { std::io::println("Hello, Azora!") }"""))
         import std.io
         func main() {
             var name = "Azora"
-            std::io::println("Hello, ${'$'}name!")
+            std::println("Hello, ${'$'}name!")
             var x = 3
             var y = 4
-            std::io::println("${'$'}x + ${'$'}y = ${'$'}{x + y}")
+            std::println("${'$'}x + ${'$'}y = ${'$'}{x + y}")
             var items = [10, 20, 30]
-            std::io::println("first is ${'$'}{items[0]}")
-            std::io::println("count is ${'$'}{items.length}")
+            std::println("first is ${'$'}{items[0]}")
+            std::println("count is ${'$'}{items.length}")
         }
     """.trimIndent()))
 
@@ -137,8 +137,8 @@ func main() { std::io::println("Hello, Azora!") }"""))
             var first = "Hello"
             var second = "World"
             var combined = first + ", " + second + "!"
-            std::io::println(combined)
-            std::io::println(combined.length)
+            std::println(combined)
+            std::println(combined.length)
         }
     """.trimIndent()))
 
@@ -148,8 +148,8 @@ func main() { std::io::println("Hello, Azora!") }"""))
             var a = [1, 2, 3]
             a.add(4)
             a.add(5)
-            std::io::println(a.length)
-            std::io::println(a[4])
+            std::println(a.length)
+            std::println(a[4])
         }
     """.trimIndent()))
 
@@ -159,10 +159,10 @@ func main() { std::io::println("Hello, Azora!") }"""))
             var fruits = ["apple", "banana", "cherry"]
             var total = 0
             for i in 0..<fruits.length {
-                std::io::println(fruits[i])
+                std::println(fruits[i])
                 total += 1
             }
-            std::io::println("ate ${'$'}{total} fruits")
+            std::println("ate ${'$'}{total} fruits")
         }
     """.trimIndent()))
 
@@ -175,8 +175,8 @@ func main() { std::io::println("Hello, Azora!") }"""))
             else { return "F" }
         }
         func main() {
-            std::io::println(classify(85))
-            std::io::println(classify(60))
+            std::println(classify(85))
+            std::println(classify(60))
         }
     """.trimIndent()))
 
@@ -193,23 +193,23 @@ func main() { std::io::println("Hello, Azora!") }"""))
                 }
                 i += 1
             }
-            std::io::println(found)
+            std::println(found)
             var sum = 0
             for n in 0..<10 {
                 if n == 3 { continue }
                 sum += n
             }
-            std::io::println(sum)
+            std::println(sum)
         }
     """.trimIndent()))
 
     @Test fun ch9_functions() = assertEquals("25\n42", run("""
         import std.io
-        func square(n: Int) { std::io::println(n * n) }
+        func square(n: Int) { std::println(n * n) }
         func double(n: Int) { return n * 2 }
         func main() {
             square(5)
-            std::io::println(double(21))
+            std::println(double(21))
         }
     """.trimIndent()))
 
@@ -219,7 +219,7 @@ func main() { std::io::println("Hello, Azora!") }"""))
             if n <= 1 { return 1 }
             return n * factorial(n - 1)
         }
-        func main() { std::io::println(factorial(5)) }
+        func main() { std::println(factorial(5)) }
     """.trimIndent()))
 
     @Test fun ch10_structs() = assertEquals("0\n15", run("""
@@ -230,10 +230,10 @@ func main() { std::io::println("Hello, Azora!") }"""))
         }
         func main() {
             var c = Counter(0, "hits")
-            std::io::println(c.count)
+            std::println(c.count)
             c.count = 10
             c.count += 5
-            std::io::println(c.count)
+            std::println(c.count)
         }
     """.trimIndent()))
 
@@ -248,8 +248,8 @@ func main() { std::io::println("Hello, Azora!") }"""))
         }
         func main() {
             var points = [Point(1, 2), Point(3, 4), origin()]
-            std::io::println(points[1].x)
-            std::io::println(points[2].y)
+            std::println(points[1].x)
+            std::println(points[2].y)
         }
     """.trimIndent()))
 
@@ -259,9 +259,9 @@ func main() { std::io::println("Hello, Azora!") }"""))
             var x = 1
             zone {
                 var y = 2
-                std::io::println(x + y)
+                std::println(x + y)
             }
-            std::io::println(x)
+            std::println(x)
         }
     """.trimIndent()))
 
@@ -271,10 +271,10 @@ func main() { std::io::println("Hello, Azora!") }"""))
             var x = 1
             zone {
                 var x = 2
-                std::io::println(x)
-                std::io::println(::x)
+                std::println(x)
+                std::println(::x)
             }
-            std::io::println(x)
+            std::println(x)
         }
     """.trimIndent()))
 
@@ -287,7 +287,7 @@ func main() { std::io::println("Hello, Azora!") }"""))
             }
             friend zone {
                 total += 5
-                std::io::println(total)
+                std::println(total)
             }
         }
     """.trimIndent()))
@@ -296,7 +296,7 @@ func main() { std::io::println("Hello, Azora!") }"""))
         import std.io
         func main() {
             inline fin SIZE = 8
-            std::io::println(SIZE)
+            std::println(SIZE)
         }
     """.trimIndent()))
 
@@ -304,7 +304,7 @@ func main() { std::io::println("Hello, Azora!") }"""))
         import std.io
         func main() {
             inline fin AREA = 8 * 8
-            std::io::println(AREA)
+            std::println(AREA)
         }
     """.trimIndent()))
 
@@ -314,7 +314,7 @@ func main() { std::io::println("Hello, Azora!") }"""))
 
         deepinline if DEBUG {
             func debugBanner() {
-                std::io::println("== debug mode ==")
+                std::println("== debug mode ==")
             }
         }
 
@@ -328,7 +328,7 @@ func main() { std::io::println("Hello, Azora!") }"""))
         func main() {
             inline {
                 fin GREETING = "hello"
-                std::io::println(GREETING)
+                std::println(GREETING)
             }
         }
     """.trimIndent()))
@@ -338,7 +338,7 @@ func main() { std::io::println("Hello, Azora!") }"""))
         inline func double(x: Int): Int {
             return x * 2
         }
-        func main() { std::io::println(double(21)) }
+        func main() { std::println(double(21)) }
     """.trimIndent()))
 
     @Test fun ch12_deepinline_noinline() = assertEquals("limit exceeded", run("""
@@ -347,7 +347,7 @@ func main() { std::io::println("Hello, Azora!") }"""))
             deepinline {
                 fin LIMIT = 10
                 if LIMIT > 5 {
-                    noinline std::io::println("limit exceeded")
+                    noinline std::println("limit exceeded")
                 }
             }
         }
@@ -362,7 +362,7 @@ func main() { std::io::println("Hello, Azora!") }"""))
                 fin result = add(2, 3)
                 assert result == 5 { "2 + 3 should be 5" }
             }
-            func main() { std::io::println("running") }
+            func main() { std::println("running") }
         """.trimIndent()))
     }
 
@@ -372,7 +372,7 @@ func main() { std::io::println("Hello, Azora!") }"""))
             assert b != 0 { "division by zero" }
             return a / b
         }
-        func main() { std::io::println(divide(10, 2)) }
+        func main() { std::println(divide(10, 2)) }
     """.trimIndent()))
 
     @Test fun ch13_trace() = assertEquals("[TRACE] processing value\n10", run("""
@@ -381,7 +381,7 @@ func main() { std::io::println("Hello, Azora!") }"""))
             trace { "processing value" }
             return x * 2
         }
-        func main() { std::io::println(process(5)) }
+        func main() { std::println(process(5)) }
     """.trimIndent()))
 
     @Test fun ch13_inline_assert() = assertEquals("16", run("""
@@ -389,7 +389,7 @@ func main() { std::io::println("Hello, Azora!") }"""))
         func main() {
             inline fin SIZE = 16
             inline assert SIZE > 0 { "SIZE must be positive" }
-            std::io::println(SIZE)
+            std::println(SIZE)
         }
     """.trimIndent()))
 
@@ -400,7 +400,7 @@ func main() { std::io::println("Hello, Azora!") }"""))
                 return a + b
             }
             func main() {
-                std::io::println(add(2, 3))
+                std::println(add(2, 3))
             }
         """.trimIndent())
         assertTrue("function add(a, b)" in r.javascript, r.javascript)
@@ -415,8 +415,8 @@ func main() { std::io::println("Hello, Azora!") }"""))
         import std.io
         func main() {
             var m = ["a": 1, "b": 2, "c": 3]
-            std::io::println(m["a"])
-            std::io::println(m["c"])
+            std::println(m["a"])
+            std::println(m["c"])
         }
     """.trimIndent()))
 
@@ -425,7 +425,7 @@ func main() { std::io::println("Hello, Azora!") }"""))
         func main() {
             var m = ["a": 1, "b": 2, "c": 3]
             m["b"] = 99
-            std::io::println(m["b"])
+            std::println(m["b"])
         }
     """.trimIndent()))
 
@@ -434,8 +434,8 @@ func main() { std::io::println("Hello, Azora!") }"""))
         func main() {
             var scores = [10: 10, 20: 20, 30: 30]
             scores[40] = 40
-            std::io::println(scores[30])
-            std::io::println(scores[40])
+            std::println(scores[30])
+            std::println(scores[40])
         }
     """.trimIndent()))
 
@@ -448,8 +448,8 @@ func main() { std::io::println("Hello, Azora!") }"""))
         func main() {
             var o = Option.Some(42)
             when o {
-                Option.Some(v) -> { std::io::println(v) }
-                Option.None    -> { std::io::println("nothing") }
+                Option.Some(v) -> { std::println(v) }
+                Option.None    -> { std::println("nothing") }
             }
         }
     """.trimIndent()))
@@ -464,9 +464,9 @@ func main() { std::io::println("Hello, Azora!") }"""))
         func main() {
             var s = Shape.Rect(3, 4)
             when s {
-                Shape.Circle(r)   -> { std::io::println(r) }
-                Shape.Rect(w, h)  -> { std::io::println(w + h) }
-                Shape.Point       -> { std::io::println("0") }
+                Shape.Circle(r)   -> { std::println(r) }
+                Shape.Rect(w, h)  -> { std::println(w + h) }
+                Shape.Point       -> { std::println("0") }
             }
         }
     """.trimIndent()))
@@ -479,8 +479,8 @@ func main() { std::io::println("Hello, Azora!") }"""))
         }
         func main() {
             var a = Animal("Rex")
-            std::io::println(a.describe())
-            std::io::println(a.speak())
+            std::println(a.describe())
+            std::println(a.speak())
         }
     """.trimIndent()))
 
@@ -494,8 +494,8 @@ func main() { std::io::println("Hello, Azora!") }"""))
         }
         func main() {
             var d = Dog("Rex")
-            std::io::println(d.name)
-            std::io::println(d.speak())
+            std::println(d.name)
+            std::println(d.speak())
         }
     """.trimIndent()))
 
@@ -509,7 +509,7 @@ func main() { std::io::println("Hello, Azora!") }"""))
         }
         func main() {
             var a: Animal = Dog("Rex")
-            std::io::println(a.speak())
+            std::println(a.speak())
         }
     """.trimIndent()))
 
@@ -517,9 +517,9 @@ func main() { std::io::println("Hello, Azora!") }"""))
         import std.io
         func main() {
             var p: Int* = alloc 42
-            std::io::println(*p)
+            std::println(*p)
             *p = 99
-            std::io::println(*p)
+            std::println(*p)
         }
     """.trimIndent()))
 
@@ -527,12 +527,12 @@ func main() { std::io::println("Hello, Azora!") }"""))
         import std.io
         func main() {
             var p: Int* = alloc [10, 20, 30]
-            std::io::println(*p)
-            std::io::println(*(p + 1))
+            std::println(*p)
+            std::println(*(p + 1))
             *(p + 2) = 99
-            std::io::println(*(p + 2))
+            std::println(*(p + 2))
             var q = p + 3
-            std::io::println(q - p)
+            std::println(q - p)
         }
     """.trimIndent()))
 
@@ -542,7 +542,7 @@ func main() { std::io::println("Hello, Azora!") }"""))
             var original = [1, 2, 3]
             var copy = isolated(original)
             copy[0] = 99
-            std::io::println(original[0])
+            std::println(original[0])
         }
     """.trimIndent()))
 
@@ -555,9 +555,9 @@ func main() { std::io::println("Hello, Azora!") }"""))
         }
         func main() {
             try {
-                std::io::println(f())
+                std::println(f())
             } catch {
-                e -> std::io::println(e)
+                e -> std::println(e)
             }
         }
     """.trimIndent()))
@@ -568,7 +568,7 @@ func main() { std::io::println("Hello, Azora!") }"""))
             for i in 0..<n { yield i * i }
         }
         func main() {
-            for x in squares(4) { std::io::println(x) }
+            for x in squares(4) { std::println(x) }
         }
     """.trimIndent()))
 
@@ -584,8 +584,8 @@ func main() { std::io::println("Hello, Azora!") }"""))
             var ch = channel()
             var p = task { produce(ch) }
             await p
-            std::io::println(ch.receive())
-            std::io::println(ch.receive())
+            std::println(ch.receive())
+            std::println(ch.receive())
         }
     """.trimIndent()))
 
@@ -596,7 +596,7 @@ func main() { std::io::println("Hello, Azora!") }"""))
             func get(): Int { return self.value }
         }
         func main() {
-            std::io::println(inject Config.get())
+            std::println(inject Config.get())
         }
     """.trimIndent()))
 
@@ -611,10 +611,10 @@ func main() { std::io::println("Hello, Azora!") }"""))
         }
         func main() {
             var c1 = inject Counter
-            std::io::println(c1.inc())
-            std::io::println(c1.inc())
+            std::println(c1.inc())
+            std::println(c1.inc())
             var c2 = inject Counter
-            std::io::println(c2.inc())
+            std::println(c2.inc())
         }
     """.trimIndent()))
 
@@ -625,8 +625,8 @@ func main() { std::io::println("Hello, Azora!") }"""))
             func sin(x: Real): Real
         }
         func main() {
-            std::io::println(sqrt(16.0))
-            std::io::println(sin(0.0))
+            std::println(sqrt(16.0))
+            std::println(sin(0.0))
         }
     """.trimIndent()))
 
@@ -636,7 +636,7 @@ func main() { std::io::println("Hello, Azora!") }"""))
             func pow(val: Real, exp: Real): Real
         }
         func main() {
-            std::io::println(pow(2.0, 10.0))
+            std::println(pow(2.0, 10.0))
         }
     """.trimIndent()))
 
@@ -644,9 +644,9 @@ func main() { std::io::println("Hello, Azora!") }"""))
         import std.io
         func main() {
             rem count: Int = 0
-            std::io::println(count)
+            std::println(count)
             count = 42
-            std::io::println(count)
+            std::println(count)
         }
     """.trimIndent()))
 
@@ -655,16 +655,16 @@ func main() { std::io::println("Hello, Azora!") }"""))
         func main() {
             rem msg: String = "hello"
             effect {
-                std::io::println(msg)
+                std::println(msg)
             }
-            std::io::println("done")
+            std::println("done")
         }
     """.trimIndent()))
 
     @Test fun ch34_view() = assertEquals("Hello, World!", run("""
         import std.io
         view Greet(name: String) {
-            std::io::println("Hello, " + name + "!")
+            std::println("Hello, " + name + "!")
         }
         func main() {
             Greet("World")
@@ -679,8 +679,8 @@ func main() { std::io::println("Hello, Azora!") }"""))
             return total
         }
         func main() {
-            std::io::println(variadicSum(1, 2))
-            std::io::println(variadicSum(1, 2, 3, 4))
+            std::println(variadicSum(1, 2))
+            std::println(variadicSum(1, 2, 3, 4))
         }
     """.trimIndent()))
 
@@ -690,7 +690,7 @@ func main() { std::io::println("Hello, Azora!") }"""))
         @Log("entry")
         func greet(): String { return "hi" }
         func main() {
-            std::io::println(greet())
+            std::println(greet())
         }
     """.trimIndent()))
 
@@ -699,8 +699,8 @@ func main() { std::io::println("Hello, Azora!") }"""))
         expose func helper(): String { return "ok" }
         confine func secret(): String { return "private" }
         func main() {
-            std::io::println(helper())
-            std::io::println(secret())
+            std::println(helper())
+            std::println(secret())
         }
     """.trimIndent()))
 
@@ -708,7 +708,7 @@ func main() { std::io::println("Hello, Azora!") }"""))
         import std.io
         threadlocal fin answer = 42
         func main() {
-            std::io::println(answer)
+            std::println(answer)
         }
     """.trimIndent()))
 }

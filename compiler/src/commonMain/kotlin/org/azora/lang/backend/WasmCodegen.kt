@@ -329,7 +329,7 @@ class WasmCodegen {
     }
 
     private fun emitCall(expr: IrExpr.Call): String {
-        if ((expr.name == "std__io__println" || expr.name == "print") && expr.args.size == 1) {
+        if ((expr.name == "std__println" || expr.name == "print") && expr.args.size == 1) {
             val arg = expr.args.single()
             val fn = when {
                 arg.type == IrType.String -> "print_str"

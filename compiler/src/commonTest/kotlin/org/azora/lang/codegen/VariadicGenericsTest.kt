@@ -27,8 +27,8 @@ class VariadicGenericsTest {
                 return total
             }
             func main() {
-                std::io::println(variadicSum(1, 2))
-                std::io::println(variadicSum(1, 2, 3, 4))
+                std::println(variadicSum(1, 2))
+                std::println(variadicSum(1, 2, 3, 4))
             }
         """.trimIndent()))
     }
@@ -40,7 +40,7 @@ class VariadicGenericsTest {
                 return first
             }
             func main() {
-                std::io::println(variadic(42))
+                std::println(variadic(42))
             }
         """.trimIndent()))
     }
@@ -53,7 +53,7 @@ class VariadicGenericsTest {
             }
             func main() {
                 var nums = [1, 2, 3]
-                std::io::println(sum3(...nums))
+                std::println(sum3(...nums))
             }
         """.trimIndent()))
     }

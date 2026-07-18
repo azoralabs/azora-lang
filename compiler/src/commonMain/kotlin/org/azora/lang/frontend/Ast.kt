@@ -262,8 +262,12 @@ sealed class Expr {
     /** `a?.field` — safe member access; returns null if `a` is null. */
     data class SafeMember(val target: Expr, val name: String, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 
-    /** `expr as Type` — type cast. */
-    data class Cast(val expr: Expr, val targetType: TypeRef, val convert: Boolean = false, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+    /**
+     * A type cast. Surface sugar: `x as T` ([CastKind.STATIC], = `std::cast<T>(x)`),
+     * `x as? T` ([CastKind.DYNAMIC], = `std::dyncast<T>(x)`, result `T?`), and
+     * `x as* T` ([CastKind.REINTERPRET], = `std::bitcast<T>(x)`).
+     */
+    data class Cast(val expr: Expr, val targetType: TypeRef, val kind: CastKind = CastKind.STATIC, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 
     /** `expr is Type` — runtime type check, returns Bool. */
     data class IsCheck(val expr: Expr, val typeName: String, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
@@ -1049,7 +1053,47 @@ sealed class TypeAnnotation {
  * @property name the parameter name
  * @property type the structured type reference as written in source
  */
-enum class Visibility { EXPOSE, PROTECT, CONFINE, SHIELD }
+enum class Visibility { EXPOSE, INTERN, PROTECT, CONFINE, SHIELD }
+
+/**
+ * Visibility of a whole module (`[export] [expose|intern|protect|confine] module x`).
+ *
+ * - [EXPOSE] (default): importable everywhere, including downstream libraries.
+ * - [INTERN]: importable only within the declaring library.
+ * - [PROTECT]: importable only within the declaring folder.
+ * - [CONFINE]: private — not importable anywhere (e.g. a test file or an app's
+ *   `main` module).
+ *
+ * Orthogonal to `export` (see [Program.isExported]): `export` auto-imports the
+ * module into every unit within its visibility scope. `export confine` is
+ * contradictory and rejected at parse time.
+ */
+enum class ModuleVisibility { EXPOSE, INTERN, PROTECT, CONFINE }
+
+/**
+ * Compile-time metadata for a declaration's enclosing zone, surfaced by
+ * `(reflect X).zone`. The global (top-level) scope is a zone with [label]
+ * `"global"`, [isInline] `false`, and no [parent].
+ *
+ * @property label the zone's string label (`zone "my zone" { … }`), or null for
+ *   an unlabeled `zone { … }`; `"global"` for the top-level scope.
+ * @property isInline whether the zone is `inline`/`deepinline`, or is nested in
+ *   one (inline-ness is inherited by nested zones).
+ * @property parent the enclosing zone, or null at the global scope.
+ */
+data class ZoneMeta(val label: String?, val isInline: Boolean, val parent: ZoneMeta? = null)
+
+/**
+ * Kind of a type cast ([Expr.Cast]).
+ *
+ * - [STATIC]: converting cast (`static_cast`) — numeric conversions, stringify to
+ *   `String`, unchecked up/down casts. Spelled `x as T` / `std::cast<T>(x)`.
+ * - [DYNAMIC]: runtime-checked downcast (`dynamic_cast`) yielding `T?` (null on a
+ *   type mismatch). Spelled `x as? T` / `std::dyncast<T>(x)`.
+ * - [REINTERPRET]: bit reinterpretation (`reinterpret_cast`), representation-
+ *   preserving. Spelled `x as* T` / `std::bitcast<T>(x)`.
+ */
+enum class CastKind { STATIC, DYNAMIC, REINTERPRET }
 
 enum class ReactiveKind { MEM, REM, RET }
 
@@ -1156,7 +1200,7 @@ data class FuncDecl(
     val visibility: Visibility = Visibility.EXPOSE,
     /** Receiver mutability for impl/extension methods: `ref self` or `mut ref self`. */
     val receiverModifier: ParamModifier = "mut ref",
-    /** Name of the variadic type param (`T` in `func<T...>`), or null for a fixed function. */
+    /** Name of the variadic type param (`T` in `func<...T>`), or null for a fixed function. */
     val variadicParam: String? = null,
     /** Minimum element count from a `where <var>.length >= N` clause, or null if unconstrained. */
     val minVariadicLength: Int? = null,
@@ -1190,7 +1234,7 @@ data class Annotation(
 )
 
 /**
- * A decorator-to-spec binding declared by `deco D bind Spec<Args...>`.
+ * A decorator-to-spec binding declared by `deco D bind Spec<...Args>`.
  *
  * The decorated declaration's type is inserted as the bound spec's first
  * generic argument. [trailingTypeArgs] supply any remaining generic arguments.
@@ -1387,12 +1431,17 @@ sealed class TopLevel {
         val visibility: Visibility = Visibility.EXPOSE,
         /** `shield pack X {}` prevents external extensions from taking `mut ref self`. */
         val shielded: Boolean = false,
-        /** Name of the variadic type param (`T` in `pack Tuple<T...>`), or null for a fixed pack. */
+        /** Name of the variadic type param (`T` in `pack Tuple<...T>`), or null for a fixed pack. */
         val variadicParam: String? = null,
         /** Minimum element count from a `where <var>.length >= N` clause, or null if unconstrained. */
         val minVariadicLength: Int? = null,
         /** Field generator for a variadic pack body (`inline for Ty in ...T with index { … }`), or null. */
         val fieldTemplate: VariadicFieldTemplate? = null,
+        /**
+         * `bridge pack X` — a compiler-provided type (primitives, `Reflected<T>`).
+         * No struct is emitted; it exists as a reflectable/declared type only.
+         */
+        val isBridge: Boolean = false,
     ) : TopLevel()
 
     /** `deco Name [bind Spec] { fields }` — an annotation type and optional derived spec contract. */
@@ -1553,6 +1602,8 @@ sealed class TopLevel {
  *
  * @property moduleName the declared module name, or `null` if no `module` declaration is present
  * @property items the list of top-level items (functions and compile-time constructs)
+ * @property isExported whether the module was declared `export module …`, making its
+ *   declarations auto-imported into every unit (as `std.root` is)
  */
 data class Program(
     val moduleName: String?,
@@ -1562,6 +1613,23 @@ data class Program(
      * uses this set to stay limited to the file that declared the pack.
      */
     val localPackNames: Set<String> = emptySet(),
+    /**
+     * `export module …` — the module's declarations are published to every
+     * compilation unit that uses this library, with no explicit `import`.
+     */
+    val isExported: Boolean = false,
+    /**
+     * Module-level visibility from `[expose|intern|protect|confine] module …`
+     * (default [ModuleVisibility.EXPOSE]). Bounds how far the module — and its
+     * `export` auto-import — reaches.
+     */
+    val moduleVisibility: ModuleVisibility = ModuleVisibility.EXPOSE,
+    /**
+     * Declaration name → the zone it was declared in, for `(reflect X).zone`.
+     * Only declarations nested inside a `zone "label" { … }` (or an inline/
+     * deepinline zone) appear; a name absent here is global (see [ZoneMeta]).
+     */
+    val zones: Map<String, ZoneMeta> = emptyMap(),
 ) {
     /** Convenience — returns only the resolved function declarations. */
     val functions: List<FuncDecl> get() = items.filterIsInstance<TopLevel.Func>().map { it.decl }

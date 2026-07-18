@@ -17,7 +17,7 @@ module std.memory.unique
 
 friend zone std {
     @Since("0.0.3")
-    pack Unique<T> {
+    pack<T> Unique {
         confine var raw: T*
         shield var active: Bool = true
     }

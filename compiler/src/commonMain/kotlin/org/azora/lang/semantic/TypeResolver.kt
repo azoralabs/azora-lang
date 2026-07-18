@@ -16,6 +16,7 @@
 
 package org.azora.lang.semantic
 
+import org.azora.lang.frontend.CastKind
 import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.FuncDecl
 import org.azora.lang.frontend.MemberCallStyle
@@ -124,6 +125,9 @@ class TypeResolver(private val table: SymbolTable) {
     private fun canAccessMember(ownerType: String, visibility: Visibility): Boolean = when (visibility) {
         Visibility.EXPOSE -> true
         Visibility.SHIELD -> true // shielded fields are publicly readable (readonly-style)
+        // `intern` bounds access to the declaring library; within one compilation
+        // unit that is always satisfied, so it reads as accessible here.
+        Visibility.INTERN -> true
         Visibility.CONFINE -> currentReceiverType == ownerType
         Visibility.PROTECT -> {
             var cursor = currentReceiverType
@@ -139,6 +143,7 @@ class TypeResolver(private val table: SymbolTable) {
         val label = when (visibility) {
             Visibility.EXPOSE -> "exposed"
             Visibility.SHIELD -> "shielded"
+            Visibility.INTERN -> "internal"
             Visibility.PROTECT -> "protected"
             Visibility.CONFINE -> "confined"
         }
@@ -1076,7 +1081,9 @@ class TypeResolver(private val table: SymbolTable) {
             is Expr.Spread -> { resolveExpr(expr.array) ?: return null; IrType.Any }
             is Expr.Cast -> {
                 resolveExpr(expr.expr) ?: return null
-                IrType.resolve(expr.targetType)
+                val target = IrType.resolve(expr.targetType)
+                // A dynamic cast (`x as? T`) may fail, so its result is `T?`.
+                if (expr.kind == CastKind.DYNAMIC && target !is IrType.Nullable) IrType.Nullable(target) else target
             }
             is Expr.IsCheck -> {
                 resolveExpr(expr.expr) ?: return null

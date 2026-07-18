@@ -18,7 +18,7 @@ module std.memory.weak
 
 friend zone std {
     @Since("0.0.3")
-    pack Weak<T> {
+    pack<T> Weak {
         confine var raw: T*
     }
 

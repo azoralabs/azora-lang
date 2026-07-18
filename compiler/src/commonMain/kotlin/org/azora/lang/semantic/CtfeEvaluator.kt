@@ -23,6 +23,7 @@ import org.azora.lang.frontend.TokenType
 import org.azora.lang.frontend.TopLevel
 import org.azora.lang.frontend.TypeAnnotation
 import org.azora.lang.frontend.TypeRef
+import org.azora.lang.frontend.ZoneMeta
 import org.azora.lang.ir.IrType
 
 /**
@@ -62,6 +63,25 @@ class CtfeEvaluator(private val table: SymbolTable) {
 
     /** Compile-time bindings from `inline fin` declarations. */
     private val inlineEnv = mutableMapOf<String, Expr>()
+
+    /**
+     * Compile-time constants folded by the top-level pass ([evaluateTopLevel]).
+     * These come from top-level `deepinline`/`inline` bindings — including those
+     * auto-imported from an `export module` such as `std.config` — and are exposed
+     * so the fixed-point pass can seed them into every function body via
+     * [seedConstants]. Without this, top-level compile-time constants are removed
+     * before symbol collection and would be invisible inside functions.
+     */
+    var topLevelConstants: Map<String, Expr> = emptyMap()
+        private set
+
+    /**
+     * Top-level compile-time constants injected into each function body's fold
+     * environment so `deepinline if DEBUG { … }` and value reads of exported
+     * config constants resolve inside functions, not only at the top level.
+     */
+    var seedConstants: Map<String, Expr> = emptyMap()
+
     private val reflectionTypes = mutableMapOf<String, String>()
     private var compileTimeDepth = 0
     private var activeErrors: MutableList<String>? = null
@@ -89,6 +109,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
         val errors = mutableListOf<String>()
         activeErrors = errors
         val (resolvedItems, changed) = resolveTopLevelItems(program.items, program, errors)
+        topLevelConstants = inlineEnv.toMap()
         return CtfeResult(program.copy(items = resolvedItems), changed, errors)
     }
 
@@ -116,6 +137,9 @@ class CtfeEvaluator(private val table: SymbolTable) {
         val newItems = resolvedItems.map { item ->
             if (item is TopLevel.Func) {
                 inlineEnv.clear()
+                // Seed top-level compile-time constants (e.g. exported `std.config`
+                // flags) so they resolve inside function bodies too.
+                inlineEnv.putAll(seedConstants)
                 reflectionTypes.clear()
                 item.decl.params.forEach { reflectionTypes[it.name] = it.type.displayName() }
                 val (newBody, bodyChanged) = foldBody(item.decl.body, program, errors)
@@ -985,8 +1009,24 @@ class CtfeEvaluator(private val table: SymbolTable) {
                     Pair(expr.copy(condition = condition, thenExpr = thenExpr, elseExpr = elseExpr), cc || tc || ec)
                 }
             }
-            is Expr.CatchExpr, is Expr.Lambda,
-            is Expr.NamedArg, is Expr.NullLiteral, is Expr.NullCoalesce, is Expr.Cast, is Expr.IsCheck, is Expr.MapLit, is Expr.SafeMember, is Expr.Alloc, is Expr.AllocBuffer, is Expr.Deref, is Expr.Isolated, is Expr.Await, is Expr.Inject, is Expr.Spread -> Pair(expr, false)
+            is Expr.CatchExpr, is Expr.Lambda -> Pair(expr, false)
+            is Expr.SafeMember -> {
+                // `(reflect X).zone?.label` / `?.isInline` — fold the safe terminal.
+                foldZoneTerminal(expr.target, expr.name, program, expr.line)?.let { return Pair(it, true) }
+                Pair(expr, false)
+            }
+            is Expr.NullCoalesce -> {
+                // Fold `a ?? b` when the left side is a known constant (e.g. a folded
+                // reflection query): a non-null constant short-circuits to itself; a
+                // literal null falls through to the right.
+                val (left, lc) = foldExpr(expr.left, program)
+                when {
+                    left is Expr.NullLiteral -> { val (right, _) = foldExpr(expr.right, program); Pair(right, true) }
+                    isConstant(left) -> Pair(left, true)
+                    else -> Pair(if (lc) expr.copy(left = left) else expr, lc)
+                }
+            }
+            is Expr.NamedArg, is Expr.NullLiteral, is Expr.Cast, is Expr.IsCheck, is Expr.MapLit, is Expr.Alloc, is Expr.AllocBuffer, is Expr.Deref, is Expr.Isolated, is Expr.Await, is Expr.Inject, is Expr.Spread -> Pair(expr, false)
             is Expr.TryPropagate -> {
                 val (inner, changed) = foldExpr(expr.expr, program)
                 Pair(if (changed) expr.copy(expr = inner) else expr, changed)
@@ -1009,6 +1049,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 Pair(if (changed) expr.copy(target = t, index = i) else expr, changed)
             }
             is Expr.Member -> {
+                foldZoneTerminal(expr.target, expr.name, program, expr.line)?.let { return Pair(it, true) }
                 val metadataQuery = expr.target as? Expr.Call
                 if (compileTimeDepth > 0 && metadataQuery?.callee == "__decoMeta") {
                     val decoratorName = metadataQuery.typeArgs.singleOrNull()?.displayName()
@@ -1059,6 +1100,57 @@ class CtfeEvaluator(private val table: SymbolTable) {
         is Expr.StringLiteral, is Expr.BoolLiteral,
         is Expr.CharLiteral -> true
         else -> false
+    }
+
+    // -- Zone reflection (`(reflect X).zone.label` / `.isInline` / `.zone`) ---
+
+    /** The implicit top-level scope reported for globally-declared names. */
+    private val globalZone = ZoneMeta("global", isInline = false, parent = null)
+
+    /** A partially-evaluated `reflect` chain node used to fold zone queries. */
+    private sealed interface ReflectNode {
+        data class Decl(val name: String) : ReflectNode
+        data class Zone(val meta: ZoneMeta?) : ReflectNode
+    }
+
+    /**
+     * Evaluates a `reflect`-rooted expression to a [ReflectNode], or null if it is
+     * not a reflection chain. `reflect X` → [ReflectNode.Decl]; `.zone` advances to
+     * the declaration's zone (global by default) or an enclosing zone's parent.
+     */
+    private fun evalReflectNode(expr: Expr, program: Program): ReflectNode? = when (expr) {
+        is Expr.Grouping -> evalReflectNode(expr.expr, program)
+        is Expr.Call ->
+            if (expr.callee == "__reflect")
+                (expr.args.singleOrNull() as? Expr.Identifier)?.let { ReflectNode.Decl(it.name) }
+            else null
+        is Expr.Member -> stepReflectZone(evalReflectNode(expr.target, program), expr.name, program)
+        is Expr.SafeMember -> stepReflectZone(evalReflectNode(expr.target, program), expr.name, program)
+        else -> null
+    }
+
+    private fun stepReflectZone(base: ReflectNode?, member: String, program: Program): ReflectNode? {
+        if (member != "zone") return null
+        return when (base) {
+            is ReflectNode.Decl -> ReflectNode.Zone(program.zones[base.name] ?: globalZone)
+            is ReflectNode.Zone -> ReflectNode.Zone(base.meta?.parent)
+            null -> null
+        }
+    }
+
+    /**
+     * Folds a terminal zone query `<zone>.label` / `<zone>.isInline` to a constant.
+     * A missing zone (e.g. the global scope's parent, or a safe step off null)
+     * yields `null` so `?:` fallbacks work. Returns null if [target] is not a zone
+     * chain, so ordinary members named `label`/`isInline` are left untouched.
+     */
+    private fun foldZoneTerminal(target: Expr, member: String, program: Program, line: Int): Expr? {
+        if (member != "label" && member != "isInline") return null
+        val node = evalReflectNode(target, program) as? ReflectNode.Zone ?: return null
+        return when (member) {
+            "label" -> node.meta?.label?.let { Expr.StringLiteral(it, line) } ?: Expr.NullLiteral
+            else -> node.meta?.let { Expr.BoolLiteral(it.isInline, line) } ?: Expr.NullLiteral
+        }
     }
 
     private fun tryFoldBinary(left: Expr, op: TokenType, right: Expr, line: Int): Expr? {
@@ -1141,7 +1233,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
         // Tasks/flows are execution boundaries, not pure value expressions. Folding
         // them would erase scheduling, cancellation, and Task<T> from the type graph.
         if (funcDecl.isTask || funcDecl.isFlow || funcDecl.isUnsafe) return null
-        // Runtime intrinsics now live in std (std::io::println, std::convert::toString,
+        // Runtime intrinsics now live in std (std::println, std::convert::toString,
         // std::concurrency::async/channel/cancel). Their .az bodies are dead placeholders
         // (each backend/interpreter intercepts the call by mangled name); folding them at
         // compile time would either infinite-recurse (channel/async call themselves) or
@@ -1326,7 +1418,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
          * bodies are placeholders and must never be compile-time evaluated.
          */
         val RUNTIME_INTRINSICS = setOf(
-            "std__io__println",
+            "std__println",
             "std__convert__toString",
             "std__concurrency__async",
             "std__concurrency__channel",

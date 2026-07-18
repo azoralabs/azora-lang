@@ -62,7 +62,7 @@ type promote(t1: Type, t2: Type) {
     return if t1.rank >= t2.rank { t1 } else { t2 }
 }
 
-type promote(T: Type...) where T.length >= 2 {
+type promote(T: ...Type) where T.length >= 2 {
     let Result = T.0
     for Ty in T[1...] {
         Result = if Ty.rank > Result.rank { Ty } else { Result }
@@ -75,7 +75,7 @@ where T1: Numeric, T2: Numeric {
     return a + b
 }
 
-func<T...> addMany(args: T...): promote(T)
+func<...T> addMany(args: ...T): promote(T)
 where each T: Numeric {
     var sum: ReturnType = 0 as ReturnType
     for arg in args {

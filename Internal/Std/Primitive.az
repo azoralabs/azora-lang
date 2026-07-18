@@ -1,0 +1,229 @@
+/*
+ * Copyright 2026 AzoraLabs
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+export module std.primitive
+
+@Experimental(since: "0.0.4")
+bridge pack Bool
+
+@Experimental(since: "0.0.4")
+bridge pack Byte
+
+@Experimental(since: "0.0.4")
+bridge pack UByte
+
+@Experimental(since: "0.0.4")
+bridge pack Short
+
+@Experimental(since: "0.0.4")
+bridge pack UShort
+
+@Experimental(since: "0.0.4")
+bridge pack Int
+
+@Experimental(since: "0.0.4")
+bridge pack UInt
+
+@Experimental(since: "0.0.4")
+bridge pack Long
+
+@Experimental(since: "0.0.4")
+bridge pack ULong
+
+@Experimental(since: "0.0.4")
+bridge pack Cent
+
+@Experimental(since: "0.0.4")
+bridge pack UCent
+
+@Experimental(since: "0.0.4")
+bridge pack Float
+
+@Experimental(since: "0.0.4")
+bridge pack Real
+
+@Experimental(since: "0.0.4")
+bridge pack Decimal
+
+impl zone for Byte {
+    @Since("0.0.4") inline fin MIN_VALUE: Int = -128
+    @Since("0.0.4") inline fin MAX_VALUE: Int = 127
+}
+
+impl zone for UByte {
+    @Since("0.0.4") inline fin MIN_VALUE: Int = 0
+    @Since("0.0.4") inline fin MAX_VALUE: Int = 255
+}
+
+impl zone for Byte + UByte {
+    @Since("0.0.4") inline fin SIZE_BYTES: Int = 1
+    @Since("0.0.4") inline fin SIZE_BITS: Int = 8
+}
+
+impl zone for Short {
+    @Since("0.0.4") inline fin MIN_VALUE: Int = -32_768
+    @Since("0.0.4") inline fin MAX_VALUE: Int = 32_767
+}
+
+impl zone for UShort {
+    @Since("0.0.4") inline fin MIN_VALUE: Int = 0
+    @Since("0.0.4") inline fin MAX_VALUE: Int = 65_535
+}
+
+impl zone for Short + UShort {
+    @Since("0.0.4") inline fin SIZE_BYTES: Int = 2
+    @Since("0.0.4") inline fin SIZE_BITS: Int = 16
+}
+
+impl zone for Int {
+    @Since("0.0.4") inline fin MIN_VALUE: Int = -2_147_483_648
+    @Since("0.0.4") inline fin MAX_VALUE: Int = 2_147_483_647
+}
+
+impl zone for UInt {
+    @Since("0.0.4") inline fin MIN_VALUE: Int = 0
+    @Since("0.0.4") inline fin MAX_VALUE: Int = 4_294_967_295
+}
+
+impl zone for Int + UInt {
+    @Since("0.0.4") inline fin SIZE_BYTES: Int = 4
+    @Since("0.0.4") inline fin SIZE_BITS: Int = 32
+}
+
+impl zone for Long {
+    @Since("0.0.4") inline fin MIN_VALUE: Long = -9_223_372_036_854_775_807L -1L
+    @Since("0.0.4") inline fin MAX_VALUE: Long = 9_223_372_036_854_775_807L
+}
+
+impl zone for ULong {
+    @Since("0.0.4") inline fin MIN_VALUE: Long = 0
+    @Since("0.0.4") inline fin MAX_VALUE: Long = 18_446_744_073_709_551_615L
+}
+
+impl zone for Long + ULong {
+    @Since("0.0.4") inline fin SIZE_BYTES: Int = 8
+    @Since("0.0.4") inline fin SIZE_BITS: Int = 64
+}
+
+impl zone for Cent {
+
+}
+
+impl zone for UCent {
+
+}
+
+impl zone for [Cent, UCent] {
+
+}
+
+impl zone for Float {
+    @Since("0.0.4") inline fin MIN_VALUE: Float = 1.4E-45f
+    @Since("0.0.4") inline fin MAX_VALUE: Float = 3.4028235E38f
+    @Since("0.0.4") inline fin POSITIVE_INFINITY: Float = 1f/0f
+    @Since("0.0.4") inline fin NEGATIVE_INFINITY: Float = -1f/0f
+    @Since("0.0.4") inline fin NAN: Float = -(0f/0f)
+    @Since("0.0.4") inline fin SIZE_BYTES: Int = 4
+    @Since("0.0.4") inline fin SIZE_BITS: Int = 32
+}
+
+impl zone for Real {
+    @Since("0.0.4") inline fin MIN_VALUE: Real = 4.9E-324
+    @Since("0.0.4") inline fin MAX_VALUE: Real = 1.7976931348623157E308
+    @Since("0.0.4") inline fin POSITIVE_INFINITY: Real = 1./0.
+    @Since("0.0.4") inline fin NEGATIVE_INFINITY: Real = -1./0.
+    @Since("0.0.4") inline fin NAN: Real = -(0./0.)
+    @Since("0.0.4") inline fin SIZE_BYTES: Int = 8
+    @Since("0.0.4") inline fin SIZE_BITS: Int = 64
+}
+
+impl zone for Decimal {
+    @Since("0.0.4") inline fin MIN_VALUE: Decimal = -9.999999999999999999999999999999999E6144D
+    @Since("0.0.4") inline fin MAX_VALUE: Decimal =  9.999999999999999999999999999999999E6144D
+    @Since("0.0.4") inline fin POSITIVE_INFINITY: Decimal = 1D / 0D
+    @Since("0.0.4") inline fin NEGATIVE_INFINITY: Decimal = -1D / 0D
+    @Since("0.0.4") inline fin NAN: Decimal = -(0D / 0D)
+    @Since("0.0.4") inline fin SIZE_BYTES: Int = 16
+    @Since("0.0.4") inline fin SIZE_BITS: Int = 128
+    @Since("0.0.4") inline fin DIGITS: Int = 34
+    @Since("0.0.4") inline fin MIN_EXPONENT: Int = -6143
+    @Since("0.0.4") inline fin MAX_EXPONENT: Int = 6144
+}
+
+confine inline fin uintPrimitives: [String] = ["UByte", "UShort", "UInt", "ULong", "UCent"]
+confine inline fin sintPrimitives: [String] = ["Byte", "Short", "Int", "Long", "Cent"]
+confine inline fin intPrimitives: [String] = uintPrimitives ~ sintPrimitives // append keyword like D
+confine inline fin realPrimitives: [String] = ["Float", "Real", "Decimal"]
+confine inline fin signedPrimitives: [String] = sintPrimitives ~ realPrimitives
+confine inline fin primitives: [String] = intPrimitives ~ realPrimitives
+
+// Bool operators
+inline for op in ["==", "!=", "&", "|", "^"] {
+    @Experimental(since: "0.0.4")
+    bridge impl oper $op for Bool: Bool(ref self, rhs: Bool)
+}
+
+// Unary arithmetic operators
+inline for op in ["+", "-"] {
+    inline for ty in signedPrimitives {
+        @Experimental(since: "0.0.4")
+        bridge impl oper $op for $ty: $ty(ref self)
+    }
+}
+
+// Bitwise complement: signed and unsigned integers
+inline for ty in intPrimitives {
+    @Experimental(since: "0.0.4")
+    bridge impl oper~ for $ty: $ty(ref self)
+}
+
+// Arithmetic operators: cross-type numeric operands
+/*inline for op in ["+", "-", "*", "/", "%"] {
+    inline for lhsTy in primitives {
+        inline for rhsTy in primitives {
+            @Experimental(since: "0.0.4")
+            bridge impl oper $op for $lhsTy: promote!($lhsTy, $rhsTy)(ref self, rhs: $rhsTy)
+        }
+    }
+}
+
+// Bitwise operators: cross-type integer operands
+inline for op in ["&", "|", "^"] {
+    inline for lhsTy in intPrimitives {
+        inline for rhsTy in intPrimitives {
+            @Experimental(since: "0.0.4")
+            bridge impl oper $op for $lhsTy: promote!($lhsTy, $rhsTy)(ref self, rhs: $rhsTy)
+        }
+    }
+}*/
+
+// Shift operators: integer value, UInt shift count
+inline for op in ["<<", ">>"] {
+    inline for ty in intPrimitives {
+        @Experimental(since: "0.0.4")
+        bridge impl oper $op for $ty: $ty (ref self, rhs: UInt)
+    }
+}
+
+// Cross-type comparison operators
+inline for op in ["<", ">", "<=", ">=", "==", "!="] {
+    inline for lhsTy in primitives {
+        inline for rhsTy in primitives {
+            @Experimental(since: "0.0.4")
+            bridge impl oper $op for $lhsTy: Bool(ref self, rhs: $rhsTy)
+        }
+    }
+}

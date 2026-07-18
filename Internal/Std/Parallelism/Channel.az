@@ -37,7 +37,7 @@ friend zone std {
      * @param T The type of messages in this channel.
      */
     @Since("0.0.1")
-    pack Channel<T> {
+    pack<T> Channel {
         confine var queue: Queue<T> = Queue<T>()
         confine var mutex: Mutex = Mutex(0)
         confine var closed: Bool = false

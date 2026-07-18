@@ -14,23 +14,23 @@
  * limitations under the License.
  */
 
-module std.root
+export module std.root
 
 /**
  * @file Root
  *
- * Compiler-predefined declarations available in every Azora module.
- * `Root` is the universal reflection surface; its members are compiler
- * intrinsics and never dispatch at runtime.
+ * Compiler-predefined declarations available in every Azora module: the
+ * primitive `bridge pack` types, the `Reflected<T>` reflection handle, the core
+ * decorators, and the `bridge func` string/char intrinsics. These are compiler-
+ * provided and never dispatch at runtime.
  */
 
-/** Universal root metadata type shared by all declarations and values. */
 @Stable(since: "0.0.4")
-pack Root
+bridge pack Unit
 
 /** Declaration categories accepted by decorator `for` constraints. */
 @Stable(since: "0.0.4")
-enum DecoTarget {
+bridge enum DecoTarget {
     Pack, Func, Prop, Task, Flow, Node, Solo, Slot, Enum, EnumValue, Deco,
     Fail, FailValue, Field, Param, Var, Fin, Let, Test, View, Hook,
     Ctor, Dtor, TypeAlias, Bridge
@@ -38,7 +38,7 @@ enum DecoTarget {
 
 /** Controls whether a test runs its own body or aggregates its source file. */
 @Stable(since: "0.0.4")
-enum TestMethod {
+bridge enum TestMethod {
     /** Runs only this test body. This is the default. */
     This
 
@@ -46,34 +46,46 @@ enum TestMethod {
     All
 }
 
+/**
+ * Backend targets a `bridge` block or `bridge func`/`bridge pack` declaration may
+ * address. `Compiler` (the first, default value) means the declaration is provided
+ * directly by the compiler; the rest are foreign-function targets. A bare `bridge`
+ * (e.g. `bridge func`) uses this default, exactly as `test` defaults to the first
+ * `TestMethod`.
+ */
+@Stable(since: "0.0.4")
+bridge enum BridgeTarget {
+    Compiler, C, JavaScript
+}
+
 /** Marks an API as stable from the optional semantic version onward. */
 @Stable(since: "0.0.4")
-deco Stable {
+bridge deco Stable {
     fin since: String = ""
 }
 
 /** Marks an API as experimental from the optional semantic version onward. */
 @Stable(since: "0.0.4")
-deco Experimental {
+bridge deco Experimental {
     fin since: String = ""
 }
 
 /** Records the first released version containing a declaration. */
 @Stable(since: "0.0.4")
-deco Since {
+bridge deco Since {
     fin version: String
 }
 
 /** Marks an API as deprecated and optionally names its replacement. */
 @Stable(since: "0.0.4")
-deco Deprecated {
+bridge deco Deprecated {
     fin since: String = ""
     fin replacement: String = ""
 }
 
 /** Restricts a declaration to one or more compilation targets. */
 @Stable(since: "0.0.4")
-deco Target {
+bridge deco Target {
     fin first: Any = null
     fin second: Any = null
     fin third: Any = null
@@ -82,7 +94,7 @@ deco Target {
 
 /** Allows compile-time generated packs to declare numeric field names. */
 @Stable(since: "0.0.4")
-deco EnforceNumFields for .Pack
+bridge deco EnforceNumFields for .Pack
 
 /**
  * Connects a library decorator to a compiler derive generator.
@@ -92,7 +104,7 @@ deco EnforceNumFields for .Pack
  * not depend on library module paths or decorator names.
  */
 @Experimental(since: "0.0.4")
-deco Derive for .Deco {
+bridge deco Derive for .Deco {
     fin generator: String
     fin role: String
     fin provider: String = ""
@@ -104,35 +116,36 @@ deco Derive for .Deco {
 
 /** Compile-time query reporting whether the reflected declaration has `D`. */
 @Stable(since: "0.0.4")
-spec HasDeco<D>: Bool { ref self } use as "hasDeco"
+bridge spec HasDeco<D>: Bool (ref self) use as "hasDeco"
 
 /** Compile-time view of immutable metadata from decorator `D`. */
 @Stable(since: "0.0.4")
-spec DecoMetadata<D>: D { ref self } use as "decoMeta"
+bridge spec DecoMetadata<D>: D (ref self) use as "decoMeta"
 
 /**
- * Primitive text and character operations supplied directly by every backend.
+ * Primitive text and character operations supplied directly by every backend
+ * (`bridge func`, target [BridgeTarget.Compiler]). They are bodyless; each backend
+ * lowers calls by name.
  *
  * These form the allocation-aware substrate used to implement `std.string`,
  * parsers, and serializers. They are declared here because Root is available
  * to every module; applications normally prefer the higher-level stdlib API.
  */
-bridge .Compiler {
-    /** Number of characters in `value`. */
-    func stringLength(value: String): Int
 
-    /** Character at zero-based `index`. */
-    func charAt(value: String, index: Int): Char
+/** Number of characters in `value`. */
+bridge func stringLength(value: String): Int
 
-    /** Text from `start` inclusive to `end` exclusive. */
-    func substring(value: String, start: Int, end: Int): String
+/** Character at zero-based `index`. */
+bridge func charAt(value: String, index: Int): Char
 
-    /** Unicode scalar value represented by `value`. */
-    func ord(value: Char): Int
+/** Text from `start` inclusive to `end` exclusive. */
+bridge func substring(value: String, start: Int, end: Int): String
 
-    /** Character represented by a valid Unicode scalar value. */
-    func chr(value: Int): Char
+/** Unicode scalar value represented by `value`. */
+bridge func ord(value: Char): Int
 
-    /** Whether `value` is an ASCII decimal digit. */
-    func isDigit(value: Char): Bool
-}
+/** Character represented by a valid Unicode scalar value. */
+bridge func chr(value: Int): Char
+
+/** Whether `value` is an ASCII decimal digit. */
+bridge func isDigit(value: Char): Bool

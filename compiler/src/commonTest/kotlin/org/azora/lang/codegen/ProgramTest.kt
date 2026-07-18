@@ -33,7 +33,7 @@ class ProgramTest {
         val result = compile("""
             import std.io
             func main() {
-                std::io::println("Hello, world!")
+                std::println("Hello, world!")
             }
         """.trimIndent())
 
@@ -55,7 +55,7 @@ class ProgramTest {
         val result = compile("""
             import std.io
             func main(): Int {
-                std::io::println("Hello")
+                std::println("Hello")
                 return 0
             }
         """.trimIndent())
@@ -79,10 +79,10 @@ class ProgramTest {
                 var x = 10
                 fin y = 3
                 let z = x + y
-                std::io::println(z)
+                std::println(z)
                 x = x * 2
-                std::io::println(x)
-                std::io::println(x - y)
+                std::println(x)
+                std::println(x - y)
             }
         """.trimIndent())
 
@@ -106,8 +106,8 @@ class ProgramTest {
             }
 
             func main() {
-                std::io::println(double(5))
-                std::io::println(addOne(double(3)))
+                std::println(double(5))
+                std::println(addOne(double(3)))
             }
         """.trimIndent())
 
@@ -131,8 +131,8 @@ class ProgramTest {
             }
 
             func main() {
-                std::io::println(abs(5))
-                std::io::println(abs(-3))
+                std::println(abs(5))
+                std::println(abs(-3))
             }
         """.trimIndent())
 
@@ -150,7 +150,7 @@ class ProgramTest {
             func main() {
                 fin greeting = "Hello"
                 fin name = "World"
-                std::io::println(greeting + ", " + name + "!")
+                std::println(greeting + ", " + name + "!")
             }
         """.trimIndent())
 
@@ -168,7 +168,7 @@ class ProgramTest {
             fin x = 9
 
             func main() {
-                std::io::println(x)
+                std::println(x)
             }
         """.trimIndent())
 
@@ -187,13 +187,13 @@ class ProgramTest {
 
             func main() {
                 var x = 2
-                std::io::println(x)
-                std::io::println(::x)
+                std::println(x)
+                std::println(::x)
                 zone {
                     var x = 5
-                    std::io::println(x)
-                    std::io::println(::x)
-                    std::io::println(::_::x)
+                    std::println(x)
+                    std::println(::x)
+                    std::println(::_::x)
                 }
             }
         """.trimIndent())
@@ -212,11 +212,11 @@ class ProgramTest {
             func main() {
                 friend zone {
                     var shared = 10
-                    std::io::println(shared)
+                    std::println(shared)
                 }
                 friend zone {
                     shared = shared + 5
-                    std::io::println(shared)
+                    std::println(shared)
                 }
             }
         """.trimIndent())
@@ -233,11 +233,11 @@ class ProgramTest {
         val source = """
             import std.io
             func unused() {
-                std::io::println("never called")
+                std::println("never called")
             }
 
             func main() {
-                std::io::println("hello")
+                std::println("hello")
             }
         """.trimIndent()
 
@@ -264,7 +264,7 @@ class ProgramTest {
             import std.io
             var x = 5
             func main() {
-                std::io::println(x)
+                std::println(x)
             }
         """.trimIndent())
         assertTrue(errors.any { "not allowed" in it && "thread-safe" in it },

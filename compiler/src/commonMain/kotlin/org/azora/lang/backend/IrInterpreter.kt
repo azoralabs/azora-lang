@@ -1028,6 +1028,20 @@ class IrInterpreter {
             }
             return result
         }
+        if (expr.name == "__dynCast") {
+            // `x as? T` — the value if it is a `T` at runtime, else null.
+            val value = args[0]
+            val typeName = args[1] as String
+            val matches = when (typeName) {
+                "Int", "UInt", "Byte", "UByte", "Short", "UShort", "Long", "ULong", "Cent", "UCent" -> value is Long
+                "Real", "Float", "Decimal" -> value is Double
+                "String" -> value is String
+                "Bool" -> value is Boolean
+                "Char" -> value is Char
+                else -> value is Map<*, *> && (value["__type"] == typeName || value["__tag"] == typeName || value["__type"] == null)
+            }
+            return if (matches) value else null
+        }
         if (expr.name == "__nullCoalesce") {
             return if (args[0] != null) args[0] else args[1]
         }
@@ -1130,7 +1144,7 @@ class IrInterpreter {
             debugHost?.onLine(((args.firstOrNull() as? Long) ?: 0L).toInt(), snapshotLocals())
             return null
         }
-        if (expr.name == "std__io__println") {
+        if (expr.name == "std__println") {
             val value = args.firstOrNull()
             val text = formatValue(value)
             azSync(output) { output.appendLine(text) }

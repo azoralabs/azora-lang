@@ -35,7 +35,7 @@ friend zone std {
      * @param T the pointee type.
      */
     @Since("0.0.3")
-    pack Ptr<T> {
+    pack<T> Ptr {
         confine var raw: T*
     }
 

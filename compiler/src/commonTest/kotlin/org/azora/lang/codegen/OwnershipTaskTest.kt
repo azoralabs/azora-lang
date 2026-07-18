@@ -36,7 +36,7 @@ class OwnershipTaskTest {
                 fin posts = loadPosts()
                 fin userValue = await user
                 fin postValue = await posts
-                std::io::println(userValue + postValue)
+                std::println(userValue + postValue)
             }
         """.trimIndent()
 
@@ -56,7 +56,7 @@ class OwnershipTaskTest {
             task answer(): Int { return 42 }
             task main() {
                 fin value = await answer()
-                std::io::println(value)
+                std::println(value)
             }
         """.trimIndent()))
     }
@@ -70,7 +70,7 @@ class OwnershipTaskTest {
                 fin right = async { 23 }
                 fin a = await left
                 fin b = await right
-                std::io::println(a + b)
+                std::println(a + b)
             }
         """.trimIndent()
 
@@ -84,7 +84,7 @@ class OwnershipTaskTest {
         val result = compile("""
             import std.io
             unsafe task compute(): Int { return 7 }
-            task main() { std::io::println(7) }
+            task main() { std::println(7) }
         """.trimIndent())
 
         val compute = result.ir.functions.first { it.name == "compute" }
@@ -98,7 +98,7 @@ class OwnershipTaskTest {
         val rejected = Compiler().compile("""
             import std.io
             unsafe func raw(): Int { return 7 }
-            func main() { std::io::println(raw()) }
+            func main() { std::println(raw()) }
         """.trimIndent())
         assertIs<CompilationResult.Failure>(rejected)
         assertTrue(rejected.errors.any { "requires an unsafe block" in it })
@@ -107,7 +107,7 @@ class OwnershipTaskTest {
             import std.io
             unsafe func raw(): Int { return 7 }
             func main() {
-                unsafe { std::io::println(raw()) }
+                unsafe { std::println(raw()) }
             }
         """.trimIndent()))
     }
@@ -118,7 +118,7 @@ class OwnershipTaskTest {
             import std.io
             pack Buffer { var value: Int }
             task inspect(input: ref Buffer): Int { return input.value }
-            task main() { std::io::println(0) }
+            task main() { std::println(0) }
         """.trimIndent())
 
         assertIs<CompilationResult.Failure>(result)
@@ -139,7 +139,7 @@ class OwnershipTaskTest {
             func main() {
                 var buffer = Buffer(1)
                 update(buffer)
-                std::io::println(buffer.value)
+                std::println(buffer.value)
             }
         """.trimIndent())
 
@@ -161,7 +161,7 @@ class OwnershipTaskTest {
                 var exclusive: mut ref Buffer = owned
                 fin shared: shared ref Buffer = owned
                 fin weakRef: weak ref Buffer = owned
-                std::io::println(borrowed.value + exclusive.value + shared.value + weakRef.value)
+                std::println(borrowed.value + exclusive.value + shared.value + weakRef.value)
             }
         """.trimIndent())
 

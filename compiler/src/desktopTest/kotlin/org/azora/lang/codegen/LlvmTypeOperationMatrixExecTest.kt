@@ -66,7 +66,7 @@ class LlvmTypeOperationMatrixExecTest(
         private fun program(body: String): String = "import std.io\nfunc main() {\n$body\n}"
 
         private fun expressionCase(name: String, expected: String, expression: String): Case =
-            Case(name, expected, program("std::io::println($expression)"))
+            Case(name, expected, program("std::println($expression)"))
 
         @JvmStatic
         @Parameterized.Parameters(name = "{0}")
@@ -192,21 +192,21 @@ class LlvmTypeOperationMatrixExecTest(
                 cases += Case(
                     "interpolate_${type.name}",
                     "value=42",
-                    program("let value: ${type.name} = $value\nstd::io::println(\"value=${'$'}value\")"),
+                    program("let value: ${type.name} = $value\nstd::println(\"value=${'$'}value\")"),
                 )
             }
             for (type in floatTypes) {
                 cases += Case(
                     "interpolate_${type.name}",
                     "value=3.5",
-                    program("let value: ${type.name} = 3.5${type.suffix}\nstd::io::println(\"value=${'$'}value\")"),
+                    program("let value: ${type.name} = 3.5${type.suffix}\nstd::println(\"value=${'$'}value\")"),
                 )
             }
 
-            cases += Case("interpolate_Bool", "value=true", program("let value = true\nstd::io::println(\"value=${'$'}value\")"))
-            cases += Case("interpolate_Char", "value=Z", program("let value = 'Z'\nstd::io::println(\"value=${'$'}value\")"))
-            cases += Case("interpolate_expression", "sum=42", program("std::io::println(\"sum=${'$'}{20 + 22}\")"))
-            cases += Case("interpolate_multiple", "a=7,b=6,p=42", program("let a = 7\nlet b = 6\nstd::io::println(\"a=${'$'}a,b=${'$'}b,p=${'$'}{a * b}\")"))
+            cases += Case("interpolate_Bool", "value=true", program("let value = true\nstd::println(\"value=${'$'}value\")"))
+            cases += Case("interpolate_Char", "value=Z", program("let value = 'Z'\nstd::println(\"value=${'$'}value\")"))
+            cases += Case("interpolate_expression", "sum=42", program("std::println(\"sum=${'$'}{20 + 22}\")"))
+            cases += Case("interpolate_multiple", "a=7,b=6,p=42", program("let a = 7\nlet b = 6\nstd::println(\"a=${'$'}a,b=${'$'}b,p=${'$'}{a * b}\")"))
 
             cases += expressionCase("string_concat_literals", "hello world", "\"hello \" + \"world\"")
             cases += expressionCase("string_concat_variables", "azora", "\"azo\" + \"ra\"")
@@ -214,7 +214,7 @@ class LlvmTypeOperationMatrixExecTest(
             cases += expressionCase("string_repeat_left", "hahaha", "3 * \"ha\"")
             cases += expressionCase("string_equal", "true", "\"same\" == \"same\"")
             cases += expressionCase("string_not_equal", "true", "\"left\" != \"right\"")
-            cases += Case("string_variable_concat", "ab", program("let prefix = \"a\"\nstd::io::println(prefix + \"b\")"))
+            cases += Case("string_variable_concat", "ab", program("let prefix = \"a\"\nstd::println(prefix + \"b\")"))
             cases += expressionCase("string_concat_number_interpolation", "n=42!", "\"n=${'$'}{40 + 2}\" + \"!\"")
             cases += expressionCase("bool_short_circuit_and", "false", "false && (1 / 0 == 0)")
             cases += expressionCase("bool_short_circuit_or", "true", "true || (1 / 0 == 0)")

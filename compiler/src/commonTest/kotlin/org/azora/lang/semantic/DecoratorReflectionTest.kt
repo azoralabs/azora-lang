@@ -49,11 +49,11 @@ class DecoratorReflectionTest {
             pack Plain
 
             func marked(): Int {
-                inline if (reflect Marked).hasDeco<Marker> { return 1 } else { return 0 }
+                inline if (std::reflect<Marked>).hasDeco<Marker> { return 1 } else { return 0 }
             }
 
             func plain(): Int {
-                inline if (reflect Plain).hasDeco<Marker> { return 1 } else { return 0 }
+                inline if (std::reflect<Plain>).hasDeco<Marker> { return 1 } else { return 0 }
             }
 
             func main() {}
@@ -71,11 +71,11 @@ class DecoratorReflectionTest {
 
             func inferred(): Int {
                 fin value = Marked()
-                inline if (reflect value).hasDeco<Marker> { return 1 } else { return 0 }
+                inline if (std::reflect<value>).hasDeco<Marker> { return 1 } else { return 0 }
             }
 
             func explicit(value: ref Marked): Int {
-                inline if (reflect value).hasDeco<Marker> { return 2 } else { return 0 }
+                inline if (std::reflect<value>).hasDeco<Marker> { return 2 } else { return 0 }
             }
 
             func main() {}
@@ -103,10 +103,10 @@ class DecoratorReflectionTest {
             }
 
             func declarations(): Int {
-                inline if (reflect read).hasDeco<Seen> &&
-                    (reflect Box::value).hasDeco<Seen> &&
-                    (reflect read::input).hasDeco<Seen> &&
-                    (reflect Counter::answer).hasDeco<Seen> {
+                inline if (std::reflect<read>).hasDeco<Seen> &&
+                    (std::reflect<Box::value>).hasDeco<Seen> &&
+                    (std::reflect<read::input>).hasDeco<Seen> &&
+                    (std::reflect<Counter::answer>).hasDeco<Seen> {
                     return 1
                 } else {
                     return 0
@@ -127,7 +127,7 @@ class DecoratorReflectionTest {
             @Wrapped pack Marked
 
             func transitive(): Int {
-                inline if (reflect Marked).hasDeco<Marker> { return 1 } else { return 0 }
+                inline if (std::reflect<Marked>).hasDeco<Marker> { return 1 } else { return 0 }
             }
 
             func main() {}
@@ -148,7 +148,7 @@ class DecoratorReflectionTest {
                 if flag {
                     fin value = Inner()
                 }
-                inline if (reflect value).hasDeco<Marker> { return 1 } else { return 0 }
+                inline if (std::reflect<value>).hasDeco<Marker> { return 1 } else { return 0 }
             }
 
             func main() {}
@@ -167,8 +167,8 @@ class DecoratorReflectionTest {
             @Config(enabled: true, label: "selected") pack Feature
 
             func configured(): String {
-                inline if (reflect Feature).decoMeta<Config>.enabled {
-                    inline fin label = (reflect Feature).decoMeta<Config>.label
+                inline if (std::reflect<Feature>).decoMeta<Config>.enabled {
+                    inline fin label = (std::reflect<Feature>).decoMeta<Config>.label
                     return label
                 } else {
                     return "disabled"
@@ -191,11 +191,11 @@ class DecoratorReflectionTest {
             @Config(true) pack Feature
 
             func enabled(): Int {
-                inline if (reflect Feature).decoMeta<Config>.enabled { return 1 } else { return 0 }
+                inline if (std::reflect<Feature>).decoMeta<Config>.enabled { return 1 } else { return 0 }
             }
 
             func label(): String {
-                inline fin value = (reflect Feature).decoMeta<Config>.label
+                inline fin value = (std::reflect<Feature>).decoMeta<Config>.label
                 return value
             }
 
@@ -216,7 +216,7 @@ class DecoratorReflectionTest {
             @Wrapped pack Feature
 
             func configured(): Int {
-                inline if (reflect Feature).decoMeta<Config>.enabled { return 1 } else { return 0 }
+                inline if (std::reflect<Feature>).decoMeta<Config>.enabled { return 1 } else { return 0 }
             }
 
             func main() {}
@@ -235,7 +235,7 @@ class DecoratorReflectionTest {
             impl Config for Feature
 
             func configured(): Int {
-                inline if (reflect Feature).hasDeco<Config> && (reflect Feature).decoMeta<Config>.enabled {
+                inline if (std::reflect<Feature>).hasDeco<Config> && (std::reflect<Feature>).decoMeta<Config>.enabled {
                     return 1
                 } else {
                     return 0
@@ -277,8 +277,8 @@ class DecoratorReflectionTest {
             impl Config(true, "positional") for PositionalFeature
 
             func named(): String {
-                inline if !(reflect NamedFeature).decoMeta<Config>.enabled {
-                    inline fin label = (reflect NamedFeature).decoMeta<Config>.label
+                inline if !(std::reflect<NamedFeature>).decoMeta<Config>.enabled {
+                    inline fin label = (std::reflect<NamedFeature>).decoMeta<Config>.label
                     return label
                 } else {
                     return "wrong"
@@ -286,8 +286,8 @@ class DecoratorReflectionTest {
             }
 
             func positional(): String {
-                inline if (reflect PositionalFeature).decoMeta<Config>.enabled {
-                    inline fin label = (reflect PositionalFeature).decoMeta<Config>.label
+                inline if (std::reflect<PositionalFeature>).decoMeta<Config>.enabled {
+                    inline fin label = (std::reflect<PositionalFeature>).decoMeta<Config>.label
                     return label
                 } else {
                     return "wrong"
@@ -311,7 +311,7 @@ class DecoratorReflectionTest {
             impl Name(value: "configured") for Feature
 
             func name(): String {
-                inline fin value = (reflect Feature).decoMeta<Name>.value
+                inline fin value = (std::reflect<Feature>).decoMeta<Name>.value
                 return value
             }
 
@@ -372,14 +372,14 @@ class DecoratorReflectionTest {
             impl [First, Second] for GroupWildcard::*
 
             func covered(): Int {
-                inline if (reflect Direct::name).hasDeco<First> &&
-                    (reflect DecoratorGroup::name).hasDeco<First> && (reflect DecoratorGroup::name).hasDeco<Second> &&
-                    (reflect TargetGroup::name).hasDeco<First> && (reflect TargetGroup::password).hasDeco<First> &&
-                    (reflect CrossProduct::name).hasDeco<First> && (reflect CrossProduct::name).hasDeco<Second> &&
-                    (reflect CrossProduct::password).hasDeco<First> && (reflect CrossProduct::password).hasDeco<Second> &&
-                    (reflect OneWildcard::name).hasDeco<First> && (reflect OneWildcard::password).hasDeco<First> &&
-                    (reflect GroupWildcard::name).hasDeco<First> && (reflect GroupWildcard::name).hasDeco<Second> &&
-                    (reflect GroupWildcard::password).hasDeco<First> && (reflect GroupWildcard::password).hasDeco<Second> {
+                inline if (std::reflect<Direct::name>).hasDeco<First> &&
+                    (std::reflect<DecoratorGroup::name>).hasDeco<First> && (std::reflect<DecoratorGroup::name>).hasDeco<Second> &&
+                    (std::reflect<TargetGroup::name>).hasDeco<First> && (std::reflect<TargetGroup::password>).hasDeco<First> &&
+                    (std::reflect<CrossProduct::name>).hasDeco<First> && (std::reflect<CrossProduct::name>).hasDeco<Second> &&
+                    (std::reflect<CrossProduct::password>).hasDeco<First> && (std::reflect<CrossProduct::password>).hasDeco<Second> &&
+                    (std::reflect<OneWildcard::name>).hasDeco<First> && (std::reflect<OneWildcard::password>).hasDeco<First> &&
+                    (std::reflect<GroupWildcard::name>).hasDeco<First> && (std::reflect<GroupWildcard::name>).hasDeco<Second> &&
+                    (std::reflect<GroupWildcard::password>).hasDeco<First> && (std::reflect<GroupWildcard::password>).hasDeco<Second> {
                     return 1
                 } else {
                     return 0
@@ -403,12 +403,12 @@ class DecoratorReflectionTest {
             impl SerialName for User::password
 
             func configured(): String {
-                inline fin value = (reflect User::name).decoMeta<SerialName>.value
+                inline fin value = (std::reflect<User::name>).decoMeta<SerialName>.value
                 return value
             }
 
             func defaulted(): String {
-                inline fin value = (reflect User::password).decoMeta<SerialName>.value
+                inline fin value = (std::reflect<User::password>).decoMeta<SerialName>.value
                 return value
             }
 
@@ -461,7 +461,7 @@ class DecoratorReflectionTest {
         val hasDeco = analyze("""
             deco Marker for .Pack
             @Marker pack Feature
-            func probe(): Bool { return (reflect Feature).hasDeco<Marker> }
+            func probe(): Bool { return (std::reflect<Feature>).hasDeco<Marker> }
             func main() {}
         """.trimIndent())
         assertTrue(hasDeco.errors.any { "hasDeco" in it && "compile-time-only" in it }, hasDeco.errors.toString())
@@ -469,7 +469,7 @@ class DecoratorReflectionTest {
         val metadata = analyze("""
             deco Config for .Pack { fin enabled: Bool = true }
             @Config pack Feature
-            func probe(): Bool { return (reflect Feature).decoMeta<Config>.enabled }
+            func probe(): Bool { return (std::reflect<Feature>).decoMeta<Config>.enabled }
             func main() {}
         """.trimIndent())
         assertTrue(metadata.errors.any { "deco" in it && "compile-time-only" in it }, metadata.errors.toString())
@@ -485,14 +485,14 @@ class DecoratorReflectionTest {
                 }
             """.trimIndent()).tokenize()).parse()
         }
-        assertTrue("requires an explicit reflect receiver" in direct.message.orEmpty(), direct.message)
+        assertTrue("requires an explicit std::reflect<receiver>" in direct.message.orEmpty(), direct.message)
 
         val dottedField = assertFailsWith<IllegalStateException> {
             Parser(Lexer("""
                 deco Marker for .Field
                 pack Feature { @Marker fin value: Int = 0 }
                 func probe(): Int {
-                    inline if (reflect Feature.value).hasDeco<Marker> { return 1 } else { return 0 }
+                    inline if (std::reflect<Feature>.value).hasDeco<Marker> { return 1 } else { return 0 }
                 }
             """.trimIndent()).tokenize()).parse()
         }
@@ -502,8 +502,8 @@ class DecoratorReflectionTest {
             deco Marker for [.Pack, .Field]
             @Marker pack Feature { @Marker fin value: Int = 0 }
             func probe(): Int {
-                inline if (reflect Feature).hasDeco<Marker> &&
-                    (reflect Feature::value).hasDeco<Marker> { return 1 } else { return 0 }
+                inline if (std::reflect<Feature>).hasDeco<Marker> &&
+                    (std::reflect<Feature::value>).hasDeco<Marker> { return 1 } else { return 0 }
             }
             func main() {}
         """.trimIndent())
@@ -526,7 +526,7 @@ class DecoratorReflectionTest {
         val unknown = analyze("""
             pack Feature
             func probe(): Int {
-                inline if (reflect Feature).hasDeco<Missing> { return 1 } else { return 0 }
+                inline if (std::reflect<Feature>).hasDeco<Missing> { return 1 } else { return 0 }
             }
             func main() {}
         """.trimIndent())
@@ -536,7 +536,7 @@ class DecoratorReflectionTest {
             deco Config for .Pack { fin enabled: Bool = true }
             pack Feature
             func probe(): Int {
-                inline if (reflect Feature).decoMeta<Config>.enabled { return 1 } else { return 0 }
+                inline if (std::reflect<Feature>).decoMeta<Config>.enabled { return 1 } else { return 0 }
             }
             func main() {}
         """.trimIndent())
@@ -546,7 +546,7 @@ class DecoratorReflectionTest {
             deco Config for .Pack { fin enabled: Bool = true }
             @Config pack Feature
             func probe(): Int {
-                inline if (reflect Feature).decoMeta<Config>.missing { return 1 } else { return 0 }
+                inline if (std::reflect<Feature>).decoMeta<Config>.missing { return 1 } else { return 0 }
             }
             func main() {}
         """.trimIndent())

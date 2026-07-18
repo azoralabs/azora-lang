@@ -16,9 +16,11 @@
 
 package org.azora.lang.ir
 
+import org.azora.lang.frontend.CastKind
 import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.FuncDecl
 import org.azora.lang.frontend.MemberCallStyle
+import org.azora.lang.frontend.TypeRef
 import org.azora.lang.frontend.NumericSuffix
 import org.azora.lang.frontend.Program
 import org.azora.lang.frontend.Stmt
@@ -134,7 +136,7 @@ class IrGenerator(private val table: SymbolTable) {
         val items = program.items.flatMap { item ->
             when (item) {
                 is TopLevel.Func -> {
-                    // Runtime intrinsics (std::io::println, …) are intercepted by name in
+                    // Runtime intrinsics (std::println, …) are intercepted by name in
                     // each backend/interpreter; their stdlib bodies are dead placeholders,
                     // so they are kept out of the IR (the symbol is already collected for
                     // type-checking). This keeps emitted IR / golden output clean.
@@ -172,9 +174,14 @@ class IrGenerator(private val table: SymbolTable) {
                     }
                 }
                 is TopLevel.Pack -> {
-                    val tpSet = item.typeParams.toSet()
-                    val fields = item.fields.map { IrField(it.name, IrType.resolve(it.type, tpSet), it.mutable) }
-                    listOf(IrTopLevel.Struct(item.name, fields))
+                    // `bridge pack X` — a compiler-provided type (primitives, Reflected);
+                    // no struct is emitted.
+                    if (item.isBridge) emptyList()
+                    else {
+                        val tpSet = item.typeParams.toSet()
+                        val fields = item.fields.map { IrField(it.name, IrType.resolve(it.type, tpSet), it.mutable) }
+                        listOf(IrTopLevel.Struct(item.name, fields))
+                    }
                 }
                 is TopLevel.Solo -> {
                     val fields = item.fields.map { IrField(it.name, IrType.resolve(it.type), it.mutable) }
@@ -643,17 +650,28 @@ class IrGenerator(private val table: SymbolTable) {
                         t is IrType.Named || t is IrType.Pointer || t is IrType.Nullable || t is IrType.Tuple
                 val innerType = inner.type
                 when {
-                    // `cast x as String` — converting cast: stringify the value by
-                    // routing through the single-part string-template machinery
-                    // (equivalent to "${x}"), which every backend already supports.
-                    expr.convert && target == IrType.String ->
-                        IrExpr.StringTemplate(listOf(IrExpr.IrTemplatePart.Expr(inner)))
-                    target == innerType -> inner
+                    // `x as? T` / `std::dyncast<T>(x)` — runtime-checked downcast to `T?`:
+                    // the value if it is a `T`, otherwise null.
+                    expr.kind == CastKind.DYNAMIC ->
+                        IrExpr.Call(
+                            "__dynCast",
+                            listOf(inner, IrExpr.StringLiteral((expr.targetType as? TypeRef.Named)?.name ?: expr.targetType.displayName())),
+                            IrType.Nullable(target),
+                        )
+                    // A custom `impl as String` conversion takes priority over the
+                    // default stringify (so `label as String` calls the user method).
                     target == IrType.String && innerType is IrType.Named &&
                         table.lookupMethod(innerType.name, "asString") != null -> {
                         val mangled = table.lookupMethod(innerType.name, "asString")!!
                         IrExpr.Call(mangled, listOf(inner), IrType.String)
                     }
+                    // `x as String` / `std::cast<String>(x)` — converting cast: stringify
+                    // the value via the single-part string-template machinery (equivalent
+                    // to "${x}"), which every backend already supports. `as*` (reinterpret)
+                    // never stringifies.
+                    expr.kind == CastKind.STATIC && target == IrType.String ->
+                        IrExpr.StringTemplate(listOf(IrExpr.IrTemplatePart.Expr(inner)))
+                    target == innerType -> inner
                     isNumericish(target) && isNumericish(innerType) -> IrExpr.NumCast(inner, target)
                     // pointer → integer / integer → pointer (FFI)
                     isNumericish(target) && isPointerish(innerType) -> IrExpr.NumCast(inner, target)
@@ -834,7 +852,7 @@ class IrGenerator(private val table: SymbolTable) {
                 // Calling a lambda stored in a variable.
                 val v = table.lookupVariable(expr.callee)
                 if (v != null && v.type is IrType.Function) {
-                    // Variadic lambda (`<T...>{ … }`): pack all args into the single `it` array.
+                    // Variadic lambda (`<...T>{ … }`): pack all args into the single `it` array.
                     val args = if (v.type.variadic) {
                         val elems = expr.args.map { lowerExpr(it) }
                         val elemType = if (elems.isEmpty()) IrType.Any else elems.first().type

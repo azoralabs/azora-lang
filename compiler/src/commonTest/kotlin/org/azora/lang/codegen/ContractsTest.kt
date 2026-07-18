@@ -37,9 +37,9 @@ class ContractsTest {
             }
 
             func main() {
-                std::io::println(clamp(-5, 0, 10))
-                std::io::println(clamp(5, 0, 10))
-                std::io::println(clamp(50, 0, 10))
+                std::println(clamp(-5, 0, 10))
+                std::println(clamp(5, 0, 10))
+                std::println(clamp(50, 0, 10))
             }
         """.trimIndent()))
     }
@@ -55,7 +55,7 @@ class ContractsTest {
                 } zone {
                     return x
                 }
-                func main() { std::io::println(value(0)) }
+                func main() { std::println(value(0)) }
             """.trimIndent())
         }
         assertTrue(failure.message.orEmpty().contains("x must be positive"))
@@ -72,7 +72,7 @@ class ContractsTest {
                 } zone {
                     return 3
                 }
-                func main() { std::io::println(value()) }
+                func main() { std::println(value()) }
             """.trimIndent())
         }
         assertTrue(failure.message.orEmpty().contains("result too small"))
@@ -93,8 +93,8 @@ class ContractsTest {
                 }
             }
             func main() {
-                std::io::println(choose(true))
-                std::io::println(choose(false))
+                std::println(choose(true))
+                std::println(choose(false))
             }
         """.trimIndent()))
     }

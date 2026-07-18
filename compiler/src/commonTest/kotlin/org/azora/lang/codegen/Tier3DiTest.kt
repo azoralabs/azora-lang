@@ -29,10 +29,10 @@ class Tier3DiTest {
             }
             func main() {
                 var c1 = inject Counter
-                std::io::println(c1.inc())
-                std::io::println(c1.inc())
+                std::println(c1.inc())
+                std::println(c1.inc())
                 var c2 = inject Counter
-                std::io::println(c2.inc())
+                std::println(c2.inc())
             }
         """.trimIndent()))
     }
@@ -47,7 +47,7 @@ class Tier3DiTest {
                 }
             }
             func main() {
-                std::io::println(inject Config.get())
+                std::println(inject Config.get())
             }
         """.trimIndent()))
     }
@@ -60,7 +60,7 @@ class Tier3DiTest {
             }
             func main() {
                 var g = inject Greeting
-                std::io::println(g.msg)
+                std::println(g.msg)
             }
         """.trimIndent()))
     }
@@ -80,9 +80,9 @@ class Tier3DiTest {
             }
             func main() {
                 var l = inject Logger
-                std::io::println(l.prefix)
+                std::println(l.prefix)
                 var d = inject DB
-                std::io::println(d.url)
+                std::println(d.url)
             }
         """.trimIndent()))
     }
@@ -100,7 +100,7 @@ class Tier3DiTest {
                 var a = inject Logger
                 var b = inject Logger
                 if a == b {
-                    std::io::println("same")
+                    std::println("same")
                 }
             }
         """.trimIndent()))

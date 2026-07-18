@@ -2683,7 +2683,7 @@ class LlvmCodegen {
     }
 
     private fun emitCall(expr: IrExpr.Call): String {
-        if (expr.name == "std__io__println") return emitPrintln(expr)
+        if (expr.name == "std__println") return emitPrintln(expr)
         if (expr.name == "print") return emitPrintln(expr, newline = false)
         if (expr.name == "async") {
             val lambda = expr.args.singleOrNull() as? IrExpr.Lambda

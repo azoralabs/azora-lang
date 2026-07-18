@@ -48,7 +48,7 @@ friend zone std {
         /** RFC 8259 JSON using `:` between object keys and values. */
         Json
 
-        /** Azora Object Notation using `=` between object keys and values. */
+        /** Azora Object Notation using `:` between object keys and values. */
         Azon
     }
 
@@ -75,7 +75,7 @@ friend zone std {
      * Use `JsonSerializable` or `AzonSerializable` when only one text format is
      * part of a type's public contract. Configuration is immutable compile-time
      * metadata and can be inspected from inline code with
-     * `(reflect value).decoMeta<Serializable>.ignoreUnknownFields`.
+     * `(std::reflect<value>).decoMeta<Serializable>.ignoreUnknownFields`.
     */
     @Experimental(since: "0.0.4")
     @Derive(
@@ -237,7 +237,7 @@ friend zone std {
     /**
      * Bidirectional AZON codec for `T`.
      *
-     * AZON uses JSON's scalar and collection grammar with `=` between object
+     * AZON uses JSON-style `:` between object
      * names and values. Generated implementations created by `@Serializable`
      * and `@AzonSerializable` use this contract.
      *
@@ -343,7 +343,7 @@ friend zone std {
                 while index < stringLength(text) {
                     fin c = charAt(text, index)
                     if !charIsDigit(c) { fail return .InvalidNumber }
-                    fin digit = cast (charToCode(c) - 48) as Long
+                    fin digit = (charToCode(c) - 48) as Long
                     if result > 922337203685477580L ||
                         (result == 922337203685477580L && digit > 7L) {
                         fail return .InvalidNumber
@@ -361,28 +361,28 @@ friend zone std {
     confine func serialAsByte(value: ref SerialValue): Byte!SerializationError {
         fin parsed = try serialAsLong(value)
         if parsed < -128L || parsed > 127L { fail return .InvalidNumber }
-        return cast parsed as Byte
+        return parsed as Byte
     }
 
     /** Extracts a range-checked unsigned byte. */
     confine func serialAsUByte(value: ref SerialValue): UByte!SerializationError {
         fin parsed = try serialAsLong(value)
         if parsed < 0L || parsed > 255L { fail return .InvalidNumber }
-        return cast parsed as UByte
+        return parsed as UByte
     }
 
     /** Extracts a range-checked signed short. */
     confine func serialAsShort(value: ref SerialValue): Short!SerializationError {
         fin parsed = try serialAsLong(value)
         if parsed < -32768L || parsed > 32767L { fail return .InvalidNumber }
-        return cast parsed as Short
+        return parsed as Short
     }
 
     /** Extracts a range-checked unsigned short. */
     confine func serialAsUShort(value: ref SerialValue): UShort!SerializationError {
         fin parsed = try serialAsLong(value)
         if parsed < 0L || parsed > 65535L { fail return .InvalidNumber }
-        return cast parsed as UShort
+        return parsed as UShort
     }
 
     /** Extracts a range-checked signed integer. */
@@ -391,33 +391,33 @@ friend zone std {
         if (parsed < 0L && parsed + 2147483648L < 0L) || parsed > 2147483647L {
             fail return .InvalidNumber
         }
-        return cast parsed as Int
+        return parsed as Int
     }
 
     /** Extracts a range-checked unsigned integer. */
     confine func serialAsUInt(value: ref SerialValue): UInt!SerializationError {
         fin parsed = try serialAsLong(value)
         if parsed < 0L || parsed > 4294967295L { fail return .InvalidNumber }
-        return cast parsed as UInt
+        return parsed as UInt
     }
 
     /** Extracts a non-negative value representable by the current ULong runtime. */
     confine func serialAsULong(value: ref SerialValue): ULong!SerializationError {
         fin parsed = try serialAsLong(value)
         if parsed < 0L { fail return .InvalidNumber }
-        return cast parsed as ULong
+        return parsed as ULong
     }
 
     /** Extracts a signed 128-bit value from the supported integer token range. */
     confine func serialAsCent(value: ref SerialValue): Cent!SerializationError {
-        return cast try serialAsLong(value) as Cent
+        return try serialAsLong(value) as Cent
     }
 
     /** Extracts an unsigned 128-bit value from the supported integer token range. */
     confine func serialAsUCent(value: ref SerialValue): UCent!SerializationError {
         fin parsed = try serialAsLong(value)
         if parsed < 0L { fail return .InvalidNumber }
-        return cast parsed as UCent
+        return parsed as UCent
     }
 
     /** Extracts a finite real number, including fraction and exponent forms. */
@@ -434,14 +434,14 @@ friend zone std {
                 }
                 var result = 0.0
                 while index < stringLength(text) && charIsDigit(charAt(text, index)) {
-                    result = result * 10.0 + cast (charToCode(charAt(text, index)) - 48) as Real
+                    result = result * 10.0 + (charToCode(charAt(text, index)) - 48) as Real
                     index += 1
                 }
                 if index < stringLength(text) && charAt(text, index) == '.' {
                     index += 1
                     var divisor = 10.0
                     while index < stringLength(text) && charIsDigit(charAt(text, index)) {
-                        result = result + cast (charToCode(charAt(text, index)) - 48) as Real / divisor
+                        result = result + (charToCode(charAt(text, index)) - 48) as Real / divisor
                         divisor = divisor * 10.0
                         index += 1
                     }
@@ -684,8 +684,7 @@ friend zone std {
                 if self.isAtEnd || charAt(self.input, self.index) != '"' { fail return .InvalidSyntax }
                 fin name = try self.readString()
                 self.skipWhitespace()
-                if self.format == SerializationFormat.Json { try self.expect(':') }
-                else { try self.expect('=') }
+                try self.expect(':')
                 self.skipWhitespace()
                 fin value = try self.readValue(depth)
 
@@ -749,8 +748,7 @@ friend zone std {
                         if written > 0 { result = result + "," }
                         if options.pretty { result = result + "\n" + repeatIndent(options.indent, depth + 1) }
                         result = result + quoteSerialString(field.name)
-                        if format == SerializationFormat.Json { result = result + ":" }
-                        else { result = result + "=" }
+                        result = result + ":"
                         if options.pretty { result = result + " " }
                         result = result + try encodeSerialValueAtDepth(field.value, format, options, depth + 1)
                         written += 1
@@ -928,45 +926,45 @@ impl [SerialName, SerialRequired] for GroupedWildcardDecoratorFixture::*
 // ---------------------------------------------------------------------------
 
 test "serializer decorator is visible at compile time" {
-    inline assert (reflect SerializerMetadataFixture).hasDeco<Serializable> {
+    inline assert (std::reflect<SerializerMetadataFixture>).hasDeco<Serializable> {
         "@Serializable must be visible through hasDeco"
     }
 }
 
 test "serializer decorator exposes named options" {
-    inline assert (reflect SerializerMetadataFixture).decoMeta<Serializable>.ignoreUnknownFields {
+    inline assert (std::reflect<SerializerMetadataFixture>).decoMeta<Serializable>.ignoreUnknownFields {
         "ignoreUnknownFields must retain its annotation value"
     }
-    inline assert !(reflect SerializerMetadataFixture).decoMeta<Serializable>.encodeDefaults {
+    inline assert !(std::reflect<SerializerMetadataFixture>).decoMeta<Serializable>.encodeDefaults {
         "encodeDefaults must retain its annotation value"
     }
 }
 
 test "serial ignore is visible on fields" {
-    inline assert (reflect SerializerMetadataFixture::secret).hasDeco<SerialIgnore> {
+    inline assert (std::reflect<SerializerMetadataFixture::secret>).hasDeco<SerialIgnore> {
         "@SerialIgnore must target field metadata"
     }
 }
 
 test "serial name exposes its immutable value" {
-    inline fin name = (reflect SerializerMetadataFixture::displayName).decoMeta<SerialName>.value
+    inline fin name = (std::reflect<SerializerMetadataFixture::displayName>).decoMeta<SerialName>.value
     inline assert name == "display_name" { "@SerialName must preserve its value" }
 }
 
 test "json-only decorator is independent" {
-    inline assert (reflect JsonMetadataFixture).hasDeco<JsonSerializable> {
+    inline assert (std::reflect<JsonMetadataFixture>).hasDeco<JsonSerializable> {
         "JSON-only metadata must be present"
     }
-    inline assert !(reflect JsonMetadataFixture).hasDeco<AzonSerializable> {
+    inline assert !(std::reflect<JsonMetadataFixture>).hasDeco<AzonSerializable> {
         "JSON-only metadata must not imply AZON metadata"
     }
 }
 
 test "azon-only decorator is independent" {
-    inline assert (reflect AzonMetadataFixture).hasDeco<AzonSerializable> {
+    inline assert (std::reflect<AzonMetadataFixture>).hasDeco<AzonSerializable> {
         "AZON-only metadata must be present"
     }
-    inline assert !(reflect AzonMetadataFixture).hasDeco<JsonSerializable> {
+    inline assert !(std::reflect<AzonMetadataFixture>).hasDeco<JsonSerializable> {
         "AZON-only metadata must not imply JSON metadata"
     }
 }
@@ -1002,79 +1000,79 @@ test "manual Serializer impl round trips through JSON" {
 }
 
 test "impl Serializable accepts configured decorator metadata" {
-    inline assert (reflect ImplSerializableFixture).hasDeco<Serializable> {
+    inline assert (std::reflect<ImplSerializableFixture>).hasDeco<Serializable> {
         "bodyless decorator implementations must be visible through hasDeco"
     }
-    inline assert (reflect ImplSerializableFixture).decoMeta<Serializable>.ignoreUnknownFields {
+    inline assert (std::reflect<ImplSerializableFixture>).decoMeta<Serializable>.ignoreUnknownFields {
         "configured decorator implementations must expose named metadata"
     }
-    inline assert !(reflect ImplSerializableFixture).decoMeta<Serializable>.encodeDefaults {
+    inline assert !(std::reflect<ImplSerializableFixture>).decoMeta<Serializable>.encodeDefaults {
         "configured decorator implementations must override defaults"
     }
 }
 
 test "impl Serializable still uses omitted metadata defaults" {
-    inline assert (reflect DefaultSerializableFixture).hasDeco<Serializable> {
+    inline assert (std::reflect<DefaultSerializableFixture>).hasDeco<Serializable> {
         "unconfigured decorator implementations must remain valid"
     }
-    inline assert !(reflect DefaultSerializableFixture).decoMeta<Serializable>.ignoreUnknownFields {
+    inline assert !(std::reflect<DefaultSerializableFixture>).decoMeta<Serializable>.ignoreUnknownFields {
         "omitted ignoreUnknownFields must use its default"
     }
-    inline assert (reflect DefaultSerializableFixture).decoMeta<Serializable>.encodeDefaults {
+    inline assert (std::reflect<DefaultSerializableFixture>).decoMeta<Serializable>.encodeDefaults {
         "omitted encodeDefaults must use its default"
     }
 }
 
 test "decorator impl targets one pack field" {
-    inline assert (reflect DirectFieldDecoratorFixture::name).hasDeco<SerialName> {
+    inline assert (std::reflect<DirectFieldDecoratorFixture::name>).hasDeco<SerialName> {
         "field implementation must apply SerialName to the selected field"
     }
-    inline fin name = (reflect DirectFieldDecoratorFixture::name).decoMeta<SerialName>.value
+    inline fin name = (std::reflect<DirectFieldDecoratorFixture::name>).decoMeta<SerialName>.value
     inline assert name == "display_name" { "field implementation must preserve configured metadata" }
-    inline assert !(reflect DirectFieldDecoratorFixture::password).hasDeco<SerialName> {
+    inline assert !(std::reflect<DirectFieldDecoratorFixture::password>).hasDeco<SerialName> {
         "field implementation must not affect sibling fields"
     }
 }
 
 test "decorator impl accepts a decorator list" {
-    inline assert (reflect GroupedDecoratorFixture::name).hasDeco<SerialName> {
+    inline assert (std::reflect<GroupedDecoratorFixture::name>).hasDeco<SerialName> {
         "decorator lists must apply every listed decorator"
     }
-    inline assert (reflect GroupedDecoratorFixture::name).hasDeco<SerialRequired> {
+    inline assert (std::reflect<GroupedDecoratorFixture::name>).hasDeco<SerialRequired> {
         "decorator lists must preserve all marker contracts"
     }
 }
 
 test "decorator impl accepts a field target list" {
-    inline assert (reflect GroupedTargetFixture::name).hasDeco<SerialIgnore> {
+    inline assert (std::reflect<GroupedTargetFixture::name>).hasDeco<SerialIgnore> {
         "target lists must decorate their first field"
     }
-    inline assert (reflect GroupedTargetFixture::password).hasDeco<SerialIgnore> {
+    inline assert (std::reflect<GroupedTargetFixture::password>).hasDeco<SerialIgnore> {
         "target lists must decorate every selected field"
     }
 }
 
 test "decorator and target lists form a cross product" {
-    inline assert (reflect CrossProductDecoratorFixture::name).hasDeco<SerialName> &&
-        (reflect CrossProductDecoratorFixture::name).hasDeco<SerialRequired> &&
-        (reflect CrossProductDecoratorFixture::password).hasDeco<SerialName> &&
-        (reflect CrossProductDecoratorFixture::password).hasDeco<SerialRequired> {
+    inline assert (std::reflect<CrossProductDecoratorFixture::name>).hasDeco<SerialName> &&
+        (std::reflect<CrossProductDecoratorFixture::name>).hasDeco<SerialRequired> &&
+        (std::reflect<CrossProductDecoratorFixture::password>).hasDeco<SerialName> &&
+        (std::reflect<CrossProductDecoratorFixture::password>).hasDeco<SerialRequired> {
         "each listed decorator must apply to each listed field"
     }
 }
 
 test "field wildcard applies a decorator to every pack field" {
-    inline assert (reflect WildcardDecoratorFixture::name).hasDeco<SerialIgnore> &&
-        (reflect WildcardDecoratorFixture::password).hasDeco<SerialIgnore> {
+    inline assert (std::reflect<WildcardDecoratorFixture::name>).hasDeco<SerialIgnore> &&
+        (std::reflect<WildcardDecoratorFixture::password>).hasDeco<SerialIgnore> {
         "Pack::* must select every declared pack field"
     }
 }
 
 test "field wildcard accepts a decorator list" {
-    inline assert (reflect GroupedWildcardDecoratorFixture::name).hasDeco<SerialName> &&
-        (reflect GroupedWildcardDecoratorFixture::name).hasDeco<SerialRequired> &&
-        (reflect GroupedWildcardDecoratorFixture::password).hasDeco<SerialName> &&
-        (reflect GroupedWildcardDecoratorFixture::password).hasDeco<SerialRequired> {
+    inline assert (std::reflect<GroupedWildcardDecoratorFixture::name>).hasDeco<SerialName> &&
+        (std::reflect<GroupedWildcardDecoratorFixture::name>).hasDeco<SerialRequired> &&
+        (std::reflect<GroupedWildcardDecoratorFixture::password>).hasDeco<SerialName> &&
+        (std::reflect<GroupedWildcardDecoratorFixture::password>).hasDeco<SerialRequired> {
         "decorator lists must apply to every field selected by Pack::*"
     }
 }
@@ -1220,9 +1218,9 @@ test "json round trips ordered objects" {
 
 test "azon round trips ordered objects" {
     fin options = std::serializerOptions()
-    fin value = std::decodeSerialValue("{\"id\"=7,\"name\"=\"Ada\"}", SerializationFormat.Azon, options) catch SerialValue.Null
+    fin value = std::decodeSerialValue("{\"id\":7,\"name\":\"Ada\"}", SerializationFormat.Azon, options) catch SerialValue.Null
     fin encoded = std::encodeSerialValue(value, SerializationFormat.Azon, options) catch "error"
-    assert encoded == "{\"id\"=7,\"name\"=\"Ada\"}" { "AZON must use equals separators" }
+    assert encoded == "{\"id\":7,\"name\":\"Ada\"}" { "AZON must use colon separators" }
 }
 
 test "decoder ignores insignificant whitespace" {
@@ -1285,7 +1283,7 @@ test "azon rejects json separators" {
     fin options = std::serializerOptions()
     fin value = std::decodeSerialValue("{\"a\":1}", SerializationFormat.Azon, options) catch SerialValue.Text("failed")
     fin encoded = std::encodeSerialValue(value, SerializationFormat.Json, options) catch "error"
-    assert encoded == "\"failed\"" { "AZON must require equals separators" }
+    assert encoded == "\"failed\"" { "AZON scalar value" }
 }
 
 test "decoder enforces input length" {

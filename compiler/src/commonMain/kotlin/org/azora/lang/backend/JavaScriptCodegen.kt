@@ -466,6 +466,7 @@ class JavaScriptCodegen {
                 "isEmpty" -> "$target.length === 0"
                 "isNotEmpty" -> "$target.length !== 0"
                 "size" -> "$target.length"
+                "data" -> target
                 // Numeric field (tuple `.0`/`.1`) — must use bracket access in JS.
                 else -> if (isNumericFieldName(expr.name)) "$target[${expr.name}]" else "$target.${expr.name}"
             }

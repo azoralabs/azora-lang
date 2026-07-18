@@ -46,6 +46,7 @@ import kotlin.collections.iterator
  */
 class IrGenerator(private val table: SymbolTable) {
     private var typeFunctions = emptyList<TypeFunctionDecl>()
+    private var functionDecls = emptyMap<String, FuncDecl>()
 
     private fun resolveType(ref: TypeRef, typeParams: Set<String> = emptySet()): IrType =
         IrType.resolve(TypeFunctionEvaluator.resolve(ref, typeFunctions, unresolvedParams = typeParams), typeParams)
@@ -106,6 +107,7 @@ class IrGenerator(private val table: SymbolTable) {
      */
     fun generate(program: Program): IrProgram {
         typeFunctions = program.typeFunctions
+        functionDecls = program.functions.associateBy { it.name }
         nameScopes.clear()
         mangledCounter = 0
         pushNameScope() // global scope
@@ -828,12 +830,29 @@ class IrGenerator(private val table: SymbolTable) {
                     } else {
                         loweredArgs
                     }
+                    val funcDecl = functionDecls[func.name] ?: functionDecls[expr.callee]
+                    val homogeneousVariadicType = funcDecl
+                        ?.takeIf { it.variadicParam == null && it.params.lastOrNull()?.variadic == true }
+                        ?.params
+                        ?.lastOrNull()
+                        ?.type
+                        ?.let { it as? TypeRef.Array }
+                        ?.element
+                        ?.let { it as? TypeRef.Named }
+                        ?.takeIf { it.name in func.typeParams }
+                        ?.let { element ->
+                            val typeParamIndex = func.typeParams.indexOf(element.name)
+                            expr.typeArgs.getOrNull(typeParamIndex)?.let(::resolveType)
+                                ?: args.getOrNull(func.params.size - 1)?.type
+                        }
                     // Variadic: pack extra args into an array for the last param.
                     val hasSpread = args.any { it is IrExpr.Spread }
                     val effectiveArgs = if (func.isVariadic && args.size >= func.params.size - 1) {
                         val fixed = args.take(func.params.size - 1)
                         val rest = args.drop(func.params.size - 1)
-                        val elemType = (func.params.last().second as? IrType.Array)?.element ?: IrType.Any
+                        val elemType = homogeneousVariadicType
+                            ?: (func.params.last().second as? IrType.Array)?.element
+                            ?: IrType.Any
                         fixed + listOf(IrExpr.ArrayLiteral(rest, IrType.Array(elemType)))
                     } else if (hasSpread) {
                         // Non-variadic with spread: keep spread args for evalCall to splice.
@@ -852,6 +871,8 @@ class IrGenerator(private val table: SymbolTable) {
                             IrType.Task(result)
                         }
                         func.isTask -> IrType.Task(func.returnType)
+                        homogeneousVariadicType != null && func.returnType is IrType.Array ->
+                            IrType.Array(homogeneousVariadicType)
                         else -> func.returnType
                     }
                     return IrExpr.Call(func.name, effectiveArgs, callType)
@@ -994,6 +1015,7 @@ class IrGenerator(private val table: SymbolTable) {
                 }
                 val memberType = when {
                     expr.name in setOf("length", "size") && (target.type is IrType.Array || target.type is IrType.Map || target.type is IrType.Set || target.type == IrType.String) -> IrType.Int
+                    expr.name == "data" && tt2 is IrType.Array -> IrType.Pointer(tt2.element)
                     (expr.name == "isEmpty" || expr.name == "isNotEmpty") && (target.type is IrType.Array || target.type is IrType.Map || target.type is IrType.Set) -> IrType.Bool
                     else -> {
                         val tt = target.type

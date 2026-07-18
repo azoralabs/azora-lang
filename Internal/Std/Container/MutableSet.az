@@ -50,7 +50,7 @@ friend zone std {
     }
 
     @Experimental(sinceAzora: "0.0.3")
-    func<T> mutableSetOf(elements: ...T): MutableSet<T> {
+    func<T> mutableSetOf(...elements: T): MutableSet<T> {
         var result = MutableSet<T>()
         var i = 0
         while i < elements.size {

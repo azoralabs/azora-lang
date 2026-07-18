@@ -268,6 +268,7 @@ class WasmCodegen {
         is IrExpr.Index -> "(i32.load ${elemAddr(expr.target, expr.index)})"
         is IrExpr.Member -> when (expr.name) {
             "length", "size" -> "(i32.load ${emitExpr(expr.target)})"
+            "data" -> "(i32.add ${emitExpr(expr.target)} (i32.const 4))"
             "isEmpty" -> "(i32.eqz (i32.load ${emitExpr(expr.target)}))"
             "isNotEmpty" -> "(i32.ne (i32.load ${emitExpr(expr.target)}) (i32.const 0))"
             else -> "(i32.load ${fieldAddr(expr.target, expr.name)})"
@@ -419,9 +420,12 @@ class WasmCodegen {
 
     // ── Address helpers ───────────────────────────────────────────────────
 
-    /** Address of `array[index]` — `ptr + 4 + index*4`. */
-    private fun elemAddr(target: IrExpr, index: IrExpr): String =
-        "(i32.add (i32.add ${emitExpr(target)} (i32.const 4)) (i32.mul ${emitExpr(index)} (i32.const 4)))"
+    /** Address of `array[index]` or raw `pointer[index]`. */
+    private fun elemAddr(target: IrExpr, index: IrExpr): String {
+        val base = if (target.type is IrType.Pointer) emitExpr(target)
+            else "(i32.add ${emitExpr(target)} (i32.const 4))"
+        return "(i32.add $base (i32.mul ${emitExpr(index)} (i32.const 4)))"
+    }
 
     /** Address of `target.field` — `ptr + fieldIndex*4`. */
     private fun fieldAddr(target: IrExpr, field: String): String {

@@ -179,7 +179,12 @@ sealed class IrType {
                 if (TypeFunctionCall.isCall(ref)) Any
                 else if (ref.name in typeParams) Any
                 else if (ref.name in aliases) resolve(aliases[ref.name]!!, typeParams)
-                else if (ref.name == "Array") error("Array<T> is not a language type; use [T] or std.container List<T>/MutableList<T>")
+                else if (ref.name == "Array") {
+                    if (ref.args.size != 1) {
+                        error("Array expects exactly one type argument, got ${ref.args.size}")
+                    }
+                    Array(resolve(ref.args.single(), typeParams))
+                }
                 else if (ref.name == "Var" && ref.args.size >= 2) Variant(ref.args.map { resolve(it, typeParams) })
                 else if (ref.args.isEmpty() && isPrimitiveName(ref.name)) fromName(ref.name)
                 else Named(ref.name)

@@ -89,10 +89,11 @@ class TypeRefTest {
     }
 
     @Test
-    fun tupleTypeAnnotation() {
-        val t = firstParamType("func f(x: (Int, String)): Int { return 0 }")
-        assertIs<IrType.Tuple>(t)
-        assertEquals(listOf(IrType.Int, IrType.String), t.elements)
+    fun removedTupleTypeAnnotationIsRejected() {
+        assertTrue(
+            expectFailure("func f(x: (Int, String)): Int { return 0 }")
+                .any { "Tuple<A, B>" in it },
+        )
     }
 
     @Test
@@ -125,8 +126,17 @@ class TypeRefTest {
     }
 
     @Test
-    fun arrayGenericNameIsRejected() {
-        assertTrue(expectFailure("func f(x: Array<Int>): Int { return 0 }").any { "Array<T> is not a language type" in it })
+    fun arrayGenericNameIsCanonicalAndEquivalentToBrackets() {
+        val canonical = firstParamType("func f(x: Array<Int>): Int { return 0 }")
+        val sugar = firstParamType("func f(x: [Int]): Int { return 0 }")
+        assertEquals(canonical, sugar)
+        assertEquals(IrType.Array(IrType.Int), canonical)
+    }
+
+    @Test
+    fun arrayGenericNameRequiresExactlyOneTypeArgument() {
+        assertTrue(expectFailure("func f(x: Array): Int { return 0 }").any { "exactly one type argument" in it })
+        assertTrue(expectFailure("func f(x: Array<Int, String>): Int { return 0 }").any { "exactly one type argument" in it })
     }
 
     @Test

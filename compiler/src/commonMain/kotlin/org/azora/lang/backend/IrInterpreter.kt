@@ -691,6 +691,10 @@ class IrInterpreter {
                 when (receiver) {
                     is MutableList<*> -> when (expr.name) {
                         "length", "size" -> receiver.size.toLong()
+                        "data" -> {
+                            @Suppress("UNCHECKED_CAST")
+                            Pointer(receiver as MutableList<Any?>, 0)
+                        }
                         "isEmpty" -> receiver.isEmpty()
                         "isNotEmpty" -> receiver.isNotEmpty()
                         else -> error("no member '${expr.name}' on array")
@@ -1121,7 +1125,11 @@ class IrInterpreter {
             if (target == null) return null
             return when (target) {
                 is MutableList<*> -> when (fieldName) {
-                    "length" -> target.size.toLong()
+                    "length", "size" -> target.size.toLong()
+                    "data" -> {
+                        @Suppress("UNCHECKED_CAST")
+                        Pointer(target as MutableList<Any?>, 0)
+                    }
                     "isEmpty" -> target.isEmpty()
                     "isNotEmpty" -> target.isNotEmpty()
                     else -> error("no member '$fieldName' on array")

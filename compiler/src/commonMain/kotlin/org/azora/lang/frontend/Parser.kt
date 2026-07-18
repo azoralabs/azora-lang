@@ -2472,7 +2472,7 @@ class Parser(
         val typeParams = typeParamsBefore.names + typeParamsAfter.names
         val variadicParam = typeParamsBefore.variadic ?: typeParamsAfter.variadic
         consume(TokenType.L_PAREN, "Expected '(' after function name")
-        val params = parseParams()
+        val params = parseParams(variadicParam)
         consume(TokenType.R_PAREN, "Expected ')' after parameters")
         val returnType: TypeAnnotation = if (match(TokenType.COLON)) {
             TypeAnnotation.Explicit(parseTypeName())
@@ -2694,7 +2694,7 @@ class Parser(
         error("$message, got '${t.lexeme}' (${t.type}) at line ${t.line}")
     }
 
-    private fun parseParams(): List<Param> {
+    private fun parseParams(variadicTypeParam: String? = null): List<Param> {
         if (check(TokenType.R_PAREN)) return emptyList()
         val params = mutableListOf<Param>()
         do {
@@ -2710,11 +2710,28 @@ class Parser(
             val name = consumeIdentifierLike("Expected parameter name")
             consume(TokenType.COLON, "Expected ':' after parameter name")
             val annotations = parseAnnotations()
-            // `...T` marks the (last) parameter variadic; parseTypeName wraps it in the internal array type.
-            val isVariadic = nameSpread || check(TokenType.ELLIPSIS)
+            // Type-side `...T` expands a declared variadic generic type pack. A
+            // homogeneous vararg uses `...values: T`, never `values: ...T`.
+            val typeSpread = check(TokenType.ELLIPSIS)
+            if (typeSpread) {
+                val spreadName = peekNext()?.takeIf { it.type == TokenType.IDENTIFIER }?.lexeme
+                if (variadicTypeParam == null || spreadName != variadicTypeParam) {
+                    error(
+                        "Type spread '...${spreadName.orEmpty()}' requires a matching variadic generic " +
+                            "declaration '<...${spreadName.orEmpty()}>' at line ${peek().line}; " +
+                            "for homogeneous varargs use '...$name: ${spreadName.orEmpty()}'",
+                    )
+                }
+            }
+            val isVariadic = nameSpread || typeSpread
             val parsedType = parseTypeName()
             val reference = parsedType as? TypeRef.Reference
-            val type = reference?.inner ?: parsedType
+            val unwrappedType = reference?.inner ?: parsedType
+            val type = if (nameSpread && unwrappedType !is TypeRef.Array) {
+                TypeRef.Array(unwrappedType)
+            } else {
+                unwrappedType
+            }
             val normalizedModifier = reference?.kind?.spelling ?: modifier
             val default = if (match(TokenType.EQUAL)) parseExpr() else null
             params.add(Param(name, type, default, normalizedModifier, variadic = isVariadic, annotations = annotations))
@@ -2835,7 +2852,7 @@ class Parser(
     /**
      * Parses a structured type reference.
      *
-     * Supports: `[T]`, `List<T>`, `Set<T>`, `Map<K, V>` as ordinary generic names,
+     * Supports: `[T]` as sugar for `Array<T>`, `List<T>`, `Set<T>`, `Map<K, V>` as ordinary generic names,
      * `(A, B)` tuples, `(A, B) -> R` functions, `(A)` grouping, and nullable/failable suffixes.
      */
     private fun parseTypeAtom(): TypeRef {
@@ -2847,7 +2864,8 @@ class Parser(
                 error("Expected type name at line ${peek().line}, got '${peek().lexeme}'")
             }
             check(TokenType.L_BRACKET) -> {
-                // `[T]` array type, or `[K: V]` map type.
+                // `[T]` is type sugar for the canonical stdlib `Array<T>` type.
+                // `[K: V]` remains the map-type spelling.
                 advance() // consume '['
                 val keyOrElem = parseTypeName()
                 if (match(TokenType.COLON)) {
@@ -2856,7 +2874,7 @@ class Parser(
                     TypeRef.Map(keyOrElem, value)
                 } else {
                     consume(TokenType.R_BRACKET, "Expected ']' after array element type")
-                    TypeRef.Array(keyOrElem)
+                    TypeRef.Named("Array", listOf(keyOrElem))
                 }
             }
             check(TokenType.L_PAREN) -> {

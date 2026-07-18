@@ -50,7 +50,7 @@ friend zone std {
     }
 
     @Experimental(sinceAzora: "0.0.3")
-    func<T> mutableListOf(elements: ...T): MutableList<T> {
+    func<T> mutableListOf(...elements: T): MutableList<T> {
         var result = MutableList<T>()
         var i = 0
         while i < elements.size {

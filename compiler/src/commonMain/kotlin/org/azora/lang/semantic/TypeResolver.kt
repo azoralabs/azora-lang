@@ -743,7 +743,27 @@ class TypeResolver(private val table: SymbolTable) {
                             } else if (funcDecl.params[i].variadic && paramRef is TypeRef.Array) {
                                 val element = paramRef.element as? TypeRef.Named
                                 if (element != null && element.name in func.typeParams) {
-                                    bindings[element.name] = argTypes.drop(i).map(::typeRefOf)
+                                    val variadicArgs = argTypes.drop(i)
+                                    if (funcDecl.variadicParam == element.name) {
+                                        // `func<...T>` preserves each argument type as a heterogeneous pack.
+                                        bindings[element.name] = variadicArgs.map(::typeRefOf)
+                                    } else if (variadicArgs.isNotEmpty()) {
+                                        // `func<T>(...values: T)` is homogeneous: infer one T and
+                                        // reject mixed arguments instead of leaving T unresolved.
+                                        val explicit = bindings[element.name]
+                                            ?.singleOrNull()
+                                            ?.let { IrType.resolve(it) }
+                                        val inferred = explicit ?: variadicArgs.first()
+                                        val mismatch = variadicArgs.firstOrNull { !isCompatible(inferred, it) }
+                                        if (mismatch != null) {
+                                            errors.add(
+                                                "line ${expr.line}: variadic arguments for '${expr.callee}' " +
+                                                    "must share a type, got $inferred and $mismatch",
+                                            )
+                                            return null
+                                        }
+                                        bindings.putIfAbsent(element.name, listOf(typeRefOf(inferred)))
+                                    }
                                 }
                             }
                         }
@@ -894,6 +914,7 @@ class TypeResolver(private val table: SymbolTable) {
                 val targetType = if (resolvedTarget is IrType.Pointer) resolvedTarget.inner else resolvedTarget
                 when {
                     expr.name in setOf("length", "size") && (targetType is IrType.Array || targetType is IrType.Map || targetType is IrType.Set || targetType == IrType.String) -> IrType.Int
+                    expr.name == "data" && targetType is IrType.Array -> IrType.Pointer(targetType.element)
                     (expr.name == "isEmpty" || expr.name == "isNotEmpty") && (targetType is IrType.Array || targetType is IrType.Map || targetType is IrType.Set) -> IrType.Bool
                     targetType is IrType.Named -> {
                         val struct = table.lookupStruct(targetType.name)

@@ -1687,6 +1687,12 @@ class LlvmCodegen {
             emit("  $t = trunc i64 $len to i32")
             return t
         }
+        if (expr.name == "data" && targetType is IrType.Array) {
+            val raw = emitExpr(expr.target)
+            val data = nextTmp()
+            emit("  $data = getelementptr i8, i8* $raw, i64 8")
+            return data
+        }
         if ((expr.name == "isEmpty" || expr.name == "isNotEmpty") && (targetType is IrType.Array || targetType is IrType.Map || targetType is IrType.Set)) {
             return emitArrayEmptyCheck(expr.target, notEmpty = expr.name == "isNotEmpty")
         }
@@ -2435,6 +2441,19 @@ class LlvmCodegen {
             emit("  $tmp = load $et, $et* $ep, align 1")
             return tmp
         }
+        if (tt is IrType.Pointer) {
+            val et = mapType(tt.inner)
+            val raw = emitExpr(expr.target)
+            val data = nextTmp()
+            emit("  $data = bitcast i8* $raw to $et*")
+            val idxRaw = emitExpr(expr.index)
+            val idx = indexToI64(idxRaw, expr.index.type)
+            val ep = nextTmp()
+            emit("  $ep = getelementptr $et, $et* $data, i64 $idx")
+            val tmp = nextTmp()
+            emit("  $tmp = load $et, $et* $ep, align 1")
+            return tmp
+        }
         if (tt is IrType.Map) return emitMapIndexRead(expr, tt)
         if (tt == IrType.String) {
             val s = emitExpr(expr.target)
@@ -2459,6 +2478,20 @@ class LlvmCodegen {
             val ep = emitArrayElemPtr(stmt.target, stmt.index, tt.element)
             val raw = emitExpr(stmt.value)
             val value = coerceNumeric(raw, stmt.value.type, tt.element)
+            emit("  store $et $value, $et* $ep, align 1")
+            return
+        }
+        if (tt is IrType.Pointer) {
+            val et = mapType(tt.inner)
+            val raw = emitExpr(stmt.target)
+            val data = nextTmp()
+            emit("  $data = bitcast i8* $raw to $et*")
+            val idxRaw = emitExpr(stmt.index)
+            val idx = indexToI64(idxRaw, stmt.index.type)
+            val ep = nextTmp()
+            emit("  $ep = getelementptr $et, $et* $data, i64 $idx")
+            val rawValue = emitExpr(stmt.value)
+            val value = coerceNumeric(rawValue, stmt.value.type, tt.inner)
             emit("  store $et $value, $et* $ep, align 1")
             return
         }

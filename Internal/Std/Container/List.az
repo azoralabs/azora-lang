@@ -124,7 +124,7 @@ friend zone std {
     }
 
     @Experimental(sinceAzora: "0.0.3")
-    func<T> listOf(elements: ...T): List<T> {
+    func<T> listOf(...elements: T): List<T> {
         var result = List<T>()
         var i = 0
         while i < elements.size {

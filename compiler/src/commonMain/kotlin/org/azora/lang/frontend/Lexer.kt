@@ -125,6 +125,7 @@ class Lexer(private val source: String) {
             "impl" to TokenType.IMPL,
             "spec" to TokenType.SPEC,
             "defer" to TokenType.DEFER,
+            "type" to TokenType.TYPE,
             "typealias" to TokenType.TYPEALIAS,
             "slot" to TokenType.SLOT,
             "as" to TokenType.AS,

@@ -1,7 +1,7 @@
 # Azora Compiler Architecture
 
 A multi-phase, IR-based compiler for the Azora language: multi-pass semantic
-analysis with compile-time function execution (CTFE), a target-agnostic typed
+analysis with compile-time function execution (CTCE), a target-agnostic typed
 IR, and the active JavaScript, WebAssembly, and LLVM source backends plus an
 in-memory interpreter — all driven from one optimized IR per compile.
 
@@ -18,7 +18,7 @@ Source → Lexer → Parser → AST Validator
                   ↓
            Stdlib Injection (only modules you `import`, transitively)
                   ↓
-           Symbol Collection → Type Resolution ⇄ CTFE (fixed point) → Alloc/Drop → Effects
+           Symbol Collection → Type Resolution ⇄ CTCE (fixed point) → Alloc/Drop → Effects
                   ↓
            IR Generator → IR Optimizer  (release mode only)
                   ↓
@@ -35,7 +35,7 @@ WebAssembly, and LLVM IR in one pass and returns them together. Adding a target
 
 1. **Frontend** — Lexer → Parser → (debug instrumentation) → Stdlib injection → AST validation.
 2. **Semantic** — multi-pass: symbol collection → import resolution →
-   type-resolution ⇄ CTFE fixed-point loop → alloc/drop → effect checking.
+   type-resolution ⇄ CTCE fixed-point loop → alloc/drop → effect checking.
 3. **IR** — AST → typed IR → optimization (constant fold/propagate, DCE, unused-symbol elimination).
 4. **Backend** — IR → JavaScript, WebAssembly, LLVM (+ interpreter, + IR/AST dump).
 
@@ -226,7 +226,7 @@ tracking is future work.
 `inline func` (call-site substitution), `inline assert` / `inline trace`.
 Constant folding, propagation, and dead-code elimination run in the IR optimizer.
 
-Decorator metadata is part of CTFE. `(reflect value).hasDeco<D>` tests direct and
+Decorator metadata is part of CTCE. `(reflect value).hasDeco<D>` tests direct and
 transitively bound decorators on values, types, packs, functions, properties,
 fields, parameters, and the other `DecoTarget` declaration categories.
 `(reflect value).decoMeta<D>.field` reads a decorator's named, positional, or default `fin`
@@ -386,25 +386,25 @@ All nodes carry `line`, `column`, `length` for error reporting.
 
 ## Phase 2 — Semantic Analysis (`semantic/``)
 
-Multiple passes. Metaprogramming (CTFE) creates ordering dependencies that
+Multiple passes. Metaprogramming (CTCE) creates ordering dependencies that
 can't be resolved in one pass, so the core runs as a **fixed-point loop**
-(type resolution ⇄ CTFE) until the AST stabilizes. Orchestrated by
+(type resolution ⇄ CTCE) until the AST stabilizes. Orchestrated by
 `SemanticPipeline.kt`.
 
-1. **Top-level CTFE** (`CtfeEvaluator.kt`) — flattens conditional declarations
+1. **Top-level CTCE** (`CtfeEvaluator.kt`) — flattens conditional declarations
    before symbol collection so `SymbolCollector` can see them.
 2. **Symbol Collection** (`SymbolCollector.kt`) — registers all signatures
    (functions, packs, enums, slots, nodes, …) so forward references work.
    Built-ins (`println`, `channel`, …) are registered here.
 3. **Import Resolution** (`ImportResolver.kt`) — resolves cross-module/stdlib
    references (largely handled by `StdlibInjector` + `QualifiedStdRewriter`).
-4. **Type Resolution ⇄ CTFE fixed point** (`TypeResolver.kt`,
+4. **Type Resolution ⇄ CTCE fixed point** (`TypeResolver.kt`,
    `CtfeEvaluator.kt`) — resolve/infer types, fold compile-time constructs back
    into the AST, repeat until stable. Any `inline` node that survives is an error.
 5. **Alloc/Drop Analysis** (`AllocDropAnalyzer.kt`) — liveness, use-before-init,
-   unused locals (post-CTFE, since generated code may allocate).
+   unused locals (post-CTCE, since generated code may allocate).
 6. **Effect Checking** (`EffectChecker.kt`) — `PURE`/`IMPURE` classification
-   with fixed-point propagation across the call graph (post-CTFE).
+   with fixed-point propagation across the call graph (post-CTCE).
 
 `SymbolTable.kt` holds function/variable symbols with scoped lookup and the
 enum/slot/fail registries.
@@ -413,7 +413,7 @@ enum/slot/fail registries.
 
 ## Phase 3 — IR Generation (`ir/`)
 
-- **IrGenerator** (`IrGenerator.kt`): lowers the CTFE-stabilized, type-checked
+- **IrGenerator** (`IrGenerator.kt`): lowers the CTCE-stabilized, type-checked
   AST into typed, target-agnostic IR. Inline functions are skipped (not emitted).
   `TokenType` operators become `IrBinaryOp`/`IrUnaryOp`; every expression carries
   its resolved `IrType`; variable shadowing is resolved by name mangling
@@ -453,7 +453,7 @@ when (val result = Compiler().compile(source, release = true)) {
         result.javascript   // generated JavaScript
         result.wasm         // WebAssembly text (WAT)
         result.llvm         // LLVM IR text
-        result.ast          // CTFE-stabilized AST after semantic analysis
+        result.ast          // CTCE-stabilized AST after semantic analysis
         result.ir           // typed IR (before optimization)
         result.optimizedIr  // typed IR (after optimization)
         result.effects      // per-function effect classifications
@@ -482,17 +482,17 @@ at the right `use`.
 
 ## Design Principles
 
-1. **Don't resolve everything in one pass.** Multiple passes with a CTFE
+1. **Don't resolve everything in one pass.** Multiple passes with a CTCE
    stabilization loop handle metaprogramming's ordering dependencies.
 2. **Separate declaration semantic from body semantic.** Signatures register
    (Pass 1) before bodies analyze — forward references just work.
-3. **CTFE before type checking.** Compile-time constructs resolve first so the
+3. **CTCE before type checking.** Compile-time constructs resolve first so the
    type checker sees clean code.
-4. **CTFE shares the type system.** The evaluator uses the same `IrType` — no
+4. **CTCE shares the type system.** The evaluator uses the same `IrType` — no
    separate interpreter types.
 5. **IR is the portability asset.** Target-agnostic typed IR; backends are thin
    lowering passes. A new target is one file.
-6. **Post-CTFE analysis.** Alloc/drop and effect checks run after CTFE
+6. **Post-CTCE analysis.** Alloc/drop and effect checks run after CTCE
    stabilizes, because generated code may introduce allocations/effects.
 7. **Desugar to existing IR where possible.** Many language features lower at
    parse time to existing nodes (`is!`, do-while, `?=`, named zones, …), so they
@@ -520,11 +520,11 @@ compiler/src/commonMain/kotlin/org/azora/lang/
 │   ├── SymbolTable.kt           Function/variable symbols + scoped lookup + registries
 │   ├── SymbolCollector.kt       Pass 1: signatures + builtins
 │   ├── ImportResolver.kt        Cross-module/stdlib resolution
-│   ├── CtfeEvaluator.kt         CTFE: top-level (Pass 0) + fixed-point body folding
+│   ├── CtfeEvaluator.kt         CTCE: top-level (Pass 0) + fixed-point body folding
 │   ├── TypeResolver.kt          Type resolution + inference + checking
 │   ├── AllocDropAnalyzer.kt     Liveness / use-before-init / unused locals
 │   ├── EffectChecker.kt         Purity classification + effect propagation
-│   └── SemanticPipeline.kt      Multi-pass orchestrator (fixed-point CTFE loop)
+│   └── SemanticPipeline.kt      Multi-pass orchestrator (fixed-point CTCE loop)
 │
 ├── stdlib/
 │   ├── StdlibInjector.kt        Import-gated, transitive stdlib injection

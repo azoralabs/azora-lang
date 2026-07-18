@@ -26,7 +26,7 @@ import org.azora.lang.frontend.TypeRef
  * Represents a resolved type in the intermediate representation.
  *
  * All types in the IR are concrete -- there is no type inference at this level.
- * The type system is shared with the CTFE evaluator.
+ * The type system is shared with the CTCE evaluator.
  *
  * - [Int] -- 32-bit signed integer
  * - [UInt] -- 32-bit unsigned integer
@@ -535,7 +535,7 @@ sealed class IrExpr {
  * Base class for all IR statement nodes.
  *
  * IR statements mirror AST statements but with all types fully resolved
- * and all compile-time constructs already eliminated by CTFE.
+ * and all compile-time constructs already eliminated by CTCE.
  */
 sealed class IrStmt {
     /**

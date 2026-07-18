@@ -40,7 +40,7 @@ class PanicTest {
     }
 
     @Test fun inlinePanicAbortsCompilation() {
-        // `inline panic` reached during CTFE aborts the compiler with its message.
+        // `inline panic` reached during CTCE aborts the compiler with its message.
         val thrown = org.junit.Assert.assertThrows(RuntimeException::class.java) {
             Compiler().compile("""
                 import std.io

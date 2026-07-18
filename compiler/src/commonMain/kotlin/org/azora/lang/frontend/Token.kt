@@ -89,7 +89,7 @@ enum class TokenType {
     PACK, ENUM, WHEN,
     THROW, TRY, CATCH,
     IMPL, SPEC,
-    DEFER, TYPEALIAS,
+    DEFER, TYPE, TYPEALIAS,
     SLOT,
 
     // Operators

@@ -32,7 +32,7 @@ friend zone std {
     /**
      * Represents either a success or failure outcome.
      */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     slot Result {
         Ok(value: Int)
         Err(code: Int, message: String)
@@ -44,7 +44,7 @@ friend zone std {
      * @param value The success value.
      * @return A Result.Ok variant.
      */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     func ok(value: Int): Result {
         return Result.Ok(value: value)
     }
@@ -56,7 +56,7 @@ friend zone std {
      * @param message The error description.
      * @return A Result.Err variant.
      */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     func err(code: Int, message: String): Result {
         return Result.Err(code: code, message: message)
     }
@@ -67,7 +67,7 @@ friend zone std {
      * @param r The result to check.
      * @return true if the result is Ok.
      */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     func isOk(r: Result): Bool {
         return r is Ok
     }
@@ -78,7 +78,7 @@ friend zone std {
      * @param r The result to check.
      * @return true if the result is Err.
      */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     func isErr(r: Result): Bool {
         return r is Err
     }
@@ -90,7 +90,7 @@ friend zone std {
      * @param default The fallback value.
      * @return The Ok value or the default.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func unwrapOr(r: Result, default: Int): Int {
         when r {
             Result.Ok(v) -> { return v }

@@ -375,7 +375,7 @@ sealed class Stmt {
     /**
      * Compile-time constant binding (`inline fin`).
      *
-     * Evaluated during CTFE. The initializer must be a compile-time constant.
+     * Evaluated during CTCE. The initializer must be a compile-time constant.
      * All references to the name are replaced with the computed value --
      * the binding itself is removed from the final AST.
      *
@@ -612,7 +612,7 @@ sealed class Stmt {
     /**
      * Compile-time conditional.
      *
-     * Evaluated during CTFE. The condition must be a compile-time constant.
+     * Evaluated during CTCE. The condition must be a compile-time constant.
      * Only the taken branch survives into the final AST -- the other branch
      * is completely removed (not even type-checked).
      *
@@ -696,7 +696,7 @@ sealed class Stmt {
     /**
      * Compile-time assertion (`inline assert condition { "message" }`).
      *
-     * Evaluated during CTFE. If condition is false, produces a compilation error.
+     * Evaluated during CTCE. If condition is false, produces a compilation error.
      * Allowed in all scopes including global.
      *
      * @property condition the compile-time boolean condition
@@ -716,7 +716,7 @@ sealed class Stmt {
     /**
      * Compile-time trace (`inline trace { expr }`).
      *
-     * Evaluated during CTFE, message stored as a compiler warning.
+     * Evaluated during CTCE, message stored as a compiler warning.
      * Allowed in all scopes including global.
      *
      * @property message the message expression (must be String)
@@ -1018,6 +1018,63 @@ sealed class TypeRef {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Compile-time type functions
+// ---------------------------------------------------------------------------
+
+/** A parameter of a compile-time `type` function. */
+data class TypeFunctionParam(val name: String, val variadic: Boolean = false)
+
+/**
+ * A compile-time type function declaration.
+ *
+ * Type functions receive type values and return a [TypeRef]. They are erased
+ * before IR generation and can therefore never be called at runtime.
+ */
+data class TypeFunctionDecl(
+    val name: String,
+    val params: List<TypeFunctionParam>,
+    val body: List<TypeFunctionStmt>,
+    val minVariadicLength: Int? = null,
+    val line: Int,
+    val column: Int = 0,
+) {
+    val variadicParam: String? get() = params.singleOrNull { it.variadic }?.name
+}
+
+/** Statements accepted in a compile-time type-function body. */
+sealed class TypeFunctionStmt {
+    data class Binding(val name: String, val value: TypeFunctionExpr, val mutable: Boolean) : TypeFunctionStmt()
+    data class Assignment(val name: String, val value: TypeFunctionExpr) : TypeFunctionStmt()
+    data class ForEach(
+        val name: String,
+        val packName: String,
+        val startIndex: Int,
+        val body: List<TypeFunctionStmt>,
+    ) : TypeFunctionStmt()
+    data class Return(val value: TypeFunctionExpr) : TypeFunctionStmt()
+}
+
+/** Expressions evaluated by a compile-time type function. */
+sealed class TypeFunctionExpr {
+    data class Reference(val name: String) : TypeFunctionExpr()
+    data class PackElement(val packName: String, val index: Int) : TypeFunctionExpr()
+    data class Call(val name: String, val args: List<TypeFunctionExpr>) : TypeFunctionExpr()
+    data class Conditional(
+        val condition: TypeFunctionCondition,
+        val thenValue: TypeFunctionExpr,
+        val elseValue: TypeFunctionExpr,
+    ) : TypeFunctionExpr()
+}
+
+/** A type comparison used by a [TypeFunctionExpr.Conditional]. */
+data class TypeFunctionCondition(
+    val left: TypeFunctionExpr,
+    val operator: TokenType,
+    val right: TypeFunctionExpr,
+    val compareRank: Boolean,
+)
+
 /**
  * Represents a type annotation on a variable or return type.
  *
@@ -1163,7 +1220,7 @@ data class TplField(val name: String, val type: TypeRef)
  * A function declaration in the AST.
  *
  * Represents a complete function including its signature and body. Functions
- * may be marked as `inline` to be substituted at call sites by the CTFE evaluator.
+ * may be marked as `inline` to be substituted at call sites by the CTCE evaluator.
  *
  * @property name the function name
  * @property params the list of parameter declarations
@@ -1280,7 +1337,7 @@ data class SpecCallback(
  *
  * Top-level items can be function declarations or compile-time constructs
  * (inline variables, inline conditionals, inline blocks) that are resolved
- * by the CTFE evaluator before semantic analysis.
+ * by the CTCE evaluator before semantic analysis.
  */
 sealed class TopLevel {
     /**
@@ -1290,17 +1347,17 @@ sealed class TopLevel {
      */
     data class Func(val decl: FuncDecl) : TopLevel()
 
-    /** Runtime top-level mutable binding (`var`). Survives CTFE. */
+    /** Runtime top-level mutable binding (`var`). Survives CTCE. */
     data class VarDecl(val name: String, val type: TypeRef?, val initializer: Expr, val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList(), val threadlocal: Boolean = false, val visibility: Visibility = Visibility.EXPOSE) : TopLevel() {
         /** Convenience: the type name as written in source, or null. */
         val typeName: String? get() = type?.displayName()
     }
-    /** Runtime top-level deeply immutable binding (`fin`). Survives CTFE. */
+    /** Runtime top-level deeply immutable binding (`fin`). Survives CTCE. */
     data class FinDecl(val name: String, val type: TypeRef?, val initializer: Expr, val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList(), val threadlocal: Boolean = false, val visibility: Visibility = Visibility.EXPOSE) : TopLevel() {
         /** Convenience: the type name as written in source, or null. */
         val typeName: String? get() = type?.displayName()
     }
-    /** Runtime top-level immutable binding (`let`). Survives CTFE. */
+    /** Runtime top-level immutable binding (`let`). Survives CTCE. */
     data class LetDecl(val name: String, val type: TypeRef?, val initializer: Expr, val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList(), val visibility: Visibility = Visibility.EXPOSE) : TopLevel() {
         /** Convenience: the type name as written in source, or null. */
         val typeName: String? get() = type?.displayName()
@@ -1630,6 +1687,8 @@ data class Program(
      * deepinline zone) appear; a name absent here is global (see [ZoneMeta]).
      */
     val zones: Map<String, ZoneMeta> = emptyMap(),
+    /** Compile-time `type name(...)` declarations owned by this unit. */
+    val typeFunctions: List<TypeFunctionDecl> = emptyList(),
 ) {
     /** Convenience — returns only the resolved function declarations. */
     val functions: List<FuncDecl> get() = items.filterIsInstance<TopLevel.Func>().map { it.decl }

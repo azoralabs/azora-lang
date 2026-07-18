@@ -30,15 +30,15 @@ module std.io
 friend zone std {
     friend zone fmt {
         /** A newline character. */
-        @Since("0.0.1")
+        @SinceAzora("0.0.1")
         fin newline = "\n"
 
         /** A tab character. */
-        @Since("0.0.1")
+        @SinceAzora("0.0.1")
         fin tab = "\t"
 
         /** A single space character. */
-        @Since("0.0.1")
+        @SinceAzora("0.0.1")
         fin space = " "
     }
 
@@ -52,7 +52,7 @@ friend zone std {
      * dispatches on the argument's concrete type.
      */
     /** Prints `value` followed by a newline. */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     func println(value: Any): Unit { }
 
     /**
@@ -62,7 +62,7 @@ friend zone std {
      * @param length The number of times to repeat it.
      * @return A string of the given character repeated length times.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func separator(char: String, length: Int): String = char * length
 
     /**
@@ -72,7 +72,7 @@ friend zone std {
      * @param width The width of the separator lines.
      * @return The title string.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func header(title: String, width: Int): String {
         var line: String = separator("-", width)
         std::println(line)

@@ -38,7 +38,7 @@ import kotlin.collections.iterator
  * Assumes semantic analysis has already validated the program -- all types
  * are known, all symbols are resolved, and all constraints are satisfied.
  * Inline functions are skipped since they were already substituted by the
- * CTFE evaluator.
+ * CTCE evaluator.
  *
  * @param table the fully populated symbol table from semantic analysis
  */
@@ -93,9 +93,9 @@ class IrGenerator(private val table: SymbolTable) {
      * Generates a typed [IrProgram] from the given AST.
      *
      * Inline functions are filtered out since they have already been
-     * substituted at their call sites by the CTFE evaluator.
+     * substituted at their call sites by the CTCE evaluator.
      *
-     * @param program the CTFE-stabilized, type-checked AST
+     * @param program the CTCE-stabilized, type-checked AST
      * @return the lowered [IrProgram]
      */
     fun generate(program: Program): IrProgram {
@@ -233,7 +233,7 @@ class IrGenerator(private val table: SymbolTable) {
                     val decl = FuncDecl("__hook_${item.name}", emptyList(), TypeAnnotation.Inferred, item.body, false, emptyList(), item.line, item.column)
                     listOf(IrTopLevel.Func(lowerFunction(decl)))
                 }
-                else -> emptyList() // Inline constructs already resolved by CTFE
+                else -> emptyList() // Inline constructs already resolved by CTCE
             }
         } +
         // Emit __singleton factories for `wrap` registrations (DI container wiring).
@@ -397,14 +397,14 @@ class IrGenerator(private val table: SymbolTable) {
                 table.defineVariable(VariableSymbol(stmt.name, type, mutable = false))
                 IrStmt.LetDecl(mangled, type, init)
             }
-            is Stmt.DeepInlineBlock -> error("DeepInlineBlock should have been resolved by CTFE before IR generation")
+            is Stmt.DeepInlineBlock -> error("DeepInlineBlock should have been resolved by CTCE before IR generation")
             is Stmt.NoInline -> lowerStmt(stmt.stmt)
-            is Stmt.InlineBlock -> error("InlineBlock should have been resolved by CTFE before IR generation")
-            is Stmt.InlineFor -> error("InlineFor should have been resolved by CTFE before IR generation")
-            is Stmt.InlineFin -> error("InlineFin should have been resolved by CTFE before IR generation")
-            is Stmt.InlineLet -> error("InlineLet should have been resolved by CTFE before IR generation")
-            is Stmt.InlineVar -> error("InlineVar should have been resolved by CTFE before IR generation")
-            is Stmt.InlineAssignment -> error("InlineAssignment should have been resolved by CTFE before IR generation")
+            is Stmt.InlineBlock -> error("InlineBlock should have been resolved by CTCE before IR generation")
+            is Stmt.InlineFor -> error("InlineFor should have been resolved by CTCE before IR generation")
+            is Stmt.InlineFin -> error("InlineFin should have been resolved by CTCE before IR generation")
+            is Stmt.InlineLet -> error("InlineLet should have been resolved by CTCE before IR generation")
+            is Stmt.InlineVar -> error("InlineVar should have been resolved by CTCE before IR generation")
+            is Stmt.InlineAssignment -> error("InlineAssignment should have been resolved by CTCE before IR generation")
             is Stmt.Assignment -> {
                 val value = lowerExpr(stmt.value)
                 IrStmt.Assignment(resolveName(stmt.name), value)
@@ -443,8 +443,8 @@ class IrGenerator(private val table: SymbolTable) {
                 val elseBranch = stmt.elseBranch?.let { lowerScopedBody(it) }
                 IrStmt.If(cond, thenBranch, elseBranch)
             }
-            is Stmt.InlineIf -> error("InlineIf should have been resolved by CTFE before IR generation")
-            is Stmt.DeepInlineIf -> error("DeepInlineIf should have been resolved by CTFE before IR generation")
+            is Stmt.InlineIf -> error("InlineIf should have been resolved by CTCE before IR generation")
+            is Stmt.DeepInlineIf -> error("DeepInlineIf should have been resolved by CTCE before IR generation")
             is Stmt.Zone -> {
                 table.pushScope()
                 pushNameScope()
@@ -577,7 +577,7 @@ class IrGenerator(private val table: SymbolTable) {
             }
             is Stmt.Throw -> IrStmt.Throw(lowerExpr(stmt.value))
             is Stmt.Panic -> {
-                if (stmt.inlinePanic) error("inline panic should have been resolved by CTFE before IR generation")
+                if (stmt.inlinePanic) error("inline panic should have been resolved by CTCE before IR generation")
                 IrStmt.ExprStmt(IrExpr.Call("__panic", listOf(lowerExpr(stmt.message)), IrType.Unit))
             }
             is Stmt.Try -> {
@@ -601,8 +601,8 @@ class IrGenerator(private val table: SymbolTable) {
                 } else null
                 IrStmt.Try(body, catchIrName, catchBody)
             }
-            is Stmt.InlineAssert -> error("InlineAssert should have been resolved by CTFE before IR generation")
-            is Stmt.InlineTrace -> error("InlineTrace should have been resolved by CTFE before IR generation")
+            is Stmt.InlineAssert -> error("InlineAssert should have been resolved by CTCE before IR generation")
+            is Stmt.InlineTrace -> error("InlineTrace should have been resolved by CTCE before IR generation")
         }
     }
 

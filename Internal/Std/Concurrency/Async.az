@@ -38,7 +38,7 @@ friend zone std {
      * @param action The function to execute.
      * @return true if the action completed, false otherwise.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     task timeout<T>(ms: T, action: () -> Unit): Bool {
         var completed = false
         fin handle = async {
@@ -60,7 +60,7 @@ friend zone std {
      * @param action The function to execute. Should return true on success.
      * @return true if any attempt succeeded, false if all attempts failed.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     task retry<T>(attempts: T, delayMs: T, action: () -> Bool): Bool {
         var i = 0
         while i < attempts {
@@ -81,7 +81,7 @@ friend zone std {
      * @param a The first action to execute.
      * @param b The second action to execute.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     task parallel<T>(tag: T, a: () -> Unit, b: () -> Unit) {
         fin t1 = async { a() }
         fin t2 = async { b() }
@@ -96,7 +96,7 @@ friend zone std {
      * @param a The first action to execute.
      * @param b The second action to execute.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     task race<T>(tag: T, a: () -> Unit, b: () -> Unit) {
         var done = false
         fin t1 = async {
@@ -128,7 +128,7 @@ friend zone std {
          *
          * @param task The task handle to cancel.
          */
-        @Since("0.0.3")
+        @SinceAzora("0.0.3")
         func cancel(task: Any): Unit { }
     }
 }

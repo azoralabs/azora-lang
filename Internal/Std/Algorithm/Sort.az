@@ -36,7 +36,7 @@ friend zone std {
      * @param arr The array to sort.
      * @return A new array with elements in ascending order.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func sort<T>(arr: [T]): [T]
     out {
         assert it.length == arr.length { "sort must preserve length" }
@@ -69,7 +69,7 @@ friend zone std {
      * @param arr The array to sort.
      * @return A new array with elements in descending order.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func sortDescending<T>(arr: [T]): [T]
     out {
         assert it.length == arr.length { "sortDescending must preserve length" }
@@ -100,7 +100,7 @@ friend zone std {
      * @param arr The array to check.
      * @return true if the array is sorted, false otherwise.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func isSorted<T>(arr: [T]): Bool {
         if arr.length <= 1 { return true }
         var i = 1
@@ -117,7 +117,7 @@ friend zone std {
      * @param arr The array to check.
      * @return true if the array is sorted descending, false otherwise.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func isSortedDescending<T>(arr: [T]): Bool {
         if arr.length <= 1 { return true }
         var i = 1
@@ -134,7 +134,7 @@ friend zone std {
      * @param arr The array to reverse.
      * @return A new reversed array.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func reverse<T>(arr: [T]): [T]
     out {
         assert it.length == arr.length { "reverse must preserve length" }
@@ -156,7 +156,7 @@ friend zone std {
      * @param arr The array to deduplicate.
      * @return A new array with unique consecutive elements.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func unique<T>(arr: [T]): [T] {
         if arr.length == 0 { return [].fill<T>(0) }
         var result: [T] = [].fill<T>(arr.length)
@@ -188,7 +188,7 @@ friend zone std {
      * @param j The second index.
      * @return A new array with elements swapped.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func swap<T>(arr: [T], i: Int, j: Int): [T]
     in {
         assert i >= 0 && i < arr.length { "swap index i out of bounds" }
@@ -213,7 +213,7 @@ friend zone std {
      * @param n The number of positions to rotate left.
      * @return A new rotated array.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func rotateLeft<T>(arr: [T], n: Int): [T] {
         if arr.length == 0 { return [].fill<T>(0) }
         fin len = arr.length

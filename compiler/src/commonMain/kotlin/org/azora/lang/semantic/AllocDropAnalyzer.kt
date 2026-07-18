@@ -27,8 +27,8 @@ import org.azora.lang.frontend.TypeRef
 /**
  * Semantic — Alloc / Drop Analysis.
  *
- * Runs AFTER types are fully resolved (post-CTFE stabilization) because
- * CTFE-generated code may introduce new allocations.
+ * Runs AFTER types are fully resolved (post-CTCE stabilization) because
+ * CTCE-generated code may introduce new allocations.
  *
  * Responsibilities (when the language grows):
  *  - Track `alloc` / `drop` pairs and verify every allocation is dropped.
@@ -45,7 +45,7 @@ class AllocDropAnalyzer {
     /**
      * Analyzes all functions in the program for liveness and use-before-init issues.
      *
-     * @param program the CTFE-stabilized, type-checked AST to analyze
+     * @param program the CTCE-stabilized, type-checked AST to analyze
      * @return a list of warning and error messages (empty if no issues found)
      */
     fun analyze(program: Program): List<String> {

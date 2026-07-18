@@ -36,7 +36,7 @@ Source → Lexer → Parser → AST Validator
                    ↓
               Stdlib Injection (only the modules you `use`)
                    ↓
-              Symbol Collection → Type Resolution ⇄ CTFE → Alloc/Drop → Effect Check
+              Symbol Collection → Type Resolution ⇄ CTCE → Alloc/Drop → Effect Check
                    ↓
               IR Generator → IR Optimizer
                    ↓

@@ -39,7 +39,7 @@ friend zone std {
      *
      * @param T Variadic type parameter pack for the element types.
      */
-    @Experimental(since: "0.0.3")
+    @Experimental(sinceAzora: "0.0.3")
     @EnforceNumFields
     @Serializable
     pack<...T> Tuple where (...T).length >= 2 {
@@ -58,7 +58,7 @@ friend zone std {
      * @param elements Values to store in the tuple.
      * @return A Tuple whose element types match the provided values.
      */
-    @Experimental(since: "0.0.3")
+    @Experimental(sinceAzora: "0.0.3")
     func<...T> tupleOf(...elements: ...T): Tuple<...T>
     where (...T).length >= 2 {
         return Tuple(elements)

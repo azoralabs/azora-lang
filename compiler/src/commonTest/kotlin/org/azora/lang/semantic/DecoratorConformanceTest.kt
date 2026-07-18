@@ -81,7 +81,7 @@ class DecoratorConformanceTest {
 
     @Test fun appliedBoundDecoratorDerivesGenericSpecConformance() {
         val result = analyze("""
-            @Experimental(since: "0.0.4")
+            @Experimental(sinceAzora: "0.0.4")
             deco Serializable bind Serializer {
                 fin ignoreUnknownFields: Bool = false
                 fin encodeDefaults: Bool = true

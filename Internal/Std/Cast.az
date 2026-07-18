@@ -32,17 +32,17 @@ module std.cast
 
 friend zone std {
     /** Converting cast (`static_cast`). Numeric conversions, stringify, up/down casts. */
-    @Since("0.0.4")
+    @SinceAzora("0.0.4")
     bridge func<T, U> cast(value: U): T
 
     /** Runtime-checked downcast (`dynamic_cast`); null when `value` is not a `T`. */
-    @Since("0.0.4")
+    @SinceAzora("0.0.4")
     bridge func<T, U> dyncast(value: U): T?
 
     /**
      * Bit reinterpretation (`reinterpret_cast`). Requires `T.sizeOf == U.sizeOf`;
      * the compiler enforces this at the lowering site.
      */
-    @Since("0.0.4")
+    @SinceAzora("0.0.4")
     bridge func<T, U> bitcast(value: U): T
 }

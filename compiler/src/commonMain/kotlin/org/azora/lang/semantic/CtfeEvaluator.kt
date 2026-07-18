@@ -27,15 +27,15 @@ import org.azora.lang.frontend.ZoneMeta
 import org.azora.lang.ir.IrType
 
 /**
- * Semantic Pass 3 — Compile-Time Function Execution (CTFE).
+ * Semantic Pass 3 — Compile-Time Function Execution (CTCE).
  *
  * Evaluates functions and expressions that are marked (or inferred) as
  * compile-time. The results are folded back into the AST, replacing
- * CTFE call sites with their computed values.
+ * CTCE call sites with their computed values.
  *
  * Design:
  *  - Shares the compiler's own type system ([IrType]) — no separate evaluator types.
- *  - After CTFE, the AST may contain new/mutated nodes that require re-running
+ *  - After CTCE, the AST may contain new/mutated nodes that require re-running
  *    type resolution. The [SemanticPipeline] handles this via a fixed-point loop.
  *  - Maximum iteration count prevents infinite metaprogramming loops.
  *
@@ -49,9 +49,9 @@ import org.azora.lang.ir.IrType
 class CtfeEvaluator(private val table: SymbolTable) {
 
     /**
-     * Result of a CTFE pass.
+     * Result of a CTCE pass.
      *
-     * @property program The (potentially modified) AST with CTFE results folded in.
+     * @property program The (potentially modified) AST with CTCE results folded in.
      * @property changed Whether any AST nodes were modified (drives the fixed-point loop).
      * @property errors Any errors encountered during evaluation.
      */
@@ -529,7 +529,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
             }
             is Stmt.Panic -> {
                 val (msg, c) = foldExpr(stmt.message, program)
-                // `inline panic` is a compile-time abort: if reached during CTFE, stop the compiler.
+                // `inline panic` is a compile-time abort: if reached during CTCE, stop the compiler.
                 if (stmt.inlinePanic) {
                     val text = (msg as? Expr.StringLiteral)?.value ?: msg.toString()
                     error("inline panic: $text")
@@ -1237,7 +1237,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
         // std::concurrency::async/channel/cancel). Their .az bodies are dead placeholders
         // (each backend/interpreter intercepts the call by mangled name); folding them at
         // compile time would either infinite-recurse (channel/async call themselves) or
-        // silently substitute the placeholder result (toString -> ""). Never CTFE them.
+        // silently substitute the placeholder result (toString -> ""). Never CTCE them.
         if (name in RUNTIME_INTRINSICS) return null
         if (args.size != funcDecl.params.size) return null // arg count mismatch — let TypeResolver report it
 
@@ -1258,8 +1258,8 @@ class CtfeEvaluator(private val table: SymbolTable) {
                     val value = evalExpr(stmt.initializer, env, program) ?: return null
                     env[stmt.name] = value
                 }
-                is Stmt.RemDecl -> return null // reactive state, not CTFE-evaluable
-                is Stmt.Effect -> return null // effects are not CTFE-evaluable
+                is Stmt.RemDecl -> return null // reactive state, not CTCE-evaluable
+                is Stmt.Effect -> return null // effects are not CTCE-evaluable
                 is Stmt.FinDecl -> {
                     val value = evalExpr(stmt.initializer, env, program) ?: return null
                     env[stmt.name] = value
@@ -1272,11 +1272,11 @@ class CtfeEvaluator(private val table: SymbolTable) {
                     return if (stmt.value != null) evalExpr(stmt.value, env, program) else null
                 }
                 is Stmt.ExprStmt -> {
-                    // Side-effecting expressions can't be CTFE'd
+                    // Side-effecting expressions can't be CTCE'd
                     return null
                 }
-                is Stmt.DerefAssign -> return null // pointer store is not CTFE-evaluable
-                is Stmt.Yield -> return null // generators are not CTFE-evaluable
+                is Stmt.DerefAssign -> return null // pointer store is not CTCE-evaluable
+                is Stmt.Yield -> return null // generators are not CTCE-evaluable
                 is Stmt.If -> {
                     val cond = evalExpr(stmt.condition, env, program) ?: return null
                     if (cond !is Expr.BoolLiteral) return null
@@ -1335,7 +1335,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
                     if (result != null) return result
                 }
                 is Stmt.NoInline -> {
-                    // In CTFE interpretation, noinline is just pass-through
+                    // In CTCE interpretation, noinline is just pass-through
                     val result = interpretBody(listOf(stmt.stmt), env, program, line)
                     if (result != null) return result
                 }
@@ -1351,8 +1351,8 @@ class CtfeEvaluator(private val table: SymbolTable) {
                     val result = interpretBody(stmt.body, env, program, line)
                     if (result != null) return result
                 }
-                is Stmt.Assert -> return null // side-effecting — can't CTFE
-                is Stmt.Trace -> return null // side-effecting — can't CTFE
+                is Stmt.Assert -> return null // side-effecting — can't CTCE
+                is Stmt.Trace -> return null // side-effecting — can't CTCE
                 is Stmt.InlineAssert -> {
                     val cond = evalExpr(stmt.condition, env, program) ?: return null
                     if (cond is Expr.BoolLiteral && !cond.value) return null
@@ -1377,11 +1377,11 @@ class CtfeEvaluator(private val table: SymbolTable) {
             is Expr.Identifier -> env[expr.name]
             is Expr.UpperScopeAccess -> env[expr.name]
             is Expr.Grouping -> evalExpr(expr.expr, env, program)
-            is Expr.Range -> null // ranges are not CTFE-evaluable values
-            is Expr.ArrayLiteral, is Expr.SetLiteral, is Expr.Index, is Expr.Member, is Expr.MethodCall -> null // not CTFE-evaluable
-            is Expr.StringTemplate -> null // not CTFE-evaluable
-            is Expr.TupleLit, is Expr.TupleAccess, is Expr.VariantLit -> null // not CTFE-evaluable
-            is Expr.CatchExpr -> null // not CTFE-evaluable
+            is Expr.Range -> null // ranges are not CTCE-evaluable values
+            is Expr.ArrayLiteral, is Expr.SetLiteral, is Expr.Index, is Expr.Member, is Expr.MethodCall -> null // not CTCE-evaluable
+            is Expr.StringTemplate -> null // not CTCE-evaluable
+            is Expr.TupleLit, is Expr.TupleAccess, is Expr.VariantLit -> null // not CTCE-evaluable
+            is Expr.CatchExpr -> null // not CTCE-evaluable
             is Expr.TryPropagate -> evalExpr(expr.expr, env, program)
             is Expr.IfExpr -> {
                 val condition = evalExpr(expr.condition, env, program) ?: return null
@@ -1389,8 +1389,8 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 if (condition.value) evalExpr(expr.thenExpr, env, program)
                 else evalExpr(expr.elseExpr, env, program)
             }
-            is Expr.Lambda -> null // not CTFE-evaluable
-            is Expr.NamedArg -> null // not CTFE-evaluable
+            is Expr.Lambda -> null // not CTCE-evaluable
+            is Expr.NamedArg -> null // not CTCE-evaluable
             is Expr.Unary -> {
                 val operand = evalExpr(expr.operand, env, program) ?: return null
                 tryFoldUnary(expr.op, operand, expr.line)
@@ -1407,7 +1407,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
             is Expr.NullLiteral, is Expr.NullCoalesce, is Expr.SafeMember,
             is Expr.Cast, is Expr.IsCheck,
             is Expr.MapLit -> null
-            is Expr.Alloc, is Expr.AllocBuffer, is Expr.Deref, is Expr.Isolated, is Expr.Await, is Expr.Inject, is Expr.Spread -> null // runtime ops, not CTFE-evaluable
+            is Expr.Alloc, is Expr.AllocBuffer, is Expr.Deref, is Expr.Isolated, is Expr.Await, is Expr.Inject, is Expr.Spread -> null // runtime ops, not CTCE-evaluable
         }
     }
 

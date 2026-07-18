@@ -33,7 +33,7 @@ friend zone std {
     /**
      *
      */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     fail StringError {
         IndexOutOfBounds
         EmptyString
@@ -46,7 +46,7 @@ friend zone std {
      * @param s The string to measure.
      * @return The number of characters.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func strLength(s: String): Int {
         return stringLength(s)
     }
@@ -58,7 +58,7 @@ friend zone std {
      * @param index The zero-based index.
      * @return The character at position index.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func strCharAt(s: String, index: Int): Char!StringError
     in {
         assert index >= 0 { "Index must be non-negative" }
@@ -75,7 +75,7 @@ friend zone std {
      * @param end The end index (exclusive).
      * @return The extracted substring.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func strSlice(s: String, start: Int, end: Int): String
     in {
         assert start >= 0 { "Start must be non-negative" }
@@ -91,7 +91,7 @@ friend zone std {
      * @param prefix The prefix to look for.
      * @return true if s starts with prefix.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func strStartsWith(s: String, prefix: String): Bool {
         return startsWith(s, prefix)
     }
@@ -103,7 +103,7 @@ friend zone std {
      * @param suffix The suffix to look for.
      * @return true if s ends with suffix.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func strEndsWith(s: String, suffix: String): Bool {
         return endsWith(s, suffix)
     }
@@ -115,7 +115,7 @@ friend zone std {
      * @param sub The substring to find.
      * @return true if s contains sub.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func strContains(s: String, sub: String): Bool {
         return contains(s, sub)
     }
@@ -127,7 +127,7 @@ friend zone std {
      * @param sub The substring to find.
      * @return The index of the first occurrence, or -1 if not found.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func strIndexOf(s: String, sub: String): Int {
         return indexOf(s, sub)
     }
@@ -138,7 +138,7 @@ friend zone std {
      * @param s The string to trim.
      * @return The trimmed string.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func strTrim(s: String): String {
         return trim(s)
     }
@@ -149,7 +149,7 @@ friend zone std {
      * @param s The string to convert.
      * @return The uppercase string.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func strToUpper(s: String): String {
         return toUpper(s)
     }
@@ -160,7 +160,7 @@ friend zone std {
      * @param s The string to convert.
      * @return The lowercase string.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func strToLower(s: String): String {
         return toLower(s)
     }
@@ -173,7 +173,7 @@ friend zone std {
      * @param new The replacement string.
      * @return The string with replacements applied.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func strReplace(s: String, old: String, new: String): String {
         return replace(s, old, new)
     }
@@ -185,7 +185,7 @@ friend zone std {
      * @param delim The delimiter string.
      * @return A sequence of substrings.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func strSplit(s: String, delim: String): [String] {
         return split(s, delim)
     }
@@ -196,7 +196,7 @@ friend zone std {
      * @param s The string to convert.
      * @return An array of Char values.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func strToChars(s: String): [Char] {
         return toChars(s)
     }
@@ -207,7 +207,7 @@ friend zone std {
      * @param chars The character array.
      * @return The concatenated string.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func charsToString(chars: [Char]): String {
         return fromChars(chars)
     }
@@ -218,7 +218,7 @@ friend zone std {
      * @param s The string to check.
      * @return true if the string has zero length.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func strIsEmpty(s: String): Bool {
         return stringLength(s) == 0
     }
@@ -229,7 +229,7 @@ friend zone std {
      * @param s The string to check.
      * @return true if the string has non-zero length.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func strIsNotEmpty(s: String): Bool {
         return stringLength(s) > 0
     }
@@ -240,7 +240,7 @@ friend zone std {
      * @param s The string to reverse.
      * @return The reversed string.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func strReverse(s: String): String {
         fin chars = toChars(s)
         fin len = chars.length
@@ -260,7 +260,7 @@ friend zone std {
      * @param n The number of repetitions.
      * @return The repeated string.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func strRepeat(s: String, n: Int): String
     in {
         assert n >= 0 { "Repetition count must be non-negative" }
@@ -274,7 +274,7 @@ friend zone std {
      * @param s The string to check.
      * @return true if every character is a digit.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func strIsNumeric(s: String): Bool {
         if stringLength(s) == 0 { return false }
         fin chars = toChars(s)
@@ -292,7 +292,7 @@ friend zone std {
      * @param s The string to check.
      * @return true if every character is a letter.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func strIsAlpha(s: String): Bool {
         if stringLength(s) == 0 { return false }
         fin chars = toChars(s)
@@ -307,7 +307,7 @@ friend zone std {
     /**
      *
      */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     fail ParseError {
         InvalidFormat,
         Overflow,
@@ -317,7 +317,7 @@ friend zone std {
     /**
      * Parses a string as an integer. Returns the parsed value or fails.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func strParseInt(s: String): Int!ParseError {
         if strIsEmpty(s) {
             fail return .EmptyInput
@@ -349,7 +349,7 @@ friend zone std {
     /**
      * Parses a string as a real number. Returns the parsed value or fails.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func strParseReal(s: String): Real!ParseError {
         if strIsEmpty(s) {
             fail return .EmptyInput
@@ -391,7 +391,7 @@ friend zone std {
     /**
      * An efficient string builder for concatenating many strings.
      */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     pack StringBuilder {
         var parts: [String] = [].fill<String>(16)
         var count: Int = 0
@@ -401,7 +401,7 @@ friend zone std {
         /**
          * Appends a string to the builder.
          */
-        @Experimental(since: "0.0.1")
+        @Experimental(sinceAzora: "0.0.1")
         func append(s: String): Unit {
             self.parts[self.count] = s
             self.count += 1
@@ -410,7 +410,7 @@ friend zone std {
         /**
          * Appends a string followed by a newline.
          */
-        @Experimental(since: "0.0.1")
+        @Experimental(sinceAzora: "0.0.1")
         func appendLine(s: String): Unit {
             self.parts[self.count] = s
             self.count += 1
@@ -421,7 +421,7 @@ friend zone std {
         /**
          * Builds the final concatenated string.
          */
-        @Experimental(since: "0.0.1")
+        @Experimental(sinceAzora: "0.0.1")
         func build(): String {
             var result: String = ""
             var i = 0
@@ -435,13 +435,13 @@ friend zone std {
         /**
          * Returns the number of parts.
          */
-        @Since("0.0.1")
+        @SinceAzora("0.0.1")
         prop length: Int = self.count
 
         /**
          * Clears the builder.
          */
-        @Since("0.0.1")
+        @SinceAzora("0.0.1")
         func clear(): Unit {
             self.parts = [].fill<String>(16)
             self.count = 0
@@ -451,7 +451,7 @@ friend zone std {
     /**
      * Counts occurrences of a substring in a string.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func strCount(s: String, sub: String): Int {
         var count: Int = 0
         var idx: Int = strIndexOf(s, sub)
@@ -472,7 +472,7 @@ friend zone std {
     /**
      * Pads a string on the left to reach the target length.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func strPadLeft(s: String, targetLength: Int, padChar: String): String {
         var result: String = s
         while strLength(result) < targetLength {
@@ -484,7 +484,7 @@ friend zone std {
     /**
      * Pads a string on the right to reach the target length.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func strPadRight(s: String, targetLength: Int, padChar: String): String {
         var result: String = s
         while strLength(result) < targetLength {

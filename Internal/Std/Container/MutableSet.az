@@ -41,7 +41,7 @@ friend zone std {
      *
      * @param T The type of elements stored in this set.
      */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     @Serializable
     pack<T> MutableSet {
         shield var data: T* = alloc T[8]
@@ -49,7 +49,7 @@ friend zone std {
         shield var capacity: Int = 8
     }
 
-    @Experimental(since: "0.0.3")
+    @Experimental(sinceAzora: "0.0.3")
     func<T> mutableSetOf(elements: ...T): MutableSet<T> {
         var result = MutableSet<T>()
         var i = 0
@@ -60,7 +60,7 @@ friend zone std {
         return result
     }
 
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     impl oper[] for MutableSet<T> { ref self, index ->
         assert index >= 0 && index < self.size {
             "Set index out of bounds"
@@ -68,7 +68,7 @@ friend zone std {
         return self.data[index]
     }
 
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     impl oper[]= for MutableSet<T> { mut ref self, index, element ->
         assert index >= 0 && index < self.size { 
             "Set index out of bounds"
@@ -83,7 +83,7 @@ friend zone std {
         self.data[index] = element
     }
 
-    @Experimental(since: "0.0.3")
+    @Experimental(sinceAzora: "0.0.3")
     impl Into<String> for MutableSet<T> { ref self ->
         var s = "{"
         var i = 0
@@ -99,16 +99,16 @@ friend zone std {
         // --- Properties ---
 
         /** Whether the set contains no elements. */
-        @Since("0.0.1")
+        @SinceAzora("0.0.1")
         prop isEmpty: Bool = self.size == 0
 
         /** Whether the set contains at least one element. */
-        @Since("0.0.1")
+        @SinceAzora("0.0.1")
         prop isNotEmpty: Bool = self.size > 0
 
         // --- Internal ---
 
-        @Experimental(since: "0.0.1")
+        @Experimental(sinceAzora: "0.0.1")
         func growSet() {
             fin newCap = capacity * 2
             fin newData = alloc T[newCap]
@@ -131,7 +131,7 @@ friend zone std {
          * @param element The element to add.
          * @return true if the element was added, false if it already existed.
          */
-        @Experimental(since: "0.0.1")
+        @Experimental(sinceAzora: "0.0.1")
         func add(element: T): Bool {
             var i = 0
             while i < size {
@@ -150,7 +150,7 @@ friend zone std {
          * @param element The element to remove.
          * @return true if the element was removed, false if not found.
          */
-        @Experimental(since: "0.0.1")
+        @Experimental(sinceAzora: "0.0.1")
         func remove(element: T): Bool {
             var idx = -1
             var i = 0
@@ -174,7 +174,7 @@ friend zone std {
          * @param element The element to search for.
          * @return true if the element is found, false otherwise.
          */
-        @Experimental(since: "0.0.1")
+        @Experimental(sinceAzora: "0.0.1")
         func contains(element: T): Bool {
             var i = 0
             while i < size {
@@ -185,7 +185,7 @@ friend zone std {
         }
 
         /** Removes all elements from the set. */
-        @Experimental(since: "0.0.1")
+        @Experimental(sinceAzora: "0.0.1")
         func clear() {
             fin oldData = data
             self.data = alloc T[8]
@@ -202,7 +202,7 @@ friend zone std {
          * @param other The other set to union with.
          * @return A new set with all unique elements from both sets.
          */
-        @Experimental(since: "0.0.1")
+        @Experimental(sinceAzora: "0.0.1")
         func union(other: MutableSet<T>): MutableSet<T> {
             var result = MutableSet<T>()
             var i = 0
@@ -225,7 +225,7 @@ friend zone std {
          * @param other The other set to intersect with.
          * @return A new set with common elements.
          */
-        @Experimental(since: "0.0.1")
+        @Experimental(sinceAzora: "0.0.1")
         func intersect(other: MutableSet<T>): MutableSet<T> {
             var result = MutableSet<T>()
             var i = 0
@@ -244,7 +244,7 @@ friend zone std {
          * @param other The set to subtract.
          * @return A new set with elements unique to this set.
          */
-        @Experimental(since: "0.0.1")
+        @Experimental(sinceAzora: "0.0.1")
         func difference(other: MutableSet<T>): MutableSet<T> {
             var result = MutableSet<T>()
             var i = 0
@@ -264,7 +264,7 @@ friend zone std {
          *
          * @param action The function to apply to each element.
          */
-        @Experimental(since: "0.0.1")
+        @Experimental(sinceAzora: "0.0.1")
         func forEach(action: (T) -> Unit) {
             var i = 0
             while i < size {
@@ -279,7 +279,7 @@ friend zone std {
          * @param predicate The function to test each element.
          * @return A new set with matching elements.
          */
-        @Experimental(since: "0.0.1")
+        @Experimental(sinceAzora: "0.0.1")
         func filter(predicate: (T) -> Bool): MutableSet<T> {
             var result = MutableSet<T>()
             var i = 0
@@ -298,7 +298,7 @@ friend zone std {
          * @param predicate The function to test each element.
          * @return true if any element matches, false otherwise.
          */
-        @Experimental(since: "0.0.1")
+        @Experimental(sinceAzora: "0.0.1")
         func any(predicate: (T) -> Bool): Bool {
             var i = 0
             while i < size {
@@ -314,7 +314,7 @@ friend zone std {
          * @param predicate The function to test each element.
          * @return true if every element matches, false otherwise.
          */
-        @Experimental(since: "0.0.1")
+        @Experimental(sinceAzora: "0.0.1")
         func all(predicate: (T) -> Bool): Bool {
             var i = 0
             while i < size {
@@ -329,7 +329,7 @@ friend zone std {
          *
          * @return An array containing all elements.
          */
-        @Experimental(since: "0.0.1")
+        @Experimental(sinceAzora: "0.0.1")
         func toArray(): [T] {
             var result: [T] = [].fill<T>(size)
             var i = 0

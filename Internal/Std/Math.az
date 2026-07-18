@@ -32,43 +32,43 @@ friend zone std::math {
         /**
          * The ratio of a circle's circumference to its diameter.
          */
-        @Since("0.0.1")
+        @SinceAzora("0.0.1")
         fin PI: Real = 3.14159265358979
 
         /**
          * Euler's number, the base of natural logarithms.
          */
-        @Since("0.0.1")
+        @SinceAzora("0.0.1")
         fin E: Real = 2.71828182845905
 
         /**
          * The ratio of a circle's circumference to its radius (2 * PI).
          */
-        @Since("0.0.1")
+        @SinceAzora("0.0.1")
         fin TAU: Real = 6.28318530717959
 
         /**
          * The square root of 2.
          */
-        @Since("0.0.1")
+        @SinceAzora("0.0.1")
         fin SQRT2: Real = 1.41421356237310
 
         /**
          * The golden ratio (phi).
          */
-        @Since("0.0.1")
+        @SinceAzora("0.0.1")
         fin PHI: Real = 1.61803398874989
 
         /**
          * Positive infinity representation.
          */
-        @Since("0.0.1")
+        @SinceAzora("0.0.1")
         fin INF: Real = 1.0 / 0.0
 
         /**
          * The smallest positive real value.
          */
-        @Since("0.0.1")
+        @SinceAzora("0.0.1")
         fin EPSILON: Real = 0.00000000000001
 
     /**
@@ -77,7 +77,7 @@ friend zone std::math {
      * @param x The value to take the absolute value of.
      * @return The non-negative magnitude of x.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func abs<T>(x: T): T
     out {
         assert it >= 0 { "abs must return non-negative" }
@@ -92,7 +92,7 @@ friend zone std::math {
      * @param b The second value to compare.
      * @return The lesser of a and b.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func min<T>(a: T, b: T): T {
         return if a < b { a } else { b }
     }
@@ -104,7 +104,7 @@ friend zone std::math {
      * @param b The second value to compare.
      * @return The greater of a and b.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func max<T>(a: T, b: T): T {
         return if a > b { a } else { b }
     }
@@ -117,7 +117,7 @@ friend zone std::math {
      * @param hi The upper bound of the range.
      * @return x if it falls within [lo, hi], otherwise the nearest bound.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func clamp<T>(x: T, lo: T, hi: T): T
     in {
         assert lo <= hi { "clamp lower bound must be <= upper bound" }
@@ -131,7 +131,7 @@ friend zone std::math {
      * @param x The value to determine the sign of.
      * @return 1 if x is positive, -1 if negative, 0 if zero.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func sign<T>(x: T): Int {
         return if x > 0 { 1 } else { if x < 0 { -1 } else { 0 } }
     }
@@ -144,7 +144,7 @@ friend zone std::math {
      * @param t The interpolation factor, typically in [0.0, 1.0].
      * @return The interpolated value a + (b - a) * t.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func lerp(a: Real, b: Real, t: Real): Real
     in {
         assert t >= 0.0 { "lerp factor must be >= 0.0" }
@@ -159,7 +159,7 @@ friend zone std::math {
      * @param x The value.
      * @return The floor value as an integer.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func floor(x: Real): Int {
         fin i = x as Int
         return if x < 0.0 && x != (i as Real) { i - 1 } else { i }
@@ -171,7 +171,7 @@ friend zone std::math {
      * @param x The value.
      * @return The ceiling value as an integer.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func ceil(x: Real): Int {
         fin i = x as Int
         return if x > 0.0 && x != (i as Real) { i + 1 } else { i }
@@ -183,7 +183,7 @@ friend zone std::math {
      * @param x The value.
      * @return The rounded value.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func round(x: Real): Int {
         return floor(x + 0.5)
     }
@@ -194,7 +194,7 @@ friend zone std::math {
      * @param x The value.
      * @return The fractional part (x - floor(x)).
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func frac(x: Real): Real {
         return x - (floor(x) as Real)
     }
@@ -209,7 +209,7 @@ friend zone std::math {
      * @param outMax The output range maximum.
      * @return The mapped value.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func mapRange(x: Real, inMin: Real, inMax: Real, outMin: Real, outMax: Real): Real
     in {
         assert inMax != inMin { "Input range must not be zero-width" }
@@ -225,7 +225,7 @@ friend zone std::math {
      * @param epsilon The tolerance (default: 0.00000001).
      * @return true if |a - b| < epsilon.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func approxEqual(a: Real, b: Real, epsilon: Real): Bool
     in {
         assert epsilon > 0.0 { "epsilon must be positive" }
@@ -242,7 +242,7 @@ friend zone std::math {
      * @param exp The exponent (must be non-negative).
      * @return value raised to the power of exp.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func pow<T>(value: T, exp: Int): T
     in {
         assert exp >= 0 { "Exponent must be non-negative" }
@@ -263,7 +263,7 @@ friend zone std::math {
      * @param n The non-negative integer.
      * @return n! (n factorial).
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func factorial<T>(n: T): T
     in {
         assert n >= 0 { "Factorial requires non-negative input" }
@@ -287,7 +287,7 @@ friend zone std::math {
      * @param b The second integer.
      * @return The GCD of a and b.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func gcd<T>(a: T, b: T): T
     out {
         assert it >= 0 { "GCD must be non-negative" }
@@ -311,7 +311,7 @@ friend zone std::math {
      * @param b The second integer.
      * @return The LCM of a and b.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func lcm<T>(a: T, b: T): T
     out {
         assert it >= 0 { "LCM must be non-negative" }
@@ -330,7 +330,7 @@ friend zone std::math {
      * @param n The integer to check.
      * @return true if n is even.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func isEven<T>(n: T): Bool {
         return n % 2 == 0
     }
@@ -341,7 +341,7 @@ friend zone std::math {
      * @param n The integer to check.
      * @return true if n is odd.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func isOdd<T>(n: T): Bool {
         return n % 2 != 0
     }
@@ -352,7 +352,7 @@ friend zone std::math {
      * @param arr The array to sum.
      * @return The sum of all elements.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func sum<T>(arr: [T]): T {
         var total = 0
         var i = 0
@@ -369,7 +369,7 @@ friend zone std::math {
      * @param arr The array to sum.
      * @return The sum of all elements.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func sumReal<T>(arr: [T]): T {
         var total = 0.0
         var i = 0
@@ -386,7 +386,7 @@ friend zone std::math {
      * @param arr The array to multiply.
      * @return The product of all elements.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func product<T>(arr: [T]): T {
         if arr.length == 0 { return 0 }
         var result = 1
@@ -404,7 +404,7 @@ friend zone std::math {
      * @param n The index (0-based) of the Fibonacci number.
      * @return The Nth Fibonacci number.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func fib<T>(n: T): T
     in {
         assert n >= 0 { "Fibonacci requires non-negative input" }
@@ -431,7 +431,7 @@ friend zone std::math {
      * @param n The number to check (must be non-negative).
      * @return true if n is prime.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func isPrime(n: Int): Bool
     in {
         assert n >= 0 { "isPrime requires non-negative input" }
@@ -455,7 +455,7 @@ friend zone std::math {
      * @param arr The values to average (must be non-empty).
      * @return The average as a real number.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func average(arr: [Int]): Real
     in {
         assert arr.length > 0 { "Input must not be empty" }
@@ -476,7 +476,7 @@ friend zone std::math {
      * @param k The selection count.
      * @return C(n, k).
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func choose(n: Int, k: Int): Int
     in {
         assert n >= 0 { "n must be non-negative" }
@@ -501,7 +501,7 @@ friend zone std::math {
      * @param n The non-negative integer.
      * @return The largest integer whose square is <= n.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func isqrt(n: Int): Int
     in {
         assert n >= 0 { "isqrt requires non-negative input" }

@@ -31,7 +31,7 @@ friend zone std {
     /**
      * A pseudo-random number generator.
      */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     pack Random {
         var seed: Int = 12345
     }
@@ -40,7 +40,7 @@ friend zone std {
         /**
          * Returns the next pseudo-random integer (0 to 2^30 - 1).
          */
-        @Experimental(since: "0.0.1")
+        @Experimental(sinceAzora: "0.0.1")
         func next(): Int {
             self.seed = (self.seed * 1103515245 + 12345) % 2147483647
             if self.seed < 0 { self.seed = 0 - self.seed }
@@ -50,7 +50,7 @@ friend zone std {
         /**
          * Returns a pseudo-random integer in [0, max).
          */
-        @Experimental(since: "0.0.1")
+        @Experimental(sinceAzora: "0.0.1")
         func nextInt(max: Int): Int {
             var n: Int = self.next()
             if max <= 0 { return 0 }
@@ -60,7 +60,7 @@ friend zone std {
         /**
          * Returns a pseudo-random integer in [min, max].
          */
-        @Experimental(since: "0.0.1")
+        @Experimental(sinceAzora: "0.0.1")
         func nextRange(min: Int, max: Int): Int {
             var range: Int = max - min + 1
             return min + self.nextInt(range)
@@ -69,7 +69,7 @@ friend zone std {
         /**
          * Returns a pseudo-random boolean.
          */
-        @Experimental(since: "0.0.1")
+        @Experimental(sinceAzora: "0.0.1")
         func nextBool(): Bool {
             return self.next() % 2 == 0
         }
@@ -78,7 +78,7 @@ friend zone std {
     /**
      * Shuffles an array in-place using Fisher-Yates algorithm.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func shuffle<T>(arr: [T], rng: Random): [T] {
         var result: [T] = [].fill<T>(arr.length)
         var i = 0
@@ -100,7 +100,7 @@ friend zone std {
     /**
      * Returns a random sample of n elements from the array.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func sample<T>(arr: [T], count: Int, rng: Random): [T] {
         var shuffled: [T] = shuffle<T>(arr, rng)
         var limit: Int = count

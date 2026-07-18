@@ -40,7 +40,7 @@ friend zone std {
      *
      * @param T The type of elements stored in this stack.
      */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     @Serializable
     pack<T> Stack {
         shield var data: T* = alloc T[8]
@@ -49,7 +49,7 @@ friend zone std {
     }
 
     /** Constructs an empty `Stack<T>` with default capacity. */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     impl ctor() for Stack<T> { mut ref self ->
         self.data = alloc T[8]
         self.size = 0
@@ -61,17 +61,17 @@ friend zone std {
         // --- Properties ---
 
         /** Whether the stack contains no elements. */
-        @Since("0.0.1")
+        @SinceAzora("0.0.1")
         prop isEmpty: Bool = size == 0
 
         /** Whether the stack contains at least one element. */
-        @Since("0.0.1")
+        @SinceAzora("0.0.1")
         prop isNotEmpty: Bool = size > 0
 
         // --- Internal ---
 
         /** Doubles the backing buffer's capacity, copying existing elements. */
-        @Experimental(since: "0.0.1")
+        @Experimental(sinceAzora: "0.0.1")
         func growStack() {
             fin newCap = capacity * 2
             fin newData = alloc T[newCap]
@@ -93,7 +93,7 @@ friend zone std {
          *
          * @param element The element to push.
          */
-        @Experimental(since: "0.0.1")
+        @Experimental(sinceAzora: "0.0.1")
         func push(element: T) {
             if size >= capacity { self.growStack() }
             data[size] = element
@@ -106,7 +106,7 @@ friend zone std {
          * @return The removed top element.
          * @throws AssertionError if the stack is empty.
          */
-        @Experimental(since: "0.0.1")
+        @Experimental(sinceAzora: "0.0.1")
         func pop(): T {
             assert size > 0 { "Stack is empty" }
             fin top = data[size - 1]
@@ -120,14 +120,14 @@ friend zone std {
          * @return The top element.
          * @throws AssertionError if the stack is empty.
          */
-        @Experimental(since: "0.0.1")
+        @Experimental(sinceAzora: "0.0.1")
         func peek(): T {
             assert size > 0 { "Stack is empty" }
             return data[size - 1]
         }
 
         /** Removes all elements from the stack. */
-        @Experimental(since: "0.0.1")
+        @Experimental(sinceAzora: "0.0.1")
         func clear() {
             fin oldData = data
             self.data = alloc T[8]
@@ -143,7 +143,7 @@ friend zone std {
          *
          * @return A string in the format "[bottom, ..., top]".
          */
-        @Experimental(since: "0.0.1")
+        @Experimental(sinceAzora: "0.0.1")
         func toString(): String {
             var s = "["
             var i = 0

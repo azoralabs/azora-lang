@@ -41,7 +41,7 @@ import std.string
 
 friend zone std {
     /** Errors raised by validation, parsing, and unsafe temporal arithmetic. */
-    @Experimental(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     fail TimeError {
         InvalidDuration,
         InvalidDate,
@@ -53,7 +53,7 @@ friend zone std {
     }
 
     /** Days of the ISO week, ordered from Monday through Sunday. */
-    @Experimental(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     enum Weekday {
         Monday
         Tuesday
@@ -70,7 +70,7 @@ friend zone std {
      * The canonical representation keeps `nanosecondAdjustment` in
      * `0..999,999,999`; negative fractions are carried in `seconds`.
      */
-    @Experimental(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     @Serializable
     pack Duration {
         shield fin seconds: Long = 0L
@@ -78,7 +78,7 @@ friend zone std {
     }
 
     /** A point on the Unix time line, independent of any calendar or offset. */
-    @Experimental(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     @Serializable
     pack Instant {
         shield fin epochSecond: Long
@@ -86,13 +86,13 @@ friend zone std {
     }
 
     /** Opaque reading from a monotonic clock, used only for elapsed time. */
-    @Experimental(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     pack MonotonicInstant {
         shield fin readingNanoseconds: Long
     }
 
     /** A validated proleptic-Gregorian calendar date. */
-    @Experimental(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     @Serializable
     pack LocalDate {
         shield fin year: Int
@@ -101,7 +101,7 @@ friend zone std {
     }
 
     /** A validated time of day with nanosecond precision. */
-    @Experimental(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     @Serializable
     pack LocalTime {
         shield fin hour: Int
@@ -111,14 +111,14 @@ friend zone std {
     }
 
     /** Fixed displacement from UTC, constrained to the ISO range of +/-18:00. */
-    @Experimental(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     @Serializable
     pack UtcOffset {
         shield fin totalSeconds: Int = 0
     }
 
     /** A local civil date and time paired with a fixed UTC offset. */
-    @Experimental(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     @Serializable
     pack DateTime {
         fin date: LocalDate
@@ -127,7 +127,7 @@ friend zone std {
     }
 
     /** Source of wall-clock and monotonic time. Injectable clocks make tests deterministic. */
-    @Experimental(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     spec Clock {
         /** Returns the current Unix instant. */
         func now(): Instant
@@ -137,10 +137,10 @@ friend zone std {
     }
 
     /** Host-backed implementation of `Clock`. */
-    @Experimental(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     pack SystemClock
 
-    @Experimental(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     impl Clock for SystemClock {
         func now(): Instant { ref self ->
             return instantFromEpochNanoseconds(az_time_unix_nanoseconds())
@@ -152,7 +152,7 @@ friend zone std {
     }
 
     /** Creates a normalized duration from seconds plus an arbitrary nanosecond adjustment. */
-    @Experimental(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     func duration(seconds: Long, nanosecondAdjustment: Long = 0L): Duration {
         var normalizedSeconds = seconds + nanosecondAdjustment / 1000000000L
         var normalizedNanos = nanosecondAdjustment % 1000000000L
@@ -164,31 +164,31 @@ friend zone std {
     }
 
     /** Creates a duration measured in whole nanoseconds. */
-    @Experimental(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     func nanoseconds(value: Long): Duration = duration(0L, value)
 
     /** Creates a duration measured in whole microseconds. */
-    @Experimental(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     func microseconds(value: Long): Duration = duration(0L, value * 1000L)
 
     /** Creates a duration measured in whole milliseconds. */
-    @Experimental(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     func milliseconds(value: Long): Duration = duration(0L, value * 1000000L)
 
     /** Creates a duration measured in whole seconds. */
-    @Experimental(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     func seconds(value: Long): Duration = duration(value)
 
     /** Creates a duration measured in whole minutes. */
-    @Experimental(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     func minutes(value: Long): Duration = duration(value * 60L)
 
     /** Creates a duration measured in fixed 60-minute hours. */
-    @Experimental(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     func hours(value: Long): Duration = duration(value * 3600L)
 
     /** Creates a duration measured in fixed 24-hour days. */
-    @Experimental(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     func days(value: Long): Duration = duration(value * 86400L)
 
     impl Duration {
@@ -221,24 +221,24 @@ friend zone std {
     }
 
     /** Creates a normalized Unix instant. */
-    @Experimental(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     func instant(epochSecond: Long, nanosecondAdjustment: Long = 0L): Instant {
         fin normalized = duration(epochSecond, nanosecondAdjustment)
         return Instant(normalized.seconds, normalized.nanosecondAdjustment)
     }
 
     /** Converts a signed Unix nanosecond count to a normalized instant. */
-    @Experimental(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     func instantFromEpochNanoseconds(value: Long): Instant {
         return instant(0L, value)
     }
 
     /** Returns the current wall-clock instant from the system clock. */
-    @Experimental(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     func now(): Instant = SystemClock().now()
 
     /** Returns the current monotonic reading from the system clock. */
-    @Experimental(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     func monotonicNow(): MonotonicInstant = SystemClock().monotonicNow()
 
     impl Instant {
@@ -286,13 +286,13 @@ friend zone std {
     }
 
     /** Returns whether `year` is a leap year in the proleptic Gregorian calendar. */
-    @Experimental(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     func isLeapYear(year: Int): Bool {
         return year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
     }
 
     /** Returns the number of days in a validated month. */
-    @Experimental(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     func daysInMonth(year: Int, month: Int): Int!TimeError {
         if month < 1 || month > 12 { fail return .InvalidDate }
         if month == 2 {
@@ -304,14 +304,14 @@ friend zone std {
     }
 
     /** Creates and validates a Gregorian date. */
-    @Experimental(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     func localDate(year: Int, month: Int, day: Int): LocalDate!TimeError {
         if day < 1 || day > try daysInMonth(year, month) { fail return .InvalidDate }
         return LocalDate(year, month, day)
     }
 
     /** Creates and validates a local time of day. Leap seconds are not accepted. */
-    @Experimental(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     func localTime(hour: Int, minute: Int, second: Int, nanosecond: Int = 0): LocalTime!TimeError {
         if hour < 0 || hour > 23 { fail return .InvalidTime }
         if minute < 0 || minute > 59 { fail return .InvalidTime }
@@ -321,14 +321,14 @@ friend zone std {
     }
 
     /** Creates a validated fixed UTC offset. */
-    @Experimental(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     func utcOffset(totalSeconds: Int): UtcOffset!TimeError {
         if totalSeconds < -64800 || totalSeconds > 64800 { fail return .InvalidOffset }
         return UtcOffset(totalSeconds)
     }
 
     /** Creates a validated fixed UTC offset from signed hours and minutes. */
-    @Experimental(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     func utcOffsetOf(hours: Int, minutes: Int = 0): UtcOffset!TimeError {
         if minutes < 0 || minutes > 59 { fail return .InvalidOffset }
         if hours < -18 || hours > 18 { fail return .InvalidOffset }
@@ -341,7 +341,7 @@ friend zone std {
     }
 
     /** Creates a validated offset date-time. */
-    @Experimental(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     func dateTime(date: LocalDate, time: LocalTime, offset: UtcOffset): DateTime {
         return DateTime(date, time, offset)
     }
@@ -364,7 +364,7 @@ friend zone std {
     }
 
     /** Converts a date-time to its unique Unix instant. */
-    @Experimental(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     func toInstant(value: ref DateTime): Instant {
         fin epochDay = daysFromCivil(value.date.year, value.date.month, value.date.day)
         fin localSecond = epochDay * 86400L +
@@ -375,7 +375,7 @@ friend zone std {
     }
 
     /** Converts an instant to a date-time at the requested fixed offset. */
-    @Experimental(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     func atOffset(value: ref Instant, offset: UtcOffset): DateTime {
         fin localSecond = value.epochSecond + offset.totalSeconds as Long
         fin epochDay = floorDiv(localSecond, 86400L)
@@ -388,7 +388,7 @@ friend zone std {
     }
 
     /** Returns the ISO weekday for a date. */
-    @Experimental(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     func weekday(value: ref LocalDate): Weekday {
         fin epochDay = daysFromCivil(value.year, value.month, value.day)
         fin index = floorMod(epochDay + 3L, 7L) as Int
@@ -402,7 +402,7 @@ friend zone std {
     }
 
     /** Formats a date-time using the canonical ISO-8601 extended representation. */
-    @Experimental(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     func formatIsoDateTime(value: ref DateTime): String {
         var result = pad4(value.date.year) + "-" + pad2(value.date.month) + "-" + pad2(value.date.day) +
             "T" + pad2(value.time.hour) + ":" + pad2(value.time.minute) + ":" + pad2(value.time.second)
@@ -421,7 +421,7 @@ friend zone std {
     }
 
     /** Formats an instant in canonical UTC ISO-8601 form. */
-    @Experimental(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     func formatIsoInstant(value: ref Instant): String {
         return formatIsoDateTime(atOffset(value, UtcOffset(0)))
     }
@@ -433,7 +433,7 @@ friend zone std {
      * `+/-HH:MM:SS` when second precision is required.
      * Fractional seconds may contain one through nine digits.
      */
-    @Experimental(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     func parseIsoDateTime(value: String): DateTime!TimeError {
         fin length = stringLength(value)
         if length < 20 { fail return .InvalidFormat }
@@ -504,16 +504,16 @@ friend zone std {
     }
 
     /** Parses canonical UTC instant text. */
-    @Experimental(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     func parseIsoInstant(value: String): Instant!TimeError {
         return toInstant(try parseIsoDateTime(value))
     }
 
     /** Serializer that represents `Instant` as canonical UTC ISO-8601 text. */
-    @Experimental(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     pack InstantSerializer
 
-    @Experimental(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     impl Serializer<Instant> for InstantSerializer {
         func toSerialValue(value: ref Instant): SerialValue!SerializationError { ref self ->
             return SerialValue.Text(formatIsoInstant(value))
@@ -534,10 +534,10 @@ friend zone std {
     }
 
     /** Serializer that represents `DateTime` as canonical offset ISO-8601 text. */
-    @Experimental(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     pack DateTimeSerializer
 
-    @Experimental(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     impl Serializer<DateTime> for DateTimeSerializer {
         func toSerialValue(value: ref DateTime): SerialValue!SerializationError { ref self ->
             return SerialValue.Text(formatIsoDateTime(value))
@@ -558,10 +558,10 @@ friend zone std {
     }
 
     /** Serializer that preserves the normalized split representation of `Duration`. */
-    @Experimental(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     pack DurationSerializer
 
-    @Experimental(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     impl Serializer<Duration> for DurationSerializer {
         func toSerialValue(value: ref Duration): SerialValue!SerializationError { ref self ->
             var fields = List<SerialField>()

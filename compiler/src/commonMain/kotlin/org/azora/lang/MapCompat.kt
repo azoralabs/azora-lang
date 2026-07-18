@@ -24,7 +24,7 @@ package org.azora.lang
  * Callers rely on the "do not overwrite an existing entry" semantics (e.g. stdlib symbol indexing
  * where the first definition wins, and singleton caching under concurrency).
  */
-internal inline fun <K, V> MutableMap<K, V>.putIfAbsentCompat(key: K, value: V): V? {
+internal fun <K, V> MutableMap<K, V>.putIfAbsentCompat(key: K, value: V): V? {
     val existing = get(key)
     if (existing == null && !containsKey(key)) put(key, value)
     return existing

@@ -66,7 +66,7 @@ object StdlibInjector {
          * Top-level items that must be injected into every unit unconditionally,
          * gathered from `export module …` declarations (and the conventional
          * `<root>.root` module). Kept as raw items — in particular a `deepinline
-         * zone { … }` block is injected whole so CTFE flattens it downstream,
+         * zone { … }` block is injected whole so CTCE flattens it downstream,
          * exactly as it would inside its own module.
          */
         val alwaysInjectedItems = mutableListOf<TopLevel>()
@@ -120,7 +120,7 @@ object StdlibInjector {
                     is TopLevel.LetDecl -> register(item.name, item)
                     is TopLevel.VarDecl -> register(item.name, item)
                     // Compile-time constants from `impl zone` / inline blocks (e.g.
-                    // `Int::MAX_VALUE`). Folded away by CTFE once injected.
+                    // `Int::MAX_VALUE`). Folded away by CTCE once injected.
                     is TopLevel.InlineFin -> register(item.name, item)
                     is TopLevel.InlineLet -> register(item.name, item)
                     is TopLevel.InlineVar -> register(item.name, item)
@@ -142,7 +142,7 @@ object StdlibInjector {
                     }
                     // `deepinline zone { … }` and similar compile-time blocks (e.g.
                     // `std.config`) carry their declarations opaquely; inject them
-                    // whole so CTFE flattens them downstream just as it would in
+                    // whole so CTCE flattens them downstream just as it would in
                     // the module itself, rather than lifting each nested constant.
                     is TopLevel.InlineBlock, is TopLevel.DeepInlineBlock,
                     is TopLevel.InlineIf, is TopLevel.DeepInlineIf ->

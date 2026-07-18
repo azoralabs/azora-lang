@@ -156,7 +156,7 @@ class DecoratorResolver {
         return valid
     }
 
-    /** Reject obvious literal mistakes while leaving general CTFE expressions to type resolution. */
+    /** Reject obvious literal mistakes while leaving general CTCE expressions to type resolution. */
     private fun literalMatches(expected: TypeRef, value: Expr): Boolean {
         val name = (expected as? TypeRef.Named)?.name ?: return true
         return when (value) {

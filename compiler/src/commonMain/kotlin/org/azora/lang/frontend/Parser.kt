@@ -3020,7 +3020,7 @@ class Parser(private val tokens: List<Token>) {
     /**
      * `mixin "<string>"` — converts a string into code at compile time. The string
      * is parsed as Azora source and spliced in place (wrapped in an inline block
-     * that CTFE flattens). Constant strings are expanded here; `$var` interpolation
+     * that CTCE flattens). Constant strings are expanded here; `$var` interpolation
      * requires a comptime context (`inline for … with index`) and is handled by the
      * variadic-pack machinery instead.
      */

@@ -34,7 +34,7 @@ friend zone std {
      * @param x The value.
      * @return The same value.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func identity<T>(x: T): T = x
 
     /**
@@ -44,7 +44,7 @@ friend zone std {
      * @param f The transformation function.
      * @return A new array with transformed elements.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func map<T>(arr: [T], f: (T) -> T): [T] {
         var result: [T] = [].fill<T>(arr.length)
         var i = 0
@@ -62,7 +62,7 @@ friend zone std {
      * @param pred The predicate function.
      * @return A filtered array.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func filter<T>(arr: [T], pred: (T) -> Bool): [T] {
         var tmp: [T] = [].fill<T>(arr.length)
         var count = 0
@@ -91,7 +91,7 @@ friend zone std {
      * @param f The accumulator function taking (accumulator, element).
      * @return The final accumulated value.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func reduce<T>(arr: [T], initial: T, f: (T, T) -> T): T {
         var acc = initial
         var i = 0
@@ -108,7 +108,7 @@ friend zone std {
      * @param arr The source array.
      * @param action The function to apply.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func forEach<T>(arr: [T], action: (T) -> Unit) {
         var i = 0
         while i < arr.length {
@@ -124,7 +124,7 @@ friend zone std {
      * @param pred The predicate function.
      * @return true if at least one element matches.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func any<T>(arr: [T], pred: (T) -> Bool): Bool {
         var i = 0
         while i < arr.length {
@@ -141,7 +141,7 @@ friend zone std {
      * @param pred The predicate function.
      * @return true if every element matches.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func all<T>(arr: [T], pred: (T) -> Bool): Bool {
         var i = 0
         while i < arr.length {
@@ -158,7 +158,7 @@ friend zone std {
      * @param pred The predicate function.
      * @return true if no element matches.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func none<T>(arr: [T], pred: (T) -> Bool): Bool {
         var i = 0
         while i < arr.length {
@@ -175,7 +175,7 @@ friend zone std {
      * @param n The number of elements to take.
      * @return A new array with at most n elements.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func take<T>(arr: [T], n: Int): [T]
     in {
         assert n >= 0 { "take count must be non-negative" }
@@ -197,7 +197,7 @@ friend zone std {
      * @param n The number of elements to skip.
      * @return A new array without the first n elements.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func drop<T>(arr: [T], n: Int): [T]
     in {
         assert n >= 0 { "drop count must be non-negative" }
@@ -221,7 +221,7 @@ friend zone std {
      * @param b The second array.
      * @return An array of [a[i], b[i]] pairs, up to the shorter length.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func zip<T>(a: [T], b: [T]): [T] {
         fin len = if a.length < b.length { a.length } else { b.length }
         var result: [T] = [].fill<[T]>(len)
@@ -240,7 +240,7 @@ friend zone std {
      * @param count The number of elements.
      * @return A new array of count elements, all set to value.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func fill<T>(value: T, count: Int): [T]
     in {
         assert count >= 0 { "fill count must be non-negative" }
@@ -261,7 +261,7 @@ friend zone std {
      * @param f The generator function taking the index.
      * @return A new array of generated elements.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func generate<T>(count: T, f: (T) -> T): [T] {
         var result: [T] = [].fill<T>(count)
         var i = 0
@@ -279,7 +279,7 @@ friend zone std {
      * @param pred The predicate function.
      * @return The count of matching elements.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func countWhere<T>(arr: [T], pred: (T) -> Bool): Int {
         var c = 0
         var i = 0
@@ -298,7 +298,7 @@ friend zone std {
      * @param default The default value if no match.
      * @return The first matching element or default.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func findOr<T>(arr: [T], pred: (T) -> Bool, default: T): T {
         var i = 0
         while i < arr.length {
@@ -311,7 +311,7 @@ friend zone std {
     /**
      * Maps each element to an array and flattens the results.
      */
-    @Experimental(since: "0.0.2")
+    @Experimental(sinceAzora: "0.0.2")
     func flatMap<T>(arr: [T], f: (T) -> [T]): [T] {
         // Two-pass: first count total, then fill
         var total = 0
@@ -341,7 +341,7 @@ friend zone std {
      * Left fold with a separate accumulator type.
      * Since Azora generics are single-type, accumulator uses same type T.
      */
-    @Experimental(since: "0.0.2")
+    @Experimental(sinceAzora: "0.0.2")
     func fold<T>(arr: [T], initial: T, f: (T, T) -> T): T {
         var acc: T = initial
         var i = 0
@@ -355,7 +355,7 @@ friend zone std {
     /**
      * Like reduce but returns all intermediate accumulator values.
      */
-    @Experimental(since: "0.0.2")
+    @Experimental(sinceAzora: "0.0.2")
     func scan<T>(arr: [T], initial: T, f: (T, T) -> T): [T] {
         var result: [T] = [].fill<T>(arr.length + 1)
         var acc: T = initial
@@ -373,7 +373,7 @@ friend zone std {
      * Maps with index: f(index, element).
      * Returns transformed array. Index passed as first element of a 2-element array.
      */
-    @Experimental(since: "0.0.2")
+    @Experimental(sinceAzora: "0.0.2")
     func mapIndexed<T>(arr: [T], f: (T, T) -> T): [T] {
         var result: [T] = [].fill<T>(arr.length)
         var i = 0
@@ -387,7 +387,7 @@ friend zone std {
     /**
      * Calls function N times, collecting results.
      */
-    @Experimental(since: "0.0.2")
+    @Experimental(sinceAzora: "0.0.2")
     func repeatCall<T>(count: T, f: () -> T): [T] {
         var result: [T] = [].fill<T>(count)
         var idx = 0
@@ -401,7 +401,7 @@ friend zone std {
     /**
      * Returns the first element matching the predicate, or default.
      */
-    @Experimental(since: "0.0.2")
+    @Experimental(sinceAzora: "0.0.2")
     func firstWhere<T>(arr: [T], pred: (T) -> Bool, default: T): T {
         var i = 0
         while i < arr.length {
@@ -416,7 +416,7 @@ friend zone std {
     /**
      * Returns the last element matching the predicate, or default.
      */
-    @Experimental(since: "0.0.2")
+    @Experimental(sinceAzora: "0.0.2")
     func lastWhere<T>(arr: [T], pred: (T) -> Bool, default: T): T {
         var result: T = default
         var i = 0
@@ -433,7 +433,7 @@ friend zone std {
      * Splits an array into two: elements matching pred and elements not matching.
      * Returns a 2-element array: [matching, nonMatching].
      */
-    @Experimental(since: "0.0.2")
+    @Experimental(sinceAzora: "0.0.2")
     func partition<T>(arr: [T], pred: (T) -> Bool): [T] {
         var yes: [T] = [].fill<T>(arr.length)
         var no: [T] = [].fill<T>(arr.length)
@@ -469,7 +469,7 @@ friend zone std {
     /**
      * Splits array into chunks of given size.
      */
-    @Experimental(since: "0.0.2")
+    @Experimental(sinceAzora: "0.0.2")
     func chunk<T>(arr: [T], size: Int): [T] {
         fin numChunks = (arr.length + size - 1) / size
         var result: [T] = [].fill<[T]>(numChunks)
@@ -494,7 +494,7 @@ friend zone std {
     /**
      * Flattens a nested array by one level.
      */
-    @Experimental(since: "0.0.2")
+    @Experimental(sinceAzora: "0.0.2")
     func flatten<T>(arr: [T]): [T] {
         // Two-pass: count total, then fill
         var total = 0
@@ -522,7 +522,7 @@ friend zone std {
     /**
      * Removes all duplicate elements (not just consecutive), preserving first occurrence.
      */
-    @Experimental(since: "0.0.2")
+    @Experimental(sinceAzora: "0.0.2")
     func distinct<T>(arr: [T]): [T] {
         var tmp: [T] = [].fill<T>(arr.length)
         var ri = 0
@@ -554,7 +554,7 @@ friend zone std {
     /**
      * Returns a new array with elements in the given index range.
      */
-    @Experimental(since: "0.0.2")
+    @Experimental(sinceAzora: "0.0.2")
     func slice<T>(arr: [T], start: Int, end: Int): [T] {
         fin actualEnd = if end < arr.length { end } else { arr.length }
         fin len = if actualEnd > start { actualEnd - start } else { 0 }

@@ -34,35 +34,35 @@ friend zone std {
      *
      * @param T the pointee type.
      */
-    @Since("0.0.3")
+    @SinceAzora("0.0.3")
     pack<T> Ptr {
         confine var raw: T*
     }
 
-    @Experimental(since: "0.0.3")
+    @Experimental(sinceAzora: "0.0.3")
     impl deref for Ptr<T> { ref self ->
         return deref self.raw
     }
 
     impl Ptr<T> {
         /** The pointed-to value. */
-        @Since("0.0.3")
+        @SinceAzora("0.0.3")
         prop get: T = deref self.raw
 
         /** Replaces the pointed-to value. */
-        @Experimental(since: "0.0.3")
+        @Experimental(sinceAzora: "0.0.3")
         func set(value: T) { self.raw[0] = value }
 
         /** The underlying `T*` (escapes the wrapper). */
-        @Since("0.0.3")
+        @SinceAzora("0.0.3")
         prop ptr: T* = self.raw
 
         /** Whether this wrapper holds a non-null pointer. */
-        @Since("0.0.3")
+        @SinceAzora("0.0.3")
         prop isNull: Bool = self.raw == null
     }
 
-    @Experimental(since: "0.0.3")
+    @Experimental(sinceAzora: "0.0.3")
     func ptrOf<T>(value: T): Ptr<T> {
         return Ptr(alloc value)
     }

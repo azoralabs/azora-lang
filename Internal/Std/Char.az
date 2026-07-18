@@ -35,7 +35,7 @@ friend zone std {
      * @param c The character to convert.
      * @return The integer code point.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func charToCode(c: Char): Int {
         return ord(c)
     }
@@ -46,7 +46,7 @@ friend zone std {
      * @param code The code point (must be a valid Unicode value).
      * @return The character at the given code point.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func codeToChar(code: Int): Char
     in {
         assert code >= 0 { "Code point must be non-negative" }
@@ -60,7 +60,7 @@ friend zone std {
      * @param c The character to check.
      * @return true if c is a digit.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func charIsDigit(c: Char): Bool {
         return isDigit(c)
     }
@@ -71,7 +71,7 @@ friend zone std {
      * @param c The character to check.
      * @return true if c is a letter.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func charIsAlpha(c: Char): Bool {
         return isAlpha(c)
     }
@@ -82,7 +82,7 @@ friend zone std {
      * @param c The character to check.
      * @return true if c is a letter or digit.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func charIsAlphanumeric(c: Char): Bool {
         return isAlphanumeric(c)
     }
@@ -93,7 +93,7 @@ friend zone std {
      * @param c The character to check.
      * @return true if c is an uppercase letter.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func charIsUpper(c: Char): Bool {
         return isUpper(c)
     }
@@ -104,7 +104,7 @@ friend zone std {
      * @param c The character to check.
      * @return true if c is a lowercase letter.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func charIsLower(c: Char): Bool {
         return isLower(c)
     }
@@ -115,7 +115,7 @@ friend zone std {
      * @param c The character to check.
      * @return true if c is a whitespace character.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func charIsWhitespace(c: Char): Bool {
         return isWhitespace(c)
     }
@@ -126,7 +126,7 @@ friend zone std {
      * @param c The character to convert.
      * @return The uppercase version of c.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func charToUpper(c: Char): Char {
         return toUpper(c)
     }
@@ -137,7 +137,7 @@ friend zone std {
      * @param c The character to convert.
      * @return The lowercase version of c.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func charToLower(c: Char): Char {
         return toLower(c)
     }
@@ -148,7 +148,7 @@ friend zone std {
      * @param c The character to check.
      * @return true if c is in the ASCII range.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func charIsAscii(c: Char): Bool {
         fin code = ord(c)
         return code >= 0 && code <= 127
@@ -160,7 +160,7 @@ friend zone std {
      * @param c The character to check.
      * @return true if c is printable.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func charIsPrintable(c: Char): Bool {
         fin code = ord(c)
         return code >= 32 && code <= 126
@@ -172,7 +172,7 @@ friend zone std {
      * @param c The character to check.
      * @return true if c is a hex digit.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func charIsHexDigit(c: Char): Bool {
         fin code = ord(c)
         return (code >= 48 && code <= 57) ||
@@ -186,7 +186,7 @@ friend zone std {
      * @param c The hex digit character.
      * @return The integer value (0-15).
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func hexDigitToInt(c: Char): Int
     in {
         assert (charIsHexDigit(c)) { "Character must be a hex digit" }
@@ -203,7 +203,7 @@ friend zone std {
      * @param c The digit character.
      * @return The integer value (0-9).
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func digitToInt(c: Char): Int
     in {
         assert (isDigit(c)) { "Character must be a digit" }
@@ -217,7 +217,7 @@ friend zone std {
      * @param n The integer to convert.
      * @return The digit character.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func intToDigit(n: Int): Char
     in {
         assert n >= 0 && n <= 9 { "Integer must be 0-9" }

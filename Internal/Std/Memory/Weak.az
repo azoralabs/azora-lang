@@ -17,12 +17,12 @@ module std.memory.weak
  */
 
 friend zone std {
-    @Since("0.0.3")
+    @SinceAzora("0.0.3")
     pack<T> Weak {
         confine var raw: T*
     }
 
-    @Experimental(since: "0.0.3")
+    @Experimental(sinceAzora: "0.0.3")
     impl deref for Weak<T> { ref self ->
         assert self.raw != null { "Weak pointer is null" }
         return deref self.raw
@@ -30,23 +30,23 @@ friend zone std {
 
     impl Weak<T> {
         /** Returns the referenced value (panics if the pointer is null). */
-        @Experimental(since: "0.0.3")
+        @Experimental(sinceAzora: "0.0.3")
         prop get: T {
             assert self.raw != null { "Weak pointer is null" }
             return deref self.raw
         }
 
         /** Returns the raw `T*` (may be null). */
-        @Since("0.0.3")
+        @SinceAzora("0.0.3")
         prop ptr: T* = self.raw
 
         /** `true` when the pointer is null (does not own a reference). */
-        @Since("0.0.3")
+        @SinceAzora("0.0.3")
         prop isNull: Bool = self.raw == null
     }
 
     /** Wraps a raw `T*` as a non-owning `Weak<T>`. */
-    @Experimental(since: "0.0.3")
+    @Experimental(sinceAzora: "0.0.3")
     func weakOf<T>(ptr: T*): Weak<T> {
         return Weak(ptr)
     }

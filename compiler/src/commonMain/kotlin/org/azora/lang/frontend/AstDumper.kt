@@ -16,7 +16,7 @@ fun Program.dumpTree(): String {
 }
 
 /**
- * Renders stability decorators (`@Experimental(since: "0.0.1")` / `@Stable(since: "1.0.0")`)
+ * Renders stability decorators (`@Experimental(sinceAzora: "0.0.1")` / `@Stable(sinceAzora: "1.0.0")`)
  * as a compact suffix for the AST dump, so they surface in compiler output / docs tooling.
  */
 private fun stabilityNote(annotations: List<Annotation>): String {

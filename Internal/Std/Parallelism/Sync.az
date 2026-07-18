@@ -37,7 +37,7 @@ friend zone std {
      *
      * @param T The type of the protected value.
      */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     pack<T> Guard {
         confine var mutex: Mutex = Mutex(0)
         confine var value: T
@@ -49,7 +49,7 @@ friend zone std {
          *
          * @param action The function to execute with the current value.
          */
-        @Experimental(since: "0.0.1")
+        @Experimental(sinceAzora: "0.0.1")
         func read(action: (T) -> Unit) {
             mutex.lock()
             action(value)
@@ -61,7 +61,7 @@ friend zone std {
          *
          * @param action The function that receives the current value and returns the new value.
          */
-        @Experimental(since: "0.0.1")
+        @Experimental(sinceAzora: "0.0.1")
         func write(action: (T) -> T) {
             mutex.lock()
             self.value = action(value)
@@ -73,7 +73,7 @@ friend zone std {
          *
          * @return The current value.
          */
-        @Experimental(since: "0.0.1")
+        @Experimental(sinceAzora: "0.0.1")
         func get(): T {
             mutex.lock()
             fin v = value
@@ -88,7 +88,7 @@ friend zone std {
      *
      * @param T The type of the count value.
      */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     pack<T> CountDownLatch {
         var count: T
         confine var atomic: Atomic = Atomic(0)
@@ -98,7 +98,7 @@ friend zone std {
         /**
          * Decrements the latch count by one.
          */
-        @Experimental(since: "0.0.1")
+        @Experimental(sinceAzora: "0.0.1")
         func countDown() {
             atomic.add(1)
         }
@@ -106,7 +106,7 @@ friend zone std {
         /**
          * Whether the latch count has been reached.
          */
-        @Experimental(since: "0.0.1")
+        @Experimental(sinceAzora: "0.0.1")
         prop isReached: Bool = atomic.load() >= count
     }
 
@@ -118,7 +118,7 @@ friend zone std {
      *
      * @param T Unused type parameter for template registration.
      */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     pack<T> SpinLock {
         confine var flag: Atomic = Atomic(0)
     }
@@ -127,7 +127,7 @@ friend zone std {
         /**
          * Acquires the lock, spinning until successful.
          */
-        @Experimental(since: "0.0.1")
+        @Experimental(sinceAzora: "0.0.1")
         func acquire() {
             while !flag.cas(0, 1) { }
         }
@@ -135,7 +135,7 @@ friend zone std {
         /**
          * Releases the lock.
          */
-        @Experimental(since: "0.0.1")
+        @Experimental(sinceAzora: "0.0.1")
         func release() {
             flag.store(0)
         }
@@ -145,7 +145,7 @@ friend zone std {
          *
          * @param action The function to execute under lock.
          */
-        @Experimental(since: "0.0.1")
+        @Experimental(sinceAzora: "0.0.1")
         func withLock(action: () -> Unit) {
             self.acquire()
             action()
@@ -159,7 +159,7 @@ friend zone std {
      * @param mutex The mutex to lock.
      * @param action The function to execute while holding the lock.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(sinceAzora: "0.0.1")
     func withMutex<T>(mutex: T, action: () -> Unit) {
         mutex.lock()
         action()

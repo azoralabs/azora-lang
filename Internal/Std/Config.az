@@ -17,7 +17,7 @@
 export module std.config
 
 deepinline zone {
-    @Since("0.0.4")
+    @SinceAzora("0.0.4")
     enum CompilerTarget {
         Interpret,
         Native,
@@ -28,24 +28,24 @@ deepinline zone {
     /**
      * Overriden by compiler flag -Target=Native
      */
-    @Since("0.0.4")
+    @SinceAzora("0.0.4")
     fin TARGET: CompilerTarget = CompilerTarget.Interpret
 
     /**
      * Overriden by compiler flag --debug and --release
      */
-    @Since("0.0.4")
+    @SinceAzora("0.0.4")
     fin DEBUG: Bool = true
 
     /**
      * Overriden by compiler flag --debug and --release
      */
-    @Since("0.0.4")
+    @SinceAzora("0.0.4")
     fin RELEASE: Bool = !DEBUG
 
     /**
      * Overriden by compiler flag --test
      */
-    @Since("0.0.4")
+    @SinceAzora("0.0.4")
     fin TEST_MODE: Bool = false
 }

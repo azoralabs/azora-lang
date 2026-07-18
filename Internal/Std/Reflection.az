@@ -42,7 +42,7 @@ friend zone std {
      * `std::reflect<T>`. Its members (`.hasDeco<D>`, `.decoMeta<D>`, `.zone`) are
      * resolved by the compiler; `bridge pack` means no struct is emitted.
      */
-    @Stable(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     bridge pack<T> Reflected
 
     /**
@@ -50,6 +50,6 @@ friend zone std {
      * (`std::reflect<T>`). `includeInherited` also surfaces decorators inherited
      * from base declarations when set.
      */
-    @Experimental(since: "0.0.4")
+    @Experimental(sinceAzora: "0.0.4")
     bridge func<T> reflect(includeInherited: Bool = false): Reflected<T>
 }

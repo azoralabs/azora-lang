@@ -23,8 +23,8 @@ import org.azora.lang.frontend.Stmt
 /**
  * Semantic — Effect Checking.
  *
- * Runs AFTER types are fully resolved (post-CTFE stabilization) because
- * CTFE-generated functions carry effects too.
+ * Runs AFTER types are fully resolved (post-CTCE stabilization) because
+ * CTCE-generated functions carry effects too.
  *
  * Responsibilities (when the language grows):
  *  - Validate `effect` annotations: ensure functions only perform
@@ -76,7 +76,7 @@ class EffectChecker {
      * Uses a two-pass algorithm: first identifies functions with external calls
      * as impure, then propagates impurity through the call graph until stable.
      *
-     * @param program the CTFE-stabilized, type-checked AST to analyze
+     * @param program the CTCE-stabilized, type-checked AST to analyze
      * @return an [EffectResult] containing per-function effect info and any errors
      */
     fun check(program: Program): EffectResult {

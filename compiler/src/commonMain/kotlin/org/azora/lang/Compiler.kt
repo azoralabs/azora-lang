@@ -49,11 +49,11 @@ import org.azora.lang.semantic.VariadicMonomorphizer
  *     6. Fixed-Point Loop:
  *          repeat:
  *            Type Resolution (Pass 2): resolve + infer types
- *            CTFE (Pass 3):            evaluate compile-time functions
+ *            CTCE (Pass 3):            evaluate compile-time functions
  *            fold results back into AST
  *          until stable
- *     7. Alloc/Drop Analysis:         ownership + liveness (post-CTFE)
- *     8. Effect Checking:             purity + side-effect propagation (post-CTFE)
+ *     7. Alloc/Drop Analysis:         ownership + liveness (post-CTCE)
+ *     8. Effect Checking:             purity + side-effect propagation (post-CTCE)
  *
  *   Phase 3 — IR Generation
  *     9.  AST → typed IR
@@ -72,7 +72,7 @@ sealed class CompilationResult {
      * @property javascript the generated JavaScript source code
      * @property wasm the generated WebAssembly text (WAT)
      * @property llvm the generated LLVM IR text
-     * @property ast the CTFE-stabilized AST after semantic analysis
+     * @property ast the CTCE-stabilized AST after semantic analysis
      * @property ir the typed IR before optimization
      * @property optimizedIr the typed IR after optimization passes
      * @property effects the per-function effect classifications
@@ -101,7 +101,7 @@ sealed class CompilationResult {
  * Full compiler pipeline orchestrator.
  *
  * Drives all four phases: frontend (lexer, parser, AST validation),
- * semantic analysis (multi-pass with CTFE), IR generation with optimization,
+ * semantic analysis (multi-pass with CTCE), IR generation with optimization,
  * and backend code generation to three targets — JavaScript, WebAssembly, and
  * LLVM IR — all from one optimized IR.
  */
@@ -175,10 +175,10 @@ class Compiler {
         }
 
         // ===============================================================
-        // Phase 2 — Semantic Analysis (multi-pass with CTFE loop)
+        // Phase 2 — Semantic Analysis (multi-pass with CTCE loop)
         // ===============================================================
 
-        // Passes 4-8: symbol collection → imports → type resolution ⇄ CTFE → alloc/drop → effects
+        // Passes 4-8: symbol collection → imports → type resolution ⇄ CTCE → alloc/drop → effects
         val semantic = SemanticPipeline().analyze(ast)
 
         val warnings = semantic.errors.filter { it.startsWith("warning:") }
@@ -195,7 +195,7 @@ class Compiler {
         // Phase 3 — IR Generation + Optimization
         // ===============================================================
 
-        // 9. AST → typed IR (uses the CTFE-stabilized program)
+        // 9. AST → typed IR (uses the CTCE-stabilized program)
         val ir = IrGenerator(semantic.symbolTable).generate(semantic.program)
 
         // 10. IR optimization passes (release mode only)

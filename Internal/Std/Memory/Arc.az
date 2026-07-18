@@ -34,35 +34,35 @@ friend zone std {
      *
      * @param T the pointee type.
      */
-    @Since("0.0.3")
+    @SinceAzora("0.0.3")
     pack<T> Arc {
         shield var raw: T*
         shield var count: Int
     }
 
-    @Experimental(since: "0.0.3")
+    @Experimental(sinceAzora: "0.0.3")
     impl deref for Arc<T> { ref self ->
         return deref self.raw
     }
 
     impl Arc<T> {
         /** The pointed-to value. */
-        @Since("0.0.3")
+        @SinceAzora("0.0.3")
         prop get: T = deref self.raw
 
         /** Replaces the pointed-to value without changing ownership. */
-        @Experimental(since: "0.0.3")
+        @Experimental(sinceAzora: "0.0.3")
         func set(value: T) { self.raw[0] = value }
 
         /** Records a new shared owner. Returns the new reference count. */
-        @Experimental(since: "0.0.3")
+        @Experimental(sinceAzora: "0.0.3")
         func retain(): Int {
             self.count = self.count + 1
             return self.count
         }
 
         /** Drops a shared owner; reclaims the allocation when the count reaches zero. */
-        @Experimental(since: "0.0.3")
+        @Experimental(sinceAzora: "0.0.3")
         func release(): Int {
             self.count = self.count - 1
             if self.count <= 0 {
@@ -72,15 +72,15 @@ friend zone std {
         }
 
         /** The current number of live references. */
-        @Since("0.0.3")
+        @SinceAzora("0.0.3")
         prop refCount: Int = self.count
 
         /** The underlying `T*` (escapes the counting). */
-        @Since("0.0.3")
+        @SinceAzora("0.0.3")
         prop ptr: T* = self.raw
     }
 
-    @Experimental(since: "0.0.3")
+    @Experimental(sinceAzora: "0.0.3")
     func arcOf<T>(value: T): Arc<T> {
         return Arc(alloc value, 1)
     }

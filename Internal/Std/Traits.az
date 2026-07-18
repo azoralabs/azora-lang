@@ -36,158 +36,158 @@ friend zone std {
      * Types implementing Numeric can be used with standard math operators
      * and the promote type function.
      */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     spec Numeric
 
     /** Int satisfies the Numeric spec. */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     impl Numeric for Int
 
     /** Real satisfies the Numeric spec. */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     impl Numeric for Real
 
     /** Types that support equality comparison via == and !=. */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     spec Equatable
 
     /** Int supports equality comparison. */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     impl Equatable for Int
 
     /** Real supports equality comparison. */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     impl Equatable for Real
 
     /** String supports equality comparison. */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     impl Equatable for String
 
     /** Char supports equality comparison. */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     impl Equatable for Char
 
     /** Bool supports equality comparison. */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     impl Equatable for Bool
 
     /** Types that support ordering via < and >. */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     spec Comparable
 
     /** Int supports ordering. */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     impl Comparable for Int
 
     /** Real supports ordering. */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     impl Comparable for Real
 
     /** String supports ordering. */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     impl Comparable for String
 
     /** Char supports ordering. */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     impl Comparable for Char
 
-    @Since("0.0.4")
+    @SinceAzora("0.0.4")
     impl Into<String> for Int { ref self ->
         return self as String
     }
 
-    @Since("0.0.4")
+    @SinceAzora("0.0.4")
     impl Into<String> for Real { ref self ->
         return self as String
     }
 
-    @Since("0.0.4")
+    @SinceAzora("0.0.4")
     impl Into<String> for Char { ref self ->
         return self as String
     }
 
-    @Since("0.0.4")
+    @SinceAzora("0.0.4")
     impl Into<String> for Bool { ref self ->
         return self as String
     }
 
     /** Types that can be hashed. */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     spec Hashable
 
     /** Int is hashable. */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     impl Hashable for Int
 
     /** String is hashable. */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     impl Hashable for String
 
     /** Char is hashable. */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     impl Hashable for Char
 
     /** Bool is hashable. */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     impl Hashable for Bool
 
     /** Types that can be copied. */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     spec Copyable
 
     /** Int is copyable. */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     impl Copyable for Int
 
     /** Real is copyable. */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     impl Copyable for Real
 
     /** String is copyable. */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     impl Copyable for String
 
     /** Char is copyable. */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     impl Copyable for Char
 
     /** Bool is copyable. */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     impl Copyable for Bool
 
     /** Types that support deep copying. */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     spec Cloneable
 
     /** Int is cloneable. */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     impl Cloneable for Int
 
     /** Real is cloneable. */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     impl Cloneable for Real
 
     /** String is cloneable. */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     impl Cloneable for String
 
     /** Char is cloneable. */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     impl Cloneable for Char
 
     /** Bool is cloneable. */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     impl Cloneable for Bool
 
     /**
      * Types that can be iterated over.
      */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     spec Iterable
 
     /**
      * An iterator that produces values one at a time.
      */
-    @Since("0.0.1")
+    @SinceAzora("0.0.1")
     spec Iterator
 }

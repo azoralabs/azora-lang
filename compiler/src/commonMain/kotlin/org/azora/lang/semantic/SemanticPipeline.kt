@@ -21,7 +21,7 @@ import org.azora.lang.frontend.Program
 /**
  * Result of the complete semantic analysis pipeline.
  *
- * @property program the CTFE-stabilized, type-checked AST
+ * @property program the CTCE-stabilized, type-checked AST
  * @property symbolTable the fully populated symbol table
  * @property effects the per-function effect classifications from [EffectChecker]
  * @property errors all errors and warnings collected across all semantic passes
@@ -49,26 +49,26 @@ data class SemanticResult(
  *            repeat:
  *              run TypeResolver (type resolution + inference)
  *              run CtfeEvaluator (compile-time function execution)
- *              fold CTFE results back into AST
+ *              fold CTCE results back into AST
  *            until AST is stable (no changes) or max iterations reached
  *            ```
  *
  *   Pass 4 — [AllocDropAnalyzer]: With types fully resolved, analyze alloc/drop
- *            pairs, ownership, and liveness. Post-CTFE because generated code
+ *            pairs, ownership, and liveness. Post-CTCE because generated code
  *            may introduce new allocations.
  *
  *   Pass 5 — [EffectChecker]: Validate effect annotations, purity, side-effect
- *            propagation. Post-CTFE because generated functions carry effects too.
+ *            propagation. Post-CTCE because generated functions carry effects too.
  *
  * Key design decisions:
  *  - Separate "declaration semantic" (Pass 1) from "body semantic" (Pass 3).
  *    A function's signature is resolved before its body, so other code can
  *    depend on it without waiting for the body to be analyzed.
- *  - CTFE shares the compiler's type system — no separate evaluator types.
+ *  - CTCE shares the compiler's type system — no separate evaluator types.
  *  - Fixed-point loop with max iterations prevents infinite metaprogramming.
  */
 /**
- * @param maxCtfeIterations maximum number of CTFE fixed-point iterations before
+ * @param maxCtfeIterations maximum number of CTCE fixed-point iterations before
  *   reporting a convergence failure (default: 100)
  */
 class SemanticPipeline(
@@ -78,8 +78,8 @@ class SemanticPipeline(
     /**
      * Runs the complete multi-pass semantic analysis on the given program.
      *
-     * Executes all passes in order: top-level CTFE, symbol collection, import
-     * resolution, CTFE fixed-point loop with type resolution, alloc/drop analysis,
+     * Executes all passes in order: top-level CTCE, symbol collection, import
+     * resolution, CTCE fixed-point loop with type resolution, alloc/drop analysis,
      * and effect checking.
      *
      * @param program the parsed AST (output of [Parser] and [AstValidator])
@@ -91,7 +91,7 @@ class SemanticPipeline(
         val allErrors = mutableListOf<String>()
 
         // ---------------------------------------------------------------
-        // Pass 0: Top-Level CTFE
+        // Pass 0: Top-Level CTCE
         // Resolve top-level inline constructs (inline if, deepinline, etc.)
         // BEFORE symbol collection. This flattens conditional function
         // declarations so SymbolCollector can see them.
@@ -106,7 +106,7 @@ class SemanticPipeline(
         }
         currentProgram = topResult.program
         // Top-level compile-time constants are folded out of the AST here (before
-        // symbol collection). Preserve them so the fixed-point CTFE pass can make
+        // symbol collection). Preserve them so the fixed-point CTCE pass can make
         // them visible inside function bodies — this is what lets exported
         // `std.config` flags be read anywhere without an import.
         val topLevelConstants = topLevelCtfe.topLevelConstants
@@ -134,15 +134,15 @@ class SemanticPipeline(
         }
 
         // ---------------------------------------------------------------
-        // Pass 3: Fixed-Point CTFE Loop
+        // Pass 3: Fixed-Point CTCE Loop
         //
         //   repeat:
-        //     run CTFE on anything that's ready
+        //     run CTCE on anything that's ready
         //     fold results back into AST
         //     run type resolution on the cleaned AST
         //   until AST is stable (no new changes)
         //
-        // CTFE runs first so that `inline fin` and `inline if` are
+        // CTCE runs first so that `inline fin` and `inline if` are
         // resolved before TypeResolver sees them. This matches the
         // approach: compile-time constructs are evaluated first, then
         // the resulting code is type-checked.
@@ -154,7 +154,7 @@ class SemanticPipeline(
         while (iteration < maxCtfeIterations) {
             iteration++
 
-            // CTFE — evaluate compile-time expressions and fold into AST
+            // CTCE — evaluate compile-time expressions and fold into AST
             val ctfeResult = CtfeEvaluator(table)
                 .apply { seedConstants = topLevelConstants }
                 .evaluate(currentProgram)
@@ -170,7 +170,7 @@ class SemanticPipeline(
             if (!ctfeResult.changed) break
         }
 
-        // Type Resolution + Inference (on the CTFE-stabilized AST)
+        // Type Resolution + Inference (on the CTCE-stabilized AST)
         val typeErrors = TypeResolver(table).resolve(currentProgram)
         if (typeErrors.isNotEmpty()) {
             allErrors.addAll(typeErrors)
@@ -178,21 +178,21 @@ class SemanticPipeline(
         }
 
         if (iteration >= maxCtfeIterations) {
-            allErrors.add("CTFE stabilization did not converge after $maxCtfeIterations iterations")
+            allErrors.add("CTCE stabilization did not converge after $maxCtfeIterations iterations")
             return SemanticResult(currentProgram, table, emptyList(), allErrors)
         }
 
         // ---------------------------------------------------------------
         // Pass 4: Alloc / Drop Analysis
-        // With types fully resolved (post-CTFE), analyze ownership and
-        // liveness. CTFE-generated code may introduce new allocations.
+        // With types fully resolved (post-CTCE), analyze ownership and
+        // liveness. CTCE-generated code may introduce new allocations.
         // ---------------------------------------------------------------
         val allocErrors = AllocDropAnalyzer().analyze(currentProgram)
         allErrors.addAll(allocErrors)
 
         // ---------------------------------------------------------------
         // Pass 5: Effect Checking
-        // Validate effect annotations and purity. Post-CTFE because
+        // Validate effect annotations and purity. Post-CTCE because
         // generated functions carry effects too.
         // ---------------------------------------------------------------
         val effectResult = EffectChecker().check(currentProgram)

@@ -37,7 +37,7 @@ import kotlin.collections.iterator
  * Walks every function body, resolves expression types, and verifies
  * that all type constraints are satisfied (assignments, returns, call args).
  *
- * This pass runs on the CTFE-stabilized AST, so all compile-time constructs
+ * This pass runs on the CTCE-stabilized AST, so all compile-time constructs
  * (`inline if`, `inline fin`, etc.) have already been evaluated and removed.
  * Any remaining inline constructs are reported as errors.
  *

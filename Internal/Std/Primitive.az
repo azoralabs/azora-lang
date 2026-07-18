@@ -58,6 +58,21 @@ bridge pack Real
 @Experimental(sinceAzora: "0.0.4")
 bridge pack Decimal
 
+@Experimental(sinceAzora: "0.0.4")
+spec Integer
+
+@Experimental(sinceAzora: "0.0.4")
+spec UnsignedInteger
+
+@Experimental(sinceAzora: "0.0.4")
+spec SignedInteger
+
+@Experimental(sinceAzora: "0.0.4")
+spec FloatingPoint
+
+@Experimental(sinceAzora: "0.0.4")
+spec Number
+
 impl zone for Byte {
     @SinceAzora("0.0.4") inline fin MIN_VALUE: Int = -128
     @SinceAzora("0.0.4") inline fin MAX_VALUE: Int = 127
@@ -68,7 +83,7 @@ impl zone for UByte {
     @SinceAzora("0.0.4") inline fin MAX_VALUE: Int = 255
 }
 
-impl zone for Byte + UByte {
+impl zone for [Byte, UByte] {
     @SinceAzora("0.0.4") inline fin SIZE_BYTES: Int = 1
     @SinceAzora("0.0.4") inline fin SIZE_BITS: Int = 8
 }
@@ -83,7 +98,7 @@ impl zone for UShort {
     @SinceAzora("0.0.4") inline fin MAX_VALUE: Int = 65_535
 }
 
-impl zone for Short + UShort {
+impl zone for [Short, UShort] {
     @SinceAzora("0.0.4") inline fin SIZE_BYTES: Int = 2
     @SinceAzora("0.0.4") inline fin SIZE_BITS: Int = 16
 }
@@ -98,7 +113,7 @@ impl zone for UInt {
     @SinceAzora("0.0.4") inline fin MAX_VALUE: Int = 4_294_967_295
 }
 
-impl zone for Int + UInt {
+impl zone for [Int, UInt] {
     @SinceAzora("0.0.4") inline fin SIZE_BYTES: Int = 4
     @SinceAzora("0.0.4") inline fin SIZE_BITS: Int = 32
 }
@@ -113,7 +128,7 @@ impl zone for ULong {
     @SinceAzora("0.0.4") inline fin MAX_VALUE: Long = 18_446_744_073_709_551_615L
 }
 
-impl zone for Long + ULong {
+impl zone for [Long, ULong] {
     @SinceAzora("0.0.4") inline fin SIZE_BYTES: Int = 8
     @SinceAzora("0.0.4") inline fin SIZE_BITS: Int = 64
 }
@@ -163,12 +178,17 @@ impl zone for Decimal {
     @SinceAzora("0.0.4") inline fin MAX_EXPONENT: Int = 6144
 }
 
-confine inline fin uintPrimitives: [String] = ["UByte", "UShort", "UInt", "ULong", "UCent"]
-confine inline fin sintPrimitives: [String] = ["Byte", "Short", "Int", "Long", "Cent"]
-confine inline fin intPrimitives: [String] = uintPrimitives ~ sintPrimitives // append keyword like D
-confine inline fin realPrimitives: [String] = ["Float", "Real", "Decimal"]
-confine inline fin signedPrimitives: [String] = sintPrimitives ~ realPrimitives
-confine inline fin primitives: [String] = intPrimitives ~ realPrimitives
+let UnsignedIntegers: [Type] = [UByte, UShort, UInt, ULong, UCent]
+let SignedIntegers: [Type] = [Byte, Short, Int, Long, Cent]
+let Integers: [Type] = UnsignedIntegerList ~ SignedIntegerList // append keyword like D
+let FloatingPoints: [Type] = [Float, Real, Decimal]
+let Numbers: [Type] = Integers ~ FloatingPoints
+
+impl UnsignedInteger for UnsignedIntegers
+impl SignedInteger for SignedIntegers
+impl Integer for Integers
+impl FloatingPoint for FloatingPoints
+impl Number for Numbers
 
 // Bool operators
 inline for op in ["==", "!=", "&", "|", "^"] {
@@ -178,52 +198,54 @@ inline for op in ["==", "!=", "&", "|", "^"] {
 
 // Unary arithmetic operators
 inline for op in ["+", "-"] {
-    inline for ty in signedPrimitives {
+    inline for Ty in SignedIntegers {
         @Experimental(sinceAzora: "0.0.4")
-        bridge impl oper $op for $ty: $ty(ref self)
+        bridge impl oper $op for Ty: Ty(ref self)
     }
 }
 
 // Bitwise complement: signed and unsigned integers
-inline for ty in intPrimitives {
+inline for Ty in Integers {
     @Experimental(sinceAzora: "0.0.4")
-    bridge impl oper~ for $ty: $ty(ref self)
+    bridge impl oper~ for Ty: Ty(ref self)
 }
 
 // Arithmetic operators: cross-type numeric operands
-/*inline for op in ["+", "-", "*", "/", "%"] {
-    inline for lhsTy in primitives {
-        inline for rhsTy in primitives {
+inline for op in ["+", "-", "*", "/", "%"] {
+    inline for LhsTy in primitives {
+        inline for RhsTy in primitives {
             @Experimental(sinceAzora: "0.0.4")
-            bridge impl oper $op for $lhsTy: promote!($lhsTy, $rhsTy)(ref self, rhs: $rhsTy)
+            bridge impl oper $op for LhsTy:
+                std.traits.std::promote!(LhsTy, RhsTy)(ref self, rhs: RhsTy)
         }
     }
 }
 
 // Bitwise operators: cross-type integer operands
 inline for op in ["&", "|", "^"] {
-    inline for lhsTy in intPrimitives {
-        inline for rhsTy in intPrimitives {
+    inline for LhsTy in intPrimitives {
+        inline for RhsTy in intPrimitives {
             @Experimental(sinceAzora: "0.0.4")
-            bridge impl oper $op for $lhsTy: promote!($lhsTy, $rhsTy)(ref self, rhs: $rhsTy)
+            bridge impl oper $op for LhsTy:
+                std.traits.std::promote!(LhsTy, RhsTy)(ref self, rhs: RhsTy)
         }
     }
-}*/
+}
 
 // Shift operators: integer value, UInt shift count
 inline for op in ["<<", ">>"] {
-    inline for ty in intPrimitives {
+    inline for Ty in Integers {
         @Experimental(sinceAzora: "0.0.4")
-        bridge impl oper $op for $ty: $ty (ref self, rhs: UInt)
+        bridge impl oper $op for Ty: Ty (ref self, rhs: UInt)
     }
 }
 
 // Cross-type comparison operators
 inline for op in ["<", ">", "<=", ">=", "==", "!="] {
-    inline for lhsTy in primitives {
-        inline for rhsTy in primitives {
+    inline for LhsTy in Numbers {
+        inline for RhsTy in Numbers {
             @Experimental(sinceAzora: "0.0.4")
-            bridge impl oper $op for $lhsTy: Bool(ref self, rhs: $rhsTy)
+            bridge impl oper $op for LhsTy: Bool(ref self, rhs: RhsTy)
         }
     }
 }

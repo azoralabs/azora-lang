@@ -23,6 +23,8 @@ import org.azora.lang.frontend.Program
 import org.azora.lang.frontend.Stmt
 import org.azora.lang.frontend.TopLevel
 import org.azora.lang.frontend.TypeAnnotation
+import org.azora.lang.frontend.TypeFunctionCall
+import org.azora.lang.frontend.TypeFunctionDecl
 import org.azora.lang.frontend.TypeRef
 import org.azora.lang.putIfAbsentCompat
 
@@ -54,6 +56,11 @@ object StdlibInjector {
         val roots = LinkedHashSet<String>()
         /** module ("std.math") → name → the item providing it. */
         val modules = LinkedHashMap<String, LinkedHashMap<String, TopLevel>>()
+        /** Compile-time type functions are indexed separately because they emit no runtime item. */
+        val typeFunctionsByModule = LinkedHashMap<String, MutableList<TypeFunctionDecl>>()
+        /** Qualified or short type-function name -> overloads, for internal library dependencies. */
+        val typeFunctionsByName = LinkedHashMap<String, MutableList<TypeFunctionDecl>>()
+        val alwaysTypeFunctions = mutableListOf<TypeFunctionDecl>()
         /** Flat name → item view (first module wins), for transitive resolution. */
         val items = LinkedHashMap<String, TopLevel>()
         /** name → module that provides it, for import hints. */
@@ -92,6 +99,14 @@ object StdlibInjector {
             idx.roots.add(root)
             idx.moduleVisibility.putIfAbsentCompat(module, program.moduleVisibility)
             val moduleItems = idx.modules.getOrPut(module) { LinkedHashMap() }
+            idx.typeFunctionsByModule.getOrPut(module) { mutableListOf() }.addAll(program.typeFunctions)
+            for (declaration in program.typeFunctions) {
+                idx.typeFunctionsByName.getOrPut(declaration.name) { mutableListOf() }.add(declaration)
+                val shortName = declaration.name.substringAfterLast("__")
+                if (shortName != declaration.name) {
+                    idx.typeFunctionsByName.getOrPut(shortName) { mutableListOf() }.add(declaration)
+                }
+            }
             fun register(name: String, item: TopLevel) {
                 moduleItems.putIfAbsentCompat(name, item)
                 idx.items.putIfAbsentCompat(name, item)
@@ -152,6 +167,7 @@ object StdlibInjector {
             }
             if (alwaysOn) {
                 moduleItems.forEach { (name, item) -> idx.implicitRootItems.putIfAbsentCompat(name, item) }
+                idx.alwaysTypeFunctions.addAll(program.typeFunctions)
             }
         }
         return idx
@@ -172,6 +188,31 @@ object StdlibInjector {
             for ((path, selected) in item.imports) {
                 for ((name, declaration) in itemsVisibleFromImport(path, selected)) {
                     visible.putIfAbsentCompat(name, declaration)
+                }
+            }
+        }
+        return visible
+    }
+
+    private fun importedTypeFunctions(program: Program): List<TypeFunctionDecl> {
+        val visible = mutableListOf<TypeFunctionDecl>()
+        for (item in program.items) {
+            if (item !is TopLevel.UseImport) continue
+            for ((path, selected) in item.imports) {
+                val modules = when {
+                    index.typeFunctionsByModule.containsKey(path) -> listOf(path)
+                    else -> index.typeFunctionsByModule.keys.filter { it.startsWith("$path.") }
+                }.filter(::isExternallyImportable)
+                for (module in modules) {
+                    val declarations = index.typeFunctionsByModule[module].orEmpty()
+                    val selectedDeclarations = if (selected == null) declarations else declarations.filter { declaration ->
+                        declaration.name == selected || declaration.name.substringAfterLast("__") == selected
+                    }
+                    for (declaration in selectedDeclarations) {
+                        visible.add(declaration)
+                        val shortName = declaration.name.substringAfterLast("__")
+                        if (shortName != declaration.name) visible.add(declaration.copy(name = shortName))
+                    }
                 }
             }
         }
@@ -257,7 +298,9 @@ object StdlibInjector {
      * is rejected. Returns the program unchanged when nothing is referenced.
      */
     fun inject(program: Program): Program {
-        if (index.items.isEmpty() && index.externs.isEmpty()) return program
+        if (index.items.isEmpty() && index.externs.isEmpty() && index.typeFunctionsByModule.isEmpty()) return program
+
+        val importedTypeFunctions = index.alwaysTypeFunctions + importedTypeFunctions(program)
 
         val shadowed = userDeclaredNames(program)
 
@@ -299,7 +342,28 @@ object StdlibInjector {
             frontier = next
         }
 
-        if (injected.isEmpty() && injectedExterns.isEmpty() && index.alwaysInjectedItems.isEmpty()) return program
+        // Runtime declarations may depend on private compile-time type functions.
+        // Resolve those dependencies without making them visible merely because
+        // user source mentioned an unimported type-function name.
+        val dependencyNames = mutableSetOf<String>()
+        injected.values.forEach { collectNamesFromItem(it, dependencyNames) }
+        index.alwaysInjectedItems.forEach { collectNamesFromItem(it, dependencyNames) }
+        val dependencyTypeFunctions = dependencyNames.flatMap { name ->
+            index.typeFunctionsByName[name].orEmpty()
+        }
+        val userTypeNames = mutableSetOf<String>()
+        program.items.forEach { collectNamesFromItem(it, userTypeNames) }
+        val qualifiedTypeFunctions = userTypeNames
+            .filter { "__" in it }
+            .flatMap { name -> index.typeFunctionsByName[name].orEmpty() }
+        // Injection runs twice; remove the exact same declaration object while
+        // preserving independently declared duplicate signatures for diagnostics.
+        val typeFunctions = (
+            program.typeFunctions + importedTypeFunctions + dependencyTypeFunctions + qualifiedTypeFunctions
+        ).distinct()
+        val typeFunctionsChanged = typeFunctions.size != program.typeFunctions.size
+
+        if (injected.isEmpty() && injectedExterns.isEmpty() && index.alwaysInjectedItems.isEmpty() && !typeFunctionsChanged) return program
         // One declaration can be indexed by both its qualified and short export
         // names. Preserve discovery order while appending each AST item once.
         val existingIdentities = program.items.mapTo(mutableSetOf()) { itemIdentity(it) }
@@ -307,8 +371,11 @@ object StdlibInjector {
         val externDeclarations = injectedExterns.values.distinct().filter { existingIdentities.add(itemIdentity(it)) }
         // Exported/root compile-time blocks are injected unconditionally.
         val alwaysDeclarations = index.alwaysInjectedItems.filter { existingIdentities.add(itemIdentity(it)) }
-        if (declarations.isEmpty() && externDeclarations.isEmpty() && alwaysDeclarations.isEmpty()) return program
-        return program.copy(items = program.items + declarations + externDeclarations + alwaysDeclarations)
+        if (declarations.isEmpty() && externDeclarations.isEmpty() && alwaysDeclarations.isEmpty() && !typeFunctionsChanged) return program
+        return program.copy(
+            items = program.items + declarations + externDeclarations + alwaysDeclarations,
+            typeFunctions = typeFunctions,
+        )
     }
 
     private fun itemIdentity(item: TopLevel): String = when (item) {
@@ -687,7 +754,7 @@ object StdlibInjector {
     private fun collectNamesFromTypeRef(ref: TypeRef, names: MutableSet<String>) {
         when (ref) {
             is TypeRef.Named -> {
-                names.add(ref.name)
+                names.add(if (TypeFunctionCall.isCall(ref)) TypeFunctionCall.name(ref) else ref.name)
                 ref.args.forEach { collectNamesFromTypeRef(it, names) }
             }
             is TypeRef.Array -> collectNamesFromTypeRef(ref.element, names)

@@ -732,15 +732,37 @@ class TypeResolver(private val table: SymbolTable) {
                 if (isGeneric) {
                     val funcDecl = program?.functions?.find { it.name == expr.callee }
                     if (funcDecl != null) {
-                        val bindings = mutableMapOf<String, IrType>()
+                        val bindings = mutableMapOf<String, List<TypeRef>>()
+                        for ((index, typeParam) in func.typeParams.withIndex()) {
+                            expr.typeArgs.getOrNull(index)?.let { bindings[typeParam] = listOf(it) }
+                        }
                         for (i in funcDecl.params.indices) {
                             val paramRef = funcDecl.params[i].type
                             if (paramRef is TypeRef.Named && paramRef.name in func.typeParams && i < argTypes.size) {
-                                bindings[paramRef.name] = argTypes[i]
+                                bindings.putIfAbsent(paramRef.name, listOf(typeRefOf(argTypes[i])))
+                            } else if (funcDecl.params[i].variadic && paramRef is TypeRef.Array) {
+                                val element = paramRef.element as? TypeRef.Named
+                                if (element != null && element.name in func.typeParams) {
+                                    bindings[element.name] = argTypes.drop(i).map(::typeRefOf)
+                                }
                             }
                         }
-                        val retRef = (funcDecl.returnType as? TypeAnnotation.Explicit)?.ref
-                        if (retRef is TypeRef.Named && retRef.name in bindings) return bindings[retRef.name]!!
+                        val retRef = func.returnTypeRef
+                        if (retRef != null) {
+                            try {
+                                val resolved = TypeFunctionEvaluator.resolve(
+                                    retRef,
+                                    program?.typeFunctions.orEmpty(),
+                                    substitutions = bindings,
+                                )
+                                if (resolved !is TypeRef.Named || !org.azora.lang.frontend.TypeFunctionCall.isCall(resolved)) {
+                                    return IrType.resolve(resolved)
+                                }
+                            } catch (error: IllegalStateException) {
+                                errors.add("line ${expr.line}: ${error.message}")
+                                return null
+                            }
+                        }
                     }
                 }
                 if (expr.callee == "async") {
@@ -1081,7 +1103,7 @@ class TypeResolver(private val table: SymbolTable) {
             is Expr.Spread -> { resolveExpr(expr.array) ?: return null; IrType.Any }
             is Expr.Cast -> {
                 resolveExpr(expr.expr) ?: return null
-                val target = IrType.resolve(expr.targetType)
+                val target = resolveDeclaredType(expr.targetType)
                 // A dynamic cast (`x as? T`) may fail, so its result is `T?`.
                 if (expr.kind == CastKind.DYNAMIC && target !is IrType.Nullable) IrType.Nullable(target) else target
             }
@@ -1116,7 +1138,7 @@ class TypeResolver(private val table: SymbolTable) {
                 // Infer the implicit `it` parameter's type from context when available.
                 val paramTypes = expr.params.map { p ->
                     if (p.name == "it" && p.type == TypeRef.Named("Any") && expectedItType != null) expectedItType!!
-                    else IrType.resolve(p.type)
+                    else resolveDeclaredType(p.type)
                 }
                 table.pushScope()
                 for (i in expr.params.indices) {
@@ -1346,6 +1368,38 @@ class TypeResolver(private val table: SymbolTable) {
         return if (ra >= rb) a else b
     }
 
+    /** Converts an inferred IR type back to the source type form used by type functions. */
+    private fun typeRefOf(type: IrType): TypeRef = when (type) {
+        IrType.Int -> TypeRef.Named("Int")
+        IrType.UInt -> TypeRef.Named("UInt")
+        IrType.Real -> TypeRef.Named("Real")
+        IrType.String -> TypeRef.Named("String")
+        IrType.Bool -> TypeRef.Named("Bool")
+        IrType.Unit -> TypeRef.Named("Unit")
+        IrType.Char -> TypeRef.Named("Char")
+        IrType.Byte -> TypeRef.Named("Byte")
+        IrType.UByte -> TypeRef.Named("UByte")
+        IrType.Short -> TypeRef.Named("Short")
+        IrType.UShort -> TypeRef.Named("UShort")
+        IrType.Long -> TypeRef.Named("Long")
+        IrType.ULong -> TypeRef.Named("ULong")
+        IrType.Cent -> TypeRef.Named("Cent")
+        IrType.UCent -> TypeRef.Named("UCent")
+        IrType.Float -> TypeRef.Named("Float")
+        IrType.Decimal -> TypeRef.Named("Decimal")
+        IrType.Any -> TypeRef.Named("Any")
+        is IrType.Array -> TypeRef.Array(typeRefOf(type.element))
+        is IrType.Map -> TypeRef.Map(typeRefOf(type.key), typeRefOf(type.value))
+        is IrType.Set -> TypeRef.Set(typeRefOf(type.element))
+        is IrType.Function -> TypeRef.Function(type.params.map(::typeRefOf), typeRefOf(type.ret))
+        is IrType.Task -> TypeRef.Named("Task", listOf(typeRefOf(type.result)))
+        is IrType.Tuple -> TypeRef.Tuple(type.elements.map(::typeRefOf))
+        is IrType.Variant -> TypeRef.Named("Var", type.elements.map(::typeRefOf))
+        is IrType.Nullable -> TypeRef.Nullable(typeRefOf(type.inner))
+        is IrType.Pointer -> TypeRef.Pointer(typeRefOf(type.inner))
+        is IrType.Named -> TypeRef.Named(type.name)
+    }
+
     private fun resolveBinaryType(op: TokenType, left: IrType, right: IrType, line: Int): IrType? {
         // Operator overloading on user types
         if (left is IrType.Named && left == right) {
@@ -1463,10 +1517,20 @@ class TypeResolver(private val table: SymbolTable) {
             // and, inside an impl method, those of the receiver struct.
             val tpSet = currentFuncTypeParams +
                 (currentReceiverType?.let { table.lookupStruct(it)?.typeParams?.toSet() } ?: emptySet())
-            IrType.resolve(ref, tpSet)
+            resolveDeclaredType(ref, tpSet)
         } catch (e: Exception) {
             errors.add("line $line: ${e.message}")
             null
         }
     }
+
+    private fun resolveDeclaredType(ref: TypeRef, typeParams: Set<String> = currentFuncTypeParams): IrType =
+        IrType.resolve(
+            TypeFunctionEvaluator.resolve(
+                ref,
+                program?.typeFunctions.orEmpty(),
+                unresolvedParams = typeParams,
+            ),
+            typeParams,
+        )
 }

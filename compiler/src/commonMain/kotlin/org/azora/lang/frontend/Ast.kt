@@ -950,7 +950,11 @@ sealed class TypeRef {
 
     /** A named type, optionally generic: `Int`, `List<Int>`. */
     data class Named(val name: String, val args: List<TypeRef> = emptyList(), val variadic: Boolean = false) : TypeRef() {
-        override fun toString() = if (args.isEmpty()) name else "$name<${args.joinToString(", ")}>"
+        override fun toString() = when {
+            TypeFunctionCall.isCall(this) -> "${TypeFunctionCall.name(this)}!(${args.joinToString(", ")})"
+            args.isEmpty() -> name
+            else -> "$name<${args.joinToString(", ")}>"
+        }
     }
 
     /** Fixed array type `[T]`. */
@@ -1074,6 +1078,15 @@ data class TypeFunctionCondition(
     val right: TypeFunctionExpr,
     val compareRank: Boolean,
 )
+
+/** Internal encoding for a type-level `name!(...)` call inside a [TypeRef]. */
+object TypeFunctionCall {
+    private const val PREFIX = "__azora_type_function__"
+
+    fun create(name: String, args: List<TypeRef>): TypeRef.Named = TypeRef.Named(PREFIX + name, args)
+    fun isCall(ref: TypeRef.Named): Boolean = ref.name.startsWith(PREFIX)
+    fun name(ref: TypeRef.Named): String = ref.name.removePrefix(PREFIX)
+}
 
 /**
  * Represents a type annotation on a variable or return type.

@@ -47,6 +47,24 @@ friend zone std {
     @SinceAzora("0.0.1")
     impl Numeric for Real
 
+    /**
+     * Chooses the type with the highest primitive promotion rank.
+     *
+     * Promotion is evaluated entirely at compile time. Exact user-defined
+     * `type promote(...)` overloads may specialize pairs, while this variadic
+     * overload provides the standard result for two or more primitive types.
+     *
+     * @param T Two or more primitive types to compare.
+     * @return The widest type in T according to Type.rank.
+     */
+    type promote(T: ...Type) where T.length >= 2 {
+        let Result: Type = T.0
+        for Candidate in T[1...] {
+            Result = if Candidate.rank > Result.rank { Candidate } else { Result }
+        }
+        return Result
+    }
+
     /** Types that support equality comparison via == and !=. */
     @SinceAzora("0.0.1")
     spec Equatable

@@ -9,6 +9,15 @@ fun Program.dumpTree(): String {
     if (moduleName != null) {
         sb.appendLine("    module: $moduleName")
     }
+    for (function in typeFunctions) {
+        val params = function.params.joinToString(", ") { param ->
+            "${param.name}: ${if (param.variadic) "..." else ""}Type"
+        }
+        val constraint = function.minVariadicLength?.let { minimum ->
+            " where ${function.variadicParam}.length >= $minimum"
+        }.orEmpty()
+        sb.appendLine("    TypeFunction(name=${function.name}, params=[$params]$constraint)")
+    }
     for (item in items) {
         dumpTopLevel(sb, item, "    ")
     }

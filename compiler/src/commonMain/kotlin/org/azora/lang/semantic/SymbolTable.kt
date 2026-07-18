@@ -19,6 +19,7 @@ package org.azora.lang.semantic
 import org.azora.lang.frontend.Visibility
 import org.azora.lang.frontend.MemberCallStyle
 import org.azora.lang.frontend.DecoTarget
+import org.azora.lang.frontend.TypeRef
 import org.azora.lang.ir.IrType
 
 /**
@@ -42,6 +43,8 @@ data class FunctionSymbol(
     val isUnsafe: Boolean = false,
     val visibility: Visibility = Visibility.EXPOSE,
     val memberCallStyle: MemberCallStyle = MemberCallStyle.NORMAL,
+    /** Source return type retained for generic compile-time type-function evaluation. */
+    val returnTypeRef: TypeRef? = null,
 )
 
 /**

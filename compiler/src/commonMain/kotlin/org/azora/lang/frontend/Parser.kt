@@ -39,6 +39,11 @@ package org.azora.lang.frontend
  */
 class Parser(private val tokens: List<Token>) {
 
+    /** Compile-time type functions are declarations, but never runtime top-level items. */
+    private val typeFunctions = mutableListOf<TypeFunctionDecl>()
+    /** Namespace used to qualify unqualified type-function calls inside a zone. */
+    private var typeFunctionNamespacePrefix = ""
+
     /**
      * Extra top-level items synthesized while parsing another declaration:
      * bridge alias wrappers and normalized decorator/target list applications.
@@ -138,6 +143,7 @@ class Parser(private val tokens: List<Token>) {
             when {
                 isZoneBlockAhead() -> body.addAll(parseZoneBlock())
                 check(TokenType.ZONE) && peekNext()?.type == TokenType.IDENTIFIER -> body.addAll(parseNamedZone())
+                check(TokenType.TYPE) -> parseTypeFunction()
                 isInline -> body.add(parseTopLevelBlockItem(deepInline = true))
                 else -> body.add(parseTopLevel())
             }
@@ -243,6 +249,8 @@ class Parser(private val tokens: List<Token>) {
                 items.addAll(parseZoneBlock())
             } else if (isFriendZoneNamespaceAhead()) {
                 items.addAll(parseFriendZoneNamespace())
+            } else if (check(TokenType.TYPE)) {
+                parseTypeFunction()
             } else {
                 items.add(parseTopLevel())
             }
@@ -256,7 +264,15 @@ class Parser(private val tokens: List<Token>) {
         }
         val localPackNames = items.filterIsInstance<TopLevel.Pack>().mapTo(mutableSetOf()) { it.name }
         val normalized = CallbackImplNormalizer.normalize(
-            Program(moduleName, items, localPackNames, isExported, moduleVisibility, zoneMetaByName.toMap())
+            Program(
+                moduleName,
+                items,
+                localPackNames,
+                isExported,
+                moduleVisibility,
+                zoneMetaByName.toMap(),
+                typeFunctions = typeFunctions.toList(),
+            )
         )
         return IntraZoneRewriter.rewrite(normalized)
     }
@@ -320,28 +336,35 @@ class Parser(private val tokens: List<Token>) {
 
     private fun parseZoneBody(prefix: String): List<TopLevel> {
         val result = mutableListOf<TopLevel>()
-        while (!check(TokenType.R_BRACE) && !isAtEnd()) {
-            skipNewlines()
-            if (check(TokenType.R_BRACE)) break
-            when {
-                isFriendZoneNamespaceAhead() -> result.addAll(parseFriendZoneNamespace(prefix))
-                check(TokenType.ZONE) && peekNext()?.type == TokenType.IDENTIFIER -> {
-                    consume(TokenType.ZONE, "Expected 'zone'")
-                    val inner = consume(TokenType.IDENTIFIER, "Expected zone name").lexeme
-                    consume(TokenType.L_BRACE, "Expected '{' after zone name")
-                    skipNewlines()
-                    result.addAll(parseZoneBody("${prefix}__$inner"))
-                    consume(TokenType.R_BRACE, "Expected '}' after nested zone")
-                    skipNewlines()
-                }
-                else -> {
-                    result.add(mangleTopLevel(parseTopLevel(), prefix))
-                    if (pendingTopLevels.isNotEmpty()) {
-                        result.addAll(pendingTopLevels)
-                        pendingTopLevels.clear()
+        val previousTypeNamespace = typeFunctionNamespacePrefix
+        typeFunctionNamespacePrefix = prefix
+        try {
+            while (!check(TokenType.R_BRACE) && !isAtEnd()) {
+                skipNewlines()
+                if (check(TokenType.R_BRACE)) break
+                when {
+                    isFriendZoneNamespaceAhead() -> result.addAll(parseFriendZoneNamespace(prefix))
+                    check(TokenType.ZONE) && peekNext()?.type == TokenType.IDENTIFIER -> {
+                        consume(TokenType.ZONE, "Expected 'zone'")
+                        val inner = consume(TokenType.IDENTIFIER, "Expected zone name").lexeme
+                        consume(TokenType.L_BRACE, "Expected '{' after zone name")
+                        skipNewlines()
+                        result.addAll(parseZoneBody("${prefix}__$inner"))
+                        consume(TokenType.R_BRACE, "Expected '}' after nested zone")
+                        skipNewlines()
+                    }
+                    check(TokenType.TYPE) -> parseTypeFunction(prefix)
+                    else -> {
+                        result.add(mangleTopLevel(parseTopLevel(), prefix))
+                        if (pendingTopLevels.isNotEmpty()) {
+                            result.addAll(pendingTopLevels)
+                            pendingTopLevels.clear()
+                        }
                     }
                 }
             }
+        } finally {
+            typeFunctionNamespacePrefix = previousTypeNamespace
         }
         return result
     }
@@ -2707,10 +2730,23 @@ class Parser(private val tokens: List<Token>) {
                 // Types are not zone-mangled, so the type resolves by its name; the
                 // zone prefix is consumed and the final segment is used.
                 var typeName = name
+                var qualifiedName = name
                 while (match(TokenType.DOUBLE_COLON)) {
                     typeName = consume(TokenType.IDENTIFIER, "Expected type name after '::' in type path").lexeme
+                    qualifiedName += "__$typeName"
                 }
-                if (match(TokenType.LESS)) {
+                if (match(TokenType.BANG)) {
+                    consume(TokenType.L_PAREN, "Expected '(' after '$typeName!'")
+                    val args = mutableListOf<TypeRef>()
+                    if (!check(TokenType.R_PAREN)) {
+                        do { args.add(parseTypeName()) } while (match(TokenType.COMMA))
+                    }
+                    consume(TokenType.R_PAREN, "Expected ')' after type-function arguments")
+                    val callName = if (qualifiedName == name && typeFunctionNamespacePrefix.isNotEmpty()) {
+                        "${typeFunctionNamespacePrefix}__$qualifiedName"
+                    } else qualifiedName
+                    TypeFunctionCall.create(callName, args)
+                } else if (match(TokenType.LESS)) {
                     val a = mutableListOf<TypeRef>()
                     var variadic = false
                     do {
@@ -3344,6 +3380,198 @@ class Parser(private val tokens: List<Token>) {
         val type = parseTypeName()
         consumeNewline()
         return TopLevel.TypeAlias(name, type, start.line, start.column, annotations)
+    }
+
+    /** Parses `type name(param: Type, pack: ...Type) where pack.length >= N { ... }`. */
+    private fun parseTypeFunction(namespacePrefix: String = "") {
+        val start = consume(TokenType.TYPE, "Expected 'type'")
+        val localName = consume(TokenType.IDENTIFIER, "Expected type-function name").lexeme
+        val name = if (namespacePrefix.isEmpty()) localName else "${namespacePrefix}__$localName"
+        consume(TokenType.L_PAREN, "Expected '(' after type-function name")
+        val params = mutableListOf<TypeFunctionParam>()
+        if (!check(TokenType.R_PAREN)) {
+            do {
+                val param = consume(TokenType.IDENTIFIER, "Expected type-function parameter name").lexeme
+                consume(TokenType.COLON, "Expected ':' after type-function parameter")
+                val prefixVariadic = match(TokenType.ELLIPSIS)
+                val typeToken = consume(TokenType.IDENTIFIER, "Expected 'Type' for type-function parameter")
+                if (typeToken.lexeme != "Type") {
+                    error("Type-function parameter '$param' must have type Type at line ${typeToken.line}")
+                }
+                val suffixVariadic = match(TokenType.ELLIPSIS)
+                if (prefixVariadic && suffixVariadic) {
+                    error("Type-function parameter '$param' cannot repeat '...' at line ${typeToken.line}")
+                }
+                params.add(TypeFunctionParam(param, prefixVariadic || suffixVariadic))
+            } while (match(TokenType.COMMA))
+        }
+        consume(TokenType.R_PAREN, "Expected ')' after type-function parameters")
+        val duplicateParam = params.groupingBy { it.name }.eachCount().entries.firstOrNull { it.value > 1 }
+        if (duplicateParam != null) {
+            error("Duplicate type-function parameter '${duplicateParam.key}' at line ${start.line}")
+        }
+        if (params.count { it.variadic } > 1 || params.dropLast(1).any { it.variadic }) {
+            error("A type function may have one variadic parameter, and it must be last, at line ${start.line}")
+        }
+
+        var minimum: Int? = null
+        if (check(TokenType.IDENTIFIER) && peek().lexeme == "where") {
+            advance()
+            val constrained = consume(TokenType.IDENTIFIER, "Expected parameter name after 'where'").lexeme
+            val variadic = params.lastOrNull()?.takeIf { it.variadic }?.name
+            if (constrained != variadic) {
+                error("Type-function length constraints require the variadic parameter '$variadic' at line ${start.line}")
+            }
+            consume(TokenType.DOT, "Expected '.' after '$constrained'")
+            val property = consume(TokenType.IDENTIFIER, "Expected 'length' in type-function constraint")
+            if (property.lexeme != "length") error("Expected 'length' in type-function constraint at line ${property.line}")
+            consume(TokenType.GREATER_EQUAL, "Expected '>=' in type-function constraint")
+            val value = consume(TokenType.INT_LITERAL, "Expected minimum argument count")
+            minimum = ((value.literal as NumericLiteral).value as Long).toInt()
+        }
+
+        consume(TokenType.L_BRACE, "Expected '{' before type-function body")
+        skipNewlines()
+        val body = parseTypeFunctionBlock()
+        consume(TokenType.R_BRACE, "Expected '}' after type-function body")
+        consumeNewline()
+        if (body.none { it is TypeFunctionStmt.Return }) {
+            error("Type function '$localName' must return a type at line ${start.line}")
+        }
+        val duplicate = typeFunctions.any {
+            it.name == name && it.params.map(TypeFunctionParam::variadic) == params.map(TypeFunctionParam::variadic) &&
+                (it.variadicParam != null || it.params.size == params.size)
+        }
+        if (duplicate) error("Type function '$localName' already has this overload at line ${start.line}")
+        typeFunctions.add(TypeFunctionDecl(name, params, body, minimum, start.line, start.column))
+    }
+
+    private fun parseTypeFunctionBlock(): List<TypeFunctionStmt> {
+        val body = mutableListOf<TypeFunctionStmt>()
+        while (!check(TokenType.R_BRACE) && !isAtEnd()) {
+            skipNewlines()
+            if (check(TokenType.R_BRACE)) break
+            body.add(parseTypeFunctionStmt())
+            skipNewlines()
+        }
+        return body
+    }
+
+    private fun parseTypeFunctionStmt(): TypeFunctionStmt = when {
+        match(TokenType.RETURN) -> {
+            val value = parseTypeFunctionExpr()
+            consumeNewline()
+            TypeFunctionStmt.Return(value)
+        }
+        check(TokenType.LET) || check(TokenType.VAR) || check(TokenType.FIN) -> {
+            val mutable = check(TokenType.VAR)
+            advance()
+            val name = consume(TokenType.IDENTIFIER, "Expected type binding name").lexeme
+            if (match(TokenType.COLON)) {
+                val type = consume(TokenType.IDENTIFIER, "Expected 'Type' after ':'")
+                if (type.lexeme != "Type") error("Type-function bindings must have type Type at line ${type.line}")
+            }
+            consume(TokenType.EQUAL, "Expected '=' in type binding")
+            val value = parseTypeFunctionExpr()
+            consumeNewline()
+            TypeFunctionStmt.Binding(name, value, mutable)
+        }
+        match(TokenType.FOR) -> {
+            val name = consume(TokenType.IDENTIFIER, "Expected type loop variable").lexeme
+            consume(TokenType.IN, "Expected 'in' in type loop")
+            val pack = consume(TokenType.IDENTIFIER, "Expected variadic type parameter").lexeme
+            consume(TokenType.L_BRACKET, "Expected '[' after variadic type parameter")
+            val start = consume(TokenType.INT_LITERAL, "Expected type-pack start index")
+            val startIndex = ((start.literal as NumericLiteral).value as Long).toInt()
+            consume(TokenType.ELLIPSIS, "Expected '...' after type-pack start index")
+            consume(TokenType.R_BRACKET, "Expected ']' after type-pack slice")
+            consume(TokenType.L_BRACE, "Expected '{' before type loop body")
+            skipNewlines()
+            val loopBody = parseTypeFunctionBlock()
+            consume(TokenType.R_BRACE, "Expected '}' after type loop body")
+            consumeNewline()
+            TypeFunctionStmt.ForEach(name, pack, startIndex, loopBody)
+        }
+        check(TokenType.IDENTIFIER) && peekNext()?.type == TokenType.EQUAL -> {
+            val name = advance().lexeme
+            advance()
+            val value = parseTypeFunctionExpr()
+            consumeNewline()
+            TypeFunctionStmt.Assignment(name, value)
+        }
+        else -> error("Expected type-function statement at line ${peek().line}, got '${peek().lexeme}'")
+    }
+
+    private fun parseTypeFunctionExpr(): TypeFunctionExpr {
+        if (match(TokenType.IF)) {
+            val condition = parseTypeFunctionCondition()
+            consume(TokenType.L_BRACE, "Expected '{' after type condition")
+            skipNewlines()
+            val thenValue = parseTypeFunctionExpr()
+            skipNewlines()
+            consume(TokenType.R_BRACE, "Expected '}' after type result")
+            skipNewlines()
+            consume(TokenType.ELSE, "Expected 'else' in conditional type expression")
+            consume(TokenType.L_BRACE, "Expected '{' after 'else'")
+            skipNewlines()
+            val elseValue = parseTypeFunctionExpr()
+            skipNewlines()
+            consume(TokenType.R_BRACE, "Expected '}' after alternative type result")
+            return TypeFunctionExpr.Conditional(condition, thenValue, elseValue)
+        }
+        val name = consume(TokenType.IDENTIFIER, "Expected a type value").lexeme
+        if (match(TokenType.BANG)) {
+            consume(TokenType.L_PAREN, "Expected '(' after '$name!'")
+            val args = mutableListOf<TypeFunctionExpr>()
+            if (!check(TokenType.R_PAREN)) {
+                do { args.add(parseTypeFunctionExpr()) } while (match(TokenType.COMMA))
+            }
+            consume(TokenType.R_PAREN, "Expected ')' after type-function arguments")
+            val callName = if (typeFunctionNamespacePrefix.isEmpty()) name else "${typeFunctionNamespacePrefix}__$name"
+            return TypeFunctionExpr.Call(callName, args)
+        }
+        if (match(TokenType.DOT)) {
+            val index = consume(TokenType.INT_LITERAL, "Expected type-pack index after '.'")
+            return TypeFunctionExpr.PackElement(name, ((index.literal as NumericLiteral).value as Long).toInt())
+        }
+        return TypeFunctionExpr.Reference(name)
+    }
+
+    private fun parseTypeFunctionCondition(): TypeFunctionCondition {
+        fun operand(): Pair<TypeFunctionExpr, Boolean> {
+            val name = consume(TokenType.IDENTIFIER, "Expected a type value in type comparison").lexeme
+            val expression = if (match(TokenType.BANG)) {
+                consume(TokenType.L_PAREN, "Expected '(' after '$name!'")
+                val args = mutableListOf<TypeFunctionExpr>()
+                if (!check(TokenType.R_PAREN)) {
+                    do { args.add(parseTypeFunctionExpr()) } while (match(TokenType.COMMA))
+                }
+                consume(TokenType.R_PAREN, "Expected ')' after type-function arguments")
+                val callName = if (typeFunctionNamespacePrefix.isEmpty()) name else "${typeFunctionNamespacePrefix}__$name"
+                TypeFunctionExpr.Call(callName, args)
+            } else {
+                TypeFunctionExpr.Reference(name)
+            }
+            val rank = if (match(TokenType.DOT)) {
+                val member = consume(TokenType.IDENTIFIER, "Expected 'rank' in type comparison")
+                if (member.lexeme != "rank") error("Only '.rank' is supported in ranked type comparisons at line ${member.line}")
+                true
+            } else false
+            return expression to rank
+        }
+        val (left, leftRank) = operand()
+        val operator = when {
+            match(TokenType.GREATER_EQUAL) -> TokenType.GREATER_EQUAL
+            match(TokenType.LESS_EQUAL) -> TokenType.LESS_EQUAL
+            match(TokenType.GREATER) -> TokenType.GREATER
+            match(TokenType.LESS) -> TokenType.LESS
+            match(TokenType.EQUAL_EQUAL) -> TokenType.EQUAL_EQUAL
+            match(TokenType.BANG_EQUAL) -> TokenType.BANG_EQUAL
+            else -> error("Expected comparison operator in type condition at line ${peek().line}")
+        }
+        val (right, rightRank) = operand()
+        if (leftRank != rightRank) error("Both sides of a type comparison must use '.rank', or neither side may use it")
+        return TypeFunctionCondition(left, operator, right, leftRank)
     }
 
     private fun parseTry(): Stmt.Try {

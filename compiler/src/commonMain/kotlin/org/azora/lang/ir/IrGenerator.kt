@@ -21,6 +21,7 @@ import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.FuncDecl
 import org.azora.lang.frontend.MemberCallStyle
 import org.azora.lang.frontend.TypeRef
+import org.azora.lang.frontend.TypeFunctionDecl
 import org.azora.lang.frontend.NumericSuffix
 import org.azora.lang.frontend.Program
 import org.azora.lang.frontend.Stmt
@@ -29,6 +30,7 @@ import org.azora.lang.frontend.TokenType
 import org.azora.lang.frontend.TopLevel
 import org.azora.lang.frontend.TypeAnnotation
 import org.azora.lang.semantic.SymbolTable
+import org.azora.lang.semantic.TypeFunctionEvaluator
 import org.azora.lang.semantic.VariableSymbol
 import kotlin.collections.iterator
 
@@ -43,6 +45,10 @@ import kotlin.collections.iterator
  * @param table the fully populated symbol table from semantic analysis
  */
 class IrGenerator(private val table: SymbolTable) {
+    private var typeFunctions = emptyList<TypeFunctionDecl>()
+
+    private fun resolveType(ref: TypeRef, typeParams: Set<String> = emptySet()): IrType =
+        IrType.resolve(TypeFunctionEvaluator.resolve(ref, typeFunctions, unresolvedParams = typeParams), typeParams)
 
     /** Scope stack mapping original variable names to their mangled IR names. */
     private val nameScopes = ArrayDeque<MutableMap<String, String>>()
@@ -99,6 +105,7 @@ class IrGenerator(private val table: SymbolTable) {
      * @return the lowered [IrProgram]
      */
     fun generate(program: Program): IrProgram {
+        typeFunctions = program.typeFunctions
         nameScopes.clear()
         mangledCounter = 0
         pushNameScope() // global scope
@@ -145,18 +152,18 @@ class IrGenerator(private val table: SymbolTable) {
                 }
                 is TopLevel.FinDecl -> {
                     val init = lowerExpr(item.initializer)
-                    val type = if (item.type != null) IrType.resolve(item.type) else init.type
+                    val type = if (item.type != null) resolveType(item.type) else init.type
                     val irName = if (item.threadlocal) "__tl__${item.name}" else item.name
                     listOf(IrTopLevel.Global(IrStmt.FinDecl(irName, type, init)))
                 }
                 is TopLevel.LetDecl -> {
                     val init = lowerExpr(item.initializer)
-                    val type = if (item.type != null) IrType.resolve(item.type) else init.type
+                    val type = if (item.type != null) resolveType(item.type) else init.type
                     listOf(IrTopLevel.Global(IrStmt.LetDecl(item.name, type, init)))
                 }
                 is TopLevel.VarDecl -> {
                     val init = lowerExpr(item.initializer)
-                    val type = if (item.type != null) IrType.resolve(item.type) else init.type
+                    val type = if (item.type != null) resolveType(item.type) else init.type
                     val irName = if (item.threadlocal) "__tl__${item.name}" else item.name
                     listOf(IrTopLevel.Global(IrStmt.VarDecl(irName, type, init)))
                 }
@@ -179,12 +186,12 @@ class IrGenerator(private val table: SymbolTable) {
                     if (item.isBridge) emptyList()
                     else {
                         val tpSet = item.typeParams.toSet()
-                        val fields = item.fields.map { IrField(it.name, IrType.resolve(it.type, tpSet), it.mutable) }
+                        val fields = item.fields.map { IrField(it.name, resolveType(it.type, tpSet), it.mutable) }
                         listOf(IrTopLevel.Struct(item.name, fields))
                     }
                 }
                 is TopLevel.Solo -> {
-                    val fields = item.fields.map { IrField(it.name, IrType.resolve(it.type), it.mutable) }
+                    val fields = item.fields.map { IrField(it.name, resolveType(it.type), it.mutable) }
                     val result = mutableListOf<IrTopLevel>(IrTopLevel.Struct(item.name, fields))
                     // Lower methods as free functions Name_method (like impl).
                     for (method in item.methods) {
@@ -193,7 +200,7 @@ class IrGenerator(private val table: SymbolTable) {
                     // Emit a __singleton_Name factory that constructs the struct from field defaults.
                     val defaults = item.fields.map { f ->
                         if (f.default != null) lowerExpr(f.default)
-                        else defaultValueForType(IrType.resolve(f.type))
+                        else defaultValueForType(resolveType(f.type))
                     }
                     val factory = IrFunction(
                         "__singleton_${item.name}",
@@ -255,8 +262,8 @@ class IrGenerator(private val table: SymbolTable) {
         // Emit extern declarations for `bridge` (FFI) function signatures.
         program.items.filterIsInstance<TopLevel.Bridge>().flatMap { bridge ->
             bridge.funcs.map { sig ->
-                val params = sig.params.map { it.name to IrType.resolve(it.type) }
-                IrTopLevel.Extern(sig.name, params, IrType.resolve(sig.returnType))
+                val params = sig.params.map { it.name to resolveType(it.type) }
+                IrTopLevel.Extern(sig.name, params, resolveType(sig.returnType))
             }
         }
         return IrProgram(program.moduleName, items)
@@ -637,7 +644,7 @@ class IrGenerator(private val table: SymbolTable) {
             is Expr.NamedArg -> lowerExpr(expr.value)
             is Expr.Cast -> {
                 val inner = lowerExpr(expr.expr)
-                val target = IrType.resolve(expr.targetType)
+                val target = resolveType(expr.targetType)
                 // Numeric casts convert the value. Pointer-carrying values
                 // (String, arrays, packs, Any, pointers) cast to/from integer
                 // types for FFI (`window as Long`); native backends lower these
@@ -1088,7 +1095,7 @@ class IrGenerator(private val table: SymbolTable) {
                 table.pushScope()
                 pushNameScope()
                 val irParams = expr.params.map { p ->
-                    val t = IrType.resolve(p.type)
+                    val t = resolveType(p.type)
                     val m = registerName(p.name)
                     table.defineVariable(VariableSymbol(p.name, t))
                     m to t
@@ -1166,7 +1173,7 @@ class IrGenerator(private val table: SymbolTable) {
     }
 
     private fun resolveTypeAnnotation(ann: TypeAnnotation, init: IrExpr): IrType = when (ann) {
-        is TypeAnnotation.Explicit -> IrType.resolve(ann.ref)
+        is TypeAnnotation.Explicit -> resolveType(ann.ref)
         is TypeAnnotation.Inferred -> init.type
     }
 

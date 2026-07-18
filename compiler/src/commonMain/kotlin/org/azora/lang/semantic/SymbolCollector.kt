@@ -37,6 +37,10 @@ import org.azora.lang.ir.IrType
  * happens in [TypeResolver] (Pass 2).
  */
 class SymbolCollector {
+    private var typeFunctions = emptyList<org.azora.lang.frontend.TypeFunctionDecl>()
+
+    private fun resolveType(ref: TypeRef, typeParams: Set<String> = emptySet()): IrType =
+        IrType.resolve(TypeFunctionEvaluator.resolve(ref, typeFunctions, unresolvedParams = typeParams), typeParams)
 
     private fun callbackTraitMethodName(traitName: String, traitArgs: List<TypeRef>, callback: org.azora.lang.frontend.SpecCallback? = null): String {
         callback?.useAsTemplate?.let { template ->
@@ -92,7 +96,14 @@ class SymbolCollector {
      * @return a list of error messages (empty if collection succeeded)
      */
     fun collect(program: Program, table: SymbolTable): List<String> {
+        typeFunctions = program.typeFunctions
         val errors = mutableListOf<String>()
+        typeFunctions.groupBy { declaration ->
+            declaration.name to declaration.params.map { it.variadic }
+        }.values.filter { it.size > 1 }.forEach { duplicates ->
+            errors.add("line ${duplicates[1].line}: type function '${duplicates[1].name.substringAfterLast("__")}' already has this overload")
+        }
+        if (errors.isNotEmpty()) return errors
 
         // Register built-in functions
         registerBuiltins(table)
@@ -104,7 +115,7 @@ class SymbolCollector {
                 is TopLevel.FinDecl -> {
                     try {
                         val initType = inferExprType(item.initializer, emptyMap())
-                        val type = if (item.type != null) IrType.resolve(item.type)
+                        val type = if (item.type != null) resolveType(item.type)
                                    else initType ?: IrType.Int
                         table.defineVariable(VariableSymbol(item.name, type, mutable = false, visibility = item.visibility))
                     } catch (e: Exception) {
@@ -115,7 +126,7 @@ class SymbolCollector {
                     if (item.threadlocal) {
                         try {
                             val initType = inferExprType(item.initializer, emptyMap())
-                            val type = if (item.type != null) IrType.resolve(item.type)
+                            val type = if (item.type != null) resolveType(item.type)
                                        else initType ?: IrType.Int
                             table.defineVariable(VariableSymbol(item.name, type, mutable = true, visibility = item.visibility))
                         } catch (e: Exception) {
@@ -130,9 +141,9 @@ class SymbolCollector {
         for (func in program.functions) {
             try {
                 val tpSet = func.typeParams.toSet()
-                val params = func.params.map { it.name to IrType.resolve(it.type, tpSet) }
+                val params = func.params.map { it.name to resolveType(it.type, tpSet) }
                 val returnType = when (val rt = func.returnType) {
-                    is TypeAnnotation.Explicit -> IrType.resolve(rt.ref, tpSet)
+                    is TypeAnnotation.Explicit -> resolveType(rt.ref, tpSet)
                     is TypeAnnotation.Inferred -> inferReturnType(func, params)
                 }
                 val paramNames = func.params.map { it.name }
@@ -146,6 +157,7 @@ class SymbolCollector {
                     name = func.name,
                     params = params,
                     returnType = callReturnType,
+                    returnTypeRef = (func.returnType as? TypeAnnotation.Explicit)?.ref,
                     isInline = func.isInline,
                     typeParams = func.typeParams,
                     paramNames = paramNames,
@@ -172,7 +184,7 @@ class SymbolCollector {
         // Register view declarations (treated as functions for type-checking).
         for (item in program.items) {
             if (item is TopLevel.View) {
-                val params = item.params.map { it.name to IrType.resolve(it.type) }
+                val params = item.params.map { it.name to resolveType(it.type) }
                 table.defineFunction(FunctionSymbol(item.name, params, IrType.Any))
             }
             if (item is TopLevel.Hook) {
@@ -185,8 +197,8 @@ class SymbolCollector {
             if (item is TopLevel.Bridge) {
                 for (sig in item.funcs) {
                     try {
-                        val params = sig.params.map { it.name to IrType.resolve(it.type) }
-                        val ret = IrType.resolve(sig.returnType)
+                        val params = sig.params.map { it.name to resolveType(it.type) }
+                        val ret = resolveType(sig.returnType)
                         val paramNames = sig.params.map { it.name }
                         table.defineFunction(FunctionSymbol(sig.name, params, ret, false, emptyList(), paramNames, emptyMap()))
                     } catch (e: Exception) {
@@ -202,7 +214,7 @@ class SymbolCollector {
                 try {
                     val tpSet = emptySet<String>()
                     val fields = item.fields.map { field ->
-                        StructField(field.name, IrType.resolve(field.type, tpSet), field.mutable, field.visibility, field.default)
+                        StructField(field.name, resolveType(field.type, tpSet), field.mutable, field.visibility, field.default)
                     }
                     table.defineStruct(StructType(item.name, fields, emptyList(), item.visibility))
                     // Register methods as Type_method (like impl)
@@ -210,12 +222,20 @@ class SymbolCollector {
                         val mangled = "${item.name}_${method.name}"
                         val params = mutableListOf<Pair<String, IrType>>()
                         params.add("self" to IrType.Named(item.name))
-                        for (p in method.params) params.add(p.name to IrType.resolve(p.type))
+                        for (p in method.params) params.add(p.name to resolveType(p.type))
                         val returnType = when (val rt = method.returnType) {
-                            is TypeAnnotation.Explicit -> IrType.resolve(rt.ref)
+                            is TypeAnnotation.Explicit -> resolveType(rt.ref)
                             is TypeAnnotation.Inferred -> inferReturnType(method, params)
                         }
-                        table.defineFunction(FunctionSymbol(mangled, params, returnType, method.isInline, visibility = method.visibility, memberCallStyle = method.memberCallStyle))
+                        table.defineFunction(FunctionSymbol(
+                            mangled,
+                            params,
+                            returnType,
+                            method.isInline,
+                            visibility = method.visibility,
+                            memberCallStyle = method.memberCallStyle,
+                            returnTypeRef = (method.returnType as? TypeAnnotation.Explicit)?.ref,
+                        ))
                         table.defineMethod(item.name, method.name, mangled)
                     }
                 } catch (e: Exception) {
@@ -230,7 +250,7 @@ class SymbolCollector {
                 try {
                     val tpSet = item.typeParams.toSet()
                     val fields = item.fields.map { field ->
-                        StructField(field.name, IrType.resolve(field.type, tpSet), field.mutable, field.visibility, field.default)
+                        StructField(field.name, resolveType(field.type, tpSet), field.mutable, field.visibility, field.default)
                     }
                     table.defineStruct(StructType(item.name, fields, item.typeParams, item.visibility, item.shielded))
                 } catch (e: Exception) {
@@ -258,13 +278,13 @@ class SymbolCollector {
                 for (node in chain) {
                     for (np in node.params) {
                         if (np.name !in seenNames) {
-                            fields.add(StructField(np.name, IrType.resolve(np.type), np.mutable))
+                            fields.add(StructField(np.name, resolveType(np.type), np.mutable))
                             seenNames.add(np.name)
                         }
                     }
                     for (ef in node.extraFields) {
                         if (ef.name !in seenNames) {
-                            fields.add(StructField(ef.name, IrType.resolve(ef.type), ef.mutable, ef.visibility))
+                            fields.add(StructField(ef.name, resolveType(ef.type), ef.mutable, ef.visibility))
                             seenNames.add(ef.name)
                         }
                     }
@@ -289,12 +309,20 @@ class SymbolCollector {
                     val mangled = "${item.name}_${method.name}"
                     val params = mutableListOf<Pair<String, IrType>>()
                     params.add("self" to IrType.Named(item.name))
-                    for (p in method.params) params.add(p.name to IrType.resolve(p.type))
+                    for (p in method.params) params.add(p.name to resolveType(p.type))
                     val returnType = when (val rt = method.returnType) {
-                        is TypeAnnotation.Explicit -> IrType.resolve(rt.ref)
+                        is TypeAnnotation.Explicit -> resolveType(rt.ref)
                         is TypeAnnotation.Inferred -> inferReturnType(method, params)
                     }
-                    table.defineFunction(FunctionSymbol(mangled, params, returnType, method.isInline, visibility = method.visibility, memberCallStyle = method.memberCallStyle))
+                    table.defineFunction(FunctionSymbol(
+                        mangled,
+                        params,
+                        returnType,
+                        method.isInline,
+                        visibility = method.visibility,
+                        memberCallStyle = method.memberCallStyle,
+                        returnTypeRef = (method.returnType as? TypeAnnotation.Explicit)?.ref,
+                    ))
                     table.defineMethod(item.name, method.name, mangled)
                 }
                 // Register inherited methods from parent chain (if not overridden by this node).
@@ -342,7 +370,7 @@ class SymbolCollector {
         for (item in program.items) {
             if (item is TopLevel.Slot) {
                 try {
-                    val variants = item.variants.map { v -> v.name to v.payloadTypes.map { IrType.resolve(it) } }
+                    val variants = item.variants.map { v -> v.name to v.payloadTypes.map { resolveType(it) } }
                     table.defineSlot(item.name, variants)
                 } catch (e: Exception) {
                     errors.add("line ${item.line}: ${e.message}")
@@ -370,15 +398,23 @@ class SymbolCollector {
                         // Resolve so primitive impl targets (Int/Real/Char/Bool/…)
                         // lower to their native IR type (e.g. i32), not an erased
                         // Named/pointer type. Struct targets stay Named(<Type>).
-                        val selfType = IrType.resolve(TypeRef.Named(item.typeName))
+                        val selfType = resolveType(TypeRef.Named(item.typeName))
                         val params = mutableListOf<Pair<String, IrType>>()
                         params.add("self" to selfType)
-                        for (p in method.params) params.add(p.name to IrType.resolve(p.type, tpSet))
+                        for (p in method.params) params.add(p.name to resolveType(p.type, tpSet))
                         val returnType = when (val rt = method.returnType) {
-                            is TypeAnnotation.Explicit -> IrType.resolve(rt.ref, tpSet)
+                            is TypeAnnotation.Explicit -> resolveType(rt.ref, tpSet)
                             is TypeAnnotation.Inferred -> inferReturnType(method, params)
                         }
-                        table.defineFunction(FunctionSymbol(mangled, params, returnType, method.isInline, visibility = method.visibility, memberCallStyle = method.memberCallStyle))
+                        table.defineFunction(FunctionSymbol(
+                            mangled,
+                            params,
+                            returnType,
+                            method.isInline,
+                            visibility = method.visibility,
+                            memberCallStyle = method.memberCallStyle,
+                            returnTypeRef = (method.returnType as? TypeAnnotation.Explicit)?.ref,
+                        ))
                         table.defineMethod(item.typeName, method.name, mangled)
                     } catch (e: Exception) {
                         errors.add("line ${method.line}: ${e.message}")
@@ -408,8 +444,9 @@ class SymbolCollector {
 // Register type aliases
         for (item in program.items) {
             if (item is TopLevel.TypeAlias) {
-                table.defineAlias(item.name, item.type)
-                IrType.aliases[item.name] = item.type
+                val resolved = TypeFunctionEvaluator.resolve(item.type, typeFunctions)
+                table.defineAlias(item.name, resolved)
+                IrType.aliases[item.name] = resolved
             }
         }
 

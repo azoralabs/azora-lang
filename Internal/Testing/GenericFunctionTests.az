@@ -70,12 +70,12 @@ type promote(T: ...Type) where T.length >= 2 {
     return Result
 }
 
-func<T1, T2> addTwo(a: T1, b: T2): promote(T1, T2)
+func<T1, T2> addTwo(a: T1, b: T2): promote!(T1, T2)
 where T1: Numeric, T2: Numeric {
     return a + b
 }
 
-func<...T> addMany(args: ...T): promote(T)
+func<...T> addMany(args: ...T): promote!(T)
 where each T: Numeric {
     var sum: ReturnType = 0 as ReturnType
     for arg in args {

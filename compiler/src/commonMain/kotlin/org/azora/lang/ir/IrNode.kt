@@ -17,6 +17,7 @@
 package org.azora.lang.ir
 
 import org.azora.lang.frontend.TypeRef
+import org.azora.lang.frontend.TypeFunctionCall
 
 // ---------------------------------------------------------------------------
 // Types
@@ -175,7 +176,8 @@ sealed class IrType {
          */
         fun resolve(ref: TypeRef, typeParams: kotlin.collections.Set<kotlin.String> = emptySet()): IrType = when (ref) {
             is TypeRef.Named -> {
-                if (ref.name in typeParams) Any
+                if (TypeFunctionCall.isCall(ref)) Any
+                else if (ref.name in typeParams) Any
                 else if (ref.name in aliases) resolve(aliases[ref.name]!!, typeParams)
                 else if (ref.name == "Array") error("Array<T> is not a language type; use [T] or std.container List<T>/MutableList<T>")
                 else if (ref.name == "Var" && ref.args.size >= 2) Variant(ref.args.map { resolve(it, typeParams) })

@@ -19,6 +19,7 @@ package org.azora.lang.stdlib
 import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.FuncDecl
 import org.azora.lang.frontend.ModuleVisibility
+import org.azora.lang.frontend.ModuleQualifiedSymbol
 import org.azora.lang.frontend.Program
 import org.azora.lang.frontend.Stmt
 import org.azora.lang.frontend.TopLevel
@@ -34,11 +35,13 @@ import org.azora.lang.putIfAbsentCompat
  * Bundled-library symbols are **import-gated**: a file sees a module's names
  * only after importing it. With the bundled stdlib that looks like:
  *
- * - `import std.math` — unqualified access to that module (`abs(x)`) plus `math::abs(x)`,
+ * - `import std.math` — access to that module while preserving its zone path (`math::abs(x)`),
  * - `import std.*` / `import std.{math, concurrency}` — wildcard/grouped module imports,
  * - `import std.math.abs` — selective import of listed names,
  * - `import std` / `import zone std` — every stdlib module,
- * - `std::math::abs(x)` / `std::abs(x)` — qualified access needs no import.
+ * - importing a module never creates bare aliases for declarations inside a zone,
+ * - compile-time type functions may instead use a complete module-plus-zone path,
+ *   such as `std.traits.std::promote!(Int, Real)`.
  *
  * The module root is derived from the loaded library modules; the frontend
  * import grammar does not special-case `std`. Only the items actually
@@ -210,8 +213,6 @@ object StdlibInjector {
                     }
                     for (declaration in selectedDeclarations) {
                         visible.add(declaration)
-                        val shortName = declaration.name.substringAfterLast("__")
-                        if (shortName != declaration.name) visible.add(declaration.copy(name = shortName))
                     }
                 }
             }
@@ -353,13 +354,21 @@ object StdlibInjector {
         }
         val userTypeNames = mutableSetOf<String>()
         program.items.forEach { collectNamesFromItem(it, userTypeNames) }
-        val qualifiedTypeFunctions = userTypeNames
-            .filter { "__" in it }
-            .flatMap { name -> index.typeFunctionsByName[name].orEmpty() }
+        val fullyQualifiedTypeFunctions = userTypeNames
+            .filter(ModuleQualifiedSymbol::isQualified)
+            .flatMap { encodedName ->
+                val module = ModuleQualifiedSymbol.module(encodedName)
+                val symbol = ModuleQualifiedSymbol.symbol(encodedName)
+                if (!isExternallyImportable(module)) emptyList()
+                else index.typeFunctionsByModule[module]
+                    .orEmpty()
+                    .filter { it.name == symbol }
+                    .map { it.copy(name = encodedName) }
+            }
         // Injection runs twice; remove the exact same declaration object while
         // preserving independently declared duplicate signatures for diagnostics.
         val typeFunctions = (
-            program.typeFunctions + importedTypeFunctions + dependencyTypeFunctions + qualifiedTypeFunctions
+            program.typeFunctions + importedTypeFunctions + dependencyTypeFunctions + fullyQualifiedTypeFunctions
         ).distinct()
         val typeFunctionsChanged = typeFunctions.size != program.typeFunctions.size
 

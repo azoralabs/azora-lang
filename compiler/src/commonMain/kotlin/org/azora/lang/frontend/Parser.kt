@@ -2900,11 +2900,18 @@ class Parser(
                     error("'${peek().lexeme}[...]' type syntax was removed; use [T], List<T>, Set<T>, or Map<K, V> at line ${peek().line}")
                 }
                 val name = advance().lexeme
-                // Accept a zone-qualified type path `Zone::Type` (e.g. `std::List`).
-                // Types are not zone-mangled, so the type resolves by its name; the
-                // zone prefix is consumed and the final segment is used.
-                var typeName = name
-                var qualifiedName = name
+                // A fully qualified path combines a dotted owning module with a
+                // zone path: `std.traits.std::promote!`. Zone-only access remains
+                // `std::promote!` and requires the module to have been imported.
+                val dottedPath = mutableListOf(name)
+                while (match(TokenType.DOT)) {
+                    dottedPath.add(consume(TokenType.IDENTIFIER, "Expected module path segment after '.'").lexeme)
+                }
+                val modulePath = dottedPath.takeIf { it.size > 1 }
+                    ?.dropLast(1)
+                    ?.joinToString(".")
+                var typeName = dottedPath.last()
+                var qualifiedName = typeName
                 while (match(TokenType.DOUBLE_COLON)) {
                     typeName = consume(TokenType.IDENTIFIER, "Expected type name after '::' in type path").lexeme
                     qualifiedName += "__$typeName"
@@ -2920,11 +2927,17 @@ class Parser(
                         do { args.add(parseTypeName()) } while (match(TokenType.COMMA))
                     }
                     consume(TokenType.R_PAREN, "Expected ')' after type-function arguments")
-                    val callName = if (qualifiedName == name && typeFunctionNamespacePrefix.isNotEmpty()) {
-                        "${typeFunctionNamespacePrefix}__$qualifiedName"
-                    } else qualifiedName
+                    val callName = when {
+                        modulePath != null -> ModuleQualifiedSymbol.create(modulePath, qualifiedName)
+                        qualifiedName == name && typeFunctionNamespacePrefix.isNotEmpty() ->
+                            "${typeFunctionNamespacePrefix}__$qualifiedName"
+                        else -> qualifiedName
+                    }
                     TypeFunctionCall.create(callName, args)
                 } else if (match(TokenType.LESS)) {
+                    if (modulePath != null) {
+                        error("Module-qualified generic type paths are not supported at line ${peek().line}")
+                    }
                     val a = mutableListOf<TypeRef>()
                     var variadic = false
                     do {
@@ -2946,6 +2959,9 @@ class Parser(
                     }
                     TypeRef.Named(typeName, a, variadic)
                 } else {
+                    if (modulePath != null) {
+                        error("A module-qualified path must name a callable type function at line ${peek().line}")
+                    }
                     TypeRef.Named(typeName)
                 }
             }

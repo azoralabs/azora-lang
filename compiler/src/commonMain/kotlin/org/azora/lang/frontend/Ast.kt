@@ -1088,6 +1088,17 @@ object TypeFunctionCall {
     fun name(ref: TypeRef.Named): String = ref.name.removePrefix(PREFIX)
 }
 
+/** Encodes a source path containing both an owning module and a zone-qualified symbol. */
+object ModuleQualifiedSymbol {
+    private const val PREFIX = "__azora_module_qualified__"
+    private const val SEPARATOR = "::"
+
+    fun create(module: String, symbol: String): String = "$PREFIX$module$SEPARATOR$symbol"
+    fun isQualified(name: String): Boolean = name.startsWith(PREFIX) && SEPARATOR in name
+    fun module(name: String): String = name.removePrefix(PREFIX).substringBefore(SEPARATOR)
+    fun symbol(name: String): String = name.removePrefix(PREFIX).substringAfter(SEPARATOR)
+}
+
 /**
  * Represents a type annotation on a variable or return type.
  *

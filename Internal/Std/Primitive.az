@@ -16,6 +16,8 @@
 
 export module std.primitive
 
+import std.traits
+
 /**
  * @file Primitive
  *

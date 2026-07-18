@@ -47,7 +47,7 @@ class TypeFunctionTest {
     fun stdlibPromoteSelectsHighestRankedType() {
         assertIs<CompilationResult.Success>(compile("""
             import std.traits
-            func result(): promote!(Byte, Int, Long, Real) {
+            func result(): std::promote!(Byte, Int, Long, Real) {
                 return 1.0
             }
         """))
@@ -57,7 +57,7 @@ class TypeFunctionTest {
     fun stdlibPromoteRequiresTwoTypes() {
         val failure = assertIs<CompilationResult.Failure>(compile("""
             import std.traits
-            func invalid(): promote!(Int) { return 1 }
+            func invalid(): std::promote!(Int) { return 1 }
         """))
         assertTrue(failure.errors.any { "requires T.length >= 2" in it }, failure.errors.toString())
     }
@@ -65,16 +65,25 @@ class TypeFunctionTest {
     @Test
     fun stdlibPromoteRequiresImport() {
         val failure = assertIs<CompilationResult.Failure>(compile("""
-            func invalid(): promote!(Int, Real) { return 1.0 }
+            func invalid(): std::promote!(Int, Real) { return 1.0 }
         """))
-        assertTrue(failure.errors.any { "Unknown type function 'promote'" in it }, failure.errors.toString())
+        assertTrue(failure.errors.any { "Unknown type function 'std__promote'" in it }, failure.errors.toString())
     }
 
     @Test
-    fun qualifiedStdlibPromoteDoesNotRequireImport() {
+    fun fullyQualifiedStdlibPromoteDoesNotRequireImport() {
         assertIs<CompilationResult.Success>(compile("""
-            func result(): std::promote!(Int, Real) { return 1.0 }
+            func result(): std.traits.std::promote!(Int, Real) { return 1.0 }
         """))
+    }
+
+    @Test
+    fun importingModuleDoesNotExposeBareZoneMember() {
+        val failure = assertIs<CompilationResult.Failure>(compile("""
+            import std.traits
+            func invalid(): promote!(Int, Real) { return 1.0 }
+        """))
+        assertTrue(failure.errors.any { "Unknown type function 'promote'" in it }, failure.errors.toString())
     }
 
     @Test
@@ -133,7 +142,7 @@ class TypeFunctionTest {
     fun genericFunctionCallUsesTypeFunctionForItsResult() {
         assertIs<CompilationResult.Success>(compile("""
             import std.traits
-            func<T, U> greater(a: T, b: U): promote!(T, U) {
+            func<T, U> greater(a: T, b: U): std::promote!(T, U) {
                 return a + b
             }
             func main() {

@@ -1128,6 +1128,8 @@ class IrGenerator(private val table: SymbolTable) {
                 val retType = body.mapNotNull { (it as? IrStmt.Return)?.value?.type }.firstOrNull() ?: IrType.Unit
                 IrExpr.Lambda(irParams, body, IrType.Function(irParams.map { it.second }, retType, variadic = expr.variadic))
             }
+            // Macros are expanded before IR generation; a MetaInvoke here is a bug.
+            is Expr.MetaInvoke -> error("MetaInvoke reached IR generation at line ${expr.line}")
         }
     }
 

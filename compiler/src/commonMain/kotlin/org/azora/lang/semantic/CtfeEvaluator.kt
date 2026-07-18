@@ -269,6 +269,8 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 Pair(listOf(item), false)
             }
         }
+        // Macros are expanded (and removed) by MacroExpander before CTCE.
+        is TopLevel.Meta -> Pair(listOf(item), false)
     }
 
     private fun resolveTopLevelInlineBlock(
@@ -336,6 +338,9 @@ class CtfeEvaluator(private val table: SymbolTable) {
                     val (resolved, _) = resolveTopLevelItem(item, program, errors)
                     result.addAll(resolved)
                 }
+                // Macros are expanded (and removed) by MacroExpander before CTCE;
+                // passthrough keeps the node intact if ever observed pre-expansion.
+                is TopLevel.Meta -> result.add(item)
             }
         }
         return Pair(result, true)
@@ -1090,6 +1095,8 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 }
                 Pair(if (changed) expr.copy(parts = newParts) else expr, changed)
             }
+            // Macros are expanded before CTCE; unreachable.
+            is Expr.MetaInvoke -> Pair(expr, false)
         }
     }
 
@@ -1408,6 +1415,9 @@ class CtfeEvaluator(private val table: SymbolTable) {
             is Expr.Cast, is Expr.IsCheck,
             is Expr.MapLit -> null
             is Expr.Alloc, is Expr.AllocBuffer, is Expr.Deref, is Expr.Isolated, is Expr.Await, is Expr.Inject, is Expr.Spread -> null // runtime ops, not CTCE-evaluable
+            // Macros are expanded to concrete expressions by MacroExpander before
+            // CTCE; a MetaInvoke reaching here means expansion was skipped.
+            is Expr.MetaInvoke -> null
         }
     }
 

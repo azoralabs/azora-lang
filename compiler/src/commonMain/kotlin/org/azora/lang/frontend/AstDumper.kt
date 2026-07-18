@@ -213,6 +213,9 @@ private fun dumpTopLevel(sb: StringBuilder, item: TopLevel, indent: String) {
         is TopLevel.Slot -> {
             sb.appendLine("${indent}Slot(name=${item.name}, variants=[${item.variants.joinToString(", ") { v -> v.name + "(" + v.payloadTypes.joinToString(",") + "" + ")" }}])")
         }
+        is TopLevel.Meta -> {
+            sb.appendLine("${indent}Meta(name=${item.name}, arms=${item.arms.size})")
+        }
     }
 }
 
@@ -581,6 +584,10 @@ private fun dumpExpr(sb: StringBuilder, expr: Expr, indent: String) {
             sb.appendLine("${indent}MethodCall(name=${expr.name})")
             sb.appendLine("$indent    target:")
             dumpExpr(sb, expr.target, "$indent        ")
+            for (arg in expr.args) dumpExpr(sb, arg, "$indent    ")
+        }
+        is Expr.MetaInvoke -> {
+            sb.appendLine("${indent}MetaInvoke(name=${expr.name})")
             for (arg in expr.args) dumpExpr(sb, arg, "$indent    ")
         }
         is Expr.StringTemplate -> {

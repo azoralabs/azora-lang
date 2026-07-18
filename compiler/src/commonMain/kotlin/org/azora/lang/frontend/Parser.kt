@@ -304,8 +304,11 @@ class Parser(
     }
 
     private fun isFriendZoneNamespaceAhead(): Boolean {
-        if (!check(TokenType.FRIEND) || peekNext()?.type != TokenType.ZONE) return false
-        var i = current + 2
+        // Optional `use` prefix (`use friend zone …`) — members stay bare-accessible.
+        val f0 = if (check(TokenType.USE)) current + 1 else current
+        if (tokens.getOrNull(f0)?.type != TokenType.FRIEND) return false
+        if (tokens.getOrNull(f0 + 1)?.type != TokenType.ZONE) return false
+        var i = f0 + 2
         if (tokens.getOrNull(i)?.type != TokenType.IDENTIFIER) return false
         i++
         while (tokens.getOrNull(i)?.type == TokenType.DOUBLE_COLON &&
@@ -323,8 +326,13 @@ class Parser(
      * as `std::math::PI`). Unlike a named `zone`, the same zone path may be
      * declared across multiple modules and the contributions merge (the
      * "friend" grant); the exclusivity check lives in semantic analysis.
+     *
+     * The `use` prefix (`use friend zone std { … }`) keeps members at their bare
+     * short names (no mangling), so importing the module makes them callable
+     * without the `Zone::` qualifier — e.g. `vec![…]` rather than `std::vec![…]`.
      */
     private fun parseFriendZoneNamespace(outerPrefix: String = ""): List<TopLevel> {
+        val useBare = match(TokenType.USE) // optional 'use' → members stay bare (unmangled)
         consume(TokenType.FRIEND, "Expected 'friend'")
         consume(TokenType.ZONE, "Expected 'zone' after 'friend'")
         val first = consume(TokenType.IDENTIFIER, "Expected zone name after 'friend zone'").lexeme
@@ -336,13 +344,13 @@ class Parser(
         val prefix = if (outerPrefix.isEmpty()) friendPath else "${outerPrefix}__$friendPath"
         consume(TokenType.L_BRACE, "Expected '{' after friend zone name")
         skipNewlines()
-        val items = parseZoneBody(prefix)
+        val items = parseZoneBody(prefix, mangle = !useBare)
         consume(TokenType.R_BRACE, "Expected '}' after friend zone")
         consumeNewline()
         return items
     }
 
-    private fun parseZoneBody(prefix: String): List<TopLevel> {
+    private fun parseZoneBody(prefix: String, mangle: Boolean = true): List<TopLevel> {
         val result = mutableListOf<TopLevel>()
         val previousTypeNamespace = typeFunctionNamespacePrefix
         typeFunctionNamespacePrefix = prefix
@@ -357,13 +365,14 @@ class Parser(
                         val inner = consume(TokenType.IDENTIFIER, "Expected zone name").lexeme
                         consume(TokenType.L_BRACE, "Expected '{' after zone name")
                         skipNewlines()
-                        result.addAll(parseZoneBody("${prefix}__$inner"))
+                        result.addAll(parseZoneBody("${prefix}__$inner", mangle))
                         consume(TokenType.R_BRACE, "Expected '}' after nested zone")
                         skipNewlines()
                     }
                     check(TokenType.TYPE) -> parseTypeFunction(prefix)
                     else -> {
-                        result.add(mangleTopLevel(parseTopLevel(), prefix))
+                        val parsed = parseTopLevel()
+                        result.add(if (mangle) mangleTopLevel(parsed, prefix) else parsed)
                         if (pendingTopLevels.isNotEmpty()) {
                             result.addAll(pendingTopLevels)
                             pendingTopLevels.clear()
@@ -564,7 +573,18 @@ class Parser(
             check(TokenType.SPEC) -> parseSpec()
             check(TokenType.SLOT) -> parseSlot(annotations)
             check(TokenType.TYPEALIAS) -> parseTypeAlias(annotations)
+            check(TokenType.META) -> parseMeta()
+            // `prop name: T = expr` at top level — accepted inside `impl … as zone
+            // for Type` / `impl zone for Type` bodies (which reparse members as
+            // top-level items); desugars to a `fin` so it mangles to `Type__name`.
+            check(TokenType.PROP) -> parsePropAsFin(annotations, visibility)
             check(TokenType.IMPORT) -> parseImport()
+            // `export import …` — re-export the import so importers of this module
+            // also receive it transitively (e.g. std.macro re-exporting std.container).
+            check(TokenType.EXPORT) && peekNext()?.type == TokenType.IMPORT -> {
+                advance() // 'export'
+                parseImport(exported = true)
+            }
             check(TokenType.FIN) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseExpr(); consumeNewline(); TopLevel.FinDecl(name, type, init, start.line, start.column, annotations, visibility = visibility) }
             check(TokenType.VAR) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseExpr(); consumeNewline(); TopLevel.VarDecl(name, type, init, start.line, start.column, annotations, visibility = visibility) }
             check(TokenType.LET) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseExpr(); consumeNewline(); TopLevel.LetDecl(name, type, init, start.line, start.column, annotations, visibility) }
@@ -1428,6 +1448,29 @@ class Parser(
     private fun parseImpl(isBridge: Boolean = false): TopLevel.Impl {
         val start = peek()
         consume(TokenType.IMPL, "Expected 'impl'")
+        // `impl <Spec> as zone for Type { members }` — type-scoped static members
+        // attributed to a spec/category (e.g. `impl Number as zone for Ty`). Like
+        // `impl zone for Type`, members desugar to mangled top-level items
+        // (`Type__member`) per target, reached as `Type::member`. The spec name is
+        // informational (parsed and dropped).
+        if (check(TokenType.IDENTIFIER) && peekNext()?.type == TokenType.AS &&
+            tokens.getOrNull(current + 2)?.type == TokenType.ZONE
+        ) {
+            advance() // spec name (e.g. Number)
+            advance() // 'as'
+            advance() // 'zone'
+            consume(TokenType.FOR, "Expected 'for' after 'impl <spec> as zone'")
+            val targets = expandTypeListTargets(parseImplTargets())
+            consume(TokenType.L_BRACE, "Expected '{' after 'impl <spec> as zone for …'")
+            skipNewlines()
+            val bodyTokens = captureBraceBody()
+            consumeNewline()
+            for (target in targets) {
+                val members = Parser(bodyTokens + Token(TokenType.EOF, "", start.line, start.column), typeListEnv).parse().items
+                members.forEach { pendingTopLevels.add(mangleTopLevel(it, target)) }
+            }
+            return TopLevel.Impl(targets.first(), emptyList(), null, start.line, start.column)
+        }
         // `impl zone for Type { members }` (or `for [A, B] { … }`) — type-scoped
         // static members, reached as `Type::member`. Desugars to mangled top-level
         // items (`Type__member`) per target type, like a named zone.
@@ -2245,6 +2288,63 @@ class Parser(
         consume(TokenType.R_BRACE, "Expected '}' after slot variants")
         consumeNewline()
         return TopLevel.Slot(name, variants, start.line, start.column, annotations)
+    }
+
+    /**
+     * `meta Name { arm; arm; … }` — a pattern-driven macro declaration.
+     *
+     * Each arm is `delim-pattern delim => template-expr`, where the written
+     * delimiter (`()`/`[]`/`{}`) is stored for diagnostics but matching is
+     * delimiter-agnostic. The pattern is `Empty` (`[]`/`()`/`{}`) or a spread
+     * capture `...$name`. The template is an ordinary expression parsed via
+     * [parseExpr] — `$name` is a normal identifier, `...$name` a normal spread.
+     */
+    private fun parseMeta(): TopLevel.Meta {
+        val start = peek()
+        consume(TokenType.META, "Expected 'meta'")
+        val name = consume(TokenType.IDENTIFIER, "Expected macro name after 'meta'").lexeme
+        consume(TokenType.L_BRACE, "Expected '{' after macro name")
+        skipNewlines()
+        val arms = mutableListOf<MacroArm>()
+        while (!check(TokenType.R_BRACE) && !isAtEnd()) {
+            skipNewlines()
+            if (check(TokenType.R_BRACE)) break
+            arms.add(parseMacroArm())
+        }
+        consume(TokenType.R_BRACE, "Expected '}' after macro arms")
+        consumeNewline()
+        return TopLevel.Meta(name, arms, start.line, start.column)
+    }
+
+    /**
+     * One macro arm: `delim <pattern> delim => <template>`.
+     *
+     * Pattern forms (MVP): `[]`/`()`/`{}` → [MacroPattern.Empty]; `[...$name]`
+     * → [MacroPattern.SeqCapture]. The closing delimiter must match the opening
+     * one. The template is a single expression (the arm's expansion).
+     */
+    private fun parseMacroArm(): MacroArm {
+        val (delimiter, open, close) = when (peek().type) {
+            TokenType.L_PAREN -> Triple(MacroDelimiter.PAREN, TokenType.L_PAREN, TokenType.R_PAREN)
+            TokenType.L_BRACKET -> Triple(MacroDelimiter.BRACKET, TokenType.L_BRACKET, TokenType.R_BRACKET)
+            TokenType.L_BRACE -> Triple(MacroDelimiter.BRACE, TokenType.L_BRACE, TokenType.R_BRACE)
+            else -> error("Expected '(', '[', or '{' to start a macro arm at line ${peek().line}")
+        }
+        advance() // opening delimiter
+        val pattern = when {
+            check(close) -> MacroPattern.Empty
+            check(TokenType.ELLIPSIS) -> {
+                advance() // '...'
+                val cap = consume(TokenType.IDENTIFIER, "Expected capture name after '...' in macro pattern").lexeme
+                MacroPattern.SeqCapture(cap)
+            }
+            else -> error("Macro arm pattern must be empty or '...\$name' at line ${peek().line}")
+        }
+        consume(close, "Expected matching delimiter after macro arm pattern")
+        consume(TokenType.ARROW, "Expected '=>' after macro arm pattern")
+        val template = parseExpr()
+        consumeNewline()
+        return MacroArm(delimiter, pattern, template)
     }
 
     /** `spec Name { func method(params): Ret ... }` or compact callback `spec Into<T>: T { ref self } use as "..."`. */
@@ -3510,7 +3610,7 @@ class Parser(
      * path names a module or a selected item. `::` is only for zone access
      * expressions, never import syntax.
      */
-    private fun parseImport(): TopLevel {
+    private fun parseImport(exported: Boolean = false): TopLevel {
         val start = consume(TokenType.IMPORT, "Expected 'import'")
         // `import zone std` — the optional marker reads naturally and is skipped.
         if (check(TokenType.ZONE) && peekNext()?.type == TokenType.IDENTIFIER) {
@@ -3546,7 +3646,7 @@ class Parser(
             }
         } while (match(TokenType.COMMA) && check(TokenType.IDENTIFIER))
         consumeNewline()
-        return TopLevel.UseImport(imports, start.line, start.column)
+        return TopLevel.UseImport(imports, start.line, start.column, exported = exported)
     }
 
     private fun addDottedUsePath(path: String, imports: MutableList<Pair<String, String?>>) {
@@ -3564,6 +3664,23 @@ class Parser(
             skipNewlines()
         } while (match(TokenType.COMMA))
         consume(TokenType.R_BRACE, "Expected '}' after import group")
+    }
+
+    /**
+     * `prop name: T = expr` at top level — desugars to a `fin` binding. This form
+     * appears inside `impl … as zone for Type` / `impl zone for Type` bodies,
+     * which reparse their members as top-level items; mangling then turns the
+     * name into `Type__name`, reachable as `Type::name`.
+     */
+    private fun parsePropAsFin(annotations: List<Annotation>, visibility: Visibility): TopLevel.FinDecl {
+        val start = peek()
+        consume(TokenType.PROP, "Expected 'prop'")
+        val name = consume(TokenType.IDENTIFIER, "Expected name after 'prop'").lexeme
+        val type = if (match(TokenType.COLON)) parseTypeName() else null
+        consume(TokenType.EQUAL, "Expected '=' in prop declaration")
+        val init = parseExpr()
+        consumeNewline()
+        return TopLevel.FinDecl(name, type, init, start.line, start.column, annotations, visibility = visibility)
     }
 
     private fun parseTypeAlias(annotations: List<Annotation> = emptyList()): TopLevel.TypeAlias {
@@ -4567,6 +4684,17 @@ class Parser(
         var pendingCallTypeArgs: List<TypeRef> = emptyList()
         while (true) {
             when {
+                // Macro invocation `name!(…)`, `name![…]`, `name!{…}`. `!=` is its
+                // own token, so a lone `BANG` immediately after an identifier and a
+                // delimiter is unambiguously a macro call. The delimiter is ergonomic
+                // only; all three forms feed args to the same arms (dropped at parse).
+                expr is Expr.Identifier && check(TokenType.BANG) && peekNext()?.type in setOf(
+                    TokenType.L_PAREN, TokenType.L_BRACKET, TokenType.L_BRACE,
+                ) -> {
+                    val bang = advance() // '!'
+                    val args = parseMacroInvokeArgs()
+                    expr = Expr.MetaInvoke(expr.name, args, expr.line, expr.column, bang.column + 1)
+                }
                 check(TokenType.DOT) -> {
                     val dot = advance()
                     if (check(TokenType.INT_LITERAL)) {
@@ -4697,6 +4825,40 @@ class Parser(
                 else -> return expr
             }
         }
+    }
+
+    /**
+     * Parses the argument list of a macro invocation `name!<delim> … <delim>`.
+     * The opening delimiter (`(`/`[`/`{`) is the current token; arguments are a
+     * comma-separated list of expressions with `...expr` spread support (mirrors
+     * the call-argument grammar). The delimiter is consumed and not retained —
+     * macro arms match delimiter-agnostically.
+     */
+    private fun parseMacroInvokeArgs(): List<Expr> {
+        val (close, closeStr) = when (peek().type) {
+            TokenType.L_PAREN -> { advance(); TokenType.R_PAREN to ")" }
+            TokenType.L_BRACKET -> { advance(); TokenType.R_BRACKET to "]" }
+            TokenType.L_BRACE -> { advance(); TokenType.R_BRACE to "}" }
+            else -> error("macro invocation expects '(', '[', or '{' at line ${peek().line}")
+        }
+        skipNewlines()
+        val args = mutableListOf<Expr>()
+        if (!check(close)) {
+            do {
+                skipNewlines()
+                if (check(close)) break
+                val arg = if (match(TokenType.ELLIPSIS)) {
+                    val first = parseExpr()
+                    Expr.Spread(first, first.line, first.column, first.length)
+                } else {
+                    parseExpr()
+                }
+                args.add(arg)
+                skipNewlines()
+            } while (match(TokenType.COMMA))
+        }
+        consume(close, "Expected '$closeStr' to close macro invocation")
+        return args
     }
 
     /**

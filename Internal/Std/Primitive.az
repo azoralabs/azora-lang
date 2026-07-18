@@ -38,491 +38,493 @@ import std.traits
  * @since 0.0.4
  */
 
-/** Boolean truth value: `true` or `false`. */
-@SinceAzora("0.0.4")
-bridge pack Bool
+use friend zone std {
+    /** Boolean truth value: `true` or `false`. */
+    @SinceAzora("0.0.4")
+    bridge pack Bool
 
-/** Signed 8-bit integer (`-128 … 127`). */
-@SinceAzora("0.0.4")
-bridge pack Byte
+    /** Signed 8-bit integer (`-128 … 127`). */
+    @SinceAzora("0.0.4")
+    bridge pack Byte
 
-/** Unsigned 8-bit integer (`0 … 255`). */
-@SinceAzora("0.0.4")
-bridge pack UByte
+    /** Unsigned 8-bit integer (`0 … 255`). */
+    @SinceAzora("0.0.4")
+    bridge pack UByte
 
-/** Signed 16-bit integer (`-32_768 … 32_767`). */
-@SinceAzora("0.0.4")
-bridge pack Short
+    /** Signed 16-bit integer (`-32_768 … 32_767`). */
+    @SinceAzora("0.0.4")
+    bridge pack Short
 
-/** Unsigned 16-bit integer (`0 … 65_535`). */
-@SinceAzora("0.0.4")
-bridge pack UShort
+    /** Unsigned 16-bit integer (`0 … 65_535`). */
+    @SinceAzora("0.0.4")
+    bridge pack UShort
 
-/** Signed 32-bit integer. The default integer type. */
-@SinceAzora("0.0.4")
-bridge pack Int
+    /** Signed 32-bit integer. The default integer type. */
+    @SinceAzora("0.0.4")
+    bridge pack Int
 
-/** Unsigned 32-bit integer. */
-@SinceAzora("0.0.4")
-bridge pack UInt
+    /** Unsigned 32-bit integer. */
+    @SinceAzora("0.0.4")
+    bridge pack UInt
 
-/** Signed 64-bit integer. */
-@SinceAzora("0.0.4")
-bridge pack Long
+    /** Signed 64-bit integer. */
+    @SinceAzora("0.0.4")
+    bridge pack Long
 
-/** Unsigned 64-bit integer. */
-@SinceAzora("0.0.4")
-bridge pack ULong
+    /** Unsigned 64-bit integer. */
+    @SinceAzora("0.0.4")
+    bridge pack ULong
 
-/** Signed 128-bit integer. */
-@SinceAzora("0.0.4")
-bridge pack Cent
+    /** Signed 128-bit integer. */
+    @SinceAzora("0.0.4")
+    bridge pack Cent
 
-/** Unsigned 128-bit integer. */
-@SinceAzora("0.0.4")
-bridge pack UCent
+    /** Unsigned 128-bit integer. */
+    @SinceAzora("0.0.4")
+    bridge pack UCent
 
-/** 32-bit IEEE-754 binary floating-point number. */
-@SinceAzora("0.0.4")
-bridge pack Float
+    /** 32-bit IEEE-754 binary floating-point number. */
+    @SinceAzora("0.0.4")
+    bridge pack Float
 
-/** 64-bit IEEE-754 binary floating-point number. The default real type. */
-@SinceAzora("0.0.4")
-bridge pack Real
+    /** 64-bit IEEE-754 binary floating-point number. The default real type. */
+    @SinceAzora("0.0.4")
+    bridge pack Real
 
-/** 128-bit IEEE-754 decimal floating-point number (currency-grade). */
-@SinceAzora("0.0.4")
-bridge pack Decimal
+    /** 128-bit IEEE-754 decimal floating-point number (currency-grade). */
+    @SinceAzora("0.0.4")
+    bridge pack Decimal
 
-/** Marker spec for the integer types (signed and unsigned). */
-@SinceAzora("0.0.4")
-spec Integer
+    /** Marker spec for the integer types (signed and unsigned). */
+    @SinceAzora("0.0.4")
+    spec Integer
 
-/** Marker spec for the unsigned integer types. */
-@SinceAzora("0.0.4")
-spec UnsignedInteger
+    /** Marker spec for the unsigned integer types. */
+    @SinceAzora("0.0.4")
+    spec UnsignedInteger
 
-/** Marker spec for the signed integer types. */
-@SinceAzora("0.0.4")
-spec SignedInteger
+    /** Marker spec for the signed integer types. */
+    @SinceAzora("0.0.4")
+    spec SignedInteger
 
-/** Marker spec for the floating-point types. */
-@SinceAzora("0.0.4")
-spec FloatingPoint
+    /** Marker spec for the floating-point types. */
+    @SinceAzora("0.0.4")
+    spec FloatingPoint
 
-/**
- * Common contract for every numeric type.
- *
- * @member rank The promotion rank: in a mixed-type expression the operand type with
- *   the higher `rank` is chosen as the result type (see `promote!`).
- */
-@SinceAzora("0.0.4")
-spec Number {
-    prop rank: Int
-}
-
-/**
- * Byte limits.
- *
- * @member MIN_VALUE The smallest representable value, `-128`.
- * @member MAX_VALUE The largest representable value, `127`.
- */
-@SinceAzora("0.0.4")
-impl zone for Byte {
-    inline fin MIN_VALUE: Int = -128
-    inline fin MAX_VALUE: Int = 127
-}
-
-/**
- * UByte limits.
- *
- * @member MIN_VALUE The smallest representable value, `0`.
- * @member MAX_VALUE The largest representable value, `255`.
- */
-@SinceAzora("0.0.4")
-impl zone for UByte {
-    inline fin MIN_VALUE: Int = 0
-    inline fin MAX_VALUE: Int = 255
-}
-
-/**
- * Storage size shared by the 8-bit integer types.
- *
- * @member SIZE_BYTES Size in bytes, `1`.
- * @member SIZE_BITS Size in bits, `8`.
- */
-@SinceAzora("0.0.4")
-impl zone for [Byte, UByte] {
-    inline fin SIZE_BYTES: Int = 1
-    inline fin SIZE_BITS: Int = 8
-}
-
-/**
- * Short limits.
- *
- * @member MIN_VALUE The smallest representable value, `-32_768`.
- * @member MAX_VALUE The largest representable value, `32_767`.
- */
-@SinceAzora("0.0.4")
-impl zone for Short {
-    inline fin MIN_VALUE: Int = -32_768
-    inline fin MAX_VALUE: Int = 32_767
-}
-
-/**
- * UShort limits.
- *
- * @member MIN_VALUE The smallest representable value, `0`.
- * @member MAX_VALUE The largest representable value, `65_535`.
- */
-@SinceAzora("0.0.4")
-impl zone for UShort {
-    inline fin MIN_VALUE: Int = 0
-    inline fin MAX_VALUE: Int = 65_535
-}
-
-/**
- * Storage size shared by the 16-bit integer types.
- *
- * @member SIZE_BYTES Size in bytes, `2`.
- * @member SIZE_BITS Size in bits, `16`.
- */
-@SinceAzora("0.0.4")
-impl zone for [Short, UShort] {
-    inline fin SIZE_BYTES: Int = 2
-    inline fin SIZE_BITS: Int = 16
-}
-
-/**
- * Int limits.
- *
- * @member MIN_VALUE The smallest representable value, `-2_147_483_648`.
- * @member MAX_VALUE The largest representable value, `2_147_483_647`.
- */
-@SinceAzora("0.0.4")
-impl zone for Int {
-    inline fin MIN_VALUE: Int = -2_147_483_648
-    inline fin MAX_VALUE: Int = 2_147_483_647
-}
-
-/**
- * UInt limits.
- *
- * @member MIN_VALUE The smallest representable value, `0`.
- * @member MAX_VALUE The largest representable value, `4_294_967_295`.
- */
-@SinceAzora("0.0.4")
-impl zone for UInt {
-    inline fin MIN_VALUE: Int = 0
-    inline fin MAX_VALUE: Int = 4_294_967_295
-}
-
-/**
- * Storage size shared by the 32-bit integer types.
- *
- * @member SIZE_BYTES Size in bytes, `4`.
- * @member SIZE_BITS Size in bits, `32`.
- */
-@SinceAzora("0.0.4")
-impl zone for [Int, UInt] {
-    inline fin SIZE_BYTES: Int = 4
-    inline fin SIZE_BITS: Int = 32
-}
-
-/**
- * Long limits.
- *
- * @member MIN_VALUE The smallest representable value, `-2^63`.
- * @member MAX_VALUE The largest representable value, `2^63 - 1`.
- */
-@SinceAzora("0.0.4")
-impl zone for Long {
-    inline fin MIN_VALUE: Long = -9_223_372_036_854_775_807L -1L
-    inline fin MAX_VALUE: Long = 9_223_372_036_854_775_807L
-}
-
-/**
- * ULong limits.
- *
- * @member MIN_VALUE The smallest representable value, `0`.
- * @member MAX_VALUE The largest representable value, `2^64 - 1`.
- */
-@SinceAzora("0.0.4")
-impl zone for ULong {
-    inline fin MIN_VALUE: Long = 0
-    inline fin MAX_VALUE: Long = 18_446_744_073_709_551_615L
-}
-
-/**
- * Storage size shared by the 64-bit integer types.
- *
- * @member SIZE_BYTES Size in bytes, `8`.
- * @member SIZE_BITS Size in bits, `64`.
- */
-@SinceAzora("0.0.4")
-impl zone for [Long, ULong] {
-    inline fin SIZE_BYTES: Int = 8
-    inline fin SIZE_BITS: Int = 64
-}
-
-/**
- * Cent limits.
- *
- * @member MIN_VALUE The smallest representable value, `-2^127`.
- * @member MAX_VALUE The largest representable value, `2^127 - 1`.
- */
-@SinceAzora("0.0.4")
-impl zone for Cent {
-    // Pending 128-bit literal support (the literal pipeline is currently Long-wide):
-    // inline fin MIN_VALUE: Cent = -170_141_183_460_469_231_731_687_303_715_884_105_728c
-    // inline fin MAX_VALUE: Cent = 170_141_183_460_469_231_731_687_303_715_884_105_727c
-}
-
-/**
- * UCent limits.
- *
- * @member MIN_VALUE The smallest representable value, `0`.
- * @member MAX_VALUE The largest representable value, `2^128 - 1`.
- */
-@SinceAzora("0.0.4")
-impl zone for UCent {
-    inline fin MIN_VALUE: UCent = 0uc
-    // Pending 128-bit literal support (the literal pipeline is currently Long-wide):
-    // inline fin MAX_VALUE: UCent = 340_282_366_920_938_463_463_374_607_431_768_211_455uc
-}
-
-/**
- * Storage size shared by the 128-bit integer types.
- *
- * @member SIZE_BYTES Size in bytes, `16`.
- * @member SIZE_BITS Size in bits, `128`.
- */
-@SinceAzora("0.0.4")
-impl zone for [Cent, UCent] {
-    inline fin SIZE_BYTES: Int = 16
-    inline fin SIZE_BITS: Int = 128
-}
-
-/**
- * Float limits and special values.
- *
- * @member MIN_VALUE The smallest positive normal value.
- * @member MAX_VALUE The largest finite value.
- * @member POSITIVE_INFINITY Positive infinity (`1f/0f`).
- * @member NEGATIVE_INFINITY Negative infinity (`-1f/0f`).
- * @member NAN Not-a-number.
- * @member SIZE_BYTES Size in bytes, `4`.
- * @member SIZE_BITS Size in bits, `32`.
- */
-@SinceAzora("0.0.4")
-impl zone for Float {
-    inline fin MIN_VALUE: Float = 1.4E-45f
-    inline fin MAX_VALUE: Float = 3.4028235E38f
-    inline fin POSITIVE_INFINITY: Float = 1f/0f
-    inline fin NEGATIVE_INFINITY: Float = -1f/0f
-    inline fin NAN: Float = -(0f/0f)
-    inline fin SIZE_BYTES: Int = 4
-    inline fin SIZE_BITS: Int = 32
-}
-
-/**
- * Real limits and special values.
- *
- * @member MIN_VALUE The smallest positive value.
- * @member MAX_VALUE The largest finite value.
- * @member POSITIVE_INFINITY Positive infinity (`1./0.`).
- * @member NEGATIVE_INFINITY Negative infinity (`-1./0.`).
- * @member NAN Not-a-number.
- * @member SIZE_BYTES Size in bytes, `8`.
- * @member SIZE_BITS Size in bits, `64`.
- */
-@SinceAzora("0.0.4")
-impl zone for Real {
-    inline fin MIN_VALUE: Real = 4.9E-324
-    inline fin MAX_VALUE: Real = 1.7976931348623157E308
-    inline fin POSITIVE_INFINITY: Real = 1./0.
-    inline fin NEGATIVE_INFINITY: Real = -1./0.
-    inline fin NAN: Real = -(0./0.)
-    inline fin SIZE_BYTES: Int = 8
-    inline fin SIZE_BITS: Int = 64
-}
-
-/**
- * Decimal limits, special values, and precision.
- *
- * @member MIN_VALUE The smallest (most negative) finite value.
- * @member MAX_VALUE The largest finite value.
- * @member POSITIVE_INFINITY Positive infinity (`1D/0D`).
- * @member NEGATIVE_INFINITY Negative infinity (`-1D/0D`).
- * @member NAN Not-a-number.
- * @member SIZE_BYTES Size in bytes, `16`.
- * @member SIZE_BITS Size in bits, `128`.
- * @member DIGITS Significant decimal digits, `34`.
- * @member MIN_EXPONENT The smallest decimal exponent, `-6143`.
- * @member MAX_EXPONENT The largest decimal exponent, `6144`.
- */
-@SinceAzora("0.0.4")
-impl zone for Decimal {
-    inline fin MIN_VALUE: Decimal = -9.999999999999999999999999999999999E6144D
-    inline fin MAX_VALUE: Decimal =  9.999999999999999999999999999999999E6144D
-    inline fin POSITIVE_INFINITY: Decimal = 1D / 0D
-    inline fin NEGATIVE_INFINITY: Decimal = -1D / 0D
-    inline fin NAN: Decimal = -(0D / 0D)
-    inline fin SIZE_BYTES: Int = 16
-    inline fin SIZE_BITS: Int = 128
-    inline fin DIGITS: Int = 34
-    inline fin MIN_EXPONENT: Int = -6143
-    inline fin MAX_EXPONENT: Int = 6144
-}
-
-/** The unsigned integer types, in ascending width. A compile-time `[Type]` list. */
-@SinceAzora("0.0.4")
-let UnsignedIntegers: [Type] = [UByte, UShort, UInt, ULong, UCent]
-
-/** The signed integer types, in ascending width. A compile-time `[Type]` list. */
-@SinceAzora("0.0.4")
-let SignedIntegers: [Type] = [Byte, Short, Int, Long, Cent]
-
-/** All integer types. `~` appends two compile-time type lists (as in D). */
-@SinceAzora("0.0.4")
-let Integers: [Type] = UnsignedIntegers ~ SignedIntegers
-
-/** The floating-point types, in ascending width. */
-@SinceAzora("0.0.4")
-let FloatingPoints: [Type] = [Float, Real, Decimal]
-
-/** Every numeric type: integers followed by floating-point types. */
-@SinceAzora("0.0.4")
-let Numbers: [Type] = Integers ~ FloatingPoints
-
-/** Every unsigned integer type conforms to `UnsignedInteger`. */
-@SinceAzora("0.0.4")
-impl UnsignedInteger for UnsignedIntegers
-
-/** Every signed integer type conforms to `SignedInteger`. */
-@SinceAzora("0.0.4")
-impl SignedInteger for SignedIntegers
-
-/** Every integer type conforms to `Integer`. */
-@SinceAzora("0.0.4")
-impl Integer for Integers
-
-/** Every floating-point type conforms to `FloatingPoint`. */
-@SinceAzora("0.0.4")
-impl FloatingPoint for FloatingPoints
-
-// Promotion ranks for every numeric type.
-inline for (Ty, rank) in (Numbers, [0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 6, 7]) {
     /**
-     * Promotion rank of `$Ty` to `$rank`.
+     * Common contract for every numeric type.
      *
-     * In a mixed-type expression `promote!` keeps the operand type with the higher
-     * `rank` (`Candidate.rank > Result.rank`). Ranks grow with width, so a wider type
-     * always wins; the floating-point types outrank every integer type (so `Int + Real`
-     * yields `Real`). Signed and unsigned types of the same width share a rank.
-     *
-     * @member rank The promotion rank of `$Ty`.
+     * @member rank The promotion rank: in a mixed-type expression the operand type with
+     *   the higher `rank` is chosen as the result type (see `promote!`).
      */
     @SinceAzora("0.0.4")
-    impl Number for Ty {
-        prop rank: Int = $rank
+    spec Number {
+        prop rank: Int
     }
-}
 
-inline for op in ["==", "!=", "&", "|", "^"] {
     /**
-     * Boolean operator $op over Bool operands.
+     * Byte limits.
      *
-     * @receiver ref self The left Bool operand.
-     * @receiver rhs The right Bool operand.
-     * @return Bool
+     * @member MIN_VALUE The smallest representable value, `-128`.
+     * @member MAX_VALUE The largest representable value, `127`.
      */
-    @Experimental(sinceAzora: "0.0.4")
-    bridge impl oper $op for Bool: Bool(ref self, rhs: Bool)
-}
+    @SinceAzora("0.0.4")
+    impl zone for Byte {
+        inline fin MIN_VALUE: Int = -128
+        inline fin MAX_VALUE: Int = 127
+    }
 
-inline for op in ["+", "-"] {
-    inline for Ty in SignedIntegers {
+    /**
+     * UByte limits.
+     *
+     * @member MIN_VALUE The smallest representable value, `0`.
+     * @member MAX_VALUE The largest representable value, `255`.
+     */
+    @SinceAzora("0.0.4")
+    impl zone for UByte {
+        inline fin MIN_VALUE: Int = 0
+        inline fin MAX_VALUE: Int = 255
+    }
+
+    /**
+     * Storage size shared by the 8-bit integer types.
+     *
+     * @member SIZE_BYTES Size in bytes, `1`.
+     * @member SIZE_BITS Size in bits, `8`.
+     */
+    @SinceAzora("0.0.4")
+    impl zone for [Byte, UByte] {
+        inline fin SIZE_BYTES: Int = 1
+        inline fin SIZE_BITS: Int = 8
+    }
+
+    /**
+     * Short limits.
+     *
+     * @member MIN_VALUE The smallest representable value, `-32_768`.
+     * @member MAX_VALUE The largest representable value, `32_767`.
+     */
+    @SinceAzora("0.0.4")
+    impl zone for Short {
+        inline fin MIN_VALUE: Int = -32_768
+        inline fin MAX_VALUE: Int = 32_767
+    }
+
+    /**
+     * UShort limits.
+     *
+     * @member MIN_VALUE The smallest representable value, `0`.
+     * @member MAX_VALUE The largest representable value, `65_535`.
+     */
+    @SinceAzora("0.0.4")
+    impl zone for UShort {
+        inline fin MIN_VALUE: Int = 0
+        inline fin MAX_VALUE: Int = 65_535
+    }
+
+    /**
+     * Storage size shared by the 16-bit integer types.
+     *
+     * @member SIZE_BYTES Size in bytes, `2`.
+     * @member SIZE_BITS Size in bits, `16`.
+     */
+    @SinceAzora("0.0.4")
+    impl zone for [Short, UShort] {
+        inline fin SIZE_BYTES: Int = 2
+        inline fin SIZE_BITS: Int = 16
+    }
+
+    /**
+     * Int limits.
+     *
+     * @member MIN_VALUE The smallest representable value, `-2_147_483_648`.
+     * @member MAX_VALUE The largest representable value, `2_147_483_647`.
+     */
+    @SinceAzora("0.0.4")
+    impl zone for Int {
+        inline fin MIN_VALUE: Int = -2_147_483_648
+        inline fin MAX_VALUE: Int = 2_147_483_647
+    }
+
+    /**
+     * UInt limits.
+     *
+     * @member MIN_VALUE The smallest representable value, `0`.
+     * @member MAX_VALUE The largest representable value, `4_294_967_295`.
+     */
+    @SinceAzora("0.0.4")
+    impl zone for UInt {
+        inline fin MIN_VALUE: Int = 0
+        inline fin MAX_VALUE: Int = 4_294_967_295
+    }
+
+    /**
+     * Storage size shared by the 32-bit integer types.
+     *
+     * @member SIZE_BYTES Size in bytes, `4`.
+     * @member SIZE_BITS Size in bits, `32`.
+     */
+    @SinceAzora("0.0.4")
+    impl zone for [Int, UInt] {
+        inline fin SIZE_BYTES: Int = 4
+        inline fin SIZE_BITS: Int = 32
+    }
+
+    /**
+     * Long limits.
+     *
+     * @member MIN_VALUE The smallest representable value, `-2^63`.
+     * @member MAX_VALUE The largest representable value, `2^63 - 1`.
+     */
+    @SinceAzora("0.0.4")
+    impl zone for Long {
+        inline fin MIN_VALUE: Long = -9_223_372_036_854_775_807L -1L
+        inline fin MAX_VALUE: Long = 9_223_372_036_854_775_807L
+    }
+
+    /**
+     * ULong limits.
+     *
+     * @member MIN_VALUE The smallest representable value, `0`.
+     * @member MAX_VALUE The largest representable value, `2^64 - 1`.
+     */
+    @SinceAzora("0.0.4")
+    impl zone for ULong {
+        inline fin MIN_VALUE: Long = 0
+        inline fin MAX_VALUE: Long = 18_446_744_073_709_551_615L
+    }
+
+    /**
+     * Storage size shared by the 64-bit integer types.
+     *
+     * @member SIZE_BYTES Size in bytes, `8`.
+     * @member SIZE_BITS Size in bits, `64`.
+     */
+    @SinceAzora("0.0.4")
+    impl zone for [Long, ULong] {
+        inline fin SIZE_BYTES: Int = 8
+        inline fin SIZE_BITS: Int = 64
+    }
+
+    /**
+     * Cent limits.
+     *
+     * @member MIN_VALUE The smallest representable value, `-2^127`.
+     * @member MAX_VALUE The largest representable value, `2^127 - 1`.
+     */
+    @SinceAzora("0.0.4")
+    impl zone for Cent {
+        // Pending 128-bit literal support (the literal pipeline is currently Long-wide):
+        // inline fin MIN_VALUE: Cent = -170_141_183_460_469_231_731_687_303_715_884_105_728c
+        // inline fin MAX_VALUE: Cent = 170_141_183_460_469_231_731_687_303_715_884_105_727c
+    }
+
+    /**
+     * UCent limits.
+     *
+     * @member MIN_VALUE The smallest representable value, `0`.
+     * @member MAX_VALUE The largest representable value, `2^128 - 1`.
+     */
+    @SinceAzora("0.0.4")
+    impl zone for UCent {
+        inline fin MIN_VALUE: UCent = 0uc
+        // Pending 128-bit literal support (the literal pipeline is currently Long-wide):
+        // inline fin MAX_VALUE: UCent = 340_282_366_920_938_463_463_374_607_431_768_211_455uc
+    }
+
+    /**
+     * Storage size shared by the 128-bit integer types.
+     *
+     * @member SIZE_BYTES Size in bytes, `16`.
+     * @member SIZE_BITS Size in bits, `128`.
+     */
+    @SinceAzora("0.0.4")
+    impl zone for [Cent, UCent] {
+        inline fin SIZE_BYTES: Int = 16
+        inline fin SIZE_BITS: Int = 128
+    }
+
+    /**
+     * Float limits and special values.
+     *
+     * @member MIN_VALUE The smallest positive normal value.
+     * @member MAX_VALUE The largest finite value.
+     * @member POSITIVE_INFINITY Positive infinity (`1f/0f`).
+     * @member NEGATIVE_INFINITY Negative infinity (`-1f/0f`).
+     * @member NAN Not-a-number.
+     * @member SIZE_BYTES Size in bytes, `4`.
+     * @member SIZE_BITS Size in bits, `32`.
+     */
+    @SinceAzora("0.0.4")
+    impl zone for Float {
+        inline fin MIN_VALUE: Float = 1.4E-45f
+        inline fin MAX_VALUE: Float = 3.4028235E38f
+        inline fin POSITIVE_INFINITY: Float = 1f/0f
+        inline fin NEGATIVE_INFINITY: Float = -1f/0f
+        inline fin NAN: Float = -(0f/0f)
+        inline fin SIZE_BYTES: Int = 4
+        inline fin SIZE_BITS: Int = 32
+    }
+
+    /**
+     * Real limits and special values.
+     *
+     * @member MIN_VALUE The smallest positive value.
+     * @member MAX_VALUE The largest finite value.
+     * @member POSITIVE_INFINITY Positive infinity (`1./0.`).
+     * @member NEGATIVE_INFINITY Negative infinity (`-1./0.`).
+     * @member NAN Not-a-number.
+     * @member SIZE_BYTES Size in bytes, `8`.
+     * @member SIZE_BITS Size in bits, `64`.
+     */
+    @SinceAzora("0.0.4")
+    impl zone for Real {
+        inline fin MIN_VALUE: Real = 4.9E-324
+        inline fin MAX_VALUE: Real = 1.7976931348623157E308
+        inline fin POSITIVE_INFINITY: Real = 1./0.
+        inline fin NEGATIVE_INFINITY: Real = -1./0.
+        inline fin NAN: Real = -(0./0.)
+        inline fin SIZE_BYTES: Int = 8
+        inline fin SIZE_BITS: Int = 64
+    }
+
+    /**
+     * Decimal limits, special values, and precision.
+     *
+     * @member MIN_VALUE The smallest (most negative) finite value.
+     * @member MAX_VALUE The largest finite value.
+     * @member POSITIVE_INFINITY Positive infinity (`1D/0D`).
+     * @member NEGATIVE_INFINITY Negative infinity (`-1D/0D`).
+     * @member NAN Not-a-number.
+     * @member SIZE_BYTES Size in bytes, `16`.
+     * @member SIZE_BITS Size in bits, `128`.
+     * @member DIGITS Significant decimal digits, `34`.
+     * @member MIN_EXPONENT The smallest decimal exponent, `-6143`.
+     * @member MAX_EXPONENT The largest decimal exponent, `6144`.
+     */
+    @SinceAzora("0.0.4")
+    impl zone for Decimal {
+        inline fin MIN_VALUE: Decimal = -9.999999999999999999999999999999999E6144D
+        inline fin MAX_VALUE: Decimal =  9.999999999999999999999999999999999E6144D
+        inline fin POSITIVE_INFINITY: Decimal = 1D / 0D
+        inline fin NEGATIVE_INFINITY: Decimal = -1D / 0D
+        inline fin NAN: Decimal = -(0D / 0D)
+        inline fin SIZE_BYTES: Int = 16
+        inline fin SIZE_BITS: Int = 128
+        inline fin DIGITS: Int = 34
+        inline fin MIN_EXPONENT: Int = -6143
+        inline fin MAX_EXPONENT: Int = 6144
+    }
+
+    /** The unsigned integer types, in ascending width. A compile-time `[Type]` list. */
+    @SinceAzora("0.0.4")
+    let UnsignedIntegers: [Type] = [UByte, UShort, UInt, ULong, UCent]
+
+    /** The signed integer types, in ascending width. A compile-time `[Type]` list. */
+    @SinceAzora("0.0.4")
+    let SignedIntegers: [Type] = [Byte, Short, Int, Long, Cent]
+
+    /** All integer types. `~` appends two compile-time type lists (as in D). */
+    @SinceAzora("0.0.4")
+    let Integers: [Type] = UnsignedIntegers ~ SignedIntegers
+
+    /** The floating-point types, in ascending width. */
+    @SinceAzora("0.0.4")
+    let FloatingPoints: [Type] = [Float, Real, Decimal]
+
+    /** Every numeric type: integers followed by floating-point types. */
+    @SinceAzora("0.0.4")
+    let Numbers: [Type] = Integers ~ FloatingPoints
+
+    /** Every unsigned integer type conforms to `UnsignedInteger`. */
+    @SinceAzora("0.0.4")
+    impl UnsignedInteger for UnsignedIntegers
+
+    /** Every signed integer type conforms to `SignedInteger`. */
+    @SinceAzora("0.0.4")
+    impl SignedInteger for SignedIntegers
+
+    /** Every integer type conforms to `Integer`. */
+    @SinceAzora("0.0.4")
+    impl Integer for Integers
+
+    /** Every floating-point type conforms to `FloatingPoint`. */
+    @SinceAzora("0.0.4")
+    impl FloatingPoint for FloatingPoints
+
+    // Promotion ranks for every numeric type.
+    inline for (Ty, rank) in (Numbers, [0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 6, 7]) {
         /**
-         * Unary arithmetic operator $op on a signed integer type.
+         * Promotion rank of `$Ty` to `$rank`.
+         *
+         * In a mixed-type expression `promote!` keeps the operand type with the higher
+         * `rank` (`Candidate.rank > Result.rank`). Ranks grow with width, so a wider type
+         * always wins; the floating-point types outrank every integer type (so `Int + Real`
+         * yields `Real`). Signed and unsigned types of the same width share a rank.
+         *
+         * @member rank The promotion rank of `$Ty`.
+         */
+        @SinceAzora("0.0.4")
+        impl Number as zone for Ty {
+            prop rank: Int = $rank
+        }
+    }
+
+    inline for op in ["==", "!=", "&", "|", "^"] {
+        /**
+         * Boolean operator $op over Bool operands.
+         *
+         * @receiver ref self The left Bool operand.
+         * @receiver rhs The right Bool operand.
+         * @return Bool
+         */
+        @Experimental(sinceAzora: "0.0.4")
+        bridge impl oper $op for Bool: Bool(ref self, rhs: Bool)
+    }
+
+    inline for op in ["+", "-"] {
+        inline for Ty in SignedIntegers {
+            /**
+             * Unary arithmetic operator $op on a signed integer type.
+             *
+             * @receiver ref self The operand; the result has the same type.
+             * @return the operand type
+             */
+            @Experimental(sinceAzora: "0.0.4")
+            bridge impl oper $op for Ty: Ty(ref self)
+        }
+    }
+
+    inline for Ty in Integers {
+        /**
+         * Bitwise complement (~) on an integer type (signed or unsigned).
          *
          * @receiver ref self The operand; the result has the same type.
          * @return the operand type
          */
         @Experimental(sinceAzora: "0.0.4")
-        bridge impl oper $op for Ty: Ty(ref self)
+        bridge impl oper~ for Ty: Ty(ref self)
     }
-}
 
-inline for Ty in Integers {
-    /**
-     * Bitwise complement (~) on an integer type (signed or unsigned).
-     *
-     * @receiver ref self The operand; the result has the same type.
-     * @return the operand type
-     */
-    @Experimental(sinceAzora: "0.0.4")
-    bridge impl oper~ for Ty: Ty(ref self)
-}
-
-inline for op in ["+", "-", "*", "/", "%"] {
-    inline for LhsTy in Numbers {
-        inline for RhsTy in Numbers {
-            /**
-             * Arithmetic operator $op over a pair of numeric operand types.
-             *
-             * @receiver ref self The left operand.
-             * @receiver rhs The right operand (any numeric type).
-             * @return promote!(LhsTy, RhsTy) — the wider of the two operand types
-             */
-            @Experimental(sinceAzora: "0.0.4")
-            bridge impl oper $op for LhsTy: std::promote!(LhsTy, RhsTy)(ref self, rhs: RhsTy)
+    inline for op in ["+", "-", "*", "/", "%"] {
+        inline for LhsTy in Numbers {
+            inline for RhsTy in Numbers {
+                /**
+                 * Arithmetic operator $op over a pair of numeric operand types.
+                 *
+                 * @receiver ref self The left operand.
+                 * @receiver rhs The right operand (any numeric type).
+                 * @return promote!(LhsTy, RhsTy) — the wider of the two operand types
+                 */
+                @Experimental(sinceAzora: "0.0.4")
+                bridge impl oper $op for LhsTy: std::promote!(LhsTy, RhsTy)(ref self, rhs: RhsTy)
+            }
         }
     }
-}
 
-inline for op in ["&", "|", "^"] {
-    inline for LhsTy in Integers {
-        inline for RhsTy in Integers {
-            /**
-             * Bitwise operator $op over a pair of integer operand types.
-             *
-             * @receiver ref self The left operand.
-             * @receiver rhs The right operand (any integer type).
-             * @return promote!(LhsTy, RhsTy) — the wider of the two operand types
-             */
-            @Experimental(sinceAzora: "0.0.4")
-            bridge impl oper $op for LhsTy: std::promote!(LhsTy, RhsTy) (ref self, rhs: RhsTy)
+    inline for op in ["&", "|", "^"] {
+        inline for LhsTy in Integers {
+            inline for RhsTy in Integers {
+                /**
+                 * Bitwise operator $op over a pair of integer operand types.
+                 *
+                 * @receiver ref self The left operand.
+                 * @receiver rhs The right operand (any integer type).
+                 * @return promote!(LhsTy, RhsTy) — the wider of the two operand types
+                 */
+                @Experimental(sinceAzora: "0.0.4")
+                bridge impl oper $op for LhsTy: std::promote!(LhsTy, RhsTy) (ref self, rhs: RhsTy)
+            }
         }
     }
-}
 
-inline for op in ["<<", ">>"] {
-    inline for Ty in Integers {
-        /**
-         * Shift operator $op on an integer type; the shift count is a UInt.
-         *
-         * @receiver ref self The value being shifted; the result has its type.
-         * @receiver rhs The shift count.
-         * @return the operand type
-         */
-        @Experimental(sinceAzora: "0.0.4")
-        bridge impl oper $op for Ty: Ty (ref self, rhs: UInt)
-    }
-}
-
-inline for op in ["<", ">", "<=", ">=", "==", "!="] {
-    inline for LhsTy in Numbers {
-        inline for RhsTy in Numbers {
+    inline for op in ["<<", ">>"] {
+        inline for Ty in Integers {
             /**
-             * Comparison operator $op over every pair of numeric operand types.
+             * Shift operator $op on an integer type; the shift count is a UInt.
              *
-             * @receiver ref self The left operand.
-             * @receiver rhs The right operand (any numeric type).
-             * @return Bool
+             * @receiver ref self The value being shifted; the result has its type.
+             * @receiver rhs The shift count.
+             * @return the operand type
              */
             @Experimental(sinceAzora: "0.0.4")
-            bridge impl oper $op for LhsTy: Bool(ref self, rhs: RhsTy)
+            bridge impl oper $op for Ty: Ty (ref self, rhs: UInt)
+        }
+    }
+
+    inline for op in ["<", ">", "<=", ">=", "==", "!="] {
+        inline for LhsTy in Numbers {
+            inline for RhsTy in Numbers {
+                /**
+                 * Comparison operator $op over every pair of numeric operand types.
+                 *
+                 * @receiver ref self The left operand.
+                 * @receiver rhs The right operand (any numeric type).
+                 * @return Bool
+                 */
+                @Experimental(sinceAzora: "0.0.4")
+                bridge impl oper $op for LhsTy: Bool(ref self, rhs: RhsTy)
+            }
         }
     }
 }

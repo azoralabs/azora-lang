@@ -295,6 +295,20 @@ sealed class Expr {
 
     /** `arr...` — spread an array's elements as individual call arguments. */
     data class Spread(val array: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+
+    /**
+     * A macro invocation `name!(…)`, `name![…]`, or `name!{…}`.
+     *
+     * The delimiter is ergonomic-only (all three forms feed [args] to the same
+     * macro arms) and is dropped at parse time. [org.azora.lang.frontend.MacroExpander]
+     * rewrites every `MetaInvoke` into the matched arm's template expression,
+     * with `$captures` spliced in, before semantic analysis — so this node never
+     * survives into type resolution or IR generation.
+     *
+     * @property name the invoked macro's name
+     * @property args the argument expressions (delimiter-agnostic)
+     */
+    data class MetaInvoke(val name: String, val args: List<Expr>, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 }
 
 // ---------------------------------------------------------------------------
@@ -1296,6 +1310,40 @@ enum class MemberCallStyle {
 }
 
 /**
+ * The delimiter a macro arm was *written* with: `()` ([PAREN]), `[]`
+ * ([BRACKET]), or `{}` ([BRACE]). Stored for diagnostics only — macro arms
+ * match delimiter-agnostically, so `vec!()`, `vec![]`, and `vec!{}` all feed
+ * their arguments to the same arms.
+ */
+enum class MacroDelimiter { PAREN, BRACKET, BRACE }
+
+/**
+ * The left-hand pattern of a macro arm, matched against a invocation's
+ * argument list.
+ *
+ * - [Empty] matches zero arguments (`[]` / `()` / `{}`).
+ * - [SeqCapture] matches one or more arguments and binds the whole list to
+ *   [name] (e.g. `[...$items]` binds `"$items"`), spliceable via `...$items`
+ *   in the arm template.
+ */
+sealed class MacroPattern {
+    /** `[]` / `()` / `{}` — matches an invocation that passed no arguments. */
+    object Empty : MacroPattern()
+    /** `(...$name)` / `[...$name]` / `{...$name}` — matches ≥1 arg, binding the full list to [name]. */
+    data class SeqCapture(val name: String) : MacroPattern()
+}
+
+/**
+ * One arm of a `meta` declaration: when an invocation's arguments match
+ * [pattern], the macro expands to [template] with `$captures` substituted.
+ *
+ * @property delimiter the delimiter the arm was written with (diagnostic only)
+ * @property pattern the argument-list pattern to match
+ * @property template the expansion expression (ordinary [Expr], may reference captures)
+ */
+data class MacroArm(val delimiter: MacroDelimiter, val pattern: MacroPattern, val template: Expr)
+
+/**
  * A decorator/annotation application: `@Name`, `@Name(args)`, or `@target:Name`.
  *
  * @property name the decorator name
@@ -1583,8 +1631,12 @@ sealed class TopLevel {
      * `import ZoneName` or `import ZoneName.Item` — imports items from a named zone so they're
      * accessible without the `ZoneName::` prefix. [imports] is a list of (zoneName, itemName)
      * pairs where itemName is null for "import all".
+     *
+     * When [exported] is true (written `export import …`), the import is re-exported:
+     * any module that imports this module also transitively imports [imports]. This lets
+     * a library forward its dependencies (e.g. `std.macro` re-exporting `std.container`).
      */
-    data class UseImport(val imports: List<Pair<String, String?>>, val line: Int, val column: Int = 0) : TopLevel()
+    data class UseImport(val imports: List<Pair<String, String?>>, val line: Int, val column: Int = 0, val exported: Boolean = false) : TopLevel()
 
     /**
      * A simple `enum` declaration: `enum Color { Red; Green; Blue }`.
@@ -1657,6 +1709,20 @@ sealed class TopLevel {
 
     /** `slot Name { Variant(Type); Variant2(Type1, Type2); Variant3 }` — a tagged union. */
     data class Slot(val name: String, val variants: List<SlotVariant>, val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList()) : TopLevel()
+
+    /**
+     * `meta Name { arm; arm; … }` — a pattern-driven macro declaration.
+     *
+     * Macros are top-level, bare-name declarations: `import std.macro` makes a
+     * macro invocable as `name!(…)`. [MacroExpander] collects every `Meta`
+     * declaration, rewrites all matching [Expr.MetaInvoke] invocations into
+     * their arm templates, and removes the `Meta` node itself — so it never
+     * reaches semantic analysis or IR generation.
+     *
+     * @property name the macro name
+     * @property arms the ordered pattern arms (first match wins)
+     */
+    data class Meta(val name: String, val arms: List<MacroArm>, val line: Int, val column: Int = 0) : TopLevel()
 
     /**
      * A top-level compile-time assertion (`inline assert condition { "message" }`).

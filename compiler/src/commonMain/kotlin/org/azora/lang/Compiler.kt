@@ -23,6 +23,7 @@ import org.azora.lang.frontend.AstValidator
 import org.azora.lang.frontend.CallbackImplNormalizer
 import org.azora.lang.frontend.Lexer
 import org.azora.lang.frontend.DebugInstrumenter
+import org.azora.lang.frontend.MacroExpander
 import org.azora.lang.frontend.Parser
 import org.azora.lang.stdlib.StdlibInjector
 import org.azora.lang.frontend.Program
@@ -160,10 +161,23 @@ class Compiler {
         }
         val injected = CallbackImplNormalizer.normalize(StdlibInjector.inject(serialization.program))
 
-        // 2c. Monomorphize variadic generics (e.g. `Tuple<T…>` / `tupleOf(…)`)
+        // 2c. Expand `meta` macros: rewrite every `Expr.MetaInvoke` into its
+        // matched arm's template (splice-substituting `$captures`) and remove
+        // the `TopLevel.Meta` declarations. Runs after stdlib injection so both
+        // user-defined and library macros are available, and before variadic
+        // monomorphization so macro-generated variadic calls (e.g. std::listOf)
+        // monomorphize normally. The result is plain expressions — no IR/backend
+        // awareness of macros is needed.
+        val macroExpanded = try {
+            MacroExpander.expand(injected)
+        } catch (e: IllegalStateException) {
+            return CompilationResult.Failure(listOf(e.message ?: "macro expansion failed"))
+        }
+
+        // 2d. Monomorphize variadic generics (e.g. `Tuple<T…>` / `tupleOf(…)`)
         // into concrete per-instantiation declarations before semantic analysis.
         val ast = try {
-            VariadicMonomorphizer.monomorphize(injected)
+            VariadicMonomorphizer.monomorphize(macroExpanded)
         } catch (e: IllegalStateException) {
             return CompilationResult.Failure(listOf(e.message ?: "variadic monomorphization failed"))
         }

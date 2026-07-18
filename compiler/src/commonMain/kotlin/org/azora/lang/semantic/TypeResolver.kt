@@ -1175,6 +1175,8 @@ class TypeResolver(private val table: SymbolTable) {
                 val retType = captured.firstOrNull() ?: IrType.Unit
                 IrType.Function(paramTypes, retType, variadic = expr.variadic)
             }
+            // Macros are expanded before type resolution; a MetaInvoke here is a bug.
+            is Expr.MetaInvoke -> error("MetaInvoke reached TypeResolver at line ${expr.line}")
         }
     }
 

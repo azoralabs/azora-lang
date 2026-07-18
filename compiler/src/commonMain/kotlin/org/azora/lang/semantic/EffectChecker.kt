@@ -264,6 +264,8 @@ class EffectChecker {
             is Expr.StringLiteral, is Expr.BoolLiteral,
             is Expr.CharLiteral,
             is Expr.Identifier, is Expr.UpperScopeAccess -> {}
+            // Macros are expanded before effect checking; unreachable.
+            is Expr.MetaInvoke -> {}
         }
     }
 }

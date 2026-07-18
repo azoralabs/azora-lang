@@ -58,6 +58,7 @@ class Lexer(private val source: String) {
             "trace" to TokenType.TRACE,
             "mixin" to TokenType.MIXIN,
             "panic" to TokenType.PANIC,
+            "meta" to TokenType.META,
             "for" to TokenType.FOR,
             "while" to TokenType.WHILE,
             "loop" to TokenType.LOOP,
@@ -194,7 +195,13 @@ class Lexer(private val source: String) {
             '*' -> addToken(if (match('=')) TokenType.STAR_EQUAL else TokenType.STAR)
             '%' -> addToken(if (match('=')) TokenType.PERCENT_EQUAL else TokenType.PERCENT)
             '!' -> addToken(if (match('=')) TokenType.BANG_EQUAL else TokenType.BANG)
-            '=' -> addToken(if (match('=')) TokenType.EQUAL_EQUAL else TokenType.EQUAL)
+            '=' -> when {
+                match('=') -> addToken(TokenType.EQUAL_EQUAL)
+                // `=>` is the fat-arrow used by `meta` macro arms (`[] => template`).
+                // Lex it as ARROW (same token as `->`) so both arrow forms are accepted.
+                match('>') -> addToken(TokenType.ARROW)
+                else -> addToken(TokenType.EQUAL)
+            }
             '<' -> when {
                 match('=') -> addToken(TokenType.LESS_EQUAL)
                 match('<') -> addToken(TokenType.SHIFT_LEFT)

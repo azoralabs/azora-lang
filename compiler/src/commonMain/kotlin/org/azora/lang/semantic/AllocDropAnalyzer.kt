@@ -304,6 +304,8 @@ class AllocDropAnalyzer {
             is Expr.IntLiteral, is Expr.RealLiteral,
             is Expr.StringLiteral, is Expr.BoolLiteral,
             is Expr.CharLiteral -> {}
+            // Macros are expanded before alloc/drop analysis; unreachable.
+            is Expr.MetaInvoke -> {}
         }
     }
 }

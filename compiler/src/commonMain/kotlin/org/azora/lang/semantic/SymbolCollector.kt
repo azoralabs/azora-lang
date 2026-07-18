@@ -620,5 +620,7 @@ class SymbolCollector {
         is Expr.NullLiteral -> IrType.Any
         is Expr.NullCoalesce, is Expr.SafeMember,
         is Expr.Cast, is Expr.IsCheck, is Expr.Alloc, is Expr.AllocBuffer, is Expr.Deref, is Expr.Isolated, is Expr.Await, is Expr.Inject, is Expr.Spread -> null
+        // Macros are expanded before symbol collection; unreachable.
+        is Expr.MetaInvoke -> null
     }
 }

@@ -60,7 +60,7 @@ friend zone std {
     type promote(T: ...Type) where T.length >= 2 && T is Number {
         let Result: Type = T.0
         for Candidate in T[1...] {
-            Result = if Candidate.rank > Result.rank { Candidate } else { Result }
+            Result = if Candidate::rank > Result::rank { Candidate } else { Result }
         }
         return Result
     }

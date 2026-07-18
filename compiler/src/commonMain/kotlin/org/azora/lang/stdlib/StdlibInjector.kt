@@ -84,6 +84,15 @@ object StdlibInjector {
         val externs = LinkedHashMap<String, TopLevel.Bridge>()
         /** struct/pack name → its `impl` blocks (methods/oper overloads), injected alongside the pack. */
         val implsByType = LinkedHashMap<String, MutableList<TopLevel.Impl>>()
+        /**
+         * Per-module `export import …` re-exports. When a program imports [module]
+         * (or [module] is auto-injected via `export module`), each (path, selected)
+         * pair here is also imported transitively — e.g. `std.macro` re-exporting
+         * `std.container.{list, set, …}` so a bare `import std.macro` suffices.
+         */
+        val exportedImportsByModule = LinkedHashMap<String, MutableList<Pair<String, String?>>>()
+        /** Modules published via `export expose module …` (auto-injected into every unit). */
+        val alwaysOnModules = mutableListOf<String>()
     }
 
     private val index: Index by lazy { buildIndex() }
@@ -148,6 +157,7 @@ object StdlibInjector {
                     is TopLevel.Spec -> register(item.name, item)
                     is TopLevel.Deco -> register(item.name, item)
                     is TopLevel.Slot -> register(item.name, item)
+                    is TopLevel.Meta -> register(item.name, item)
                     is TopLevel.Impl -> {
                         val owner = item.typeName.substringBefore('.')
                         val keys = linkedSetOf(item.typeName, normalizedTypeName(item.typeName), owner)
@@ -168,7 +178,15 @@ object StdlibInjector {
                     else -> {}
                 }
             }
+            // Record this module's `export import …` re-exports for transitive
+            // import propagation, and (if always-on) the module name itself.
+            for (item in program.items) {
+                if (item is TopLevel.UseImport && item.exported) {
+                    idx.exportedImportsByModule.getOrPut(module) { mutableListOf() }.addAll(item.imports)
+                }
+            }
             if (alwaysOn) {
+                idx.alwaysOnModules.add(module)
                 moduleItems.forEach { (name, item) -> idx.implicitRootItems.putIfAbsentCompat(name, item) }
                 idx.alwaysTypeFunctions.addAll(program.typeFunctions)
             }
@@ -186,16 +204,37 @@ object StdlibInjector {
      */
     private fun importedItems(program: Program): Map<String, TopLevel> {
         val visible = LinkedHashMap<String, TopLevel>()
+        // Seed with the program's own imports, plus the re-exports of any
+        // `export module` library that is auto-injected into every unit — its
+        // `export import …` declarations apply to importers transitively.
+        val seeds = ArrayDeque<Pair<String, String?>>()
         for (item in program.items) {
-            if (item !is TopLevel.UseImport) continue
-            for ((path, selected) in item.imports) {
-                for ((name, declaration) in itemsVisibleFromImport(path, selected)) {
-                    visible.putIfAbsentCompat(name, declaration)
-                }
+            if (item is TopLevel.UseImport && !item.exported) seeds.addAll(item.imports)
+        }
+        for (module in index.alwaysOnModules) {
+            seeds.addAll(index.exportedImportsByModule[module].orEmpty())
+        }
+        // Expand transitively: resolving a module also pulls in its `export import`
+        // re-exports, and so on (visited guards against cycles).
+        val visited = mutableSetOf<String>()
+        while (seeds.isNotEmpty()) {
+            val (path, selected) = seeds.removeFirst()
+            val key = "$path::${selected ?: "*"}"
+            if (!visited.add(key)) continue
+            for ((name, declaration) in itemsVisibleFromImport(path, selected)) {
+                visible.putIfAbsentCompat(name, declaration)
+            }
+            for (module in modulesForPath(path)) {
+                seeds.addAll(index.exportedImportsByModule[module].orEmpty())
             }
         }
         return visible
     }
+
+    /** The library module(s) an import [path] reaches: itself if exact, else descendant modules. */
+    private fun modulesForPath(path: String): List<String> =
+        if (index.modules.containsKey(path)) listOf(path)
+        else index.modules.keys.filter { it.startsWith("$path.") }.toList()
 
     private fun importedTypeFunctions(program: Program): List<TypeFunctionDecl> {
         val visible = mutableListOf<TypeFunctionDecl>()
@@ -281,6 +320,10 @@ object StdlibInjector {
                 is TopLevel.Spec -> names.add(item.name)
                 is TopLevel.Slot -> names.add(item.name)
                 is TopLevel.Bridge -> item.funcs.forEach { names.add(it.name) }
+                is TopLevel.Meta -> {
+                    names.add(item.name)
+                    item.arms.forEach { arm -> collectNamesFromExpr(arm.template, names) }
+                }
                 else -> {}
             }
         }
@@ -398,6 +441,7 @@ object StdlibInjector {
         is TopLevel.Spec -> "spec:${item.name}"
         is TopLevel.Deco -> "deco:${item.name}"
         is TopLevel.Slot -> "slot:${item.name}"
+        is TopLevel.Meta -> "meta:${item.name}"
         is TopLevel.Impl -> "impl:${item.typeName}:${item.traitName.orEmpty()}:${item.line}:${item.column}"
         is TopLevel.Bridge -> "bridge:${item.target}:${item.funcs.joinToString(",") { it.name }}"
         else -> item.toString()
@@ -540,6 +584,10 @@ object StdlibInjector {
                 collectNamesFromTypeRef(item.type, names)
             }
             is TopLevel.Bridge -> collectNamesFromAnnotations(item.annotations, names)
+            is TopLevel.Meta -> {
+                names.add(item.name)
+                item.arms.forEach { arm -> collectNamesFromExpr(arm.template, names) }
+            }
             else -> {}
         }
     }
@@ -752,6 +800,10 @@ object StdlibInjector {
             is Expr.Await -> collectNamesFromExpr(expr.value, names)
             is Expr.Inject -> names.add(expr.typeName)
             is Expr.Spread -> collectNamesFromExpr(expr.array, names)
+            is Expr.MetaInvoke -> {
+                names.add(expr.name)
+                expr.args.forEach { collectNamesFromExpr(it, names) }
+            }
             else -> {}
         }
     }

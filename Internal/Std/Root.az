@@ -25,8 +25,16 @@ export module std.root
  * provided and never dispatch at runtime.
  */
 
-@Experimental(sinceAzora: "0.0.4")
+@SinceAzora("0.0.4")
 bridge pack Unit
+
+/**
+ * The compile-time meta-type: the type of a type. Used as the element type of
+ * type lists (`[Type]`) and as the parameter type of `type` functions
+ * (`type promote(T: ...Type)`).
+ */
+@SinceAzora("0.0.4")
+bridge pack Type
 
 /** Declaration categories accepted by decorator `for` constraints. */
 @Experimental(sinceAzora: "0.0.4")

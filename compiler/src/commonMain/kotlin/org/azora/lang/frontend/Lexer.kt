@@ -470,6 +470,13 @@ class Lexer(private val source: String) {
             isFloat = true
             advance() // consume '.'
             while (!isAtEnd() && (peek().isDigit() || peek() == '_')) advance()
+        } else if (base == 10 && !afterMemberAccess && !isAtEnd() && peek() == '.' &&
+            (isAtEnd(1) || (source[current + 1] != '.' && !source[current + 1].isLetter() && source[current + 1] != '_'))
+        ) {
+            // Trailing-dot real (`1.`, `0.`) — `.` not followed by a digit, a second
+            // `.` (range `1..5`), or an identifier char (member access `5.foo`).
+            isFloat = true
+            advance() // consume '.'
         }
 
         // Scientific notation (only for base-10 floats or integers)
@@ -493,13 +500,17 @@ class Lexer(private val source: String) {
             val value = numericText.toDouble()
             tokens.add(Token(TokenType.REAL_LITERAL, text, line, startColumn, NumericLiteral(value, suffix)))
         } else {
-            // Parse as integer
+            // Parse as integer. Values in [Long.MAX+1, ULong.MAX] (e.g. a ULong
+            // MAX_VALUE literal) don't fit a signed Long, so fall back to parsing
+            // them as ULong and reinterpreting the bit pattern.
             val numericText = numText.replace("_", "")
+            fun parseBits(digits: String, radix: Int): Long =
+                digits.toLongOrNull(radix) ?: digits.toULong(radix).toLong()
             val value = when (base) {
-                16 -> numericText.removePrefix("0x").removePrefix("0X").toLong(16)
-                8 -> numericText.removePrefix("0o").removePrefix("0O").toLong(8)
-                2 -> numericText.removePrefix("0b").removePrefix("0B").toLong(2)
-                else -> numericText.toLong()
+                16 -> parseBits(numericText.removePrefix("0x").removePrefix("0X"), 16)
+                8 -> parseBits(numericText.removePrefix("0o").removePrefix("0O"), 8)
+                2 -> parseBits(numericText.removePrefix("0b").removePrefix("0B"), 2)
+                else -> parseBits(numericText, 10)
             }
             tokens.add(Token(TokenType.INT_LITERAL, text, line, startColumn, NumericLiteral(value, suffix)))
         }

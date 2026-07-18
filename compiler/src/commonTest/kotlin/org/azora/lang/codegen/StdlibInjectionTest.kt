@@ -72,8 +72,7 @@ class StdlibInjectionTest {
         val source = AzStdlib.sources.single { "module std.root" in it }
         val root = Parser(Lexer(source).tokenize()).parse()
 
-        assertTrue(root.items.any { it is TopLevel.Pack && it.name == "Reflected" && it.isBridge })
-        assertTrue(root.items.any { it is TopLevel.Pack && it.name == "Int" && it.isBridge })
+        assertTrue(root.items.any { it is TopLevel.Pack && it.name == "Unit" && it.isBridge })
         assertTrue(root.items.any { it is TopLevel.Enum && it.name == "DecoTarget" })
         assertTrue(root.items.any { it is TopLevel.Enum && it.name == "TestMethod" })
         assertTrue(root.items.any { it is TopLevel.Enum && it.name == "BridgeTarget" })

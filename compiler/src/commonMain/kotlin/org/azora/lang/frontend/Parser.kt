@@ -37,7 +37,15 @@ package org.azora.lang.frontend
  *   call        → IDENTIFIER "(" args? ")" | primary
  *   primary     → INT | REAL | STRING | BOOL | IDENTIFIER | "(" expr ")"
  */
-class Parser(private val tokens: List<Token>) {
+class Parser(
+    private val tokens: List<Token>,
+    /**
+     * Compile-time lists of type names (`let X: [Type] = [A, B] ~ C`). Shared with
+     * sub-parsers used to expand `inline for` bodies so nested loops resolve the
+     * same lists. Purely a parse-time metaprogramming environment.
+     */
+    private val typeListEnv: MutableMap<String, List<String>> = mutableMapOf(),
+) {
 
     /** Compile-time type functions are declarations, but never runtime top-level items. */
     private val typeFunctions = mutableListOf<TypeFunctionDecl>()
@@ -417,7 +425,10 @@ class Parser(private val tokens: List<Token>) {
         consume(TokenType.FOR, "Expected 'for' after 'impl oper$opName'")
         val typeName = consume(TokenType.IDENTIFIER, "Expected type name after 'for'").lexeme
         skipGenericTypeArgs()
-        val returnType = if (match(TokenType.COLON)) TypeAnnotation.Explicit(parseTypeName()) else TypeAnnotation.Inferred
+        val returnType = if (match(TokenType.COLON)) {
+            skipNewlines() // the return type may sit on a continuation line (e.g. `promote!(…)`)
+            TypeAnnotation.Explicit(parseTypeName())
+        } else TypeAnnotation.Inferred
         val (receiverModifier, params, body) = parseReceiverAndBody()
         consumeNewline()
         if (isBridge || body.isEmpty()) {
@@ -493,6 +504,9 @@ class Parser(private val tokens: List<Token>) {
         val visibility = parseVisibility()
         val start = peek()
         return when {
+            // Compile-time list bindings (`let X: [Type]`, `inline fin ranks: [Int]`)
+            // must be recognised before the general `inline`/`fin`/`let` handlers.
+            isTypeListBindingAhead() -> parseTypeListBinding()
             check(TokenType.UNSAFE) && peekNext()?.type in setOf(TokenType.FUNC, TokenType.TASK, TokenType.FLOW) -> {
                 advance()
                 when {
@@ -704,41 +718,153 @@ class Parser(private val tokens: List<Token>) {
         val start = peek()
         consume(TokenType.INLINE, "Expected 'inline'")
         consume(TokenType.FOR, "Expected 'for'")
-        val loopVar = consumeIdentifierLike("Expected loop variable after 'inline for'")
+        // Loop variables: a single `Ty`, or destructured `(Ty, r)` for parallel lists.
+        val loopVars = if (match(TokenType.L_PAREN)) {
+            val vs = mutableListOf<String>()
+            do { vs.add(consumeIdentifierLike("Expected loop variable")) } while (match(TokenType.COMMA))
+            consume(TokenType.R_PAREN, "Expected ')' after loop variables")
+            vs
+        } else listOf(consumeIdentifierLike("Expected loop variable after 'inline for'"))
         consume(TokenType.IN, "Expected 'in' after 'inline for' variable")
-        val values = parseComptimeForValues()
+        // Iterables: a single list, or `(list1, list2, …)` iterated in parallel (zip).
+        val lists = if (loopVars.size > 1) {
+            consume(TokenType.L_PAREN, "Expected '(' with ${loopVars.size} parallel lists for destructured 'inline for'")
+            val ls = mutableListOf<List<String>>()
+            do { ls.add(parseComptimeForValues()) } while (match(TokenType.COMMA))
+            consume(TokenType.R_PAREN, "Expected ')' after parallel lists")
+            if (ls.size != loopVars.size) {
+                error("'inline for' has ${loopVars.size} variables but ${ls.size} lists at line ${start.line}")
+            }
+            ls
+        } else listOf(parseComptimeForValues())
+        // Optional `with index` — binds a 0-based counter usable as `list[index]`.
+        val indexVar = if (peek().type == TokenType.IDENTIFIER && peek().lexeme == "with") {
+            advance()
+            consumeIdentifierLike("Expected index variable after 'with'")
+        } else null
         consume(TokenType.L_BRACE, "Expected '{' to open 'inline for' body")
         val bodyTokens = captureBraceBody()
         consumeNewline()
-        for (value in values) {
-            val rendered = substituteLoopVar(bodyTokens, loopVar, value) +
-                Token(TokenType.EOF, "", start.line, start.column)
-            pendingTopLevels.addAll(Parser(rendered).parse().items)
+        val count = lists.minOf { it.size }
+        for (i in 0 until count) {
+            var rendered = bodyTokens
+            for ((v, list) in loopVars.zip(lists)) rendered = substituteLoopVar(rendered, v, list[i])
+            if (indexVar != null) rendered = substituteLoopVar(rendered, indexVar, i.toString())
+            rendered = foldListIndexing(rendered)
+            pendingTopLevels.addAll(
+                Parser(rendered + Token(TokenType.EOF, "", start.line, start.column), typeListEnv).parse().items
+            )
         }
         return TopLevel.InlineBlock(emptyList(), start.line, start.column)
     }
 
-    /** Compile-time values of a top-level `inline for` iterable (list literal or int range). */
-    private fun parseComptimeForValues(): List<String> {
-        val expr = parseExpr()
-        return when (expr) {
-            is Expr.ArrayLiteral -> expr.elements.map {
-                when (it) {
-                    is Expr.StringLiteral -> it.value
-                    is Expr.IntLiteral -> it.value.toString()
-                    else -> error("'inline for' list elements must be string or int literals at line ${expr.line}")
-                }
+    /** Folds `list[<int>]` on a compile-time list variable into the element value. */
+    private fun foldListIndexing(tokens: List<Token>): List<Token> {
+        val result = mutableListOf<Token>()
+        var i = 0
+        while (i < tokens.size) {
+            val t = tokens[i]
+            val list = if (t.type == TokenType.IDENTIFIER) typeListEnv[t.lexeme] else null
+            if (list != null &&
+                tokens.getOrNull(i + 1)?.type == TokenType.L_BRACKET &&
+                tokens.getOrNull(i + 2)?.type == TokenType.INT_LITERAL &&
+                tokens.getOrNull(i + 3)?.type == TokenType.R_BRACKET
+            ) {
+                val idx = ((tokens[i + 2].literal as NumericLiteral).value as Long).toInt()
+                val value = list.getOrNull(idx)
+                    ?: error("compile-time index $idx is out of bounds for list '${t.lexeme}'")
+                result.addAll(Lexer(value).tokenize().dropLast(1))
+                i += 4
+            } else {
+                result.add(t)
+                i += 1
             }
-            is Expr.Range -> {
-                val from = (expr.from as? Expr.IntLiteral)?.value
-                    ?: error("'inline for' range bounds must be int literals at line ${expr.line}")
-                val to = (expr.to as? Expr.IntLiteral)?.value
-                    ?: error("'inline for' range bounds must be int literals at line ${expr.line}")
-                val last = if (expr.inclusive) to else to - 1
-                (from..last).map { it.toString() }
-            }
-            else -> error("'inline for' iterable must be a list literal or an int range at line ${expr.line}")
         }
+        return result
+    }
+
+    /**
+     * Compile-time values of an `inline for` iterable: an int range (`0..4`), a
+     * list literal of string/int/type names (`["+", "-"]`, `[Byte, Short]`), a
+     * type-list variable (`Integers`), or those joined with `~`.
+     */
+    private fun parseComptimeForValues(): List<String> {
+        if (check(TokenType.INT_LITERAL) &&
+            tokens.getOrNull(current + 1)?.type in setOf(TokenType.DOT_DOT, TokenType.DOT_DOT_LESS)
+        ) {
+            val expr = parseExpr() as Expr.Range
+            val from = (expr.from as Expr.IntLiteral).value
+            val to = (expr.to as Expr.IntLiteral).value
+            val last = if (expr.inclusive) to else to - 1
+            return (from..last).map { it.toString() }
+        }
+        return parseComptimeListValue()
+    }
+
+    /** `term (~ term)*` — a compile-time list value (terms are `[…]` literals or list variables). */
+    private fun parseComptimeListValue(): List<String> {
+        val result = parseComptimeListTerm().toMutableList()
+        while (match(TokenType.TILDE)) result.addAll(parseComptimeListTerm())
+        return result
+    }
+
+    /**
+     * True at `[inline] let/fin/var NAME : [ Elem ] =` when it is a compile-time
+     * list: any `[Type]` list, or an `inline` list of any element type (e.g.
+     * `inline fin ranks: [Int] = […]`). A plain runtime `[Int]` binding is not one.
+     */
+    private fun isTypeListBindingAhead(): Boolean {
+        var i = current
+        val hasInline = tokens.getOrNull(i)?.type == TokenType.INLINE
+        if (hasInline) i += 1
+        if (tokens.getOrNull(i)?.type !in setOf(TokenType.LET, TokenType.FIN, TokenType.VAR)) return false
+        i += 1
+        if (tokens.getOrNull(i)?.type != TokenType.IDENTIFIER) return false
+        i += 1
+        if (tokens.getOrNull(i)?.type != TokenType.COLON) return false
+        i += 1
+        if (tokens.getOrNull(i)?.type != TokenType.L_BRACKET) return false
+        i += 1
+        val elem = tokens.getOrNull(i)
+        if (elem?.type != TokenType.IDENTIFIER) return false
+        i += 1
+        if (tokens.getOrNull(i)?.type != TokenType.R_BRACKET) return false
+        return elem.lexeme == "Type" || hasInline
+    }
+
+    /** `[inline] let X: [Elem] = <list>` — records a compile-time list; emits no runtime item. */
+    private fun parseTypeListBinding(): TopLevel {
+        val start = peek()
+        match(TokenType.INLINE) // optional `inline`
+        advance() // let/fin/var
+        val name = consume(TokenType.IDENTIFIER, "Expected list name").lexeme
+        consume(TokenType.COLON, "Expected ':'")
+        consume(TokenType.L_BRACKET, "Expected '['")
+        consume(TokenType.IDENTIFIER, "Expected element type")
+        consume(TokenType.R_BRACKET, "Expected ']'")
+        consume(TokenType.EQUAL, "Expected '=' in compile-time list binding")
+        typeListEnv[name] = parseComptimeListValue()
+        consumeNewline()
+        return TopLevel.InlineBlock(emptyList(), start.line, start.column)
+    }
+
+    private fun parseComptimeListTerm(): List<String> {
+        if (match(TokenType.L_BRACKET)) {
+            val values = mutableListOf<String>()
+            if (!check(TokenType.R_BRACKET)) {
+                do {
+                    values.add(when {
+                        check(TokenType.STRING_LITERAL) -> advance().literal as String
+                        check(TokenType.INT_LITERAL) -> (advance().literal as NumericLiteral).value.toString()
+                        else -> consumeIdentifierLike("Expected a literal or type name in compile-time list")
+                    })
+                } while (match(TokenType.COMMA))
+            }
+            consume(TokenType.R_BRACKET, "Expected ']' to close compile-time list")
+            return values
+        }
+        val name = consumeIdentifierLike("Expected a compile-time list literal or variable")
+        return typeListEnv[name] ?: error("Unknown compile-time list '$name' at line ${peek().line}")
     }
 
     /** Collects the tokens of a brace-delimited body (the opening `{` already consumed). */
@@ -759,15 +885,25 @@ class Parser(private val tokens: List<Token>) {
         error("Unterminated 'inline for' body at line ${peek().line}")
     }
 
-    /** Substitutes `$VAR` inside identifier tokens (e.g. `oper$op` → `oper+`), re-lexing the result. */
+    /**
+     * Substitutes an `inline for` loop variable in a body token stream, re-lexing
+     * touched tokens. A bare identifier equal to [varName] (e.g. `Ty` → `Byte`) and
+     * a `$VAR` inside an identifier (e.g. `oper$op` → `oper+`) are both replaced.
+     */
     private fun substituteLoopVar(tokens: List<Token>, varName: String, value: String): List<Token> {
         val placeholder = "\$$varName"
+        val valueTokens = Lexer(value).tokenize().dropLast(1)
+        // A bare `Ty` is replaced only when the value is a type name (a single
+        // identifier), so a value loop variable that collides with a real name (e.g.
+        // `prop rank` with loop var `rank`) is untouched — use `$rank` for those.
+        val bareOk = valueTokens.size == 1 && valueTokens[0].type == TokenType.IDENTIFIER
         val result = mutableListOf<Token>()
         for (t in tokens) {
-            if (t.type == TokenType.IDENTIFIER && t.lexeme.contains(placeholder)) {
-                result.addAll(Lexer(t.lexeme.replace(placeholder, value)).tokenize().dropLast(1))
-            } else {
-                result.add(t)
+            when {
+                bareOk && t.type == TokenType.IDENTIFIER && t.lexeme == varName -> result.addAll(valueTokens)
+                t.type == TokenType.IDENTIFIER && t.lexeme.contains(placeholder) ->
+                    result.addAll(Lexer(t.lexeme.replace(placeholder, value)).tokenize().dropLast(1))
+                else -> result.add(t)
             }
         }
         return result
@@ -1250,6 +1386,10 @@ class Parser(private val tokens: List<Token>) {
     }
 
     /** Parses one implementation target or `[Target, Other::member]`. */
+    /** Expands any compile-time type-list variable target into its member types. */
+    private fun expandTypeListTargets(targets: List<String>): List<String> =
+        targets.flatMap { typeListEnv[it] ?: listOf(it) }
+
     private fun parseImplTargets(): List<String> {
         if (!match(TokenType.L_BRACKET)) return listOf(parseImplTarget())
         if (check(TokenType.R_BRACKET)) error("Expected at least one implementation target at line ${peek().line}")
@@ -1288,20 +1428,22 @@ class Parser(private val tokens: List<Token>) {
     private fun parseImpl(isBridge: Boolean = false): TopLevel.Impl {
         val start = peek()
         consume(TokenType.IMPL, "Expected 'impl'")
-        // `impl zone for Type { members }` — type-scoped static members, reached as
-        // `Type::member`. Desugars to mangled top-level items (`Type__member`), like
-        // a named zone, so no dedicated node is needed.
+        // `impl zone for Type { members }` (or `for [A, B] { … }`) — type-scoped
+        // static members, reached as `Type::member`. Desugars to mangled top-level
+        // items (`Type__member`) per target type, like a named zone.
         if (check(TokenType.ZONE)) {
             advance()
             consume(TokenType.FOR, "Expected 'for' after 'impl zone'")
-            val typeName = consume(TokenType.IDENTIFIER, "Expected type name after 'for'").lexeme
-            skipGenericTypeArgs()
-            consume(TokenType.L_BRACE, "Expected '{' after 'impl zone for $typeName'")
+            val targets = expandTypeListTargets(parseImplTargets())
+            consume(TokenType.L_BRACE, "Expected '{' after 'impl zone for …'")
             skipNewlines()
-            pendingTopLevels.addAll(parseZoneBody(typeName))
-            consume(TokenType.R_BRACE, "Expected '}' after 'impl zone' body")
+            val bodyTokens = captureBraceBody()
             consumeNewline()
-            return TopLevel.Impl(typeName, emptyList(), null, start.line, start.column)
+            for (target in targets) {
+                val members = Parser(bodyTokens + Token(TokenType.EOF, "", start.line, start.column), typeListEnv).parse().items
+                members.forEach { pendingTopLevels.add(mangleTopLevel(it, target)) }
+            }
+            return TopLevel.Impl(targets.first(), emptyList(), null, start.line, start.column)
         }
         // `[bridge] impl oper<OP> for Type(params): Ret { … }` — an operator overload
         // for any operator (comparison/arithmetic/bitwise). `oper[]`/`oper[]=` keep
@@ -1557,7 +1699,7 @@ class Parser(private val tokens: List<Token>) {
             if (isPackImpl) error("'impl pack' cannot be used for spec implementations at line ${peek().line}")
             traitName = first
             traitArgs = firstArgs
-            implementationTargets = parseImplTargets()
+            implementationTargets = expandTypeListTargets(parseImplTargets())
             typeName = implementationTargets.first()
         } else if (traitHeads.size > 1) {
             error("Decorator implementation lists require 'for Target' at line ${start.line}")
@@ -2168,7 +2310,21 @@ class Parser(private val tokens: List<Token>) {
         while (!check(TokenType.R_BRACE) && !isAtEnd()) {
             skipNewlines()
             if (check(TokenType.R_BRACE)) break
-            consume(TokenType.FUNC, "Expected 'func' in spec")
+            parseAnnotations() // trailing metadata on a requirement is accepted and dropped
+            // `prop name: Type` — a property requirement (a zero-arg getter).
+            if (check(TokenType.PROP)) {
+                advance()
+                val pname = consumeIdentifierLike("Expected property name in spec")
+                consume(TokenType.COLON, "Expected ':' after spec property name")
+                val ptype = parseTypeName()
+                consumeNewline()
+                methods.add(FuncDecl(
+                    pname, emptyList(), TypeAnnotation.Explicit(ptype), emptyList(), false, emptyList(),
+                    start.line, start.column, receiverModifier = "ref", memberCallStyle = MemberCallStyle.PROPERTY,
+                ))
+                continue
+            }
+            consume(TokenType.FUNC, "Expected 'func' or 'prop' in spec")
             val mname = consume(TokenType.IDENTIFIER, "Expected method name").lexeme
             consume(TokenType.L_PAREN, "Expected '('")
             val params = parseParams()
@@ -2735,7 +2891,11 @@ class Parser(private val tokens: List<Token>) {
                     typeName = consume(TokenType.IDENTIFIER, "Expected type name after '::' in type path").lexeme
                     qualifiedName += "__$typeName"
                 }
-                if (match(TokenType.BANG)) {
+                // `Type!(args)` — a compile-time type-function (macro) call. A `!`
+                // NOT followed by `(` is a failable type (`Type!ErrSet`), handled by
+                // parseTypeSuffixes; leave it for that pass.
+                if (check(TokenType.BANG) && peekNext()?.type == TokenType.L_PAREN) {
+                    advance() // '!'
                     consume(TokenType.L_PAREN, "Expected '(' after '$typeName!'")
                     val args = mutableListOf<TypeRef>()
                     if (!check(TokenType.R_PAREN)) {
@@ -3414,20 +3574,29 @@ class Parser(private val tokens: List<Token>) {
             error("A type function may have one variadic parameter, and it must be last, at line ${start.line}")
         }
 
+        // `where <var>.length >= N` and/or `<var> is Spec`, joined with `&&`.
         var minimum: Int? = null
         if (check(TokenType.IDENTIFIER) && peek().lexeme == "where") {
             advance()
-            val constrained = consume(TokenType.IDENTIFIER, "Expected parameter name after 'where'").lexeme
             val variadic = params.lastOrNull()?.takeIf { it.variadic }?.name
-            if (constrained != variadic) {
-                error("Type-function length constraints require the variadic parameter '$variadic' at line ${start.line}")
-            }
-            consume(TokenType.DOT, "Expected '.' after '$constrained'")
-            val property = consume(TokenType.IDENTIFIER, "Expected 'length' in type-function constraint")
-            if (property.lexeme != "length") error("Expected 'length' in type-function constraint at line ${property.line}")
-            consume(TokenType.GREATER_EQUAL, "Expected '>=' in type-function constraint")
-            val value = consume(TokenType.INT_LITERAL, "Expected minimum argument count")
-            minimum = ((value.literal as NumericLiteral).value as Long).toInt()
+            do {
+                val constrained = consume(TokenType.IDENTIFIER, "Expected parameter name in 'where' constraint").lexeme
+                when {
+                    // `<var> is Spec` — a conformance constraint (accepted; enforced by the evaluator).
+                    match(TokenType.IS) -> consume(TokenType.IDENTIFIER, "Expected spec name after 'is'")
+                    match(TokenType.DOT) -> {
+                        val property = consume(TokenType.IDENTIFIER, "Expected 'length' in type-function constraint")
+                        if (property.lexeme != "length") error("Expected 'length' in type-function constraint at line ${property.line}")
+                        if (constrained != variadic) {
+                            error("Type-function length constraints require the variadic parameter '$variadic' at line ${start.line}")
+                        }
+                        consume(TokenType.GREATER_EQUAL, "Expected '>=' in type-function constraint")
+                        val value = consume(TokenType.INT_LITERAL, "Expected minimum argument count")
+                        minimum = ((value.literal as NumericLiteral).value as Long).toInt()
+                    }
+                    else -> error("Expected '.length >= N' or 'is Spec' in 'where' constraint at line ${peek().line}")
+                }
+            } while (match(TokenType.AND_AND))
         }
 
         consume(TokenType.L_BRACE, "Expected '{' before type-function body")
@@ -4618,7 +4787,11 @@ class Parser(private val tokens: List<Token>) {
                 advance()
                 val first = parseExpr()
                 if (match(TokenType.COMMA)) {
-                    error("Tuple literal syntax '(a, b)' was removed; use 'tupleOf(a, b)' at line ${tok.line}")
+                    // `(a, b, …)` — tuple literal sugar for `std::tupleOf(a, b, …)`.
+                    val elements = mutableListOf(first)
+                    do { elements.add(parseExpr()) } while (match(TokenType.COMMA))
+                    consume(TokenType.R_PAREN, "Expected ')' after tuple elements")
+                    Expr.Call("std__tupleOf", elements, tok.line, tok.column)
                 } else {
                     consume(TokenType.R_PAREN, "Expected ')'")
                     Expr.Grouping(first, tok.line, tok.column)

@@ -57,76 +57,12 @@ friend zone std {
      * @param T Two or more primitive types to compare.
      * @return The widest type in T according to Type.rank.
      */
-    type promote(T: ...Type) where T.length >= 2 {
+    type promote(T: ...Type) where T.length >= 2 && T is Number {
         let Result: Type = T.0
         for Candidate in T[1...] {
             Result = if Candidate.rank > Result.rank { Candidate } else { Result }
         }
         return Result
-    }
-
-    /** Types that support equality comparison via == and !=. */
-    @SinceAzora("0.0.1")
-    spec Equatable
-
-    /** Int supports equality comparison. */
-    @SinceAzora("0.0.1")
-    impl Equatable for Int
-
-    /** Real supports equality comparison. */
-    @SinceAzora("0.0.1")
-    impl Equatable for Real
-
-    /** String supports equality comparison. */
-    @SinceAzora("0.0.1")
-    impl Equatable for String
-
-    /** Char supports equality comparison. */
-    @SinceAzora("0.0.1")
-    impl Equatable for Char
-
-    /** Bool supports equality comparison. */
-    @SinceAzora("0.0.1")
-    impl Equatable for Bool
-
-    /** Types that support ordering via < and >. */
-    @SinceAzora("0.0.1")
-    spec Comparable
-
-    /** Int supports ordering. */
-    @SinceAzora("0.0.1")
-    impl Comparable for Int
-
-    /** Real supports ordering. */
-    @SinceAzora("0.0.1")
-    impl Comparable for Real
-
-    /** String supports ordering. */
-    @SinceAzora("0.0.1")
-    impl Comparable for String
-
-    /** Char supports ordering. */
-    @SinceAzora("0.0.1")
-    impl Comparable for Char
-
-    @SinceAzora("0.0.4")
-    impl Into<String> for Int { ref self ->
-        return self as String
-    }
-
-    @SinceAzora("0.0.4")
-    impl Into<String> for Real { ref self ->
-        return self as String
-    }
-
-    @SinceAzora("0.0.4")
-    impl Into<String> for Char { ref self ->
-        return self as String
-    }
-
-    @SinceAzora("0.0.4")
-    impl Into<String> for Bool { ref self ->
-        return self as String
     }
 
     /** Types that can be hashed. */

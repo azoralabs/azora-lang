@@ -30,15 +30,21 @@ class TupleTest {
         assertEquals("ready\n7", IrInterpreter().interpret(result.ir).trim())
     }
 
-    @Test fun tupleLiteralSyntaxIsRejectedWithMigration() {
+    @Test fun tupleLiteralSugarDesugarsToTupleOf() {
+        // `(a, b, …)` is sugar for `std::tupleOf(a, b, …)`.
         val result = Compiler().compile("""
+            import std.io
+            import std.container
+
             func main() {
                 fin pair = (1, "hello")
+                std::println(pair.0)
+                std::println(pair.1)
             }
         """.trimIndent(), release = false)
 
-        assertIs<CompilationResult.Failure>(result)
-        assertTrue(result.errors.any { "tupleOf(a, b)" in it }, result.errors.toString())
+        assertIs<CompilationResult.Success>(result, (result as? CompilationResult.Failure)?.errors.toString())
+        assertEquals("1\nhello", IrInterpreter().interpret(result.ir).trim())
     }
 
     @Test fun tupleTypeSyntaxIsRejectedWithMigration() {

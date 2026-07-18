@@ -20,7 +20,7 @@ class ContainerStdlibTest {
     @Test fun everyContainerSourceParsesAndIsSerializableMetadata() {
         val directory = java.io.File("../Internal/Std/Container")
         val files = directory.listFiles { file -> file.extension == "az" }.orEmpty()
-        assertEquals(10, files.size)
+        assertEquals(11, files.size)
         files.forEach { Parser(Lexer(it.readText()).tokenize()).parse() }
 
         val result = compile("""

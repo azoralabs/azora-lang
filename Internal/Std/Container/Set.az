@@ -17,7 +17,6 @@
 module std.container.set
 
 import std.serializer
-
 import std.convert
 
 /**

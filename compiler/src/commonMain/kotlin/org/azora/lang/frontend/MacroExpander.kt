@@ -60,7 +60,12 @@ internal object MacroExpander {
                 nonMacros.add(item)
             }
         }
-        if (macros.isEmpty()) return program
+        // Fast path: nothing to do when there are no macro declarations AND the
+        // program never invokes a macro. (A program that *uses* `name!` without
+        // defining/importing a macro still needs to run, so the use site can fail
+        // clearly with "macro 'name' is not defined" rather than leaking
+        // MetaInvoke into semantic analysis.)
+        if (macros.isEmpty() && !program.usesMacros) return program
         val table: MacroTable = macros
         return program.copy(items = nonMacros.map { rewriteItem(it, table, 0) })
     }
@@ -504,9 +509,10 @@ internal object MacroExpander {
             },
             body = template.body.map { substituteStmt(it, bindings, invokeLine) },
         )
-        // A nested MetaInvoke surviving into a template: substitute its args and
-        // leave the node for the outer rewriteExpr loop to expand.
-        is Expr.MetaInvoke -> template.copy(args = template.args.map { substitute(it, bindings, invokeLine) })
+        // A nested MetaInvoke surviving into a template: splice-substitute its
+        // args (a `...$capture` must splice here, just as in a Call) and leave the
+        // node for the outer rewriteExpr loop to expand.
+        is Expr.MetaInvoke -> template.copy(args = substituteSeq(template.args, bindings, invokeLine))
     }
 
     /** Mirrors [substitute] for the Stmt children of a [Expr.Lambda] body. */

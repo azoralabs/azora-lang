@@ -1325,6 +1325,23 @@ class TypeResolver(private val table: SymbolTable) {
         else -> null
     }
 
+    /** The `impl oper<OP> for Type` method name for [op] (e.g. PLUS → "oper+"). */
+    private fun operOverloadName(op: TokenType): String? = when (op) {
+        TokenType.PLUS -> "oper+"
+        TokenType.MINUS -> "oper-"
+        TokenType.STAR -> "oper*"
+        TokenType.SLASH -> "oper/"
+        TokenType.PERCENT -> "oper%"
+        TokenType.EQUAL_EQUAL -> "oper=="
+        TokenType.BANG_EQUAL -> "oper!="
+        TokenType.LESS -> "oper<"
+        TokenType.LESS_EQUAL -> "oper<="
+        TokenType.GREATER -> "oper>"
+        TokenType.GREATER_EQUAL -> "oper>="
+        TokenType.TILDE -> "oper~"
+        else -> null
+    }
+
     /** Extracts the variant name from a when pattern expression (Color.Red → "Red"). */
     private fun extractVariantName(pattern: Expr, table: SymbolTable): String? {
         return when (pattern) {
@@ -1424,16 +1441,26 @@ class TypeResolver(private val table: SymbolTable) {
     }
 
     private fun resolveBinaryType(op: TokenType, left: IrType, right: IrType, line: Int): IrType? {
-        // Operator overloading on user types
-        if (left is IrType.Named && left == right) {
-            val methodName = operatorMethodName(op)
-            if (methodName != null) {
-                val mangled = table.lookupMethod(left.name, methodName)
+        // Operator overloading on user types.
+        if (left is IrType.Named) {
+            // `impl oper<OP> [by <Spec>] for Type` overloads — method named `oper<OP>`
+            // (e.g. `oper+`), resolved regardless of the operand type (the `by`
+            // clause may declare a different operand, e.g. Map + MapEntry).
+            operOverloadName(op)?.let { operName ->
+                val mangled = table.lookupMethod(left.name, operName)
                 if (mangled != null) return table.lookupFunction(mangled)?.returnType
             }
-            if (op == TokenType.BANG_EQUAL) {
-                val eqMangled = table.lookupMethod(left.name, "equals")
-                if (eqMangled != null) return IrType.Bool
+            // Legacy same-type named-method overloads (e.g. `func plus(ref self, …)`).
+            if (left == right) {
+                val methodName = operatorMethodName(op)
+                if (methodName != null) {
+                    val mangled = table.lookupMethod(left.name, methodName)
+                    if (mangled != null) return table.lookupFunction(mangled)?.returnType
+                }
+                if (op == TokenType.BANG_EQUAL) {
+                    val eqMangled = table.lookupMethod(left.name, "equals")
+                    if (eqMangled != null) return IrType.Bool
+                }
             }
         }
         // Pointer arithmetic: Pointer(T) + Int -> Pointer(T), Pointer(T) - Int -> Pointer(T),

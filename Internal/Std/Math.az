@@ -29,47 +29,47 @@ module std.math
  */
 
 friend zone std::math {
-        /**
-         * The ratio of a circle's circumference to its diameter.
-         */
-        @SinceAzora("0.0.1")
-        fin PI: Real = 3.14159265358979
+    /**
+     * The ratio of a circle's circumference to its diameter.
+     */
+    @SinceAzora("0.0.1")
+    fin PI: Real = 3.14159265358979
 
-        /**
-         * Euler's number, the base of natural logarithms.
-         */
-        @SinceAzora("0.0.1")
-        fin E: Real = 2.71828182845905
+    /**
+     * Euler's number, the base of natural logarithms.
+     */
+    @SinceAzora("0.0.1")
+    fin E: Real = 2.71828182845905
 
-        /**
-         * The ratio of a circle's circumference to its radius (2 * PI).
-         */
-        @SinceAzora("0.0.1")
-        fin TAU: Real = 6.28318530717959
+    /**
+     * The ratio of a circle's circumference to its radius (2 * PI).
+     */
+    @SinceAzora("0.0.1")
+    fin TAU: Real = 6.28318530717959
 
-        /**
-         * The square root of 2.
-         */
-        @SinceAzora("0.0.1")
-        fin SQRT2: Real = 1.41421356237310
+    /**
+     * The square root of 2.
+     */
+    @SinceAzora("0.0.1")
+    fin SQRT2: Real = 1.41421356237310
 
-        /**
-         * The golden ratio (phi).
-         */
-        @SinceAzora("0.0.1")
-        fin PHI: Real = 1.61803398874989
+    /**
+     * The golden ratio (phi).
+     */
+    @SinceAzora("0.0.1")
+    fin PHI: Real = 1.61803398874989
 
-        /**
-         * Positive infinity representation.
-         */
-        @SinceAzora("0.0.1")
-        fin INF: Real = 1.0 / 0.0
+    /**
+     * Positive infinity representation.
+     */
+    @SinceAzora("0.0.1")
+    fin INF: Real = 1.0 / 0.0
 
-        /**
-         * The smallest positive real value.
-         */
-        @SinceAzora("0.0.1")
-        fin EPSILON: Real = 0.00000000000001
+    /**
+     * The smallest positive real value.
+     */
+    @SinceAzora("0.0.1")
+    fin EPSILON: Real = 0.00000000000001
 
     /**
      * Returns the absolute value of the given number.

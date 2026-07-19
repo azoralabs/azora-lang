@@ -16,380 +16,1466 @@
 
 module std.container.map
 
-import std.serializer
-
-import std.convert
+import std.container.array
 
 /**
- * @file Map
+ * @file ExperimentalMap
  *
- * Generic key-value dictionary collection.
+ * Proposed native map hierarchy for Azora.
  *
- * Provides an associative array backed by parallel pointer arrays,
- * with support for insertion, lookup, removal, and functional iteration.
- * Uses pointer-based storage with explicit capacity management.
+ * Maps use operators supplied by their key and value types. There are no
+ * runtime hasher, equality, or comparator objects:
  *
- * @since 0.0.1
+ * - `HashMap<K, V>` and `LinkedHashMap<K, V>` require `oper#` and `oper==`
+ *   for `K`.
+ * - `TreeMap<K, V>` requires `oper<` for `K`.
+ * - `containsValue`, structural `oper==`, and structural `oper#` instantiate
+ *   only when the corresponding value operators exist.
+ *
+ * `oper[start:stop:step]` returns a snapshot of the map's entries using its
+ * iteration order. `start` is inclusive, `stop` is exclusive, and `step`
+ * defaults to `1`. Omitting `start` begins from the first entry, omitting
+ * `stop` continues to the last entry, and negative indices count backward from
+ * the end. The result is always a `LinkedHashMap` snapshot, preserving the
+ * observed iteration order even when the source is a `HashMap`. Key ranges on
+ * sorted maps use `subMap`, `headMap`, and `tailMap`; this avoids ambiguity
+ * when `K` is an integer type.
+ *
+ * @since 0.0.4
  */
 
 friend zone std {
     /**
-     * A generic key-value dictionary using parallel pointer arrays.
+     * One immutable key-value association.
      *
-     * Map stores associations between keys and values. Keys are unique;
-     * inserting with an existing key replaces the previous value.
-     *
-     * @param K The type of keys.
-     * @param V The type of values.
+     * @param K The key type.
+     * @param V The value type.
      */
-    @SinceAzora("0.0.1")
-    @Serializable
-    pack<K, V> Map {
-        shield var keys: K* = alloc K[8]
-        shield var values: V* = alloc V[8]
-        shield var size: Int = 0
-        shield var capacity: Int = 8
+    @Experimental(sinceAzora: "0.0.4")
+    pack<K, V> MapEntry {
+        fin key: K
+        fin value: V
     }
 
     /**
-     * Creates an empty immutable map.
+     * Read-only behavior shared by every map implementation.
      *
-     * @return A new `Map<K, V>` with no entries.
+     * `Map` does not promise a particular iteration order. A concrete pack may
+     * provide a stronger guarantee. Index access returns `null` for an absent
+     * key, matching Kotlin map access.
+     *
+     * @param K The key type.
+     * @param V The value type.
      */
-    @Experimental(sinceAzora: "0.0.3")
-    func<K, V> emptyMap(): Map<K, V> {
-        return Map<K, V>()
+    @Experimental(sinceAzora: "0.0.4")
+    spec Map<K, V> {
+        /** Number of unique keys. */
+        prop size: Int
+
+        /** Whether this map has no entries. */
+        prop isEmpty: Bool
+
+        /** Whether this map has at least one entry. */
+        prop isNotEmpty: Bool
+
+        /** Returns whether `key` is present. */
+        func containsKey(key: ref K): Bool
+
+        /** Returns whether an equal value is present. Requires `oper==` for `V`. */
+        func containsValue(value: ref V): Bool
+
+        /** Returns the value associated with `key`, or `null` when absent. */
+        func get(key: ref K): V?
+
+        /** Returns the associated value, or `defaultValue` when absent. */
+        func getOrDefault(key: ref K, defaultValue: V): V
+
+        /** Returns an iteration-order snapshot of all entries. */
+        func entries(): Array<MapEntry<K, V>>
+
+        /** Returns an iteration-order snapshot of all keys. */
+        func keys(): Array<K>
+
+        /** Returns an iteration-order snapshot of all values. */
+        func values(): Array<V>
+
+        /** Invokes `action` once for every entry in iteration order. */
+        func forEach(action: (ref K, ref V) -> Unit)
     }
 
-    @Experimental(sinceAzora: "0.0.1")
-    impl oper[] for Map<K, V> { ref self, key ->
+    /**
+     * Mutation behavior implemented by mutable map packs.
+     *
+     * Mutation always receives `mut ref self`. Implementing this spec does not
+     * weaken a `ref Map<K, V>` view: callers holding only a shared reference can
+     * still use only read operations.
+     *
+     * @param K The key type.
+     * @param V The value type.
+     */
+    @Experimental(sinceAzora: "0.0.4")
+    spec MutableMap<K, V> {
+        /** Associates `key` with `value` and returns the replaced value, if any. */
+        func put(key: K, value: V): V?
+
+        /** Copies all entries from `other`, replacing equal keys. */
+        func putAll(other: ref Map<K, V>)
+
+        /** Removes `key` and returns its previous value, or `null` when absent. */
+        func remove(key: ref K): V?
+
+        /** Removes `key` only when it is currently associated with `value`. */
+        func remove(key: ref K, value: ref V): Bool
+
+        /** Removes every entry while retaining reusable internal capacity. */
+        func clear()
+
+        /** Returns the existing value or inserts and returns `defaultValue()`. */
+        func getOrPut(key: K, defaultValue: () -> V): V
+    }
+
+    /**
+     * Ordered navigation supplied by maps whose keys obey `oper<`.
+     *
+     * Iteration is ascending according to the strict weak ordering defined by
+     * `oper<`. Keys `a` and `b` are equivalent when neither `a < b` nor `b < a`.
+     * `TreeMap` therefore does not require `oper==` for keys.
+     *
+     * @param K The ordered key type.
+     * @param V The value type.
+     */
+    @Experimental(sinceAzora: "0.0.4")
+    spec SortedMap<K, V> {
+        /** Returns the smallest key, or `null` when empty. */
+        func firstKey(): K?
+
+        /** Returns the greatest key, or `null` when empty. */
+        func lastKey(): K?
+
+        /** Returns the greatest key strictly below `key`. */
+        func lowerKey(key: ref K): K?
+
+        /** Returns the greatest key below or equivalent to `key`. */
+        func floorKey(key: ref K): K?
+
+        /** Returns the smallest key equivalent to or above `key`. */
+        func ceilingKey(key: ref K): K?
+
+        /** Returns the smallest key strictly above `key`. */
+        func higherKey(key: ref K): K?
+
+        /** Returns the entry with the smallest key, or `null` when empty. */
+        func firstEntry(): MapEntry<K, V>?
+
+        /** Returns the entry with the greatest key, or `null` when empty. */
+        func lastEntry(): MapEntry<K, V>?
+
+        /** Returns an ascending read-only view below `toKey`. */
+        func headMap(toKey: ref K, inclusive: Bool = false): SortedMap<K, V>
+
+        /** Returns an ascending read-only view above `fromKey`. */
+        func tailMap(fromKey: ref K, inclusive: Bool = true): SortedMap<K, V>
+
+        /** Returns an ascending read-only view between two key boundaries. */
+        func subMap(
+            fromKey: ref K,
+            fromInclusive: Bool,
+            toKey: ref K,
+            toInclusive: Bool
+        ): SortedMap<K, V>
+    }
+
+    /**
+     * Mutable operations specific to an ordered map.
+     *
+     * Polling removes and returns a boundary entry in one tree operation.
+     */
+    @Experimental(sinceAzora: "0.0.4")
+    spec MutableSortedMap<K, V> {
+        /** Removes and returns the smallest entry, or `null` when empty. */
+        func pollFirstEntry(): MapEntry<K, V>?
+
+        /** Removes and returns the greatest entry, or `null` when empty. */
+        func pollLastEntry(): MapEntry<K, V>?
+    }
+
+    /** Hash table with unspecified iteration order. `K` requires `oper#` and `oper==`. */
+    @Experimental(sinceAzora: "0.0.4")
+    pack<K, V> HashMap {
+        shield var keys: K* = alloc K[16]
+        shield var values: V* = alloc V[16]
+        shield var hashes: ULong* = alloc ULong[16]
+        shield var occupied: Bool* = alloc Bool[16]
+        confine var _size: Int = 0
+        shield var capacity: Int = 16
+    }
+
+    /** Hash table whose dense entry storage preserves insertion order. */
+    @Experimental(sinceAzora: "0.0.4")
+    pack<K, V> LinkedHashMap {
+        shield var keys: K* = alloc K[16]
+        shield var values: V* = alloc V[16]
+        shield var hashes: ULong* = alloc ULong[16]
+        shield var buckets: Int* = alloc Int[32]
+        confine var _size: Int = 0
+        shield var capacity: Int = 16
+        shield var bucketCapacity: Int = 32
+    }
+
+    /** AVL tree map ordered exclusively through `oper<` for `K`. */
+    @Experimental(sinceAzora: "0.0.4")
+    pack<K, V> TreeMap {
+        shield var keys: K* = alloc K[16]
+        shield var values: V* = alloc V[16]
+        shield var left: Int* = alloc Int[16]
+        shield var right: Int* = alloc Int[16]
+        shield var parent: Int* = alloc Int[16]
+        shield var heights: Int* = alloc Int[16]
+        shield var freeNext: Int* = alloc Int[16]
+        shield var root: Int = -1
+        shield var freeHead: Int = -1
+        shield var elemCount: Int = 0
+        confine var _size: Int = 0
+        shield var capacity: Int = 16
+    }
+
+    /** Normalized operands delivered to `oper[:]` for slicing. */
+    @Experimental(sinceAzora: "0.0.4")
+    pack MapSlice {
+        fin start: Int
+        fin end: Int
+        fin step: Int = 1
+    }
+
+    // ---------------------------------------------------------------------
+    // HashMap implementation
+    // ---------------------------------------------------------------------
+
+    impl ctor() for HashMap<K, V> { mut ref self ->
         var i = 0
-        while i < self.size {
-            if self.keys[i] == key { return self.values[i] }
+        while i < self.capacity {
+            self.occupied[i] = false
             i += 1
         }
-        assert false { "Key not found in Map" }
     }
 
-    @Experimental(sinceAzora: "0.0.1")
-    impl oper[]= for Map<K, V> { mut ref self, key, value ->
-        var i = 0
-        while i < self.size {
-            if self.keys[i] == key {
-                self.values[i] = value
-                return
+    impl dtor() for HashMap<K, V> {
+        ref self ->
+        drop self.keys
+        drop self.values
+        drop self.hashes
+        drop self.occupied
+    }
+
+    impl HashMap<K, V> {
+        confine func bucketFor(hash: ULong): Int { ref self ->
+            return (hash % (self.capacity as ULong)) as Int
+        }
+
+        confine func findIndex(key: ref K): Int { ref self ->
+            fin hash = #key
+            var index = self.bucketFor(hash)
+            var visited = 0
+            while visited < self.capacity {
+                if !self.occupied[index] { return -1 }
+                if self.hashes[index] == hash && self.keys[index] == key { return index }
+                index = (index + 1) % self.capacity
+                visited += 1
             }
-            i += 1
+            return -1
         }
-        if self.size >= self.capacity { self.growMap() }
-        self.keys[self.size] = key
-        self.values[self.size] = value
-        self.size = self.size + 1
-    }
 
-    @Experimental(sinceAzora: "0.0.3")
-    impl Into<String> for Map<K, V> { ref self ->
-        var s = "{"
-        var i = 0
-        while i < self.size {
-            if i > 0 { s = s + ", " }
-            s = s + std::convert::toString(self.keys[i]) + ": " + std::convert::toString(self.values[i])
-            i += 1
+        confine func insertKnownHash(key: K, value: V, hash: ULong): V? { mut ref self ->
+            var index = self.bucketFor(hash)
+            while self.occupied[index] {
+                if self.hashes[index] == hash && self.keys[index] == key {
+                    fin previous = self.values[index]
+                    self.values[index] = value
+                    return previous
+                }
+                index = (index + 1) % self.capacity
+            }
+            self.keys[index] = key
+            self.values[index] = value
+            self.hashes[index] = hash
+            self.occupied[index] = true
+            self._size += 1
+            return null
         }
-        return s + "}"
-    }
 
-    @SinceAzora("0.0.1")
-    impl Map<K, V> {
-        // --- Properties ---
+        confine func rehash(newCapacity: Int) { mut ref self ->
+            fin oldKeys = self.keys
+            fin oldValues = self.values
+            fin oldHashes = self.hashes
+            fin oldOccupied = self.occupied
+            fin oldCapacity = self.capacity
 
-        /** Whether the map contains no entries. */
-        @SinceAzora("0.0.1")
-        prop isEmpty: Bool = self.size == 0
+            self.keys = alloc K[newCapacity]
+            self.values = alloc V[newCapacity]
+            self.hashes = alloc ULong[newCapacity]
+            self.occupied = alloc Bool[newCapacity]
+            self.capacity = newCapacity
+            self._size = 0
 
-        /** Whether the map contains at least one entry. */
-        @SinceAzora("0.0.1")
-        prop isNotEmpty: Bool = self.size > 0
-
-        // --- Internal ---
-
-        confine func growMap() {
-            fin newCap = self.capacity * 2
-            fin newKeys = alloc K[newCap]
-            fin newValues = alloc V[newCap]
             var i = 0
-            while i < self.size {
+            while i < newCapacity {
+                self.occupied[i] = false
+                i += 1
+            }
+            i = 0
+            while i < oldCapacity {
+                if oldOccupied[i] {
+                    self.insertKnownHash(oldKeys[i], oldValues[i], oldHashes[i])
+                }
+                i += 1
+            }
+            drop oldKeys
+            drop oldValues
+            drop oldHashes
+            drop oldOccupied
+        }
+
+        confine func ensureInsertCapacity() { mut ref self ->
+            if (self._size + 1) * 10 >= self.capacity * 7 {
+                self.rehash(self.capacity * 2)
+            }
+        }
+
+        confine func putValue(key: K, value: V): V? { mut ref self ->
+            self.ensureInsertCapacity()
+            fin hash = #key
+            return self.insertKnownHash(key, value, hash)
+        }
+
+        confine func removeValue(key: ref K): V? { mut ref self ->
+            fin found = self.findIndex(key)
+            if found < 0 { return null }
+            fin previous = self.values[found]
+            self.occupied[found] = false
+            self._size -= 1
+
+            var index = (found + 1) % self.capacity
+            while self.occupied[index] {
+                fin movedKey = self.keys[index]
+                fin movedValue = self.values[index]
+                fin movedHash = self.hashes[index]
+                self.occupied[index] = false
+                self._size -= 1
+                self.insertKnownHash(movedKey, movedValue, movedHash)
+                index = (index + 1) % self.capacity
+            }
+            return previous
+        }
+
+        confine func entrySnapshot(): Array<MapEntry<K, V>> { ref self ->
+            var result: Array<MapEntry<K, V>> = arrayOf().fill<MapEntry<K, V>>(self._size)
+            var source = 0
+            var target = 0
+            while source < self.capacity {
+                if self.occupied[source] {
+                    result[target] = MapEntry(self.keys[source], self.values[source])
+                    target += 1
+                }
+                source += 1
+            }
+            return result
+        }
+    }
+
+    impl Map<K, V> for HashMap<K, V> {
+        prop size: Int = self._size
+        prop isEmpty: Bool = self._size == 0
+        prop isNotEmpty: Bool = self._size > 0
+
+        func containsKey(key: ref K): Bool { ref self -> return self.findIndex(key) >= 0 }
+
+        func containsValue(value: ref V): Bool { ref self ->
+            var i = 0
+            while i < self.capacity {
+                if self.occupied[i] && self.values[i] == value { return true }
+                i += 1
+            }
+            return false
+        }
+
+        func get(key: ref K): V? { ref self ->
+            fin index = self.findIndex(key)
+            if index < 0 { return null }
+            return self.values[index]
+        }
+
+        func getOrDefault(key: ref K, defaultValue: V): V { ref self ->
+            fin index = self.findIndex(key)
+            if index < 0 { return defaultValue }
+            return self.values[index]
+        }
+
+        func entries(): Array<MapEntry<K, V>> { ref self -> return self.entrySnapshot() }
+
+        func keys(): Array<K> { ref self ->
+            fin all = self.entrySnapshot()
+            var result: Array<K> = arrayOf().fill<K>(all.size)
+            var i = 0
+            while i < all.size {
+                result[i] = all[i].key
+                i += 1
+            }
+            return result
+        }
+
+        func values(): Array<V> { ref self ->
+            fin all = self.entrySnapshot()
+            var result: Array<V> = arrayOf().fill<V>(all.size)
+            var i = 0
+            while i < all.size {
+                result[i] = all[i].value
+                i += 1
+            }
+            return result
+        }
+
+        func forEach(action: (ref K, ref V) -> Unit) { ref self ->
+            var i = 0
+            while i < self.capacity {
+                if self.occupied[i] {
+                    action(self.keys[i], self.values[i])
+                }
+                i += 1
+            }
+        }
+    }
+
+    impl MutableMap<K, V> for HashMap<K, V> {
+        func put(key: K, value: V): V? { mut ref self ->
+            return self.putValue(key, value)
+        }
+
+        func putAll(other: ref Map<K, V>) { mut ref self ->
+            fin all = other.entries()
+            var i = 0
+            while i < all.size {
+                self.putValue(all[i].key, all[i].value)
+                i += 1
+            }
+        }
+
+        func remove(key: ref K): V? { mut ref self ->
+            return self.removeValue(key)
+        }
+
+        func remove(key: ref K, value: ref V): Bool { mut ref self ->
+            fin index = self.findIndex(key)
+            if index < 0 || self.values[index] != value { return false }
+            self.removeValue(key)
+            return true
+        }
+
+        func clear() { mut ref self ->
+            var i = 0
+            while i < self.capacity {
+                self.occupied[i] = false
+                i += 1
+            }
+            self._size = 0
+        }
+
+        func getOrPut(key: K, defaultValue: () -> V): V { mut ref self ->
+            fin index = self.findIndex(key)
+            if index >= 0 { return self.values[index] }
+            fin value = defaultValue()
+            self.putValue(key, value)
+            return value
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // LinkedHashMap implementation
+    // ---------------------------------------------------------------------
+
+    impl ctor() for LinkedHashMap<K, V> { mut ref self ->
+        var i = 0
+        while i < self.bucketCapacity {
+            self.buckets[i] = -1
+            i += 1
+        }
+    }
+
+    impl dtor() for LinkedHashMap<K, V> { ref self ->
+        drop self.keys
+        drop self.values
+        drop self.hashes
+        drop self.buckets
+    }
+
+    impl LinkedHashMap<K, V> {
+        confine func findIndex(key: ref K): Int { ref self ->
+            fin hash = #key
+            var bucket = (hash % (self.bucketCapacity as ULong)) as Int
+            var visited = 0
+            while visited < self.bucketCapacity {
+                fin index = self.buckets[bucket]
+                if index < 0 { return -1 }
+                if self.hashes[index] == hash && self.keys[index] == key { return index }
+                bucket = (bucket + 1) % self.bucketCapacity
+                visited += 1
+            }
+            return -1
+        }
+
+        confine func insertBucket(index: Int) { mut ref self ->
+            var bucket = (self.hashes[index] % (self.bucketCapacity as ULong)) as Int
+            while self.buckets[bucket] >= 0 {
+                bucket = (bucket + 1) % self.bucketCapacity
+            }
+            self.buckets[bucket] = index
+        }
+
+        confine func rebuildBuckets(newCapacity: Int) { mut ref self ->
+            fin oldBuckets = self.buckets
+            self.buckets = alloc Int[newCapacity]
+            self.bucketCapacity = newCapacity
+            var i = 0
+            while i < newCapacity {
+                self.buckets[i] = -1
+                i += 1
+            }
+            i = 0
+            while i < self._size {
+                self.insertBucket(i)
+                i += 1
+            }
+            drop oldBuckets
+        }
+
+        confine func growEntries() { mut ref self ->
+            fin newCapacity = self.capacity * 2
+            fin newKeys = alloc K[newCapacity]
+            fin newValues = alloc V[newCapacity]
+            fin newHashes = alloc ULong[newCapacity]
+            var i = 0
+            while i < self._size {
                 newKeys[i] = self.keys[i]
                 newValues[i] = self.values[i]
+                newHashes[i] = self.hashes[i]
                 i += 1
             }
             fin oldKeys = self.keys
             fin oldValues = self.values
+            fin oldHashes = self.hashes
             self.keys = newKeys
             self.values = newValues
-            self.capacity = newCap
+            self.hashes = newHashes
+            self.capacity = newCapacity
             drop oldKeys
             drop oldValues
+            drop oldHashes
         }
 
-        // --- Access ---
+        confine func putValue(key: K, value: V): V? { mut ref self ->
+            fin found = self.findIndex(key)
+            if found >= 0 {
+                fin previous = self.values[found]
+                self.values[found] = value
+                return previous
+            }
+            if self._size >= self.capacity {
+                self.growEntries()
+            }
+            if (self._size + 1) * 10 >= self.bucketCapacity * 7 {
+                self.rebuildBuckets(self.bucketCapacity * 2)
+            }
+            fin hash = #key
+            self.keys[self._size] = key
+            self.values[self._size] = value
+            self.hashes[self._size] = hash
+            self.insertBucket(self._size)
+            self._size += 1
+            return null
+        }
 
-        /**
-         * Associates the given key with the given value.
-         *
-         * If the key already exists, its value is replaced.
-         *
-         * @param key The key to insert or update.
-         * @param value The value to associate with the key.
-         */
-        @Experimental(sinceAzora: "0.0.1")
-        func put(key: K, value: V) {
-            var i = 0
-            while i < self.size {
-                if self.keys[i] == key {
-                    self.values[i] = value
-                    return
-                }
+        confine func removeValue(key: ref K): V? { mut ref self ->
+            fin found = self.findIndex(key)
+            if found < 0 { return null }
+            fin previous = self.values[found]
+            var i = found
+            while i < self._size - 1 {
+                self.keys[i] = self.keys[i + 1]
+                self.values[i] = self.values[i + 1]
+                self.hashes[i] = self.hashes[i + 1]
                 i += 1
             }
-            if self.size >= self.capacity { self.growMap() }
-            self.keys[self.size] = key
-            self.values[self.size] = value
-            self.size = self.size + 1
+            self._size -= 1
+            self.rebuildBuckets(self.bucketCapacity)
+            return previous
         }
 
-        /**
-         * Returns the value associated with the given key.
-         *
-         * @param key The key to look up.
-         * @return The associated value.
-         * @throws AssertionError if the key is not found.
-         */
-        @Experimental(sinceAzora: "0.0.1")
-        func get(key: K): V {
+        confine func entrySnapshot(): Array<MapEntry<K, V>> { ref self ->
+            var result: Array<MapEntry<K, V>> = arrayOf().fill<MapEntry<K, V>>(self._size)
             var i = 0
-            while i < self.size {
-                if self.keys[i] == key { return self.values[i] }
+            while i < self._size {
+                result[i] = MapEntry(self.keys[i], self.values[i])
                 i += 1
             }
-            assert false { "Key not found in Map" }
+            return result
+        }
+    }
+
+    impl Map<K, V> for LinkedHashMap<K, V> {
+        prop size: Int = self._size
+        prop isEmpty: Bool = self._size == 0
+        prop isNotEmpty: Bool = self._size > 0
+
+        func containsKey(key: ref K): Bool { ref self ->
+            return self.findIndex(key) >= 0
         }
 
-        /**
-         * Returns the value for the given key, or a default if not found.
-         *
-         * @param key The key to look up.
-         * @param default The fallback value.
-         * @return The associated value or the default.
-         */
-        @Experimental(sinceAzora: "0.0.1")
-        func getOrDefault(key: K, default: V): V {
+        func containsValue(value: ref V): Bool { ref self ->
             var i = 0
-            while i < self.size {
-                if self.keys[i] == key {
-                    return self.values[i]
-                }
-                i += 1
-            }
-            return default
-        }
-
-        /**
-         * Removes the entry with the given key and returns its value.
-         *
-         * @param key The key to remove.
-         * @return The removed value.
-         * @throws AssertionError if the key is not found.
-         */
-        @Experimental(sinceAzora: "0.0.1")
-        func remove(key: K): V {
-            var idx = -1
-            var i = 0
-            while i < self.size {
-                if self.keys[i] == key {
-                    idx = i
-                }
-                i += 1
-            }
-            assert idx >= 0 { "Key not found in Map" }
-            fin removed = self.values[idx]
-            var j = idx
-            while j < self.size - 1 {
-                self.keys[j] = self.keys[j + 1]
-                self.values[j] = self.values[j + 1]
-                j += 1
-            }
-            self.size = self.size - 1
-            return removed
-        }
-
-        /**
-         * Checks whether the map contains the given key.
-         *
-         * @param key The key to search for.
-         * @return true if the key exists, false otherwise.
-         */
-        @Experimental(sinceAzora: "0.0.1")
-        func containsKey(key: K): Bool {
-            var i = 0
-            while i < self.size {
-                if self.keys[i] == key {
-                    return true
-                }
+            while i < self._size {
+                if self.values[i] == value { return true }
                 i += 1
             }
             return false
         }
 
-        /**
-         * Checks whether the map contains the given value.
-         *
-         * @param value The value to search for.
-         * @return true if the value exists, false otherwise.
-         */
-        @Experimental(sinceAzora: "0.0.1")
-        func containsValue(value: V): Bool {
-            var i = 0
-            while i < self.size {
-                if self.values[i] == value {
-                    return true
-                }
-                i += 1
-            }
-            return false
+        func get(key: ref K): V? { ref self ->
+            fin index = self.findIndex(key)
+            if index < 0 { return null }
+            return self.values[index]
         }
 
-        /** Removes all entries from the map. */
-        @Experimental(sinceAzora: "0.0.1")
-        func clear() {
-            fin oldKeys = self.keys
-            fin oldValues = self.values
-            self.keys = alloc K[8]
-            self.values = alloc V[8]
-            self.size = 0
-            self.capacity = 8
-            drop oldKeys
-            drop oldValues
+        func getOrDefault(key: ref K, defaultValue: V): V { ref self ->
+            fin index = self.findIndex(key)
+            if index < 0 { return defaultValue }
+            return self.values[index]
         }
 
-        // --- Functional ---
-
-        /**
-         * Executes the given action on each key-value pair.
-         *
-         * @param action The function to apply to each key and value.
-         */
-        @Experimental(sinceAzora: "0.0.1")
-        func forEach(action: (K, V) -> Unit) {
-            var i = 0
-            while i < self.size {
-                action(self.keys[i], self.values[i])
-                i += 1
-            }
+        func entries(): Array<MapEntry<K, V>> { ref self ->
+            return self.entrySnapshot()
         }
 
-        /**
-         * Returns all keys.
-         *
-         * @return A sequence containing all keys in insertion order.
-         */
-        @Experimental(sinceAzora: "0.0.1")
-        func keys(): [K] {
-            var result: [K] = [].fill<K>(self.size)
+        func keys(): Array<K> { ref self ->
+            var result: Array<K> = arrayOf().fill<K>(self._size)
             var i = 0
-            while i < self.size {
+            while i < self._size {
                 result[i] = self.keys[i]
                 i += 1
             }
             return result
         }
 
-        /**
-         * Returns all values.
-         *
-         * @return A sequence containing all values in insertion order.
-         */
-        @Experimental(sinceAzora: "0.0.1")
-        func values(): [V] {
-            var result: [V] = [].fill<V>(self.size)
+        func values(): Array<V> { ref self ->
+            var result: Array<V> = arrayOf().fill<V>(self._size)
             var i = 0
-            while i < self.size {
+            while i < self._size {
                 result[i] = self.values[i]
                 i += 1
             }
             return result
         }
+
+        func forEach(action: (ref K, ref V) -> Unit) { ref self ->
+            var i = 0
+            while i < self._size {
+                action(self.keys[i], self.values[i])
+                i += 1
+            }
+        }
+    }
+
+    impl MutableMap<K, V> for LinkedHashMap<K, V> {
+        func put(key: K, value: V): V? { mut ref self ->
+            return self.putValue(key, value)
+        }
+
+        func putAll(other: ref Map<K, V>) { mut ref self ->
+            fin all = other.entries()
+            var i = 0
+            while i < all.size {
+                self.putValue(all[i].key, all[i].value)
+                i += 1
+            }
+        }
+
+        func remove(key: ref K): V? { mut ref self -> return self.removeValue(key) }
+
+        func remove(key: ref K, value: ref V): Bool { mut ref self ->
+            fin index = self.findIndex(key)
+            if index < 0 || self.values[index] != value { return false }
+            self.removeValue(key)
+            return true
+        }
+
+        func clear() { mut ref self ->
+            self._size = 0
+            var i = 0
+            while i < self.bucketCapacity {
+                self.buckets[i] = -1
+                i += 1
+            }
+        }
+
+        func getOrPut(key: K, defaultValue: () -> V): V { mut ref self ->
+            fin index = self.findIndex(key)
+            if index >= 0 { return self.values[index] }
+            fin value = defaultValue()
+            self.putValue(key, value)
+            return value
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // TreeMap implementation (AVL balanced tree)
+    // ---------------------------------------------------------------------
+
+    impl dtor() for TreeMap<K, V> {
+        ref self ->
+        drop self.keys
+        drop self.values
+        drop self.left
+        drop self.right
+        drop self.parent
+        drop self.heights
+        drop self.freeNext
+    }
+
+    impl TreeMap<K, V> {
+        confine func elemHeight(elem: Int): Int { ref self ->
+            if elem < 0 { return 0 }
+            return self.heights[elem]
+        }
+
+        confine func updateHeight(elem: Int) { mut ref self ->
+            if elem < 0 { return }
+            fin leftHeight = self.elemHeight(self.left[elem])
+            fin rightHeight = self.elemHeight(self.right[elem])
+            self.heights[elem] = if leftHeight > rightHeight {
+                leftHeight + 1
+            } else {
+                rightHeight + 1
+            }
+        }
+
+        confine func grow() { mut ref self ->
+            fin newCapacity = self.capacity * 2
+            fin newKeys = alloc K[newCapacity]
+            fin newValues = alloc V[newCapacity]
+            fin newLeft = alloc Int[newCapacity]
+            fin newRight = alloc Int[newCapacity]
+            fin newParent = alloc Int[newCapacity]
+            fin newHeights = alloc Int[newCapacity]
+            fin newFreeNext = alloc Int[newCapacity]
+            var i = 0
+            while i < self.elemCount {
+                newKeys[i] = self.keys[i]
+                newValues[i] = self.values[i]
+                newLeft[i] = self.left[i]
+                newRight[i] = self.right[i]
+                newParent[i] = self.parent[i]
+                newHeights[i] = self.heights[i]
+                newFreeNext[i] = self.freeNext[i]
+                i += 1
+            }
+            drop self.keys
+            drop self.values
+            drop self.left
+            drop self.right
+            drop self.parent
+            drop self.heights
+            drop self.freeNext
+            self.keys = newKeys
+            self.values = newValues
+            self.left = newLeft
+            self.right = newRight
+            self.parent = newParent
+            self.heights = newHeights
+            self.freeNext = newFreeNext
+            self.capacity = newCapacity
+        }
+
+        confine func allocateNode(key: K, value: V, parent: Int): Int { mut ref self ->
+            var elem = self.freeHead
+            if elem >= 0 {
+                self.freeHead = self.freeNext[elem]
+            } else {
+                if self.elemCount >= self.capacity {
+                    self.grow()
+                }
+                elem = self.elemCount
+                self.elemCount += 1
+            }
+            self.keys[elem] = key
+            self.values[elem] = value
+            self.left[elem] = -1
+            self.right[elem] = -1
+            self.parent[elem] = parent
+            self.heights[elem] = 1
+            self._size += 1
+            return elem
+        }
+
+        confine func releaseNode(elem: Int) { mut ref self ->
+            self.freeNext[elem] = self.freeHead
+            self.freeHead = elem
+            self._size -= 1
+        }
+
+        confine func replaceParentChild(parent: Int, oldChild: Int, newChild: Int) { mut ref self ->
+            if parent < 0 {
+                self.root = newChild
+            } else if self.left[parent] == oldChild {
+                self.left[parent] = newChild
+            } else {
+                self.right[parent] = newChild
+            }
+            if newChild >= 0 { self.parent[newChild] = parent }
+        }
+
+        confine func rotateLeft(elem: Int): Int { mut ref self ->
+            fin pivot = self.right[elem]
+            fin oldParent = self.parent[elem]
+            self.right[elem] = self.left[pivot]
+            if self.right[elem] >= 0 {
+                self.parent[self.right[elem]] = elem
+            }
+            self.left[pivot] = elem
+            self.parent[elem] = pivot
+            self.parent[pivot] = oldParent
+            self.replaceParentChild(oldParent, elem, pivot)
+            self.updateHeight(elem)
+            self.updateHeight(pivot)
+            return pivot
+        }
+
+        confine func rotateRight(elem: Int): Int { mut ref self ->
+            fin pivot = self.left[elem]
+            fin oldParent = self.parent[elem]
+            self.left[elem] = self.right[pivot]
+            if self.left[elem] >= 0 {
+                self.parent[self.left[elem]] = elem
+            }
+            self.right[pivot] = elem
+            self.parent[elem] = pivot
+            self.parent[pivot] = oldParent
+            self.replaceParentChild(oldParent, elem, pivot)
+            self.updateHeight(elem)
+            self.updateHeight(pivot)
+            return pivot
+        }
+
+        confine func rebalanceFrom(start: Int) { mut ref self ->
+            var elem = start
+            while elem >= 0 {
+                self.updateHeight(elem)
+                fin balance = self.elemHeight(self.left[elem]) - self.elemHeight(self.right[elem])
+                if balance > 1 {
+                    if self.elemHeight(self.left[self.left[elem]]) < self.elemHeight(self.right[self.left[elem]]) {
+                        self.rotateLeft(self.left[elem])
+                    }
+                    fin top = self.rotateRight(elem)
+                    elem = self.parent[top]
+                } else if balance < -1 {
+                    if self.elemHeight(self.right[self.right[elem]]) < self.elemHeight(self.left[self.right[elem]]) {
+                        self.rotateRight(self.right[elem])
+                    }
+                    fin top = self.rotateLeft(elem)
+                    elem = self.parent[top]
+                } else {
+                    elem = self.parent[elem]
+                }
+            }
+        }
+
+        confine func findNode(key: ref K): Int { ref self ->
+            var elem = self.root
+            while elem >= 0 {
+                if key < self.keys[elem] {
+                    elem = self.left[elem]
+                } else if self.keys[elem] < key {
+                    elem = self.right[elem]
+                } else {
+                    return elem
+                }
+            }
+            return -1
+        }
+
+        confine func putValue(key: K, value: V): V? { mut ref self ->
+            if self.root < 0 {
+                self.root = self.allocateNode(key, value, -1)
+                return null
+            }
+            var elem = self.root
+            var parent = -1
+            while elem >= 0 {
+                parent = elem
+                if key < self.keys[elem] {
+                    elem = self.left[elem]
+                } else if self.keys[elem] < key {
+                    elem = self.right[elem]
+                } else {
+                    fin previous = self.values[elem]
+                    self.values[elem] = value
+                    return previous
+                }
+            }
+            fin inserted = self.allocateNode(key, value, parent)
+            if key < self.keys[parent] {
+                self.left[parent] = inserted
+            } else {
+                self.right[parent] = inserted
+            }
+            self.rebalanceFrom(parent)
+            return null
+        }
+
+        confine func minimumNode(start: Int): Int { ref self ->
+            var elem = start
+            if elem < 0 { return -1 }
+            while self.left[elem] >= 0 {
+                elem = self.left[elem]
+            }
+            return elem
+        }
+
+        confine func maximumNode(start: Int): Int { ref self ->
+            var elem = start
+            if elem < 0 { return -1 }
+            while self.right[elem] >= 0 {
+                elem = self.right[elem]
+            }
+            return elem
+        }
+
+        confine func removeValue(key: ref K): V? { mut ref self ->
+            var elem = self.findNode(key)
+            if elem < 0 { return null }
+            fin previous = self.values[elem]
+
+            if self.left[elem] >= 0 && self.right[elem] >= 0 {
+                fin successor = self.minimumNode(self.right[elem])
+                self.keys[elem] = self.keys[successor]
+                self.values[elem] = self.values[successor]
+                elem = successor
+            }
+
+            fin child = if self.left[elem] >= 0 {
+                self.left[elem]
+            } else {
+                self.right[elem]
+            }
+            fin oldParent = self.parent[elem]
+            self.replaceParentChild(oldParent, elem, child)
+            self.releaseNode(elem)
+            self.rebalanceFrom(oldParent)
+            return previous
+        }
+
+        confine func entrySnapshot(): Array<MapEntry<K, V>> { ref self ->
+            var result: Array<MapEntry<K, V>> = arrayOf().fill<MapEntry<K, V>>(self._size)
+            fin stack = alloc Int[self._size]
+            var stackSize = 0
+            var elem = self.root
+            var output = 0
+            while elem >= 0 || stackSize > 0 {
+                while elem >= 0 {
+                    stack[stackSize] = elem
+                    stackSize += 1
+                    elem = self.left[elem]
+                }
+                stackSize -= 1
+                elem = stack[stackSize]
+                result[output] = MapEntry(self.keys[elem], self.values[elem])
+                output += 1
+                elem = self.right[elem]
+            }
+            drop stack
+            return result
+        }
+    }
+
+    impl Map<K, V> for TreeMap<K, V> {
+        prop size: Int = self._size
+        prop isEmpty: Bool = self._size == 0
+        prop isNotEmpty: Bool = self._size > 0
+
+        func containsKey(key: ref K): Bool { ref self ->
+            return self.findNode(key) >= 0
+        }
+
+        func containsValue(value: ref V): Bool { ref self ->
+            fin all = self.entrySnapshot()
+            var i = 0
+            while i < all.size {
+                if all[i].value == value { return true }
+                i += 1
+            }
+            return false
+        }
+
+        func get(key: ref K): V? { ref self ->
+            fin elem = self.findNode(key)
+            if elem < 0 { return null }
+            return self.values[elem]
+        }
+
+        func getOrDefault(key: ref K, defaultValue: V): V { ref self ->
+            fin elem = self.findNode(key)
+            if elem < 0 { return defaultValue }
+            return self.values[elem]
+        }
+
+        func entries(): Array<MapEntry<K, V>> { ref self -> return self.entrySnapshot() }
+
+        func keys(): Array<K> { ref self ->
+            fin all = self.entrySnapshot()
+            var result: Array<K> = arrayOf().fill<K>(all.size)
+            var i = 0
+            while i < all.size {
+                result[i] = all[i].key
+                i += 1
+            }
+            return result
+        }
+
+        func values(): Array<V> { ref self ->
+            fin all = self.entrySnapshot()
+            var result: Array<V> = arrayOf().fill<V>(all.size)
+            var i = 0
+            while i < all.size {
+                result[i] = all[i].value
+                i += 1
+            }
+            return result
+        }
+
+        func forEach(action: (ref K, ref V) -> Unit) { ref self ->
+            fin all = self.entrySnapshot()
+            var i = 0
+            while i < all.size {
+                action(all[i].key, all[i].value)
+                i += 1
+            }
+        }
+    }
+
+    impl MutableMap<K, V> for TreeMap<K, V> {
+        func put(key: K, value: V): V? { mut ref self -> return self.putValue(key, value) }
+
+        func putAll(other: ref Map<K, V>) { mut ref self ->
+            fin all = other.entries()
+            var i = 0
+            while i < all.size {
+                self.putValue(all[i].key, all[i].value)
+                i += 1
+            }
+        }
+
+        func remove(key: ref K): V? { mut ref self -> return self.removeValue(key) }
+
+        func remove(key: ref K, value: ref V): Bool { mut ref self ->
+            fin elem = self.findNode(key)
+            if elem < 0 || self.values[elem] != value { return false }
+            self.removeValue(key)
+            return true
+        }
+
+        func clear() { mut ref self ->
+            self.root = -1
+            self.freeHead = -1
+            self.elemCount = 0
+            self._size = 0
+        }
+
+        func getOrPut(key: K, defaultValue: () -> V): V { mut ref self ->
+            fin elem = self.findNode(key)
+            if elem >= 0 { return self.values[elem] }
+            fin value = defaultValue()
+            self.putValue(key, value)
+            return value
+        }
+    }
+
+    impl SortedMap<K, V> for TreeMap<K, V> {
+        func firstKey(): K? { ref self ->
+            fin elem = self.minimumNode(self.root)
+            if elem < 0 { return null }
+            return self.keys[elem]
+        }
+
+        func lastKey(): K? { ref self ->
+            fin elem = self.maximumNode(self.root)
+            if elem < 0 { return null }
+            return self.keys[elem]
+        }
+
+        func lowerKey(key: ref K): K? { ref self ->
+            var elem = self.root
+            var candidate = -1
+            while elem >= 0 {
+                if self.keys[elem] < key {
+                    candidate = elem
+                    elem = self.right[elem]
+                } else {
+                    elem = self.left[elem]
+                }
+            }
+            if candidate < 0 { return null }
+            return self.keys[candidate]
+        }
+
+        func floorKey(key: ref K): K? { ref self ->
+            fin exact = self.findNode(key)
+            if exact >= 0 { return self.keys[exact] }
+            return self.lowerKey(key)
+        }
+
+        func ceilingKey(key: ref K): K? { ref self ->
+            fin exact = self.findNode(key)
+            if exact >= 0 { return self.keys[exact] }
+            return self.higherKey(key)
+        }
+
+        func higherKey(key: ref K): K? { ref self ->
+            var elem = self.root
+            var candidate = -1
+            while elem >= 0 {
+                if key < self.keys[elem] {
+                    candidate = elem
+                    elem = self.left[elem]
+                }
+                else {
+                    elem = self.right[elem]
+                }
+            }
+            if candidate < 0 { return null }
+            return self.keys[candidate]
+        }
+
+        func firstEntry(): MapEntry<K, V>? { ref self ->
+            fin elem = self.minimumNode(self.root)
+            if elem < 0 { return null }
+            return MapEntry(self.keys[elem], self.values[elem])
+        }
+
+        func lastEntry(): MapEntry<K, V>? { ref self ->
+            fin elem = self.maximumNode(self.root)
+            if elem < 0 { return null }
+            return MapEntry(self.keys[elem], self.values[elem])
+        }
+
+        func headMap(toKey: ref K, inclusive: Bool = false): SortedMap<K, V> { ref self ->
+            var result = TreeMap<K, V>()
+            fin all = self.entrySnapshot()
+            var i = 0
+            while i < all.size {
+                fin beforeEnd = all[i].key < toKey || (inclusive && !(toKey < all[i].key))
+                if beforeEnd { result.put(all[i].key, all[i].value) }
+                i += 1
+            }
+            return result
+        }
+
+        func tailMap(fromKey: ref K, inclusive: Bool = true): SortedMap<K, V> { ref self ->
+            var result = TreeMap<K, V>()
+            fin all = self.entrySnapshot()
+            var i = 0
+            while i < all.size {
+                fin afterStart = fromKey < all[i].key || (inclusive && !(all[i].key < fromKey))
+                if afterStart { result.put(all[i].key, all[i].value) }
+                i += 1
+            }
+            return result
+        }
+
+        func subMap(fromKey: ref K, fromInclusive: Bool, toKey: ref K, toInclusive: Bool): SortedMap<K, V> { ref self ->
+            assert !(toKey < fromKey) { "subMap start must not be greater than end" }
+            var result = TreeMap<K, V>()
+            fin all = self.entrySnapshot()
+            var i = 0
+            while i < all.size {
+                fin afterStart = fromKey < all[i].key || (fromInclusive && !(all[i].key < fromKey))
+                fin beforeEnd = all[i].key < toKey || (toInclusive && !(toKey < all[i].key))
+                if afterStart && beforeEnd { result.put(all[i].key, all[i].value) }
+                i += 1
+            }
+            return result
+        }
+    }
+
+    impl MutableSortedMap<K, V> for TreeMap<K, V> {
+        func pollFirstEntry(): MapEntry<K, V>? { mut ref self ->
+            fin elem = self.minimumNode(self.root)
+            if elem < 0 { return null }
+            fin result = MapEntry(self.keys[elem], self.values[elem])
+            self.removeValue(self.keys[elem])
+            return result
+        }
+
+        func pollLastEntry(): MapEntry<K, V>? { mut ref self ->
+            fin elem = self.maximumNode(self.root)
+            if elem < 0 { return null }
+            fin result = MapEntry(self.keys[elem], self.values[elem])
+            self.removeValue(self.keys[elem])
+            return result
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Factories
+    // ---------------------------------------------------------------------
+
+    @Experimental(sinceAzora: "0.0.4")
+    func<K, V> mapEntry(key: K, value: V): MapEntry<K, V> {
+        return MapEntry(key, value)
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    func<K, V> hashMapOf(...entries: MapEntry<K, V>): HashMap<K, V> {
+        var result = HashMap<K, V>()
+        var i = 0
+        while i < entries.size {
+            result.put(entries[i].key, entries[i].value)
+            i += 1
+        }
+        return result
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    func<K, V> linkedHashMapOf(...entries: MapEntry<K, V>): LinkedHashMap<K, V> {
+        var result = LinkedHashMap<K, V>()
+        var i = 0
+        while i < entries.size {
+            result.put(entries[i].key, entries[i].value)
+            i += 1
+        }
+        return result
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    func<K, V> treeMapOf(...entries: MapEntry<K, V>): TreeMap<K, V> {
+        var result = TreeMap<K, V>()
+        var i = 0
+        while i < entries.size {
+            result.put(entries[i].key, entries[i].value)
+            i += 1
+        }
+        return result
+    }
+
+    // ---------------------------------------------------------------------
+    // Operators
+    // ---------------------------------------------------------------------
+
+    @Experimental(sinceAzora: "0.0.4")
+    impl oper[] for HashMap<K, V> { ref self, key ->
+        return self.get(key)
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    impl oper[]= for HashMap<K, V> { mut ref self, key, value ->
+        self.put(key, value)
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    impl oper[] for LinkedHashMap<K, V> { ref self, key ->
+        return self.get(key)
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    impl oper[]= for LinkedHashMap<K, V> { mut ref self, key, value ->
+        self.put(key, value)
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    impl oper[] for TreeMap<K, V> { ref self, key ->
+        return self.get(key)
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    impl oper[]= for TreeMap<K, V> { mut ref self, key, value ->
+        self.put(key, value)
+    }
+
+    /** Slicing is over current iteration order and returns an ordered snapshot. */
+    @Experimental(sinceAzora: "0.0.4")
+    impl oper[:] by MapSlice for HashMap<K, V> { ref self, slice ->
+        assert slice.step != 0 { "Map slice step cannot be zero" }
+        fin all = self.entries()
+        var result = LinkedHashMap<K, V>()
+        var i = slice.start
+        while (slice.step > 0 && i < slice.end) || (slice.step < 0 && i > slice.end) {
+            if i >= 0 && i < all.size {
+                result.put(all[i].key, all[i].value)
+            }
+            i += slice.step
+        }
+        return result
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    impl oper[:] by MapSlice for LinkedHashMap<K, V> { ref self, slice ->
+        assert slice.step != 0 { "Map slice step cannot be zero" }
+        var result = LinkedHashMap<K, V>()
+        var i = slice.start
+        while (slice.step > 0 && i < slice.end) || (slice.step < 0 && i > slice.end) {
+            if i >= 0 && i < self._size {
+                result.put(self.keys[i], self.values[i])
+            }
+            i += slice.step
+        }
+        return result
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    impl oper[:] by MapSlice for TreeMap<K, V> { ref self, slice ->
+        assert slice.step != 0 { "Map slice step cannot be zero" }
+        fin all = self.entries()
+        var result = LinkedHashMap<K, V>()
+        var i = slice.start
+        while (slice.step > 0 && i < slice.end) || (slice.step < 0 && i > slice.end) {
+            if i >= 0 && i < all.size {
+                result.put(all[i].key, all[i].value)
+            }
+            i += slice.step
+        }
+        return result
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    impl oper+ by MapEntry<K, V> for HashMap<K, V> { ref self, entry ->
+        var result = hashMapOf<K, V>()
+        result.putAll(self)
+        result.put(entry.key, entry.value)
+        return result
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    impl oper- by K for HashMap<K, V> { ref self, key ->
+        var result = hashMapOf<K, V>()
+        result.putAll(self)
+        result.remove(key)
+        return result
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    impl oper+ by MapEntry<K, V> for LinkedHashMap<K, V> { ref self, entry ->
+        var result = linkedHashMapOf<K, V>()
+        result.putAll(self)
+        result.put(entry.key, entry.value)
+        return result
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    impl oper- by K for LinkedHashMap<K, V> { ref self, key ->
+        var result = linkedHashMapOf<K, V>()
+        result.putAll(self)
+        result.remove(key)
+        return result
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    impl oper+ by MapEntry<K, V> for TreeMap<K, V> { ref self, entry ->
+        var result = treeMapOf<K, V>()
+        result.putAll(self)
+        result.put(entry.key, entry.value)
+        return result
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    impl oper- by K for TreeMap<K, V> { ref self, key ->
+        var result = treeMapOf<K, V>()
+        result.putAll(self)
+        result.remove(key)
+        return result
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    impl oper== by Map<K, V> for HashMap<K, V> { ref self, rhs ->
+        if self.size != rhs.size { return false }
+        fin all = self.entries()
+        var i = 0
+        while i < all.size {
+            if !rhs.containsKey(all[i].key) || rhs.get(all[i].key) != all[i].value {
+                return false
+            }
+            i += 1
+        }
+        return true
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    impl oper!= by Map<K, V> for HashMap<K, V> { ref self, rhs ->
+        return !(self == rhs)
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    impl oper# for HashMap<K, V> { ref self ->
+        fin all = self.entries()
+        var result = 0 as ULong
+        var i = 0
+        while i < all.size {
+            result = result + (#all[i].key ^ #all[i].value)
+            i += 1
+        }
+        return result
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    impl oper== by Map<K, V> for LinkedHashMap<K, V> { ref self, rhs ->
+        if self.size != rhs.size { return false }
+        var i = 0
+        while i < self._size {
+            if !rhs.containsKey(self.keys[i]) || rhs.get(self.keys[i]) != self.values[i] {
+                return false
+            }
+            i += 1
+        }
+        return true
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    impl oper!= by Map<K, V> for LinkedHashMap<K, V> { ref self, rhs ->
+        return !(self == rhs)
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    impl oper# for LinkedHashMap<K, V> { ref self ->
+        var result = 0 as ULong
+        var i = 0
+        while i < self._size {
+            result = result + (#self.keys[i] ^ #self.values[i])
+            i += 1
+        }
+        return result
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    impl oper== by Map<K, V> for TreeMap<K, V> { ref self, rhs ->
+        if self.size != rhs.size { return false }
+        fin all = self.entries()
+        var i = 0
+        while i < all.size {
+            if !rhs.containsKey(all[i].key) || rhs.get(all[i].key) != all[i].value { return false }
+            i += 1
+        }
+        return true
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    impl oper!= by Map<K, V> for TreeMap<K, V> { ref self, rhs ->
+        return !(self == rhs)
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    impl oper# for TreeMap<K, V> { ref self ->
+        fin all = self.entries()
+        var result = 0 as ULong
+        var i = 0
+        while i < all.size {
+            result = result + (#all[i].key ^ #all[i].value)
+            i += 1
+        }
+        return result
     }
 }
-
-test "map starts empty" {
-    fin value = std::emptyMap<String, Int>()
-    assert value.size == 0 && value.isEmpty { "emptyMap must contain no entries" }
-}
-
-test "map put inserts and replaces" {
-    var value = Map<String, Int>()
-    value.put("a", 1)
-    value.put("b", 2)
-    value.put("a", 3)
-    assert value.size == 2 { "replacing a key must not change size" }
-    assert value["a"] == 3 && value.get("b") == 2 { "map lookup returned the wrong value" }
-}
-
-test "map index assignment inserts and replaces" {
-    var value = Map<String, Int>()
-    value["x"] = 4
-    value["x"] = 5
-    assert value.size == 1 && value["x"] == 5 { "index assignment must obey key uniqueness" }
-}
-
-test "map fallback does not insert" {
-    var value = Map<String, Int>()
-    fin fallback = value.getOrDefault("missing", 9)
-    assert fallback == 9 && value.size == 0 { "getOrDefault must not mutate the map" }
-}
-
-test "map remove compacts entries" {
-    var value = Map<String, Int>()
-    value.put("a", 1)
-    value.put("b", 2)
-    value.put("c", 3)
-    assert value.remove("b") == 2 { "remove must return the previous value" }
-    assert value.size == 2 && value["c"] == 3 { "remove must preserve later entries" }
-}
-
-test "map membership distinguishes keys and values" {
-    var value = Map<String, Int>()
-    value.put("answer", 42)
-    assert value.containsKey("answer") && !value.containsKey("42") { "key membership changed" }
-    assert value.containsValue(42) && !value.containsValue(7) { "value membership changed" }
-}
-
-test "map key and value snapshots preserve storage order" {
-    var value = Map<String, Int>()
-    value.put("a", 1)
-    value.put("b", 2)
-    fin keys = value.keys()
-    fin values = value.values()
-    assert keys.length == 2 && keys[0] == "a" && keys[1] == "b" { "key snapshot order changed" }
-    assert values.length == 2 && values[0] == 1 && values[1] == 2 { "value snapshot order changed" }
-}
-
-test "map grows and clears safely" {
-    var value = Map<Int, Int>()
-    var i = 0
-    while i < 20 {
-        value.put(i, i * i)
-        i += 1
-    }
-    assert value.size == 20 && value[19] == 361 { "map growth lost an entry" }
-    value.clear()
-    value.put(1, 2)
-    assert value.size == 1 && value[1] == 2 { "cleared maps must remain reusable" }
-}
-
-test "map serialization metadata is declared" {
-    inline assert (std::reflect<Map>).hasDeco<Serializable> { "Map must carry Serializable metadata" }
-}
-
-test .All "map"

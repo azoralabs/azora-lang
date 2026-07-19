@@ -48,4 +48,10 @@ deepinline zone {
      */
     @SinceAzora("0.0.4")
     fin TEST_MODE: Bool = false
+
+    /**
+     * Overriden by compiler flag --auto-import-macros
+     */
+    @SinceAzora("0.0.4")
+    fin AUTO_IMPORT_MACROS = false
 }

@@ -185,6 +185,8 @@ class Lexer(private val source: String) {
             '[' -> { bracketDepth++; addToken(TokenType.L_BRACKET) }
             ']' -> { if (bracketDepth > 0) bracketDepth--; addToken(TokenType.R_BRACKET) }
             ',' -> addToken(TokenType.COMMA)
+            ';' -> addToken(TokenType.SEMICOLON)
+            '#' -> addToken(TokenType.HASH)
             '@' -> addToken(TokenType.AT)
             '.' -> when {
                 match('.') -> if (match('.')) addToken(TokenType.ELLIPSIS) else addToken(if (match('<')) TokenType.DOT_DOT_LESS else TokenType.DOT_DOT)

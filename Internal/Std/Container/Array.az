@@ -45,10 +45,7 @@ friend zone std {
      * @param T The type shared by every element in the array.
      */
     @Experimental(sinceAzora: "0.0.4")
-    bridge pack<T> Array {
-        /** Number of elements stored in this array. */
-        fin size: Int
-
+    bridge pack<T, N: Int> Array {
         /**
          * Pointer to the first contiguous element.
          *

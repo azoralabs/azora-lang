@@ -174,10 +174,17 @@ class Compiler {
             return CompilationResult.Failure(listOf(e.message ?: "macro expansion failed"))
         }
 
+        // 2c-bis. Re-inject: macro expansion turns `name!` sites into concrete
+        // expressions (e.g. vec![1,2,3] → std__listOf(1,2,3)), which may reference
+        // stdlib symbols not pulled in by the pre-expansion injection (the macro
+        // template's own dependencies). A second injection pass over the expanded
+        // program picks those up transitively.
+        val macroReInjected = CallbackImplNormalizer.normalize(StdlibInjector.inject(macroExpanded))
+
         // 2d. Monomorphize variadic generics (e.g. `Tuple<T…>` / `tupleOf(…)`)
         // into concrete per-instantiation declarations before semantic analysis.
         val ast = try {
-            VariadicMonomorphizer.monomorphize(macroExpanded)
+            VariadicMonomorphizer.monomorphize(macroReInjected)
         } catch (e: IllegalStateException) {
             return CompilationResult.Failure(listOf(e.message ?: "variadic monomorphization failed"))
         }

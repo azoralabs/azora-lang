@@ -751,22 +751,35 @@ class IrGenerator(private val table: SymbolTable) {
                     return IrExpr.Call("__ptrDiff", listOf(left, right), IrType.Int)
                 }
                 // Operator overloading on user types
-                if (left.type is IrType.Named && left.type == right.type) {
+                if (left.type is IrType.Named) {
                     val lt = left.type as IrType.Named
-                    val methodName = operatorMethodName(expr.op)
-                    if (methodName != null) {
-                        val mangled = table.lookupMethod(lt.name, methodName)
+                    // `impl oper<OP>` overloads (method named `oper<OP>`); resolved
+                    // regardless of operand type (a `by <Spec>` overload may differ).
+                    val operName = operOverloadName(expr.op)
+                    if (operName != null) {
+                        val mangled = table.lookupMethod(lt.name, operName)
                         if (mangled != null) {
                             val func = table.lookupFunction(mangled)!!
                             return IrExpr.Call(mangled, listOf(left, right), func.returnType)
                         }
                     }
-                    if (expr.op == TokenType.BANG_EQUAL) {
-                        val eqMangled = table.lookupMethod(lt.name, "equals")
-                        if (eqMangled != null) {
-                            val func = table.lookupFunction(eqMangled)!!
-                            return IrExpr.Unary(IrUnaryOp.NOT,
-                                IrExpr.Call(eqMangled, listOf(left, right), func.returnType), IrType.Bool)
+                    // Legacy same-type named-method overloads.
+                    if (left.type == right.type) {
+                        val methodName = operatorMethodName(expr.op)
+                        if (methodName != null) {
+                            val mangled = table.lookupMethod(lt.name, methodName)
+                            if (mangled != null) {
+                                val func = table.lookupFunction(mangled)!!
+                                return IrExpr.Call(mangled, listOf(left, right), func.returnType)
+                            }
+                        }
+                        if (expr.op == TokenType.BANG_EQUAL) {
+                            val eqMangled = table.lookupMethod(lt.name, "equals")
+                            if (eqMangled != null) {
+                                val func = table.lookupFunction(eqMangled)!!
+                                return IrExpr.Unary(IrUnaryOp.NOT,
+                                    IrExpr.Call(eqMangled, listOf(left, right), func.returnType), IrType.Bool)
+                            }
                         }
                     }
                 }
@@ -1171,6 +1184,23 @@ class IrGenerator(private val table: SymbolTable) {
         TokenType.SLASH -> "div"
         TokenType.PERCENT -> "mod"
         TokenType.EQUAL_EQUAL -> "equals"
+        else -> null
+    }
+
+    /** The `impl oper<OP> for Type` method name for [op] (e.g. PLUS → "oper+"). */
+    private fun operOverloadName(op: TokenType): String? = when (op) {
+        TokenType.PLUS -> "oper+"
+        TokenType.MINUS -> "oper-"
+        TokenType.STAR -> "oper*"
+        TokenType.SLASH -> "oper/"
+        TokenType.PERCENT -> "oper%"
+        TokenType.EQUAL_EQUAL -> "oper=="
+        TokenType.BANG_EQUAL -> "oper!="
+        TokenType.LESS -> "oper<"
+        TokenType.LESS_EQUAL -> "oper<="
+        TokenType.GREATER -> "oper>"
+        TokenType.GREATER_EQUAL -> "oper>="
+        TokenType.TILDE -> "oper~"
         else -> null
     }
 

@@ -320,10 +320,7 @@ object StdlibInjector {
                 is TopLevel.Spec -> names.add(item.name)
                 is TopLevel.Slot -> names.add(item.name)
                 is TopLevel.Bridge -> item.funcs.forEach { names.add(it.name) }
-                is TopLevel.Meta -> {
-                    names.add(item.name)
-                    item.arms.forEach { arm -> collectNamesFromExpr(arm.template, names) }
-                }
+                is TopLevel.Meta -> names.add(item.name)
                 else -> {}
             }
         }

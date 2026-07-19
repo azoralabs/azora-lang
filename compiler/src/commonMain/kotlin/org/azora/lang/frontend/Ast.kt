@@ -1344,6 +1344,25 @@ sealed class MacroPattern {
 data class MacroArm(val delimiter: MacroDelimiter, val pattern: MacroPattern, val template: Expr)
 
 /**
+ * Which built-in type-sugar form a [TypeTypeArm] pattern matches. Used by the
+ * (staged) `meta type` rewriting pass to map a source form to its template.
+ */
+enum class TypeFormKind { ARRAY, ARRAY_SIZED, SET, MAP, TUPLE }
+
+/**
+ * One arm of a `meta type { pattern => template }` declaration: when a type
+ * of [kind]'s shape appears, expand it to [template] substituting [holes]
+ * positionally with the actual type arguments.
+ *
+ * NOTE: the rewriting pass is scaffolded, not yet wired — `meta type`
+ * declarations currently parse and store their rules (so the stdlib builds)
+ * without repurposing any built-in type syntax. Activating the rewrite is the
+ * next stage (it requires migrating stdlib usage of `[T]`/`[K: V]`/tuples to
+ * explicit `Array<T>`/`std::mapOf`/etc. first).
+ */
+data class TypeTypeArm(val kind: TypeFormKind, val holes: List<String>, val template: TypeRef)
+
+/**
  * A decorator/annotation application: `@Name`, `@Name(args)`, or `@target:Name`.
  *
  * @property name the decorator name
@@ -1779,6 +1798,18 @@ data class Program(
     val zones: Map<String, ZoneMeta> = emptyMap(),
     /** Compile-time `type name(...)` declarations owned by this unit. */
     val typeFunctions: List<TypeFunctionDecl> = emptyList(),
+    /**
+     * `meta type { pattern => template }` rules declared in this unit. Parsed
+     * and stored; the rewriting pass is not yet active (see [TypeTypeArm]).
+     */
+    val typeMacroRules: List<TypeTypeArm> = emptyList(),
+    /**
+     * True if this unit contains any `name!…` macro invocation. Lets
+     * [MacroExpander] skip the rewrite pass for programs that neither declare
+     * nor use macros (the common case), while still catching undefined-macro
+     * use sites with a clear error.
+     */
+    val usesMacros: Boolean = false,
 ) {
     /** Convenience — returns only the resolved function declarations. */
     val functions: List<FuncDecl> get() = items.filterIsInstance<TopLevel.Func>().map { it.decl }

@@ -14,7 +14,9 @@
  * limitations under the License.
  */
 
-export module std.macro
+// TODO: `inline if AUTO_IMPORT_MACROS { export } module std.macro` — a
+// comptime-conditional module export is not yet supported; use plain opt-in for now.
+module std.macro
 
 export import std.container.{list, set, tuple, array}
 
@@ -34,8 +36,8 @@ use friend zone std {
     /**
      * Builds an immutable [List].
      *
-     * `vec![]` expands to `std::emptyList()`; `vec![1, 2, 3]` expands to
-     * `std::listOf(1, 2, 3)`.
+     * @0 `vec![]` expands to `std::emptyList()`.
+     * @1 `vec![1, 2, 3]` expands to `std::listOf(1, 2, 3)`.
      */
     meta vec {
         [] => std::emptyList()
@@ -45,16 +47,28 @@ use friend zone std {
     /**
      * Builds an immutable [Set].
      *
-     * `set![1, 2, 3]` expands to `std::setOf(1, 2, 3)`.
+     * @0 `set![]` expands to `std::emptySet()`.
+     * @1 `set![1, 2, 3]` expands to `std::setOf(1, 2, 3)`.
      */
     meta set {
+        [] => std::emptySet()
         [...$items] => std::setOf(...$items)
+    }
+
+    /**
+     * Builds an immutable [Map].
+     *
+     * @0 `map![]` expands to `std::emptyMap()`.
+     * @1 `map!["One": 1, "Two": 2]` expands to `std::mapOf("One" to 1, "Two" to 2)`. todo. Create std::mapOf and to infx like in Kotlin
+     */
+    meta map {
+
     }
 
     /**
      * Builds a structural [Tuple].
      *
-     * `tup!(1, "two", 3.0)` expands to `std::tupleOf(1, "two", 3.0)`.
+     * @0 `tup!(1, "two", 3.0)` expands to `std::tupleOf(1, "two", 3.0)`.
      */
     meta tup {
         [...$items] => std::tupleOf(...$items)
@@ -63,14 +77,12 @@ use friend zone std {
     /**
      * Builds a fixed [Array].
      *
-     * `arr![1, 2, 3]` expands to `std::arrayOf(1, 2, 3)`.
+     * @0 `arr![]` expands to `std::emptyArray()`.
+     * @1 `arr![1, 2, 3]` expands to `std::arrayOf(1, 2, 3)`.
      */
     meta arr {
+        [] => std::emptyArray()
         [...$items] => std::arrayOf(...$items)
-    }
-
-    meta map {
-        [] // implement it
     }
 
     // So we can say "fin x: [Int; 3] = arr![1, 2, 3]", "fin x: [Int] = vec![1, 2, 3]", "fin x: {Int} = set![1, 2, 3]"

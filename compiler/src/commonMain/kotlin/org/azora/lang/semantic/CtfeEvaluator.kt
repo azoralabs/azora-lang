@@ -1097,6 +1097,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
             }
             // Macros are expanded before CTCE; unreachable.
             is Expr.MetaInvoke -> Pair(expr, false)
+            is Expr.Slice -> Pair(expr, false)
         }
     }
 
@@ -1418,6 +1419,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
             // Macros are expanded to concrete expressions by MacroExpander before
             // CTCE; a MetaInvoke reaching here means expansion was skipped.
             is Expr.MetaInvoke -> null
+            is Expr.Slice -> null
         }
     }
 

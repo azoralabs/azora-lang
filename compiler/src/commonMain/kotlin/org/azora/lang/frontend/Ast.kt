@@ -297,18 +297,16 @@ sealed class Expr {
     data class Spread(val array: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 
     /**
-     * A macro invocation `name!(…)`, `name![…]`, or `name!{…}`.
-     *
-     * The delimiter is ergonomic-only (all three forms feed [args] to the same
-     * macro arms) and is dropped at parse time. [org.azora.lang.frontend.MacroExpander]
-     * rewrites every `MetaInvoke` into the matched arm's template expression,
-     * with `$captures` spliced in, before semantic analysis — so this node never
-     * survives into type resolution or IR generation.
-     *
-     * @property name the invoked macro's name
-     * @property args the argument expressions (delimiter-agnostic)
+     * A macro invocation `name!(…)`, `name![…]`, or `name!{…}` (see [TopLevel.Meta]).
      */
     data class MetaInvoke(val name: String, val args: List<Expr>, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+
+    /**
+     * A slice expression `target[start:stop:step]` (Python-style), despatched to the
+     * target type's `oper[:]` overload. Any of [start]/[stop]/[step] may be null
+     * (omitted), matching Python's open-ended slicing.
+     */
+    data class Slice(val target: Expr, val start: Expr?, val stop: Expr?, val step: Expr?, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 }
 
 // ---------------------------------------------------------------------------
@@ -1024,6 +1022,16 @@ sealed class TypeRef {
         override fun toString() = "$inner*"
     }
 
+    /**
+     * A compile-time integer used as a **const-generic type argument** — the `3` in
+     * `Array<Int, 3>`. Not a runtime type; it supplies a value (e.g. an array's
+     * element count) at type-argument position. Resolved into the dependent type
+     * (e.g. `IrType.Array(_, size = 3)`).
+     */
+    data class Const(val value: Long) : TypeRef() {
+        override fun toString() = value.toString()
+    }
+
     /** A checked reference. Ownership is carried by the qualifier, not punctuation. */
     data class Reference(val kind: RefKind, val inner: TypeRef) : TypeRef() {
         override fun toString() = "${kind.spelling} $inner"
@@ -1299,6 +1307,12 @@ data class FuncDecl(
     val variadicParam: String? = null,
     /** Minimum element count from a `where <var>.length >= N` clause, or null if unconstrained. */
     val minVariadicLength: Int? = null,
+    /**
+     * Type parameters declared as const value params (`name: Int` in `<…>`), e.g.
+     * `N` in `func<T, N: Int>`. They are supplied as [TypeRef.Const] arguments at
+     * call/instantiation sites and fold into dependent types (e.g. `Array<T, N>`).
+     */
+    val constParams: Set<String> = emptySet(),
     /** How this declaration may be invoked when registered as an impl member. */
     val memberCallStyle: MemberCallStyle = MemberCallStyle.NORMAL,
 )
@@ -1363,18 +1377,16 @@ enum class TypeFormKind { ARRAY, ARRAY_SIZED, SET, MAP, TUPLE }
 data class TypeTypeArm(val kind: TypeFormKind, val holes: List<String>, val template: TypeRef)
 
 /**
- * A decorator/annotation application: `@Name`, `@Name(args)`, or `@target:Name`.
+ * A decorator/annotation application: `@Name` or `@Name(args)`.
  *
  * @property name the decorator name
  * @property args optional arguments (`@Name(a, b)`)
- * @property target optional use-site target (`@file:Name`, `@field:Name`)
  * @property line 1-based source line
  * @property column 1-based source column
  */
 data class Annotation(
     val name: String,
     val args: List<Expr> = emptyList(),
-    val target: String? = null,
     val line: Int = 0,
     val column: Int = 0,
     /** Named arguments `@name(key = value)` / `@name(key: value)`, in source order. */
@@ -1583,6 +1595,12 @@ sealed class TopLevel {
         val variadicParam: String? = null,
         /** Minimum element count from a `where <var>.length >= N` clause, or null if unconstrained. */
         val minVariadicLength: Int? = null,
+        /**
+         * Type parameters declared as const value params (`name: Int`), e.g. `N` in
+         * `pack<T, N: Int> Array`. Supplied as [TypeRef.Const] arguments at
+         * instantiation and folded into dependent types.
+         */
+        val constParams: Set<String> = emptySet(),
         /** Field generator for a variadic pack body (`inline for Ty in ...T with index { … }`), or null. */
         val fieldTemplate: VariadicFieldTemplate? = null,
         /**

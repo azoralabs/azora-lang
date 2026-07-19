@@ -262,6 +262,7 @@ private class MonoContext(
             "${renderType(type.ok)}![${type.errSets.joinToString(", ")}]"
         }
         is TypeRef.Reference -> "${type.kind.spelling} ${renderType(type.inner)}"
+        is TypeRef.Const -> type.value.toString()
     }
 
     /** Parses a rendered mixin string (e.g. `0: Int`) as a pack [PackField]. */
@@ -285,6 +286,7 @@ private class MonoContext(
         is TypeRef.Failable -> type.copy(ok = substituteLoopVar(type.ok, loopVar, replacement))
         is TypeRef.Pointer -> type.copy(inner = substituteLoopVar(type.inner, loopVar, replacement))
         is TypeRef.Reference -> type.copy(inner = substituteLoopVar(type.inner, loopVar, replacement))
+        is TypeRef.Const -> type
     }
 
     private fun expandFunc(mangled: String, template: FuncDecl, elementTypes: List<TypeRef>, packMangled: String): TopLevel.Func {
@@ -358,6 +360,7 @@ private class MonoContext(
         is TypeRef.Failable -> ref.copy(ok = rewriteType(ref.ok))
         is TypeRef.Pointer -> ref.copy(inner = rewriteType(ref.inner))
         is TypeRef.Reference -> ref.copy(inner = rewriteType(ref.inner))
+        is TypeRef.Const -> ref
     }
 
     fun rewriteExpr(e: Expr): Expr = when (e) {
@@ -473,6 +476,7 @@ private class MonoContext(
         is TypeRef.Failable -> type.copy(ok = substituteTypeParams(type.ok, substitutions))
         is TypeRef.Pointer -> type.copy(inner = substituteTypeParams(type.inner, substitutions))
         is TypeRef.Reference -> type.copy(inner = substituteTypeParams(type.inner, substitutions))
+        is TypeRef.Const -> type
     }
 
     /** Element [index] of a tuple-typed [type] (structural `Tuple` or a variadic pack ref). */
@@ -547,6 +551,7 @@ private class MonoContext(
         is TypeRef.Failable -> mangleType(type.ok) + "_F"
         is TypeRef.Pointer -> mangleType(type.inner) + "_P"
         is TypeRef.Reference -> mangleType(type.inner) + "_R"
+        is TypeRef.Const -> type.value.toString()
     }
 
     private fun sanitize(name: String): String =

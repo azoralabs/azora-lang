@@ -72,7 +72,7 @@ friend zone std {
     }
 }
 
-test "arrayOf preserves values and order" {
+test "arrayOf preserves values and ordefir" {
     fin values: Array<Int> = std::arrayOf(10, 20, 30)
     assert values.size == 3 { "arrayOf changed the number of elements" }
     assert values[0] == 10 && values[1] == 20 && values[2] == 30 {

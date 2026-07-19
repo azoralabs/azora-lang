@@ -60,7 +60,7 @@ class ContainerStdlibTest {
                 set.add(3)
                 std::println(set.size)
 
-                var map = Map<String, Int>()
+                var map = HashMap<String, Int>()
                 map.put("a", 1)
                 map.put("a", 2)
                 std::println(map["a"])

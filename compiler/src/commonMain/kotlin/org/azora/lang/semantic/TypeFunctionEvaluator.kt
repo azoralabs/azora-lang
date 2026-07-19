@@ -75,6 +75,7 @@ internal object TypeFunctionEvaluator {
             is TypeRef.Failable -> type.copy(ok = resolve(type.ok))
             is TypeRef.Pointer -> type.copy(inner = resolve(type.inner))
             is TypeRef.Reference -> type.copy(inner = resolve(type.inner))
+            is TypeRef.Const -> type
         }
 
         private fun resolveCall(call: TypeRef.Named): TypeRef {
@@ -101,6 +102,7 @@ internal object TypeFunctionEvaluator {
             is TypeRef.Failable -> containsUnresolvedParam(type.ok)
             is TypeRef.Pointer -> containsUnresolvedParam(type.inner)
             is TypeRef.Reference -> containsUnresolvedParam(type.inner)
+            is TypeRef.Const -> false
         }
 
         private fun evaluateCall(name: String, args: List<TypeRef>): TypeRef {

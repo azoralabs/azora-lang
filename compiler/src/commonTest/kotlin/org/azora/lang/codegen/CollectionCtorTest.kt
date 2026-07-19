@@ -123,7 +123,7 @@ class CollectionCtorTest {
         import std.io
         import std.container
         func main() {
-            var scores = MutableMap<String, Int>()
+            var scores = HashMap<String, Int>()
             scores.put("azora", 3)
             std::println(scores["azora"])
         }

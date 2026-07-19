@@ -388,6 +388,12 @@ internal object MacroExpander {
                 body = rewriteStmts(expr.body, macros, depth),
             )
             is Expr.MetaInvoke -> expr // unreachable (handled above); satisfies exhaustiveness
+            is Expr.Slice -> expr.copy(
+                target = rewriteExpr(expr.target, macros, depth),
+                start = expr.start?.let { rewriteExpr(it, macros, depth) },
+                stop = expr.stop?.let { rewriteExpr(it, macros, depth) },
+                step = expr.step?.let { rewriteExpr(it, macros, depth) },
+            )
         }
     }
 
@@ -513,6 +519,12 @@ internal object MacroExpander {
         // args (a `...$capture` must splice here, just as in a Call) and leave the
         // node for the outer rewriteExpr loop to expand.
         is Expr.MetaInvoke -> template.copy(args = substituteSeq(template.args, bindings, invokeLine))
+        is Expr.Slice -> template.copy(
+            target = substitute(template.target, bindings, invokeLine),
+            start = template.start?.let { substitute(it, bindings, invokeLine) },
+            stop = template.stop?.let { substitute(it, bindings, invokeLine) },
+            step = template.step?.let { substitute(it, bindings, invokeLine) },
+        )
     }
 
     /** Mirrors [substitute] for the Stmt children of a [Expr.Lambda] body. */

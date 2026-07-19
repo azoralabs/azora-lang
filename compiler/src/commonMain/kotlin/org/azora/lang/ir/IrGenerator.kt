@@ -866,7 +866,8 @@ class IrGenerator(private val table: SymbolTable) {
                         val elemType = homogeneousVariadicType
                             ?: (func.params.last().second as? IrType.Array)?.element
                             ?: IrType.Any
-                        fixed + listOf(IrExpr.ArrayLiteral(rest, IrType.Array(elemType)))
+                        val restSize: kotlin.Long? = if (hasSpread) null else rest.size.toLong()
+                        fixed + listOf(IrExpr.ArrayLiteral(rest, IrType.Array(elemType, restSize)))
                     } else if (hasSpread) {
                         // Non-variadic with spread: keep spread args for evalCall to splice.
                         args
@@ -910,7 +911,9 @@ class IrGenerator(private val table: SymbolTable) {
             is Expr.ArrayLiteral -> {
                 val elems = expr.elements.map { lowerExpr(it) }
                 val elemType = if (elems.isEmpty()) IrType.Any else elems.first().type
-                IrExpr.ArrayLiteral(elems, IrType.Array(elemType))
+                // A literal carries its compile-time element count as the array's size.
+                val size: kotlin.Long? = if (elems.isEmpty()) null else elems.size.toLong()
+                IrExpr.ArrayLiteral(elems, IrType.Array(elemType, size))
             }
             is Expr.SetLiteral -> {
                 val elems = expr.elements.map { lowerExpr(it) }
@@ -991,6 +994,11 @@ class IrGenerator(private val table: SymbolTable) {
                 IrExpr.Index(target, index, elemType)
             }
             is Expr.Member -> {
+                // NOTE: `.size`/`.length` are left as runtime intrinsics (handled by
+                // each backend) even for compile-time-sized arrays — existing dynamic
+                // arrays (`var a = [1,2,3]; a.add(4); a.length`) rely on the runtime
+                // length. The const `N` drives type identity (`Array<T,3>` ≠
+                // `Array<T,5>`) and future bound checks, not the live element count.
                 // Slot no-payload construction: SlotName.Variant (no parens)
                 if (expr.target is Expr.Identifier) {
                     val slotVariants = table.lookupSlot(expr.target.name)
@@ -1142,12 +1150,24 @@ class IrGenerator(private val table: SymbolTable) {
                 IrExpr.Lambda(irParams, body, IrType.Function(irParams.map { it.second }, retType, variadic = expr.variadic))
             }
             // Macros are expanded before IR generation; a MetaInvoke here is a bug.
+            is Expr.Slice -> {
+                // `a[start:stop:step]` → `a.slice(start, stop, step)`; null bounds use
+                // 0 / -1 (to-end sentinel) / 1 defaults the slice method interprets.
+                val target = lowerExpr(expr.target)
+                val start = expr.start?.let { lowerExpr(it) } ?: IrExpr.IntLiteral(0)
+                val stop = expr.stop?.let { lowerExpr(it) } ?: IrExpr.IntLiteral(-1)
+                val step = expr.step?.let { lowerExpr(it) } ?: IrExpr.IntLiteral(1)
+                IrExpr.MethodCall(target, "slice", listOf(start, stop, step), IrType.Any)
+            }
             is Expr.MetaInvoke -> error("MetaInvoke reached IR generation at line ${expr.line}")
         }
     }
 
     /** Resolves the return type of a builtin method on a receiver of [receiverType]. */
-    private fun builtinMethodReturnType(receiverType: IrType, name: String): IrType = when (receiverType) {
+    private fun builtinMethodReturnType(receiverType: IrType, name: String): IrType {
+        // `#expr` (oper#) hashes its operand → ULong, regardless of receiver type.
+        if (name == "oper#") return IrType.ULong
+        return when (receiverType) {
         is IrType.Array -> when (name) {
             "add", "insert", "remove" -> IrType.Unit
             "contains", "isEmpty", "isNotEmpty" -> IrType.Bool
@@ -1174,6 +1194,7 @@ class IrGenerator(private val table: SymbolTable) {
             else -> IrType.Any
         }
         else -> IrType.Any
+        }
     }
 
     /** Maps an operator token to the impl method name for operator overloading. */

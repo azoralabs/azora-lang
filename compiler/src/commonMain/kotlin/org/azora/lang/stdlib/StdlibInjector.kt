@@ -837,6 +837,7 @@ object StdlibInjector {
             }
             is TypeRef.Pointer -> collectNamesFromTypeRef(ref.inner, names)
             is TypeRef.Reference -> collectNamesFromTypeRef(ref.inner, names)
+            is TypeRef.Const -> {}
         }
     }
 }

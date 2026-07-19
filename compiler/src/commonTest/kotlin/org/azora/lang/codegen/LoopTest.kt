@@ -214,7 +214,7 @@ class LoopTest {
         // `reverse` is a soft keyword usable as a stdlib function name in call position.
         assertEquals("5\n4\n3\n2\n1", run("""
             import std.io
-            import std.algorithm
+            import std.algorithm.sort
             func main() {
                 fin r = reverse<Int>([1, 2, 3, 4, 5])
                 for x in r { std::println(x) }

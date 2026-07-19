@@ -266,6 +266,7 @@ class EffectChecker {
             is Expr.Identifier, is Expr.UpperScopeAccess -> {}
             // Macros are expanded before effect checking; unreachable.
             is Expr.MetaInvoke -> {}
+            is Expr.Slice -> {}
         }
     }
 }

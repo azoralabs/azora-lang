@@ -823,6 +823,15 @@ class IrInterpreter {
                     }
                 }
                 when {
+                    // `#expr` (oper#) — hash of a primitive/value-type operand.
+                    expr.name == "oper#" -> when (receiver) {
+                        is Long -> receiver
+                        is Boolean -> if (receiver) 1L else 0L
+                        is String -> receiver.hashCode().toLong()
+                        is Double -> receiver.toRawBits().toLong()
+                        is Float -> receiver.toRawBits().toLong()
+                        else -> receiver.hashCode().toLong()
+                    }
                     receiver is String -> when (expr.name) {
                         "toUpperCase" -> receiver.uppercase()
                         "toLowerCase" -> receiver.lowercase()

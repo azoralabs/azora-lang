@@ -83,8 +83,17 @@ sealed class IrType {
     /** 128-bit decimal floating-point type. */
     object Decimal : IrType() { override fun toString() = "Decimal" }
 
-    /** Internal fixed-array type for `[T]` annotations and array literals. */
-    data class Array(val element: IrType) : IrType() { override fun toString() = "[$element]" }
+    /**
+     * Internal fixed-array type for `[T]` annotations and array literals.
+     *
+     * [size] is the compile-time element count when known (a const-generic `N`,
+     * e.g. `Array<Int, 3>` or the `[1,2,3]` literal), or `null` for an unsized
+     * array (`[T]` sugar / `std::arrayOf`). Two arrays are distinct types unless
+     * both [element] and [size] match.
+     */
+    data class Array(val element: IrType, val size: kotlin.Long? = null) : IrType() {
+        override fun toString() = if (size != null) "[$element; $size]" else "[$element]"
+    }
 
     /** Structural map literal type `map[K, V]`. */
     data class Map(val key: IrType, val value: IrType) : IrType() { override fun toString() = "map[$key, $value]" }
@@ -180,10 +189,16 @@ sealed class IrType {
                 else if (ref.name in typeParams) Any
                 else if (ref.name in aliases) resolve(aliases[ref.name]!!, typeParams)
                 else if (ref.name == "Array") {
-                    if (ref.args.size != 1) {
-                        error("Array expects exactly one type argument, got ${ref.args.size}")
+                    // `Array<T>` (unsized) or `Array<T, N>` (const-generic size; the
+                    // second arg is a [TypeRef.Const] carrying the element count).
+                    if (ref.args.size == 2 && ref.args[1] is TypeRef.Const) {
+                        Array(resolve(ref.args[0], typeParams), (ref.args[1] as TypeRef.Const).value)
+                    } else {
+                        if (ref.args.size != 1) {
+                            error("Array expects one type argument (Array<T>) or a const size (Array<T, N>), got ${ref.args.size}")
+                        }
+                        Array(resolve(ref.args.single(), typeParams))
                     }
-                    Array(resolve(ref.args.single(), typeParams))
                 }
                 else if (ref.name == "Var" && ref.args.size >= 2) Variant(ref.args.map { resolve(it, typeParams) })
                 else if (ref.args.isEmpty() && isPrimitiveName(ref.name)) fromName(ref.name)
@@ -202,6 +217,9 @@ sealed class IrType {
             // `T!ErrSet` — at runtime a value of T (errors propagate via exceptions),
             // so the IR type is just the inner ok type.
             is TypeRef.Failable -> resolve(ref.ok, typeParams)
+            // A const-generic value (`3` in `Array<Int, 3>`); stands alone only if
+            // referenced directly — treat it as its Int value type.
+            is TypeRef.Const -> Int
         }
     }
 }

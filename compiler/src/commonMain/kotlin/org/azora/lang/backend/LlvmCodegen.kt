@@ -2552,7 +2552,11 @@ class LlvmCodegen {
             (leftType is IrType.Nullable || leftType == IrType.Any) &&
                 (expr.op == IrBinaryOp.EQ || expr.op == IrBinaryOp.NEQ) -> {
                 val pred = if (expr.op == IrBinaryOp.EQ) "eq" else "ne"
-                emit("  $tmp = icmp $pred i8* $left, $right")
+                // A raw integer literal (e.g. `0`) in a pointer comparison is a null
+                // sentinel — LLVM requires `null`, not an integer, for pointer icmp.
+                val l = if (left == "0") "null" else left
+                val r = if (right == "0") "null" else right
+                emit("  $tmp = icmp $pred i8* $l, $r")
             }
             leftType in IrType.integerTypes || leftType == IrType.Char -> {
                 val u = isUnsigned(leftType)
@@ -3496,7 +3500,12 @@ class LlvmCodegen {
             sb.appendLine()
         }
 
-        return sb.toString()
+        // Post-process: fix pointer comparisons against integer `0` — LLVM requires `null`.
+        return sb.toString().lineSequence().map { line ->
+            if (line.contains("icmp") && line.contains("*") && line.contains(", 0"))
+                line.replace(", 0", ", null")
+            else line
+        }.joinToString("\n")
     }
 
     // -----------------------------------------------------------------------

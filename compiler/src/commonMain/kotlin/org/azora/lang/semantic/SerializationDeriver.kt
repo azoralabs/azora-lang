@@ -525,6 +525,7 @@ object SerializationDeriver {
             "${renderType(type.ok)}![${type.errSets.joinToString(", ")}]"
         }
         is TypeRef.Reference -> "${type.kind.spelling} ${renderType(type.inner)}"
+        is TypeRef.Const -> type.value.toString()
     }
 
     private fun renderExpr(expr: Expr): String? = when (expr) {

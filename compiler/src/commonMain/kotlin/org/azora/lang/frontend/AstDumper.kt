@@ -590,6 +590,13 @@ private fun dumpExpr(sb: StringBuilder, expr: Expr, indent: String) {
             sb.appendLine("${indent}MetaInvoke(name=${expr.name})")
             for (arg in expr.args) dumpExpr(sb, arg, "$indent    ")
         }
+        is Expr.Slice -> {
+            sb.appendLine("${indent}Slice")
+            dumpExpr(sb, expr.target, "$indent    ")
+            expr.start?.let { dumpExpr(sb, it, "$indent    start:") }
+            expr.stop?.let { dumpExpr(sb, it, "$indent    stop:") }
+            expr.step?.let { dumpExpr(sb, it, "$indent    step:") }
+        }
         is Expr.StringTemplate -> {
             sb.appendLine("${indent}StringTemplate")
             for (part in expr.parts) {

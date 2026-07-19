@@ -813,7 +813,8 @@ class TypeResolver(private val table: SymbolTable) {
                             return null
                         }
                     }
-                    IrType.Array(elemType)
+                    // A non-empty literal carries its compile-time element count.
+                    IrType.Array(elemType, expr.elements.size.toLong())
                 }
             }
             is Expr.SetLiteral -> {
@@ -917,6 +918,11 @@ class TypeResolver(private val table: SymbolTable) {
                     expr.name == "data" && targetType is IrType.Array -> IrType.Pointer(targetType.element)
                     (expr.name == "isEmpty" || expr.name == "isNotEmpty") && (targetType is IrType.Array || targetType is IrType.Map || targetType is IrType.Set) -> IrType.Bool
                     targetType is IrType.Named -> {
+                        // Spec-typed value: a property/requirement declared by the spec
+                        // (e.g. `map.size` where `map: Map<K,V>` — a spec) resolves to
+                        // the spec's declared prop type and dispatches to the impl.
+                        val specProp = table.lookupSpec(targetType.name)?.propTypes?.get(expr.name)
+                        if (specProp != null) return specProp
                         val struct = table.lookupStruct(targetType.name)
                         val field = struct?.field(expr.name)
                         if (field != null) {
@@ -956,6 +962,13 @@ class TypeResolver(private val table: SymbolTable) {
                 }
             }
             is Expr.MethodCall -> {
+                // `#expr` (oper#) — hash; returns ULong regardless of operand type
+                // (the operand may be a generic K erased to Any, whose concrete type
+                // supplies oper# at runtime).
+                if (expr.name == "oper#") {
+                    resolveExpr(expr.target)
+                    return IrType.ULong
+                }
                 // Slot construction: SlotName.Variant(args) — check BEFORE resolving target
                 if (expr.target is Expr.Identifier) {
                     val slotVariants = table.lookupSlot(expr.target.name)
@@ -1175,6 +1188,14 @@ class TypeResolver(private val table: SymbolTable) {
                 val retType = captured.firstOrNull() ?: IrType.Unit
                 IrType.Function(paramTypes, retType, variadic = expr.variadic)
             }
+            // `a[start:stop:step]` → the target's `slice` method return type (or Any).
+            is Expr.Slice -> {
+                resolveExpr(expr.target)
+                expr.start?.let { resolveExpr(it) }
+                expr.stop?.let { resolveExpr(it) }
+                expr.step?.let { resolveExpr(it) }
+                IrType.Any
+            }
             // Macros are expanded before type resolution; a MetaInvoke here is a bug.
             is Expr.MetaInvoke -> error("MetaInvoke reached TypeResolver at line ${expr.line}")
         }
@@ -1355,6 +1376,12 @@ class TypeResolver(private val table: SymbolTable) {
     /** Checks if an initializer type is compatible with a declared type (nullable widening, Any from null). */
     private fun isCompatible(declared: IrType, actual: IrType): Boolean {
         if (declared == actual) return true
+        // An unsized array slot (`[T]`) accepts any sized array of the same element
+        // (`Array<T, N>`); a sized slot still requires an exact-size match (handled
+        // by the `==` check above).
+        if (declared is IrType.Array && actual is IrType.Array &&
+            declared.element == actual.element && declared.size == null
+        ) return true
         // Primitive literals bridge to std.container collection pack names.
         val setNames = setOf("Set", "MutableSet")
         val mapNames = setOf("Map", "MutableMap")

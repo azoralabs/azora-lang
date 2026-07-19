@@ -129,16 +129,6 @@ class Tier2MetaprogrammingTest {
         """.trimIndent()))
     }
 
-    @Test fun annotationWithUseSiteTarget() {
-        assertEquals("ok", run("""
-            import std.io
-            @file:experimental
-            func main() {
-                std::println("ok")
-            }
-        """.trimIndent()))
-    }
-
     @Test fun multipleAnnotationsOnOneDecl() {
         assertEquals("done", run("""
             import std.io

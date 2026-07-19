@@ -306,6 +306,12 @@ class AllocDropAnalyzer {
             is Expr.CharLiteral -> {}
             // Macros are expanded before alloc/drop analysis; unreachable.
             is Expr.MetaInvoke -> {}
+            is Expr.Slice -> {
+                collectUsedVars(expr.target, used)
+                expr.start?.let { collectUsedVars(it, used) }
+                expr.stop?.let { collectUsedVars(it, used) }
+                expr.step?.let { collectUsedVars(it, used) }
+            }
         }
     }
 }

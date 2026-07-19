@@ -16,7 +16,7 @@
 
 module std.container.map
 
-import std.container.array
+import std.container.list
 
 /**
  * @file ExperimentalMap
@@ -91,13 +91,13 @@ friend zone std {
         func getOrDefault(key: ref K, defaultValue: V): V
 
         /** Returns an iteration-order snapshot of all entries. */
-        func entries(): Array<MapEntry<K, V>>
+        func entries(): List<MapEntry<K, V>>
 
         /** Returns an iteration-order snapshot of all keys. */
-        func keys(): Array<K>
+        func keys(): List<K>
 
         /** Returns an iteration-order snapshot of all values. */
-        func values(): Array<V>
+        func values(): List<V>
 
         /** Invokes `action` once for every entry in iteration order. */
         func forEach(action: (ref K, ref V) -> Unit)
@@ -123,9 +123,6 @@ friend zone std {
 
         /** Removes `key` and returns its previous value, or `null` when absent. */
         func remove(key: ref K): V?
-
-        /** Removes `key` only when it is currently associated with `value`. */
-        func remove(key: ref K, value: ref V): Bool
 
         /** Removes every entry while retaining reusable internal capacity. */
         func clear()
@@ -367,8 +364,8 @@ friend zone std {
             return previous
         }
 
-        confine func entrySnapshot(): Array<MapEntry<K, V>> { ref self ->
-            var result: Array<MapEntry<K, V>> = arrayOf().fill<MapEntry<K, V>>(self._size)
+        confine func entrySnapshot(): List<MapEntry<K, V>> { ref self ->
+            var result: List<MapEntry<K, V>> = arrayOf().fill<MapEntry<K, V>>(self._size)
             var source = 0
             var target = 0
             while source < self.capacity {
@@ -410,11 +407,11 @@ friend zone std {
             return self.values[index]
         }
 
-        func entries(): Array<MapEntry<K, V>> { ref self -> return self.entrySnapshot() }
+        func entries(): List<MapEntry<K, V>> { ref self -> return self.entrySnapshot() }
 
-        func keys(): Array<K> { ref self ->
+        func keys(): List<K> { ref self ->
             fin all = self.entrySnapshot()
-            var result: Array<K> = arrayOf().fill<K>(all.size)
+            var result: List<K> = arrayOf().fill<K>(all.size)
             var i = 0
             while i < all.size {
                 result[i] = all[i].key
@@ -423,9 +420,9 @@ friend zone std {
             return result
         }
 
-        func values(): Array<V> { ref self ->
+        func values(): List<V> { ref self ->
             fin all = self.entrySnapshot()
-            var result: Array<V> = arrayOf().fill<V>(all.size)
+            var result: List<V> = arrayOf().fill<V>(all.size)
             var i = 0
             while i < all.size {
                 result[i] = all[i].value
@@ -461,13 +458,6 @@ friend zone std {
 
         func remove(key: ref K): V? { mut ref self ->
             return self.removeValue(key)
-        }
-
-        func remove(key: ref K, value: ref V): Bool { mut ref self ->
-            fin index = self.findIndex(key)
-            if index < 0 || self.values[index] != value { return false }
-            self.removeValue(key)
-            return true
         }
 
         func clear() { mut ref self ->
@@ -609,8 +599,8 @@ friend zone std {
             return previous
         }
 
-        confine func entrySnapshot(): Array<MapEntry<K, V>> { ref self ->
-            var result: Array<MapEntry<K, V>> = arrayOf().fill<MapEntry<K, V>>(self._size)
+        confine func entrySnapshot(): List<MapEntry<K, V>> { ref self ->
+            var result: List<MapEntry<K, V>> = arrayOf().fill<MapEntry<K, V>>(self._size)
             var i = 0
             while i < self._size {
                 result[i] = MapEntry(self.keys[i], self.values[i])
@@ -650,12 +640,12 @@ friend zone std {
             return self.values[index]
         }
 
-        func entries(): Array<MapEntry<K, V>> { ref self ->
+        func entries(): List<MapEntry<K, V>> { ref self ->
             return self.entrySnapshot()
         }
 
-        func keys(): Array<K> { ref self ->
-            var result: Array<K> = arrayOf().fill<K>(self._size)
+        func keys(): List<K> { ref self ->
+            var result: List<K> = arrayOf().fill<K>(self._size)
             var i = 0
             while i < self._size {
                 result[i] = self.keys[i]
@@ -664,8 +654,8 @@ friend zone std {
             return result
         }
 
-        func values(): Array<V> { ref self ->
-            var result: Array<V> = arrayOf().fill<V>(self._size)
+        func values(): List<V> { ref self ->
+            var result: List<V> = arrayOf().fill<V>(self._size)
             var i = 0
             while i < self._size {
                 result[i] = self.values[i]
@@ -697,13 +687,8 @@ friend zone std {
             }
         }
 
-        func remove(key: ref K): V? { mut ref self -> return self.removeValue(key) }
-
-        func remove(key: ref K, value: ref V): Bool { mut ref self ->
-            fin index = self.findIndex(key)
-            if index < 0 || self.values[index] != value { return false }
-            self.removeValue(key)
-            return true
+        func remove(key: ref K): V? { mut ref self ->
+            return self.removeValue(key)
         }
 
         func clear() { mut ref self ->
@@ -728,8 +713,7 @@ friend zone std {
     // TreeMap implementation (AVL balanced tree)
     // ---------------------------------------------------------------------
 
-    impl dtor() for TreeMap<K, V> {
-        ref self ->
+    impl dtor() for TreeMap<K, V> { ref self ->
         drop self.keys
         drop self.values
         drop self.left
@@ -971,8 +955,8 @@ friend zone std {
             return previous
         }
 
-        confine func entrySnapshot(): Array<MapEntry<K, V>> { ref self ->
-            var result: Array<MapEntry<K, V>> = arrayOf().fill<MapEntry<K, V>>(self._size)
+        confine func entrySnapshot(): List<MapEntry<K, V>> { ref self ->
+            var result: List<MapEntry<K, V>> = arrayOf().fill<MapEntry<K, V>>(self._size)
             fin stack = alloc Int[self._size]
             var stackSize = 0
             var elem = self.root
@@ -1025,11 +1009,11 @@ friend zone std {
             return self.values[elem]
         }
 
-        func entries(): Array<MapEntry<K, V>> { ref self -> return self.entrySnapshot() }
+        func entries(): List<MapEntry<K, V>> { ref self -> return self.entrySnapshot() }
 
-        func keys(): Array<K> { ref self ->
+        func keys(): List<K> { ref self ->
             fin all = self.entrySnapshot()
-            var result: Array<K> = arrayOf().fill<K>(all.size)
+            var result: List<K> = arrayOf().fill<K>(all.size)
             var i = 0
             while i < all.size {
                 result[i] = all[i].key
@@ -1038,9 +1022,9 @@ friend zone std {
             return result
         }
 
-        func values(): Array<V> { ref self ->
+        func values(): List<V> { ref self ->
             fin all = self.entrySnapshot()
-            var result: Array<V> = arrayOf().fill<V>(all.size)
+            var result: List<V> = arrayOf().fill<V>(all.size)
             var i = 0
             while i < all.size {
                 result[i] = all[i].value
@@ -1060,7 +1044,9 @@ friend zone std {
     }
 
     impl MutableMap<K, V> for TreeMap<K, V> {
-        func put(key: K, value: V): V? { mut ref self -> return self.putValue(key, value) }
+        func put(key: K, value: V): V? { mut ref self ->
+            return self.putValue(key, value)
+        }
 
         func putAll(other: ref Map<K, V>) { mut ref self ->
             fin all = other.entries()
@@ -1072,13 +1058,6 @@ friend zone std {
         }
 
         func remove(key: ref K): V? { mut ref self -> return self.removeValue(key) }
-
-        func remove(key: ref K, value: ref V): Bool { mut ref self ->
-            fin elem = self.findNode(key)
-            if elem < 0 || self.values[elem] != value { return false }
-            self.removeValue(key)
-            return true
-        }
 
         func clear() { mut ref self ->
             self.root = -1

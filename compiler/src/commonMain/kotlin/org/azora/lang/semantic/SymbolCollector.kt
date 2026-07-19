@@ -430,7 +430,13 @@ class SymbolCollector {
             if (!contractNames.add(item.name)) {
                 errors.add("line ${item.line}: duplicate spec or decorator '${item.name}'")
             } else {
-                table.defineSpec(item.name, item.methods.map { it.name }, item.callback, item.typeParams)
+                // Capture each requirement's declared return type so member access
+                // on a spec-typed value (e.g. `map.size` on a `Map<K,V>`) resolves.
+                val propTypes = item.methods.mapNotNull { m ->
+                    val ref = (m.returnType as? TypeAnnotation.Explicit)?.ref
+                    if (ref != null) m.name to IrType.resolve(ref, item.typeParams.toSet()) else null
+                }.toMap()
+                table.defineSpec(item.name, item.methods.map { it.name }, item.callback, item.typeParams, propTypes)
             }
         }
         for (item in program.items.filterIsInstance<TopLevel.Deco>()) {
@@ -454,9 +460,24 @@ class SymbolCollector {
         // decorators are marker contracts and must use the bodyless form.
         for (item in program.items) {
             if (item is TopLevel.Impl && item.traitName != null) {
+                // Oper overloads with a `by <Type>` clause (e.g. `impl oper== by Map for
+                // HashMap`) are NOT spec conformances — the `by` type names the operand,
+                // not the contract. Skip spec validation for oper-style methods entirely.
+                val isOperOverload = item.methods.any {
+                    it.name.startsWith("oper") || it.name in setOf("slice", "index", "indexSet")
+                }
+                if (isOperOverload) continue
                 val contract = table.lookupSpec(item.traitName)
                 if (contract == null) {
-                    errors.add("line ${item.line}: unknown spec or decorator '${item.traitName}'")
+                    // The traitName may be a `by <Type>` annotation on an operator
+                    // overload (e.g. `impl oper+ by MapEntry for Type`), not a spec
+                    // conformance — skip validation for oper-style methods.
+                    val isOperOverload = item.methods.any {
+                        it.name.startsWith("oper") || it.name in setOf("slice", "index", "indexSet")
+                    }
+                    if (!isOperOverload) {
+                        errors.add("line ${item.line}: unknown spec or decorator '${item.traitName}'")
+                    }
                 } else if (contract.isDecorator) {
                     // Decorator impls are validated and expanded by DecoratorResolver.
                     continue
@@ -622,5 +643,6 @@ class SymbolCollector {
         is Expr.Cast, is Expr.IsCheck, is Expr.Alloc, is Expr.AllocBuffer, is Expr.Deref, is Expr.Isolated, is Expr.Await, is Expr.Inject, is Expr.Spread -> null
         // Macros are expanded before symbol collection; unreachable.
         is Expr.MetaInvoke -> null
+        is Expr.Slice -> null
     }
 }

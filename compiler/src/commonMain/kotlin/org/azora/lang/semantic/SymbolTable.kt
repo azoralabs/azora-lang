@@ -103,6 +103,8 @@ data class SpecSymbol(
     val typeParams: List<String> = emptyList(),
     val decoratorTargets: Set<DecoTarget> = emptySet(),
     val decoratorBindings: List<org.azora.lang.frontend.DecoratorBinding> = emptyList(),
+    /** Property/requirement name → return type, for member access on a spec-typed value. */
+    val propTypes: Map<String, org.azora.lang.ir.IrType> = emptyMap(),
 )
 
 /** A validated `impl Contract for Type` conformance. */
@@ -244,8 +246,9 @@ class SymbolTable {
         methodNames: List<String>,
         callback: org.azora.lang.frontend.SpecCallback? = null,
         typeParams: List<String> = emptyList(),
+        propTypes: Map<String, org.azora.lang.ir.IrType> = emptyMap(),
     ) {
-        specs[name] = SpecSymbol(methodNames, callback, isDecorator = false, typeParams = typeParams)
+        specs[name] = SpecSymbol(methodNames, callback, isDecorator = false, typeParams = typeParams, propTypes = propTypes)
     }
 
     /** Registers a `deco` as a marker contract usable by `impl Deco for Type`. */

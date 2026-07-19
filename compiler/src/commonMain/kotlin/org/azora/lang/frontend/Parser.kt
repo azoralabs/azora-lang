@@ -218,19 +218,6 @@ class Parser(
      */
     fun parse(): Program {
         skipNewlines()
-        // `@file:...` annotations are file-level metadata (e.g. `@file:experimental`)
-        // and may precede the module declaration — consume and discard them.
-        while (check(TokenType.AT) && peekNext()?.lexeme == "file") {
-            advance() // '@'
-            advance() // 'file'
-            consume(TokenType.COLON, "Expected ':' after '@file'")
-            consume(TokenType.IDENTIFIER, "Expected annotation name after '@file:'")
-            if (match(TokenType.L_PAREN)) {
-                while (!check(TokenType.R_PAREN) && !isAtEnd()) advance()
-                consume(TokenType.R_PAREN, "Expected ')' after '@file:' annotation arguments")
-            }
-            skipNewlines()
-        }
         var isExported = false
         var moduleVisibility = ModuleVisibility.EXPOSE
         val moduleName = if (isModuleHeaderAhead()) {
@@ -619,27 +606,21 @@ class Parser(
     }
 
     /**
-     * Parses zero or more leading decorator applications: `@Name`, `@Name(args)`,
-     * or `@target:Name`. These appear at top level before a declaration (labels
-     * use `@` too, but only at statement level before a loop, so there's no clash).
+     * Parses zero or more leading decorator applications: `@Name` or `@Name(args)`.
+     * These appear at top level before a declaration (labels use `@` too, but only
+     * at statement level before a loop, so there's no clash).
      */
     private fun parseAnnotations(): List<Annotation> {
         val result = mutableListOf<Annotation>()
         while (check(TokenType.AT)) {
             val at = advance() // '@'
-            val first = consume(TokenType.IDENTIFIER, "Expected name after '@'").lexeme
-            val (target, name) = if (match(TokenType.COLON)) {
-                val n = consume(TokenType.IDENTIFIER, "Expected decorator name after ':'").lexeme
-                first to n
-            } else {
-                null to first
-            }
+            val name = consume(TokenType.IDENTIFIER, "Expected name after '@'").lexeme
             if (name.firstOrNull()?.isUpperCase() != true) {
                 error("Decorator names must start with an uppercase letter: use '@${name.replaceFirstChar { it.uppercase() }}' at line ${at.line}")
             }
             val (args, namedArgs) = if (check(TokenType.L_PAREN)) parseDecoratorArguments()
             else emptyList<Expr>() to emptyList<Pair<String, Expr>>()
-            result.add(Annotation(name, args, target, at.line, at.column, namedArgs = namedArgs))
+            result.add(Annotation(name, args, at.line, at.column, namedArgs = namedArgs))
             skipNewlines()
         }
         return result
@@ -1198,6 +1179,7 @@ class Parser(
                 shielded = visibility == Visibility.SHIELD,
                 variadicParam = tp.variadic,
                 minVariadicLength = minLen,
+                constParams = tp.constParams,
                 fieldTemplate = null,
                 isBridge = isBridge,
             )
@@ -1230,6 +1212,7 @@ class Parser(
             shielded = visibility == Visibility.SHIELD,
             variadicParam = tp.variadic,
             minVariadicLength = minLen,
+            constParams = tp.constParams,
             fieldTemplate = fieldTemplate,
         )
     }
@@ -1365,11 +1348,22 @@ class Parser(
         val args = mutableListOf<TypeRef>()
         if (!check(TokenType.GREATER)) {
             do {
-                args.add(parseTypeName())
+                args.add(parseTypeArg())
             } while (match(TokenType.COMMA))
         }
         consume(TokenType.GREATER, "Expected '>' after generic type arguments")
         return args
+    }
+
+    /**
+     * A single type argument: a type, or a const value (`3` in `Array<Int, 3>`).
+     * An integer literal becomes a [TypeRef.Const] (a const-generic value arg).
+     */
+    private fun parseTypeArg(): TypeRef = if (check(TokenType.INT_LITERAL)) {
+        val t = advance()
+        TypeRef.Const((t.literal as NumericLiteral).value as Long)
+    } else {
+        parseTypeName()
     }
 
     private fun typeMethodSuffix(type: TypeRef): String {
@@ -2691,6 +2685,7 @@ class Parser(
         val typeParamsAfter = parseTypeParams()
         val typeParams = typeParamsBefore.names + typeParamsAfter.names
         val variadicParam = typeParamsBefore.variadic ?: typeParamsAfter.variadic
+        val constParams = typeParamsBefore.constParams + typeParamsAfter.constParams
         consume(TokenType.L_PAREN, "Expected '(' after function name")
         val params = parseParams(variadicParam)
         consume(TokenType.R_PAREN, "Expected ')' after parameters")
@@ -2771,6 +2766,7 @@ class Parser(
             receiverModifier = receiverModifier,
             variadicParam = variadicParam,
             minVariadicLength = minVariadicLength,
+            constParams = constParams,
         )
     }
 
@@ -2959,14 +2955,15 @@ class Parser(
         return params
     }
 
-    /** Result of [parseTypeParams]: the names plus which one (if any) is the variadic pack. */
-    private data class TypeParams(val names: List<String>, val variadic: String?)
+    /** Result of [parseTypeParams]: the names, which (if any) is the variadic pack, and which are const value params. */
+    private data class TypeParams(val names: List<String>, val variadic: String?, val constParams: Set<String> = emptySet())
 
-    /** `<T, U>` type-parameter list. A parameter may be variadic via the `...T` prefix form. */
+    /** `<T, U>` type-parameter list. A parameter may be variadic via the `...T` prefix form, or a const value param via `N: Int`. */
     private fun parseTypeParams(): TypeParams {
         if (!check(TokenType.LESS)) return TypeParams(emptyList(), null)
         advance()
         val names = mutableListOf<String>()
+        val constParams = mutableSetOf<String>()
         var variadic: String? = null
         do {
             val prefixVariadic = match(TokenType.ELLIPSIS) // `...T` prefix form
@@ -2974,11 +2971,18 @@ class Parser(
             if (check(TokenType.ELLIPSIS)) {
                 error("Variadic type parameters use the prefix form '...$name', not '$name...', at line ${peek().line}")
             }
+            // Optional kind/constraint after `:`:
+            //  - `N: Int` → a const-generic value parameter (supplied as a `TypeRef.Const` arg).
+            //  - `T: Spec` → a conformance constraint (accepted, not yet enforced).
+            if (match(TokenType.COLON)) {
+                val constraint = parseTypeName()
+                if ((constraint as? TypeRef.Named)?.name == "Int") constParams.add(name)
+            }
             if (prefixVariadic) variadic = name
             names.add(name)
         } while (match(TokenType.COMMA))
         consume(TokenType.GREATER, "Expected '>' after type parameters")
-        return TypeParams(names, variadic)
+        return TypeParams(names, variadic, constParams)
     }
 
     /**
@@ -3163,7 +3167,7 @@ class Parser(
                     do {
                         val prefixVariadic = match(TokenType.ELLIPSIS)
                         if (prefixVariadic) variadic = true
-                        a.add(parseTypeName())
+                        a.add(parseTypeArg())
                     } while (match(TokenType.COMMA))
                     // `Name<...T>` — the variadic pack expands into this type's args.
                     // The legacy suffix spelling `Name<T...>` is rejected.
@@ -4849,9 +4853,25 @@ class Parser(
                 }
                 check(TokenType.L_BRACKET) -> {
                     advance()
-                    val index = parseExpr()
-                    consume(TokenType.R_BRACKET, "Expected ']' after index")
-                    expr = Expr.Index(expr, index, expr.line, expr.column)
+                    // `a[start:stop:step]` — a Python-style slice → oper[:]. An absent
+                    // bound is `null` (open-ended). A bare `a[i]` (no colon) stays an Index.
+                    if (check(TokenType.COLON)) {
+                        val stop = parseExpr()
+                        val step = if (match(TokenType.COLON)) parseExpr() else null
+                        consume(TokenType.R_BRACKET, "Expected ']' after slice")
+                        expr = Expr.Slice(expr, null, stop, step, expr.line, expr.column)
+                    } else {
+                        val first = parseExpr()
+                        if (match(TokenType.COLON)) {
+                            val stop = if (check(TokenType.R_BRACKET)) null else parseExpr()
+                            val step = if (match(TokenType.COLON)) parseExpr() else null
+                            consume(TokenType.R_BRACKET, "Expected ']' after slice")
+                            expr = Expr.Slice(expr, first, stop, step, expr.line, expr.column)
+                        } else {
+                            consume(TokenType.R_BRACKET, "Expected ']' after index")
+                            expr = Expr.Index(expr, first, expr.line, expr.column)
+                        }
+                    }
                 }
                 check(TokenType.LESS) && expr is Expr.Member && expr.name in setOf("hasDeco", "decoMeta") -> {
                     val innerTarget = (expr.target as? Expr.Grouping)?.expr ?: expr.target
@@ -4890,7 +4910,7 @@ class Parser(
                     val tArgs = mutableListOf<TypeRef>()
                     if (!check(TokenType.GREATER) && !check(TokenType.SHIFT_RIGHT) && !pendingGreater) {
                         do {
-                            tArgs.add(parseTypeName())
+                            tArgs.add(parseTypeArg())
                         } while (match(TokenType.COMMA))
                         if (check(TokenType.ELLIPSIS)) {
                             error("Variadic type arguments use the prefix form '<...T>', not '<T...>', at line ${peek().line}")
@@ -5002,7 +5022,7 @@ class Parser(
             when (tokens[i].type) {
                 TokenType.IDENTIFIER, TokenType.COMMA, TokenType.DOT,
                 TokenType.L_BRACKET, TokenType.R_BRACKET, TokenType.QMARK,
-                TokenType.COLON, TokenType.STAR -> {}
+                TokenType.COLON, TokenType.STAR, TokenType.INT_LITERAL -> {}
                 TokenType.LESS -> depth++
                 TokenType.GREATER -> {
                     depth--

@@ -105,6 +105,15 @@ data class SpecSymbol(
     val decoratorBindings: List<org.azora.lang.frontend.DecoratorBinding> = emptyList(),
     /** Property/requirement name → return type, for member access on a spec-typed value. */
     val propTypes: Map<String, org.azora.lang.ir.IrType> = emptyMap(),
+    /** Method name → signature, for method calls on a spec-typed value. */
+    val methodSigs: Map<String, SpecMethodSig> = emptyMap(),
+)
+
+/** A spec method's erased signature, used to type-check calls on a spec-typed value. */
+data class SpecMethodSig(
+    val paramTypes: List<org.azora.lang.ir.IrType>,
+    val returnType: org.azora.lang.ir.IrType,
+    val isProperty: Boolean,
 )
 
 /** A validated `impl Contract for Type` conformance. */
@@ -241,6 +250,14 @@ class SymbolTable {
     /** Looks up the mangled function name for a method, or `null`. */
     fun lookupMethod(typeName: String, methodName: String): String? = methods[typeName]?.get(methodName)
 
+    // -- Universal infix extensions (`infx<K,V> K.to(v)`) -----------------
+    /** Infix method name → the generic free function it desugars to (`self` first). */
+    private val universalInfix = mutableMapOf<String, String>()
+
+    fun defineUniversalInfix(methodName: String, funcName: String) { universalInfix[methodName] = funcName }
+
+    fun lookupUniversalInfix(methodName: String): String? = universalInfix[methodName]
+
     // -- Specs (traits) ---------------------------------------------------
 
     fun defineSpec(
@@ -249,8 +266,9 @@ class SymbolTable {
         callback: org.azora.lang.frontend.SpecCallback? = null,
         typeParams: List<String> = emptyList(),
         propTypes: Map<String, org.azora.lang.ir.IrType> = emptyMap(),
+        methodSigs: Map<String, SpecMethodSig> = emptyMap(),
     ) {
-        specs[name] = SpecSymbol(methodNames, callback, isDecorator = false, typeParams = typeParams, propTypes = propTypes)
+        specs[name] = SpecSymbol(methodNames, callback, isDecorator = false, typeParams = typeParams, propTypes = propTypes, methodSigs = methodSigs)
     }
 
     /** Registers a `deco` as a marker contract usable by `impl Deco for Type`. */
@@ -287,6 +305,14 @@ class SymbolTable {
     ): Boolean = conformances.any {
         it.typeName == typeName && it.contractName == contractName && it.typeArgs == typeArgs
     }
+
+    /**
+     * Returns whether [typeName] implements [contractName], ignoring type
+     * arguments — used for subtype checks (a pack usable as a spec it implements)
+     * where the spec's generic arguments are erased.
+     */
+    fun conformsTo(typeName: String, contractName: String): Boolean =
+        conformances.any { it.typeName == typeName && it.contractName == contractName }
 
     /** Returns all validated conformances. */
     fun allConformances(): List<TraitConformance> = conformances.toList()

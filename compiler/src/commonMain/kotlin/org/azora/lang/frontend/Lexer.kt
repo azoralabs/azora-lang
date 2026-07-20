@@ -157,7 +157,7 @@ class Lexer(private val source: String) {
         TokenType.LESS, TokenType.LESS_EQUAL, TokenType.GREATER, TokenType.GREATER_EQUAL,
         TokenType.AMP, TokenType.PIPE, TokenType.CARET,
         TokenType.SHIFT_LEFT, TokenType.SHIFT_RIGHT,
-        TokenType.EQUAL, TokenType.COMMA, TokenType.DOT, TokenType.ARROW,
+        TokenType.EQUAL, TokenType.COMMA, TokenType.DOT, TokenType.ARROW, TokenType.FAT_ARROW,
         TokenType.QMARK_QMARK
     )
 
@@ -200,9 +200,7 @@ class Lexer(private val source: String) {
             '!' -> addToken(if (match('=')) TokenType.BANG_EQUAL else TokenType.BANG)
             '=' -> when {
                 match('=') -> addToken(TokenType.EQUAL_EQUAL)
-                // `=>` is the fat-arrow used by `meta` macro arms (`[] => template`).
-                // Lex it as ARROW (same token as `->`) so both arrow forms are accepted.
-                match('>') -> addToken(TokenType.ARROW)
+                match('>') -> addToken(TokenType.FAT_ARROW)
                 else -> addToken(TokenType.EQUAL)
             }
             '<' -> when {

@@ -1315,6 +1315,12 @@ data class FuncDecl(
     val constParams: Set<String> = emptySet(),
     /** How this declaration may be invoked when registered as an impl member. */
     val memberCallStyle: MemberCallStyle = MemberCallStyle.NORMAL,
+    /**
+     * A generic `infx` whose receiver is a type parameter (`infx<K,V> K.to(v)`):
+     * callable as an infix method on any receiver type (`a to b` → `to(a, b)`).
+     * The first param is the receiver (`self`).
+     */
+    val isUniversalInfix: Boolean = false,
 )
 
 enum class MemberCallStyle {
@@ -1345,6 +1351,12 @@ sealed class MacroPattern {
     object Empty : MacroPattern()
     /** `(...$name)` / `[...$name]` / `{...$name}` — matches ≥1 arg, binding the full list to [name]. */
     data class SeqCapture(val name: String) : MacroPattern()
+    /**
+     * `[...${key: value}]` — matches ≥1 `k: v` argument pair (each passed as an
+     * [Expr.MapEntryArg]), binding the key exprs to [keyName] and the value exprs
+     * to [valueName] so a template can splice them (e.g. `...std::mapEntry($key, $value)`).
+     */
+    data class MapEntryCapture(val keyName: String, val valueName: String) : MacroPattern()
 }
 
 /**
@@ -1374,7 +1386,7 @@ enum class TypeFormKind { ARRAY, ARRAY_SIZED, SET, MAP, TUPLE }
  * next stage (it requires migrating stdlib usage of `[T]`/`[K: V]`/tuples to
  * explicit `Array<T>`/`std::mapOf`/etc. first).
  */
-data class TypeTypeArm(val kind: TypeFormKind, val holes: List<String>, val template: TypeRef)
+data class TypeTypeArm(val kind: TypeFormKind, val holes: List<String>, val template: TypeRef, val prefix: String = "")
 
 /**
  * A decorator/annotation application: `@Name` or `@Name(args)`.
@@ -1629,7 +1641,7 @@ sealed class TopLevel {
     ) : TopLevel()
 
     /** An extern function signature inside a `bridge` block: `func sin(x: Real): Real` (no body). */
-    data class BridgeSig(val name: String, val params: List<Param>, val returnType: TypeRef, val line: Int, val column: Int = 0)
+    data class BridgeSig(val name: String, val params: List<Param>, val returnType: TypeRef, val line: Int, val column: Int = 0, val typeParams: List<String> = emptyList())
 
     /** `bridge <target> { func sigs }` — declares extern functions for active FFI targets (C/LLVM, JS/WASM). */
     data class Bridge(val target: String, val funcs: List<BridgeSig>, val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList()) : TopLevel()
@@ -1755,10 +1767,12 @@ sealed class TopLevel {
         val column: Int = 0,
         val callback: SpecCallback? = null,
         val typeParams: List<String> = emptyList(),
+        /** Parent spec this one inherits every member from (`spec Mutable: Read {…}`). */
+        val parent: TypeRef? = null,
     ) : TopLevel()
 
     /** `typealias Name = Type` — a type alias. */
-    data class TypeAlias(val name: String, val type: TypeRef, val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList()) : TopLevel()
+    data class TypeAlias(val name: String, val type: TypeRef, val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList(), val typeParams: List<String> = emptyList()) : TopLevel()
 
     /** A variant of a `slot` (tagged union): `VariantName(Type1, Type2)` or `VariantName` (no payload). */
     data class SlotVariant(val name: String, val payloadTypes: List<TypeRef>)

@@ -749,10 +749,18 @@ object StdlibInjector {
             }
             is Expr.Call -> {
                 names.add(expr.callee)
+                // A `Type::member` static call (e.g. `Array::fill`) mangles to
+                // `Type__member`. The member is provided by an `impl zone for Type`
+                // block, which is only attached when the base type itself is pulled
+                // in — so also mark the base type as referenced.
+                if ("__" in expr.callee) names.add(expr.callee.substringBeforeLast("__"))
                 expr.args.forEach { collectNamesFromExpr(it, names) }
             }
             is Expr.MethodCall -> {
                 collectNamesFromExpr(expr.target, names)
+                // The method name may be a universal infix (`a to b`), which is a
+                // top-level function; pull it in so it is injected and registered.
+                names.add(expr.name)
                 expr.args.forEach { collectNamesFromExpr(it, names) }
             }
             is Expr.Binary -> {

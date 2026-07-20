@@ -42,4 +42,12 @@ class LexerEscapeTest {
         val error = assertFailsWith<IllegalStateException> { Lexer("\"\\x\"").tokenize() }
         assertTrue("Unknown escape sequence" in error.message.orEmpty(), error.message)
     }
+
+    @Test fun thinAndFatArrowsHaveDistinctTokens() {
+        val tokens = Lexer("-> =>").tokenize()
+        assertEquals(
+            listOf(TokenType.ARROW, TokenType.FAT_ARROW, TokenType.EOF),
+            tokens.map(Token::type),
+        )
+    }
 }

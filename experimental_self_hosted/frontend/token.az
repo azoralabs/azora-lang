@@ -1,0 +1,281 @@
+/*
+ * Copyright 2026 AzoraLabs
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+module experimental_self_hosted.frontend.token
+
+friend zone azora::lang {
+    /**
+     * Enumerates every token type recognized by the Azora [Lexer].
+     *
+     * Variants are grouped into five categories:
+     *
+     * **Literals** -- values that appear directly in source code
+     * **Identifier** -- a user-defined name
+     * **Keywords** -- reserved words in the language
+     * **Operators** -- arithmetic, comparison, logical, and assignment operators
+     * **Delimiters** -- structural punctuation
+     * **Special** -- synthetic tokens
+     */
+    enum TokenType {
+        use zone literal {
+            IntLiteral              /** 1 */
+            RealLiteral             /** 1.0 */
+            StringLiteral           /** "" */
+            CharLiteral             /** '' */
+            True                    /** true */
+            False                   /** false */
+            InterpolatedString      /** "${}" */
+            Null                    /** null */
+        }
+
+        Identifier                  /** Identifier */
+
+        use zone keyword {
+            Var                     /** Keyword var */
+            Fin                     /** Keyword fin */
+            Let                     /** Keyword let */
+            Func                    /** Keyword func */
+            Return                  /** Keyword return */
+            If                      /** Keyword if */
+            Else                    /** Keyword else */
+            Inline                  /** Keyword inline */
+            DeepInline              /** Keyword deepinline */
+            NoInline                /** Keyword noinline */
+            Zone                    /** Keyword zone */
+            Friend                  /** Keyword friend */
+            Test                    /** Keyword test */
+            Assert                  /** Keyword assert */
+            Trace                   /** Keyword trace */
+            Panic                   /** Keyword panic */
+            Meta                    /** Keyword meta */
+            For                     /** Keyword for */
+            While                   /** Keyword while */
+            Loop                    /** Keyword loop */
+            In                      /** Keyword in */
+            Break                   /** Keyword break */
+            Continue                /** Keyword continue */
+            Pack                    /** Keyword pack */
+            Enum                    /** Keyword enum */
+            When                    /** Keyword when */
+            Throw                   /** Keyword throw */
+            Try                     /** Keyword try */
+            Catch                   /** Keyword catch */
+            Impl                    /** Keyword impl */
+            Spec                    /** Keyword spec */
+            Defer                   /** Keyword defer */
+            Type                    /** Keyword type */
+            TypeAlias               /** Keyword typealias */
+            Slot                    /** Keyword slot */
+            Use                     /** Keyword use */
+            Import                  /** Keyword import */
+            As                      /** Keyword as */
+            Guard                   /** Keyword guard */
+            Is                      /** Keyword is */
+            By                      /** Keyword by */
+            Reverse                 /** Keyword reverse */
+            Infx                    /** Keyword infx */
+            Oper                    /** Keyword oper */
+            Fail                    /** Keyword fail */
+            Alloc                   /** Keyword alloc */
+            Drop                    /** Keyword drop */
+            Deref                   /** Keyword deref */
+            Unsafe                  /** Keyword unsafe */
+            Isolate                 /** Keyword isolate */
+            Flow                    /** Keyword flow */
+            Yield                   /** Keyword yield */
+            Task                    /** Keyword task */
+            Async                   /** Keyword async */
+            Await                   /** Keyword await */
+            Launch                  /** Keyword launch */
+            Bridge                  /** Keyword bridge */
+            Solo                    /** Keyword solo */
+            Inject                  /** Keyword inject */
+            Wrap                    /** Keyword wrap */
+            Rescue                  /** Keyword rescue */
+            Node                    /** Keyword node */
+            Leaf                    /** Keyword leaf */
+            Replace                 /** Keyword replace */
+            Virtual                 /** Keyword virtual */
+            Base                    /** Keyword base */
+            Abstract                /** Keyword abstract */
+            Mem                     /** Keyword mem */
+            Rem                     /** Keyword rem */
+            Ret                     /** Keyword ret */
+            Effect                  /** Keyword effect */
+            Hook                    /** Keyword hook */
+            Prop                    /** Keyword prop */
+            Ctor                    /** Keyword ctor */
+            Dtor                    /** Keyword dtor */
+            Ref                     /** Keyword ref */
+            Out                     /** Keyword out */
+            Mut                     /** Keyword mut */
+            Expose                  /** Keyword expose */
+            Confine                 /** Keyword confine */
+            Protect                 /** Keyword protect */
+            Shield                  /** Keyword shield */
+            Intern                  /** Keyword intern */
+            Opaque                  /** Keyword opaque */
+            Module                  /** Keyword module */
+            Export                  /** Keyword export */
+            ThreadLocal             /** Keyword threadlocal */
+            Deco                    /** Keyword deco */
+            Bind                    /** Keyword bind */
+        }
+
+        use zone operator {
+            Plus                    /** Operator + */
+            Minus                   /** Operator - */
+            Star                    /** Operator * */
+            Slash                   /** Operator / */
+            Percent                 /** Operator % */
+            Equal                   /** Operator = */
+            DoubleEqual             /** Operator == */
+            BangEqual               /** Operator != */
+            Less                    /** Operator < */
+            LessEqual               /** Operator <= */
+            Greater                 /** Operator > */
+            GreaterEqual            /** Operator >= */
+            And                     /** Operator && */
+            Or                      /** Operator || */
+            Bang                    /** Operator ! */
+            Range                   /** Operator .. */
+            RangeExclusive          /** Operator ..< */
+            PlusEqual               /** Operator += */
+            MinusEqual              /** Operator -= */
+            StarEqual               /** Operator *= */
+            SlashEqual              /** Operator /= */
+            PercentEqual            /** Operator %= */
+            Increment               /** Operator ++ */
+            Decrement               /** Operator -- */
+            BitAnd                  /** Operator & */
+            BitOr                   /** Operator | */
+            Caret                   /** Operator ^ */
+            Tilde                   /** Operator ~ */
+            ShiftLeft               /** Operator << */
+            ShiftRight              /** Operator >> */
+            QMark                   /** Operator ? */
+            DoubleQMark             /** Operator ?? */
+            QMarkDot                /** Operator ?. */
+            QMarkEqual              /** Operator ?= */
+            QMarkPlusEqual          /** Operator ?+= */
+            QMarkMinusEqual         /** Operator ?-= */
+            QMarkStarEqual          /** Operator ?*= */
+            QMarkSlashEqual         /** Operator ?/= */
+            QMarkPercentEqual       /** Operator ?%= */
+            QMarkIncrement          /** Operator ?++ */
+            QMarkDecrement          /** Operator ?-- */
+            Ellipsis                /** ... */
+            Hash                    /** # */
+        }
+
+        use zone delimiter {
+            At                      /** Delimiter @ */
+            Dot                     /** Delimiter . */
+            LParen                  /** Delimiter ( */
+            RParen                  /** Delimiter ) */
+            LBrace                  /** Delimiter { */
+            RBrace                  /** Delimiter } */
+            LBracket                /** Delimiter [ */
+            RBracket                /** Delimiter ] */
+            Comma                   /** Delimiter , */
+            Colon                   /** Delimiter : ] */
+            DoubleColon             /** Delimiter :: */
+            SemiColon               /** Delimiter ; */
+            Arrow                   /** Delimiter -> */
+            FatArrow                /** Delimiter => */
+        }
+
+        use zone special {
+            Eol
+            Eof
+        }
+    }
+
+    /**
+     * Enumerates the type suffix attached to a numeric literal.
+     *
+     * No suffix means the default type: [None] maps to `Int` for integer
+     * literals and `Real` for floating-point literals.
+     */
+    enum NumericSuffix {
+        None            /** maps to `Int` or `Real` */
+
+        use zone signed {
+            Byte        /** b */
+            Short       /** s */
+            Long        /** L */
+            Cent        /** c */
+        }
+
+        use zone unsigned {
+            UByte       /** ub */
+            UShort      /** us */
+            UInt        /** u */
+            ULong       /** uL */
+            UCent       /** uc */
+        }
+
+        use zone floating_point {
+            Float       /** f */
+            Decimal     /** D */
+        }
+    }
+
+    /**
+     * Pairs a numeric value with its suffix so the parser/IR generator can
+     * produce the correct typed literal node.
+     */
+    pack NumericLiteral {
+        fin value: Any
+        fin suffix: NumericSuffix = .None
+    }
+
+    /**
+     * One segment of an interpolated string literal.
+     *
+     * - [Literal] is a chunk of literal text (escapes already resolved).
+     * - [Expr] is an embedded expression given as raw source text, parsed later
+     *   in the surrounding expression context.
+     */
+     slot StringPart {
+        /** A literal text chunk of an interpolated string. */
+        Literal(text: String)
+        /** An embedded expression, as raw source text (e.g. `"a + b"` from `"${a + b}"`). */
+        Expr(source: String)
+     }
+
+     /**
+      * A single lexical token produced by the [Lexer].
+      *
+      * Tokens carry enough source-location information to produce accurate
+      * error messages in later compiler phases.
+      *
+      * @field type the [TokenType] that classifies this token
+      * @field lexeme the raw source text that was matched (e.g. `"42"`, `"func"`)
+      * @field line the 1-based line number where the token starts
+      * @field column the 1-based column number where the token starts
+      * @field literal the parsed literal value for literal tokens (e.g. [Long] for
+      *   [TokenType.IntLiteral], [Double] for [TokenType.RealLiteral], [String] for
+      *   [TokenType.StringLiteral]), or `null` for non-literal tokens
+      */
+     pack Token {
+         fin ty: TokenType
+         fin lexeme: String
+         fin line: Int
+         fin column: Int = 0
+         fin literal: Any? = null
+     }
+}

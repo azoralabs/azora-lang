@@ -399,6 +399,9 @@ class Parser(
         is TopLevel.InlineFin -> item.copy(name = "${prefix}__${item.name}")
         is TopLevel.InlineLet -> item.copy(name = "${prefix}__${item.name}")
         is TopLevel.InlineVar -> item.copy(name = "${prefix}__${item.name}")
+        // `bridge func` members of `impl zone for Type` are static intrinsics
+        // reached as `Type::member`; mangle each to `Type__member` to match.
+        is TopLevel.Bridge -> item.copy(funcs = item.funcs.map { it.copy(name = "${prefix}__${it.name}") })
         else -> item
     }
 
@@ -1472,11 +1475,16 @@ class Parser(
      * A single type argument: a type, or a const value (`3` in `Array<Int, 3>`).
      * An integer literal becomes a [TypeRef.Const] (a const-generic value arg).
      */
-    private fun parseTypeArg(): TypeRef = if (check(TokenType.INT_LITERAL)) {
-        val t = advance()
-        TypeRef.Const((t.literal as NumericLiteral).value as Long)
-    } else {
-        parseTypeName()
+    private fun parseTypeArg(): TypeRef = when {
+        check(TokenType.INT_LITERAL) -> {
+            val t = advance()
+            TypeRef.Const((t.literal as NumericLiteral).value as Long)
+        }
+        check(TokenType.STAR) -> {
+            advance()
+            TypeRef.Named("*")
+        }
+        else -> parseTypeName()
     }
 
     private fun typeMethodSuffix(type: TypeRef): String {
@@ -1787,7 +1795,8 @@ class Parser(
                 else -> TypeRef.Named("Any")
             }
             val paramTypes = when {
-                isSlice -> listOf(TypeRef.Named(typeName), TypeRef.Named("Slice"))
+                // `oper[:] by MapSlice` names the operand type; default to `Slice`.
+                isSlice -> listOf(TypeRef.Named(typeName), TypeRef.Named(bySpec ?: "Slice"))
                 isSet -> listOf(TypeRef.Named(typeName), indexType, valueType)
                 else -> listOf(TypeRef.Named(typeName), indexType)
             }
@@ -2048,9 +2057,12 @@ class Parser(
      * the implicit `self` parameter and registers `Type_method`, and the parser already
      * turns `a method b` into `a.method(b)`, so no semantic/IR/backend changes are needed.
      */
-    private fun parseInfx(): TopLevel.Impl {
+    private fun parseInfx(): TopLevel {
         val start = peek()
         consume(TokenType.INFX, "Expected 'infx'")
+        // Optional type params: `infx<K, V> K.to(v)` — a generic infix whose
+        // receiver is a type parameter, so it applies to any receiver type.
+        val typeParams = parseTypeParams()
         val typeName = consume(TokenType.IDENTIFIER, "Expected type name after 'infx'").lexeme
         consume(TokenType.DOT, "Expected '.' between type and method name")
         val methodName = consume(TokenType.IDENTIFIER, "Expected method name").lexeme
@@ -2062,8 +2074,20 @@ class Parser(
         } else {
             TypeAnnotation.Inferred
         }
+        val universal = typeName in typeParams.names
         consume(TokenType.L_BRACE, "Expected '{' before infx method body")
         skipNewlines()
+        // A universal infix binds its receiver through an explicit header
+        // (`{ ref self -> … }`), like an extension function, so `self` is the
+        // receiver value inside the body.
+        val receiverModifier = if (universal) {
+            val mod = parseExtensionReceiverModifier()
+            val receiverName = consumeIdentifierLike("Expected infx receiver name")
+            if (receiverName != "self") error("Expected infx receiver to be named 'self' at line ${peek().line}")
+            consume(TokenType.ARROW, "Expected '->' after infx receiver")
+            skipNewlines()
+            mod
+        } else "mut ref"
         val body = mutableListOf<Stmt>()
         while (!check(TokenType.R_BRACE) && !isAtEnd()) {
             body.add(parseStmt())
@@ -2071,6 +2095,18 @@ class Parser(
         }
         consume(TokenType.R_BRACE, "Expected '}' after infx method body")
         consumeNewline()
+        // When the receiver is a type parameter, this is a universal infix
+        // (`a to b` works for any `a`). Desugar to a generic top-level function
+        // `method(self: Recv, params...)`; method resolution falls back to it for
+        // any receiver type.
+        if (universal) {
+            val self = Param("self", TypeRef.Named(typeName))
+            val fn = FuncDecl(
+                methodName, listOf(self) + params, returnType, body, false, typeParams.names,
+                start.line, start.column, isUniversalInfix = true, receiverModifier = receiverModifier,
+            )
+            return TopLevel.Func(fn)
+        }
         val method = FuncDecl(methodName, params, returnType, body, false, emptyList(), start.line, start.column)
         return TopLevel.Impl(typeName, listOf(method), null, start.line, start.column)
     }
@@ -2189,9 +2225,12 @@ class Parser(
             consume(TokenType.IDENTIFIER, "Expected bridge target (e.g. Compiler, C, JS)").lexeme
         } else "Compiler"
         consume(TokenType.FUNC, "Expected 'func' after 'bridge'")
-        parseTypeParams() // tolerate `bridge func<T, U> …` (dropped)
+        // Type params may appear before or after the name (`bridge func<T> fill` or
+        // `bridge func fill<T>`); capture them so a generic return type like
+        // `Array<T>` erases correctly at registration.
+        val tpBefore = parseTypeParams()
         val name = consumeIdentifierLike("Expected bridge function name")
-        parseTypeParams()
+        val tpAfter = parseTypeParams()
         consume(TokenType.L_PAREN, "Expected '(' after bridge function name")
         val params = parseParams()
         consume(TokenType.R_PAREN, "Expected ')' after bridge parameters")
@@ -2199,7 +2238,7 @@ class Parser(
         consumeNewline()
         return TopLevel.Bridge(
             target,
-            listOf(TopLevel.BridgeSig(name, params, returnType, start.line, start.column)),
+            listOf(TopLevel.BridgeSig(name, params, returnType, start.line, start.column, tpBefore.names + tpAfter.names)),
             start.line, start.column, annotations,
         )
     }
@@ -2475,7 +2514,12 @@ class Parser(
             consumeNewline()
             return TopLevel.Meta("__type_macro__", emptyList(), start.line, start.column)
         }
-        val name = consume(TokenType.IDENTIFIER, "Expected macro name after 'meta'").lexeme
+        // Optional sigil prefix: `meta mut vec`, `meta # map`, `meta !# set`,
+        // `meta ^ map`. The prefix is folded into the macro's name (e.g. `# map`)
+        // so it matches the equivalently-prefixed invocation.
+        val prefix = parseMetaPrefix()
+        val bareName = consume(TokenType.IDENTIFIER, "Expected macro name after 'meta'").lexeme
+        val name = if (prefix.isEmpty()) bareName else "$prefix $bareName"
         consume(TokenType.L_BRACE, "Expected '{' after macro name")
         skipNewlines()
         val arms = mutableListOf<MacroArm>()
@@ -2490,15 +2534,28 @@ class Parser(
     }
 
     /**
-     * One `meta type` arm: a type-sugar pattern `=>` a type template. The pattern
-     * kind ([TypeFormKind]) and its hole names (the type-variable names written in
-     * the pattern) are captured for the (staged) rewriting pass.
+     * A sigil prefix used by container macros to select a concrete implementation:
+     * `mut`, `#` (hash), `!#` (linked-hash), `^` (tree). Returns "" when absent.
+     */
+    private fun parseMetaPrefix(): String = when {
+        match(TokenType.MUT) -> "mut"
+        match(TokenType.CARET) -> "^"
+        check(TokenType.BANG) && peekNext()?.type == TokenType.HASH -> { advance(); advance(); "!#" }
+        match(TokenType.HASH) -> "#"
+        else -> ""
+    }
+
+    /**
+     * One `meta type` arm: an optional sigil prefix, a type-sugar pattern, `=>`,
+     * and a type template. The pattern kind ([TypeFormKind]), its hole names, and
+     * the prefix are captured for the (staged) rewriting pass.
      */
     private fun parseTypeMacroArm(): TypeTypeArm {
+        val prefix = parseMetaPrefix()
         val (kind, holes) = parseTypeMacroPattern()
-        consume(TokenType.ARROW, "Expected '=>' after 'meta type' pattern")
+        consume(TokenType.FAT_ARROW, "Expected '=>' after 'meta type' pattern")
         val template = parseTypeName()
-        return TypeTypeArm(kind, holes, template)
+        return TypeTypeArm(kind, holes, template, prefix)
     }
 
     private fun parseTypeMacroPattern(): Pair<TypeFormKind, List<String>> {
@@ -2508,9 +2565,10 @@ class Parser(
                 val first = parseTypeName()
                 when {
                     match(TokenType.SEMICOLON) -> {
-                        val n = parseTypeName()
+                        // `[T; *]` — an unsized array pattern; `*` is a wildcard hole.
+                        val n = if (match(TokenType.STAR)) "*" else holeName(parseTypeName())
                         consume(TokenType.R_BRACKET, "Expected ']' after '[T; N]'")
-                        TypeFormKind.ARRAY_SIZED to listOf(holeName(first), holeName(n))
+                        TypeFormKind.ARRAY_SIZED to listOf(holeName(first), n)
                     }
                     match(TokenType.COLON) -> {
                         val v = parseTypeName()
@@ -2573,12 +2631,23 @@ class Parser(
             check(TokenType.ELLIPSIS) -> {
                 advance() // '...'
                 val cap = consume(TokenType.IDENTIFIER, "Expected capture name after '...' in macro pattern").lexeme
-                MacroPattern.SeqCapture(cap)
+                // `...${key: value}` — a key/value destructuring capture. The lexer
+                // splits `${` into a lone `$` identifier followed by `{`.
+                if (cap == "$" && check(TokenType.L_BRACE)) {
+                    advance() // '{'
+                    val key = consume(TokenType.IDENTIFIER, "Expected key name in '\${key: value}'").lexeme
+                    consume(TokenType.COLON, "Expected ':' in '\${key: value}'")
+                    val value = consume(TokenType.IDENTIFIER, "Expected value name in '\${key: value}'").lexeme
+                    consume(TokenType.R_BRACE, "Expected '}' after '\${key: value}'")
+                    MacroPattern.MapEntryCapture("\$$key", "\$$value")
+                } else {
+                    MacroPattern.SeqCapture(cap)
+                }
             }
             else -> error("Macro arm pattern must be empty or '...\$name' at line ${peek().line}")
         }
         consume(close, "Expected matching delimiter after macro arm pattern")
-        consume(TokenType.ARROW, "Expected '=>' after macro arm pattern")
+        consume(TokenType.FAT_ARROW, "Expected '=>' after macro arm pattern")
         val template = parseExpr()
         consumeNewline()
         return MacroArm(delimiter, pattern, template)
@@ -2598,8 +2667,15 @@ class Parser(
         } else {
             emptyList()
         }
+        var parentSpec: TypeRef? = null
         if (match(TokenType.COLON)) {
             val returnType = parseTypeName()
+            // `spec MutableList<T>: List<T> { … }` — spec inheritance: the child
+            // includes every member of the parent. A `(` instead means this is a
+            // callback spec (`spec Into<T>: T (ref self)`), handled below.
+            if (!check(TokenType.L_PAREN)) {
+                parentSpec = returnType
+            } else {
             // Callback receiver in parens: `spec Into<T>: T (ref self) use as "…"`.
             consume(TokenType.L_PAREN, "Expected '(' after spec callback signature")
             skipNewlines()
@@ -2632,13 +2708,14 @@ class Parser(
                 callback = callback,
                 typeParams = typeParams.names,
             )
+            }
         }
         if (hasCallParens) {
             error("Expected ':' after spec callback parameters at line ${peek().line}")
         }
         if (!check(TokenType.L_BRACE)) {
             consumeNewline()
-            return TopLevel.Spec(name, emptyList(), start.line, start.column, typeParams = typeParams.names)
+            return TopLevel.Spec(name, emptyList(), start.line, start.column, typeParams = typeParams.names, parent = parentSpec)
         }
         consume(TokenType.L_BRACE, "Expected '{' after spec name")
         skipNewlines()
@@ -2675,7 +2752,7 @@ class Parser(
         }
         consume(TokenType.R_BRACE, "Expected '}' after spec methods")
         consumeNewline()
-        return TopLevel.Spec(name, methods, start.line, start.column, typeParams = typeParams.names)
+        return TopLevel.Spec(name, methods, start.line, start.column, typeParams = typeParams.names, parent = parentSpec)
     }
 
     /** `when scrutinee { patterns -> { body } ... else -> { body } }`. */
@@ -3950,10 +4027,12 @@ class Parser(
         val start = peek()
         consume(TokenType.TYPEALIAS, "Expected 'typealias'")
         val name = consume(TokenType.IDENTIFIER, "Expected type alias name").lexeme
+        // Optional type parameters: `typealias Array<T> = …`
+        val tp = parseTypeParams()
         consume(TokenType.EQUAL, "Expected '=' in typealias")
         val type = parseTypeName()
         consumeNewline()
-        return TopLevel.TypeAlias(name, type, start.line, start.column, annotations)
+        return TopLevel.TypeAlias(name, type, start.line, start.column, annotations, typeParams = tp.names)
     }
 
     /** Parses `type name(param: Type, pack: ...Type) where pack.length >= N { ... }`. */
@@ -4374,7 +4453,12 @@ class Parser(
     private fun parseAssertStmt(): Stmt.Assert {
         val start = peek()
         consume(TokenType.ASSERT, "Expected 'assert'")
+        // The `{ message }` block belongs to the assert, so a call in the condition
+        // must not swallow it as a trailing lambda (`assert x.add(v) { "msg" }`).
+        val savedTrailing = allowTrailingLambda
+        allowTrailingLambda = false
         val condition = parseExpr()
+        allowTrailingLambda = savedTrailing
         // The `{ message }` block is optional — a bare `assert cond` uses an empty message.
         val message = if (check(TokenType.L_BRACE)) {
             advance()

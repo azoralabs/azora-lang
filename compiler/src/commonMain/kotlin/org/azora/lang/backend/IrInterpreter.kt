@@ -1191,6 +1191,27 @@ class IrInterpreter {
         if (expr.name == "ord") return (args[0] as Char).code.toLong()
         if (expr.name == "chr") return (args[0] as Number).toInt().toChar()
         if (expr.name == "isDigit") return (args[0] as Char) in '0'..'9'
+        // Low-level string intrinsics used by std.string's free-function wrappers.
+        if (expr.name == "startsWith") return (args[0] as String).startsWith(args[1] as String)
+        if (expr.name == "endsWith") return (args[0] as String).endsWith(args[1] as String)
+        if (expr.name == "contains") return (args[0] as String).contains(args[1] as String)
+        if (expr.name == "indexOf") return (args[0] as String).indexOf(args[1] as String).toLong()
+        if (expr.name == "trim") return (args[0] as String).trim()
+        if (expr.name == "toUpper") return (args[0] as String).uppercase()
+        if (expr.name == "toLower") return (args[0] as String).lowercase()
+        if (expr.name == "replace") return (args[0] as String).replace(args[1] as String, args[2] as String)
+        if (expr.name == "split") return (args[0] as String).split(args[1] as String).toMutableList()
+        if (expr.name == "toChars") return (args[0] as String).toMutableList()
+        if (expr.name == "fromChars") {
+            @Suppress("UNCHECKED_CAST")
+            return (args[0] as List<Char>).joinToString("")
+        }
+        if (expr.name == "isAlpha") return (args[0] as Char).isLetter()
+        // `Array::fill<T>(count)` — allocate `count` default (null) slots.
+        if (expr.name == "Array__fill") {
+            val count = (args[0] as Number).toInt()
+            return MutableList<Any?>(count) { null }
+        }
         if (expr.name == "async") {
             val thunk = args.firstOrNull() as? Closure ?: error("async expects a task body")
             val scope = coroutineScope ?: error("async used outside of the interpreter's structured scope")

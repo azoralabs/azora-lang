@@ -187,12 +187,20 @@ sealed class IrType {
             is TypeRef.Named -> {
                 if (TypeFunctionCall.isCall(ref)) Any
                 else if (ref.name in typeParams) Any
-                else if (ref.name in aliases) resolve(aliases[ref.name]!!, typeParams)
+                // Skip self-referential aliases (e.g. `typealias Array<T> = Array<T, *>`):
+                // the alias target names the same type, so following it would recurse
+                // forever. The concrete branch below (e.g. the `Array` builtin) handles it.
+                else if (ref.name in aliases && (aliases[ref.name] as? TypeRef.Named)?.name != ref.name)
+                    resolve(aliases[ref.name]!!, typeParams)
                 else if (ref.name == "Array") {
                     // `Array<T>` (unsized) or `Array<T, N>` (const-generic size; the
                     // second arg is a [TypeRef.Const] carrying the element count).
                     if (ref.args.size == 2 && ref.args[1] is TypeRef.Const) {
                         Array(resolve(ref.args[0], typeParams), (ref.args[1] as TypeRef.Const).value)
+                    } else if (ref.args.size == 2 && (ref.args[1] as? TypeRef.Named)?.name == "*") {
+                        // `Array<T, *>` — a wildcard (unsized) array, e.g. from the
+                        // `typealias Array<T> = Array<T, *>` sugar.
+                        Array(resolve(ref.args[0], typeParams))
                     } else {
                         if (ref.args.size != 1) {
                             error("Array expects one type argument (Array<T>) or a const size (Array<T, N>), got ${ref.args.size}")

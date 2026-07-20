@@ -93,7 +93,7 @@ friend zone std {
         func getOrDefault(key: ref K, defaultValue: V): V
 
         /** Returns an iteration-order snapshot of all entries. */
-        func entries(): List<MapEntry<K, V>>
+        func entries(): Array<MapEntry<K, V>>
 
         /** Returns an iteration-order snapshot of all keys. */
         func keys(): List<K>
@@ -116,7 +116,7 @@ friend zone std {
      * @param V The value type.
      */
     @Experimental(sinceAzora: "0.0.4")
-    spec MutableMap<K, V> {
+    spec MutableMap<K, V> : Map<K, V> {
         /** Associates `key` with `value` and returns the replaced value, if any. */
         func put(key: K, value: V): V?
 
@@ -190,7 +190,7 @@ friend zone std {
      * Polling removes and returns a boundary entry in one tree operation.
      */
     @Experimental(sinceAzora: "0.0.4")
-    spec MutableSortedMap<K, V> {
+    spec MutableSortedMap<K, V> : SortedMap<K, V> {
         /** Removes and returns the smallest entry, or `null` when empty. */
         func pollFirstEntry(): MapEntry<K, V>?
 
@@ -362,8 +362,8 @@ friend zone std {
             return previous
         }
 
-        confine func entrySnapshot(): List<MapEntry<K, V>> { ref self ->
-            var result: List<MapEntry<K, V>> = Array::fill<MapEntry<K, V>>(self._size)
+        confine func entrySnapshot(): Array<MapEntry<K, V>> { ref self ->
+            var result: Array<MapEntry<K, V>> = Array::fill<MapEntry<K, V>>(self._size)
             var source = 0
             var target = 0
             while source < self.capacity {
@@ -403,11 +403,11 @@ friend zone std {
             return self.values[index]
         }
 
-        func entries(): List<MapEntry<K, V>> { ref self -> return self.entrySnapshot() }
+        func entries(): Array<MapEntry<K, V>> { ref self -> return self.entrySnapshot() }
 
         func keys(): List<K> { ref self ->
             fin all = self.entrySnapshot()
-            var result: List<K> = Array::fill<K>(all.size)
+            var result: Array<K> = Array::fill<K>(all.size)
             for i in 0..<all.size {
                 result[i] = all[i].key
             }
@@ -416,7 +416,7 @@ friend zone std {
 
         func values(): List<V> { ref self ->
             fin all = self.entrySnapshot()
-            var result: List<V> = Array::fill<V>(all.size)
+            var result: Array<V> = Array::fill<V>(all.size)
             for i in 0..<all.size {
                 result[i] = all[i].value
             }
@@ -577,8 +577,8 @@ friend zone std {
             return previous
         }
 
-        confine func entrySnapshot(): List<MapEntry<K, V>> { ref self ->
-            var result: List<MapEntry<K, V>> = Array::fill<MapEntry<K, V>>(self._size)
+        confine func entrySnapshot(): Array<MapEntry<K, V>> { ref self ->
+            var result: Array<MapEntry<K, V>> = Array::fill<MapEntry<K, V>>(self._size)
             for i in 0..<self._size {
                 result[i] = MapEntry(self.keys[i], self.values[i])
             }
@@ -614,12 +614,12 @@ friend zone std {
             return self.values[index]
         }
 
-        func entries(): List<MapEntry<K, V>> { ref self ->
+        func entries(): Array<MapEntry<K, V>> { ref self ->
             return self.entrySnapshot()
         }
 
         func keys(): List<K> { ref self ->
-            var result: List<K> = Array::fill<K>(self._size)
+            var result: Array<K> = Array::fill<K>(self._size)
             for i in 0..<self._size {
                 result[i] = self.keys[i]
             }
@@ -627,7 +627,7 @@ friend zone std {
         }
 
         func values(): List<V> { ref self ->
-            var result: List<V> = Array::fill<V>(self._size)
+            var result: Array<V> = Array::fill<V>(self._size)
             for i in 0..<self._size {
                 result[i] = self.values[i]
             }
@@ -917,8 +917,8 @@ friend zone std {
             return previous
         }
 
-        confine func entrySnapshot(): List<MapEntry<K, V>> { ref self ->
-            var result: List<MapEntry<K, V>> = Array::fill<MapEntry<K, V>>(self._size)
+        confine func entrySnapshot(): Array<MapEntry<K, V>> { ref self ->
+            var result: Array<MapEntry<K, V>> = Array::fill<MapEntry<K, V>>(self._size)
             fin stack = alloc Int[self._size]
             var stackSize = 0
             var elem = self.root
@@ -969,11 +969,11 @@ friend zone std {
             return self.values[elem]
         }
 
-        func entries(): List<MapEntry<K, V>> { ref self -> return self.entrySnapshot() }
+        func entries(): Array<MapEntry<K, V>> { ref self -> return self.entrySnapshot() }
 
         func keys(): List<K> { ref self ->
             fin all = self.entrySnapshot()
-            var result: List<K> = Array::fill<K>(all.size)
+            var result: Array<K> = Array::fill<K>(all.size)
             for i in 0..<all.size {
                 result[i] = all[i].key
             }
@@ -982,7 +982,7 @@ friend zone std {
 
         func values(): List<V> { ref self ->
             fin all = self.entrySnapshot()
-            var result: List<V> = Array::fill<V>(all.size)
+            var result: Array<V> = Array::fill<V>(all.size)
             for i in 0..<all.size {
                 result[i] = all[i].value
             }
@@ -1155,6 +1155,17 @@ friend zone std {
         return MapEntry(key, value)
     }
 
+    /**
+     * Infix constructor for a [MapEntry].
+     *
+     * `1 to "a"` is sugar for `std::mapEntry(1, "a")`, so map factories read
+     * naturally: `std::hashMapOf(1 to "a", 2 to "b")`.
+     */
+    @Experimental(sinceAzora: "0.0.4")
+    infx<K, V> K.to(that: V): MapEntry<K, V> { ref self ->
+        return std::mapEntry(self, that)
+    }
+
     @Experimental(sinceAzora: "0.0.4")
     func<K, V> hashMapOf(...entries: MapEntry<K, V>): HashMap<K, V> {
         var result = HashMap<K, V>()
@@ -1212,6 +1223,31 @@ friend zone std {
             result.put(entries[i].key, entries[i].value)
         }
         return result
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    func<K, V> emptyMap(): Map<K, V> {
+        return LinkedHashMap<K, V>()
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    func<K, V> emptyMutableMap(): MutableMap<K, V> {
+        return LinkedHashMap<K, V>()
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    func<K, V> emptyHashMap(): MutableMap<K, V> {
+        return HashMap<K, V>()
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    func<K, V> emptyLinkedHashMap(): MutableMap<K, V> {
+        return LinkedHashMap<K, V>()
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    func<K, V> emptyTreeMap(): MutableMap<K, V> {
+        return TreeMap<K, V>()
     }
 
     // ---------------------------------------------------------------------
@@ -1470,7 +1506,7 @@ use friend zone std {
      * @0 `^ map![]` expands to `std::emptyTreeMap()`.
      * @1 `^ map!["One": 1, "Two": 2]` expands to `std::treeMapOf("One" to 1, "Two" to 2)`.
      */
-    meta ^ set {
+    meta ^ map {
         [] => std::emptyTreeMap()
         [...$items] => std::treeMapOf(...$items)
     }
@@ -1566,34 +1602,34 @@ test "tree map polling removes the extremes" {
 }
 
 test "factories build maps from entries" {
-    fin hm = std::hashMapOf(mapEntry(1, "a"), mapEntry(2, "b"))
-    fin lhm = std::linkedHashMapOf(mapEntry(1, "a"), mapEntry(2, "b"))
-    fin tm = std::treeMapOf(mapEntry(1, "a"), mapEntry(2, "b"))
+    fin hm = std::hashMapOf(1 to "a", 2 to "b")
+    fin lhm = std::linkedHashMapOf(1 to "a", 2 to "b")
+    fin tm = std::treeMapOf(1 to "a", 2 to "b")
     assert hm.size == 2 && lhm.size == 2 && tm.size == 2 { "factory sizes changed" }
     assert hm.get(1) == "a" && lhm.get(2) == "b" && tm.get(1) == "a" { "factory retrieval changed" }
 }
 
 test "mapOf exposes a read-only Map" {
-    fin m = std::mapOf(mapEntry(1, "a"), mapEntry(2, "b"))
+    fin m = std::mapOf(1 to "a", 2 to "b")
     assert m.size == 2 { "mapOf size changed" }
     assert m.containsKey(1) && m.get(1) == "a" { "mapOf must store entries read-only" }
 }
 
 test "mutableMapOf allows in-place mutation" {
-    var m = std::mutableMapOf(mapEntry(1, "a"))
+    var m = std::mutableMapOf(1 to "a")
     m.put(2, "b")
     m.remove(1)
     assert m.size == 1 && m.get(2) == "b" { "mutableMapOf mutation changed" }
 }
 
 test "map plus and minus derive new maps" {
-    var base = HashMap<Int, String>()
-    base.put(1, "a")
-    fin grown = base + mapEntry(2, "b")
-    fin shrunk = base - 1
+    var origin = HashMap<Int, String>()
+    origin.put(1, "a")
+    fin grown = origin + (2 to "b")
+    fin shrunk = origin - 1
     assert grown.size == 2 && grown.get(2) == "b" { "oper+ must add the entry" }
     assert shrunk.size == 0 { "oper- must remove the key" }
-    assert base.size == 1 { "derivation must not mutate the source" }
+    assert origin.size == 1 { "derivation must not mutate the source" }
 }
 
 test "map equality compares entries not identity" {

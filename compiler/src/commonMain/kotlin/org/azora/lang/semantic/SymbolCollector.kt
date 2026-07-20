@@ -18,6 +18,7 @@ package org.azora.lang.semantic
 
 import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.FuncDecl
+import org.azora.lang.frontend.MemberCallStyle
 import org.azora.lang.frontend.NumericSuffix
 import org.azora.lang.frontend.Program
 import org.azora.lang.frontend.Stmt
@@ -38,6 +39,8 @@ import org.azora.lang.ir.IrType
  */
 class SymbolCollector {
     private var typeFunctions = emptyList<org.azora.lang.frontend.TypeFunctionDecl>()
+    /** Set for the duration of [collect]; lets return-type inference resolve call/ctor types. */
+    private var symbolTable: SymbolTable? = null
 
     private fun resolveType(ref: TypeRef, typeParams: Set<String> = emptySet()): IrType =
         IrType.resolve(TypeFunctionEvaluator.resolve(ref, typeFunctions, unresolvedParams = typeParams), typeParams)
@@ -97,6 +100,7 @@ class SymbolCollector {
      */
     fun collect(program: Program, table: SymbolTable): List<String> {
         typeFunctions = program.typeFunctions
+        symbolTable = table
         val errors = mutableListOf<String>()
         typeFunctions.groupBy { declaration ->
             declaration.name to declaration.params.map { it.variadic }
@@ -176,6 +180,10 @@ class SymbolCollector {
                 if (shortName != func.name && table.lookupFunction(shortName) == null) {
                     table.defineFunctionAlias(shortName, symbol)
                 }
+                // A generic `infx` (`infx<K,V> K.to(v)`) is callable as an infix
+                // method on any receiver; record it under the (short) method name
+                // written at call sites (`a to b`), pointing at the real function.
+                if (func.isUniversalInfix) table.defineUniversalInfix(shortName, func.name)
             } catch (e: Exception) {
                 errors.add("line ${func.line}: ${e.message}")
             }
@@ -197,10 +205,11 @@ class SymbolCollector {
             if (item is TopLevel.Bridge) {
                 for (sig in item.funcs) {
                     try {
-                        val params = sig.params.map { it.name to resolveType(it.type) }
-                        val ret = resolveType(sig.returnType)
+                        val tpSet = sig.typeParams.toSet()
+                        val params = sig.params.map { it.name to resolveType(it.type, tpSet) }
+                        val ret = resolveType(sig.returnType, tpSet)
                         val paramNames = sig.params.map { it.name }
-                        table.defineFunction(FunctionSymbol(sig.name, params, ret, false, emptyList(), paramNames, emptyMap()))
+                        table.defineFunction(FunctionSymbol(sig.name, params, ret, false, sig.typeParams, paramNames, emptyMap()))
                     } catch (e: Exception) {
                         errors.add("line ${sig.line}: ${e.message}")
                     }
@@ -402,10 +411,20 @@ class SymbolCollector {
                         val selfType = resolveType(TypeRef.Named(item.typeName))
                         val params = mutableListOf<Pair<String, IrType>>()
                         params.add("self" to selfType)
-                        for (p in method.params) params.add(p.name to resolveType(p.type, tpSet))
+                        // An operator's `by <Spec>` clause names the operand type
+                        // (`impl oper== by List<T> for ArrayList { ref self, rhs -> }`),
+                        // so the operand param(s) — written without a type in the body
+                        // header — take that spec type rather than erasing to Any.
+                        val operandType = if (method.name.startsWith("oper") && item.traitName != null) {
+                            resolveType(TypeRef.Named(item.traitName!!), tpSet)
+                        } else null
+                        for (p in method.params) params.add(p.name to (operandType ?: resolveType(p.type, tpSet)))
                         val returnType = when (val rt = method.returnType) {
                             is TypeAnnotation.Explicit -> resolveType(rt.ref, tpSet)
-                            is TypeAnnotation.Inferred -> inferReturnType(method, params)
+                            // `oper#` (hash) is ULong by contract; its body typically
+                            // returns a local accumulator that return-type inference
+                            // (params-only) cannot see.
+                            is TypeAnnotation.Inferred -> if (method.name == "oper#") IrType.ULong else inferReturnType(method, params)
                         }
                         // Bridge impls register the member name (so semantic gates like the
                         // range-operator check can find it) but define NO callable function —
@@ -438,11 +457,29 @@ class SymbolCollector {
             } else {
                 // Capture each requirement's declared return type so member access
                 // on a spec-typed value (e.g. `map.size` on a `Map<K,V>`) resolves.
-                val propTypes = item.methods.mapNotNull { m ->
+                val tpSet = item.typeParams.toSet()
+                val ownPropTypes = item.methods.mapNotNull { m ->
                     val ref = (m.returnType as? TypeAnnotation.Explicit)?.ref
-                    if (ref != null) m.name to IrType.resolve(ref, item.typeParams.toSet()) else null
+                    if (ref != null) m.name to IrType.resolve(ref, tpSet) else null
                 }.toMap()
-                table.defineSpec(item.name, item.methods.map { it.name }, item.callback, item.typeParams, propTypes)
+                // Full signatures so method calls on a spec-typed value type-check
+                // and yield the declared (erased) return type.
+                val ownMethodSigs = item.methods.associate { m ->
+                    val ret = (m.returnType as? TypeAnnotation.Explicit)?.ref?.let { IrType.resolve(it, tpSet) } ?: IrType.Unit
+                    val params = m.params.map { IrType.resolve(it.type, tpSet) }
+                    m.name to SpecMethodSig(params, ret, m.memberCallStyle == MemberCallStyle.PROPERTY)
+                }
+                // Spec inheritance: fold in the parent's members (a child member
+                // overrides a same-named parent one). The parent is registered first
+                // in source order (e.g. `List` before `MutableList`).
+                val parent = (item.parent as? TypeRef.Named)?.name?.let { table.lookupSpec(it) }
+                val propTypes = (parent?.propTypes ?: emptyMap()) + ownPropTypes
+                val methodSigs = (parent?.methodSigs ?: emptyMap()) + ownMethodSigs
+                // methodNames drives the `impl … for Type` completeness check, so it
+                // stays own-only: inherited members are satisfied by the separate
+                // `impl Parent for Type` block, not re-required here.
+                val methodNames = item.methods.map { it.name }
+                table.defineSpec(item.name, methodNames, item.callback, item.typeParams, propTypes, methodSigs)
             }
         }
         for (item in program.items.filterIsInstance<TopLevel.Deco>()) {
@@ -543,8 +580,21 @@ class SymbolCollector {
         val returnExprs = collectReturnExprs(func.body)
         if (returnExprs.isEmpty()) return IrType.Unit
 
-        // Build a simple name→type map from params for expression type inference
-        val env = params.toMap()
+        // Build a name→type map from params, plus top-level local bindings so a
+        // `return <local>` (e.g. `var result = hashMapOf(); … ; return result`)
+        // can be typed.
+        val env = params.toMap().toMutableMap()
+        val tpSet = func.typeParams.toSet()
+        for (stmt in func.body) {
+            val (name, ann, init) = when (stmt) {
+                is Stmt.VarDecl -> Triple(stmt.name, stmt.type, stmt.initializer)
+                is Stmt.FinDecl -> Triple(stmt.name, stmt.type, stmt.initializer)
+                else -> continue
+            }
+            val t = (ann as? TypeAnnotation.Explicit)?.ref?.let { IrType.resolve(it, tpSet) }
+                ?: inferExprType(init, env)
+            if (t != null) env[name] = t
+        }
         val types = returnExprs.mapNotNull { inferExprType(it, env) }
         if (types.isEmpty()) return IrType.Unit
 
@@ -626,7 +676,10 @@ class SymbolCollector {
             else -> inferExprType(expr.operand, env)
         }
         is Expr.Grouping -> inferExprType(expr.expr, env)
-        is Expr.Call -> null // can't infer without full symbol table yet
+        // A struct constructor yields its named type; a known function yields its
+        // (erased) declared return type.
+        is Expr.Call -> symbolTable?.lookupStruct(expr.callee)?.let { IrType.Named(it.name) }
+            ?: symbolTable?.lookupFunction(expr.callee)?.returnType
         is Expr.UpperScopeAccess -> null // can't infer type from upper scope access during symbol collection
         is Expr.Range -> null // ranges are not first-class values
         is Expr.ArrayLiteral -> expr.elements.firstOrNull()?.let { inferExprType(it, env) }?.let(IrType::Array)

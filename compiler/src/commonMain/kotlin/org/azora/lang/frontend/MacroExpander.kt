@@ -413,6 +413,11 @@ internal object MacroExpander {
                         return arm to mapOf(arm.pattern.name to args)
                     }
                 }
+                is MacroPattern.MapEntryCapture -> {
+                    // `[...${key: value}]` — key/value destructuring. Invocation-side
+                    // support (parsing `map!["a": 1]` into paired args) is a later
+                    // stage; the arm parses and stores its capture names for now.
+                }
             }
         }
         return null

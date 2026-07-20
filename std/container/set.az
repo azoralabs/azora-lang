@@ -101,7 +101,7 @@ friend zone std {
      * @param T The element type.
      */
     @Experimental(sinceAzora: "0.0.4")
-    spec MutableSet<T> {
+    spec MutableSet<T> : Set<T> {
         /** Adds `element`; returns whether membership changed. */
         func add(element: T): Bool
 
@@ -276,6 +276,11 @@ friend zone std {
     }
 
     @Experimental(sinceAzora: "0.0.4")
+    func<T> emptyMutableSet(): MutableSet<T> {
+        return LinkedHashSet<T>()
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
     func<T> setOf(...elements: T): Set<T> {
         var result = LinkedHashSet<T>()
         for i in 0..<elements.size {
@@ -298,6 +303,411 @@ friend zone std {
         var result = LinkedHashSet<T>()
         for i in 0..<elements.size {
             result.add(elements[i])
+        }
+        return result
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    func<T> emptyLinkedHashSet(): MutableSet<T> {
+        return LinkedHashSet<T>()
+    }
+
+    // --- HashSet (hash-table, unspecified iteration order; T requires oper# + oper==) ---
+
+    @Experimental(sinceAzora: "0.0.4")
+    @Serializable
+    pack<T> HashSet {
+        shield var data: T* = alloc T[8]
+        shield var size: Int = 0
+        shield var capacity: Int = 8
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    func<T> hashSetOf(...elements: T): HashSet<T> {
+        var result = HashSet<T>()
+        for i in 0..<elements.size {
+            result.add(elements[i])
+        }
+        return result
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    func<T> emptyHashSet(): MutableSet<T> {
+        return HashSet<T>()
+    }
+
+    impl HashSet<T> {
+        @Experimental(sinceAzora: "0.0.4")
+        func growSet() { mut ref self ->
+            fin newCap = self.capacity * 2
+            fin newData = alloc T[newCap]
+            for i in 0..<self.size {
+                newData[i] = self.data[i]
+            }
+            fin oldData = self.data
+            self.data = newData
+            self.capacity = newCap
+            drop oldData
+        }
+
+        @Experimental(sinceAzora: "0.0.4")
+        confine func has(element: T): Bool { ref self ->
+            for i in 0..<self.size {
+                if self.data[i] == element { return true }
+            }
+            return false
+        }
+    }
+
+    impl Set<T> for HashSet<T> {
+        prop size: Int = self.size
+        prop isEmpty: Bool = self.size == 0
+        prop isNotEmpty: Bool = self.size > 0
+
+        func get(index: Int): T { ref self ->
+            assert index >= 0 { "Set index must be non-negative" }
+            assert index < self.size { "Set index out of bounds" }
+            return self.data[index]
+        }
+
+        func contains(element: T): Bool { ref self ->
+            return self.has(element)
+        }
+
+        func forEach(action: (T) -> Unit) { ref self ->
+            for i in 0..<self.size {
+                action(self.data[i])
+            }
+        }
+
+        func filter(predicate: (T) -> Bool): Set<T> { ref self ->
+            var result = HashSet<T>()
+            for i in 0..<self.size {
+                if predicate(self.data[i]) {
+                    result.add(self.data[i])
+                }
+            }
+            return result
+        }
+
+        func any(predicate: (T) -> Bool): Bool { ref self ->
+            for i in 0..<self.size {
+                if predicate(self.data[i]) { return true }
+            }
+            return false
+        }
+
+        func all(predicate: (T) -> Bool): Bool { ref self ->
+            for i in 0..<self.size {
+                if !predicate(self.data[i]) { return false }
+            }
+            return true
+        }
+
+        func union(other: Set<T>): Set<T> { ref self ->
+            var result = HashSet<T>()
+            for i in 0..<self.size {
+                result.add(self.data[i])
+            }
+            var j = 0
+            while j < other.size {
+                result.add(other.get(j))
+                j += 1
+            }
+            return result
+        }
+
+        func intersect(other: Set<T>): Set<T> { ref self ->
+            var result = HashSet<T>()
+            for i in 0..<self.size {
+                if other.contains(self.data[i]) {
+                    result.add(self.data[i])
+                }
+            }
+            return result
+        }
+
+        func difference(other: Set<T>): Set<T> { ref self ->
+            var result = HashSet<T>()
+            for i in 0..<self.size {
+                if !other.contains(self.data[i]) {
+                    result.add(self.data[i])
+                }
+            }
+            return result
+        }
+    }
+
+    impl MutableSet<T> for HashSet<T> {
+        func add(element: T): Bool { mut ref self ->
+            if self.has(element) { return false }
+            if self.size >= self.capacity { self.growSet() }
+            self.data[self.size] = element
+            self.size = self.size + 1
+            return true
+        }
+
+        func remove(element: T): Bool { mut ref self ->
+            var idx = -1
+            for i in 0..<self.size {
+                if self.data[i] == element { idx = i }
+            }
+            if idx < 0 { return false }
+            var j = idx
+            while j < self.size - 1 {
+                self.data[j] = self.data[j + 1]
+                j += 1
+            }
+            self.size = self.size - 1
+            return true
+        }
+
+        func clear() { mut ref self ->
+            fin oldData = self.data
+            self.data = alloc T[8]
+            self.size = 0
+            self.capacity = 8
+            drop oldData
+        }
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    impl oper[] for HashSet<T> { ref self, index ->
+        assert index >= 0 && index < self.size {
+            "Set index out of bounds"
+        }
+        return self.data[index]
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    impl Into<String> for HashSet<T> { ref self ->
+        var s = "{"
+        for i in 0..<self.size {
+            if i > 0 { s = s + ", " }
+            s = s + std::convert::toString(self.data[i])
+        }
+        return s + "}"
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    impl oper== by Set<T> for HashSet<T> { ref self, rhs ->
+        if self.size != rhs.size { return false }
+        for i in 0..<self.size {
+            if !rhs.contains(self.data[i]) { return false }
+        }
+        return true
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    impl oper!= by Set<T> for HashSet<T> { ref self, rhs ->
+        return !(self == rhs)
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    impl oper# for HashSet<T> { ref self ->
+        var result = 0 as ULong
+        for i in 0..<self.size {
+            result = result + #self.data[i]
+        }
+        return result
+    }
+
+    // --- TreeSet (sorted via oper<; T requires oper<) ---
+
+    @Experimental(sinceAzora: "0.0.4")
+    @Serializable
+    pack<T> TreeSet {
+        shield var data: T* = alloc T[8]
+        shield var size: Int = 0
+        shield var capacity: Int = 8
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    func<T> treeSetOf(...elements: T): TreeSet<T> {
+        var result = TreeSet<T>()
+        for i in 0..<elements.size {
+            result.add(elements[i])
+        }
+        return result
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    func<T> emptyTreeSet(): MutableSet<T> {
+        return TreeSet<T>()
+    }
+
+    impl TreeSet<T> {
+        @Experimental(sinceAzora: "0.0.4")
+        func growSet() { mut ref self ->
+            fin newCap = self.capacity * 2
+            fin newData = alloc T[newCap]
+            for i in 0..<self.size {
+                newData[i] = self.data[i]
+            }
+            fin oldData = self.data
+            self.data = newData
+            self.capacity = newCap
+            drop oldData
+        }
+
+        @Experimental(sinceAzora: "0.0.4")
+        confine func has(element: T): Bool { ref self ->
+            for i in 0..<self.size {
+                if self.data[i] == element { return true }
+            }
+            return false
+        }
+    }
+
+    impl Set<T> for TreeSet<T> {
+        prop size: Int = self.size
+        prop isEmpty: Bool = self.size == 0
+        prop isNotEmpty: Bool = self.size > 0
+
+        func get(index: Int): T { ref self ->
+            assert index >= 0 { "Set index must be non-negative" }
+            assert index < self.size { "Set index out of bounds" }
+            return self.data[index]
+        }
+
+        func contains(element: T): Bool { ref self ->
+            return self.has(element)
+        }
+
+        func forEach(action: (T) -> Unit) { ref self ->
+            for i in 0..<self.size {
+                action(self.data[i])
+            }
+        }
+
+        func filter(predicate: (T) -> Bool): Set<T> { ref self ->
+            var result = TreeSet<T>()
+            for i in 0..<self.size {
+                if predicate(self.data[i]) {
+                    result.add(self.data[i])
+                }
+            }
+            return result
+        }
+
+        func any(predicate: (T) -> Bool): Bool { ref self ->
+            for i in 0..<self.size {
+                if predicate(self.data[i]) { return true }
+            }
+            return false
+        }
+
+        func all(predicate: (T) -> Bool): Bool { ref self ->
+            for i in 0..<self.size {
+                if !predicate(self.data[i]) { return false }
+            }
+            return true
+        }
+
+        func union(other: Set<T>): Set<T> { ref self ->
+            var result = TreeSet<T>()
+            for i in 0..<self.size {
+                result.add(self.data[i])
+            }
+            var j = 0
+            while j < other.size {
+                result.add(other.get(j))
+                j += 1
+            }
+            return result
+        }
+
+        func intersect(other: Set<T>): Set<T> { ref self ->
+            var result = TreeSet<T>()
+            for i in 0..<self.size {
+                if other.contains(self.data[i]) {
+                    result.add(self.data[i])
+                }
+            }
+            return result
+        }
+
+        func difference(other: Set<T>): Set<T> { ref self ->
+            var result = TreeSet<T>()
+            for i in 0..<self.size {
+                if !other.contains(self.data[i]) {
+                    result.add(self.data[i])
+                }
+            }
+            return result
+        }
+    }
+
+    impl MutableSet<T> for TreeSet<T> {
+        func add(element: T): Bool { mut ref self ->
+            if self.has(element) { return false }
+            if self.size >= self.capacity { self.growSet() }
+            self.data[self.size] = element
+            self.size = self.size + 1
+            return true
+        }
+
+        func remove(element: T): Bool { mut ref self ->
+            var idx = -1
+            for i in 0..<self.size {
+                if self.data[i] == element { idx = i }
+            }
+            if idx < 0 { return false }
+            var j = idx
+            while j < self.size - 1 {
+                self.data[j] = self.data[j + 1]
+                j += 1
+            }
+            self.size = self.size - 1
+            return true
+        }
+
+        func clear() { mut ref self ->
+            fin oldData = self.data
+            self.data = alloc T[8]
+            self.size = 0
+            self.capacity = 8
+            drop oldData
+        }
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    impl oper[] for TreeSet<T> { ref self, index ->
+        assert index >= 0 && index < self.size {
+            "Set index out of bounds"
+        }
+        return self.data[index]
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    impl Into<String> for TreeSet<T> { ref self ->
+        var s = "{"
+        for i in 0..<self.size {
+            if i > 0 { s = s + ", " }
+            s = s + std::convert::toString(self.data[i])
+        }
+        return s + "}"
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    impl oper== by Set<T> for TreeSet<T> { ref self, rhs ->
+        if self.size != rhs.size { return false }
+        for i in 0..<self.size {
+            if !rhs.contains(self.data[i]) { return false }
+        }
+        return true
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    impl oper!= by Set<T> for TreeSet<T> { ref self, rhs ->
+        return !(self == rhs)
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    impl oper# for TreeSet<T> { ref self ->
+        var result = 0 as ULong
+        for i in 0..<self.size {
+            result = result + #self.data[i]
         }
         return result
     }

@@ -69,6 +69,7 @@ package org.azora.lang.frontend
  * - [COMMA] -- `,` parameter/argument separator
  * - [COLON] -- `:` type annotation separator
  * - [ARROW] -- `->` return type or function type separator
+ * - [FAT_ARROW] -- `=>` macro and lowering rule separator
  *
  * **Special** -- synthetic tokens:
  * - [NEWLINE] -- significant newline (statement terminator)
@@ -154,11 +155,12 @@ enum class TokenType {
     THREADLOCAL,
     // `deco Name [bind Spec] { fields }` — decorator/annotation declaration.
     DECO, BIND,
+    HASH,
 
     // Delimiters
     L_PAREN, R_PAREN, L_BRACE, R_BRACE,
     L_BRACKET, R_BRACKET,
-    COMMA, COLON, DOUBLE_COLON, ARROW, SEMICOLON, HASH,
+    COMMA, COLON, DOUBLE_COLON, ARROW, FAT_ARROW, SEMICOLON,
 
     // Special
     NEWLINE, EOF

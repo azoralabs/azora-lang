@@ -116,7 +116,7 @@ friend zone std {
      * @param T The element type.
      */
     @Experimental(sinceAzora: "0.0.4")
-    spec MutableList<T> {
+    spec MutableList<T> : List<T> {
         /** Appends `element` to the end. */
         func add(element: T)
 
@@ -357,6 +357,11 @@ friend zone std {
 
     @Experimental(sinceAzora: "0.0.4")
     func<T> emptyList(): List<T> {
+        return ArrayList<T>()
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    func<T> emptyMutableList(): MutableList<T> {
         return ArrayList<T>()
     }
 

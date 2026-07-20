@@ -164,4 +164,52 @@ use friend zone std {
     /** Whether `value` is an ASCII decimal digit. */
     @Experimental(sinceAzora: "0.0.4")
     bridge func isDigit(value: Char): Bool
+
+    /** Whether `value` starts with `prefix`. */
+    @Experimental(sinceAzora: "0.0.4")
+    bridge func startsWith(value: String, prefix: String): Bool
+
+    /** Whether `value` ends with `suffix`. */
+    @Experimental(sinceAzora: "0.0.4")
+    bridge func endsWith(value: String, suffix: String): Bool
+
+    /** Whether `value` contains `sub`. */
+    @Experimental(sinceAzora: "0.0.4")
+    bridge func contains(value: String, sub: String): Bool
+
+    /** First index of `sub` in `value`, or `-1` when absent. */
+    @Experimental(sinceAzora: "0.0.4")
+    bridge func indexOf(value: String, sub: String): Int
+
+    /** `value` with leading and trailing whitespace removed. */
+    @Experimental(sinceAzora: "0.0.4")
+    bridge func trim(value: String): String
+
+    /** `value` with every character upper-cased. */
+    @Experimental(sinceAzora: "0.0.4")
+    bridge func toUpper(value: String): String
+
+    /** `value` with every character lower-cased. */
+    @Experimental(sinceAzora: "0.0.4")
+    bridge func toLower(value: String): String
+
+    /** `value` with each occurrence of `old` replaced by `new`. */
+    @Experimental(sinceAzora: "0.0.4")
+    bridge func replace(value: String, old: String, new: String): String
+
+    /** `value` split on each occurrence of `delim`. */
+    @Experimental(sinceAzora: "0.0.4")
+    bridge func split(value: String, delim: String): Array<String>
+
+    /** The characters of `value` as an array. */
+    @Experimental(sinceAzora: "0.0.4")
+    bridge func toChars(value: String): Array<Char>
+
+    /** A string built by concatenating `chars` in order. */
+    @Experimental(sinceAzora: "0.0.4")
+    bridge func fromChars(chars: Array<Char>): String
+
+    /** Whether `value` is an ASCII alphabetic character. */
+    @Experimental(sinceAzora: "0.0.4")
+    bridge func isAlpha(value: Char): Bool
 }

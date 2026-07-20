@@ -422,7 +422,7 @@ class TypeResolver(private val table: SymbolTable) {
                         errors.add("line ${stmt.line}: cannot assign to immutable field '${stmt.name}' of struct ${targetType.name}")
                         return
                     }
-                    if (valueType != field.type) {
+                    if (!isCompatible(field.type, valueType)) {
                         errors.add("line ${stmt.line}: cannot assign $valueType to field '${stmt.name}' of type ${field.type}")
                     }
                 } else {
@@ -654,6 +654,12 @@ class TypeResolver(private val table: SymbolTable) {
                         }
                     }
                     return IrType.Named(struct.name)
+                }
+                // `std::convert::toString(x)` is a compiler builtin (special-cased in
+                // CTCE and every backend); it stringifies any value.
+                if (expr.callee == "std__convert__toString") {
+                    expr.args.forEach { resolveExpr(it) ?: return null }
+                    return IrType.String
                 }
                 val func = table.lookupFunction(expr.callee)
                 if (func == null) {
@@ -1023,6 +1029,45 @@ class TypeResolver(private val table: SymbolTable) {
                         }
                         return func.returnType
                     }
+                    // Spec-typed value: dispatch to a method declared by the spec
+                    // (e.g. `list.get(0)` where `list: List<T>`). The concrete impl
+                    // is selected at runtime; here we type-check against the spec.
+                    val specMethod = table.lookupSpec(targetType.name)?.methodSigs?.get(expr.name)
+                    if (specMethod != null) {
+                        if (specMethod.isProperty) {
+                            errors.add("line ${expr.line}: property '${expr.name}' must be accessed without parentheses")
+                            return null
+                        }
+                        if (expr.args.size != specMethod.paramTypes.size) {
+                            errors.add("line ${expr.line}: method '${expr.name}' expects ${specMethod.paramTypes.size} args, got ${expr.args.size}")
+                            return null
+                        }
+                        for (i in expr.args.indices) {
+                            val argType = resolveExpr(expr.args[i]) ?: return null
+                            if (!isCompatible(specMethod.paramTypes[i], argType)) {
+                                errors.add("line ${expr.line}: arg ${i + 1} of '${expr.name}': expected ${specMethod.paramTypes[i]}, got $argType")
+                            }
+                        }
+                        return specMethod.returnType
+                    }
+                }
+                // Universal infix (`a to b` → `to(a, b)`): a generic `infx` that
+                // applies to any receiver. Checked after real methods so those win.
+                val infixFn = table.lookupUniversalInfix(expr.name)?.let { table.lookupFunction(it) }
+                if (infixFn != null) {
+                    val declared = infixFn.params.size - 1 // exclude the receiver `self`
+                    if (expr.args.size != declared) {
+                        errors.add("line ${expr.line}: infix '${expr.name}' expects $declared operand(s), got ${expr.args.size}")
+                        return null
+                    }
+                    for (i in expr.args.indices) {
+                        val argType = resolveExpr(expr.args[i]) ?: return null
+                        val paramType = infixFn.params[i + 1].second
+                        if (!isCompatible(paramType, argType)) {
+                            errors.add("line ${expr.line}: operand ${i + 1} of '${expr.name}': expected $paramType, got $argType")
+                        }
+                    }
+                    return infixFn.returnType
                 }
                 // Builtin string methods
                 if (targetType == IrType.String) {
@@ -1386,7 +1431,8 @@ class TypeResolver(private val table: SymbolTable) {
         // (`Array<T, N>`); a sized slot still requires an exact-size match (handled
         // by the `==` check above).
         if (declared is IrType.Array && actual is IrType.Array &&
-            declared.element == actual.element && declared.size == null
+            isCompatible(declared.element, actual.element) &&
+            (declared.size == null || declared.size == actual.size)
         ) return true
         // Primitive literals bridge to std.container collection pack names.
         val setNames = setOf("Set", "MutableSet")
@@ -1408,6 +1454,13 @@ class TypeResolver(private val table: SymbolTable) {
                 t = table.nodeParents[t]
             }
         }
+        // Spec conformance: a pack that implements a spec is usable wherever that
+        // spec type is expected (e.g. returning `ArrayList<T>` for `List<T>`, just
+        // as a class implementing an interface is returned as the interface).
+        if (declared is IrType.Named && actual is IrType.Named &&
+            table.lookupSpec(declared.name) != null &&
+            table.conformsTo(actual.name, declared.name)
+        ) return true
         // null (Any) is compatible with any Nullable type
         if (actual == IrType.Any && declared is IrType.Nullable) return true
         // non-nullable is compatible with its nullable version
@@ -1540,7 +1593,11 @@ class TypeResolver(private val table: SymbolTable) {
             TokenType.EQUAL_EQUAL, TokenType.BANG_EQUAL -> {
                 // Equality is allowed between identical types, against null (which
                 // resolves to Any), or between a nullable type and its inner type.
-                val nullCompare = left == IrType.Any || right == IrType.Any
+                // An erased generic (e.g. `V?` from `map.get(k)`) is `Any` or
+                // `Any?`; either compares against anything at runtime.
+                val leftBare = if (left is IrType.Nullable) left.inner else left
+                val rightBare = if (right is IrType.Nullable) right.inner else right
+                val nullCompare = leftBare == IrType.Any || rightBare == IrType.Any
                 val nullableMatch = (left is IrType.Nullable && left.inner == right) ||
                     (right is IrType.Nullable && right.inner == left)
                 if (left == right || nullCompare || nullableMatch) {

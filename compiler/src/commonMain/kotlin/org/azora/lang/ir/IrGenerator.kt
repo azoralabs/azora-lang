@@ -1094,6 +1094,13 @@ class IrGenerator(private val table: SymbolTable) {
                         return IrExpr.Call(mangled, listOf(target) + args, func.returnType)
                     }
                 }
+                // Universal infix (`a to b`) → call the generic free function.
+                val infixMangled = table.lookupUniversalInfix(expr.name)
+                if (infixMangled != null) {
+                    val func = table.lookupFunction(infixMangled)!!
+                    val args = expr.args.map { lowerExpr(it) }
+                    return IrExpr.Call(infixMangled, listOf(target) + args, func.returnType)
+                }
                 val args = expr.args.map { lowerExpr(it) }
                 IrExpr.MethodCall(target, expr.name, args, builtinMethodReturnType(target.type, expr.name))
             }

@@ -99,7 +99,12 @@ class AstValidator {
 
         val allFunctions = buildList {
             addAll(program.functions)
-            program.items.filterIsInstance<TopLevel.Impl>().forEach { addAll(it.methods) }
+            // Bridge impls carry bodyless registration markers (no body to validate), and
+            // `@UncheckedCast` impls opt out of structural checks entirely.
+            program.items.filterIsInstance<TopLevel.Impl>().forEach {
+                val suppress = it.isBridge || it.annotations.any { a -> a.name == "UncheckedCast" }
+                if (!suppress) addAll(it.methods)
+            }
             program.items.filterIsInstance<TopLevel.Node>().forEach { addAll(it.methods) }
             program.items.filterIsInstance<TopLevel.Solo>().forEach { addAll(it.methods) }
         }
@@ -116,6 +121,7 @@ class AstValidator {
      */
     private val knownDecorators = setOf(
         "Experimental", "Stable", "Since", "Deprecated", "EnforceNumFields", "Target", "Derive",
+        "UncheckedCast",
     )
 
     /** Custom decorator names declared via `deco Name { … }` in the current program. */

@@ -1,0 +1,55 @@
+/*
+ * Copyright 2026 AzoraLabs
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+module std.reflection
+
+/**
+ * @file std/reflection
+ *
+ * The compile-time reflection intrinsic. `std::reflect<X>` yields a compile-time
+ * handle to the declaration named `X` (a type, a value binding, or a `Type::member`
+ * path). It is used as a prop — no call parentheses — and is only valid in
+ * compile-time positions:
+ *
+ * ```
+ * std::reflect<P>.hasDeco<Serializable>       // Bool
+ * std::reflect<P>.decoMeta<SerialName>.value  // decorator field
+ * std::reflect<P>.zone?.label                 // enclosing zone metadata
+ * ```
+ *
+ * The compiler lowers every `std::reflect<X>` at parse time, so the declaration
+ * below is a placeholder that is never executed.
+ *
+ * @since 0.0.4
+ */
+
+friend zone std {
+    /**
+     * Compile-time reflection handle for the declaration `T`, produced by
+     * `std::reflect<T>`. Its members (`.hasDeco<D>`, `.decoMeta<D>`, `.zone`) are
+     * resolved by the compiler; `bridge pack` means no struct is emitted.
+     */
+    @Experimental(sinceAzora: "0.0.4")
+    bridge pack<T> Reflected
+
+    /**
+     * Compile-time reflection handle for the declaration `T`. Used as a prop
+     * (`std::reflect<T>`). `includeInherited` also surfaces decorators inherited
+     * from base declarations when set.
+     */
+    @Experimental(sinceAzora: "0.0.4")
+    bridge func<T> reflect(includeInherited: Bool = false): Reflected<T>
+}

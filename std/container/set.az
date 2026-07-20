@@ -1,0 +1,411 @@
+/*
+ * Copyright 2026 AzoraLabs
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+module std.container.set
+
+import std.serializer
+import std.convert
+
+/**
+ * @file std/container/set
+ *
+ * Proposed native set hierarchy for Azora, mirroring `map.az` and `list.az`.
+ *
+ * Sets come in two flavors:
+ *
+ * - `Set<T>` is the read-only view: membership tests, algebra (`union`,
+ *   `intersect`, `difference`), and functional combinators returning fresh
+ *   `Set<T>` snapshots.
+ * - `MutableSet<T>` adds in-place mutation. Every mutation receives
+ *   `mut ref self`, so a caller holding only a shared `ref Set<T>` view
+ *   cannot mutate it.
+ *
+ * `LinkedHashSet<T>` is the single concrete pack implementing both specs. It
+ * stores unique elements in insertion order, so indexed access is stable. The
+ * `setOf`, `mutableSetOf`, `emptySet`, and `linkedHashSetOf` factories
+ * construct it; `setOf` and `emptySet` expose the read-only `Set<T>` view,
+ * `mutableSetOf` exposes `MutableSet<T>`.
+ *
+ * @since 0.0.4
+ */
+
+friend zone std {
+    /**
+     * Read-only behavior shared by every set implementation.
+     *
+     * `Set` stores unique elements. A concrete pack defines the iteration
+     * order; `LinkedHashSet` uses insertion order, which makes indexed access
+     * well-defined.
+     *
+     * @param T The element type.
+     */
+    @Experimental(sinceAzora: "0.0.4")
+    spec Set<T> {
+        /** Number of unique elements. */
+        prop size: Int
+
+        /** Whether this set has no elements. */
+        prop isEmpty: Bool
+
+        /** Whether this set has at least one element. */
+        prop isNotEmpty: Bool
+
+        /** Returns the element at `index` in iteration order. Asserts out of bounds. */
+        func get(index: Int): T
+
+        /** Returns whether `element` is present. */
+        func contains(element: T): Bool
+
+        /** Invokes `action` once for every element in iteration order. */
+        func forEach(action: (T) -> Unit)
+
+        /** Returns a new set with only elements satisfying `predicate`. */
+        func filter(predicate: (T) -> Bool): Set<T>
+
+        /** Returns whether at least one element satisfies `predicate`. */
+        func any(predicate: (T) -> Bool): Bool
+
+        /** Returns whether every element satisfies `predicate`. */
+        func all(predicate: (T) -> Bool): Bool
+
+        /** Returns a new set with all unique elements from both sets. */
+        func union(other: Set<T>): Set<T>
+
+        /** Returns a new set with only elements present in both sets. */
+        func intersect(other: Set<T>): Set<T>
+
+        /** Returns a new set with elements here that are absent from `other`. */
+        func difference(other: Set<T>): Set<T>
+    }
+
+    /**
+     * Mutation behavior implemented by mutable set packs.
+     *
+     * Mutation always receives `mut ref self`. Implementing this spec does not
+     * weaken a `ref Set<T>` view: callers holding only a shared reference can
+     * still use only read operations.
+     *
+     * @param T The element type.
+     */
+    @Experimental(sinceAzora: "0.0.4")
+    spec MutableSet<T> {
+        /** Adds `element`; returns whether membership changed. */
+        func add(element: T): Bool
+
+        /** Removes `element`; returns whether membership changed. */
+        func remove(element: T): Bool
+
+        /** Removes every element while retaining reusable internal capacity. */
+        func clear()
+    }
+
+    /**
+     * Hash set pack backing both `Set<T>` and `MutableSet<T>`.
+     *
+     * Stores unique elements in insertion order in a contiguous `T*` buffer
+     * that doubles on demand. Uniqueness and equality use `oper==` for `T`.
+     * Fields are `shield` so external zones cannot reach into the buffer.
+     *
+     * @param T The element type.
+     */
+    @Experimental(sinceAzora: "0.0.4")
+    @Serializable
+    pack<T> LinkedHashSet {
+        shield var data: T* = alloc T[8]
+        shield var size: Int = 0
+        shield var capacity: Int = 8
+    }
+
+    // ---------------------------------------------------------------------
+    // LinkedHashSet implementation
+    // ---------------------------------------------------------------------
+
+    impl LinkedHashSet<T> {
+        /** Doubles the backing buffer, copying existing elements. */
+        @Experimental(sinceAzora: "0.0.4")
+        func growSet() { mut ref self ->
+            fin newCap = self.capacity * 2
+            fin newData = alloc T[newCap]
+            for i in 0..<self.size {
+                newData[i] = self.data[i]
+            }
+            fin oldData = self.data
+            self.data = newData
+            self.capacity = newCap
+            drop oldData
+        }
+
+        /** Returns whether `element` is already stored. */
+        @Experimental(sinceAzora: "0.0.4")
+        confine func has(element: T): Bool { ref self ->
+            for i in 0..<self.size {
+                if self.data[i] == element { return true }
+            }
+            return false
+        }
+    }
+
+    impl Set<T> for LinkedHashSet<T> {
+        prop size: Int = self.size
+        prop isEmpty: Bool = self.size == 0
+        prop isNotEmpty: Bool = self.size > 0
+
+        func get(index: Int): T { ref self ->
+            assert index >= 0 { "Set index must be non-negative" }
+            assert index < self.size { "Set index out of bounds" }
+            return self.data[index]
+        }
+
+        func contains(element: T): Bool { ref self ->
+            return self.has(element)
+        }
+
+        func forEach(action: (T) -> Unit) { ref self ->
+            for i in 0..<self.size {
+                action(self.data[i])
+            }
+        }
+
+        func filter(predicate: (T) -> Bool): Set<T> { ref self ->
+            var result = LinkedHashSet<T>()
+            for i in 0..<self.size {
+                if predicate(self.data[i]) {
+                    result.add(self.data[i])
+                }
+            }
+            return result
+        }
+
+        func any(predicate: (T) -> Bool): Bool { ref self ->
+            for i in 0..<self.size {
+                if predicate(self.data[i]) { return true }
+            }
+            return false
+        }
+
+        func all(predicate: (T) -> Bool): Bool { ref self ->
+            for i in 0..<self.size {
+                if !predicate(self.data[i]) { return false }
+            }
+            return true
+        }
+
+        func union(other: Set<T>): Set<T> { ref self ->
+            var result = LinkedHashSet<T>()
+            for i in 0..<self.size {
+                result.add(self.data[i])
+            }
+            for j in 0..<other.size {
+                result.add(other.get(j))
+            }
+            return result
+        }
+
+        func intersect(other: Set<T>): Set<T> { ref self ->
+            var result = LinkedHashSet<T>()
+            for i in 0..<self.size {
+                if other.contains(self.data[i]) {
+                    result.add(self.data[i])
+                }
+            }
+            return result
+        }
+
+        func difference(other: Set<T>): Set<T> { ref self ->
+            var result = LinkedHashSet<T>()
+            for i in 0..<self.size {
+                if !other.contains(self.data[i]) {
+                    result.add(self.data[i])
+                }
+            }
+            return result
+        }
+    }
+
+    impl MutableSet<T> for LinkedHashSet<T> {
+        func add(element: T): Bool { mut ref self ->
+            if self.has(element) { return false }
+            if self.size >= self.capacity { self.growSet() }
+            self.data[self.size] = element
+            self.size = self.size + 1
+            return true
+        }
+
+        func remove(element: T): Bool { mut ref self ->
+            var idx = -1
+            for i in 0..<self.size {
+                if self.data[i] == element { idx = i }
+            }
+            if idx < 0 { return false }
+            for j in idx..<self.size - 1 {
+                self.data[j] = self.data[j + 1]
+            }
+            self.size = self.size - 1
+            return true
+        }
+
+        func clear() { mut ref self ->
+            fin oldData = self.data
+            self.data = alloc T[8]
+            self.size = 0
+            self.capacity = 8
+            drop oldData
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Factories
+    // ---------------------------------------------------------------------
+
+    @Experimental(sinceAzora: "0.0.4")
+    func<T> emptySet(): Set<T> {
+        return LinkedHashSet<T>()
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    func<T> setOf(...elements: T): Set<T> {
+        var result = LinkedHashSet<T>()
+        for i in 0..<elements.size {
+            result.add(elements[i])
+        }
+        return result
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    func<T> mutableSetOf(...elements: T): MutableSet<T> {
+        var result = LinkedHashSet<T>()
+        for i in 0..<elements.size {
+            result.add(elements[i])
+        }
+        return result
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    func<T> linkedHashSetOf(...elements: T): LinkedHashSet<T> {
+        var result = LinkedHashSet<T>()
+        for i in 0..<elements.size {
+            result.add(elements[i])
+        }
+        return result
+    }
+
+    // ---------------------------------------------------------------------
+    // Operators
+    // ---------------------------------------------------------------------
+
+    @Experimental(sinceAzora: "0.0.4")
+    impl oper[] for LinkedHashSet<T> { ref self, index ->
+        assert index >= 0 && index < self.size {
+            "Set index out of bounds"
+        }
+        return self.data[index]
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    impl Into<String> for LinkedHashSet<T> { ref self ->
+        var s = "{"
+        for i in 0..<self.size {
+            if i > 0 { s = s + ", " }
+            s = s + std::convert::toString(self.data[i])
+        }
+        return s + "}"
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    impl oper== by Set<T> for LinkedHashSet<T> { ref self, rhs ->
+        if self.size != rhs.size { return false }
+        for i in 0..<self.size {
+            if !rhs.contains(self.data[i]) { return false }
+        }
+        return true
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    impl oper!= by Set<T> for LinkedHashSet<T> { ref self, rhs ->
+        return !(self == rhs)
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    impl oper# for LinkedHashSet<T> { ref self ->
+        var result = 0 as ULong
+        for i in 0..<self.size {
+            result = result + #self.data[i]
+        }
+        return result
+    }
+}
+
+test "set starts empty" {
+    fin value = std::emptySet<Int>()
+    assert value.size == 0 && value.isEmpty { "emptySet must contain no values" }
+}
+
+test "setOf removes duplicates" {
+    fin value = std::setOf(1, 2, 1, 3, 2)
+    assert value.size == 3 { "setOf must retain unique values only" }
+    assert value.get(0) == 1 && value.get(1) == 2 && value.get(2) == 3 { "set insertion order changed" }
+}
+
+test "mutableSetOf removes duplicates" {
+    fin value = std::mutableSetOf(1, 2, 1)
+    assert value.size == 2 && value.contains(1) && value.contains(2) { "mutableSetOf uniqueness changed" }
+}
+
+test "set add reports whether membership changed" {
+    var value = std::mutableSetOf(1)
+    assert !value.add(1) { "adding a duplicate must be a no-op" }
+    assert value.add(2) { "adding a new value must report a change" }
+    assert value.size == 2 { "set size must count unique values" }
+}
+
+test "set remove preserves remaining membership" {
+    var value = std::mutableSetOf(1, 2, 3)
+    assert value.remove(2) { "remove must report an existing value" }
+    assert !value.remove(9) { "remove must report a missing value" }
+    assert value.size == 2 && !value.contains(2) { "removed values must disappear" }
+}
+
+test "set algebra produces unique results" {
+    fin left = std::setOf(1, 2, 3)
+    fin right = std::setOf(3, 4)
+    fin union = left.union(right)
+    fin common = left.intersect(right)
+    fin difference = left.difference(right)
+    assert union.size == 4 && union.contains(4) { "union must contain both memberships" }
+    assert common.size == 1 && common.contains(3) { "intersection must contain shared values" }
+    assert difference.size == 2 && difference.contains(1) && difference.contains(2) { "difference must exclude right values" }
+}
+
+test "set grows without losing uniqueness" {
+    var value = LinkedHashSet<Int>()
+    for i in 0..<20 {
+        value.add(i % 10)
+    }
+    assert value.size == 10 && value.contains(9) { "growth must preserve ten unique values" }
+}
+
+test "set clear permits reuse" {
+    var value = std::mutableSetOf(1, 2)
+    value.clear()
+    value.add(7)
+    assert value.size == 1 && value.contains(7) { "cleared sets must remain reusable" }
+}
+
+test "set serialization metadata is declared" {
+    inline assert (std::reflect<LinkedHashSet>).hasDeco<Serializable> { "LinkedHashSet must carry Serializable metadata" }
+}
+
+test .All "set"

@@ -395,6 +395,10 @@ class Parser(
 
     /** Reads an operator symbol after `oper` (for `impl oper<OP> …`). */
     private fun parseOperatorName(): String = when {
+        // `reverse..` (two tokens) and the range operators `..`/`..<` share one name.
+        check(TokenType.REVERSE) && peekNext()?.type == TokenType.DOT_DOT -> { advance(); advance(); "reverse.." }
+        match(TokenType.DOT_DOT) -> ".."
+        match(TokenType.DOT_DOT_LESS) -> ".."
         match(TokenType.LESS_EQUAL) -> "<="
         match(TokenType.GREATER_EQUAL) -> ">="
         match(TokenType.EQUAL_EQUAL) -> "=="
@@ -424,7 +428,7 @@ class Parser(
      * the declaration is accepted but emits no method, so the backend's native
      * operator handling stands.
      */
-    private fun parseOperatorImpl(start: Token, isBridge: Boolean): TopLevel.Impl {
+    private fun parseOperatorImpl(start: Token, isBridge: Boolean, annotations: List<Annotation> = emptyList()): TopLevel.Impl {
         consume(TokenType.OPER, "Expected 'oper'")
         val opName = parseOperatorName()
         // `impl oper<OP> by <Spec> for Type` — an optional spec/operand-type clause.
@@ -439,14 +443,72 @@ class Parser(
         } else TypeAnnotation.Inferred
         val (receiverModifier, params, body) = parseReceiverAndBody()
         consumeNewline()
+        val methodName = "oper$opName"
+        // A bridge/bodyless oper impl carries a bodyless marker method named
+        // `oper$opName` so the operator is REGISTERED in the symbol table (e.g.
+        // enabling the range-operator gate), even though no IR body is emitted.
         if (isBridge || body.isEmpty()) {
-            return TopLevel.Impl(typeName, emptyList(), bySpec, start.line, start.column)
+            val marker = FuncDecl(
+                methodName, params, returnType, emptyList(), false, emptyList(),
+                start.line, start.column, receiverModifier = receiverModifier,
+            )
+            return TopLevel.Impl(
+                typeName, listOf(marker), bySpec, start.line, start.column,
+                annotations = annotations, isBridge = true,
+            )
         }
         val method = FuncDecl(
-            "oper$opName", params, returnType, body, false, emptyList(),
+            methodName, params, returnType, body, false, emptyList(),
             start.line, start.column, receiverModifier = receiverModifier,
         )
-        return TopLevel.Impl(typeName, listOf(method), bySpec, start.line, start.column)
+        return TopLevel.Impl(
+            typeName, listOf(method), bySpec, start.line, start.column,
+            annotations = annotations, isBridge = isBridge,
+        )
+    }
+
+    /**
+     * `impl oper[spec, spec, ...] for Type` — declares several operators at once.
+     * Each spec is `[reverse] (.. | ..<) [by <expr>]`. `..` and `..<` are one
+     * operator (the inclusive/exclusive flag lives on the range node); `reverse..`
+     * is the reverse-range operator. The optional `by <expr>` is declarative step
+     * metadata (parsed, then discarded). The expansion produces one `TopLevel.Impl`
+     * per spec via the `pendingTopLevels` queue (first returned, rest queued).
+     * `oper` and the leading `[` have already been consumed by the caller.
+     */
+    private fun parseMultiOperImpl(start: Token, isBridge: Boolean, annotations: List<Annotation>): TopLevel.Impl {
+        data class OpSpec(val methodName: String)
+        val specs = mutableListOf<OpSpec>()
+        do {
+            val reversed = match(TokenType.REVERSE)
+            val opName = when {
+                match(TokenType.DOT_DOT) -> ".."
+                match(TokenType.DOT_DOT_LESS) -> ".."
+                else -> error("Expected '..' or 'reverse..' in oper spec at line ${peek().line}")
+            }
+            // `by <expr>` — declarative default-step metadata; parsed then discarded.
+            if (match(TokenType.BY)) parseExpr()
+            specs.add(OpSpec("oper" + (if (reversed) "reverse" else "") + opName))
+        } while (match(TokenType.COMMA))
+        consume(TokenType.R_BRACKET, "Expected ']' after oper spec list")
+        consume(TokenType.FOR, "Expected 'for' after 'impl oper[...]'")
+        val typeName = consume(TokenType.IDENTIFIER, "Expected type name after 'for'").lexeme
+        skipGenericTypeArgs()
+        val (receiverModifier, params, body) = parseReceiverAndBody()
+        consumeNewline()
+        val bridge = isBridge || body.isEmpty()
+        val impls = specs.map { sp ->
+            val method = FuncDecl(
+                sp.methodName, params, TypeAnnotation.Inferred, body, false, emptyList(),
+                start.line, start.column, receiverModifier = receiverModifier,
+            )
+            TopLevel.Impl(
+                typeName, listOf(method), null, start.line, start.column,
+                annotations = annotations, isBridge = bridge,
+            )
+        }
+        if (impls.size > 1) pendingTopLevels.addAll(impls.drop(1))
+        return impls.first()
     }
 
     /**
@@ -548,10 +610,10 @@ class Parser(
             check(TokenType.PACK) -> parsePack(annotations, visibility)
             check(TokenType.ENUM) -> parseEnumDecl(annotations)
             check(TokenType.FAIL) -> parseFailDecl(annotations)
-            check(TokenType.IMPL) -> parseImpl()
+            check(TokenType.IMPL) -> parseImpl(annotations = annotations)
             check(TokenType.INFX) -> parseInfx()
             check(TokenType.BRIDGE) && peekNext()?.type == TokenType.IMPL -> {
-                advance(); parseImpl(isBridge = true)
+                advance(); parseImpl(isBridge = true, annotations = annotations)
             }
             // `bridge <decl>` marks a declaration as compiler-provided. `bridge pack`
             // and `bridge func` are bodyless (no struct / no body emitted); `bridge`
@@ -876,6 +938,10 @@ class Parser(
     }
 
     private fun parseComptimeListTerm(): List<String> {
+        // `arr![...]` — the array-literal macro used as a compile-time list; accept the
+        // `Name !` prefix and parse the bracket body as a list literal of values.
+        val isMacro = check(TokenType.IDENTIFIER) && peekNext()?.type == TokenType.BANG
+        if (isMacro) { advance(); advance() }
         if (match(TokenType.L_BRACKET)) {
             val values = mutableListOf<String>()
             if (!check(TokenType.R_BRACKET)) {
@@ -890,6 +956,7 @@ class Parser(
             consume(TokenType.R_BRACKET, "Expected ']' to close compile-time list")
             return values
         }
+        if (isMacro) error("Expected '[...]' after macro prefix in compile-time list at line ${peek().line}")
         val name = consumeIdentifierLike("Expected a compile-time list literal or variable")
         return typeListEnv[name] ?: error("Unknown compile-time list '$name' at line ${peek().line}")
     }
@@ -1465,7 +1532,7 @@ class Parser(
     }
 
     /** `impl Type { methods }` or `impl Trait for Type { methods }`. */
-    private fun parseImpl(isBridge: Boolean = false): TopLevel.Impl {
+    private fun parseImpl(isBridge: Boolean = false, annotations: List<Annotation> = emptyList()): TopLevel.Impl {
         val start = peek()
         consume(TokenType.IMPL, "Expected 'impl'")
         // `impl <Spec> as zone for Type { members }` — type-scoped static members
@@ -1512,7 +1579,7 @@ class Parser(
         // for any operator (comparison/arithmetic/bitwise). `oper[]`/`oper[]=` keep
         // their dedicated block form below; every other operator uses this form.
         if (check(TokenType.OPER) && peekNext()?.type != TokenType.L_BRACKET) {
-            return parseOperatorImpl(start, isBridge)
+            return parseOperatorImpl(start, isBridge, annotations)
         }
         if (check(TokenType.CTOR)) {
             val ctorStart = advance()
@@ -1644,6 +1711,12 @@ class Parser(
             val operStart = peek()
             advance() // 'oper'
             consume(TokenType.L_BRACKET, "Expected '[' after 'oper'")
+            // Multi-oper form: `impl oper[.. by 1, reverse.. by 1] for Ty` expands to one
+            // impl per spec. Routed here (before oper[]/oper[:]/oper[]=) only when the
+            // bracket content is an operator spec, so the index/slice forms stay intact.
+            if (peek().type in setOf(TokenType.DOT_DOT, TokenType.DOT_DOT_LESS, TokenType.REVERSE)) {
+                return parseMultiOperImpl(operStart, isBridge, annotations)
+            }
             // `oper[:]` — the Python-style slice overload (`a[1:3]`, `a[:]`, …).
             val isSlice = match(TokenType.COLON)
             consume(TokenType.R_BRACKET, "Expected ']' after 'oper['")
@@ -1704,6 +1777,8 @@ class Parser(
                 bySpec,
                 operStart.line,
                 operStart.column,
+                annotations = annotations,
+                isBridge = isBridge,
             )
         }
         if (check(TokenType.DEREF)) {
@@ -2902,7 +2977,7 @@ class Parser(
             t.type == TokenType.DROP || t.type == TokenType.MEM || t.type == TokenType.REM || t.type == TokenType.RET ||
             t.type == TokenType.FLIP || t.type == TokenType.FLOP ||
             t.type == TokenType.ALLOC || t.type == TokenType.DEREF || t.type == TokenType.TEST ||
-            t.type == TokenType.SHARED || t.type == TokenType.WEAK
+            t.type == TokenType.SHARED || t.type == TokenType.WEAK || t.type == TokenType.META
         if (t.type == TokenType.IDENTIFIER || soft) {
             advance()
             return t.lexeme

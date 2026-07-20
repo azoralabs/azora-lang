@@ -1,0 +1,53 @@
+/*
+ * Copyright 2026 AzoraLabs
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ */
+
+module std.memory.weak
+
+/**
+ * @file std/memory/weak
+ *
+ * Non-owning pointer view. It never drops memory; callers must prove the
+ * pointee outlives the weak view.
+ *
+ * @since 0.0.3
+ */
+
+friend zone std {
+    @SinceAzora("0.0.3")
+    pack<T> Weak {
+        confine var raw: T*
+    }
+
+    @Experimental(sinceAzora: "0.0.3")
+    impl deref for Weak<T> { ref self ->
+        assert self.raw != null { "Weak pointer is null" }
+        return deref self.raw
+    }
+
+    impl Weak<T> {
+        /** Returns the referenced value (panics if the pointer is null). */
+        @Experimental(sinceAzora: "0.0.3")
+        prop get: T {
+            assert self.raw != null { "Weak pointer is null" }
+            return deref self.raw
+        }
+
+        /** Returns the raw `T*` (may be null). */
+        @SinceAzora("0.0.3")
+        prop ptr: T* = self.raw
+
+        /** `true` when the pointer is null (does not own a reference). */
+        @SinceAzora("0.0.3")
+        prop isNull: Bool = self.raw == null
+    }
+
+    /** Wraps a raw `T*` as a non-owning `Weak<T>`. */
+    @Experimental(sinceAzora: "0.0.3")
+    func weakOf<T>(ptr: T*): Weak<T> {
+        return Weak(ptr)
+    }
+}

@@ -1,0 +1,1329 @@
+/*
+ * Copyright 2026 AzoraLabs
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+module std.serializer
+
+import std.container.list
+import std.char
+import std.convert
+import std.string
+
+/**
+ * @file std/serializer
+ *
+ * Deterministic, format-independent serialization primitives.
+ *
+ * A `Serializer<T>` converts a typed value to and from `SerialValue`. Text
+ * formats are a separate concern: `encodeSerialValue` and `decodeSerialValue`
+ * handle canonical JSON and AZON. This separation lets applications reuse one
+ * typed serializer with multiple wire formats and makes custom serializers
+ * straightforward for values owned by another library.
+ *
+ * Numbers are retained as validated source text instead of being converted to
+ * `Real`; this prevents precision loss for large integers and decimal values.
+ * Object fields preserve insertion order. Duplicate fields are rejected while
+ * decoding unless explicitly enabled in `SerializerOptions`.
+ *
+ * This API is experimental, but its wire-format rules are intentionally strict
+ * so data written today can remain readable as the implementation evolves.
+ */
+
+friend zone std {
+    /** Text encodings supported by the standard serializer. */
+    @Experimental(sinceAzora: "0.0.4")
+    enum SerializationFormat {
+        /** RFC 8259 JSON using `:` between object keys and values. */
+        Json
+
+        /** Azora Object Notation using `:` between object keys and values. */
+        Azon
+    }
+
+    /** Failures reported by text decoders and typed serializers. */
+    @Experimental(sinceAzora: "0.0.4")
+    fail SerializationError {
+        InvalidSyntax,
+        InvalidEscape,
+        InvalidNumber,
+        UnexpectedEnd,
+        TrailingContent,
+        DuplicateField,
+        MissingField,
+        UnknownField,
+        UnexpectedType,
+        MaxDepthExceeded,
+        InputTooLarge,
+        UnsupportedFormat
+    }
+
+    /**
+     * Marks a pack for compiler-generated value-tree, JSON, and AZON codecs.
+     *
+     * Use `JsonSerializable` or `AzonSerializable` when only one text format is
+     * part of a type's public contract. Configuration is immutable compile-time
+     * metadata and can be inspected from inline code with
+     * `(std::reflect<value>).decoMeta<Serializable>.ignoreUnknownFields`.
+    */
+    @Experimental(sinceAzora: "0.0.4")
+    @Derive(
+        generator: "serializer",
+        role: "all",
+        provider: "std",
+        conversionProvider: "std::convert",
+        providerModule: "std.serializer",
+        conversionModule: "std.convert",
+        deferGeneric: true
+    )
+    deco Serializable for .Pack bind [Serializer, JsonSerializer, AzonSerializer] {
+        /** Accepts object members which do not map to an exposed pack field. */
+        fin ignoreUnknownFields: Bool = false
+
+        /** Includes fields whose value is equal to the declared default. */
+        fin encodeDefaults: Bool = true
+    }
+
+    /** Marks a pack for compiler-generated JSON serialization only. */
+    @Experimental(sinceAzora: "0.0.4")
+    @Derive(
+        generator: "serializer",
+        role: "json",
+        provider: "std",
+        conversionProvider: "std::convert",
+        providerModule: "std.serializer",
+        conversionModule: "std.convert",
+        deferGeneric: true
+    )
+    deco JsonSerializable for .Pack bind JsonSerializer {
+        /** Accepts JSON object members which do not map to an exposed pack field. */
+        fin ignoreUnknownFields: Bool = false
+
+        /** Includes fields whose value is equal to the declared default. */
+        fin encodeDefaults: Bool = true
+    }
+
+    /** Marks a pack for compiler-generated AZON serialization only. */
+    @Experimental(sinceAzora: "0.0.4")
+    @Derive(
+        generator: "serializer",
+        role: "azon",
+        provider: "std",
+        conversionProvider: "std::convert",
+        providerModule: "std.serializer",
+        conversionModule: "std.convert",
+        deferGeneric: true
+    )
+    deco AzonSerializable for .Pack bind AzonSerializer {
+        /** Accepts AZON object members which do not map to an exposed pack field. */
+        fin ignoreUnknownFields: Bool = false
+
+        /** Includes fields whose value is equal to the declared default. */
+        fin encodeDefaults: Bool = true
+    }
+
+    /** Overrides the serialized name of a field or type. */
+    @Experimental(sinceAzora: "0.0.4")
+    @Derive(generator: "serializer", role: "name")
+    deco SerialName for [.Pack, .Node, .Enum, .Field] {
+        /**
+         * Name written to and read from the serialized representation.
+         *
+         * An empty value retains the declaration's source name. This makes the
+         * marker form usable in grouped decorator implementations while an
+         * explicit non-empty value performs an actual rename.
+         */
+        fin value: String = ""
+    }
+
+    /** Excludes a field from generated serialization and deserialization. */
+    @Experimental(sinceAzora: "0.0.4")
+    @Derive(generator: "serializer", role: "ignore")
+    deco SerialIgnore for .Field
+
+    /** Requires a field to be present even when its Azora field has a default. */
+    @Experimental(sinceAzora: "0.0.4")
+    @Derive(generator: "serializer", role: "required")
+    deco SerialRequired for .Field
+
+    /**
+     * Resource and formatting limits for untrusted serialized input.
+     *
+     * `maxDepth` and `maxInputLength` are security limits. Applications should
+     * lower them for protocols with known payload bounds.
+     */
+    @Experimental(sinceAzora: "0.0.4")
+    pack SerializerOptions {
+        var pretty: Bool = false
+        var indent: String = "  "
+        var encodeNulls: Bool = true
+        var allowDuplicateFields: Bool = false
+        var maxDepth: Int = 64
+        var maxInputLength: Int = 16777216
+    }
+
+    /** A named member in an ordered serialized object. */
+    @Experimental(sinceAzora: "0.0.4")
+    pack SerialField {
+        fin name: String
+        fin value: SerialValue
+    }
+
+    /**
+     * Lossless format-independent serialized data.
+     *
+     * `Number` stores a validated JSON number token. Object fields are ordered,
+     * which provides deterministic output and permits duplicate detection before
+     * a typed decoder consumes the value.
+     */
+    @Experimental(sinceAzora: "0.0.4")
+    slot SerialValue {
+        Null
+        Bool(value: Bool)
+        Number(value: String)
+        Text(value: String)
+        Array(elements: List<SerialValue>)
+        Object(fields: List<SerialField>)
+    }
+
+    /**
+     * Bidirectional codec for `T`.
+     *
+     * Implement this spec when a type needs a custom representation. Generated
+     * serializers created by `@Serializable` implement the same contract.
+     * Implementations must not retain references to `value` after returning.
+     *
+     * @param T The value type handled by this serializer.
+     */
+    @Experimental(sinceAzora: "0.0.4")
+    spec Serializer<T> {
+        /** Converts a typed value into the format-independent value tree. */
+        func toSerialValue(value: ref T): SerialValue!SerializationError
+
+        /** Reconstructs a typed value, validating all required fields and types. */
+        func fromSerialValue(value: ref SerialValue): T!SerializationError
+    }
+
+    /**
+     * Bidirectional JSON codec for `T`.
+     *
+     * Implement this spec when JSON is the type's primary representation and a
+     * format-independent `SerialValue` adapter would add no value. Generated
+     * implementations created by `@Serializable` and `@JsonSerializable` obey
+     * the same strict limits as `decodeSerialValue`.
+     *
+     * @param T The value type handled by this JSON codec.
+     */
+    @Experimental(sinceAzora: "0.0.4")
+    spec JsonSerializer<T> {
+        /** Encodes `value` as one complete JSON document. */
+        func toJson(value: ref T, options: ref SerializerOptions): String!SerializationError
+
+        /** Decodes one complete JSON document into `T`. */
+        func fromJson(input: String, options: ref SerializerOptions): T!SerializationError
+    }
+
+    /**
+     * Bidirectional AZON codec for `T`.
+     *
+     * AZON uses JSON-style `:` between object
+     * names and values. Generated implementations created by `@Serializable`
+     * and `@AzonSerializable` use this contract.
+     *
+     * @param T The value type handled by this AZON codec.
+     */
+    @Experimental(sinceAzora: "0.0.4")
+    spec AzonSerializer<T> {
+        /** Encodes `value` as one complete AZON document. */
+        func toAzon(value: ref T, options: ref SerializerOptions): String!SerializationError
+
+        /** Decodes one complete AZON document into `T`. */
+        func fromAzon(input: String, options: ref SerializerOptions): T!SerializationError
+    }
+
+    /** Creates conservative defaults suitable for processing untrusted input. */
+    @Experimental(sinceAzora: "0.0.4")
+    func serializerOptions(): SerializerOptions {
+        return SerializerOptions()
+    }
+
+    /** Creates an exact number node after validating the number token. */
+    @Experimental(sinceAzora: "0.0.4")
+    func serialNumber(value: String): SerialValue!SerializationError {
+        if !isValidSerialNumber(value) { fail return .InvalidNumber }
+        return SerialValue.Number(value)
+    }
+
+    /** Returns the named object field, or fails when it is absent. */
+    @Experimental(sinceAzora: "0.0.4")
+    func serialField(value: ref SerialValue, name: String): SerialValue!SerializationError {
+        when value {
+            SerialValue.Object(fields) -> {
+                for i in 0..<fields.size {
+                    if fields[i].name == name { return fields[i].value }
+                }
+                fail return .MissingField
+            }
+            else -> { fail return .UnexpectedType }
+        }
+    }
+
+    /** Returns one typed object field by positional index. */
+    confine func serialFieldAt(fields: ref List<SerialField>, index: Int): SerialField {
+        return fields[index]
+    }
+
+    /** Returns one typed serialized array element by positional index. */
+    confine func serialValueAt(values: ref List<SerialValue>, index: Int): SerialValue {
+        return values[index]
+    }
+
+    /** Extracts a text value or reports an incompatible serialized type. */
+    @Experimental(sinceAzora: "0.0.4")
+    func serialAsText(value: ref SerialValue): String!SerializationError {
+        when value {
+            SerialValue.Text(text) -> { return text }
+            else -> { fail return .UnexpectedType }
+        }
+    }
+
+    /** Extracts a Boolean value or reports an incompatible serialized type. */
+    @Experimental(sinceAzora: "0.0.4")
+    func serialAsBool(value: ref SerialValue): Bool!SerializationError {
+        when value {
+            SerialValue.Bool(boolean) -> { return boolean }
+            else -> { fail return .UnexpectedType }
+        }
+    }
+
+    /** Extracts exactly one character from a serialized text value. */
+    @Experimental(sinceAzora: "0.0.4")
+    func serialAsChar(value: ref SerialValue): Char!SerializationError {
+        fin text = try serialAsText(value)
+        if stringLength(text) != 1 { fail return .UnexpectedType }
+        return charAt(text, 0)
+    }
+
+    /**
+     * Extracts a signed integral number with overflow checking.
+     *
+     * Fractional and exponent forms are rejected even though they are valid
+     * serialized real numbers.
+     */
+    @Experimental(sinceAzora: "0.0.4")
+    func serialAsLong(value: ref SerialValue): Long!SerializationError {
+        when value {
+            SerialValue.Number(text) -> {
+                if stringLength(text) == 0 { fail return .InvalidNumber }
+                if text == "-9223372036854775808" {
+                    fin minimum = 0L - 9223372036854775807L
+                    return minimum - 1L
+                }
+                var index = 0
+                var negative = false
+                if charAt(text, index) == '-' {
+                    negative = true
+                    index += 1
+                }
+                if index >= stringLength(text) { fail return .InvalidNumber }
+                var result = 0L
+                while index < stringLength(text) {
+                    fin c = charAt(text, index)
+                    if !charIsDigit(c) { fail return .InvalidNumber }
+                    fin digit = (charToCode(c) - 48) as Long
+                    if result > 922337203685477580L ||
+                        (result == 922337203685477580L && digit > 7L) {
+                        fail return .InvalidNumber
+                    }
+                    result = result * 10L + digit
+                    index += 1
+                }
+                return if negative { 0L - result } else { result }
+            }
+            else -> { fail return .UnexpectedType }
+        }
+    }
+
+    /** Extracts a range-checked signed byte. */
+    confine func serialAsByte(value: ref SerialValue): Byte!SerializationError {
+        fin parsed = try serialAsLong(value)
+        if parsed < -128L || parsed > 127L { fail return .InvalidNumber }
+        return parsed as Byte
+    }
+
+    /** Extracts a range-checked unsigned byte. */
+    confine func serialAsUByte(value: ref SerialValue): UByte!SerializationError {
+        fin parsed = try serialAsLong(value)
+        if parsed < 0L || parsed > 255L { fail return .InvalidNumber }
+        return parsed as UByte
+    }
+
+    /** Extracts a range-checked signed short. */
+    confine func serialAsShort(value: ref SerialValue): Short!SerializationError {
+        fin parsed = try serialAsLong(value)
+        if parsed < -32768L || parsed > 32767L { fail return .InvalidNumber }
+        return parsed as Short
+    }
+
+    /** Extracts a range-checked unsigned short. */
+    confine func serialAsUShort(value: ref SerialValue): UShort!SerializationError {
+        fin parsed = try serialAsLong(value)
+        if parsed < 0L || parsed > 65535L { fail return .InvalidNumber }
+        return parsed as UShort
+    }
+
+    /** Extracts a range-checked signed integer. */
+    confine func serialAsInt(value: ref SerialValue): Int!SerializationError {
+        fin parsed = try serialAsLong(value)
+        if (parsed < 0L && parsed + 2147483648L < 0L) || parsed > 2147483647L {
+            fail return .InvalidNumber
+        }
+        return parsed as Int
+    }
+
+    /** Extracts a range-checked unsigned integer. */
+    confine func serialAsUInt(value: ref SerialValue): UInt!SerializationError {
+        fin parsed = try serialAsLong(value)
+        if parsed < 0L || parsed > 4294967295L { fail return .InvalidNumber }
+        return parsed as UInt
+    }
+
+    /** Extracts a non-negative value representable by the current ULong runtime. */
+    confine func serialAsULong(value: ref SerialValue): ULong!SerializationError {
+        fin parsed = try serialAsLong(value)
+        if parsed < 0L { fail return .InvalidNumber }
+        return parsed as ULong
+    }
+
+    /** Extracts a signed 128-bit value from the supported integer token range. */
+    confine func serialAsCent(value: ref SerialValue): Cent!SerializationError {
+        return try serialAsLong(value) as Cent
+    }
+
+    /** Extracts an unsigned 128-bit value from the supported integer token range. */
+    confine func serialAsUCent(value: ref SerialValue): UCent!SerializationError {
+        fin parsed = try serialAsLong(value)
+        if parsed < 0L { fail return .InvalidNumber }
+        return parsed as UCent
+    }
+
+    /** Extracts a finite real number, including fraction and exponent forms. */
+    @Experimental(sinceAzora: "0.0.4")
+    func serialAsReal(value: ref SerialValue): Real!SerializationError {
+        when value {
+            SerialValue.Number(text) -> {
+                if !isValidSerialNumber(text) { fail return .InvalidNumber }
+                var index = 0
+                var sign = 1.0
+                if charAt(text, index) == '-' {
+                    sign = -1.0
+                    index += 1
+                }
+                var result = 0.0
+                while index < stringLength(text) && charIsDigit(charAt(text, index)) {
+                    result = result * 10.0 + (charToCode(charAt(text, index)) - 48) as Real
+                    index += 1
+                }
+                if index < stringLength(text) && charAt(text, index) == '.' {
+                    index += 1
+                    var divisor = 10.0
+                    while index < stringLength(text) && charIsDigit(charAt(text, index)) {
+                        result = result + (charToCode(charAt(text, index)) - 48) as Real / divisor
+                        divisor = divisor * 10.0
+                        index += 1
+                    }
+                }
+                if index < stringLength(text) &&
+                    (charAt(text, index) == 'e' || charAt(text, index) == 'E') {
+                    index += 1
+                    var exponentNegative = false
+                    if index < stringLength(text) && charAt(text, index) == '+' { index += 1 }
+                    else if index < stringLength(text) && charAt(text, index) == '-' {
+                        exponentNegative = true
+                        index += 1
+                    }
+                    var exponent = 0
+                    while index < stringLength(text) {
+                        exponent = exponent * 10 + charToCode(charAt(text, index)) - 48
+                        index += 1
+                    }
+                    var factor = 1.0
+                    for power in 0..<exponent {
+                        factor = factor * 10.0
+                    }
+                    if exponentNegative { result = result / factor }
+                    else { result = result * factor }
+                }
+                return sign * result
+            }
+            else -> { fail return .UnexpectedType }
+        }
+    }
+
+    /** Encodes a value tree as canonical compact JSON or AZON. */
+    @Experimental(sinceAzora: "0.0.4")
+    func encodeSerialValue(
+        value: ref SerialValue,
+        format: SerializationFormat,
+        options: ref SerializerOptions
+    ): String!SerializationError {
+        return try encodeSerialValueAtDepth(value, format, options, 0)
+    }
+
+    /**
+     * Decodes one complete JSON or AZON document.
+     *
+     * The decoder rejects trailing content, malformed UTF escapes, invalid
+     * number grammar, excessive nesting, oversized input, and duplicate keys by
+     * default. AZON uses the same scalar and collection grammar as JSON, with
+     * `=` replacing `:` for object members.
+     */
+    @Experimental(sinceAzora: "0.0.4")
+    func decodeSerialValue(
+        input: String,
+        format: SerializationFormat,
+        options: ref SerializerOptions
+    ): SerialValue!SerializationError {
+        if stringLength(input) > options.maxInputLength { fail return .InputTooLarge }
+        var reader = SerialReader(input, 0, format, options)
+        fin value = try reader.readValue(0)
+        reader.skipWhitespace()
+        if !reader.isAtEnd { fail return .TrailingContent }
+        return value
+    }
+
+    /** Internal cursor used by the strict text decoder. */
+    confine pack SerialReader {
+        var input: String
+        var index: Int
+        fin format: SerializationFormat
+        fin options: SerializerOptions
+    }
+
+    confine impl SerialReader {
+        prop isAtEnd: Bool = self.index >= stringLength(self.input)
+
+        func skipWhitespace(): Unit { mut ref self ->
+            while !self.isAtEnd {
+                fin c = charAt(self.input, self.index)
+                if c != ' ' && c != '\n' && c != '\r' && c != '\t' { return }
+                self.index += 1
+            }
+        }
+
+        func take(): Char!SerializationError { mut ref self ->
+            if self.isAtEnd { fail return .UnexpectedEnd }
+            fin c = charAt(self.input, self.index)
+            self.index += 1
+            return c
+        }
+
+        func expect(expected: Char): Unit!SerializationError { mut ref self ->
+            fin actual = try self.take()
+            if actual != expected { fail return .InvalidSyntax }
+        }
+
+        func readValue(depth: Int): SerialValue!SerializationError { mut ref self ->
+            if depth > self.options.maxDepth { fail return .MaxDepthExceeded }
+            self.skipWhitespace()
+            if self.isAtEnd { fail return .UnexpectedEnd }
+            fin c = charAt(self.input, self.index)
+            if c == '"' { return SerialValue.Text(try self.readString()) }
+            if c == '[' { return try self.readArray(depth + 1) }
+            if c == '{' { return try self.readObject(depth + 1) }
+            if c == 't' {
+                try self.readLiteral("true")
+                return SerialValue.Bool(true)
+            }
+            if c == 'f' {
+                try self.readLiteral("false")
+                return SerialValue.Bool(false)
+            }
+            if c == 'n' {
+                try self.readLiteral("null")
+                return SerialValue.Null
+            }
+            if c == '-' || (c >= '0' && c <= '9') {
+                return SerialValue.Number(try self.readNumber())
+            }
+            fail return .InvalidSyntax
+        }
+
+        func readLiteral(expected: String): Unit!SerializationError { mut ref self ->
+            for i in 0..<stringLength(expected) {
+                if try self.take() != charAt(expected, i) { fail return .InvalidSyntax }
+            }
+        }
+
+        func readString(): String!SerializationError { mut ref self ->
+            try self.expect('"')
+            var result = ""
+            while !self.isAtEnd {
+                fin c = try self.take()
+                if c == '"' { return result }
+                if charToCode(c) < 32 { fail return .InvalidEscape }
+                if c != '\\' {
+                    result = result + std::convert::toString(c)
+                } else {
+                    fin escaped = try self.take()
+                    if escaped == '"' { result = result + "\"" }
+                    else if escaped == '\\' { result = result + "\\" }
+                    else if escaped == '/' { result = result + "/" }
+                    else if escaped == 'b' { result = result + "\b" }
+                    else if escaped == 'f' { result = result + "\f" }
+                    else if escaped == 'n' { result = result + "\n" }
+                    else if escaped == 'r' { result = result + "\r" }
+                    else if escaped == 't' { result = result + "\t" }
+                    else if escaped == 'u' {
+                        fin codePoint = try self.readEscapedCodePoint()
+                        result = result + std::convert::toString(codeToChar(codePoint))
+                    } else { fail return .InvalidEscape }
+                }
+            }
+            fail return .UnexpectedEnd
+        }
+
+        func readHexUnit(): Int!SerializationError { mut ref self ->
+            var value = 0
+            for i in 0..<4 {
+                fin c = try self.take()
+                if !charIsHexDigit(c) { fail return .InvalidEscape }
+                value = value * 16 + hexDigitToInt(c)
+            }
+            return value
+        }
+
+        func readEscapedCodePoint(): Int!SerializationError { mut ref self ->
+            fin first = try self.readHexUnit()
+            if first >= 56320 && first <= 57343 { fail return .InvalidEscape }
+            if first < 55296 || first > 56319 { return first }
+
+            // A high surrogate must be immediately followed by a low surrogate.
+            if try self.take() != '\\' || try self.take() != 'u' { fail return .InvalidEscape }
+            fin second = try self.readHexUnit()
+            if second < 56320 || second > 57343 { fail return .InvalidEscape }
+            return 65536 + (first - 55296) * 1024 + (second - 56320)
+        }
+
+        func readNumber(): String!SerializationError { mut ref self ->
+            fin start = self.index
+            if charAt(self.input, self.index) == '-' { self.index += 1 }
+            if self.isAtEnd { fail return .InvalidNumber }
+
+            if charAt(self.input, self.index) == '0' {
+                self.index += 1
+            } else {
+                if !charIsDigit(charAt(self.input, self.index)) { fail return .InvalidNumber }
+                while !self.isAtEnd && charIsDigit(charAt(self.input, self.index)) { self.index += 1 }
+            }
+
+            if !self.isAtEnd && charAt(self.input, self.index) == '.' {
+                self.index += 1
+                if self.isAtEnd || !charIsDigit(charAt(self.input, self.index)) { fail return .InvalidNumber }
+                while !self.isAtEnd && charIsDigit(charAt(self.input, self.index)) { self.index += 1 }
+            }
+
+            if !self.isAtEnd && (charAt(self.input, self.index) == 'e' || charAt(self.input, self.index) == 'E') {
+                self.index += 1
+                if !self.isAtEnd && (charAt(self.input, self.index) == '+' || charAt(self.input, self.index) == '-') {
+                    self.index += 1
+                }
+                if self.isAtEnd || !charIsDigit(charAt(self.input, self.index)) { fail return .InvalidNumber }
+                while !self.isAtEnd && charIsDigit(charAt(self.input, self.index)) { self.index += 1 }
+            }
+            return substring(self.input, start, self.index)
+        }
+
+        func readArray(depth: Int): SerialValue!SerializationError { mut ref self ->
+            try self.expect('[')
+            var values = List<SerialValue>()
+            self.skipWhitespace()
+            if !self.isAtEnd && charAt(self.input, self.index) == ']' {
+                self.index += 1
+                return SerialValue.Array(values)
+            }
+            loop {
+                values.add(try self.readValue(depth))
+                self.skipWhitespace()
+                fin separator = try self.take()
+                if separator == ']' { return SerialValue.Array(values) }
+                if separator != ',' { fail return .InvalidSyntax }
+                self.skipWhitespace()
+            }
+        }
+
+        func readObject(depth: Int): SerialValue!SerializationError { mut ref self ->
+            try self.expect('{')
+            var fields = List<SerialField>()
+            self.skipWhitespace()
+            if !self.isAtEnd && charAt(self.input, self.index) == '}' {
+                self.index += 1
+                return SerialValue.Object(fields)
+            }
+            loop {
+                self.skipWhitespace()
+                if self.isAtEnd || charAt(self.input, self.index) != '"' { fail return .InvalidSyntax }
+                fin name = try self.readString()
+                self.skipWhitespace()
+                try self.expect(':')
+                self.skipWhitespace()
+                fin value = try self.readValue(depth)
+
+                var duplicate = false
+                for i in 0..<fields.size {
+                    if serialFieldAt(fields, i).name == name { duplicate = true }
+                }
+                if duplicate && !self.options.allowDuplicateFields { fail return .DuplicateField }
+                fields.add(SerialField(name, value))
+
+                self.skipWhitespace()
+                fin separator = try self.take()
+                if separator == '}' { return SerialValue.Object(fields) }
+                if separator != ',' { fail return .InvalidSyntax }
+                self.skipWhitespace()
+            }
+        }
+    }
+
+    confine func encodeSerialValueAtDepth(
+        value: ref SerialValue,
+        format: SerializationFormat,
+        options: ref SerializerOptions,
+        depth: Int
+    ): String!SerializationError {
+        if depth > options.maxDepth { fail return .MaxDepthExceeded }
+        when value {
+            SerialValue.Null -> { return "null" }
+            SerialValue.Bool(v) -> { return if v { "true" } else { "false" } }
+            SerialValue.Number(v) -> {
+                if !isValidSerialNumber(v) { fail return .InvalidNumber }
+                return v
+            }
+            SerialValue.Text(v) -> { return quoteSerialString(v) }
+            SerialValue.Array(values) -> {
+                var result = "["
+                for i in 0..<values.size {
+                    if i > 0 { result = result + "," }
+                    if options.pretty { result = result + "\n" + repeatIndent(options.indent, depth + 1) }
+                    result = result + try encodeSerialValueAtDepth(values[i], format, options, depth + 1)
+                }
+                if options.pretty && values.size > 0 { result = result + "\n" + repeatIndent(options.indent, depth) }
+                return result + "]"
+            }
+            SerialValue.Object(fields) -> {
+                var result = "{"
+                var i = 0
+                var written = 0
+                while i < fields.size {
+                    fin field = serialFieldAt(fields, i)
+                    var include = true
+                    when field.value {
+                        SerialValue.Null -> { include = options.encodeNulls }
+                        else -> {}
+                    }
+                    if include {
+                        if written > 0 { result = result + "," }
+                        if options.pretty { result = result + "\n" + repeatIndent(options.indent, depth + 1) }
+                        result = result + quoteSerialString(field.name)
+                        result = result + ":"
+                        if options.pretty { result = result + " " }
+                        result = result + try encodeSerialValueAtDepth(field.value, format, options, depth + 1)
+                        written += 1
+                    }
+                    i += 1
+                }
+                if options.pretty && written > 0 { result = result + "\n" + repeatIndent(options.indent, depth) }
+                return result + "}"
+            }
+        }
+        fail return .UnexpectedType
+    }
+
+    confine func quoteSerialString(value: String): String {
+        var result = "\""
+        for i in 0..<stringLength(value) {
+            fin c = charAt(value, i)
+            if c == '"' { result = result + "\\\"" }
+            else if c == '\\' { result = result + "\\\\" }
+            else if c == '\b' { result = result + "\\b" }
+            else if c == '\f' { result = result + "\\f" }
+            else if c == '\n' { result = result + "\\n" }
+            else if c == '\r' { result = result + "\\r" }
+            else if c == '\t' { result = result + "\\t" }
+            else if charToCode(c) < 32 { result = result + "\\u" + hex4(charToCode(c)) }
+            else { result = result + std::convert::toString(c) }
+        }
+        return result + "\""
+    }
+
+    confine func repeatIndent(indent: String, count: Int): String {
+        var result = ""
+        for i in 0..<count {
+            result = result + indent
+        }
+        return result
+    }
+
+    confine func hex4(value: Int): String {
+        fin digits = "0123456789abcdef"
+        return std::convert::toString(charAt(digits, (value / 4096) % 16)) +
+            std::convert::toString(charAt(digits, (value / 256) % 16)) +
+            std::convert::toString(charAt(digits, (value / 16) % 16)) +
+            std::convert::toString(charAt(digits, value % 16))
+    }
+
+    /** Validates the complete RFC 8259 number grammar without converting it. */
+    @Experimental(sinceAzora: "0.0.4")
+    func isValidSerialNumber(value: String): Bool {
+        if stringLength(value) == 0 { return false }
+        var i = 0
+        if charAt(value, i) == '-' { i += 1 }
+        if i >= stringLength(value) { return false }
+        if charAt(value, i) == '0' {
+            i += 1
+        } else {
+            if !charIsDigit(charAt(value, i)) { return false }
+            while i < stringLength(value) && charIsDigit(charAt(value, i)) { i += 1 }
+        }
+        if i < stringLength(value) && charAt(value, i) == '.' {
+            i += 1
+            if i >= stringLength(value) || !charIsDigit(charAt(value, i)) { return false }
+            while i < stringLength(value) && charIsDigit(charAt(value, i)) { i += 1 }
+        }
+        if i < stringLength(value) && (charAt(value, i) == 'e' || charAt(value, i) == 'E') {
+            i += 1
+            if i < stringLength(value) && (charAt(value, i) == '+' || charAt(value, i) == '-') { i += 1 }
+            if i >= stringLength(value) || !charIsDigit(charAt(value, i)) { return false }
+            while i < stringLength(value) && charIsDigit(charAt(value, i)) { i += 1 }
+        }
+        return i == stringLength(value)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Compile-time decorator fixtures
+// ---------------------------------------------------------------------------
+
+@Serializable(ignoreUnknownFields: true, encodeDefaults: false)
+confine pack SerializerMetadataFixture {
+    @SerialIgnore
+    fin secret: String = ""
+
+    @SerialName("display_name")
+    fin displayName: String
+}
+
+@JsonSerializable(ignoreUnknownFields: false, encodeDefaults: true)
+confine pack JsonMetadataFixture
+
+@AzonSerializable(ignoreUnknownFields: true, encodeDefaults: true)
+confine pack AzonMetadataFixture
+
+confine pack ManualTextValue {
+    fin value: String
+}
+
+confine pack ManualTextSerializer
+
+impl Serializer<ManualTextValue> for ManualTextSerializer {
+    func toSerialValue(value: ref ManualTextValue): SerialValue!SerializationError { ref self ->
+        return SerialValue.Text(value.value)
+    }
+
+    func fromSerialValue(value: ref SerialValue): ManualTextValue!SerializationError { ref self ->
+        when value {
+            SerialValue.Text(text) -> { return ManualTextValue(text) }
+            else -> { fail return .UnexpectedType }
+        }
+    }
+}
+
+confine pack ImplSerializableFixture {
+    fin value: String
+}
+
+impl Serializable(
+    ignoreUnknownFields: true,
+    encodeDefaults: false
+) for ImplSerializableFixture
+
+confine pack DefaultSerializableFixture {
+    fin value: String
+}
+
+impl Serializable for DefaultSerializableFixture
+
+confine pack DirectFieldDecoratorFixture {
+    fin name: String = ""
+    fin password: String = ""
+}
+
+impl SerialName(value: "display_name") for DirectFieldDecoratorFixture::name
+
+confine pack GroupedDecoratorFixture {
+    fin name: String = ""
+}
+
+impl [SerialName, SerialRequired] for GroupedDecoratorFixture::name
+
+confine pack GroupedTargetFixture {
+    fin name: String = ""
+    fin password: String = ""
+}
+
+impl SerialIgnore for [GroupedTargetFixture::name, GroupedTargetFixture::password]
+
+confine pack CrossProductDecoratorFixture {
+    fin name: String = ""
+    fin password: String = ""
+}
+
+impl [SerialName, SerialRequired] for [CrossProductDecoratorFixture::name, CrossProductDecoratorFixture::password]
+
+confine pack WildcardDecoratorFixture {
+    fin name: String = ""
+    fin password: String = ""
+}
+
+impl SerialIgnore for WildcardDecoratorFixture::*
+
+confine pack GroupedWildcardDecoratorFixture {
+    fin name: String = ""
+    fin password: String = ""
+}
+
+impl [SerialName, SerialRequired] for GroupedWildcardDecoratorFixture::*
+
+// ---------------------------------------------------------------------------
+// Unit tests
+// ---------------------------------------------------------------------------
+
+test "serializer decorator is visible at compile time" {
+    inline assert (std::reflect<SerializerMetadataFixture>).hasDeco<Serializable> {
+        "@Serializable must be visible through hasDeco"
+    }
+}
+
+test "serializer decorator exposes named options" {
+    inline assert (std::reflect<SerializerMetadataFixture>).decoMeta<Serializable>.ignoreUnknownFields {
+        "ignoreUnknownFields must retain its annotation value"
+    }
+    inline assert !(std::reflect<SerializerMetadataFixture>).decoMeta<Serializable>.encodeDefaults {
+        "encodeDefaults must retain its annotation value"
+    }
+}
+
+test "serial ignore is visible on fields" {
+    inline assert (std::reflect<SerializerMetadataFixture::secret>).hasDeco<SerialIgnore> {
+        "@SerialIgnore must target field metadata"
+    }
+}
+
+test "serial name exposes its immutable value" {
+    inline fin name = (std::reflect<SerializerMetadataFixture::displayName>).decoMeta<SerialName>.value
+    inline assert name == "display_name" { "@SerialName must preserve its value" }
+}
+
+test "json-only decorator is independent" {
+    inline assert (std::reflect<JsonMetadataFixture>).hasDeco<JsonSerializable> {
+        "JSON-only metadata must be present"
+    }
+    inline assert !(std::reflect<JsonMetadataFixture>).hasDeco<AzonSerializable> {
+        "JSON-only metadata must not imply AZON metadata"
+    }
+}
+
+test "azon-only decorator is independent" {
+    inline assert (std::reflect<AzonMetadataFixture>).hasDeco<AzonSerializable> {
+        "AZON-only metadata must be present"
+    }
+    inline assert !(std::reflect<AzonMetadataFixture>).hasDeco<JsonSerializable> {
+        "AZON-only metadata must not imply JSON metadata"
+    }
+}
+
+test "manual Serializer impl converts a typed value" {
+    fin serializer = ManualTextSerializer()
+    fin value = serializer.toSerialValue(ManualTextValue("Azora")) catch SerialValue.Null
+    fin encoded = std::encodeSerialValue(value, SerializationFormat.Json, std::serializerOptions()) catch "error"
+    assert encoded == "\"Azora\"" { "Serializer.toSerialValue must use the implementation body" }
+}
+
+test "manual Serializer impl reconstructs a typed value" {
+    fin serializer = ManualTextSerializer()
+    fin serial = SerialValue.Text("Azora")
+    fin value = serializer.fromSerialValue(serial) catch ManualTextValue("fallback")
+    assert value.value == "Azora" { "Serializer.fromSerialValue must reconstruct the value" }
+}
+
+test "manual Serializer impl reports unexpected value types" {
+    fin serializer = ManualTextSerializer()
+    fin value = serializer.fromSerialValue(SerialValue.Bool(true)) catch ManualTextValue("failed")
+    assert value.value == "failed" { "the serializer must fail for an incompatible SerialValue" }
+}
+
+test "manual Serializer impl round trips through JSON" {
+    fin serializer = ManualTextSerializer()
+    fin options = std::serializerOptions()
+    fin tree = serializer.toSerialValue(ManualTextValue("round-trip")) catch SerialValue.Null
+    fin json = std::encodeSerialValue(tree, SerializationFormat.Json, options) catch "error"
+    fin decodedTree = std::decodeSerialValue(json, SerializationFormat.Json, options) catch SerialValue.Null
+    fin decoded = serializer.fromSerialValue(decodedTree) catch ManualTextValue("failed")
+    assert decoded.value == "round-trip" { "custom serializers must compose with wire formats" }
+}
+
+test "impl Serializable accepts configured decorator metadata" {
+    inline assert (std::reflect<ImplSerializableFixture>).hasDeco<Serializable> {
+        "bodyless decorator implementations must be visible through hasDeco"
+    }
+    inline assert (std::reflect<ImplSerializableFixture>).decoMeta<Serializable>.ignoreUnknownFields {
+        "configured decorator implementations must expose named metadata"
+    }
+    inline assert !(std::reflect<ImplSerializableFixture>).decoMeta<Serializable>.encodeDefaults {
+        "configured decorator implementations must override defaults"
+    }
+}
+
+test "impl Serializable still uses omitted metadata defaults" {
+    inline assert (std::reflect<DefaultSerializableFixture>).hasDeco<Serializable> {
+        "unconfigured decorator implementations must remain valid"
+    }
+    inline assert !(std::reflect<DefaultSerializableFixture>).decoMeta<Serializable>.ignoreUnknownFields {
+        "omitted ignoreUnknownFields must use its default"
+    }
+    inline assert (std::reflect<DefaultSerializableFixture>).decoMeta<Serializable>.encodeDefaults {
+        "omitted encodeDefaults must use its default"
+    }
+}
+
+test "decorator impl targets one pack field" {
+    inline assert (std::reflect<DirectFieldDecoratorFixture::name>).hasDeco<SerialName> {
+        "field implementation must apply SerialName to the selected field"
+    }
+    inline fin name = (std::reflect<DirectFieldDecoratorFixture::name>).decoMeta<SerialName>.value
+    inline assert name == "display_name" { "field implementation must preserve configured metadata" }
+    inline assert !(std::reflect<DirectFieldDecoratorFixture::password>).hasDeco<SerialName> {
+        "field implementation must not affect sibling fields"
+    }
+}
+
+test "decorator impl accepts a decorator list" {
+    inline assert (std::reflect<GroupedDecoratorFixture::name>).hasDeco<SerialName> {
+        "decorator lists must apply every listed decorator"
+    }
+    inline assert (std::reflect<GroupedDecoratorFixture::name>).hasDeco<SerialRequired> {
+        "decorator lists must preserve all marker contracts"
+    }
+}
+
+test "decorator impl accepts a field target list" {
+    inline assert (std::reflect<GroupedTargetFixture::name>).hasDeco<SerialIgnore> {
+        "target lists must decorate their first field"
+    }
+    inline assert (std::reflect<GroupedTargetFixture::password>).hasDeco<SerialIgnore> {
+        "target lists must decorate every selected field"
+    }
+}
+
+test "decorator and target lists form a cross product" {
+    inline assert (std::reflect<CrossProductDecoratorFixture::name>).hasDeco<SerialName> &&
+        (std::reflect<CrossProductDecoratorFixture::name>).hasDeco<SerialRequired> &&
+        (std::reflect<CrossProductDecoratorFixture::password>).hasDeco<SerialName> &&
+        (std::reflect<CrossProductDecoratorFixture::password>).hasDeco<SerialRequired> {
+        "each listed decorator must apply to each listed field"
+    }
+}
+
+test "field wildcard applies a decorator to every pack field" {
+    inline assert (std::reflect<WildcardDecoratorFixture::name>).hasDeco<SerialIgnore> &&
+        (std::reflect<WildcardDecoratorFixture::password>).hasDeco<SerialIgnore> {
+        "Pack::* must select every declared pack field"
+    }
+}
+
+test "field wildcard accepts a decorator list" {
+    inline assert (std::reflect<GroupedWildcardDecoratorFixture::name>).hasDeco<SerialName> &&
+        (std::reflect<GroupedWildcardDecoratorFixture::name>).hasDeco<SerialRequired> &&
+        (std::reflect<GroupedWildcardDecoratorFixture::password>).hasDeco<SerialName> &&
+        (std::reflect<GroupedWildcardDecoratorFixture::password>).hasDeco<SerialRequired> {
+        "decorator lists must apply to every field selected by Pack::*"
+    }
+}
+
+test "serial text extraction validates the slot type" {
+    fin text = std::serialAsText(SerialValue.Text("Azora")) catch "failed"
+    fin fallback = std::serialAsText(SerialValue.Bool(true)) catch "wrong-type"
+    assert text == "Azora" { "serialAsText must return text payloads" }
+    assert fallback == "wrong-type" { "serialAsText must reject non-text values" }
+}
+
+test "serial bool extraction validates the slot type" {
+    fin boolean = std::serialAsBool(SerialValue.Bool(true)) catch false
+    fin fallback = std::serialAsBool(SerialValue.Text("true")) catch false
+    assert boolean { "serialAsBool must return Boolean payloads" }
+    assert !fallback { "serialAsBool must reject non-Boolean values" }
+}
+
+test "serial char extraction requires exactly one character" {
+    fin character = std::serialAsChar(SerialValue.Text("A")) catch '?'
+    fin fallback = std::serialAsChar(SerialValue.Text("AB")) catch '?'
+    assert character == 'A' { "serialAsChar must return one character" }
+    assert fallback == '?' { "serialAsChar must reject wider strings" }
+}
+
+test "serial long extraction accepts signed integers" {
+    fin positive = std::serialAsLong(SerialValue.Number("42")) catch -1L
+    fin negative = std::serialAsLong(SerialValue.Number("-17")) catch 0L
+    assert positive == 42L { "serialAsLong must parse positive integers" }
+    assert negative == -17L { "serialAsLong must parse negative integers" }
+}
+
+test "serial long extraction rejects real syntax" {
+    fin fraction = std::serialAsLong(SerialValue.Number("1.5")) catch -1L
+    fin exponent = std::serialAsLong(SerialValue.Number("1e2")) catch -2L
+    assert fraction == -1L { "integral decoding must reject fractions" }
+    assert exponent == -2L { "integral decoding must reject exponents" }
+}
+
+test "serial long extraction rejects overflow" {
+    fin overflow = std::serialAsLong(SerialValue.Number("9223372036854775808")) catch -1L
+    assert overflow == -1L { "integral decoding must reject values above Long" }
+}
+
+test "serial long extraction accepts the minimum value" {
+    fin minimum = std::serialAsLong(SerialValue.Number("-9223372036854775808")) catch 0L
+    assert minimum == 0L - 9223372036854775807L - 1L {
+        "serialAsLong must preserve the full signed Long range"
+    }
+}
+
+test "serial integer extraction rejects narrowing overflow" {
+    fin valid = std::serialAsInt(SerialValue.Number("2147483647")) catch -1
+    fin overflow = std::serialAsInt(SerialValue.Number("2147483648")) catch -2
+    assert valid == 2147483647 { "serialAsInt must accept Int.MAX_VALUE" }
+    assert overflow == -2 { "serialAsInt must reject values above Int" }
+}
+
+test "serial real extraction accepts fractions" {
+    fin value = std::serialAsReal(SerialValue.Number("12.5")) catch -1.0
+    assert value == 12.5 { "serialAsReal must parse fractional numbers" }
+}
+
+test "serial real extraction accepts exponents" {
+    fin positive = std::serialAsReal(SerialValue.Number("1.25e2")) catch -1.0
+    fin negative = std::serialAsReal(SerialValue.Number("2.5e-1")) catch -1.0
+    assert positive == 125.0 { "serialAsReal must apply positive exponents" }
+    assert negative == 0.25 { "serialAsReal must apply negative exponents" }
+}
+
+test "serial number accepts zero" {
+    assert std::isValidSerialNumber("0") { "zero is a valid serialized number" }
+}
+
+test "serial number accepts negative integer" {
+    assert std::isValidSerialNumber("-42") { "negative integers are valid" }
+}
+
+test "serial number accepts fraction" {
+    assert std::isValidSerialNumber("12.375") { "fractions are valid" }
+}
+
+test "serial number accepts exponent" {
+    assert std::isValidSerialNumber("-1.25e+10") { "exponents are valid" }
+}
+
+test "serial number rejects empty input" {
+    assert !std::isValidSerialNumber("") { "an empty number token is invalid" }
+}
+
+test "serial number rejects leading zero" {
+    assert !std::isValidSerialNumber("01") { "leading zeroes are invalid" }
+}
+
+test "serial number rejects trailing decimal point" {
+    assert !std::isValidSerialNumber("1.") { "a fraction needs digits" }
+}
+
+test "serial number rejects incomplete exponent" {
+    assert !std::isValidSerialNumber("1e+") { "an exponent needs digits" }
+}
+
+test "serial number preserves exact source text" {
+    fin options = std::serializerOptions()
+    fin number = std::serialNumber("9007199254740993123456789") catch SerialValue.Null
+    fin encoded = std::encodeSerialValue(number, SerializationFormat.Json, options) catch "error"
+    assert encoded == "9007199254740993123456789" { "large integers must not lose precision" }
+}
+
+test "invalid number nodes cannot be encoded" {
+    fin options = std::serializerOptions()
+    fin encoded = std::encodeSerialValue(
+        SerialValue.Number("01"),
+        SerializationFormat.Json,
+        options
+    ) catch "invalid"
+    assert encoded == "invalid" { "invalid number text must fail encoding" }
+}
+
+test "json encodes scalar values" {
+    fin options = std::serializerOptions()
+    fin nullText = std::encodeSerialValue(SerialValue.Null, SerializationFormat.Json, options) catch "error"
+    fin trueText = std::encodeSerialValue(SerialValue.Bool(true), SerializationFormat.Json, options) catch "error"
+    fin stringText = std::encodeSerialValue(SerialValue.Text("Azora"), SerializationFormat.Json, options) catch "error"
+    assert nullText == "null" { "null encoding changed" }
+    assert trueText == "true" { "boolean encoding changed" }
+    assert stringText == "\"Azora\"" { "text encoding changed" }
+}
+
+test "json round trips arrays" {
+    fin options = std::serializerOptions()
+    fin value = std::decodeSerialValue("[1,true,null,\"x\"]", SerializationFormat.Json, options) catch SerialValue.Null
+    fin encoded = std::encodeSerialValue(value, SerializationFormat.Json, options) catch "error"
+    assert encoded == "[1,true,null,\"x\"]" { "JSON arrays must round trip canonically" }
+}
+
+test "json round trips ordered objects" {
+    fin options = std::serializerOptions()
+    fin value = std::decodeSerialValue("{\"id\":7,\"name\":\"Ada\"}", SerializationFormat.Json, options) catch SerialValue.Null
+    fin encoded = std::encodeSerialValue(value, SerializationFormat.Json, options) catch "error"
+    assert encoded == "{\"id\":7,\"name\":\"Ada\"}" { "JSON object order must be deterministic" }
+}
+
+test "azon round trips ordered objects" {
+    fin options = std::serializerOptions()
+    fin value = std::decodeSerialValue("{\"id\":7,\"name\":\"Ada\"}", SerializationFormat.Azon, options) catch SerialValue.Null
+    fin encoded = std::encodeSerialValue(value, SerializationFormat.Azon, options) catch "error"
+    assert encoded == "{\"id\":7,\"name\":\"Ada\"}" { "AZON must use colon separators" }
+}
+
+test "decoder ignores insignificant whitespace" {
+    fin options = std::serializerOptions()
+    fin value = std::decodeSerialValue(" { \"a\" : [ 1, 2 ] } ", SerializationFormat.Json, options) catch SerialValue.Null
+    fin encoded = std::encodeSerialValue(value, SerializationFormat.Json, options) catch "error"
+    assert encoded == "{\"a\":[1,2]}" { "whitespace must not alter the value tree" }
+}
+
+test "json escapes control characters" {
+    fin options = std::serializerOptions()
+    fin encoded = std::encodeSerialValue(SerialValue.Text("a\nb\tc"), SerializationFormat.Json, options) catch "error"
+    assert encoded == "\"a\\nb\\tc\"" { "control characters must be escaped" }
+}
+
+test "decoder resolves unicode escapes" {
+    fin options = std::serializerOptions()
+    fin value = std::decodeSerialValue("\"\\u0041\"", SerializationFormat.Json, options) catch SerialValue.Null
+    fin encoded = std::encodeSerialValue(value, SerializationFormat.Json, options) catch "error"
+    assert encoded == "\"A\"" { "unicode escapes must decode to their character" }
+}
+
+test "decoder rejects invalid escapes" {
+    fin options = std::serializerOptions()
+    fin value = std::decodeSerialValue("\"\\x\"", SerializationFormat.Json, options) catch SerialValue.Text("failed")
+    fin encoded = std::encodeSerialValue(value, SerializationFormat.Json, options) catch "error"
+    assert encoded == "\"failed\"" { "invalid escapes must fail decoding" }
+}
+
+test "decoder rejects trailing content" {
+    fin options = std::serializerOptions()
+    fin value = std::decodeSerialValue("true false", SerializationFormat.Json, options) catch SerialValue.Text("failed")
+    fin encoded = std::encodeSerialValue(value, SerializationFormat.Json, options) catch "error"
+    assert encoded == "\"failed\"" { "trailing content must be rejected" }
+}
+
+test "decoder rejects duplicate object fields by default" {
+    fin options = std::serializerOptions()
+    fin value = std::decodeSerialValue("{\"a\":1,\"a\":2}", SerializationFormat.Json, options) catch SerialValue.Text("failed")
+    fin encoded = std::encodeSerialValue(value, SerializationFormat.Json, options) catch "error"
+    assert encoded == "\"failed\"" { "duplicate fields must be rejected by default" }
+}
+
+test "decoder can retain duplicate object fields explicitly" {
+    var options = std::serializerOptions()
+    options.allowDuplicateFields = true
+    fin value = std::decodeSerialValue("{\"a\":1,\"a\":2}", SerializationFormat.Json, options) catch SerialValue.Null
+    fin encoded = std::encodeSerialValue(value, SerializationFormat.Json, options) catch "error"
+    assert encoded == "{\"a\":1,\"a\":2}" { "explicit duplicate handling must preserve order" }
+}
+
+test "json rejects azon separators" {
+    fin options = std::serializerOptions()
+    fin value = std::decodeSerialValue("{\"a\"=1}", SerializationFormat.Json, options) catch SerialValue.Text("failed")
+    fin encoded = std::encodeSerialValue(value, SerializationFormat.Json, options) catch "error"
+    assert encoded == "\"failed\"" { "JSON must require colon separators" }
+}
+
+test "azon rejects json separators" {
+    fin options = std::serializerOptions()
+    fin value = std::decodeSerialValue("{\"a\":1}", SerializationFormat.Azon, options) catch SerialValue.Text("failed")
+    fin encoded = std::encodeSerialValue(value, SerializationFormat.Json, options) catch "error"
+    assert encoded == "\"failed\"" { "AZON scalar value" }
+}
+
+test "decoder enforces input length" {
+    var options = std::serializerOptions()
+    options.maxInputLength = 4
+    fin value = std::decodeSerialValue("false", SerializationFormat.Json, options) catch SerialValue.Text("failed")
+    fin encoded = std::encodeSerialValue(value, SerializationFormat.Json, options) catch "error"
+    assert encoded == "\"failed\"" { "maxInputLength must be enforced before parsing" }
+}
+
+test "decoder enforces nesting depth" {
+    var options = std::serializerOptions()
+    options.maxDepth = 0
+    fin value = std::decodeSerialValue("[[]]", SerializationFormat.Json, options) catch SerialValue.Text("failed")
+    fin encoded = std::encodeSerialValue(value, SerializationFormat.Json, options) catch "error"
+    assert encoded == "\"failed\"" { "maxDepth must reject deeply nested input" }
+}
+
+test "encoder omits null object fields when configured" {
+    var options = std::serializerOptions()
+    options.encodeNulls = false
+    fin value = std::decodeSerialValue("{\"a\":null,\"b\":1}", SerializationFormat.Json, std::serializerOptions()) catch SerialValue.Null
+    fin encoded = std::encodeSerialValue(value, SerializationFormat.Json, options) catch "error"
+    assert encoded == "{\"b\":1}" { "encodeNulls=false must omit null object fields" }
+}
+
+test "pretty encoder uses configured indentation" {
+    var options = std::serializerOptions()
+    options.pretty = true
+    options.indent = "    "
+    fin value = std::decodeSerialValue("[1,2]", SerializationFormat.Json, std::serializerOptions()) catch SerialValue.Null
+    fin encoded = std::encodeSerialValue(value, SerializationFormat.Json, options) catch "error"
+    assert encoded == "[\n    1,\n    2\n]" { "pretty output must use the configured indent" }
+}
+
+test "serial field returns an existing object member" {
+    fin options = std::serializerOptions()
+    fin object = std::decodeSerialValue("{\"id\":17}", SerializationFormat.Json, options) catch SerialValue.Null
+    fin value = std::serialField(object, "id") catch SerialValue.Null
+    fin encoded = std::encodeSerialValue(value, SerializationFormat.Json, options) catch "error"
+    assert encoded == "17" { "serialField must return the requested value" }
+}
+
+test "serial field fails for a missing member" {
+    fin options = std::serializerOptions()
+    fin object = std::decodeSerialValue("{\"id\":17}", SerializationFormat.Json, options) catch SerialValue.Null
+    fin value = std::serialField(object, "name") catch SerialValue.Text("missing")
+    fin encoded = std::encodeSerialValue(value, SerializationFormat.Json, options) catch "error"
+    assert encoded == "\"missing\"" { "serialField must fail for absent names" }
+}
+
+test "serial field rejects non-object values" {
+    fin options = std::serializerOptions()
+    fin value = std::serialField(SerialValue.Bool(true), "name") catch SerialValue.Text("wrong-type")
+    fin encoded = std::encodeSerialValue(value, SerializationFormat.Json, options) catch "error"
+    assert encoded == "\"wrong-type\"" { "serialField must reject non-object values" }
+}
+
+test .All "serializer"

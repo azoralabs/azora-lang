@@ -1,0 +1,201 @@
+/*
+ * Copyright 2026 AzoraLabs
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+module std.container.queue
+
+import std.serializer
+import std.convert
+
+/**
+ * @file std/container/queue
+ *
+ * Generic FIFO queue collection.
+ *
+ * Provides a first-in-first-out queue backed by a pointer array,
+ * with enqueue, dequeue, and peek operations.
+ * Uses pointer-based storage with explicit capacity management.
+ *
+ * @since 0.0.1
+ */
+
+friend zone std {
+    /**
+     * A generic first-in-first-out (FIFO) queue.
+     *
+     * Queue provides pointer-backed storage where elements are
+     * added at the back and removed from the front.
+     *
+     * @param T The type of elements stored in this queue.
+     */
+    @SinceAzora("0.0.1")
+    @Serializable
+    pack<T> Queue {
+        shield var data: T* = alloc T[8]
+        shield var size: Int = 0
+        shield var capacity: Int = 8
+    }
+
+    /** Constructs an empty `Queue<T>` with default capacity. */
+    @Experimental(sinceAzora: "0.0.1")
+    impl ctor() for Queue<T> { mut ref self ->
+        self.data = alloc T[8]
+        self.size = 0
+        self.capacity = 8
+    }
+
+    /** Queue operations: enqueue, dequeue, peek, clear, and string conversion. */
+    impl Queue<T> {
+        // --- Properties ---
+
+        /** Whether the queue contains no elements. */
+        @SinceAzora("0.0.1")
+        prop isEmpty: Bool = size == 0
+
+        /** Whether the queue contains at least one element. */
+        @SinceAzora("0.0.1")
+        prop isNotEmpty: Bool = size > 0
+
+        // --- Internal ---
+
+        /** Doubles the backing buffer's capacity, copying existing elements. */
+        @Experimental(sinceAzora: "0.0.1")
+        func growQueue() {
+            fin newCap = capacity * 2
+            fin newData = alloc T[newCap]
+            for i in 0..<size {
+                newData[i] = data[i]
+            }
+            fin oldData = data
+            self.data = newData
+            self.capacity = newCap
+            drop oldData
+        }
+
+        // --- Operations ---
+
+        /**
+         * Adds an element to the back of the queue.
+         *
+         * @param element The element to enqueue.
+         */
+        @Experimental(sinceAzora: "0.0.1")
+        func enqueue(element: T) {
+            if size >= capacity { self.growQueue() }
+            data[size] = element
+            self.size = size + 1
+        }
+
+        /**
+         * Removes and returns the front element of the queue.
+         *
+         * @return The removed front element.
+         * @throws AssertionError if the queue is empty.
+         */
+        @Experimental(sinceAzora: "0.0.1")
+        func dequeue(): T {
+            assert size > 0 { "Queue is empty" }
+            fin front = data[0]
+            for i in 0..<size - 1 {
+                data[i] = data[i + 1]
+            }
+            self.size = size - 1
+            return front
+        }
+
+        /**
+         * Returns the front element without removing it.
+         *
+         * @return The front element.
+         * @throws AssertionError if the queue is empty.
+         */
+        @Experimental(sinceAzora: "0.0.1")
+        func peek(): T {
+            assert size > 0 { "Queue is empty" }
+            return data[0]
+        }
+
+        /** Removes all elements from the queue. */
+        @Experimental(sinceAzora: "0.0.1")
+        func clear() {
+            fin oldData = data
+            self.data = alloc T[8]
+            self.size = 0
+            self.capacity = 8
+            drop oldData
+        }
+
+        // --- String ---
+
+        /**
+         * Returns a string representation of the queue.
+         *
+         * @return A string in the format "[front, ..., back]".
+         */
+        @Experimental(sinceAzora: "0.0.1")
+        func toString(): String {
+            var s = "["
+            for i in 0..<size {
+                if i > 0 { s = s + ", " }
+                s = s + std::convert::toString(data[i])
+            }
+            return s + "]"
+        }
+    }
+}
+
+test "queue starts empty" {
+    fin value = Queue<Int>()
+    assert value.size == 0 && value.isEmpty { "new queue must be empty" }
+}
+
+test "queue is FIFO" {
+    var value = Queue<Int>()
+    value.enqueue(1)
+    value.enqueue(2)
+    value.enqueue(3)
+    assert value.peek() == 1 { "queue peek must return the oldest value" }
+    assert value.dequeue() == 1 && value.dequeue() == 2 && value.dequeue() == 3 { "queue order must be FIFO" }
+    assert value.isEmpty { "queue must be empty after all dequeues" }
+}
+
+test "queue grows without losing order" {
+    var value = Queue<Int>()
+    var i = 0
+    while i < 20 {
+        value.enqueue(i)
+        i += 1
+    }
+    i = 0
+    while i < 20 {
+        assert value.dequeue() == i { "queue growth reordered an element" }
+        i += 1
+    }
+}
+
+test "queue clear permits reuse" {
+    var value = Queue<Int>()
+    value.enqueue(1)
+    value.enqueue(2)
+    value.clear()
+    value.enqueue(8)
+    assert value.size == 1 && value.dequeue() == 8 { "cleared queue must be reusable" }
+}
+
+test "queue serialization metadata is declared" {
+    inline assert (std::reflect<Queue>).hasDeco<Serializable> { "Queue must carry Serializable metadata" }
+}
+
+test .All "queue"

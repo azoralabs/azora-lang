@@ -1,0 +1,225 @@
+/*
+ * Copyright 2026 AzoraLabs
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+module std.algorithm
+
+/**
+ * @file std/algorithm/algorithm
+ *
+ * Additional algorithm utilities: merge sort, sortBy, groupBy, etc.
+ *
+ * @since 0.0.1
+ */
+
+friend zone std {
+    /**
+     * Merge sort - O(n log n) stable sorting algorithm.
+     */
+    @Experimental(sinceAzora: "0.0.1")
+    func mergeSort<T>(arr: [T]): [T] {
+        if arr.length <= 1 {
+            return arr
+        }
+        var mid: Int = arr.length / 2
+        var left: [T] = [].fill<T>(mid)
+        var right: [T] = [].fill<T>(arr.length - mid)
+        var i = 0
+        while i < mid {
+            left[i] = arr[i]
+            i += 1
+        }
+        var j = 0
+        while i < arr.length {
+            right[j] = arr[i]
+            i += 1
+            j += 1
+        }
+        var sortedLeft: [T] = mergeSort<T>(left)
+        var sortedRight: [T] = mergeSort<T>(right)
+        return merge<T>(sortedLeft, sortedRight)
+    }
+
+    /**
+     * Merges two sorted arrays into one sorted array.
+     */
+    @Experimental(sinceAzora: "0.0.1")
+    func merge<T>(a: [T], b: [T]): [T] {
+        var result: [T] = [].fill<T>(a.length + b.length)
+        var ri = 0
+        var ai = 0
+        var bi = 0
+        while ai < a.length && bi < b.length {
+            if a[ai] <= b[bi] {
+                result[ri] = a[ai]
+                ai += 1
+            } else {
+                result[ri] = b[bi]
+                bi += 1
+            }
+            ri += 1
+        }
+        while ai < a.length {
+            result[ri] = a[ai]
+            ai += 1
+            ri += 1
+        }
+        while bi < b.length {
+            result[ri] = b[bi]
+            bi += 1
+            ri += 1
+        }
+        return result
+    }
+
+    /**
+     * Sort by a key function - applies key to each element and sorts by key value.
+     * Uses insertion sort on key-value pairs.
+     */
+    @Experimental(sinceAzora: "0.0.1")
+    func sortBy<T>(arr: [T], key: (T) -> T): [T] {
+        var result: [T] = [].fill<T>(arr.length)
+        var i = 0
+        while i < arr.length {
+            result[i] = arr[i]
+            i += 1
+        }
+        i = 1
+        while i < result.length {
+            var current: T = result[i]
+            var currentKey: T = key(current)
+            var j: Int = i - 1
+            while j >= 0 && key(result[j]) > currentKey {
+                result[j + 1] = result[j]
+                j -= 1
+            }
+            result[j + 1] = current
+            i += 1
+        }
+        return result
+    }
+
+    /**
+     * Groups elements by a key function.
+     * Returns array of arrays where each sub-array has elements with the same key.
+     */
+    @Experimental(sinceAzora: "0.0.1")
+    func groupBy<T>(arr: [T], key: (T) -> T): [T] {
+        var keys: [T] = [].fill<T>(arr.length)
+        var groups: [T] = [].fill<T>(arr.length)
+        var keyCount = 0
+        for i in 0..<arr.length {
+            var k: T = key(arr[i])
+            var found = -1
+            for j in 0..<keyCount {
+                if keys[j] == k {
+                    found = j
+                }
+            }
+            if found == -1 {
+                keys[keyCount] = k
+                groups[keyCount] = [arr[i]]
+                keyCount += 1
+            } else {
+                var g: [T] = groups[found]
+                g[g.length] = arr[i]
+                groups[found] = g
+            }
+        }
+        // Trim groups to actual count
+        var trimmed: [T] = [].fill<[T]>(keyCount)
+        for ti in 0..<keyCount {
+            trimmed[ti] = groups[ti]
+        }
+        return trimmed
+    }
+
+    /**
+     * Interleaves two arrays: [a1, b1, a2, b2, ...].
+     */
+    @Experimental(sinceAzora: "0.0.1")
+    func interleave<T>(a: [T], b: [T]): [T] {
+        var result: [T] = [].fill<T>(a.length + b.length)
+        var ri = 0
+        var maxLen: Int = a.length
+        if b.length > maxLen { maxLen = b.length }
+        for i in 0..<maxLen {
+            if i < a.length {
+                result[ri] = a[i]
+                ri += 1
+            }
+            if i < b.length {
+                result[ri] = b[i]
+                ri += 1
+            }
+        }
+        return result
+    }
+
+    /**
+     * Returns a sliding window of given size over the array.
+     */
+    @Experimental(sinceAzora: "0.0.1")
+    func windows<T>(arr: [T], size: Int): [T] {
+        fin count = if arr.length >= size { arr.length - size + 1 } else { 0 }
+        var result: [T] = [].fill<[T]>(count)
+        var ri = 0
+        var i = 0
+        while i + size <= arr.length {
+            var w: [T] = [].fill<T>(size)
+            for j in 0..<size {
+                w[j] = arr[i + j]
+            }
+            result[ri] = w
+            ri += 1
+            i += 1
+        }
+        return result
+    }
+
+    /**
+     * Returns array with elements at even indices.
+     */
+    @Experimental(sinceAzora: "0.0.1")
+    func evens<T>(arr: [T]): [T] {
+        fin count = (arr.length + 1) / 2
+        var result: [T] = [].fill<T>(count)
+        var ri = 0
+        var i = 0
+        while i < arr.length {
+            result[ri] = arr[i]
+            ri += 1
+            i += 2
+        }
+        return result
+    }
+
+    /**
+     * Returns array with elements at odd indices.
+     */
+    @Experimental(sinceAzora: "0.0.1")
+    func odds<T>(arr: [T]): [T] {
+        fin count = arr.length / 2
+        var result: [T] = [].fill<T>(count)
+        var ri = 0
+        var i = 1
+        while i < arr.length {
+            result[ri] = arr[i]
+            ri += 1
+            i += 2
+        }
+        return result
+    }
+}

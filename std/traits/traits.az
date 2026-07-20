@@ -1,0 +1,147 @@
+/*
+ * Copyright 2026 AzoraLabs
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+module std.traits
+
+import std.convert
+
+/**
+ * @file std/traits/traits
+ *
+ * Core type traits and promotion system.
+ *
+ * Defines the Numeric spec for arithmetic types and the
+ * compile-time type promotion function for mixed-type expressions.
+ *
+ * @since 0.0.1
+ */
+
+friend zone std {
+    /**
+     * A specification that marks types supporting arithmetic operations.
+     *
+     * Types implementing Numeric can be used with standard math operators
+     * and the promote type function.
+     */
+    @SinceAzora("0.0.1")
+    spec Numeric
+
+    /** Int satisfies the Numeric spec. */
+    @SinceAzora("0.0.1")
+    impl Numeric for Int
+
+    /** Real satisfies the Numeric spec. */
+    @SinceAzora("0.0.1")
+    impl Numeric for Real
+
+    /**
+     * Chooses the type with the highest primitive promotion rank.
+     *
+     * Promotion is evaluated entirely at compile time. Exact user-defined
+     * `type promote(...)` overloads may specialize pairs, while this variadic
+     * overload provides the standard result for two or more primitive types.
+     *
+     * @param T Two or more primitive types to compare.
+     * @return The widest type in T according to Type.rank.
+     */
+    type promote(T: ...Type) where T.length >= 2 && T is Number {
+        let Result: Type = T.0
+        for Candidate in T[1...] {
+            Result = if Candidate::rank > Result::rank { Candidate } else { Result }
+        }
+        return Result
+    }
+
+    /** Types that can be hashed. */
+    @SinceAzora("0.0.1")
+    spec Hashable
+
+    /** Int is hashable. */
+    @SinceAzora("0.0.1")
+    impl Hashable for Int
+
+    /** String is hashable. */
+    @SinceAzora("0.0.1")
+    impl Hashable for String
+
+    /** Char is hashable. */
+    @SinceAzora("0.0.1")
+    impl Hashable for Char
+
+    /** Bool is hashable. */
+    @SinceAzora("0.0.1")
+    impl Hashable for Bool
+
+    /** Types that can be copied. */
+    @SinceAzora("0.0.1")
+    spec Copyable
+
+    /** Int is copyable. */
+    @SinceAzora("0.0.1")
+    impl Copyable for Int
+
+    /** Real is copyable. */
+    @SinceAzora("0.0.1")
+    impl Copyable for Real
+
+    /** String is copyable. */
+    @SinceAzora("0.0.1")
+    impl Copyable for String
+
+    /** Char is copyable. */
+    @SinceAzora("0.0.1")
+    impl Copyable for Char
+
+    /** Bool is copyable. */
+    @SinceAzora("0.0.1")
+    impl Copyable for Bool
+
+    /** Types that support deep copying. */
+    @SinceAzora("0.0.1")
+    spec Cloneable
+
+    /** Int is cloneable. */
+    @SinceAzora("0.0.1")
+    impl Cloneable for Int
+
+    /** Real is cloneable. */
+    @SinceAzora("0.0.1")
+    impl Cloneable for Real
+
+    /** String is cloneable. */
+    @SinceAzora("0.0.1")
+    impl Cloneable for String
+
+    /** Char is cloneable. */
+    @SinceAzora("0.0.1")
+    impl Cloneable for Char
+
+    /** Bool is cloneable. */
+    @SinceAzora("0.0.1")
+    impl Cloneable for Bool
+
+    /**
+     * Types that can be iterated over.
+     */
+    @SinceAzora("0.0.1")
+    spec Iterable
+
+    /**
+     * An iterator that produces values one at a time.
+     */
+    @SinceAzora("0.0.1")
+    spec Iterator
+}

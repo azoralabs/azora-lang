@@ -361,7 +361,17 @@ class DecoratorResolver {
                 }
                 is TopLevel.Deco -> sites.add(Site(item.name, DecoTarget.Deco, TypeRef.Named(item.name), item.annotations))
                 is TopLevel.Func -> addFunction(null, item.decl)
-                is TopLevel.Impl -> item.methods.forEach { addFunction(item.typeName, it) }
+                is TopLevel.Impl -> {
+                    // An oper-impl block is itself an `.ImplOper` site (carries the block's
+                    // annotations, e.g. `@UncheckedCast`), in addition to its per-method sites.
+                    val isOperBlock = item.methods.any {
+                        it.name.startsWith("oper") || it.name in setOf("slice", "index", "indexSet")
+                    }
+                    if (isOperBlock) {
+                        sites.add(Site(item.typeName, DecoTarget.ImplOper, namedType(item.typeName), item.annotations))
+                    }
+                    item.methods.forEach { addFunction(item.typeName, it) }
+                }
                 is TopLevel.Solo -> {
                     sites.add(Site(item.name, DecoTarget.Solo, namedType(item.name), item.annotations))
                     item.fields.forEach { field ->

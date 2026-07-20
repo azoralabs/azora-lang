@@ -1,0 +1,113 @@
+/*
+ * Copyright 2026 AzoraLabs
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+module std.array
+
+/**
+ * @file std/container/array
+ *
+ * Fixed-size contiguous array storage.
+ *
+ * Defines the canonical `Array<T>` type and the `arrayOf` factory. Array values
+ * are built with `std::arrayOf(a, b, c)` or the `arr![a, b, c]` macro (see
+ * `std.macro`); bracket value literals are not array syntax. Arrays expose their
+ * element count through `size` and provide low-level access to contiguous
+ * storage through `data`.
+ *
+ * @since 0.0.4
+ */
+
+friend zone std {
+    /**
+     * A contiguous, ordered collection whose elements all have type `T`.
+     *
+     * `Array<T>` is the canonical array type; it is spelled `Array<T>` in full
+     * (bracket type spellings are not array syntax). Arrays use zero-based
+     * indexing and expose their current element count through `size` and
+     * `length`.
+     *
+     * Array storage is supplied directly by each compiler backend. Declaring
+     * this as a bridge pack keeps the API and its fields in the standard
+     * library without wrapping the native array allocation in another object.
+     *
+     * @param T The type shared by every element in the array.
+     */
+    @Experimental(sinceAzora: "0.0.4")
+    bridge pack<T, N: Int> Array {
+        /**
+         * Pointer to the first contiguous element.
+         *
+         * The pointer is stable for the lifetime of a fixed array. Bounds are
+         * not carried by the pointer itself; use `size` before pointer indexing.
+         */
+        fin data: T*
+    }
+
+    /**
+     * Creates an array containing `elements` in argument order.
+     *
+     * Every element must have the same type. The `arr![first, second, third]`
+     * macro (see `std.macro`) expands to this call.
+     *
+     * @param T The element type inferred from the arguments.
+     * @param elements The values copied into the resulting array.
+     * @return An `Array<T>` containing all supplied elements.
+     */
+    @Experimental(sinceAzora: "0.0.4")
+    func<T> arrayOf(...elements: T): Array<T> {
+        return elements
+    }
+
+    /**
+     * Pre-allocates an array of `count` slots.
+     *
+     * Compiler-provided (`bridge`): each backend supplies the storage allocation
+     * directly, so there is no Azora body. Used as a low-level building block by
+     * the functional combinators that grow result arrays.
+     *
+     * @param T The element type.
+     * @param count The number of slots to allocate; must be non-negative.
+     * @return An `Array<T>` with `count` slots.
+     */
+    @Experimental(sinceAzora: "0.0.4")
+    bridge func<T> fill(count: Int): Array<T>
+}
+
+test "arrayOf preserves values and ordefir" {
+    fin values: Array<Int> = std::arrayOf(10, 20, 30)
+    assert values.size == 3 { "arrayOf changed the number of elements" }
+    assert values[0] == 10 && values[1] == 20 && values[2] == 30 {
+        "arrayOf changed element order"
+    }
+}
+
+test "arrayOf produces the canonical Array type" {
+    fin values: Array<String> = std::arrayOf("first", "second")
+    assert values.length == 2 { "arrayOf did not create an Array" }
+    assert values[0] == "first" && values[1] == "second" {
+        "arrayOf changed its elements"
+    }
+}
+
+test "array exposes size and contiguous data fields" {
+    fin values = std::arrayOf(5, 8, 13)
+    assert values.size == 3 { "Array.size must report the element count" }
+    assert values.data[0] == 5 && values.data[2] == 13 {
+        "Array.data must point to the first contiguous element"
+    }
+}
+
+test .All "array"

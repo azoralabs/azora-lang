@@ -147,7 +147,13 @@ object DecoratorMetadata {
                 }
                 is TopLevel.Deco -> sites.add(Site(item.name, DecoTarget.Deco, item.annotations))
                 is TopLevel.Func -> addFunction(null, item.decl)
-                is TopLevel.Impl -> item.methods.forEach { addFunction(item.typeName, it) }
+                is TopLevel.Impl -> {
+                    val isOperBlock = item.methods.any {
+                        it.name.startsWith("oper") || it.name in setOf("slice", "index", "indexSet")
+                    }
+                    if (isOperBlock) sites.add(Site(item.typeName, DecoTarget.ImplOper, item.annotations))
+                    item.methods.forEach { addFunction(item.typeName, it) }
+                }
                 is TopLevel.Solo -> {
                     sites.add(Site(item.name, DecoTarget.Solo, item.annotations))
                     item.fields.forEach { sites.add(Site("${item.name}.${it.name}", DecoTarget.Field, it.annotations)) }

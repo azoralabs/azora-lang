@@ -1,0 +1,516 @@
+/*
+ * Copyright 2026 AzoraLabs
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+module std.container.list
+
+import std.serializer
+import std.convert
+
+/**
+ * @file std/container/list
+ *
+ * Proposed native list hierarchy for Azora, mirroring `map.az`.
+ *
+ * Lists come in two flavors:
+ *
+ * - `List<T>` is the read-only view: indexed access, search, and functional
+ *   combinators that return fresh `List<T>` snapshots.
+ * - `MutableList<T>` adds in-place mutation. Every mutation receives
+ *   `mut ref self`, so a caller holding only a shared `ref List<T>` view
+ *   cannot mutate it.
+ *
+ * `ArrayList<T>` is the single concrete dynamic-array pack implementing both
+ * specs. The `listOf`, `mutableListOf`, `emptyList`, and `arrayListOf`
+ * factories construct it; `listOf` and `emptyList` expose the read-only
+ * `List<T>` view, `mutableListOf` exposes `MutableList<T>`.
+ *
+ * @since 0.0.4
+ */
+
+friend zone std {
+    /**
+     * Read-only behavior shared by every list implementation.
+     *
+     * `List` guarantees element ordering: iteration and indexed access follow
+     * insertion order. A concrete pack may add stronger guarantees.
+     *
+     * @param T The element type.
+     */
+    @Experimental(sinceAzora: "0.0.4")
+    spec List<T> {
+        /** Number of elements. */
+        prop size: Int
+
+        /** Whether this list has no elements. */
+        prop isEmpty: Bool
+
+        /** Whether this list has at least one element. */
+        prop isNotEmpty: Bool
+
+        /** The first element. Asserts when empty. */
+        prop first: T
+
+        /** The last element. Asserts when empty. */
+        prop last: T
+
+        /** A new list with the elements of this one in reverse order. */
+        prop reversed: List<T>
+
+        /** Returns the element at `index`. Asserts on an out-of-bounds index. */
+        func get(index: Int): T
+
+        /** Returns whether `element` is present. */
+        func contains(element: T): Bool
+
+        /** Returns the first index of `element`, or `-1` when absent. */
+        func indexOf(element: T): Int
+
+        /** Returns the last index of `element`, or `-1` when absent. */
+        func lastIndexOf(element: T): Int
+
+        /** Invokes `action` once for every element in order. */
+        func forEach(action: (T) -> Unit)
+
+        /** Returns a new list with each element transformed by `transform`. */
+        func map(transform: (T) -> T): List<T>
+
+        /** Returns a new list with only elements satisfying `predicate`. */
+        func filter(predicate: (T) -> Bool): List<T>
+
+        /** Returns whether at least one element satisfies `predicate`. */
+        func any(predicate: (T) -> Bool): Bool
+
+        /** Returns whether every element satisfies `predicate`. */
+        func all(predicate: (T) -> Bool): Bool
+
+        /** Returns whether no element satisfies `predicate`. */
+        func none(predicate: (T) -> Bool): Bool
+
+        /** Counts the elements satisfying `predicate`. */
+        func count(predicate: (T) -> Bool): Int
+
+        /** Returns a half-open `[from, to)` snapshot of this list. */
+        func subList(from: Int, to: Int): List<T>
+    }
+
+    /**
+     * Mutation behavior implemented by mutable list packs.
+     *
+     * Mutation always receives `mut ref self`. Implementing this spec does not
+     * weaken a `ref List<T>` view: callers holding only a shared reference can
+     * still use only read operations.
+     *
+     * @param T The element type.
+     */
+    @Experimental(sinceAzora: "0.0.4")
+    spec MutableList<T> {
+        /** Appends `element` to the end. */
+        func add(element: T)
+
+        /** Inserts `element` at `index`, shifting the suffix right. */
+        func insert(index: Int, element: T)
+
+        /** Replaces the element at `index`. */
+        func set(index: Int, element: T)
+
+        /** Removes and returns the element at `index`. */
+        func removeAt(index: Int): T
+
+        /** Removes and returns the first element. */
+        func removeFirst(): T
+
+        /** Removes and returns the last element. */
+        func removeLast(): T
+
+        /** Removes every element while retaining reusable internal capacity. */
+        func clear()
+    }
+
+    /**
+     * Dynamic-array pack backing both `List<T>` and `MutableList<T>`.
+     *
+     * Storage is a contiguous `T*` buffer that doubles on demand. Fields are
+     * `shield` so external zones cannot reach into the buffer directly.
+     *
+     * @param T The element type.
+     */
+    @Experimental(sinceAzora: "0.0.4")
+    @Serializable
+    pack<T> ArrayList {
+        shield var data: T* = alloc T[8]
+        shield var size: Int = 0
+        shield var capacity: Int = 8
+    }
+
+    // ---------------------------------------------------------------------
+    // ArrayList implementation
+    // ---------------------------------------------------------------------
+
+    impl ArrayList<T> {
+        /** Doubles the backing buffer, copying existing elements. */
+        @Experimental(sinceAzora: "0.0.4")
+        func grow() { mut ref self ->
+            fin newCap = self.capacity * 2
+            fin newData = alloc T[newCap]
+            for i in 0..<self.size {
+                newData[i] = self.data[i]
+            }
+            fin oldData = self.data
+            self.data = newData
+            self.capacity = newCap
+            drop oldData
+        }
+    }
+
+    impl List<T> for ArrayList<T> {
+        prop size: Int = self.size
+        prop isEmpty: Bool = self.size == 0
+        prop isNotEmpty: Bool = self.size > 0
+
+        prop first: T {
+            assert self.size > 0 { "List is empty" }
+            return self.data[0]
+        }
+
+        prop last: T {
+            assert self.size > 0 { "List is empty" }
+            return self.data[self.size - 1]
+        }
+
+        prop reversed: List<T> {
+            var result = ArrayList<T>()
+            var i = self.size - 1
+            while i >= 0 {
+                result.add(self.data[i])
+                i -= 1
+            }
+            return result
+        }
+
+        func get(index: Int): T { ref self ->
+            assert index >= 0 { "List index must be non-negative" }
+            assert index < self.size { "List index out of bounds" }
+            return self.data[index]
+        }
+
+        func contains(element: T): Bool { ref self ->
+            for i in 0..<self.size {
+                if self.data[i] == element { return true }
+            }
+            return false
+        }
+
+        func indexOf(element: T): Int { ref self ->
+            for i in 0..<self.size {
+                if self.data[i] == element { return i }
+            }
+            return -1
+        }
+
+        func lastIndexOf(element: T): Int { ref self ->
+            var result = -1
+            for i in 0..<self.size {
+                if self.data[i] == element { result = i }
+            }
+            return result
+        }
+
+        func forEach(action: (T) -> Unit) { ref self ->
+            for i in 0..<self.size {
+                action(self.data[i])
+            }
+        }
+
+        func map(transform: (T) -> T): List<T> { ref self ->
+            var result = ArrayList<T>()
+            for i in 0..<self.size {
+                result.add(transform(self.data[i]))
+            }
+            return result
+        }
+
+        func filter(predicate: (T) -> Bool): List<T> { ref self ->
+            var result = ArrayList<T>()
+            for i in 0..<self.size {
+                if predicate(self.data[i]) {
+                    result.add(self.data[i])
+                }
+            }
+            return result
+        }
+
+        func any(predicate: (T) -> Bool): Bool { ref self ->
+            for i in 0..<self.size {
+                if predicate(self.data[i]) { return true }
+            }
+            return false
+        }
+
+        func all(predicate: (T) -> Bool): Bool { ref self ->
+            for i in 0..<self.size {
+                if !predicate(self.data[i]) { return false }
+            }
+            return true
+        }
+
+        func none(predicate: (T) -> Bool): Bool { ref self ->
+            for i in 0..<self.size {
+                if predicate(self.data[i]) { return false }
+            }
+            return true
+        }
+
+        func count(predicate: (T) -> Bool): Int { ref self ->
+            var c = 0
+            for i in 0..<self.size {
+                if predicate(self.data[i]) { c += 1 }
+            }
+            return c
+        }
+
+        func subList(from: Int, to: Int): List<T> { ref self ->
+            assert from >= 0 { "subList from must be non-negative" }
+            assert to <= self.size { "subList to out of bounds" }
+            assert from <= to { "subList from must be <= to" }
+            var result = ArrayList<T>()
+            for i in from..<to {
+                result.add(self.data[i])
+            }
+            return result
+        }
+    }
+
+    impl MutableList<T> for ArrayList<T> {
+        func add(element: T) { mut ref self ->
+            if self.size >= self.capacity { self.grow() }
+            self.data[self.size] = element
+            self.size = self.size + 1
+        }
+
+        func insert(index: Int, element: T) { mut ref self ->
+            assert index >= 0 { "Insert index must be non-negative" }
+            assert index <= self.size { "Insert index out of bounds" }
+            if self.size >= self.capacity { self.grow() }
+            var i = self.size
+            while i > index {
+                self.data[i] = self.data[i - 1]
+                i -= 1
+            }
+            self.data[index] = element
+            self.size = self.size + 1
+        }
+
+        func set(index: Int, element: T) { mut ref self ->
+            assert index >= 0 { "Set index must be non-negative" }
+            assert index < self.size { "Set index out of bounds" }
+            self.data[index] = element
+        }
+
+        func removeAt(index: Int): T { mut ref self ->
+            assert index >= 0 { "Remove index must be non-negative" }
+            assert index < self.size { "Remove index out of bounds" }
+            fin removed = self.data[index]
+            for i in index..<self.size - 1 {
+                self.data[i] = self.data[i + 1]
+            }
+            self.size = self.size - 1
+            return removed
+        }
+
+        func removeFirst(): T { mut ref self ->
+            assert self.size > 0 { "List is empty" }
+            return self.removeAt(0)
+        }
+
+        func removeLast(): T { mut ref self ->
+            assert self.size > 0 { "List is empty" }
+            fin removed = self.data[self.size - 1]
+            self.size = self.size - 1
+            return removed
+        }
+
+        func clear() { mut ref self ->
+            fin oldData = self.data
+            self.data = alloc T[8]
+            self.size = 0
+            self.capacity = 8
+            drop oldData
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Factories
+    // ---------------------------------------------------------------------
+
+    @Experimental(sinceAzora: "0.0.4")
+    func<T> emptyList(): List<T> {
+        return ArrayList<T>()
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    func<T> listOf(...elements: T): List<T> {
+        var result = ArrayList<T>()
+        for i in 0..<elements.size {
+            result.add(elements[i])
+        }
+        return result
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    func<T> mutableListOf(...elements: T): MutableList<T> {
+        var result = ArrayList<T>()
+        for i in 0..<elements.size {
+            result.add(elements[i])
+        }
+        return result
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    func<T> arrayListOf(...elements: T): ArrayList<T> {
+        var result = ArrayList<T>()
+        for i in 0..<elements.size {
+            result.add(elements[i])
+        }
+        return result
+    }
+
+    // ---------------------------------------------------------------------
+    // Operators
+    // ---------------------------------------------------------------------
+
+    @Experimental(sinceAzora: "0.0.4")
+    impl oper[] for ArrayList<T> { ref self, index ->
+        assert index >= 0 && index < self.size {
+            "List index out of bounds"
+        }
+        return self.data[index]
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    impl oper[]= for ArrayList<T> { mut ref self, index, element ->
+        assert index >= 0 && index < self.size {
+            "List index out of bounds"
+        }
+        self.data[index] = element
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    impl Into<String> for ArrayList<T> { ref self ->
+        var s = "["
+        for i in 0..<self.size {
+            if i > 0 { s = s + ", " }
+            s = s + std::convert::toString(self.data[i])
+        }
+        return s + "]"
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    impl oper== by List<T> for ArrayList<T> { ref self, rhs ->
+        if self.size != rhs.size { return false }
+        for i in 0..<self.size {
+            if !(self.get(i) == rhs.get(i)) { return false }
+        }
+        return true
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    impl oper!= by List<T> for ArrayList<T> { ref self, rhs ->
+        return !(self == rhs)
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    impl oper# for ArrayList<T> { ref self ->
+        var result = 0 as ULong
+        for i in 0..<self.size {
+            result = result + #self.data[i]
+        }
+        return result
+    }
+}
+
+test "list starts empty" {
+    fin value = std::emptyList<Int>()
+    assert value.size == 0 && value.isEmpty { "emptyList must contain no elements" }
+}
+
+test "listOf preserves order" {
+    fin value = std::listOf(3, 1, 2)
+    assert value.size == 3 { "listOf size changed" }
+    assert value.get(0) == 3 && value.get(1) == 1 && value.get(2) == 2 { "listOf must preserve argument order" }
+}
+
+test "mutableListOf accepts initial elements" {
+    fin value = std::mutableListOf(1, 2, 3)
+    assert value.size == 3 && value.get(0) == 1 && value.get(2) == 3 { "mutableListOf order changed" }
+}
+
+test "array list grows beyond initial capacity" {
+    var value = ArrayList<Int>()
+    for i in 0..<20 {
+        value.add(i)
+    }
+    assert value.size == 20 && value[19] == 19 { "list growth must preserve every element" }
+}
+
+test "mutable list insert shifts the suffix" {
+    var value = std::mutableListOf(1, 3)
+    value.insert(1, 2)
+    assert value.size == 3 && value.get(1) == 2 && value.get(2) == 3 { "insert must shift the suffix" }
+}
+
+test "mutable list set replaces in place" {
+    var value = std::mutableListOf(1, 2, 3)
+    value.set(0, 4)
+    value.set(2, 6)
+    assert value.size == 3 && value.get(0) == 4 && value.get(2) == 6 { "replacement must not change size" }
+}
+
+test "mutable list removals retain order" {
+    var value = std::mutableListOf(1, 2, 3, 4)
+    assert value.removeAt(1) == 2 { "removeAt must return the removed value" }
+    assert value.removeFirst() == 1 { "removeFirst must return the first value" }
+    assert value.removeLast() == 4 { "removeLast must return the last value" }
+    assert value.size == 1 && value.get(0) == 3 { "removals must preserve the remaining order" }
+}
+
+test "list search reports first and last positions" {
+    fin value = std::listOf(4, 7, 4)
+    assert value.contains(7) { "contains must find present values" }
+    assert value.indexOf(4) == 0 && value.lastIndexOf(4) == 2 { "search positions changed" }
+    assert value.indexOf(9) == -1 { "missing values must report -1" }
+}
+
+test "list slices and reversal return independent orderings" {
+    fin value = std::listOf(1, 2, 3, 4)
+    fin middle = value.subList(1, 3)
+    fin rev = value.reversed
+    assert middle.size == 2 && middle.get(0) == 2 && middle.get(1) == 3 { "subList bounds are half-open" }
+    assert rev.get(0) == 4 && rev.get(3) == 1 { "reversed order changed" }
+    assert value.get(0) == 1 { "derived lists must not mutate the source" }
+}
+
+test "mutable list clear permits reuse" {
+    var value = std::mutableListOf(1, 2)
+    value.clear()
+    value.add(9)
+    assert value.size == 1 && value.get(0) == 9 { "cleared lists must remain reusable" }
+}
+
+test "list serialization metadata is declared" {
+    inline assert (std::reflect<ArrayList>).hasDeco<Serializable> { "ArrayList must carry Serializable metadata" }
+}
+
+test .All "list"

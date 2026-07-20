@@ -1,0 +1,611 @@
+/*
+ * Copyright 2026 AzoraLabs
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+module std.math
+
+/**
+ * @file std/math
+ *
+ * Core mathematical constants and utility functions.
+ *
+ * Provides fundamental constants (PI, E, TAU, SQRT2) and common numeric
+ * operations such as absolute value, clamping, linear interpolation,
+ * floor, ceil, and rounding.
+ *
+ * @since 0.0.1
+ */
+
+friend zone std::math {
+    /**
+     * The ratio of a circle's circumference to its diameter.
+     */
+    @SinceAzora("0.0.1")
+    fin PI: Real = 3.14159265358979
+
+    /**
+     * Euler's number, the base of natural logarithms.
+     */
+    @SinceAzora("0.0.1")
+    fin E: Real = 2.71828182845905
+
+    /**
+     * The ratio of a circle's circumference to its radius (2 * PI).
+     */
+    @SinceAzora("0.0.1")
+    fin TAU: Real = 6.28318530717959
+
+    /**
+     * The square root of 2.
+     */
+    @SinceAzora("0.0.1")
+    fin SQRT2: Real = 1.41421356237310
+
+    /**
+     * The golden ratio (phi).
+     */
+    @SinceAzora("0.0.1")
+    fin PHI: Real = 1.61803398874989
+
+    /**
+     * Positive infinity representation.
+     */
+    @SinceAzora("0.0.1")
+    fin INF: Real = 1.0 / 0.0
+
+    /**
+     * The smallest positive real value.
+     */
+    @SinceAzora("0.0.1")
+    fin EPSILON: Real = 0.00000000000001
+
+    /**
+     * Returns the absolute value of the given number.
+     *
+     * @param x The value to take the absolute value of.
+     * @return The non-negative magnitude of x.
+     */
+    @Experimental(sinceAzora: "0.0.1")
+    func abs<T>(x: T): T
+    out {
+        assert it >= 0 { "abs must return non-negative" }
+    } zone {
+        return if x < 0 { -x } else { x }
+    }
+
+    /**
+     * Returns the smaller of two values.
+     *
+     * @param a The first value to compare.
+     * @param b The second value to compare.
+     * @return The lesser of a and b.
+     */
+    @Experimental(sinceAzora: "0.0.1")
+    func min<T>(a: T, b: T): T {
+        return if a < b { a } else { b }
+    }
+
+    /**
+     * Returns the larger of two values.
+     *
+     * @param a The first value to compare.
+     * @param b The second value to compare.
+     * @return The greater of a and b.
+     */
+    @Experimental(sinceAzora: "0.0.1")
+    func max<T>(a: T, b: T): T {
+        return if a > b { a } else { b }
+    }
+
+    /**
+     * Constrains a value within the given range.
+     *
+     * @param x The value to clamp.
+     * @param lo The lower bound of the range.
+     * @param hi The upper bound of the range.
+     * @return x if it falls within [lo, hi], otherwise the nearest bound.
+     */
+    @Experimental(sinceAzora: "0.0.1")
+    func clamp<T>(x: T, lo: T, hi: T): T
+    in {
+        assert lo <= hi { "clamp lower bound must be <= upper bound" }
+    } zone {
+        return max<T>(lo, min<T>(x, hi))
+    }
+
+    /**
+     * Returns the sign of a number as an integer.
+     *
+     * @param x The value to determine the sign of.
+     * @return 1 if x is positive, -1 if negative, 0 if zero.
+     */
+    @Experimental(sinceAzora: "0.0.1")
+    func sign<T>(x: T): Int {
+        return if x > 0 { 1 } else { if x < 0 { -1 } else { 0 } }
+    }
+
+    /**
+     * Performs linear interpolation between two values.
+     *
+     * @param a The start value.
+     * @param b The end value.
+     * @param t The interpolation factor, typically in [0.0, 1.0].
+     * @return The interpolated value a + (b - a) * t.
+     */
+    @Experimental(sinceAzora: "0.0.1")
+    func lerp(a: Real, b: Real, t: Real): Real
+    in {
+        assert t >= 0.0 { "lerp factor must be >= 0.0" }
+        assert t <= 1.0 { "lerp factor must be <= 1.0" }
+    } zone {
+        return a + (b - a) * t
+    }
+
+    /**
+     * Returns the floor of a real number (largest integer <= x).
+     *
+     * @param x The value.
+     * @return The floor value as an integer.
+     */
+    @Experimental(sinceAzora: "0.0.1")
+    func floor(x: Real): Int {
+        fin i = x as Int
+        return if x < 0.0 && x != (i as Real) { i - 1 } else { i }
+    }
+
+    /**
+     * Returns the ceiling of a real number (smallest integer >= x).
+     *
+     * @param x The value.
+     * @return The ceiling value as an integer.
+     */
+    @Experimental(sinceAzora: "0.0.1")
+    func ceil(x: Real): Int {
+        fin i = x as Int
+        return if x > 0.0 && x != (i as Real) { i + 1 } else { i }
+    }
+
+    /**
+     * Rounds a real number to the nearest integer.
+     *
+     * @param x The value.
+     * @return The rounded value.
+     */
+    @Experimental(sinceAzora: "0.0.1")
+    func round(x: Real): Int {
+        return floor(x + 0.5)
+    }
+
+    /**
+     * Returns the fractional part of a real number.
+     *
+     * @param x The value.
+     * @return The fractional part (x - floor(x)).
+     */
+    @Experimental(sinceAzora: "0.0.1")
+    func frac(x: Real): Real {
+        return x - (floor(x) as Real)
+    }
+
+    /**
+     * Maps a value from one range to another.
+     *
+     * @param x The value to map.
+     * @param inMin The input range minimum.
+     * @param inMax The input range maximum.
+     * @param outMin The output range minimum.
+     * @param outMax The output range maximum.
+     * @return The mapped value.
+     */
+    @Experimental(sinceAzora: "0.0.1")
+    func mapRange(x: Real, inMin: Real, inMax: Real, outMin: Real, outMax: Real): Real
+    in {
+        assert inMax != inMin { "Input range must not be zero-width" }
+    } zone {
+        return outMin + (x - inMin) * (outMax - outMin) / (inMax - inMin)
+    }
+
+    /**
+     * Checks if two real numbers are approximately equal.
+     *
+     * @param a The first value.
+     * @param b The second value.
+     * @param epsilon The tolerance (default: 0.00000001).
+     * @return true if |a - b| < epsilon.
+     */
+    @Experimental(sinceAzora: "0.0.1")
+    func approxEqual(a: Real, b: Real, epsilon: Real): Bool
+    in {
+        assert epsilon > 0.0 { "epsilon must be positive" }
+    } zone {
+        var diff = a - b
+        if diff < 0.0 { diff = -diff }
+        return diff < epsilon
+    }
+
+    /**
+     * Computes exponentiation.
+     *
+     * @param value The base value.
+     * @param exp The exponent (must be non-negative).
+     * @return value raised to the power of exp.
+     */
+    @Experimental(sinceAzora: "0.0.1")
+    func pow<T>(value: T, exp: Int): T
+    in {
+        assert exp >= 0 { "Exponent must be non-negative" }
+    } zone {
+        if exp == 0 { return 1 }
+        var result = value
+        for i in 1..<exp {
+            result = result * value
+        }
+        return result
+    }
+
+    /**
+     * Computes the factorial of n.
+     *
+     * @param n The non-negative integer.
+     * @return n! (n factorial).
+     */
+    @Experimental(sinceAzora: "0.0.1")
+    func factorial<T>(n: T): T
+    in {
+        assert n >= 0 { "Factorial requires non-negative input" }
+    } out {
+        assert it >= 1 { "Factorial result must be >= 1" }
+    } zone {
+        if n <= 1 { return 1 }
+        var result = 1
+        var i = 2
+        while i <= n {
+            result = result * i
+            i += 1
+        }
+        return result
+    }
+
+    /**
+     * Computes the greatest common divisor using the Euclidean algorithm.
+     *
+     * @param a The first integer.
+     * @param b The second integer.
+     * @return The GCD of a and b.
+     */
+    @Experimental(sinceAzora: "0.0.1")
+    func gcd<T>(a: T, b: T): T
+    out {
+        assert it >= 0 { "GCD must be non-negative" }
+    } zone {
+        var x = a
+        if x < 0 { x = -x }
+        var y = b
+        if y < 0 { y = -y }
+        while y != 0 {
+            fin temp = y
+            y = x % y
+            x = temp
+        }
+        return x
+    }
+
+    /**
+     * Computes the least common multiple.
+     *
+     * @param a The first integer.
+     * @param b The second integer.
+     * @return The LCM of a and b.
+     */
+    @Experimental(sinceAzora: "0.0.1")
+    func lcm<T>(a: T, b: T): T
+    out {
+        assert it >= 0 { "LCM must be non-negative" }
+    } zone {
+        if a == 0 || b == 0 { return 0 }
+        var absA = a
+        if absA < 0 { absA = -absA }
+        var absB = b
+        if absB < 0 { absB = -absB }
+        return absA / gcd<T>(a, b) * absB
+    }
+
+    /**
+     * Checks if an integer is even.
+     *
+     * @param n The integer to check.
+     * @return true if n is even.
+     */
+    @Experimental(sinceAzora: "0.0.1")
+    func isEven<T>(n: T): Bool {
+        return n % 2 == 0
+    }
+
+    /**
+     * Checks if an integer is odd.
+     *
+     * @param n The integer to check.
+     * @return true if n is odd.
+     */
+    @Experimental(sinceAzora: "0.0.1")
+    func isOdd<T>(n: T): Bool {
+        return n % 2 != 0
+    }
+
+    /**
+     * Computes the sum of an integer array.
+     *
+     * @param arr The array to sum.
+     * @return The sum of all elements.
+     */
+    @Experimental(sinceAzora: "0.0.1")
+    func sum<T>(arr: [T]): T {
+        var total = 0
+        for i in 0..<arr.length {
+            total += arr[i]
+        }
+        return total
+    }
+
+    /**
+     * Computes the sum of a real array.
+     *
+     * @param arr The array to sum.
+     * @return The sum of all elements.
+     */
+    @Experimental(sinceAzora: "0.0.1")
+    func sumReal<T>(arr: [T]): T {
+        var total = 0.0
+        for i in 0..<arr.length {
+            total += arr[i]
+        }
+        return total
+    }
+
+    /**
+     * Computes the product of an integer array.
+     *
+     * @param arr The array to multiply.
+     * @return The product of all elements.
+     */
+    @Experimental(sinceAzora: "0.0.1")
+    func product<T>(arr: [T]): T {
+        if arr.length == 0 { return 0 }
+        var result = 1
+        for i in 0..<arr.length {
+            result = result * arr[i]
+        }
+        return result
+    }
+
+    /**
+     * Computes the Nth Fibonacci number (fib).
+     *
+     * @param n The index (0-based) of the Fibonacci number.
+     * @return The Nth Fibonacci number.
+     */
+    @Experimental(sinceAzora: "0.0.1")
+    func fib<T>(n: T): T
+    in {
+        assert n >= 0 { "Fibonacci requires non-negative input" }
+    } out {
+        assert it >= 0 { "Fibonacci result must be non-negative" }
+    } zone {
+        if n == 0 { return 0 }
+        if n == 1 { return 1 }
+        var a = 0
+        var b = 1
+        var i = 2
+        while i <= n {
+            fin temp = a + b
+            a = b
+            b = temp
+            i += 1
+        }
+        return b
+    }
+
+    /**
+     * Checks if a number is prime.
+     *
+     * @param n The number to check (must be non-negative).
+     * @return true if n is prime.
+     */
+    @Experimental(sinceAzora: "0.0.1")
+    func isPrime(n: Int): Bool
+    in {
+        assert n >= 0 { "isPrime requires non-negative input" }
+    } zone {
+        if n < 2 { return false }
+        if n < 4 { return true }
+        if n % 2 == 0 { return false }
+        if n % 3 == 0 { return false }
+        var i = 5
+        while i * i <= n {
+            if n % i == 0 { return false }
+            if n % (i + 2) == 0 { return false }
+            i += 6
+        }
+        return true
+    }
+
+    /**
+     * Computes the average of an integer sequence.
+     *
+     * @param arr The values to average (must be non-empty).
+     * @return The average as a real number.
+     */
+    @Experimental(sinceAzora: "0.0.1")
+    func average(arr: [Int]): Real
+    in {
+        assert arr.length > 0 { "Input must not be empty" }
+    } zone {
+        var total = 0
+        for i in 0..<arr.length {
+            total += arr[i]
+        }
+        return (total as Real) / (arr.length as Real)
+    }
+
+    /**
+     * Computes n choose k (binomial coefficient).
+     *
+     * @param n The total count.
+     * @param k The selection count.
+     * @return C(n, k).
+     */
+    @Experimental(sinceAzora: "0.0.1")
+    func choose(n: Int, k: Int): Int
+    in {
+        assert n >= 0 { "n must be non-negative" }
+        assert k >= 0 { "k must be non-negative" }
+        assert k <= n { "k must be <= n" }
+    } zone {
+        if k == 0 || k == n { return 1 }
+        var result = 1
+        var i = 0
+        fin kk = if k > n - k { n - k } else { k }
+        while i < kk {
+            result = result * (n - i)
+            result = result / (i + 1)
+            i += 1
+        }
+        return result
+    }
+
+    /**
+     * Computes the integer square root (floor of sqrt).
+     *
+     * @param n The non-negative integer.
+     * @return The largest integer whose square is <= n.
+     */
+    @Experimental(sinceAzora: "0.0.1")
+    func isqrt(n: Int): Int
+    in {
+        assert n >= 0 { "isqrt requires non-negative input" }
+    } out {
+        assert it * it <= n { "isqrt result squared must be <= n" }
+    } zone {
+        if n == 0 { return 0 }
+        var x = n
+        var y = (x + 1) / 2
+        while y < x {
+            x = y
+            y = (x + n / x) / 2
+        }
+        return x
+    }
+}
+
+@Target(.Native)
+bridge .C {
+    /** Foreign binding: C `sin` (sine). */
+    func sin use as az_sin(x: Real): Real
+    /** Foreign binding: C `cos` (cosine). */
+    func cos use as az_cos(x: Real): Real
+    /** Foreign binding: C `tan` (tangent). */
+    func tan use as az_tan(x: Real): Real
+    /** Foreign binding: C `asin` (arc sine). */
+    func asin use as az_asin(x: Real): Real
+    /** Foreign binding: C `acos` (arc cosine). */
+    func acos use as az_acos(x: Real): Real
+    /** Foreign binding: C `atan` (arc tangent). */
+    func atan use as az_atan(x: Real): Real
+    /** Foreign binding: C `atan2` (2-arg arc tangent). */
+    func atan2 use as az_atan2(y: Real, x: Real): Real
+    /** Foreign binding: C `sqrt` (square root). */
+    func sqrt use as az_sqrt(x: Real): Real
+    /** Foreign binding: C `cbrt` (cube root). */
+    func cbrt use as az_cbrt(x: Real): Real
+    /** Foreign binding: C `log` (natural logarithm). */
+    func log use as az_log(x: Real): Real
+    /** Foreign binding: C `log2` (base-2 logarithm). */
+    func log2 use as az_log2(x: Real): Real
+    /** Foreign binding: C `log10` (base-10 logarithm). */
+    func log10 use as az_log10(x: Real): Real
+    /** Foreign binding: C `exp` (e^x). */
+    func exp use as az_exp(x: Real): Real
+    /** Foreign binding: C `exp2` (2^x). */
+    func exp2 use as az_exp2(x: Real): Real
+    /** Foreign binding: C `hypot` (sqrt(x*x + y*y)). */
+    func hypot use as az_hypot(x: Real, y: Real): Real
+}
+
+@Target(.WebJs, .WebWasm)
+bridge .JS {
+    /** Foreign binding: JS `Math.sin` (sine). */
+    func Math.sin use as az_sin(x: Real): Real
+    /** Foreign binding: JS `Math.cos` (cosine). */
+    func Math.cos use as az_cos(x: Real): Real
+    /** Foreign binding: JS `Math.tan` (tangent). */
+    func Math.tan use as az_tan(x: Real): Real
+    /** Foreign binding: JS `Math.asin` (arc sine). */
+    func Math.asin use as az_asin(x: Real): Real
+    /** Foreign binding: JS `Math.acos` (arc cosine). */
+    func Math.acos use as az_acos(x: Real): Real
+    /** Foreign binding: JS `Math.atan` (arc tangent). */
+    func Math.atan use as az_atan(x: Real): Real
+    /** Foreign binding: JS `Math.atan2` (2-arg arc tangent). */
+    func Math.atan2 use as az_atan2(y: Real, x: Real): Real
+    /** Foreign binding: JS `Math.sqrt` (square root). */
+    func Math.sqrt use as az_sqrt(x: Real): Real
+    /** Foreign binding: JS `Math.cbrt` (cube root). */
+    func Math.cbrt use as az_cbrt(x: Real): Real
+    /** Foreign binding: JS `Math.log` (natural logarithm). */
+    func Math.log use as az_log(x: Real): Real
+    /** Foreign binding: JS `Math.log2` (base-2 logarithm). */
+    func Math.log2 use as az_log2(x: Real): Real
+    /** Foreign binding: JS `Math.log10` (base-10 logarithm). */
+    func Math.log10 use as az_log10(x: Real): Real
+    /** Foreign binding: JS `Math.exp` (e^x). */
+    func Math.exp use as az_exp(x: Real): Real
+    /** Foreign binding: JS `Math.pow` (base^exp; backs `exp2`). */
+    func Math.pow use as az_exp2(x: Real, y: Real): Real
+    /** Foreign binding: JS `Math.hypot` (sqrt(x*x + y*y)). */
+    func Math.hypot use as az_hypot(x: Real, y: Real): Real
+}
+
+friend zone std::math {
+    /** Sine of [x] (radians). */
+    func sin(x: Real): Real { return az_sin(x) }
+    /** Cosine of [x] (radians). */
+    func cos(x: Real): Real { return az_cos(x) }
+    /** Tangent of [x] (radians). */
+    func tan(x: Real): Real { return az_tan(x) }
+    /** Arc sine of [x] in radians; [x] must be in [-1, 1]. */
+    func asin(x: Real): Real { return az_asin(x) }
+    /** Arc cosine of [x] in radians; [x] must be in [-1, 1]. */
+    func acos(x: Real): Real { return az_acos(x) }
+    /** Arc tangent of [x] in radians. */
+    func atan(x: Real): Real { return az_atan(x) }
+    /** Angle (radians) of the point (x, y) — the 2-argument arc tangent. */
+    func atan2(y: Real, x: Real): Real { return az_atan2(y, x) }
+    /** Square root of [x]. */
+    func sqrt(x: Real): Real { return az_sqrt(x) }
+    /** Cube root of [x]. */
+    func cbrt(x: Real): Real { return az_cbrt(x) }
+    /** Natural (base-e) logarithm of [x]. */
+    func log(x: Real): Real { return az_log(x) }
+    /** Base-2 logarithm of [x]. */
+    func log2(x: Real): Real { return az_log2(x) }
+    /** Base-10 logarithm of [x]. */
+    func log10(x: Real): Real { return az_log10(x) }
+    /** e raised to the power [x]. */
+    func exp(x: Real): Real { return az_exp(x) }
+    /** 2 raised to the power [x]. */
+    func exp2(x: Real): Real { return az_exp2(x) }
+    /** sqrt(x*x + y*y) without overflow/underflow. */
+    func hypot(x: Real, y: Real): Real { return az_hypot(x, y) }
+}

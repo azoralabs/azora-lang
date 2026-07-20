@@ -147,7 +147,7 @@ enum class TokenType {
     // read-only, internally mutable.
     EXPOSE, CONFINE, PROTECT, SHIELD, INTERN,
     // Module: `module Name`. `export module Name` publishes the module so that
-    // its declarations are auto-imported into every unit (like `std.root`).
+    // its declarations are auto-imported into every unit (like `std.core`).
     MODULE, EXPORT,
     // Thread-local storage: `threadlocal var x = 0` / `threadlocal fin y = 42`.
     THREADLOCAL,

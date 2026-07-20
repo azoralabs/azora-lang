@@ -69,7 +69,7 @@ class StdlibInjectionTest {
     }
 
     @Test fun rootModuleContainsCompilerPredefinedDeclarations() {
-        val source = AzStdlib.sources.single { "module std.root" in it }
+        val source = AzStdlib.sources.single { "module std.core" in it }
         val root = Parser(Lexer(source).tokenize()).parse()
 
         assertTrue(root.items.any { it is TopLevel.Pack && it.name == "Unit" && it.isBridge })

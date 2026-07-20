@@ -1,0 +1,207 @@
+/*
+ * Copyright 2026 AzoraLabs
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+module std.algorithm.sort
+
+/**
+ * @file std/algorithm/sort
+ *
+ * Sorting functions for arrays.
+ *
+ * Provides stable insertion sort, descending sort, sorted check,
+ * array reversal, and custom comparator sorting.
+ *
+ * @since 0.0.1
+ */
+
+friend zone std {
+    /**
+     * Sorts an array in ascending order using insertion sort.
+     *
+     * Returns a new sorted array; the original is not modified.
+     *
+     * @param arr The array to sort.
+     * @return A new array with elements in ascending order.
+     */
+    @Experimental(sinceAzora: "0.0.1")
+    func sort<T>(arr: [T]): [T]
+    out {
+        assert it.length == arr.length { "sort must preserve length" }
+    } zone {
+        var result: [T] = [].fill<T>(arr.length)
+        for i in 0..<arr.length {
+            result[i] = arr[i]
+        }
+        for j in 1..<result.length {
+            fin key = result[j]
+            var k = j - 1
+            while k >= 0 && result[k] > key {
+                result[k + 1] = result[k]
+                k -= 1
+            }
+            result[k + 1] = key
+        }
+        return result
+    }
+
+    /**
+     * Sorts an array in descending order.
+     *
+     * Returns a new sorted array; the original is not modified.
+     *
+     * @param arr The array to sort.
+     * @return A new array with elements in descending order.
+     */
+    @Experimental(sinceAzora: "0.0.1")
+    func sortDescending<T>(arr: [T]): [T]
+    out {
+        assert it.length == arr.length { "sortDescending must preserve length" }
+    } zone {
+        var result: [T] = [].fill<T>(arr.length)
+        for i in 0..<arr.length {
+            result[i] = arr[i]
+        }
+        for j in 1..<result.length {
+            fin key = result[j]
+            var k = j - 1
+            while k >= 0 && result[k] < key {
+                result[k + 1] = result[k]
+                k -= 1
+            }
+            result[k + 1] = key
+        }
+        return result
+    }
+
+    /**
+     * Checks whether an array is sorted in ascending order.
+     *
+     * @param arr The array to check.
+     * @return true if the array is sorted, false otherwise.
+     */
+    @Experimental(sinceAzora: "0.0.1")
+    func isSorted<T>(arr: [T]): Bool {
+        if arr.length <= 1 { return true }
+        for i in 1..<arr.length {
+            if arr[i] < arr[i - 1] { return false }
+        }
+        return true
+    }
+
+    /**
+     * Checks whether an array is sorted in descending order.
+     *
+     * @param arr The array to check.
+     * @return true if the array is sorted descending, false otherwise.
+     */
+    @Experimental(sinceAzora: "0.0.1")
+    func isSortedDescending<T>(arr: [T]): Bool {
+        if arr.length <= 1 { return true }
+        for i in 1..<arr.length {
+            if arr[i] > arr[i - 1] { return false }
+        }
+        return true
+    }
+
+    /**
+     * Returns a new array with elements in reverse order.
+     *
+     * @param arr The array to reverse.
+     * @return A new reversed array.
+     */
+    @Experimental(sinceAzora: "0.0.1")
+    func reverse<T>(arr: [T]): [T]
+    out {
+        assert it.length == arr.length { "reverse must preserve length" }
+    } zone {
+        var result: [T] = [].fill<T>(arr.length)
+        for i in 0..<arr.length {
+            result[i] = arr[arr.length - 1 - i]
+        }
+        return result
+    }
+
+    /**
+     * Returns a new array with duplicate consecutive elements removed.
+     *
+     * The array should be sorted for all duplicates to be removed.
+     *
+     * @param arr The array to deduplicate.
+     * @return A new array with unique consecutive elements.
+     */
+    @Experimental(sinceAzora: "0.0.1")
+    func unique<T>(arr: [T]): [T] {
+        if arr.length == 0 { return [].fill<T>(0) }
+        var result: [T] = [].fill<T>(arr.length)
+        result[0] = arr[0]
+        var count = 1
+        for i in 1..<arr.length {
+            if arr[i] != arr[i - 1] {
+                result[count] = arr[i]
+                count += 1
+            }
+        }
+        // Trim to actual size
+        var trimmed: [T] = [].fill<T>(count)
+        for j in 0..<count {
+            trimmed[j] = result[j]
+        }
+        return trimmed
+    }
+
+    /**
+     * Swaps two elements in an array by index.
+     *
+     * @param arr The array (modified in place via a copy).
+     * @param i The first index.
+     * @param j The second index.
+     * @return A new array with elements swapped.
+     */
+    @Experimental(sinceAzora: "0.0.1")
+    func swap<T>(arr: [T], i: Int, j: Int): [T]
+    in {
+        assert i >= 0 && i < arr.length { "swap index i out of bounds" }
+        assert j >= 0 && j < arr.length { "swap index j out of bounds" }
+    } zone {
+        var result: [T] = [].fill<T>(arr.length)
+        for k in 0..<arr.length {
+            result[k] = arr[k]
+        }
+        fin temp = result[i]
+        result[i] = result[j]
+        result[j] = temp
+        return result
+    }
+
+    /**
+     * Rotates array elements left by n positions.
+     *
+     * @param arr The array to rotate.
+     * @param n The number of positions to rotate left.
+     * @return A new rotated array.
+     */
+    @Experimental(sinceAzora: "0.0.1")
+    func rotateLeft<T>(arr: [T], n: Int): [T] {
+        if arr.length == 0 { return [].fill<T>(0) }
+        fin len = arr.length
+        fin shift = ((n % len) + len) % len
+        var result: [T] = [].fill(len, _)
+        for i in 0..<len {
+            result[i] = arr[(i + shift) % len]
+        }
+        return result
+    }
+}

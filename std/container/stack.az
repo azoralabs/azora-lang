@@ -1,0 +1,198 @@
+/*
+ * Copyright 2026 AzoraLabs
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+module std.container.stack
+
+import std.serializer
+import std.convert
+
+/**
+ * @file std/container/stack
+ *
+ * Generic LIFO stack collection.
+ *
+ * Provides a last-in-first-out stack backed by a pointer array,
+ * with push, pop, and peek operations.
+ * Uses pointer-based storage with explicit capacity management.
+ *
+ * @since 0.0.1
+ */
+
+friend zone std {
+    /**
+     * A generic last-in-first-out (LIFO) stack.
+     *
+     * Stack provides pointer-backed storage where elements are
+     * added and removed from the top.
+     *
+     * @param T The type of elements stored in this stack.
+     */
+    @SinceAzora("0.0.1")
+    @Serializable
+    pack<T> Stack {
+        shield var data: T* = alloc T[8]
+        shield var size: Int = 0
+        shield var capacity: Int = 8
+    }
+
+    /** Constructs an empty `Stack<T>` with default capacity. */
+    @Experimental(sinceAzora: "0.0.1")
+    impl ctor() for Stack<T> { mut ref self ->
+        self.data = alloc T[8]
+        self.size = 0
+        self.capacity = 8
+    }
+
+    /** Stack operations: push, pop, peek, clear, and string conversion. */
+    impl Stack<T> {
+        // --- Properties ---
+
+        /** Whether the stack contains no elements. */
+        @SinceAzora("0.0.1")
+        prop isEmpty: Bool = size == 0
+
+        /** Whether the stack contains at least one element. */
+        @SinceAzora("0.0.1")
+        prop isNotEmpty: Bool = size > 0
+
+        // --- Internal ---
+
+        /** Doubles the backing buffer's capacity, copying existing elements. */
+        @Experimental(sinceAzora: "0.0.1")
+        func growStack() {
+            fin newCap = capacity * 2
+            fin newData = alloc T[newCap]
+            for i in 0..<size {
+                newData[i] = data[i]
+            }
+            fin oldData = data
+            self.data = newData
+            self.capacity = newCap
+            drop oldData
+        }
+
+        // --- Operations ---
+
+        /**
+         * Pushes an element onto the top of the stack.
+         *
+         * @param element The element to push.
+         */
+        @Experimental(sinceAzora: "0.0.1")
+        func push(element: T) {
+            if size >= capacity { self.growStack() }
+            data[size] = element
+            self.size = size + 1
+        }
+
+        /**
+         * Removes and returns the top element of the stack.
+         *
+         * @return The removed top element.
+         * @throws AssertionError if the stack is empty.
+         */
+        @Experimental(sinceAzora: "0.0.1")
+        func pop(): T {
+            assert size > 0 { "Stack is empty" }
+            fin top = data[size - 1]
+            self.size = size - 1
+            return top
+        }
+
+        /**
+         * Returns the top element without removing it.
+         *
+         * @return The top element.
+         * @throws AssertionError if the stack is empty.
+         */
+        @Experimental(sinceAzora: "0.0.1")
+        func peek(): T {
+            assert size > 0 { "Stack is empty" }
+            return data[size - 1]
+        }
+
+        /** Removes all elements from the stack. */
+        @Experimental(sinceAzora: "0.0.1")
+        func clear() {
+            fin oldData = data
+            self.data = alloc T[8]
+            self.size = 0
+            self.capacity = 8
+            drop oldData
+        }
+
+        // --- String ---
+
+        /**
+         * Returns a string representation of the stack.
+         *
+         * @return A string in the format "[bottom, ..., top]".
+         */
+        @Experimental(sinceAzora: "0.0.1")
+        func toString(): String {
+            var s = "["
+            for i in 0..<size {
+                if i > 0 { s = s + ", " }
+                s = s + std::convert::toString(data[i])
+            }
+            return s + "]"
+        }
+    }
+}
+
+test "stack starts empty" {
+    fin value = Stack<Int>()
+    assert value.size == 0 && value.isEmpty { "new stack must be empty" }
+}
+
+test "stack is LIFO" {
+    var value = Stack<Int>()
+    value.push(1)
+    value.push(2)
+    value.push(3)
+    assert value.peek() == 3 { "stack peek must return the newest value" }
+    assert value.pop() == 3 && value.pop() == 2 && value.pop() == 1 { "stack order must be LIFO" }
+    assert value.isEmpty { "stack must be empty after all pops" }
+}
+
+test "stack grows without losing order" {
+    var value = Stack<Int>()
+    var i = 0
+    while i < 20 {
+        value.push(i)
+        i += 1
+    }
+    i = 19
+    while i >= 0 {
+        assert value.pop() == i { "stack growth reordered an element" }
+        i -= 1
+    }
+}
+
+test "stack clear permits reuse" {
+    var value = Stack<Int>()
+    value.push(1)
+    value.push(2)
+    value.clear()
+    value.push(8)
+    assert value.size == 1 && value.pop() == 8 { "cleared stack must be reusable" }
+}
+
+test "stack serialization metadata is declared" {
+    inline assert (std::reflect<Stack>).hasDeco<Serializable> { "Stack must carry Serializable metadata" }
+}
+
+test .All "stack"

@@ -1403,7 +1403,7 @@ data class Annotation(
 enum class DecoTarget {
     Pack, Func, Prop, Task, Flow, Node, Solo, Slot, Enum, EnumValue, Deco,
     Fail, FailValue, Field, Param, Var, Fin, Let, Test, View, Hook,
-    Ctor, Dtor, TypeAlias, Bridge,
+    Ctor, Dtor, TypeAlias, Bridge, ImplOper,
 }
 
 data class DecoratorBinding(
@@ -1726,6 +1726,10 @@ sealed class TopLevel {
         val decoratorArgs: List<Expr> = emptyList(),
         /** Named compile-time metadata values on `impl Decorator(field: value) for Type`. */
         val decoratorNamedArgs: List<Pair<String, Expr>> = emptyList(),
+        /** `@Deco` annotations applied to the impl block (e.g. `@UncheckedCast`). */
+        val annotations: List<Annotation> = emptyList(),
+        /** `bridge impl …` — compiler-provided; no IR emitted, but still registers members. */
+        val isBridge: Boolean = false,
     ) : TopLevel()
 
     /** `spec Name { func method(params): Ret; ... }` or compact callback `spec Name<T>: T { ref self } use as "to${T.typeName}"`. */
@@ -1787,7 +1791,7 @@ sealed class TopLevel {
  * @property moduleName the declared module name, or `null` if no `module` declaration is present
  * @property items the list of top-level items (functions and compile-time constructs)
  * @property isExported whether the module was declared `export module …`, making its
- *   declarations auto-imported into every unit (as `std.root` is)
+ *   declarations auto-imported into every unit (as `std.core` is)
  */
 data class Program(
     val moduleName: String?,

@@ -70,12 +70,12 @@ object StdlibInjector {
         val moduleOfName = LinkedHashMap<String, String>()
         /** module → its declared visibility, for import gating. */
         val moduleVisibility = LinkedHashMap<String, ModuleVisibility>()
-        /** Items from a library's conventional `<root>.root` module. */
+        /** Items from a library's conventional `<root>.core` module. */
         val implicitRootItems = LinkedHashMap<String, TopLevel>()
         /**
          * Top-level items that must be injected into every unit unconditionally,
          * gathered from `export module …` declarations (and the conventional
-         * `<root>.root` module). Kept as raw items — in particular a `deepinline
+         * `<root>.core` module). Kept as raw items — in particular a `deepinline
          * zone { … }` block is injected whole so CTCE flattens it downstream,
          * exactly as it would inside its own module.
          */
@@ -135,11 +135,11 @@ object StdlibInjector {
             }
             // A module is auto-imported into downstream/user units when it is
             // declared `export expose module …` (the default visibility) or follows
-            // the conventional `<root>.root` naming. `export intern`/`export protect`
+            // the conventional `<root>.core` naming. `export intern`/`export protect`
             // auto-import only within the library/folder, so they are not injected
             // into external units here; `export confine` is rejected at parse time.
             val alwaysOn = (program.isExported && program.moduleVisibility == ModuleVisibility.EXPOSE) ||
-                module.substringAfterLast('.') == "root"
+                module.substringAfterLast('.') == "core"
             for (item in program.items) {
                 when (item) {
                     is TopLevel.Func -> register(item.decl.name, item)
@@ -352,7 +352,7 @@ object StdlibInjector {
 
         val referenced = mutableSetOf<String>()
         for (item in program.items) collectNamesFromItem(item, referenced)
-        // Exported/root blocks are always injected; pull in whatever they reference.
+        // Exported/core blocks are always injected; pull in whatever they reference.
         for (item in index.alwaysInjectedItems) collectNamesFromItem(item, referenced)
         val implicitReferenced = referenced.filterTo(mutableSetOf()) { it in implicitCollectionTypes }
         referenced.retainAll(visible.keys)
@@ -418,7 +418,7 @@ object StdlibInjector {
         val existingIdentities = program.items.mapTo(mutableSetOf()) { itemIdentity(it) }
         val declarations = injected.values.distinct().filter { existingIdentities.add(itemIdentity(it)) }
         val externDeclarations = injectedExterns.values.distinct().filter { existingIdentities.add(itemIdentity(it)) }
-        // Exported/root compile-time blocks are injected unconditionally.
+        // Exported/core compile-time blocks are injected unconditionally.
         val alwaysDeclarations = index.alwaysInjectedItems.filter { existingIdentities.add(itemIdentity(it)) }
         if (declarations.isEmpty() && externDeclarations.isEmpty() && alwaysDeclarations.isEmpty() && !typeFunctionsChanged) return program
         return program.copy(

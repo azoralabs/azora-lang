@@ -3,14 +3,14 @@ plugins {
 }
 
 val generateStdlib = tasks.register("generateAzStdlib") {
-    val stdDir = rootProject.file("Internal/Std")
+    val stdDir = rootProject.file("std")
     val outputDir = layout.buildDirectory.dir("generated/stdlib")
 
     inputs.dir(stdDir)
     outputs.dir(outputDir)
 
     doLast {
-        // Discover stdlib sources dynamically: every .az file under Internal/Std
+        // Discover stdlib sources dynamically: every .az file under std
         // is embedded into AzStdlib. This keeps the build in sync with the source
         // tree when modules are added, removed, renamed, or flattened — no
         // hand-maintained list to forget. Mirrors generateAzTests / generateAzCodegenTests.
@@ -65,10 +65,14 @@ val generateStdlib = tasks.register("generateAzStdlib") {
             appendLine("    fun loadPrograms(): List<Program> = cachedPrograms")
             appendLine()
             appendLine("    private fun loadProgramsInternal(): List<Program> {")
+            appendLine("        // One shared compile-time list env across all stdlib sources so a list")
+            appendLine("        // bound in one file (e.g. `let Numbers: [Type] = ...` in primitive.az) is")
+            appendLine("        // visible to `inline for` loops in later files (e.g. traits/core.az).")
+            appendLine("        val typeListEnv = mutableMapOf<String, List<String>>()")
             appendLine("        return namedSources.map { (name, source) ->")
             appendLine("            try {")
             appendLine("                val tokens = Lexer(source).tokenize()")
-            appendLine("                Parser(tokens).parse()")
+            appendLine("                Parser(tokens, typeListEnv).parse()")
             appendLine("            } catch (e: Exception) {")
             appendLine("                error(\"Failed to parse embedded stdlib source \$name: \${e.message}\")")
             appendLine("            }")

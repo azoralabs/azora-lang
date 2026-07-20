@@ -1,0 +1,99 @@
+/*
+ * Copyright 2026 AzoraLabs
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+// TODO: `inline if AUTO_IMPORT_MACROS { export } module std.macro` — a
+// comptime-conditional module export is not yet supported; use plain opt-in for now.
+module std.macro
+
+export import std.container.{list, set, tuple, array}
+
+/**
+ * @file std/macro
+ *
+ * Pattern-driven `meta` macros available after `import std.macro`. Each macro
+ * is a bare-name, top-level declaration invoked as `name!(…)`, `name![…]`, or
+ * `name!{…}` (all three delimiters are equivalent). Arms match the invocation's
+ * argument list: `[]` matches zero arguments; `[...$items]` matches one or more
+ * and binds them, spliceable in the template via `...$items`.
+ *
+ * @since 0.0.4
+ */
+
+use friend zone std {
+    /**
+     * Builds an immutable [List].
+     *
+     * @0 `vec![]` expands to `std::emptyList()`.
+     * @1 `vec![1, 2, 3]` expands to `std::listOf(1, 2, 3)`.
+     */
+    meta vec {
+        [] => std::emptyList()
+        [...$items] => std::listOf(...$items)
+    }
+
+    /**
+     * Builds an immutable [Set].
+     *
+     * @0 `set![]` expands to `std::emptySet()`.
+     * @1 `set![1, 2, 3]` expands to `std::setOf(1, 2, 3)`.
+     */
+    meta set {
+        [] => std::emptySet()
+        [...$items] => std::setOf(...$items)
+    }
+
+    /**
+     * Builds an immutable [Map].
+     *
+     * @0 `map![]` expands to `std::emptyMap()`.
+     * @1 `map!["One": 1, "Two": 2]` expands to `std::mapOf("One" to 1, "Two" to 2)`. todo. Create std::mapOf and to infx like in Kotlin
+     */
+    meta map {
+
+    }
+
+    /**
+     * Builds a structural [Tuple].
+     *
+     * @0 `tup!(1, "two", 3.0)` expands to `std::tupleOf(1, "two", 3.0)`.
+     */
+    meta tup {
+        [...$items] => std::tupleOf(...$items)
+    }
+
+    /**
+     * Builds a fixed [Array].
+     *
+     * @0 `arr![]` expands to `std::emptyArray()`.
+     * @1 `arr![1, 2, 3]` expands to `std::arrayOf(1, 2, 3)`.
+     */
+    meta arr {
+        [] => std::emptyArray()
+        [...$items] => std::arrayOf(...$items)
+    }
+
+    // So we can say "fin x: [Int; 3] = arr![1, 2, 3]", "fin x: [Int] = vec![1, 2, 3]", "fin x: {Int} = set![1, 2, 3]"
+    // "fin x: [String: Int] = map!["1": 1, "2": 2]", "fin x: (Real, String) = tup!(2.0, "Hi")"
+    // no more array [T], no more tuple (T1, T2) inside compiler, no more [1, 2, 3] array literal and (1, "2") tuple literal inside compiler
+    // we will use this meta type
+    meta type {
+        [T; N] => std::Array<T, N>
+        [T] => std::List<T>
+        {T} => std::Set<T>
+        [K: V] => std::Map<K, V>
+        (...T) => std::Tuple<...T>
+    }
+}

@@ -406,15 +406,20 @@ class SymbolCollector {
                             is TypeAnnotation.Explicit -> resolveType(rt.ref, tpSet)
                             is TypeAnnotation.Inferred -> inferReturnType(method, params)
                         }
-                        table.defineFunction(FunctionSymbol(
-                            mangled,
-                            params,
-                            returnType,
-                            method.isInline,
-                            visibility = method.visibility,
-                            memberCallStyle = method.memberCallStyle,
-                            returnTypeRef = (method.returnType as? TypeAnnotation.Explicit)?.ref,
-                        ))
+                        // Bridge impls register the member name (so semantic gates like the
+                        // range-operator check can find it) but define NO callable function —
+                        // the backend lowers bridge operators natively.
+                        if (!item.isBridge) {
+                            table.defineFunction(FunctionSymbol(
+                                mangled,
+                                params,
+                                returnType,
+                                method.isInline,
+                                visibility = method.visibility,
+                                memberCallStyle = method.memberCallStyle,
+                                returnTypeRef = (method.returnType as? TypeAnnotation.Explicit)?.ref,
+                            ))
+                        }
                         table.defineMethod(item.typeName, method.name, mangled)
                     } catch (e: Exception) {
                         errors.add("line ${method.line}: ${e.message}")

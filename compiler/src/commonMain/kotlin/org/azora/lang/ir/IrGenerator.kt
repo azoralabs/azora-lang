@@ -224,7 +224,7 @@ class IrGenerator(private val table: SymbolTable) {
                     }
                     result
                 }
-                is TopLevel.Impl -> item.methods.mapNotNull { method ->
+                is TopLevel.Impl -> if (item.isBridge) emptyList() else item.methods.mapNotNull { method ->
                     if (method.isInline) null
                     else {
                         val saved = currentReceiverType
@@ -489,6 +489,14 @@ class IrGenerator(private val table: SymbolTable) {
                 if (range != null) {
                     val start = lowerExpr(range.from)
                     val end = lowerExpr(range.to)
+                    // Range iteration requires the bound type to declare the range operator
+                    // (e.g. `bridge impl oper .. for Int`); otherwise it is rejected.
+                    val rangeTypeName = start.type.toString()
+                    val operName = if (stmt.reverse) "operreverse.." else "oper.."
+                    if (table.lookupMethod(rangeTypeName, operName) == null) {
+                        val sym = if (stmt.reverse) "reverse.." else ".."
+                        error("type '$rangeTypeName' does not support the range operator '$sym' (declare 'impl oper $sym for $rangeTypeName')")
+                    }
                     val step = stmt.step?.let { lowerExpr(it) }
                     table.pushScope()
                     pushNameScope()

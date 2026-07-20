@@ -65,6 +65,8 @@ class TypeResolver(private val table: SymbolTable) {
         // Resolve impl method bodies (self + declared params in scope)
         for (item in program.items) {
             if (item is TopLevel.Impl) {
+                // `@UncheckedCast` opts the whole impl out of body type-checking.
+                if (item.annotations.any { it.name == "UncheckedCast" }) continue
                 for (method in item.methods) {
                     val mangled = "${item.typeName}_${method.name}"
                     val func = table.lookupFunction(mangled) ?: continue

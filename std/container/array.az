@@ -46,7 +46,7 @@ friend zone std {
      * @param T The type shared by every element in the array.
      */
     @Experimental(sinceAzora: "0.0.4")
-    bridge pack<T, N: Int> Array {
+    bridge pack<T, N: Int Array {
         /**
          * Pointer to the first contiguous element.
          *
@@ -71,19 +71,41 @@ friend zone std {
         return elements
     }
 
+    impl zone for Array {
+        /**
+         * Pre-allocates an array of `count` slots.
+         *
+         * Compiler-provided (`bridge`): each backend supplies the storage allocation
+         * directly, so there is no Azora body. Used as a low-level building block by
+         * the functional combinators that grow result arrays.
+         *
+         * @param T The element type.
+         * @param count The number of slots to allocate; must be non-negative.
+         * @return An `Array<T>` with `count` slots.
+         */
+        @Experimental(sinceAzora: "0.0.4")
+        bridge func<T> fill(count: Int): Array<T>
+    }
+
+    typealias Array<T> = Array<T, *>
+}
+
+use friend zone std {
     /**
-     * Pre-allocates an array of `count` slots.
+     * Builds a fixed [Array].
      *
-     * Compiler-provided (`bridge`): each backend supplies the storage allocation
-     * directly, so there is no Azora body. Used as a low-level building block by
-     * the functional combinators that grow result arrays.
-     *
-     * @param T The element type.
-     * @param count The number of slots to allocate; must be non-negative.
-     * @return An `Array<T>` with `count` slots.
+     * @0 `arr![]` expands to `std::emptyArray()`.
+     * @1 `arr![1, 2, 3]` expands to `std::arrayOf(1, 2, 3)`.
      */
-    @Experimental(sinceAzora: "0.0.4")
-    bridge func<T> fill(count: Int): Array<T>
+    meta arr {
+        [] => std::emptyArray()
+        [...$items] => std::arrayOf(...$items)
+    }
+
+    meta type {
+        [T; *] => std::Array<T, *>
+        [T; N] => std::Array<T, N>
+    }
 }
 
 test "arrayOf preserves values and ordefir" {

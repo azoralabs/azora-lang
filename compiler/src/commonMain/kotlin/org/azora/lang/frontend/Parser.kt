@@ -220,17 +220,25 @@ class Parser(
         skipNewlines()
         var isExported = false
         var moduleVisibility = ModuleVisibility.EXPOSE
+        var exportCondition: Expr? = null
         val moduleName = if (isModuleHeaderAhead()) {
             if (match(TokenType.EXPORT)) isExported = true
-            moduleVisibility = when {
-                match(TokenType.EXPOSE) -> ModuleVisibility.EXPOSE
-                match(TokenType.INTERN) -> ModuleVisibility.INTERN
-                match(TokenType.PROTECT) -> ModuleVisibility.PROTECT
-                match(TokenType.CONFINE) -> ModuleVisibility.CONFINE
-                else -> ModuleVisibility.EXPOSE
-            }
-            if (isExported && moduleVisibility == ModuleVisibility.CONFINE) {
-                error("'export confine module' is contradictory: a confined module is private and cannot be exported")
+            if (check(TokenType.IF)) {
+                // `export if COND \n module …` — comptime-conditional export.
+                advance() // 'if'
+                exportCondition = parseExpr()
+                consume(TokenType.NEWLINE, "Expected a newline after 'export if <condition>'")
+            } else {
+                moduleVisibility = when {
+                    match(TokenType.EXPOSE) -> ModuleVisibility.EXPOSE
+                    match(TokenType.INTERN) -> ModuleVisibility.INTERN
+                    match(TokenType.PROTECT) -> ModuleVisibility.PROTECT
+                    match(TokenType.CONFINE) -> ModuleVisibility.CONFINE
+                    else -> ModuleVisibility.EXPOSE
+                }
+                if (isExported && moduleVisibility == ModuleVisibility.CONFINE) {
+                    error("'export confine module' is contradictory: a confined module is private and cannot be exported")
+                }
             }
             parseModule()
         } else null
@@ -271,6 +279,7 @@ class Parser(
                 localPackNames,
                 isExported,
                 moduleVisibility,
+                exportCondition,
                 zoneMetaByName.toMap(),
                 typeFunctions = typeFunctions.toList(),
                 typeMacroRules = pendingTypeMacroRules.toList(),
@@ -608,6 +617,12 @@ class Parser(
             check(TokenType.TEST) -> parseTestDecl(annotations)
             check(TokenType.DECO) -> parseDeco(annotations)
             check(TokenType.PACK) -> parsePack(annotations, visibility)
+            // `opaque pack X { … }` — every field is forced to confine; no field
+            // visibility modifier may be written.
+            check(TokenType.OPAQUE) && peekNext()?.type == TokenType.PACK -> {
+                advance()
+                parsePack(annotations, visibility, isOpaque = true)
+            }
             check(TokenType.ENUM) -> parseEnumDecl(annotations)
             check(TokenType.FAIL) -> parseFailDecl(annotations)
             check(TokenType.IMPL) -> parseImpl(annotations = annotations)
@@ -642,6 +657,15 @@ class Parser(
             check(TokenType.WRAP) -> parseWrap()
             check(TokenType.NODE) -> parseNode(visibility = visibility, annotations = annotations)
             check(TokenType.LEAF) -> parseNode(isLeaf = true, visibility = visibility, annotations = annotations)
+            // `abstract node Name` / `abstract Name` — cannot be instantiated directly.
+            check(TokenType.ABSTRACT) && peekNext()?.type == TokenType.NODE -> {
+                advance()
+                parseNode(isAbstract = true, visibility = visibility, annotations = annotations)
+            }
+            check(TokenType.ABSTRACT) -> {
+                advance()
+                parseNode(isAbstract = true, visibility = visibility, annotations = annotations)
+            }
             check(TokenType.VIEW) -> parseView(annotations)
             check(TokenType.HOOK) -> parseHook(annotations)
             check(TokenType.THREADLOCAL) -> parseThreadLocal(visibility)
@@ -659,6 +683,15 @@ class Parser(
             check(TokenType.EXPORT) && peekNext()?.type == TokenType.IMPORT -> {
                 advance() // 'export'
                 parseImport(exported = true)
+            }
+            // `export if COND \n import …` — comptime-conditional re-export. The
+            // newline before `import` is mandatory.
+            check(TokenType.EXPORT) && peekNext()?.type == TokenType.IF -> {
+                advance() // 'export'
+                advance() // 'if'
+                val cond = parseExpr()
+                consume(TokenType.NEWLINE, "Expected a newline after 'export if <condition>'")
+                parseImport(exported = true, condition = cond)
             }
             check(TokenType.FIN) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseExpr(); consumeNewline(); TopLevel.FinDecl(name, type, init, start.line, start.column, annotations, visibility = visibility) }
             check(TokenType.VAR) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseExpr(); consumeNewline(); TopLevel.VarDecl(name, type, init, start.line, start.column, annotations, visibility = visibility) }
@@ -1221,6 +1254,7 @@ class Parser(
         annotations: List<Annotation> = emptyList(),
         visibility: Visibility = Visibility.EXPOSE,
         isBridge: Boolean = false,
+        isOpaque: Boolean = false,
     ): TopLevel.Pack {
         val start = peek()
         consume(TokenType.PACK, "Expected 'pack'")
@@ -1249,6 +1283,7 @@ class Parser(
                 constParams = tp.constParams,
                 fieldTemplate = null,
                 isBridge = isBridge,
+                isOpaque = isOpaque,
             )
         }
         consume(TokenType.L_BRACE, "Expected '{' after pack name")
@@ -1261,7 +1296,7 @@ class Parser(
             while (!check(TokenType.R_BRACE) && !isAtEnd()) {
                 skipNewlines()
                 if (check(TokenType.R_BRACE)) break
-                fields.add(parsePackField(enforceNumFields = enforceNumFields))
+                fields.add(parsePackField(enforceNumFields = enforceNumFields, forceConfine = isOpaque))
                 match(TokenType.COMMA)
                 skipNewlines()
             }
@@ -1281,6 +1316,7 @@ class Parser(
             minVariadicLength = minLen,
             constParams = tp.constParams,
             fieldTemplate = fieldTemplate,
+            isOpaque = isOpaque,
         )
     }
 
@@ -1304,11 +1340,11 @@ class Parser(
         while (!check(TokenType.R_BRACE) && !isAtEnd()) {
             skipNewlines()
             if (check(TokenType.R_BRACE)) break
-            if (check(TokenType.MIXIN)) {
-                advance() // 'mixin'
+            if (check(TokenType.INLINE)) {
+                advance() // 'inline' splice
                 val template = parsePrimary()
                 val str = template as? Expr.StringTemplate
-                    ?: error("Expected interpolated string after 'mixin' at line ${peek().line}")
+                    ?: error("Expected interpolated string after 'inline' at line ${peek().line}")
                 mixins.add(str)
                 consumeNewline()
             } else {
@@ -1330,9 +1366,19 @@ class Parser(
         enforceNumFields: Boolean = false,
         preparsedAnnotations: List<Annotation>? = null,
         requireFin: Boolean = false,
+        forceConfine: Boolean = false,
     ): PackField {
         val annotations = preparsedAnnotations ?: parseAnnotations()
-        val visibility = preparsedVisibility ?: parseVisibility()
+        val wroteVisibility = peek().type in setOf(
+            TokenType.EXPOSE, TokenType.INTERN, TokenType.CONFINE, TokenType.PROTECT, TokenType.SHIELD,
+        )
+        val parsedVisibility = preparsedVisibility ?: parseVisibility()
+        if (forceConfine) {
+            if (wroteVisibility && parsedVisibility != Visibility.CONFINE) {
+                error("opaque pack fields are confine; remove the visibility modifier at line ${peek().line}")
+            }
+        }
+        val visibility = if (forceConfine) Visibility.CONFINE else parsedVisibility
         if (requireFin && !check(TokenType.FIN)) {
             error("Decorator fields must be declared with 'fin' at line ${peek().line}")
         }
@@ -2226,10 +2272,12 @@ class Parser(
         isLeaf: Boolean = false,
         visibility: Visibility = Visibility.EXPOSE,
         annotations: List<Annotation> = emptyList(),
+        isAbstract: Boolean = false,
     ): TopLevel.Node {
         val start = peek()
         if (isLeaf) consume(TokenType.LEAF, "Expected 'leaf'")
-        match(TokenType.NODE) // `leaf Name` or `leaf node Name` — node is optional
+        if (isAbstract) consume(TokenType.ABSTRACT, "Expected 'abstract'")
+        match(TokenType.NODE) // `leaf Name`, `abstract node Name`, or `abstract Name` — node is optional
         val name = consume(TokenType.IDENTIFIER, "Expected node name").lexeme
         // Ctor params: (var|fin name: Type, ...)
         val params = mutableListOf<TopLevel.NodeParam>()
@@ -2323,7 +2371,7 @@ class Parser(
         }
         consume(TokenType.R_BRACE, "Expected '}' after node body")
         consumeNewline()
-        return TopLevel.Node(name, params, methods, parent, parentArgs, isLeaf, extraFields, start.line, start.column, visibility, annotations)
+        return TopLevel.Node(name, params, methods, parent, parentArgs, isLeaf, isAbstract, extraFields, start.line, start.column, visibility, annotations)
     }
 
     /**
@@ -2552,13 +2600,12 @@ class Parser(
         }
         if (match(TokenType.COLON)) {
             val returnType = parseTypeName()
-            // Receiver in parens `(ref self)` (preferred) or braces `{ ref self }`.
-            val close = if (check(TokenType.L_PAREN)) { advance(); TokenType.R_PAREN }
-                else { consume(TokenType.L_BRACE, "Expected '(' or '{' after spec callback signature"); TokenType.R_BRACE }
+            // Callback receiver in parens: `spec Into<T>: T (ref self) use as "…"`.
+            consume(TokenType.L_PAREN, "Expected '(' after spec callback signature")
             skipNewlines()
             val receiverModifier = parseSpecReceiverModifier()
             val receiverName = consumeIdentifierLike("Expected spec callback receiver name")
-            consume(close, "Expected ')' or '}' after spec callback receiver")
+            consume(TokenType.R_PAREN, "Expected ')' after spec callback receiver")
             val useAsTemplate = if (check(TokenType.USE) && peekNext()?.type == TokenType.AS) {
                 advance()
                 advance()
@@ -2717,6 +2764,14 @@ class Parser(
     private fun isModuleHeaderAhead(): Boolean {
         var i = current
         if (tokens.getOrNull(i)?.type == TokenType.EXPORT) i++
+        // `export if COND \n module …` — the newline before `module` is mandatory.
+        if (tokens.getOrNull(i)?.type == TokenType.IF) {
+            var j = i + 1
+            while (j < tokens.size && tokens[j].type != TokenType.NEWLINE) j++
+            // exactly one newline, then `module`
+            return tokens.getOrNull(j)?.type == TokenType.NEWLINE &&
+                tokens.getOrNull(j + 1)?.type == TokenType.MODULE
+        }
         if (tokens.getOrNull(i)?.type in setOf(
                 TokenType.EXPOSE, TokenType.INTERN, TokenType.PROTECT, TokenType.CONFINE
             )
@@ -2762,7 +2817,7 @@ class Parser(
         val variadicParam = typeParamsBefore.variadic ?: typeParamsAfter.variadic
         val constParams = typeParamsBefore.constParams + typeParamsAfter.constParams
         consume(TokenType.L_PAREN, "Expected '(' after function name")
-        val params = parseParams(variadicParam)
+        val params = parseParams(variadicParam).toMutableList()
         consume(TokenType.R_PAREN, "Expected ')' after parameters")
         val returnType: TypeAnnotation = if (match(TokenType.COLON)) {
             TypeAnnotation.Explicit(parseTypeName())
@@ -2810,6 +2865,16 @@ class Parser(
                 if (receiverName != "self") error("Expected receiver to be named 'self' at line ${peek().line}")
                 consume(TokenType.ARROW, "Expected '->' after receiver")
                 skipNewlines()
+            }
+            // `func main() { ...args[: Type] -> body }` — bind CLI args to a
+            // synthetic variadic param. Only main; only when declared with ().
+            if (name == "main" && params.isEmpty() && check(TokenType.ELLIPSIS)) {
+                advance() // '...'
+                val argsName = consumeIdentifierLike("Expected args name after '...' in main")
+                val elemType = if (match(TokenType.COLON)) parseTypeName() else TypeRef.Named("String")
+                consume(TokenType.ARROW, "Expected '->' after main args binding")
+                skipNewlines()
+                params.add(Param(argsName, TypeRef.Array(elemType), variadic = true))
             }
             val stmts = mutableListOf<Stmt>()
             while (!check(TokenType.R_BRACE) && !isAtEnd()) {
@@ -3301,7 +3366,6 @@ class Parser(
             check(TokenType.FAIL) && peekNext()?.type == TokenType.DEFER -> parseFailDefer()
             check(TokenType.FAIL) && peekNext()?.type == TokenType.RETURN -> parseFailReturn()
             check(TokenType.FAIL) -> parseFailThrow()
-            check(TokenType.MIXIN) -> parseMixinStmt()
             check(TokenType.UNSAFE) -> parseUnsafe()
             check(TokenType.DROP) -> parseDrop()
             check(TokenType.YIELD) -> parseYield()
@@ -3553,9 +3617,9 @@ class Parser(
      * requires a comptime context (`inline for … with index`) and is handled by the
      * variadic-pack machinery instead.
      */
-    private fun parseMixinStmt(): Stmt {
+    private fun parseInlineSplice(): Stmt {
         val start = peek()
-        consume(TokenType.MIXIN, "Expected 'mixin'")
+        consume(TokenType.INLINE, "Expected 'inline'")
         val template = parsePrimary()
         val rendered = when (template) {
             is Expr.StringLiteral -> template.value
@@ -3565,17 +3629,17 @@ class Parser(
                     when (part) {
                         is Expr.StringTemplatePart.Literal -> sb.append(part.text)
                         is Expr.StringTemplatePart.Expr -> error(
-                            "mixin '\$${(part.expr as? Expr.Identifier)?.name ?: ""}' interpolation is only valid inside an `inline for … with index` comptime context at line ${start.line}"
+                            "inline splice '\$${(part.expr as? Expr.Identifier)?.name ?: ""}' interpolation is only valid inside an `inline for … with index` comptime context at line ${start.line}"
                         )
                     }
                 }
                 sb.toString()
             }
-            else -> error("Expected string after 'mixin' at line ${start.line}")
+            else -> error("Expected string after 'inline' at line ${start.line}")
         }
         val wrapper = Parser(Lexer("func __mixin() {\n$rendered\n}").tokenize()).parse()
         val body = (wrapper.items.firstOrNull() as? TopLevel.Func)?.decl?.body
-            ?: error("mixin did not produce any statements at line ${start.line}")
+            ?: error("inline splice did not produce any statements at line ${start.line}")
         consumeNewline()
         return Stmt.InlineBlock(body, start.line, start.column)
     }
@@ -3809,7 +3873,7 @@ class Parser(
      * path names a module or a selected item. `::` is only for zone access
      * expressions, never import syntax.
      */
-    private fun parseImport(exported: Boolean = false): TopLevel {
+    private fun parseImport(exported: Boolean = false, condition: Expr? = null): TopLevel {
         val start = consume(TokenType.IMPORT, "Expected 'import'")
         // `import zone std` — the optional marker reads naturally and is skipped.
         if (check(TokenType.ZONE) && peekNext()?.type == TokenType.IDENTIFIER) {
@@ -3845,7 +3909,7 @@ class Parser(
             }
         } while (match(TokenType.COMMA) && check(TokenType.IDENTIFIER))
         consumeNewline()
-        return TopLevel.UseImport(imports, start.line, start.column, exported = exported)
+        return TopLevel.UseImport(imports, start.line, start.column, exported = exported, condition = condition)
     }
 
     private fun addDottedUsePath(path: String, imports: MutableList<Pair<String, String?>>) {
@@ -4130,7 +4194,8 @@ class Parser(
             TokenType.VAR -> parseInlineVar()
             TokenType.LET -> parseInlineLet()
             TokenType.IDENTIFIER -> parseInlineAssignment()
-            else -> error("Expected '{', 'zone', 'if', 'for', 'assert', 'trace', 'fin', 'var', 'let', or identifier after 'inline' at line ${peek().line}")
+            TokenType.STRING_LITERAL, TokenType.INTERPOLATED_STRING -> parseInlineSplice()
+            else -> error("Expected '{', 'zone', 'if', 'for', 'assert', 'trace', 'fin', 'var', 'let', a string splice, or identifier after 'inline' at line ${peek().line}")
         }
     }
 

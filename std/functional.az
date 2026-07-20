@@ -16,6 +16,8 @@
 
 module std.functional
 
+import std.container.array
+
 /**
  * @file std/functional
  *
@@ -45,8 +47,8 @@ friend zone std {
      * @return A new array with transformed elements.
      */
     @Experimental(sinceAzora: "0.0.1")
-    func map<T>(arr: [T], f: (T) -> T): [T] {
-        var result: [T] = [].fill<T>(arr.length)
+    func map<T>(arr: Array<T>, f: (T) -> T): Array<T> {
+        var result: Array<T> = Array::fill<T>(arr.length)
         for i in 0..<arr.length {
             result[i] = f(arr[i])
         }
@@ -61,8 +63,8 @@ friend zone std {
      * @return A filtered array.
      */
     @Experimental(sinceAzora: "0.0.1")
-    func filter<T>(arr: [T], pred: (T) -> Bool): [T] {
-        var tmp: [T] = [].fill<T>(arr.length)
+    func filter<T>(arr: Array<T>, pred: (T) -> Bool): Array<T> {
+        var tmp: Array<T> = Array::fill<T>(arr.length)
         var count = 0
         for i in 0..<arr.length {
             if pred(arr[i]) {
@@ -70,7 +72,7 @@ friend zone std {
                 count += 1
             }
         }
-        var result: [T] = [].fill<T>(count)
+        var result: Array<T> = Array::fill<T>(count)
         for j in 0..<count {
             result[j] = tmp[j]
         }
@@ -86,7 +88,7 @@ friend zone std {
      * @return The final accumulated value.
      */
     @Experimental(sinceAzora: "0.0.1")
-    func reduce<T>(arr: [T], initial: T, f: (T, T) -> T): T {
+    func reduce<T>(arr: Array<T>, initial: T, f: (T, T) -> T): T {
         var acc = initial
         for i in 0..<arr.length {
             acc = f(acc, arr[i])
@@ -101,7 +103,7 @@ friend zone std {
      * @param action The function to apply.
      */
     @Experimental(sinceAzora: "0.0.1")
-    func forEach<T>(arr: [T], action: (T) -> Unit) {
+    func forEach<T>(arr: Array<T>, action: (T) -> Unit) {
         for i in 0..<arr.length {
             action(arr[i])
         }
@@ -115,7 +117,7 @@ friend zone std {
      * @return true if at least one element matches.
      */
     @Experimental(sinceAzora: "0.0.1")
-    func any<T>(arr: [T], pred: (T) -> Bool): Bool {
+    func any<T>(arr: Array<T>, pred: (T) -> Bool): Bool {
         for i in 0..<arr.length {
             if pred(arr[i]) { return true }
         }
@@ -130,7 +132,7 @@ friend zone std {
      * @return true if every element matches.
      */
     @Experimental(sinceAzora: "0.0.1")
-    func all<T>(arr: [T], pred: (T) -> Bool): Bool {
+    func all<T>(arr: Array<T>, pred: (T) -> Bool): Bool {
         for i in 0..<arr.length {
             if !pred(arr[i]) { return false }
         }
@@ -145,7 +147,7 @@ friend zone std {
      * @return true if no element matches.
      */
     @Experimental(sinceAzora: "0.0.1")
-    func none<T>(arr: [T], pred: (T) -> Bool): Bool {
+    func none<T>(arr: Array<T>, pred: (T) -> Bool): Bool {
         for i in 0..<arr.length {
             if pred(arr[i]) { return false }
         }
@@ -160,12 +162,12 @@ friend zone std {
      * @return A new array with at most n elements.
      */
     @Experimental(sinceAzora: "0.0.1")
-    func take<T>(arr: [T], n: Int): [T]
+    func take<T>(arr: Array<T>, n: Int): Array<T>
     in {
         assert n >= 0 { "take count must be non-negative" }
     } zone {
         fin len = if n < arr.length { n } else { arr.length }
-        var result: [T] = [].fill<T>(len)
+        var result: Array<T> = Array::fill<T>(len)
         for i in 0..<len {
             result[i] = arr[i]
         }
@@ -180,12 +182,12 @@ friend zone std {
      * @return A new array without the first n elements.
      */
     @Experimental(sinceAzora: "0.0.1")
-    func drop<T>(arr: [T], n: Int): [T]
+    func drop<T>(arr: Array<T>, n: Int): Array<T>
     in {
         assert n >= 0 { "drop count must be non-negative" }
     } zone {
         fin start = if n < arr.length { n } else { arr.length }
-        var result: [T] = [].fill<T>(arr.length - start)
+        var result: Array<T> = Array::fill<T>(arr.length - start)
         var i = start
         var j = 0
         while i < arr.length {
@@ -204,9 +206,9 @@ friend zone std {
      * @return An array of [a[i], b[i]] pairs, up to the shorter length.
      */
     @Experimental(sinceAzora: "0.0.1")
-    func zip<T>(a: [T], b: [T]): [T] {
+    func zip<T>(a: Array<T>, b: Array<T>): Array<T> {
         fin len = if a.length < b.length { a.length } else { b.length }
-        var result: [T] = [].fill<[T]>(len)
+        var result: Array<T> = Array::fill<Array<T>>(len)
         for i in 0..<len {
             result[i] = arrayOf(a[i], b[i])
         }
@@ -221,11 +223,11 @@ friend zone std {
      * @return A new array of count elements, all set to value.
      */
     @Experimental(sinceAzora: "0.0.1")
-    func fill<T>(value: T, count: Int): [T]
+    func fill<T>(value: T, count: Int): Array<T>
     in {
         assert count >= 0 { "fill count must be non-negative" }
     } zone {
-        var result: [T] = [].fill<T>(count)
+        var result: Array<T> = Array::fill<T>(count)
         for i in 0..<count {
             result[i] = value
         }
@@ -240,8 +242,8 @@ friend zone std {
      * @return A new array of generated elements.
      */
     @Experimental(sinceAzora: "0.0.1")
-    func generate<T>(count: T, f: (T) -> T): [T] {
-        var result: [T] = [].fill<T>(count)
+    func generate<T>(count: T, f: (T) -> T): Array<T> {
+        var result: Array<T> = Array::fill<T>(count)
         for i in 0..<count {
             result[i] = f(i)
         }
@@ -256,7 +258,7 @@ friend zone std {
      * @return The count of matching elements.
      */
     @Experimental(sinceAzora: "0.0.1")
-    func countWhere<T>(arr: [T], pred: (T) -> Bool): Int {
+    func countWhere<T>(arr: Array<T>, pred: (T) -> Bool): Int {
         var c = 0
         for i in 0..<arr.length {
             if pred(arr[i]) { c += 1 }
@@ -273,7 +275,7 @@ friend zone std {
      * @return The first matching element or default.
      */
     @Experimental(sinceAzora: "0.0.1")
-    func findOr<T>(arr: [T], pred: (T) -> Bool, default: T): T {
+    func findOr<T>(arr: Array<T>, pred: (T) -> Bool, default: T): T {
         for i in 0..<arr.length {
             if pred(arr[i]) { return arr[i] }
         }
@@ -284,20 +286,20 @@ friend zone std {
      * Maps each element to an array and flattens the results.
      */
     @Experimental(sinceAzora: "0.0.2")
-    func flatMap<T>(arr: [T], f: (T) -> [T]): [T] {
+    func flatMap<T>(arr: Array<T>, f: (T) -> Array<T>): Array<T> {
         // Two-pass: first count total, then fill
         var total = 0
         var i = 0
         while i < arr.length {
-            var mapped: [T] = f(arr[i])
+            var mapped: Array<T> = f(arr[i])
             total += mapped.length
             i += 1
         }
-        var result: [T] = [].fill<T>(total)
+        var result: Array<T> = Array::fill<T>(total)
         var ri = 0
         i = 0
         while i < arr.length {
-            var mapped: [T] = f(arr[i])
+            var mapped: Array<T> = f(arr[i])
             for j in 0..<mapped.length {
                 result[ri] = mapped[j]
                 ri += 1
@@ -312,7 +314,7 @@ friend zone std {
      * Since Azora generics are single-type, accumulator uses same type T.
      */
     @Experimental(sinceAzora: "0.0.2")
-    func fold<T>(arr: [T], initial: T, f: (T, T) -> T): T {
+    func fold<T>(arr: Array<T>, initial: T, f: (T, T) -> T): T {
         var acc: T = initial
         for i in 0..<arr.length {
             acc = f(acc, arr[i])
@@ -324,8 +326,8 @@ friend zone std {
      * Like reduce but returns all intermediate accumulator values.
      */
     @Experimental(sinceAzora: "0.0.2")
-    func scan<T>(arr: [T], initial: T, f: (T, T) -> T): [T] {
-        var result: [T] = [].fill<T>(arr.length + 1)
+    func scan<T>(arr: Array<T>, initial: T, f: (T, T) -> T): Array<T> {
+        var result: Array<T> = Array::fill<T>(arr.length + 1)
         var acc: T = initial
         result[0] = acc
         for i in 0..<arr.length {
@@ -340,8 +342,8 @@ friend zone std {
      * Returns transformed array. Index passed as first element of a 2-element array.
      */
     @Experimental(sinceAzora: "0.0.2")
-    func mapIndexed<T>(arr: [T], f: (T, T) -> T): [T] {
-        var result: [T] = [].fill<T>(arr.length)
+    func mapIndexed<T>(arr: Array<T>, f: (T, T) -> T): Array<T> {
+        var result: Array<T> = Array::fill<T>(arr.length)
         for i in 0..<arr.length {
             result[i] = f(arr[i], arr[i])
         }
@@ -352,8 +354,8 @@ friend zone std {
      * Calls function N times, collecting results.
      */
     @Experimental(sinceAzora: "0.0.2")
-    func repeatCall<T>(count: T, f: () -> T): [T] {
-        var result: [T] = [].fill<T>(count)
+    func repeatCall<T>(count: T, f: () -> T): Array<T> {
+        var result: Array<T> = Array::fill<T>(count)
         for idx in 0..<count {
             result[idx] = f()
         }
@@ -364,7 +366,7 @@ friend zone std {
      * Returns the first element matching the predicate, or default.
      */
     @Experimental(sinceAzora: "0.0.2")
-    func firstWhere<T>(arr: [T], pred: (T) -> Bool, default: T): T {
+    func firstWhere<T>(arr: Array<T>, pred: (T) -> Bool, default: T): T {
         for i in 0..<arr.length {
             if pred(arr[i]) {
                 return arr[i]
@@ -377,7 +379,7 @@ friend zone std {
      * Returns the last element matching the predicate, or default.
      */
     @Experimental(sinceAzora: "0.0.2")
-    func lastWhere<T>(arr: [T], pred: (T) -> Bool, default: T): T {
+    func lastWhere<T>(arr: Array<T>, pred: (T) -> Bool, default: T): T {
         var result: T = default
         for i in 0..<arr.length {
             if pred(arr[i]) {
@@ -392,9 +394,9 @@ friend zone std {
      * Returns a 2-element array: [matching, nonMatching].
      */
     @Experimental(sinceAzora: "0.0.2")
-    func partition<T>(arr: [T], pred: (T) -> Bool): [T] {
-        var yes: [T] = [].fill<T>(arr.length)
-        var no: [T] = [].fill<T>(arr.length)
+    func partition<T>(arr: Array<T>, pred: (T) -> Bool): Array<T> {
+        var yes: Array<T> = Array::fill<T>(arr.length)
+        var no: Array<T> = Array::fill<T>(arr.length)
         var yi = 0
         var ni = 0
         for i in 0..<arr.length {
@@ -407,13 +409,13 @@ friend zone std {
             }
         }
         // Trim to actual sizes
-        var yTrim: [T] = [].fill<T>(yi)
+        var yTrim: Array<T> = Array::fill<T>(yi)
         var j = 0
         while j < yi {
             yTrim[j] = yes[j]
             j += 1
         }
-        var nTrim: [T] = [].fill<T>(ni)
+        var nTrim: Array<T> = Array::fill<T>(ni)
         j = 0
         while j < ni {
             nTrim[j] = no[j]
@@ -426,15 +428,15 @@ friend zone std {
      * Splits array into chunks of given size.
      */
     @Experimental(sinceAzora: "0.0.2")
-    func chunk<T>(arr: [T], size: Int): [T] {
+    func chunk<T>(arr: Array<T>, size: Int): Array<T> {
         fin numChunks = (arr.length + size - 1) / size
-        var result: [T] = [].fill<[T]>(numChunks)
+        var result: Array<T> = Array::fill<Array<T>>(numChunks)
         var ri = 0
         var i = 0
         while i < arr.length {
             fin remaining = arr.length - i
             fin chunkSize = if remaining < size { remaining } else { size }
-            var ch: [T] = [].fill<T>(chunkSize)
+            var ch: Array<T> = Array::fill<T>(chunkSize)
             for j in 0..<chunkSize {
                 ch[j] = arr[i + j]
             }
@@ -449,7 +451,7 @@ friend zone std {
      * Flattens a nested array by one level.
      */
     @Experimental(sinceAzora: "0.0.2")
-    func flatten<T>(arr: [T]): [T] {
+    func flatten<T>(arr: Array<T>): Array<T> {
         // Two-pass: count total, then fill
         var total = 0
         var i = 0
@@ -457,11 +459,11 @@ friend zone std {
             total += arr[i].length
             i += 1
         }
-        var result: [T] = [].fill<T>(total)
+        var result: Array<T> = Array::fill<T>(total)
         var ri = 0
         i = 0
         while i < arr.length {
-            var inner: [T] = arr[i]
+            var inner: Array<T> = arr[i]
             for j in 0..<inner.length {
                 result[ri] = inner[j]
                 ri += 1
@@ -475,8 +477,8 @@ friend zone std {
      * Removes all duplicate elements (not just consecutive), preserving first occurrence.
      */
     @Experimental(sinceAzora: "0.0.2")
-    func distinct<T>(arr: [T]): [T] {
-        var tmp: [T] = [].fill<T>(arr.length)
+    func distinct<T>(arr: Array<T>): Array<T> {
+        var tmp: Array<T> = Array::fill<T>(arr.length)
         var ri = 0
         for i in 0..<arr.length {
             var found = false
@@ -490,7 +492,7 @@ friend zone std {
                 ri += 1
             }
         }
-        var result: [T] = [].fill<T>(ri)
+        var result: Array<T> = Array::fill<T>(ri)
         for k in 0..<ri {
             result[k] = tmp[k]
         }
@@ -501,10 +503,10 @@ friend zone std {
      * Returns a new array with elements in the given index range.
      */
     @Experimental(sinceAzora: "0.0.2")
-    func slice<T>(arr: [T], start: Int, end: Int): [T] {
+    func slice<T>(arr: Array<T>, start: Int, end: Int): Array<T> {
         fin actualEnd = if end < arr.length { end } else { arr.length }
         fin len = if actualEnd > start { actualEnd - start } else { 0 }
-        var result: [T] = [].fill<T>(len)
+        var result: Array<T> = Array::fill<T>(len)
         var ri = 0
         for i in start..<actualEnd {
             result[ri] = arr[i]

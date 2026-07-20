@@ -161,8 +161,8 @@ class Feature003SyntaxTest {
             pack Label {
                 var value: String
             }
-            spec Into<T>: T { ref self } use as "to${'$'}{T.typeName}"
-            spec From<T>: T { ref self } use as "from${'$'}{T.typeName}"
+            spec Into<T>: T ( ref self ) use as "to${'$'}{T.typeName}"
+            spec From<T>: T ( ref self ) use as "from${'$'}{T.typeName}"
             impl Into<String> for Label { ref self ->
                 return "Label(" + self.value + ")"
             }
@@ -186,7 +186,7 @@ class Feature003SyntaxTest {
             impl Show<String> for Label { ref self ->
                 return "Label(" + self.value + ")"
             }
-            spec Show<T>: T { ref self } use as "show${'$'}{T.typeName}"
+            spec Show<T>: T ( ref self ) use as "show${'$'}{T.typeName}"
             func main() {
                 var label = Label("ok")
                 std::println(label.showString)
@@ -200,7 +200,7 @@ class Feature003SyntaxTest {
             pack Label {
                 var value: String
             }
-            spec Render<T>: T { ref self } use as "render"
+            spec Render<T>: T ( ref self ) use as "render"
             impl Render<String> for Label { ref self ->
                 return "Label(" + self.value + ")"
             }
@@ -217,7 +217,7 @@ class Feature003SyntaxTest {
             pack Label {
                 var value: String
             }
-            spec Into<T>: T { ref self } use as "to${'$'}{T.typeName}"
+            spec Into<T>: T ( ref self ) use as "to${'$'}{T.typeName}"
             impl Into<String> for Label { ref self ->
                 return self.value
             }
@@ -236,7 +236,7 @@ class Feature003SyntaxTest {
             pack Box {
                 var value: Int
             }
-            spec Extract<T>(): T { ref self } use as "extract${'$'}{T.typeName}"
+            spec Extract<T>(): T ( ref self ) use as "extract${'$'}{T.typeName}"
             impl Extract<Int> for Box { ref self ->
                 return self.value
             }
@@ -251,7 +251,7 @@ class Feature003SyntaxTest {
             pack Box {
                 var value: Int
             }
-            spec Extract<T>(): T { ref self } use as "extract${'$'}{T.typeName}"
+            spec Extract<T>(): T ( ref self ) use as "extract${'$'}{T.typeName}"
             impl Extract<Int> for Box { ref self ->
                 return self.value
             }

@@ -17,6 +17,7 @@
 module std.io.convert
 
 import std.convert
+import std.container.array
 
 /**
  * @file std/io/convert
@@ -121,7 +122,7 @@ friend zone std {
      * @return The joined string.
      */
     @Experimental(sinceAzora: "0.0.1")
-    func join<T>(arr: [T], sep: T): T {
+    func join<T>(arr: Array<T>, sep: T): T {
         if arr.length == 0 { return "" }
         var result = arr[0]
         for i in 1..<arr.length {

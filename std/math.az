@@ -16,6 +16,8 @@
 
 module std.math
 
+import std.container.array
+
 /**
  * @file std/math
  *
@@ -351,7 +353,7 @@ friend zone std::math {
      * @return The sum of all elements.
      */
     @Experimental(sinceAzora: "0.0.1")
-    func sum<T>(arr: [T]): T {
+    func sum<T>(arr: Array<T>): T {
         var total = 0
         for i in 0..<arr.length {
             total += arr[i]
@@ -366,7 +368,7 @@ friend zone std::math {
      * @return The sum of all elements.
      */
     @Experimental(sinceAzora: "0.0.1")
-    func sumReal<T>(arr: [T]): T {
+    func sumReal<T>(arr: Array<T>): T {
         var total = 0.0
         for i in 0..<arr.length {
             total += arr[i]
@@ -381,7 +383,7 @@ friend zone std::math {
      * @return The product of all elements.
      */
     @Experimental(sinceAzora: "0.0.1")
-    func product<T>(arr: [T]): T {
+    func product<T>(arr: Array<T>): T {
         if arr.length == 0 { return 0 }
         var result = 1
         for i in 0..<arr.length {

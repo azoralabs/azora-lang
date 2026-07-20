@@ -17,10 +17,10 @@
 export module std.core
 
 /**
- * @file std/core
+ * @file std/core.az
  *
  * Compiler-predefined declarations available in every Azora module: the
- * primitive `bridge pack` types, the `Reflected<T>` reflection handle, the core
+ * primitive `bridge pack` types, the `Reflected<T>` reflection handle, the core.az
  * decorators, and the `bridge func` string/char intrinsics. These are compiler-
  * provided and never dispatch at runtime.
  */

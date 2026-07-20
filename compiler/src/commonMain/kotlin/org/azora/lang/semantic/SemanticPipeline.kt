@@ -16,6 +16,7 @@
 
 package org.azora.lang.semantic
 
+import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.Program
 
 /**
@@ -86,9 +87,20 @@ class SemanticPipeline(
      * @return a [SemanticResult] containing the stabilized AST, symbol table,
      *   effect info, and any errors or warnings
      */
-    fun analyze(program: Program): SemanticResult {
+    fun analyze(program: Program, defines: Map<String, String> = emptyMap()): SemanticResult {
         val table = SymbolTable()
         val allErrors = mutableListOf<String>()
+        // CLI `-D NAME=VAL` overrides parsed to compile-time literals, merged into
+        // the top-level constant pool so `config.az` flags are user-overridable.
+        val defineExprs = defines.mapValues { (name, raw) ->
+            val v = raw.trim()
+            when {
+                v == "true" -> Expr.BoolLiteral(true, 0, 0)
+                v == "false" -> Expr.BoolLiteral(false, 0, 0)
+                v.toIntOrNull() != null -> Expr.IntLiteral(v.toLong(), 0, 0)
+                else -> Expr.StringLiteral(v, 0, 0)
+            }
+        }
 
         // ---------------------------------------------------------------
         // Pass 0: Top-Level CTCE
@@ -109,7 +121,7 @@ class SemanticPipeline(
         // symbol collection). Preserve them so the fixed-point CTCE pass can make
         // them visible inside function bodies — this is what lets exported
         // `std.config` flags be read anywhere without an import.
-        val topLevelConstants = topLevelCtfe.topLevelConstants
+        val topLevelConstants = topLevelCtfe.topLevelConstants + defineExprs
 
         // ---------------------------------------------------------------
         // Pass 1: Symbol Collection

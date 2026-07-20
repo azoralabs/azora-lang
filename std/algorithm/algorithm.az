@@ -16,6 +16,8 @@
 
 module std.algorithm
 
+import std.container.array
+
 /**
  * @file std/algorithm/algorithm
  *
@@ -29,13 +31,13 @@ friend zone std {
      * Merge sort - O(n log n) stable sorting algorithm.
      */
     @Experimental(sinceAzora: "0.0.1")
-    func mergeSort<T>(arr: [T]): [T] {
+    func mergeSort<T>(arr: Array<T>): Array<T> {
         if arr.length <= 1 {
             return arr
         }
         var mid: Int = arr.length / 2
-        var left: [T] = [].fill<T>(mid)
-        var right: [T] = [].fill<T>(arr.length - mid)
+        var left: Array<T> = Array::fill<T>(mid)
+        var right: Array<T> = Array::fill<T>(arr.length - mid)
         var i = 0
         while i < mid {
             left[i] = arr[i]
@@ -47,8 +49,8 @@ friend zone std {
             i += 1
             j += 1
         }
-        var sortedLeft: [T] = mergeSort<T>(left)
-        var sortedRight: [T] = mergeSort<T>(right)
+        var sortedLeft: Array<T> = mergeSort<T>(left)
+        var sortedRight: Array<T> = mergeSort<T>(right)
         return merge<T>(sortedLeft, sortedRight)
     }
 
@@ -56,8 +58,8 @@ friend zone std {
      * Merges two sorted arrays into one sorted array.
      */
     @Experimental(sinceAzora: "0.0.1")
-    func merge<T>(a: [T], b: [T]): [T] {
-        var result: [T] = [].fill<T>(a.length + b.length)
+    func merge<T>(a: Array<T>, b: Array<T>): Array<T> {
+        var result: Array<T> = Array::fill<T>(a.length + b.length)
         var ri = 0
         var ai = 0
         var bi = 0
@@ -89,8 +91,8 @@ friend zone std {
      * Uses insertion sort on key-value pairs.
      */
     @Experimental(sinceAzora: "0.0.1")
-    func sortBy<T>(arr: [T], key: (T) -> T): [T] {
-        var result: [T] = [].fill<T>(arr.length)
+    func sortBy<T>(arr: Array<T>, key: (T) -> T): Array<T> {
+        var result: Array<T> = Array::fill<T>(arr.length)
         var i = 0
         while i < arr.length {
             result[i] = arr[i]
@@ -116,9 +118,9 @@ friend zone std {
      * Returns array of arrays where each sub-array has elements with the same key.
      */
     @Experimental(sinceAzora: "0.0.1")
-    func groupBy<T>(arr: [T], key: (T) -> T): [T] {
-        var keys: [T] = [].fill<T>(arr.length)
-        var groups: [T] = [].fill<T>(arr.length)
+    func groupBy<T>(arr: Array<T>, key: (T) -> T): Array<T> {
+        var keys: Array<T> = Array::fill<T>(arr.length)
+        var groups: Array<T> = Array::fill<T>(arr.length)
         var keyCount = 0
         for i in 0..<arr.length {
             var k: T = key(arr[i])
@@ -133,13 +135,13 @@ friend zone std {
                 groups[keyCount] = [arr[i]]
                 keyCount += 1
             } else {
-                var g: [T] = groups[found]
+                var g: Array<T> = groups[found]
                 g[g.length] = arr[i]
                 groups[found] = g
             }
         }
         // Trim groups to actual count
-        var trimmed: [T] = [].fill<[T]>(keyCount)
+        var trimmed: Array<T> = Array::fill<Array<T>>(keyCount)
         for ti in 0..<keyCount {
             trimmed[ti] = groups[ti]
         }
@@ -150,8 +152,8 @@ friend zone std {
      * Interleaves two arrays: [a1, b1, a2, b2, ...].
      */
     @Experimental(sinceAzora: "0.0.1")
-    func interleave<T>(a: [T], b: [T]): [T] {
-        var result: [T] = [].fill<T>(a.length + b.length)
+    func interleave<T>(a: Array<T>, b: Array<T>): Array<T> {
+        var result: Array<T> = Array::fill<T>(a.length + b.length)
         var ri = 0
         var maxLen: Int = a.length
         if b.length > maxLen { maxLen = b.length }
@@ -172,13 +174,13 @@ friend zone std {
      * Returns a sliding window of given size over the array.
      */
     @Experimental(sinceAzora: "0.0.1")
-    func windows<T>(arr: [T], size: Int): [T] {
+    func windows<T>(arr: Array<T>, size: Int): Array<T> {
         fin count = if arr.length >= size { arr.length - size + 1 } else { 0 }
-        var result: [T] = [].fill<[T]>(count)
+        var result: Array<T> = Array::fill<Array<T>>(count)
         var ri = 0
         var i = 0
         while i + size <= arr.length {
-            var w: [T] = [].fill<T>(size)
+            var w: Array<T> = Array::fill<T>(size)
             for j in 0..<size {
                 w[j] = arr[i + j]
             }
@@ -193,9 +195,9 @@ friend zone std {
      * Returns array with elements at even indices.
      */
     @Experimental(sinceAzora: "0.0.1")
-    func evens<T>(arr: [T]): [T] {
+    func evens<T>(arr: Array<T>): Array<T> {
         fin count = (arr.length + 1) / 2
-        var result: [T] = [].fill<T>(count)
+        var result: Array<T> = Array::fill<T>(count)
         var ri = 0
         var i = 0
         while i < arr.length {
@@ -210,9 +212,9 @@ friend zone std {
      * Returns array with elements at odd indices.
      */
     @Experimental(sinceAzora: "0.0.1")
-    func odds<T>(arr: [T]): [T] {
+    func odds<T>(arr: Array<T>): Array<T> {
         fin count = arr.length / 2
-        var result: [T] = [].fill<T>(count)
+        var result: Array<T> = Array::fill<T>(count)
         var ri = 0
         var i = 1
         while i < arr.length {

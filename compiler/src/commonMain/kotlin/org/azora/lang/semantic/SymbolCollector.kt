@@ -296,6 +296,7 @@ class SymbolCollector {
                     table.nodeParents[item.name] = item.parent!!
                 }
                 if (item.isLeaf) table.leafNodes.add(item.name)
+                if (item.isAbstract) table.abstractNodes.add(item.name)
             } catch (e: Exception) {
                 errors.add("line ${item.line}: ${e.message}")
             }

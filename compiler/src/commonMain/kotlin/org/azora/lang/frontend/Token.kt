@@ -84,7 +84,7 @@ enum class TokenType {
 
     // Keywords
     VAR, FIN, LET, FUNC, RETURN, IF, ELSE, INLINE, DEEPINLINE, NOINLINE, ZONE, FRIEND,
-    TEST, ASSERT, TRACE, MIXIN, PANIC, META,
+    TEST, ASSERT, TRACE, PANIC, META,
     FOR, WHILE, LOOP, IN, BREAK, CONTINUE,
     PACK, ENUM, WHEN,
     THROW, TRY, CATCH,
@@ -131,7 +131,8 @@ enum class TokenType {
     // Error handling: `rescue { … }` — catch-and-suppress.
     RESCUE,
     // Inheritance: `node Name(params)`, `leaf Name`, `repl func` (override), `virt` (virtual), `base` (parent/super).
-    NODE, LEAF, REPL, VIRT, BASE,
+    // `abstract node` cannot be instantiated directly — only subclassed by a `leaf`.
+    NODE, LEAF, REPL, VIRT, BASE, ABSTRACT,
     // Variadic generics: `...T` type params, `args: ...T` variadic params, `...arr` spread.
     ELLIPSIS,
     // Reactivity: `mem` (remember), `rem` (saveable/serializable), `ret` (retain), `effect { }`, `view Name() { }`.
@@ -144,8 +145,8 @@ enum class TokenType {
     REF, OUT, MUT, SHARED, WEAK,
     // Visibility: `expose` (public), `confine` (private), `protect` (protected),
     // `intern` (library-scoped). `shield` — a pack/field modifier: externally
-    // read-only, internally mutable.
-    EXPOSE, CONFINE, PROTECT, SHIELD, INTERN,
+    // read-only, internally mutable. `opaque pack` forces every field to confine.
+    EXPOSE, CONFINE, PROTECT, SHIELD, INTERN, OPAQUE,
     // Module: `module Name`. `export module Name` publishes the module so that
     // its declarations are auto-imported into every unit (like `std.core`).
     MODULE, EXPORT,

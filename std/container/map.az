@@ -16,6 +16,8 @@
 
 module std.container.map
 
+import std.container.array
+
 import std.container.list
 
 /**
@@ -361,7 +363,7 @@ friend zone std {
         }
 
         confine func entrySnapshot(): List<MapEntry<K, V>> { ref self ->
-            var result: List<MapEntry<K, V>> = arrayOf().fill<MapEntry<K, V>>(self._size)
+            var result: List<MapEntry<K, V>> = Array::fill<MapEntry<K, V>>(self._size)
             var source = 0
             var target = 0
             while source < self.capacity {
@@ -405,7 +407,7 @@ friend zone std {
 
         func keys(): List<K> { ref self ->
             fin all = self.entrySnapshot()
-            var result: List<K> = arrayOf().fill<K>(all.size)
+            var result: List<K> = Array::fill<K>(all.size)
             for i in 0..<all.size {
                 result[i] = all[i].key
             }
@@ -414,7 +416,7 @@ friend zone std {
 
         func values(): List<V> { ref self ->
             fin all = self.entrySnapshot()
-            var result: List<V> = arrayOf().fill<V>(all.size)
+            var result: List<V> = Array::fill<V>(all.size)
             for i in 0..<all.size {
                 result[i] = all[i].value
             }
@@ -576,7 +578,7 @@ friend zone std {
         }
 
         confine func entrySnapshot(): List<MapEntry<K, V>> { ref self ->
-            var result: List<MapEntry<K, V>> = arrayOf().fill<MapEntry<K, V>>(self._size)
+            var result: List<MapEntry<K, V>> = Array::fill<MapEntry<K, V>>(self._size)
             for i in 0..<self._size {
                 result[i] = MapEntry(self.keys[i], self.values[i])
             }
@@ -617,7 +619,7 @@ friend zone std {
         }
 
         func keys(): List<K> { ref self ->
-            var result: List<K> = arrayOf().fill<K>(self._size)
+            var result: List<K> = Array::fill<K>(self._size)
             for i in 0..<self._size {
                 result[i] = self.keys[i]
             }
@@ -625,7 +627,7 @@ friend zone std {
         }
 
         func values(): List<V> { ref self ->
-            var result: List<V> = arrayOf().fill<V>(self._size)
+            var result: List<V> = Array::fill<V>(self._size)
             for i in 0..<self._size {
                 result[i] = self.values[i]
             }
@@ -916,7 +918,7 @@ friend zone std {
         }
 
         confine func entrySnapshot(): List<MapEntry<K, V>> { ref self ->
-            var result: List<MapEntry<K, V>> = arrayOf().fill<MapEntry<K, V>>(self._size)
+            var result: List<MapEntry<K, V>> = Array::fill<MapEntry<K, V>>(self._size)
             fin stack = alloc Int[self._size]
             var stackSize = 0
             var elem = self.root
@@ -971,7 +973,7 @@ friend zone std {
 
         func keys(): List<K> { ref self ->
             fin all = self.entrySnapshot()
-            var result: List<K> = arrayOf().fill<K>(all.size)
+            var result: List<K> = Array::fill<K>(all.size)
             for i in 0..<all.size {
                 result[i] = all[i].key
             }
@@ -980,7 +982,7 @@ friend zone std {
 
         func values(): List<V> { ref self ->
             fin all = self.entrySnapshot()
-            var result: List<V> = arrayOf().fill<V>(all.size)
+            var result: List<V> = Array::fill<V>(all.size)
             for i in 0..<all.size {
                 result[i] = all[i].value
             }
@@ -1414,6 +1416,71 @@ friend zone std {
             result = result + (#all[i].key ^ #all[i].value)
         }
         return result
+    }
+}
+
+use friend zone std {
+    /**
+     * Builds an immutable [Map].
+     *
+     * @0 `map![]` expands to `std::emptyMap()`.
+     * @1 `map!["One": 1, "Two": 2]` expands to `std::mapOf("One" to 1, "Two" to 2)`. // todo. to infx like in Kotlin
+     */
+    meta map {
+        [] => std::emptyMap()
+        [...${key: value}] => std::mapOf(...std::mapEntry($key, $value))
+    }
+
+    /**
+     * Builds an mutable [Map].
+     *
+     * @0 `mut map![]` expands to `std::emptyMutableMap()`.
+     * @1 `mut map!["One": 1, "Two": 2]` expands to `std::mutableMapOf("One" to 1, "Two" to 2)`.
+     */
+    meta mut map {
+        [] => std::emptyMutableMap()
+        [...${key: value}] => std::mutableMapOf(...std::mapEntry($key, $value))
+    }
+
+    /**
+     * Builds a hash [Map].
+     *
+     * @0 `# map![]` expands to `std::emptyHashMap()`.
+     * @1 `# map!["One": 1, "Two": 2]` expands to `std::hashMapOf("One" to 1, "Two" to 2)`.
+     */
+    meta # map {
+        [] => std::emptyHashMap()
+        [...${key: value}] => std::hashMapOf(...std::mapEntry($key, $value))
+    }
+
+    /**
+     * Builds a linked hash [Map].
+     *
+     * @0 `!# map![]` expands to `std::emptyLinkedHashMap()`.
+     * @1 `!# map!["One": 1, "Two": 2]` expands to `std::linkedHashMapOf("One" to 1, "Two" to 2)`.
+     */
+    meta !# map {
+        [] => std::emptyLinkedHashMap()
+        [...${key: value}] => std::linkedHashMapOf(...std::mapEntry($key, $value))
+    }
+
+    /**
+     * Builds a tree [Map].
+     *
+     * @0 `^ map![]` expands to `std::emptyTreeMap()`.
+     * @1 `^ map!["One": 1, "Two": 2]` expands to `std::treeMapOf("One" to 1, "Two" to 2)`.
+     */
+    meta ^ set {
+        [] => std::emptyTreeMap()
+        [...$items] => std::treeMapOf(...$items)
+    }
+
+    meta type {
+        [K: V] => std::Map<K, V>
+        mut [K: V] => std::MutableMap<K, V>
+        # [K: V] => std::HashMap<K, V>
+        !# [K: V] => std::LinkedHashMap<K, V>
+        ^ [K: V] => std::TreeMap<K, V>
     }
 }
 

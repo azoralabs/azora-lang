@@ -44,7 +44,7 @@ friend zone std {
     @Serializable
     pack<...T> Tuple where (...T).length >= 2 {
         inline for Ty in ...T with index {
-            mixin "$index: $Ty"
+            inline "$index: $Ty"
         }
     }
 
@@ -62,6 +62,21 @@ friend zone std {
     func<...T> tupleOf(...elements: ...T): Tuple<...T>
     where (...T).length >= 2 {
         return Tuple(elements)
+    }
+}
+
+use friend zone std {
+    /**
+     * Builds a structural [Tuple].
+     *
+     * @0 `tup!(1, "two", 3.0)` expands to `std::tupleOf(1, "two", 3.0)`.
+     */
+    meta tup {
+        [...$items] => std::tupleOf(...$items)
+    }
+
+    meta type {
+        (...T) => std::Tuple<...T>
     }
 }
 

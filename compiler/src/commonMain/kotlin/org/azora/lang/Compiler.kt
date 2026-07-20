@@ -125,10 +125,14 @@ class Compiler {
         return "$message — '${match.groupValues[1]}' is provided by '$module': add 'import $module'"
     }
 
-    fun compile(source: String, warningsAsErrors: Boolean = false, release: Boolean = true, debug: Boolean = false): CompilationResult {
+    fun compile(source: String, warningsAsErrors: Boolean = false, release: Boolean = true, debug: Boolean = false, defines: Map<String, String> = emptyMap()): CompilationResult {
 
         // Clear per-compilation state
         IrType.aliases.clear()
+
+        // CLI `-D NAME=VAL` / named flags drive `config.az` constants and
+        // `export if COND` conditions. Publish them before stdlib injection.
+        StdlibInjector.configOverrides = defines
 
         // ===============================================================
         // Phase 1 — Frontend
@@ -200,7 +204,7 @@ class Compiler {
         // ===============================================================
 
         // Passes 4-8: symbol collection → imports → type resolution ⇄ CTCE → alloc/drop → effects
-        val semantic = SemanticPipeline().analyze(ast)
+        val semantic = SemanticPipeline().analyze(ast, defines = defines)
 
         val warnings = semantic.errors.filter { it.startsWith("warning:") }
         val errors = semantic.errors.filter { !it.startsWith("warning:") }

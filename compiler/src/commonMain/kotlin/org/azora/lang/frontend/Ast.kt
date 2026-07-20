@@ -1608,6 +1608,12 @@ sealed class TopLevel {
          * No struct is emitted; it exists as a reflectable/declared type only.
          */
         val isBridge: Boolean = false,
+        /**
+         * `opaque pack X` — every field is forced to [Visibility.CONFINE] and no
+         * other field visibility modifier may be written. The pack’s fields are
+         * an implementation detail invisible outside the declaring file.
+         */
+        val isOpaque: Boolean = false,
     ) : TopLevel()
 
     /** `deco Name [bind Spec] { fields }` — an annotation type and optional derived spec contract. */
@@ -1645,6 +1651,8 @@ sealed class TopLevel {
         val parent: String? = null,
         val parentArgs: List<Expr> = emptyList(),
         val isLeaf: Boolean = false,
+        /** `abstract node` cannot be instantiated directly — only subclassed by a `leaf`. */
+        val isAbstract: Boolean = false,
         val extraFields: List<PackField> = emptyList(),
         val line: Int,
         val column: Int = 0,
@@ -1673,7 +1681,14 @@ sealed class TopLevel {
      * any module that imports this module also transitively imports [imports]. This lets
      * a library forward its dependencies (e.g. `std.macro` re-exporting `std.container`).
      */
-    data class UseImport(val imports: List<Pair<String, String?>>, val line: Int, val column: Int = 0, val exported: Boolean = false) : TopLevel()
+    data class UseImport(
+        val imports: List<Pair<String, String?>>,
+        val line: Int,
+        val column: Int = 0,
+        val exported: Boolean = false,
+        /** Comptime condition on `export if COND \n import …`; null = unconditional. */
+        val condition: Expr? = null,
+    ) : TopLevel()
 
     /**
      * A simple `enum` declaration: `enum Color { Red; Green; Blue }`.
@@ -1812,6 +1827,12 @@ data class Program(
      * `export` auto-import — reaches.
      */
     val moduleVisibility: ModuleVisibility = ModuleVisibility.EXPOSE,
+    /**
+     * Comptime condition on `export if COND \n module …` (null = unconditional
+     * `export module`). Evaluated against config constants + CLI defines; when it
+     * folds to `false`, [isExported] is cleared before stdlib indexing.
+     */
+    val exportCondition: Expr? = null,
     /**
      * Declaration name → the zone it was declared in, for `(reflect X).zone`.
      * Only declarations nested inside a `zone "label" { … }` (or an inline/

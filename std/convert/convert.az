@@ -27,7 +27,7 @@ friend zone std {
      * @param T target type produced by the conversion.
      */
     @Experimental(sinceAzora: "0.0.3")
-    spec Into<T>: T { ref self } use as "to${T.typeName}"
+    spec Into<T>: T (ref self) use as "to${T.typeName}"
 
     /**
      * Declares conversion from `T`.
@@ -39,5 +39,5 @@ friend zone std {
      * @param T source type represented by the conversion.
      */
     @Experimental(sinceAzora: "0.0.3")
-    spec From<T>: T { ref self } use as "from${T.typeName}"
+    spec From<T>: T (ref self) use as "from${T.typeName}"
 }

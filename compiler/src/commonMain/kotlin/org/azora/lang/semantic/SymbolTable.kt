@@ -140,6 +140,8 @@ class SymbolTable {
     val nodeParents = mutableMapOf<String, String>()
     /** Leaf nodes that cannot be subclassed. */
     val leafNodes = mutableSetOf<String>()
+    /** Abstract nodes that cannot be instantiated directly (only subclassed by a `leaf`). */
+    val abstractNodes = mutableSetOf<String>()
     /** All registered node type names (for dynamic dispatch checks). */
     val nodeTypes = mutableSetOf<String>()
     /** Import aliases: alias name → real (mangled) name. Populated from `use` declarations. */

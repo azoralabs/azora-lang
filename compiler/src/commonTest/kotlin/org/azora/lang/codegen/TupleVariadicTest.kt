@@ -192,11 +192,11 @@ class TupleVariadicTest {
     }
 
     @Test fun generalMixinConvertsStringToCode() {
-        // `mixin "<string>"` is a general statement: the string is parsed as code and spliced.
+        // `inline "<string>"` is a general statement: the string is parsed as code and spliced.
         val out = compile("""
             import std.io
             func main() {
-                mixin "std::println(40 + 2)"
+                inline "std::println(40 + 2)"
             }
         """.trimIndent())
         assertEquals("42", IrInterpreter().interpret(out.ir).trim())

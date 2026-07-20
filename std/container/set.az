@@ -348,6 +348,71 @@ friend zone std {
     }
 }
 
+use friend zone std {
+    /**
+     * Builds an immutable [Set].
+     *
+     * @0 `set![]` expands to `std::emptySet()`.
+     * @1 `set![1, 2, 3]` expands to `std::setOf(1, 2, 3)`.
+     */
+    meta set {
+        [] => std::emptySet()
+        [...$items] => std::setOf(...$items)
+    }
+
+    /**
+     * Builds an mutable [Set].
+     *
+     * @0 `mut set![]` expands to `std::emptyMutableSet()`.
+     * @1 `mut set![1, 2, 3]` expands to `std::mutableSetOf(1, 2, 3)`.
+     */
+    meta mut set {
+        [] => std::emptyMutableSet()
+        [...$items] => std::mutableSetOf(...$items)
+    }
+
+    /**
+     * Builds a hash [Set].
+     *
+     * @0 `# set![]` expands to `std::emptyHashSet()`.
+     * @1 `# set![1, 2, 3]` expands to `std::hashSetOf(1, 2, 3)`.
+     */
+    meta # set {
+        [] => std::emptyHashSet()
+        [...$items] => std::hashSetOf(...$items)
+    }
+
+    /**
+     * Builds a linked hash [Set].
+     *
+     * @0 `!# set![]` expands to `std::emptyLinkedHashSet()`.
+     * @1 `!# set![1, 2, 3]` expands to `std::linkedHashSetOf(1, 2, 3)`.
+     */
+    meta !# set {
+        [] => std::emptyLinkedHashSet()
+        [...$items] => std::linkedHashSetOf(...$items)
+    }
+
+    /**
+     * Builds a tree [Set].
+     *
+     * @0 `^ set![]` expands to `std::emptyTreeSet()`.
+     * @1 `^ set![1, 2, 3]` expands to `std::treeSetOf(1, 2, 3)`.
+     */
+    meta ^ set {
+        [] => std::emptyTreeSet()
+        [...$items] => std::treeSetOf(...$items)
+    }
+
+    meta type {
+        {T} => std::Set<T>
+        mut {T} => std::MutableSet<T>
+        # {T} => std::HashSet<T>
+        !# {T} => std::LinkedHashSet<T>
+        ^ {T} => std::TreeSet<T>
+    }
+}
+
 test "set starts empty" {
     fin value = std::emptySet<Int>()
     assert value.size == 0 && value.isEmpty { "emptySet must contain no values" }

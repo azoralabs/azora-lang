@@ -54,6 +54,26 @@ object StdlibInjector {
 
     private val implicitCollectionTypes = setOf("List", "MutableList", "Set", "MutableSet", "Map", "MutableMap")
 
+    /**
+     * CLI `-D NAME=VAL` overrides (and named flags) that drive `export if COND`
+     * conditions and `config.az` constants. Set by [org.azora.lang.Compiler] before
+     * any injection. Values are strings; booleans are `"true"`/`"false"`.
+     */
+    var configOverrides: Map<String, String> = emptyMap()
+
+    /**
+     * Evaluates an `export if COND` condition against the boolean CLI overrides.
+     * `null` (unconditional) and `true` keep the export; an unresolvable or `false`
+     * condition drops it. (config.az defaults like `AUTO_IMPORT_MACROS = false` are
+     * captured by the `false` fallback when no override is present.)
+     */
+    private fun evalExportIf(cond: Expr?, boolOverrides: Map<String, Boolean>): Boolean = when (cond) {
+        null -> true
+        is Expr.BoolLiteral -> cond.value
+        is Expr.Identifier -> boolOverrides[cond.name] ?: false
+        else -> false
+    }
+
     private class Index {
         /** Library root module names, derived from loaded modules (for example "std"). */
         val roots = LinkedHashSet<String>()
@@ -105,6 +125,7 @@ object StdlibInjector {
 
     private fun buildIndex(): Index {
         val idx = Index()
+        val boolOverrides = configOverrides.mapValues { it.value.trim() == "true" }
         for (program in AzStdlib.loadPrograms()) {
             val module = program.moduleName ?: continue
             val root = module.substringBefore('.')
@@ -138,7 +159,8 @@ object StdlibInjector {
             // the conventional `<root>.core` naming. `export intern`/`export protect`
             // auto-import only within the library/folder, so they are not injected
             // into external units here; `export confine` is rejected at parse time.
-            val alwaysOn = (program.isExported && program.moduleVisibility == ModuleVisibility.EXPOSE) ||
+            val alwaysOn = (program.isExported && evalExportIf(program.exportCondition, boolOverrides) &&
+                program.moduleVisibility == ModuleVisibility.EXPOSE) ||
                 module.substringAfterLast('.') == "core"
             for (item in program.items) {
                 when (item) {
@@ -181,7 +203,7 @@ object StdlibInjector {
             // Record this module's `export import …` re-exports for transitive
             // import propagation, and (if always-on) the module name itself.
             for (item in program.items) {
-                if (item is TopLevel.UseImport && item.exported) {
+                if (item is TopLevel.UseImport && item.exported && evalExportIf(item.condition, boolOverrides)) {
                     idx.exportedImportsByModule.getOrPut(module) { mutableListOf() }.addAll(item.imports)
                 }
             }

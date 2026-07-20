@@ -23,7 +23,7 @@ import std.convert
  *
  * memory allocation primitives and custom allocator types.
  *
- * Provides a core allocator specification and concrete implementations
+ * Provides a core.az allocator specification and concrete implementations
  * inspired by Zig's std.mem.allocator design:
  *
  * - Arena: bump allocator for fast, bulk-freed temporary allocations
@@ -60,7 +60,7 @@ friend zone std {
     // -----------------------------------------------------------------------
 
     /**
-     * The core allocator specification.
+     * The core.az allocator specification.
      *
      * Any type implementing allocator can be used with the `in` keyword
      * to direct allocations to a specific backing store:

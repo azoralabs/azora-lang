@@ -441,6 +441,35 @@ friend zone std {
     }
 }
 
+use friend zone std {
+    /**
+     * Builds an immutable [List].
+     *
+     * @0 `vec![]` expands to `std::emptyList()`.
+     * @1 `vec![1, 2, 3]` expands to `std::listOf(1, 2, 3)`.
+     */
+    meta vec {
+        [] => std::emptyList()
+        [...$items] => std::listOf(...$items)
+    }
+
+    /**
+     * Builds an mutable [List].
+     *
+     * @0 `mut vec![]` expands to `std::emptyMutableList()`.
+     * @1 `mut vec![1, 2, 3]` expands to `std::mutableListOf(1, 2, 3)`.
+     */
+    meta mut vec {
+        [] => std::emptyMutableList()
+        [...$items] => std::mutableListOf(...$items)
+    }
+
+    meta type {
+        [T] => std::List<T>
+        mut [T] => std::MutableList<T>
+    }
+}
+
 test "list starts empty" {
     fin value = std::emptyList<Int>()
     assert value.size == 0 && value.isEmpty { "emptyList must contain no elements" }

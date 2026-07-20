@@ -65,6 +65,12 @@ class IrInterpreter {
     /** When set, receives each println/trace line as it is produced (live output). */
     var outputListener: ((String) -> Unit)? = null
 
+    /**
+     * Command-line arguments passed to `func main() { ...args -> … }` (bound to the
+     * synthetic variadic `args` param). Set this before [interpret]/[runTests].
+     */
+    var programArgs: List<String> = emptyList()
+
     private val output = StringBuilder()
     private val functions = mutableMapOf<String, IrFunction>()
     private val structs = mutableMapOf<String, IrTopLevel.Struct>()
@@ -259,7 +265,9 @@ class IrInterpreter {
 
         // Execute main
         val main = functions["main"] ?: error("No 'main' function found")
-        executeFunction(main, emptyList())
+        // `func main() { ...args -> … }` binds CLI args to a synthetic variadic param.
+        val mainArgs = if (main.params.isNotEmpty()) listOf(programArgs.toMutableList()) else emptyList<Any?>()
+        executeFunction(main, mainArgs)
 
         // Execute tests after main
         for (test in tests) {

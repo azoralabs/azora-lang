@@ -23,6 +23,38 @@ import org.azora.lang.frontend.dumpTree
 import java.io.File
 import kotlin.system.exitProcess
 
+/**
+ * Parses CLI flags into `config.az` overrides (`-D NAME=VAL`, `--define NAME=VAL`)
+ * plus named flags that map to the standard config constants:
+ * `--debug`/`--release` (DEBUG/RELEASE), `--test` (TEST_MODE),
+ * `--auto-import-macros` (AUTO_IMPORT_MACROS). These drive `export if COND` and
+ * `inline fin` config reads.
+ */
+private fun parseDefines(args: List<String>): Map<String, String> {
+    val defines = mutableMapOf<String, String>()
+    for (a in args) {
+        when {
+            a.startsWith("-D") && a.length > 2 && a[2] == ' ' -> {
+                val pair = a.drop(3).split("=", limit = 2)
+                if (pair.size == 2) defines[pair[0].trim()] = pair[1].trim()
+            }
+            a.startsWith("-D") && a.contains("=") -> {
+                val pair = a.removePrefix("-D").split("=", limit = 2)
+                if (pair.size == 2) defines[pair[0].trim()] = pair[1].trim()
+            }
+            a.startsWith("--define=") -> {
+                val pair = a.removePrefix("--define=").split("=", limit = 2)
+                if (pair.size == 2) defines[pair[0].trim()] = pair[1].trim()
+            }
+            a == "--debug" -> { defines["DEBUG"] = "true"; defines["RELEASE"] = "false" }
+            a == "--release" -> { defines["DEBUG"] = "false"; defines["RELEASE"] = "true" }
+            a == "--test" -> defines["TEST_MODE"] = "true"
+            a == "--auto-import-macros" -> defines["AUTO_IMPORT_MACROS"] = "true"
+        }
+    }
+    return defines
+}
+
 fun main(args: Array<String>) {
     if (args.isEmpty()) {
         printUsage()
@@ -63,10 +95,11 @@ private fun handleRun(args: List<String>) {
     }
 
     val source = resolveAndConcatenate(file)
-    val result = Compiler().compile(source)
+    val programArgs = args.drop(args.indexOf(filePath) + 1)
+    val result = Compiler().compile(source, defines = parseDefines(args))
     when (result) {
         is CompilationResult.Success -> {
-            val output = IrInterpreter().interpret(result.ir)
+            val output = IrInterpreter().apply { this.programArgs = programArgs }.interpret(result.ir)
             if (output.isNotBlank()) println(output)
         }
         is CompilationResult.Failure -> {
@@ -126,7 +159,7 @@ private fun handleCheck(args: List<String>) {
     }
 
     val source = resolveAndConcatenate(file)
-    val result = Compiler().compile(source)
+    val result = Compiler().compile(source, defines = parseDefines(args))
     when (result) {
         is CompilationResult.Success -> println("No errors found.")
         is CompilationResult.Failure -> result.errors.forEach { System.err.println(it) }
@@ -151,7 +184,7 @@ private fun handleCompile(args: List<String>) {
     }
 
     val source = resolveAndConcatenate(file)
-    val result = Compiler().compile(source, release = !debug)
+    val result = Compiler().compile(source, release = !debug, defines = parseDefines(args))
     when (result) {
         is CompilationResult.Success -> {
             // In debug mode emit code from the un-optimized IR so backend output
@@ -202,7 +235,7 @@ private fun handleTest(args: List<String>) {
     var filesFailed = 0
     for (file in files) {
         val result = try {
-            Compiler().compile(file.readText(), release = false)
+            Compiler().compile(file.readText(), release = false, defines = parseDefines(args))
         } catch (e: Exception) {
             filesFailed++
             println("✗ ${file.path} — parse/compile error")

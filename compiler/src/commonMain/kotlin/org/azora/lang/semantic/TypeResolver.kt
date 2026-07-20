@@ -616,6 +616,10 @@ class TypeResolver(private val table: SymbolTable) {
                 // Struct construction: `Name(args)` where Name is a pack.
                 val struct = table.lookupStruct(expr.callee)
                 if (struct != null) {
+                    if (expr.callee in table.abstractNodes) {
+                        errors.add("line ${expr.line}: abstract node '${expr.callee}' cannot be instantiated directly; use a leaf subclass")
+                        return null
+                    }
                     if (expr.args.size > struct.fields.size) {
                         errors.add("line ${expr.line}: '${expr.callee}' has ${struct.fields.size} fields, got ${expr.args.size} arguments")
                         return null

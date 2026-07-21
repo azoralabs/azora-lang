@@ -34,8 +34,7 @@ class MacroTest {
     fun vecMacroExpandsToListOf() {
         val out = run(
             """
-            import std.macro
-            import std.container
+            import std.container.*
             import std.io
 
             func main() {
@@ -53,8 +52,7 @@ class MacroTest {
     fun vecMacroEmptyArmExpandsToEmptyList() {
         val out = run(
             """
-            import std.macro
-            import std.container
+            import std.container.*
             import std.io
 
             func main() {
@@ -70,8 +68,7 @@ class MacroTest {
     @Test
     fun allThreeDelimitersAreEquivalent() {
         val src = """
-            import std.macro
-            import std.container
+            import std.container.*
             import std.io
 
             func main() {
@@ -93,8 +90,7 @@ class MacroTest {
     fun setTupleArrMacrosExpandToConstructors() {
         val out = run(
             """
-            import std.macro
-            import std.container
+            import std.container.*
             import std.io
 
             func main() {
@@ -113,7 +109,7 @@ class MacroTest {
     fun userMacroSplicesCaptureIntoMultiplePositions() {
         val out = run(
             """
-            import std.container
+            import std.container.*
             import std.io
 
             meta dup {
@@ -136,8 +132,7 @@ class MacroTest {
     fun nestedMacroExpandsRecursively() {
         val out = run(
             """
-            import std.macro
-            import std.container
+            import std.container.*
             import std.io
 
             // `box` expands to a `vec!` invocation, which must then itself expand.
@@ -175,12 +170,11 @@ class MacroTest {
     fun macroWithNoMatchingArmIsCompileFailure() {
         // A macro with only a spread arm cannot match an empty invocation.
         val result = Compiler().compile(
-            """
-            import std.macro
-            import std.container
+            $$"""
+            import std.container.*
 
             meta needsArgs {
-                [...${'$'}xs] => std::listOf(...${'$'}xs)
+                [...$xs] => std::listOf(...$xs)
             }
 
             func main() {
@@ -199,8 +193,7 @@ class MacroTest {
     fun expandedProgramContainsNoMacroNodes() {
         val result = compile(
             """
-            import std.macro
-            import std.container
+            import std.container.*
 
             func main() {
                 fin x = vec![1, 2, 3]

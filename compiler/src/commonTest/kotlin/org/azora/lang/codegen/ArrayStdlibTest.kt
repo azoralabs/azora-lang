@@ -27,7 +27,7 @@ class ArrayStdlibTest {
 
             func main() {
                 fin factory: Array<Int> = std::arrayOf(1, 2, 3)
-                fin literal: [Int] = [1, 2, 3]
+                fin literal: Array<Int> = [1, 2, 3]
                 std::println(factory.length)
                 std::println(factory[1])
                 std::println(factory.data[1])
@@ -51,7 +51,7 @@ class ArrayStdlibTest {
                 return values[0]
             }
 
-            func last(values: [String]): String {
+            func last(values: Array<String>): String {
                 return values[values.length - 1]
             }
 

@@ -336,8 +336,14 @@ class StdlibInjectionTest {
         assertIs<CompilationResult.Failure>(result)
     }
 
-    @Test fun importStdExposesAllModules() =
-        assertEquals("5\n9", run("import std.io\nimport std\nfunc main() {\n    std::println(std::math::abs(-5))\n    std::println(std::math::max(2, 9))\n}"))
+    @Test fun importStdWildcardExposesAllModules() =
+        assertEquals("5\n9", run("import std.io\nimport std.*\nfunc main() {\n    std::println(std::math::abs(-5))\n    std::println(std::math::max(2, 9))\n}"))
+
+    @Test fun importStdNamespaceWithoutModuleIsRejected() {
+        val result = Compiler().compile("import std\nfunc main() {}")
+        assertIs<CompilationResult.Failure>(result)
+        assertTrue(result.errors.any { "'std' is a namespace" in it }, result.errors.toString())
+    }
 
     // ---- import syntax errors ----
 

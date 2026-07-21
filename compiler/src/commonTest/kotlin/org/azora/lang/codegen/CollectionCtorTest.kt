@@ -21,7 +21,7 @@ class CollectionCtorTest {
 
     @Test fun set_ctor() = assertEquals("true\nfalse", run("""
         import std.io
-        import std
+        import std.*
 
         func main() {
             fin s = std::setOf(1, 2, 3)
@@ -32,7 +32,7 @@ class CollectionCtorTest {
 
     @Test fun set_add_preserves_uniqueness() = assertEquals("3\ntrue\nfalse", run("""
         import std.io
-        import std
+        import std.*
         func main() {
             var s = LinkedHashSet<Int>()
             s.add(1)
@@ -47,9 +47,9 @@ class CollectionCtorTest {
 
     @Test fun tup_ctor() = assertEquals("1\na", run("""
         import std.io
-        import std.container
+        import std.container.*
         func main() {
-            fin t = (1, "a", 2.5)
+            fin t = std::tupleOf(1, "a", 2.5)
             std::println(t.0)
             std::println(t.1)
         }
@@ -87,7 +87,7 @@ class CollectionCtorTest {
 
     @Test fun explicit_set_type() = assertEquals("true", run("""
         import std.io
-        import std
+        import std.*
 
         func main() {
             fin s: Set<Int> = std::setOf(10, 20, 30)
@@ -97,7 +97,7 @@ class CollectionCtorTest {
 
     @Test fun mutable_list_pack_exists() = assertEquals("8", run("""
         import std.io
-        import std.container
+        import std.container.*
         func main() {
             var xs = ArrayList<Int>()
             xs.add(7)
@@ -108,7 +108,7 @@ class CollectionCtorTest {
 
     @Test fun mutable_set_pack_exists() = assertEquals("true\nfalse", run("""
         import std.io
-        import std.container
+        import std.container.*
         func main() {
             var seen = LinkedHashSet<Int>()
             seen.add(1)
@@ -120,7 +120,7 @@ class CollectionCtorTest {
 
     @Test fun mutable_map_pack_exists() = assertEquals("3", run("""
         import std.io
-        import std.container
+        import std.container.*
         func main() {
             var scores = HashMap<String, Int>()
             scores.put("azora", 3)

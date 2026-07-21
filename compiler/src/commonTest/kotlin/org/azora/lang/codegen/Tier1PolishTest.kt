@@ -441,7 +441,7 @@ class Tier1PolishTest {
         assertEquals("20\n99", run("""
             import std.io
             pack IntBag {
-                var data: [Int]
+                var data: Array<Int>
             }
             impl oper[] for IntBag { ref self, i: Int ->
                 return self.data[i]

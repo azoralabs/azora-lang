@@ -118,7 +118,7 @@ class StdlibMethodsTest {
     @Test fun setOfDeduplicates() {
         assertEquals("3\ntrue", run("""
             import std.io
-            import std
+            import std.*
 
             func main() {
                 fin nums = std::setOf(1, 2, 2, 3)

@@ -273,7 +273,7 @@ class SerializationDeriverTest {
                     self.valuesData[self.size] = value
                     self.size += 1
                 }
-                func keys(): [K] { ref self ->
+                func keys(): Array<K> { ref self ->
                     var result = [].fill<K>(self.size)
                     var index = 0
                     while index < self.size {

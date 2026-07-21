@@ -75,13 +75,13 @@ class ConstGenericArrayTest {
 
     @Test
     fun unsizedSlotAcceptsSizedArray() {
-        // An unsized `[Int]` slot accepts a sized literal (back-compat with existing code).
+        // An unsized `Array<Int>` slot accepts a sized literal (back-compat with existing code).
         val out = run(
             """
             import std.io
 
             func main() {
-                fin a: [Int] = [1, 2, 3]
+                fin a: Array<Int> = [1, 2, 3]
                 std::println(a[1])
             }
             """,

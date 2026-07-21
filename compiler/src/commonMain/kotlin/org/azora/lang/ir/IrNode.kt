@@ -92,7 +92,7 @@ sealed class IrType {
      * both [element] and [size] match.
      */
     data class Array(val element: IrType, val size: kotlin.Long? = null) : IrType() {
-        override fun toString() = if (size != null) "[$element; $size]" else "[$element]"
+        override fun toString() = if (size != null) "Array<$element, $size>" else "Array<$element>"
     }
 
     /** Structural map literal type `map[K, V]`. */

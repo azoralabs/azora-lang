@@ -450,7 +450,7 @@ friend zone std::math {
      * @return The average as a real number.
      */
     @Experimental(sinceAzora: "0.0.1")
-    func average(arr: [Int]): Real
+    func average(arr: Array<Int>): Real
     in {
         assert arr.length > 0 { "Input must not be empty" }
     } zone {

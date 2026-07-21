@@ -153,10 +153,13 @@ class TypeResolver(private val table: SymbolTable) {
     }
 
     /**
-     * Expected type for an implicit `it` lambda parameter, inferred from context (e.g. the
-     * function-parameter type a lambda is passed as). Consumed by `Expr.Lambda` resolution.
+     * Expected parameter types for a lambda argument, inferred from context (the
+     * function-parameter type the lambda is passed as). Each untyped lambda
+     * parameter — the implicit `it`, or an explicitly named `{ it -> … }` /
+     * `{ a, b -> … }` — is seeded from the entry at its position. Consumed by
+     * `Expr.Lambda` resolution.
      */
-    private var expectedItType: IrType? = null
+    private var expectedLambdaParamTypes: List<IrType>? = null
 
     /**
      * When non-null, return-value types inside the body being resolved are appended here
@@ -740,13 +743,13 @@ class TypeResolver(private val table: SymbolTable) {
                     // `it` inference: if this argument is an implicit-`it` lambda, seed `it`'s type
                     // from the corresponding function-parameter type before resolving it.
                     val arg = effectiveArgs[i]
-                    val prevIt = expectedItType
-                    if (arg is Expr.Lambda && arg.params.size == 1 && arg.params[0].name == "it" && i < func.params.size) {
+                    val prevIt = expectedLambdaParamTypes
+                    if (arg is Expr.Lambda && i < func.params.size) {
                         val ptype = func.params[i].second
-                        if (ptype is IrType.Function && ptype.params.isNotEmpty()) expectedItType = ptype.params[0]
+                        if (ptype is IrType.Function && ptype.params.isNotEmpty()) expectedLambdaParamTypes = ptype.params
                     }
-                    val argType = resolveExpr(arg) ?: run { expectedItType = prevIt; return null }
-                    expectedItType = prevIt
+                    val argType = resolveExpr(arg) ?: run { expectedLambdaParamTypes = prevIt; return null }
+                    expectedLambdaParamTypes = prevIt
                     argTypes.add(argType)
                     if (!isGeneric) {
                         val paramType = func.params[i].second
@@ -1236,10 +1239,14 @@ class TypeResolver(private val table: SymbolTable) {
             }
             is Expr.Lambda -> {
                 // Infer the implicit `it` parameter's type from context when available.
-                val paramTypes = expr.params.map { p ->
-                    if (p.name == "it" && p.type == TypeRef.Named("Any") && expectedItType != null) expectedItType!!
+                val expectedParams = expectedLambdaParamTypes
+                val paramTypes = expr.params.mapIndexed { i, p ->
+                    val expected = expectedParams?.getOrNull(i)
+                    if (p.type == TypeRef.Named("Any") && expected != null) expected
                     else resolveDeclaredType(p.type)
                 }
+                // Only the outer call seeds these; nested lambdas resolve on their own.
+                expectedLambdaParamTypes = null
                 table.pushScope()
                 for (i in expr.params.indices) {
                     table.defineVariable(VariableSymbol(expr.params[i].name, paramTypes[i]))

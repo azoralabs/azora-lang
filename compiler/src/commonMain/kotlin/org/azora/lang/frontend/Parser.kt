@@ -3388,17 +3388,20 @@ class Parser(
                 error("Expected type name at line ${peek().line}, got '${peek().lexeme}'")
             }
             check(TokenType.L_BRACKET) -> {
-                // `[T]` is type sugar for the canonical stdlib `Array<T>` type.
-                // `[K: V]` remains the map-type spelling.
+                // Bracket type sugar is not a valid type spelling. `[…]` in type
+                // position never means an array or map — brackets only group types in
+                // a compile-time type list (`[Type]`, `[Int, Float]`), handled by
+                // `parseTypeListBinding`. Arrays are `Array<T>`, maps are `Map<K, V>`.
+                val start = peek()
                 advance() // consume '['
                 val keyOrElem = parseTypeName()
                 if (match(TokenType.COLON)) {
-                    val value = parseTypeName()
+                    parseTypeName()
                     consume(TokenType.R_BRACKET, "Expected ']' after map type")
-                    TypeRef.Map(keyOrElem, value)
+                    error("Map type syntax '[K: V]' is not valid; use 'Map<K, V>' at line ${start.line}")
                 } else {
-                    consume(TokenType.R_BRACKET, "Expected ']' after array element type")
-                    TypeRef.Named("Array", listOf(keyOrElem))
+                    consume(TokenType.R_BRACKET, "Expected ']' after type")
+                    error("Array type syntax '[$keyOrElem]' is not valid; use 'Array<$keyOrElem>' at line ${start.line}")
                 }
             }
             check(TokenType.L_PAREN) -> {
@@ -3421,7 +3424,7 @@ class Parser(
             }
             check(TokenType.IDENTIFIER) -> {
                 if (peekNext()?.type == TokenType.L_BRACKET && peek().lexeme in setOf("arr", "vec", "set", "map")) {
-                    error("'${peek().lexeme}[...]' type syntax was removed; use [T], List<T>, Set<T>, or Map<K, V> at line ${peek().line}")
+                    error("'${peek().lexeme}[...]' type syntax was removed; use Array<T>, List<T>, Set<T>, or Map<K, V> at line ${peek().line}")
                 }
                 val name = advance().lexeme
                 // A fully qualified path combines a dotted owning module with a
@@ -5644,6 +5647,15 @@ class Parser(
                 params.add(Param(name, type))
             } while (match(TokenType.COMMA))
             consume(TokenType.ARROW, "Expected '->' in lambda")
+        } else if (isUntypedLambdaParamsAhead()) {
+            // Untyped params: `{ it -> … }`, `{ a, b -> … }`. The single-receiver
+            // form lets a caller name the implicit `it` explicitly; multi-param
+            // lambda values name each argument.
+            do {
+                val name = consumeIdentifierLike("Expected lambda parameter name")
+                params.add(Param(name, TypeRef.Named("Any")))
+            } while (match(TokenType.COMMA))
+            consume(TokenType.ARROW, "Expected '->' in lambda")
         } else if (!check(TokenType.ARROW) && implicitIt) {
             // No params, no arrow → implicit `it`
             params.add(Param("it", TypeRef.Named("Any")))
@@ -5658,6 +5670,25 @@ class Parser(
         }
         consume(TokenType.R_BRACE, "Expected '}' after lambda body")
         return Expr.Lambda(params, body, line, column, variadic = variadic)
+    }
+
+    /**
+     * True when the tokens open an untyped lambda parameter list — `IDENT (','
+     * IDENT)* '->'` — as in `{ it -> … }` or `{ a, b -> … }`. Requires the
+     * trailing `->` so a body that merely begins with an identifier (`{ it }`,
+     * `{ a + b }`) is not mistaken for a parameter list.
+     */
+    private fun isUntypedLambdaParamsAhead(): Boolean {
+        var i = current
+        if (tokens.getOrNull(i)?.type != TokenType.IDENTIFIER) return false
+        while (true) {
+            if (tokens.getOrNull(i)?.type != TokenType.IDENTIFIER) return false
+            when (tokens.getOrNull(i + 1)?.type) {
+                TokenType.ARROW -> return true
+                TokenType.COMMA -> i += 2
+                else -> return false
+            }
+        }
     }
 
     /** True when `<...T>{` opens a variadic lambda (vs. a less-than comparison). */

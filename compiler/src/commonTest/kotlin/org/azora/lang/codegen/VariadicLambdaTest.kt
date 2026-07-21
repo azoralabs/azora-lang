@@ -59,7 +59,7 @@ class VariadicLambdaTest {
         assertEquals("6", run("""
             import std.io
             func main() {
-                fin f = { xs: [Int] ->
+                fin f = { xs: Array<Int> ->
                     var total = 0
                     for x in xs { total = total + x }
                     total

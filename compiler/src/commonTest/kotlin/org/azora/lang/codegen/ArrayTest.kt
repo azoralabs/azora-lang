@@ -57,7 +57,7 @@ class ArrayTest {
         assertEquals("42", run("""
             import std.io
             func main() {
-                var a: [Int] = [7, 42, 13]
+                var a: Array<Int> = [7, 42, 13]
                 std::println(a[1])
             }
         """.trimIndent()))
@@ -163,7 +163,7 @@ class ArrayTest {
     fun arrayReturnedFromFunction() {
         assertEquals("30", run("""
             import std.io
-            func makeThree(): [Int] {
+            func makeThree(): Array<Int> {
                 return [10, 20, 30]
             }
             func main() {

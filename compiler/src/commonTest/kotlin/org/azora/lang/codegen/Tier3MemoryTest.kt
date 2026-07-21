@@ -97,7 +97,7 @@ class Tier3MemoryTest {
     @Test fun ptrSmartPointerUsesDerefImpl() {
         assertEquals("41\n42", run("""
             import std.io
-            import std.memory
+            import std.memory.*
             func main() {
                 var p = std::ptrOf(41)
                 std::println(deref p)
@@ -110,7 +110,7 @@ class Tier3MemoryTest {
     @Test fun sliceIndexesPointerBuffer() {
         assertEquals("9\n4", run("""
             import std.io
-            import std.memory
+            import std.memory.*
             func main() {
                 var p = alloc Int[3]
                 p[0] = 7

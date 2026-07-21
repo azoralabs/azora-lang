@@ -33,15 +33,15 @@ class TypeRefTest {
         compile(source).ir.functions.first { it.name == "f" }.params.first().second
 
     @Test
-    fun bracketArrayTypeAnnotation() {
-        val t = firstParamType("func f(x: [Int]): Int { return 0 }")
+    fun arrayGenericTypeAnnotation() {
+        val t = firstParamType("func f(x: Array<Int>): Int { return 0 }")
         assertIs<IrType.Array>(t)
         assertEquals(IrType.Int, t.element)
     }
 
     @Test
-    fun nestedBracketArrayTypeAnnotation() {
-        val t = firstParamType("func f(x: [[Int]]): Int { return 0 }")
+    fun nestedArrayGenericTypeAnnotation() {
+        val t = firstParamType("func f(x: Array<Array<Int>>): Int { return 0 }")
         assertIs<IrType.Array>(t)
         assertIs<IrType.Array>(t.element)
     }
@@ -119,17 +119,15 @@ class TypeRefTest {
     }
 
     @Test
-    fun bracketArrayTypeLoweredToAllBackends() {
-        val result = compile("func f(x: [Int]): Int { return 0 }")
+    fun arrayGenericTypeLoweredToAllBackends() {
+        val result = compile("func f(x: Array<Int>): Int { return 0 }")
         // JavaScript is untyped, so the array parameter carries no type annotation.
         assertTrue("function f(x)" in result.javascript, "JavaScript backend should emit function f(x), got:\n${result.javascript}")
     }
 
     @Test
-    fun arrayGenericNameIsCanonicalAndEquivalentToBrackets() {
+    fun arrayGenericNameIsCanonical() {
         val canonical = firstParamType("func f(x: Array<Int>): Int { return 0 }")
-        val sugar = firstParamType("func f(x: [Int]): Int { return 0 }")
-        assertEquals(canonical, sugar)
         assertEquals(IrType.Array(IrType.Int), canonical)
     }
 
@@ -140,16 +138,16 @@ class TypeRefTest {
     }
 
     @Test
-    fun bracketCollectionTypesAreAccepted() {
-        // `[T]` (array) and `[K: V]` (map) bracket type syntax is supported.
-        compile("func f(x: [Int]): Int { return x.length }")
-        compile("func f(x: [String: Int]): Int { return x.length }")
+    fun bracketCollectionTypesAreRejected() {
+        // Bracket type sugar is not valid: arrays are `Array<T>`, maps are `Map<K, V>`.
+        assertTrue(expectFailure("func f(x: [Int]): Int { return x.length }").any { "Array<Int>" in it })
+        assertTrue(expectFailure("func f(x: [String: Int]): Int { return x.length }").any { "Map<K, V>" in it })
     }
 
     @Test
     fun removedCollectionTypeSpellingsAreRejected() {
         assertTrue(expectFailure("func f(x: ![Int]): Int { return 0 }").any { "Set<T>" in it })
-        assertTrue(expectFailure("func f(x: arr[Int]): Int { return 0 }").any { "[T]" in it })
+        assertTrue(expectFailure("func f(x: arr[Int]): Int { return 0 }").any { "Array<T>" in it })
         assertTrue(expectFailure("func f(x: tup(Int, String)): Int { return 0 }").any { "Expected ')' after parameters" in it || "undefined" in it || "tup" in it })
     }
 }

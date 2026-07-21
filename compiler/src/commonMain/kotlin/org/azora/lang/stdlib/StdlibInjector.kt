@@ -139,8 +139,8 @@ class StdlibInjector private constructor(
         /**
          * Per-module `export import …` re-exports. When a program imports [module]
          * (or [module] is auto-injected via `export module`), each (path, selected)
-         * pair here is also imported transitively — e.g. `std.macro` re-exporting
-         * `std.container.{list, set, …}` so a bare `import std.macro` suffices.
+         * pair here is also imported transitively — e.g. `std.char` re-exporting
+         * `std.char.core` so a bare `import std.char` suffices.
          */
         val exportedImportsByModule = LinkedHashMap<String, MutableList<Pair<String, String?>>>()
         /** Modules published via `export expose module …` (auto-injected into every unit). */

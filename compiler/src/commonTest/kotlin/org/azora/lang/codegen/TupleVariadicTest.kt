@@ -60,7 +60,7 @@ class TupleVariadicTest {
     @Test fun tupleOfInferredMonomorphizes() {
         val out = compile("""
             import std.io
-            import std.container
+            import std.container.*
             func main() {
                 fin x = std::tupleOf(1, 2.0)
                 std::println(x.0)
@@ -74,7 +74,7 @@ class TupleVariadicTest {
     @Test fun tupleOfExplicitAnnotation() {
         val src = """
             import std.io
-            import std.container
+            import std.container.*
             func main() {
                 fin x: Tuple<Int, Real> = std::tupleOf(1, 2.0)
                 std::println(x.0)
@@ -89,7 +89,7 @@ class TupleVariadicTest {
     @Test fun tupleOfExplicitTypeArgsBothForms() {
         val a = compile("""
             import std.io
-            import std.container
+            import std.container.*
             func main() {
                 fin x: Tuple<Int, Real> = std::tupleOf<Int, Real>(1, 2.0)
                 std::println(x.0)
@@ -98,7 +98,7 @@ class TupleVariadicTest {
         """.trimIndent())
         val b = compile("""
             import std.io
-            import std.container
+            import std.container.*
             func main() {
                 fin x = std::tupleOf<Int, Real>(1, 2.0)
                 std::println(x.0)
@@ -112,7 +112,7 @@ class TupleVariadicTest {
     @Test fun jsBackendEmitsValidNumericFieldAccess() {
         val out = compile("""
             import std.io
-            import std.container
+            import std.container.*
             func main() {
                 fin x = std::tupleOf(1, 2.0)
                 std::println(x.0)
@@ -130,7 +130,7 @@ class TupleVariadicTest {
     @Test fun jsBackendRunsViaNode() {
         assertEquals("7\n3.5", runJs("""
             import std.io
-            import std.container
+            import std.container.*
             func main() {
                 fin x = std::tupleOf(7, 3.5)
                 std::println(x.0)
@@ -142,7 +142,7 @@ class TupleVariadicTest {
     @Test fun tupleOfThreeElementsAndMutation() {
         val src = """
             import std.io
-            import std.container
+            import std.container.*
             func main() {
                 fin t = std::tupleOf(true, "hi", 42)
                 std::println(t.0)
@@ -161,7 +161,7 @@ class TupleVariadicTest {
         // checked across backends in the other tests.
         val src = """
             import std.io
-            import std.container
+            import std.container.*
             func main() {
                 fin tup = std::tupleOf(1, 2.0, "3")
                 if tup.0 is Int && tup.0 == 1 { std::println("ok0") }
@@ -283,7 +283,7 @@ class TupleVariadicTest {
     @Test fun nestedTuple() {
         val src = """
             import std.io
-            import std.container
+            import std.container.*
             func main() {
                 fin outer = std::tupleOf(std::tupleOf(1, 2), 3)
                 std::println(outer.0.0)
@@ -299,7 +299,7 @@ class TupleVariadicTest {
         // `where (...T).length >= 2` — a 1-element tuple must fail with a clear message.
         val r = Compiler().compile("""
             import std.io
-            import std.container
+            import std.container.*
             func main() {
                 fin x = std::tupleOf(1)
             }

@@ -622,6 +622,9 @@ private class MonoContext(
         is Expr.Identifier -> bindings[e.name]
         is Expr.Grouping -> inferExprType(e.expr)
         is Expr.TupleAccess -> inferExprType(e.target)?.let { tupleElementType(it, e.index) }
+        // Positional tuple access parses as a `Member` with a numeric field name
+        // (`v.0`, `v.1`); resolve it against the target's tuple element types.
+        is Expr.Member -> e.name.toIntOrNull()?.let { idx -> inferExprType(e.target)?.let { tupleElementType(it, idx) } }
         is Expr.Call -> {
             when {
                 e.callee in funcTemplates -> resolveElementTypes(e)?.let { elementTypes ->

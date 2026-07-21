@@ -13,7 +13,7 @@ class TupleTest {
         val result = Compiler().compile("""
             import std.io
             import std.container.tuple
-            import std
+            import std.*
 
             func swap(value: Tuple<Int, String>): Tuple<String, Int> {
                 return std::tupleOf(value.1, value.0)
@@ -30,21 +30,21 @@ class TupleTest {
         assertEquals("ready\n7", IrInterpreter().interpret(result.ir).trim())
     }
 
-    @Test fun tupleLiteralSugarDesugarsToTupleOf() {
-        // `(a, b, …)` is sugar for `std::tupleOf(a, b, …)`.
+    @Test fun tupleLiteralIsRejectedWithMigration() {
+        // `(a, b, …)` value tuple literals were removed: build tuples with
+        // `std::tupleOf(…)` or the `tup!` macro. Parentheses only group.
         val result = Compiler().compile("""
             import std.io
-            import std.container
+            import std.container.*
 
             func main() {
                 fin pair = (1, "hello")
                 std::println(pair.0)
-                std::println(pair.1)
             }
         """.trimIndent(), release = false)
 
-        assertIs<CompilationResult.Success>(result, (result as? CompilationResult.Failure)?.errors.toString())
-        assertEquals("1\nhello", IrInterpreter().interpret(result.ir).trim())
+        assertIs<CompilationResult.Failure>(result)
+        assertTrue(result.errors.any { "tuple literal" in it && "std::tupleOf" in it }, result.errors.toString())
     }
 
     @Test fun tupleTypeSyntaxIsRejectedWithMigration() {

@@ -1704,7 +1704,7 @@ sealed class TopLevel {
      *
      * When [exported] is true (written `export import …`), the import is re-exported:
      * any module that imports this module also transitively imports [imports]. This lets
-     * a library forward its dependencies (e.g. `std.macro` re-exporting `std.container`).
+     * a library forward its dependencies (e.g. `std.char` re-exporting `std.char.core`).
      */
     data class UseImport(
         val imports: List<Pair<String, String?>>,
@@ -1802,8 +1802,9 @@ sealed class TopLevel {
     /**
      * `meta Name { arm; arm; … }` — a pattern-driven macro declaration.
      *
-     * Macros are top-level, bare-name declarations: `import std.macro` makes a
-     * macro invocable as `name!(…)`. [MacroExpander] collects every `Meta`
+     * Macros are top-level, bare-name declarations: importing the module that
+     * declares one (e.g. `import std.container.*` for `vec!`) makes it invocable
+     * as `name!(…)`. [MacroExpander] collects every `Meta`
      * declaration, rewrites all matching [Expr.MetaInvoke] invocations into
      * their arm templates, and removes the `Meta` node itself — so it never
      * reaches semantic analysis or IR generation.

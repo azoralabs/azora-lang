@@ -406,7 +406,7 @@ friend zone std {
         func entries(): Array<MapEntry<K, V>> { ref self -> return self.entrySnapshot() }
 
         func keys(): List<K> { ref self ->
-            fin all = self.entrySnapshot()
+            fin all = self.entries()
             var result: Array<K> = Array::fill<K>(all.size)
             for i in 0..<all.size {
                 result[i] = all[i].key
@@ -972,7 +972,7 @@ friend zone std {
         func entries(): Array<MapEntry<K, V>> { ref self -> return self.entrySnapshot() }
 
         func keys(): List<K> { ref self ->
-            fin all = self.entrySnapshot()
+            fin all = self.entries()
             var result: Array<K> = Array::fill<K>(all.size)
             for i in 0..<all.size {
                 result[i] = all[i].key

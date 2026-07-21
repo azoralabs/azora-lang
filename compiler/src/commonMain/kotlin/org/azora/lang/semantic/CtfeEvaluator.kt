@@ -145,6 +145,16 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 val (newBody, bodyChanged) = foldBody(item.decl.body, program, errors)
                 if (bodyChanged) changed = true
                 TopLevel.Func(item.decl.copy(body = newBody))
+            } else if (item is TopLevel.Test) {
+                // Test bodies may contain compile-time constructs (e.g.
+                // `inline assert (reflect<T>).hasDeco<D>`); fold them too so they
+                // are evaluated rather than left for runtime.
+                inlineEnv.clear()
+                inlineEnv.putAll(seedConstants)
+                reflectionTypes.clear()
+                val (newBody, bodyChanged) = foldBody(item.body, program, errors)
+                if (bodyChanged) changed = true
+                item.copy(body = newBody)
             } else item
         }
 

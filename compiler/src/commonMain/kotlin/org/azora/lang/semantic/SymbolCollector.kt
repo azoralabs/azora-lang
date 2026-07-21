@@ -469,17 +469,16 @@ class SymbolCollector {
                     val params = m.params.map { IrType.resolve(it.type, tpSet) }
                     m.name to SpecMethodSig(params, ret, m.memberCallStyle == MemberCallStyle.PROPERTY)
                 }
-                // Spec inheritance: fold in the parent's members (a child member
-                // overrides a same-named parent one). The parent is registered first
-                // in source order (e.g. `List` before `MutableList`).
-                val parent = (item.parent as? TypeRef.Named)?.name?.let { table.lookupSpec(it) }
-                val propTypes = (parent?.propTypes ?: emptyMap()) + ownPropTypes
-                val methodSigs = (parent?.methodSigs ?: emptyMap()) + ownMethodSigs
-                // methodNames drives the `impl … for Type` completeness check, so it
-                // stays own-only: inherited members are satisfied by the separate
-                // `impl Parent for Type` block, not re-required here.
+                // Spec inheritance (`spec Mutable: Read`): store only own members
+                // plus the parent name. Inherited members resolve by walking the
+                // parent chain at query time, so registration order (which the
+                // stdlib injector may reorder) does not matter. methodNames stays
+                // own-only — the `impl … for Type` completeness check requires only
+                // this spec's own methods; inherited ones are satisfied by the
+                // separate `impl Parent for Type` block.
+                val parentName = (item.parent as? TypeRef.Named)?.name
                 val methodNames = item.methods.map { it.name }
-                table.defineSpec(item.name, methodNames, item.callback, item.typeParams, propTypes, methodSigs)
+                table.defineSpec(item.name, methodNames, item.callback, item.typeParams, ownPropTypes, ownMethodSigs, parentName)
             }
         }
         for (item in program.items.filterIsInstance<TopLevel.Deco>()) {

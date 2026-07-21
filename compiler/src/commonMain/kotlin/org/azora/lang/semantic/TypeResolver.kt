@@ -933,7 +933,7 @@ class TypeResolver(private val table: SymbolTable) {
                         // Spec-typed value: a property/requirement declared by the spec
                         // (e.g. `map.size` where `map: Map<K,V>` — a spec) resolves to
                         // the spec's declared prop type and dispatches to the impl.
-                        val specProp = table.lookupSpec(targetType.name)?.propTypes?.get(expr.name)
+                        val specProp = table.lookupSpecProp(targetType.name, expr.name)
                         if (specProp != null) return specProp
                         val struct = table.lookupStruct(targetType.name)
                         val field = struct?.field(expr.name)
@@ -1032,7 +1032,7 @@ class TypeResolver(private val table: SymbolTable) {
                     // Spec-typed value: dispatch to a method declared by the spec
                     // (e.g. `list.get(0)` where `list: List<T>`). The concrete impl
                     // is selected at runtime; here we type-check against the spec.
-                    val specMethod = table.lookupSpec(targetType.name)?.methodSigs?.get(expr.name)
+                    val specMethod = table.lookupSpecMethod(targetType.name, expr.name)
                     if (specMethod != null) {
                         if (specMethod.isProperty) {
                             errors.add("line ${expr.line}: property '${expr.name}' must be accessed without parentheses")

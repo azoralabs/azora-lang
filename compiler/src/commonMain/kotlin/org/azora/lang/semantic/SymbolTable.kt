@@ -107,6 +107,8 @@ data class SpecSymbol(
     val propTypes: Map<String, org.azora.lang.ir.IrType> = emptyMap(),
     /** Method name → signature, for method calls on a spec-typed value. */
     val methodSigs: Map<String, SpecMethodSig> = emptyMap(),
+    /** Parent spec inherited from (`spec Mutable: Read`), resolved at query time. */
+    val parentName: String? = null,
 )
 
 /** A spec method's erased signature, used to type-check calls on a spec-typed value. */
@@ -267,8 +269,37 @@ class SymbolTable {
         typeParams: List<String> = emptyList(),
         propTypes: Map<String, org.azora.lang.ir.IrType> = emptyMap(),
         methodSigs: Map<String, SpecMethodSig> = emptyMap(),
+        parentName: String? = null,
     ) {
-        specs[name] = SpecSymbol(methodNames, callback, isDecorator = false, typeParams = typeParams, propTypes = propTypes, methodSigs = methodSigs)
+        specs[name] = SpecSymbol(methodNames, callback, isDecorator = false, typeParams = typeParams, propTypes = propTypes, methodSigs = methodSigs, parentName = parentName)
+    }
+
+    /**
+     * Resolves a spec method signature, walking the parent chain
+     * (`spec Mutable: Read`) so inherited members resolve regardless of the
+     * order specs were registered in.
+     */
+    fun lookupSpecMethod(specName: String, methodName: String): SpecMethodSig? {
+        var current: String? = specName
+        val seen = mutableSetOf<String>()
+        while (current != null && seen.add(current)) {
+            val spec = specs[current] ?: return null
+            spec.methodSigs[methodName]?.let { return it }
+            current = spec.parentName
+        }
+        return null
+    }
+
+    /** Resolves a spec property's type, walking the parent chain. */
+    fun lookupSpecProp(specName: String, propName: String): org.azora.lang.ir.IrType? {
+        var current: String? = specName
+        val seen = mutableSetOf<String>()
+        while (current != null && seen.add(current)) {
+            val spec = specs[current] ?: return null
+            spec.propTypes[propName]?.let { return it }
+            current = spec.parentName
+        }
+        return null
     }
 
     /** Registers a `deco` as a marker contract usable by `impl Deco for Type`. */

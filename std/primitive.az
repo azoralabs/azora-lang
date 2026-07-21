@@ -17,7 +17,6 @@
 export module std.primitive
 
 import std.traits
-import std.meta
 
 /**
  * @file std/primitive
@@ -413,10 +412,12 @@ use friend zone std {
     @SinceAzora("0.0.4")
     impl FloatingPoint for FloatingPoints
 
+    inline fin ranks: Array<Int> = arr![0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 6, 7]
+
     // Promotion ranks for every numeric type.
-    inline for (Ty, rank) in (Numbers, arr![0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 6, 7]) {
+    inline for Ty in Numbers with index {
         /**
-         * Promotion rank of `$Ty` to `$rank`.
+         * Promotion rank of `$Ty`.
          *
          * In a mixed-type expression `promote!` keeps the operand type with the higher
          * `rank` (`Candidate.rank > Result.rank`). Ranks grow with width, so a wider type
@@ -427,11 +428,11 @@ use friend zone std {
          */
         @SinceAzora("0.0.4")
         impl Number as zone for Ty {
-            prop rank: Int = $rank
+            prop rank: Int = ${ranks[index]}
         }
     }
 
-    inline for op in ["==", "!=", "&", "|", "^"] {
+    inline for op in arr!["==", "!=", "&", "|", "^"] {
         /**
          * Boolean operator $op over Bool operands.
          *
@@ -443,7 +444,7 @@ use friend zone std {
         bridge impl oper $op for Bool: Bool(ref self, rhs: Bool)
     }
 
-    inline for op in ["+", "-"] {
+    inline for op in arr!["+", "-"] {
         inline for Ty in SignedIntegers {
             /**
              * Unary arithmetic operator $op on a signed integer type.
@@ -467,7 +468,7 @@ use friend zone std {
         bridge impl oper~ for Ty: Ty(ref self)
     }
 
-    inline for op in ["+", "-", "*", "/", "%"] {
+    inline for op in arr!["+", "-", "*", "/", "%"] {
         inline for LhsTy in Numbers {
             inline for RhsTy in Numbers {
                 /**
@@ -483,7 +484,7 @@ use friend zone std {
         }
     }
 
-    inline for op in ["&", "|", "^"] {
+    inline for op in arr!["&", "|", "^"] {
         inline for LhsTy in Integers {
             inline for RhsTy in Integers {
                 /**
@@ -499,7 +500,7 @@ use friend zone std {
         }
     }
 
-    inline for op in ["<<", ">>"] {
+    inline for op in arr!["<<", ">>"] {
         inline for Ty in Integers {
             /**
              * Shift operator $op on an integer type; the shift count is a UInt.
@@ -513,7 +514,7 @@ use friend zone std {
         }
     }
 
-    inline for op in ["<", ">", "<=", ">=", "==", "!="] {
+    inline for op in arr!["<", ">", "<=", ">=", "==", "!="] {
         inline for LhsTy in Numbers {
             inline for RhsTy in Numbers {
                 /**

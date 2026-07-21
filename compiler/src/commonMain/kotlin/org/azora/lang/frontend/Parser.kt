@@ -843,26 +843,16 @@ class Parser(
         val start = peek()
         consume(TokenType.INLINE, "Expected 'inline'")
         consume(TokenType.FOR, "Expected 'for'")
-        // Loop variables: a single `Ty`, or destructured `(Ty, r)` for parallel lists.
-        val loopVars = if (match(TokenType.L_PAREN)) {
-            val vs = mutableListOf<String>()
-            do { vs.add(consumeIdentifierLike("Expected loop variable")) } while (match(TokenType.COMMA))
-            consume(TokenType.R_PAREN, "Expected ')' after loop variables")
-            vs
-        } else listOf(consumeIdentifierLike("Expected loop variable after 'inline for'"))
+        // A single loop variable. Parallel lists are iterated by binding one list and
+        // reading the others with `${otherList[index]}` under `with index` — the
+        // tuple form `inline for (A, B) in (L1, L2)` is not supported.
+        if (check(TokenType.L_PAREN)) {
+            error("tuple 'inline for (A, B) in (L1, L2)' is not supported; use 'inline for A in L1 with index' and index the parallel list as '\${L2[index]}' at line ${start.line}")
+        }
+        val loopVar = consumeIdentifierLike("Expected loop variable after 'inline for'")
         consume(TokenType.IN, "Expected 'in' after 'inline for' variable")
-        // Iterables: a single list, or `(list1, list2, …)` iterated in parallel (zip).
-        val lists = if (loopVars.size > 1) {
-            consume(TokenType.L_PAREN, "Expected '(' with ${loopVars.size} parallel lists for destructured 'inline for'")
-            val ls = mutableListOf<List<String>>()
-            do { ls.add(parseComptimeForValues()) } while (match(TokenType.COMMA))
-            consume(TokenType.R_PAREN, "Expected ')' after parallel lists")
-            if (ls.size != loopVars.size) {
-                error("'inline for' has ${loopVars.size} variables but ${ls.size} lists at line ${start.line}")
-            }
-            ls
-        } else listOf(parseComptimeForValues())
-        // Optional `with index` — binds a 0-based counter usable as `list[index]`.
+        val list = parseComptimeForValues()
+        // Optional `with index` — binds a 0-based counter usable as `${list[index]}`.
         val indexVar = if (peek().type == TokenType.IDENTIFIER && peek().lexeme == "with") {
             advance()
             consumeIdentifierLike("Expected index variable after 'with'")
@@ -870,10 +860,16 @@ class Parser(
         consume(TokenType.L_BRACE, "Expected '{' to open 'inline for' body")
         val bodyTokens = captureBraceBody()
         consumeNewline()
-        val count = lists.minOf { it.size }
+        val count = list.size
         for (i in 0 until count) {
             var rendered = bodyTokens
-            for ((v, list) in loopVars.zip(lists)) rendered = substituteLoopVar(rendered, v, list[i])
+            // Fold `${…}` interpolations (loop var + index bound bare inside) first.
+            val bindings = buildList {
+                add(loopVar to list[i])
+                if (indexVar != null) add(indexVar to i.toString())
+            }
+            rendered = foldBraceInterpolation(rendered, bindings)
+            rendered = substituteLoopVar(rendered, loopVar, list[i])
             if (indexVar != null) rendered = substituteLoopVar(rendered, indexVar, i.toString())
             rendered = foldListIndexing(rendered)
             pendingTopLevels.addAll(
@@ -881,6 +877,57 @@ class Parser(
             )
         }
         return TopLevel.InlineBlock(emptyList(), start.line, start.column)
+    }
+
+    /**
+     * Folds `${ <expr> }` compile-time interpolations in an `inline for` body: the
+     * loop variables (and the `with index` counter) are substituted bare inside the
+     * braces, `list[<int>]` indexing is folded, and the braces are removed — so
+     * `${ranks[index]}` becomes the parallel list's element for this iteration.
+     */
+    private fun foldBraceInterpolation(
+        tokens: List<Token>, bindings: List<Pair<String, String>>,
+    ): List<Token> {
+        val result = mutableListOf<Token>()
+        var k = 0
+        while (k < tokens.size) {
+            val t = tokens[k]
+            if (t.type == TokenType.IDENTIFIER && t.lexeme == "$" &&
+                tokens.getOrNull(k + 1)?.type == TokenType.L_BRACE
+            ) {
+                var depth = 1
+                var j = k + 2
+                val inner = mutableListOf<Token>()
+                while (j < tokens.size && depth > 0) {
+                    when (tokens[j].type) {
+                        TokenType.L_BRACE -> depth += 1
+                        TokenType.R_BRACE -> { depth -= 1; if (depth == 0) break }
+                        else -> {}
+                    }
+                    if (depth > 0) inner.add(tokens[j])
+                    j += 1
+                }
+                var folded: List<Token> = inner
+                for ((name, value) in bindings) folded = substituteBareIdentifier(folded, name, value)
+                folded = foldListIndexing(folded)
+                result.addAll(folded)
+                k = j + 1
+            } else {
+                result.add(t)
+                k += 1
+            }
+        }
+        return result
+    }
+
+    /** Replaces every bare identifier `name` with the tokens of `value`. */
+    private fun substituteBareIdentifier(tokens: List<Token>, name: String, value: String): List<Token> {
+        val valueTokens = Lexer(value).tokenize().dropLast(1)
+        val result = mutableListOf<Token>()
+        for (t in tokens) {
+            if (t.type == TokenType.IDENTIFIER && t.lexeme == name) result.addAll(valueTokens) else result.add(t)
+        }
+        return result
     }
 
     /** Folds `list[<int>]` on a compile-time list variable into the element value. */
@@ -948,25 +995,41 @@ class Parser(
         i += 1
         if (tokens.getOrNull(i)?.type != TokenType.COLON) return false
         i += 1
-        if (tokens.getOrNull(i)?.type != TokenType.L_BRACKET) return false
-        i += 1
-        val elem = tokens.getOrNull(i)
-        if (elem?.type != TokenType.IDENTIFIER) return false
-        i += 1
-        if (tokens.getOrNull(i)?.type != TokenType.R_BRACKET) return false
-        return elem.lexeme == "Type" || hasInline
+        val t = tokens.getOrNull(i)
+        // `[ Type ]` — a type list (grouping types, e.g. `[Type]`, `[Int]`).
+        if (t?.type == TokenType.L_BRACKET) {
+            i += 1
+            val elem = tokens.getOrNull(i)
+            if (elem?.type != TokenType.IDENTIFIER) return false
+            i += 1
+            if (tokens.getOrNull(i)?.type != TokenType.R_BRACKET) return false
+            return elem.lexeme == "Type" || hasInline
+        }
+        // `Array<Elem>` — an `inline` compile-time value list (`inline fin ranks: Array<Int> = arr![…]`).
+        if (t?.type == TokenType.IDENTIFIER && t.lexeme == "Array") return hasInline
+        return false
     }
 
-    /** `[inline] let X: [Elem] = <list>` — records a compile-time list; emits no runtime item. */
+    /**
+     * `[inline] let X: [Elem] = <list>` / `inline fin X: Array<Elem> = arr![…]` —
+     * records a compile-time list; emits no runtime item.
+     */
     private fun parseTypeListBinding(): TopLevel {
         val start = peek()
         match(TokenType.INLINE) // optional `inline`
         advance() // let/fin/var
         val name = consume(TokenType.IDENTIFIER, "Expected list name").lexeme
         consume(TokenType.COLON, "Expected ':'")
-        consume(TokenType.L_BRACKET, "Expected '['")
-        consume(TokenType.IDENTIFIER, "Expected element type")
-        consume(TokenType.R_BRACKET, "Expected ']'")
+        if (check(TokenType.L_BRACKET)) {
+            consume(TokenType.L_BRACKET, "Expected '['")
+            consume(TokenType.IDENTIFIER, "Expected element type")
+            consume(TokenType.R_BRACKET, "Expected ']'")
+        } else {
+            // `Array<Elem>` — a value list; `[Elem]` value spellings are reserved for
+            // grouping types, so a value binding is written `Array<…>`.
+            consume(TokenType.IDENTIFIER, "Expected 'Array<…>' or '[Elem]' compile-time list type")
+            skipGenericTypeArgs()
+        }
         consume(TokenType.EQUAL, "Expected '=' in compile-time list binding")
         typeListEnv[name] = parseComptimeListValue()
         consumeNewline()
@@ -983,8 +1046,13 @@ class Parser(
             if (!check(TokenType.R_BRACKET)) {
                 do {
                     values.add(when {
-                        check(TokenType.STRING_LITERAL) -> advance().literal as String
-                        check(TokenType.INT_LITERAL) -> (advance().literal as NumericLiteral).value.toString()
+                        // Plain `[…]` groups *types* only; string/int value lists must
+                        // be written `arr![…]`.
+                        check(TokenType.STRING_LITERAL) || check(TokenType.INT_LITERAL) -> {
+                            if (!isMacro) error("value lists must use 'arr![…]'; plain '[…]' only groups types at line ${peek().line}")
+                            if (check(TokenType.STRING_LITERAL)) advance().literal as String
+                            else (advance().literal as NumericLiteral).value.toString()
+                        }
                         else -> consumeIdentifierLike("Expected a literal or type name in compile-time list")
                     })
                 } while (match(TokenType.COMMA))

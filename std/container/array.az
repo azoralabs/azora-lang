@@ -103,6 +103,7 @@ use friend zone std {
     }
 
     meta type {
+        [T;] => std::Array<T>
         [T; *] => std::Array<T, *>
         [T; N] => std::Array<T, N>
     }

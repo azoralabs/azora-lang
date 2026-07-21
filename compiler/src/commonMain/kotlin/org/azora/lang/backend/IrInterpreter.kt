@@ -549,8 +549,15 @@ class IrInterpreter {
                 val value = evalExpr(stmt.value)
                 when (target) {
                     is MutableMap<*, *> -> {
-                        @Suppress("UNCHECKED_CAST")
-                        (target as MutableMap<Any?, Any?>)[key] = value
+                        // A pack instance assigns through its `oper[]=` (`Type_indexSet`).
+                        val structType = target["__type"] as? String
+                        val setFn = structType?.let { functions["${it}_indexSet"] }
+                        if (setFn != null) {
+                            executeFunction(setFn, listOf(target, key, value))
+                        } else {
+                            @Suppress("UNCHECKED_CAST")
+                            (target as MutableMap<Any?, Any?>)[key] = value
+                        }
                     }
                     is MutableList<*> -> {
                         @Suppress("UNCHECKED_CAST")
@@ -680,8 +687,17 @@ class IrInterpreter {
                 val key = evalExpr(expr.index)
                 when (target) {
                     is MutableMap<*, *> -> {
-                        @Suppress("UNCHECKED_CAST")
-                        (target as MutableMap<Any?, Any?>)[key]
+                        // A pack instance (e.g. an `ArrayList` behind a `List`-typed
+                        // value) indexes through its `oper[]` (`Type_index`), not a
+                        // raw key lookup on the struct's field map.
+                        val structType = target["__type"] as? String
+                        val indexFn = structType?.let { functions["${it}_index"] }
+                        if (indexFn != null) {
+                            executeFunction(indexFn, listOf(target, key))
+                        } else {
+                            @Suppress("UNCHECKED_CAST")
+                            (target as MutableMap<Any?, Any?>)[key]
+                        }
                     }
                     is MutableList<*> -> {
                         @Suppress("UNCHECKED_CAST")
@@ -719,15 +735,21 @@ class IrInterpreter {
                             @Suppress("UNCHECKED_CAST")
                             return@evalExpr (receiver as Map<String, Any?>)[expr.name]
                         }
+                        // A computed property (`prop size = self._size`) is dispatched
+                        // before the generic map fallbacks so a spec-typed value (e.g.
+                        // `m: Map` backed by a `LinkedHashMap`) reads the pack's own
+                        // `.size`, not the struct field count.
+                        if (typeName != null) {
+                            val propFunc = functions["${typeName}_prop_${expr.name}"]
+                                ?: functions["${typeName}_${expr.name}"]
+                            if (propFunc != null && propFunc.params.size == 1) {
+                                return@evalExpr executeFunction(propFunc, listOf(receiver))
+                            }
+                        }
                         when (expr.name) {
                             "length", "size" -> return@evalExpr receiver.size.toLong()
                             "isEmpty" -> return@evalExpr receiver.isEmpty()
                             "isNotEmpty" -> return@evalExpr receiver.isNotEmpty()
-                        }
-                        // Check for a computed property (prop): `Type_prop_name` method.
-                        if (typeName != null) {
-                            val propFunc = functions["${typeName}_prop_${expr.name}"]
-                            if (propFunc != null) return@evalExpr executeFunction(propFunc, listOf(receiver))
                         }
                         @Suppress("UNCHECKED_CAST")
                         val result = (receiver as Map<String, Any?>)[expr.name]
@@ -747,6 +769,13 @@ class IrInterpreter {
                 map["__type"] = expr.name
                 for (i in expr.fieldNames.indices) {
                     map[expr.fieldNames[i]] = evalExpr(expr.args[i])
+                }
+                // Run the pack's `impl ctor()` (if any) so field-initializing
+                // constructors execute. Only a receiver-only ctor (`mut ref self`)
+                // is auto-invoked here; the instance is mutated in place.
+                val ctor = functions["${expr.name}_ctor"]
+                if (ctor != null && ctor.params.size == 1) {
+                    executeFunction(ctor, listOf(map))
                 }
                 map
             }
@@ -829,6 +858,16 @@ class IrInterpreter {
                             }
                         }
                     }
+                    // A pack instance carries its concrete type in `__type`; dispatch a
+                    // spec-typed call (e.g. `xs.add(4)` where `xs: MutableList`) to the
+                    // concrete impl (`ArrayList_add`) rather than a builtin.
+                    val structType = receiver["__type"] as? String
+                    if (structType != null) {
+                        val func = functions["${structType}_${expr.name}"]
+                        if (func != null) {
+                            return executeFunction(func, listOf(receiver) + args)
+                        }
+                    }
                 }
                 when {
                     // `#expr` (oper#) — hash of a primitive/value-type operand.
@@ -881,6 +920,15 @@ class IrInterpreter {
                         }
                         when (expr.name) {
                             "add" -> { list.add(args[0]); null }
+                            // `List`/`MutableList` positional access (spec methods).
+                            "get" -> list[(args[0] as Long).toInt()]
+                            "set" -> { list[(args[0] as Long).toInt()] = args[1]; null }
+                            "removeAt" -> list.removeAt((args[0] as Long).toInt())
+                            "removeFirst" -> list.removeAt(0)
+                            "removeLast" -> list.removeAt(list.size - 1)
+                            "first" -> list.first()
+                            "last" -> list.last()
+                            "size" -> list.size.toLong()
                             "insert" -> { list.add((args[0] as Long).toInt(), args[1]); null }
                             "remove" -> { list.removeAt((args[0] as Long).toInt()); null }
                             "contains" -> list.contains(args[0])
@@ -911,24 +959,10 @@ class IrInterpreter {
     private fun materializeDeclared(type: IrType, value: Any?): Any? {
         val name = (type as? IrType.Named)?.name ?: return value
         return when {
-            name in setOf("List", "MutableList") && value is MutableList<*> -> {
-                val elements = value.toMutableList()
-                linkedMapOf<String, Any?>(
-                    "__type" to name,
-                    "data" to elements,
-                    "size" to elements.size.toLong(),
-                    "capacity" to maxOf(8, elements.size).toLong(),
-                )
-            }
-            name in setOf("Set", "MutableSet") && value is MutableList<*> -> {
-                val elements = value.distinct().toMutableList()
-                linkedMapOf<String, Any?>(
-                    "__type" to name,
-                    "data" to elements,
-                    "size" to elements.size.toLong(),
-                    "capacity" to maxOf(8, elements.size).toLong(),
-                )
-            }
+            // A raw array bound to a `List`/`Set`-typed slot stays a raw list: the
+            // interpreter supports positional access, membership, and mutation on it
+            // directly. (Wrapping it in a `{__type, data}` struct would have no
+            // matching `List_get`/`Set_get` method and read back as null.)
             name in setOf("Map", "MutableMap") && value is Map<*, *> && !value.containsKey("__type") -> {
                 val entries = value.entries.toList()
                 linkedMapOf<String, Any?>(

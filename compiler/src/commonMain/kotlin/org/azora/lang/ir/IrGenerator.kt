@@ -912,6 +912,11 @@ class IrGenerator(private val table: SymbolTable) {
                     }
                     return IrExpr.Call(resolveName(expr.callee), args, v.type.ret)
                 }
+                // Compiler builtin: `std::convert::toString(x)` stringifies any
+                // value (implemented natively by CTCE and every backend).
+                if (expr.callee == "std__convert__toString") {
+                    return IrExpr.Call("std__convert__toString", expr.args.map { lowerExpr(it) }, IrType.String)
+                }
                 error("undefined function or variable '${expr.callee}'")
             }
             is Expr.Grouping -> lowerExpr(expr.expr)

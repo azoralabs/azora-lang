@@ -27,6 +27,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import org.azora.lang.CompilationResult
 import org.azora.lang.Compiler
+import org.azora.lang.LibrarySource
 import org.azora.lang.backend.IrInterpreter
 
 /**
@@ -43,7 +44,7 @@ import org.azora.lang.backend.IrInterpreter
  * functions directly exposes Kotlin's continuation ABI, so the public bridge returns JavaScript
  * promises that resolve to plain JS strings.
  */
-private const val AZORA_VERSION = "0.0.3"
+private const val AZORA_VERSION = "0.0.4"
 
 private val bridgeScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -73,9 +74,87 @@ private fun withCompiled(source: String, onSuccess: (CompilationResult.Success) 
     }
 }
 
+private fun withCompiledLibrary(
+    source: String,
+    libraryPath: String,
+    librarySource: String,
+    onSuccess: (CompilationResult.Success) -> String,
+): String {
+    val result = Compiler(listOf(LibrarySource(libraryPath, librarySource))).compile(source, release = false)
+    return when (result) {
+        is CompilationResult.Success -> json(true, onSuccess(result), "")
+        is CompilationResult.Failure -> json(false, "", result.errors.joinToString("\n"))
+    }
+}
+
+/** Decodes a concatenation of `<pathLength>:<path><sourceLength>:<source>` entries. */
+private fun decodeLibraries(bundle: String): List<LibrarySource> {
+    var cursor = 0
+    fun readPart(): String {
+        val colon = bundle.indexOf(':', cursor)
+        require(colon >= cursor) { "invalid library bundle at offset $cursor" }
+        val length = bundle.substring(cursor, colon).toIntOrNull()
+            ?: error("invalid library length at offset $cursor")
+        val start = colon + 1
+        val end = start + length
+        require(end <= bundle.length) { "truncated library bundle at offset $cursor" }
+        cursor = end
+        return bundle.substring(start, end)
+    }
+
+    val libraries = mutableListOf<LibrarySource>()
+    while (cursor < bundle.length) libraries += LibrarySource(readPart(), readPart())
+    return libraries
+}
+
+private fun withCompiledLibraries(
+    source: String,
+    libraryBundle: String,
+    onSuccess: (CompilationResult.Success) -> String,
+): String {
+    val result = try {
+        Compiler(decodeLibraries(libraryBundle)).compile(source, release = false)
+    } catch (error: IllegalArgumentException) {
+        return json(false, "", error.message ?: "invalid library bundle")
+    }
+    return when (result) {
+        is CompilationResult.Success -> json(true, onSuccess(result), "")
+        is CompilationResult.Failure -> json(false, "", result.errors.joinToString("\n"))
+    }
+}
+
 /** [withCompiled] for `suspend` success callbacks (used by the interpreter entry points). */
 private suspend fun withCompiledSuspend(source: String, onSuccess: suspend (CompilationResult.Success) -> String): String {
     val result = Compiler().compile(source, release = false)
+    return when (result) {
+        is CompilationResult.Success -> json(true, onSuccess(result), "")
+        is CompilationResult.Failure -> json(false, "", result.errors.joinToString("\n"))
+    }
+}
+
+private suspend fun withCompiledLibrarySuspend(
+    source: String,
+    libraryPath: String,
+    librarySource: String,
+    onSuccess: suspend (CompilationResult.Success) -> String,
+): String {
+    val result = Compiler(listOf(LibrarySource(libraryPath, librarySource))).compile(source, release = false)
+    return when (result) {
+        is CompilationResult.Success -> json(true, onSuccess(result), "")
+        is CompilationResult.Failure -> json(false, "", result.errors.joinToString("\n"))
+    }
+}
+
+private suspend fun withCompiledLibrariesSuspend(
+    source: String,
+    libraryBundle: String,
+    onSuccess: suspend (CompilationResult.Success) -> String,
+): String {
+    val result = try {
+        Compiler(decodeLibraries(libraryBundle)).compile(source, release = false)
+    } catch (error: IllegalArgumentException) {
+        return json(false, "", error.message ?: "invalid library bundle")
+    }
     return when (result) {
         is CompilationResult.Success -> json(true, onSuccess(result), "")
         is CompilationResult.Failure -> json(false, "", result.errors.joinToString("\n"))
@@ -131,3 +210,71 @@ fun azGenerateLlvmIr(source: String): String =
 @JsExport
 fun azGenerateWasm(source: String): String =
     withCompiled(source) { it.wasm }
+
+/** Compiles Azora IR with one external library module available for imports. */
+@JsExport
+fun azPreprocessWithLibrary(source: String, libraryPath: String, librarySource: String): String =
+    withCompiledLibrary(source, libraryPath, librarySource) { it.ir.prettyPrint() }
+
+/** Interprets source with one external library module available for imports. */
+@JsExport
+fun azInterpretWithLibrary(source: String, libraryPath: String, librarySource: String): Promise<JsString> =
+    promisedJson { withCompiledLibrarySuspend(source, libraryPath, librarySource) {
+        try { IrInterpreter().interpretSuspend(it.ir) } catch (e: Throwable) { "Runtime error: ${e.message ?: e.toString()}" }
+    } }
+
+/** Runs tests with one external library module available for imports. */
+@JsExport
+fun azRunTestsWithLibrary(source: String, libraryPath: String, librarySource: String): Promise<JsString> =
+    promisedJson { withCompiledLibrarySuspend(source, libraryPath, librarySource) {
+        try { IrInterpreter().interpretSuspend(it.ir) } catch (e: Throwable) { "Runtime error: ${e.message ?: e.toString()}" }
+    } }
+
+/** Generates JavaScript with one external library module available for imports. */
+@JsExport
+fun azGenerateJavaScriptWithLibrary(source: String, libraryPath: String, librarySource: String): String =
+    withCompiledLibrary(source, libraryPath, librarySource) { it.javascript }
+
+/** Generates LLVM IR with one external library module available for imports. */
+@JsExport
+fun azGenerateLlvmIrWithLibrary(source: String, libraryPath: String, librarySource: String): String =
+    withCompiledLibrary(source, libraryPath, librarySource) { it.llvm }
+
+/** Generates WebAssembly text with one external library module available for imports. */
+@JsExport
+fun azGenerateWasmWithLibrary(source: String, libraryPath: String, librarySource: String): String =
+    withCompiledLibrary(source, libraryPath, librarySource) { it.wasm }
+
+/** Compiles Azora IR with an arbitrary encoded set of external library modules. */
+@JsExport
+fun azPreprocessWithLibraries(source: String, libraryBundle: String): String =
+    withCompiledLibraries(source, libraryBundle) { it.ir.prettyPrint() }
+
+/** Interprets source with an arbitrary encoded set of external library modules. */
+@JsExport
+fun azInterpretWithLibraries(source: String, libraryBundle: String): Promise<JsString> =
+    promisedJson { withCompiledLibrariesSuspend(source, libraryBundle) {
+        try { IrInterpreter().interpretSuspend(it.ir) } catch (e: Throwable) { "Runtime error: ${e.message ?: e.toString()}" }
+    } }
+
+/** Runs tests with an arbitrary encoded set of external library modules. */
+@JsExport
+fun azRunTestsWithLibraries(source: String, libraryBundle: String): Promise<JsString> =
+    promisedJson { withCompiledLibrariesSuspend(source, libraryBundle) {
+        try { IrInterpreter().interpretSuspend(it.ir) } catch (e: Throwable) { "Runtime error: ${e.message ?: e.toString()}" }
+    } }
+
+/** Generates JavaScript with an arbitrary encoded set of external library modules. */
+@JsExport
+fun azGenerateJavaScriptWithLibraries(source: String, libraryBundle: String): String =
+    withCompiledLibraries(source, libraryBundle) { it.javascript }
+
+/** Generates LLVM IR with an arbitrary encoded set of external library modules. */
+@JsExport
+fun azGenerateLlvmIrWithLibraries(source: String, libraryBundle: String): String =
+    withCompiledLibraries(source, libraryBundle) { it.llvm }
+
+/** Generates WebAssembly with an arbitrary encoded set of external library modules. */
+@JsExport
+fun azGenerateWasmWithLibraries(source: String, libraryBundle: String): String =
+    withCompiledLibraries(source, libraryBundle) { it.wasm }

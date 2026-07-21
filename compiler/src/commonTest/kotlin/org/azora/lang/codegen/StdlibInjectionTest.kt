@@ -2,6 +2,7 @@ package org.azora.lang.codegen
 
 import org.azora.lang.CompilationResult
 import org.azora.lang.Compiler
+import org.azora.lang.LibrarySource
 import org.azora.lang.backend.IrInterpreter
 import org.azora.lang.frontend.AstValidator
 import org.azora.lang.frontend.Lexer
@@ -351,5 +352,57 @@ class StdlibInjectionTest {
         val result = Compiler().compile("import std.io\nfunc main() {\n    std::println(std.math.abs(-5))\n}")
         assertIs<CompilationResult.Failure>(result)
         assertTrue(result.errors.any { "std" in it }, "${'$'}{result.errors}")
+    }
+
+    @Test fun compilerLoadsExternalLibraryModulesPerInstance() {
+        val library = LibrarySource(
+            "engine/render.az",
+            """
+                module engine.render
+                friend zone engine {
+                    func answer(): Int { return 42 }
+                }
+            """.trimIndent(),
+        )
+        val result = Compiler(listOf(library)).compile("""
+            import std.io
+            import engine.render
+            func main() {
+                std::println(engine::answer())
+            }
+        """.trimIndent())
+
+        assertIs<CompilationResult.Success>(result, (result as? CompilationResult.Failure)?.errors.toString())
+        assertEquals("42", IrInterpreter().interpret(result.ir))
+    }
+
+    @Test fun externalLibraryModulesResolveTheirOwnImports() {
+        val libraries = listOf(
+            LibrarySource(
+                "engine/shaders.az",
+                """
+                    module engine.shaders
+                    func shaderValue(): Int { return 7 }
+                """.trimIndent(),
+            ),
+            LibrarySource(
+                "engine/render.az",
+                """
+                    module engine.render
+                    import engine.shaders
+                    friend zone engine {
+                        func shaderCount(): Int { return shaderValue() }
+                    }
+                """.trimIndent(),
+            ),
+        )
+        val result = Compiler(libraries).compile("""
+            import std.io
+            import engine.render
+            func main() { std::println(engine::shaderCount()) }
+        """.trimIndent())
+
+        assertIs<CompilationResult.Success>(result, (result as? CompilationResult.Failure)?.errors.toString())
+        assertEquals("7", IrInterpreter().interpret(result.ir))
     }
 }

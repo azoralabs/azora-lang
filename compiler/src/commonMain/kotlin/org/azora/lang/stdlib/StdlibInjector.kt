@@ -19,8 +19,10 @@ package org.azora.lang.stdlib
 import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.FuncDecl
 import org.azora.lang.frontend.IntraZoneRewriter
+import org.azora.lang.frontend.Lexer
 import org.azora.lang.frontend.ModuleVisibility
 import org.azora.lang.frontend.ModuleQualifiedSymbol
+import org.azora.lang.frontend.Parser
 import org.azora.lang.frontend.Program
 import org.azora.lang.frontend.Stmt
 import org.azora.lang.frontend.TopLevel
@@ -51,16 +53,45 @@ import org.azora.lang.putIfAbsentCompat
  * transitively. A user declaration always shadows a library item of the same
  * name, and programs that never touch the library compile exactly as before.
  */
-object StdlibInjector {
+class StdlibInjector private constructor(
+    private val programs: List<Program>,
+    private val configOverrides: Map<String, String>,
+) {
+
+    companion object {
+        private val standard: StdlibInjector by lazy {
+            StdlibInjector(AzStdlib.loadPrograms(), emptyMap())
+        }
+
+        /**
+         * Creates an isolated import/injection context for one compilation.
+         * Additional sources are ordinary Azora modules and are resolved with
+         * exactly the same rules as bundled standard-library modules.
+         */
+        fun create(
+            additionalSources: List<Pair<String, String>> = emptyList(),
+            configOverrides: Map<String, String> = emptyMap(),
+        ): StdlibInjector {
+            if (additionalSources.isEmpty() && configOverrides.isEmpty()) return standard
+            val typeListEnv = mutableMapOf<String, List<String>>()
+            val additionalPrograms = additionalSources.map { (path, source) ->
+                try {
+                    Parser(Lexer(source).tokenize(), typeListEnv).parse()
+                } catch (error: Exception) {
+                    throw IllegalArgumentException(
+                        "Failed to parse library source '$path': ${error.message ?: error.toString()}",
+                        error,
+                    )
+                }
+            }
+            return StdlibInjector(AzStdlib.loadPrograms() + additionalPrograms, configOverrides)
+        }
+
+        /** Compatibility lookup against the bundled standard library. */
+        fun moduleOf(name: String): String? = standard.moduleOf(name)
+    }
 
     private val implicitCollectionTypes = setOf("List", "MutableList", "Set", "MutableSet", "Map", "MutableMap")
-
-    /**
-     * CLI `-D NAME=VAL` overrides (and named flags) that drive `export if COND`
-     * conditions and `config.az` constants. Set by [org.azora.lang.Compiler] before
-     * any injection. Values are strings; booleans are `"true"`/`"false"`.
-     */
-    var configOverrides: Map<String, String> = emptyMap()
 
     /**
      * Evaluates an `export if COND` condition against the boolean CLI overrides.
@@ -185,7 +216,7 @@ object StdlibInjector {
     private fun buildIndex(): Index {
         val idx = Index()
         val boolOverrides = configOverrides.mapValues { it.value.trim() == "true" }
-        for (program in AzStdlib.loadPrograms()) {
+        for (program in programs) {
             val module = program.moduleName ?: continue
             val root = module.substringBefore('.')
             idx.roots.add(root)

@@ -98,6 +98,9 @@ sealed class CompilationResult {
     data class Failure(val errors: List<String>) : CompilationResult()
 }
 
+/** An external Azora module made available to one compiler instance. */
+data class LibrarySource(val path: String, val source: String)
+
 /**
  * Full compiler pipeline orchestrator.
  *
@@ -106,7 +109,9 @@ sealed class CompilationResult {
  * and backend code generation to three targets — JavaScript, WebAssembly, and
  * LLVM IR — all from one optimized IR.
  */
-class Compiler {
+class Compiler(
+    private val librarySources: List<LibrarySource> = emptyList(),
+) {
 
     /**
      * Compiles Azora source code through the full pipeline.
@@ -118,16 +123,16 @@ class Compiler {
      *   [CompilationResult.Failure] with error messages
      */
     /** Points unknown symbols at their imported zone path or providing module. */
-    private fun withLibraryHint(message: String, program: Program): String {
+    private fun withLibraryHint(message: String, program: Program, libraries: StdlibInjector): String {
         val match = Regex("(?:undefined function|undefined variable) '([A-Za-z_][A-Za-z0-9_]*)'").find(message)
             ?: return message
         val name = match.groupValues[1]
-        val qualified = StdlibInjector.qualifiedAccessOf(name, program)
+        val qualified = libraries.qualifiedAccessOf(name, program)
         if (qualified != null) {
             val zone = qualified.substringBeforeLast("::")
             return "$message; '$name' is part of zone '$zone', use '$qualified' instead"
         }
-        val module = StdlibInjector.moduleOf(name) ?: return message
+        val module = libraries.moduleOf(name) ?: return message
         return "$message — '$name' is provided by '$module': add 'import $module'"
     }
 
@@ -136,9 +141,14 @@ class Compiler {
         // Clear per-compilation state
         IrType.aliases.clear()
 
-        // CLI `-D NAME=VAL` / named flags drive `config.az` constants and
-        // `export if COND` conditions. Publish them before stdlib injection.
-        StdlibInjector.configOverrides = defines
+        val libraries = try {
+            StdlibInjector.create(
+                additionalSources = librarySources.map { it.path to it.source },
+                configOverrides = defines,
+            )
+        } catch (error: IllegalArgumentException) {
+            return CompilationResult.Failure(listOf(error.message ?: "library loading failed"))
+        }
 
         // ===============================================================
         // Phase 1 — Frontend
@@ -160,14 +170,14 @@ class Compiler {
 
         // 2a-bis. Reject imports of namespaces that have no module file (e.g.
         // `import std` — there is no `std.az`, only modules beneath it).
-        val importErrors = StdlibInjector.validateImports(parsed)
+        val importErrors = libraries.validateImports(parsed)
         if (importErrors.isNotEmpty()) {
             return CompilationResult.Failure(importErrors)
         }
 
         // 2b. Standard library: append the stdlib declarations the program
         // actually references (transitively); user definitions shadow stdlib.
-        val initiallyInjected = CallbackImplNormalizer.normalize(StdlibInjector.inject(parsed))
+        val initiallyInjected = CallbackImplNormalizer.normalize(libraries.inject(parsed))
 
         // Decorator derives produce ordinary checked AST methods. Run injection
         // once more afterwards so helper functions referenced by generated
@@ -176,7 +186,7 @@ class Compiler {
         if (serialization.errors.isNotEmpty()) {
             return CompilationResult.Failure(serialization.errors)
         }
-        val injected = CallbackImplNormalizer.normalize(StdlibInjector.inject(serialization.program))
+        val injected = CallbackImplNormalizer.normalize(libraries.inject(serialization.program))
 
         // 2c. Expand `meta` macros: rewrite every `Expr.MetaInvoke` into its
         // matched arm's template (splice-substituting `$captures`) and remove
@@ -196,7 +206,7 @@ class Compiler {
         // stdlib symbols not pulled in by the pre-expansion injection (the macro
         // template's own dependencies). A second injection pass over the expanded
         // program picks those up transitively.
-        val macroReInjected = CallbackImplNormalizer.normalize(StdlibInjector.inject(macroExpanded))
+        val macroReInjected = CallbackImplNormalizer.normalize(libraries.inject(macroExpanded))
 
         // 2d. Monomorphize variadic generics (e.g. `Tuple<T…>` / `tupleOf(…)`)
         // into concrete per-instantiation declarations before semantic analysis.
@@ -223,7 +233,7 @@ class Compiler {
         val errors = semantic.errors.filter { !it.startsWith("warning:") }
 
         if (errors.isNotEmpty()) {
-            return CompilationResult.Failure(semantic.errors.map { withLibraryHint(it, ast) })
+            return CompilationResult.Failure(semantic.errors.map { withLibraryHint(it, ast, libraries) })
         }
         if (warningsAsErrors && warnings.isNotEmpty()) {
             return CompilationResult.Failure(semantic.errors)

@@ -202,6 +202,38 @@ class CodegenGoldenTest {
         assertTrue("(export \"main\" (func \$main))" in wat, "exports main")
     }
 
+    @Test
+    fun wasmDeclaresReferencedBridgeFunctionsAsTypedHostImports() {
+        val wat = compile(
+            """
+            bridge WebGL {
+                func webClear(r: Real, g: Real, b: Real): Unit
+                func webWave(time: Real, speed: Real): Real
+                func unused(value: Int): Unit
+            }
+
+            func frame(time: Real): Real {
+                webClear(0.1, 0.2, 0.3)
+                return webWave(time, 2.0)
+            }
+
+            func main() {
+                frame(0.0)
+            }
+            """.trimIndent(),
+        ).wasm
+
+        assertTrue(
+            "(import \"env\" \"webClear\" (func \$webClear (param f64) (param f64) (param f64)))" in wat,
+            wat,
+        )
+        assertTrue(
+            "(import \"env\" \"webWave\" (func \$webWave (param f64) (param f64) (result f64)))" in wat,
+            wat,
+        )
+        assertTrue("\"unused\"" !in wat, "unused bridge declarations must not become required host imports")
+    }
+
     // -----------------------------------------------------------------------
     // LLVM
     // -----------------------------------------------------------------------

@@ -69,6 +69,8 @@ class WasmCodegen {
     private var usesIntToStr = false
     private var usesIsCheck = false
     private val neededIntrinsics = mutableSetOf<String>()
+    private val externs = LinkedHashMap<String, IrTopLevel.Extern>()
+    private val neededExterns = LinkedHashSet<String>()
     private val stringIntrinsics = setOf(
         "stringLength", "charAt", "ord", "chr", "isDigit", "isAlpha", "substring",
         "startsWith", "endsWith", "contains", "indexOf", "toUpper", "toLower", "trim",
@@ -89,9 +91,10 @@ class WasmCodegen {
         out.clear(); indent = 0
         structs.clear(); stringConsts.clear(); constCursor = STRING_BASE
         usesAlloc = false; usesConcat = false; usesStrEq = false; usesRepeat = false; usesIntToStr = false; usesIsCheck = false
-        neededIntrinsics.clear()
+        neededIntrinsics.clear(); externs.clear(); neededExterns.clear()
 
         for (item in program.items) if (item is IrTopLevel.Struct) structs[item.name] = item.fields
+        for (item in program.items) if (item is IrTopLevel.Extern) externs[item.name] = item
 
         val funcs = program.items.filterIsInstance<IrTopLevel.Func>().map { it.function }
             .filter { it.name !in org.azora.lang.semantic.CtfeEvaluator.RUNTIME_INTRINSICS }
@@ -114,6 +117,12 @@ class WasmCodegen {
         sb.appendLine("  (import \"env\" \"write_f32\" (func \$write_f32 (param f32)))")
         sb.appendLine("  (import \"env\" \"write_bool\" (func \$write_bool (param i32)))")
         sb.appendLine("  (import \"env\" \"write_str\" (func \$write_str (param i32)))")
+        for (name in neededExterns) {
+            val extern = externs.getValue(name)
+            val params = extern.params.joinToString("") { " (param ${wasmType(it.second)})" }
+            val result = if (extern.returnType == IrType.Unit) "" else " (result ${wasmType(extern.returnType)})"
+            sb.appendLine("  (import \"env\" \"$name\" (func \$$name$params$result))")
+        }
         sb.appendLine("  (memory (export \"memory\") 16)")
         sb.appendLine("  (global \$__heap (mut i32) (i32.const ${align4(constCursor)}))")
         if (usesAlloc) sb.append(RT_ALLOC)
@@ -451,6 +460,7 @@ class WasmCodegen {
                 "  (local.get $t))"
         }
         if (expr.name in stringIntrinsics) neededIntrinsics.add(expr.name)
+        if (expr.name in externs && expr.name !in stringIntrinsics) neededExterns.add(expr.name)
         val args = expr.args.joinToString(" ") { emitExpr(it) }
         return "(call \$${expr.name}${if (args.isEmpty()) "" else " $args"})"
     }

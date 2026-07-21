@@ -18,6 +18,7 @@ package dev.azora.lang
 
 import org.azora.lang.Compiler
 import org.azora.lang.CompilationResult
+import org.azora.lang.LibrarySource
 import org.azora.lang.backend.IrInterpreter
 import org.azora.lang.frontend.dumpTree
 import java.io.File
@@ -94,9 +95,9 @@ private fun handleRun(args: List<String>) {
         return
     }
 
-    val source = resolveAndConcatenate(file)
+    val unit = resolveCompilation(file)
     val programArgs = args.drop(args.indexOf(filePath) + 1)
-    val result = Compiler().compile(source, defines = parseDefines(args))
+    val result = Compiler(unit.libraries).compile(unit.source, defines = parseDefines(args))
     when (result) {
         is CompilationResult.Success -> {
             val output = IrInterpreter().apply { this.programArgs = programArgs }.interpret(result.ir)
@@ -111,14 +112,18 @@ private fun handleRun(args: List<String>) {
 // ── Multi-file resolution ────────────────────────────────────────
 
 /**
- * Resolves multi-file imports by:
- * 1. Finding all `.az` files in sibling directories referenced by `use` statements
- * 2. Concatenating them before the entry file
- * 3. Stripping `package` and local `use` lines during concatenation
+ * A compilation unit keeps the entry module separate and loads every sibling
+ * `.az` file as an importable library module. Module declarations and imports
+ * therefore reach the same resolver used by the browser and embedded compiler;
+ * source files are never concatenated or stripped.
  */
-private fun resolveAndConcatenate(entryFile: File): String {
-    val entrySource = entryFile.readText()
-    val sourceDir = entryFile.parentFile ?: return entrySource
+private data class SourceCompilation(
+    val source: String,
+    val libraries: List<LibrarySource>,
+)
+
+private fun resolveCompilation(entryFile: File): SourceCompilation {
+    val sourceDir = entryFile.parentFile ?: return SourceCompilation(entryFile.readText(), emptyList())
 
     // Find all `.az` files in the source directory and subdirectories (except the entry file itself)
     val siblingFiles = sourceDir.walkTopDown()
@@ -126,23 +131,10 @@ private fun resolveAndConcatenate(entryFile: File): String {
         .sortedBy { it.name }
         .toList()
 
-    if (siblingFiles.isEmpty()) return entrySource
-
-    // Concatenate: siblings first, entry file last
-    val parts = siblingFiles.map { cleanSource(it.readText(), it) } + cleanSource(entrySource, entryFile)
-    return parts.joinToString("\n\n")
-}
-
-/** Strips `package` declarations and `use` imports from a source file (they're metadata for the CLI, not for the compiler). */
-private fun cleanSource(source: String, file: File): String {
-    return source.lines().joinToString("\n") { line ->
-        val trimmed = line.trim()
-        when {
-            trimmed.startsWith("package ") || trimmed == "package" -> ""
-            trimmed.startsWith("use ") -> ""  // All use lines stripped — CLI handles resolution
-            else -> line
-        }
+    val libraries = siblingFiles.map { sibling ->
+        LibrarySource(sibling.relativeTo(sourceDir).path, sibling.readText())
     }
+    return SourceCompilation(entryFile.readText(), libraries)
 }
 
 // ── azora check <file.az> ───────────────────────────────────────
@@ -158,8 +150,8 @@ private fun handleCheck(args: List<String>) {
         return
     }
 
-    val source = resolveAndConcatenate(file)
-    val result = Compiler().compile(source, defines = parseDefines(args))
+    val unit = resolveCompilation(file)
+    val result = Compiler(unit.libraries).compile(unit.source, defines = parseDefines(args))
     when (result) {
         is CompilationResult.Success -> println("No errors found.")
         is CompilationResult.Failure -> result.errors.forEach { System.err.println(it) }
@@ -183,8 +175,8 @@ private fun handleCompile(args: List<String>) {
         return
     }
 
-    val source = resolveAndConcatenate(file)
-    val result = Compiler().compile(source, release = !debug, defines = parseDefines(args))
+    val unit = resolveCompilation(file)
+    val result = Compiler(unit.libraries).compile(unit.source, release = !debug, defines = parseDefines(args))
     when (result) {
         is CompilationResult.Success -> {
             // In debug mode emit code from the un-optimized IR so backend output

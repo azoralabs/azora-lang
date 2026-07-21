@@ -216,7 +216,7 @@ class Lexer(private val source: String) {
             '&' -> if (match('&')) addToken(TokenType.AND_AND) else addToken(TokenType.AMP)
             '|' -> if (match('|')) addToken(TokenType.OR_OR) else addToken(TokenType.PIPE)
             '^' -> addToken(TokenType.CARET)
-            '~' -> addToken(TokenType.TILDE)
+            '~' -> addToken(if (match('=')) TokenType.TILDE_EQUAL else TokenType.TILDE)
             '?' -> scanNullableOp()
             '-' -> when {
                 match('>') -> addToken(TokenType.ARROW)

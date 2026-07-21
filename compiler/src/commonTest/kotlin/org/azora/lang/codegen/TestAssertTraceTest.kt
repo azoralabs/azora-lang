@@ -254,6 +254,21 @@ class TestAssertTraceTest {
         assertFalse("assert" in ir.lowercase(), "inline assert should be removed from IR, got:\n$ir")
     }
 
+    @Test
+    fun inlineBindings_areCompileTimeOnlyAndRemovedFromIr() {
+        val result = compile("""
+            inline var BUILD = 1
+            inline fin ANSWER = 42
+            func main(): Int {
+                return BUILD + ANSWER
+            }
+        """.trimIndent())
+        val ir = result.ir.prettyPrint()
+        assertFalse("BUILD" in ir, "inline var should be removed from IR, got:\n$ir")
+        assertFalse("ANSWER" in ir, "inline fin should be removed from IR, got:\n$ir")
+        assertTrue("return 43" in ir, "inline values should be folded into runtime IR, got:\n$ir")
+    }
+
     // -----------------------------------------------------------------------
     // inline trace (compile-time)
     // -----------------------------------------------------------------------

@@ -61,6 +61,7 @@ internal object VariadicMonomorphizer {
     fun monomorphize(program: Program): Program {
         val packTemplates = linkedMapOf<String, TopLevel.Pack>()
         val funcTemplates = linkedMapOf<String, TopLevel.Func>()
+        val implTemplates = linkedMapOf<String, MutableList<TopLevel.Impl>>()
         val constructibleTypes = linkedMapOf<String, List<String>>()
         val functionReturns = linkedMapOf<String, CallableReturn>()
         for (item in program.items) {
@@ -84,6 +85,11 @@ internal object VariadicMonomorphizer {
                 is TopLevel.Solo -> constructibleTypes[item.name] = emptyList()
                 is TopLevel.Node -> constructibleTypes[item.name] = emptyList()
                 else -> {}
+            }
+        }
+        for (item in program.items.filterIsInstance<TopLevel.Impl>()) {
+            if (item.variadicParam != null && item.typeName in packTemplates) {
+                implTemplates.getOrPut(item.typeName) { mutableListOf() }.add(item)
             }
         }
         if (packTemplates.isEmpty() && funcTemplates.isEmpty()) return program
@@ -116,9 +122,10 @@ internal object VariadicMonomorphizer {
             constructibleTypes,
             functionReturns,
             methodReturns,
+            implTemplates,
         )
         val rewritten = program.items.mapNotNull { ctx.rewriteTopLevel(it) }
-        return program.copy(items = rewritten + ctx.packs.values + ctx.funcs.values)
+        return program.copy(items = rewritten + ctx.packs.values + ctx.funcs.values + ctx.expandImpls())
     }
 
     private fun explicitReturnType(decl: FuncDecl): TypeRef? =
@@ -142,9 +149,11 @@ private class MonoContext(
     private val constructibleTypes: Map<String, List<String>>,
     private val functionReturns: Map<String, CallableReturn>,
     private val methodReturns: Map<Pair<String, String>, CallableReturn>,
+    private val implTemplates: Map<String, List<TopLevel.Impl>>,
 ) {
     val packs = linkedMapOf<String, TopLevel.Pack>()
     val funcs = linkedMapOf<String, TopLevel.Func>()
+    private val packArguments = linkedMapOf<String, List<TypeRef>>()
 
     /**
      * In-scope value bindings (parameter names, local `fin`/`var`/`let`) to their
@@ -165,7 +174,9 @@ private class MonoContext(
         }
         val mangled = mangleTemplate(templateName, args)
         if (mangled !in packs) {
-            packs[mangled] = expandPack(mangled, template, args)
+            val concreteArgs = args.map(::rewriteType)
+            packArguments[mangled] = concreteArgs
+            packs[mangled] = expandPack(mangled, template, concreteArgs)
         }
         return mangled
     }
@@ -306,6 +317,182 @@ private class MonoContext(
         ))
     }
 
+    /** Materializes generic impl templates once for every concrete variadic pack. */
+    fun expandImpls(): List<TopLevel.Impl> = packArguments.entries.flatMap { (mangled, _) ->
+        val templateName = packTemplates.keys.firstOrNull { mangled.startsWith("__${it}_") }
+            ?: return@flatMap emptyList()
+        val struct = packs[mangled] ?: return@flatMap emptyList()
+        implTemplates[templateName].orEmpty().map { template ->
+            val methods = template.methods.map { method ->
+                val selfType = TypeRef.Named(mangled)
+                val specialized = method.copy(
+                    params = method.params.map { it.copy(type = substituteSelf(it.type, selfType)) },
+                    returnType = substituteSelf(method.returnType, selfType),
+                    body = expandReflectedFields(method.body, struct.fields),
+                    typeParams = method.typeParams.filterNot { it == template.variadicParam },
+                    variadicParam = method.variadicParam?.takeUnless { it == template.variadicParam },
+                )
+                rewriteFuncDecl(specialized)
+            }
+            template.copy(
+                typeName = mangled,
+                methods = methods,
+                traitArgs = template.traitArgs.map { substituteSelf(it, TypeRef.Named(mangled)) },
+                typeParams = emptyList(),
+                variadicParam = null,
+            )
+        }
+    }
+
+    private fun substituteSelf(annotation: TypeAnnotation, selfType: TypeRef): TypeAnnotation =
+        if (annotation is TypeAnnotation.Explicit) TypeAnnotation.Explicit(substituteSelf(annotation.ref, selfType)) else annotation
+
+    private fun substituteSelf(type: TypeRef, selfType: TypeRef): TypeRef = when (type) {
+        is TypeRef.Named -> if (type.name == "Self" && type.args.isEmpty()) selfType
+            else type.copy(args = type.args.map { substituteSelf(it, selfType) })
+        is TypeRef.Array -> type.copy(element = substituteSelf(type.element, selfType))
+        is TypeRef.Map -> type.copy(key = substituteSelf(type.key, selfType), value = substituteSelf(type.value, selfType))
+        is TypeRef.Set -> type.copy(element = substituteSelf(type.element, selfType))
+        is TypeRef.Function -> type.copy(params = type.params.map { substituteSelf(it, selfType) }, ret = substituteSelf(type.ret, selfType))
+        is TypeRef.Tuple -> type.copy(elements = type.elements.map { substituteSelf(it, selfType) })
+        is TypeRef.Nullable -> type.copy(inner = substituteSelf(type.inner, selfType))
+        is TypeRef.Failable -> type.copy(ok = substituteSelf(type.ok, selfType))
+        is TypeRef.Pointer -> type.copy(inner = substituteSelf(type.inner, selfType))
+        is TypeRef.Reference -> type.copy(inner = substituteSelf(type.inner, selfType))
+        is TypeRef.Const -> type
+    }
+
+    private data class FieldBinding(
+        val variable: String,
+        val indexName: String?,
+        val index: Int,
+        val field: PackField,
+    )
+
+    private fun reflectedSelfFields(expr: Expr): Boolean {
+        val member = expr as? Expr.Member ?: return false
+        if (member.name != "fields") return false
+        val call = (member.target as? Expr.Grouping)?.expr ?: member.target
+        return call is Expr.Call && call.callee == "__reflect" &&
+            (call.args.singleOrNull() as? Expr.Identifier)?.name == "Self"
+    }
+
+    private fun expandReflectedFields(body: List<Stmt>, fields: List<PackField>): List<Stmt> = body.flatMap { stmt ->
+        if (stmt is Stmt.InlineFor && reflectedSelfFields(stmt.iterable)) {
+            fields.flatMapIndexed { index, field ->
+                val binding = FieldBinding(stmt.name, stmt.indexName, index, field)
+                stmt.body.flatMap { expandReflectedStmt(it, fields, binding) }
+            }
+        } else {
+            expandReflectedStmt(stmt, fields, null)
+        }
+    }
+
+    private fun expandReflectedStmt(stmt: Stmt, fields: List<PackField>, binding: FieldBinding?): List<Stmt> {
+        fun expr(value: Expr) = substituteReflectedExpr(value, binding)
+        fun nested(items: List<Stmt>) = items.flatMap { expandReflectedStmt(it, fields, binding) }
+        val rewritten = when (stmt) {
+            is Stmt.VarDecl -> stmt.copy(type = substituteSelf(stmt.type, TypeRef.Named("Self")), initializer = expr(stmt.initializer))
+            is Stmt.FinDecl -> stmt.copy(type = substituteSelf(stmt.type, TypeRef.Named("Self")), initializer = expr(stmt.initializer))
+            is Stmt.LetDecl -> stmt.copy(type = substituteSelf(stmt.type, TypeRef.Named("Self")), initializer = expr(stmt.initializer))
+            is Stmt.InlineVar -> stmt.copy(initializer = expr(stmt.initializer))
+            is Stmt.InlineFin -> stmt.copy(initializer = expr(stmt.initializer))
+            is Stmt.InlineLet -> stmt.copy(initializer = expr(stmt.initializer))
+            is Stmt.RemDecl -> stmt.copy(initializer = expr(stmt.initializer))
+            is Stmt.Assignment -> stmt.copy(value = expr(stmt.value))
+            is Stmt.InlineAssignment -> stmt.copy(value = expr(stmt.value))
+            is Stmt.IndexAssign -> stmt.copy(target = expr(stmt.target), index = expr(stmt.index), value = expr(stmt.value))
+            is Stmt.MemberAssign -> stmt.copy(target = expr(stmt.target), value = expr(stmt.value))
+            is Stmt.DerefAssign -> stmt.copy(target = expr(stmt.target), value = expr(stmt.value))
+            is Stmt.Return -> stmt.copy(value = stmt.value?.let(::expr))
+            is Stmt.ExprStmt -> stmt.copy(expr = expr(stmt.expr))
+            is Stmt.Throw -> stmt.copy(value = expr(stmt.value))
+            is Stmt.Panic -> stmt.copy(message = expr(stmt.message))
+            is Stmt.Yield -> stmt.copy(value = expr(stmt.value))
+            is Stmt.Assert -> stmt.copy(condition = expr(stmt.condition), message = expr(stmt.message))
+            is Stmt.InlineAssert -> stmt.copy(condition = expr(stmt.condition), message = expr(stmt.message))
+            is Stmt.Trace -> stmt.copy(message = expr(stmt.message))
+            is Stmt.InlineTrace -> stmt.copy(message = expr(stmt.message))
+            is Stmt.If -> stmt.copy(condition = expr(stmt.condition), thenBranch = nested(stmt.thenBranch), elseBranch = stmt.elseBranch?.let(::nested))
+            is Stmt.InlineIf -> stmt.copy(condition = expr(stmt.condition), thenBranch = nested(stmt.thenBranch), elseBranch = stmt.elseBranch?.let(::nested))
+            is Stmt.DeepInlineIf -> stmt.copy(condition = expr(stmt.condition), thenBranch = nested(stmt.thenBranch), elseBranch = stmt.elseBranch?.let(::nested))
+            is Stmt.While -> stmt.copy(condition = expr(stmt.condition), body = nested(stmt.body))
+            is Stmt.For -> stmt.copy(iterable = expr(stmt.iterable), step = stmt.step?.let(::expr), body = nested(stmt.body))
+            is Stmt.InlineFor -> {
+                if (reflectedSelfFields(stmt.iterable)) return expandReflectedFields(listOf(stmt), fields)
+                stmt.copy(iterable = expr(stmt.iterable), body = nested(stmt.body))
+            }
+            is Stmt.Loop -> stmt.copy(iterable = stmt.iterable?.let(::expr), body = nested(stmt.body))
+            is Stmt.When -> stmt.copy(scrutinee = expr(stmt.scrutinee), branches = stmt.branches.map { branch ->
+                branch.copy(patterns = branch.patterns.map(::expr), body = nested(branch.body))
+            }, elseBranch = stmt.elseBranch?.let(::nested))
+            is Stmt.Try -> stmt.copy(body = nested(stmt.body), catchBody = stmt.catchBody?.let(::nested))
+            is Stmt.Defer -> stmt.copy(body = nested(stmt.body))
+            is Stmt.Zone -> stmt.copy(body = nested(stmt.body))
+            is Stmt.FriendZone -> stmt.copy(body = nested(stmt.body))
+            is Stmt.InlineBlock -> stmt.copy(body = nested(stmt.body))
+            is Stmt.DeepInlineBlock -> stmt.copy(body = nested(stmt.body))
+            is Stmt.Effect -> stmt.copy(body = nested(stmt.body))
+            is Stmt.NoInline -> stmt.copy(stmt = expandReflectedStmt(stmt.stmt, fields, binding).single())
+            is Stmt.Break, is Stmt.Continue -> stmt
+        }
+        return listOf(rewritten)
+    }
+
+    private fun substituteReflectedExpr(expr: Expr, binding: FieldBinding?): Expr {
+        if (binding != null) {
+            if (expr is Expr.Identifier && expr.name == binding.indexName) {
+                return Expr.IntLiteral(binding.index.toLong(), expr.line, expr.column, expr.length)
+            }
+            if (expr is Expr.Member && expr.name == "value" &&
+                (expr.target as? Expr.Identifier)?.name == binding.variable
+            ) {
+                return Expr.Member(
+                    Expr.Identifier("self", expr.line, expr.column, 4),
+                    binding.field.name,
+                    expr.line,
+                    expr.column,
+                    expr.length,
+                )
+            }
+        }
+        return when (expr) {
+            is Expr.Binary -> expr.copy(left = substituteReflectedExpr(expr.left, binding), right = substituteReflectedExpr(expr.right, binding))
+            is Expr.Call -> expr.copy(args = expr.args.map { substituteReflectedExpr(it, binding) })
+            is Expr.Unary -> expr.copy(operand = substituteReflectedExpr(expr.operand, binding))
+            is Expr.Grouping -> expr.copy(expr = substituteReflectedExpr(expr.expr, binding))
+            is Expr.Range -> expr.copy(from = substituteReflectedExpr(expr.from, binding), to = substituteReflectedExpr(expr.to, binding))
+            is Expr.ArrayLiteral -> expr.copy(elements = expr.elements.map { substituteReflectedExpr(it, binding) })
+            is Expr.SetLiteral -> expr.copy(elements = expr.elements.map { substituteReflectedExpr(it, binding) })
+            is Expr.Index -> expr.copy(target = substituteReflectedExpr(expr.target, binding), index = substituteReflectedExpr(expr.index, binding))
+            is Expr.Member -> expr.copy(target = substituteReflectedExpr(expr.target, binding))
+            is Expr.MethodCall -> expr.copy(target = substituteReflectedExpr(expr.target, binding), args = expr.args.map { substituteReflectedExpr(it, binding) })
+            is Expr.StringTemplate -> expr.copy(parts = expr.parts.map { part ->
+                if (part is Expr.StringTemplatePart.Expr) Expr.StringTemplatePart.Expr(substituteReflectedExpr(part.expr, binding)) else part
+            })
+            is Expr.TupleLit -> expr.copy(elements = expr.elements.map { substituteReflectedExpr(it, binding) })
+            is Expr.VariantLit -> expr.copy(elements = expr.elements.map { substituteReflectedExpr(it, binding) })
+            is Expr.TupleAccess -> expr.copy(target = substituteReflectedExpr(expr.target, binding))
+            is Expr.CatchExpr -> expr.copy(expr = substituteReflectedExpr(expr.expr, binding), fallback = substituteReflectedExpr(expr.fallback, binding))
+            is Expr.TryPropagate -> expr.copy(expr = substituteReflectedExpr(expr.expr, binding))
+            is Expr.IfExpr -> expr.copy(condition = substituteReflectedExpr(expr.condition, binding), thenExpr = substituteReflectedExpr(expr.thenExpr, binding), elseExpr = substituteReflectedExpr(expr.elseExpr, binding))
+            is Expr.Lambda -> expr.copy(body = expr.body.flatMap { expandReflectedStmt(it, emptyList(), binding) })
+            is Expr.NamedArg -> expr.copy(value = substituteReflectedExpr(expr.value, binding))
+            is Expr.NullCoalesce -> expr.copy(left = substituteReflectedExpr(expr.left, binding), right = substituteReflectedExpr(expr.right, binding))
+            is Expr.SafeMember -> expr.copy(target = substituteReflectedExpr(expr.target, binding))
+            is Expr.Cast -> expr.copy(expr = substituteReflectedExpr(expr.expr, binding))
+            is Expr.IsCheck -> expr.copy(expr = substituteReflectedExpr(expr.expr, binding))
+            is Expr.MapLit -> expr.copy(entries = expr.entries.map { (key, value) -> substituteReflectedExpr(key, binding) to substituteReflectedExpr(value, binding) })
+            is Expr.Alloc -> expr.copy(value = substituteReflectedExpr(expr.value, binding))
+            is Expr.AllocBuffer -> expr.copy(count = substituteReflectedExpr(expr.count, binding))
+            is Expr.Deref -> expr.copy(target = substituteReflectedExpr(expr.target, binding))
+            is Expr.Isolated -> expr.copy(value = substituteReflectedExpr(expr.value, binding))
+            is Expr.Await -> expr.copy(value = substituteReflectedExpr(expr.value, binding))
+            is Expr.Spread -> expr.copy(array = substituteReflectedExpr(expr.array, binding))
+            else -> expr
+        }
+    }
+
     // ------------------------------------------------------------------
     // Rewriting
     // ------------------------------------------------------------------
@@ -316,7 +503,7 @@ private class MonoContext(
             else item.copy(fields = item.fields.map { it.copy(type = rewriteType(it.type)) })
         is TopLevel.Func -> if (item.decl.name in funcTemplates) null
             else item.copy(decl = rewriteFuncDecl(item.decl))
-        is TopLevel.Impl -> item.copy(
+        is TopLevel.Impl -> if (item.variadicParam != null && item.typeName in packTemplates) null else item.copy(
             traitArgs = item.traitArgs.map(::rewriteType),
             decoratorArgs = item.decoratorArgs.map(::rewriteExpr),
             decoratorNamedArgs = item.decoratorNamedArgs.map { (name, value) -> name to rewriteExpr(value) },

@@ -101,7 +101,7 @@ enum class TokenType {
     DOT, DOT_DOT, DOT_DOT_LESS,
     PLUS_EQUAL, MINUS_EQUAL, STAR_EQUAL, SLASH_EQUAL, PERCENT_EQUAL,
     PLUS_PLUS, MINUS_MINUS,
-    AMP, PIPE, CARET, TILDE, SHIFT_LEFT, SHIFT_RIGHT,
+    AMP, PIPE, CARET, TILDE, TILDE_EQUAL, SHIFT_LEFT, SHIFT_RIGHT,
     AS, GUARD, IS,
     QMARK, QMARK_QMARK, QMARK_DOT, QMARK_EQUAL,
     // Null-conditional compound assignment / inc-dec: ?+= ?-= ?*= ?/= ?%= ?++ ?--

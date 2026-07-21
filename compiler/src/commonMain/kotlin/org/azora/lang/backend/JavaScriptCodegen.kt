@@ -43,6 +43,7 @@ class JavaScriptCodegen {
     private var usesPointers = false
     private var usesTasks = false
     private var whenCounter = 0
+    private var structsByName: Map<String, IrTopLevel.Struct> = emptyMap()
 
     private val POINTER_RUNTIME = setOf("__alloc", "__deref", "__derefAssign", "__isolated")
 
@@ -70,6 +71,7 @@ class JavaScriptCodegen {
         usesPointers = false
         whenCounter = 0
         usesTasks = program.functions.any { it.isTask }
+        structsByName = program.items.filterIsInstance<IrTopLevel.Struct>().associateBy { it.name }
 
         if (program.moduleName != null) {
             line("// module: ${program.moduleName}")
@@ -77,6 +79,23 @@ class JavaScriptCodegen {
         }
         // Slot (tagged-union) runtime: `x is Variant` / `when` tag checks.
         line("function __isCheck(v, tag) { return v != null && v.__tag === tag; }")
+        line("function __azoraFormatTuple(v) {")
+        indent++
+        line("const keys = Object.keys(v).filter(k => k !== \"__type\");")
+        line("return v.__type + \"(\" + keys.map(k =>")
+        indent++
+        line("(typeof v[k] === \"string\" ? JSON.stringify(v[k]) :")
+        line("(v[k] != null && typeof v[k] === \"object\" && typeof v[k].__type === \"string\" && v[k].__type.startsWith(\"Tuple<\")")
+        line("? __azoraFormatTuple(v[k]) : String(v[k])))).join(\", \" ) + \")\";")
+        indent--
+        indent--
+        line("}")
+        line("function __azoraPrintln(v) {")
+        indent++
+        line("if (v != null && typeof v === \"object\" && typeof v.__type === \"string\" && v.__type.startsWith(\"Tuple<\")) console.log(__azoraFormatTuple(v));")
+        line("else console.log(v);")
+        indent--
+        line("}")
         line("")
         if (usesTasks) {
             line("const __azoraChildren = new Set();")
@@ -120,6 +139,9 @@ class JavaScriptCodegen {
                     val params = item.fields.mapIndexed { idx, f -> if (isNumericFieldName(f.name)) "_$idx" else f.name }.joinToString(", ")
                     line("constructor($params) {")
                     indent++
+                    if (item.name.startsWith("__Tuple_")) {
+                        line("this.__type = \"${escapeString(tupleTypeName(item.name))}\";")
+                    }
                     for ((idx, f) in item.fields.withIndex()) {
                         val param = if (isNumericFieldName(f.name)) "_$idx" else f.name
                         line("this${jsFieldAccess(f.name)} = $param;")
@@ -477,7 +499,7 @@ class JavaScriptCodegen {
                 "isDigit" -> emitExpr(expr.args[0]).let { "($it >= '0' && $it <= '9')" }
                 else -> {
                     val name = when (expr.name) {
-                        "std__println" -> "console.log"
+                        "std__println" -> "__azoraPrintln"
                         "std__convert__toString" -> "String"
                         else -> expr.name
                     }
@@ -616,6 +638,20 @@ class JavaScriptCodegen {
         val text = out.substring(start)
         out.setLength(start)
         return text
+    }
+
+    private fun tupleTypeName(internalName: String, visiting: Set<String> = emptySet()): String {
+        if (internalName in visiting) return internalName
+        val struct = structsByName[internalName] ?: return internalName
+        val nextVisiting = visiting + internalName
+        return struct.fields.joinToString(", ", "Tuple<", ">") { field ->
+            sourceTypeName(field.type, nextVisiting)
+        }
+    }
+
+    private fun sourceTypeName(type: IrType, visiting: Set<String>): String = when (type) {
+        is IrType.Named -> if (type.name.startsWith("__Tuple_")) tupleTypeName(type.name, visiting) else type.name
+        else -> type.toString()
     }
 
     private fun escapeString(s: String): String =

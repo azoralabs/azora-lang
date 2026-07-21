@@ -145,4 +145,9 @@ friend zone std {
      */
     @SinceAzora("0.0.1")
     spec Iterator
+
+    @SinceAzora("0.0.4")
+    spec PrettyPrint {
+        prop pretty: String
+    }
 }

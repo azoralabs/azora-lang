@@ -29,6 +29,9 @@ use friend zone std {
     @SinceAzora("0.0.4")
     bridge pack Unit
 
+    @SinceAzora("0.0.4")
+    bridge pack Self
+
     /**
      * The compile-time meta-type: the type of a type. Used as the element type of
      * type lists (`[Type]`) and as the parameter type of `type` functions

@@ -73,6 +73,28 @@ class JavaScriptExecTest {
     @Test fun printsHello() =
         check("hello", main("""std::println("hello")"""))
 
+    @Test fun tuplePrintMatchesAzoraStructuralFormat() = check(
+        "Tuple<String, String>(\"Hello from Azora!\", \":)\")",
+        """
+        module playground
+        import std.io
+        import std.container.tuple
+
+        pack App { var name: String }
+
+        impl App {
+            func greet(): String { ref self ->
+                return "Hello from ${'$'}{self.name}!"
+            }
+        }
+
+        func main() {
+            fin app = App("Azora")
+            std::println(std::tupleOf(app.greet(), ":)"))
+        }
+        """.trimIndent(),
+    )
+
     @Test fun arithmetic() =
         check("14", main("""std::println(2 + 3 * 4)"""))
 

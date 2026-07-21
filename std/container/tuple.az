@@ -18,6 +18,8 @@ module std.container.tuple
 
 import std.serializer
 import std.convert
+import std.traits
+import std.reflection
 
 /**
  * @file std/container/tuple
@@ -45,6 +47,29 @@ friend zone std {
     pack<...T> Tuple where (...T).length >= 2 {
         inline for Ty in ...T with index {
             inline "$index: $Ty"
+        }
+    }
+
+    impl<...T> PrettyPrint for Tuple {
+        /**
+         * Returns the tuple's source-style representation.
+         *
+         * Element order and concrete element types are preserved, including for
+         * heterogeneous and nested tuples.
+         *
+         * @return This tuple formatted as `(fields...)`.
+         */
+        @Experimental(sinceAzora: "0.0.4")
+        prop pretty: String {
+            var res = "("
+            inline for field in reflect<Self>.fields with index {
+                if index > 0 {
+                    res ~= ", "
+                }
+                res ~= field.value as String
+            }
+            res ~= ")"
+            return res
         }
     }
 
@@ -100,7 +125,7 @@ test "tuple fields are fixed positional members" {
 
 test "tuple string representation includes type and fields" {
     fin value = std::tupleOf("a", "b")
-    assert std::convert::toString(value) == "{\"__type\"=\"Tuple<String, String>\", \"0\"=\"a\", \"1\"=\"b\"}" {
+    assert std::convert::toString(value) == "Tuple<String, String>(\"a\", \"b\")" {
         "tuple diagnostic representation changed"
     }
 }

@@ -1660,6 +1660,7 @@ class Parser(
     private fun parseImpl(isBridge: Boolean = false, annotations: List<Annotation> = emptyList()): TopLevel.Impl {
         val start = peek()
         consume(TokenType.IMPL, "Expected 'impl'")
+        val implTypeParams = parseTypeParams()
         // `impl <Spec> as zone for Type { members }` — type-scoped static members
         // attributed to a spec/category (e.g. `impl Number as zone for Ty`). Like
         // `impl zone for Type`, members desugar to mangled top-level items
@@ -1998,6 +1999,8 @@ class Parser(
                 traitArgs = traitArgs,
                 decoratorArgs = decoratorArgs,
                 decoratorNamedArgs = decoratorNamedArgs,
+                typeParams = implTypeParams.names,
+                variadicParam = implTypeParams.variadic,
             )
         }
         if (traitHeads.size > 1 || implementationTargets.size > 1 || typeName.contains('.')) {
@@ -2087,6 +2090,8 @@ class Parser(
             traitArgs = traitArgs,
             decoratorArgs = decoratorArgs,
             decoratorNamedArgs = decoratorNamedArgs,
+            typeParams = implTypeParams.names,
+            variadicParam = implTypeParams.variadic,
         )
     }
 
@@ -4364,13 +4369,27 @@ class Parser(
         consume(TokenType.FOR, "Expected 'for'")
         val name = consume(TokenType.IDENTIFIER, "Expected loop variable name").lexeme
         consume(TokenType.IN, "Expected 'in' after loop variable")
-        val iterable = parseExpr()
+        val parsedIterable = parseExpr()
+        // The general expression parser also supports free-form infix calls, so
+        // `items with index` initially has the shape `items.with(index)`. Unwrap
+        // that parser-level representation here because `with index` belongs to
+        // the compile-time loop rather than the iterable expression.
+        val infixWith = parsedIterable as? Expr.MethodCall
+        val hasInfixIndex = infixWith?.name == "with" && infixWith.args.size == 1 &&
+            infixWith.args.single() is Expr.Identifier
+        val iterable = if (hasInfixIndex) infixWith!!.target else parsedIterable
+        val indexName = if (hasInfixIndex) {
+            (infixWith!!.args.single() as Expr.Identifier).name
+        } else if (peek().type == TokenType.IDENTIFIER && peek().lexeme == "with") {
+            advance()
+            consume(TokenType.IDENTIFIER, "Expected index binding after 'with'").lexeme
+        } else null
         consume(TokenType.L_BRACE, "Expected '{' after inline for iterable")
         skipNewlines()
         val body = parseBlock()
         consume(TokenType.R_BRACE, "Expected '}' after inline for body")
         consumeNewline()
-        return Stmt.InlineFor(name, iterable, body, start.line, start.column)
+        return Stmt.InlineFor(name, iterable, body, start.line, start.column, indexName = indexName)
     }
 
 
@@ -4705,6 +4724,7 @@ class Parser(
                 buildAssignment(expr, value, start.line, start.column)
             }
             TokenType.PLUS_EQUAL, TokenType.MINUS_EQUAL, TokenType.STAR_EQUAL,
+            TokenType.TILDE_EQUAL,
             TokenType.SLASH_EQUAL, TokenType.PERCENT_EQUAL -> {
                 advance()
                 val op = when (opTok.type) {
@@ -4713,12 +4733,16 @@ class Parser(
                     TokenType.STAR_EQUAL -> TokenType.STAR
                     TokenType.SLASH_EQUAL -> TokenType.SLASH
                     TokenType.PERCENT_EQUAL -> TokenType.PERCENT
+                    TokenType.TILDE_EQUAL -> TokenType.PLUS
                     else -> error("unreachable compound assignment")
                 }
                 val value = parseExpr()
                 consumeNewline()
                 // Desugar `target op= value` into `target = target op value`
-                val rhs = Expr.Binary(expr, op, value, start.line, start.column, start.lexeme.length)
+                val operand = if (opTok.type == TokenType.TILDE_EQUAL) {
+                    Expr.Cast(value, TypeRef.Named("String"), CastKind.STATIC, value.line, value.column, value.length)
+                } else value
+                val rhs = Expr.Binary(expr, op, operand, start.line, start.column, start.lexeme.length)
                 buildAssignment(expr, rhs, start.line, start.column)
             }
             // Null-conditional coalescing assignment: `target ?= value` → `target = target ?: value`

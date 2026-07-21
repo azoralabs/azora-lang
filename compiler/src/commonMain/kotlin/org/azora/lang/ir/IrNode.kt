@@ -963,7 +963,7 @@ data class IrProgram(
                 }
                 is IrTopLevel.Extern -> {
                     val params = item.params.joinToString(", ") { (n, t) -> "$n: $t" }
-                    sb.appendLine("extern func ${item.name}($params): ${item.returnType}")
+                    sb.appendLine("bridge func ${item.name}($params): ${item.returnType}")
                     if (i < items.lastIndex) sb.appendLine()
                 }
             }

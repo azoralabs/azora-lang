@@ -818,7 +818,9 @@ sealed class Stmt {
         val body: List<Stmt>,
         override val line: Int,
         override val column: Int = 0,
-        override val length: Int = 0
+        override val length: Int = 0,
+        /** Optional compile-time position binding introduced by `with index`. */
+        val indexName: String? = null,
     ) : Stmt()
 
     /**
@@ -1757,6 +1759,10 @@ sealed class TopLevel {
         val annotations: List<Annotation> = emptyList(),
         /** `bridge impl …` — compiler-provided; no IR emitted, but still registers members. */
         val isBridge: Boolean = false,
+        /** Generic parameters declared directly on the implementation. */
+        val typeParams: List<String> = emptyList(),
+        /** Variadic implementation parameter from `impl<...T>`. */
+        val variadicParam: String? = null,
     ) : TopLevel()
 
     /** `spec Name { func method(params): Ret; ... }` or compact callback `spec Name<T>: T { ref self } use as "to${T.typeName}"`. */

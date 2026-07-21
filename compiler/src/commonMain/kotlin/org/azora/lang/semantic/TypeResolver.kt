@@ -406,7 +406,7 @@ class TypeResolver(private val table: SymbolTable) {
                 if (targetType is IrType.Named) {
                     val field = table.lookupStruct(targetType.name)?.field(stmt.name)
                     if (field == null) {
-                        errors.add("line ${stmt.line}: no field '${stmt.name}' on struct ${targetType.name}")
+                        errors.add("line ${stmt.line}: no member '${stmt.name}' on pack ${sourcePackTypeName(targetType.name)}")
                         return
                     }
                     val selfTarget = stmt.target as? Expr.Identifier
@@ -751,7 +751,7 @@ class TypeResolver(private val table: SymbolTable) {
                         for (i in funcDecl.params.indices) {
                             val paramRef = funcDecl.params[i].type
                             if (paramRef is TypeRef.Named && paramRef.name in func.typeParams && i < argTypes.size) {
-                                bindings.putIfAbsent(paramRef.name, listOf(typeRefOf(argTypes[i])))
+                                bindings.getOrPut(paramRef.name) { listOf(typeRefOf(argTypes[i])) }
                             } else if (funcDecl.params[i].variadic && paramRef is TypeRef.Array) {
                                 val element = paramRef.element as? TypeRef.Named
                                 if (element != null && element.name in func.typeParams) {
@@ -774,7 +774,7 @@ class TypeResolver(private val table: SymbolTable) {
                                             )
                                             return null
                                         }
-                                        bindings.putIfAbsent(element.name, listOf(typeRefOf(inferred)))
+                                        bindings.getOrPut(element.name) { listOf(typeRefOf(inferred)) }
                                     }
                                 }
                             }
@@ -962,7 +962,7 @@ class TypeResolver(private val table: SymbolTable) {
                                     null
                                 }
                             } else {
-                                errors.add("line ${expr.line}: no field '${expr.name}' on struct ${targetType.name}")
+                                errors.add("line ${expr.line}: no member '${expr.name}' on pack ${sourcePackTypeName(targetType.name)}")
                                 null
                             }
                         }
@@ -1250,6 +1250,20 @@ class TypeResolver(private val table: SymbolTable) {
             // Macros are expanded before type resolution; a MetaInvoke here is a bug.
             is Expr.MetaInvoke -> error("MetaInvoke reached TypeResolver at line ${expr.line}")
         }
+    }
+
+    private fun sourcePackTypeName(internalName: String, visiting: Set<String> = emptySet()): String {
+        if (!internalName.startsWith("__Tuple_") || internalName in visiting) return internalName
+        val tuple = table.lookupStruct(internalName) ?: return internalName
+        val nextVisiting = visiting + internalName
+        return tuple.fields.joinToString(", ", "Tuple<", ">") { field ->
+            sourceTypeName(field.type, nextVisiting)
+        }
+    }
+
+    private fun sourceTypeName(type: IrType, visiting: Set<String>): String = when (type) {
+        is IrType.Named -> sourcePackTypeName(type.name, visiting)
+        else -> type.toString()
     }
 
     /**

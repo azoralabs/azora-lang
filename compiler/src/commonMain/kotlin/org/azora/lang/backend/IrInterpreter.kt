@@ -1361,11 +1361,13 @@ class IrInterpreter {
     private fun formatMapValue(value: Map<*, *>): String {
         val internalType = value["__type"] as? String
         if (internalType?.startsWith("__Tuple_") != true) return value.toString()
-
-        return value.entries.joinToString(", ", "{", "}") { (key, fieldValue) ->
-            val displayedValue = if (key == "__type") tupleTypeName(internalType) else fieldValue
-            "${quoteValue(key.toString())}=${formatStructuredValue(displayedValue)}"
+        val fields = structs[internalType]?.fields
+        val values = if (fields != null) {
+            fields.map { field -> value[field.name] }
+        } else {
+            value.entries.filter { (key, _) -> key != "__type" }.map { (_, fieldValue) -> fieldValue }
         }
+        return values.joinToString(", ", "${tupleTypeName(internalType)}(", ")", transform = ::formatStructuredValue)
     }
 
     private fun formatStructuredValue(value: Any?): String = when (value) {

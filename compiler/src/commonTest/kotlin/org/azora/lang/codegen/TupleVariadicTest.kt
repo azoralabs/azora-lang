@@ -5,6 +5,9 @@ import org.azora.lang.Compiler
 import org.azora.lang.backend.IrInterpreter
 import org.azora.lang.frontend.Lexer
 import org.azora.lang.frontend.Parser
+import org.azora.lang.frontend.Expr
+import org.azora.lang.frontend.Stmt
+import org.azora.lang.frontend.TopLevel
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertContains
@@ -28,6 +31,30 @@ class TupleVariadicTest {
         val output = proc.inputStream.bufferedReader().readText().trim()
         assertTrue(ok, "node failed:\n$output")
         return output
+    }
+
+    @Test fun genericImplReflectedFieldLoopParses() {
+        val program = Parser(Lexer("""
+            spec PrettyPrint { prop pretty: String }
+            impl<...T> PrettyPrint for Tuple {
+                prop pretty: String {
+                    inline for field in reflect<Self>.fields with index {
+                        trace { field.value }
+                    }
+                    return ""
+                }
+            }
+        """.trimIndent()).tokenize()).parse()
+
+        val impl = program.items.filterIsInstance<TopLevel.Impl>().single()
+        assertEquals("T", impl.variadicParam)
+        val loop = impl.methods.single().body.filterIsInstance<Stmt.InlineFor>().single()
+        assertEquals("index", loop.indexName)
+        val fields = assertIs<Expr.Member>(loop.iterable)
+        assertEquals("fields", fields.name)
+        val reflect = assertIs<Expr.Call>(fields.target)
+        assertEquals("__reflect", reflect.callee)
+        assertEquals("Self", assertIs<Expr.Identifier>(reflect.args.single()).name)
     }
 
     @Test fun tupleOfInferredMonomorphizes() {
@@ -147,11 +174,10 @@ class TupleVariadicTest {
         assertContains(out.javascript, "__Tuple_Int_Real_String")
     }
 
-    @Test fun useZoneImportsTuple() {
-        // `import std` appears in the user's TupleTests.az.
+    @Test fun tupleModuleImportExposesTuple() {
         val r = Compiler().compile("""
             import std.io
-            import std
+            import std.container.tuple
             func main() {
                 fin x = std::tupleOf(1, 2)
                 std::println(x.0)
@@ -165,8 +191,6 @@ class TupleVariadicTest {
             module playground            
             import std.io
             import std.container.tuple
-
-            import std
 
             pack App {
                 var name: String
@@ -186,9 +210,46 @@ class TupleVariadicTest {
 
         assertContains(out.javascript, "__Tuple_String_String")
         assertEquals(
-            "{\"__type\"=\"Tuple<String, String>\", \"0\"=\"Hello from Azora!\", \"1\"=\":)\"}",
+            "Tuple<String, String>(\"Hello from Azora!\", \":)\")",
             IrInterpreter().interpret(out.ir).trim(),
         )
+    }
+
+    @Test fun tuplePrettyUsesReflectedFields() {
+        val result = compile("""
+            module playground
+            import std.io
+            import std.container.tuple
+
+            func main() {
+                fin value = std::tupleOf("left", "right")
+                std::println(value.pretty)
+            }
+        """.trimIndent())
+
+        assertEquals("(left, right)", IrInterpreter().interpret(result.ir).trim())
+        val irText = result.ir.toString()
+        assertFalse("__reflect" in irText, irText)
+        assertFalse("Self" in irText, irText)
+        assertFalse("field.value" in irText, irText)
+        for (generated in listOf(result.javascript, result.wasm, result.llvm)) {
+            assertFalse("__reflect" in generated, generated)
+            assertFalse("field.value" in generated, generated)
+        }
+    }
+
+    @Test fun stringAppendAssignmentConvertsItsOperand() {
+        val result = compile("""
+            import std.io
+
+            func main() {
+                var value = "count="
+                value ~= 7
+                std::println(value)
+            }
+        """.trimIndent())
+
+        assertEquals("count=7", IrInterpreter().interpret(result.ir).trim())
     }
 
     @Test fun generalMixinConvertsStringToCode() {
@@ -206,9 +267,8 @@ class TupleVariadicTest {
         val src = """
             import std.io
             import std.container.tuple
-            import std
             func swap(t: Tuple<Int, Real>): Tuple<Real, Int> {
-                return std::tupleOf(t.1, t.0)
+                return std::tupleOf<Real, Int>(t.1, t.0)
             }
             func main() {
                 fin r = swap(std::tupleOf(7, 9.0))
@@ -250,8 +310,7 @@ class TupleVariadicTest {
     }
 
     @Test fun tupleTestsAzFileParses() {
-        // The user's Internal/Testing/TupleTests.az must parse in full.
-        val src = java.io.File("../Internal/Testing/TupleTests.az").readText()
+        val src = java.io.File("../std/container/tuple.az").readText()
         Parser(Lexer(src).tokenize()).parse()
     }
 }

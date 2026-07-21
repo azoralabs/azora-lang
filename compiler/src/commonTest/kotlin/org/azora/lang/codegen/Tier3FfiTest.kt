@@ -56,6 +56,14 @@ class Tier3FfiTest {
             }
         """.trimIndent())
         assertIs<CompilationResult.Success>(result)
+        assertTrue(
+            "bridge func sqrt(x: Real): Real" in result.ir.prettyPrint(),
+            "Azora IR should preserve bridge syntax, got:\n${result.ir.prettyPrint()}",
+        )
+        assertFalse(
+            "extern func" in result.ir.prettyPrint(),
+            "Azora IR must not expose backend extern terminology, got:\n${result.ir.prettyPrint()}",
+        )
         assertTrue("// extern function sqrt" in result.javascript, "JavaScript should emit an extern comment, got:\n${result.javascript}")
         assertTrue("declare" in result.llvm && "sqrt" in result.llvm, "LLVM should emit declare, got:\n${result.llvm}")
     }

@@ -411,8 +411,8 @@ private class MonoContext(
             is Stmt.Yield -> stmt.copy(value = expr(stmt.value))
             is Stmt.Assert -> stmt.copy(condition = expr(stmt.condition), message = expr(stmt.message))
             is Stmt.InlineAssert -> stmt.copy(condition = expr(stmt.condition), message = expr(stmt.message))
-            is Stmt.Trace -> stmt.copy(message = expr(stmt.message))
-            is Stmt.InlineTrace -> stmt.copy(message = expr(stmt.message))
+            is Stmt.Trace -> stmt.copy(message = expr(stmt.message), level = stmt.level?.let(::expr))
+            is Stmt.InlineTrace -> stmt.copy(message = expr(stmt.message), level = stmt.level?.let(::expr))
             is Stmt.If -> stmt.copy(condition = expr(stmt.condition), thenBranch = nested(stmt.thenBranch), elseBranch = stmt.elseBranch?.let(::nested))
             is Stmt.InlineIf -> stmt.copy(condition = expr(stmt.condition), thenBranch = nested(stmt.thenBranch), elseBranch = stmt.elseBranch?.let(::nested))
             is Stmt.DeepInlineIf -> stmt.copy(condition = expr(stmt.condition), thenBranch = nested(stmt.thenBranch), elseBranch = stmt.elseBranch?.let(::nested))
@@ -516,6 +516,10 @@ private class MonoContext(
         is TopLevel.InlineVar -> item.copy(initializer = rewriteExpr(item.initializer))
         is TopLevel.InlineLet -> item.copy(initializer = rewriteExpr(item.initializer))
         is TopLevel.InlineFin -> item.copy(initializer = rewriteExpr(item.initializer))
+        is TopLevel.InlineTrace -> item.copy(
+            message = rewriteExpr(item.message),
+            level = item.level?.let(::rewriteExpr),
+        )
         else -> item
     }
 
@@ -699,8 +703,8 @@ private class MonoContext(
         is Stmt.Yield -> s.copy(value = rewriteExpr(s.value))
         is Stmt.Assert -> s.copy(condition = rewriteExpr(s.condition), message = rewriteExpr(s.message))
         is Stmt.InlineAssert -> s.copy(condition = rewriteExpr(s.condition), message = rewriteExpr(s.message))
-        is Stmt.Trace -> s.copy(message = rewriteExpr(s.message))
-        is Stmt.InlineTrace -> s.copy(message = rewriteExpr(s.message))
+        is Stmt.Trace -> s.copy(message = rewriteExpr(s.message), level = s.level?.let(::rewriteExpr))
+        is Stmt.InlineTrace -> s.copy(message = rewriteExpr(s.message), level = s.level?.let(::rewriteExpr))
         is Stmt.If -> s.copy(condition = rewriteExpr(s.condition), thenBranch = s.thenBranch.map(::rewriteStmt), elseBranch = s.elseBranch?.map(::rewriteStmt))
         is Stmt.InlineIf -> s.copy(condition = rewriteExpr(s.condition), thenBranch = s.thenBranch.map(::rewriteStmt), elseBranch = s.elseBranch?.map(::rewriteStmt))
         is Stmt.DeepInlineIf -> s.copy(condition = rewriteExpr(s.condition), thenBranch = s.thenBranch.map(::rewriteStmt), elseBranch = s.elseBranch?.map(::rewriteStmt))

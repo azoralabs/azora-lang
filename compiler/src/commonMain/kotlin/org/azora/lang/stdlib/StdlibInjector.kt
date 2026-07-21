@@ -586,6 +586,10 @@ object StdlibInjector {
             is TopLevel.InlineFin -> collectNamesFromExpr(item.initializer, names)
             is TopLevel.InlineLet -> collectNamesFromExpr(item.initializer, names)
             is TopLevel.InlineVar -> collectNamesFromExpr(item.initializer, names)
+            is TopLevel.InlineTrace -> {
+                item.level?.let { collectNamesFromExpr(it, names) }
+                collectNamesFromExpr(item.message, names)
+            }
             is TopLevel.VarDecl -> {
                 collectNamesFromAnnotations(item.annotations, names)
                 item.type?.let { collectNamesFromTypeRef(it, names) }
@@ -765,8 +769,14 @@ object StdlibInjector {
                 collectNamesFromExpr(stmt.condition, names)
                 collectNamesFromExpr(stmt.message, names)
             }
-            is Stmt.Trace -> collectNamesFromExpr(stmt.message, names)
-            is Stmt.InlineTrace -> collectNamesFromExpr(stmt.message, names)
+            is Stmt.Trace -> {
+                stmt.level?.let { collectNamesFromExpr(it, names) }
+                collectNamesFromExpr(stmt.message, names)
+            }
+            is Stmt.InlineTrace -> {
+                stmt.level?.let { collectNamesFromExpr(it, names) }
+                collectNamesFromExpr(stmt.message, names)
+            }
             is Stmt.If -> {
                 collectNamesFromExpr(stmt.condition, names)
                 stmt.thenBranch.forEach { collectNamesFromStmt(it, names) }

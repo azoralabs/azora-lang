@@ -47,6 +47,10 @@ import kotlin.collections.iterator
 class IrGenerator(private val table: SymbolTable) {
     private var typeFunctions = emptyList<TypeFunctionDecl>()
     private var functionDecls = emptyMap<String, FuncDecl>()
+    private val generatedTraceFunctions = mutableListOf<IrFunction>()
+    private val traceLambdaIndices = mutableMapOf<String, Int>()
+    private val knownEnumValues = mutableMapOf<String, IrExpr.EnumLiteral>()
+    private var currentTraceOwner: String? = null
 
     private fun resolveType(ref: TypeRef, typeParams: Set<String> = emptySet()): IrType =
         IrType.resolve(TypeFunctionEvaluator.resolve(ref, typeFunctions, unresolvedParams = typeParams), typeParams)
@@ -108,6 +112,10 @@ class IrGenerator(private val table: SymbolTable) {
     fun generate(program: Program): IrProgram {
         typeFunctions = program.typeFunctions
         functionDecls = program.functions.associateBy { it.name }
+        generatedTraceFunctions.clear()
+        traceLambdaIndices.clear()
+        knownEnumValues.clear()
+        currentTraceOwner = null
         nameScopes.clear()
         mangledCounter = 0
         pushNameScope() // global scope
@@ -130,7 +138,10 @@ class IrGenerator(private val table: SymbolTable) {
         val sourceTests = program.tests
         val hasAllTest = sourceTests.any { it.method == TestMethod.All }
 
-        fun lowerTestBody(body: List<Stmt>): List<IrStmt> {
+        fun lowerTestBody(name: String, body: List<Stmt>): List<IrStmt> {
+            val previousOwner = currentTraceOwner
+            currentTraceOwner = "test_${name.replace(Regex("[^A-Za-z0-9_]"), "_")}"
+            knownEnumValues.clear()
             table.pushScope()
             pushNameScope()
             return try {
@@ -138,6 +149,7 @@ class IrGenerator(private val table: SymbolTable) {
             } finally {
                 popNameScope()
                 table.popScope()
+                currentTraceOwner = previousOwner
             }
         }
 
@@ -172,15 +184,16 @@ class IrGenerator(private val table: SymbolTable) {
                     when {
                         hasAllTest && item.method == TestMethod.This -> emptyList()
                         item.method == TestMethod.All -> {
-                            val ownBody = lowerTestBody(item.body)
+                            val ownBody = lowerTestBody(item.name, item.body)
                             val children = sourceTests
                                 .filter { it.method == TestMethod.This }
-                                .map { IrStmt.Zone(lowerTestBody(it.body)) }
+                                .map { IrStmt.Zone(lowerTestBody(it.name, it.body)) }
                             listOf(IrTopLevel.Test(item.name, ownBody + children))
                         }
-                        else -> listOf(IrTopLevel.Test(item.name, lowerTestBody(item.body)))
+                        else -> listOf(IrTopLevel.Test(item.name, lowerTestBody(item.name, item.body)))
                     }
                 }
+                is TopLevel.Enum -> listOf(IrTopLevel.Enum(item.name, item.variants))
                 is TopLevel.Pack -> {
                     // `bridge pack X` — a compiler-provided type (primitives, Reflected);
                     // no struct is emitted.
@@ -267,11 +280,27 @@ class IrGenerator(private val table: SymbolTable) {
                 IrTopLevel.Extern(sig.name, params, resolveType(sig.returnType))
             }
         }
-        return IrProgram(program.moduleName, items)
+        val enumItems = items.filterIsInstance<IrTopLevel.Enum>()
+        val runtimeItems = items.filterNot { it is IrTopLevel.Enum }
+        val mainIndex = runtimeItems.indexOfFirst {
+            it is IrTopLevel.Func && it.function.name == "main"
+        }
+        val orderedItems = if (mainIndex >= 0) {
+            runtimeItems.take(mainIndex + 1) + enumItems + runtimeItems.drop(mainIndex + 1)
+        } else {
+            runtimeItems + enumItems
+        }
+        return IrProgram(
+            program.moduleName,
+            generatedTraceFunctions.map { IrTopLevel.Func(it) } + orderedItems,
+        )
     }
 
     private fun lowerFunction(func: FuncDecl): IrFunction {
         val symbol = table.lookupFunction(func.name)!!
+        val previousOwner = currentTraceOwner
+        currentTraceOwner = func.name
+        knownEnumValues.clear()
         // Collect ref/out param indices from the AST FuncDecl.
         val refParams = func.params.indices.filter {
             func.params[it].modifier in setOf("ref", "out", "mut ref")
@@ -287,9 +316,13 @@ class IrGenerator(private val table: SymbolTable) {
             mangled to type
         }
 
-        val body = lowerBody(func.body)
-        popNameScope()
-        table.popScope()
+        val body = try {
+            lowerBody(func.body)
+        } finally {
+            popNameScope()
+            table.popScope()
+            currentTraceOwner = previousOwner
+        }
 
         return IrFunction(
             func.name,
@@ -322,6 +355,9 @@ class IrGenerator(private val table: SymbolTable) {
     private fun lowerMethodInternal(typeName: String, method: FuncDecl): IrFunction {
         val mangled = "${typeName}_${method.name}"
         val symbol = table.lookupFunction(mangled)!!
+        val previousOwner = currentTraceOwner
+        currentTraceOwner = mangled
+        knownEnumValues.clear()
         table.pushScope()
         pushNameScope()
         val mangledParams = symbol.params.map { (name, type) ->
@@ -330,9 +366,13 @@ class IrGenerator(private val table: SymbolTable) {
             table.defineVariable(VariableSymbol(name, type, mutable = mutable))
             m to type
         }
-        val body = lowerBody(method.body)
-        popNameScope()
-        table.popScope()
+        val body = try {
+            lowerBody(method.body)
+        } finally {
+            popNameScope()
+            table.popScope()
+            currentTraceOwner = previousOwner
+        }
         return IrFunction(mangled, mangledParams, symbol.returnType, body)
     }
 
@@ -389,6 +429,7 @@ class IrGenerator(private val table: SymbolTable) {
                 val type = resolveTypeAnnotation(stmt.type, init)
                 val mangled = registerName(stmt.name)
                 table.defineVariable(VariableSymbol(stmt.name, type, mutable = true))
+                if (init is IrExpr.EnumLiteral) knownEnumValues[mangled] = init else knownEnumValues.remove(mangled)
                 IrStmt.VarDecl(mangled, type, init)
             }
             is Stmt.FinDecl -> {
@@ -396,6 +437,7 @@ class IrGenerator(private val table: SymbolTable) {
                 val type = resolveTypeAnnotation(stmt.type, init)
                 val mangled = registerName(stmt.name)
                 table.defineVariable(VariableSymbol(stmt.name, type, mutable = false))
+                if (init is IrExpr.EnumLiteral) knownEnumValues[mangled] = init else knownEnumValues.remove(mangled)
                 IrStmt.FinDecl(mangled, type, init)
             }
             is Stmt.LetDecl -> {
@@ -403,6 +445,7 @@ class IrGenerator(private val table: SymbolTable) {
                 val type = resolveTypeAnnotation(stmt.type, init)
                 val mangled = registerName(stmt.name)
                 table.defineVariable(VariableSymbol(stmt.name, type, mutable = false))
+                if (init is IrExpr.EnumLiteral) knownEnumValues[mangled] = init else knownEnumValues.remove(mangled)
                 IrStmt.LetDecl(mangled, type, init)
             }
             is Stmt.DeepInlineBlock -> error("DeepInlineBlock should have been resolved by CTCE before IR generation")
@@ -415,7 +458,9 @@ class IrGenerator(private val table: SymbolTable) {
             is Stmt.InlineAssignment -> error("InlineAssignment should have been resolved by CTCE before IR generation")
             is Stmt.Assignment -> {
                 val value = lowerExpr(stmt.value)
-                IrStmt.Assignment(resolveName(stmt.name), value)
+                val name = resolveName(stmt.name)
+                knownEnumValues.remove(name)
+                IrStmt.Assignment(name, value)
             }
             is Stmt.IndexAssign -> {
                 val target = lowerExpr(stmt.target)
@@ -471,8 +516,21 @@ class IrGenerator(private val table: SymbolTable) {
                 IrStmt.Assert(cond, msg)
             }
             is Stmt.Trace -> {
+                val level = lowerExpr(stmt.level ?: defaultTraceLevel(stmt.line))
+                val displayLevel = (level as? IrExpr.Var)?.let { knownEnumValues[it.name] } ?: level
                 val msg = lowerExpr(stmt.message)
-                IrStmt.Trace(msg)
+                if (stmt.liftBody) {
+                    liftTrace(level, displayLevel, msg, table.lookupEnum("LogLevel").orEmpty())
+                } else {
+                    IrStmt.Trace(
+                        level,
+                        msg,
+                        table.lookupEnum("LogLevel").orEmpty(),
+                        direct = true,
+                        showLevel = stmt.explicitLevel,
+                        displayLevel = displayLevel,
+                    )
+                }
             }
             is Stmt.While -> {
                 val cond = lowerExpr(stmt.condition)
@@ -643,6 +701,160 @@ class IrGenerator(private val table: SymbolTable) {
         else -> IrType.Real
     }
 
+    private fun defaultTraceLevel(line: Int): Expr {
+        val first = table.lookupEnum("LogLevel")?.firstOrNull() ?: "Debug"
+        return Expr.Member(Expr.Identifier("LogLevel", line), first, line)
+    }
+
+    /** Converts an enum value to its source-level qualified spelling. */
+    private fun stringifyEnum(expr: IrExpr): IrExpr {
+        val enumName = (expr.type as? IrType.Named)?.name
+            ?.takeIf { table.lookupEnum(it) != null }
+            ?: return expr
+        return IrExpr.StringTemplate(
+            listOf(
+                IrExpr.IrTemplatePart.Literal("$enumName."),
+                IrExpr.IrTemplatePart.Expr(IrExpr.EnumToString(expr)),
+            ),
+        )
+    }
+
+    /** Rewrites an expression tree, replacing one value with another. */
+    private fun replaceExpr(expr: IrExpr, from: IrExpr, to: IrExpr): IrExpr {
+        if (expr == from) return to
+        return when (expr) {
+            is IrExpr.Unary -> expr.copy(operand = replaceExpr(expr.operand, from, to))
+            is IrExpr.Binary -> expr.copy(left = replaceExpr(expr.left, from, to), right = replaceExpr(expr.right, from, to))
+            is IrExpr.Call -> expr.copy(args = expr.args.map { replaceExpr(it, from, to) })
+            is IrExpr.ArrayLiteral -> expr.copy(elements = expr.elements.map { replaceExpr(it, from, to) })
+            is IrExpr.MapLit -> expr.copy(entries = expr.entries.map { replaceExpr(it.first, from, to) to replaceExpr(it.second, from, to) })
+            is IrExpr.SetLit -> expr.copy(elements = expr.elements.map { replaceExpr(it, from, to) })
+            is IrExpr.Index -> expr.copy(target = replaceExpr(expr.target, from, to), index = replaceExpr(expr.index, from, to))
+            is IrExpr.Member -> expr.copy(target = replaceExpr(expr.target, from, to))
+            is IrExpr.MethodCall -> expr.copy(
+                target = replaceExpr(expr.target, from, to),
+                args = expr.args.map { replaceExpr(it, from, to) },
+            )
+            is IrExpr.StructCtor -> expr.copy(args = expr.args.map { replaceExpr(it, from, to) })
+            is IrExpr.StringTemplate -> expr.copy(parts = expr.parts.map { part ->
+                if (part is IrExpr.IrTemplatePart.Expr) part.copy(expr = replaceExpr(part.expr, from, to)) else part
+            })
+            is IrExpr.TupleLit -> expr.copy(elements = expr.elements.map { replaceExpr(it, from, to) })
+            is IrExpr.VariantLit -> expr.copy(elements = expr.elements.map { replaceExpr(it, from, to) })
+            is IrExpr.TupleAccess -> expr.copy(target = replaceExpr(expr.target, from, to))
+            is IrExpr.CatchExpr -> expr.copy(
+                expr = replaceExpr(expr.expr, from, to),
+                fallback = replaceExpr(expr.fallback, from, to),
+            )
+            is IrExpr.IfExpr -> expr.copy(
+                condition = replaceExpr(expr.condition, from, to),
+                thenExpr = replaceExpr(expr.thenExpr, from, to),
+                elseExpr = replaceExpr(expr.elseExpr, from, to),
+            )
+            is IrExpr.NumCast -> expr.copy(value = replaceExpr(expr.value, from, to))
+            is IrExpr.EnumToString -> expr.copy(value = replaceExpr(expr.value, from, to))
+            is IrExpr.Await -> expr.copy(value = replaceExpr(expr.value, from, to))
+            is IrExpr.Spread -> expr.copy(array = replaceExpr(expr.array, from, to))
+            is IrExpr.Lambda,
+            is IrExpr.IntLiteral, is IrExpr.RealLiteral, is IrExpr.StringLiteral,
+            is IrExpr.EnumLiteral, is IrExpr.BoolLiteral, is IrExpr.CharLiteral,
+            is IrExpr.Var, is IrExpr.SlotPattern -> expr
+        }
+    }
+
+    /** Collects free runtime values captured by a lifted trace body. */
+    private fun collectTraceCaptures(expr: IrExpr, captures: LinkedHashMap<String, IrType>) {
+        when (expr) {
+            is IrExpr.Var -> if (expr.name != "level" && expr.name !in captures) {
+                captures[expr.name] = expr.type
+            }
+            is IrExpr.Unary -> collectTraceCaptures(expr.operand, captures)
+            is IrExpr.Binary -> {
+                collectTraceCaptures(expr.left, captures)
+                collectTraceCaptures(expr.right, captures)
+            }
+            is IrExpr.Call -> expr.args.forEach { collectTraceCaptures(it, captures) }
+            is IrExpr.ArrayLiteral -> expr.elements.forEach { collectTraceCaptures(it, captures) }
+            is IrExpr.MapLit -> expr.entries.forEach {
+                collectTraceCaptures(it.first, captures)
+                collectTraceCaptures(it.second, captures)
+            }
+            is IrExpr.SetLit -> expr.elements.forEach { collectTraceCaptures(it, captures) }
+            is IrExpr.Index -> {
+                collectTraceCaptures(expr.target, captures)
+                collectTraceCaptures(expr.index, captures)
+            }
+            is IrExpr.Member -> collectTraceCaptures(expr.target, captures)
+            is IrExpr.MethodCall -> {
+                collectTraceCaptures(expr.target, captures)
+                expr.args.forEach { collectTraceCaptures(it, captures) }
+            }
+            is IrExpr.StructCtor -> expr.args.forEach { collectTraceCaptures(it, captures) }
+            is IrExpr.StringTemplate -> expr.parts.forEach {
+                if (it is IrExpr.IrTemplatePart.Expr) collectTraceCaptures(it.expr, captures)
+            }
+            is IrExpr.TupleLit -> expr.elements.forEach { collectTraceCaptures(it, captures) }
+            is IrExpr.VariantLit -> expr.elements.forEach { collectTraceCaptures(it, captures) }
+            is IrExpr.TupleAccess -> collectTraceCaptures(expr.target, captures)
+            is IrExpr.CatchExpr -> {
+                collectTraceCaptures(expr.expr, captures)
+                collectTraceCaptures(expr.fallback, captures)
+            }
+            is IrExpr.IfExpr -> {
+                collectTraceCaptures(expr.condition, captures)
+                collectTraceCaptures(expr.thenExpr, captures)
+                collectTraceCaptures(expr.elseExpr, captures)
+            }
+            is IrExpr.NumCast -> collectTraceCaptures(expr.value, captures)
+            is IrExpr.EnumToString -> collectTraceCaptures(expr.value, captures)
+            is IrExpr.Await -> collectTraceCaptures(expr.value, captures)
+            is IrExpr.Spread -> collectTraceCaptures(expr.array, captures)
+            is IrExpr.Lambda,
+            is IrExpr.IntLiteral, is IrExpr.RealLiteral, is IrExpr.StringLiteral,
+            is IrExpr.EnumLiteral, is IrExpr.BoolLiteral, is IrExpr.CharLiteral,
+            is IrExpr.SlotPattern -> Unit
+        }
+    }
+
+    /** Lifts a trace body into a named function and leaves a typed call at the trace site. */
+    private fun liftTrace(
+        level: IrExpr,
+        displayLevel: IrExpr,
+        message: IrExpr,
+        variants: List<String>,
+    ): IrStmt.Trace {
+        val owner = currentTraceOwner ?: "module"
+        val index = traceLambdaIndices.getOrPut(owner) { 0 }
+        traceLambdaIndices[owner] = index + 1
+        val functionName = "__${owner}_lmbda$index"
+        val levelParam = IrExpr.Var("level", IrType.Named("LogLevel"))
+
+        var bodyExpr = replaceExpr(message, level, levelParam)
+        if (bodyExpr.type != IrType.String) {
+            bodyExpr = IrExpr.StringTemplate(listOf(IrExpr.IrTemplatePart.Expr(stringifyEnum(bodyExpr))))
+        }
+
+        val captures = linkedMapOf<String, IrType>()
+        collectTraceCaptures(bodyExpr, captures)
+        val captureParams = mutableListOf<Pair<String, IrType>>()
+        val captureArgs = mutableListOf<IrExpr>()
+        for ((name, type) in captures) {
+            val paramName = "__capture_$name"
+            bodyExpr = replaceExpr(bodyExpr, IrExpr.Var(name, type), IrExpr.Var(paramName, type))
+            captureParams += paramName to type
+            captureArgs += IrExpr.Var(name, type)
+        }
+
+        generatedTraceFunctions += IrFunction(
+            functionName,
+            listOf("level" to IrType.Named("LogLevel")) + captureParams,
+            IrType.String,
+            listOf(IrStmt.Return(bodyExpr)),
+        )
+        val call = IrExpr.Call(functionName, listOf(level) + captureArgs, IrType.String)
+        return IrStmt.Trace(level, call, variants, displayLevel = displayLevel)
+    }
+
     private fun lowerExpr(expr: Expr): IrExpr {
         return when (expr) {
             is Expr.IntLiteral -> IrExpr.IntLiteral(expr.value, suffixToIntType(expr.suffix))
@@ -681,6 +893,9 @@ class IrGenerator(private val table: SymbolTable) {
                         val mangled = table.lookupMethod(innerType.name, "asString")!!
                         IrExpr.Call(mangled, listOf(inner), IrType.String)
                     }
+                    expr.kind == CastKind.STATIC && target == IrType.String &&
+                        innerType is IrType.Named && table.lookupEnum(innerType.name) != null ->
+                        stringifyEnum(inner)
                     // `x as String` / `std::cast<String>(x)` — converting cast: stringify
                     // the value via the single-part string-template machinery (equivalent
                     // to "${x}"), which every backend already supports. `as*` (reinterpret)
@@ -743,8 +958,8 @@ class IrGenerator(private val table: SymbolTable) {
                 IrExpr.Unary(op, operand, operand.type)
             }
             is Expr.Binary -> {
-                val left = lowerExpr(expr.left)
-                val right = lowerExpr(expr.right)
+                var left = lowerExpr(expr.left)
+                var right = lowerExpr(expr.right)
                 // Pointer arithmetic: ptr + n, ptr - n, ptr - ptr
                 if (left.type is IrType.Pointer && right.type in IrType.integerTypes &&
                     (expr.op == TokenType.PLUS || expr.op == TokenType.MINUS)) {
@@ -805,9 +1020,18 @@ class IrGenerator(private val table: SymbolTable) {
                     }
                     else -> left.type // bitwise / shift — keep the left operand type
                 }
+                if (type == IrType.String) {
+                    left = stringifyEnum(left)
+                    right = stringifyEnum(right)
+                }
                 IrExpr.Binary(left, op, right, type)
             }
             is Expr.Call -> {
+                if (expr.callee == "__defaultLogLevel") {
+                    val first = table.lookupEnum("LogLevel")?.firstOrNull()
+                        ?: error("LogLevel must declare at least one variant")
+                    return IrExpr.EnumLiteral("LogLevel", first)
+                }
                 // Resolve import aliases (`import Zone.Item` maps Item to Zone__Item).
                 val realCallee = table.aliasMap[expr.callee] ?: expr.callee
                 val struct = table.lookupStruct(realCallee) ?: table.lookupStruct(expr.callee)
@@ -899,7 +1123,12 @@ class IrGenerator(private val table: SymbolTable) {
                             IrType.Array(homogeneousVariadicType)
                         else -> func.returnType
                     }
-                    return IrExpr.Call(func.name, effectiveArgs, callType)
+                    val displayArgs = if (func.name == "std__println" || func.name == "std__print") {
+                        effectiveArgs.map(::stringifyEnum)
+                    } else {
+                        effectiveArgs
+                    }
+                    return IrExpr.Call(func.name, displayArgs, callType)
                 }
                 // Calling a lambda stored in a variable.
                 val v = table.lookupVariable(expr.callee)
@@ -917,7 +1146,8 @@ class IrGenerator(private val table: SymbolTable) {
                 // Compiler builtin: `std::convert::toString(x)` stringifies any
                 // value (implemented natively by CTCE and every backend).
                 if (expr.callee == "std__convert__toString") {
-                    return IrExpr.Call("std__convert__toString", expr.args.map { lowerExpr(it) }, IrType.String)
+                    val args = expr.args.map { stringifyEnum(lowerExpr(it)) }
+                    return IrExpr.Call("std__convert__toString", args, IrType.String)
                 }
                 error("undefined function or variable '${expr.callee}'")
             }
@@ -1021,9 +1251,10 @@ class IrGenerator(private val table: SymbolTable) {
                         return IrExpr.StructCtor(expr.target.name, listOf("__tag"), listOf(IrExpr.StringLiteral(expr.name)), IrType.Named(expr.target.name))
                     }
                 }
-                // Enum variant `Color.Red` → string literal "Red"
+                // Enum variants retain their nominal identity in IR while backends
+                // keep the compact variant-only runtime representation.
                 if (expr.target is Expr.Identifier && table.lookupEnum(expr.target.name) != null) {
-                    return IrExpr.StringLiteral(expr.name)
+                    return IrExpr.EnumLiteral(expr.target.name, expr.name)
                 }
                 // Error-set variant `ErrSet.Variant` → string literal "Variant"
                 if (expr.target is Expr.Identifier && table.lookupFail(expr.target.name) != null) {
@@ -1115,7 +1346,7 @@ class IrGenerator(private val table: SymbolTable) {
                 val parts = expr.parts.map { p ->
                     when (p) {
                         is Expr.StringTemplatePart.Literal -> IrExpr.IrTemplatePart.Literal(p.text)
-                        is Expr.StringTemplatePart.Expr -> IrExpr.IrTemplatePart.Expr(lowerExpr(p.expr))
+                        is Expr.StringTemplatePart.Expr -> IrExpr.IrTemplatePart.Expr(stringifyEnum(lowerExpr(p.expr)))
                     }
                 }
                 IrExpr.StringTemplate(parts)

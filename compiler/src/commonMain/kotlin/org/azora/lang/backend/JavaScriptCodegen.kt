@@ -142,6 +142,10 @@ class JavaScriptCodegen {
                     emitFunction(item.function)
                     if (i < lastEmittedIndex) line("")
                 }
+                is IrTopLevel.Enum -> {
+                    // Enum values are lowered to their string representation;
+                    // the declaration remains IR metadata for tooling.
+                }
                 is IrTopLevel.Test -> {
                     emitTest(item)
                     if (i < lastEmittedIndex) line("")
@@ -343,7 +347,7 @@ class JavaScriptCodegen {
                 line("if (!(${emitExpr(stmt.condition)})) { throw new Error(${emitExpr(stmt.message)}); }")
             }
             is IrStmt.Trace -> {
-                line("console.log(\"[TRACE]\", ${emitExpr(stmt.message)});")
+                line("console.log(\"[\" + String(${emitExpr(stmt.level)}).toUpperCase() + \"]\", ${emitExpr(stmt.message)});")
             }
             is IrStmt.Zone -> {
                 line("{")
@@ -465,8 +469,10 @@ class JavaScriptCodegen {
         }
         is IrExpr.RealLiteral -> "${expr.value}"
         is IrExpr.StringLiteral -> "\"${escapeString(expr.value)}\""
+        is IrExpr.EnumLiteral -> "\"${escapeString(expr.variant)}\""
         is IrExpr.BoolLiteral -> "${expr.value}"
         is IrExpr.CharLiteral -> "\"${escapeString(expr.value.toString())}\""
+        is IrExpr.EnumToString -> emitExpr(expr.value)
         is IrExpr.Var -> jsIdent(expr.name)
         is IrExpr.Unary -> {
             val op = when (expr.op) {

@@ -400,6 +400,10 @@ class LlvmCodegen {
                 val ref = addStringConstant(initializer.value)
                 "getelementptr ([${ref.byteLen} x i8], [${ref.byteLen} x i8]* ${ref.name}, i64 0, i64 0)"
             }
+            is IrExpr.EnumLiteral -> {
+                val ref = addStringConstant(initializer.variant)
+                "getelementptr ([${ref.byteLen} x i8], [${ref.byteLen} x i8]* ${ref.name}, i64 0, i64 0)"
+            }
             else -> {
                 dynamicGlobalInitializers += DynamicGlobalInitializer(
                     name = name,
@@ -1308,11 +1312,25 @@ class LlvmCodegen {
 
     private fun emitTrace(stmt: IrStmt.Trace) {
         usesPrintf = true
+        usesStrcmp = true
+        val rawLevel = emitExpr(stmt.level)
+        var displayLevel = rawLevel
+        for (variant in stmt.variants.asReversed()) {
+            val source = gepString(addStringConstant(variant))
+            val display = gepString(addStringConstant(variant.uppercase()))
+            val comparison = nextTmp()
+            emit("  $comparison = call i32 @strcmp(i8* $rawLevel, i8* $source)")
+            val matches = nextTmp()
+            emit("  $matches = icmp eq i32 $comparison, 0")
+            val selected = nextTmp()
+            emit("  $selected = select i1 $matches, i8* $display, i8* $displayLevel")
+            displayLevel = selected
+        }
         val msg = stringify(stmt.message)
-        val fmtRef = addStringConstant("[TRACE] %s\n")
+        val fmtRef = addStringConstant("[%s] %s\n")
         val fmtPtr = gepString(fmtRef)
         val unused = nextTmp()
-        emit("  $unused = call i32 (i8*, ...) @printf(i8* $fmtPtr, i8* $msg)")
+        emit("  $unused = call i32 (i8*, ...) @printf(i8* $fmtPtr, i8* $displayLevel, i8* $msg)")
     }
 
     // -----------------------------------------------------------------------
@@ -1329,6 +1347,11 @@ class LlvmCodegen {
             val ref = addStringConstant(expr.value)
             gepString(ref)
         }
+        is IrExpr.EnumLiteral -> {
+            val ref = addStringConstant(expr.variant)
+            gepString(ref)
+        }
+        is IrExpr.EnumToString -> emitExpr(expr.value)
         is IrExpr.Var -> {
             // The null literal is lowered to `Var("__null", Any)`; emit LLVM's null pointer.
             if (expr.name == "__null") return "null"
@@ -1654,7 +1677,10 @@ class LlvmCodegen {
                     collectReferencedVars(stmt.condition, refs)
                     collectReferencedVars(stmt.message, refs)
                 }
-                is IrStmt.Trace -> collectReferencedVars(stmt.message, refs)
+                is IrStmt.Trace -> {
+                    collectReferencedVars(stmt.level, refs)
+                    collectReferencedVars(stmt.message, refs)
+                }
                 is IrStmt.While -> {
                     collectReferencedVars(stmt.condition, refs)
                     collectReferencedVars(stmt.body, refs)
@@ -1731,10 +1757,11 @@ class LlvmCodegen {
                 collectReferencedVars(expr.elseExpr, refs)
             }
             is IrExpr.NumCast -> collectReferencedVars(expr.value, refs)
+            is IrExpr.EnumToString -> collectReferencedVars(expr.value, refs)
             is IrExpr.Lambda -> {}
             is IrExpr.Await -> collectReferencedVars(expr.value, refs)
             is IrExpr.Spread -> collectReferencedVars(expr.array, refs)
-            is IrExpr.IntLiteral, is IrExpr.RealLiteral, is IrExpr.StringLiteral,
+            is IrExpr.IntLiteral, is IrExpr.RealLiteral, is IrExpr.StringLiteral, is IrExpr.EnumLiteral,
             is IrExpr.BoolLiteral, is IrExpr.CharLiteral, is IrExpr.SlotPattern -> {}
         }
     }

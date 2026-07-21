@@ -120,7 +120,8 @@ internal object IntraZoneRewriter {
             is Stmt.Throw -> collectExprNames(s.value, names)
             is Stmt.Yield -> collectExprNames(s.value, names)
             is Stmt.Assert -> { collectExprNames(s.condition, names); collectExprNames(s.message, names) }
-            is Stmt.Trace -> collectExprNames(s.message, names)
+            is Stmt.Trace -> { s.level?.let { collectExprNames(it, names) }; collectExprNames(s.message, names) }
+            is Stmt.InlineTrace -> { s.level?.let { collectExprNames(it, names) }; collectExprNames(s.message, names) }
             is Stmt.If -> { collectExprNames(s.condition, names); s.thenBranch.forEach { collectStmtNames(it, names) }; s.elseBranch?.forEach { collectStmtNames(it, names) } }
             is Stmt.While -> { collectExprNames(s.condition, names); s.body.forEach { collectStmtNames(it, names) } }
             is Stmt.For -> { names.add(s.name); collectExprNames(s.iterable, names); s.step?.let { collectExprNames(it, names) }; s.body.forEach { collectStmtNames(it, names) } }
@@ -193,7 +194,14 @@ internal object IntraZoneRewriter {
         is Stmt.Throw -> s.copy(value = expr(s.value, prefix, mangled, shadowed))
         is Stmt.Yield -> s.copy(value = expr(s.value, prefix, mangled, shadowed))
         is Stmt.Assert -> s.copy(condition = expr(s.condition, prefix, mangled, shadowed), message = expr(s.message, prefix, mangled, shadowed))
-        is Stmt.Trace -> s.copy(message = expr(s.message, prefix, mangled, shadowed))
+        is Stmt.Trace -> s.copy(
+            message = expr(s.message, prefix, mangled, shadowed),
+            level = s.level?.let { expr(it, prefix, mangled, shadowed) },
+        )
+        is Stmt.InlineTrace -> s.copy(
+            message = expr(s.message, prefix, mangled, shadowed),
+            level = s.level?.let { expr(it, prefix, mangled, shadowed) },
+        )
         is Stmt.If -> s.copy(condition = expr(s.condition, prefix, mangled, shadowed), thenBranch = s.thenBranch.map { stmt(it, prefix, mangled, shadowed) }, elseBranch = s.elseBranch?.map { stmt(it, prefix, mangled, shadowed) })
         is Stmt.While -> s.copy(condition = expr(s.condition, prefix, mangled, shadowed), body = s.body.map { stmt(it, prefix, mangled, shadowed) })
         is Stmt.For -> s.copy(iterable = expr(s.iterable, prefix, mangled, shadowed), step = s.step?.let { expr(it, prefix, mangled, shadowed) }, body = s.body.map { stmt(it, prefix, mangled, shadowed) })

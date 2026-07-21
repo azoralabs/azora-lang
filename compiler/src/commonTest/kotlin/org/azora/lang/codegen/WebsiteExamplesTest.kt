@@ -375,7 +375,7 @@ func main() { std::println("Hello, Azora!") }"""))
         func main() { std::println(divide(10, 2)) }
     """.trimIndent()))
 
-    @Test fun ch13_trace() = assertEquals("[TRACE] processing value\n10", run("""
+    @Test fun ch13_trace() = assertEquals("[DEBUG] processing value\n10", run("""
         import std.io
         func process(x: Int): Int {
             trace { "processing value" }

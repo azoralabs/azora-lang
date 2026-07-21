@@ -688,12 +688,18 @@ sealed class Stmt {
     ) : Stmt()
 
     /**
-     * Runtime trace (`trace { expr }`).
+     * Runtime trace (`trace level { expr }`).
      *
-     * Prints `[TRACE] message` at runtime.
+     * Prints `[LEVEL] message` at runtime. [level] is `null` only for ASTs built
+     * by older compiler clients; the compiler resolves that to the first
+     * `LogLevel` variant. Source parsed by the current grammar always supplies it.
      * NOT allowed at global scope.
      *
      * @property message the message expression (must be String)
+     * @property level the selected `LogLevel` expression
+     * @property liftBody whether the message came from a brace lambda and must
+     * be lifted into a generated IR function
+     * @property explicitLevel whether source code selected a log level
      * @property line 1-based source line
      * @property column 1-based source column
      * @property length source text length
@@ -702,7 +708,10 @@ sealed class Stmt {
         val message: Expr,
         override val line: Int,
         override val column: Int = 0,
-        override val length: Int = 0
+        override val length: Int = 0,
+        val level: Expr? = null,
+        val liftBody: Boolean = true,
+        val explicitLevel: Boolean = true,
     ) : Stmt()
 
     /**
@@ -726,12 +735,13 @@ sealed class Stmt {
     ) : Stmt()
 
     /**
-     * Compile-time trace (`inline trace { expr }`).
+     * Compile-time trace (`inline trace level { expr }`).
      *
      * Evaluated during CTCE, message stored as a compiler warning.
      * Allowed in all scopes including global.
      *
      * @property message the message expression (must be String)
+     * @property level the selected compile-time `LogLevel` expression
      * @property line 1-based source line
      * @property column 1-based source column
      * @property length source text length
@@ -740,7 +750,8 @@ sealed class Stmt {
         val message: Expr,
         override val line: Int,
         override val column: Int = 0,
-        override val length: Int = 0
+        override val length: Int = 0,
+        val level: Expr? = null,
     ) : Stmt()
 
     /**
@@ -1813,13 +1824,14 @@ sealed class TopLevel {
     data class InlineAssert(val condition: Expr, val message: Expr, val line: Int, val column: Int = 0) : TopLevel()
 
     /**
-     * A top-level compile-time trace (`inline trace { expr }`).
+     * A top-level compile-time trace (`inline trace level { expr }`).
      *
      * @property message the message expression
+     * @property level the selected compile-time `LogLevel` expression
      * @property line 1-based source line
      * @property column 1-based source column
      */
-    data class InlineTrace(val message: Expr, val line: Int, val column: Int = 0) : TopLevel()
+    data class InlineTrace(val message: Expr, val line: Int, val column: Int = 0, val level: Expr? = null) : TopLevel()
 }
 
 /**

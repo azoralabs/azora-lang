@@ -271,12 +271,15 @@ class CtfeEvaluator(private val table: SymbolTable) {
             }
         }
         is TopLevel.InlineTrace -> {
+            val (foldedLevel, levelChanged) = foldCompileTimeExpr(traceLevel(item.level, item.line), program)
             val (foldedMsg, _) = foldExpr(item.message, program)
-            if (foldedMsg is Expr.StringLiteral) {
-                errors.add("warning: [TRACE] ${foldedMsg.value}")
+            val levelName = traceLevelName(foldedLevel)
+            val messageText = constantText(foldedMsg)
+            if (levelName != null && messageText != null) {
+                errors.add("warning: [${levelName.uppercase()}] $messageText")
                 Pair(emptyList(), true)
             } else {
-                Pair(listOf(item), false)
+                Pair(listOf(item.copy(message = foldedMsg, level = foldedLevel)), levelChanged)
             }
         }
         // Macros are expanded (and removed) by MacroExpander before CTCE.
@@ -461,8 +464,9 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 Pair(listOf(stmt.copy(condition = newCond, message = newMsg)), condChanged || msgChanged)
             }
             is Stmt.Trace -> {
+                val (newLevel, levelChanged) = foldExpr(traceLevel(stmt.level, stmt.line), program)
                 val (newMsg, changed) = foldExpr(stmt.message, program)
-                Pair(listOf(stmt.copy(message = newMsg)), changed)
+                Pair(listOf(stmt.copy(message = newMsg, level = newLevel)), changed || levelChanged)
             }
             is Stmt.InlineAssert -> {
                 val (foldedCond, _) = foldCompileTimeExpr(stmt.condition, program)
@@ -478,12 +482,15 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 }
             }
             is Stmt.InlineTrace -> {
+                val (foldedLevel, levelChanged) = foldCompileTimeExpr(traceLevel(stmt.level, stmt.line), program)
                 val (foldedMsg, _) = foldExpr(stmt.message, program)
-                if (foldedMsg is Expr.StringLiteral) {
-                    errors.add("warning: [TRACE] ${foldedMsg.value}")
+                val levelName = traceLevelName(foldedLevel)
+                val messageText = constantText(foldedMsg)
+                if (levelName != null && messageText != null) {
+                    errors.add("warning: [${levelName.uppercase()}] $messageText")
                     Pair(emptyList(), true)
                 } else {
-                    Pair(listOf(stmt), false)
+                    Pair(listOf(stmt.copy(message = foldedMsg, level = foldedLevel)), levelChanged)
                 }
             }
             is Stmt.While -> {
@@ -674,7 +681,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
 
             // Assert/Trace in deepinline → treated as inline assert/trace
             is Stmt.Assert -> foldStmt(Stmt.InlineAssert(stmt.condition, stmt.message, stmt.line, stmt.column, stmt.length), program, errors)
-            is Stmt.Trace -> foldStmt(Stmt.InlineTrace(stmt.message, stmt.line, stmt.column, stmt.length), program, errors)
+            is Stmt.Trace -> foldStmt(Stmt.InlineTrace(stmt.message, stmt.line, stmt.column, stmt.length, stmt.level), program, errors)
             is Stmt.InlineAssert -> foldStmt(stmt, program, errors)
             is Stmt.InlineTrace -> foldStmt(stmt, program, errors)
 
@@ -738,7 +745,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
 
             // Assert/Trace inside inline block → treated as inline assert/trace
             is Stmt.Assert -> foldStmt(Stmt.InlineAssert(stmt.condition, stmt.message, stmt.line, stmt.column, stmt.length), program, errors)
-            is Stmt.Trace -> foldStmt(Stmt.InlineTrace(stmt.message, stmt.line, stmt.column, stmt.length), program, errors)
+            is Stmt.Trace -> foldStmt(Stmt.InlineTrace(stmt.message, stmt.line, stmt.column, stmt.length, stmt.level), program, errors)
             is Stmt.InlineAssert -> foldStmt(stmt, program, errors)
             is Stmt.InlineTrace -> foldStmt(stmt, program, errors)
 
@@ -821,7 +828,14 @@ class CtfeEvaluator(private val table: SymbolTable) {
             condition = substituteInExpr(stmt.condition, paramMap),
             message = substituteInExpr(stmt.message, paramMap)
         )
-        is Stmt.Trace -> stmt.copy(message = substituteInExpr(stmt.message, paramMap))
+        is Stmt.Trace -> stmt.copy(
+            message = substituteInExpr(stmt.message, paramMap),
+            level = stmt.level?.let { substituteInExpr(it, paramMap) },
+        )
+        is Stmt.InlineTrace -> stmt.copy(
+            message = substituteInExpr(stmt.message, paramMap),
+            level = stmt.level?.let { substituteInExpr(it, paramMap) },
+        )
         else -> stmt // inline constructs shouldn't appear in inline function bodies
     }
 
@@ -1041,7 +1055,14 @@ class CtfeEvaluator(private val table: SymbolTable) {
                     else -> Pair(if (lc) expr.copy(left = left) else expr, lc)
                 }
             }
-            is Expr.NamedArg, is Expr.NullLiteral, is Expr.Cast, is Expr.IsCheck, is Expr.MapLit, is Expr.Alloc, is Expr.AllocBuffer, is Expr.Deref, is Expr.Isolated, is Expr.Await, is Expr.Inject, is Expr.Spread -> Pair(expr, false)
+            is Expr.Cast -> {
+                val (inner, changed) = foldExpr(expr.expr, program)
+                val candidate = if (changed) expr.copy(expr = inner) else expr
+                val text = constantText(candidate)
+                if (text != null) Pair(Expr.StringLiteral(text, expr.line, expr.column, expr.length), true)
+                else Pair(candidate, changed)
+            }
+            is Expr.NamedArg, is Expr.NullLiteral, is Expr.IsCheck, is Expr.MapLit, is Expr.Alloc, is Expr.AllocBuffer, is Expr.Deref, is Expr.Isolated, is Expr.Await, is Expr.Inject, is Expr.Spread -> Pair(expr, false)
             is Expr.TryPropagate -> {
                 val (inner, changed) = foldExpr(expr.expr, program)
                 Pair(if (changed) expr.copy(expr = inner) else expr, changed)
@@ -1103,7 +1124,10 @@ class CtfeEvaluator(private val table: SymbolTable) {
                         if (c) Expr.StringTemplatePart.Expr(e) else part
                     } else part
                 }
-                Pair(if (changed) expr.copy(parts = newParts) else expr, changed)
+                val candidate = if (changed) expr.copy(parts = newParts) else expr
+                val text = constantText(candidate)
+                if (text != null) Pair(Expr.StringLiteral(text, expr.line, expr.column, expr.length), true)
+                else Pair(candidate, changed)
             }
             // Macros are expanded before CTCE; unreachable.
             is Expr.MetaInvoke -> Pair(expr, false)
@@ -1117,7 +1141,65 @@ class CtfeEvaluator(private val table: SymbolTable) {
         is Expr.IntLiteral, is Expr.RealLiteral,
         is Expr.StringLiteral, is Expr.BoolLiteral,
         is Expr.CharLiteral -> true
+        is Expr.Member -> {
+            val target = expr.target as? Expr.Identifier
+            target != null && table.lookupEnum(target.name)?.contains(expr.name) == true
+        }
+        is Expr.Call -> expr.callee == "__defaultLogLevel" && expr.args.isEmpty()
         else -> false
+    }
+
+    private fun traceLevel(level: Expr?, line: Int): Expr {
+        if (level != null) return level
+        val first = table.lookupEnum("LogLevel")?.firstOrNull() ?: "Debug"
+        return Expr.Member(Expr.Identifier("LogLevel", line), first, line)
+    }
+
+    private fun traceLevelName(level: Expr): String? = when (level) {
+        is Expr.Member -> {
+            val target = level.target as? Expr.Identifier
+            level.name.takeIf { target?.name == "LogLevel" && table.lookupEnum("LogLevel")?.contains(it) == true }
+        }
+        is Expr.StringLiteral -> level.value.takeIf { table.lookupEnum("LogLevel")?.contains(it) == true }
+        is Expr.Call -> if (level.callee == "__defaultLogLevel" && level.args.isEmpty()) {
+            table.lookupEnum("LogLevel")?.firstOrNull()
+        } else null
+        else -> null
+    }
+
+    private fun enumQualifiedName(expr: Expr): String? {
+        val member = expr as? Expr.Member ?: return null
+        val target = member.target as? Expr.Identifier ?: return null
+        return if (table.lookupEnum(target.name)?.contains(member.name) == true) {
+            "${target.name}.${member.name}"
+        } else {
+            null
+        }
+    }
+
+    /** Renders values accepted in a compile-time trace interpolation. */
+    private fun constantText(expr: Expr): String? = when (expr) {
+        is Expr.StringLiteral -> expr.value
+        is Expr.IntLiteral -> expr.value.toString()
+        is Expr.RealLiteral -> expr.value.toString()
+        is Expr.BoolLiteral -> expr.value.toString()
+        is Expr.CharLiteral -> expr.value.toString()
+        is Expr.Member -> enumQualifiedName(expr)
+        is Expr.Call -> if (expr.callee == "__defaultLogLevel" && expr.args.isEmpty()) {
+            val first = table.lookupEnum("LogLevel")?.firstOrNull() ?: return null
+            "LogLevel.$first"
+        } else null
+        is Expr.Grouping -> constantText(expr.expr)
+        is Expr.Cast -> if (expr.targetType.displayName() == "String") constantText(expr.expr) else null
+        is Expr.StringTemplate -> buildString {
+            for (part in expr.parts) {
+                when (part) {
+                    is Expr.StringTemplatePart.Literal -> append(part.text)
+                    is Expr.StringTemplatePart.Expr -> append(constantText(part.expr) ?: return null)
+                }
+            }
+        }
+        else -> null
     }
 
     // -- Zone reflection (`(reflect X).zone.label` / `.isInline` / `.zone`) ---

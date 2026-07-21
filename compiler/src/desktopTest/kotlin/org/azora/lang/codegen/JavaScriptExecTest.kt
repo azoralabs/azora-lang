@@ -39,6 +39,11 @@ class JavaScriptExecTest {
 
     private fun main(body: String): String = "import std.io\nfunc main() {\n$body\n}"
 
+    @Test fun traceUsesLogLevel() = check(
+        "[WARN] LogLevel.Warn: browser ready",
+        main("fin level = LogLevel.Warn\ntrace level { \"${'$'}{it}: browser ready\" }")
+    )
+
     @Test fun structuredTasksAndAsyncBlocks() = check(
         "42",
         """

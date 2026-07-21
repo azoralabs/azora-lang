@@ -69,11 +69,22 @@ use friend zone std {
 
     @Experimental(sinceAzora: "0.0.4")
     bridge enum LogLevel {
+        /** Detailed diagnostic information. The default level for `trace`. */
         Debug
+
+        /** Normal progress or lifecycle information. */
         Info
-        Warning
+
+        /** A recoverable problem that deserves attention. */
+        Warn
+
+        /** A failed operation. */
         Error
+
+        /** A severe failure that may prevent continued execution. */
         Critical
+
+        /** A trace marking unfinished implementation work. */
         Todo
     }
 

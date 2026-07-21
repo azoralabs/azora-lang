@@ -162,12 +162,18 @@ class EffectChecker {
                 collectCallsFromExpr(stmt.condition, calls)
                 collectCallsFromExpr(stmt.message, calls)
             }
-            is Stmt.Trace -> collectCallsFromExpr(stmt.message, calls)
+            is Stmt.Trace -> {
+                stmt.level?.let { collectCallsFromExpr(it, calls) }
+                collectCallsFromExpr(stmt.message, calls)
+            }
             is Stmt.InlineAssert -> {
                 collectCallsFromExpr(stmt.condition, calls)
                 collectCallsFromExpr(stmt.message, calls)
             }
-            is Stmt.InlineTrace -> collectCallsFromExpr(stmt.message, calls)
+            is Stmt.InlineTrace -> {
+                stmt.level?.let { collectCallsFromExpr(it, calls) }
+                collectCallsFromExpr(stmt.message, calls)
+            }
             is Stmt.While -> {
                 collectCallsFromExpr(stmt.condition, calls)
                 stmt.body.forEach { collectCallsFromStmt(it, calls) }

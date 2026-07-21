@@ -176,12 +176,18 @@ class AllocDropAnalyzer {
                 collectUsedVars(stmt.condition, used)
                 collectUsedVars(stmt.message, used)
             }
-            is Stmt.Trace -> collectUsedVars(stmt.message, used)
+            is Stmt.Trace -> {
+                stmt.level?.let { collectUsedVars(it, used) }
+                collectUsedVars(stmt.message, used)
+            }
             is Stmt.InlineAssert -> {
                 collectUsedVars(stmt.condition, used)
                 collectUsedVars(stmt.message, used)
             }
-            is Stmt.InlineTrace -> collectUsedVars(stmt.message, used)
+            is Stmt.InlineTrace -> {
+                stmt.level?.let { collectUsedVars(it, used) }
+                collectUsedVars(stmt.message, used)
+            }
             is Stmt.While -> {
                 collectUsedVars(stmt.condition, used)
                 stmt.body.forEach { analyzeStmt(it, defined, used, errors) }

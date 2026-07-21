@@ -335,6 +335,15 @@ sealed class IrExpr {
     }
 
     /**
+     * Enum variant literal. Backends may store [variant] using their native string
+     * representation, while [enumName] preserves the nominal type for diagnostics
+     * and qualified stringification (`LogLevel.Warn`).
+     */
+    data class EnumLiteral(val enumName: String, val variant: String) : IrExpr() {
+        override val type: IrType = IrType.Named(enumName)
+    }
+
+    /**
      * Boolean literal.
      *
      * @property value the boolean value
@@ -488,6 +497,15 @@ sealed class IrExpr {
     data class NumCast(val value: IrExpr, override val type: IrType) : IrExpr()
 
     /**
+     * Representation-preserving conversion of an enum's variant payload to a
+     * string. Enum values are stored as variant strings; this node makes that
+     * representation explicit to backends without discarding nominal typing.
+     */
+    data class EnumToString(val value: IrExpr) : IrExpr() {
+        override val type: IrType = IrType.String
+    }
+
+    /**
      * A lambda/closure `{ params -> body }`.
      *
      * @property params the parameter name/type pairs
@@ -515,11 +533,39 @@ sealed class IrExpr {
         override val type: IrType = IrType.Any
     }
 
+    private fun StringTemplate.qualifiedEnumValue(): IrExpr? {
+        if (parts.size != 2) return null
+        if (parts[0] !is IrTemplatePart.Literal) return null
+        val value = (parts[1] as? IrTemplatePart.Expr)?.expr as? EnumToString ?: return null
+        val enumName = (value.value.type as? IrType.Named)?.name ?: return null
+        return value.value.takeIf { (parts[0] as IrTemplatePart.Literal).text == "$enumName." }
+    }
+
+    private fun StringTemplate.prettyContent(): String = buildString {
+        for (part in parts) {
+            when (part) {
+                is IrTemplatePart.Literal -> append(
+                    part.text.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n"),
+                )
+                is IrTemplatePart.Expr -> {
+                    val nested = part.expr as? StringTemplate
+                    val enumValue = nested?.qualifiedEnumValue()
+                    when {
+                        enumValue != null -> append("\${${enumValue.prettyPrint()}}")
+                        nested != null -> append(nested.prettyContent())
+                        else -> append("\${${part.expr.prettyPrint()}}")
+                    }
+                }
+            }
+        }
+    }
+
     /** Pretty-prints this expression as Azora IR text. */
     fun prettyPrint(): String = when (this) {
         is IntLiteral -> "$value"
         is RealLiteral -> "$value"
         is StringLiteral -> "\"$value\""
+        is EnumLiteral -> "$enumName.$variant"
         is BoolLiteral -> "$value"
         is CharLiteral -> "'$value'"
         is Var -> name
@@ -547,18 +593,14 @@ sealed class IrExpr {
         is Member -> "${target.prettyPrint()}.$name"
         is MethodCall -> "${target.prettyPrint()}.$name(${args.joinToString(", ") { it.prettyPrint() }})"
         is StructCtor -> "$name(${args.joinToString(", ") { it.prettyPrint() }})"
-        is StringTemplate -> parts.joinToString("") {
-            when (it) {
-                is IrTemplatePart.Literal -> "\"${it.text}\""
-                is IrTemplatePart.Expr -> "\${${it.expr.prettyPrint()}}"
-            }
-        }
+        is StringTemplate -> "\"${prettyContent()}\""
         is TupleLit -> "(${elements.joinToString(", ") { it.prettyPrint() }})"
         is VariantLit -> "var(${elements.joinToString(", ") { it.prettyPrint() }})"
         is TupleAccess -> "${target.prettyPrint()}.$index"
         is CatchExpr -> "(${expr.prettyPrint()} catch ${fallback.prettyPrint()})"
         is IfExpr -> "(if ${condition.prettyPrint()} { ${thenExpr.prettyPrint()} } else { ${elseExpr.prettyPrint()} })"
         is NumCast -> "(${value.prettyPrint()} as $type)"
+        is EnumToString -> value.prettyPrint()
         is Lambda -> "{ ${params.joinToString(", ") { (n, t) -> "$n: $t" }} -> ... }"
         is SlotPattern -> "$slotName.$variantName(${bindings.joinToString(",")})"
         is Await -> "await ${value.prettyPrint()}"
@@ -673,11 +715,22 @@ sealed class IrStmt {
     data class Assert(val condition: IrExpr, val message: IrExpr) : IrStmt()
 
     /**
-     * Runtime trace (`trace { expr }`).
+     * Runtime trace (`trace level { expr }`).
      *
+     * @property level selected `LogLevel`, represented by its variant name
      * @property message the message expression
      */
-    data class Trace(val message: IrExpr) : IrStmt()
+    data class Trace(
+        val level: IrExpr,
+        val message: IrExpr,
+        val variants: List<String>,
+        /** Direct `trace expr`; false means [message] is a lifted trace-body call. */
+        val direct: Boolean = false,
+        /** Whether Azora IR should render the selected level explicitly. */
+        val showLevel: Boolean = !direct,
+        /** Source-level level value used by the Azora IR printer. */
+        val displayLevel: IrExpr = level,
+    ) : IrStmt()
 
     /**
      * `while` loop.
@@ -746,10 +799,13 @@ sealed class IrStmt {
     /** Pretty-prints this statement as Azora IR text. */
     fun prettyPrint(sb: StringBuilder, indent: Int) {
         val pad = "    ".repeat(indent)
+        fun binding(keyword: String, name: String, type: IrType, initializer: IrExpr) {
+            sb.appendLine("${pad}$keyword $name: $type = ${initializer.prettyPrint()}")
+        }
         when (this) {
-            is VarDecl -> sb.appendLine("${pad}var $name: $type = ${initializer.prettyPrint()}")
-            is FinDecl -> sb.appendLine("${pad}fin $name: $type = ${initializer.prettyPrint()}")
-            is LetDecl -> sb.appendLine("${pad}let $name: $type = ${initializer.prettyPrint()}")
+            is VarDecl -> binding("var", name, type, initializer)
+            is FinDecl -> binding("fin", name, type, initializer)
+            is LetDecl -> binding("let", name, type, initializer)
             is Assignment -> sb.appendLine("${pad}$name = ${value.prettyPrint()}")
             is IndexAssign -> sb.appendLine("${pad}${target.prettyPrint()}[${index.prettyPrint()}] = ${value.prettyPrint()}")
             is MemberAssign -> sb.appendLine("${pad}${target.prettyPrint()}.$name = ${value.prettyPrint()}")
@@ -770,7 +826,14 @@ sealed class IrStmt {
                 sb.appendLine("${pad}}")
             }
             is Assert -> sb.appendLine("${pad}assert ${condition.prettyPrint()} { ${message.prettyPrint()} }")
-            is Trace -> sb.appendLine("${pad}trace { ${message.prettyPrint()} }")
+            is Trace -> if (direct) {
+                val selected = if (showLevel) "${displayLevel.prettyPrint()} " else ""
+                sb.appendLine("${pad}trace $selected${message.prettyPrint()}")
+            } else if (message is IrExpr.Call && message.name.startsWith("__") && message.name.contains("_lmbda")) {
+                sb.appendLine("${pad}trace ${displayLevel.prettyPrint()} ${message.prettyPrint()}")
+            } else {
+                sb.appendLine("${pad}trace ${level.prettyPrint()} { ${message.prettyPrint()} }")
+            }
             is While -> {
                 sb.appendLine("${pad}while ${condition.prettyPrint()} {")
                 for (s in body) s.prettyPrint(sb, indent + 1)
@@ -886,6 +949,9 @@ sealed class IrTopLevel {
     data class Global(val stmt: IrStmt) : IrTopLevel()
     data class Func(val function: IrFunction) : IrTopLevel()
 
+    /** Nominal enum declaration retained for typed Azora IR and tooling. */
+    data class Enum(val name: String, val variants: List<String>) : IrTopLevel()
+
     /**
      * A test declaration (`test "name" { body }`).
      *
@@ -950,6 +1016,12 @@ data class IrProgram(
                     item.function.prettyPrint(sb, 0)
                     if (i < items.lastIndex) sb.appendLine()
                 }
+                is IrTopLevel.Enum -> {
+                    sb.appendLine("enum ${item.name} {")
+                    item.variants.forEach { sb.appendLine("    $it") }
+                    sb.appendLine("}")
+                    if (i < items.lastIndex) sb.appendLine()
+                }
                 is IrTopLevel.Test -> {
                     sb.appendLine("test \"${item.name}\" {")
                     for (stmt in item.body) stmt.prettyPrint(sb, 1)
@@ -990,6 +1062,9 @@ data class IrProgram(
                     sb.appendLine("    IrFunction(name=${func.name}, params=($params), returnType=${func.returnType})")
                     sb.appendLine("        body:")
                     for (stmt in func.body) dumpIrStmtTree(sb, stmt, "            ")
+                }
+                is IrTopLevel.Enum -> {
+                    sb.appendLine("    IrEnum(name=${item.name}, variants=${item.variants})")
                 }
                 is IrTopLevel.Test -> {
                     sb.appendLine("    IrTest(name=\"${item.name}\")")
@@ -1080,6 +1155,8 @@ private fun dumpIrStmtTree(sb: StringBuilder, stmt: IrStmt, indent: String) {
         }
         is IrStmt.Trace -> {
             sb.appendLine("${indent}IrTrace")
+            sb.appendLine("$indent    level:")
+            dumpIrExprTree(sb, stmt.level, "$indent        ")
             sb.appendLine("$indent    message:")
             dumpIrExprTree(sb, stmt.message, "$indent        ")
         }
@@ -1160,11 +1237,16 @@ private fun dumpIrExprTree(sb: StringBuilder, expr: IrExpr, indent: String) {
         is IrExpr.IntLiteral -> sb.appendLine("${indent}IrIntLiteral(${expr.value}) : ${expr.type}")
         is IrExpr.RealLiteral -> sb.appendLine("${indent}IrRealLiteral(${expr.value}) : ${expr.type}")
         is IrExpr.StringLiteral -> sb.appendLine("${indent}IrStringLiteral(\"${expr.value}\") : String")
+        is IrExpr.EnumLiteral -> sb.appendLine("${indent}IrEnumLiteral(${expr.enumName}.${expr.variant}) : ${expr.enumName}")
         is IrExpr.BoolLiteral -> sb.appendLine("${indent}IrBoolLiteral(${expr.value}) : Bool")
         is IrExpr.CharLiteral -> sb.appendLine("${indent}IrCharLiteral('${expr.value}') : Char")
         is IrExpr.Var -> sb.appendLine("${indent}IrVar(${expr.name}) : ${expr.type}")
         is IrExpr.NumCast -> {
             sb.appendLine("${indent}IrNumCast : ${expr.type}")
+            dumpIrExprTree(sb, expr.value, "$indent    ")
+        }
+        is IrExpr.EnumToString -> {
+            sb.appendLine("${indent}IrEnumToString : String")
             dumpIrExprTree(sb, expr.value, "$indent    ")
         }
         is IrExpr.Binary -> {

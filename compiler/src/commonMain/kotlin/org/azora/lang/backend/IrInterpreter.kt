@@ -186,7 +186,7 @@ class IrInterpreter {
                     is IrTopLevel.Global -> executeStmt(item.stmt)
                     is IrTopLevel.Func -> functions[item.function.name] = item.function
                     is IrTopLevel.Test -> tests.add(item)
-                    is IrTopLevel.Struct, is IrTopLevel.Extern -> {}
+                    is IrTopLevel.Struct, is IrTopLevel.Enum, is IrTopLevel.Extern -> {}
                 }
             }
             tests.map { test ->
@@ -259,6 +259,7 @@ class IrInterpreter {
                 is IrTopLevel.Func -> functions[item.function.name] = item.function
                 is IrTopLevel.Test -> tests.add(item)
                 is IrTopLevel.Struct -> { /* struct definitions need no execution */ }
+                is IrTopLevel.Enum -> { /* enum metadata needs no execution */ }
                 is IrTopLevel.Extern -> { /* extern declarations need no execution */ }
             }
         }
@@ -643,9 +644,10 @@ class IrInterpreter {
                 }
             }
             is IrStmt.Trace -> {
+                val level = formatValue(evalExpr(stmt.level)).uppercase()
                 val msg = formatValue(evalExpr(stmt.message))
-                azSync(output) { output.appendLine("[TRACE] $msg") }
-                outputListener?.invoke("[TRACE] $msg")
+                azSync(output) { output.appendLine("[$level] $msg") }
+                outputListener?.invoke("[$level] $msg")
             }
         }
         return null
@@ -656,8 +658,10 @@ class IrInterpreter {
             is IrExpr.IntLiteral -> expr.value
             is IrExpr.RealLiteral -> expr.value
             is IrExpr.StringLiteral -> expr.value
+            is IrExpr.EnumLiteral -> expr.variant
             is IrExpr.BoolLiteral -> expr.value
             is IrExpr.CharLiteral -> expr.value
+            is IrExpr.EnumToString -> formatValue(evalExpr(expr.value))
             is IrExpr.Var -> lookupVar(expr.name)
             is IrExpr.Unary -> {
                 val operand = evalExpr(expr.operand)

@@ -291,6 +291,11 @@ class TypeResolver(private val table: SymbolTable) {
                 }
             }
             is Stmt.Trace -> {
+                val level = stmt.level ?: defaultTraceLevel(stmt.line)
+                val levelType = resolveExpr(level) ?: return
+                if (levelType != IrType.Named("LogLevel")) {
+                    errors.add("line ${stmt.line}: trace level must be LogLevel, got $levelType")
+                }
                 val msgType = resolveExpr(stmt.message) ?: return
                 if (msgType != IrType.String) {
                     errors.add("line ${stmt.line}: trace message must be String, got $msgType")
@@ -540,6 +545,11 @@ class TypeResolver(private val table: SymbolTable) {
         NumericSuffix.DECIMAL -> IrType.Decimal
     }
 
+    private fun defaultTraceLevel(line: Int): Expr {
+        val first = table.lookupEnum("LogLevel")?.firstOrNull() ?: "Debug"
+        return Expr.Member(Expr.Identifier("LogLevel", line), first, line)
+    }
+
     private fun suffixToRealType(suffix: NumericSuffix): IrType = when (suffix) {
         NumericSuffix.FLOAT -> IrType.Float
         NumericSuffix.DECIMAL -> IrType.Decimal
@@ -605,6 +615,7 @@ class TypeResolver(private val table: SymbolTable) {
                 resolveBinaryType(expr.op, leftType, rightType, expr.line)
             }
             is Expr.Call -> {
+                if (expr.callee == "__defaultLogLevel") return IrType.Named("LogLevel")
                 if (expr.callee == "__reflect") {
                     errors.add("line ${expr.line}: reflect is compile-time-only and must be followed by .hasDeco<D> or .decoMeta<D>")
                     return null

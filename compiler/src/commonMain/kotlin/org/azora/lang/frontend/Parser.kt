@@ -705,9 +705,9 @@ class Parser(
                 consume(TokenType.NEWLINE, "Expected a newline after 'export if <condition>'")
                 parseImport(exported = true, condition = cond)
             }
-            check(TokenType.FIN) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseExpr(); consumeNewline(); TopLevel.FinDecl(name, type, init, start.line, start.column, annotations, visibility = visibility) }
-            check(TokenType.VAR) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseExpr(); consumeNewline(); TopLevel.VarDecl(name, type, init, start.line, start.column, annotations, visibility = visibility) }
-            check(TokenType.LET) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseExpr(); consumeNewline(); TopLevel.LetDecl(name, type, init, start.line, start.column, annotations, visibility) }
+            check(TokenType.FIN) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); TopLevel.FinDecl(name, type, init, start.line, start.column, annotations, visibility = visibility) }
+            check(TokenType.VAR) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); TopLevel.VarDecl(name, type, init, start.line, start.column, annotations, visibility = visibility) }
+            check(TokenType.LET) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); TopLevel.LetDecl(name, type, init, start.line, start.column, annotations, visibility) }
             else -> error("Expected 'func', 'fin', 'var', 'let', 'test', 'inline', or 'deepinline' at top level, got '${peek().lexeme}' at line ${peek().line}")
         }
     }
@@ -834,9 +834,9 @@ class Parser(
             TokenType.IF -> parseTopLevelInlineIf()
             TokenType.ASSERT -> parseTopLevelInlineAssert()
             TokenType.TRACE -> parseTopLevelInlineTrace()
-            TokenType.FIN -> { val start = peek(); advance(); advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; if (match(TokenType.COLON)) parseTypeName(); consume(TokenType.EQUAL, "Expected '='"); val init = parseExpr(); consumeNewline(); TopLevel.InlineFin(name, init, start.line, start.column) }
-            TokenType.LET -> { val start = peek(); advance(); advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; if (match(TokenType.COLON)) parseTypeName(); consume(TokenType.EQUAL, "Expected '='"); val init = parseExpr(); consumeNewline(); TopLevel.InlineLet(name, init, start.line, start.column) }
-            TokenType.VAR -> { val start = peek(); advance(); advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; if (match(TokenType.COLON)) parseTypeName(); consume(TokenType.EQUAL, "Expected '='"); val init = parseExpr(); consumeNewline(); TopLevel.InlineVar(name, init, start.line, start.column) }
+            TokenType.FIN -> { val start = peek(); advance(); advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); TopLevel.InlineFin(name, init, start.line, start.column) }
+            TokenType.LET -> { val start = peek(); advance(); advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); TopLevel.InlineLet(name, init, start.line, start.column) }
+            TokenType.VAR -> { val start = peek(); advance(); advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); TopLevel.InlineVar(name, init, start.line, start.column) }
             TokenType.IDENTIFIER -> { val start = peek(); advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; consume(TokenType.EQUAL, "Expected '='"); val value = parseExpr(); consumeNewline(); TopLevel.InlineAssignment(name, value, start.line, start.column) }
             else -> error("Expected 'func', '{', 'zone', 'if', 'assert', 'trace', 'fin', 'var', 'let', or identifier after 'inline' at line ${peek().line}")
         }
@@ -1256,22 +1256,22 @@ class Parser(
             check(TokenType.TRACE) -> {
                 // Bare trace inside inline block → InlineTrace at top level
                 val traceStmt = parseTraceStmt()
-                TopLevel.InlineTrace(traceStmt.message, traceStmt.line, traceStmt.column)
+                TopLevel.InlineTrace(traceStmt.message, traceStmt.line, traceStmt.column, traceStmt.level)
             }
             check(TokenType.NOINLINE) -> {
                 advance() // consume 'noinline'
                 when {
                     check(TokenType.FUNC) -> TopLevel.Func(parseFuncDecl(isInline = false))
-                    check(TokenType.FIN) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseExpr(); consumeNewline(); TopLevel.FinDecl(name, type, init, start.line, start.column) }
-                    check(TokenType.VAR) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseExpr(); consumeNewline(); TopLevel.VarDecl(name, type, init, start.line, start.column) }
-                    check(TokenType.LET) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseExpr(); consumeNewline(); TopLevel.LetDecl(name, type, init, start.line, start.column) }
+                    check(TokenType.FIN) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); TopLevel.FinDecl(name, type, init, start.line, start.column) }
+                    check(TokenType.VAR) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); TopLevel.VarDecl(name, type, init, start.line, start.column) }
+                    check(TokenType.LET) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); TopLevel.LetDecl(name, type, init, start.line, start.column) }
                     else -> error("Expected 'func', 'fin', 'var', or 'let' after 'noinline' at line ${peek().line}")
                 }
             }
             // Bare declarations: inline if deepInline, runtime otherwise
-            check(TokenType.VAR) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseExpr(); consumeNewline(); if (deepInline) TopLevel.InlineVar(name, init, start.line, start.column) else TopLevel.VarDecl(name, type, init, start.line, start.column) }
-            check(TokenType.FIN) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseExpr(); consumeNewline(); if (deepInline) TopLevel.InlineFin(name, init, start.line, start.column) else TopLevel.FinDecl(name, type, init, start.line, start.column) }
-            check(TokenType.LET) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseExpr(); consumeNewline(); if (deepInline) TopLevel.InlineLet(name, init, start.line, start.column) else TopLevel.LetDecl(name, type, init, start.line, start.column) }
+            check(TokenType.VAR) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); if (deepInline) TopLevel.InlineVar(name, init, start.line, start.column) else TopLevel.VarDecl(name, type, init, start.line, start.column) }
+            check(TokenType.FIN) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); if (deepInline) TopLevel.InlineFin(name, init, start.line, start.column) else TopLevel.FinDecl(name, type, init, start.line, start.column) }
+            check(TokenType.LET) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); if (deepInline) TopLevel.InlineLet(name, init, start.line, start.column) else TopLevel.LetDecl(name, type, init, start.line, start.column) }
             check(TokenType.IF) -> {
                 consume(TokenType.IF, "Expected 'if'")
                 val condition = parseExpr()
@@ -2911,13 +2911,9 @@ class Parser(
         val start = peek()
         consume(TokenType.INLINE, "Expected 'inline'")
         consume(TokenType.TRACE, "Expected 'trace'")
-        consume(TokenType.L_BRACE, "Expected '{' after trace")
-        skipNewlines()
-        val message = parseExpr()
-        skipNewlines()
-        consume(TokenType.R_BRACE, "Expected '}' after trace message")
+        val (level, message) = parseTracePayload(start, inline = true)
         consumeNewline()
-        return TopLevel.InlineTrace(message, start.line, start.column)
+        return TopLevel.InlineTrace(message, start.line, start.column, level)
     }
 
     /**
@@ -4515,7 +4511,7 @@ class Parser(
         val name = consumeIdentifierLike("Expected variable name")
         val type: TypeAnnotation = if (match(TokenType.COLON)) TypeAnnotation.Explicit(parseTypeName()) else TypeAnnotation.Inferred
         consume(TokenType.EQUAL, "Expected '=' in inline fin declaration")
-        val init = parseExpr()
+        val init = parseInitializer(type)
         consumeNewline()
         return Stmt.InlineFin(name, type, init, start.line, start.column)
     }
@@ -4527,7 +4523,7 @@ class Parser(
         val name = consumeIdentifierLike("Expected variable name")
         val type: TypeAnnotation = if (match(TokenType.COLON)) TypeAnnotation.Explicit(parseTypeName()) else TypeAnnotation.Inferred
         consume(TokenType.EQUAL, "Expected '=' in inline var declaration")
-        val init = parseExpr()
+        val init = parseInitializer(type)
         consumeNewline()
         return Stmt.InlineVar(name, type, init, start.line, start.column)
     }
@@ -4539,7 +4535,7 @@ class Parser(
         val name = consumeIdentifierLike("Expected variable name")
         val type: TypeAnnotation = if (match(TokenType.COLON)) TypeAnnotation.Explicit(parseTypeName()) else TypeAnnotation.Inferred
         consume(TokenType.EQUAL, "Expected '=' in inline let declaration")
-        val init = parseExpr()
+        val init = parseInitializer(type)
         consumeNewline()
         return Stmt.InlineLet(name, type, init, start.line, start.column)
     }
@@ -4581,13 +4577,16 @@ class Parser(
     private fun parseTraceStmt(): Stmt.Trace {
         val start = peek()
         consume(TokenType.TRACE, "Expected 'trace'")
-        consume(TokenType.L_BRACE, "Expected '{' after trace")
-        skipNewlines()
-        val message = parseExpr()
-        skipNewlines()
-        consume(TokenType.R_BRACE, "Expected '}' after trace message")
+        val (level, message, liftBody, explicitLevel) = parseTracePayload(start, inline = false)
         consumeNewline()
-        return Stmt.Trace(message, start.line, start.column)
+        return Stmt.Trace(
+            message,
+            start.line,
+            start.column,
+            level = level,
+            liftBody = liftBody,
+            explicitLevel = explicitLevel,
+        )
     }
 
     private fun parseInlineAssertStmt(): Stmt.InlineAssert {
@@ -4608,14 +4607,77 @@ class Parser(
         val start = peek()
         consume(TokenType.INLINE, "Expected 'inline'")
         consume(TokenType.TRACE, "Expected 'trace'")
-        consume(TokenType.L_BRACE, "Expected '{' after inline trace")
-        skipNewlines()
-        val message = parseExpr()
-        skipNewlines()
-        consume(TokenType.R_BRACE, "Expected '}' after inline trace message")
+        val (level, message) = parseTracePayload(start, inline = true)
         consumeNewline()
-        return Stmt.InlineTrace(message, start.line, start.column)
+        return Stmt.InlineTrace(message, start.line, start.column, level = level)
     }
+
+    private data class TracePayload(
+        val level: Expr,
+        val message: Expr,
+        val liftBody: Boolean,
+        val explicitLevel: Boolean,
+    )
+
+    /** Parses direct `trace expr` and lambda `[level] { message }` forms. */
+    private fun parseTracePayload(start: Token, inline: Boolean): TracePayload {
+        if (check(TokenType.L_BRACE)) {
+            val level = defaultTraceLevel(start)
+            consume(TokenType.L_BRACE, "Expected '{' after ${if (inline) "inline " else ""}trace")
+            skipNewlines()
+            val message = parseExpr().bindTraceReceiver(level)
+            skipNewlines()
+            consume(TokenType.R_BRACE, "Expected '}' after trace message")
+            return TracePayload(level, message, liftBody = true, explicitLevel = false)
+        }
+
+        val shorthandLevel = if (match(TokenType.DOT)) {
+            val variant = consume(TokenType.IDENTIFIER, "Expected LogLevel variant after '.'")
+            Expr.Member(
+                Expr.Identifier("LogLevel", variant.line, variant.column, variant.lexeme.length),
+                variant.lexeme,
+                variant.line,
+                variant.column,
+                variant.lexeme.length + 1,
+            )
+        } else null
+
+        val candidate = shorthandLevel ?: run {
+            val savedTrailing = allowTrailingLambda
+            allowTrailingLambda = false
+            try {
+                parseExpr()
+            } finally {
+                allowTrailingLambda = savedTrailing
+            }
+        }
+
+        if (!check(TokenType.L_BRACE)) {
+            return if (shorthandLevel != null) {
+                TracePayload(shorthandLevel, parseExpr(), liftBody = false, explicitLevel = true)
+            } else if (
+                !check(TokenType.NEWLINE) &&
+                !check(TokenType.SEMICOLON) &&
+                !check(TokenType.R_BRACE) &&
+                !isAtEnd()
+            ) {
+                TracePayload(candidate, parseExpr(), liftBody = false, explicitLevel = true)
+            } else {
+                TracePayload(defaultTraceLevel(start), candidate, liftBody = false, explicitLevel = false)
+            }
+        }
+
+        val level = candidate
+        consume(TokenType.L_BRACE, "Expected '{' after ${if (inline) "inline " else ""}trace level")
+        skipNewlines()
+        val message = parseExpr().bindTraceReceiver(level)
+        skipNewlines()
+        consume(TokenType.R_BRACE, "Expected '}' after trace message")
+        return TracePayload(level, message, liftBody = true, explicitLevel = true)
+    }
+
+    private fun defaultTraceLevel(start: Token): Expr =
+        Expr.Call("__defaultLogLevel", emptyList(), start.line, start.column)
 
     private fun parseIf(): Stmt.If {
         val start = peek()
@@ -4676,13 +4738,39 @@ class Parser(
         return stmts
     }
 
+    /**
+     * Parses an initializer with the declaration's expected type in scope.
+     * A leading-dot value (`.Warn`) is expanded to a nominal member
+     * (`LogLevel.Warn`) only when an explicit named type provides that context.
+     */
+    private fun parseInitializer(expectedType: TypeRef?): Expr {
+        if (!check(TokenType.DOT)) return parseExpr()
+        val named = when (expectedType) {
+            is TypeRef.Named -> expectedType
+            is TypeRef.Nullable -> expectedType.inner as? TypeRef.Named
+            else -> null
+        } ?: return parseExpr()
+        val dot = advance()
+        val variant = consume(TokenType.IDENTIFIER, "Expected variant name after '.'")
+        return Expr.Member(
+            Expr.Identifier(named.name, dot.line, dot.column, named.name.length),
+            variant.lexeme,
+            dot.line,
+            dot.column,
+            variant.lexeme.length + 1,
+        )
+    }
+
+    private fun parseInitializer(type: TypeAnnotation): Expr =
+        parseInitializer((type as? TypeAnnotation.Explicit)?.ref)
+
     private fun parseVarDecl(): Stmt.VarDecl {
         val start = peek()
         advance() // consume 'var'
         val name = consumeIdentifierLike("Expected variable name")
         val type: TypeAnnotation = if (match(TokenType.COLON)) TypeAnnotation.Explicit(parseTypeName()) else TypeAnnotation.Inferred
         consume(TokenType.EQUAL, "Expected '=' in declaration")
-        val init = parseExpr()
+        val init = parseInitializer(type)
         consumeNewline()
         return Stmt.VarDecl(name, type, init, start.line, start.column)
     }
@@ -4693,7 +4781,7 @@ class Parser(
         val name = consumeIdentifierLike("Expected variable name")
         val type: TypeAnnotation = if (match(TokenType.COLON)) TypeAnnotation.Explicit(parseTypeName()) else TypeAnnotation.Inferred
         consume(TokenType.EQUAL, "Expected '=' in declaration")
-        val init = parseExpr()
+        val init = parseInitializer(type)
         consumeNewline()
         return Stmt.FinDecl(name, type, init, start.line, start.column)
     }
@@ -4704,7 +4792,7 @@ class Parser(
         val name = consumeIdentifierLike("Expected variable name")
         val type: TypeAnnotation = if (match(TokenType.COLON)) TypeAnnotation.Explicit(parseTypeName()) else TypeAnnotation.Inferred
         consume(TokenType.EQUAL, "Expected '=' in let declaration")
-        val init = parseExpr()
+        val init = parseInitializer(type)
         consumeNewline()
         return Stmt.LetDecl(name, type, init, start.line, start.column)
     }

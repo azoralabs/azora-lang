@@ -94,6 +94,10 @@ internal object MacroExpander {
         is TopLevel.InlineFin -> item.copy(initializer = rewriteExpr(item.initializer, macros, depth))
         is TopLevel.InlineLet -> item.copy(initializer = rewriteExpr(item.initializer, macros, depth))
         is TopLevel.InlineAssignment -> item.copy(value = rewriteExpr(item.value, macros, depth))
+        is TopLevel.InlineTrace -> item.copy(
+            message = rewriteExpr(item.message, macros, depth),
+            level = item.level?.let { rewriteExpr(it, macros, depth) },
+        )
         is TopLevel.InlineIf -> item.copy(
             condition = rewriteExpr(item.condition, macros, depth),
             thenBranch = item.thenBranch.map { rewriteItem(it, macros, depth) },
@@ -233,8 +237,14 @@ internal object MacroExpander {
             condition = rewriteExpr(stmt.condition, macros, depth),
             message = rewriteExpr(stmt.message, macros, depth),
         )
-        is Stmt.Trace -> stmt.copy(message = rewriteExpr(stmt.message, macros, depth))
-        is Stmt.InlineTrace -> stmt.copy(message = rewriteExpr(stmt.message, macros, depth))
+        is Stmt.Trace -> stmt.copy(
+            message = rewriteExpr(stmt.message, macros, depth),
+            level = stmt.level?.let { rewriteExpr(it, macros, depth) },
+        )
+        is Stmt.InlineTrace -> stmt.copy(
+            message = rewriteExpr(stmt.message, macros, depth),
+            level = stmt.level?.let { rewriteExpr(it, macros, depth) },
+        )
         is Stmt.IndexAssign -> stmt.copy(
             target = rewriteExpr(stmt.target, macros, depth),
             index = rewriteExpr(stmt.index, macros, depth),
@@ -556,8 +566,14 @@ internal object MacroExpander {
             condition = substitute(stmt.condition, bindings, invokeLine),
             message = substitute(stmt.message, bindings, invokeLine),
         )
-        is Stmt.Trace -> stmt.copy(message = substitute(stmt.message, bindings, invokeLine))
-        is Stmt.InlineTrace -> stmt.copy(message = substitute(stmt.message, bindings, invokeLine))
+        is Stmt.Trace -> stmt.copy(
+            message = substitute(stmt.message, bindings, invokeLine),
+            level = stmt.level?.let { substitute(it, bindings, invokeLine) },
+        )
+        is Stmt.InlineTrace -> stmt.copy(
+            message = substitute(stmt.message, bindings, invokeLine),
+            level = stmt.level?.let { substitute(it, bindings, invokeLine) },
+        )
         is Stmt.IndexAssign -> stmt.copy(
             target = substitute(stmt.target, bindings, invokeLine),
             index = substitute(stmt.index, bindings, invokeLine),

@@ -141,6 +141,8 @@ private fun dumpTopLevel(sb: StringBuilder, item: TopLevel, indent: String) {
         }
         is TopLevel.InlineTrace -> {
             sb.appendLine("${indent}InlineTrace")
+            sb.appendLine("$indent    level:")
+            item.level?.let { dumpExpr(sb, it, "$indent        ") }
             sb.appendLine("$indent    message:")
             dumpExpr(sb, item.message, "$indent        ")
         }
@@ -337,6 +339,8 @@ private fun dumpStmt(sb: StringBuilder, stmt: Stmt, indent: String) {
         }
         is Stmt.Trace -> {
             sb.appendLine("${indent}Trace")
+            sb.appendLine("$indent    level:")
+            stmt.level?.let { dumpExpr(sb, it, "$indent        ") }
             sb.appendLine("$indent    message:")
             dumpExpr(sb, stmt.message, "$indent        ")
         }
@@ -349,6 +353,8 @@ private fun dumpStmt(sb: StringBuilder, stmt: Stmt, indent: String) {
         }
         is Stmt.InlineTrace -> {
             sb.appendLine("${indent}InlineTrace")
+            sb.appendLine("$indent    level:")
+            stmt.level?.let { dumpExpr(sb, it, "$indent        ") }
             sb.appendLine("$indent    message:")
             dumpExpr(sb, stmt.message, "$indent        ")
         }

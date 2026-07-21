@@ -17,7 +17,7 @@ class EnumWhenTest {
     }
 
     @Test fun enumValuePrints() {
-        assertEquals("Red", run("""
+        assertEquals("Color.Red", run("""
             import std.io
             enum Color {
                 Red
@@ -26,6 +26,18 @@ class EnumWhenTest {
             }
             func main() {
                 std::println(Color.Red)
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun typedDeclarationsAcceptContextualEnumVariants() {
+        assertEquals("[WARN] LogLevel.Warn: contextual", run("""
+            fin DEFAULT_LEVEL: LogLevel = .Warn
+            func main() {
+                var level3: LogLevel = .Warn
+                fin level4: LogLevel = .Warn
+                let level5: LogLevel = .Warn
+                trace level3 { "${'$'}{it}: contextual" }
             }
         """.trimIndent()))
     }

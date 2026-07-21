@@ -478,8 +478,18 @@ class LlvmCodegenExecTest {
     )
 
     @Test fun traceEmitsMessage() = check(
-        "[TRACE] hello",
+        "[DEBUG] hello",
         main("""trace { "hello" }""")
+    )
+
+    @Test fun traceUsesRuntimeLevelAndImplicitReceiver() = check(
+        "[WARN] LogLevel.Warn: check",
+        main("var level = LogLevel.Warn\ntrace level { \"${'$'}{it}: check\" }")
+    )
+
+    @Test fun traceAcceptsQualifiedDirectLevel() = check(
+        "[ERROR] Error",
+        main("trace LogLevel.Error \"Error\"")
     )
 
     // -----------------------------------------------------------------------

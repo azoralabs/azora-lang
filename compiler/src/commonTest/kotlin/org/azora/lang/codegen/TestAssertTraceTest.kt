@@ -3,6 +3,8 @@ package org.azora.lang.codegen
 import org.azora.lang.CompilationResult
 import org.azora.lang.Compiler
 import org.azora.lang.backend.IrInterpreter
+import org.azora.lang.ir.IrStmt
+import org.azora.lang.ir.IrType
 import kotlin.test.*
 
 class TestAssertTraceTest {
@@ -54,7 +56,7 @@ class TestAssertTraceTest {
             }
         """.trimIndent())
         assertTrue("main" in output)
-        assertTrue("[TRACE] inside test" in output)
+        assertTrue("[DEBUG] inside test" in output)
     }
 
     @Test
@@ -172,8 +174,147 @@ class TestAssertTraceTest {
                 std::println("done")
             }
         """.trimIndent())
-        assertTrue("[TRACE] hello from trace" in output)
+        assertTrue("[DEBUG] hello from trace" in output)
         assertTrue("done" in output)
+    }
+
+    @Test
+    fun trace_acceptsShorthandAndRuntimeLogLevels() {
+        val output = run("""
+            func main() {
+                trace .Info { "Any bridge works" }
+                var level = LogLevel.Warn
+                trace level { "${'$'}{it}: Hello" }
+                fin finalLevel = LogLevel.Error
+                trace finalLevel { "final" }
+                trace { "${'$'}{it}: default" }
+            }
+        """.trimIndent())
+
+        assertEquals("[INFO] Any bridge works\n[WARN] LogLevel.Warn: Hello\n[ERROR] final\n[DEBUG] LogLevel.Debug: default", output)
+    }
+
+    @Test
+    fun trace_liftsBodiesIntoTypedIrFunctions() {
+        val result = compile("""
+            module playground
+            func main() {
+                trace .Info { "Any bridge works" }
+                var level = LogLevel.Warn
+                trace level { "${'$'}{it}: Hello" }
+            }
+        """.trimIndent())
+        val ir = result.ir.prettyPrint()
+        val level = result.ir.functions
+            .first { it.name == "main" }
+            .body
+            .filterIsInstance<IrStmt.VarDecl>()
+            .first { it.name == "level" }
+
+        assertEquals(IrType.Named("LogLevel"), level.type)
+        assertTrue(ir.startsWith("module playground\n\nfunc __main_lmbda0"), ir)
+        assertTrue("""
+            func __main_lmbda0(level: LogLevel): String {
+                return "Any bridge works"
+            }
+        """.trimIndent() in ir, ir)
+        assertTrue("""
+            func __main_lmbda1(level: LogLevel): String {
+                return "${'$'}{level}: Hello"
+            }
+        """.trimIndent() in ir, ir)
+        val mainIr = """
+            func main(): Unit {
+                trace LogLevel.Info __main_lmbda0(LogLevel.Info)
+                var level: LogLevel = LogLevel.Warn
+                trace LogLevel.Warn __main_lmbda1(level)
+            }
+        """.trimIndent()
+        assertTrue(mainIr in ir, ir)
+        assertTrue("$mainIr\n\nenum LogLevel {" in ir, ir)
+        assertTrue(ir.indexOf("func main(): Unit") < ir.indexOf("enum LogLevel {"), ir)
+    }
+
+    @Test
+    fun trace_liftedBodyCapturesSurroundingValues() {
+        val output = run("""
+            func main() {
+                fin subject = "compiler"
+                trace .Info { "${'$'}subject ready" }
+            }
+        """.trimIndent())
+
+        assertEquals("[INFO] compiler ready", output)
+    }
+
+    @Test
+    fun directTrace_remainsDirectInIr() {
+        val result = compile("""
+            func main() {
+                trace "Meow"
+            }
+        """.trimIndent())
+        val ir = result.ir.prettyPrint()
+
+        assertTrue("trace \"Meow\"" in ir, ir)
+        assertFalse("__main_lmbda" in ir, ir)
+        assertEquals("[DEBUG] Meow", IrInterpreter().interpret(result.ir))
+    }
+
+    @Test
+    fun directTrace_acceptsExplicitShorthandLevel() {
+        val result = compile("""
+            func main() {
+                trace .Info "Meow"
+            }
+        """.trimIndent())
+        val ir = result.ir.prettyPrint()
+
+        assertTrue("trace LogLevel.Info \"Meow\"" in ir, ir)
+        assertTrue("enum LogLevel {" in ir, ir)
+        assertTrue("Info" in ir, ir)
+        assertTrue(ir.indexOf("func main(): Unit") < ir.indexOf("enum LogLevel {"), ir)
+        assertEquals("[INFO] Meow", IrInterpreter().interpret(result.ir))
+    }
+
+    @Test
+    fun directTrace_acceptsQualifiedExplicitLevel() {
+        val result = compile("""
+            func main() {
+                trace LogLevel.Error "Error"
+            }
+        """.trimIndent())
+        val ir = result.ir.prettyPrint()
+
+        assertTrue("trace LogLevel.Error \"Error\"" in ir, ir)
+        assertEquals("[ERROR] Error", IrInterpreter().interpret(result.ir))
+    }
+
+    @Test
+    fun enumValues_stringifyWithTheirQualifiedPath() {
+        val output = run("""
+            import std.io
+            enum Tone { Warm Cool }
+            func main() {
+                fin tone = Tone.Warm
+                std::println(tone)
+                std::println("${'$'}{tone}")
+                std::println(tone as String)
+            }
+        """.trimIndent())
+
+        assertEquals("Tone.Warm\nTone.Warm\nTone.Warm", output)
+    }
+
+    @Test
+    fun trace_rejectsNonLogLevelExpression() {
+        val errors = expectFailure("""
+            func main() {
+                trace "Info" { "wrong" }
+            }
+        """.trimIndent())
+
+        assertTrue(errors.any { "trace level must be LogLevel, got String" in it }, errors.toString())
     }
 
     @Test
@@ -185,7 +326,7 @@ class TestAssertTraceTest {
             }
         """.trimIndent())
         assertTrue("console.log" in result.javascript, "JavaScript should emit console.log, got:\n${result.javascript}")
-        assertTrue("[TRACE]" in result.javascript, "JavaScript should include TRACE prefix, got:\n${result.javascript}")
+        assertTrue("toUpperCase" in result.javascript, "JavaScript should normalize the log level, got:\n${result.javascript}")
     }
 
     @Test
@@ -196,7 +337,7 @@ class TestAssertTraceTest {
                 trace { "debug" }
             }
         """.trimIndent())
-        assertTrue("TRACE" in result.llvm, "LLVM should emit TRACE string, got:\n${result.llvm}")
+        assertTrue("DEBUG" in result.llvm, "LLVM should emit the default DEBUG level, got:\n${result.llvm}")
     }
 
     // -----------------------------------------------------------------------
@@ -282,7 +423,7 @@ class TestAssertTraceTest {
                 std::println("ok")
             }
         """.trimIndent())
-        assertTrue(result.warnings.any { "TRACE" in it && "compiling module" in it },
+        assertTrue(result.warnings.any { "DEBUG" in it && "compiling module" in it },
             "Should produce trace warning, got: ${result.warnings}")
     }
 
@@ -295,8 +436,39 @@ class TestAssertTraceTest {
                 std::println("ok")
             }
         """.trimIndent())
-        assertTrue(result.warnings.any { "TRACE" in it && "in main" in it },
+        assertTrue(result.warnings.any { "DEBUG" in it && "in main" in it },
             "Should produce trace warning, got: ${result.warnings}")
+    }
+
+    @Test
+    fun inlineTrace_acceptsShorthandAndInlineBindings() {
+        val result = compile("""
+            func main() {
+                inline fin INFO_LEVEL = LogLevel.Info
+                inline var WARN_LEVEL = LogLevel.Warn
+                inline trace INFO_LEVEL { "${'$'}{it}: compiling" }
+                inline trace WARN_LEVEL { "careful" }
+                inline trace .Critical { "stop" }
+            }
+        """.trimIndent())
+
+        assertTrue(result.warnings.any { "[INFO] LogLevel.Info: compiling" in it }, result.warnings.toString())
+        assertTrue(result.warnings.any { "[WARN] careful" in it }, result.warnings.toString())
+        assertTrue(result.warnings.any { "[CRITICAL] stop" in it }, result.warnings.toString())
+    }
+
+    @Test
+    fun inlineTrace_acceptsTopLevelInlineBindings() {
+        val result = compile("""
+            inline fin INFO_LEVEL = LogLevel.Info
+            inline trace INFO_LEVEL { "${'$'}{it}: module" }
+            inline var TODO_LEVEL = LogLevel.Todo
+            inline trace TODO_LEVEL { "later" }
+            func main() {}
+        """.trimIndent())
+
+        assertTrue(result.warnings.any { "[INFO] LogLevel.Info: module" in it }, result.warnings.toString())
+        assertTrue(result.warnings.any { "[TODO] later" in it }, result.warnings.toString())
     }
 
     @Test

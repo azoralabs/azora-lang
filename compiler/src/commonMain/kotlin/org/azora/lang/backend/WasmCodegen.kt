@@ -177,7 +177,7 @@ class WasmCodegen {
             is IrStmt.Continue -> line("(br \$${continueTarget(stmt.label)})")
             is IrStmt.Zone -> for (s in stmt.body) emitStmt(s)
             is IrStmt.Assert -> line("(if (i32.eqz ${emitExpr(stmt.condition)}) (then unreachable))")
-            is IrStmt.Trace -> if (stmt.message.type == IrType.String) line("(call \$print_str ${emitExpr(stmt.message)})")
+            is IrStmt.Trace -> emitTrace(stmt)
             is IrStmt.Throw -> line("unreachable")
             is IrStmt.Try -> for (s in stmt.body) emitStmt(s) // no exception support — run the body
             is IrStmt.Defer -> {}
@@ -203,6 +203,25 @@ class WasmCodegen {
             line("))")
         }
         indent--
+    }
+
+    private fun emitTrace(stmt: IrStmt.Trace) {
+        if (stmt.message.type != IrType.String) return
+        usesStrEq = true
+        val level = newTemp("i32")
+        line("(local.set $level ${emitExpr(stmt.level)})")
+        var displayLevel = "(local.get $level)"
+        for (variant in stmt.variants.asReversed()) {
+            val source = internString(variant)
+            val display = internString(variant.uppercase())
+            displayLevel = "(if (result i32) " +
+                "(call \$__str_eq (local.get $level) (i32.const $source)) " +
+                "(then (i32.const $display)) (else $displayLevel))"
+        }
+        line("(call \$write_str (i32.const ${internString("[")}))")
+        line("(call \$write_str $displayLevel)")
+        line("(call \$write_str (i32.const ${internString("] ")}))")
+        line("(call \$print_str ${emitExpr(stmt.message)})")
     }
 
     private fun emitWhen(stmt: IrStmt.When) {
@@ -281,6 +300,8 @@ class WasmCodegen {
         is IrExpr.BoolLiteral -> "(i32.const ${if (expr.value) 1 else 0})"
         is IrExpr.CharLiteral -> "(i32.const ${expr.value.code})"
         is IrExpr.StringLiteral -> "(i32.const ${internString(expr.value)})"
+        is IrExpr.EnumLiteral -> "(i32.const ${internString(expr.variant)})"
+        is IrExpr.EnumToString -> emitExpr(expr.value)
         is IrExpr.Var -> "(local.get \$${expr.name})"
         is IrExpr.Unary -> when (expr.op) {
             IrUnaryOp.NEG -> {

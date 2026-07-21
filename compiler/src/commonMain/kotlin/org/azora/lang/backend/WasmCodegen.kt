@@ -108,6 +108,12 @@ class WasmCodegen {
         sb.appendLine("  (import \"env\" \"print_f32\" (func \$print_f32 (param f32)))")
         sb.appendLine("  (import \"env\" \"print_bool\" (func \$print_bool (param i32)))")
         sb.appendLine("  (import \"env\" \"print_str\" (func \$print_str (param i32)))")
+        sb.appendLine("  (import \"env\" \"write_i32\" (func \$write_i32 (param i32)))")
+        sb.appendLine("  (import \"env\" \"write_i64\" (func \$write_i64 (param i64)))")
+        sb.appendLine("  (import \"env\" \"write_f64\" (func \$write_f64 (param f64)))")
+        sb.appendLine("  (import \"env\" \"write_f32\" (func \$write_f32 (param f32)))")
+        sb.appendLine("  (import \"env\" \"write_bool\" (func \$write_bool (param i32)))")
+        sb.appendLine("  (import \"env\" \"write_str\" (func \$write_str (param i32)))")
         sb.appendLine("  (memory (export \"memory\") 16)")
         sb.appendLine("  (global \$__heap (mut i32) (i32.const ${align4(constCursor)}))")
         if (usesAlloc) sb.append(RT_ALLOC)
@@ -399,15 +405,16 @@ class WasmCodegen {
     }
 
     private fun emitCall(expr: IrExpr.Call): String {
-        if ((expr.name == "std__println" || expr.name == "print") && expr.args.size == 1) {
+        if ((expr.name == "std__println" || expr.name == "std__print") && expr.args.size == 1) {
             val arg = expr.args.single()
+            val operation = if (expr.name == "std__print") "write" else "print"
             val fn = when {
-                arg.type == IrType.String -> "print_str"
-                arg.type == IrType.Bool -> "print_bool"
-                wasmType(arg.type) == "i64" -> "print_i64"
-                wasmType(arg.type) == "f64" -> "print_f64"
-                wasmType(arg.type) == "f32" -> "print_f32"
-                else -> "print_i32"
+                arg.type == IrType.String -> "${operation}_str"
+                arg.type == IrType.Bool -> "${operation}_bool"
+                wasmType(arg.type) == "i64" -> "${operation}_i64"
+                wasmType(arg.type) == "f64" -> "${operation}_f64"
+                wasmType(arg.type) == "f32" -> "${operation}_f32"
+                else -> "${operation}_i32"
             }
             return "(call \$$fn ${emitExpr(arg)})"
         }

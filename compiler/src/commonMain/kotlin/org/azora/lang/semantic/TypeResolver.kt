@@ -616,6 +616,10 @@ class TypeResolver(private val table: SymbolTable) {
                 // Struct construction: `Name(args)` where Name is a pack.
                 val struct = table.lookupStruct(expr.callee)
                 if (struct != null) {
+                    if (struct.isBridge) {
+                        errors.add("line ${expr.line}: compiler bridge pack '${expr.callee}' cannot be constructed directly")
+                        return null
+                    }
                     if (expr.callee in table.abstractNodes) {
                         errors.add("line ${expr.line}: abstract node '${expr.callee}' cannot be instantiated directly; use a leaf subclass")
                         return null

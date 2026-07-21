@@ -145,10 +145,9 @@ class IrGenerator(private val table: SymbolTable) {
         val items = program.items.flatMap { item ->
             when (item) {
                 is TopLevel.Func -> {
-                    // Runtime intrinsics (std::println, …) are intercepted by name in
-                    // each backend/interpreter; their stdlib bodies are dead placeholders,
-                    // so they are kept out of the IR (the symbol is already collected for
-                    // type-checking). This keeps emitted IR / golden output clean.
+                    // Legacy runtime intrinsics with ordinary stdlib declarations
+                    // have dead placeholder bodies and stay out of IR. Proper
+                    // compiler intrinsics are represented by `bridge func` instead.
                     if (item.decl.isInline || item.decl.name in org.azora.lang.semantic.CtfeEvaluator.RUNTIME_INTRINSICS) emptyList()
                     else listOf(IrTopLevel.Func(lowerFunction(item.decl)))
                 }

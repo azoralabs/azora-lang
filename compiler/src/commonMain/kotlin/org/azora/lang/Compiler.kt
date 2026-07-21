@@ -117,12 +117,18 @@ class Compiler {
      * @return a [CompilationResult.Success] with all generated outputs, or a
      *   [CompilationResult.Failure] with error messages
      */
-    /** Points unknown symbols at the loaded library module that provides them. */
-    private fun withLibraryHint(message: String): String {
+    /** Points unknown symbols at their imported zone path or providing module. */
+    private fun withLibraryHint(message: String, program: Program): String {
         val match = Regex("(?:undefined function|undefined variable) '([A-Za-z_][A-Za-z0-9_]*)'").find(message)
             ?: return message
-        val module = StdlibInjector.moduleOf(match.groupValues[1]) ?: return message
-        return "$message — '${match.groupValues[1]}' is provided by '$module': add 'import $module'"
+        val name = match.groupValues[1]
+        val qualified = StdlibInjector.qualifiedAccessOf(name, program)
+        if (qualified != null) {
+            val zone = qualified.substringBeforeLast("::")
+            return "$message; '$name' is part of zone '$zone', use '$qualified' instead"
+        }
+        val module = StdlibInjector.moduleOf(name) ?: return message
+        return "$message — '$name' is provided by '$module': add 'import $module'"
     }
 
     fun compile(source: String, warningsAsErrors: Boolean = false, release: Boolean = true, debug: Boolean = false, defines: Map<String, String> = emptyMap()): CompilationResult {
@@ -217,7 +223,7 @@ class Compiler {
         val errors = semantic.errors.filter { !it.startsWith("warning:") }
 
         if (errors.isNotEmpty()) {
-            return CompilationResult.Failure(semantic.errors.map { withLibraryHint(it) })
+            return CompilationResult.Failure(semantic.errors.map { withLibraryHint(it, ast) })
         }
         if (warningsAsErrors && warnings.isNotEmpty()) {
             return CompilationResult.Failure(semantic.errors)

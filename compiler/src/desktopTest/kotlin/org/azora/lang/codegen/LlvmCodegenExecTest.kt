@@ -57,6 +57,9 @@ class LlvmCodegenExecTest {
     @Test fun printsStringLiteral() =
         check("hello", main("""std::println("hello")"""))
 
+    @Test fun printWritesWithoutNewline() =
+        check("Hello, 7!", main("std::print(\"Hello, \" )\nstd::print(7)\nstd::println(\"!\")"))
+
     @Test fun printsBoolLiterals() =
         check("true\nfalse", main("std::println(true)\nstd::println(false)"))
 

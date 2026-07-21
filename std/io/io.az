@@ -43,17 +43,27 @@ friend zone std {
     }
 
     /**
+     * Writes `value` to standard output without appending a newline.
+     *
+     * This compiler bridge uses the same value formatting as `println`.
+     * Consecutive calls continue on the same output line.
+     *
+     * @param value The value to write.
+     */
+    @SinceAzora("0.0.4")
+    bridge func print(value: Any): Unit
+
+    /**
      * Console output intrinsic.
      *
-     * A real, importable std symbol whose body is never emitted — each backend
-     * and the interpreter intercepts the call by its zone-mangled name and
-     * lowers it to the native runtime operation. Reach as `std::println` after
-     * `import std.io`. Accepts `Any` so it prints every type; the backend
-     * dispatches on the argument's concrete type.
+     * A real, importable bridge whose implementation is supplied by each
+     * backend and the interpreter. Reach as `std::println` after `import std.io`.
+     * Accepts `Any` so it prints every type; the backend dispatches on the
+     * argument's concrete type.
      */
     /** Prints `value` followed by a newline. */
     @SinceAzora("0.0.1")
-    func println(value: Any): Unit { }
+    bridge func println(value: Any): Unit
 
     /**
      * Creates a separator string by repeating a character.
@@ -75,9 +85,9 @@ friend zone std {
     @Experimental(sinceAzora: "0.0.1")
     func header(title: String, width: Int): String {
         var line: String = separator("-", width)
-        std::println(line)
-        std::println(title)
-        std::println(line)
+        println(line)
+        println(title)
+        println(line)
         return title
     }
 }

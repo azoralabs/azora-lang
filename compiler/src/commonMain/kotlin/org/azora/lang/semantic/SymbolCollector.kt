@@ -172,14 +172,7 @@ class SymbolCollector {
                     visibility = func.visibility,
                 )
                 table.defineFunction(symbol)
-                // Injected friend-zone declarations retain their qualified symbol
-                // name (`root__zone__member`). Their module bodies, however, use
-                // imported short names. The injector is import-gated, so exposing
-                // an alias here cannot make an unimported library symbol visible.
                 val shortName = func.name.substringAfterLast("__")
-                if (shortName != func.name && table.lookupFunction(shortName) == null) {
-                    table.defineFunctionAlias(shortName, symbol)
-                }
                 // A generic `infx` (`infx<K,V> K.to(v)`) is callable as an infix
                 // method on any receiver; record it under the (short) method name
                 // written at call sites (`a to b`), pointing at the real function.
@@ -261,7 +254,7 @@ class SymbolCollector {
                     val fields = item.fields.map { field ->
                         StructField(field.name, resolveType(field.type, tpSet), field.mutable, field.visibility, field.default)
                     }
-                    table.defineStruct(StructType(item.name, fields, item.typeParams, item.visibility, item.shielded))
+                    table.defineStruct(StructType(item.name, fields, item.typeParams, item.visibility, item.shielded, item.isBridge))
                 } catch (e: Exception) {
                     errors.add("line ${item.line}: ${e.message}")
                 }

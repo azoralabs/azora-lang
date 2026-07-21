@@ -246,10 +246,9 @@ class Parser(
         while (!isAtEnd()) {
             skipNewlines()
             if (isAtEnd()) break
-            if (check(TokenType.ZONE) && peekNext()?.type == TokenType.IDENTIFIER) {
-                // `zone Name { … }` — a named zone is a namespace; it desugars to
-                // mangled top-level items (`Name__member`). Anonymous `zone { … }`
-                // (no name) keeps its block-scope meaning inside function bodies.
+            if (isNamedZoneNamespaceAhead()) {
+                // `[use] zone Name { … }` — a named zone is a namespace. Plain
+                // declarations use qualified names; `use zone` keeps members bare.
                 items.addAll(parseNamedZone())
             } else if (isZoneBlockAhead()) {
                 // `[inline|deepinline] zone ["label"] { … }` — a labeled/anonymous
@@ -289,19 +288,25 @@ class Parser(
         return IntraZoneRewriter.rewrite(normalized)
     }
 
+    private fun isNamedZoneNamespaceAhead(): Boolean {
+        val offset = if (check(TokenType.USE)) 1 else 0
+        return tokens.getOrNull(current + offset)?.type == TokenType.ZONE &&
+            tokens.getOrNull(current + offset + 1)?.type == TokenType.IDENTIFIER
+    }
+
     /**
-     * `zone Name { items }` — a named zone acts as a namespace. Desugared at parse
-     * time: each member becomes a top-level item with a mangled name `Name__member`
-     * (so `Name::member` resolves to it). Nested named zones nest the prefix.
-     * Produces no dedicated AST node, so no downstream changes are needed.
+     * `[use] zone Name { items }` — a named zone acts as a namespace. Desugared at
+     * parse time: a plain zone member becomes `Name__member` (and is accessed as
+     * `Name::member`), while `use zone` deliberately keeps member names bare.
      */
     private fun parseNamedZone(): List<TopLevel> {
+        val useBare = match(TokenType.USE)
         consume(TokenType.ZONE, "Expected 'zone'")
         val name = consume(TokenType.IDENTIFIER, "Expected zone name").lexeme
         namedZoneDeclarations[name] = (namedZoneDeclarations[name] ?: 0) + 1
         consume(TokenType.L_BRACE, "Expected '{' after zone name")
         skipNewlines()
-        val items = parseZoneBody(name)
+        val items = parseZoneBody(name, mangle = !useBare)
         consume(TokenType.R_BRACE, "Expected '}' after zone")
         consumeNewline()
         return items
@@ -399,6 +404,7 @@ class Parser(
         is TopLevel.InlineFin -> item.copy(name = "${prefix}__${item.name}")
         is TopLevel.InlineLet -> item.copy(name = "${prefix}__${item.name}")
         is TopLevel.InlineVar -> item.copy(name = "${prefix}__${item.name}")
+        is TopLevel.Impl -> item.copy(zonePrefix = prefix)
         // `bridge func` members of `impl zone for Type` are static intrinsics
         // reached as `Type::member`; mangle each to `Type__member` to match.
         is TopLevel.Bridge -> item.copy(funcs = item.funcs.map { it.copy(name = "${prefix}__${it.name}") })

@@ -1763,6 +1763,8 @@ sealed class TopLevel {
         val typeParams: List<String> = emptyList(),
         /** Variadic implementation parameter from `impl<...T>`. */
         val variadicParam: String? = null,
+        /** Lexical zone containing this implementation, used for same-zone lookup. */
+        val zonePrefix: String? = null,
     ) : TopLevel()
 
     /** `spec Name { func method(params): Ret; ... }` or compact callback `spec Name<T>: T { ref self } use as "to${T.typeName}"`. */

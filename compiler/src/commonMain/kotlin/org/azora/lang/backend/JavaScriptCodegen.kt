@@ -90,10 +90,25 @@ class JavaScriptCodegen {
         indent--
         indent--
         line("}")
+        line("function __azoraFormatValue(v) {")
+        indent++
+        line("return v != null && typeof v === \"object\" && typeof v.__type === \"string\" && v.__type.startsWith(\"Tuple<\") ? __azoraFormatTuple(v) : String(v);")
+        indent--
+        line("}")
+        line("let __azoraPendingOutput = \"\";")
+        line("function __azoraPrint(v) { __azoraPendingOutput += __azoraFormatValue(v); }")
         line("function __azoraPrintln(v) {")
         indent++
-        line("if (v != null && typeof v === \"object\" && typeof v.__type === \"string\" && v.__type.startsWith(\"Tuple<\")) console.log(__azoraFormatTuple(v));")
-        line("else console.log(v);")
+        line("console.log(__azoraPendingOutput + __azoraFormatValue(v));")
+        line("__azoraPendingOutput = \"\";")
+        indent--
+        line("}")
+        line("function __azoraFlushPrint() {")
+        indent++
+        line("if (__azoraPendingOutput.length === 0) return;")
+        line("if (typeof process !== \"undefined\" && process.stdout && typeof process.stdout.write === \"function\") process.stdout.write(__azoraPendingOutput);")
+        line("else console.log(__azoraPendingOutput);")
+        line("__azoraPendingOutput = \"\";")
         indent--
         line("}")
         line("")
@@ -171,11 +186,13 @@ class JavaScriptCodegen {
                 indent++
                 line("await main();")
                 line("while (__azoraChildren.size > 0) await Promise.all(Array.from(__azoraChildren));")
+                line("__azoraFlushPrint();")
                 indent--
                 line("}")
                 line("void __azoraRunMain();")
             } else {
                 line("main()")
+                line("__azoraFlushPrint()")
             }
         }
 
@@ -499,6 +516,7 @@ class JavaScriptCodegen {
                 "isDigit" -> emitExpr(expr.args[0]).let { "($it >= '0' && $it <= '9')" }
                 else -> {
                     val name = when (expr.name) {
+                        "std__print" -> "__azoraPrint"
                         "std__println" -> "__azoraPrintln"
                         "std__convert__toString" -> "String"
                         else -> expr.name

@@ -70,6 +70,12 @@ object WasmExec {
           print_f32: x => console.log(Number.isInteger(x) ? x.toFixed(1) : String(x)),
           print_bool: x => console.log(x ? "true" : "false"),
           print_str: ptr => console.log(readStr(ptr)),
+          write_i32: x => process.stdout.write(String(x)),
+          write_i64: x => process.stdout.write(x.toString()),
+          write_f64: x => process.stdout.write(Number.isInteger(x) ? x.toFixed(1) : String(x)),
+          write_f32: x => process.stdout.write(Number.isInteger(x) ? x.toFixed(1) : String(x)),
+          write_bool: x => process.stdout.write(x ? "true" : "false"),
+          write_str: ptr => process.stdout.write(readStr(ptr)),
         }};
         WebAssembly.instantiate(bytes, imports).then(({instance}) => {
           mem = instance.exports.memory;

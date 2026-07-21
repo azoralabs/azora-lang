@@ -18,6 +18,7 @@ package org.azora.lang.stdlib
 
 import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.FuncDecl
+import org.azora.lang.frontend.IntraZoneRewriter
 import org.azora.lang.frontend.ModuleVisibility
 import org.azora.lang.frontend.ModuleQualifiedSymbol
 import org.azora.lang.frontend.Program
@@ -38,7 +39,7 @@ import org.azora.lang.putIfAbsentCompat
  * - `import std.math` — access to that module while preserving its zone path (`math::abs(x)`),
  * - `import std.*` / `import std.{math, concurrency}` — wildcard/grouped module imports,
  * - `import std.math.abs` — selective import of listed names,
- * - `import std` / `import zone std` — every stdlib module,
+ * - `import std.*` — every module below that namespace,
  * - importing a module never creates bare aliases for declarations inside a zone,
  * - compile-time type functions may instead use a complete module-plus-zone path,
  *   such as `std.traits.std::promote!(Int, Real)`.
@@ -122,6 +123,30 @@ object StdlibInjector {
 
     /** The bundled-library module providing [name] ("std.math"), or null — used for error hints. */
     fun moduleOf(name: String): String? = index.moduleOfName[name]
+
+    /**
+     * Returns the source-level qualified access path for an imported zone member.
+     * Members declared by `use zone` or `use friend zone` keep bare names and
+     * intentionally return null because they require no explicit zone prefix.
+     */
+    fun qualifiedAccessOf(name: String, program: Program): String? {
+        val item = index.items[name] ?: return null
+        val visible = LinkedHashMap<String, TopLevel>().apply {
+            putAll(index.implicitRootItems)
+            putAll(importedItems(program))
+        }
+        if (visible.values.none { it == item }) return null
+        val declaredName = when (item) {
+            is TopLevel.Func -> item.decl.name
+            is TopLevel.FinDecl -> item.name
+            is TopLevel.LetDecl -> item.name
+            is TopLevel.VarDecl -> item.name
+            is TopLevel.Bridge -> item.funcs.singleOrNull()?.name
+            else -> return null
+        } ?: return null
+        if ("__" !in declaredName) return null
+        return declaredName.split("__").joinToString("::")
+    }
 
     /**
      * Rejects imports that name a namespace/folder rather than an actual module
@@ -222,7 +247,15 @@ object StdlibInjector {
                         }
                     }
                     is TopLevel.Bridge -> for (sig in item.funcs) {
-                        idx.externs.putIfAbsentCompat(sig.name, TopLevel.Bridge(item.target, listOf(sig), item.line, item.column))
+                        val declaration = TopLevel.Bridge(
+                            item.target,
+                            listOf(sig),
+                            item.line,
+                            item.column,
+                            item.annotations,
+                        )
+                        idx.externs.putIfAbsentCompat(sig.name, declaration)
+                        register(sig.name, declaration)
                     }
                     // `deepinline zone { … }` and similar compile-time blocks (e.g.
                     // `std.config`) carry their declarations opaquely; inject them
@@ -484,10 +517,10 @@ object StdlibInjector {
         // Exported/core compile-time blocks are injected unconditionally.
         val alwaysDeclarations = index.alwaysInjectedItems.filter { existingIdentities.add(itemIdentity(it)) }
         if (declarations.isEmpty() && externDeclarations.isEmpty() && alwaysDeclarations.isEmpty() && !typeFunctionsChanged) return program
-        return program.copy(
+        return IntraZoneRewriter.rewrite(program.copy(
             items = program.items + declarations + externDeclarations + alwaysDeclarations,
             typeFunctions = typeFunctions,
-        )
+        ))
     }
 
     private fun itemIdentity(item: TopLevel): String = when (item) {

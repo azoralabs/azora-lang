@@ -89,6 +89,8 @@ data class StructType(
     val typeParams: List<String> = emptyList(),
     val visibility: Visibility = Visibility.EXPOSE,
     val shielded: Boolean = false,
+    /** Compiler-provided type declaration with no ordinary runtime constructor. */
+    val isBridge: Boolean = false,
 ) {
     /** Looks up a field by name. */
     fun field(name: String): StructField? = fields.find { it.name == name }

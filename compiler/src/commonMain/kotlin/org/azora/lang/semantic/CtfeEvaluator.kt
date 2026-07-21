@@ -1435,12 +1435,12 @@ class CtfeEvaluator(private val table: SymbolTable) {
 
     companion object {
         /**
-         * Functions declared in std whose real behaviour is supplied by the
-         * backends/interpreter (call interception by mangled name). Their stdlib
-         * bodies are placeholders and must never be compile-time evaluated.
+         * Legacy runtime functions whose behavior is supplied by the backends
+         * even though their declarations have ordinary stdlib bodies. Proper
+         * compiler intrinsics such as `std::println` are declared `bridge func`
+         * and therefore do not belong in this compatibility list.
          */
         val RUNTIME_INTRINSICS = setOf(
-            "std__println",
             "std__convert__toString",
             "std__concurrency__async",
             "std__concurrency__channel",

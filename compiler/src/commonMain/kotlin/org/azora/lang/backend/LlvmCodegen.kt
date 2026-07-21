@@ -3024,7 +3024,7 @@ class LlvmCodegen {
             return raw
         }
         if (expr.name == "std__println") return emitPrintln(expr)
-        if (expr.name == "print") return emitPrintln(expr, newline = false)
+        if (expr.name == "std__print") return emitPrintln(expr, newline = false)
         if (expr.name == "async") {
             val lambda = expr.args.singleOrNull() as? IrExpr.Lambda
                 ?: error("LLVM async lowering requires a task block")

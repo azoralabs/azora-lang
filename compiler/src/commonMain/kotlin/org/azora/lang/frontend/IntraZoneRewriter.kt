@@ -39,12 +39,22 @@ internal object IntraZoneRewriter {
     fun rewrite(program: Program): Program {
         val mangled = HashSet<String>()
         for (item in program.items) {
+            if (item is TopLevel.Bridge) {
+                item.funcs.mapTo(mangled) { it.name }
+                continue
+            }
             val name = nameOf(item) ?: continue
             if ("__" in name) mangled.add(name)
         }
         if (mangled.isEmpty()) return program
 
         val rewrittenItems = program.items.map { item ->
+            if (item is TopLevel.Impl && item.zonePrefix != null) {
+                return@map item.copy(methods = item.methods.map { method ->
+                    val shadowed = collectShadowed(method)
+                    method.copy(body = method.body.map { stmt(it, item.zonePrefix, mangled, shadowed) })
+                })
+            }
             val name = nameOf(item)
             val prefix = name?.zonePrefix() ?: return@map item
             val shadowed = collectShadowed(item)
@@ -83,13 +93,17 @@ internal object IntraZoneRewriter {
         val names = mutableSetOf<String>()
         when (item) {
             is TopLevel.Func -> {
-                item.decl.params.forEach { names.add(it.name) }
-                item.decl.body.forEach { collectStmtNames(it, names) }
+                names.addAll(collectShadowed(item.decl))
             }
             is TopLevel.Test -> item.body.forEach { collectStmtNames(it, names) }
             else -> {}
         }
         return names
+    }
+
+    private fun collectShadowed(func: FuncDecl): Set<String> = mutableSetOf<String>().apply {
+        func.params.forEach { add(it.name) }
+        func.body.forEach { collectStmtNames(it, this) }
     }
 
     private fun collectStmtNames(s: Stmt, names: MutableSet<String>) {

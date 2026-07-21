@@ -7,6 +7,8 @@ import org.azora.lang.frontend.AstValidator
 import org.azora.lang.frontend.Lexer
 import org.azora.lang.frontend.Parser
 import org.azora.lang.frontend.TopLevel
+import org.azora.lang.ir.IrTopLevel
+import org.azora.lang.ir.IrType
 import org.azora.lang.stdlib.AzStdlib
 import org.azora.lang.stdlib.StdlibInjector
 import org.azora.lang.semantic.SerializationDeriver
@@ -37,6 +39,31 @@ class StdlibInjectionTest {
 
     @Test fun qualifiedMathFunctionsWork() =
         assertEquals("5\n7", run("import std.io\nimport std.math\nfunc main() {\n    std::println(std::math::abs(-5))\n    std::println(std::math::abs(7))\n}"))
+
+    @Test fun printWritesWithoutNewline() =
+        assertEquals("Hello, 7!", run("import std.io\nfunc main() {\n    std::print(\"Hello, \" )\n    std::print(7)\n    std::println(\"!\")\n}"))
+
+    @Test fun stdlibZoneMemberCallsSiblingBare() {
+        val result = Compiler().compile("import std.io\nfunc main() {\n    std::header(\"Title\", 4)\n}")
+        assertIs<CompilationResult.Success>(result, (result as? CompilationResult.Failure)?.errors.toString())
+    }
+
+    @Test fun printlnIsDeclaredAsCompilerBridge() {
+        val source = AzStdlib.sources.single { Regex("(?m)^module std\\.io$").containsMatchIn(it) }
+        val io = Parser(Lexer(source).tokenize()).parse()
+
+        assertTrue(io.items.none { it is TopLevel.Func && it.decl.name == "std__println" })
+        assertTrue(io.items.any {
+            it is TopLevel.Bridge &&
+                it.target == "Compiler" &&
+                it.funcs.singleOrNull()?.name == "std__println"
+        })
+        assertTrue(io.items.any {
+            it is TopLevel.Bridge &&
+                it.target == "Compiler" &&
+                it.funcs.singleOrNull()?.name == "std__print"
+        })
+    }
 
     @Test fun qualifiedMinMaxWork() =
         assertEquals("2\n9", run("import std.io\nimport std.math\nfunc main() {\n    std::println(std::math::min(2, 9))\n    std::println(std::math::max(2, 9))\n}"))
@@ -73,6 +100,7 @@ class StdlibInjectionTest {
         val root = Parser(Lexer(source).tokenize()).parse()
 
         assertTrue(root.items.any { it is TopLevel.Pack && it.name == "Unit" && it.isBridge })
+        assertTrue(root.items.any { it is TopLevel.Pack && it.name == "Any" && it.isBridge })
         assertTrue(root.items.any { it is TopLevel.Enum && it.name == "DecoTarget" })
         assertTrue(root.items.any { it is TopLevel.Enum && it.name == "TestMethod" })
         assertTrue(root.items.any { it is TopLevel.Enum && it.name == "BridgeTarget" })
@@ -81,6 +109,33 @@ class StdlibInjectionTest {
         assertTrue(root.items.any { it is TopLevel.Deco && it.name == "Derive" })
         // `bridge func` string primitives become extern bridge sigs.
         assertTrue(root.items.any { it is TopLevel.Bridge && it.funcs.any { f -> f.name == "stringLength" } })
+    }
+
+    @Test fun anyBridgeMapsToErasedCompilerTypeWithoutRuntimeStruct() {
+        val result = Compiler().compile("""
+            func identity(value: Any): Any {
+                return value
+            }
+
+            func main() {}
+        """.trimIndent())
+
+        assertIs<CompilationResult.Success>(result, (result as? CompilationResult.Failure)?.errors.toString())
+        assertTrue(result.ast.items.any { it is TopLevel.Pack && it.name == "Any" && it.isBridge })
+        assertTrue(result.ir.items.none { it is IrTopLevel.Struct && it.name == "Any" })
+        val identity = result.ir.functions.single { it.name == "identity" }
+        assertEquals(IrType.Any, identity.params.single().second)
+        assertEquals(IrType.Any, identity.returnType)
+    }
+
+    @Test fun anyBridgeCannotBeConstructedAsRuntimePack() {
+        val result = Compiler().compile("func main() {\n    fin value = Any()\n}")
+
+        assertIs<CompilationResult.Failure>(result)
+        assertTrue(
+            result.errors.any { "compiler bridge pack 'Any' cannot be constructed directly" in it },
+            result.errors.toString(),
+        )
     }
 
     @Test fun serializerSourceAndEmbeddedUnitTestsParse() {
@@ -211,6 +266,61 @@ class StdlibInjectionTest {
         val result = Compiler().compile("import std.io\nimport std.math\nfunc main() {\n    std::println(abs(-5))\n}")
         assertIs<CompilationResult.Failure>(result)
         assertTrue(result.errors.any { "undefined" in it && "abs" in it }, "bare access should be rejected: ${'$'}{result.errors}")
+    }
+
+    @Test fun importedZoneMemberRequiresQualifiedAccess() {
+        val result = Compiler().compile("""
+            module playground
+
+            import std.io
+
+            func main() {
+                println("Hello, world!")
+            }
+        """.trimIndent())
+
+        assertIs<CompilationResult.Failure>(result)
+        assertTrue(
+            result.errors.any {
+                it == "line 6: undefined function 'println'; 'println' is part of zone 'std', use 'std::println' instead"
+            },
+            result.errors.toString(),
+        )
+    }
+
+    @Test fun explicitlyUsedZonesExposeBareMembers() =
+        assertEquals("local\nshared", run("""
+            import std.io
+
+            use zone local {
+                func first(): String { return "local" }
+            }
+
+            use friend zone merged {
+                func second(): String { return "shared" }
+            }
+
+            func main() {
+                std::println(first())
+                std::println(second())
+            }
+        """.trimIndent()))
+
+    @Test fun plainZonesDoNotExposeBareMembers() {
+        for (declaration in listOf("zone local", "friend zone local")) {
+            val result = Compiler().compile("""
+                $declaration {
+                    func hidden(): Int { return 1 }
+                }
+
+                func main() {
+                    hidden()
+                }
+            """.trimIndent())
+
+            assertIs<CompilationResult.Failure>(result)
+            assertTrue(result.errors.any { "undefined function 'hidden'" in it }, result.errors.toString())
+        }
     }
 
     @Test fun qualifiedAccessWithoutImportIsRejected() {

@@ -73,6 +73,9 @@ class JavaScriptExecTest {
     @Test fun printsHello() =
         check("hello", main("""std::println("hello")"""))
 
+    @Test fun printWritesWithoutNewline() =
+        check("Hello, 7!", main("std::print(\"Hello, \" )\nstd::print(7)\nstd::println(\"!\")"))
+
     @Test fun tuplePrintMatchesAzoraStructuralFormat() = check(
         "Tuple<String, String>(\"Hello from Azora!\", \":)\")",
         """

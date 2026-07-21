@@ -40,6 +40,8 @@ class WasmCodegenExecTest {
     private fun main(body: String): String = "import std.io\nfunc main() {\n$body\n}"
 
     @Test fun printsHello() = check("hello", main("""std::println("hello")"""))
+    @Test fun printWritesWithoutNewline() =
+        check("Hello, 7!", main("std::print(\"Hello, \" )\nstd::print(7)\nstd::println(\"!\")"))
     @Test fun arithmetic() = check("14", main("""std::println(2 + 3 * 4)"""))
 
     @Test fun integerDivisionTruncates() = check(

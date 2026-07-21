@@ -29,6 +29,15 @@ use friend zone std {
     @SinceAzora("0.0.4")
     bridge pack Unit
 
+    /**
+     * The erased top type accepted by APIs that can receive values of any type.
+     *
+     * `Any` is compiler-provided: it has no constructible runtime pack and each
+     * backend uses its native erased value representation.
+     */
+    @SinceAzora("0.0.4")
+    bridge pack Any
+
     @SinceAzora("0.0.4")
     bridge pack Self
 
@@ -56,6 +65,16 @@ use friend zone std {
 
         /** Runs every `This` test declared in the same source file. */
         All
+    }
+
+    @Experimental(sinceAzora: "0.0.4")
+    bridge enum LogLevel {
+        Debug
+        Info
+        Warning
+        Error
+        Critical
+        Todo
     }
 
     /**

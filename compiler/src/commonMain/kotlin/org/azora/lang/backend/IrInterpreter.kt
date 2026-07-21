@@ -1191,10 +1191,12 @@ class IrInterpreter {
             debugHost?.onLine(((args.firstOrNull() as? Long) ?: 0L).toInt(), snapshotLocals())
             return null
         }
-        if (expr.name == "std__println") {
+        if (expr.name == "std__print" || expr.name == "std__println") {
             val value = args.firstOrNull()
             val text = formatValue(value)
-            azSync(output) { output.appendLine(text) }
+            azSync(output) {
+                if (expr.name == "std__println") output.appendLine(text) else output.append(text)
+            }
             outputListener?.invoke(text)
             return null
         }

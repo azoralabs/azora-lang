@@ -439,7 +439,8 @@ friend zone std {
                     index += 1
                     var divisor = 10.0
                     while index < stringLength(text) && charIsDigit(charAt(text, index)) {
-                        result = result + (charToCode(charAt(text, index)) - 48) as Real / divisor
+                        fin digit: Real = (charToCode(charAt(text, index)) - 48) as Real
+                        result = result + digit / divisor
                         divisor = divisor * 10.0
                         index += 1
                     }

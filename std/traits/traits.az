@@ -16,6 +16,7 @@
 
 module std.traits
 
+export import std.traits.core
 import std.convert
 
 /**

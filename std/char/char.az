@@ -28,6 +28,8 @@ module std.char
  * @since 0.0.1
  */
 
+export import std.char.core
+
 friend zone std {
     /**
      * Returns the Unicode code point of a character.

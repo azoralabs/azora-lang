@@ -16,6 +16,7 @@
 
 export module std.string
 
+export import std.string.core
 import std.container.array
 
 /**

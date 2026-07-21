@@ -16,6 +16,8 @@
 
 module std.convert
 
+export import std.convert.core
+
 friend zone std {
     /**
      * Declares conversion into `T`.

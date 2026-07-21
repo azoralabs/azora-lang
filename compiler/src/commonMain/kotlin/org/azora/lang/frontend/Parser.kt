@@ -2633,8 +2633,13 @@ class Parser(
                 val first = parseTypeName()
                 when {
                     match(TokenType.SEMICOLON) -> {
-                        // `[T; *]` — an unsized array pattern; `*` is a wildcard hole.
-                        val n = if (match(TokenType.STAR)) "*" else holeName(parseTypeName())
+                        // `[T; *]` or `[T;]` — an unsized array pattern (`*` / empty size
+                        // are both wildcard holes); `[T; N]` binds the size hole `N`.
+                        val n = when {
+                            check(TokenType.R_BRACKET) -> "*"
+                            match(TokenType.STAR) -> "*"
+                            else -> holeName(parseTypeName())
+                        }
                         consume(TokenType.R_BRACKET, "Expected ']' after '[T; N]'")
                         TypeFormKind.ARRAY_SIZED to listOf(holeName(first), n)
                     }

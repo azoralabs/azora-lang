@@ -566,7 +566,7 @@ class IrGenerator(private val table: SymbolTable) {
                             val variant = slotVariants.find { it.first == pat.name }
                             val bindNames = pat.args.map { (it as Expr.Identifier).name }
                             if (variant != null) slotBindings = bindNames.zip(variant.second)
-                            IrExpr.SlotPattern(pat.target.name, pat.name, bindNames)
+                            IrExpr.SlotPattern(pat.target.name, pat.name, bindNames, variant?.second ?: emptyList())
                         } else {
                             lowerExpr(pat)
                         }
@@ -797,11 +797,14 @@ class IrGenerator(private val table: SymbolTable) {
                     IrBinaryOp.LT, IrBinaryOp.LTE,
                     IrBinaryOp.GT, IrBinaryOp.GTE,
                     IrBinaryOp.AND, IrBinaryOp.OR -> IrType.Bool
-                    IrBinaryOp.MUL -> {
+                    // Arithmetic widens to the common numeric type (`Int / Real` → Real,
+                    // `Byte + Long` → Long) so backends emit one machine type; `*` also
+                    // doubles as string repetition.
+                    IrBinaryOp.ADD, IrBinaryOp.SUB, IrBinaryOp.MUL, IrBinaryOp.DIV, IrBinaryOp.MOD -> {
                         if (left.type == IrType.String || right.type == IrType.String) IrType.String
-                        else left.type
+                        else numericResultType(left.type, right.type)
                     }
-                    else -> left.type
+                    else -> left.type // bitwise / shift — keep the left operand type
                 }
                 IrExpr.Binary(left, op, right, type)
             }
@@ -1243,6 +1246,23 @@ class IrGenerator(private val table: SymbolTable) {
         TokenType.GREATER_EQUAL -> "oper>="
         TokenType.TILDE -> "oper~"
         else -> null
+    }
+
+    /** The common type of two numeric operands (wider float wins, else wider int). */
+    private fun numericResultType(a: IrType, b: IrType): IrType {
+        if (a == b) return a
+        if (a !in IrType.numericTypes || b !in IrType.numericTypes) return a
+        if (a in IrType.floatTypes || b in IrType.floatTypes) {
+            if (a == IrType.Decimal || b == IrType.Decimal) return IrType.Decimal
+            if (a == IrType.Real || b == IrType.Real) return IrType.Real
+            return IrType.Float
+        }
+        val rank = mapOf(
+            IrType.Byte to 1, IrType.UByte to 1, IrType.Short to 2, IrType.UShort to 2,
+            IrType.Int to 3, IrType.UInt to 3, IrType.Long to 4, IrType.ULong to 4,
+            IrType.Cent to 5, IrType.UCent to 5,
+        )
+        return if ((rank[a] ?: 0) >= (rank[b] ?: 0)) a else b
     }
 
     private fun lowerBinaryOp(op: TokenType): IrBinaryOp = when (op) {

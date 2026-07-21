@@ -497,7 +497,13 @@ sealed class IrExpr {
     data class Lambda(val params: List<Pair<String, IrType>>, val body: List<IrStmt>, override val type: IrType) : IrExpr()
 
     /** A slot pattern `SlotName.VariantName(bindings)` in a `when` branch. Never evaluated — consumed by the interpreter. */
-    data class SlotPattern(val slotName: String, val variantName: String, val bindings: List<String>) : IrExpr() {
+    data class SlotPattern(
+        val slotName: String,
+        val variantName: String,
+        val bindings: List<String>,
+        /** Payload types for [bindings], parallel — used by backends to unbox each payload. */
+        val bindingTypes: List<IrType> = emptyList(),
+    ) : IrExpr() {
         override val type: IrType = IrType.Bool
     }
 

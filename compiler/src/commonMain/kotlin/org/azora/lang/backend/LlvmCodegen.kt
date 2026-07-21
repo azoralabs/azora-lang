@@ -138,6 +138,7 @@ class LlvmCodegen {
     private var usesStrcpy = false
     private var usesStrcat = false
     private var usesStrcmp = false
+    private var usesIsCheck = false
     private var usesMemcpy = false
     private var usesSnprintf = false
     private var usesStrConcat = false
@@ -488,7 +489,16 @@ class LlvmCodegen {
                 }
                 is IrStmt.Loop -> collectLocalSlots(stmt.body, slots)
                 is IrStmt.When -> {
-                    stmt.branches.forEach { collectLocalSlots(it.body, slots) }
+                    stmt.branches.forEach { branch ->
+                        // Slot-pattern payload bindings become locals holding the
+                        // unboxed payloads (`when r { Result.Ok(v) -> … }`).
+                        branch.patterns.filterIsInstance<IrExpr.SlotPattern>().forEach { sp ->
+                            sp.bindings.forEachIndexed { i, name ->
+                                slots.add(name to mapType(sp.bindingTypes.getOrElse(i) { IrType.Any }))
+                            }
+                        }
+                        collectLocalSlots(branch.body, slots)
+                    }
                     stmt.elseBranch?.let { collectLocalSlots(it, slots) }
                 }
                 is IrStmt.Try -> {
@@ -1055,9 +1065,43 @@ class LlvmCodegen {
             }
             // icmp is invalid on floating-point operands.
             scrutIrType in IrType.floatTypes -> emit("  $cmp = fcmp oeq $scrutType $scrut, $pv")
-            else -> emit("  $cmp = icmp eq $scrutType $scrut, $pv")
+            else -> {
+                // Pointer scrutinees (slots, structs, erased/nullable values) compare
+                // against `null`, not the integer `0` — LLVM rejects an integer
+                // constant as a pointer operand.
+                val p = if (scrutType.endsWith("*") && pv == "0") "null" else pv
+                emit("  $cmp = icmp eq $scrutType $scrut, $p")
+            }
         }
         return cmp
+    }
+
+    /** i1 result of comparing a slot's tag (its first `i8*` cell) to [variantName]. */
+    private fun emitSlotTagCheck(scrut: String, variantName: String): String {
+        usesStrcmp = true
+        val tagPtr = gepString(addStringConstant(variantName))
+        val tagpp = nextTmp(); emit("  $tagpp = bitcast i8* $scrut to i8**")
+        val slottag = nextTmp(); emit("  $slottag = load i8*, i8** $tagpp")
+        val c = nextTmp(); emit("  $c = call i32 @strcmp(i8* $slottag, i8* $tagPtr)")
+        val eq = nextTmp(); emit("  $eq = icmp eq i32 $c, 0")
+        return eq
+    }
+
+    /** Unboxes a matched slot's payloads into their pattern bindings' local slots. */
+    private fun bindSlotPayloads(scrut: String, pattern: IrExpr.SlotPattern) {
+        pattern.bindings.forEachIndexed { i, name ->
+            val type = pattern.bindingTypes.getOrElse(i) { IrType.Any }
+            val t = mapType(type)
+            val value = emitSlotPayload(scrut, i, type)
+            val alloca = allocaSlots[name to t] ?: run {
+                val reg = "%loc${allocaCounter++}.${sanitizeName(name)}"
+                emit("  $reg = alloca $t")
+                allocaSlots[name to t] = reg
+                reg
+            }
+            emit("  store $t $value, $t* $alloca")
+            localVars[name] = alloca to t
+        }
     }
 
     private fun emitWhen(stmt: IrStmt.When) {
@@ -1071,12 +1115,17 @@ class LlvmCodegen {
             // Test each pattern; any match jumps to the body, otherwise fall
             // through to the next pattern test (and finally the next branch).
             for ((i, pattern) in branch.patterns.withIndex()) {
-                val pv = emitExpr(pattern)
-                val cmp = emitWhenEq(scrutIrType, scrutType, scrut, pv)
+                val cmp = if (pattern is IrExpr.SlotPattern) {
+                    emitSlotTagCheck(scrut, pattern.variantName)
+                } else {
+                    emitWhenEq(scrutIrType, scrutType, scrut, emitExpr(pattern))
+                }
                 if (i == branch.patterns.lastIndex) {
                     val nextLabel = nextLabel("when_next")
                     emitTerminator("  br i1 $cmp, label %$bodyLabel, label %$nextLabel")
                     startBlock(bodyLabel)
+                    // Bind slot payloads before the body runs.
+                    (pattern as? IrExpr.SlotPattern)?.let { bindSlotPayloads(scrut, it) }
                     emitStmts(branch.body)
                     emitTerminator("  br label %$endLabel")
                     startBlock(nextLabel)
@@ -1568,6 +1617,22 @@ class LlvmCodegen {
      * into struct fields / array elements whose declared type is wider or
      * floating-point, e.g. `Vec3(1, 2, 3)` with `Real` fields).
      */
+    private fun isNumericLike(t: IrType): Boolean =
+        t in IrType.integerTypes || t in IrType.floatTypes || t == IrType.Char
+
+    /** The common type two numeric operands widen to (wider float wins, else wider int). */
+    private fun commonNumeric(a: IrType, b: IrType): IrType {
+        if (a == b) return a
+        val aFloat = a in IrType.floatTypes
+        val bFloat = b in IrType.floatTypes
+        if (aFloat || bFloat) {
+            if (a == IrType.Decimal || b == IrType.Decimal) return IrType.Decimal
+            if (a == IrType.Real || b == IrType.Real) return IrType.Real
+            return IrType.Float
+        }
+        return if (sizeOfScalar(a) >= sizeOfScalar(b)) a else b
+    }
+
     private fun coerceNumeric(value: String, from: IrType, to: IrType): String {
         if (from == to) return value
         val ft = mapType(from)
@@ -1631,6 +1696,9 @@ class LlvmCodegen {
 
     /** `Name(args)` → malloc + field stores; the value is the typed pointer. */
     private fun emitStructCtor(expr: IrExpr.StructCtor): String {
+        // Slot (tagged-union) instance: `[ i8* tag, i64 payload… ]` on the heap.
+        // The tag is the variant name; payloads are boxed to i64.
+        if (expr.fieldNames.firstOrNull() == "__tag") return emitSlotCtor(expr)
         val def = structDefs[expr.name] ?: run {
             emit("  ; struct ${expr.name} has no definition — emitting null")
             return "null"
@@ -1662,6 +1730,70 @@ class LlvmCodegen {
             emit("  store $ft $value, $ft* $fp")
         }
         return ptr
+    }
+
+    /**
+     * A slot instance: heap block `[ i8* tag, i64 p0, i64 p1, … ]`. The tag holds
+     * the variant name (for `is`/`when` checks); each payload is boxed to i64.
+     */
+    private fun emitSlotCtor(expr: IrExpr.StructCtor): String {
+        val argVals = expr.args.map { emitExpr(it) to it.type }
+        val n = expr.fieldNames.size // 1 tag + payload count
+        val raw = emitHeapAlloc("${8L * n}")
+        val tagSlot = nextTmp()
+        emit("  $tagSlot = bitcast i8* $raw to i8**")
+        emit("  store i8* ${argVals[0].first}, i8** $tagSlot")
+        for (i in 1 until n) {
+            val (v, t) = argVals[i]
+            val boxed = boxToI64(v, t)
+            val p8 = nextTmp()
+            emit("  $p8 = getelementptr i8, i8* $raw, i64 ${8L * i}")
+            val p = nextTmp()
+            emit("  $p = bitcast i8* $p8 to i64*")
+            emit("  store i64 $boxed, i64* $p")
+        }
+        return raw
+    }
+
+    /** Widens/reinterprets a payload value to the i64 slot cell it is stored in. */
+    private fun boxToI64(value: String, type: IrType): String {
+        val t = nextTmp()
+        return when {
+            type in IrType.integerTypes || type == IrType.Char -> coerceNumeric(value, type, IrType.Long)
+            type == IrType.Bool -> { emit("  $t = zext i1 $value to i64"); t }
+            type == IrType.Real || type == IrType.Decimal -> { emit("  $t = bitcast double $value to i64"); t }
+            type == IrType.Float -> {
+                val b = nextTmp(); emit("  $b = bitcast float $value to i32")
+                emit("  $t = zext i32 $b to i64"); t
+            }
+            else -> { emit("  $t = ptrtoint ${mapType(type)} $value to i64"); t } // pointers (String, structs, slots)
+        }
+    }
+
+    /** Reinterprets an i64 slot cell back to a payload value of [type]. */
+    private fun unboxFromI64(value: String, type: IrType): String {
+        val t = nextTmp()
+        return when {
+            type in IrType.integerTypes || type == IrType.Char -> coerceNumeric(value, IrType.Long, type)
+            type == IrType.Bool -> { emit("  $t = trunc i64 $value to i1"); t }
+            type == IrType.Real || type == IrType.Decimal -> { emit("  $t = bitcast i64 $value to double"); t }
+            type == IrType.Float -> {
+                val tr = nextTmp(); emit("  $tr = trunc i64 $value to i32")
+                emit("  $t = bitcast i32 $tr to float"); t
+            }
+            else -> { emit("  $t = inttoptr i64 $value to ${mapType(type)}"); t }
+        }
+    }
+
+    /** Loads and unboxes payload [index] of a slot instance [slotPtr] (an i8*). */
+    private fun emitSlotPayload(slotPtr: String, index: Int, type: IrType): String {
+        val p8 = nextTmp()
+        emit("  $p8 = getelementptr i8, i8* $slotPtr, i64 ${8L * (index + 1)}")
+        val p = nextTmp()
+        emit("  $p = bitcast i8* $p8 to i64*")
+        val raw = nextTmp()
+        emit("  $raw = load i64, i64* $p")
+        return unboxFromI64(raw, type)
     }
 
     /** Emits a pointer to field [name] of struct value [expr] (or null if unknown). */
@@ -2535,31 +2667,38 @@ class LlvmCodegen {
         }
 
         val leftType = expr.left.type
-        val llvmType = mapType(leftType)
+        val rightType = expr.right.type
 
         // Short-circuit boolean && / || via control flow.
         if (leftType == IrType.Bool && (expr.op == IrBinaryOp.AND || expr.op == IrBinaryOp.OR)) {
             return emitShortCircuit(expr)
         }
 
-        val left = emitExpr(expr.left)
-        val right = emitExpr(expr.right)
+        // Mixed numeric operands (`Int + Real`, `Byte < Long`, …) are widened to a
+        // common type first, so the machine op sees two operands of one LLVM type.
+        val bothNumeric = isNumericLike(leftType) && isNumericLike(rightType)
+        val opType = if (bothNumeric) commonNumeric(leftType, rightType) else leftType
+        val llvmType = mapType(opType)
+
+        val left = emitExpr(expr.left).let { if (bothNumeric) coerceNumeric(it, leftType, opType) else it }
+        val right = emitExpr(expr.right).let { if (bothNumeric) coerceNumeric(it, rightType, opType) else it }
         val tmp = nextTmp()
 
         when {
-            // Nullable / erased-any pointers: only equality against null (or another
-            // pointer) is meaningful — lower as pointer comparison.
-            (leftType is IrType.Nullable || leftType == IrType.Any) &&
+            // Pointer-typed operands (nullable, erased `Any`, raw pointers, and
+            // structs/slots — all lowered to `i8*`): only equality against null or
+            // another pointer is meaningful. A raw `0` in a pointer comparison is the
+            // null sentinel — LLVM requires `null`, not an integer, for pointer icmp.
+            (opType is IrType.Nullable || opType == IrType.Any ||
+                opType is IrType.Pointer || opType is IrType.Named) &&
                 (expr.op == IrBinaryOp.EQ || expr.op == IrBinaryOp.NEQ) -> {
                 val pred = if (expr.op == IrBinaryOp.EQ) "eq" else "ne"
-                // A raw integer literal (e.g. `0`) in a pointer comparison is a null
-                // sentinel — LLVM requires `null`, not an integer, for pointer icmp.
                 val l = if (left == "0") "null" else left
                 val r = if (right == "0") "null" else right
                 emit("  $tmp = icmp $pred i8* $l, $r")
             }
-            leftType in IrType.integerTypes || leftType == IrType.Char -> {
-                val u = isUnsigned(leftType)
+            opType in IrType.integerTypes || opType == IrType.Char -> {
+                val u = isUnsigned(opType)
                 val inst = when (expr.op) {
                     IrBinaryOp.ADD -> "add $llvmType"
                     IrBinaryOp.SUB -> "sub $llvmType"
@@ -2581,7 +2720,7 @@ class LlvmCodegen {
                 }
                 emit("  $tmp = $inst $left, $right")
             }
-            leftType in IrType.floatTypes -> {
+            opType in IrType.floatTypes -> {
                 val inst = when (expr.op) {
                     IrBinaryOp.ADD -> "fadd $llvmType"
                     IrBinaryOp.SUB -> "fsub $llvmType"
@@ -2720,6 +2859,9 @@ class LlvmCodegen {
     }
 
     private fun emitCall(expr: IrExpr.Call): String {
+        // `x is Variant` lowers to `@__isCheck(slot, "Variant")`; ensure the helper
+        // (and strcmp) is emitted. The general call path emits the call itself.
+        if (expr.name == "__isCheck") { usesIsCheck = true; usesStrcmp = true }
         if (expr.name == "std__println") return emitPrintln(expr)
         if (expr.name == "print") return emitPrintln(expr, newline = false)
         if (expr.name == "async") {
@@ -3037,6 +3179,27 @@ class LlvmCodegen {
 
     private fun buildRuntimeHelpers(): String {
         val sb = StringBuilder()
+
+        if (usesIsCheck) {
+            // `x is Variant`: a slot carries its variant name as its first (`i8*`)
+            // field; compare it to the requested tag. Null-safe (a null slot never
+            // matches), which also covers the not-yet-modelled slot payloads.
+            sb.appendLine("; runtime: slot variant tag check")
+            sb.appendLine("define i1 @__isCheck(i8* %slot, i8* %tag) {")
+            sb.appendLine("entry:")
+            sb.appendLine("  %isnull = icmp eq i8* %slot, null")
+            sb.appendLine("  br i1 %isnull, label %nomatch, label %check")
+            sb.appendLine("check:")
+            sb.appendLine("  %tagpp = bitcast i8* %slot to i8**")
+            sb.appendLine("  %slottag = load i8*, i8** %tagpp")
+            sb.appendLine("  %c = call i32 @strcmp(i8* %slottag, i8* %tag)")
+            sb.appendLine("  %eq = icmp eq i32 %c, 0")
+            sb.appendLine("  ret i1 %eq")
+            sb.appendLine("nomatch:")
+            sb.appendLine("  ret i1 0")
+            sb.appendLine("}")
+            sb.appendLine("")
+        }
 
         if (usesAllocatorRuntime) {
             usesMalloc = true

@@ -50,7 +50,7 @@ class TupleTest {
     @Test fun tupleTypeSyntaxIsRejectedWithMigration() {
         val result = Compiler().compile("""
             func pair(): (Int, String) {
-                return tupleOf(1, "hello")
+                return std::tupleOf(1, "hello")
             }
         """.trimIndent(), release = false)
 

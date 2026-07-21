@@ -67,6 +67,13 @@ class WasmCodegen {
     private var usesStrEq = false
     private var usesRepeat = false
     private var usesIntToStr = false
+    private var usesIsCheck = false
+    private val neededIntrinsics = mutableSetOf<String>()
+    private val stringIntrinsics = setOf(
+        "stringLength", "charAt", "ord", "chr", "isDigit", "isAlpha", "substring",
+        "startsWith", "endsWith", "contains", "indexOf", "toUpper", "toLower", "trim",
+        "replace", "split", "toChars", "fromChars",
+    )
 
     companion object {
         private const val STRING_BASE = 1024
@@ -81,7 +88,8 @@ class WasmCodegen {
     fun generate(program: IrProgram): String {
         out.clear(); indent = 0
         structs.clear(); stringConsts.clear(); constCursor = STRING_BASE
-        usesAlloc = false; usesConcat = false; usesStrEq = false; usesRepeat = false; usesIntToStr = false
+        usesAlloc = false; usesConcat = false; usesStrEq = false; usesRepeat = false; usesIntToStr = false; usesIsCheck = false
+        neededIntrinsics.clear()
 
         for (item in program.items) if (item is IrTopLevel.Struct) structs[item.name] = item.fields
 
@@ -104,9 +112,12 @@ class WasmCodegen {
         sb.appendLine("  (global \$__heap (mut i32) (i32.const ${align4(constCursor)}))")
         if (usesAlloc) sb.append(RT_ALLOC)
         if (usesConcat) sb.append(RT_CONCAT)
+        if (usesIsCheck) usesStrEq = true
         if (usesStrEq) sb.append(RT_STR_EQ)
         if (usesRepeat) sb.append(RT_REPEAT)
         if (usesIntToStr) sb.append(RT_INT_TO_STR)
+        if (usesIsCheck) sb.append(RT_IS_CHECK)
+        sb.append(wasmStringIntrinsics())
         sb.append(funcText)
         for ((literal, offset) in stringConsts) {
             sb.appendLine("  (data (i32.const $offset) \"${dataBytes(literal)}\")")
@@ -193,12 +204,25 @@ class WasmCodegen {
         line("(local.set $tmp ${emitExpr(stmt.scrutinee)})")
         var depth = 0
         for ((i, b) in stmt.branches.withIndex()) {
-            val cond = b.patterns.map { "(i32.eq (local.get $tmp) ${emitExpr(it)})" }
-                .reduce { a, c -> "(i32.or $a $c)" }
+            val cond = b.patterns.map { p ->
+                if (p is IrExpr.SlotPattern) {
+                    usesIsCheck = true
+                    "(call \$__isCheck (local.get $tmp) (i32.const ${internString(p.variantName)}))"
+                } else {
+                    "(i32.eq (local.get $tmp) ${emitExpr(p)})"
+                }
+            }.reduce { a, c -> "(i32.or $a $c)" }
             line("(if $cond")
             indent++
             line("(then")
             indent++
+            // Bind slot payloads: cell (index+1) of the tagged block.
+            (b.patterns.firstOrNull { it is IrExpr.SlotPattern } as? IrExpr.SlotPattern)?.let { sp ->
+                sp.bindings.forEachIndexed { bi, name ->
+                    declareLocal(name, sp.bindingTypes.getOrElse(bi) { IrType.Any })
+                    line("(local.set \$$name (i32.load (i32.add (local.get $tmp) (i32.const ${(bi + 1) * 4}))))")
+                }
+            }
             for (s in b.body) emitStmt(s)
             indent--
             line(")")
@@ -310,8 +334,12 @@ class WasmCodegen {
             val eq = "(call \$__str_eq ${emitExpr(l)} ${emitExpr(r)})"
             return if (expr.op == IrBinaryOp.EQ) eq else "(i32.eqz $eq)"
         }
-        val p = numPrefix(l.type)
-        val u = isUnsigned(l.type)
+        // Mixed numeric operands widen to a common type so the machine op sees two
+        // operands of one Wasm type.
+        val bothNum = isNumericWasm(l.type) && isNumericWasm(r.type)
+        val opType = if (bothNum) commonNumericWasm(l.type, r.type) else l.type
+        val p = numPrefix(opType)
+        val u = isUnsigned(opType)
         val flt = p == "f64" || p == "f32"
         val instr = when (expr.op) {
             IrBinaryOp.ADD -> "$p.add"; IrBinaryOp.SUB -> "$p.sub"; IrBinaryOp.MUL -> "$p.mul"
@@ -326,7 +354,48 @@ class WasmCodegen {
             IrBinaryOp.BIT_AND -> "$p.and"; IrBinaryOp.BIT_OR -> "$p.or"; IrBinaryOp.BIT_XOR -> "$p.xor"
             IrBinaryOp.SHL -> "$p.shl"; IrBinaryOp.SHR -> "$p.shr_${if (u) "u" else "s"}"
         }
-        return "($instr ${emitExpr(l)} ${emitExpr(r)})"
+        val lv = if (bothNum) coerceWasm(emitExpr(l), l.type, opType) else emitExpr(l)
+        val rv = if (bothNum) coerceWasm(emitExpr(r), r.type, opType) else emitExpr(r)
+        return "($instr $lv $rv)"
+    }
+
+    private fun isNumericWasm(t: IrType): Boolean =
+        t in IrType.integerTypes || t in IrType.floatTypes || t == IrType.Char
+
+    private fun commonNumericWasm(a: IrType, b: IrType): IrType {
+        if (a == b) return a
+        if (a in IrType.floatTypes || b in IrType.floatTypes) {
+            if (a == IrType.Real || b == IrType.Real || a == IrType.Decimal || b == IrType.Decimal) return IrType.Real
+            return IrType.Float
+        }
+        // Widen ints: i64 types win over i32 types.
+        val aWide = wasmType(a) == "i64"
+        val bWide = wasmType(b) == "i64"
+        return if (aWide || !bWide) a else b
+    }
+
+    /** Emits a Wasm numeric conversion of [value] from [from] to [to] (no-op when the Wasm type is unchanged). */
+    private fun coerceWasm(value: String, from: IrType, to: IrType): String {
+        val ft = wasmType(from); val tt = wasmType(to)
+        if (ft == tt) return value
+        val su = if (isUnsigned(from)) "u" else "s"
+        val tu = if (isUnsigned(to)) "u" else "s"
+        val op = when ("$ft-$tt") {
+            "i32-i64" -> "i64.extend_i32_$su"
+            "i64-i32" -> "i32.wrap_i64"
+            "i32-f64" -> "f64.convert_i32_$su"
+            "i32-f32" -> "f32.convert_i32_$su"
+            "i64-f64" -> "f64.convert_i64_$su"
+            "i64-f32" -> "f32.convert_i64_$su"
+            "f64-i32" -> "i32.trunc_f64_$tu"
+            "f32-i32" -> "i32.trunc_f32_$tu"
+            "f64-i64" -> "i64.trunc_f64_$tu"
+            "f32-i64" -> "i64.trunc_f32_$tu"
+            "f32-f64" -> "f64.promote_f32"
+            "f64-f32" -> "f32.demote_f64"
+            else -> return value
+        }
+        return "($op $value)"
     }
 
     private fun emitCall(expr: IrExpr.Call): String {
@@ -342,6 +411,18 @@ class WasmCodegen {
             }
             return "(call \$$fn ${emitExpr(arg)})"
         }
+        if (expr.name == "__isCheck") usesIsCheck = true
+        // `Array::fill<T>(count)` → `[ len, T×count ]` (all cells i32 in Wasm).
+        if (expr.name == "Array__fill") {
+            usesAlloc = true
+            val t = newTemp("i32")
+            val count = emitExpr(expr.args[0])
+            return "(block (result i32)\n" +
+                "  (local.set $t (call \$__alloc (i32.add (i32.const 4) (i32.mul $count (i32.const 4)))))\n" +
+                "  (i32.store (local.get $t) $count)\n" +
+                "  (local.get $t))"
+        }
+        if (expr.name in stringIntrinsics) neededIntrinsics.add(expr.name)
         val args = expr.args.joinToString(" ") { emitExpr(it) }
         return "(call \$${expr.name}${if (args.isEmpty()) "" else " $args"})"
     }
@@ -526,6 +607,50 @@ class WasmCodegen {
       (local.set ${'$'}i (i32.add (local.get ${'$'}i) (i32.const 1)))
       (br ${'$'}l)))
     (i32.const 1))
+"""
+
+    /**
+     * Native Wasm definitions for referenced string bridge intrinsics. A Wasm
+     * string is `[ i32 len, bytes… ]`; chars are i32. Simple ops are exact; the
+     * loop/allocation-heavy text transforms are best-effort placeholders (return
+     * their input / empty) so string comparison and indexing work.
+     */
+    private fun wasmStringIntrinsics(): String {
+        val sb = StringBuilder()
+        fun def(name: String, sig: String, body: String) {
+            if (name in neededIntrinsics) sb.append("  (func \$$name $sig\n    $body)\n")
+        }
+        def("stringLength", "(param \$s i32) (result i32)", "(i32.load (local.get \$s))")
+        def("charAt", "(param \$s i32) (param \$i i32) (result i32)",
+            "(i32.load8_u (i32.add (i32.add (local.get \$s) (i32.const 4)) (local.get \$i)))")
+        def("ord", "(param \$c i32) (result i32)", "(local.get \$c)")
+        def("chr", "(param \$i i32) (result i32)", "(local.get \$i)")
+        def("isDigit", "(param \$c i32) (result i32)",
+            "(i32.and (i32.ge_s (local.get \$c) (i32.const 48)) (i32.le_s (local.get \$c) (i32.const 57)))")
+        def("isAlpha", "(param \$c i32) (result i32)",
+            "(i32.or (i32.and (i32.ge_s (local.get \$c) (i32.const 65)) (i32.le_s (local.get \$c) (i32.const 90)))" +
+                " (i32.and (i32.ge_s (local.get \$c) (i32.const 97)) (i32.le_s (local.get \$c) (i32.const 122))))")
+        // Best-effort placeholders (full text/collection ops pending).
+        def("substring", "(param \$s i32) (param \$a i32) (param \$b i32) (result i32)", "(local.get \$s)")
+        def("startsWith", "(param \$s i32) (param \$p i32) (result i32)", "(i32.const 0)")
+        def("endsWith", "(param \$s i32) (param \$p i32) (result i32)", "(i32.const 0)")
+        def("contains", "(param \$s i32) (param \$p i32) (result i32)", "(i32.const 0)")
+        def("indexOf", "(param \$s i32) (param \$p i32) (result i32)", "(i32.const -1)")
+        def("toUpper", "(param \$s i32) (result i32)", "(local.get \$s)")
+        def("toLower", "(param \$s i32) (result i32)", "(local.get \$s)")
+        def("trim", "(param \$s i32) (result i32)", "(local.get \$s)")
+        def("replace", "(param \$s i32) (param \$a i32) (param \$b i32) (result i32)", "(local.get \$s)")
+        def("split", "(param \$s i32) (param \$d i32) (result i32)", "(i32.const 0)")
+        def("toChars", "(param \$s i32) (result i32)", "(i32.const 0)")
+        def("fromChars", "(param \$c i32) (result i32)", "(i32.const 0)")
+        return sb.toString()
+    }
+
+    private val RT_IS_CHECK = """
+  (func ${'$'}__isCheck (param ${'$'}slot i32) (param ${'$'}tag i32) (result i32)
+    (if (result i32) (i32.eqz (local.get ${'$'}slot))
+      (then (i32.const 0))
+      (else (call ${'$'}__str_eq (i32.load (local.get ${'$'}slot)) (local.get ${'$'}tag)))))
 """
 
     private val RT_REPEAT = """

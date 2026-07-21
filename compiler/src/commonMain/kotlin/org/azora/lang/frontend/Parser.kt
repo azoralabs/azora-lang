@@ -509,13 +509,16 @@ class Parser(
         val (receiverModifier, params, body) = parseReceiverAndBody()
         consumeNewline()
         val bridge = isBridge || body.isEmpty()
-        val impls = specs.map { sp ->
+        val impls = specs.mapIndexed { idx, sp ->
+            // Distinct columns per operator so downstream position-keyed dedup (e.g.
+            // the stdlib injector) does not collapse the expanded impls into one.
+            val col = start.column + idx
             val method = FuncDecl(
                 sp.methodName, params, TypeAnnotation.Inferred, body, false, emptyList(),
-                start.line, start.column, receiverModifier = receiverModifier,
+                start.line, col, receiverModifier = receiverModifier,
             )
             TopLevel.Impl(
-                typeName, listOf(method), null, start.line, start.column,
+                typeName, listOf(method), null, start.line, col,
                 annotations = annotations, isBridge = bridge,
             )
         }
@@ -4036,7 +4039,10 @@ class Parser(
             usePath@ while (match(TokenType.DOT)) {
                 when {
                     match(TokenType.STAR) -> {
-                        imports.add(base.toString() to null)
+                        // `import path.*` — wildcard. Marked with the "*" selector so
+                        // it stays distinct from a plain `import path` (which must name
+                        // an actual module file, not just a namespace/folder).
+                        imports.add(base.toString() to "*")
                         completed = true
                         break@usePath
                     }
@@ -5433,16 +5439,14 @@ class Parser(
             TokenType.L_PAREN -> {
                 advance()
                 val first = parseExpr()
-                if (match(TokenType.COMMA)) {
-                    // `(a, b, …)` — tuple literal sugar for `std::tupleOf(a, b, …)`.
-                    val elements = mutableListOf(first)
-                    do { elements.add(parseExpr()) } while (match(TokenType.COMMA))
-                    consume(TokenType.R_PAREN, "Expected ')' after tuple elements")
-                    Expr.Call("std__tupleOf", elements, tok.line, tok.column)
-                } else {
-                    consume(TokenType.R_PAREN, "Expected ')'")
-                    Expr.Grouping(first, tok.line, tok.column)
+                if (check(TokenType.COMMA)) {
+                    // Tuple-literal sugar `(a, b, …)` was removed: parentheses only
+                    // group a single expression. Build tuples with `std::tupleOf(…)`
+                    // or the `tup!` macro.
+                    error("tuple literal '(a, b, …)' is not supported; use 'std::tupleOf(a, b, …)' or 'tup!(a, b, …)' at line ${tok.line}")
                 }
+                consume(TokenType.R_PAREN, "Expected ')'")
+                Expr.Grouping(first, tok.line, tok.column)
             }
             TokenType.L_BRACKET -> {
                 advance()

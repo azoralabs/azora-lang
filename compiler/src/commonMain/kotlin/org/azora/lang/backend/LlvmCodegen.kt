@@ -138,8 +138,17 @@ class LlvmCodegen {
     private var usesStrcpy = false
     private var usesStrcat = false
     private var usesStrcmp = false
+    private var usesStrncmp = false
+    private var usesStrstr = false
     private var usesIsCheck = false
     private var usesMemcpy = false
+    /** Referenced compiler string/array bridge intrinsics; defined as runtime helpers. */
+    private val neededIntrinsics = linkedSetOf<String>()
+    private val stringIntrinsics = setOf(
+        "stringLength", "charAt", "ord", "chr", "isDigit", "isAlpha", "substring",
+        "startsWith", "endsWith", "contains", "indexOf", "toUpper", "toLower", "trim",
+        "replace", "split", "toChars", "fromChars", "Array__fill",
+    )
     private var usesSnprintf = false
     private var usesStrConcat = false
     private var usesStrRepeat = false
@@ -181,6 +190,9 @@ class LlvmCodegen {
         usesAbort = false
         usesMalloc = false
         usesStrlen = false
+        usesStrncmp = false
+        usesStrstr = false
+        neededIntrinsics.clear()
         usesStrcpy = false
         usesStrcat = false
         usesStrcmp = false
@@ -293,8 +305,10 @@ class LlvmCodegen {
             deferredIndex++
         }
 
-        // Extern (`bridge`) function declarations
+        // Extern (`bridge`) function declarations (intrinsics we define ourselves
+        // are emitted as runtime helpers below, so skip their `declare`).
         for (item in program.items.filterIsInstance<IrTopLevel.Extern>()) {
+            if (item.name in stringIntrinsics) continue
             val params = item.params.joinToString(", ") { (_, t) -> mapType(t) }
             body.appendLine("declare ${mapType(item.returnType)} @${item.name}($params)")
         }
@@ -337,6 +351,8 @@ class LlvmCodegen {
         if (usesStrcpy) line("declare i8* @strcpy(i8*, i8*)")
         if (usesStrcat) line("declare i8* @strcat(i8*, i8*)")
         if (usesStrcmp) line("declare i32 @strcmp(i8*, i8*)")
+        if (usesStrncmp) line("declare i32 @strncmp(i8*, i8*, i64)")
+        if (usesStrstr) line("declare i8* @strstr(i8*, i8*)")
         if (usesMemcpy) line("declare i8* @memcpy(i8*, i8*, i64)")
         if (usesTaskRuntime) {
             line("declare i32 @pthread_create(i8**, i8*, i8* (i8*)*, i8*)")
@@ -1074,6 +1090,134 @@ class LlvmCodegen {
             }
         }
         return cmp
+    }
+
+    /**
+     * Native definitions for the referenced compiler string bridge intrinsics.
+     * The simple ones map to libc; a few text transforms and array-returning ones
+     * are best-effort placeholders (they return their input / empty) so programs
+     * that only compare or slice strings work while richer text ops mature.
+     */
+    private fun buildStringIntrinsics(sb: StringBuilder) {
+        fun def(name: String, body: String) {
+            if (name !in neededIntrinsics) return
+            sb.appendLine(body.trimIndent())
+            sb.appendLine()
+        }
+        if ("stringLength" in neededIntrinsics || "startsWith" in neededIntrinsics ||
+            "endsWith" in neededIntrinsics || "substring" in neededIntrinsics
+        ) usesStrlen = true
+        if ("startsWith" in neededIntrinsics || "endsWith" in neededIntrinsics) usesStrncmp = true
+        if ("contains" in neededIntrinsics || "indexOf" in neededIntrinsics) usesStrstr = true
+        if ("substring" in neededIntrinsics) { usesMemcpy = true; usesAllocatorRuntime = true }
+
+        def("stringLength", """
+            define i32 @stringLength(i8* %s) {
+              %l = call i64 @strlen(i8* %s)
+              %r = trunc i64 %l to i32
+              ret i32 %r
+            }""")
+        def("charAt", """
+            define i8 @charAt(i8* %s, i32 %i) {
+              %i64 = sext i32 %i to i64
+              %p = getelementptr i8, i8* %s, i64 %i64
+              %c = load i8, i8* %p
+              ret i8 %c
+            }""")
+        def("ord", """
+            define i32 @ord(i8 %c) {
+              %r = zext i8 %c to i32
+              ret i32 %r
+            }""")
+        def("chr", """
+            define i8 @chr(i32 %i) {
+              %r = trunc i32 %i to i8
+              ret i8 %r
+            }""")
+        def("isDigit", """
+            define i1 @isDigit(i8 %c) {
+              %ge = icmp uge i8 %c, 48
+              %le = icmp ule i8 %c, 57
+              %r = and i1 %ge, %le
+              ret i1 %r
+            }""")
+        def("isAlpha", """
+            define i1 @isAlpha(i8 %c) {
+              %g1 = icmp uge i8 %c, 65
+              %l1 = icmp ule i8 %c, 90
+              %up = and i1 %g1, %l1
+              %g2 = icmp uge i8 %c, 97
+              %l2 = icmp ule i8 %c, 122
+              %lo = and i1 %g2, %l2
+              %r = or i1 %up, %lo
+              ret i1 %r
+            }""")
+        def("substring", """
+            define i8* @substring(i8* %s, i32 %start, i32 %end) {
+              %len = sub i32 %end, %start
+              %len64 = sext i32 %len to i64
+              %size = add i64 %len64, 1
+              %buf = call i8* @__azora_alloc(i64 %size)
+              %s64 = sext i32 %start to i64
+              %src = getelementptr i8, i8* %s, i64 %s64
+              %cp = call i8* @memcpy(i8* %buf, i8* %src, i64 %len64)
+              %tp = getelementptr i8, i8* %buf, i64 %len64
+              store i8 0, i8* %tp
+              ret i8* %buf
+            }""")
+        def("startsWith", """
+            define i1 @startsWith(i8* %s, i8* %p) {
+              %lp = call i64 @strlen(i8* %p)
+              %c = call i32 @strncmp(i8* %s, i8* %p, i64 %lp)
+              %r = icmp eq i32 %c, 0
+              ret i1 %r
+            }""")
+        def("endsWith", """
+            define i1 @endsWith(i8* %s, i8* %suf) {
+            entry:
+              %ls = call i64 @strlen(i8* %s)
+              %lsuf = call i64 @strlen(i8* %suf)
+              %short = icmp ult i64 %ls, %lsuf
+              br i1 %short, label %no, label %check
+            check:
+              %off = sub i64 %ls, %lsuf
+              %tail = getelementptr i8, i8* %s, i64 %off
+              %c = call i32 @strncmp(i8* %tail, i8* %suf, i64 %lsuf)
+              %r = icmp eq i32 %c, 0
+              ret i1 %r
+            no:
+              ret i1 0
+            }""")
+        def("contains", """
+            define i1 @contains(i8* %s, i8* %sub) {
+              %p = call i8* @strstr(i8* %s, i8* %sub)
+              %r = icmp ne i8* %p, null
+              ret i1 %r
+            }""")
+        def("indexOf", """
+            define i32 @indexOf(i8* %s, i8* %sub) {
+            entry:
+              %p = call i8* @strstr(i8* %s, i8* %sub)
+              %isnull = icmp eq i8* %p, null
+              br i1 %isnull, label %no, label %found
+            found:
+              %pi = ptrtoint i8* %p to i64
+              %si = ptrtoint i8* %s to i64
+              %diff = sub i64 %pi, %si
+              %r = trunc i64 %diff to i32
+              ret i32 %r
+            no:
+              ret i32 -1
+            }""")
+        // Best-effort placeholders: text transforms return their input; the
+        // collection-returning ops return null (valid IR — full support pending).
+        def("toUpper", "define i8* @toUpper(i8* %s) {\n  ret i8* %s\n}")
+        def("toLower", "define i8* @toLower(i8* %s) {\n  ret i8* %s\n}")
+        def("trim", "define i8* @trim(i8* %s) {\n  ret i8* %s\n}")
+        def("replace", "define i8* @replace(i8* %s, i8* %a, i8* %b) {\n  ret i8* %s\n}")
+        def("split", "define i8* @split(i8* %s, i8* %d) {\n  ret i8* null\n}")
+        def("toChars", "define i8* @toChars(i8* %s) {\n  ret i8* null\n}")
+        def("fromChars", "define i8* @fromChars(i8* %c) {\n  ret i8* null\n}")
     }
 
     /** i1 result of comparing a slot's tag (its first `i8*` cell) to [variantName]. */
@@ -2862,6 +3006,23 @@ class LlvmCodegen {
         // `x is Variant` lowers to `@__isCheck(slot, "Variant")`; ensure the helper
         // (and strcmp) is emitted. The general call path emits the call itself.
         if (expr.name == "__isCheck") { usesIsCheck = true; usesStrcmp = true }
+        // Compiler string/array intrinsics are defined as runtime helpers.
+        if (expr.name in stringIntrinsics) neededIntrinsics.add(expr.name)
+        // `Array::fill<T>(count)` allocates `[ i64 length, T×count ]` (the array
+        // layout used by `emitArrayLiteral`); handled inline since element size
+        // varies per instantiation.
+        if (expr.name == "Array__fill") {
+            val elemType = (expr.type as? IrType.Array)?.element ?: IrType.Any
+            val elemSize = sizeOfScalar(elemType)
+            val count = emitExpr(expr.args[0])
+            val count64 = nextTmp(); emit("  $count64 = sext i32 $count to i64")
+            val bytes = nextTmp(); emit("  $bytes = mul i64 $count64, $elemSize")
+            val total = nextTmp(); emit("  $total = add i64 $bytes, 8")
+            val raw = emitHeapAlloc(total)
+            val lenPtr = nextTmp(); emit("  $lenPtr = bitcast i8* $raw to i64*")
+            emit("  store i64 $count64, i64* $lenPtr")
+            return raw
+        }
         if (expr.name == "std__println") return emitPrintln(expr)
         if (expr.name == "print") return emitPrintln(expr, newline = false)
         if (expr.name == "async") {
@@ -3179,6 +3340,8 @@ class LlvmCodegen {
 
     private fun buildRuntimeHelpers(): String {
         val sb = StringBuilder()
+
+        buildStringIntrinsics(sb)
 
         if (usesIsCheck) {
             // `x is Variant`: a slot carries its variant name as its first (`i8*`)

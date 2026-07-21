@@ -16,7 +16,7 @@ class TupleVariadicLlvmExecTest {
             import std.io
             import std.container
             func main() {
-                fin x = tupleOf(1, 2)
+                fin x = std::tupleOf(1, 2)
                 std::println(x.0)
                 std::println(x.1)
             }
@@ -29,7 +29,7 @@ class TupleVariadicLlvmExecTest {
             import std.io
             import std.container
             func main() {
-                fin t = tupleOf(1, 2, 3)
+                fin t = std::tupleOf(1, 2, 3)
                 std::println(t.0)
                 std::println(t.1)
                 std::println(t.2)
@@ -43,7 +43,7 @@ class TupleVariadicLlvmExecTest {
             import std.io
             import std.container
             func main() {
-                fin x = tupleOf(1, 2)
+                fin x = std::tupleOf(1, 2)
                 std::println(x.0)
             }
         """.trimIndent())

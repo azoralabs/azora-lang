@@ -152,6 +152,13 @@ class Compiler {
         // debugger can pause at breakpoints (stdlib, injected below, stays clean).
         val parsed = if (debug) DebugInstrumenter.instrument(rawAst) else rawAst
 
+        // 2a-bis. Reject imports of namespaces that have no module file (e.g.
+        // `import std` — there is no `std.az`, only modules beneath it).
+        val importErrors = StdlibInjector.validateImports(parsed)
+        if (importErrors.isNotEmpty()) {
+            return CompilationResult.Failure(importErrors)
+        }
+
         // 2b. Standard library: append the stdlib declarations the program
         // actually references (transitively); user definitions shadow stdlib.
         val initiallyInjected = CallbackImplNormalizer.normalize(StdlibInjector.inject(parsed))

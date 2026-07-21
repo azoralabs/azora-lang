@@ -957,24 +957,12 @@ class IrInterpreter {
     }
 
     private fun materializeDeclared(type: IrType, value: Any?): Any? {
-        val name = (type as? IrType.Named)?.name ?: return value
-        return when {
-            // A raw array bound to a `List`/`Set`-typed slot stays a raw list: the
-            // interpreter supports positional access, membership, and mutation on it
-            // directly. (Wrapping it in a `{__type, data}` struct would have no
-            // matching `List_get`/`Set_get` method and read back as null.)
-            name in setOf("Map", "MutableMap") && value is Map<*, *> && !value.containsKey("__type") -> {
-                val entries = value.entries.toList()
-                linkedMapOf<String, Any?>(
-                    "__type" to name,
-                    "keys" to entries.map { it.key }.toMutableList(),
-                    "values" to entries.map { it.value }.toMutableList(),
-                    "size" to entries.size.toLong(),
-                    "capacity" to maxOf(8, entries.size).toLong(),
-                )
-            }
-            else -> value
-        }
+        // Values bound to a `List`/`Set`/`Map`-typed slot keep their native runtime
+        // representation (a raw list or map): the interpreter supports positional
+        // access, membership, mutation, and key lookup on those directly. Wrapping a
+        // raw value in a `{__type, …}` struct would have no matching accessor method
+        // and read back as null.
+        return value
     }
 
     private suspend fun evalBinary(expr: IrExpr.Binary): Any {

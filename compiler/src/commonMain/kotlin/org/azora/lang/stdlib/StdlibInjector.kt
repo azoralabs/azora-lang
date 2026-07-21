@@ -123,6 +123,40 @@ object StdlibInjector {
     /** The bundled-library module providing [name] ("std.math"), or null — used for error hints. */
     fun moduleOf(name: String): String? = index.moduleOfName[name]
 
+    /**
+     * Rejects imports that name a namespace/folder rather than an actual module
+     * file. `import std` fails because there is no `std` module — only modules
+     * *under* `std` (`std.math`, `std.container`, …). Callers that want every
+     * module below a namespace write `import std.*`; a specific one, `import
+     * std.container`. Unknown roots (e.g. a user's own module) are left alone.
+     */
+    fun validateImports(program: Program): List<String> {
+        if (index.modules.isEmpty()) return emptyList()
+        val known = index.modules.keys
+        val errors = mutableListOf<String>()
+        for (item in program.items) {
+            if (item !is TopLevel.UseImport) continue
+            for ((path, selected) in item.imports) {
+                // Wildcard and selective-item forms are validated by name resolution.
+                if (selected != null) continue
+                val isExactModule = path in known && isExternallyImportable(path)
+                val isSelectedItem = resolveSelectedLibraryPath(path)
+                    ?.let { isExternallyImportable(it.first) && index.modules[it.first]?.containsKey(it.second) == true } == true
+                if (isExactModule || isSelectedItem) continue
+                // Only flag paths that are a real namespace of known modules (so a
+                // typo'd or user-defined root is not falsely rejected here).
+                if (known.any { it.startsWith("$path.") }) {
+                    errors.add(
+                        "cannot 'import $path': '$path' is a namespace, not a module — " +
+                            "import a specific module such as 'import $path.<name>', or 'import $path.*' " +
+                            "to pull in every module below it (line ${item.line})"
+                    )
+                }
+            }
+        }
+        return errors
+    }
+
     private fun buildIndex(): Index {
         val idx = Index()
         val boolOverrides = configOverrides.mapValues { it.value.trim() == "true" }
@@ -269,7 +303,7 @@ object StdlibInjector {
                 }.filter(::isExternallyImportable)
                 for (module in modules) {
                     val declarations = index.typeFunctionsByModule[module].orEmpty()
-                    val selectedDeclarations = if (selected == null) declarations else declarations.filter { declaration ->
+                    val selectedDeclarations = if (selected == null || selected == "*") declarations else declarations.filter { declaration ->
                         declaration.name == selected || declaration.name.substringAfterLast("__") == selected
                     }
                     for (declaration in selectedDeclarations) {
@@ -292,22 +326,29 @@ object StdlibInjector {
         index.moduleVisibility[module]?.let { it == ModuleVisibility.EXPOSE } ?: true
 
     private fun itemsVisibleFromImport(path: String, selected: String?): Map<String, TopLevel> {
+        // `import path.*` — wildcard: the exact module at `path` (if any) plus every
+        // descendant module. This is the only form that pulls in a whole namespace.
+        if (selected == "*") {
+            val result = LinkedHashMap<String, TopLevel>()
+            if (isExternallyImportable(path)) {
+                index.modules[path]?.forEach { (name, declaration) -> result.putIfAbsentCompat(name, declaration) }
+            }
+            index.modules
+                .filterKeys { it.startsWith("$path.") && isExternallyImportable(it) }
+                .values.forEach { module ->
+                    module.forEach { (name, declaration) -> result.putIfAbsentCompat(name, declaration) }
+                }
+            return result
+        }
         if (selected != null) {
             if (!isExternallyImportable(path)) return emptyMap()
             val module = index.modules[path] ?: return emptyMap()
             return module[selected]?.let { mapOf(selected to it) } ?: emptyMap()
         }
+        // `import path` — plain: `path` must name an actual module file, or resolve to
+        // a single `module.item` selection. A bare namespace/folder (e.g. `std`, which
+        // has no `std.az`) pulls in nothing; `validateImports` rejects it up front.
         if (index.modules[path] != null && isExternallyImportable(path)) return index.modules[path]!!
-        val descendants = index.modules
-            .filterKeys { it.startsWith("$path.") && isExternallyImportable(it) }
-            .values
-        if (descendants.isNotEmpty()) {
-            val result = LinkedHashMap<String, TopLevel>()
-            descendants.forEach { module ->
-                module.forEach { (name, declaration) -> result.putIfAbsentCompat(name, declaration) }
-            }
-            return result
-        }
         val (moduleName, itemName) = resolveSelectedLibraryPath(path) ?: return emptyMap()
         if (!isExternallyImportable(moduleName)) return emptyMap()
         val declaration = index.modules[moduleName]?.get(itemName) ?: return emptyMap()
@@ -474,7 +515,11 @@ object StdlibInjector {
         val keys = linkedSetOf(typeName, normalizedTypeName(typeName))
         for (keyName in keys) {
             index.implsByType[keyName]?.forEach { impl ->
-                val key = "impl::${normalizedTypeName(impl.typeName)}::${impl.traitName.orEmpty()}::${impl.line}:${impl.column}"
+                // Include the member names: a multi-operator impl (`oper[.. , reverse..]`)
+                // expands to several impls sharing one source position, so position
+                // alone would collapse them into one.
+                val members = impl.methods.joinToString(",") { it.name }
+                val key = "impl::${normalizedTypeName(impl.typeName)}::${impl.traitName.orEmpty()}::${impl.line}:${impl.column}::$members"
                 if (key !in injected) {
                     injected[key] = impl
                     val names = mutableSetOf<String>()

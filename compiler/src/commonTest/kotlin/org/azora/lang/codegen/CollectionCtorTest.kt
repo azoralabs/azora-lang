@@ -30,25 +30,24 @@ class CollectionCtorTest {
         }
     """.trimIndent()))
 
-    @Test fun set_index_assign_preserves_uniqueness() = assertEquals("4\n4\ntrue\nfalse", run("""
+    @Test fun set_add_preserves_uniqueness() = assertEquals("3\ntrue\nfalse", run("""
         import std.io
         import std
         func main() {
-            var s = Set<Int>()
+            var s = LinkedHashSet<Int>()
             s.add(1)
             s.add(2)
             s.add(3)
-            s[0] = 4
-            std::println(s[0])
-            s[0] = 2
-            std::println(s[0])
-            std::println(s.contains(4))
-            std::println(s.contains(1))
+            s.add(2)
+            std::println(s.size)
+            std::println(s.contains(2))
+            std::println(s.contains(9))
         }
     """.trimIndent()))
 
     @Test fun tup_ctor() = assertEquals("1\na", run("""
         import std.io
+        import std.container
         func main() {
             fin t = (1, "a", 2.5)
             std::println(t.0)
@@ -100,7 +99,7 @@ class CollectionCtorTest {
         import std.io
         import std.container
         func main() {
-            var xs = MutableList<Int>()
+            var xs = ArrayList<Int>()
             xs.add(7)
             xs[0] = 8
             std::println(xs[0])
@@ -111,7 +110,7 @@ class CollectionCtorTest {
         import std.io
         import std.container
         func main() {
-            var seen = MutableSet<Int>()
+            var seen = LinkedHashSet<Int>()
             seen.add(1)
             seen.add(1)
             std::println(seen.contains(1))
@@ -167,7 +166,7 @@ class CollectionCtorTest {
                 return v
             }
         }
-        func run(q: Query<(Int, String)>): Int {
+        func run(q: Query<Tuple<Int, String>>): Int {
             var sum = 0
             loop q { sum += q.next() }
             return sum

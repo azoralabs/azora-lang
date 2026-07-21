@@ -42,6 +42,7 @@ class JavaScriptCodegen {
     private var indent = 0
     private var usesPointers = false
     private var usesTasks = false
+    private var whenCounter = 0
 
     private val POINTER_RUNTIME = setOf("__alloc", "__deref", "__derefAssign", "__isolated")
 
@@ -67,12 +68,16 @@ class JavaScriptCodegen {
         out.clear()
         indent = 0
         usesPointers = false
+        whenCounter = 0
         usesTasks = program.functions.any { it.isTask }
 
         if (program.moduleName != null) {
             line("// module: ${program.moduleName}")
             line("")
         }
+        // Slot (tagged-union) runtime: `x is Variant` / `when` tag checks.
+        line("function __isCheck(v, tag) { return v != null && v.__tag === tag; }")
+        line("")
         if (usesTasks) {
             line("const __azoraChildren = new Set();")
             line("function cancel(_task) {}")
@@ -128,7 +133,7 @@ class JavaScriptCodegen {
                 is IrTopLevel.Extern -> {
                     // JavaScript has no declarations; the extern is expected to be
                     // provided by the host. Emit a documentation comment.
-                    val params = item.params.joinToString(", ") { (n, _) -> n }
+                    val params = item.params.joinToString(", ") { (n, _) -> jsIdent(n) }
                     line("// extern function ${item.name}($params)")
                     if (i < lastEmittedIndex) line("")
                 }
@@ -164,8 +169,18 @@ class JavaScriptCodegen {
         line("});")
     }
 
+    /** JS reserved words that are valid Azora identifiers, and their safe rewrite. */
+    private val jsReserved = setOf(
+        "default", "new", "class", "delete", "in", "instanceof", "typeof", "void",
+        "with", "yield", "super", "enum", "await", "static", "export", "import",
+        "extends", "finally", "debugger", "function", "var", "const", "arguments",
+    )
+
+    /** Rewrites an identifier that collides with a JS reserved word (used consistently for decls and refs). */
+    private fun jsIdent(name: String): String = if (name in jsReserved) "${name}_" else name
+
     private fun emitFunction(func: IrFunction) {
-        val params = func.params.joinToString(", ") { (name, _) -> name }
+        val params = func.params.joinToString(", ") { (name, _) -> jsIdent(name) }
         val async = if (func.isTask) "async " else ""
         line("${async}function ${func.name}($params) {")
         indent++
@@ -222,13 +237,39 @@ class JavaScriptCodegen {
 
     private fun emitStmt(stmt: IrStmt) {
         when (stmt) {
-            is IrStmt.VarDecl -> line("let ${stmt.name} = ${emitExpr(stmt.initializer)};")
-            is IrStmt.FinDecl -> line("const ${stmt.name} = ${emitExpr(stmt.initializer)};")
-            is IrStmt.LetDecl -> line("const ${stmt.name} = ${emitExpr(stmt.initializer)};")
-            is IrStmt.Assignment -> line("${stmt.name} = ${emitExpr(stmt.value)};")
+            is IrStmt.VarDecl -> line("let ${jsIdent(stmt.name)} = ${emitExpr(stmt.initializer)};")
+            is IrStmt.FinDecl -> line("const ${jsIdent(stmt.name)} = ${emitExpr(stmt.initializer)};")
+            is IrStmt.LetDecl -> line("const ${jsIdent(stmt.name)} = ${emitExpr(stmt.initializer)};")
+            is IrStmt.Assignment -> line("${jsIdent(stmt.name)} = ${emitExpr(stmt.value)};")
             is IrStmt.IndexAssign -> line("${emitExpr(stmt.target)}[${emitExpr(stmt.index)}] = ${emitExpr(stmt.value)};")
             is IrStmt.MemberAssign -> line("${emitExpr(stmt.target)}.${stmt.name} = ${emitExpr(stmt.value)};")
-            is IrStmt.When -> {
+            is IrStmt.When -> if (stmt.branches.any { b -> b.patterns.any { it is IrExpr.SlotPattern } }) {
+                // Slot matches lower to an if/else chain: a switch can't tag-check a
+                // tagged object nor bind its payloads.
+                val scrut = "__when${whenCounter++}"
+                line("const $scrut = ${emitExpr(stmt.scrutinee)};")
+                var first = true
+                for (b in stmt.branches) {
+                    val cond = b.patterns.joinToString(" || ") { p ->
+                        if (p is IrExpr.SlotPattern) "__isCheck($scrut, \"${p.variantName}\")"
+                        else "$scrut === ${emitExpr(p)}"
+                    }
+                    line("${if (first) "if" else "} else if"} ($cond) {")
+                    indent++
+                    (b.patterns.firstOrNull { it is IrExpr.SlotPattern } as? IrExpr.SlotPattern)?.bindings
+                        ?.forEachIndexed { i, name -> line("const ${jsIdent(name)} = $scrut.__$i;") }
+                    for (s in b.body) emitStmt(s)
+                    indent--
+                    first = false
+                }
+                if (stmt.elseBranch != null) {
+                    line("} else {")
+                    indent++
+                    for (s in stmt.elseBranch) emitStmt(s)
+                    indent--
+                }
+                line("}")
+            } else {
                 line("switch (${emitExpr(stmt.scrutinee)}) {")
                 indent++
                 // Case bodies are wrapped in blocks so `let`/`const` declarations
@@ -387,7 +428,7 @@ class JavaScriptCodegen {
         is IrExpr.StringLiteral -> "\"${escapeString(expr.value)}\""
         is IrExpr.BoolLiteral -> "${expr.value}"
         is IrExpr.CharLiteral -> "\"${escapeString(expr.value.toString())}\""
-        is IrExpr.Var -> expr.name
+        is IrExpr.Var -> jsIdent(expr.name)
         is IrExpr.Unary -> {
             val op = when (expr.op) {
                 IrUnaryOp.NEG -> "-"
@@ -481,7 +522,13 @@ class JavaScriptCodegen {
             }
             "${emitExpr(expr.target)}.$call"
         }
-        is IrExpr.StructCtor -> "new ${expr.name}(${expr.args.joinToString(", ") { emitExpr(it) }})"
+        is IrExpr.StructCtor ->
+            if (expr.fieldNames.firstOrNull() == "__tag") {
+                // Slot (tagged union) — a plain tagged object `{__tag, __0, …}`.
+                "{ ${expr.fieldNames.zip(expr.args).joinToString(", ") { (f, a) -> "\"$f\": ${emitExpr(a)}" }} }"
+            } else {
+                "new ${expr.name}(${expr.args.joinToString(", ") { emitExpr(it) }})"
+            }
         is IrExpr.TupleLit -> "[${expr.elements.joinToString(", ") { emitExpr(it) }}]"
         is IrExpr.VariantLit -> emitExpr(expr.elements.first())
         is IrExpr.TupleAccess -> "${emitExpr(expr.target)}[${expr.index}]"
@@ -503,7 +550,7 @@ class JavaScriptCodegen {
         }
         is IrExpr.SlotPattern -> "" /* handled by when lowering */
         is IrExpr.Lambda -> {
-            val ps = expr.params.joinToString(", ") { (n, _) -> n }
+            val ps = expr.params.joinToString(", ") { (n, _) -> jsIdent(n) }
             val ret = expr.body.singleOrNull() as? IrStmt.Return
             if (ret != null && ret.value != null) "($ps) => ${emitExpr(ret.value)}"
             else if (expr.body.isEmpty() || ret != null) "($ps) => {}"

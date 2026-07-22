@@ -2621,10 +2621,16 @@ class LlvmCodegen {
     }
 
     private fun variableStorage(target: IrExpr): Pair<String, String>? {
-        val v = target as? IrExpr.Var ?: return null
-        val local = localVars[v.name]
-        if (local != null) return local
-        return "@${v.name}" to mapType(v.type)
+        return when (target) {
+            is IrExpr.Var -> {
+                val local = localVars[target.name]
+                local ?: ("@${target.name}" to mapType(target.type))
+            }
+            is IrExpr.Member -> emitFieldPtr(target.target, target.name)?.let { (pointer, _, llvmType) ->
+                pointer to llvmType
+            }
+            else -> null
+        }
     }
 
     private fun emitArrayAdd(target: IrExpr, valueExpr: IrExpr, elemType: IrType) {

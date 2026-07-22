@@ -236,6 +236,22 @@ class LlvmAggregateExecTest {
         """.trimIndent()
     )
 
+    @Test fun arrayAddWritesGrownBufferBackToPackField() = check(
+        "3\n30",
+        """
+        import std.io
+        pack Bucket {
+            var values: Array<Int>
+        }
+        func main() {
+            var bucket = Bucket(arr![10, 20])
+            bucket.values.add(30)
+            std::println(bucket.values.length)
+            std::println(bucket.values[2])
+        }
+        """.trimIndent()
+    )
+
     @Test fun arrayEmptyPropertiesAndMethods() = check(
         "false\ntrue\nfalse\ntrue",
         """

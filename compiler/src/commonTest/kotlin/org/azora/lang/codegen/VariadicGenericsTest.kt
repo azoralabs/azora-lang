@@ -52,7 +52,7 @@ class VariadicGenericsTest {
                 return a + b + c
             }
             func main() {
-                var nums = [1, 2, 3]
+                var nums = arr![1, 2, 3]
                 std::println(sum3(...nums))
             }
         """.trimIndent()))

@@ -5691,27 +5691,23 @@ class Parser(
             TokenType.L_BRACKET -> {
                 advance()
                 if (check(TokenType.R_BRACKET)) {
-                    advance()
-                    Expr.ArrayLiteral(emptyList(), tok.line, tok.column)
-                } else {
-                    val first = parseExpr()
-                    if (match(TokenType.COLON)) {
-                        // Map literal: ["k": v, ...]
-                        val entries = mutableListOf<Pair<Expr, Expr>>(first to parseExpr())
-                        while (match(TokenType.COMMA)) {
-                            val k = parseExpr()
-                            consume(TokenType.COLON, "Expected ':' in map literal")
-                            entries.add(k to parseExpr())
-                        }
-                        consume(TokenType.R_BRACKET, "Expected ']' after map literal")
-                        Expr.MapLit(entries, tok.line, tok.column)
-                    } else {
-                        // Array literal: [1, 2, 3]
-                        val elements = mutableListOf(first)
-                        while (match(TokenType.COMMA)) { elements.add(parseExpr()) }
-                        consume(TokenType.R_BRACKET, "Expected ']' after array elements")
-                        Expr.ArrayLiteral(elements, tok.line, tok.column)
+                    error("array literal '[]' is not valid; use 'arr![]' at line ${tok.line}")
+                }
+                val first = parseExpr()
+                if (match(TokenType.COLON)) {
+                    // Map literal: ["k": v, ...]
+                    val entries = mutableListOf<Pair<Expr, Expr>>(first to parseExpr())
+                    while (match(TokenType.COMMA)) {
+                        val k = parseExpr()
+                        consume(TokenType.COLON, "Expected ':' in map literal")
+                        entries.add(k to parseExpr())
                     }
+                    consume(TokenType.R_BRACKET, "Expected ']' after map literal")
+                    Expr.MapLit(entries, tok.line, tok.column)
+                } else {
+                    // Value array literals are not a bracket sugar — `[…]` only groups
+                    // types. Values use the `arr!` macro: `[1, 2, 3]`.
+                    error("array literal '[…]' is not valid; use 'arr![…]' at line ${tok.line}")
                 }
             }
             TokenType.L_BRACE -> parseLambda(tok.line, tok.column)

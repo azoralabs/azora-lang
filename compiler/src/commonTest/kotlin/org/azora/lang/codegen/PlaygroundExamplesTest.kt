@@ -71,7 +71,7 @@ func main() {
     @Test fun arrays() = assertEquals("10" + "\n" + "3" + "\n" + "4" + "\n" + "99" + "\n" + "total = 189", run("""module playground
 import std.io
 func main() {
-    var nums = [10, 20, 30]
+    var nums = arr![10, 20, 30]
     std::println(nums[0])
     std::println(nums.length)
     nums.add(40)
@@ -238,7 +238,7 @@ func main() {
     @Test fun pointers() = assertEquals("10\n20\n99", run("""module playground
 import std.io
 func main() {
-    var p: Int* = alloc [10, 20, 30]
+    var p: Int* = alloc arr![10, 20, 30]
     std::println(*p)
     std::println(*(p + 1))
     *(p + 2) = 99

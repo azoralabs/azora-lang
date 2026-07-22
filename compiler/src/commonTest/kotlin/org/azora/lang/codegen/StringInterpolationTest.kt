@@ -80,7 +80,7 @@ class StringInterpolationTest {
         assertEquals("first = 10", run("""
             import std.io
             func main() {
-                var a = [10, 20, 30]
+                var a = arr![10, 20, 30]
                 std::println("first = ${'$'}{a[0]}")
             }
         """.trimIndent()))

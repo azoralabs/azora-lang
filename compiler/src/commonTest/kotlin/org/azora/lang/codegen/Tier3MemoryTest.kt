@@ -129,7 +129,7 @@ class Tier3MemoryTest {
         assertEquals("[1, 2, 3]\n[1, 2, 3, 99]", run("""
             import std.io
             func main() {
-                var a = [1, 2, 3]
+                var a = arr![1, 2, 3]
                 var b = isolated(a)
                 b.add(99)
                 std::println(a)
@@ -203,7 +203,7 @@ class Tier3MemoryTest {
         assertEquals("10\n20\n30", run("""
             import std.io
             func main() {
-                var p: Int* = alloc [10, 20, 30]
+                var p: Int* = alloc arr![10, 20, 30]
                 std::println(*p)
                 var p1 = p + 1
                 std::println(*p1)
@@ -216,7 +216,7 @@ class Tier3MemoryTest {
         assertEquals("30\n20", run("""
             import std.io
             func main() {
-                var p: Int* = alloc [10, 20, 30]
+                var p: Int* = alloc arr![10, 20, 30]
                 var end = p + 2
                 std::println(*end)
                 var back = end - 1
@@ -229,7 +229,7 @@ class Tier3MemoryTest {
         assertEquals("99", run("""
             import std.io
             func main() {
-                var p: Int* = alloc [10, 20, 30]
+                var p: Int* = alloc arr![10, 20, 30]
                 *(p + 1) = 99
                 std::println(*(p + 1))
             }
@@ -240,7 +240,7 @@ class Tier3MemoryTest {
         assertEquals("3", run("""
             import std.io
             func main() {
-                var p: Int* = alloc [10, 20, 30, 40]
+                var p: Int* = alloc arr![10, 20, 30, 40]
                 var q = p + 3
                 std::println(q - p)
             }

@@ -65,7 +65,7 @@ private fun jsonStr(s: String): String {
     return sb.toString()
 }
 
-/** Compiles source; on success calls [onSuccess] to produce the output string. */
+/** Compiles source; on success calls arr![onSuccess] to produce the output string. */
 private fun withCompiled(source: String, onSuccess: (CompilationResult.Success) -> String): String {
     val result = Compiler().compile(source, release = false)
     return when (result) {
@@ -123,7 +123,7 @@ private fun withCompiledLibraries(
     }
 }
 
-/** [withCompiled] for `suspend` success callbacks (used by the interpreter entry points). */
+/** arr![withCompiled] for `suspend` success callbacks (used by the interpreter entry points). */
 private suspend fun withCompiledSuspend(source: String, onSuccess: suspend (CompilationResult.Success) -> String): String {
     val result = Compiler().compile(source, release = false)
     return when (result) {
@@ -189,7 +189,7 @@ fun azInterpret(source: String): Promise<JsString> =
         try { IrInterpreter().interpretSuspend(it.ir) } catch (e: Throwable) { "Runtime error: ${e.message ?: e.toString()}" }
     } }
 
-/** Runs the program's `test` blocks (same path as [azInterpret], which runs tests after main). */
+/** Runs the program's `test` blocks (same path as arr![azInterpret], which runs tests after main). */
 @JsExport
 fun azRunTests(source: String): Promise<JsString> =
     promisedJson { withCompiledSuspend(source) {

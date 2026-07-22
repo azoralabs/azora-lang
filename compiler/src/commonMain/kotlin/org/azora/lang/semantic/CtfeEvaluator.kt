@@ -1340,6 +1340,10 @@ class CtfeEvaluator(private val table: SymbolTable) {
         // compile time would either infinite-recurse (channel/async call themselves) or
         // silently substitute the placeholder result (toString -> ""). Never CTCE them.
         if (name in RUNTIME_INTRINSICS) return null
+        // A variadic parameter (`…xs: T`) is bound at runtime to an *array* of the
+        // trailing arguments. Folding here would bind the single argument directly
+        // (e.g. `arrayOf(0)` → `0` instead of `[0]`), so leave variadic calls alone.
+        if (funcDecl.params.any { it.variadic }) return null
         if (args.size != funcDecl.params.size) return null // arg count mismatch — let TypeResolver report it
 
         // Build a compile-time environment: param name → constant value

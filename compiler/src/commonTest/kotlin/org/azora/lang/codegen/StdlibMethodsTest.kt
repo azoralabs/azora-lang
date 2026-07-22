@@ -30,7 +30,7 @@ class StdlibMethodsTest {
         assertEquals("6", run("""
             import std.io
             func main() {
-                var nums = [1, 2, 3]
+                var nums = arr![1, 2, 3]
                 var sum = 0
                 for n in nums {
                     sum = sum + n
@@ -108,7 +108,7 @@ class StdlibMethodsTest {
         assertEquals("true\nfalse", run("""
             import std.io
             func main() {
-                var nums = [1, 2, 3]
+                var nums = arr![1, 2, 3]
                 std::println(nums.contains(2))
                 std::println(nums.contains(9))
             }

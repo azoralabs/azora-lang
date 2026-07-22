@@ -29,6 +29,7 @@ import org.azora.lang.frontend.TypeRef
 import org.azora.lang.frontend.UseAsTemplate
 import org.azora.lang.frontend.Visibility
 import org.azora.lang.ir.IrType
+import org.azora.lang.ir.mangleMethodSymbol
 
 /**
  * Semantic Pass 1 — Symbol Collection.
@@ -392,7 +393,7 @@ class SymbolCollector {
                 }
                 val tpSet = table.lookupStruct(item.typeName)?.typeParams?.toSet() ?: emptySet()
                 for (method in item.methods) {
-                    val mangled = "${item.typeName}_${method.name}"
+                    val mangled = mangleMethodSymbol("${item.typeName}_${method.name}")
                     try {
                         if (item.isExtension && struct != null && struct.fields.none { it.visibility == Visibility.EXPOSE } && method.receiverModifier == "mut ref") {
                             errors.add("line ${method.line}: pack '${item.typeName}' has no exposed fields, so extension '${method.name}' cannot use mut ref self")

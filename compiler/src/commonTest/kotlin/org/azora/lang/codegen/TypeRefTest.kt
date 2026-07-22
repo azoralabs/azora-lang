@@ -6,7 +6,7 @@ import org.azora.lang.ir.IrType
 import kotlin.test.*
 
 /**
- * Tests for the structured type-reference system ([org.azora.lang.frontend.TypeRef])
+ * Tests for the structured type-reference system (arr![org.azora.lang.frontend.TypeRef])
  * and its resolution to [IrType]. Covers fixed arrays, stdlib collection
  * surface types, function, tuple, and generic named-type annotations.
  */

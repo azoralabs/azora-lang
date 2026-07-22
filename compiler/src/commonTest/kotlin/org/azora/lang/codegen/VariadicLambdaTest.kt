@@ -64,7 +64,7 @@ class VariadicLambdaTest {
                     for x in xs { total = total + x }
                     total
                 }
-                std::println(f([1, 2, 3]))
+                std::println(f(arr![1, 2, 3]))
             }
         """.trimIndent()))
     }

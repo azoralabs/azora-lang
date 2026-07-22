@@ -32,7 +32,7 @@ class ConstGenericArrayTest {
             import std.io
 
             func main() {
-                fin a: Array<Int, 3> = [1, 2, 3]
+                fin a: Array<Int, 3> = arr![1, 2, 3]
                 std::println(a.size)
                 std::println(a[0])
                 std::println(a[2])
@@ -44,13 +44,13 @@ class ConstGenericArrayTest {
 
     @Test
     fun literalInfersItsSize() {
-        // `[4, 5]` infers `Array<Int, 2>`; `.size` folds to 2.
+        // `arr![4, 5]` infers `Array<Int, 2>`; `.size` folds to 2.
         val out = run(
             """
             import std.io
 
             func main() {
-                fin a = [4, 5]
+                fin a = arr![4, 5]
                 std::println(a.size)
             }
             """,
@@ -64,7 +64,7 @@ class ConstGenericArrayTest {
         val result = Compiler().compile(
             """
             func main() {
-                fin a: Array<Int, 2> = [1, 2]
+                fin a: Array<Int, 2> = arr![1, 2]
                 fin b: Array<Int, 3> = a
             }
             """.trimIndent(),
@@ -81,7 +81,7 @@ class ConstGenericArrayTest {
             import std.io
 
             func main() {
-                fin a: Array<Int> = [1, 2, 3]
+                fin a: Array<Int> = arr![1, 2, 3]
                 std::println(a[1])
             }
             """,

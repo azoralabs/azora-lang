@@ -151,14 +151,6 @@ use friend zone std {
         fin deferGeneric: Bool = false
     }
 
-    /** Compile-time query reporting whether the reflected declaration has `D`. */
-    @Experimental(sinceAzora: "0.0.4")
-    bridge spec HasDeco<D>: Bool (ref self) use as "hasDeco"
-
-    /** Compile-time view of immutable metadata from decorator `D`. */
-    @Experimental(sinceAzora: "0.0.4")
-    bridge spec DecoMetadata<D>: D (ref self) use as "decoMeta"
-
     /**
      * Primitive text and character operations supplied directly by every backend
      * (`bridge func`, target [BridgeTarget.Compiler]). They are bodyless; each backend

@@ -90,25 +90,6 @@ friend zone std {
     typealias Array<T> = Array<T, *>
 }
 
-use friend zone std {
-    /**
-     * Builds a fixed [Array].
-     *
-     * @0 `arr![]` expands to `std::emptyArray()`.
-     * @1 `arr![1, 2, 3]` expands to `std::arrayOf(1, 2, 3)`.
-     */
-    meta arr {
-        [] => std::emptyArray()
-        [...$items] => std::arrayOf(...$items)
-    }
-
-    meta type {
-        [T;] => std::Array<T>
-        [T; *] => std::Array<T, *>
-        [T; N] => std::Array<T, N>
-    }
-}
-
 test "arrayOf preserves values and ordefir" {
     fin values: Array<Int> = std::arrayOf(10, 20, 30)
     assert values.size == 3 { "arrayOf changed the number of elements" }

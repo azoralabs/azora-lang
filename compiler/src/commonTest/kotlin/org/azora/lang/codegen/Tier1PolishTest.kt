@@ -450,7 +450,7 @@ class Tier1PolishTest {
                 self.data[i] = v
             }
             func main() {
-                var b = IntBag([10, 20, 30])
+                var b = IntBag(arr![10, 20, 30])
                 std::println(b[1])
                 b[1] = 99
                 std::println(b[1])
@@ -503,7 +503,7 @@ class Tier1PolishTest {
         assertEquals("one\ntwo", run("""
             import std.io
             func main() {
-                var m = [1: "one", 2: "two"]
+                var m = arr![1: "one", 2: "two"]
                 std::println(m[1])
                 std::println(m[2])
             }
@@ -514,7 +514,7 @@ class Tier1PolishTest {
         assertEquals("red", run("""
             import std.io
             func main() {
-                var colors: Map<Int, String> = [1: "red", 2: "green"]
+                var colors: Map<Int, String> = arr![1: "red", 2: "green"]
                 std::println(colors[1])
             }
         """.trimIndent()))

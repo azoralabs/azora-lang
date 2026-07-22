@@ -132,7 +132,7 @@ friend zone std {
             }
             if found == -1 {
                 keys[keyCount] = k
-                groups[keyCount] = [arr[i]]
+                groups[keyCount] = arr![arr[i]]
                 keyCount += 1
             } else {
                 var g: Array<T> = groups[found]

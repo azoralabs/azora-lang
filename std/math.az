@@ -318,9 +318,13 @@ friend zone std::math {
     } zone {
         if a == 0 || b == 0 { return 0 }
         var absA = a
-        if absA < 0 { absA = -absA }
+        if absA < 0 {
+            absA = -absA
+        }
         var absB = b
-        if absB < 0 { absB = -absB }
+        if absB < 0 {
+            absB = -absB
+        }
         return absA / gcd<T>(a, b) * absB
     }
 
@@ -405,8 +409,7 @@ friend zone std::math {
     } out {
         assert it >= 0 { "Fibonacci result must be non-negative" }
     } zone {
-        if n == 0 { return 0 }
-        if n == 1 { return 1 }
+        if n == 0 || n == 1 { return n }
         var a = 0
         var b = 1
         var i = 2

@@ -276,13 +276,12 @@ class StdlibInjector private constructor(
                 }
             }
             // A module is auto-imported into downstream/user units when it is
-            // declared `export expose module …` (the default visibility) or follows
-            // the conventional `<root>.core` naming. `export intern`/`export protect`
-            // auto-import only within the library/folder, so they are not injected
-            // into external units here; `export confine` is rejected at parse time.
-            val alwaysOn = (program.isExported && evalExportIf(program.exportCondition, boolOverrides) &&
-                program.moduleVisibility == ModuleVisibility.EXPOSE) ||
-                module.substringAfterLast('.') == "core"
+            // declared `export expose module …` (the default visibility). The module
+            // name is irrelevant. `export intern`/`export protect` auto-import only
+            // within the library/folder, so they are not injected into external units
+            // here; `export confine` is rejected at parse time.
+            val alwaysOn = program.isExported && evalExportIf(program.exportCondition, boolOverrides) &&
+                program.moduleVisibility == ModuleVisibility.EXPOSE
             for (item in program.items) {
                 when (item) {
                     is TopLevel.Func -> register(item.decl.name, item)
@@ -748,8 +747,16 @@ class StdlibInjector private constructor(
             }
             is TopLevel.Bridge -> collectNamesFromAnnotations(item.annotations, names)
             is TopLevel.Meta -> {
+                // A `meta` is a compile-time macro definition, not a dependency
+                // root. Registering its name keeps it available to the macro
+                // expander, but its arm templates must NOT be treated as injection
+                // dependencies: an arm like `arr![…] => std::arrayOf(…)` references
+                // every collection factory the macro *could* expand to, and pulling
+                // those eagerly drags the whole container library into every program
+                // (including un-optimized builds where dead-code elimination cannot
+                // remove it). The real expansion targets are pulled on demand by the
+                // re-injection that runs after the macro expander rewrites call sites.
                 names.add(item.name)
-                item.arms.forEach { arm -> collectNamesFromExpr(arm.template, names) }
             }
             else -> {}
         }

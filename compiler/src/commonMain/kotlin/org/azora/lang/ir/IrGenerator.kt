@@ -353,7 +353,7 @@ class IrGenerator(private val table: SymbolTable) {
     }
 
     private fun lowerMethodInternal(typeName: String, method: FuncDecl): IrFunction {
-        val mangled = "${typeName}_${method.name}"
+        val mangled = mangleMethodSymbol("${typeName}_${method.name}")
         val symbol = table.lookupFunction(mangled)!!
         val previousOwner = currentTraceOwner
         currentTraceOwner = mangled

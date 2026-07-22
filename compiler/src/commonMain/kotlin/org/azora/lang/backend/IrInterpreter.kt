@@ -1059,6 +1059,24 @@ class IrInterpreter {
             }
         }
 
+        // Value call `receiver(args)`: the receiver evaluates to a function value.
+        expr.receiver?.let { recv ->
+            val fn = evalExpr(recv)
+            if (fn is Closure) {
+                val st = state()
+                val saved = st.scopes
+                st.scopes = ArrayDeque()
+                fn.capturedScopes.forEach { st.scopes.addLast(it) }
+                pushScope()
+                for (i in fn.params.indices) defineVar(fn.params[i].first, args.getOrNull(i))
+                val result = executeBody(fn.body)
+                popScope()
+                st.scopes = saved
+                return (result as? ReturnSignal)?.value
+            }
+            error("value is not callable: $fn")
+        }
+
         if (expr.name == "__isCheck") {
             val value = args[0]
             val typeName = args[1] as String

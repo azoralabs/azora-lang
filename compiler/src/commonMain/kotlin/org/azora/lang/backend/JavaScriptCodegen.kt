@@ -511,7 +511,10 @@ class JavaScriptCodegen {
                 "(${emitExpr(expr.left)} $op ${emitExpr(expr.right)})"
             }
         }
-        is IrExpr.Call -> {
+        is IrExpr.Call -> if (expr.receiver != null) {
+            // Value call `receiver(args)` — the receiver is a function value.
+            "(${emitExpr(expr.receiver)})(${expr.args.joinToString(", ") { emitExpr(it) }})"
+        } else {
             if (expr.name in POINTER_RUNTIME) usesPointers = true
             when (expr.name) {
                 "stringLength" -> "${emitExpr(expr.args[0])}.length"

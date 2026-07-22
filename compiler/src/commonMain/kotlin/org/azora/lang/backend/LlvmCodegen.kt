@@ -3030,6 +3030,9 @@ class LlvmCodegen {
     }
 
     private fun emitCall(expr: IrExpr.Call): String {
+        if (expr.receiver != null) {
+            error("indirect value calls (e.g. 'fs[0](x)') are not yet supported on the LLVM target")
+        }
         // `x is Variant` lowers to `@__isCheck(slot, "Variant")`; ensure the helper
         // (and strcmp) is emitted. The general call path emits the call itself.
         if (expr.name == "__isCheck") { usesIsCheck = true; usesStrcmp = true }

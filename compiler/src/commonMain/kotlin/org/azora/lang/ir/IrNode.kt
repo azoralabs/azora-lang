@@ -407,7 +407,9 @@ sealed class IrExpr {
     data class Call(
         val name: String,
         val args: List<IrExpr>,
-        override val type: IrType
+        override val type: IrType,
+        /** Non-null for an indirect value call `receiver(args)`; [name] is then unused. */
+        val receiver: IrExpr? = null,
     ) : IrExpr()
 
     /**

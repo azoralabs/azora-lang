@@ -347,10 +347,6 @@ class TypeResolver(private val table: SymbolTable) {
                         table.popScope()
                     }
                 }
-                table.pushScope()
-                table.defineVariable(VariableSymbol(stmt.name, IrType.Int, mutable = true))
-                resolveBody(stmt.body, returnType)
-                table.popScope()
             }
             is Stmt.Loop -> {
                 table.pushScope()
@@ -618,6 +614,16 @@ class TypeResolver(private val table: SymbolTable) {
                 resolveBinaryType(expr.op, leftType, rightType, expr.line)
             }
             is Expr.Call -> {
+                // Value call `receiver(args)` — the receiver must be a function value.
+                expr.receiver?.let { recv ->
+                    val recvType = resolveExpr(recv)
+                    for (arg in expr.args) resolveExpr(arg)
+                    if (recvType is IrType.Function) return recvType.ret
+                    if (recvType != null && recvType != IrType.Any) {
+                        errors.add("line ${expr.line}: value of type '$recvType' is not callable")
+                    }
+                    return IrType.Any
+                }
                 if (expr.callee == "__defaultLogLevel") return IrType.Named("LogLevel")
                 if (expr.callee == "__reflect") {
                     errors.add("line ${expr.line}: reflect is compile-time-only and must be followed by .hasDeco<D> or .decoMeta<D>")
@@ -701,6 +707,13 @@ class TypeResolver(private val table: SymbolTable) {
                             }
                         }
                         return fn.ret
+                    }
+                    // A function value whose concrete type was erased to `Any` (e.g. a
+                    // loop variable over `Array<(Int) -> Int>`, whose element type
+                    // erases). Trust it is callable; the result type is unknown.
+                    if (v != null && (v.type == IrType.Any || v.type is IrType.Function)) {
+                        for (arg in expr.args) { resolveExpr(arg) ?: return null }
+                        return IrType.Any
                     }
                     errors.add("line ${expr.line}: undefined function '${expr.callee}'")
                     return null

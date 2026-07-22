@@ -2080,6 +2080,33 @@ class Parser(
                         methods.add(FuncDecl(propName, emptyList(), propType, propBody, false, emptyList(), methodStart.line, methodStart.column, annotations = memberAnnotations, visibility = visibility, receiverModifier = "ref", memberCallStyle = MemberCallStyle.PROPERTY))
                     }
                 }
+                // `bridge prop<D> name: T` / `bridge func<D> name(params): T` — a
+                // bodyless, compiler-provided member (used by reflection handles).
+                check(TokenType.BRIDGE) -> {
+                    advance()
+                    when {
+                        check(TokenType.PROP) -> {
+                            advance()
+                            val tp = parseTypeParams()
+                            val propName = consumeIdentifierLike("Expected property name after 'bridge prop'")
+                            val propType: TypeAnnotation = if (match(TokenType.COLON)) TypeAnnotation.Explicit(parseTypeName()) else TypeAnnotation.Inferred
+                            consumeNewline()
+                            methods.add(FuncDecl(propName, emptyList(), propType, emptyList(), false, tp.names, methodStart.line, methodStart.column, annotations = memberAnnotations, visibility = visibility, receiverModifier = "ref", memberCallStyle = MemberCallStyle.PROPERTY))
+                        }
+                        check(TokenType.FUNC) -> {
+                            advance()
+                            val tp = parseTypeParams()
+                            val fnName = consumeIdentifierLike("Expected function name after 'bridge func'")
+                            consume(TokenType.L_PAREN, "Expected '(' after bridge function name")
+                            val params = parseParams()
+                            consume(TokenType.R_PAREN, "Expected ')' after bridge parameters")
+                            val ret: TypeAnnotation = if (match(TokenType.COLON)) TypeAnnotation.Explicit(parseTypeName()) else TypeAnnotation.Explicit(TypeRef.Named("Unit"))
+                            consumeNewline()
+                            methods.add(FuncDecl(fnName, params, ret, emptyList(), false, tp.names, methodStart.line, methodStart.column, annotations = memberAnnotations, visibility = visibility, receiverModifier = "ref"))
+                        }
+                        else -> error("Expected 'prop' or 'func' after 'bridge' in impl block at line ${peek().line}")
+                    }
+                }
                 check(TokenType.OPER) -> error("oper[] overloads are only allowed as standalone 'impl oper[] for ${typeName} { ... }' at line ${peek().line}")
                 check(TokenType.FUNC) -> methods.add(parseFuncDecl(isInline, annotations = memberAnnotations, isVirtual = isVirt, visibility = visibility))
                 check(TokenType.TASK) -> methods.add(parseFuncDecl(isInline, annotations = memberAnnotations, isVirtual = isVirt, isTask = true, visibility = visibility))
@@ -4404,12 +4431,40 @@ class Parser(
     }
 
     /** `inline for x in a..b { body }` — a compile-time unrolled loop. */
-    private fun parseInlineFor(): Stmt.InlineFor {
+    private fun parseInlineFor(): Stmt {
         val start = peek()
         consume(TokenType.INLINE, "Expected 'inline'")
         consume(TokenType.FOR, "Expected 'for'")
         val name = consume(TokenType.IDENTIFIER, "Expected loop variable name").lexeme
         consume(TokenType.IN, "Expected 'in' after loop variable")
+        // Compile-time list iterable (a type-list variable like `Systems`, a
+        // `[A, B]` grouping, or `~`-joined lists): unroll the body per element at
+        // parse time into a static statement block, exactly like the top-level
+        // form. Generated calls stay named/static, so this lowers to every target.
+        if ((peek().type == TokenType.IDENTIFIER && typeListEnv.containsKey(peek().lexeme)) ||
+            peek().type == TokenType.L_BRACKET) {
+            val list = parseComptimeForValues()
+            val indexVar = if (peek().type == TokenType.IDENTIFIER && peek().lexeme == "with") {
+                advance(); consumeIdentifierLike("Expected index variable after 'with'")
+            } else null
+            consume(TokenType.L_BRACE, "Expected '{' after inline for iterable")
+            val bodyTokens = captureBraceBody()
+            consumeNewline()
+            val stmts = mutableListOf<Stmt>()
+            for (i in list.indices) {
+                var rendered = bodyTokens
+                val bindings = buildList {
+                    add(name to list[i])
+                    if (indexVar != null) add(indexVar to i.toString())
+                }
+                rendered = foldBraceInterpolation(rendered, bindings)
+                rendered = substituteLoopVar(rendered, name, list[i])
+                if (indexVar != null) rendered = substituteLoopVar(rendered, indexVar, i.toString())
+                rendered = foldListIndexing(rendered)
+                stmts.addAll(parseInlineForBodyStatements(rendered, start))
+            }
+            return Stmt.Zone(stmts, start.line, start.column)
+        }
         val parsedIterable = parseExpr()
         // The general expression parser also supports free-form infix calls, so
         // `items with index` initially has the shape `items.with(index)`. Unwrap
@@ -4433,6 +4488,22 @@ class Parser(
         return Stmt.InlineFor(name, iterable, body, start.line, start.column, indexName = indexName)
     }
 
+
+    /**
+     * Re-parses the rendered tokens of one unrolled `inline for` iteration as a
+     * statement sequence. The tokens are wrapped in a throwaway function so the
+     * ordinary body parser can consume them, then that function's body is lifted.
+     */
+    private fun parseInlineForBodyStatements(rendered: List<Token>, start: Token): List<Stmt> {
+        val prefix = Lexer("func __inline_for_body__() {\n").tokenize().dropLast(1) // drop trailing EOF
+        val suffix = Lexer("\n}\n").tokenize() // includes EOF
+        val tokens = prefix + rendered + suffix
+        val program = Parser(tokens, typeListEnv).parse()
+        val fn = program.items.filterIsInstance<TopLevel.Func>()
+            .firstOrNull { it.decl.name == "__inline_for_body__" }
+            ?: error("failed to expand 'inline for' body at line ${start.line}")
+        return fn.decl.body
+    }
 
     /** `inline zone { ... }` — alias for `inline { ... }`. */
     private fun parseInlineZoneBlock(): Stmt.InlineBlock {
@@ -5158,9 +5229,13 @@ class Parser(
 
     private fun isReflectName(name: String): Boolean = name == "reflect" || name.endsWith("__reflect")
 
-    /** After `<`, whether the tokens spell a reflect target `Ident(::Ident)*>`. */
+    /** After `<`, whether the tokens spell a reflect target `Ident(::Ident)*>` or the whole-program `*`. */
     private fun isReflectTargetAhead(): Boolean {
         var i = current + 1
+        // `reflect<*>` — the whole program, used with `.withDeco<D>` enumeration.
+        if (tokens.getOrNull(i)?.type == TokenType.STAR) {
+            return tokens.getOrNull(i + 1)?.type == TokenType.GREATER
+        }
         if (tokens.getOrNull(i)?.type != TokenType.IDENTIFIER) return false
         i++
         while (tokens.getOrNull(i)?.type == TokenType.DOUBLE_COLON) {
@@ -5173,6 +5248,8 @@ class Parser(
     /** Parses `X` / `X::member` inside `reflect<…>` into the mangled identifier. */
     private fun parseReflectTarget(): Expr {
         val start = peek()
+        // `reflect<*>` — a whole-program handle for `.withDeco<D>` enumeration.
+        if (match(TokenType.STAR)) return Expr.Identifier("*", start.line, start.column, 1)
         var name = consume(TokenType.IDENTIFIER, "Expected a name inside 'reflect<...>'").lexeme
         while (match(TokenType.DOUBLE_COLON)) {
             name += "__" + consume(TokenType.IDENTIFIER, "Expected name after '::' in 'reflect<...>'").lexeme
@@ -5333,7 +5410,7 @@ class Parser(
                         }
                     }
                 }
-                check(TokenType.LESS) && expr is Expr.Member && expr.name in setOf("hasDeco", "decoMeta") -> {
+                check(TokenType.LESS) && expr is Expr.Member && expr.name in setOf("hasDeco", "decoMeta", "withDeco") -> {
                     val innerTarget = (expr.target as? Expr.Grouping)?.expr ?: expr.target
                     // `std::reflect<Type>.field` accesses a member of the reflect handle;
                     // reflected declaration members must go inside the angle brackets
@@ -5349,7 +5426,11 @@ class Parser(
                     if (typeArgs.size != 1) {
                         error("'${expr.name}' expects exactly one decorator type argument at line ${expr.line}")
                     }
-                    val intrinsic = if (expr.name == "hasDeco") "__hasDeco" else "__decoMeta"
+                    val intrinsic = when (expr.name) {
+                        "hasDeco" -> "__hasDeco"
+                        "decoMeta" -> "__decoMeta"
+                        else -> "__withDeco"
+                    }
                     expr = Expr.Call(intrinsic, reflected.args, expr.line, expr.column, expr.length, typeArgs)
                 }
                 check(TokenType.LESS) && expr is Expr.Identifier &&
@@ -5417,7 +5498,9 @@ class Parser(
                             rewriteCastIntrinsic(call) ?: call
                         }
                         is Expr.Member -> Expr.MethodCall(expr.target, expr.name, args, expr.line, expr.column)
-                        else -> error("Invalid call target at line ${peek().line}")
+                        // Calling an arbitrary expression value, e.g. `fs[0](x)` or
+                        // `(getFn())(x)` — the receiver must be a function value.
+                        else -> Expr.Call("", args, expr.line, expr.column, expr.length, receiver = expr)
                     }
                 }
                 allowTrailingLambda && check(TokenType.L_BRACE) && expr is Expr.Identifier && expr.name == "async" -> {

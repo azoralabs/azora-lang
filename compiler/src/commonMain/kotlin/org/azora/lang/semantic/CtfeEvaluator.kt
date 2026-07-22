@@ -1230,7 +1230,8 @@ class CtfeEvaluator(private val table: SymbolTable) {
     }
 
     private fun stepReflectZone(base: ReflectNode?, member: String, program: Program): ReflectNode? {
-        if (member != "zone") return null
+        // `reflect<T>.enclosingZone` (`zone` is a keyword, so the member is spelled out).
+        if (member != "enclosingZone") return null
         return when (base) {
             is ReflectNode.Decl -> ReflectNode.Zone(program.zones[base.name] ?: globalZone)
             is ReflectNode.Zone -> ReflectNode.Zone(base.meta?.parent)

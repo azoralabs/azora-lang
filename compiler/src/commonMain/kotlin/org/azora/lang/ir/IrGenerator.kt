@@ -1027,6 +1027,14 @@ class IrGenerator(private val table: SymbolTable) {
                 IrExpr.Binary(left, op, right, type)
             }
             is Expr.Call -> {
+                // Value call `receiver(args)` — lower the receiver (a function value)
+                // and emit an indirect call carrying it.
+                expr.receiver?.let { recv ->
+                    val target = lowerExpr(recv)
+                    val ret = (target.type as? IrType.Function)?.ret ?: IrType.Any
+                    val args = expr.args.map { lowerExpr(it) }
+                    return IrExpr.Call("", args, ret, receiver = target)
+                }
                 if (expr.callee == "__defaultLogLevel") {
                     val first = table.lookupEnum("LogLevel")?.firstOrNull()
                         ?: error("LogLevel must declare at least one variant")
@@ -1132,6 +1140,12 @@ class IrGenerator(private val table: SymbolTable) {
                 }
                 // Calling a lambda stored in a variable.
                 val v = table.lookupVariable(expr.callee)
+                // A function value whose type erased to `Any` (e.g. a loop variable
+                // over `Array<(Int) -> Int>`): emit an indirect call by variable name.
+                if (v != null && v.type !is IrType.Function && v.type == IrType.Any) {
+                    val args = expr.args.map { lowerExpr(it) }
+                    return IrExpr.Call(resolveName(expr.callee), args, IrType.Any)
+                }
                 if (v != null && v.type is IrType.Function) {
                     // Variadic lambda (`<...T>{ … }`): pack all args into the single `it` array.
                     val args = if (v.type.variadic) {

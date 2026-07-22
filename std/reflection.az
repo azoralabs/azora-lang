@@ -27,7 +27,7 @@ module std.reflection
  * ```
  * std::reflect<P>.hasDeco<Serializable>       // Bool
  * std::reflect<P>.decoMeta<SerialName>.value  // decorator field
- * std::reflect<P>.zone?.label                 // enclosing zone metadata
+ * std::reflect<P>.enclosingZone?.label        // enclosing zone metadata
  * ```
  *
  * The compiler lowers every `std::reflect<X>` at parse time, so the declaration
@@ -39,11 +39,35 @@ module std.reflection
 friend zone std {
     /**
      * Compile-time reflection handle for the declaration `T`, produced by
-     * `std::reflect<T>`. Its members (`.hasDeco<D>`, `.decoMeta<D>`, `.zone`) are
+     * `std::reflect<T>`. Its members (`.hasDeco<D>`, `.decoMeta<D>`, `.enclosingZone`) are
      * resolved by the compiler; `bridge pack` means no struct is emitted.
      */
     @Experimental(sinceAzora: "0.0.4")
     bridge pack<T> Reflected
+
+    impl<T> Reflected {
+        /** Whether the reflected declaration `T` carries decorator `D`. */
+        @Experimental(sinceAzora: "0.0.4")
+        bridge prop<D> hasDeco: Bool
+
+        /** Immutable compile-time metadata from decorator `D` on `T`. */
+        @Experimental(sinceAzora: "0.0.4")
+        bridge prop<D> decoMeta: D
+
+        /** The enclosing lexical zone of `T`, or null at global scope. */
+        @Experimental(sinceAzora: "0.0.4")
+        bridge prop enclosingZone: Zone?
+
+        /**
+         * Every program type carrying decorator `D`. Read from the whole-program
+         * handle `std::reflect<*>` and iterated with
+         * `inline for X in std::reflect<*>.withDeco<D> { … }`, which the compiler
+         * unrolls at compile time into static references to each matching type —
+         * no runtime cost and no function values, so it lowers to every backend.
+         */
+        @Experimental(sinceAzora: "0.0.4")
+        bridge prop<D> withDeco: Array<Type>
+    }
 
     /**
      * Compile-time reflection handle for the declaration `T`. Used as a prop
@@ -52,4 +76,22 @@ friend zone std {
      */
     @Experimental(sinceAzora: "0.0.4")
     bridge func<T> reflect(includeInherited: Bool = false): Reflected<T>
+
+     /** Compile-time handle for a lexical zone, from `std::reflect<T>.enclosingZone`. */
+    @Experimental(sinceAzora: "0.0.4")
+    bridge pack Zone
+
+    impl Zone {
+        /** The zone's label, or null for the global scope / an unlabeled zone. */
+        @Experimental(sinceAzora: "0.0.4")
+        bridge prop label: String?
+
+        /** Whether this is an inline (compile-time) zone. */
+        @Experimental(sinceAzora: "0.0.4")
+        bridge prop isInline: Bool
+
+        /** The enclosing parent zone, or null at the global scope. */
+        @Experimental(sinceAzora: "0.0.4")
+        bridge prop parent: Zone?
+    }
 }

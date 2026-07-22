@@ -33,6 +33,7 @@ import org.azora.lang.ir.IrProgram
 import org.azora.lang.ir.IrType
 import org.azora.lang.semantic.EffectChecker
 import org.azora.lang.semantic.SemanticPipeline
+import org.azora.lang.semantic.ReflectDecoExpander
 import org.azora.lang.semantic.SerializationDeriver
 import org.azora.lang.semantic.VariadicMonomorphizer
 
@@ -188,6 +189,11 @@ class Compiler(
         }
         val injected = CallbackImplNormalizer.normalize(libraries.inject(serialization.program))
 
+        // 2b-bis. Unroll `inline for X in reflect<*>.withDeco<D>` loops now that the
+        // whole program (all modules' decorated types) is visible. Generic: the
+        // compiler attaches no meaning to any decorator.
+        val reflected = ReflectDecoExpander.expand(injected)
+
         // 2c. Expand `meta` macros: rewrite every `Expr.MetaInvoke` into its
         // matched arm's template (splice-substituting `$captures`) and remove
         // the `TopLevel.Meta` declarations. Runs after stdlib injection so both
@@ -196,7 +202,7 @@ class Compiler(
         // monomorphize normally. The result is plain expressions — no IR/backend
         // awareness of macros is needed.
         val macroExpanded = try {
-            MacroExpander.expand(injected)
+            MacroExpander.expand(reflected)
         } catch (e: IllegalStateException) {
             return CompilationResult.Failure(listOf(e.message ?: "macro expansion failed"))
         }
@@ -258,11 +264,16 @@ class Compiler(
         // 11. IR → JavaScript
         val javascript = JavaScriptCodegen().generate(backendIr)
 
-        // 12. IR → WebAssembly text (WAT)
-        val wasm = WasmCodegen().generate(backendIr)
+        // 12. IR → WebAssembly text (WAT). A feature a backend cannot yet lower
+        // (e.g. indirect value calls) degrades only that target's output rather
+        // than failing the whole compilation, so the interpreter and other targets
+        // remain usable.
+        val wasm = try { WasmCodegen().generate(backendIr) }
+            catch (e: IllegalStateException) { "(; WebAssembly codegen unsupported: ${e.message} ;)" }
 
         // 13. IR → LLVM IR
-        val llvm = LlvmCodegen().generate(backendIr)
+        val llvm = try { LlvmCodegen().generate(backendIr) }
+            catch (e: IllegalStateException) { "; LLVM codegen unsupported: ${e.message}" }
 
         return CompilationResult.Success(javascript, wasm, llvm, semantic.program, ir, optimizedIr, semantic.effects, warnings)
     }

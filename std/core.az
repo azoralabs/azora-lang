@@ -99,6 +99,7 @@ use friend zone std {
     bridge enum Target {
         Compiler,
         C,
+        ObjectiveC,
         JavaScript,
         WebAssembly
     }

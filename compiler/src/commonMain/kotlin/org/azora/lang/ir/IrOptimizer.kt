@@ -120,7 +120,7 @@ class IrOptimizer {
             val operand = foldExpr(expr.operand)
             tryFoldUnary(expr.op, operand, expr.type) ?: expr.copy(operand = operand)
         }
-        is IrExpr.Call -> expr.copy(args = expr.args.map { foldExpr(it) })
+        is IrExpr.Call -> expr.copy(args = expr.args.map { foldExpr(it) }, receiver = expr.receiver?.let { foldExpr(it) })
         else -> expr
     }
 
@@ -421,7 +421,7 @@ class IrOptimizer {
         )
         is IrExpr.Unary -> expr.copy(operand = propagateExpr(expr.operand, constants))
         is IrExpr.EnumToString -> expr.copy(value = propagateExpr(expr.value, constants))
-        is IrExpr.Call -> expr.copy(args = expr.args.map { propagateExpr(it, constants) })
+        is IrExpr.Call -> expr.copy(args = expr.args.map { propagateExpr(it, constants) }, receiver = expr.receiver?.let { propagateExpr(it, constants) })
         is IrExpr.IfExpr -> expr.copy(
             condition = propagateExpr(expr.condition, constants),
             thenExpr = propagateExpr(expr.thenExpr, constants),
@@ -728,6 +728,7 @@ class IrOptimizer {
             is IrExpr.Var -> names.add(expr.name)
             is IrExpr.Call -> {
                 names.add(expr.name)
+                expr.receiver?.let { collectReferencedNamesFromExpr(it, names) }
                 expr.args.forEach { collectReferencedNamesFromExpr(it, names) }
             }
             is IrExpr.Binary -> {

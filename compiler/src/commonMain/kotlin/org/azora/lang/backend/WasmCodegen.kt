@@ -435,6 +435,9 @@ class WasmCodegen {
     }
 
     private fun emitCall(expr: IrExpr.Call): String {
+        if (expr.receiver != null) {
+            error("indirect value calls (e.g. 'fs[0](x)') are not yet supported on the WebAssembly target")
+        }
         if ((expr.name == "std__println" || expr.name == "std__print") && expr.args.size == 1) {
             val arg = expr.args.single()
             val operation = if (expr.name == "std__print") "write" else "print"

@@ -128,7 +128,13 @@ sealed class Expr {
      * @property column 1-based source column
      * @property length source text length
      */
-    data class Call(val callee: String, val args: List<Expr>, override val line: Int, override val column: Int = 0, override val length: Int = 0, val typeArgs: List<TypeRef> = emptyList()) : Expr()
+    /**
+     * A call `callee(args)`. When [receiver] is non-null the call target is an
+     * arbitrary expression value (e.g. `fs[0](x)`, `getFn()(x)`) rather than a
+     * named function; [callee] is then unused. The receiver must evaluate to a
+     * function value.
+     */
+    data class Call(val callee: String, val args: List<Expr>, override val line: Int, override val column: Int = 0, override val length: Int = 0, val typeArgs: List<TypeRef> = emptyList(), val receiver: Expr? = null) : Expr()
 
     /**
      * Parenthesized expression (e.g. `(a + b)`).

@@ -115,8 +115,10 @@ class LlvmCodegen {
     /** Function-local structured task scopes; spawned tasks attach to the innermost scope. */
     private val taskScopeStack = ArrayDeque<String>()
 
+    private data class ActiveArena(val pointer: String, val previous: String)
+
     /** Active zone alloc arenas; returns clean them from inner to outer. */
-    private val arenaStack = ArrayDeque<String>()
+    private val arenaStack = ArrayDeque<ActiveArena>()
 
     private var taskContextCounter = 0
 
@@ -366,6 +368,7 @@ class LlvmCodegen {
         }
         if (usesArenaRuntime) {
             line("%azora.arena = type { i64, i64, i8** }")
+            line("@__azora_current_arena = internal thread_local global %azora.arena* null")
         }
         for (typeDef in lateTypeDefinitions) line(typeDef)
         if (usesTaskRuntime || usesArenaRuntime || lateTypeDefinitions.isNotEmpty()) line("")
@@ -676,7 +679,9 @@ class LlvmCodegen {
             val ctx = "%ctx"
             emit("  $sizeGep = getelementptr $ctxType, $ctxType* null, i32 1")
             emit("  $size = ptrtoint $ctxType* $sizeGep to i64")
-            emit("  $raw = call i8* @__azora_alloc(i64 $size)")
+            // The task entry releases its context explicitly. Keep runtime-owned
+            // bookkeeping outside a caller's active zone to avoid double frees.
+            emit("  $raw = call i8* @__azora_alloc_raw(i64 $size)")
             emit("  $ctx = bitcast i8* $raw to $ctxType*")
             for ((i, param) in func.params.withIndex()) {
                 val (name, type) = param
@@ -721,7 +726,8 @@ class LlvmCodegen {
     private fun emitAllArenaCleanups() {
         if (!usesArenaRuntime) return
         for (arena in arenaStack.asReversed()) {
-            emit("  call void @__azora_arena_free_all(%azora.arena* $arena)")
+            emit("  call void @__azora_arena_free_all(%azora.arena* ${arena.pointer})")
+            emit("  store %azora.arena* ${arena.previous}, %azora.arena** @__azora_current_arena")
         }
     }
 
@@ -819,7 +825,10 @@ class LlvmCodegen {
         val arena = nextTmp()
         emit("  $arena = alloca %azora.arena")
         emit("  call void @__azora_arena_begin(%azora.arena* $arena)")
-        arenaStack.addLast(arena)
+        val previous = nextTmp()
+        emit("  $previous = load %azora.arena*, %azora.arena** @__azora_current_arena")
+        emit("  store %azora.arena* $arena, %azora.arena** @__azora_current_arena")
+        arenaStack.addLast(ActiveArena(arena, previous))
 
         var nestedScope: String? = null
         if (usesTaskRuntime) {
@@ -834,6 +843,7 @@ class LlvmCodegen {
         if (!terminated) {
             if (nestedScope != null) emit("  call void @__azora_scope_join_all(%azora.scope* $nestedScope)")
             emit("  call void @__azora_arena_free_all(%azora.arena* $arena)")
+            emit("  store %azora.arena* $previous, %azora.arena** @__azora_current_arena")
         }
         if (nestedScope != null) taskScopeStack.removeLast()
         arenaStack.removeLast()
@@ -1443,7 +1453,9 @@ class LlvmCodegen {
     private fun emitResultBox(value: String, type: IrType): String {
         usesAllocatorRuntime = true
         val raw = nextTmp()
-        emit("  $raw = call i8* @__azora_alloc(i64 ${sizeOfScalar(type)})")
+        // Joined task results are owned and released by the task runtime. They
+        // must not also be registered in an enclosing allocation zone.
+        emit("  $raw = call i8* @__azora_alloc_raw(i64 ${sizeOfScalar(type)})")
         val ptrType = "${mapType(type)}*"
         val typed = nextTmp()
         emit("  $typed = bitcast i8* $raw to $ptrType")
@@ -1459,7 +1471,7 @@ class LlvmCodegen {
 
     private fun emitHeapAlloc(size: String): String {
         usesAllocatorRuntime = true
-        val arena = arenaStack.lastOrNull()
+        val arena = arenaStack.lastOrNull()?.pointer
         val raw = nextTmp()
         if (arena != null) {
             usesArenaRuntime = true
@@ -1491,7 +1503,8 @@ class LlvmCodegen {
             emit("  $sizeGep = getelementptr $ctxType, $ctxType* null, i32 1")
             emit("  $size = ptrtoint $ctxType* $sizeGep to i64")
             val raw = nextTmp()
-            emit("  $raw = call i8* @__azora_alloc(i64 $size)")
+            // The task entry releases its capture context explicitly.
+            emit("  $raw = call i8* @__azora_alloc_raw(i64 $size)")
             val ctx = nextTmp()
             emit("  $ctx = bitcast i8* $raw to $ctxType*")
             for ((i, capture) in captures.withIndex()) {
@@ -3379,6 +3392,14 @@ class LlvmCodegen {
 
         buildStringIntrinsics(sb)
 
+        // Values created by language helpers follow the active allocation zone.
+        // Runtime bookkeeping is handled separately with __azora_alloc_raw.
+        if (usesStrConcat || usesStrRepeat || usesArrayGrow || usesMapGrow ||
+            usesIntToStr || usesUintToStr || usesRealToStr || usesCharToStr
+        ) {
+            usesAllocatorRuntime = true
+        }
+
         if (usesIsCheck) {
             // `x is Variant`: a slot carries its variant name as its first (`i8*`)
             // field; compare it to the requested tag. Null-safe (a null slot never
@@ -3405,7 +3426,7 @@ class LlvmCodegen {
             usesFree = true
             usesAbort = true
             sb.appendLine("; runtime: checked native allocation")
-            sb.appendLine("define i8* @__azora_alloc(i64 %size) {")
+            sb.appendLine("define i8* @__azora_alloc_raw(i64 %size) {")
             sb.appendLine("entry:")
             sb.appendLine("  %p = call i8* @malloc(i64 %size)")
             sb.appendLine("  %isnull = icmp eq i8* %p, null")
@@ -3416,6 +3437,27 @@ class LlvmCodegen {
             sb.appendLine("ok:")
             sb.appendLine("  ret i8* %p")
             sb.appendLine("}")
+            sb.appendLine()
+            if (usesArenaRuntime) {
+                sb.appendLine("define i8* @__azora_alloc(i64 %size) {")
+                sb.appendLine("entry:")
+                sb.appendLine("  %arena = load %azora.arena*, %azora.arena** @__azora_current_arena")
+                sb.appendLine("  %outside = icmp eq %azora.arena* %arena, null")
+                sb.appendLine("  br i1 %outside, label %raw, label %scoped")
+                sb.appendLine("raw:")
+                sb.appendLine("  %rawPtr = call i8* @__azora_alloc_raw(i64 %size)")
+                sb.appendLine("  ret i8* %rawPtr")
+                sb.appendLine("scoped:")
+                sb.appendLine("  %arenaPtr = call i8* @__azora_arena_alloc(%azora.arena* %arena, i64 %size)")
+                sb.appendLine("  ret i8* %arenaPtr")
+                sb.appendLine("}")
+            } else {
+                sb.appendLine("define i8* @__azora_alloc(i64 %size) {")
+                sb.appendLine("entry:")
+                sb.appendLine("  %p = call i8* @__azora_alloc_raw(i64 %size)")
+                sb.appendLine("  ret i8* %p")
+                sb.appendLine("}")
+            }
             sb.appendLine()
             sb.appendLine("define void @__azora_free(i8* %ptr) {")
             sb.appendLine("entry:")
@@ -3430,7 +3472,7 @@ class LlvmCodegen {
             sb.appendLine()
         }
 
-        if (globalVars.keys.any { it.startsWith("__tl__") }) {
+        if (globalVars.keys.any { it.startsWith("__tl__") } || usesArenaRuntime) {
             sb.appendLine("; runtime: lli fallback for Mach-O emulated TLS lookup")
             sb.appendLine("define i8* @__emutls_get_address(i8* %control) {")
             sb.appendLine("entry:")
@@ -3458,7 +3500,7 @@ class LlvmCodegen {
             sb.appendLine()
             sb.appendLine("define i8* @__azora_arena_alloc(%azora.arena* %arena, i64 %size) {")
             sb.appendLine("entry:")
-            sb.appendLine("  %ptr = call i8* @__azora_alloc(i64 %size)")
+            sb.appendLine("  %ptr = call i8* @__azora_alloc_raw(i64 %size)")
             sb.appendLine("  %countPtr = getelementptr %azora.arena, %azora.arena* %arena, i32 0, i32 0")
             sb.appendLine("  %capPtr = getelementptr %azora.arena, %azora.arena* %arena, i32 0, i32 1")
             sb.appendLine("  %itemsPtr = getelementptr %azora.arena, %azora.arena* %arena, i32 0, i32 2")
@@ -3471,7 +3513,7 @@ class LlvmCodegen {
             sb.appendLine("  %double = mul i64 %cap, 2")
             sb.appendLine("  %newCap = select i1 %iszero, i64 8, i64 %double")
             sb.appendLine("  %bytes = mul i64 %newCap, 8")
-            sb.appendLine("  %newRaw = call i8* @__azora_alloc(i64 %bytes)")
+            sb.appendLine("  %newRaw = call i8* @__azora_alloc_raw(i64 %bytes)")
             sb.appendLine("  %newItems = bitcast i8* %newRaw to i8**")
             sb.appendLine("  %oldItems = load i8**, i8*** %itemsPtr")
             sb.appendLine("  br label %copy.cond")
@@ -3536,9 +3578,9 @@ class LlvmCodegen {
             sb.appendLine("; runtime: pthread-backed structured tasks")
             sb.appendLine("define %azora.task* @__azora_task_spawn(i8* (i8*)* %fn, i8* %ctx) {")
             sb.appendLine("entry:")
-            sb.appendLine("  %task.raw = call i8* @__azora_alloc(i64 24)")
+            sb.appendLine("  %task.raw = call i8* @__azora_alloc_raw(i64 24)")
             sb.appendLine("  %task = bitcast i8* %task.raw to %azora.task*")
-            sb.appendLine("  %thread.slot.raw = call i8* @__azora_alloc(i64 8)")
+            sb.appendLine("  %thread.slot.raw = call i8* @__azora_alloc_raw(i64 8)")
             sb.appendLine("  %thread.slot = bitcast i8* %thread.slot.raw to i8**")
             sb.appendLine("  %create = call i32 @pthread_create(i8** %thread.slot, i8* null, i8* (i8*)* %fn, i8* %ctx)")
             sb.appendLine("  %thread = load i8*, i8** %thread.slot")
@@ -3639,7 +3681,7 @@ class LlvmCodegen {
             sb.appendLine("  %double = mul i64 %cap, 2")
             sb.appendLine("  %newCap = select i1 %iszero, i64 8, i64 %double")
             sb.appendLine("  %bytes = mul i64 %newCap, 8")
-            sb.appendLine("  %newRaw = call i8* @__azora_alloc(i64 %bytes)")
+            sb.appendLine("  %newRaw = call i8* @__azora_alloc_raw(i64 %bytes)")
             sb.appendLine("  %newItems = bitcast i8* %newRaw to %azora.task**")
             sb.appendLine("  %oldItems = load %azora.task**, %azora.task*** %itemsPtr")
             sb.appendLine("  br label %copy.cond")
@@ -3699,7 +3741,7 @@ class LlvmCodegen {
         }
 
         if (usesStrConcat) {
-            usesMalloc = true; usesStrlen = true; usesStrcpy = true; usesStrcat = true
+            usesStrlen = true; usesStrcpy = true; usesStrcat = true
             sb.appendLine("; runtime: string concatenation")
             sb.appendLine("define i8* @__azora_str_concat(i8* %a, i8* %b) {")
             sb.appendLine("entry:")
@@ -3707,7 +3749,7 @@ class LlvmCodegen {
             sb.appendLine("  %lb = call i64 @strlen(i8* %b)")
             sb.appendLine("  %sum = add i64 %la, %lb")
             sb.appendLine("  %size = add i64 %sum, 1")
-            sb.appendLine("  %buf = call i8* @malloc(i64 %size)")
+            sb.appendLine("  %buf = call i8* @__azora_alloc(i64 %size)")
             sb.appendLine("  %c1 = call i8* @strcpy(i8* %buf, i8* %a)")
             sb.appendLine("  %c2 = call i8* @strcat(i8* %buf, i8* %b)")
             sb.appendLine("  ret i8* %buf")
@@ -3716,7 +3758,7 @@ class LlvmCodegen {
         }
 
         if (usesStrRepeat) {
-            usesMalloc = true; usesStrlen = true
+            usesStrlen = true
             sb.appendLine("; runtime: string repetition")
             sb.appendLine("define i8* @__azora_str_repeat(i8* %s, i32 %n) {")
             sb.appendLine("entry:")
@@ -3724,7 +3766,7 @@ class LlvmCodegen {
             sb.appendLine("  %n64 = sext i32 %n to i64")
             sb.appendLine("  %total = mul i64 %len, %n64")
             sb.appendLine("  %size = add i64 %total, 1")
-            sb.appendLine("  %buf = call i8* @malloc(i64 %size)")
+            sb.appendLine("  %buf = call i8* @__azora_alloc(i64 %size)")
             sb.appendLine("  store i8 0, i8* %buf")
             sb.appendLine("  br label %cond")
             sb.appendLine("cond:")
@@ -3744,7 +3786,6 @@ class LlvmCodegen {
         }
 
         if (usesArrayGrow) {
-            usesMalloc = true
             sb.appendLine("; runtime: append one element to a packed array buffer")
             sb.appendLine("define i8* @__azora_array_grow(i8* %old, i64 %elemSize) {")
             sb.appendLine("entry:")
@@ -3754,7 +3795,7 @@ class LlvmCodegen {
             sb.appendLine("  %oldBytes = mul i64 %len, %elemSize")
             sb.appendLine("  %newBytes = mul i64 %newLen, %elemSize")
             sb.appendLine("  %newSize = add i64 %newBytes, 8")
-            sb.appendLine("  %newRaw = call i8* @malloc(i64 %newSize)")
+            sb.appendLine("  %newRaw = call i8* @__azora_alloc(i64 %newSize)")
             sb.appendLine("  %newLenPtr = bitcast i8* %newRaw to i64*")
             sb.appendLine("  store i64 %newLen, i64* %newLenPtr")
             sb.appendLine("  %oldData = getelementptr i8, i8* %old, i64 8")
@@ -3778,7 +3819,6 @@ class LlvmCodegen {
         }
 
         if (usesMapGrow) {
-            usesMalloc = true
             usesMemcpy = true
             sb.appendLine("; runtime: append storage for one packed map entry")
             sb.appendLine("define i8* @__azora_map_grow(i8* %old, i64 %keySize, i64 %valueSize) {")
@@ -3792,7 +3832,7 @@ class LlvmCodegen {
             sb.appendLine("  %newValueBytes = mul i64 %newLen, %valueSize")
             sb.appendLine("  %payloadBytes = add i64 %newKeyBytes, %newValueBytes")
             sb.appendLine("  %totalBytes = add i64 %payloadBytes, 8")
-            sb.appendLine("  %newRaw = call i8* @malloc(i64 %totalBytes)")
+            sb.appendLine("  %newRaw = call i8* @__azora_alloc(i64 %totalBytes)")
             sb.appendLine("  %newLenPtr = bitcast i8* %newRaw to i64*")
             sb.appendLine("  store i64 %newLen, i64* %newLenPtr")
             sb.appendLine("  %oldKeys = getelementptr i8, i8* %old, i64 8")
@@ -3807,12 +3847,12 @@ class LlvmCodegen {
         }
 
         if (usesIntToStr) {
-            usesMalloc = true; usesSnprintf = true
+            usesSnprintf = true
             val fmt = addStringConstant("%lld")
             sb.appendLine("; runtime: integer to string")
             sb.appendLine("define i8* @__azora_int_to_str(i64 %v) {")
             sb.appendLine("entry:")
-            sb.appendLine("  %buf = call i8* @malloc(i64 24)")
+            sb.appendLine("  %buf = call i8* @__azora_alloc(i64 24)")
             sb.appendLine("  %fmt = getelementptr [${fmt.byteLen} x i8], [${fmt.byteLen} x i8]* ${fmt.name}, i64 0, i64 0")
             sb.appendLine("  %r = call i32 (i8*, i64, i8*, ...) @snprintf(i8* %buf, i64 24, i8* %fmt, i64 %v)")
             sb.appendLine("  ret i8* %buf")
@@ -3821,12 +3861,12 @@ class LlvmCodegen {
         }
 
         if (usesUintToStr) {
-            usesMalloc = true; usesSnprintf = true
+            usesSnprintf = true
             val fmt = addStringConstant("%llu")
             sb.appendLine("; runtime: unsigned integer to string")
             sb.appendLine("define i8* @__azora_uint_to_str(i64 %v) {")
             sb.appendLine("entry:")
-            sb.appendLine("  %buf = call i8* @malloc(i64 24)")
+            sb.appendLine("  %buf = call i8* @__azora_alloc(i64 24)")
             sb.appendLine("  %fmt = getelementptr [${fmt.byteLen} x i8], [${fmt.byteLen} x i8]* ${fmt.name}, i64 0, i64 0")
             sb.appendLine("  %r = call i32 (i8*, i64, i8*, ...) @snprintf(i8* %buf, i64 24, i8* %fmt, i64 %v)")
             sb.appendLine("  ret i8* %buf")
@@ -3835,12 +3875,12 @@ class LlvmCodegen {
         }
 
         if (usesRealToStr) {
-            usesMalloc = true; usesSnprintf = true
+            usesSnprintf = true
             val fmt = addStringConstant("%g")
             sb.appendLine("; runtime: real to string")
             sb.appendLine("define i8* @__azora_real_to_str(double %v) {")
             sb.appendLine("entry:")
-            sb.appendLine("  %buf = call i8* @malloc(i64 32)")
+            sb.appendLine("  %buf = call i8* @__azora_alloc(i64 32)")
             sb.appendLine("  %fmt = getelementptr [${fmt.byteLen} x i8], [${fmt.byteLen} x i8]* ${fmt.name}, i64 0, i64 0")
             sb.appendLine("  %r = call i32 (i8*, i64, i8*, ...) @snprintf(i8* %buf, i64 32, i8* %fmt, double %v)")
             sb.appendLine("  ret i8* %buf")
@@ -3849,12 +3889,12 @@ class LlvmCodegen {
         }
 
         if (usesCharToStr) {
-            usesMalloc = true; usesSnprintf = true
+            usesSnprintf = true
             val fmt = addStringConstant("%c")
             sb.appendLine("; runtime: char to string")
             sb.appendLine("define i8* @__azora_char_to_str(i32 %v) {")
             sb.appendLine("entry:")
-            sb.appendLine("  %buf = call i8* @malloc(i64 2)")
+            sb.appendLine("  %buf = call i8* @__azora_alloc(i64 2)")
             sb.appendLine("  %fmt = getelementptr [${fmt.byteLen} x i8], [${fmt.byteLen} x i8]* ${fmt.name}, i64 0, i64 0")
             sb.appendLine("  %r = call i32 (i8*, i64, i8*, ...) @snprintf(i8* %buf, i64 2, i8* %fmt, i32 %v)")
             sb.appendLine("  ret i8* %buf")

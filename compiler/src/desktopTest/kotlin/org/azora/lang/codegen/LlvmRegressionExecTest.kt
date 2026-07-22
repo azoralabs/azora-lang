@@ -126,6 +126,25 @@ class LlvmRegressionExecTest {
         """.trimIndent()
     )
 
+    @Test fun zoneAllocPropagatesIntoCalledFunctions() {
+        val source = """
+            import std.io
+            pack Box { var value: Int }
+            func makeBox(value: Int): Box { return Box(value) }
+            func main() {
+                zone alloc {
+                    fin box = makeBox(42)
+                    std::println(box.value)
+                }
+            }
+        """.trimIndent()
+        check("42", source)
+        val ir = LlvmExec.compile(source)
+        assertTrue("@__azora_current_arena = internal thread_local global %azora.arena* null" in ir)
+        assertTrue("load %azora.arena*, %azora.arena** @__azora_current_arena" in ir)
+        assertTrue("call i8* @__azora_arena_alloc(%azora.arena* %arena, i64 %size)" in ir)
+    }
+
     @Test fun cancelCallsNativeTaskCancellationRuntime() = check(
         "42",
         """

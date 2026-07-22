@@ -96,8 +96,11 @@ use friend zone std {
      * `TestMethod`.
      */
     @Experimental(sinceAzora: "0.0.4")
-    bridge enum BridgeTarget {
-        Compiler, C, JavaScript
+    bridge enum Target {
+        Compiler,
+        C,
+        JavaScript,
+        WebAssembly
     }
 
     /** Marks an API as stable from the optional semantic version onward. */
@@ -123,15 +126,6 @@ use friend zone std {
     bridge deco Deprecated {
         fin sinceAzora: String = ""
         fin replacement: String = ""
-    }
-
-    /** Restricts a declaration to one or more compilation targets. */
-    @Experimental(sinceAzora: "0.0.4")
-    bridge deco Target {
-        fin first: Any = null
-        fin second: Any = null
-        fin third: Any = null
-        fin fourth: Any = null
     }
 
     /** Allows compile-time generated packs to declare numeric field names. */

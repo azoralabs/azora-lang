@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-module std.array
+module std.container.array
 
 /**
  * @file std/container/array

@@ -682,6 +682,14 @@ friend zone std {
     }
 }
 
+bridge [.C, .JavaScript, .WebAssembly] {
+    /** Host runtime hook returning Unix time as signed nanoseconds. */
+    func azora_time_unix_nanoseconds use as az_time_unix_nanoseconds(): Long
+
+    /** Host runtime hook returning a process-monotonic signed nanosecond reading. */
+    func azora_time_monotonic_nanoseconds use as az_time_monotonic_nanoseconds(): Long
+}
+
 // ---------------------------------------------------------------------------
 // Unit tests
 // ---------------------------------------------------------------------------
@@ -901,21 +909,3 @@ test "monotonic readings are intentionally not serializable" {
 }
 
 test .All "time"
-
-@Target(.Native)
-bridge .C {
-    /** Host runtime hook returning Unix time as signed nanoseconds. */
-    func azora_time_unix_nanoseconds use as az_time_unix_nanoseconds(): Long
-
-    /** Host runtime hook returning a process-monotonic signed nanosecond reading. */
-    func azora_time_monotonic_nanoseconds use as az_time_monotonic_nanoseconds(): Long
-}
-
-@Target(.WebJs, .WebWasm)
-bridge .JS {
-    /** Browser/runtime adapter returning Unix time as signed nanoseconds. */
-    func AzoraRuntime.timeUnixNanoseconds use as az_time_unix_nanoseconds(): Long
-
-    /** Browser/runtime adapter returning a monotonic signed nanosecond reading. */
-    func AzoraRuntime.timeMonotonicNanoseconds use as az_time_monotonic_nanoseconds(): Long
-}

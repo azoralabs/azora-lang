@@ -2285,14 +2285,37 @@ class Parser(
      * `bridge <target> { func sigs }` — declares extern functions for FFI.
      * Each signature is `func name(params): RetType` (no body).
      */
-    /** After `bridge`, whether an optional `.Target` is followed by `func`. */
+    /** After `bridge`, whether an optional target (`.C` or `Target.C`) is followed by `func`. */
     private fun isBridgeFuncAhead(): Boolean {
         var i = current + 1
-        if (tokens.getOrNull(i)?.type == TokenType.DOT) {
-            i++
-            if (tokens.getOrNull(i)?.type == TokenType.IDENTIFIER) i++
+        when {
+            tokens.getOrNull(i)?.type == TokenType.DOT -> {
+                i++
+                if (tokens.getOrNull(i)?.type == TokenType.IDENTIFIER) i++
+            }
+            tokens.getOrNull(i)?.type == TokenType.IDENTIFIER && tokens.getOrNull(i + 1)?.type == TokenType.DOT -> {
+                i += 2
+                if (tokens.getOrNull(i)?.type == TokenType.IDENTIFIER) i++
+            }
         }
         return tokens.getOrNull(i)?.type == TokenType.FUNC
+    }
+
+    /**
+     * A single bridge target after `bridge` / inside a `[…]` list. Accepts
+     * `.Variant` (e.g. `.C`), a qualified `Enum.Variant` (e.g. `Target.C`), or a
+     * bare `Variant` (e.g. `C`). Returns the bare variant name; any enum qualifier
+     * is accepted and discarded.
+     */
+    private fun parseBridgeTarget(): String {
+        if (match(TokenType.DOT)) {
+            return consume(TokenType.IDENTIFIER, "Expected bridge target after '.' (e.g. '.C', '.JavaScript')").lexeme
+        }
+        val first = consume(TokenType.IDENTIFIER, "Expected bridge target (e.g. '.C', 'Target.C', or 'C')").lexeme
+        // `Enum.Variant` — the leading name is the enum qualifier; keep the variant.
+        return if (match(TokenType.DOT)) {
+            consume(TokenType.IDENTIFIER, "Expected bridge target variant after '.'").lexeme
+        } else first
     }
 
     /**
@@ -2303,9 +2326,8 @@ class Parser(
      */
     private fun parseBridgeFunc(annotations: List<Annotation> = emptyList()): TopLevel.Bridge {
         val start = consume(TokenType.BRIDGE, "Expected 'bridge'")
-        val target = if (match(TokenType.DOT)) {
-            consume(TokenType.IDENTIFIER, "Expected bridge target (e.g. Compiler, C, JS)").lexeme
-        } else "Compiler"
+        // Bare `bridge func …` defaults to the compiler-provided target.
+        val target = if (check(TokenType.FUNC)) "Compiler" else parseBridgeTarget()
         consume(TokenType.FUNC, "Expected 'func' after 'bridge'")
         // Type params may appear before or after the name (`bridge func<T> fill` or
         // `bridge func fill<T>`); capture them so a generic return type like
@@ -2327,8 +2349,22 @@ class Parser(
 
     private fun parseBridge(annotations: List<Annotation> = emptyList()): TopLevel.Bridge {
         val start = consume(TokenType.BRIDGE, "Expected 'bridge'")
-        match(TokenType.DOT) // `bridge .C { … }` — the leading dot is optional
-        val target = consume(TokenType.IDENTIFIER, "Expected bridge target (e.g. C, JS)").lexeme
+        // Target forms after `bridge`:
+        //   `bridge { … }`                       → default `Compiler`
+        //   `bridge .C { … }` / `bridge Target.C { … }`
+        //   `bridge [.C, .JavaScript] { … }` / `bridge [Target.C, .JavaScript] { … }`
+        // A bracketed list means the declaration is provided by several backends;
+        // multiple targets are stored comma-joined.
+        val target = when {
+            match(TokenType.L_BRACKET) -> {
+                val targets = mutableListOf<String>()
+                do { targets.add(parseBridgeTarget()) } while (match(TokenType.COMMA))
+                consume(TokenType.R_BRACKET, "Expected ']' after bridge targets")
+                targets.joinToString(",")
+            }
+            check(TokenType.L_BRACE) -> "Compiler" // bare `bridge { … }` → default target
+            else -> parseBridgeTarget()
+        }
         consume(TokenType.L_BRACE, "Expected '{' after bridge target")
         skipNewlines()
         val funcs = mutableListOf<TopLevel.BridgeSig>()

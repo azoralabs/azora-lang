@@ -22,7 +22,7 @@ class ArrayStdlibTest {
     fun arrayOfAndLiteralProduceEquivalentValues() {
         val result = compile(
             """
-            import std.array
+            import std.container.array
             import std.io
 
             func main() {
@@ -44,7 +44,7 @@ class ArrayStdlibTest {
     fun arrayTypeSugarIsCanonicalAcrossFunctionBoundaries() {
         val result = compile(
             """
-            import std.array
+            import std.container.array
             import std.io
 
             func first(values: Array<String>): String {
@@ -73,7 +73,7 @@ class ArrayStdlibTest {
     fun arrayOfSupportsNestedHomogeneousArrays() {
         val result = compile(
             """
-            import std.array
+            import std.container.array
             import std.io
 
             func main() {
@@ -90,7 +90,7 @@ class ArrayStdlibTest {
     fun arrayOfSupportsAnExplicitlyTypedEmptyArray() {
         val result = compile(
             """
-            import std.array
+            import std.container.array
             import std.io
 
             func main() {
@@ -107,7 +107,7 @@ class ArrayStdlibTest {
     fun arrayOfRejectsMixedElementTypes() {
         val mixed = Compiler().compile(
             """
-            import std.array
+            import std.container.array
 
             func main() {
                 fin values = std::arrayOf(1, "two")
@@ -121,7 +121,7 @@ class ArrayStdlibTest {
 
         val wrongExplicitType = Compiler().compile(
             """
-            import std.array
+            import std.container.array
 
             func main() {
                 fin values = std::arrayOf<String>(1, 2)

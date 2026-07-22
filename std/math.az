@@ -511,103 +511,37 @@ friend zone std::math {
     }
 }
 
-@Target(.Native)
-bridge .C {
-    /** Foreign binding: C `sin` (sine). */
-    func sin use as az_sin(x: Real): Real
-    /** Foreign binding: C `cos` (cosine). */
-    func cos use as az_cos(x: Real): Real
-    /** Foreign binding: C `tan` (tangent). */
-    func tan use as az_tan(x: Real): Real
-    /** Foreign binding: C `asin` (arc sine). */
-    func asin use as az_asin(x: Real): Real
-    /** Foreign binding: C `acos` (arc cosine). */
-    func acos use as az_acos(x: Real): Real
-    /** Foreign binding: C `atan` (arc tangent). */
-    func atan use as az_atan(x: Real): Real
-    /** Foreign binding: C `atan2` (2-arg arc tangent). */
-    func atan2 use as az_atan2(y: Real, x: Real): Real
-    /** Foreign binding: C `sqrt` (square root). */
-    func sqrt use as az_sqrt(x: Real): Real
-    /** Foreign binding: C `cbrt` (cube root). */
-    func cbrt use as az_cbrt(x: Real): Real
-    /** Foreign binding: C `log` (natural logarithm). */
-    func log use as az_log(x: Real): Real
-    /** Foreign binding: C `log2` (base-2 logarithm). */
-    func log2 use as az_log2(x: Real): Real
-    /** Foreign binding: C `log10` (base-10 logarithm). */
-    func log10 use as az_log10(x: Real): Real
-    /** Foreign binding: C `exp` (e^x). */
-    func exp use as az_exp(x: Real): Real
-    /** Foreign binding: C `exp2` (2^x). */
-    func exp2 use as az_exp2(x: Real): Real
-    /** Foreign binding: C `hypot` (sqrt(x*x + y*y)). */
-    func hypot use as az_hypot(x: Real, y: Real): Real
-}
-
-@Target(.WebJs, .WebWasm)
-bridge .JS {
-    /** Foreign binding: JS `Math.sin` (sine). */
-    func Math.sin use as az_sin(x: Real): Real
-    /** Foreign binding: JS `Math.cos` (cosine). */
-    func Math.cos use as az_cos(x: Real): Real
-    /** Foreign binding: JS `Math.tan` (tangent). */
-    func Math.tan use as az_tan(x: Real): Real
-    /** Foreign binding: JS `Math.asin` (arc sine). */
-    func Math.asin use as az_asin(x: Real): Real
-    /** Foreign binding: JS `Math.acos` (arc cosine). */
-    func Math.acos use as az_acos(x: Real): Real
-    /** Foreign binding: JS `Math.atan` (arc tangent). */
-    func Math.atan use as az_atan(x: Real): Real
-    /** Foreign binding: JS `Math.atan2` (2-arg arc tangent). */
-    func Math.atan2 use as az_atan2(y: Real, x: Real): Real
-    /** Foreign binding: JS `Math.sqrt` (square root). */
-    func Math.sqrt use as az_sqrt(x: Real): Real
-    /** Foreign binding: JS `Math.cbrt` (cube root). */
-    func Math.cbrt use as az_cbrt(x: Real): Real
-    /** Foreign binding: JS `Math.log` (natural logarithm). */
-    func Math.log use as az_log(x: Real): Real
-    /** Foreign binding: JS `Math.log2` (base-2 logarithm). */
-    func Math.log2 use as az_log2(x: Real): Real
-    /** Foreign binding: JS `Math.log10` (base-10 logarithm). */
-    func Math.log10 use as az_log10(x: Real): Real
-    /** Foreign binding: JS `Math.exp` (e^x). */
-    func Math.exp use as az_exp(x: Real): Real
-    /** Foreign binding: JS `Math.pow` (base^exp; backs `exp2`). */
-    func Math.pow use as az_exp2(x: Real, y: Real): Real
-    /** Foreign binding: JS `Math.hypot` (sqrt(x*x + y*y)). */
-    func Math.hypot use as az_hypot(x: Real, y: Real): Real
-}
-
 friend zone std::math {
-    /** Sine of [x] (radians). */
-    func sin(x: Real): Real { return az_sin(x) }
-    /** Cosine of [x] (radians). */
-    func cos(x: Real): Real { return az_cos(x) }
-    /** Tangent of [x] (radians). */
-    func tan(x: Real): Real { return az_tan(x) }
-    /** Arc sine of [x] in radians; [x] must be in [-1, 1]. */
-    func asin(x: Real): Real { return az_asin(x) }
-    /** Arc cosine of [x] in radians; [x] must be in [-1, 1]. */
-    func acos(x: Real): Real { return az_acos(x) }
-    /** Arc tangent of [x] in radians. */
-    func atan(x: Real): Real { return az_atan(x) }
-    /** Angle (radians) of the point (x, y) — the 2-argument arc tangent. */
-    func atan2(y: Real, x: Real): Real { return az_atan2(y, x) }
-    /** Square root of [x]. */
-    func sqrt(x: Real): Real { return az_sqrt(x) }
-    /** Cube root of [x]. */
-    func cbrt(x: Real): Real { return az_cbrt(x) }
-    /** Natural (base-e) logarithm of [x]. */
-    func log(x: Real): Real { return az_log(x) }
-    /** Base-2 logarithm of [x]. */
-    func log2(x: Real): Real { return az_log2(x) }
-    /** Base-10 logarithm of [x]. */
-    func log10(x: Real): Real { return az_log10(x) }
-    /** e raised to the power [x]. */
-    func exp(x: Real): Real { return az_exp(x) }
-    /** 2 raised to the power [x]. */
-    func exp2(x: Real): Real { return az_exp2(x) }
-    /** sqrt(x*x + y*y) without overflow/underflow. */
-    func hypot(x: Real, y: Real): Real { return az_hypot(x, y) }
+    bridge [.C, .JavaScript, .WebAssembly] {
+        /** Sine of [x] (radians). */
+        func sin(x: Real): Real
+        /** Cosine of [x] (radians). */
+        func cos(x: Real): Real
+        /** Tangent of [x] (radians). */
+        func tan(x: Real): Real
+        /** Arc sine of [x] in radians; [x] must be in [-1, 1]. */
+        func asin(x: Real): Real
+        /** Arc cosine of [x] in radians; [x] must be in [-1, 1]. */
+        func acos(x: Real): Real
+        /** Arc tangent of [x] in radians. */
+        func atan(x: Real): Real
+        /** Angle (radians) of the point (x, y) — the 2-argument arc tangent. */
+        func atan2(y: Real, x: Real): Real
+        /** Square root of [x]. */
+        func sqrt(x: Real): Real
+        /** Cube root of [x]. */
+        func cbrt(x: Real): Real
+        /** Natural (base-e) logarithm of [x]. */
+        func log(x: Real): Real
+        /** Base-2 logarithm of [x]. */
+        func log2(x: Real): Real
+        /** Base-10 logarithm of [x]. */
+        func log10(x: Real): Real
+        /** e raised to the power [x]. */
+        func exp(x: Real): Real
+        /** 2 raised to the power [x]. */
+        func exp2(x: Real): Real
+        /** sqrt(x*x + y*y) without overflow/underflow. */
+        func hypot(x: Real, y: Real): Real
+    }
 }

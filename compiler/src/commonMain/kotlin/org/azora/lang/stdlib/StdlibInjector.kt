@@ -75,7 +75,7 @@ class StdlibInjector private constructor(
             if (additionalSources.isEmpty() && configOverrides.isEmpty()) return standard
             val typeListEnv = mutableMapOf<String, List<String>>()
             val additionalPrograms = additionalSources.map { (path, source) ->
-                try {
+                val program = try {
                     Parser(Lexer(source).tokenize(), typeListEnv).parse()
                 } catch (error: Exception) {
                     throw IllegalArgumentException(
@@ -83,12 +83,43 @@ class StdlibInjector private constructor(
                         error,
                     )
                 }
+                checkFileMatchesModule(path, program.moduleName)
+                program
             }
             return StdlibInjector(AzStdlib.loadPrograms() + additionalPrograms, configOverrides)
         }
 
         /** Compatibility lookup against the bundled standard library. */
         fun moduleOf(name: String): String? = standard.moduleOf(name)
+
+        /**
+         * Enforces that a source file's whole path matches its declared module: a
+         * file declaring `module a.b.c` must live at `a/b/c.az`. The one exception
+         * is a folder-index file `a/b/b.az` (named after its own folder), which
+         * represents `module a.b`. Files without a `module` declaration are
+         * unconstrained. Throws [IllegalArgumentException] on a mismatch (e.g.
+         * `engine/input/az_input.az` declaring `module engine.input`).
+         */
+        fun checkFileMatchesModule(path: String, moduleName: String?) {
+            if (moduleName == null) return
+            val segments = path.replace('\\', '/').removeSuffix(".azora").removeSuffix(".az")
+                .split('/').filter { it.isNotEmpty() && it != "." }
+            if (segments.isEmpty()) return
+            val moduleSegments = moduleName.split('.')
+            // `a/b/c.az` → `module a.b.c`.
+            val fullMatch = segments == moduleSegments
+            // Folder-index `a/b/b.az` → `module a.b` (the folder's own module).
+            val folderIndexMatch = segments.size >= 2 &&
+                segments.last() == segments[segments.size - 2] &&
+                segments.dropLast(1) == moduleSegments
+            if (fullMatch || folderIndexMatch) return
+            val expectedPath = moduleName.replace('.', '/') + ".az"
+            val indexPath = (moduleSegments + moduleSegments.last()).joinToString("/") + ".az"
+            throw IllegalArgumentException(
+                "file path '$path' does not match module '$moduleName': a file declaring " +
+                    "'module $moduleName' must be located at '$expectedPath' (or the folder-index '$indexPath')",
+            )
+        }
     }
 
     private val implicitCollectionTypes = setOf("List", "MutableList", "Set", "MutableSet", "Map", "MutableMap")

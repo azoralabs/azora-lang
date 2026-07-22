@@ -5,7 +5,7 @@ import kotlin.test.assertEquals
 
 class ArrayStdlibExecTest {
     private val source = """
-        import std.array
+        import std.container.array
         import std.io
 
         func main() {

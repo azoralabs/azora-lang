@@ -98,4 +98,51 @@ class ContractsTest {
             }
         """.trimIndent()))
     }
+
+    @Test
+    fun computedPropertiesSupportContracts() {
+        assertEquals("7", run("""
+            import std.io
+            pack Counter { var value: Int }
+            impl Counter {
+                prop current: Int
+                in {
+                    assert self.value >= 0 { "counter must not be negative" }
+                } out { result ->
+                    assert result == self.value { "property returned stale data" }
+                } zone {
+                    return self.value
+                }
+            }
+            func main() {
+                fin counter = Counter(7)
+                std::println(counter.current)
+            }
+        """.trimIndent()))
+    }
+
+    @Test
+    fun taskAndFlowSupportContracts() {
+        compile("""
+            task load(value: Int): Int
+            in {
+                assert value >= 0 { "task input must be non-negative" }
+            } out { result ->
+                assert result >= 0 { "task result must be non-negative" }
+            } zone {
+                return value
+            }
+
+            flow values(value: Int): Int
+            in {
+                assert value >= 0 { "flow input must be non-negative" }
+            } out { item ->
+                assert item >= 0 { "flow item must be non-negative" }
+            } zone {
+                yield value
+            }
+
+            func main() {}
+        """.trimIndent())
+    }
 }

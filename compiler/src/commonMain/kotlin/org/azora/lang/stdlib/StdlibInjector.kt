@@ -30,6 +30,7 @@ import org.azora.lang.frontend.TypeAnnotation
 import org.azora.lang.frontend.TypeFunctionCall
 import org.azora.lang.frontend.TypeFunctionDecl
 import org.azora.lang.frontend.TypeRef
+import org.azora.lang.frontend.TypeTypeArm
 import org.azora.lang.putIfAbsentCompat
 
 /**
@@ -144,9 +145,12 @@ class StdlibInjector private constructor(
         val modules = LinkedHashMap<String, LinkedHashMap<String, TopLevel>>()
         /** Compile-time type functions are indexed separately because they emit no runtime item. */
         val typeFunctionsByModule = LinkedHashMap<String, MutableList<TypeFunctionDecl>>()
+        /** Library-defined named type macros, import-gated by their declaring module. */
+        val typeMacrosByModule = LinkedHashMap<String, MutableList<TypeTypeArm>>()
         /** Qualified or short type-function name -> overloads, for internal library dependencies. */
         val typeFunctionsByName = LinkedHashMap<String, MutableList<TypeFunctionDecl>>()
         val alwaysTypeFunctions = mutableListOf<TypeFunctionDecl>()
+        val alwaysTypeMacros = mutableListOf<TypeTypeArm>()
         /** Flat name → item view (first module wins), for transitive resolution. */
         val items = LinkedHashMap<String, TopLevel>()
         /** name → module that provides it, for import hints. */
@@ -254,6 +258,7 @@ class StdlibInjector private constructor(
             idx.moduleVisibility.putIfAbsentCompat(module, program.moduleVisibility)
             val moduleItems = idx.modules.getOrPut(module) { LinkedHashMap() }
             idx.typeFunctionsByModule.getOrPut(module) { mutableListOf() }.addAll(program.typeFunctions)
+            idx.typeMacrosByModule.getOrPut(module) { mutableListOf() }.addAll(program.typeMacroRules)
             for (declaration in program.typeFunctions) {
                 idx.typeFunctionsByName.getOrPut(declaration.name) { mutableListOf() }.add(declaration)
                 val shortName = declaration.name.substringAfterLast("__")
@@ -299,6 +304,7 @@ class StdlibInjector private constructor(
                     is TopLevel.Spec -> register(item.name, item)
                     is TopLevel.Deco -> register(item.name, item)
                     is TopLevel.Slot -> register(item.name, item)
+                    is TopLevel.TypeAlias -> register(item.name, item)
                     is TopLevel.Meta -> register(item.name, item)
                     is TopLevel.Impl -> {
                         val owner = item.typeName.substringBefore('.')
@@ -339,6 +345,7 @@ class StdlibInjector private constructor(
                 idx.alwaysOnModules.add(module)
                 moduleItems.forEach { (name, item) -> idx.implicitRootItems.putIfAbsentCompat(name, item) }
                 idx.alwaysTypeFunctions.addAll(program.typeFunctions)
+                idx.alwaysTypeMacros.addAll(program.typeMacroRules)
             }
         }
         return idx
@@ -404,6 +411,36 @@ class StdlibInjector private constructor(
                         visible.add(declaration)
                     }
                 }
+            }
+        }
+        return visible
+    }
+
+    private fun importedTypeMacros(program: Program): List<TypeTypeArm> {
+        val visible = mutableListOf<TypeTypeArm>()
+        val seeds = ArrayDeque<Pair<String, String?>>()
+        for (item in program.items) {
+            if (item is TopLevel.UseImport && !item.exported) seeds.addAll(item.imports)
+        }
+        for (module in index.alwaysOnModules) {
+            seeds.addAll(index.exportedImportsByModule[module].orEmpty())
+        }
+
+        // Type macros obey the same transitive `export import` visibility as
+        // ordinary declarations. A facade module may therefore re-export a
+        // library-defined grammar without copying or compiler-registering it.
+        val visited = mutableSetOf<String>()
+        while (seeds.isNotEmpty()) {
+            val (path, selected) = seeds.removeFirst()
+            val key = "$path::${selected ?: "*"}"
+            if (!visited.add(key)) continue
+            for (module in modulesForPath(path).filter(::isExternallyImportable)) {
+                val declarations = index.typeMacrosByModule[module].orEmpty()
+                visible.addAll(
+                    if (selected == null || selected == "*") declarations
+                    else declarations.filter { it.name == selected },
+                )
+                seeds.addAll(index.exportedImportsByModule[module].orEmpty())
             }
         }
         return visible
@@ -496,9 +533,18 @@ class StdlibInjector private constructor(
      * is rejected. Returns the program unchanged when nothing is referenced.
      */
     fun inject(program: Program): Program {
-        if (index.items.isEmpty() && index.externs.isEmpty() && index.typeFunctionsByModule.isEmpty()) return program
+        if (
+            index.items.isEmpty() &&
+            index.externs.isEmpty() &&
+            index.typeFunctionsByModule.isEmpty() &&
+            index.typeMacrosByModule.isEmpty()
+        ) return program
 
         val importedTypeFunctions = index.alwaysTypeFunctions + importedTypeFunctions(program)
+        val typeMacros = (
+            program.typeMacroRules + index.alwaysTypeMacros + importedTypeMacros(program)
+        ).distinct()
+        val typeMacrosChanged = typeMacros.size != program.typeMacroRules.size
 
         val shadowed = userDeclaredNames(program)
 
@@ -569,7 +615,13 @@ class StdlibInjector private constructor(
         ).distinct()
         val typeFunctionsChanged = typeFunctions.size != program.typeFunctions.size
 
-        if (injected.isEmpty() && injectedExterns.isEmpty() && index.alwaysInjectedItems.isEmpty() && !typeFunctionsChanged) return program
+        if (
+            injected.isEmpty() &&
+            injectedExterns.isEmpty() &&
+            index.alwaysInjectedItems.isEmpty() &&
+            !typeFunctionsChanged &&
+            !typeMacrosChanged
+        ) return program
         // One declaration can be indexed by both its qualified and short export
         // names. Preserve discovery order while appending each AST item once.
         val existingIdentities = program.items.mapTo(mutableSetOf()) { itemIdentity(it) }
@@ -577,10 +629,17 @@ class StdlibInjector private constructor(
         val externDeclarations = injectedExterns.values.distinct().filter { existingIdentities.add(itemIdentity(it)) }
         // Exported/core compile-time blocks are injected unconditionally.
         val alwaysDeclarations = index.alwaysInjectedItems.filter { existingIdentities.add(itemIdentity(it)) }
-        if (declarations.isEmpty() && externDeclarations.isEmpty() && alwaysDeclarations.isEmpty() && !typeFunctionsChanged) return program
+        if (
+            declarations.isEmpty() &&
+            externDeclarations.isEmpty() &&
+            alwaysDeclarations.isEmpty() &&
+            !typeFunctionsChanged &&
+            !typeMacrosChanged
+        ) return program
         return IntraZoneRewriter.rewrite(program.copy(
             items = program.items + declarations + externDeclarations + alwaysDeclarations,
             typeFunctions = typeFunctions,
+            typeMacroRules = typeMacros,
         ))
     }
 

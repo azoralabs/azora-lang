@@ -6,6 +6,7 @@ import org.azora.lang.backend.IrInterpreter
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertFalse
 
 class GenericsTest {
     private fun run(source: String): String {
@@ -87,5 +88,37 @@ class GenericsTest {
                 std::println(x + 1)
             }
         """.trimIndent()))
+    }
+
+    @Test fun explicitGenericReturnKeepsConcretePackTypeInLlvm() {
+        val result = Compiler().compile(
+            """
+            import std.io
+
+            pack<T> Store {
+                var value: T
+            }
+
+            pack Player {
+                var health: Int
+            }
+
+            func<T> get(store: Store<T>): T {
+                return store.value
+            }
+
+            func main() {
+                var store = Store<Player>(Player(3))
+                fin player = get<Player>(store)
+                std::println(player.health)
+            }
+            """.trimIndent(),
+            release = false,
+        )
+        val success = assertIs<CompilationResult.Success>(result)
+        assertFalse(
+            success.llvm.contains("member .health on Any"),
+            "Explicit generic return type was erased before LLVM lowering:\n${success.llvm}",
+        )
     }
 }

@@ -517,10 +517,17 @@ class TypeResolver(private val table: SymbolTable) {
             is Stmt.MemberAssign -> {
                 val resolvedTarget = resolveExpr(stmt.target) ?: return
                 // Auto-deref: assigning through a pointer writes through it (`p.v = x` == `(*p).v = x`).
-                val targetType = if (resolvedTarget is IrType.Pointer) resolvedTarget.inner else resolvedTarget
+                var targetType = if (resolvedTarget is IrType.Pointer) resolvedTarget.inner else resolvedTarget
                 val valueType = resolveExpr(stmt.value) ?: return
                 if (targetType is IrType.Named) {
-                    val field = table.lookupStruct(targetType.name)?.field(stmt.name)
+                    var field = table.lookupStruct(targetType.name)?.field(stmt.name)
+                    if (field == null) {
+                        val dereferenced = userDerefType(targetType)
+                        if (dereferenced != null) {
+                            targetType = dereferenced
+                            field = table.lookupStruct(targetType.name)?.field(stmt.name)
+                        }
+                    }
                     if (field == null) {
                         errors.add("line ${stmt.line}: no member '${stmt.name}' on pack ${sourcePackTypeName(targetType.name)}")
                         return
@@ -1109,8 +1116,26 @@ class TypeResolver(private val table: SymbolTable) {
                                     null
                                 }
                             } else {
-                                errors.add("line ${expr.line}: no member '${expr.name}' on pack ${sourcePackTypeName(targetType.name)}")
-                                null
+                                val dereferenced = userDerefType(targetType)
+                                val derefField = dereferenced?.let { table.lookupStruct(it.name)?.field(expr.name) }
+                                val derefMethod = dereferenced?.let { table.lookupMethod(it.name, expr.name) }
+                                when {
+                                    derefField != null -> derefField.type
+                                    derefMethod != null -> {
+                                        val func = table.lookupFunction(derefMethod)
+                                        if (func != null && func.params.size == 1 &&
+                                            func.memberCallStyle != MemberCallStyle.METHOD
+                                        ) func.returnType
+                                        else {
+                                            errors.add("line ${expr.line}: member '${expr.name}' on ${dereferenced.name} requires a method call")
+                                            null
+                                        }
+                                    }
+                                    else -> {
+                                        errors.add("line ${expr.line}: no member '${expr.name}' on pack ${sourcePackTypeName(targetType.name)}")
+                                        null
+                                    }
+                                }
                             }
                         }
                     }
@@ -1176,6 +1201,19 @@ class TypeResolver(private val table: SymbolTable) {
                             }
                         }
                         return func.returnType
+                    }
+                    val dereferenced = userDerefType(targetType)
+                    if (dereferenced != null) {
+                        val derefMethod = table.lookupMethod(dereferenced.name, expr.name)
+                        if (derefMethod != null) {
+                            val func = table.lookupFunction(derefMethod)!!
+                            if (func.memberCallStyle == MemberCallStyle.PROPERTY) {
+                                errors.add("line ${expr.line}: property '${expr.name}' must be accessed without parentheses")
+                                return null
+                            }
+                            for (argument in expr.args) resolveExpr(argument)
+                            return func.returnType
+                        }
                     }
                     val callableField = table.lookupStruct(targetType.name)?.field(expr.name)
                         ?.type as? IrType.Function
@@ -1431,6 +1469,13 @@ class TypeResolver(private val table: SymbolTable) {
             // Macros are expanded before type resolution; a MetaInvoke here is a bug.
             is Expr.MetaInvoke -> error("MetaInvoke reached TypeResolver at line ${expr.line}")
         }
+    }
+
+    /** Return type of a user-defined `impl deref`, guarded against cycles/erasure. */
+    private fun userDerefType(type: IrType.Named): IrType.Named? {
+        val method = table.lookupMethod(type.name, "deref") ?: return null
+        val result = table.lookupFunction(method)?.returnType as? IrType.Named ?: return null
+        return result.takeIf { it.name != type.name && it != IrType.Named("Any") }
     }
 
     private fun sourcePackTypeName(internalName: String, visiting: Set<String> = emptySet()): String {

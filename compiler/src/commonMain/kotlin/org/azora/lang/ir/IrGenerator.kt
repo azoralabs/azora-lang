@@ -57,6 +57,7 @@ class IrGenerator(private val table: SymbolTable) {
     private val reactiveNames = mutableSetOf<String>()
     private val activeEffects = mutableListOf<ActiveEffect>()
     private var loweringEffect = false
+    private var currentGenericTypeParams = emptySet<String>()
 
     private fun resolveType(ref: TypeRef, typeParams: Set<String> = emptySet()): IrType =
         IrType.resolve(TypeFunctionEvaluator.resolve(ref, typeFunctions, unresolvedParams = typeParams), typeParams)
@@ -494,7 +495,9 @@ class IrGenerator(private val table: SymbolTable) {
     private fun lowerFunction(func: FuncDecl): IrFunction {
         val symbol = table.lookupFunction(func.name)!!
         val previousOwner = currentTraceOwner
+        val previousTypeParams = currentGenericTypeParams
         currentTraceOwner = func.name
+        currentGenericTypeParams = func.typeParams.toSet()
         knownEnumValues.clear()
         // Collect ref/out param indices from the AST FuncDecl.
         val refParams = func.params.indices.filter {
@@ -525,6 +528,7 @@ class IrGenerator(private val table: SymbolTable) {
             popNameScope()
             table.popScope()
             currentTraceOwner = previousOwner
+            currentGenericTypeParams = previousTypeParams
         }
 
         return IrFunction(
@@ -704,7 +708,7 @@ class IrGenerator(private val table: SymbolTable) {
                 IrStmt.ExprStmt(IrExpr.Call("__derefAssign", listOf(target, value), IrType.Unit))
             }
             is Stmt.MemberAssign -> {
-                val target = lowerExpr(stmt.target)
+                val target = autoDerefMemberTarget(lowerExpr(stmt.target), stmt.name, method = false)
                 val value = lowerExpr(stmt.value)
                 IrStmt.MemberAssign(target, stmt.name, value)
             }
@@ -1366,6 +1370,24 @@ class IrGenerator(private val table: SymbolTable) {
                         func.isTask -> IrType.Task(func.returnType)
                         homogeneousVariadicType != null && func.returnType is IrType.Array ->
                             IrType.Array(homogeneousVariadicType)
+                        funcDecl != null && expr.typeArgs.isNotEmpty() &&
+                            expr.typeArgs.none { typeRefMentionsAny(it, currentGenericTypeParams) } -> {
+                            val returnRef = (funcDecl.returnType as? TypeAnnotation.Explicit)?.ref
+                            if (returnRef == null) {
+                                func.returnType
+                            } else {
+                                val substitutions = func.typeParams
+                                    .zip(expr.typeArgs)
+                                    .associate { (name, argument) -> name to listOf(argument) }
+                                resolveType(
+                                    TypeFunctionEvaluator.resolve(
+                                        returnRef,
+                                        typeFunctions,
+                                        substitutions = substitutions,
+                                    ),
+                                )
+                            }
+                        }
                         else -> func.returnType
                     }
                     val displayArgs = if (func.name == "std__println" || func.name == "std__print") {
@@ -1516,7 +1538,7 @@ class IrGenerator(private val table: SymbolTable) {
                 if (expr.target is Expr.Identifier && table.lookupFail(expr.target.name) != null) {
                     return IrExpr.StringLiteral(expr.name)
                 }
-                val target = lowerExpr(expr.target)
+                val target = autoDerefMemberTarget(lowerExpr(expr.target), expr.name, method = false)
                 val tt2 = target.type
                 if (tt2 is IrType.Named) {
                     // Concrete pack fields win over property-style callbacks. This matters
@@ -1556,7 +1578,7 @@ class IrGenerator(private val table: SymbolTable) {
                     val allArgs = listOf(IrExpr.StringLiteral(expr.name)) + args
                     return IrExpr.StructCtor(expr.target.name, fieldNames, allArgs, IrType.Named(expr.target.name))
                 }
-                val target = lowerExpr(expr.target)
+                val target = autoDerefMemberTarget(lowerExpr(expr.target), expr.name, method = true)
                 val tt = target.type
                 // User method on a struct: obj.method(args) -> Type_method(obj, args)
                 if (tt is IrType.Named) {
@@ -1690,6 +1712,52 @@ class IrGenerator(private val table: SymbolTable) {
             }
             is Expr.MetaInvoke -> error("MetaInvoke reached IR generation at line ${expr.line}")
         }
+    }
+
+    private fun typeRefMentionsAny(ref: TypeRef, names: Set<String>): Boolean = when (ref) {
+        is TypeRef.Named -> ref.name in names || ref.args.any { typeRefMentionsAny(it, names) }
+        is TypeRef.Array -> typeRefMentionsAny(ref.element, names)
+        is TypeRef.Map -> typeRefMentionsAny(ref.key, names) || typeRefMentionsAny(ref.value, names)
+        is TypeRef.Set -> typeRefMentionsAny(ref.element, names)
+        is TypeRef.Function ->
+            ref.params.any { typeRefMentionsAny(it, names) } ||
+                typeRefMentionsAny(ref.ret, names) ||
+                ref.receivers.any { typeRefMentionsAny(it, names) }
+        is TypeRef.Tuple -> ref.elements.any { typeRefMentionsAny(it, names) }
+        is TypeRef.Nullable -> typeRefMentionsAny(ref.inner, names)
+        is TypeRef.Pointer -> typeRefMentionsAny(ref.inner, names)
+        is TypeRef.Reference -> typeRefMentionsAny(ref.inner, names)
+        is TypeRef.Failable -> typeRefMentionsAny(ref.ok, names)
+        is TypeRef.Const -> false
+    }
+
+    /**
+     * Applies one user-defined `impl deref` when the wrapper does not own the
+     * requested member but its dereference target does.
+     */
+    private fun autoDerefMemberTarget(target: IrExpr, name: String, method: Boolean): IrExpr {
+        val wrapper = target.type as? IrType.Named ?: return target
+        val wrapperStruct = table.lookupStruct(wrapper.name)
+        val direct = if (method) {
+            table.lookupMethod(wrapper.name, name) != null ||
+                wrapperStruct?.field(name)?.type is IrType.Function
+        } else {
+            wrapperStruct?.field(name) != null || table.lookupMethod(wrapper.name, name) != null
+        }
+        if (direct) return target
+
+        val derefName = table.lookupMethod(wrapper.name, "deref") ?: return target
+        val deref = table.lookupFunction(derefName) ?: return target
+        val inner = deref.returnType as? IrType.Named ?: return target
+        if (inner.name == wrapper.name) return target
+        val innerStruct = table.lookupStruct(inner.name)
+        val exists = if (method) {
+            table.lookupMethod(inner.name, name) != null ||
+                innerStruct?.field(name)?.type is IrType.Function
+        } else {
+            innerStruct?.field(name) != null || table.lookupMethod(inner.name, name) != null
+        }
+        return if (exists) IrExpr.Call(derefName, listOf(target), inner) else target
     }
 
     /** Resolves the return type of a builtin method on a receiver of [receiverType]. */

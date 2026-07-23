@@ -20,6 +20,7 @@ import org.azora.lang.frontend.Annotation
 import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.FuncDecl
 import org.azora.lang.frontend.Lexer
+import org.azora.lang.frontend.NamedTypeMacroCall
 import org.azora.lang.frontend.PackField
 import org.azora.lang.frontend.Param
 import org.azora.lang.frontend.Parser
@@ -27,7 +28,9 @@ import org.azora.lang.frontend.Program
 import org.azora.lang.frontend.Stmt
 import org.azora.lang.frontend.TopLevel
 import org.azora.lang.frontend.TypeAnnotation
+import org.azora.lang.frontend.TypeFormKind
 import org.azora.lang.frontend.TypeRef
+import org.azora.lang.frontend.TypeTypeArm
 import org.azora.lang.frontend.VariadicFieldTemplate
 
 /**
@@ -91,7 +94,8 @@ internal object VariadicMonomorphizer {
                 implTemplates.getOrPut(item.typeName) { mutableListOf() }.add(item)
             }
         }
-        if (packTemplates.isEmpty() && funcTemplates.isEmpty()) return program
+        val namedTypeMacroRules = program.typeMacroRules.filter { it.name != null }
+        if (packTemplates.isEmpty() && funcTemplates.isEmpty() && namedTypeMacroRules.isEmpty()) return program
 
         val methodReturns = linkedMapOf<Pair<String, String>, CallableReturn>()
         for (item in program.items) {
@@ -120,6 +124,7 @@ internal object VariadicMonomorphizer {
             functionReturns,
             methodReturns,
             implTemplates,
+            namedTypeMacroRules,
         )
         val rewritten = program.items.mapNotNull { ctx.rewriteTopLevel(it) }
         return program.copy(items = rewritten + ctx.packs.values + ctx.funcs.values + ctx.expandImpls())
@@ -147,6 +152,7 @@ private class MonoContext(
     private val functionReturns: Map<String, CallableReturn>,
     private val methodReturns: Map<Pair<String, String>, CallableReturn>,
     private val implTemplates: Map<String, List<TopLevel.Impl>>,
+    private val namedTypeMacroRules: List<TypeTypeArm>,
 ) {
     val packs = linkedMapOf<String, TopLevel.Pack>()
     val funcs = linkedMapOf<String, TopLevel.Func>()
@@ -218,7 +224,7 @@ private class MonoContext(
     private fun expandFields(template: TopLevel.Pack, args: List<TypeRef>): List<PackField> {
         val tpl = template.fieldTemplate
         if (tpl == null) return template.fields.map { it.copy(type = rewriteType(it.type)) }
-        val out = mutableListOf<PackField>()
+        val out = template.fields.mapTo(mutableListOf()) { it.copy(type = rewriteType(it.type)) }
         for ((i, argType) in args.withIndex()) {
             for (f in tpl.fields) {
                 val name = if (f.name.startsWith("\$index")) i.toString() else f.name
@@ -546,10 +552,23 @@ private class MonoContext(
         bindings.clear()
         for (p in decl.params) bindings[p.name] = p.type
         return decl.copy(
-            params = decl.params.map { it.copy(type = rewriteType(it.type)) },
+            params = decl.params.map(::rewriteParam),
             returnType = rewriteTypeAnnotation(decl.returnType),
             body = decl.body.map(::rewriteStmt),
         )
+    }
+
+    private fun rewriteParam(param: Param): Param {
+        val rewritten = rewriteType(param.type)
+        val reference = rewritten as? TypeRef.Reference
+        return if (reference != null) {
+            param.copy(
+                type = reference.inner,
+                modifier = if (param.modifier.isEmpty()) reference.kind.spelling else param.modifier,
+            )
+        } else {
+            param.copy(type = rewritten)
+        }
     }
 
     private fun rewriteTypeAnnotation(ann: TypeAnnotation): TypeAnnotation =
@@ -557,6 +576,7 @@ private class MonoContext(
 
     fun rewriteType(ref: TypeRef): TypeRef = when (ref) {
         is TypeRef.Named -> when {
+            NamedTypeMacroCall.isCall(ref) -> expandNamedTypeMacro(ref)
             ref.name in packTemplates && ref.args.isNotEmpty() -> TypeRef.Named(instantiatePack(ref.name, ref.args))
             ref.args.isNotEmpty() -> ref.copy(args = ref.args.map(::rewriteType), variadic = false)
             else -> ref
@@ -575,6 +595,87 @@ private class MonoContext(
         is TypeRef.Pointer -> ref.copy(inner = rewriteType(ref.inner))
         is TypeRef.Reference -> ref.copy(inner = rewriteType(ref.inner))
         is TypeRef.Const -> ref
+    }
+
+    private fun expandNamedTypeMacro(call: TypeRef.Named): TypeRef {
+        val expectedKind = when (NamedTypeMacroCall.form(call)) {
+            NamedTypeMacroCall.Form.Prefix -> TypeFormKind.PREFIX
+            NamedTypeMacroCall.Form.List -> TypeFormKind.PREFIX_LIST
+            NamedTypeMacroCall.Form.Infix -> TypeFormKind.INFIX
+        }
+        val name = NamedTypeMacroCall.name(call)
+        val modifier = NamedTypeMacroCall.modifier(call)
+        val matches = namedTypeMacroRules.filter {
+            it.kind == expectedKind && it.name == name && it.prefix == modifier
+        }
+        if (matches.isEmpty()) {
+            val spelling = buildString {
+                if (modifier.isNotEmpty()) append(modifier).append(' ')
+                append(name)
+            }
+            error("undefined type macro '$spelling'; import the module that declares its 'meta type' rule")
+        }
+        if (matches.size > 1) {
+            error("ambiguous type macro '$name': ${matches.size} matching 'meta type' rules are visible")
+        }
+        val rule = matches.single()
+        val rewrittenArgs = call.args.map(::rewriteType)
+        val bindings: Map<String, List<TypeRef>> = when {
+            rule.kind == TypeFormKind.PREFIX_LIST && rule.holes.size == 1 ->
+                mapOf(rule.holes.single() to rewrittenArgs)
+            rule.holes.size == rewrittenArgs.size ->
+                rule.holes.zip(rewrittenArgs.map(::listOf)).toMap()
+            else -> error(
+                "type macro '$name' expects ${rule.holes.size} type argument(s), got ${rewrittenArgs.size}",
+            )
+        }
+        return rewriteType(substituteTypeMacroTemplate(rule.template, bindings))
+    }
+
+    private fun substituteTypeMacroTemplate(
+        type: TypeRef,
+        bindings: Map<String, List<TypeRef>>,
+    ): TypeRef = when (type) {
+        is TypeRef.Named -> {
+            val direct = bindings[type.name]
+            if (direct != null) {
+                val values = direct
+                if (values.size != 1) {
+                    error("variadic type-macro hole '${type.name}' must be expanded inside '<...${type.name}>'")
+                }
+                values.single()
+            } else {
+                val args = if (type.variadic) {
+                    type.args.flatMap { argument ->
+                        if (argument is TypeRef.Named && argument.name in bindings) {
+                            bindings.getValue(argument.name)
+                        } else {
+                            listOf(substituteTypeMacroTemplate(argument, bindings))
+                        }
+                    }
+                } else {
+                    type.args.map { substituteTypeMacroTemplate(it, bindings) }
+                }
+                type.copy(args = args, variadic = false)
+            }
+        }
+        is TypeRef.Array -> type.copy(element = substituteTypeMacroTemplate(type.element, bindings))
+        is TypeRef.Map -> type.copy(
+            key = substituteTypeMacroTemplate(type.key, bindings),
+            value = substituteTypeMacroTemplate(type.value, bindings),
+        )
+        is TypeRef.Set -> type.copy(element = substituteTypeMacroTemplate(type.element, bindings))
+        is TypeRef.Function -> type.copy(
+            params = type.params.map { substituteTypeMacroTemplate(it, bindings) },
+            ret = substituteTypeMacroTemplate(type.ret, bindings),
+            receivers = type.receivers.map { substituteTypeMacroTemplate(it, bindings) },
+        )
+        is TypeRef.Tuple -> type.copy(elements = type.elements.map { substituteTypeMacroTemplate(it, bindings) })
+        is TypeRef.Nullable -> type.copy(inner = substituteTypeMacroTemplate(type.inner, bindings))
+        is TypeRef.Failable -> type.copy(ok = substituteTypeMacroTemplate(type.ok, bindings))
+        is TypeRef.Pointer -> type.copy(inner = substituteTypeMacroTemplate(type.inner, bindings))
+        is TypeRef.Reference -> type.copy(inner = substituteTypeMacroTemplate(type.inner, bindings))
+        is TypeRef.Const -> type
     }
 
     fun rewriteExpr(e: Expr): Expr = when (e) {
@@ -597,8 +698,8 @@ private class MonoContext(
         is Expr.TryPropagate -> e.copy(expr = rewriteExpr(e.expr))
         is Expr.IfExpr -> e.copy(condition = rewriteExpr(e.condition), thenExpr = rewriteExpr(e.thenExpr), elseExpr = rewriteExpr(e.elseExpr))
         is Expr.Lambda -> e.copy(
-            params = e.params.map { it.copy(type = rewriteType(it.type)) },
-            receivers = e.receivers.map { it.copy(type = rewriteType(it.type)) },
+            params = e.params.map(::rewriteParam),
+            receivers = e.receivers.map(::rewriteParam),
             body = e.body.map(::rewriteStmt),
         )
         is Expr.NamedArg -> e.copy(value = rewriteExpr(e.value))

@@ -1351,18 +1351,23 @@ class Parser(
         }
         consume(TokenType.L_BRACE, "Expected '{' after pack name")
         skipNewlines()
-        // A variadic pack's body is a field-generating template:
-        // `inline for Ty in ...T with index { mixin "$index: $Ty" }`.
-        val fieldTemplate = if (tp.variadic != null && check(TokenType.INLINE)) parseVariadicFieldTemplate() else null
+        // A variadic pack may mix fixed fields with one generated field template:
+        // `fin metadata: M; inline for Ty in ...T { mixin "$index: $Ty" }`.
+        var fieldTemplate: VariadicFieldTemplate? = null
         val fields = mutableListOf<PackField>()
-        if (fieldTemplate == null) {
-            while (!check(TokenType.R_BRACE) && !isAtEnd()) {
-                skipNewlines()
-                if (check(TokenType.R_BRACE)) break
+        while (!check(TokenType.R_BRACE) && !isAtEnd()) {
+            skipNewlines()
+            if (check(TokenType.R_BRACE)) break
+            if (tp.variadic != null && check(TokenType.INLINE)) {
+                if (fieldTemplate != null) {
+                    error("A variadic pack may declare only one inline field template at line ${peek().line}")
+                }
+                fieldTemplate = parseVariadicFieldTemplate()
+            } else {
                 fields.add(parsePackField(enforceNumFields = enforceNumFields, forceConfine = isOpaque))
                 match(TokenType.COMMA)
-                skipNewlines()
             }
+            skipNewlines()
         }
         consume(TokenType.R_BRACE, "Expected '}' after pack fields")
         consumeNewline()
@@ -1454,11 +1459,72 @@ class Parser(
             enforceNumFields && check(TokenType.INT_LITERAL) -> advance().lexeme
             else -> consumeIdentifierLike("Expected field name")
         }
-        consume(TokenType.COLON, "Expected ':' after pack field name")
-        val type = parseTypeName()
-        val default = if (match(TokenType.EQUAL)) parseExpr() else null
+        val type: TypeRef
+        val default: Expr?
+        if (match(TokenType.COLON)) {
+            type = parseTypeName()
+            default = if (match(TokenType.EQUAL)) parseExpr() else null
+        } else {
+            consume(TokenType.EQUAL, "Expected ':' or '=' after pack field name")
+            default = parseExpr()
+            type = inferPackFieldType(default)
+                ?: error("Cannot infer type of field '$name' at line ${default.line}; add an explicit ': Type'")
+        }
         consumeNewline()
         return PackField(name, type, mutable, default, visibility, annotations)
+    }
+
+    /**
+     * Infers declaration types that are fully determined by syntax.
+     *
+     * Field layouts must be known before semantic analysis, so this deliberately
+     * accepts literals, constructor-shaped calls, and homogeneous collection
+     * literals only. Expressions that require symbol lookup keep the diagnostic
+     * local and ask for an explicit field type.
+     */
+    private fun inferPackFieldType(expr: Expr): TypeRef? = when (expr) {
+        is Expr.IntLiteral -> TypeRef.Named(
+            when (expr.suffix) {
+                NumericSuffix.NONE -> "Int"
+                NumericSuffix.BYTE -> "Byte"
+                NumericSuffix.UBYTE -> "UByte"
+                NumericSuffix.SHORT -> "Short"
+                NumericSuffix.USHORT -> "UShort"
+                NumericSuffix.UINT -> "UInt"
+                NumericSuffix.LONG -> "Long"
+                NumericSuffix.ULONG -> "ULong"
+                NumericSuffix.CENT -> "Cent"
+                NumericSuffix.UCENT -> "UCent"
+                NumericSuffix.FLOAT -> "Float"
+                NumericSuffix.DECIMAL -> "Decimal"
+            },
+        )
+        is Expr.RealLiteral -> TypeRef.Named(
+            when (expr.suffix) {
+                NumericSuffix.FLOAT -> "Float"
+                NumericSuffix.DECIMAL -> "Decimal"
+                else -> "Real"
+            },
+        )
+        is Expr.StringLiteral, is Expr.StringTemplate -> TypeRef.Named("String")
+        is Expr.BoolLiteral -> TypeRef.Named("Bool")
+        is Expr.CharLiteral -> TypeRef.Named("Char")
+        is Expr.Grouping -> inferPackFieldType(expr.expr)
+        is Expr.Call -> TypeRef.Named(expr.callee, expr.typeArgs)
+        is Expr.ArrayLiteral -> expr.elements.firstOrNull()
+            ?.let(::inferPackFieldType)
+            ?.let(TypeRef::Array)
+        is Expr.SetLiteral -> expr.elements.firstOrNull()
+            ?.let(::inferPackFieldType)
+            ?.let(TypeRef::Set)
+        is Expr.MapLit -> expr.entries.firstOrNull()?.let { (key, value) ->
+            val keyType = inferPackFieldType(key)
+            val valueType = inferPackFieldType(value)
+            if (keyType != null && valueType != null) TypeRef.Map(keyType, valueType) else null
+        }
+        is Expr.TupleLit -> TypeRef.Tuple(expr.elements.mapNotNull(::inferPackFieldType))
+            .takeIf { it.elements.size == expr.elements.size }
+        else -> null
     }
 
     /** `enum Name { Var1; Var2; ... }` — variants one per line, each optionally with trailing annotations. */
@@ -1926,10 +1992,12 @@ class Parser(
             consumeNewline()
             return TopLevel.Impl(
                 typeName,
-                listOf(FuncDecl("deref", emptyList(), TypeAnnotation.Explicit(TypeRef.Named("Any")), body, false, emptyList(), derefStart.line, derefStart.column)),
+                listOf(FuncDecl("deref", emptyList(), TypeAnnotation.Inferred, body, false, emptyList(), derefStart.line, derefStart.column)),
                 null,
                 derefStart.line,
                 derefStart.column,
+                typeParams = implTypeParams.names,
+                variadicParam = implTypeParams.variadic,
             )
         }
         val isPackImpl = match(TokenType.PACK)
@@ -2054,12 +2122,23 @@ class Parser(
                         consumeNewline()
                         methods.add(FuncDecl(propName, emptyList(), propType, listOf(Stmt.Return(expr, expr.line, expr.column)), false, emptyList(), methodStart.line, methodStart.column, annotations = memberAnnotations, visibility = visibility, receiverModifier = "ref", memberCallStyle = MemberCallStyle.PROPERTY))
                     } else {
+                        val contracts = parseContractClauses()
+                        run {
+                            val i = nextMeaningfulIndex()
+                            if (
+                                tokens.getOrNull(i)?.type == TokenType.ZONE &&
+                                tokens.getOrNull(i + 1)?.type == TokenType.L_BRACE
+                            ) {
+                                while (current < i) advance()
+                                advance()
+                            }
+                        }
                         consume(TokenType.L_BRACE, "Expected '{' after prop type")
                         skipNewlines()
                         val propBody = parseBlock()
                         consume(TokenType.R_BRACE, "Expected '}' after prop body")
                         consumeNewline()
-                        methods.add(FuncDecl(propName, emptyList(), propType, propBody, false, emptyList(), methodStart.line, methodStart.column, annotations = memberAnnotations, visibility = visibility, receiverModifier = "ref", memberCallStyle = MemberCallStyle.PROPERTY))
+                        methods.add(FuncDecl(propName, emptyList(), propType, applyContracts(propBody, contracts), false, emptyList(), methodStart.line, methodStart.column, annotations = memberAnnotations, visibility = visibility, receiverModifier = "ref", memberCallStyle = MemberCallStyle.PROPERTY))
                     }
                 }
                 // `bridge prop<D> name: T` / `bridge func<D> name(params): T` — a
@@ -2573,10 +2652,73 @@ class Parser(
      */
     private fun parseTypeMacroArm(): TypeTypeArm {
         val prefix = parseMetaPrefix()
-        val (kind, holes) = parseTypeMacroPattern()
+        val pattern = if (check(TokenType.IDENTIFIER)) {
+            parseNamedTypeMacroPattern(prefix)
+        } else {
+            val (kind, holes) = parseTypeMacroPattern()
+            TypeTypeArm(kind, holes, TypeRef.Named("Unit"), prefix)
+        }
+        skipNewlines()
         consume(TokenType.FAT_ARROW, "Expected '=>' after 'meta type' pattern")
         val template = parseTypeName()
-        return TypeTypeArm(kind, holes, template, prefix)
+        return pattern.copy(template = template)
+    }
+
+    /**
+     * Library-defined named type macros:
+     *
+     *     res $T                  => Resource<$T>
+     *     mut res $T              => MutResource<$T>
+     *     query [...$T]           => Query<...$T>
+     *     $Base with $Filter      => With<$Base, $Filter>
+     */
+    private fun parseNamedTypeMacroPattern(prefix: String): TypeTypeArm {
+        val first = consume(TokenType.IDENTIFIER, "Expected named type-macro pattern").lexeme
+        if (first.startsWith("\$")) {
+            if (prefix.isNotEmpty()) {
+                error("Infix type-macro patterns cannot use prefix '$prefix' at line ${peek().line}")
+            }
+            val operator = when {
+                match(TokenType.WITH) -> "with"
+                check(TokenType.IDENTIFIER) -> advance().lexeme
+                else -> error("Expected infix type-macro name after '$first' at line ${peek().line}")
+            }
+            val right = consume(TokenType.IDENTIFIER, "Expected right type hole after '$operator'").lexeme
+            requireTypeMacroHole(first)
+            requireTypeMacroHole(right)
+            return TypeTypeArm(
+                TypeFormKind.INFIX,
+                listOf(first, right),
+                TypeRef.Named("Unit"),
+                name = operator,
+            )
+        }
+
+        val holes = mutableListOf<String>()
+        val kind = if (match(TokenType.L_BRACKET)) {
+            if (!check(TokenType.R_BRACKET)) {
+                do {
+                    match(TokenType.ELLIPSIS)
+                    val hole = consume(TokenType.IDENTIFIER, "Expected type hole in '$first [...]'").lexeme
+                    requireTypeMacroHole(hole)
+                    holes.add(hole)
+                } while (match(TokenType.COMMA))
+            }
+            consume(TokenType.R_BRACKET, "Expected ']' after '$first' type-macro pattern")
+            TypeFormKind.PREFIX_LIST
+        } else {
+            val hole = consume(TokenType.IDENTIFIER, "Expected type hole after '$first'").lexeme
+            requireTypeMacroHole(hole)
+            holes.add(hole)
+            TypeFormKind.PREFIX
+        }
+        return TypeTypeArm(kind, holes, TypeRef.Named("Unit"), prefix, first)
+    }
+
+    private fun requireTypeMacroHole(name: String) {
+        if (!name.startsWith("\$") || name.length == 1) {
+            error("Type-macro holes must start with '\$', got '$name' at line ${peek().line}")
+        }
     }
 
     private fun parseTypeMacroPattern(): Pair<TypeFormKind, List<String>> {
@@ -2984,7 +3126,7 @@ class Parser(
             consumeNewline()
             body = stmts
         }
-        val contractedBody = applyContracts(body, contracts)
+        val contractedBody = applyContracts(body, contracts, rewriteYields = isFlow)
         return FuncDecl(
             name = name,
             params = params,
@@ -3078,34 +3220,45 @@ class Parser(
         return ContractClauses(preconditions, resultName, postconditions)
     }
 
-    private fun applyContracts(body: List<Stmt>, contracts: ContractClauses): List<Stmt> {
+    private fun applyContracts(
+        body: List<Stmt>,
+        contracts: ContractClauses,
+        rewriteYields: Boolean = false,
+    ): List<Stmt> {
         if (contracts.preconditions.isEmpty() && contracts.postconditions.isEmpty()) return body
-        val withPosts = if (contracts.postconditions.isEmpty()) body else body.map { rewriteContractReturns(it, contracts) }
+        val withPosts = if (contracts.postconditions.isEmpty()) body else {
+            body.map { rewriteContractResults(it, contracts, rewriteYields) }
+        }
         return contracts.preconditions + withPosts
     }
 
-    private fun rewriteContractReturns(stmt: Stmt, contracts: ContractClauses): Stmt {
+    private fun rewriteContractResults(
+        stmt: Stmt,
+        contracts: ContractClauses,
+        rewriteYields: Boolean,
+    ): Stmt {
         return when (stmt) {
             is Stmt.Return -> rewriteContractReturn(stmt, contracts)
+            is Stmt.Yield -> if (rewriteYields) rewriteContractYield(stmt, contracts) else stmt
             is Stmt.If -> stmt.copy(
-                thenBranch = stmt.thenBranch.map { rewriteContractReturns(it, contracts) },
-                elseBranch = stmt.elseBranch?.map { rewriteContractReturns(it, contracts) },
+                thenBranch = stmt.thenBranch.map { rewriteContractResults(it, contracts, rewriteYields) },
+                elseBranch = stmt.elseBranch?.map { rewriteContractResults(it, contracts, rewriteYields) },
             )
-            is Stmt.While -> stmt.copy(body = stmt.body.map { rewriteContractReturns(it, contracts) })
-            is Stmt.For -> stmt.copy(body = stmt.body.map { rewriteContractReturns(it, contracts) })
-            is Stmt.Loop -> stmt.copy(body = stmt.body.map { rewriteContractReturns(it, contracts) })
+            is Stmt.While -> stmt.copy(body = stmt.body.map { rewriteContractResults(it, contracts, rewriteYields) })
+            is Stmt.For -> stmt.copy(body = stmt.body.map { rewriteContractResults(it, contracts, rewriteYields) })
+            is Stmt.Loop -> stmt.copy(body = stmt.body.map { rewriteContractResults(it, contracts, rewriteYields) })
             is Stmt.When -> stmt.copy(
                 branches = stmt.branches.map { branch ->
-                    branch.copy(body = branch.body.map { rewriteContractReturns(it, contracts) })
+                    branch.copy(body = branch.body.map { rewriteContractResults(it, contracts, rewriteYields) })
                 },
-                elseBranch = stmt.elseBranch?.map { rewriteContractReturns(it, contracts) },
+                elseBranch = stmt.elseBranch?.map { rewriteContractResults(it, contracts, rewriteYields) },
             )
             is Stmt.Try -> stmt.copy(
-                body = stmt.body.map { rewriteContractReturns(it, contracts) },
-                catchBody = stmt.catchBody?.map { rewriteContractReturns(it, contracts) },
+                body = stmt.body.map { rewriteContractResults(it, contracts, rewriteYields) },
+                catchBody = stmt.catchBody?.map { rewriteContractResults(it, contracts, rewriteYields) },
             )
-            is Stmt.Zone -> stmt.copy(body = stmt.body.map { rewriteContractReturns(it, contracts) })
-            is Stmt.FriendZone -> stmt.copy(body = stmt.body.map { rewriteContractReturns(it, contracts) })
+            is Stmt.Zone -> stmt.copy(body = stmt.body.map { rewriteContractResults(it, contracts, rewriteYields) })
+            is Stmt.FriendZone -> stmt.copy(body = stmt.body.map { rewriteContractResults(it, contracts, rewriteYields) })
             else -> stmt
         }
     }
@@ -3118,6 +3271,18 @@ class Parser(
             listOf(
                 Stmt.FinDecl(resultName, TypeAnnotation.Inferred, value, stmt.line, stmt.column),
             ) + contracts.postconditions + Stmt.Return(resultRef, stmt.line, stmt.column),
+            stmt.line,
+            stmt.column,
+        )
+    }
+
+    private fun rewriteContractYield(stmt: Stmt.Yield, contracts: ContractClauses): Stmt {
+        val resultName = contracts.resultName ?: "__az_contract_result_${contractResultCounter++}"
+        val resultRef = Expr.Identifier(resultName, stmt.line, stmt.column, resultName.length)
+        return Stmt.Zone(
+            listOf(
+                Stmt.FinDecl(resultName, TypeAnnotation.Inferred, stmt.value, stmt.line, stmt.column),
+            ) + contracts.postconditions + Stmt.Yield(resultRef, stmt.line, stmt.column),
             stmt.line,
             stmt.column,
         )
@@ -3150,11 +3315,18 @@ class Parser(
     }
 
     private fun parseParams(variadicTypeParam: String? = null): List<Param> {
+        skipNewlines()
         if (check(TokenType.R_PAREN)) return emptyList()
         val params = mutableListOf<Param>()
-        do {
-            // Optional modifier: ref/out/mut before the name.
+        while (!check(TokenType.R_PAREN)) {
+            // Optional modifier: ref/out/mut before the name. `mut ref name`
+            // is one exclusive-borrow modifier, not two separate parameters.
             val modifier = when {
+                check(TokenType.MUT) && peekNext()?.type == TokenType.REF -> {
+                    advance()
+                    advance()
+                    "mut ref"
+                }
                 match(TokenType.REF) -> "ref"
                 match(TokenType.OUT) -> "out"
                 match(TokenType.MUT) -> "mut"
@@ -3190,7 +3362,21 @@ class Parser(
             val normalizedModifier = reference?.kind?.spelling ?: modifier
             val default = if (match(TokenType.EQUAL)) parseExpr() else null
             params.add(Param(name, type, default, normalizedModifier, variadic = isVariadic, annotations = annotations))
-        } while (match(TokenType.COMMA))
+            val previousLine = tokens.getOrNull(current - 1)?.line ?: peek().line
+            val separatedByPhysicalLine = peek().line > previousLine
+            when {
+                match(TokenType.COMMA) -> {
+                    skipNewlines()
+                    if (check(TokenType.R_PAREN)) break
+                }
+                check(TokenType.NEWLINE) -> {
+                    skipNewlines()
+                    if (check(TokenType.R_PAREN)) break
+                }
+                separatedByPhysicalLine -> continue
+                else -> break
+            }
+        }
         return params
     }
 
@@ -3269,6 +3455,10 @@ class Parser(
         if (referenceKind != null) {
             return TypeRef.Reference(referenceKind, parseTypeName())
         }
+        if (check(TokenType.MUT) && isNamedTypeMacroInvocationAhead(current + 1)) {
+            advance()
+            return parseTypeInfixes(parseTypeSuffixes(parseNamedTypeMacroInvocation("mut")))
+        }
         if (match(TokenType.MUT)) {
             return parseMutableTypeName()
         }
@@ -3277,7 +3467,7 @@ class Parser(
             val inner = parseTypeAtom()
             return TypeRef.Array(inner)
         }
-        return parseTypeSuffixes(parseTypeAtom())
+        return parseTypeInfixes(parseTypeSuffixes(parseTypeAtom()))
     }
 
     private fun parseMutableTypeName(): TypeRef =
@@ -3310,6 +3500,65 @@ class Parser(
                 else -> return base
             }
         }
+    }
+
+    /** Type-filter composition used by ECS queries: `A with B`, `A without C`. */
+    private fun parseTypeInfixes(start: TypeRef): TypeRef {
+        var base = start
+        while (true) {
+            val operator = when {
+                match(TokenType.WITH) -> "with"
+                check(TokenType.IDENTIFIER) && peek().lexeme == "without" -> {
+                    advance()
+                    "without"
+                }
+                else -> return base
+            }
+            val right = parseTypeName()
+            base = NamedTypeMacroCall.create(
+                operator,
+                listOf(base, right),
+                form = NamedTypeMacroCall.Form.Infix,
+            )
+        }
+    }
+
+    private fun isNamedTypeMacroInvocationAhead(index: Int = current): Boolean {
+        val macro = tokens.getOrNull(index) ?: return false
+        if (macro.type != TokenType.IDENTIFIER || macro.lexeme.firstOrNull()?.isLowerCase() != true) return false
+        val next = tokens.getOrNull(index + 1)?.type ?: return false
+        return next == TokenType.L_BRACKET || next in setOf(
+            TokenType.IDENTIFIER,
+            TokenType.REF,
+            TokenType.MUT,
+            TokenType.SHARED,
+            TokenType.WEAK,
+            TokenType.L_PAREN,
+            TokenType.ELLIPSIS,
+        )
+    }
+
+    private fun parseNamedTypeMacroInvocation(modifier: String = ""): TypeRef {
+        val name = consume(TokenType.IDENTIFIER, "Expected type-macro name").lexeme
+        if (match(TokenType.L_BRACKET)) {
+            val args = mutableListOf<TypeRef>()
+            skipNewlines()
+            if (!check(TokenType.R_BRACKET)) {
+                do {
+                    skipNewlines()
+                    args.add(parseTypeName())
+                    skipNewlines()
+                } while (match(TokenType.COMMA))
+            }
+            consume(TokenType.R_BRACKET, "Expected ']' after '$name' type arguments")
+            return NamedTypeMacroCall.create(name, args, modifier, NamedTypeMacroCall.Form.List)
+        }
+        return NamedTypeMacroCall.create(
+            name,
+            listOf(parseTypeName()),
+            modifier,
+            NamedTypeMacroCall.Form.Prefix,
+        )
     }
 
     /**
@@ -3362,6 +3611,9 @@ class Parser(
                 }
             }
             check(TokenType.IDENTIFIER) -> {
+                if (isNamedTypeMacroInvocationAhead()) {
+                    return parseNamedTypeMacroInvocation()
+                }
                 if (peek().lexeme in setOf("Func", "Task", "Flow") &&
                     peekNext()?.type in setOf(TokenType.L_BRACKET, TokenType.L_PAREN)
                 ) {

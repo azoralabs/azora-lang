@@ -217,7 +217,14 @@ class Compiler(
         // 2d. Monomorphize variadic generics (e.g. `Tuple<T…>` / `tupleOf(…)`)
         // into concrete per-instantiation declarations before semantic analysis.
         val ast = try {
-            VariadicMonomorphizer.monomorphize(macroReInjected)
+            // Named type macros are library-defined and expand during the first
+            // rewrite. Re-inject afterwards so declarations referenced by their
+            // templates become visible, then run monomorphization once more for
+            // any variadic type produced by an expansion (for example a query
+            // over a heterogeneous component list).
+            val typeExpanded = VariadicMonomorphizer.monomorphize(macroReInjected)
+            val typeReInjected = CallbackImplNormalizer.normalize(libraries.inject(typeExpanded))
+            VariadicMonomorphizer.monomorphize(typeReInjected)
         } catch (e: IllegalStateException) {
             return CompilationResult.Failure(listOf(e.message ?: "variadic monomorphization failed"))
         }

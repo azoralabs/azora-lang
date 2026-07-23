@@ -113,6 +113,16 @@ class SymbolCollector {
         // Register built-in functions
         registerBuiltins(table)
 
+        // Register aliases before packs/functions so imported aliases participate
+        // in field layout and signature resolution regardless of source order.
+        for (item in program.items) {
+            if (item is TopLevel.TypeAlias) {
+                val resolved = TypeFunctionEvaluator.resolve(item.type, typeFunctions)
+                table.defineAlias(item.name, resolved)
+                IrType.aliases[item.name] = resolved
+            }
+        }
+
         // Register global fin declarations as variables in a global scope
         table.pushScope()
         for (item in program.items) {
@@ -400,15 +410,6 @@ class SymbolCollector {
             }
         }
 
-// Register type aliases
-        for (item in program.items) {
-            if (item is TopLevel.TypeAlias) {
-                val resolved = TypeFunctionEvaluator.resolve(item.type, typeFunctions)
-                table.defineAlias(item.name, resolved)
-                IrType.aliases[item.name] = resolved
-            }
-        }
-
         // Validate impl Contract for Type. Specs require their declared methods;
         // decorators are marker contracts and must use the bodyless form.
         for (item in program.items) {
@@ -599,7 +600,23 @@ class SymbolCollector {
             val valueType = inferExprType(value, env)
             if (keyType != null && valueType != null) IrType.Map(keyType, valueType) else null
         }
-        is Expr.Index, is Expr.Member, is Expr.MethodCall -> null
+        is Expr.Member -> {
+            val target = inferExprType(expr.target, env)
+            when (target) {
+                is IrType.Pointer -> (target.inner as? IrType.Named)
+                    ?.let { symbolTable?.lookupStruct(it.name)?.field(expr.name)?.type }
+                is IrType.Named -> symbolTable?.lookupStruct(target.name)?.field(expr.name)?.type
+                else -> null
+            }
+        }
+        is Expr.MethodCall -> {
+            val target = inferExprType(expr.target, env) as? IrType.Named
+            target?.let { owner ->
+                symbolTable?.lookupMethod(owner.name, expr.name)
+                    ?.let { symbolTable?.lookupFunction(it)?.returnType }
+            }
+        }
+        is Expr.Index -> null
         is Expr.StringTemplate -> IrType.String
         is Expr.TupleLit, is Expr.TupleAccess, is Expr.VariantLit -> null
         is Expr.CatchExpr -> null

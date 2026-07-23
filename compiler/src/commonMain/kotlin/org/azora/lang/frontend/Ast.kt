@@ -1173,6 +1173,35 @@ object TypeFunctionCall {
     fun name(ref: TypeRef.Named): String = ref.name.removePrefix(PREFIX)
 }
 
+/**
+ * Internal encoding for a library-defined named type-macro invocation.
+ *
+ * The parser records surface forms such as `res Time`, `mut res Time`,
+ * `query [ref A, mut ref B]`, and `A with B` without assigning semantics to
+ * their names. Imported `meta type` rules expand these calls before semantic
+ * analysis, leaving ordinary [TypeRef] nodes for every backend.
+ */
+object NamedTypeMacroCall {
+    private const val PREFIX = "__azora_named_type_macro__"
+    private const val SEPARATOR = "\u001f"
+
+    enum class Form { Prefix, List, Infix }
+
+    fun create(name: String, args: List<TypeRef>, modifier: String = "", form: Form): TypeRef.Named =
+        TypeRef.Named("$PREFIX$modifier$SEPARATOR${form.name}$SEPARATOR$name", args)
+
+    fun isCall(ref: TypeRef.Named): Boolean = ref.name.startsWith(PREFIX)
+
+    fun modifier(ref: TypeRef.Named): String =
+        ref.name.removePrefix(PREFIX).substringBefore(SEPARATOR)
+
+    fun form(ref: TypeRef.Named): Form =
+        Form.valueOf(ref.name.removePrefix(PREFIX).substringAfter(SEPARATOR).substringBefore(SEPARATOR))
+
+    fun name(ref: TypeRef.Named): String =
+        ref.name.removePrefix(PREFIX).substringAfter(SEPARATOR).substringAfter(SEPARATOR)
+}
+
 /** Encodes a source path containing both an owning module and a zone-qualified symbol. */
 object ModuleQualifiedSymbol {
     private const val PREFIX = "__azora_module_qualified__"
@@ -1442,7 +1471,7 @@ data class MacroArm(val delimiter: MacroDelimiter, val pattern: MacroPattern, va
  * Which built-in type-sugar form a [TypeTypeArm] pattern matches. Used by the
  * (staged) `meta type` rewriting pass to map a source form to its template.
  */
-enum class TypeFormKind { ARRAY, ARRAY_SIZED, SET, MAP, TUPLE }
+enum class TypeFormKind { ARRAY, ARRAY_SIZED, SET, MAP, TUPLE, PREFIX, PREFIX_LIST, INFIX }
 
 /**
  * One arm of a `meta type { pattern => template }` declaration: when a type
@@ -1455,7 +1484,14 @@ enum class TypeFormKind { ARRAY, ARRAY_SIZED, SET, MAP, TUPLE }
  * next stage (it requires migrating stdlib usage of `[T]`/`[K: V]`/tuples to
  * explicit `Array<T>`/`std::mapOf`/etc. first).
  */
-data class TypeTypeArm(val kind: TypeFormKind, val holes: List<String>, val template: TypeRef, val prefix: String = "")
+data class TypeTypeArm(
+    val kind: TypeFormKind,
+    val holes: List<String>,
+    val template: TypeRef,
+    val prefix: String = "",
+    /** Name of a library-defined prefix/list/infix type macro; null for shape sugar. */
+    val name: String? = null,
+)
 
 /**
  * A decorator/annotation application: `@Name` or `@Name(args)`.

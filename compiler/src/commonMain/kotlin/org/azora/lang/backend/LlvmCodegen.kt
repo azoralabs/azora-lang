@@ -177,6 +177,14 @@ class LlvmCodegen {
     private var usesArenaRuntime = false
     private var usesTaskRuntime = false
 
+    /**
+     * True when any function in the program uses a `zone alloc` arena. Because the
+     * active arena is a thread-local consulted by nested calls, an allocation made
+     * anywhere can be captured by an arena — so escape detaches must be emitted in
+     * every function once any arena exists, not only lexically inside a zone.
+     */
+    private var programUsesArena = false
+
     /** Tracks the continue/end labels of enclosing loops for `break`/`continue`. */
     private data class LoopTarget(val continueLabel: String, val endLabel: String, val label: String? = null)
     private val loopStack = ArrayDeque<LoopTarget>()
@@ -224,6 +232,7 @@ class LlvmCodegen {
         usesAllocatorRuntime = false
         usesArenaRuntime = false
         usesTaskRuntime = false
+        programUsesArena = false
         loopStack.clear()
         taskScopeStack.clear()
         arenaStack.clear()
@@ -238,6 +247,15 @@ class LlvmCodegen {
         for (item in program.items.filterIsInstance<IrTopLevel.Struct>()) {
             structDefs[item.name] = item
         }
+
+        // Whole-program scan: does any function open a `zone alloc` arena? If so,
+        // escaping-pointer stores everywhere must detach from the current arena.
+        programUsesArena = program.items.any {
+            it is IrTopLevel.Func && stmtsUseAllocZone(it.function.body)
+        }
+        // Escaping-pointer detaches reference the arena runtime, so ensure it (and
+        // the arena type/thread-local) is emitted whenever any arena exists.
+        if (programUsesArena) usesArenaRuntime = true
 
         // Spec dynamic dispatch: index the tables and assign each concrete
         // implementer a stable non-zero type id (used as the fat-pointer tag).
@@ -781,17 +799,24 @@ class LlvmCodegen {
                     val (alloca, type) = entry
                     val value = emitExpr(stmt.value)
                     emit("  store $type $value, $type* $alloca")
+                    // The variable may be declared outside the current `zone alloc`;
+                    // conservatively keep a reassigned pointer alive past its free_all.
+                    emitArenaDetach(value, stmt.value.type)
                 } else {
                     val type = globalVars[stmt.name]
                         ?: error("Assignment target '${stmt.name}' has no local or global storage")
                     val value = emitExpr(stmt.value)
                     emit("  store $type $value, $type* @${stmt.name}")
+                    emitArenaDetach(value, stmt.value.type)
                 }
             }
             is IrStmt.Return -> {
                 if (stmt.value != null) {
                     val declared = currentReturnType
                     val raw = emitExpr(stmt.value)
+                    // A returned pointer escapes any arena the caller opened, so
+                    // detach it before the exit cleanup runs the arena free_all.
+                    emitArenaDetach(raw, stmt.value.type)
                     emitFunctionExitCleanup()
                     if (declared != null && declared != IrType.Unit) {
                         val value = coerceNumeric(raw, stmt.value.type, declared)
@@ -874,6 +899,94 @@ class LlvmCodegen {
         }
         if (nestedScope != null) taskScopeStack.removeLast()
         arenaStack.removeLast()
+    }
+
+    /** Whether any statement (transitively, including lambda bodies) opens a `zone alloc`. */
+    private fun stmtsUseAllocZone(stmts: List<IrStmt>): Boolean = stmts.any { stmtUsesAllocZone(it) }
+
+    private fun stmtUsesAllocZone(stmt: IrStmt): Boolean = when (stmt) {
+        is IrStmt.Zone -> stmt.alloc || stmtsUseAllocZone(stmt.body)
+        is IrStmt.If -> exprUsesAllocZone(stmt.condition) || stmtsUseAllocZone(stmt.thenBranch) ||
+            (stmt.elseBranch?.let { stmtsUseAllocZone(it) } ?: false)
+        is IrStmt.While -> exprUsesAllocZone(stmt.condition) || stmtsUseAllocZone(stmt.body)
+        is IrStmt.For -> exprUsesAllocZone(stmt.start) || exprUsesAllocZone(stmt.end) ||
+            (stmt.step?.let { exprUsesAllocZone(it) } ?: false) || stmtsUseAllocZone(stmt.body)
+        is IrStmt.ForEach -> exprUsesAllocZone(stmt.iterable) || stmtsUseAllocZone(stmt.body)
+        is IrStmt.Loop -> stmtsUseAllocZone(stmt.body)
+        is IrStmt.When -> exprUsesAllocZone(stmt.scrutinee) ||
+            stmt.branches.any { stmtsUseAllocZone(it.body) } ||
+            (stmt.elseBranch?.let { stmtsUseAllocZone(it) } ?: false)
+        is IrStmt.Try -> stmtsUseAllocZone(stmt.body) || (stmt.catchBody?.let { stmtsUseAllocZone(it) } ?: false)
+        is IrStmt.Defer -> stmtsUseAllocZone(stmt.body)
+        is IrStmt.VarDecl -> exprUsesAllocZone(stmt.initializer)
+        is IrStmt.FinDecl -> exprUsesAllocZone(stmt.initializer)
+        is IrStmt.LetDecl -> exprUsesAllocZone(stmt.initializer)
+        is IrStmt.Assignment -> exprUsesAllocZone(stmt.value)
+        is IrStmt.IndexAssign -> exprUsesAllocZone(stmt.target) || exprUsesAllocZone(stmt.index) ||
+            exprUsesAllocZone(stmt.value)
+        is IrStmt.MemberAssign -> exprUsesAllocZone(stmt.target) || exprUsesAllocZone(stmt.value)
+        is IrStmt.Return -> stmt.value?.let { exprUsesAllocZone(it) } ?: false
+        is IrStmt.ExprStmt -> exprUsesAllocZone(stmt.expr)
+        is IrStmt.Throw -> exprUsesAllocZone(stmt.value)
+        is IrStmt.Yield -> exprUsesAllocZone(stmt.value)
+        is IrStmt.Assert -> exprUsesAllocZone(stmt.condition) || exprUsesAllocZone(stmt.message)
+        else -> false
+    }
+
+    private fun exprUsesAllocZone(expr: IrExpr): Boolean = when (expr) {
+        is IrExpr.Lambda -> stmtsUseAllocZone(expr.body)
+        is IrExpr.Binary -> exprUsesAllocZone(expr.left) || exprUsesAllocZone(expr.right)
+        is IrExpr.Unary -> exprUsesAllocZone(expr.operand)
+        is IrExpr.Call -> (expr.receiver?.let { exprUsesAllocZone(it) } ?: false) ||
+            expr.args.any { exprUsesAllocZone(it) }
+        is IrExpr.MethodCall -> exprUsesAllocZone(expr.target) || expr.args.any { exprUsesAllocZone(it) }
+        is IrExpr.ArrayLiteral -> expr.elements.any { exprUsesAllocZone(it) }
+        is IrExpr.SetLit -> expr.elements.any { exprUsesAllocZone(it) }
+        is IrExpr.TupleLit -> expr.elements.any { exprUsesAllocZone(it) }
+        is IrExpr.VariantLit -> expr.elements.any { exprUsesAllocZone(it) }
+        is IrExpr.MapLit -> expr.entries.any { exprUsesAllocZone(it.first) || exprUsesAllocZone(it.second) }
+        is IrExpr.Index -> exprUsesAllocZone(expr.target) || exprUsesAllocZone(expr.index)
+        is IrExpr.Member -> exprUsesAllocZone(expr.target)
+        is IrExpr.StructCtor -> expr.args.any { exprUsesAllocZone(it) }
+        is IrExpr.TupleAccess -> exprUsesAllocZone(expr.target)
+        is IrExpr.CatchExpr -> exprUsesAllocZone(expr.expr) || exprUsesAllocZone(expr.fallback)
+        is IrExpr.IfExpr -> exprUsesAllocZone(expr.condition) || exprUsesAllocZone(expr.thenExpr) ||
+            exprUsesAllocZone(expr.elseExpr)
+        is IrExpr.NumCast -> exprUsesAllocZone(expr.value)
+        is IrExpr.EnumToString -> exprUsesAllocZone(expr.value)
+        is IrExpr.Await -> exprUsesAllocZone(expr.value)
+        is IrExpr.Spread -> exprUsesAllocZone(expr.array)
+        is IrExpr.StringTemplate -> expr.parts.any { it is IrExpr.IrTemplatePart.Expr && exprUsesAllocZone(it.expr) }
+        else -> false
+    }
+
+    /** Types whose values are heap objects that a `zone alloc` arena tracks and frees. */
+    private fun isArenaTrackedType(type: IrType): Boolean = when (type) {
+        is IrType.Named -> type.name in structDefs
+        is IrType.Array, is IrType.Map, is IrType.Set, is IrType.Tuple,
+        is IrType.Variant, is IrType.Nullable, is IrType.Function -> true
+        else -> false
+    }
+
+    /**
+     * Detaches an escaping pointer [value] of [type] from the innermost active arena
+     * so it survives that arena's `free_all`. Emitted after storing an arena-managed
+     * pointer into memory that can outlive the enclosing `zone alloc` (an aggregate
+     * field, an array/map slot, a global, or a return value). A no-op at runtime when
+     * no arena is active or the pointer was not arena-allocated.
+     */
+    private fun emitArenaDetach(value: String, type: IrType) {
+        if (!programUsesArena || !isArenaTrackedType(type)) return
+        usesArenaRuntime = true
+        val vt = mapType(type)
+        val p = if (vt == "i8*") {
+            value
+        } else {
+            val t = nextTmp()
+            emit("  $t = bitcast $vt $value to i8*")
+            t
+        }
+        emit("  call void @__azora_arena_detach_current(i8* $p)")
     }
 
     private fun emitLocalDecl(name: String, type: IrType, initializer: IrExpr) {
@@ -2068,6 +2181,9 @@ class LlvmCodegen {
             val fp = nextTmp()
             emit("  $fp = getelementptr $st, $st* $ptr, i32 0, i32 $fi")
             emit("  store $ft $value, $ft* $fp")
+            // Storing a pointer into an aggregate roots it out of the arena so the
+            // aggregate can safely outlive the zone it was built in.
+            emitArenaDetach(value, field.type)
         }
         return ptr
     }
@@ -2197,6 +2313,9 @@ class LlvmCodegen {
             val raw = emitExpr(stmt.value)
             val value = coerceNumeric(raw, stmt.value.type, fieldType)
             emit("  store $ft $value, $ft* $fp")
+            // The receiver may outlive the current `zone alloc`; keep the stored
+            // pointer alive past the arena's free_all.
+            emitArenaDetach(value, fieldType)
             return
         }
         emitExpr(stmt.target)
@@ -2842,6 +2961,7 @@ class LlvmCodegen {
         val stored = coerceNumeric(value, sourceType, field.type)
         val ft = mapType(field.type)
         emit("  store $ft $stored, $ft* $fp")
+        emitArenaDetach(stored, field.type)
     }
 
     private fun emitArrayLengthI64(raw: String): String {
@@ -3029,6 +3149,8 @@ class LlvmCodegen {
             val raw = emitExpr(stmt.value)
             val value = coerceNumeric(raw, stmt.value.type, tt.element)
             emit("  store $et $value, $et* $ep, align 1")
+            // The array can outlive the current `zone alloc`; root the element.
+            emitArenaDetach(value, tt.element)
             return
         }
         if (tt is IrType.Pointer) {
@@ -3043,6 +3165,7 @@ class LlvmCodegen {
             val rawValue = emitExpr(stmt.value)
             val value = coerceNumeric(rawValue, stmt.value.type, tt.inner)
             emit("  store $et $value, $et* $ep, align 1")
+            emitArenaDetach(value, tt.inner)
             return
         }
         if (tt is IrType.Map) {
@@ -3823,6 +3946,51 @@ class LlvmCodegen {
             sb.appendLine("  store i64 0, i64* %countPtr")
             sb.appendLine("  store i64 0, i64* %capPtr")
             sb.appendLine("  store i8** null, i8*** %itemsPtr")
+            sb.appendLine("  ret void")
+            sb.appendLine("}")
+            sb.appendLine()
+            // Escape hatch: unregister a pointer from the innermost active arena so
+            // it survives that arena's free_all. Emitted after every store of an
+            // arena-managed pointer into memory that can outlive the zone (aggregate
+            // fields, returns). No-op when no arena is active or the pointer was not
+            // arena-allocated. Uses the thread-local current arena so it correctly
+            // detaches allocations made in nested calls under a `zone alloc`.
+            sb.appendLine("; runtime: detach a pointer from the current scoped arena (escape)")
+            sb.appendLine("define void @__azora_arena_detach_current(i8* %ptr) {")
+            sb.appendLine("entry:")
+            sb.appendLine("  %pnull = icmp eq i8* %ptr, null")
+            sb.appendLine("  br i1 %pnull, label %done, label %load")
+            sb.appendLine("load:")
+            sb.appendLine("  %arena = load %azora.arena*, %azora.arena** @__azora_current_arena")
+            sb.appendLine("  %anull = icmp eq %azora.arena* %arena, null")
+            sb.appendLine("  br i1 %anull, label %done, label %scan")
+            sb.appendLine("scan:")
+            sb.appendLine("  %countPtr = getelementptr %azora.arena, %azora.arena* %arena, i32 0, i32 0")
+            sb.appendLine("  %itemsPtr = getelementptr %azora.arena, %azora.arena* %arena, i32 0, i32 2")
+            sb.appendLine("  %count = load i64, i64* %countPtr")
+            sb.appendLine("  %items = load i8**, i8*** %itemsPtr")
+            sb.appendLine("  br label %loop")
+            sb.appendLine("loop:")
+            sb.appendLine("  %i = phi i64 [ 0, %scan ], [ %next, %cont ]")
+            sb.appendLine("  %atEnd = icmp uge i64 %i, %count")
+            sb.appendLine("  br i1 %atEnd, label %done, label %body")
+            sb.appendLine("body:")
+            sb.appendLine("  %slot = getelementptr i8*, i8** %items, i64 %i")
+            sb.appendLine("  %val = load i8*, i8** %slot")
+            sb.appendLine("  %hit = icmp eq i8* %val, %ptr")
+            sb.appendLine("  br i1 %hit, label %remove, label %cont")
+            sb.appendLine("remove:")
+            // swap-remove: items[i] = items[count-1]; count = count - 1
+            sb.appendLine("  %last = sub i64 %count, 1")
+            sb.appendLine("  %lastSlot = getelementptr i8*, i8** %items, i64 %last")
+            sb.appendLine("  %lastVal = load i8*, i8** %lastSlot")
+            sb.appendLine("  store i8* %lastVal, i8** %slot")
+            sb.appendLine("  store i64 %last, i64* %countPtr")
+            sb.appendLine("  br label %done")
+            sb.appendLine("cont:")
+            sb.appendLine("  %next = add i64 %i, 1")
+            sb.appendLine("  br label %loop")
+            sb.appendLine("done:")
             sb.appendLine("  ret void")
             sb.appendLine("}")
             sb.appendLine()

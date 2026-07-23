@@ -6,7 +6,7 @@ import org.azora.lang.backend.IrInterpreter
 import kotlin.test.*
 
 /**
- * Tests for the object model: `hook`, `prop`, `ctor`, `dtor`.
+ * Tests for the object model: `prop`, `ctor`.
  */
 class ObjectModelTest {
 
@@ -14,21 +14,6 @@ class ObjectModelTest {
         val result = Compiler().compile(source)
         assertIs<CompilationResult.Success>(result, "Compilation failed: ${(result as? CompilationResult.Failure)?.errors}")
         return IrInterpreter().interpret(result.ir).trim()
-    }
-
-    @Test fun hookRunsAfterMain() {
-        assertEquals("main done\nhook:start\nhook:stop", run("""
-            import std.io
-            hook start {
-                std::println("hook:start")
-            }
-            hook stop {
-                std::println("hook:stop")
-            }
-            func main() {
-                std::println("main done")
-            }
-        """.trimIndent()))
     }
 
     @Test fun propComputesValue() {
@@ -45,39 +30,6 @@ class ObjectModelTest {
             func main() {
                 var b = Box(5)
                 std::println(b.doubled)
-            }
-        """.trimIndent()))
-    }
-
-    @Test fun propInNode() {
-        assertEquals("42\n84", run("""
-            import std.io
-            node Container(v: Int) {
-                prop doubled: Int {
-                    return self.v + self.v
-                }
-            }
-            func main() {
-                var c = Container(42)
-                std::println(c.v)
-                std::println(c.doubled)
-            }
-        """.trimIndent()))
-    }
-
-    @Test fun dtorCalledOnDrop() {
-        assertEquals("created\ndestroyed\ndropped", run("""
-            import std.io
-            node Resource(name: String) {
-                dtor {
-                    std::println("destroyed")
-                }
-            }
-            func main() {
-                var r = Resource("test")
-                std::println("created")
-                drop r
-                std::println("dropped")
             }
         """.trimIndent()))
     }

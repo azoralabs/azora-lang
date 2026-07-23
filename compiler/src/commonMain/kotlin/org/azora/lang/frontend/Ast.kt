@@ -1175,13 +1175,12 @@ sealed class TypeAnnotation {
  * @property name the parameter name
  * @property type the structured type reference as written in source
  */
-enum class Visibility { EXPOSE, INTERN, PROTECT, CONFINE, SHIELD }
+enum class Visibility { EXPOSE, PROTECT, CONFINE, SHIELD }
 
 /**
  * Visibility of a whole module (`[export] [expose|intern|protect|confine] module x`).
  *
  * - [EXPOSE] (default): importable everywhere, including downstream libraries.
- * - [INTERN]: importable only within the declaring library.
  * - [PROTECT]: importable only within the declaring folder.
  * - [CONFINE]: private — not importable anywhere (e.g. a test file or an app's
  *   `main` module).
@@ -1190,7 +1189,7 @@ enum class Visibility { EXPOSE, INTERN, PROTECT, CONFINE, SHIELD }
  * module into every unit within its visibility scope. `export confine` is
  * contradictory and rejected at parse time.
  */
-enum class ModuleVisibility { EXPOSE, INTERN, PROTECT, CONFINE }
+enum class ModuleVisibility { EXPOSE, PROTECT, CONFINE }
 
 /**
  * Compile-time metadata for a declaration's enclosing zone, surfaced by
@@ -1432,8 +1431,8 @@ data class Annotation(
  */
 /** Declaration categories accepted by decorator and binding `for` clauses. */
 enum class DecoTarget {
-    Pack, Func, Prop, Task, Flow, Node, Solo, Slot, Enum, EnumValue, Deco,
-    Fail, FailValue, Field, Param, Var, Fin, Let, Test, View, Hook,
+    Pack, Func, Prop, Task, Flow, Solo, Slot, Enum, EnumValue, Deco,
+    Fail, FailValue, Field, Param, Var, Fin, Let, Test, View,
     Ctor, Dtor, TypeAlias, Bridge, ImplOper,
 }
 
@@ -1668,29 +1667,6 @@ sealed class TopLevel {
     /** `solo Name { fields; methods }` — declares a singleton struct with one lazily-created shared instance. */
     data class Solo(val name: String, val fields: List<PackField>, val methods: List<FuncDecl>, val line: Int, val column: Int = 0, val visibility: Visibility = Visibility.EXPOSE, val annotations: List<Annotation> = emptyList()) : TopLevel()
 
-    /** A constructor parameter for a `node`: `var name: Type` or `fin name: Type`. Stored as a field. */
-    data class NodeParam(val name: String, val type: TypeRef, val mutable: Boolean)
-
-    /**
-     * `node Name(params) [: Parent(args)] { methods }` — an inheritable type with ctor params (fields)
-     * and methods. `leaf node` cannot be subclassed. `repl func` marks overrides.
-     */
-    data class Node(
-        val name: String,
-        val params: List<NodeParam>,
-        val methods: List<FuncDecl>,
-        val parent: String? = null,
-        val parentArgs: List<Expr> = emptyList(),
-        val isLeaf: Boolean = false,
-        /** `abstract node` cannot be instantiated directly — only subclassed by a `leaf`. */
-        val isAbstract: Boolean = false,
-        val extraFields: List<PackField> = emptyList(),
-        val line: Int,
-        val column: Int = 0,
-        val visibility: Visibility = Visibility.EXPOSE,
-        val annotations: List<Annotation> = emptyList(),
-    ) : TopLevel()
-
     /** A singleton registration inside a `wrap` block: `solo Type(args) [bind Spec]`. */
     data class WrapReg(val typeName: String, val args: List<Expr>, val bindSpec: String? = null, val line: Int = 0, val column: Int = 0)
 
@@ -1699,9 +1675,6 @@ sealed class TopLevel {
 
     /** `view Name(params) { body }` — a reactive UI component (like a function but with reactive semantics). */
     data class View(val name: String, val params: List<Param>, val body: List<Stmt>, val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList()) : TopLevel()
-
-    /** `hook name { body }` — a lifecycle callback (start/stop/etc). Called by the runtime. */
-    data class Hook(val name: String, val body: List<Stmt>, val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList()) : TopLevel()
 
     /**
      * `import ZoneName` or `import ZoneName.Item` — imports items from a named zone so they're

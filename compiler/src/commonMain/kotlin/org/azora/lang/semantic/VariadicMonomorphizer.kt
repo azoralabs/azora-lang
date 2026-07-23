@@ -83,7 +83,6 @@ internal object VariadicMonomorphizer {
                     }
                 }
                 is TopLevel.Solo -> constructibleTypes[item.name] = emptyList()
-                is TopLevel.Node -> constructibleTypes[item.name] = emptyList()
                 else -> {}
             }
         }
@@ -99,14 +98,12 @@ internal object VariadicMonomorphizer {
             val owner = when (item) {
                 is TopLevel.Impl -> item.typeName.substringBefore('<')
                 is TopLevel.Solo -> item.name
-                is TopLevel.Node -> item.name
                 else -> null
             } ?: continue
             val ownerTypeParams = constructibleTypes[owner].orEmpty()
             val methods = when (item) {
                 is TopLevel.Impl -> item.methods
                 is TopLevel.Solo -> item.methods
-                is TopLevel.Node -> item.methods
                 else -> emptyList()
             }
             for (method in methods) {

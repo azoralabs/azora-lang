@@ -127,12 +127,6 @@ internal object MacroExpander {
             methods = item.methods.map { rewriteFunc(it, macros, depth) },
             annotations = item.annotations.map { rewriteAnnotation(it, macros, depth) },
         )
-        is TopLevel.Node -> item.copy(
-            parentArgs = item.parentArgs.map { rewriteExpr(it, macros, depth) },
-            extraFields = item.extraFields.map { rewriteField(it, macros, depth) },
-            methods = item.methods.map { rewriteFunc(it, macros, depth) },
-            annotations = item.annotations.map { rewriteAnnotation(it, macros, depth) },
-        )
         is TopLevel.Impl -> item.copy(
             methods = item.methods.map { rewriteFunc(it, macros, depth) },
             decoratorArgs = item.decoratorArgs.map { rewriteExpr(it, macros, depth) },
@@ -148,10 +142,6 @@ internal object MacroExpander {
         )
         is TopLevel.View -> item.copy(
             params = item.params.map { rewriteParam(it, macros, depth) },
-            body = rewriteStmts(item.body, macros, depth),
-            annotations = item.annotations.map { rewriteAnnotation(it, macros, depth) },
-        )
-        is TopLevel.Hook -> item.copy(
             body = rewriteStmts(item.body, macros, depth),
             annotations = item.annotations.map { rewriteAnnotation(it, macros, depth) },
         )

@@ -97,7 +97,8 @@ class DecoratorReflectionTest {
             @Seen
             func read(input: @Seen Int): Int { return input }
 
-            node Counter() {
+            pack Counter {}
+            impl Counter {
                 @Seen
                 prop answer: Int { return 42 }
             }

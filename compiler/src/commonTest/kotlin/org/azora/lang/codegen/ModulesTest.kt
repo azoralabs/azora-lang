@@ -169,41 +169,6 @@ class ModulesTest {
         """.trimIndent()))
     }
 
-    @Test fun protectedMethodWorksThroughExposedMethod() {
-        assertEquals("protected", run("""
-            import std.io
-            node Base(x: Int) {
-                protected func internal(): String {
-                    return "protected"
-                }
-                func reveal(): String {
-                    return self.internal()
-                }
-            }
-            func main() {
-                var b = Base(1)
-                std::println(b.reveal())
-            }
-        """.trimIndent()))
-    }
-
-    @Test fun protectedMethodCannotBeCalledExternally() {
-        val result = Compiler().compile("""
-            import std.io
-            node Base(x: Int) {
-                protected func internal(): String {
-                    return "protected"
-                }
-            }
-            func main() {
-                var b = Base(1)
-                std::println(b.internal())
-            }
-        """.trimIndent())
-        assertIs<CompilationResult.Failure>(result)
-        assertTrue(result.errors.any { "protected method 'internal'" in it }, "${result.errors}")
-    }
-
     @Test fun confinePackFieldCannotBeReadExternally() {
         val result = Compiler().compile("""
             import std.io

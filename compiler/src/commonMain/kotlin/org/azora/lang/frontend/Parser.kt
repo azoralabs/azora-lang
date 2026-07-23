@@ -107,7 +107,6 @@ class Parser(
         is TopLevel.Deco -> item.name
         is TopLevel.Slot -> item.name
         is TopLevel.Solo -> item.name
-        is TopLevel.Node -> item.name
         is TopLevel.TypeAlias -> item.name
         else -> null
     }
@@ -231,7 +230,6 @@ class Parser(
             } else {
                 moduleVisibility = when {
                     match(TokenType.EXPOSE) -> ModuleVisibility.EXPOSE
-                    match(TokenType.INTERN) -> ModuleVisibility.INTERN
                     match(TokenType.PROTECT) -> ModuleVisibility.PROTECT
                     match(TokenType.CONFINE) -> ModuleVisibility.CONFINE
                     else -> ModuleVisibility.EXPOSE
@@ -592,7 +590,6 @@ class Parser(
 
     private fun parseVisibility(): Visibility = when {
         match(TokenType.EXPOSE) -> Visibility.EXPOSE
-        match(TokenType.INTERN) -> Visibility.INTERN
         match(TokenType.CONFINE) -> Visibility.CONFINE
         match(TokenType.PROTECT) -> Visibility.PROTECT
         match(TokenType.SHIELD) -> Visibility.SHIELD
@@ -667,19 +664,7 @@ class Parser(
             check(TokenType.BRIDGE) -> parseBridge(annotations)
             check(TokenType.SOLO) -> parseSolo(visibility, annotations)
             check(TokenType.WRAP) -> parseWrap()
-            check(TokenType.NODE) -> parseNode(visibility = visibility, annotations = annotations)
-            check(TokenType.LEAF) -> parseNode(isLeaf = true, visibility = visibility, annotations = annotations)
-            // `abstract node Name` / `abstract Name` — cannot be instantiated directly.
-            check(TokenType.ABSTRACT) && peekNext()?.type == TokenType.NODE -> {
-                advance()
-                parseNode(isAbstract = true, visibility = visibility, annotations = annotations)
-            }
-            check(TokenType.ABSTRACT) -> {
-                advance()
-                parseNode(isAbstract = true, visibility = visibility, annotations = annotations)
-            }
             check(TokenType.VIEW) -> parseView(annotations)
-            check(TokenType.HOOK) -> parseHook(annotations)
             check(TokenType.THREADLOCAL) -> parseThreadLocal(visibility)
             check(TokenType.SPEC) -> parseSpec()
             check(TokenType.SLOT) -> parseSlot(annotations)
@@ -1450,7 +1435,7 @@ class Parser(
     ): PackField {
         val annotations = preparsedAnnotations ?: parseAnnotations()
         val wroteVisibility = peek().type in setOf(
-            TokenType.EXPOSE, TokenType.INTERN, TokenType.CONFINE, TokenType.PROTECT, TokenType.SHIELD,
+            TokenType.EXPOSE, TokenType.CONFINE, TokenType.PROTECT, TokenType.SHIELD,
         )
         val parsedVisibility = preparsedVisibility ?: parseVisibility()
         if (forceConfine) {
@@ -2059,7 +2044,7 @@ class Parser(
             val memberAnnotations = parseAnnotations()
             val methodStart = peek()
             val isInline = match(TokenType.INLINE)
-            val isVirt = match(TokenType.VIRT)
+            val isVirt = false
             val visibility = parseVisibility()
             when {
                 check(TokenType.PROP) -> {
@@ -2452,112 +2437,6 @@ class Parser(
      * `[leaf] node Name(var|fin param: Type, ...) [: Parent(args)] { methods; fields }`
      * — an inheritable type. Ctor params are fields. `repl func` marks overrides.
      */
-    private fun parseNode(
-        isLeaf: Boolean = false,
-        visibility: Visibility = Visibility.EXPOSE,
-        annotations: List<Annotation> = emptyList(),
-        isAbstract: Boolean = false,
-    ): TopLevel.Node {
-        val start = peek()
-        if (isLeaf) consume(TokenType.LEAF, "Expected 'leaf'")
-        if (isAbstract) consume(TokenType.ABSTRACT, "Expected 'abstract'")
-        match(TokenType.NODE) // `leaf Name`, `abstract node Name`, or `abstract Name` — node is optional
-        val name = consume(TokenType.IDENTIFIER, "Expected node name").lexeme
-        // Ctor params: (var|fin name: Type, ...)
-        val params = mutableListOf<TopLevel.NodeParam>()
-        consume(TokenType.L_PAREN, "Expected '(' after node name")
-        if (!check(TokenType.R_PAREN)) {
-            do {
-                val mutable = when {
-                    check(TokenType.VAR) -> { advance(); true }
-                    check(TokenType.FIN) -> { advance(); false }
-                    else -> true
-                }
-                val pname = consume(TokenType.IDENTIFIER, "Expected ctor param name").lexeme
-                consume(TokenType.COLON, "Expected ':' after ctor param name")
-                val ptype = parseTypeName()
-                params.add(TopLevel.NodeParam(pname, ptype, mutable))
-            } while (match(TokenType.COMMA))
-        }
-        consume(TokenType.R_PAREN, "Expected ')' after ctor params")
-        // Optional parent: : Parent(args)
-        var parent: String? = null
-        var parentArgs = emptyList<Expr>()
-        if (match(TokenType.COLON)) {
-            parent = consume(TokenType.IDENTIFIER, "Expected parent node name").lexeme
-            if (match(TokenType.L_PAREN)) {
-                parentArgs = mutableListOf()
-                if (!check(TokenType.R_PAREN)) {
-                    do { parentArgs.add(parseExpr()) } while (match(TokenType.COMMA))
-                }
-                consume(TokenType.R_PAREN, "Expected ')' after parent args")
-                parentArgs = parentArgs.toList()
-            }
-        }
-        // Body: methods (func / repl func) and extra fields
-        consume(TokenType.L_BRACE, "Expected '{' after node header")
-        skipNewlines()
-        val methods = mutableListOf<FuncDecl>()
-        val extraFields = mutableListOf<PackField>()
-        while (!check(TokenType.R_BRACE) && !isAtEnd()) {
-            skipNewlines()
-            if (check(TokenType.R_BRACE)) break
-            val memberAnnotations = parseAnnotations()
-            val isRepl = match(TokenType.REPL)
-            val isVirt = match(TokenType.VIRT)
-            val memberVisibility = parseVisibility()
-            when {
-                check(TokenType.FUNC) -> {
-                    val method = parseFuncDecl(annotations = memberAnnotations, isOverride = isRepl, isVirtual = isVirt || isRepl, visibility = memberVisibility)
-                    methods.add(method)
-                }
-                check(TokenType.PROP) -> {
-                    // `prop name: T { body }` — computed property. Lowered as a zero-arg method.
-                    advance()
-                    val propName = consume(TokenType.IDENTIFIER, "Expected property name").lexeme
-                    val propType: TypeAnnotation = if (match(TokenType.COLON)) TypeAnnotation.Explicit(parseTypeName()) else TypeAnnotation.Inferred
-                    consume(TokenType.L_BRACE, "Expected '{' after prop type")
-                    skipNewlines()
-                    val propBody = parseBlock()
-                    consume(TokenType.R_BRACE, "Expected '}' after prop body")
-                    consumeNewline()
-                    methods.add(FuncDecl(propName, emptyList(), propType, propBody, false, emptyList(), peek().line, peek().column, annotations = memberAnnotations, visibility = memberVisibility, receiverModifier = "ref", memberCallStyle = MemberCallStyle.PROPERTY))
-                }
-                check(TokenType.CTOR) -> {
-                    // `ctor(params) { body }` — secondary constructor. Lowered as `ctor__<type>` function.
-                    advance()
-                    consume(TokenType.L_PAREN, "Expected '(' after ctor")
-                    val ctorParams = parseParams()
-                    consume(TokenType.R_PAREN, "Expected ')' after ctor params")
-                    consume(TokenType.L_BRACE, "Expected '{' after ctor header")
-                    skipNewlines()
-                    val ctorBody = parseBlock()
-                    consume(TokenType.R_BRACE, "Expected '}' after ctor body")
-                    consumeNewline()
-                    methods.add(FuncDecl("ctor", ctorParams, TypeAnnotation.Inferred, ctorBody, false, emptyList(), peek().line, peek().column, visibility = memberVisibility))
-                }
-                check(TokenType.DTOR) -> {
-                    // `dtor { body }` — destructor. Lowered as `dtor__<type>` function.
-                    advance()
-                    consume(TokenType.L_BRACE, "Expected '{' after dtor")
-                    skipNewlines()
-                    val dtorBody = parseBlock()
-                    consume(TokenType.R_BRACE, "Expected '}' after dtor body")
-                    consumeNewline()
-                    methods.add(FuncDecl("dtor", emptyList(), TypeAnnotation.Inferred, dtorBody, false, emptyList(), peek().line, peek().column, visibility = memberVisibility))
-                }
-                check(TokenType.VAR) || check(TokenType.FIN) || check(TokenType.LET) -> {
-                    extraFields.add(parsePackField(memberVisibility, preparsedAnnotations = memberAnnotations))
-                }
-                else -> error("Expected 'func', 'repl func', 'virt func', 'prop', 'ctor', 'dtor', or field in node body at line ${peek().line}")
-            }
-            skipNewlines()
-        }
-        consume(TokenType.R_BRACE, "Expected '}' after node body")
-        consumeNewline()
-        return TopLevel.Node(name, params, methods, parent, parentArgs, isLeaf, isAbstract, extraFields, start.line, start.column, visibility, annotations)
-    }
-
     /**
      * `wrap Name { solo Type(args); … }` — a DI container that wires singletons with
      * construction args. Each `solo Type(args)` generates a `__singleton_Type` factory
@@ -2996,7 +2875,7 @@ class Parser(
                 tokens.getOrNull(j + 1)?.type == TokenType.MODULE
         }
         if (tokens.getOrNull(i)?.type in setOf(
-                TokenType.EXPOSE, TokenType.INTERN, TokenType.PROTECT, TokenType.CONFINE
+                TokenType.EXPOSE, TokenType.PROTECT, TokenType.CONFINE
             )
         ) i++
         return tokens.getOrNull(i)?.type == TokenType.MODULE
@@ -3260,8 +3139,8 @@ class Parser(
 
     private fun consumeIdentifierLike(message: String): String {
         val t = peek()
-        val soft = t.type == TokenType.REVERSE || t.type == TokenType.BASE ||
-            t.type == TokenType.TASK || t.type == TokenType.LEAF || t.type == TokenType.PROP ||
+        val soft = t.type == TokenType.REVERSE ||
+            t.type == TokenType.TASK || t.type == TokenType.PROP ||
             t.type == TokenType.DROP || t.type == TokenType.MEM || t.type == TokenType.REM || t.type == TokenType.RET ||
             t.type == TokenType.FLIP || t.type == TokenType.FLOP ||
             t.type == TokenType.ALLOC || t.type == TokenType.DEREF || t.type == TokenType.TEST ||
@@ -3984,22 +3863,6 @@ class Parser(
         consume(TokenType.R_BRACE, "Expected '}' after view body")
         consumeNewline()
         return TopLevel.View(name, params, body, start.line, start.column, annotations)
-    }
-
-    /** `hook name { body }` — a lifecycle callback. */
-    private fun parseHook(annotations: List<Annotation> = emptyList()): TopLevel.Hook {
-        val start = consume(TokenType.HOOK, "Expected 'hook'")
-        val name = consume(TokenType.IDENTIFIER, "Expected hook name").lexeme
-        consume(TokenType.L_BRACE, "Expected '{' after hook name")
-        skipNewlines()
-        val body = mutableListOf<Stmt>()
-        while (!check(TokenType.R_BRACE) && !isAtEnd()) {
-            body.add(parseStmt())
-            skipNewlines()
-        }
-        consume(TokenType.R_BRACE, "Expected '}' after hook body")
-        consumeNewline()
-        return TopLevel.Hook(name, body, start.line, start.column, annotations)
     }
 
     /**
@@ -5658,11 +5521,6 @@ class Parser(
             TokenType.REVERSE -> {
                 advance()
                 Expr.Identifier(tok.lexeme, tok.line, tok.column, tok.lexeme.length)
-            }
-            TokenType.BASE -> {
-                advance()
-                // `base` parses as a synthetic identifier the IrGenerator intercepts for parent dispatch.
-                Expr.Identifier("__base__", tok.line, tok.column, tok.lexeme.length)
             }
             TokenType.DOUBLE_COLON -> {
                 advance() // consume first '::'

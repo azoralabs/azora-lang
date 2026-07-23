@@ -40,18 +40,18 @@ class DecoratorTargetTest {
 
     @Test fun allRequestedBindingFormsParse() {
         assertEquals(setOf(DecoTarget.Pack), parseDeco("deco A for .Pack bind X").targets)
-        assertEquals(setOf(DecoTarget.Pack, DecoTarget.Node), parseDeco("deco A for [.Pack, .Node] bind X").targets)
-        assertTrue(parseDeco("deco A for [.Pack, .Node]").bindings.isEmpty())
+        assertEquals(setOf(DecoTarget.Pack, DecoTarget.Func), parseDeco("deco A for [.Pack, .Func] bind X").targets)
+        assertTrue(parseDeco("deco A for [.Pack, .Func]").bindings.isEmpty())
 
-        val filtered = parseDeco("deco A for [.Pack, .Node] bind X for .Pack")
+        val filtered = parseDeco("deco A for [.Pack, .Func] bind X for .Pack")
         assertEquals(setOf(DecoTarget.Pack), filtered.bindings.single().targets)
 
-        val list = parseDeco("deco A for [.Pack, .Node] bind [X for .Pack, Y for .Node]")
+        val list = parseDeco("deco A for [.Pack, .Func] bind [X for .Pack, Y for .Func]")
         assertEquals(listOf("X", "Y"), list.bindings.map { it.name })
-        assertEquals(setOf(DecoTarget.Node), list.bindings[1].targets)
+        assertEquals(setOf(DecoTarget.Func), list.bindings[1].targets)
 
         assertEquals(setOf(DecoTarget.Pack), parseDeco("deco A bind X for .Pack").bindings.single().targets)
-        assertEquals(2, parseDeco("deco A bind [X for .Pack, Y for .Node]").bindings.size)
+        assertEquals(2, parseDeco("deco A bind [X for .Pack, Y for .Func]").bindings.size)
         assertEquals("X", parseDeco("deco A bind X").bindings.single().name)
     }
 
@@ -59,25 +59,6 @@ class DecoratorTargetTest {
         val decorator = parseDeco("deco SerialIgnore")
         assertTrue(decorator.fields.isEmpty())
         assertTrue(decorator.bindings.isEmpty())
-    }
-
-    @Test fun targetFilteredBindingsRouteByDeclarationKind() {
-        val result = analyze("""
-            spec X<T>
-            spec Y<T>
-            deco A for [.Pack, .Node] bind [X for .Pack, Y for .Node]
-            @A
-            pack P
-            @A
-            node N() {}
-            func main() {}
-        """.trimIndent())
-
-        assertTrue(result.errors.isEmpty(), result.errors.toString())
-        assertTrue(result.symbolTable.implements("P", "X", listOf(TypeRef.Named("P"))))
-        assertFalse(result.symbolTable.implements("P", "Y", listOf(TypeRef.Named("P"))))
-        assertTrue(result.symbolTable.implements("N", "Y", listOf(TypeRef.Named("N"))))
-        assertFalse(result.symbolTable.implements("N", "X", listOf(TypeRef.Named("N"))))
     }
 
     @Test fun decoratorChainsAndMixedBindingsExpandTransitively() {
@@ -137,7 +118,7 @@ class DecoratorTargetTest {
     @Test fun targetDisjointBackEdgesDoNotFormCycle() {
         val result = analyze("""
             deco A bind B for .Pack
-            deco B bind A for .Node
+            deco B bind A for .Func
             func main() {}
         """.trimIndent())
         assertTrue(result.errors.isEmpty(), result.errors.toString())
@@ -151,22 +132,6 @@ class DecoratorTargetTest {
             func main() {}
         """.trimIndent())
         assertTrue(result.errors.any { "cannot target .Func" in it }, result.errors.toString())
-    }
-
-    @Test fun propertyAndNodeTargetsAreRecognized() {
-        val result = analyze("""
-            deco OnNode for .Node
-            deco OnProp for .Prop
-            @OnNode
-            node N(var value: Int) {
-                @OnProp
-                prop doubled: Int { return self.value * 2 }
-            }
-            func main() {}
-        """.trimIndent())
-        assertTrue(result.errors.isEmpty(), result.errors.toString())
-        assertTrue(result.symbolTable.implements("N", "OnNode"))
-        assertTrue(result.symbolTable.implements("N.doubled", "OnProp"))
     }
 
     @Test fun fieldAndParameterTargetsAreRecognized() {
@@ -197,7 +162,7 @@ class DecoratorTargetTest {
     @Test fun unreachableBindingFilterIsRejected() {
         val result = analyze("""
             spec X<T>
-            deco A for .Pack bind X for .Node
+            deco A for .Pack bind X for .Func
             func main() {}
         """.trimIndent())
         assertTrue(result.errors.any { "can never match" in it }, result.errors.toString())

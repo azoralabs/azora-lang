@@ -40,12 +40,11 @@ import org.azora.lang.frontend.TypeRef
 object ReflectDecoExpander {
 
     fun expand(program: Program): Program {
-        if (program.items.none { it is TopLevel.Pack || it is TopLevel.Node }) return program
+        if (program.items.none { it is TopLevel.Pack }) return program
         val decoratedByName = HashMap<String, MutableList<String>>()
         for (item in program.items) {
             val (name, annotations) = when (item) {
                 is TopLevel.Pack -> item.name to item.annotations
-                is TopLevel.Node -> item.name to item.annotations
                 else -> continue
             }
             for (a in annotations) decoratedByName.getOrPut(a.name) { mutableListOf() }.add(name)

@@ -149,14 +149,6 @@ class SymbolTable {
     private val conformances = mutableListOf<TraitConformance>()
     // slot name → list of (variant name → payload types)
     private val slots = mutableMapOf<String, List<Pair<String, List<IrType>>>>()
-    /** Node inheritance: child node name → parent node name. */
-    val nodeParents = mutableMapOf<String, String>()
-    /** Leaf nodes that cannot be subclassed. */
-    val leafNodes = mutableSetOf<String>()
-    /** Abstract nodes that cannot be instantiated directly (only subclassed by a `leaf`). */
-    val abstractNodes = mutableSetOf<String>()
-    /** All registered node type names (for dynamic dispatch checks). */
-    val nodeTypes = mutableSetOf<String>()
     /** Import aliases: alias name → real (mangled) name. Populated from `use` declarations. */
     val aliasMap = mutableMapOf<String, String>()
 

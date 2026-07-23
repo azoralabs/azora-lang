@@ -278,13 +278,6 @@ class IrInterpreter {
         // Join any fire-and-forget `launch { … }` tasks so their side effects complete.
         val toJoin = azSync(launchedTasks) { launchedTasks.toList() }
         for (task in toJoin) task.await()
-
-        // Execute lifecycle hooks (`hook start { }`, `hook stop { }`, etc.) in declaration order.
-        for (fn in functions.keys.sorted()) {
-            if (fn.startsWith("__hook_")) {
-                executeFunction(functions[fn]!!, emptyList())
-            }
-        }
     }
 
     private suspend fun executeTest(test: IrTopLevel.Test) {
@@ -850,18 +843,7 @@ class IrInterpreter {
             is IrExpr.MethodCall -> {
                 val receiver = evalExpr(expr.target)
                 val args = expr.args.map { evalExpr(it) }
-                // Dynamic dispatch for node instances: walk the __chain to find the method.
                 if (receiver is Map<*, *>) {
-                    val chain = receiver["__chain"] as? MutableList<*>
-                    if (chain != null) {
-                        for (t in chain) {
-                            val mangled = "${t}_${expr.name}"
-                            val func = functions[mangled]
-                            if (func != null) {
-                                return executeFunction(func, listOf(receiver) + args)
-                            }
-                        }
-                    }
                     // A pack instance carries its concrete type in `__type`; dispatch a
                     // spec-typed call (e.g. `xs.add(4)` where `xs: MutableList`) to the
                     // concrete impl (`ArrayList_add`) rather than a builtin.

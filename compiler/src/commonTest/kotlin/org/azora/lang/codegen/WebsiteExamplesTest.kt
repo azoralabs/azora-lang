@@ -471,48 +471,6 @@ func main() { std::println("Hello, Azora!") }"""))
         }
     """.trimIndent()))
 
-    @Test fun ch28_node_basic() = assertEquals("Rex\n...", run("""
-        import std.io
-        node Animal(name: String) {
-            func speak(): String { return "..." }
-            func describe(): String { return self.name }
-        }
-        func main() {
-            var a = Animal("Rex")
-            std::println(a.describe())
-            std::println(a.speak())
-        }
-    """.trimIndent()))
-
-    @Test fun ch28_leaf_override() = assertEquals("Rex\nWoof", run("""
-        import std.io
-        node Animal(name: String) {
-            func speak(): String { return "generic" }
-        }
-        leaf Dog(name: String) : Animal(name) {
-            repl func speak(): String { return "Woof" }
-        }
-        func main() {
-            var d = Dog("Rex")
-            std::println(d.name)
-            std::println(d.speak())
-        }
-    """.trimIndent()))
-
-    @Test fun ch28_dynamic_dispatch() = assertEquals("Woof", run("""
-        import std.io
-        node Animal(name: String) {
-            func speak(): String { return "generic" }
-        }
-        leaf Dog(name: String) : Animal(name) {
-            repl func speak(): String { return "Woof" }
-        }
-        func main() {
-            var a: Animal = Dog("Rex")
-            std::println(a.speak())
-        }
-    """.trimIndent()))
-
     @Test fun ch29_alloc_scalar() = assertEquals("42\n99", run("""
         import std.io
         func main() {

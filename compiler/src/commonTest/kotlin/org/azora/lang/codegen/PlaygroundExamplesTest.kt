@@ -197,19 +197,6 @@ func main() {
     std::println(area(Shape.Empty))
 }"""))
 
-    @Test fun inheritance() = assertEquals("Woof", run("""module playground
-import std.io
-node Animal(name: String) {
-    func speak(): String { return "..." }
-}
-leaf Dog(name: String) : Animal(name) {
-    repl func speak(): String { return "Woof" }
-}
-func main() {
-    var d: Animal = Dog("Rex")
-    std::println(d.speak())
-}"""))
-
     @Test fun generators() = assertEquals("30", run("""module playground
 import std.io
 flow squares(n: Int): Int {

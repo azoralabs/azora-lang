@@ -187,15 +187,8 @@ private fun dumpTopLevel(sb: StringBuilder, item: TopLevel, indent: String) {
         is TopLevel.Wrap -> {
             sb.appendLine("${indent}Wrap(name=${item.name}, registrations=[${item.registrations.joinToString(", ") { "${it.typeName}(${it.args.size} args)" }}])")
         }
-        is TopLevel.Node -> {
-            val parent = if (item.parent != null) " : ${item.parent}" else ""
-            sb.appendLine("${indent}Node(name=${item.name}$parent, leaf=${item.isLeaf}, params=[${item.params.joinToString(", ") { it.name }}], methods=[${item.methods.joinToString(", ") { it.name }}])")
-        }
         is TopLevel.View -> {
             sb.appendLine("${indent}View(name=${item.name}, params=[${item.params.joinToString(", ") { it.name }}])")
-        }
-        is TopLevel.Hook -> {
-            sb.appendLine("${indent}Hook(name=${item.name})")
         }
         is TopLevel.UseImport -> {
             sb.appendLine("${indent}UseImport(${item.imports.joinToString(", ") { (zone, item) -> if (item != null) "$zone::$item" else "$zone::*" }})")

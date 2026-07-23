@@ -21,6 +21,9 @@ import org.azora.lang.ir.IrBinaryOp
 import org.azora.lang.ir.IrExpr
 import org.azora.lang.ir.IrFunction
 import org.azora.lang.ir.IrProgram
+import org.azora.lang.ir.IrSpecImpl
+import org.azora.lang.ir.IrSpecMethod
+import org.azora.lang.ir.IrSpecTable
 import org.azora.lang.ir.IrStmt
 import org.azora.lang.ir.IrTopLevel
 import org.azora.lang.ir.IrType
@@ -88,6 +91,15 @@ class LlvmCodegen {
 
     /** Struct (pack/solo/node) definitions by name, for field-index lookup. */
     private val structDefs = mutableMapOf<String, IrTopLevel.Struct>()
+
+    /**
+     * Dynamic dispatch for spec-typed values (Rust-style `dyn Trait`). A spec
+     * type has no native struct; a spec-typed value is a heap `{ i32 typeId,
+     * i8* data }` fat pointer. [specDispatch] maps a spec name to its dispatch
+     * table; [specTypeIds] assigns each concrete implementer a stable non-zero id.
+     */
+    private val specDispatch = mutableMapOf<String, IrSpecTable>()
+    private val specTypeIds = mutableMapOf<String, Int>()
     private val stdlibListNames = setOf("List", "MutableList")
     private val stdlibSetNames = setOf("Set", "MutableSet")
     private val stdlibMapNames = setOf("Map", "MutableMap")
@@ -225,6 +237,21 @@ class LlvmCodegen {
         deferredFunctions.clear()
         for (item in program.items.filterIsInstance<IrTopLevel.Struct>()) {
             structDefs[item.name] = item
+        }
+
+        // Spec dynamic dispatch: index the tables and assign each concrete
+        // implementer a stable non-zero type id (used as the fat-pointer tag).
+        specDispatch.clear()
+        specTypeIds.clear()
+        for (t in program.specTables) specDispatch[t.specName] = t
+        var nextTypeId = 1
+        for (t in program.specTables) {
+            for (impl in t.impls) {
+                if (impl.typeName !in specTypeIds) specTypeIds[impl.typeName] = nextTypeId++
+            }
+        }
+        for (t in specDispatch.values) {
+            for (m in t.methods) deferredFunctions += renderSpecDispatcher(t, m)
         }
         for (item in program.items) {
             when (item) {
@@ -1819,6 +1846,21 @@ class LlvmCodegen {
 
     private fun coerceNumeric(value: String, from: IrType, to: IrType): String {
         if (from == to) return value
+        // Upcast a concrete `pack` to a spec it implements: box into a fat pointer
+        // `{ i32 typeId, i8* data }` so the value carries its runtime type for
+        // dynamic dispatch. (A spec→spec pass-through keeps the existing box.)
+        if (to is IrType.Named && to.name in specDispatch &&
+            from is IrType.Named && from.name in specTypeIds
+        ) {
+            val box = emitHeapAlloc("16")
+            val tidPtr = nextTmp(); emit("  $tidPtr = bitcast i8* $box to i32*")
+            emit("  store i32 ${specTypeIds.getValue(from.name)}, i32* $tidPtr")
+            val slotRaw = nextTmp(); emit("  $slotRaw = getelementptr i8, i8* $box, i64 8")
+            val slot = nextTmp(); emit("  $slot = bitcast i8* $slotRaw to i8**")
+            val dataI8 = nextTmp(); emit("  $dataI8 = bitcast ${mapType(from)} $value to i8*")
+            emit("  store i8* $dataI8, i8** $slot")
+            return box
+        }
         val ft = mapType(from)
         val tt = mapType(to)
         if (ft == tt) return value
@@ -2048,7 +2090,79 @@ class LlvmCodegen {
         emit("  ; member assign .${stmt.name} on ${stmt.target.type} — not lowered")
     }
 
+    /** The LLVM symbol name of a spec method's dynamic-dispatch stub. */
+    private fun specDispatcherName(spec: String, method: String) =
+        "__dyn_${sanitizeName(spec)}_${sanitizeName(method)}"
+
+    /**
+     * Emits a dynamic-dispatch stub for one spec method. The receiver is a fat
+     * pointer `{ i32 typeId, i8* data }`; the stub loads the id, switches to the
+     * matching implementer, unpacks the concrete `self`, and tail-calls its
+     * `impl` body. Unknown ids return a zero value (unreachable in practice).
+     */
+    private fun renderSpecDispatcher(t: IrSpecTable, m: IrSpecMethod): String {
+        val ret = mapType(m.returnType)
+        val paramTypes = m.paramTypes.map { mapType(it) }
+        val sigParams = (listOf("i8* %box") + paramTypes.mapIndexed { i, ty -> "$ty %a$i" }).joinToString(", ")
+        val forwardArgs = paramTypes.mapIndexed { i, ty -> "$ty %a$i" }
+        val cases = t.impls.mapNotNull { impl ->
+            val id = specTypeIds[impl.typeName] ?: return@mapNotNull null
+            val fn = impl.methodFuncs[m.name] ?: return@mapNotNull null
+            Triple(id, impl.typeName, fn)
+        }
+        val sb = StringBuilder()
+        sb.appendLine("define $ret @${specDispatcherName(t.specName, m.name)}($sigParams) {")
+        sb.appendLine("entry:")
+        sb.appendLine("  %tidp = bitcast i8* %box to i32*")
+        sb.appendLine("  %tid = load i32, i32* %tidp")
+        sb.appendLine("  %datap = getelementptr i8, i8* %box, i64 8")
+        sb.appendLine("  %datapp = bitcast i8* %datap to i8**")
+        sb.appendLine("  %data = load i8*, i8** %datapp")
+        sb.appendLine("  switch i32 %tid, label %default [ ${cases.joinToString(" ") { (id, _, _) -> "i32 $id, label %case_$id" }} ]")
+        for ((id, typeName, fn) in cases) {
+            val st = "%struct.${sanitizeName(typeName)}*"
+            sb.appendLine("case_$id:")
+            sb.appendLine("  %self_$id = bitcast i8* %data to $st")
+            val callArgs = (listOf("$st %self_$id") + forwardArgs).joinToString(", ")
+            if (m.returnType == IrType.Unit) {
+                sb.appendLine("  call void @$fn($callArgs)")
+                sb.appendLine("  ret void")
+            } else {
+                sb.appendLine("  %r_$id = call $ret @$fn($callArgs)")
+                sb.appendLine("  ret $ret %r_$id")
+            }
+        }
+        sb.appendLine("default:")
+        if (m.returnType == IrType.Unit) sb.appendLine("  ret void")
+        else sb.appendLine("  ret $ret ${defaultValue(m.returnType)}")
+        sb.appendLine("}")
+        return sb.toString()
+    }
+
     private fun emitMethodCall(expr: IrExpr.MethodCall): String {
+        // Spec-typed receiver → dynamic dispatch through the fat pointer.
+        val recvType = expr.target.type
+        if (recvType is IrType.Named && recvType.name in specDispatch) {
+            val table = specDispatch.getValue(recvType.name)
+            val method = table.methods.firstOrNull { it.name == expr.name }
+            if (method != null) {
+                val box = emitExpr(expr.target)
+                val args = expr.args.mapIndexed { i, a ->
+                    val pt = method.paramTypes.getOrNull(i) ?: a.type
+                    "${mapType(pt)} ${coerceNumeric(emitExpr(a), a.type, pt)}"
+                }
+                val argList = (listOf("i8* $box") + args).joinToString(", ")
+                val disp = specDispatcherName(recvType.name, expr.name)
+                if (method.returnType == IrType.Unit) {
+                    emit("  call void @$disp($argList)")
+                    return "void"
+                }
+                val r = nextTmp()
+                emit("  $r = call ${mapType(method.returnType)} @$disp($argList)")
+                return r
+            }
+        }
+
         val arrayType = expr.target.type as? IrType.Array
         if (arrayType != null) {
             when (expr.name) {

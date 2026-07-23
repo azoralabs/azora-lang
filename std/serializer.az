@@ -136,7 +136,7 @@ friend zone std {
     /** Overrides the serialized name of a field or type. */
     @Experimental(sinceAzora: "0.0.4")
     @Derive(generator: "serializer", role: "name")
-    deco SerialName for [.Pack, .Node, .Enum, .Field] {
+    deco SerialName for [.Pack, .Enum, .Field] {
         /**
          * Name written to and read from the serialized representation.
          *

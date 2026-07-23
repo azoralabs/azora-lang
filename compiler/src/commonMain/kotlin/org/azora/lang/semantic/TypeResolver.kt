@@ -127,25 +127,14 @@ class TypeResolver(private val table: SymbolTable) {
     private fun canAccessMember(ownerType: String, visibility: Visibility): Boolean = when (visibility) {
         Visibility.EXPOSE -> true
         Visibility.SHIELD -> true // shielded fields are publicly readable (readonly-style)
-        // `intern` bounds access to the declaring library; within one compilation
-        // unit that is always satisfied, so it reads as accessible here.
-        Visibility.INTERN -> true
         Visibility.CONFINE -> currentReceiverType == ownerType
-        Visibility.PROTECT -> {
-            var cursor = currentReceiverType
-            while (cursor != null) {
-                if (cursor == ownerType) return true
-                cursor = table.nodeParents[cursor]
-            }
-            false
-        }
+        Visibility.PROTECT -> currentReceiverType == ownerType
     }
 
     private fun reportInaccessible(line: Int, kind: String, ownerType: String, name: String, visibility: Visibility) {
         val label = when (visibility) {
             Visibility.EXPOSE -> "exposed"
             Visibility.SHIELD -> "shielded"
-            Visibility.INTERN -> "internal"
             Visibility.PROTECT -> "protected"
             Visibility.CONFINE -> "confined"
         }
@@ -638,10 +627,6 @@ class TypeResolver(private val table: SymbolTable) {
                 if (struct != null) {
                     if (struct.isBridge) {
                         errors.add("line ${expr.line}: compiler bridge pack '${expr.callee}' cannot be constructed directly")
-                        return null
-                    }
-                    if (expr.callee in table.abstractNodes) {
-                        errors.add("line ${expr.line}: abstract node '${expr.callee}' cannot be instantiated directly; use a leaf subclass")
                         return null
                     }
                     if (expr.args.size > struct.fields.size) {
@@ -1497,11 +1482,7 @@ class TypeResolver(private val table: SymbolTable) {
         if (declared == IrType.String && actual is IrType.Named && table.lookupEnum(actual.name) != null) return true
         // Node upcast: a child node is compatible with its parent (walk the parent chain).
         if (declared is IrType.Named && actual is IrType.Named) {
-            var t: String? = actual.name
-            while (t != null) {
-                if (t == declared.name) return true
-                t = table.nodeParents[t]
-            }
+            if (actual.name == declared.name) return true
         }
         // Spec conformance: a pack that implements a spec is usable wherever that
         // spec type is expected (e.g. returning `ArrayList<T>` for `List<T>`, just

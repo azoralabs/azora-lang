@@ -132,11 +132,6 @@ object DecoratorMetadata {
                     sites.add(Site(item.name, DecoTarget.Pack, item.annotations))
                     item.fields.forEach { sites.add(Site("${item.name}.${it.name}", DecoTarget.Field, it.annotations)) }
                 }
-                is TopLevel.Node -> {
-                    sites.add(Site(item.name, DecoTarget.Node, item.annotations))
-                    item.extraFields.forEach { sites.add(Site("${item.name}.${it.name}", DecoTarget.Field, it.annotations)) }
-                    item.methods.forEach { addFunction(item.name, it) }
-                }
                 is TopLevel.Enum -> {
                     sites.add(Site(item.name, DecoTarget.Enum, item.annotations))
                     item.variants.forEachIndexed { i, name -> sites.add(Site("${item.name}.$name", DecoTarget.EnumValue, item.variantAnnotations[i])) }
@@ -163,7 +158,6 @@ object DecoratorMetadata {
                 is TopLevel.TypeAlias -> sites.add(Site(item.name, DecoTarget.TypeAlias, item.annotations))
                 is TopLevel.Test -> sites.add(Site(item.name, DecoTarget.Test, item.annotations))
                 is TopLevel.View -> sites.add(Site(item.name, DecoTarget.View, item.annotations))
-                is TopLevel.Hook -> sites.add(Site(item.name, DecoTarget.Hook, item.annotations))
                 is TopLevel.Bridge -> sites.add(Site(item.target, DecoTarget.Bridge, item.annotations))
                 is TopLevel.VarDecl -> sites.add(Site(item.name, DecoTarget.Var, item.annotations))
                 is TopLevel.FinDecl -> sites.add(Site(item.name, DecoTarget.Fin, item.annotations))

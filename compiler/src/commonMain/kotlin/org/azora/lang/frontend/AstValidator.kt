@@ -58,12 +58,10 @@ class AstValidator {
             val anns = when (item) {
                 is TopLevel.Pack -> item.annotations + item.fields.flatMap { it.annotations }
                 is TopLevel.Deco -> item.annotations + item.fields.flatMap { it.annotations }
-                is TopLevel.Node -> item.annotations + item.extraFields.flatMap { it.annotations }
                 is TopLevel.Solo -> item.annotations + item.fields.flatMap { it.annotations }
                 is TopLevel.Slot -> item.annotations
                 is TopLevel.Test -> item.annotations
                 is TopLevel.View -> item.annotations + item.params.flatMap { it.annotations }
-                is TopLevel.Hook -> item.annotations
                 is TopLevel.Bridge -> item.annotations
                 is TopLevel.TypeAlias -> item.annotations
                 is TopLevel.VarDecl -> item.annotations
@@ -105,7 +103,6 @@ class AstValidator {
                 val suppress = it.isBridge || it.annotations.any { a -> a.name == "UncheckedCast" }
                 if (!suppress) addAll(it.methods)
             }
-            program.items.filterIsInstance<TopLevel.Node>().forEach { addAll(it.methods) }
             program.items.filterIsInstance<TopLevel.Solo>().forEach { addAll(it.methods) }
         }
         for (func in allFunctions) {

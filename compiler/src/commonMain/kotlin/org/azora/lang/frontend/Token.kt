@@ -131,23 +131,20 @@ enum class TokenType {
     SOLO, INJECT, WRAP,
     // Error handling: `rescue { … }` — catch-and-suppress.
     RESCUE,
-    // Inheritance: `node Name(params)`, `leaf Name`, `repl func` (override), `virt` (virtual), `base` (parent/super).
-    // `abstract node` cannot be instantiated directly — only subclassed by a `leaf`.
-    NODE, LEAF, REPL, VIRT, BASE, ABSTRACT,
     // Variadic generics: `...T` type params, `args: ...T` variadic params, `...arr` spread.
     ELLIPSIS,
     // Reactivity: `mem` (remember), `rem` (saveable/serializable), `ret` (retain), `effect { }`, `view Name() { }`.
     MEM, REM, RET, EFFECT, VIEW,
-    // Object model: `hook name { }`, `prop name: T { }`, `ctor(params) { }`, `dtor { }`.
-    HOOK, PROP, CTOR, DTOR,
+    // Object model: `prop name: T { }`, `ctor(params) { }`, `dtor { }`.
+    PROP, CTOR, DTOR,
     // Alternating execution: `flip { } flop { }`.
     FLIP, FLOP,
     // Ownership/reference modifiers: `ref T`, `mut ref T`, `shared ref T`, `weak ref T`.
     REF, OUT, MUT, SHARED, WEAK,
-    // Visibility: `expose` (public), `confine` (private), `protect` (protected),
-    // `intern` (library-scoped). `shield` — a pack/field modifier: externally
-    // read-only, internally mutable. `opaque pack` forces every field to confine.
-    EXPOSE, CONFINE, PROTECT, SHIELD, INTERN, OPAQUE,
+    // Visibility: `expose` (public), `confine` (private), `protect` (protected).
+    // `shield` — a pack/field modifier: externally read-only, internally mutable.
+    // `opaque pack` forces every field to confine.
+    EXPOSE, CONFINE, PROTECT, SHIELD, OPAQUE,
     // Module: `module Name`. `export module Name` publishes the module so that
     // its declarations are auto-imported into every unit (like `std.core`).
     MODULE, EXPORT,

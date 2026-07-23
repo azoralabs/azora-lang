@@ -511,6 +511,16 @@ class IrOptimizer {
         // Transitively collect all used function names starting from "main"
         val worklist = ArrayDeque<String>()
         if ("main" in funcMap) worklist.add("main")
+        // Spec `impl` methods are reached only through dynamic dispatch (backends
+        // synthesize the stubs), so the IR has no direct reference to them. Treat
+        // every implementer method as a reachability root so it survives shaking.
+        for (table in program.specTables) {
+            for (impl in table.impls) {
+                for (fn in impl.methodFuncs.values) {
+                    if (fn in funcMap) { usedNames.add(fn); worklist.add(fn) }
+                }
+            }
+        }
         // Also enqueue functions referenced by tests
         for (item in program.items) {
             if (item is IrTopLevel.Test) {

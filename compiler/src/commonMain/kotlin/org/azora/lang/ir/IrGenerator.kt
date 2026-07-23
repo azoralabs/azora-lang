@@ -225,17 +225,6 @@ class IrGenerator(private val table: SymbolTable) {
                     result.add(IrTopLevel.Func(factory))
                     result
                 }
-                is TopLevel.Node -> {
-                    // Emit the struct (fields already flattened by SymbolCollector).
-                    val struct = table.lookupStruct(item.name)!!
-                    val fields = struct.fields.map { IrField(it.name, it.type, it.mutable) }
-                    val result = mutableListOf<IrTopLevel>(IrTopLevel.Struct(item.name, fields))
-                    // Lower own methods as free functions.
-                    for (method in item.methods) {
-                        if (!method.isInline) result.add(IrTopLevel.Func(lowerMethod(item.name, method)))
-                    }
-                    result
-                }
                 is TopLevel.Impl -> if (item.isBridge) emptyList() else item.methods.mapNotNull { method ->
                     if (method.isInline) null
                     else {
@@ -247,11 +236,6 @@ class IrGenerator(private val table: SymbolTable) {
                 }
                 is TopLevel.View -> {
                     val decl = FuncDecl(item.name, item.params, TypeAnnotation.Inferred, item.body, false, emptyList(), item.line, item.column)
-                    listOf(IrTopLevel.Func(lowerFunction(decl)))
-                }
-                is TopLevel.Hook -> {
-                    // A hook is lowered as a function `__hook_<name>` with no params.
-                    val decl = FuncDecl("__hook_${item.name}", emptyList(), TypeAnnotation.Inferred, item.body, false, emptyList(), item.line, item.column)
                     listOf(IrTopLevel.Func(lowerFunction(decl)))
                 }
                 else -> emptyList() // Inline constructs already resolved by CTCE
@@ -293,7 +277,42 @@ class IrGenerator(private val table: SymbolTable) {
         return IrProgram(
             program.moduleName,
             generatedTraceFunctions.map { IrTopLevel.Func(it) } + orderedItems,
+            buildSpecTables(),
         )
+    }
+
+    /**
+     * Collects a dynamic-dispatch table for every spec that has at least one
+     * concrete `pack` implementer whose `impl` methods all resolve to real
+     * functions. Backends without native trait objects use this to emit a
+     * type-id switch; the interpreter/JS ignore it. Decorator contracts and
+     * marker specs (no method signatures) are skipped.
+     */
+    private fun buildSpecTables(): List<IrSpecTable> {
+        val bySpec = table.allConformances()
+            .filterNot { it.isDecorator }
+            .groupBy { it.contractName }
+        val tables = mutableListOf<IrSpecTable>()
+        for ((specName, confs) in bySpec) {
+            val spec = table.lookupSpec(specName) ?: continue
+            val methods = spec.methodSigs
+                .filterNot { it.value.isProperty }
+                .map { (name, sig) -> IrSpecMethod(name, sig.paramTypes, sig.returnType) }
+            if (methods.isEmpty()) continue
+            val impls = mutableListOf<IrSpecImpl>()
+            for (typeName in confs.map { it.typeName }.distinct()) {
+                val methodFuncs = mutableMapOf<String, String>()
+                var complete = true
+                for (m in methods) {
+                    val fn = table.lookupMethod(typeName, m.name)
+                    if (fn == null) { complete = false; break }
+                    methodFuncs[m.name] = fn
+                }
+                if (complete) impls.add(IrSpecImpl(typeName, methodFuncs))
+            }
+            if (impls.isNotEmpty()) tables.add(IrSpecTable(specName, methods, impls))
+        }
+        return tables
     }
 
     private fun lowerFunction(func: FuncDecl): IrFunction {
@@ -903,6 +922,14 @@ class IrGenerator(private val table: SymbolTable) {
                     expr.kind == CastKind.STATIC && target == IrType.String ->
                         IrExpr.StringTemplate(listOf(IrExpr.IrTemplatePart.Expr(inner)))
                     target == innerType -> inner
+                    // Upcast a concrete `pack` to a spec it implements: mark it as a
+                    // representation coercion so native backends can box it into a fat
+                    // pointer for dynamic dispatch. The interpreter/JS treat a NumCast
+                    // of a non-numeric as identity (the value keeps its `__type`).
+                    expr.kind != CastKind.DYNAMIC && target is IrType.Named && innerType is IrType.Named &&
+                        table.lookupSpec(target.name)?.isDecorator == false &&
+                        table.conformsTo(innerType.name, target.name) ->
+                        IrExpr.NumCast(inner, target)
                     isNumericish(target) && isNumericish(innerType) -> IrExpr.NumCast(inner, target)
                     // pointer → integer / integer → pointer (FFI)
                     isNumericish(target) && isPointerish(innerType) -> IrExpr.NumCast(inner, target)
@@ -1055,19 +1082,6 @@ class IrGenerator(private val table: SymbolTable) {
                             padded.add(lowerExpr(struct.fields[i].default ?: Expr.NullLiteral))
                         }
                         padded
-                    }
-                    // Node types: prepend __type and __chain for dynamic dispatch.
-                    if (realCallee in table.nodeTypes) {
-                        val chain = mutableListOf(realCallee)
-                        var p = table.nodeParents[realCallee]
-                        while (p != null) { chain.add(p); p = table.nodeParents[p] }
-                        val chainLit = IrExpr.ArrayLiteral(chain.map { IrExpr.StringLiteral(it) }, IrType.Array(IrType.String))
-                        return IrExpr.StructCtor(
-                            realCallee,
-                            listOf("__type", "__chain") + struct.fields.map { it.name },
-                            listOf(IrExpr.StringLiteral(realCallee), chainLit) + args,
-                            IrType.Named(realCallee)
-                        )
                     }
                     return IrExpr.StructCtor(realCallee, struct.fields.map { it.name }, args, IrType.Named(realCallee))
                 }
@@ -1314,20 +1328,6 @@ class IrGenerator(private val table: SymbolTable) {
                     val allArgs = listOf(IrExpr.StringLiteral(expr.name)) + args
                     return IrExpr.StructCtor(expr.target.name, fieldNames, allArgs, IrType.Named(expr.target.name))
                 }
-                // `base.method(args)` — resolve to the parent node's method.
-                if (expr.target is Expr.Identifier && expr.target.name == "__base__") {
-                    val parent = currentNodeType?.let { table.nodeParents[it] }
-                    if (parent != null) {
-                        val mangled = "${parent}_${expr.name}"
-                        val func = table.lookupFunction(mangled)
-                        if (func != null) {
-                            val args = expr.args.map { lowerExpr(it) }
-                            val selfVar = IrExpr.Var(resolveName("self"), IrType.Named(parent))
-                            return IrExpr.Call(mangled, listOf(selfVar) + args, func.returnType)
-                        }
-                    }
-                    error("'base' used but current type has no parent with method '${expr.name}'")
-                }
                 val target = lowerExpr(expr.target)
                 val tt = target.type
                 // User method on a struct: obj.method(args) -> Type_method(obj, args)
@@ -1339,11 +1339,19 @@ class IrGenerator(private val table: SymbolTable) {
                             error("property '${expr.name}' must be accessed without parentheses")
                         }
                         val args = expr.args.map { lowerExpr(it) }
-                        // Node types use dynamic dispatch — keep as MethodCall.
-                        if (tt.name in table.nodeTypes) {
-                            return IrExpr.MethodCall(target, expr.name, args, func.returnType)
-                        }
                         return IrExpr.Call(mangled, listOf(target) + args, func.returnType)
+                    }
+                }
+                // Call on a spec-typed value (`p.build()` where `p: Plugin`): no
+                // concrete method exists on the spec name, so keep it as a
+                // `MethodCall` for dynamic dispatch. The interpreter resolves it via
+                // the receiver's `__type`; native backends via the spec table. We
+                // still stamp the erased return type from the spec signature.
+                if (tt is IrType.Named) {
+                    val sig = table.lookupSpecMethod(tt.name, expr.name)
+                    if (sig != null && !sig.isProperty) {
+                        val args = expr.args.map { lowerExpr(it) }
+                        return IrExpr.MethodCall(target, expr.name, args, sig.returnType)
                     }
                 }
                 // Universal infix (`a to b`) → call the generic free function.

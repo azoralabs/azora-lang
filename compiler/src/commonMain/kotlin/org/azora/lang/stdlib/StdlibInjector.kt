@@ -679,16 +679,6 @@ class StdlibInjector private constructor(
                 }
                 item.methods.forEach { collectNamesFromFunc(it, names) }
             }
-            is TopLevel.Node -> {
-                collectNamesFromAnnotations(item.annotations, names)
-                item.params.forEach { collectNamesFromTypeRef(it.type, names) }
-                item.extraFields.forEach { field ->
-                    collectNamesFromAnnotations(field.annotations, names)
-                    collectNamesFromTypeRef(field.type, names)
-                    field.default?.let { collectNamesFromExpr(it, names) }
-                }
-                item.methods.forEach { collectNamesFromFunc(it, names) }
-            }
             is TopLevel.Impl -> {
                 names.add(item.typeName)
                 item.traitName?.let { names.add(it) }
@@ -734,10 +724,6 @@ class StdlibInjector private constructor(
                     collectNamesFromAnnotations(it.annotations, names)
                     collectNamesFromTypeRef(it.type, names)
                 }
-                item.body.forEach { collectNamesFromStmt(it, names) }
-            }
-            is TopLevel.Hook -> {
-                collectNamesFromAnnotations(item.annotations, names)
                 item.body.forEach { collectNamesFromStmt(it, names) }
             }
             is TopLevel.Slot -> collectNamesFromAnnotations(item.annotations, names)

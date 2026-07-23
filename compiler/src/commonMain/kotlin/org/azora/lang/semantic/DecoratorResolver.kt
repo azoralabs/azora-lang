@@ -340,13 +340,6 @@ class DecoratorResolver {
                         sites.add(Site("${item.name}.${field.name}", DecoTarget.Field, field.type, field.annotations))
                     }
                 }
-                is TopLevel.Node -> {
-                    sites.add(Site(item.name, DecoTarget.Node, namedType(item.name), item.annotations))
-                    item.extraFields.forEach { field ->
-                        sites.add(Site("${item.name}.${field.name}", DecoTarget.Field, field.type, field.annotations))
-                    }
-                    item.methods.forEach { addFunction(item.name, it) }
-                }
                 is TopLevel.Enum -> {
                     sites.add(Site(item.name, DecoTarget.Enum, TypeRef.Named(item.name), item.annotations))
                     item.variants.forEachIndexed { index, variant ->
@@ -394,7 +387,6 @@ class DecoratorResolver {
                         sites.add(Site("${item.name}.${param.name}", DecoTarget.Param, param.type, param.annotations))
                     }
                 }
-                is TopLevel.Hook -> sites.add(Site(item.name, DecoTarget.Hook, TypeRef.Named("Unit"), item.annotations))
                 is TopLevel.Bridge -> sites.add(Site(item.target, DecoTarget.Bridge, TypeRef.Named("Any"), item.annotations))
                 is TopLevel.VarDecl -> sites.add(Site(item.name, DecoTarget.Var, item.type ?: TypeRef.Named("Any"), item.annotations))
                 is TopLevel.FinDecl -> sites.add(Site(item.name, DecoTarget.Fin, item.type ?: TypeRef.Named("Any"), item.annotations))

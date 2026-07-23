@@ -83,4 +83,70 @@ class LambdaTest {
             }
         """.trimIndent()))
     }
+
+    @Test fun callableKindsAreStorablePackFields() {
+        assertEquals("5\n2", run("""
+            import std.io
+
+            pack Calculator {
+                fin add: Func[Int, Int] -> Int =
+                    func { x: Int, y: Int -> x + y }
+                fin sub: Func(Int, Int) -> Int =
+                    func(x: Int, y: Int) { return x - y }
+            }
+
+            func main() {
+                fin calculator = Calculator()
+                std::println(calculator.add(2, 3))
+                std::println(calculator.sub(9, 7))
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun withSuppliesContextualReceivers() {
+        assertEquals("5", run("""
+            import std.io
+
+            fin add: Func[Int, Int] -> Int =
+                func { x: Int, y: Int -> x + y }
+
+            func main() {
+                with [2, 3] {
+                    std::println(add())
+                }
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun ordinaryAndContextualParametersCanBeCombined() {
+        assertEquals("10\n14", run("""
+            import std.io
+
+            fin scale: Func[Int](Int) -> Int =
+                func(value: Int) { factor: Int -> value * factor }
+
+            func main() {
+                with 5 {
+                    std::println(scale(2))
+                }
+                std::println(scale(2, 7))
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun nonGenericVariadicFunctionsValidateEachElement() {
+        assertEquals("3", run("""
+            import std.io
+            func sum(...values: Int): Int {
+                var result = 0
+                for value in values {
+                    result += value
+                }
+                return result
+            }
+            func main() {
+                std::println(sum(1, 1, 1))
+            }
+        """.trimIndent()))
+    }
 }

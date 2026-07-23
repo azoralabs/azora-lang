@@ -45,6 +45,7 @@ data class FunctionSymbol(
     val memberCallStyle: MemberCallStyle = MemberCallStyle.NORMAL,
     /** Source return type retained for generic compile-time type-function evaluation. */
     val returnTypeRef: TypeRef? = null,
+    val isReactive: Boolean = false,
 )
 
 /**
@@ -111,6 +112,7 @@ data class SpecSymbol(
     val methodSigs: Map<String, SpecMethodSig> = emptyMap(),
     /** Parent spec inherited from (`spec Mutable: Read`), resolved at query time. */
     val parentName: String? = null,
+    val isBridge: Boolean = false,
 )
 
 /** A spec method's erased signature, used to type-check calls on a spec-typed value. */
@@ -147,6 +149,7 @@ class SymbolTable {
     private val methods = mutableMapOf<String, MutableMap<String, String>>()
     private val specs = mutableMapOf<String, SpecSymbol>() // spec name → method names/callback
     private val conformances = mutableListOf<TraitConformance>()
+    private val lambdaTypes = mutableMapOf<Pair<Int, Int>, IrType.Function>()
     // slot name → list of (variant name → payload types)
     private val slots = mutableMapOf<String, List<Pair<String, List<IrType>>>>()
     /** Import aliases: alias name → real (mangled) name. Populated from `use` declarations. */
@@ -182,6 +185,13 @@ class SymbolTable {
      * @return the [FunctionSymbol] if found, or `null` if undefined
      */
     fun lookupFunction(name: String): FunctionSymbol? = functions[name]
+
+    fun markFunctionReactive(name: String) {
+        val canonical = functions[name]?.name ?: name
+        functions.entries.forEach { entry ->
+            if (entry.value.name == canonical) entry.setValue(entry.value.copy(isReactive = true))
+        }
+    }
 
     /** Returns all registered function names (for import resolution). */
     fun allFunctionNames(): Set<String> = functions.keys.toSet()
@@ -301,12 +311,14 @@ class SymbolTable {
         name: String,
         targets: Set<DecoTarget> = emptySet(),
         bindings: List<org.azora.lang.frontend.DecoratorBinding> = emptyList(),
+        isBridge: Boolean = false,
     ) {
         specs[name] = SpecSymbol(
             emptyList(),
             isDecorator = true,
             decoratorTargets = targets,
             decoratorBindings = bindings,
+            isBridge = isBridge,
         )
     }
 
@@ -341,6 +353,14 @@ class SymbolTable {
 
     /** Returns all validated conformances. */
     fun allConformances(): List<TraitConformance> = conformances.toList()
+
+    /** Retains the fully inferred callable type for IR lowering. */
+    fun defineLambdaType(line: Int, column: Int, type: IrType.Function) {
+        lambdaTypes[line to column] = type
+    }
+
+    fun lookupLambdaType(line: Int, column: Int): IrType.Function? =
+        lambdaTypes[line to column]
 
 
     // -- Type aliases -----------------------------------------------------

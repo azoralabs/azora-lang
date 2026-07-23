@@ -518,7 +518,7 @@ object SerializationDeriver {
         is TypeRef.Tuple -> type.elements.joinToString(", ", "(", ")") { renderType(it) }
         is TypeRef.Nullable -> "${renderType(type.inner)}?"
         is TypeRef.Pointer -> "${renderType(type.inner)}*"
-        is TypeRef.Function -> "${type.params.joinToString(", ", "(", ")") { renderType(it) }} -> ${renderType(type.ret)}"
+        is TypeRef.Function -> type.toString()
         is TypeRef.Failable -> if (type.errSets.size == 1) {
             "${renderType(type.ok)}!${type.errSets.single()}"
         } else {

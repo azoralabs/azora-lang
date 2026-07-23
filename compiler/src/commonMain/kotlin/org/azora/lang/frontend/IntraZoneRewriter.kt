@@ -141,7 +141,11 @@ internal object IntraZoneRewriter {
 
     private fun collectExprNames(e: Expr, names: MutableSet<String>) {
         when (e) {
-            is Expr.Lambda -> { e.params.forEach { names.add(it.name) }; e.body.forEach { collectStmtNames(it, names) } }
+            is Expr.Lambda -> {
+                e.params.forEach { names.add(it.name) }
+                e.receivers.forEach { names.add(it.name) }
+                e.body.forEach { collectStmtNames(it, names) }
+            }
             is Expr.MethodCall -> { collectExprNames(e.target, names); e.args.forEach { collectExprNames(it, names) } }
             is Expr.Member -> collectExprNames(e.target, names)
             is Expr.Call -> e.args.forEach { collectExprNames(it, names) }

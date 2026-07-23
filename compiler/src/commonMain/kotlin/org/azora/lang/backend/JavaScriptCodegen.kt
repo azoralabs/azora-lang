@@ -42,6 +42,7 @@ class JavaScriptCodegen {
     private var indent = 0
     private var usesPointers = false
     private var usesTasks = false
+    private var usesVirtualDom = false
     private var whenCounter = 0
     private var structsByName: Map<String, IrTopLevel.Struct> = emptyMap()
 
@@ -54,6 +55,155 @@ class JavaScriptCodegen {
         function __derefAssign(p, v) { p.value = v; }
         // NOTE: __isolated is a shallow copy in the JavaScript backend.
         function __isolated(v) { return v; }
+    """.trimIndent()
+
+    private val virtualDomPreamble: String = """
+        const __azoraDomRoots = new Map();
+
+        function __azoraDomAttributes(attributes) {
+          const result = new Map();
+          for (const attribute of attributes || []) result.set(attribute.name, attribute.value);
+          return result;
+        }
+
+        function __azoraDomApplyAttributes(element, previous, next) {
+          const before = __azoraDomAttributes(previous);
+          const after = __azoraDomAttributes(next);
+          for (const name of before.keys()) {
+            if (!after.has(name) || after.get(name) === "") {
+              element.removeAttribute(name);
+              if (name === "value" && "value" in element) element.value = "";
+            }
+          }
+          for (const [name, value] of after) {
+            if (value === "") {
+              element.removeAttribute(name);
+            } else if (name === "value" && "value" in element) {
+              if (element.value !== value) element.value = value;
+            } else {
+              element.setAttribute(name, value);
+            }
+          }
+        }
+
+        function __azoraDomSchedule(root) {
+          if (root.pending) return;
+          root.pending = true;
+          queueMicrotask(() => {
+            root.pending = false;
+            const next = root.render();
+            root.dom = __azoraDomPatch(root.container, root.dom, root.tree, next, root);
+            root.tree = next;
+          });
+        }
+
+        function __azoraDomApplyEvents(element, events, root) {
+          const listeners = element.__azoraListeners || new Map();
+          const nextNames = new Set((events || []).map(event => event.name));
+          for (const [name, listener] of listeners) {
+            if (!nextNames.has(name)) {
+              element.removeEventListener(name, listener);
+              listeners.delete(name);
+            }
+          }
+          for (const event of events || []) {
+            const previous = listeners.get(event.name);
+            if (previous) element.removeEventListener(event.name, previous);
+            const listener = browserEvent => {
+              let result;
+              try {
+                result = event.handler();
+              } catch (error) {
+                __azoraDomSchedule(root);
+                throw error;
+              }
+              if (result && typeof result.then === "function") {
+                void result.finally(() => __azoraDomSchedule(root));
+              } else {
+                __azoraDomSchedule(root);
+              }
+            };
+            element.addEventListener(event.name, listener);
+            listeners.set(event.name, listener);
+          }
+          element.__azoraListeners = listeners;
+        }
+
+        function __azoraDomCreate(vnode, root) {
+          if (vnode == null) return document.createComment("azora-empty");
+          if (vnode.tag === "#text") return document.createTextNode(vnode.value);
+          const element = document.createElement(vnode.tag);
+          __azoraDomApplyAttributes(element, [], vnode.attributes);
+          __azoraDomApplyEvents(element, vnode.events, root);
+          for (const child of vnode.children || []) element.appendChild(__azoraDomCreate(child, root));
+          return element;
+        }
+
+        function __azoraDomSameNode(previous, next) {
+          if (previous == null || next == null) return previous === next;
+          if (previous.tag !== next.tag) return false;
+          if (previous.key !== "" || next.key !== "") return previous.key === next.key;
+          return true;
+        }
+
+        function __azoraDomPatch(parent, dom, previous, next, root) {
+          if (previous == null) {
+            const created = __azoraDomCreate(next, root);
+            parent.appendChild(created);
+            return created;
+          }
+          if (next == null) {
+            if (dom) parent.removeChild(dom);
+            return null;
+          }
+          if (!__azoraDomSameNode(previous, next)) {
+            const replacement = __azoraDomCreate(next, root);
+            parent.replaceChild(replacement, dom);
+            return replacement;
+          }
+          if (next.tag === "#text") {
+            if (dom.nodeValue !== next.value) dom.nodeValue = next.value;
+            return dom;
+          }
+
+          __azoraDomApplyAttributes(dom, previous.attributes, next.attributes);
+          __azoraDomApplyEvents(dom, next.events, root);
+          const oldChildren = previous.children || [];
+          const newChildren = next.children || [];
+          const common = Math.min(oldChildren.length, newChildren.length);
+          for (let index = 0; index < common; index++) {
+            __azoraDomPatch(dom, dom.childNodes[index], oldChildren[index], newChildren[index], root);
+          }
+          for (let index = common; index < newChildren.length; index++) {
+            __azoraDomPatch(dom, null, null, newChildren[index], root);
+          }
+          for (let index = oldChildren.length - 1; index >= newChildren.length; index--) {
+            __azoraDomPatch(dom, dom.childNodes[index], oldChildren[index], null, root);
+          }
+          return dom;
+        }
+
+        function __azoraEngineUiDomMount(rootId, render) {
+          if (typeof document === "undefined") {
+            throw new Error("engine.ui.dom requires a browser document");
+          }
+          const container = document.getElementById(rootId);
+          if (!container) throw new Error("engine.ui.dom root not found: #" + rootId);
+
+          const existing = __azoraDomRoots.get(rootId);
+          if (existing) {
+            existing.render = render;
+            __azoraDomSchedule(existing);
+            return;
+          }
+
+          const root = { container, render, tree: null, dom: null, pending: false };
+          container.replaceChildren();
+          root.tree = render();
+          root.dom = __azoraDomCreate(root.tree, root);
+          container.appendChild(root.dom);
+          __azoraDomRoots.set(rootId, root);
+        }
     """.trimIndent()
 
     /**
@@ -69,6 +219,7 @@ class JavaScriptCodegen {
         out.clear()
         indent = 0
         usesPointers = false
+        usesVirtualDom = false
         whenCounter = 0
         usesTasks = program.functions.any { it.isTask }
         structsByName = program.items.filterIsInstance<IrTopLevel.Struct>().associateBy { it.name }
@@ -151,7 +302,7 @@ class JavaScriptCodegen {
                     if (i < lastEmittedIndex) line("")
                 }
                 is IrTopLevel.Struct -> {
-                    line("class ${item.name} {")
+                    line("class ${jsPackName(item.name)} {")
                     indent++
                     // Numeric field names (e.g. `0`, `1` on `@EnforceNumFields` tuples) are
                     // not valid JS identifiers — use positional param names and bracket access.
@@ -201,7 +352,11 @@ class JavaScriptCodegen {
         }
 
         val body = out.toString().trimEnd()
-        return if (usesPointers) pointerPreamble + "\n\n" + body else body
+        val preambles = buildList {
+            if (usesPointers) add(pointerPreamble)
+            if (usesVirtualDom) add(virtualDomPreamble)
+        }
+        return if (preambles.isEmpty()) body else preambles.joinToString("\n\n") + "\n\n" + body
     }
 
     private fun emitTest(test: IrTopLevel.Test) {
@@ -221,6 +376,15 @@ class JavaScriptCodegen {
 
     /** Rewrites an identifier that collides with a JS reserved word (used consistently for decls and refs). */
     private fun jsIdent(name: String): String = if (name in jsReserved) "${name}_" else name
+
+    /**
+     * Keeps Azora pack constructors out of JavaScript's global identifier space.
+     *
+     * Source packs may legitimately be named `Array`, `Map`, `Promise`, and so
+     * on. Emitting those names directly would shadow host intrinsics used by
+     * browsers, generated runtimes, and embedding applications.
+     */
+    private fun jsPackName(name: String): String = "__azoraPack_$name"
 
     private fun emitFunction(func: IrFunction) {
         val params = func.params.joinToString(", ") { (name, _) -> jsIdent(name) }
@@ -524,10 +688,12 @@ class JavaScriptCodegen {
                 "chr" -> "String.fromCodePoint(${emitExpr(expr.args[0])})"
                 "isDigit" -> emitExpr(expr.args[0]).let { "($it >= '0' && $it <= '9')" }
                 else -> {
+                    if (expr.name == "engineUiDomMount") usesVirtualDom = true
                     val name = when (expr.name) {
                         "std__print" -> "__azoraPrint"
                         "std__println" -> "__azoraPrintln"
                         "std__convert__toString" -> "String"
+                        "engineUiDomMount" -> "__azoraEngineUiDomMount"
                         else -> expr.name
                     }
                     if (expr.name == "async" && expr.args.size == 1) {
@@ -576,7 +742,7 @@ class JavaScriptCodegen {
                 // Slot (tagged union) — a plain tagged object `{__tag, __0, …}`.
                 "{ ${expr.fieldNames.zip(expr.args).joinToString(", ") { (f, a) -> "\"$f\": ${emitExpr(a)}" }} }"
             } else {
-                "new ${expr.name}(${expr.args.joinToString(", ") { emitExpr(it) }})"
+                "new ${jsPackName(expr.name)}(${expr.args.joinToString(", ") { emitExpr(it) }})"
             }
         is IrExpr.TupleLit -> "[${expr.elements.joinToString(", ") { emitExpr(it) }}]"
         is IrExpr.VariantLit -> emitExpr(expr.elements.first())

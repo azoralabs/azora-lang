@@ -136,7 +136,7 @@ checking; `guard cond else { }`; `break`/`continue`.
 | `deco Name for [.Pack, .Node] bind [X for .Pack, Y for .Node]` | constrains decorator applications and individual transitive bindings by target |
 | `solo Name { … }` / `wrap Name { … }` / `inject Type` | DI singleton / container / resolve |
 | `flow name(p): T { … yield v }` | lazy generator |
-| `view Name(params) { body }` | reactive UI component |
+| `@Reactive func name() { }` | rendering-independent reactive owner |
 | `bridge target { func sigs }` | FFI extern declarations |
 | `zone Name { … }` / `friend zone std::math { … }` | named namespace (`Name::member`) / shared namespace contribution |
 | `test "name" { }` / `test .All "suite"` | one test / bodyless file-level aggregate suite |
@@ -213,10 +213,10 @@ task gets isolated execution state), `channel()` + `.send`/`.receive`/`.close`,
 
 ### Reactivity
 
-`mem x: T = init` (remembered), `rem x: T = init` (saveable/serializable),
-`ret x: T = init` (retained), `effect { }` (side-effect block), and
-`view Name() { }` (component). Re-runs run once currently; automatic dependency
-tracking is future work.
+`@Reactive` enables `mem` (memoized), `rem` (saveable), `ret` (retained), and
+`effect`. Effects may track reads automatically, declare one/list dependencies,
+or use `effect defer` for owner-exit cleanup. Reactive callables may only be
+called from another reactive scope.
 
 ### Compile-time execution (CTCE)
 
@@ -334,7 +334,7 @@ Reserved words in the language (see `frontend/Token.kt`):
 - **Control**: `if` `else` `for` `while` `loop` `in` `by` `reverse` `break` `continue` `when` `guard`
 - **Errors/concurrency**: `throw` `try` `catch` `rescue` `fail` `defer` `flow` `yield` `task` `await` `launch`
 - **Memory/FFI/DI**: `alloc` `drop` `unsafe` `isolated` `bridge` `solo` `wrap` `inject`
-- **Reactivity/object model**: `mem` `rem` `ret` `effect` `view` `hook` `prop` `ctor` `dtor` `flip` `flop`
+- **Reactivity/object model**: `mem` `rem` `ret` `effect` `hook` `prop` `ctor` `dtor` `flip` `flop`
 - **Metaprogramming**: `inline` `deepinline` `noinline`
 - **Scoping/modules**: `zone` `friend` `module` `import`
 - **Modifiers/visibility**: `mut` `ref` `out` `shared` `weak` `expose` `confine` `protect`

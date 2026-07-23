@@ -117,6 +117,8 @@ enum class TokenType {
     AT,
     // `infx Type.method(params)` — extension method usable as an infix call (`a method b`).
     INFX,
+    // Contextual callable receivers: `with value { ... }` / `with [a, b] { ... }`.
+    WITH,
     // `oper[]` / `oper[]=` — index-operator overloading inside impl blocks.
     OPER,
     // `fail ErrSet { … }` — error-set declaration; also `fail <expr>` throw sugar.
@@ -133,8 +135,8 @@ enum class TokenType {
     RESCUE,
     // Variadic generics: `...T` type params, `args: ...T` variadic params, `...arr` spread.
     ELLIPSIS,
-    // Reactivity: `mem` (remember), `rem` (saveable/serializable), `ret` (retain), `effect { }`, `view Name() { }`.
-    MEM, REM, RET, EFFECT, VIEW,
+    // Reactivity enabled by `@Reactive`: `mem`, `rem`, `ret`, and `effect`.
+    MEM, REM, RET, EFFECT,
     // Object model: `prop name: T { }`, `ctor(params) { }`, `dtor { }`.
     PROP, CTOR, DTOR,
     // Alternating execution: `flip { } flop { }`.

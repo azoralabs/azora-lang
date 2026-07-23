@@ -652,7 +652,7 @@ class Parser(
                 advance(); parseEnumDecl(annotations)
             }
             check(TokenType.BRIDGE) && peekNext()?.type == TokenType.DECO -> {
-                advance(); parseDeco(annotations)
+                advance(); parseDeco(annotations, isBridge = true)
             }
             check(TokenType.BRIDGE) && peekNext()?.type == TokenType.SPEC -> {
                 advance(); parseSpec()
@@ -664,7 +664,6 @@ class Parser(
             check(TokenType.BRIDGE) -> parseBridge(annotations)
             check(TokenType.SOLO) -> parseSolo(visibility, annotations)
             check(TokenType.WRAP) -> parseWrap()
-            check(TokenType.VIEW) -> parseView(annotations)
             check(TokenType.THREADLOCAL) -> parseThreadLocal(visibility)
             check(TokenType.SPEC) -> parseSpec()
             check(TokenType.SLOT) -> parseSlot(annotations)
@@ -771,7 +770,7 @@ class Parser(
     }
 
     /** Parses every `deco` target/binding combination into a normalized declaration. */
-    private fun parseDeco(annotations: List<Annotation>): TopLevel.Deco {
+    private fun parseDeco(annotations: List<Annotation>, isBridge: Boolean = false): TopLevel.Deco {
         val start = peek()
         consume(TokenType.DECO, "Expected 'deco'")
         val name = consume(TokenType.IDENTIFIER, "Expected decorator name").lexeme
@@ -793,7 +792,7 @@ class Parser(
 
         if (!check(TokenType.L_BRACE)) {
             consumeNewline()
-            return TopLevel.Deco(name, emptyList(), start.line, start.column, annotations, targets, bindings)
+            return TopLevel.Deco(name, emptyList(), start.line, start.column, annotations, targets, bindings, isBridge)
         }
         consume(TokenType.L_BRACE, "Expected '{' after decorator declaration")
         skipNewlines()
@@ -807,7 +806,7 @@ class Parser(
         }
         consume(TokenType.R_BRACE, "Expected '}' after deco fields")
         consumeNewline()
-        return TopLevel.Deco(name, fields, start.line, start.column, annotations, targets, bindings)
+        return TopLevel.Deco(name, fields, start.line, start.column, annotations, targets, bindings, isBridge)
     }
 
     private fun parseTopLevelInline(): TopLevel {
@@ -847,8 +846,7 @@ class Parser(
         consume(TokenType.IN, "Expected 'in' after 'inline for' variable")
         val list = parseComptimeForValues()
         // Optional `with index` — binds a 0-based counter usable as `${list[index]}`.
-        val indexVar = if (peek().type == TokenType.IDENTIFIER && peek().lexeme == "with") {
-            advance()
+        val indexVar = if (matchWithKeyword()) {
             consumeIdentifierLike("Expected index variable after 'with'")
         } else null
         consume(TokenType.L_BRACE, "Expected '{' to open 'inline for' body")
@@ -1394,8 +1392,7 @@ class Parser(
         match(TokenType.ELLIPSIS) // preferred spelling: `inline for Ty in ...T`
         val packVar = consume(TokenType.IDENTIFIER, "Expected variadic pack variable").lexeme
         // Optional `with index` — declares that `$index` interpolates the position.
-        if (peek().type == TokenType.IDENTIFIER && peek().lexeme == "with") {
-            advance() // 'with'
+        if (matchWithKeyword()) {
             consume(TokenType.IDENTIFIER, "Expected 'index' after 'with'").lexeme // 'index'
         }
         consume(TokenType.L_BRACE, "Expected '{' to open variadic field template")
@@ -3365,6 +3362,11 @@ class Parser(
                 }
             }
             check(TokenType.IDENTIFIER) -> {
+                if (peek().lexeme in setOf("Func", "Task", "Flow") &&
+                    peekNext()?.type in setOf(TokenType.L_BRACKET, TokenType.L_PAREN)
+                ) {
+                    return parseCallableType()
+                }
                 if (peekNext()?.type == TokenType.L_BRACKET && peek().lexeme in setOf("arr", "vec", "set", "map")) {
                     error("'${peek().lexeme}[...]' type syntax was removed; use Array<T>, List<T>, Set<T>, or Map<K, V> at line ${peek().line}")
                 }
@@ -3438,6 +3440,32 @@ class Parser(
         }
     }
 
+    /** `Func[Ctx](A, B) -> R` and the corresponding `Task` / `Flow` forms. */
+    private fun parseCallableType(): TypeRef {
+        val callable = advance()
+        val kind = when (callable.lexeme) {
+            "Task" -> CallableKind.TASK
+            "Flow" -> CallableKind.FLOW
+            else -> CallableKind.FUNC
+        }
+        val receivers = mutableListOf<TypeRef>()
+        if (match(TokenType.L_BRACKET)) {
+            if (!check(TokenType.R_BRACKET)) {
+                do { receivers.add(parseTypeName()) } while (match(TokenType.COMMA))
+            }
+            consume(TokenType.R_BRACKET, "Expected ']' after contextual callable parameters")
+        }
+        val params = mutableListOf<TypeRef>()
+        if (match(TokenType.L_PAREN)) {
+            if (!check(TokenType.R_PAREN)) {
+                do { params.add(parseTypeName()) } while (match(TokenType.COMMA))
+            }
+            consume(TokenType.R_PAREN, "Expected ')' after callable parameters")
+        }
+        consume(TokenType.ARROW, "Expected '->' after ${callable.lexeme} parameters")
+        return TypeRef.Function(params, parseTypeName(), receivers, kind)
+    }
+
     // -----------------------------------------------------------------------
     // Statements
     // -----------------------------------------------------------------------
@@ -3481,6 +3509,7 @@ class Parser(
             check(TokenType.REM) -> parseReactiveDecl(ReactiveKind.REM)
             check(TokenType.RET) -> parseReactiveDecl(ReactiveKind.RET)
             check(TokenType.EFFECT) -> parseEffect()
+            check(TokenType.WITH) -> parseWithContext()
             check(TokenType.FLIP) -> parseFlipFlop()
             check(TokenType.GUARD) -> parseGuard()
             else -> parseExprStmt()
@@ -3833,36 +3862,58 @@ class Parser(
         return Stmt.RemDecl(name, type, init, start.line, start.column, kind = kind)
     }
 
-    /** `effect { body }` — reactive side-effect block. */
+    /** Reactive effect with automatic, explicit, or disposal-only execution. */
     private fun parseEffect(): Stmt.Effect {
         val start = peek()
         consume(TokenType.EFFECT, "Expected 'effect'")
+        val deferred = match(TokenType.DEFER)
+        val dependencies = when {
+            deferred || check(TokenType.L_BRACE) -> null
+            match(TokenType.L_BRACKET) -> {
+                val values = mutableListOf<Expr>()
+                if (!check(TokenType.R_BRACKET)) {
+                    do { values.add(parseExpr()) } while (match(TokenType.COMMA))
+                }
+                consume(TokenType.R_BRACKET, "Expected ']' after effect dependencies")
+                values
+            }
+            else -> {
+                val savedTrailing = allowTrailingLambda
+                allowTrailingLambda = false
+                val dependency = parseExpr()
+                allowTrailingLambda = savedTrailing
+                listOf(dependency)
+            }
+        }
         consume(TokenType.L_BRACE, "Expected '{' after 'effect'")
         skipNewlines()
         val body = parseBlock()
         consume(TokenType.R_BRACE, "Expected '}'")
         consumeNewline()
-        return Stmt.Effect(body, start.line, start.column)
+        return Stmt.Effect(body, start.line, start.column, dependencies = dependencies, deferred = deferred)
     }
 
-    /** `view Name(params) { body }` — a reactive UI component. */
-    private fun parseView(annotations: List<Annotation> = emptyList()): TopLevel.View {
-        val start = peek()
-        consume(TokenType.VIEW, "Expected 'view'")
-        val name = consume(TokenType.IDENTIFIER, "Expected view name").lexeme
-        consume(TokenType.L_PAREN, "Expected '(' after view name")
-        val params = parseParams()
-        consume(TokenType.R_PAREN, "Expected ')' after view params")
-        consume(TokenType.L_BRACE, "Expected '{' after view header")
-        skipNewlines()
-        val body = mutableListOf<Stmt>()
-        while (!check(TokenType.R_BRACE) && !isAtEnd()) {
-            body.add(parseStmt())
-            skipNewlines()
+    /** Contextual receiver scope for first-class callables. */
+    private fun parseWithContext(): Stmt.WithContext {
+        val start = consume(TokenType.WITH, "Expected 'with'")
+        val values = mutableListOf<Expr>()
+        if (match(TokenType.L_BRACKET)) {
+            if (!check(TokenType.R_BRACKET)) {
+                do { values.add(parseExpr()) } while (match(TokenType.COMMA))
+            }
+            consume(TokenType.R_BRACKET, "Expected ']' after contextual values")
+        } else {
+            val savedTrailing = allowTrailingLambda
+            allowTrailingLambda = false
+            values.add(parseExpr())
+            allowTrailingLambda = savedTrailing
         }
-        consume(TokenType.R_BRACE, "Expected '}' after view body")
+        consume(TokenType.L_BRACE, "Expected '{' after contextual values")
+        skipNewlines()
+        val body = parseBlock()
+        consume(TokenType.R_BRACE, "Expected '}' after with body")
         consumeNewline()
-        return TopLevel.View(name, params, body, start.line, start.column, annotations)
+        return Stmt.WithContext(values, body, start.line, start.column)
     }
 
     /**
@@ -4307,8 +4358,8 @@ class Parser(
         if ((peek().type == TokenType.IDENTIFIER && typeListEnv.containsKey(peek().lexeme)) ||
             peek().type == TokenType.L_BRACKET) {
             val list = parseComptimeForValues()
-            val indexVar = if (peek().type == TokenType.IDENTIFIER && peek().lexeme == "with") {
-                advance(); consumeIdentifierLike("Expected index variable after 'with'")
+            val indexVar = if (matchWithKeyword()) {
+                consumeIdentifierLike("Expected index variable after 'with'")
             } else null
             consume(TokenType.L_BRACE, "Expected '{' after inline for iterable")
             val bodyTokens = captureBraceBody()
@@ -4339,8 +4390,7 @@ class Parser(
         val iterable = if (hasInfixIndex) infixWith!!.target else parsedIterable
         val indexName = if (hasInfixIndex) {
             (infixWith!!.args.single() as Expr.Identifier).name
-        } else if (peek().type == TokenType.IDENTIFIER && peek().lexeme == "with") {
-            advance()
+        } else if (matchWithKeyword()) {
             consume(TokenType.IDENTIFIER, "Expected index binding after 'with'").lexeme
         } else null
         consume(TokenType.L_BRACE, "Expected '{' after inline for iterable")
@@ -5490,6 +5540,7 @@ class Parser(
         }
         return when (tok.type) {
             TokenType.IF -> parseIfExpr()
+            TokenType.FUNC -> parseCallableLambda(CallableKind.FUNC)
             TokenType.INT_LITERAL -> {
                 advance()
                 val numLit = tok.literal as NumericLiteral
@@ -5569,19 +5620,8 @@ class Parser(
                 }
             }
             TokenType.L_BRACE -> parseLambda(tok.line, tok.column)
-            // `task { body }` — a no-argument thunk (a lambda), awaited later.
-            TokenType.TASK -> {
-                val t = advance() // 'task'
-                consume(TokenType.L_BRACE, "Expected '{' after 'task'")
-                skipNewlines()
-                val body = parseBlock().toMutableList()
-                if (body.isNotEmpty() && body.last() is Stmt.ExprStmt) {
-                    val last = body.removeAt(body.size - 1) as Stmt.ExprStmt
-                    body.add(Stmt.Return(last.expr, last.line, last.column, last.length))
-                }
-                consume(TokenType.R_BRACE, "Expected '}' after task body")
-                Expr.Lambda(emptyList(), body, t.line, t.column)
-            }
+            TokenType.TASK -> parseCallableLambda(CallableKind.TASK)
+            TokenType.FLOW -> parseCallableLambda(CallableKind.FLOW)
             // `launch { body }` — fire-and-forget task; desugars to a __launch(thunk) call.
             TokenType.LAUNCH -> {
                 val t = advance() // 'launch'
@@ -5597,6 +5637,48 @@ class Parser(
             }
             else -> error("Unexpected token '${tok.lexeme}' at line ${tok.line}")
         }
+    }
+
+    /**
+     * `func(params) { receivers -> body }`, with equivalent `task` and `flow`
+     * spellings. A callable without `(params)` has no ordinary parameters;
+     * names before `->` are contextual receivers.
+     */
+    private fun parseCallableLambda(kind: CallableKind): Expr.Lambda {
+        val start = advance()
+        val params = if (match(TokenType.L_PAREN)) {
+            val parsed = if (check(TokenType.R_PAREN)) emptyList() else parseParams()
+            consume(TokenType.R_PAREN, "Expected ')' after callable parameters")
+            parsed
+        } else {
+            emptyList()
+        }
+        consume(TokenType.L_BRACE, "Expected '{' after ${kind.surfaceName.lowercase()} lambda")
+        skipNewlines()
+        val receivers = mutableListOf<Param>()
+        if (check(TokenType.IDENTIFIER) && peekNext()?.type == TokenType.COLON) {
+            do {
+                val name = consume(TokenType.IDENTIFIER, "Expected contextual receiver name").lexeme
+                consume(TokenType.COLON, "Expected ':' after contextual receiver name")
+                receivers.add(Param(name, parseTypeName()))
+            } while (match(TokenType.COMMA))
+            consume(TokenType.ARROW, "Expected '->' after contextual receivers")
+        } else if (isUntypedLambdaParamsAhead()) {
+            do {
+                receivers.add(Param(consumeIdentifierLike("Expected contextual receiver name"), TypeRef.Named("Any")))
+            } while (match(TokenType.COMMA))
+            consume(TokenType.ARROW, "Expected '->' after contextual receivers")
+        } else if (match(TokenType.ARROW)) {
+            // Explicitly empty contextual receiver list.
+        }
+        skipNewlines()
+        val body = parseBlock().toMutableList()
+        if (body.isNotEmpty() && body.last() is Stmt.ExprStmt) {
+            val last = body.removeAt(body.size - 1) as Stmt.ExprStmt
+            body.add(Stmt.Return(last.expr, last.line, last.column, last.length))
+        }
+        consume(TokenType.R_BRACE, "Expected '}' after callable body")
+        return Expr.Lambda(params, body, start.line, start.column, receivers = receivers, kind = kind)
     }
 
     // -----------------------------------------------------------------------
@@ -5703,6 +5785,15 @@ class Parser(
         if (!check(type)) return false
         advance()
         return true
+    }
+
+    private fun matchWithKeyword(): Boolean {
+        if (match(TokenType.WITH)) return true
+        if (check(TokenType.IDENTIFIER) && peek().lexeme == "with") {
+            advance()
+            return true
+        }
+        return false
     }
 
     private fun consume(type: TokenType, message: String): Token {

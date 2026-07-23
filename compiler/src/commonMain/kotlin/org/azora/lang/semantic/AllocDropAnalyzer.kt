@@ -222,7 +222,14 @@ class AllocDropAnalyzer {
                 collectUsedVars(stmt.initializer, used)
                 defined.add(stmt.name)
             }
-            is Stmt.Effect -> stmt.body.forEach { analyzeStmt(it, defined, used, errors) }
+            is Stmt.Effect -> {
+                stmt.dependencies?.forEach { collectUsedVars(it, used) }
+                stmt.body.forEach { analyzeStmt(it, defined, used, errors) }
+            }
+            is Stmt.WithContext -> {
+                stmt.values.forEach { collectUsedVars(it, used) }
+                stmt.body.forEach { analyzeStmt(it, defined, used, errors) }
+            }
             is Stmt.When -> {
                 collectUsedVars(stmt.scrutinee, used)
                 for (branch in stmt.branches) {

@@ -61,7 +61,6 @@ class AstValidator {
                 is TopLevel.Solo -> item.annotations + item.fields.flatMap { it.annotations }
                 is TopLevel.Slot -> item.annotations
                 is TopLevel.Test -> item.annotations
-                is TopLevel.View -> item.annotations + item.params.flatMap { it.annotations }
                 is TopLevel.Bridge -> item.annotations
                 is TopLevel.TypeAlias -> item.annotations
                 is TopLevel.VarDecl -> item.annotations
@@ -253,6 +252,7 @@ class AstValidator {
             is Stmt.DerefAssign -> {}
             is Stmt.RemDecl -> {}
             is Stmt.Effect -> {}
+            is Stmt.WithContext -> stmt.body.forEach { validateStmt(it, funcName, errors) }
             is Stmt.When -> {
                 for (branch in stmt.branches) {
                     branch.body.forEach { validateStmt(it, funcName, errors) }

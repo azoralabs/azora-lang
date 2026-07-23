@@ -20,7 +20,7 @@ Azora already has several foundations needed for Verse-like gameplay:
 | Error-aware control | `fail ErrSet`, `T!ErrSet`, `try/catch`, `guard` |
 | Metadata | `deco`, declaration decorators, parameter query decorators |
 | Services | `solo`, `wrap`, `inject` |
-| Reactivity | `rem`, `effect`, `view` |
+| Reactivity | `@Reactive`, `mem`, `rem`, `ret`, `effect` |
 | Memory | `alloc`, `drop`, `isolated`, `zone alloc`, pointers |
 | Tooling | one AST/IR feeding interpreter, LLVM, WASM, and source backends |
 

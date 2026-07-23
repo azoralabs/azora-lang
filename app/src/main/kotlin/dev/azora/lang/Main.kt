@@ -154,7 +154,10 @@ private fun handleCheck(args: List<String>) {
     val result = Compiler(unit.libraries).compile(unit.source, defines = parseDefines(args))
     when (result) {
         is CompilationResult.Success -> println("No errors found.")
-        is CompilationResult.Failure -> result.errors.forEach { System.err.println(it) }
+        is CompilationResult.Failure -> {
+            result.errors.forEach { System.err.println(it) }
+            exitProcess(1)
+        }
     }
 }
 
@@ -195,7 +198,10 @@ private fun handleCompile(args: List<String>) {
             }
             println(output)
         }
-        is CompilationResult.Failure -> result.errors.forEach { System.err.println(it) }
+        is CompilationResult.Failure -> {
+            result.errors.forEach { System.err.println(it) }
+            exitProcess(1)
+        }
     }
 }
 

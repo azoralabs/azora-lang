@@ -247,10 +247,22 @@ sealed class Expr {
     data class IfExpr(val condition: Expr, val thenExpr: Expr, val elseExpr: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 
     /**
-     * Lambda `{ params -> body }`. Parameters carry explicit types. The result type is a
-     * function type inferred from the body's return value.
+     * A first-class callable value.
+     *
+     * [params] are ordinary call parameters. [receivers] are contextual
+     * parameters which may be supplied explicitly after the ordinary
+     * arguments or resolved from an enclosing `with` block.
      */
-    data class Lambda(val params: List<Param>, val body: List<Stmt>, override val line: Int, override val column: Int = 0, override val length: Int = 0, val variadic: Boolean = false) : Expr()
+    data class Lambda(
+        val params: List<Param>,
+        val body: List<Stmt>,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0,
+        val variadic: Boolean = false,
+        val receivers: List<Param> = emptyList(),
+        val kind: CallableKind = CallableKind.FUNC,
+    ) : Expr()
 
     /** A named argument `name: value` in a call expression. */
     data class NamedArg(val name: String, val value: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
@@ -949,7 +961,25 @@ sealed class Stmt {
     ) : Stmt()
 
     /** `effect { body }` — reactive side-effect; re-runs when tracked `rem` variables change. */
-    data class Effect(val body: List<Stmt>, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Stmt()
+    data class Effect(
+        val body: List<Stmt>,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0,
+        /** Null means automatic dependency tracking; an empty list is explicit. */
+        val dependencies: List<Expr>? = null,
+        /** `effect defer { ... }` runs at reactive-owner disposal. */
+        val deferred: Boolean = false,
+    ) : Stmt()
+
+    /** `with value { ... }` / `with [a, b] { ... }` contextual receiver scope. */
+    data class WithContext(
+        val values: List<Expr>,
+        val body: List<Stmt>,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0,
+    ) : Stmt()
 }
 
 // ---------------------------------------------------------------------------
@@ -1003,9 +1033,23 @@ sealed class TypeRef {
         override fun toString() = "set[$element]"
     }
 
-    /** Function type `(A, B) -> R`. */
-    data class Function(val params: List<TypeRef>, val ret: TypeRef) : TypeRef() {
-        override fun toString() = "(${params.joinToString(", ")}) -> $ret"
+    /** First-class callable type with ordinary and contextual parameters. */
+    data class Function(
+        val params: List<TypeRef>,
+        val ret: TypeRef,
+        val receivers: List<TypeRef> = emptyList(),
+        val kind: CallableKind = CallableKind.FUNC,
+    ) : TypeRef() {
+        override fun toString(): String {
+            val name = kind.surfaceName
+            val context = if (receivers.isEmpty()) "" else receivers.joinToString(", ", "[", "]")
+            val arguments = if (params.isEmpty()) {
+                if (receivers.isEmpty()) "()" else ""
+            } else {
+                params.joinToString(", ", "(", ")")
+            }
+            return "$name$context$arguments -> $ret"
+        }
     }
 
     /** Tuple type `(A, B)` (two or more elements). */
@@ -1217,6 +1261,13 @@ data class ZoneMeta(val label: String?, val isInline: Boolean, val parent: ZoneM
 enum class CastKind { STATIC, DYNAMIC, REINTERPRET }
 
 enum class ReactiveKind { MEM, REM, RET }
+
+/** Surface callable families supported by first-class lambda values. */
+enum class CallableKind(val surfaceName: String) {
+    FUNC("Func"),
+    TASK("Task"),
+    FLOW("Flow"),
+}
 
 /** Test execution mode mirrored by the compiler-predefined `TestMethod` enum. */
 enum class TestMethod { This, All }
@@ -1431,7 +1482,7 @@ data class Annotation(
  */
 /** Declaration categories accepted by decorator and binding `for` clauses. */
 enum class DecoTarget {
-    Pack, Func, Prop, Task, Flow, Solo, Slot, Enum, EnumValue, Deco,
+    Pack, Func, Infx, Prop, Task, Flow, Solo, Slot, Enum, EnumValue, Deco,
     Fail, FailValue, Field, Param, Var, Fin, Let, Test, View,
     Ctor, Dtor, TypeAlias, Bridge, ImplOper,
 }
@@ -1656,6 +1707,8 @@ sealed class TopLevel {
         /** Empty means this decorator may be applied to every supported target. */
         val targets: Set<DecoTarget> = emptySet(),
         val bindings: List<DecoratorBinding> = emptyList(),
+        /** Compiler-recognized contract whose semantics are provided by lowering. */
+        val isBridge: Boolean = false,
     ) : TopLevel()
 
     /** An extern function signature inside a `bridge` block: `func sin(x: Real): Real` (no body). */
@@ -1672,9 +1725,6 @@ sealed class TopLevel {
 
     /** `wrap Name { solo Type(args); Concrete bind Spec }` — a DI container that wires singletons. */
     data class Wrap(val name: String, val registrations: List<WrapReg>, val line: Int, val column: Int = 0) : TopLevel()
-
-    /** `view Name(params) { body }` — a reactive UI component (like a function but with reactive semantics). */
-    data class View(val name: String, val params: List<Param>, val body: List<Stmt>, val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList()) : TopLevel()
 
     /**
      * `import ZoneName` or `import ZoneName.Item` — imports items from a named zone so they're

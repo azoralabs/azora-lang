@@ -52,8 +52,8 @@ use friend zone std {
     /** Declaration categories accepted by decorator `for` constraints. */
     @Experimental(sinceAzora: "0.0.4")
     bridge enum DecoTarget {
-        Pack, Func, Prop, Task, Flow, Node, Solo, Slot, Enum, EnumValue, Deco,
-        Fail, FailValue, Field, Param, Var, Fin, Let, Test, View, Hook,
+        Pack, Func, Infx, Prop, Task, Flow, Node, Solo, Slot, Enum, EnumValue, Deco,
+        Fail, FailValue, Field, Param, Var, Fin, Let, Test, Hook,
         Ctor, Dtor, TypeAlias, Bridge, ImplOper
     }
 

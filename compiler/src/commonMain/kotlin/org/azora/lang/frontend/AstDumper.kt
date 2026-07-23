@@ -187,9 +187,6 @@ private fun dumpTopLevel(sb: StringBuilder, item: TopLevel, indent: String) {
         is TopLevel.Wrap -> {
             sb.appendLine("${indent}Wrap(name=${item.name}, registrations=[${item.registrations.joinToString(", ") { "${it.typeName}(${it.args.size} args)" }}])")
         }
-        is TopLevel.View -> {
-            sb.appendLine("${indent}View(name=${item.name}, params=[${item.params.joinToString(", ") { it.name }}])")
-        }
         is TopLevel.UseImport -> {
             sb.appendLine("${indent}UseImport(${item.imports.joinToString(", ") { (zone, item) -> if (item != null) "$zone::$item" else "$zone::*" }})")
         }
@@ -398,8 +395,14 @@ private fun dumpStmt(sb: StringBuilder, stmt: Stmt, indent: String) {
             sb.appendLine("${indent}ReactiveDecl(kind=${stmt.kind}, name=${stmt.name})")
         }
         is Stmt.Effect -> {
-            sb.appendLine("${indent}Effect")
+            sb.appendLine("${indent}Effect(deferred=${stmt.deferred}, dependencies=${stmt.dependencies?.size ?: "auto"})")
+            stmt.dependencies?.forEach { dumpExpr(sb, it, "$indent    ") }
             for (s in stmt.body) dumpStmt(sb, s, "$indent    ")
+        }
+        is Stmt.WithContext -> {
+            sb.appendLine("${indent}WithContext")
+            stmt.values.forEach { dumpExpr(sb, it, "$indent    ") }
+            stmt.body.forEach { dumpStmt(sb, it, "$indent    ") }
         }
         is Stmt.When -> {
             sb.appendLine("${indent}When")

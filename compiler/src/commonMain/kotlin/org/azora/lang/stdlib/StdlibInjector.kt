@@ -718,14 +718,6 @@ class StdlibInjector private constructor(
             }
             is TopLevel.InlineBlock -> item.body.forEach { collectNamesFromItem(it, names) }
             is TopLevel.DeepInlineBlock -> item.body.forEach { collectNamesFromItem(it, names) }
-            is TopLevel.View -> {
-                collectNamesFromAnnotations(item.annotations, names)
-                item.params.forEach {
-                    collectNamesFromAnnotations(it.annotations, names)
-                    collectNamesFromTypeRef(it.type, names)
-                }
-                item.body.forEach { collectNamesFromStmt(it, names) }
-            }
             is TopLevel.Slot -> collectNamesFromAnnotations(item.annotations, names)
             is TopLevel.TypeAlias -> {
                 collectNamesFromAnnotations(item.annotations, names)
@@ -878,7 +870,14 @@ class StdlibInjector private constructor(
             is Stmt.FriendZone -> stmt.body.forEach { collectNamesFromStmt(it, names) }
             is Stmt.InlineBlock -> stmt.body.forEach { collectNamesFromStmt(it, names) }
             is Stmt.DeepInlineBlock -> stmt.body.forEach { collectNamesFromStmt(it, names) }
-            is Stmt.Effect -> stmt.body.forEach { collectNamesFromStmt(it, names) }
+            is Stmt.Effect -> {
+                stmt.dependencies?.forEach { collectNamesFromExpr(it, names) }
+                stmt.body.forEach { collectNamesFromStmt(it, names) }
+            }
+            is Stmt.WithContext -> {
+                stmt.values.forEach { collectNamesFromExpr(it, names) }
+                stmt.body.forEach { collectNamesFromStmt(it, names) }
+            }
             is Stmt.NoInline -> collectNamesFromStmt(stmt.stmt, names)
             is Stmt.Break, is Stmt.Continue -> {}
         }
@@ -935,6 +934,7 @@ class StdlibInjector private constructor(
             }
             is Expr.Lambda -> {
                 expr.params.forEach { collectNamesFromTypeAnnotation(TypeAnnotation.Explicit(it.type), names) }
+                expr.receivers.forEach { collectNamesFromTypeAnnotation(TypeAnnotation.Explicit(it.type), names) }
                 expr.body.forEach { collectNamesFromStmt(it, names) }
             }
             is Expr.NamedArg -> collectNamesFromExpr(expr.value, names)
@@ -1000,6 +1000,7 @@ class StdlibInjector private constructor(
             }
             is TypeRef.Function -> {
                 ref.params.forEach { collectNamesFromTypeRef(it, names) }
+                ref.receivers.forEach { collectNamesFromTypeRef(it, names) }
                 collectNamesFromTypeRef(ref.ret, names)
             }
             is TypeRef.Tuple -> ref.elements.forEach { collectNamesFromTypeRef(it, names) }

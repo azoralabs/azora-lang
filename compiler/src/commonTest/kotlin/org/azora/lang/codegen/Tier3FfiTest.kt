@@ -22,7 +22,7 @@ class Tier3FfiTest {
     @Test fun bridgeSinAndSqrt() {
         assertEquals("4.0\n0.0", run("""
             import std.io
-            bridge C {
+            bridge .C {
                 func sqrt(x: Real): Real
                 func sin(x: Real): Real
             }
@@ -36,7 +36,7 @@ class Tier3FfiTest {
     @Test fun bridgePowTwoArgs() {
         assertEquals("1024.0", run("""
             import std.io
-            bridge C {
+            bridge .C {
                 func pow(val: Real, exp: Real): Real
             }
             func main() {
@@ -48,7 +48,7 @@ class Tier3FfiTest {
     @Test fun bridgeEmitsExternDeclarationsInBackends() {
         val result = Compiler().compile("""
             import std.io
-            bridge C {
+            bridge .C {
                 func sqrt(x: Real): Real
             }
             func main() {

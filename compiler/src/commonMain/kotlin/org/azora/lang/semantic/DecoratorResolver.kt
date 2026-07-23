@@ -316,6 +316,7 @@ class DecoratorResolver {
         fun addFunction(owner: String?, function: FuncDecl) {
             val identity = if (owner == null) function.name else "$owner.${function.name}"
             val target = when {
+                function.isUniversalInfix -> DecoTarget.Infx
                 function.memberCallStyle == MemberCallStyle.PROPERTY -> DecoTarget.Prop
                 function.name == "ctor" -> DecoTarget.Ctor
                 function.name == "dtor" -> DecoTarget.Dtor
@@ -380,13 +381,6 @@ class DecoratorResolver {
                 is TopLevel.Slot -> sites.add(Site(item.name, DecoTarget.Slot, TypeRef.Named(item.name), item.annotations))
                 is TopLevel.TypeAlias -> sites.add(Site(item.name, DecoTarget.TypeAlias, item.type, item.annotations))
                 is TopLevel.Test -> sites.add(Site(item.name, DecoTarget.Test, TypeRef.Named("Unit"), item.annotations))
-                is TopLevel.View -> {
-                    val type = TypeRef.Function(item.params.map { it.type }, TypeRef.Named("Any"))
-                    sites.add(Site(item.name, DecoTarget.View, type, item.annotations))
-                    item.params.forEach { param ->
-                        sites.add(Site("${item.name}.${param.name}", DecoTarget.Param, param.type, param.annotations))
-                    }
-                }
                 is TopLevel.Bridge -> sites.add(Site(item.target, DecoTarget.Bridge, TypeRef.Named("Any"), item.annotations))
                 is TopLevel.VarDecl -> sites.add(Site(item.name, DecoTarget.Var, item.type ?: TypeRef.Named("Any"), item.annotations))
                 is TopLevel.FinDecl -> sites.add(Site(item.name, DecoTarget.Fin, item.type ?: TypeRef.Named("Any"), item.annotations))

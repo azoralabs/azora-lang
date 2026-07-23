@@ -14,8 +14,139 @@
  * limitations under the License.
  */
 
-module std.reactive
+export module std.reactive
+
+/**
+ * @file std.reactive
+ *
+ * Rendering-independent reactive state and deterministic effects.
+ *
+ * `@Reactive` establishes a reactive owner for a function, task, or infix.
+ * Inside that owner:
+ *
+ * - `mem` stores owner-local memoized state.
+ * - `rem` stores state eligible for save/restore by a host.
+ * - `ret` stores state retained for the owner's full lifetime.
+ * - `effect { }` tracks reactive values read by the effect.
+ * - `effect value { }` tracks one explicit dependency.
+ * - `effect [a, b] { }` tracks an explicit dependency list.
+ * - `effect defer { }` registers owner-exit cleanup.
+ *
+ * This module contains no rendering or UI policy. A renderer, server, game,
+ * data pipeline, or command-line program may all build on the same semantics.
+ */
+
+/**
+ * Enables reactive declarations and effects in the decorated callable.
+ *
+ * The declaration is a compiler bridge rather than a magic undeclared
+ * annotation, so imports, completion, decorator target checks, reflection,
+ * and documentation all observe the same symbol.
+ */
+@Experimental(sinceAzora: "0.0.4")
+bridge deco Reactive for [.Infx, .Task, .Func]
 
 friend zone std {
+    /**
+     * Describes the distinct lifetime selected by a reactive declaration.
+     */
+    @Experimental(sinceAzora: "0.0.4")
+    enum ReactiveLifetime {
+        /** Lives in the current reactive owner and may be recomputed with it. */
+        Memory
 
+        /** May be serialized and restored by a host across owner recreation. */
+        Remembered
+
+        /** Remains alive until the reactive owner itself is disposed. */
+        Retained
+    }
+
+    /**
+     * A serializable description of one reactive value.
+     *
+     * Hosts can use this metadata when persisting `rem` state without knowing
+     * anything about a renderer.
+     */
+    @Experimental(sinceAzora: "0.0.4")
+    pack<T> ReactiveSnapshot {
+        fin key: String
+        fin value: T
+        fin lifetime: ReactiveLifetime
+    }
 }
+
+@Reactive
+func reactiveAutomaticEffectFixture(): Int {
+    rem value = 1
+    var observed = 0
+    effect {
+        observed = value
+    }
+    value = 7
+    return observed
+}
+
+@Reactive
+func reactiveExplicitEffectFixture(): Int {
+    mem x = 1
+    ret y = 10
+    var observed = 0
+    effect x {
+        observed = x + y
+    }
+    y = 20
+    x = 2
+    return observed
+}
+
+@Reactive
+func reactiveListEffectFixture(): Int {
+    rem x = 1
+    rem y = 2
+    var observed = 0
+    effect [x, y] {
+        observed = x * 10 + y
+    }
+    x = 3
+    y = 4
+    return observed
+}
+
+@Reactive
+func reactiveDeferredEffectFixture() {
+    effect defer {
+        fin cleanupRegistered = true
+    }
+}
+
+@Reactive
+func testReactiveAutomaticEffect() {
+    assert reactiveAutomaticEffectFixture() == 7 {
+        "automatic effect did not observe the latest rem value"
+    }
+}
+
+@Reactive
+func testReactiveExplicitEffect() {
+    assert reactiveExplicitEffectFixture() == 22 {
+        "explicit effect dependencies were not respected"
+    }
+}
+
+@Reactive
+func testReactiveListEffect() {
+    assert reactiveListEffectFixture() == 34 {
+        "effect dependency list did not observe both updates"
+    }
+}
+
+test "reactive declarations and effects compile" {
+    assert true { "reactive compile fixture" }
+}
+
+test "reactive cleanup contract compiles" {
+    assert true { "reactive cleanup compile fixture" }
+}
+
+test .All "reactive"

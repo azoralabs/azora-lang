@@ -45,12 +45,18 @@ import kotlin.collections.iterator
  * @param table the fully populated symbol table from semantic analysis
  */
 class IrGenerator(private val table: SymbolTable) {
+    private data class ActiveEffect(val dependencies: Set<String>, val body: List<Stmt>)
+
     private var typeFunctions = emptyList<TypeFunctionDecl>()
     private var functionDecls = emptyMap<String, FuncDecl>()
     private val generatedTraceFunctions = mutableListOf<IrFunction>()
     private val traceLambdaIndices = mutableMapOf<String, Int>()
     private val knownEnumValues = mutableMapOf<String, IrExpr.EnumLiteral>()
     private var currentTraceOwner: String? = null
+    private val contextualValues = ArrayDeque<List<IrExpr>>()
+    private val reactiveNames = mutableSetOf<String>()
+    private val activeEffects = mutableListOf<ActiveEffect>()
+    private var loweringEffect = false
 
     private fun resolveType(ref: TypeRef, typeParams: Set<String> = emptySet()): IrType =
         IrType.resolve(TypeFunctionEvaluator.resolve(ref, typeFunctions, unresolvedParams = typeParams), typeParams)
@@ -65,9 +71,13 @@ class IrGenerator(private val table: SymbolTable) {
     private fun lowerScopedBody(stmts: List<Stmt>): List<IrStmt> {
         table.pushScope()
         pushNameScope()
+        val effectCount = activeEffects.size
+        val names = reactiveNames.toSet()
         return try {
             lowerBody(stmts)
         } finally {
+            while (activeEffects.size > effectCount) activeEffects.removeLast()
+            reactiveNames.retainAll(names)
             popNameScope()
             table.popScope()
         }
@@ -100,6 +110,175 @@ class IrGenerator(private val table: SymbolTable) {
         return name // global
     }
 
+    private fun contextualArguments(type: IrType.Function, explicitCount: Int): List<IrExpr> {
+        val explicitReceivers = (explicitCount - type.params.size).coerceAtLeast(0)
+        val missing = type.receivers.drop(explicitReceivers)
+        if (missing.isEmpty()) return emptyList()
+        val available = contextualValues.asReversed().flatten()
+        val used = mutableSetOf<Int>()
+        return missing.map { expected ->
+            val index = available.indices.firstOrNull {
+                it !in used && (
+                    available[it].type == expected ||
+                        available[it].type == IrType.Any ||
+                        expected == IrType.Any
+                    )
+            } ?: error("missing contextual receiver $expected after semantic validation")
+            used.add(index)
+            available[index]
+        }
+    }
+
+    private fun dependencyNames(expr: Expr): Set<String> = when (expr) {
+        is Expr.Identifier -> setOf(expr.name)
+        is Expr.Grouping -> dependencyNames(expr.expr)
+        is Expr.Member -> dependencyNames(expr.target)
+        is Expr.SafeMember -> dependencyNames(expr.target)
+        is Expr.Index -> dependencyNames(expr.target)
+        is Expr.TupleAccess -> dependencyNames(expr.target)
+        else -> emptySet()
+    }
+
+    private fun referencedNames(body: List<IrStmt>): Set<String> = buildSet {
+        body.forEach { collectReferencedNames(it, this) }
+    }
+
+    private fun collectReferencedNames(stmt: IrStmt, names: MutableSet<String>) {
+        when (stmt) {
+            is IrStmt.VarDecl -> collectReferencedNames(stmt.initializer, names)
+            is IrStmt.FinDecl -> collectReferencedNames(stmt.initializer, names)
+            is IrStmt.LetDecl -> collectReferencedNames(stmt.initializer, names)
+            is IrStmt.Assignment -> collectReferencedNames(stmt.value, names)
+            is IrStmt.IndexAssign -> {
+                collectReferencedNames(stmt.target, names)
+                collectReferencedNames(stmt.index, names)
+                collectReferencedNames(stmt.value, names)
+            }
+            is IrStmt.MemberAssign -> {
+                collectReferencedNames(stmt.target, names)
+                collectReferencedNames(stmt.value, names)
+            }
+            is IrStmt.Return -> stmt.value?.let { collectReferencedNames(it, names) }
+            is IrStmt.ExprStmt -> collectReferencedNames(stmt.expr, names)
+            is IrStmt.If -> {
+                collectReferencedNames(stmt.condition, names)
+                stmt.thenBranch.forEach { collectReferencedNames(it, names) }
+                stmt.elseBranch?.forEach { collectReferencedNames(it, names) }
+            }
+            is IrStmt.Zone -> stmt.body.forEach { collectReferencedNames(it, names) }
+            is IrStmt.Assert -> {
+                collectReferencedNames(stmt.condition, names)
+                collectReferencedNames(stmt.message, names)
+            }
+            is IrStmt.Trace -> {
+                collectReferencedNames(stmt.level, names)
+                collectReferencedNames(stmt.message, names)
+            }
+            is IrStmt.While -> {
+                collectReferencedNames(stmt.condition, names)
+                stmt.body.forEach { collectReferencedNames(it, names) }
+            }
+            is IrStmt.For -> {
+                collectReferencedNames(stmt.start, names)
+                collectReferencedNames(stmt.end, names)
+                stmt.step?.let { collectReferencedNames(it, names) }
+                stmt.body.forEach { collectReferencedNames(it, names) }
+            }
+            is IrStmt.ForEach -> {
+                collectReferencedNames(stmt.iterable, names)
+                stmt.body.forEach { collectReferencedNames(it, names) }
+            }
+            is IrStmt.Loop -> stmt.body.forEach { collectReferencedNames(it, names) }
+            is IrStmt.When -> {
+                collectReferencedNames(stmt.scrutinee, names)
+                stmt.branches.forEach { branch ->
+                    branch.patterns.forEach { collectReferencedNames(it, names) }
+                    branch.body.forEach { collectReferencedNames(it, names) }
+                }
+                stmt.elseBranch?.forEach { collectReferencedNames(it, names) }
+            }
+            is IrStmt.Throw -> collectReferencedNames(stmt.value, names)
+            is IrStmt.Try -> {
+                stmt.body.forEach { collectReferencedNames(it, names) }
+                stmt.catchBody?.forEach { collectReferencedNames(it, names) }
+            }
+            is IrStmt.Defer -> stmt.body.forEach { collectReferencedNames(it, names) }
+            is IrStmt.Yield -> collectReferencedNames(stmt.value, names)
+            is IrStmt.Break, is IrStmt.Continue -> Unit
+        }
+    }
+
+    private fun collectReferencedNames(expr: IrExpr, names: MutableSet<String>) {
+        when (expr) {
+            is IrExpr.Var -> names.add(expr.name)
+            is IrExpr.Binary -> {
+                collectReferencedNames(expr.left, names)
+                collectReferencedNames(expr.right, names)
+            }
+            is IrExpr.Unary -> collectReferencedNames(expr.operand, names)
+            is IrExpr.Call -> {
+                expr.receiver?.let { collectReferencedNames(it, names) }
+                expr.args.forEach { collectReferencedNames(it, names) }
+            }
+            is IrExpr.ArrayLiteral -> expr.elements.forEach { collectReferencedNames(it, names) }
+            is IrExpr.MapLit -> expr.entries.forEach { (key, value) ->
+                collectReferencedNames(key, names)
+                collectReferencedNames(value, names)
+            }
+            is IrExpr.SetLit -> expr.elements.forEach { collectReferencedNames(it, names) }
+            is IrExpr.Index -> {
+                collectReferencedNames(expr.target, names)
+                collectReferencedNames(expr.index, names)
+            }
+            is IrExpr.Member -> collectReferencedNames(expr.target, names)
+            is IrExpr.MethodCall -> {
+                collectReferencedNames(expr.target, names)
+                expr.args.forEach { collectReferencedNames(it, names) }
+            }
+            is IrExpr.StructCtor -> expr.args.forEach { collectReferencedNames(it, names) }
+            is IrExpr.StringTemplate -> expr.parts.forEach { part ->
+                if (part is IrExpr.IrTemplatePart.Expr) collectReferencedNames(part.expr, names)
+            }
+            is IrExpr.TupleLit -> expr.elements.forEach { collectReferencedNames(it, names) }
+            is IrExpr.VariantLit -> expr.elements.forEach { collectReferencedNames(it, names) }
+            is IrExpr.TupleAccess -> collectReferencedNames(expr.target, names)
+            is IrExpr.CatchExpr -> {
+                collectReferencedNames(expr.expr, names)
+                collectReferencedNames(expr.fallback, names)
+            }
+            is IrExpr.IfExpr -> {
+                collectReferencedNames(expr.condition, names)
+                collectReferencedNames(expr.thenExpr, names)
+                collectReferencedNames(expr.elseExpr, names)
+            }
+            is IrExpr.NumCast -> collectReferencedNames(expr.value, names)
+            is IrExpr.EnumToString -> collectReferencedNames(expr.value, names)
+            is IrExpr.Lambda -> Unit
+            is IrExpr.Await -> collectReferencedNames(expr.value, names)
+            is IrExpr.Spread -> collectReferencedNames(expr.array, names)
+            is IrExpr.IntLiteral,
+            is IrExpr.RealLiteral,
+            is IrExpr.StringLiteral,
+            is IrExpr.EnumLiteral,
+            is IrExpr.BoolLiteral,
+            is IrExpr.CharLiteral,
+            is IrExpr.SlotPattern -> Unit
+        }
+    }
+
+    private fun lowerEffectStatements(body: List<Stmt>): List<IrStmt> {
+        val saved = loweringEffect
+        loweringEffect = true
+        return try {
+            lowerScopedBody(body)
+        } finally {
+            loweringEffect = saved
+        }
+    }
+
+    private fun lowerEffectBody(body: List<Stmt>): IrStmt =
+        IrStmt.Zone(lowerEffectStatements(body), alloc = false)
+
     /**
      * Generates a typed [IrProgram] from the given AST.
      *
@@ -116,6 +295,7 @@ class IrGenerator(private val table: SymbolTable) {
         traceLambdaIndices.clear()
         knownEnumValues.clear()
         currentTraceOwner = null
+        contextualValues.clear()
         nameScopes.clear()
         mangledCounter = 0
         pushNameScope() // global scope
@@ -234,10 +414,6 @@ class IrGenerator(private val table: SymbolTable) {
                         finally { currentReceiverType = saved }
                     }
                 }
-                is TopLevel.View -> {
-                    val decl = FuncDecl(item.name, item.params, TypeAnnotation.Inferred, item.body, false, emptyList(), item.line, item.column)
-                    listOf(IrTopLevel.Func(lowerFunction(decl)))
-                }
                 else -> emptyList() // Inline constructs already resolved by CTCE
             }
         } +
@@ -326,6 +502,10 @@ class IrGenerator(private val table: SymbolTable) {
         }.toSet()
         table.pushScope()
         pushNameScope()
+        val savedReactiveNames = reactiveNames.toSet()
+        val savedEffects = activeEffects.toList()
+        reactiveNames.clear()
+        activeEffects.clear()
 
         // Register parameters
         val mangledParams = symbol.params.map { (name, type) ->
@@ -338,6 +518,10 @@ class IrGenerator(private val table: SymbolTable) {
         val body = try {
             lowerBody(func.body)
         } finally {
+            reactiveNames.clear()
+            reactiveNames.addAll(savedReactiveNames)
+            activeEffects.clear()
+            activeEffects.addAll(savedEffects)
             popNameScope()
             table.popScope()
             currentTraceOwner = previousOwner
@@ -379,15 +563,25 @@ class IrGenerator(private val table: SymbolTable) {
         knownEnumValues.clear()
         table.pushScope()
         pushNameScope()
+        val savedReactiveNames = reactiveNames.toSet()
+        val savedEffects = activeEffects.toList()
+        reactiveNames.clear()
+        activeEffects.clear()
         val mangledParams = symbol.params.map { (name, type) ->
             val m = registerName(name)
             val mutable = name != "self" || method.receiverModifier != "ref"
             table.defineVariable(VariableSymbol(name, type, mutable = mutable))
             m to type
         }
+        contextualValues.addLast(listOf(IrExpr.Var(resolveName("self"), IrType.Named(typeName))))
         val body = try {
             lowerBody(method.body)
         } finally {
+            reactiveNames.clear()
+            reactiveNames.addAll(savedReactiveNames)
+            activeEffects.clear()
+            activeEffects.addAll(savedEffects)
+            contextualValues.removeLast()
             popNameScope()
             table.popScope()
             currentTraceOwner = previousOwner
@@ -479,7 +673,14 @@ class IrGenerator(private val table: SymbolTable) {
                 val value = lowerExpr(stmt.value)
                 val name = resolveName(stmt.name)
                 knownEnumValues.remove(name)
-                IrStmt.Assignment(name, value)
+                val assignment = IrStmt.Assignment(name, value)
+                val triggered = if (!loweringEffect && stmt.name in reactiveNames) {
+                    activeEffects.filter { stmt.name in it.dependencies }
+                } else {
+                    emptyList()
+                }
+                if (triggered.isEmpty()) assignment
+                else IrStmt.Zone(listOf(assignment) + triggered.map { lowerEffectBody(it.body) })
             }
             is Stmt.IndexAssign -> {
                 val target = lowerExpr(stmt.target)
@@ -624,11 +825,31 @@ class IrGenerator(private val table: SymbolTable) {
                 val type = resolveTypeAnnotation(stmt.type, init)
                 val mangled = registerName(stmt.name)
                 table.defineVariable(VariableSymbol(stmt.name, type, mutable = true))
+                reactiveNames.add(stmt.name)
                 IrStmt.VarDecl(mangled, type, init)
             }
             is Stmt.Effect -> {
-                lowerBody(stmt.body).forEach { /* effects run as-is */ }
-                lowerBody(stmt.body).firstOrNull() ?: IrStmt.ExprStmt(IrExpr.IntLiteral(0))
+                if (stmt.deferred) {
+                    IrStmt.Defer(lowerEffectStatements(stmt.body))
+                } else {
+                    val loweredBody = lowerEffectStatements(stmt.body)
+                    val dependencies = stmt.dependencies
+                        ?.flatMap(::dependencyNames)
+                        ?.toSet()
+                        ?: referencedNames(loweredBody).intersect(reactiveNames)
+                    activeEffects.add(ActiveEffect(dependencies, stmt.body))
+                    IrStmt.Zone(loweredBody, alloc = false)
+                }
+            }
+            is Stmt.WithContext -> {
+                val values = stmt.values.map(::lowerExpr)
+                contextualValues.addLast(values)
+                val body = try {
+                    lowerScopedBody(stmt.body)
+                } finally {
+                    contextualValues.removeLast()
+                }
+                IrStmt.Zone(body, alloc = false)
             }
             is Stmt.Yield -> IrStmt.Yield(lowerExpr(stmt.value))
             is Stmt.When -> {
@@ -1058,8 +1279,10 @@ class IrGenerator(private val table: SymbolTable) {
                 // and emit an indirect call carrying it.
                 expr.receiver?.let { recv ->
                     val target = lowerExpr(recv)
-                    val ret = (target.type as? IrType.Function)?.ret ?: IrType.Any
-                    val args = expr.args.map { lowerExpr(it) }
+                    val callable = target.type as? IrType.Function
+                    val ret = callable?.ret ?: IrType.Any
+                    val args = expr.args.map { lowerExpr(it) } +
+                        (callable?.let { contextualArguments(it, expr.args.size) } ?: emptyList())
                     return IrExpr.Call("", args, ret, receiver = target)
                 }
                 if (expr.callee == "__defaultLogLevel") {
@@ -1167,9 +1390,14 @@ class IrGenerator(private val table: SymbolTable) {
                         val elemType = if (elems.isEmpty()) IrType.Any else elems.first().type
                         listOf(IrExpr.ArrayLiteral(elems, IrType.Array(elemType)))
                     } else {
-                        expr.args.map { lowerExpr(it) }
+                        expr.args.map { lowerExpr(it) } + contextualArguments(v.type, expr.args.size)
                     }
-                    return IrExpr.Call(resolveName(expr.callee), args, v.type.ret)
+                    return IrExpr.Call(
+                        "",
+                        args,
+                        v.type.ret,
+                        receiver = IrExpr.Var(resolveName(expr.callee), v.type),
+                    )
                 }
                 // Compiler builtin: `std::convert::toString(x)` stringifies any
                 // value (implemented natively by CTCE and every backend).
@@ -1341,6 +1569,13 @@ class IrGenerator(private val table: SymbolTable) {
                         val args = expr.args.map { lowerExpr(it) }
                         return IrExpr.Call(mangled, listOf(target) + args, func.returnType)
                     }
+                    val callableField = table.lookupStruct(tt.name)?.field(expr.name)?.type as? IrType.Function
+                    if (callableField != null) {
+                        val member = IrExpr.Member(target, expr.name, callableField)
+                        val args = expr.args.map(::lowerExpr) +
+                            contextualArguments(callableField, expr.args.size)
+                        return IrExpr.Call("", args, callableField.ret, receiver = member)
+                    }
                 }
                 // Call on a spec-typed value (`p.build()` where `p: Plugin`): no
                 // concrete method exists on the spec name, so keep it as a
@@ -1410,19 +1645,38 @@ class IrGenerator(private val table: SymbolTable) {
             // Runtime failure transport already propagates when uncaught.
             is Expr.TryPropagate -> lowerExpr(expr.expr)
             is Expr.Lambda -> {
+                val callableType = table.lookupLambdaType(expr.line, expr.column)
+                    ?: IrType.Function(
+                        expr.params.map { resolveType(it.type) },
+                        IrType.Unit,
+                        variadic = expr.variadic,
+                        receivers = expr.receivers.map { resolveType(it.type) },
+                        kind = expr.kind,
+                    )
                 table.pushScope()
                 pushNameScope()
-                val irParams = expr.params.map { p ->
-                    val t = resolveType(p.type)
+                val ordinaryParams = expr.params.mapIndexed { index, p ->
+                    val t = callableType.params.getOrNull(index) ?: resolveType(p.type)
                     val m = registerName(p.name)
                     table.defineVariable(VariableSymbol(p.name, t))
+                    m to t
+                }
+                val receiverParams = expr.receivers.mapIndexed { index, p ->
+                    val t = callableType.receivers.getOrNull(index) ?: resolveType(p.type)
+                    val m = registerName(p.name)
+                    table.defineVariable(VariableSymbol(p.name, t, mutable = false))
                     m to t
                 }
                 val body = lowerBody(expr.body)
                 popNameScope()
                 table.popScope()
                 val retType = body.mapNotNull { (it as? IrStmt.Return)?.value?.type }.firstOrNull() ?: IrType.Unit
-                IrExpr.Lambda(irParams, body, IrType.Function(irParams.map { it.second }, retType, variadic = expr.variadic))
+                val irParams = ordinaryParams + receiverParams
+                IrExpr.Lambda(
+                    irParams,
+                    body,
+                    callableType.copy(ret = retType),
+                )
             }
             // Macros are expanded before IR generation; a MetaInvoke here is a bug.
             is Expr.Slice -> {

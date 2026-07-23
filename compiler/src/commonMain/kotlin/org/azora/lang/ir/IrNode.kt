@@ -18,6 +18,7 @@ package org.azora.lang.ir
 
 import org.azora.lang.frontend.TypeRef
 import org.azora.lang.frontend.TypeFunctionCall
+import org.azora.lang.frontend.CallableKind
 
 // ---------------------------------------------------------------------------
 // Types
@@ -101,8 +102,24 @@ sealed class IrType {
     /** Structural set literal type `set[T]`. */
     data class Set(val element: IrType) : IrType() { override fun toString() = "set[$element]" }
 
-    /** Function type `(A, B) -> R`. */
-    data class Function(val params: List<IrType>, val ret: IrType, val variadic: Boolean = false) : IrType() { override fun toString() = "(${params.joinToString(", ")}) -> $ret" }
+    /** First-class callable type with ordinary and contextual parameters. */
+    data class Function(
+        val params: List<IrType>,
+        val ret: IrType,
+        val variadic: Boolean = false,
+        val receivers: List<IrType> = emptyList(),
+        val kind: CallableKind = CallableKind.FUNC,
+    ) : IrType() {
+        override fun toString(): kotlin.String {
+            val context = if (receivers.isEmpty()) "" else receivers.joinToString(", ", "[", "]")
+            val arguments = if (params.isEmpty()) {
+                if (receivers.isEmpty()) "()" else ""
+            } else {
+                params.joinToString(", ", "(", ")")
+            }
+            return "${kind.surfaceName}$context$arguments -> $ret"
+        }
+    }
 
     /** Handle returned by an asynchronous `task` invocation. */
     data class Task(val result: IrType) : IrType() { override fun toString() = "Task<$result>" }
@@ -215,7 +232,12 @@ sealed class IrType {
             is TypeRef.Array -> Array(resolve(ref.element, typeParams))
             is TypeRef.Map -> Map(resolve(ref.key, typeParams), resolve(ref.value, typeParams))
             is TypeRef.Set -> Set(resolve(ref.element, typeParams))
-            is TypeRef.Function -> Function(ref.params.map { resolve(it, typeParams) }, resolve(ref.ret, typeParams))
+            is TypeRef.Function -> Function(
+                params = ref.params.map { resolve(it, typeParams) },
+                ret = resolve(ref.ret, typeParams),
+                receivers = ref.receivers.map { resolve(it, typeParams) },
+                kind = ref.kind,
+            )
             is TypeRef.Tuple -> Tuple(ref.elements.map { resolve(it, typeParams) })
             is TypeRef.Nullable -> Nullable(resolve(ref.inner, typeParams))
             is TypeRef.Pointer -> Pointer(resolve(ref.inner, typeParams))

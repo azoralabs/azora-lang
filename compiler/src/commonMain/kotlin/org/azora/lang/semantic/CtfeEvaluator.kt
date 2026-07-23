@@ -195,7 +195,6 @@ class CtfeEvaluator(private val table: SymbolTable) {
         is TopLevel.Bridge -> Pair(listOf(item), false)
         is TopLevel.Solo -> Pair(listOf(item), false)
         is TopLevel.Wrap -> Pair(listOf(item), false)
-        is TopLevel.View -> Pair(listOf(item), false)
         is TopLevel.UseImport -> Pair(listOf(item), false)
         is TopLevel.Impl -> Pair(listOf(item), false)
         is TopLevel.Spec -> Pair(listOf(item), false)
@@ -316,7 +315,6 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 is TopLevel.Bridge -> result.add(item)
                 is TopLevel.Solo -> result.add(item)
                 is TopLevel.Wrap -> result.add(item)
-                is TopLevel.View -> result.add(item)
                 is TopLevel.UseImport -> result.add(item)
                 is TopLevel.Impl -> result.add(item)
                 is TopLevel.Spec -> result.add(item)
@@ -564,7 +562,23 @@ class CtfeEvaluator(private val table: SymbolTable) {
             }
             is Stmt.Effect -> {
                 val (newBody, changed) = foldScopedBody(stmt.body, program, errors)
-                Pair(listOf(stmt.copy(body = newBody)), changed)
+                var dependencyChanged = false
+                val dependencies = stmt.dependencies?.map {
+                    val (value, didChange) = foldExpr(it, program)
+                    dependencyChanged = dependencyChanged || didChange
+                    value
+                }
+                Pair(listOf(stmt.copy(body = newBody, dependencies = dependencies)), changed || dependencyChanged)
+            }
+            is Stmt.WithContext -> {
+                var valuesChanged = false
+                val values = stmt.values.map {
+                    val (value, didChange) = foldExpr(it, program)
+                    valuesChanged = valuesChanged || didChange
+                    value
+                }
+                val (body, bodyChanged) = foldScopedBody(stmt.body, program, errors)
+                Pair(listOf(stmt.copy(values = values, body = body)), valuesChanged || bodyChanged)
             }
             is Stmt.Try -> {
                 var changed = false
@@ -1361,6 +1375,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 }
                 is Stmt.RemDecl -> return null // reactive state, not CTCE-evaluable
                 is Stmt.Effect -> return null // effects are not CTCE-evaluable
+                is Stmt.WithContext -> return null // contextual dispatch is resolved semantically
                 is Stmt.FinDecl -> {
                     val value = evalExpr(stmt.initializer, env, program) ?: return null
                     env[stmt.name] = value

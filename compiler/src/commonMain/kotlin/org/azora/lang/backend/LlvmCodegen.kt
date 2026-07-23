@@ -1443,12 +1443,126 @@ class LlvmCodegen {
             "null"
         }
         is IrExpr.Lambda -> {
-            emit("  ; lambda/closure — not lowered")
-            "null"
+            emitClosure(expr)
         }
     }
 
     private data class Capture(val name: String, val type: IrType, val llvmType: String)
+
+    private fun emitClosure(lambda: IrExpr.Lambda): String {
+        val callableType = lambda.type as IrType.Function
+        usesAllocatorRuntime = true
+        lateTypeDefinitions.add("%azora.closure = type { i8*, i8* }")
+        val id = taskContextCounter++
+        val bodyName = "__azora_lambda_body_$id"
+        val ctxType = "%azora.lambda.ctx.$id"
+        val captures = collectCaptures(lambda)
+        if (captures.isNotEmpty()) {
+            lateTypeDefinitions.add("$ctxType = type { ${captures.joinToString(", ") { it.llvmType }} }")
+        }
+
+        val environment = if (captures.isEmpty()) {
+            "null"
+        } else {
+            val sizePtr = nextTmp()
+            val size = nextTmp()
+            emit("  $sizePtr = getelementptr $ctxType, $ctxType* null, i32 1")
+            emit("  $size = ptrtoint $ctxType* $sizePtr to i64")
+            val raw = emitHeapAlloc(size)
+            val context = nextTmp()
+            emit("  $context = bitcast i8* $raw to $ctxType*")
+            captures.forEachIndexed { index, capture ->
+                val storage = localVars.getValue(capture.name)
+                val field = nextTmp()
+                val value = nextTmp()
+                emit("  $field = getelementptr $ctxType, $ctxType* $context, i32 0, i32 $index")
+                emit("  $value = load ${capture.llvmType}, ${capture.llvmType}* ${storage.first}")
+                emit("  store ${capture.llvmType} $value, ${capture.llvmType}* $field, align 1")
+            }
+            raw
+        }
+
+        deferredFunctions += renderDeferredFunction {
+            emitClosureBody(bodyName, ctxType, captures, lambda)
+        }
+
+        val closureSizePtr = nextTmp()
+        val closureSize = nextTmp()
+        emit("  $closureSizePtr = getelementptr %azora.closure, %azora.closure* null, i32 1")
+        emit("  $closureSize = ptrtoint %azora.closure* $closureSizePtr to i64")
+        val rawClosure = emitHeapAlloc(closureSize)
+        val closure = nextTmp()
+        emit("  $closure = bitcast i8* $rawClosure to %azora.closure*")
+        val fnField = nextTmp()
+        val signature = closureFunctionType(callableType)
+        val erasedFn = nextTmp()
+        emit("  $fnField = getelementptr %azora.closure, %azora.closure* $closure, i32 0, i32 0")
+        emit("  $erasedFn = bitcast $signature* @$bodyName to i8*")
+        emit("  store i8* $erasedFn, i8** $fnField")
+        val envField = nextTmp()
+        emit("  $envField = getelementptr %azora.closure, %azora.closure* $closure, i32 0, i32 1")
+        emit("  store i8* $environment, i8** $envField")
+        return closure
+    }
+
+    private fun closureFunctionType(type: IrType.Function): String {
+        val params = listOf("i8*") + (type.params + type.receivers).map(::mapType)
+        return "${mapType(type.ret)} (${params.joinToString(", ")})"
+    }
+
+    private fun emitClosureBody(
+        name: String,
+        contextType: String,
+        captures: List<Capture>,
+        lambda: IrExpr.Lambda,
+    ) {
+        val callableType = lambda.type as IrType.Function
+        localVars.clear()
+        allocaSlots.clear()
+        loopStack.clear()
+        taskScopeStack.clear()
+        arenaStack.clear()
+        tmpCounter = 0
+        labelCounter = 0
+        allocaCounter = 0
+        terminated = false
+        currentBlock = "entry"
+        currentReturnType = callableType.ret
+        currentIsMain = false
+
+        val parameters = lambda.params.joinToString(", ") { (paramName, type) ->
+            "${mapType(type)} %arg.$paramName"
+        }
+        val suffix = if (parameters.isEmpty()) "" else ", $parameters"
+        line("define ${mapType(callableType.ret)} @$name(i8* %env.raw$suffix) {")
+        line("entry:")
+
+        if (captures.isNotEmpty()) {
+            emit("  %env = bitcast i8* %env.raw to $contextType*")
+            captures.forEachIndexed { index, capture ->
+                val field = nextTmp()
+                val value = nextTmp()
+                val slot = nextTmp()
+                emit("  $field = getelementptr $contextType, $contextType* %env, i32 0, i32 $index")
+                emit("  $value = load ${capture.llvmType}, ${capture.llvmType}* $field, align 1")
+                emit("  $slot = alloca ${capture.llvmType}")
+                emit("  store ${capture.llvmType} $value, ${capture.llvmType}* $slot")
+                localVars[capture.name] = slot to capture.llvmType
+            }
+        }
+        lambda.params.forEach { (paramName, type) ->
+            val llvmType = mapType(type)
+            val slot = nextTmp()
+            emit("  $slot = alloca $llvmType")
+            emit("  store $llvmType %arg.$paramName, $llvmType* $slot")
+            localVars[paramName] = slot to llvmType
+        }
+        emitEntryAllocas(lambda.body)
+        emitStmts(lambda.body)
+        if (callableType.ret == IrType.Unit) emitTerminator("  ret void")
+        else emitTerminator("  ret ${mapType(callableType.ret)} ${defaultValue(callableType.ret)}")
+        line("}")
+    }
 
     private fun emitAwait(expr: IrExpr.Await): String {
         usesTaskRuntime = true
@@ -3164,7 +3278,35 @@ class LlvmCodegen {
 
     private fun emitCall(expr: IrExpr.Call): String {
         if (expr.receiver != null) {
-            error("indirect value calls (e.g. 'fs[0](x)') are not yet supported on the LLVM target")
+            val functionType = expr.receiver.type as? IrType.Function
+                ?: error("indirect call receiver is not a callable type")
+            val closure = emitExpr(expr.receiver)
+            val fnField = nextTmp()
+            val envField = nextTmp()
+            val erasedFn = nextTmp()
+            val environment = nextTmp()
+            val functionPointer = nextTmp()
+            emit("  $fnField = getelementptr %azora.closure, %azora.closure* $closure, i32 0, i32 0")
+            emit("  $envField = getelementptr %azora.closure, %azora.closure* $closure, i32 0, i32 1")
+            emit("  $erasedFn = load i8*, i8** $fnField")
+            emit("  $environment = load i8*, i8** $envField")
+            val signature = closureFunctionType(functionType)
+            emit("  $functionPointer = bitcast i8* $erasedFn to $signature*")
+            val expected = functionType.params + functionType.receivers
+            val args = expr.args.mapIndexed { index, argument ->
+                val type = expected.getOrNull(index) ?: argument.type
+                val value = coerceNumeric(emitExpr(argument), argument.type, type)
+                "${mapType(type)} $value"
+            }
+            val callArgs = (listOf("i8* $environment") + args).joinToString(", ")
+            return if (expr.type == IrType.Unit) {
+                emit("  call void $functionPointer($callArgs)")
+                "void"
+            } else {
+                val result = nextTmp()
+                emit("  $result = call ${mapType(expr.type)} $functionPointer($callArgs)")
+                result
+            }
         }
         // `x is Variant` lowers to `@__isCheck(slot, "Variant")`; ensure the helper
         // (and strcmp) is emitted. The general call path emits the call itself.
@@ -4049,7 +4191,7 @@ class LlvmCodegen {
         IrType.Any -> "i8*"
         is IrType.Array -> "i8*"
         is IrType.Map, is IrType.Set -> "i8*"
-        is IrType.Function -> "i8*"
+        is IrType.Function -> "%azora.closure*"
         is IrType.Task -> {
             usesTaskRuntime = true
             "%azora.task*"

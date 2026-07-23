@@ -140,11 +140,6 @@ internal object MacroExpander {
                 )
             },
         )
-        is TopLevel.View -> item.copy(
-            params = item.params.map { rewriteParam(it, macros, depth) },
-            body = rewriteStmts(item.body, macros, depth),
-            annotations = item.annotations.map { rewriteAnnotation(it, macros, depth) },
-        )
         is TopLevel.Wrap -> item.copy(
             registrations = item.registrations.map { reg ->
                 reg.copy(args = reg.args.map { rewriteExpr(it, macros, depth) })
@@ -284,7 +279,14 @@ internal object MacroExpander {
         is Stmt.FriendZone -> stmt.copy(body = rewriteStmts(stmt.body, macros, depth))
         is Stmt.InlineBlock -> stmt.copy(body = rewriteStmts(stmt.body, macros, depth))
         is Stmt.DeepInlineBlock -> stmt.copy(body = rewriteStmts(stmt.body, macros, depth))
-        is Stmt.Effect -> stmt.copy(body = rewriteStmts(stmt.body, macros, depth))
+        is Stmt.Effect -> stmt.copy(
+            body = rewriteStmts(stmt.body, macros, depth),
+            dependencies = stmt.dependencies?.map { rewriteExpr(it, macros, depth) },
+        )
+        is Stmt.WithContext -> stmt.copy(
+            values = stmt.values.map { rewriteExpr(it, macros, depth) },
+            body = rewriteStmts(stmt.body, macros, depth),
+        )
         is Stmt.Defer -> stmt.copy(body = rewriteStmts(stmt.body, macros, depth))
         is Stmt.Try -> stmt.copy(
             body = rewriteStmts(stmt.body, macros, depth),
@@ -385,6 +387,7 @@ internal object MacroExpander {
             })
             is Expr.Lambda -> expr.copy(
                 params = expr.params.map { rewriteParam(it, macros, depth) },
+                receivers = expr.receivers.map { rewriteParam(it, macros, depth) },
                 body = rewriteStmts(expr.body, macros, depth),
             )
             is Expr.MetaInvoke -> expr // unreachable (handled above); satisfies exhaustiveness
@@ -518,6 +521,9 @@ internal object MacroExpander {
             params = template.params.map { p ->
                 p.copy(defaultValue = p.defaultValue?.let { substitute(it, bindings, invokeLine) })
             },
+            receivers = template.receivers.map { p ->
+                p.copy(defaultValue = p.defaultValue?.let { substitute(it, bindings, invokeLine) })
+            },
             body = template.body.map { substituteStmt(it, bindings, invokeLine) },
         )
         // A nested MetaInvoke surviving into a template: splice-substitute its
@@ -599,7 +605,14 @@ internal object MacroExpander {
         is Stmt.FriendZone -> stmt.copy(body = stmt.body.map { substituteStmt(it, bindings, invokeLine) })
         is Stmt.InlineBlock -> stmt.copy(body = stmt.body.map { substituteStmt(it, bindings, invokeLine) })
         is Stmt.DeepInlineBlock -> stmt.copy(body = stmt.body.map { substituteStmt(it, bindings, invokeLine) })
-        is Stmt.Effect -> stmt.copy(body = stmt.body.map { substituteStmt(it, bindings, invokeLine) })
+        is Stmt.Effect -> stmt.copy(
+            body = stmt.body.map { substituteStmt(it, bindings, invokeLine) },
+            dependencies = stmt.dependencies?.map { substitute(it, bindings, invokeLine) },
+        )
+        is Stmt.WithContext -> stmt.copy(
+            values = stmt.values.map { substitute(it, bindings, invokeLine) },
+            body = stmt.body.map { substituteStmt(it, bindings, invokeLine) },
+        )
         is Stmt.Defer -> stmt.copy(body = stmt.body.map { substituteStmt(it, bindings, invokeLine) })
         is Stmt.Try -> stmt.copy(
             body = stmt.body.map { substituteStmt(it, bindings, invokeLine) },

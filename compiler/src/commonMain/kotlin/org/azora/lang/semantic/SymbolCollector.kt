@@ -183,14 +183,6 @@ class SymbolCollector {
             }
         }
 
-        // Register view declarations (treated as functions for type-checking).
-        for (item in program.items) {
-            if (item is TopLevel.View) {
-                val params = item.params.map { it.name to resolveType(it.type) }
-                table.defineFunction(FunctionSymbol(item.name, params, IrType.Any))
-            }
-        }
-
         // Register bridge (FFI extern) function signatures
         for (item in program.items) {
             if (item is TopLevel.Bridge) {
@@ -391,7 +383,20 @@ class SymbolCollector {
             if (!contractNames.add(item.name)) {
                 errors.add("line ${item.line}: duplicate spec or decorator '${item.name}'")
             } else {
-                table.defineDecorator(item.name, item.targets, item.bindings)
+                table.defineDecorator(item.name, item.targets, item.bindings, item.isBridge)
+            }
+        }
+        // A compiler bridge decorator opts matching callables into the
+        // corresponding runtime contract. The symbol must exist and be a
+        // bridge; an arbitrary annotation named Reactive has no effect.
+        if (table.lookupSpec("Reactive")?.isBridge == true) {
+            program.functions
+                .filter { function -> function.annotations.any { it.name == "Reactive" } }
+                .forEach { table.markFunctionReactive(it.name) }
+            program.items.filterIsInstance<TopLevel.Impl>().forEach { impl ->
+                impl.methods
+                    .filter { method -> method.annotations.any { it.name == "Reactive" } }
+                    .forEach { method -> table.markFunctionReactive("${impl.typeName}_${method.name}") }
             }
         }
 

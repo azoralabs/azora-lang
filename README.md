@@ -203,11 +203,13 @@ Adding a new target means one new file under `backend/`.
 - Codegens emit backend extern surfaces: JavaScript host comments/import expectations and LLVM `declare`
 
 ### Reactivity
+- `@Reactive` — enables reactive state/effects on a function, task, or infix; reactive callables require reactive callers
 - `mem x: T = init` — remembered reactive declaration
 - `rem x: T = init` — saveable/serializable remembered reactive declaration
 - `ret x: T = init` — retained reactive declaration
-- `effect { body }` — reactive side-effect block (runs once immediately; matches the old interpreter's semantics)
-- `view Name(params) { body }` — a reactive UI component declaration (lowered like a function; callable from code)
+- `effect { body }` — automatically tracks reactive dependencies
+- `effect x { body }` / `effect [x, y] { body }` — explicit dependencies
+- `effect defer { body }` — owner-exit cleanup
 
 ### Backends (targets)
 Every compile produces the active codegen outputs from the same optimized IR:
@@ -282,8 +284,7 @@ backends.
 - **Multi-statement lambda codegen** — best-effort in JavaScript/WASM/LLVM
 
 ### Systems (large effort)
-- **Full reactivity** — `mem`/`rem`/`ret`/`effect` currently run once; automatic dependency tracking and re-runs are future work
-- **UI rendering** — `view` is parsed and callable; no DOM/Compose rendering backend yet
+- **Reactive host persistence** — hosts may still add durable storage adapters for `rem` snapshots
 
 ### Known Limitations
 - Generics use type erasure (field types are `Any` at runtime)

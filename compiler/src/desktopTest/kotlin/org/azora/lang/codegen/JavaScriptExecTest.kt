@@ -17,7 +17,9 @@
 package org.azora.lang.codegen
 
 import kotlin.test.Test
+import kotlin.test.assertContains
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 
 /**
  * End-to-end tests for the arr![org.azora.lang.backend.JavaScriptCodegen] backend.
@@ -102,6 +104,25 @@ class JavaScriptExecTest {
         }
         """.trimIndent(),
     )
+
+    @Test fun packConstructorsCannotShadowJavaScriptGlobals() {
+        val javascript = NodeExec.compile(
+            """
+            import std.io
+
+            pack HostValue { fin value: Int }
+
+            func main() {
+                fin value = HostValue(7)
+                std::println(value.value)
+            }
+            """.trimIndent(),
+        )
+
+        assertContains(javascript, "class __azoraPack_HostValue")
+        assertContains(javascript, "new __azoraPack_HostValue(7)")
+        assertFalse("class Array {" in javascript)
+    }
 
     @Test fun arithmetic() =
         check("14", main("""std::println(2 + 3 * 4)"""))

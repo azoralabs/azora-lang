@@ -47,6 +47,7 @@ import kotlin.collections.iterator
 class TypeResolver(private val table: SymbolTable) {
     private var unsafeContext = false
     private var currentReceiverType: String? = null
+    private var reactiveContext = false
 
     private val errors = mutableListOf<String>()
     private var program: Program? = null
@@ -60,6 +61,33 @@ class TypeResolver(private val table: SymbolTable) {
         for (test in program.tests) {
             table.pushScope()
             for (stmt in test.body) resolveStmt(stmt, IrType.Unit)
+            table.popScope()
+        }
+        // Pack defaults are executable expressions too. Callable fields need
+        // their declared type as the lambda's inference context.
+        for (item in program.items) {
+            if (item !is TopLevel.Pack) continue
+            val struct = table.lookupStruct(item.name) ?: continue
+            table.pushScope()
+            for (i in item.fields.indices) {
+                val initializer = item.fields[i].default ?: continue
+                val declared = struct.fields[i].type
+                val savedParams = expectedLambdaParamTypes
+                val savedReceivers = expectedLambdaReceiverTypes
+                if (initializer is Expr.Lambda && declared is IrType.Function) {
+                    expectedLambdaParamTypes = declared.params
+                    expectedLambdaReceiverTypes = declared.receivers
+                }
+                val actual = resolveExpr(initializer)
+                expectedLambdaParamTypes = savedParams
+                expectedLambdaReceiverTypes = savedReceivers
+                if (actual != null && !isCompatible(declared, actual)) {
+                    errors.add(
+                        "line ${item.line}: default for '${item.name}.${item.fields[i].name}' " +
+                            "expects $declared, got $actual",
+                    )
+                }
+            }
             table.popScope()
         }
         // Resolve impl method bodies (self + declared params in scope)
@@ -76,9 +104,16 @@ class TypeResolver(private val table: SymbolTable) {
                         table.defineVariable(VariableSymbol(name, type, mutable = mutable))
                     }
                     val savedReceiver = currentReceiverType
+                    val savedReactive = reactiveContext
                     currentReceiverType = item.typeName
+                    reactiveContext = hasReactiveContract(method.annotations)
+                    contextualValues.addLast(
+                        listOf(Expr.Identifier("self", method.line, method.column) to IrType.Named(item.typeName)),
+                    )
                     resolveBody(method.body, func.returnType)
+                    contextualValues.removeLast()
                     currentReceiverType = savedReceiver
+                    reactiveContext = savedReactive
                     table.popScope()
                 }
             }
@@ -106,13 +141,16 @@ class TypeResolver(private val table: SymbolTable) {
         val savedUnsafe = unsafeContext
         val savedReceiver = currentReceiverType
         val savedFuncTypeParams = currentFuncTypeParams
+        val savedReactive = reactiveContext
         unsafeContext = func.isUnsafe
         currentReceiverType = null
         currentFuncTypeParams = func.typeParams.toSet()
+        reactiveContext = hasReactiveContract(func.annotations)
         resolveBody(func.body, symbol.returnType)
         currentReceiverType = savedReceiver
         currentFuncTypeParams = savedFuncTypeParams
         unsafeContext = savedUnsafe
+        reactiveContext = savedReactive
         declaredFailSets = savedFailSets
 
         table.popScope()
@@ -123,6 +161,20 @@ class TypeResolver(private val table: SymbolTable) {
 
     /** Type parameters of the function currently being resolved (erased to `Any` in types). */
     private var currentFuncTypeParams: Set<String> = emptySet()
+
+    private fun hasReactiveContract(annotations: List<org.azora.lang.frontend.Annotation>): Boolean =
+        annotations.any { annotation ->
+            annotation.name == "Reactive" && table.lookupSpec(annotation.name)?.isBridge == true
+        }
+
+    private fun requireReactiveCaller(function: FunctionSymbol, line: Int): Boolean {
+        if (!function.isReactive || reactiveContext) return true
+        errors.add(
+            "line $line: reactive function '${function.name.substringAfterLast("__")}' " +
+                "can only be called from an @Reactive function, task, or infix",
+        )
+        return false
+    }
 
     private fun canAccessMember(ownerType: String, visibility: Visibility): Boolean = when (visibility) {
         Visibility.EXPOSE -> true
@@ -149,6 +201,8 @@ class TypeResolver(private val table: SymbolTable) {
      * `Expr.Lambda` resolution.
      */
     private var expectedLambdaParamTypes: List<IrType>? = null
+    private var expectedLambdaReceiverTypes: List<IrType>? = null
+    private val contextualValues = ArrayDeque<List<Pair<Expr, IrType>>>()
 
     /**
      * When non-null, return-value types inside the body being resolved are appended here
@@ -156,6 +210,54 @@ class TypeResolver(private val table: SymbolTable) {
      * When null, `return` statements are validated against the enclosing function's declared type.
      */
     private var lambdaReturnTypes: MutableList<IrType>? = null
+
+    private fun inferredContexts(expected: List<IrType>): List<Pair<Expr, IrType>>? {
+        if (expected.isEmpty()) return emptyList()
+        val available = contextualValues.asReversed().flatten()
+        val used = mutableSetOf<Int>()
+        return expected.map { wanted ->
+            val index = available.indices.firstOrNull {
+                it !in used && isCompatible(wanted, available[it].second)
+            } ?: return null
+            used.add(index)
+            available[index]
+        }
+    }
+
+    private fun resolveCallableArguments(
+        label: String,
+        function: IrType.Function,
+        args: List<Expr>,
+        line: Int,
+    ): IrType? {
+        if (function.variadic) {
+            args.forEach { resolveExpr(it) ?: return null }
+            return function.ret
+        }
+        if (args.size < function.params.size || args.size > function.params.size + function.receivers.size) {
+            errors.add(
+                "line $line: '$label' expects ${function.params.size} parameter(s) and " +
+                    "${function.receivers.size} contextual receiver(s), got ${args.size} argument(s)",
+            )
+            return null
+        }
+        val expectedExplicit = function.params + function.receivers.take(args.size - function.params.size)
+        for (i in args.indices) {
+            val actual = resolveExpr(args[i]) ?: return null
+            if (!isCompatible(expectedExplicit[i], actual)) {
+                errors.add("line $line: arg ${i + 1} of '$label': expected ${expectedExplicit[i]}, got $actual")
+            }
+        }
+        val missing = function.receivers.drop(args.size - function.params.size)
+        if (missing.isNotEmpty() && inferredContexts(missing) == null) {
+            errors.add(
+                "line $line: '$label' requires contextual receiver(s) " +
+                    missing.joinToString(", ") + "; provide them explicitly or with 'with'",
+            )
+            return null
+        }
+        return function.ret
+    }
 
     /** If [expr] is `ErrSet.Variant`, returns the error-set name; otherwise null. */
     private fun failSetOf(expr: Expr): String? {
@@ -198,8 +300,29 @@ class TypeResolver(private val table: SymbolTable) {
     private fun resolveStmt(stmt: Stmt, returnType: IrType) {
         when (stmt) {
             is Stmt.VarDecl -> resolveBinding(stmt.name, stmt.type, stmt.initializer, stmt.line, mutable = true)
-            is Stmt.RemDecl -> resolveBinding(stmt.name, stmt.type, stmt.initializer, stmt.line, mutable = true)
-            is Stmt.Effect -> { resolveBody(stmt.body, returnType) }
+            is Stmt.RemDecl -> {
+                if (!reactiveContext) {
+                    errors.add("line ${stmt.line}: '${stmt.kind.name.lowercase()}' requires an @Reactive function, task, or infix")
+                }
+                resolveBinding(stmt.name, stmt.type, stmt.initializer, stmt.line, mutable = true)
+            }
+            is Stmt.Effect -> {
+                if (!reactiveContext) {
+                    errors.add("line ${stmt.line}: 'effect' requires an @Reactive function, task, or infix")
+                }
+                stmt.dependencies?.forEach(::resolveExpr)
+                resolveBody(stmt.body, returnType)
+            }
+            is Stmt.WithContext -> {
+                val values = stmt.values.mapNotNull { value ->
+                    resolveExpr(value)?.let { value to it }
+                }
+                contextualValues.addLast(values)
+                table.pushScope()
+                resolveBody(stmt.body, returnType)
+                table.popScope()
+                contextualValues.removeLast()
+            }
             is Stmt.FinDecl -> resolveBinding(stmt.name, stmt.type, stmt.initializer, stmt.line, mutable = false)
             is Stmt.Assignment -> {
                 val varSym = table.lookupVariable(stmt.name)
@@ -606,8 +729,10 @@ class TypeResolver(private val table: SymbolTable) {
                 // Value call `receiver(args)` — the receiver must be a function value.
                 expr.receiver?.let { recv ->
                     val recvType = resolveExpr(recv)
+                    if (recvType is IrType.Function) {
+                        return resolveCallableArguments("callable value", recvType, expr.args, expr.line)
+                    }
                     for (arg in expr.args) resolveExpr(arg)
-                    if (recvType is IrType.Function) return recvType.ret
                     if (recvType != null && recvType != IrType.Any) {
                         errors.add("line ${expr.line}: value of type '$recvType' is not callable")
                     }
@@ -675,23 +800,7 @@ class TypeResolver(private val table: SymbolTable) {
                     // Maybe a lambda stored in a variable.
                     val v = table.lookupVariable(expr.callee)
                     if (v != null && v.type is IrType.Function) {
-                        val fn = v.type
-                        // A variadic lambda (`<T…>{ … }`) packs all args into its single `it` array.
-                        if (fn.variadic) {
-                            for (arg in expr.args) { resolveExpr(arg) ?: return null }
-                            return fn.ret
-                        }
-                        if (expr.args.size != fn.params.size) {
-                            errors.add("line ${expr.line}: '${expr.callee}' expects ${fn.params.size} args, got ${expr.args.size}")
-                            return null
-                        }
-                        for (i in expr.args.indices) {
-                            val at = resolveExpr(expr.args[i]) ?: return null
-                            if (!isCompatible(fn.params[i], at)) {
-                                errors.add("line ${expr.line}: arg ${i + 1} of '${expr.callee}': expected ${fn.params[i]}, got $at")
-                            }
-                        }
-                        return fn.ret
+                        return resolveCallableArguments(expr.callee, v.type, expr.args, expr.line)
                     }
                     // A function value whose concrete type was erased to `Any` (e.g. a
                     // loop variable over `Array<(Int) -> Int>`, whose element type
@@ -707,6 +816,7 @@ class TypeResolver(private val table: SymbolTable) {
                     errors.add("line ${expr.line}: call to unsafe '${expr.callee}' requires an unsafe block or unsafe function")
                     return null
                 }
+                if (!requireReactiveCaller(func, expr.line)) return null
                 // Handle named arguments — reorder to param order
                 val effectiveArgs = if (expr.args.isNotEmpty() && expr.args[0] is Expr.NamedArg && func.paramNames.isNotEmpty()) {
                     val namedMap = expr.args.associate { (it as Expr.NamedArg).name to (it as Expr.NamedArg).value }
@@ -742,15 +852,36 @@ class TypeResolver(private val table: SymbolTable) {
                     // from the corresponding function-parameter type before resolving it.
                     val arg = effectiveArgs[i]
                     val prevIt = expectedLambdaParamTypes
-                    if (arg is Expr.Lambda && i < func.params.size) {
-                        val ptype = func.params[i].second
-                        if (ptype is IrType.Function && ptype.params.isNotEmpty()) expectedLambdaParamTypes = ptype.params
+                    val prevReceivers = expectedLambdaReceiverTypes
+                    if (arg is Expr.Lambda && (i < func.params.size || func.isVariadic)) {
+                        val declaredType = func.params.getOrNull(i)?.second ?: func.params.last().second
+                        val ptype = if (func.isVariadic && i >= func.params.lastIndex) {
+                            (declaredType as? IrType.Array)?.element ?: declaredType
+                        } else {
+                            declaredType
+                        }
+                        if (ptype is IrType.Function) {
+                            expectedLambdaParamTypes = ptype.params
+                            expectedLambdaReceiverTypes = ptype.receivers
+                        }
                     }
-                    val argType = resolveExpr(arg) ?: run { expectedLambdaParamTypes = prevIt; return null }
+                    val argType = resolveExpr(arg) ?: run {
+                        expectedLambdaParamTypes = prevIt
+                        expectedLambdaReceiverTypes = prevReceivers
+                        return null
+                    }
                     expectedLambdaParamTypes = prevIt
+                    expectedLambdaReceiverTypes = prevReceivers
                     argTypes.add(argType)
                     if (!isGeneric) {
-                        val paramType = func.params[i].second
+                        val declaredType = func.params.getOrNull(i)?.second
+                            ?: func.params.lastOrNull()?.second
+                            ?: IrType.Any
+                        val paramType = if (func.isVariadic && i >= func.params.lastIndex) {
+                            (declaredType as? IrType.Array)?.element ?: declaredType
+                        } else {
+                            declaredType
+                        }
                         if (!isCompatible(paramType, argType)) {
                             errors.add("line ${expr.line}: arg ${i + 1} of '${expr.callee}': expected $paramType, got $argType")
                         }
@@ -1023,6 +1154,7 @@ class TypeResolver(private val table: SymbolTable) {
                     val mangled = table.lookupMethod(targetType.name, expr.name)
                     if (mangled != null) {
                         val func = table.lookupFunction(mangled)!!
+                        if (!requireReactiveCaller(func, expr.line)) return null
                         if (func.memberCallStyle == MemberCallStyle.PROPERTY) {
                             errors.add("line ${expr.line}: property '${expr.name}' must be accessed without parentheses")
                             return null
@@ -1044,6 +1176,16 @@ class TypeResolver(private val table: SymbolTable) {
                             }
                         }
                         return func.returnType
+                    }
+                    val callableField = table.lookupStruct(targetType.name)?.field(expr.name)
+                        ?.type as? IrType.Function
+                    if (callableField != null) {
+                        return resolveCallableArguments(
+                            "${sourcePackTypeName(targetType.name)}.${expr.name}",
+                            callableField,
+                            expr.args,
+                            expr.line,
+                        )
                     }
                     // Spec-typed value: dispatch to a method declared by the spec
                     // (e.g. `list.get(0)` where `list: List<T>`). The concrete impl
@@ -1071,6 +1213,7 @@ class TypeResolver(private val table: SymbolTable) {
                 // applies to any receiver. Checked after real methods so those win.
                 val infixFn = table.lookupUniversalInfix(expr.name)?.let { table.lookupFunction(it) }
                 if (infixFn != null) {
+                    if (!requireReactiveCaller(infixFn, expr.line)) return null
                     val declared = infixFn.params.size - 1 // exclude the receiver `self`
                     if (expr.args.size != declared) {
                         errors.add("line ${expr.line}: infix '${expr.name}' expects $declared operand(s), got ${expr.args.size}")
@@ -1238,16 +1381,26 @@ class TypeResolver(private val table: SymbolTable) {
             is Expr.Lambda -> {
                 // Infer the implicit `it` parameter's type from context when available.
                 val expectedParams = expectedLambdaParamTypes
+                val expectedReceivers = expectedLambdaReceiverTypes
                 val paramTypes = expr.params.mapIndexed { i, p ->
                     val expected = expectedParams?.getOrNull(i)
                     if (p.type == TypeRef.Named("Any") && expected != null) expected
                     else resolveDeclaredType(p.type)
                 }
+                val receiverTypes = expr.receivers.mapIndexed { i, p ->
+                    val expected = expectedReceivers?.getOrNull(i)
+                    if (p.type == TypeRef.Named("Any") && expected != null) expected
+                    else resolveDeclaredType(p.type)
+                }
                 // Only the outer call seeds these; nested lambdas resolve on their own.
                 expectedLambdaParamTypes = null
+                expectedLambdaReceiverTypes = null
                 table.pushScope()
                 for (i in expr.params.indices) {
                     table.defineVariable(VariableSymbol(expr.params[i].name, paramTypes[i]))
+                }
+                for (i in expr.receivers.indices) {
+                    table.defineVariable(VariableSymbol(expr.receivers[i].name, receiverTypes[i], mutable = false))
                 }
                 // Resolve the body with locals in scope, capturing return-value types to infer retType.
                 val captured = mutableListOf<IrType>()
@@ -1257,7 +1410,15 @@ class TypeResolver(private val table: SymbolTable) {
                 lambdaReturnTypes = savedReturns
                 table.popScope()
                 val retType = captured.firstOrNull() ?: IrType.Unit
-                IrType.Function(paramTypes, retType, variadic = expr.variadic)
+                val type = IrType.Function(
+                    paramTypes,
+                    retType,
+                    variadic = expr.variadic,
+                    receivers = receiverTypes,
+                    kind = expr.kind,
+                )
+                table.defineLambdaType(expr.line, expr.column, type)
+                type
             }
             // `a[start:stop:step]` → the target's `slice` method return type (or Any).
             is Expr.Slice -> {
@@ -1547,7 +1708,12 @@ class TypeResolver(private val table: SymbolTable) {
         is IrType.Array -> TypeRef.Array(typeRefOf(type.element))
         is IrType.Map -> TypeRef.Map(typeRefOf(type.key), typeRefOf(type.value))
         is IrType.Set -> TypeRef.Set(typeRefOf(type.element))
-        is IrType.Function -> TypeRef.Function(type.params.map(::typeRefOf), typeRefOf(type.ret))
+        is IrType.Function -> TypeRef.Function(
+            type.params.map(::typeRefOf),
+            typeRefOf(type.ret),
+            type.receivers.map(::typeRefOf),
+            type.kind,
+        )
         is IrType.Task -> TypeRef.Named("Task", listOf(typeRefOf(type.result)))
         is IrType.Tuple -> TypeRef.Tuple(type.elements.map(::typeRefOf))
         is IrType.Variant -> TypeRef.Named("Var", type.elements.map(::typeRefOf))
@@ -1666,11 +1832,23 @@ class TypeResolver(private val table: SymbolTable) {
             errors.add("line $line: '$name' is already declared in this scope")
             return
         }
+        val declaredType = if (typeAnn is TypeAnnotation.Explicit) {
+            tryResolveType(typeAnn.ref, line) ?: return
+        } else {
+            null
+        }
+        val savedParams = expectedLambdaParamTypes
+        val savedReceivers = expectedLambdaReceiverTypes
+        if (initializer is Expr.Lambda && declaredType is IrType.Function) {
+            expectedLambdaParamTypes = declaredType.params
+            expectedLambdaReceiverTypes = declaredType.receivers
+        }
         val initType = resolveExpr(initializer) ?: return
+        expectedLambdaParamTypes = savedParams
+        expectedLambdaReceiverTypes = savedReceivers
         when (typeAnn) {
             is TypeAnnotation.Explicit -> {
-                val declaredType = tryResolveType(typeAnn.ref, line) ?: return
-                if (!isCompatible(declaredType, initType)) {
+                if (!isCompatible(declaredType!!, initType)) {
                     errors.add("line $line: type mismatch in '$name': declared $declaredType but initializer is $initType")
                 }
                 table.defineVariable(VariableSymbol(name, declaredType, mutable))

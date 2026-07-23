@@ -263,7 +263,17 @@ private class MonoContext(
         is TypeRef.Tuple -> type.elements.joinToString(", ", "(", ")") { renderType(it) }
         is TypeRef.Nullable -> "${renderType(type.inner)}?"
         is TypeRef.Pointer -> "${renderType(type.inner)}*"
-        is TypeRef.Function -> "${type.params.joinToString(", ", "(", ")") { renderType(it) }} -> ${renderType(type.ret)}"
+        is TypeRef.Function -> buildString {
+            append(type.kind.surfaceName)
+            if (type.receivers.isNotEmpty()) {
+                append(type.receivers.joinToString(", ", "[", "]") { renderType(it) })
+            }
+            if (type.params.isNotEmpty()) {
+                append(type.params.joinToString(", ", "(", ")") { renderType(it) })
+            }
+            append(" -> ")
+            append(renderType(type.ret))
+        }
         is TypeRef.Failable -> if (type.errSets.size == 1) {
             "${renderType(type.ok)}!${type.errSets.single()}"
         } else {
@@ -288,7 +298,11 @@ private class MonoContext(
         is TypeRef.Array -> type.copy(element = substituteLoopVar(type.element, loopVar, replacement))
         is TypeRef.Map -> type.copy(key = substituteLoopVar(type.key, loopVar, replacement), value = substituteLoopVar(type.value, loopVar, replacement))
         is TypeRef.Set -> type.copy(element = substituteLoopVar(type.element, loopVar, replacement))
-        is TypeRef.Function -> type.copy(params = type.params.map { substituteLoopVar(it, loopVar, replacement) }, ret = substituteLoopVar(type.ret, loopVar, replacement))
+        is TypeRef.Function -> type.copy(
+            params = type.params.map { substituteLoopVar(it, loopVar, replacement) },
+            ret = substituteLoopVar(type.ret, loopVar, replacement),
+            receivers = type.receivers.map { substituteLoopVar(it, loopVar, replacement) },
+        )
         is TypeRef.Tuple -> type.copy(elements = type.elements.map { substituteLoopVar(it, loopVar, replacement) })
         is TypeRef.Nullable -> type.copy(inner = substituteLoopVar(type.inner, loopVar, replacement))
         is TypeRef.Failable -> type.copy(ok = substituteLoopVar(type.ok, loopVar, replacement))
@@ -350,7 +364,11 @@ private class MonoContext(
         is TypeRef.Array -> type.copy(element = substituteSelf(type.element, selfType))
         is TypeRef.Map -> type.copy(key = substituteSelf(type.key, selfType), value = substituteSelf(type.value, selfType))
         is TypeRef.Set -> type.copy(element = substituteSelf(type.element, selfType))
-        is TypeRef.Function -> type.copy(params = type.params.map { substituteSelf(it, selfType) }, ret = substituteSelf(type.ret, selfType))
+        is TypeRef.Function -> type.copy(
+            params = type.params.map { substituteSelf(it, selfType) },
+            ret = substituteSelf(type.ret, selfType),
+            receivers = type.receivers.map { substituteSelf(it, selfType) },
+        )
         is TypeRef.Tuple -> type.copy(elements = type.elements.map { substituteSelf(it, selfType) })
         is TypeRef.Nullable -> type.copy(inner = substituteSelf(type.inner, selfType))
         is TypeRef.Failable -> type.copy(ok = substituteSelf(type.ok, selfType))
@@ -429,7 +447,11 @@ private class MonoContext(
             is Stmt.FriendZone -> stmt.copy(body = nested(stmt.body))
             is Stmt.InlineBlock -> stmt.copy(body = nested(stmt.body))
             is Stmt.DeepInlineBlock -> stmt.copy(body = nested(stmt.body))
-            is Stmt.Effect -> stmt.copy(body = nested(stmt.body))
+            is Stmt.Effect -> stmt.copy(
+                dependencies = stmt.dependencies?.map(::expr),
+                body = nested(stmt.body),
+            )
+            is Stmt.WithContext -> stmt.copy(values = stmt.values.map(::expr), body = nested(stmt.body))
             is Stmt.NoInline -> stmt.copy(stmt = expandReflectedStmt(stmt.stmt, fields, binding).single())
             is Stmt.Break, is Stmt.Continue -> stmt
         }
@@ -542,7 +564,11 @@ private class MonoContext(
         is TypeRef.Array -> ref.copy(element = rewriteType(ref.element))
         is TypeRef.Map -> ref.copy(key = rewriteType(ref.key), value = rewriteType(ref.value))
         is TypeRef.Set -> ref.copy(element = rewriteType(ref.element))
-        is TypeRef.Function -> ref.copy(params = ref.params.map(::rewriteType), ret = rewriteType(ref.ret))
+        is TypeRef.Function -> ref.copy(
+            params = ref.params.map(::rewriteType),
+            ret = rewriteType(ref.ret),
+            receivers = ref.receivers.map(::rewriteType),
+        )
         is TypeRef.Tuple -> ref.copy(elements = ref.elements.map(::rewriteType))
         is TypeRef.Nullable -> ref.copy(inner = rewriteType(ref.inner))
         is TypeRef.Failable -> ref.copy(ok = rewriteType(ref.ok))
@@ -570,7 +596,11 @@ private class MonoContext(
         is Expr.CatchExpr -> e.copy(expr = rewriteExpr(e.expr), fallback = rewriteExpr(e.fallback))
         is Expr.TryPropagate -> e.copy(expr = rewriteExpr(e.expr))
         is Expr.IfExpr -> e.copy(condition = rewriteExpr(e.condition), thenExpr = rewriteExpr(e.thenExpr), elseExpr = rewriteExpr(e.elseExpr))
-        is Expr.Lambda -> e.copy(params = e.params.map { it.copy(type = rewriteType(it.type)) }, body = e.body.map(::rewriteStmt))
+        is Expr.Lambda -> e.copy(
+            params = e.params.map { it.copy(type = rewriteType(it.type)) },
+            receivers = e.receivers.map { it.copy(type = rewriteType(it.type)) },
+            body = e.body.map(::rewriteStmt),
+        )
         is Expr.NamedArg -> e.copy(value = rewriteExpr(e.value))
         is Expr.NullCoalesce -> e.copy(left = rewriteExpr(e.left), right = rewriteExpr(e.right))
         is Expr.SafeMember -> e.copy(target = rewriteExpr(e.target))
@@ -661,6 +691,7 @@ private class MonoContext(
         is TypeRef.Function -> type.copy(
             params = type.params.map { substituteTypeParams(it, substitutions) },
             ret = substituteTypeParams(type.ret, substitutions),
+            receivers = type.receivers.map { substituteTypeParams(it, substitutions) },
         )
         is TypeRef.Tuple -> type.copy(elements = type.elements.map { substituteTypeParams(it, substitutions) })
         is TypeRef.Nullable -> type.copy(inner = substituteTypeParams(type.inner, substitutions))
@@ -719,7 +750,11 @@ private class MonoContext(
         is Stmt.FriendZone -> s.copy(body = s.body.map(::rewriteStmt))
         is Stmt.InlineBlock -> s.copy(body = s.body.map(::rewriteStmt))
         is Stmt.DeepInlineBlock -> s.copy(body = s.body.map(::rewriteStmt))
-        is Stmt.Effect -> s.copy(body = s.body.map(::rewriteStmt))
+        is Stmt.Effect -> s.copy(
+            dependencies = s.dependencies?.map(::rewriteExpr),
+            body = s.body.map(::rewriteStmt),
+        )
+        is Stmt.WithContext -> s.copy(values = s.values.map(::rewriteExpr), body = s.body.map(::rewriteStmt))
         is Stmt.NoInline -> s.copy(stmt = rewriteStmt(s.stmt))
         is Stmt.Break, is Stmt.Continue -> s
     }
@@ -736,7 +771,10 @@ private class MonoContext(
         is TypeRef.Array -> "Array_" + mangleType(type.element)
         is TypeRef.Map -> "Map_" + mangleType(type.key) + "_" + mangleType(type.value)
         is TypeRef.Set -> "Set_" + mangleType(type.element)
-        is TypeRef.Function -> "Fn_" + type.params.joinToString("_") { mangleType(it) } + "_" + mangleType(type.ret)
+        is TypeRef.Function -> type.kind.surfaceName + "_P_" +
+            type.params.joinToString("_") { mangleType(it) } + "_R_" +
+            type.receivers.joinToString("_") { mangleType(it) } + "_" +
+            mangleType(type.ret)
         is TypeRef.Tuple -> "Tup_" + type.elements.joinToString("_") { mangleType(it) }
         is TypeRef.Nullable -> mangleType(type.inner) + "_N"
         is TypeRef.Failable -> mangleType(type.ok) + "_F"

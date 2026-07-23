@@ -115,6 +115,7 @@ object DecoratorMetadata {
         fun addFunction(owner: String?, function: FuncDecl) {
             val identity = if (owner == null) function.name else "$owner.${function.name}"
             val target = when {
+                function.isUniversalInfix -> DecoTarget.Infx
                 function.memberCallStyle == MemberCallStyle.PROPERTY -> DecoTarget.Prop
                 function.name == "ctor" -> DecoTarget.Ctor
                 function.name == "dtor" -> DecoTarget.Dtor
@@ -157,7 +158,6 @@ object DecoratorMetadata {
                 is TopLevel.Slot -> sites.add(Site(item.name, DecoTarget.Slot, item.annotations))
                 is TopLevel.TypeAlias -> sites.add(Site(item.name, DecoTarget.TypeAlias, item.annotations))
                 is TopLevel.Test -> sites.add(Site(item.name, DecoTarget.Test, item.annotations))
-                is TopLevel.View -> sites.add(Site(item.name, DecoTarget.View, item.annotations))
                 is TopLevel.Bridge -> sites.add(Site(item.target, DecoTarget.Bridge, item.annotations))
                 is TopLevel.VarDecl -> sites.add(Site(item.name, DecoTarget.Var, item.annotations))
                 is TopLevel.FinDecl -> sites.add(Site(item.name, DecoTarget.Fin, item.annotations))

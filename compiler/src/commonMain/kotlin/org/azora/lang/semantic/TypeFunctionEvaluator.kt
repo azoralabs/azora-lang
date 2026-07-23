@@ -69,7 +69,11 @@ internal object TypeFunctionEvaluator {
             is TypeRef.Array -> type.copy(element = resolve(type.element))
             is TypeRef.Map -> type.copy(key = resolve(type.key), value = resolve(type.value))
             is TypeRef.Set -> type.copy(element = resolve(type.element))
-            is TypeRef.Function -> type.copy(params = type.params.map(::resolve), ret = resolve(type.ret))
+            is TypeRef.Function -> type.copy(
+                params = type.params.map(::resolve),
+                ret = resolve(type.ret),
+                receivers = type.receivers.map(::resolve),
+            )
             is TypeRef.Tuple -> type.copy(elements = type.elements.map(::resolve))
             is TypeRef.Nullable -> type.copy(inner = resolve(type.inner))
             is TypeRef.Failable -> type.copy(ok = resolve(type.ok))
@@ -96,7 +100,10 @@ internal object TypeFunctionEvaluator {
             is TypeRef.Array -> containsUnresolvedParam(type.element)
             is TypeRef.Map -> containsUnresolvedParam(type.key) || containsUnresolvedParam(type.value)
             is TypeRef.Set -> containsUnresolvedParam(type.element)
-            is TypeRef.Function -> type.params.any(::containsUnresolvedParam) || containsUnresolvedParam(type.ret)
+            is TypeRef.Function ->
+                type.params.any(::containsUnresolvedParam) ||
+                    type.receivers.any(::containsUnresolvedParam) ||
+                    containsUnresolvedParam(type.ret)
             is TypeRef.Tuple -> type.elements.any(::containsUnresolvedParam)
             is TypeRef.Nullable -> containsUnresolvedParam(type.inner)
             is TypeRef.Failable -> containsUnresolvedParam(type.ok)

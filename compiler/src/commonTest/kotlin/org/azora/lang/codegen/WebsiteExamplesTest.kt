@@ -578,7 +578,7 @@ func main() { std::println("Hello, Azora!") }"""))
 
     @Test fun ch33_bridge_math() = assertEquals("4.0\n0.0", run("""
         import std.io
-        bridge C {
+        bridge .C {
             func sqrt(x: Real): Real
             func sin(x: Real): Real
         }
@@ -590,7 +590,7 @@ func main() { std::println("Hello, Azora!") }"""))
 
     @Test fun ch33_bridge_pow() = assertEquals("1024.0", run("""
         import std.io
-        bridge C {
+        bridge .C {
             func pow(val: Real, exp: Real): Real
         }
         func main() {
@@ -600,6 +600,7 @@ func main() { std::println("Hello, Azora!") }"""))
 
     @Test fun ch34_rem() = assertEquals("0\n42", run("""
         import std.io
+        @Reactive
         func main() {
             rem count: Int = 0
             std::println(count)
@@ -610,6 +611,7 @@ func main() { std::println("Hello, Azora!") }"""))
 
     @Test fun ch34_effect() = assertEquals("hello\ndone", run("""
         import std.io
+        @Reactive
         func main() {
             rem msg: String = "hello"
             effect {
@@ -619,13 +621,15 @@ func main() { std::println("Hello, Azora!") }"""))
         }
     """.trimIndent()))
 
-    @Test fun ch34_view() = assertEquals("Hello, World!", run("""
+    @Test fun ch34_reactiveFunction() = assertEquals("Hello, World!", run("""
         import std.io
-        view Greet(name: String) {
+        @Reactive
+        func greet(name: String) {
             std::println("Hello, " + name + "!")
         }
+        @Reactive
         func main() {
-            Greet("World")
+            greet("World")
         }
     """.trimIndent()))
 

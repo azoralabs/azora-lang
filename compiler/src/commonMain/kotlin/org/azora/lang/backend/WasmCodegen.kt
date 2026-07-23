@@ -46,11 +46,20 @@ import org.azora.lang.ir.IrUnaryOp
  */
 class WasmCodegen {
 
+    private data class ClosureCapture(val name: String, val type: IrType, val offset: Int)
+    private data class ClosureFunction(
+        val index: Int,
+        val lambda: IrExpr.Lambda,
+        val captures: List<ClosureCapture>,
+        val typeName: String,
+    )
+
     private val out = StringBuilder()
     private var indent = 0
 
     // Per-function state.
     private val locals = LinkedHashMap<String, String>() // name -> wasm type
+    private val localIrTypes = LinkedHashMap<String, IrType>()
     private var params = emptySet<String>()
     private var tempCounter = 0
     private var blockCounter = 0
@@ -59,6 +68,7 @@ class WasmCodegen {
 
     // Module state.
     private val structs = HashMap<String, List<IrField>>()
+    private val globalTypes = LinkedHashMap<String, IrType>()
     private val stringConsts = LinkedHashMap<String, Int>() // literal -> offset
     private var constCursor = STRING_BASE
 
@@ -71,6 +81,8 @@ class WasmCodegen {
     private val neededIntrinsics = mutableSetOf<String>()
     private val externs = LinkedHashMap<String, IrTopLevel.Extern>()
     private val neededExterns = LinkedHashSet<String>()
+    private val closureTypes = LinkedHashMap<IrType.Function, String>()
+    private val closureFunctions = mutableListOf<ClosureFunction>()
     private val stringIntrinsics = setOf(
         "stringLength", "charAt", "ord", "chr", "isDigit", "isAlpha", "substring",
         "startsWith", "endsWith", "contains", "indexOf", "toUpper", "toLower", "trim",
@@ -89,12 +101,21 @@ class WasmCodegen {
      */
     fun generate(program: IrProgram): String {
         out.clear(); indent = 0
-        structs.clear(); stringConsts.clear(); constCursor = STRING_BASE
+        structs.clear(); globalTypes.clear(); stringConsts.clear(); constCursor = STRING_BASE
         usesAlloc = false; usesConcat = false; usesStrEq = false; usesRepeat = false; usesIntToStr = false; usesIsCheck = false
         neededIntrinsics.clear(); externs.clear(); neededExterns.clear()
+        closureTypes.clear(); closureFunctions.clear()
 
         for (item in program.items) if (item is IrTopLevel.Struct) structs[item.name] = item.fields
         for (item in program.items) if (item is IrTopLevel.Extern) externs[item.name] = item
+        for (stmt in program.globals) {
+            when (stmt) {
+                is IrStmt.VarDecl -> globalTypes[stmt.name] = stmt.type
+                is IrStmt.FinDecl -> globalTypes[stmt.name] = stmt.type
+                is IrStmt.LetDecl -> globalTypes[stmt.name] = stmt.type
+                else -> Unit
+            }
+        }
 
         val funcs = program.items.filterIsInstance<IrTopLevel.Func>().map { it.function }
             .filter { it.name !in org.azora.lang.semantic.CtfeEvaluator.RUNTIME_INTRINSICS }
@@ -102,6 +123,11 @@ class WasmCodegen {
         // Emit function bodies first (interns strings, sets runtime flags).
         val funcText = StringBuilder()
         for (f in funcs) funcText.append(emitFunction(f))
+        val globalInitText = emitGlobalInitializer(program.globals)
+        var closureIndex = 0
+        while (closureIndex < closureFunctions.size) {
+            funcText.append(emitClosureFunction(closureFunctions[closureIndex++]))
+        }
 
         val sb = StringBuilder()
         sb.appendLine("(module")
@@ -123,8 +149,25 @@ class WasmCodegen {
             val result = if (extern.returnType == IrType.Unit) "" else " (result ${wasmType(extern.returnType)})"
             sb.appendLine("  (import \"env\" \"$name\" (func \$$name$params$result))")
         }
+        for ((callable, name) in closureTypes) {
+            val params = (callable.params + callable.receivers + IrType.Any)
+                .joinToString("") { " (param ${wasmType(it)})" }
+            val result = if (callable.ret == IrType.Unit) "" else " (result ${wasmType(callable.ret)})"
+            sb.appendLine("  (type \$$name (func$params$result))")
+        }
+        if (closureFunctions.isNotEmpty()) {
+            sb.appendLine("  (table ${closureFunctions.size} funcref)")
+            sb.appendLine(
+                closureFunctions.joinToString(" ", "  (elem (i32.const 0) ", ")\n") {
+                    "\$__closure_${it.index}"
+                },
+            )
+        }
         sb.appendLine("  (memory (export \"memory\") 16)")
         sb.appendLine("  (global \$__heap (mut i32) (i32.const ${align4(constCursor)}))")
+        for ((name, type) in globalTypes) {
+            sb.appendLine("  (global \$$name (mut ${wasmType(type)}) (${wasmType(type)}.const 0))")
+        }
         if (usesAlloc) sb.append(RT_ALLOC)
         if (usesConcat) sb.append(RT_CONCAT)
         if (usesIsCheck) usesStrEq = true
@@ -133,7 +176,9 @@ class WasmCodegen {
         if (usesIntToStr) sb.append(RT_INT_TO_STR)
         if (usesIsCheck) sb.append(RT_IS_CHECK)
         sb.append(wasmStringIntrinsics())
+        sb.append(globalInitText)
         sb.append(funcText)
+        if (program.globals.isNotEmpty()) sb.appendLine("  (start \$__init_globals)")
         for ((literal, offset) in stringConsts) {
             sb.appendLine("  (data (i32.const $offset) \"${dataBytes(literal)}\")")
         }
@@ -142,10 +187,34 @@ class WasmCodegen {
         return sb.toString().trimEnd()
     }
 
+    private fun emitGlobalInitializer(globals: List<IrStmt>): String {
+        if (globals.isEmpty()) return ""
+        locals.clear(); localIrTypes.clear(); tempCounter = 0; blockCounter = 0
+        loopStack.clear(); labelTargets.clear(); params = emptySet()
+
+        out.clear(); indent = 2
+        for (stmt in globals) {
+            when (stmt) {
+                is IrStmt.VarDecl -> line("(global.set \$${stmt.name} ${emitExpr(stmt.initializer)})")
+                is IrStmt.FinDecl -> line("(global.set \$${stmt.name} ${emitExpr(stmt.initializer)})")
+                is IrStmt.LetDecl -> line("(global.set \$${stmt.name} ${emitExpr(stmt.initializer)})")
+                else -> emitStmt(stmt)
+            }
+        }
+        val body = out.toString()
+        return buildString {
+            appendLine("  (func \$__init_globals")
+            for ((name, type) in locals) appendLine("    (local \$$name $type)")
+            append(body)
+            appendLine("  )")
+        }
+    }
+
     private fun emitFunction(func: IrFunction): String {
-        locals.clear(); tempCounter = 0; blockCounter = 0
+        locals.clear(); localIrTypes.clear(); tempCounter = 0; blockCounter = 0
         loopStack.clear(); labelTargets.clear()
         params = func.params.map { it.first }.toSet()
+        localIrTypes.putAll(func.params)
 
         out.clear(); indent = 2
         for (stmt in func.body) emitStmt(stmt)
@@ -168,7 +237,10 @@ class WasmCodegen {
             is IrStmt.VarDecl -> { declareLocal(stmt.name, stmt.type); line("(local.set \$${stmt.name} ${emitExpr(stmt.initializer)})") }
             is IrStmt.FinDecl -> { declareLocal(stmt.name, stmt.type); line("(local.set \$${stmt.name} ${emitExpr(stmt.initializer)})") }
             is IrStmt.LetDecl -> { declareLocal(stmt.name, stmt.type); line("(local.set \$${stmt.name} ${emitExpr(stmt.initializer)})") }
-            is IrStmt.Assignment -> line("(local.set \$${stmt.name} ${emitExpr(stmt.value)})")
+            is IrStmt.Assignment -> {
+                val operation = if (stmt.name in globalTypes && stmt.name !in localIrTypes) "global.set" else "local.set"
+                line("($operation \$${stmt.name} ${emitExpr(stmt.value)})")
+            }
             is IrStmt.IndexAssign -> line("(i32.store ${elemAddr(stmt.target, stmt.index)} ${emitExpr(stmt.value)})")
             is IrStmt.MemberAssign -> line("(i32.store ${fieldAddr(stmt.target, stmt.name)} ${emitExpr(stmt.value)})")
             is IrStmt.ExprStmt -> {
@@ -311,7 +383,10 @@ class WasmCodegen {
         is IrExpr.StringLiteral -> "(i32.const ${internString(expr.value)})"
         is IrExpr.EnumLiteral -> "(i32.const ${internString(expr.variant)})"
         is IrExpr.EnumToString -> emitExpr(expr.value)
-        is IrExpr.Var -> "(local.get \$${expr.name})"
+        is IrExpr.Var -> {
+            val operation = if (expr.name in globalTypes && expr.name !in localIrTypes) "global.get" else "local.get"
+            "($operation \$${expr.name})"
+        }
         is IrExpr.Unary -> when (expr.op) {
             IrUnaryOp.NEG -> {
                 val p = numPrefix(expr.type)
@@ -347,8 +422,9 @@ class WasmCodegen {
         }
         is IrExpr.StringTemplate -> emitTemplate(expr)
         is IrExpr.CatchExpr -> emitExpr(expr.expr) // no exception support — evaluate the primary expression
+        is IrExpr.Lambda -> emitClosure(expr)
         is IrExpr.SetLit, is IrExpr.MapLit, is IrExpr.TupleLit, is IrExpr.TupleAccess,
-        is IrExpr.VariantLit, is IrExpr.Lambda, is IrExpr.SlotPattern -> "(i32.const 0)" // unsupported by the MVP target
+        is IrExpr.VariantLit, is IrExpr.SlotPattern -> "(i32.const 0)" // unsupported by the MVP target
     }
 
     private fun emitBinary(expr: IrExpr.Binary): String {
@@ -436,7 +512,18 @@ class WasmCodegen {
 
     private fun emitCall(expr: IrExpr.Call): String {
         if (expr.receiver != null) {
-            error("indirect value calls (e.g. 'fs[0](x)') are not yet supported on the WebAssembly target")
+            val callable = expr.receiver.type as? IrType.Function
+                ?: error("indirect call receiver is not a callable type")
+            val closure = newTemp("i32")
+            val typeName = closureTypeName(callable)
+            val args = expr.args.joinToString(" ") { emitExpr(it) }
+            val environment = "(i32.load (i32.add (local.get $closure) (i32.const 4)))"
+            val tableIndex = "(i32.load (local.get $closure))"
+            val operands = listOf(args, environment, tableIndex).filter { it.isNotEmpty() }.joinToString(" ")
+            val result = if (expr.type == IrType.Unit) "" else " (result ${wasmType(expr.type)})"
+            return "(block$result " +
+                "(local.set $closure ${emitExpr(expr.receiver)}) " +
+                "(call_indirect (type \$$typeName) $operands))"
         }
         if ((expr.name == "std__println" || expr.name == "std__print") && expr.args.size == 1) {
             val arg = expr.args.single()
@@ -494,6 +581,86 @@ class WasmCodegen {
         }
         sb.append("$pad(local.get $t))")
         return sb.toString()
+    }
+
+    private fun closureTypeName(type: IrType.Function): String =
+        closureTypes.getOrPut(type) { "__closure_type_${closureTypes.size}" }
+
+    private fun emitClosure(lambda: IrExpr.Lambda): String {
+        val callable = lambda.type as? IrType.Function
+            ?: error("lambda has non-callable IR type ${lambda.type}")
+        val captures = collectCaptures(lambda)
+        val index = closureFunctions.size
+        closureFunctions += ClosureFunction(index, lambda, captures, closureTypeName(callable))
+        usesAlloc = true
+
+        val closure = newTemp("i32")
+        val environment = newTemp("i32")
+        val environmentSize = captures.lastOrNull()?.let { it.offset + wasmSize(it.type) } ?: 0
+        val sb = StringBuilder("(block (result i32)\n")
+        val pad = "  ".repeat(indent + 1)
+        if (environmentSize == 0) {
+            sb.append("$pad(local.set $environment (i32.const 0))\n")
+        } else {
+            sb.append("$pad(local.set $environment (call \$__alloc (i32.const $environmentSize)))\n")
+            for (capture in captures) {
+                val address = wasmAddress(environment, capture.offset)
+                sb.append("$pad(${wasmStore(capture.type)} $address (local.get \$${capture.name}))\n")
+            }
+        }
+        sb.append("$pad(local.set $closure (call \$__alloc (i32.const 8)))\n")
+        sb.append("$pad(i32.store (local.get $closure) (i32.const $index))\n")
+        sb.append("$pad(i32.store (i32.add (local.get $closure) (i32.const 4)) (local.get $environment))\n")
+        sb.append("$pad(local.get $closure))")
+        return sb.toString()
+    }
+
+    private fun emitClosureFunction(closure: ClosureFunction): String {
+        locals.clear(); localIrTypes.clear(); tempCounter = 0; blockCounter = 0
+        loopStack.clear(); labelTargets.clear()
+        params = closure.lambda.params.map { it.first }.toSet() + "__env"
+        localIrTypes.putAll(closure.lambda.params)
+        localIrTypes["__env"] = IrType.Any
+
+        out.clear(); indent = 2
+        for (capture in closure.captures) {
+            declareLocal(capture.name, capture.type)
+            line(
+                "(local.set \$${capture.name} " +
+                    "(${wasmLoad(capture.type)} ${wasmAddress("\$__env", capture.offset)}))",
+            )
+        }
+        for (stmt in closure.lambda.body) emitStmt(stmt)
+        val body = out.toString()
+
+        val sig = StringBuilder("  (func \$__closure_${closure.index}")
+        for ((name, type) in closure.lambda.params) sig.append(" (param \$$name ${wasmType(type)})")
+        sig.append(" (param \$__env i32)")
+        val returnType = (closure.lambda.type as IrType.Function).ret
+        if (returnType != IrType.Unit) sig.append(" (result ${wasmType(returnType)})")
+        sig.append("\n")
+        for ((name, type) in locals) if (name !in params) sig.append("    (local \$$name $type)\n")
+        sig.append(body)
+        sig.append("  )\n")
+        return sig.toString()
+    }
+
+    private fun collectCaptures(lambda: IrExpr.Lambda): List<ClosureCapture> {
+        val declared = linkedSetOf<String>()
+        val references = linkedMapOf<String, IrType>()
+        lambda.params.forEach { declared.add(it.first) }
+        collectDeclaredNames(lambda.body, declared)
+        collectReferencedVars(lambda.body, references)
+
+        var offset = 0
+        return references
+            .filterKeys { it !in declared && it in localIrTypes }
+            .map { (name, type) ->
+                offset = alignTo(offset, wasmAlignment(type))
+                ClosureCapture(name, localIrTypes.getValue(name), offset).also {
+                    offset += wasmSize(it.type)
+                }
+            }
     }
 
     private fun emitTemplate(expr: IrExpr.StringTemplate): String {
@@ -556,10 +723,191 @@ class WasmCodegen {
         return "(i32.add ${emitExpr(target)} (i32.const ${idx * 4}))"
     }
 
+    private fun wasmSize(type: IrType): Int = when (wasmType(type)) {
+        "i64", "f64" -> 8
+        else -> 4
+    }
+
+    private fun wasmAlignment(type: IrType): Int = wasmSize(type)
+
+    private fun alignTo(value: Int, alignment: Int): Int =
+        (value + alignment - 1) and (alignment - 1).inv()
+
+    private fun wasmLoad(type: IrType): String = "${wasmType(type)}.load"
+    private fun wasmStore(type: IrType): String = "${wasmType(type)}.store"
+
+    private fun wasmAddress(base: String, offset: Int): String =
+        if (offset == 0) "(local.get $base)"
+        else "(i32.add (local.get $base) (i32.const $offset))"
+
     // ── Locals / temps ────────────────────────────────────────────────────
 
-    private fun declareLocal(name: String, type: IrType) { if (name !in params) locals[name] = wasmType(type) }
+    private fun declareLocal(name: String, type: IrType) {
+        localIrTypes[name] = type
+        if (name !in params) locals[name] = wasmType(type)
+    }
     private fun newTemp(type: String): String { val n = "\$__t${tempCounter++}"; locals[n.substring(1)] = type; return n }
+
+    private fun collectDeclaredNames(stmts: List<IrStmt>, names: MutableSet<String>) {
+        for (stmt in stmts) {
+            when (stmt) {
+                is IrStmt.VarDecl -> names.add(stmt.name)
+                is IrStmt.FinDecl -> names.add(stmt.name)
+                is IrStmt.LetDecl -> names.add(stmt.name)
+                is IrStmt.For -> {
+                    names.add(stmt.counter)
+                    collectDeclaredNames(stmt.body, names)
+                }
+                is IrStmt.ForEach -> {
+                    names.add(stmt.elem)
+                    collectDeclaredNames(stmt.body, names)
+                }
+                is IrStmt.If -> {
+                    collectDeclaredNames(stmt.thenBranch, names)
+                    stmt.elseBranch?.let { collectDeclaredNames(it, names) }
+                }
+                is IrStmt.Zone -> collectDeclaredNames(stmt.body, names)
+                is IrStmt.While -> collectDeclaredNames(stmt.body, names)
+                is IrStmt.Loop -> collectDeclaredNames(stmt.body, names)
+                is IrStmt.When -> {
+                    stmt.branches.forEach { collectDeclaredNames(it.body, names) }
+                    stmt.elseBranch?.let { collectDeclaredNames(it, names) }
+                }
+                is IrStmt.Try -> {
+                    collectDeclaredNames(stmt.body, names)
+                    stmt.catchName?.let { names.add(it) }
+                    stmt.catchBody?.let { collectDeclaredNames(it, names) }
+                }
+                is IrStmt.Defer -> collectDeclaredNames(stmt.body, names)
+                else -> Unit
+            }
+        }
+    }
+
+    private fun collectReferencedVars(stmts: List<IrStmt>, refs: MutableMap<String, IrType>) {
+        for (stmt in stmts) {
+            when (stmt) {
+                is IrStmt.VarDecl -> collectReferencedVars(stmt.initializer, refs)
+                is IrStmt.FinDecl -> collectReferencedVars(stmt.initializer, refs)
+                is IrStmt.LetDecl -> collectReferencedVars(stmt.initializer, refs)
+                is IrStmt.Assignment -> collectReferencedVars(stmt.value, refs)
+                is IrStmt.IndexAssign -> {
+                    collectReferencedVars(stmt.target, refs)
+                    collectReferencedVars(stmt.index, refs)
+                    collectReferencedVars(stmt.value, refs)
+                }
+                is IrStmt.MemberAssign -> {
+                    collectReferencedVars(stmt.target, refs)
+                    collectReferencedVars(stmt.value, refs)
+                }
+                is IrStmt.Return -> stmt.value?.let { collectReferencedVars(it, refs) }
+                is IrStmt.ExprStmt -> collectReferencedVars(stmt.expr, refs)
+                is IrStmt.If -> {
+                    collectReferencedVars(stmt.condition, refs)
+                    collectReferencedVars(stmt.thenBranch, refs)
+                    stmt.elseBranch?.let { collectReferencedVars(it, refs) }
+                }
+                is IrStmt.Zone -> collectReferencedVars(stmt.body, refs)
+                is IrStmt.Assert -> {
+                    collectReferencedVars(stmt.condition, refs)
+                    collectReferencedVars(stmt.message, refs)
+                }
+                is IrStmt.Trace -> {
+                    collectReferencedVars(stmt.level, refs)
+                    collectReferencedVars(stmt.message, refs)
+                }
+                is IrStmt.While -> {
+                    collectReferencedVars(stmt.condition, refs)
+                    collectReferencedVars(stmt.body, refs)
+                }
+                is IrStmt.For -> {
+                    collectReferencedVars(stmt.start, refs)
+                    collectReferencedVars(stmt.end, refs)
+                    stmt.step?.let { collectReferencedVars(it, refs) }
+                    collectReferencedVars(stmt.body, refs)
+                }
+                is IrStmt.ForEach -> {
+                    collectReferencedVars(stmt.iterable, refs)
+                    collectReferencedVars(stmt.body, refs)
+                }
+                is IrStmt.Loop -> collectReferencedVars(stmt.body, refs)
+                is IrStmt.When -> {
+                    collectReferencedVars(stmt.scrutinee, refs)
+                    stmt.branches.forEach { branch ->
+                        branch.patterns.forEach { collectReferencedVars(it, refs) }
+                        collectReferencedVars(branch.body, refs)
+                    }
+                    stmt.elseBranch?.let { collectReferencedVars(it, refs) }
+                }
+                is IrStmt.Throw -> collectReferencedVars(stmt.value, refs)
+                is IrStmt.Try -> {
+                    collectReferencedVars(stmt.body, refs)
+                    stmt.catchBody?.let { collectReferencedVars(it, refs) }
+                }
+                is IrStmt.Defer -> collectReferencedVars(stmt.body, refs)
+                is IrStmt.Yield -> collectReferencedVars(stmt.value, refs)
+                is IrStmt.Break, is IrStmt.Continue -> Unit
+            }
+        }
+    }
+
+    private fun collectReferencedVars(expr: IrExpr, refs: MutableMap<String, IrType>) {
+        when (expr) {
+            is IrExpr.Var -> if (expr.name !in refs) refs[expr.name] = expr.type
+            is IrExpr.Unary -> collectReferencedVars(expr.operand, refs)
+            is IrExpr.Binary -> {
+                collectReferencedVars(expr.left, refs)
+                collectReferencedVars(expr.right, refs)
+            }
+            is IrExpr.Call -> {
+                expr.receiver?.let { collectReferencedVars(it, refs) }
+                expr.args.forEach { collectReferencedVars(it, refs) }
+            }
+            is IrExpr.ArrayLiteral -> expr.elements.forEach { collectReferencedVars(it, refs) }
+            is IrExpr.MapLit -> expr.entries.forEach { (key, value) ->
+                collectReferencedVars(key, refs)
+                collectReferencedVars(value, refs)
+            }
+            is IrExpr.SetLit -> expr.elements.forEach { collectReferencedVars(it, refs) }
+            is IrExpr.Index -> {
+                collectReferencedVars(expr.target, refs)
+                collectReferencedVars(expr.index, refs)
+            }
+            is IrExpr.Member -> collectReferencedVars(expr.target, refs)
+            is IrExpr.MethodCall -> {
+                collectReferencedVars(expr.target, refs)
+                expr.args.forEach { collectReferencedVars(it, refs) }
+            }
+            is IrExpr.StructCtor -> expr.args.forEach { collectReferencedVars(it, refs) }
+            is IrExpr.StringTemplate -> expr.parts.forEach { part ->
+                if (part is IrExpr.IrTemplatePart.Expr) collectReferencedVars(part.expr, refs)
+            }
+            is IrExpr.TupleLit -> expr.elements.forEach { collectReferencedVars(it, refs) }
+            is IrExpr.VariantLit -> expr.elements.forEach { collectReferencedVars(it, refs) }
+            is IrExpr.TupleAccess -> collectReferencedVars(expr.target, refs)
+            is IrExpr.CatchExpr -> {
+                collectReferencedVars(expr.expr, refs)
+                collectReferencedVars(expr.fallback, refs)
+            }
+            is IrExpr.IfExpr -> {
+                collectReferencedVars(expr.condition, refs)
+                collectReferencedVars(expr.thenExpr, refs)
+                collectReferencedVars(expr.elseExpr, refs)
+            }
+            is IrExpr.NumCast -> collectReferencedVars(expr.value, refs)
+            is IrExpr.EnumToString -> collectReferencedVars(expr.value, refs)
+            is IrExpr.Lambda -> Unit
+            is IrExpr.Await -> collectReferencedVars(expr.value, refs)
+            is IrExpr.Spread -> collectReferencedVars(expr.array, refs)
+            is IrExpr.IntLiteral,
+            is IrExpr.RealLiteral,
+            is IrExpr.StringLiteral,
+            is IrExpr.EnumLiteral,
+            is IrExpr.BoolLiteral,
+            is IrExpr.CharLiteral,
+            is IrExpr.SlotPattern -> Unit
+        }
+    }
 
     private fun breakTarget(label: String?): String =
         if (label != null) labelTargets[label]!!.first else loopStack.last().first

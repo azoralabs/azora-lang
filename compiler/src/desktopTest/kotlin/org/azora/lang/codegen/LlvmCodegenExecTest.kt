@@ -20,7 +20,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /**
- * End-to-end tests for the arr![org.azora.lang.backend.LlvmCodegen] backend.
+ * End-to-end tests for the arr@[org.azora.lang.backend.LlvmCodegen] backend.
  *
  * Each test compiles a small Azora program to LLVM IR, executes it with `lli`,
  * and asserts on the program's standard output. This validates that the
@@ -36,7 +36,7 @@ import kotlin.test.assertEquals
  */
 class LlvmCodegenExecTest {
 
-    /** Runs arr![source] and asserts its stdout equals arr![expected] (skips without `lli`). */
+    /** Runs arr@[source] and asserts its stdout equals arr@[expected] (skips without `lli`). */
     private fun check(expected: String, source: String) {
         if (!LlvmExec.available) return
         assertEquals(expected, LlvmExec.run(source))

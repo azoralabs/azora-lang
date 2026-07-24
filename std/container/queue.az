@@ -50,7 +50,7 @@ friend zone std {
 
     /** Constructs an empty `Queue<T>` with default capacity. */
     @Experimental(sinceAzora: "0.0.1")
-    impl ctor() for Queue<T> { mut ref self ->
+    impl ctor() for Queue<T> { self! ->
         self.data = alloc T[8]
         self.size = 0
         self.capacity = 8

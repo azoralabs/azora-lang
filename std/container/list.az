@@ -29,7 +29,7 @@ import std.convert
  * - `List<T>` is the read-only view: indexed access, search, and functional
  *   combinators that return fresh `List<T>` snapshots.
  * - `MutableList<T>` adds in-place mutation. Every mutation receives
- *   `mut ref self`, so a caller holding only a shared `ref List<T>` view
+ *   `self!`, so a caller holding only a shared `ref List<T>` view
  *   cannot mutate it.
  *
  * `ArrayList<T>` is the single concrete dynamic-array pack implementing both
@@ -109,7 +109,7 @@ friend zone std {
     /**
      * Mutation behavior implemented by mutable list packs.
      *
-     * Mutation always receives `mut ref self`. Implementing this spec does not
+     * Mutation always receives `self!`. Implementing this spec does not
      * weaken a `ref List<T>` view: callers holding only a shared reference can
      * still use only read operations.
      *
@@ -162,7 +162,7 @@ friend zone std {
     impl ArrayList<T> {
         /** Doubles the backing buffer, copying existing elements. */
         @Experimental(sinceAzora: "0.0.4")
-        func grow() { mut ref self ->
+        func grow() { self! ->
             fin newCap = self.capacity * 2
             fin newData = alloc T[newCap]
             for i in 0..<self.size {
@@ -200,27 +200,27 @@ friend zone std {
             return result
         }
 
-        func get(index: Int): T { ref self ->
+        func get(index: Int): T { self& ->
             assert index >= 0 { "List index must be non-negative" }
             assert index < self.size { "List index out of bounds" }
             return self.data[index]
         }
 
-        func contains(element: T): Bool { ref self ->
+        func contains(element: T): Bool { self& ->
             for i in 0..<self.size {
                 if self.data[i] == element { return true }
             }
             return false
         }
 
-        func indexOf(element: T): Int { ref self ->
+        func indexOf(element: T): Int { self& ->
             for i in 0..<self.size {
                 if self.data[i] == element { return i }
             }
             return -1
         }
 
-        func lastIndexOf(element: T): Int { ref self ->
+        func lastIndexOf(element: T): Int { self& ->
             var result = -1
             for i in 0..<self.size {
                 if self.data[i] == element { result = i }
@@ -228,13 +228,13 @@ friend zone std {
             return result
         }
 
-        func forEach(action: (T) -> Unit) { ref self ->
+        func forEach(action: (T) -> Unit) { self& ->
             for i in 0..<self.size {
                 action(self.data[i])
             }
         }
 
-        func map(transform: (T) -> T): List<T> { ref self ->
+        func map(transform: (T) -> T): List<T> { self& ->
             var result = ArrayList<T>()
             for i in 0..<self.size {
                 result.add(transform(self.data[i]))
@@ -242,7 +242,7 @@ friend zone std {
             return result
         }
 
-        func filter(predicate: (T) -> Bool): List<T> { ref self ->
+        func filter(predicate: (T) -> Bool): List<T> { self& ->
             var result = ArrayList<T>()
             for i in 0..<self.size {
                 if predicate(self.data[i]) {
@@ -252,28 +252,28 @@ friend zone std {
             return result
         }
 
-        func any(predicate: (T) -> Bool): Bool { ref self ->
+        func any(predicate: (T) -> Bool): Bool { self& ->
             for i in 0..<self.size {
                 if predicate(self.data[i]) { return true }
             }
             return false
         }
 
-        func all(predicate: (T) -> Bool): Bool { ref self ->
+        func all(predicate: (T) -> Bool): Bool { self& ->
             for i in 0..<self.size {
                 if !predicate(self.data[i]) { return false }
             }
             return true
         }
 
-        func none(predicate: (T) -> Bool): Bool { ref self ->
+        func none(predicate: (T) -> Bool): Bool { self& ->
             for i in 0..<self.size {
                 if predicate(self.data[i]) { return false }
             }
             return true
         }
 
-        func count(predicate: (T) -> Bool): Int { ref self ->
+        func count(predicate: (T) -> Bool): Int { self& ->
             var c = 0
             for i in 0..<self.size {
                 if predicate(self.data[i]) { c += 1 }
@@ -281,7 +281,7 @@ friend zone std {
             return c
         }
 
-        func subList(from: Int, to: Int): List<T> { ref self ->
+        func subList(from: Int, to: Int): List<T> { self& ->
             assert from >= 0 { "subList from must be non-negative" }
             assert to <= self.size { "subList to out of bounds" }
             assert from <= to { "subList from must be <= to" }
@@ -294,13 +294,13 @@ friend zone std {
     }
 
     impl MutableList<T> for ArrayList<T> {
-        func add(element: T) { mut ref self ->
+        func add(element: T) { self! ->
             if self.size >= self.capacity { self.grow() }
             self.data[self.size] = element
             self.size = self.size + 1
         }
 
-        func insert(index: Int, element: T) { mut ref self ->
+        func insert(index: Int, element: T) { self! ->
             assert index >= 0 { "Insert index must be non-negative" }
             assert index <= self.size { "Insert index out of bounds" }
             if self.size >= self.capacity { self.grow() }
@@ -313,13 +313,13 @@ friend zone std {
             self.size = self.size + 1
         }
 
-        func set(index: Int, element: T) { mut ref self ->
+        func set(index: Int, element: T) { self! ->
             assert index >= 0 { "Set index must be non-negative" }
             assert index < self.size { "Set index out of bounds" }
             self.data[index] = element
         }
 
-        func removeAt(index: Int): T { mut ref self ->
+        func removeAt(index: Int): T { self! ->
             assert index >= 0 { "Remove index must be non-negative" }
             assert index < self.size { "Remove index out of bounds" }
             fin removed = self.data[index]
@@ -330,19 +330,19 @@ friend zone std {
             return removed
         }
 
-        func removeFirst(): T { mut ref self ->
+        func removeFirst(): T { self! ->
             assert self.size > 0 { "List is empty" }
             return self.removeAt(0)
         }
 
-        func removeLast(): T { mut ref self ->
+        func removeLast(): T { self! ->
             assert self.size > 0 { "List is empty" }
             fin removed = self.data[self.size - 1]
             self.size = self.size - 1
             return removed
         }
 
-        func clear() { mut ref self ->
+        func clear() { self! ->
             fin oldData = self.data
             self.data = alloc T[8]
             self.size = 0
@@ -397,7 +397,7 @@ friend zone std {
     // ---------------------------------------------------------------------
 
     @Experimental(sinceAzora: "0.0.4")
-    impl oper[] for ArrayList<T> { ref self, index ->
+    impl oper[] for ArrayList<T> { self&, index ->
         assert index >= 0 && index < self.size {
             "List index out of bounds"
         }
@@ -405,7 +405,7 @@ friend zone std {
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    impl oper[]= for ArrayList<T> { mut ref self, index, element ->
+    impl oper[]= for ArrayList<T> { self!, index, element ->
         assert index >= 0 && index < self.size {
             "List index out of bounds"
         }
@@ -413,7 +413,7 @@ friend zone std {
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    impl Into<String> for ArrayList<T> { ref self ->
+    impl Into<String> for ArrayList<T> { self& ->
         var s = "["
         for i in 0..<self.size {
             if i > 0 { s = s + ", " }
@@ -423,7 +423,7 @@ friend zone std {
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    impl oper== by List<T> for ArrayList<T> { ref self, rhs ->
+    impl oper== by List<T> for ArrayList<T> { self&, rhs ->
         if self.size != rhs.size { return false }
         for i in 0..<self.size {
             if !(self.get(i) == rhs.get(i)) { return false }
@@ -432,12 +432,12 @@ friend zone std {
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    impl oper!= by List<T> for ArrayList<T> { ref self, rhs ->
+    impl oper!= by List<T> for ArrayList<T> { self&, rhs ->
         return !(self == rhs)
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    impl oper# for ArrayList<T> { ref self ->
+    impl oper# for ArrayList<T> { self& ->
         var result = 0 as ULong
         for i in 0..<self.size {
             result = result + #self.data[i]

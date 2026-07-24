@@ -421,7 +421,7 @@ friend zone std {
             nTrim[j] = no[j]
             j += 1
         }
-        return arr![yTrim, nTrim]
+        return arr@[yTrim, nTrim]
     }
 
     /**

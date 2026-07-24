@@ -81,16 +81,16 @@ friend zone std {
         prop isNotEmpty: Bool
 
         /** Returns whether `key` is present. */
-        func containsKey(key: ref K): Bool
+        func containsKey(key: K&): Bool
 
         /** Returns whether an equal value is present. Requires `oper==` for `V`. */
-        func containsValue(value: ref V): Bool
+        func containsValue(value: V&): Bool
 
         /** Returns the value associated with `key`, or `null` when absent. */
-        func get(key: ref K): V?
+        func get(key: K&): V?
 
         /** Returns the associated value, or `defaultValue` when absent. */
-        func getOrDefault(key: ref K, defaultValue: V): V
+        func getOrDefault(key: K&, defaultValue: V): V
 
         /** Returns an iteration-order snapshot of all entries. */
         func entries(): Array<MapEntry<K, V>>
@@ -102,13 +102,13 @@ friend zone std {
         func values(): List<V>
 
         /** Invokes `action` once for every entry in iteration order. */
-        func forEach(action: (ref K, ref V) -> Unit)
+        func forEach(action: (K&, V&) -> Unit)
     }
 
     /**
      * Mutation behavior implemented by mutable map packs.
      *
-     * Mutation always receives `mut ref self`. Implementing this spec does not
+     * Mutation always receives `self!`. Implementing this spec does not
      * weaken a `ref Map<K, V>` view: callers holding only a shared reference can
      * still use only read operations.
      *
@@ -121,10 +121,10 @@ friend zone std {
         func put(key: K, value: V): V?
 
         /** Copies all entries from `other`, replacing equal keys. */
-        func putAll(other: ref Map<K, V>)
+        func putAll(other: Map<K, V>&)
 
         /** Removes `key` and returns its previous value, or `null` when absent. */
-        func remove(key: ref K): V?
+        func remove(key: K&): V?
 
         /** Removes every entry while retaining reusable internal capacity. */
         func clear()
@@ -152,16 +152,16 @@ friend zone std {
         func lastKey(): K?
 
         /** Returns the greatest key strictly below `key`. */
-        func lowerKey(key: ref K): K?
+        func lowerKey(key: K&): K?
 
         /** Returns the greatest key below or equivalent to `key`. */
-        func floorKey(key: ref K): K?
+        func floorKey(key: K&): K?
 
         /** Returns the smallest key equivalent to or above `key`. */
-        func ceilingKey(key: ref K): K?
+        func ceilingKey(key: K&): K?
 
         /** Returns the smallest key strictly above `key`. */
-        func higherKey(key: ref K): K?
+        func higherKey(key: K&): K?
 
         /** Returns the entry with the smallest key, or `null` when empty. */
         func firstEntry(): MapEntry<K, V>?
@@ -170,16 +170,16 @@ friend zone std {
         func lastEntry(): MapEntry<K, V>?
 
         /** Returns an ascending read-only view below `toKey`. */
-        func headMap(toKey: ref K, inclusive: Bool = false): SortedMap<K, V>
+        func headMap(toKey: K&, inclusive: Bool = false): SortedMap<K, V>
 
         /** Returns an ascending read-only view above `fromKey`. */
-        func tailMap(fromKey: ref K, inclusive: Bool = true): SortedMap<K, V>
+        func tailMap(fromKey: K&, inclusive: Bool = true): SortedMap<K, V>
 
         /** Returns an ascending read-only view between two key boundaries. */
         func subMap(
-            fromKey: ref K,
+            fromKey: K&,
             fromInclusive: Bool,
-            toKey: ref K,
+            toKey: K&,
             toInclusive: Bool
         ): SortedMap<K, V>
     }
@@ -250,14 +250,14 @@ friend zone std {
     // HashMap implementation
     // ---------------------------------------------------------------------
 
-    impl ctor() for HashMap<K, V> { mut ref self ->
+    impl ctor() for HashMap<K, V> { self! ->
         for i in 0..<self.capacity {
             self.occupied[i] = false
         }
     }
 
     impl dtor() for HashMap<K, V> {
-        ref self ->
+        self& ->
         drop self.keys
         drop self.values
         drop self.hashes
@@ -265,11 +265,11 @@ friend zone std {
     }
 
     impl HashMap<K, V> {
-        confine func bucketFor(hash: ULong): Int { ref self ->
+        confine func bucketFor(hash: ULong): Int { self& ->
             return (hash % (self.capacity as ULong)) as Int
         }
 
-        confine func findIndex(key: ref K): Int { ref self ->
+        confine func findIndex(key: K&): Int { self& ->
             fin hash = #key
             var index = self.bucketFor(hash)
             for visited in 0..<self.capacity {
@@ -280,7 +280,7 @@ friend zone std {
             return -1
         }
 
-        confine func insertKnownHash(key: K, value: V, hash: ULong): V? { mut ref self ->
+        confine func insertKnownHash(key: K, value: V, hash: ULong): V? { self! ->
             var index = self.bucketFor(hash)
             while self.occupied[index] {
                 if self.hashes[index] == hash && self.keys[index] == key {
@@ -298,7 +298,7 @@ friend zone std {
             return null
         }
 
-        confine func rehash(newCapacity: Int) { mut ref self ->
+        confine func rehash(newCapacity: Int) { self! ->
             fin oldKeys = self.keys
             fin oldValues = self.values
             fin oldHashes = self.hashes
@@ -330,19 +330,19 @@ friend zone std {
             drop oldOccupied
         }
 
-        confine func ensureInsertCapacity() { mut ref self ->
+        confine func ensureInsertCapacity() { self! ->
             if (self._size + 1) * 10 >= self.capacity * 7 {
                 self.rehash(self.capacity * 2)
             }
         }
 
-        confine func putValue(key: K, value: V): V? { mut ref self ->
+        confine func putValue(key: K, value: V): V? { self! ->
             self.ensureInsertCapacity()
             fin hash = #key
             return self.insertKnownHash(key, value, hash)
         }
 
-        confine func removeValue(key: ref K): V? { mut ref self ->
+        confine func removeValue(key: K&): V? { self! ->
             fin found = self.findIndex(key)
             if found < 0 { return null }
             fin previous = self.values[found]
@@ -362,7 +362,7 @@ friend zone std {
             return previous
         }
 
-        confine func entrySnapshot(): Array<MapEntry<K, V>> { ref self ->
+        confine func entrySnapshot(): Array<MapEntry<K, V>> { self& ->
             var result: Array<MapEntry<K, V>> = Array::fill<MapEntry<K, V>>(self._size)
             var source = 0
             var target = 0
@@ -382,30 +382,30 @@ friend zone std {
         prop isEmpty: Bool = self._size == 0
         prop isNotEmpty: Bool = self._size > 0
 
-        func containsKey(key: ref K): Bool { ref self -> return self.findIndex(key) >= 0 }
+        func containsKey(key: K&): Bool { self& -> return self.findIndex(key) >= 0 }
 
-        func containsValue(value: ref V): Bool { ref self ->
+        func containsValue(value: V&): Bool { self& ->
             for i in 0..<self.capacity {
                 if self.occupied[i] && self.values[i] == value { return true }
             }
             return false
         }
 
-        func get(key: ref K): V? { ref self ->
+        func get(key: K&): V? { self& ->
             fin index = self.findIndex(key)
             if index < 0 { return null }
             return self.values[index]
         }
 
-        func getOrDefault(key: ref K, defaultValue: V): V { ref self ->
+        func getOrDefault(key: K&, defaultValue: V): V { self& ->
             fin index = self.findIndex(key)
             if index < 0 { return defaultValue }
             return self.values[index]
         }
 
-        func entries(): Array<MapEntry<K, V>> { ref self -> return self.entrySnapshot() }
+        func entries(): Array<MapEntry<K, V>> { self& -> return self.entrySnapshot() }
 
-        func keys(): List<K> { ref self ->
+        func keys(): List<K> { self& ->
             fin all = self.entries()
             var result: Array<K> = Array::fill<K>(all.size)
             for i in 0..<all.size {
@@ -414,7 +414,7 @@ friend zone std {
             return result
         }
 
-        func values(): List<V> { ref self ->
+        func values(): List<V> { self& ->
             fin all = self.entrySnapshot()
             var result: Array<V> = Array::fill<V>(all.size)
             for i in 0..<all.size {
@@ -423,7 +423,7 @@ friend zone std {
             return result
         }
 
-        func forEach(action: (ref K, ref V) -> Unit) { ref self ->
+        func forEach(action: (K&, V&) -> Unit) { self& ->
             for i in 0..<self.capacity {
                 if self.occupied[i] {
                     action(self.keys[i], self.values[i])
@@ -433,29 +433,29 @@ friend zone std {
     }
 
     impl MutableMap<K, V> for HashMap<K, V> {
-        func put(key: K, value: V): V? { mut ref self ->
+        func put(key: K, value: V): V? { self! ->
             return self.putValue(key, value)
         }
 
-        func putAll(other: ref Map<K, V>) { mut ref self ->
+        func putAll(other: Map<K, V>&) { self! ->
             fin all = other.entries()
             for i in 0..<all.size {
                 self.putValue(all[i].key, all[i].value)
             }
         }
 
-        func remove(key: ref K): V? { mut ref self ->
+        func remove(key: K&): V? { self! ->
             return self.removeValue(key)
         }
 
-        func clear() { mut ref self ->
+        func clear() { self! ->
             for i in 0..<self.capacity {
                 self.occupied[i] = false
             }
             self._size = 0
         }
 
-        func getOrPut(key: K, defaultValue: () -> V): V { mut ref self ->
+        func getOrPut(key: K, defaultValue: () -> V): V { self! ->
             fin index = self.findIndex(key)
             if index >= 0 { return self.values[index] }
             fin value = defaultValue()
@@ -468,13 +468,13 @@ friend zone std {
     // LinkedHashMap implementation
     // ---------------------------------------------------------------------
 
-    impl ctor() for LinkedHashMap<K, V> { mut ref self ->
+    impl ctor() for LinkedHashMap<K, V> { self! ->
         for i in 0..<self.bucketCapacity {
             self.buckets[i] = -1
         }
     }
 
-    impl dtor() for LinkedHashMap<K, V> { ref self ->
+    impl dtor() for LinkedHashMap<K, V> { self& ->
         drop self.keys
         drop self.values
         drop self.hashes
@@ -482,7 +482,7 @@ friend zone std {
     }
 
     impl LinkedHashMap<K, V> {
-        confine func findIndex(key: ref K): Int { ref self ->
+        confine func findIndex(key: K&): Int { self& ->
             fin hash = #key
             var bucket = (hash % (self.bucketCapacity as ULong)) as Int
             for visited in 0..<self.bucketCapacity {
@@ -494,7 +494,7 @@ friend zone std {
             return -1
         }
 
-        confine func insertBucket(index: Int) { mut ref self ->
+        confine func insertBucket(index: Int) { self! ->
             var bucket = (self.hashes[index] % (self.bucketCapacity as ULong)) as Int
             while self.buckets[bucket] >= 0 {
                 bucket = (bucket + 1) % self.bucketCapacity
@@ -502,7 +502,7 @@ friend zone std {
             self.buckets[bucket] = index
         }
 
-        confine func rebuildBuckets(newCapacity: Int) { mut ref self ->
+        confine func rebuildBuckets(newCapacity: Int) { self! ->
             fin oldBuckets = self.buckets
             self.buckets = alloc Int[newCapacity]
             self.bucketCapacity = newCapacity
@@ -519,7 +519,7 @@ friend zone std {
             drop oldBuckets
         }
 
-        confine func growEntries() { mut ref self ->
+        confine func growEntries() { self! ->
             fin newCapacity = self.capacity * 2
             fin newKeys = alloc K[newCapacity]
             fin newValues = alloc V[newCapacity]
@@ -541,7 +541,7 @@ friend zone std {
             drop oldHashes
         }
 
-        confine func putValue(key: K, value: V): V? { mut ref self ->
+        confine func putValue(key: K, value: V): V? { self! ->
             fin found = self.findIndex(key)
             if found >= 0 {
                 fin previous = self.values[found]
@@ -563,7 +563,7 @@ friend zone std {
             return null
         }
 
-        confine func removeValue(key: ref K): V? { mut ref self ->
+        confine func removeValue(key: K&): V? { self! ->
             fin found = self.findIndex(key)
             if found < 0 { return null }
             fin previous = self.values[found]
@@ -577,7 +577,7 @@ friend zone std {
             return previous
         }
 
-        confine func entrySnapshot(): Array<MapEntry<K, V>> { ref self ->
+        confine func entrySnapshot(): Array<MapEntry<K, V>> { self& ->
             var result: Array<MapEntry<K, V>> = Array::fill<MapEntry<K, V>>(self._size)
             for i in 0..<self._size {
                 result[i] = MapEntry(self.keys[i], self.values[i])
@@ -591,34 +591,34 @@ friend zone std {
         prop isEmpty: Bool = self._size == 0
         prop isNotEmpty: Bool = self._size > 0
 
-        func containsKey(key: ref K): Bool { ref self ->
+        func containsKey(key: K&): Bool { self& ->
             return self.findIndex(key) >= 0
         }
 
-        func containsValue(value: ref V): Bool { ref self ->
+        func containsValue(value: V&): Bool { self& ->
             for i in 0..<self._size {
                 if self.values[i] == value { return true }
             }
             return false
         }
 
-        func get(key: ref K): V? { ref self ->
+        func get(key: K&): V? { self& ->
             fin index = self.findIndex(key)
             if index < 0 { return null }
             return self.values[index]
         }
 
-        func getOrDefault(key: ref K, defaultValue: V): V { ref self ->
+        func getOrDefault(key: K&, defaultValue: V): V { self& ->
             fin index = self.findIndex(key)
             if index < 0 { return defaultValue }
             return self.values[index]
         }
 
-        func entries(): Array<MapEntry<K, V>> { ref self ->
+        func entries(): Array<MapEntry<K, V>> { self& ->
             return self.entrySnapshot()
         }
 
-        func keys(): List<K> { ref self ->
+        func keys(): List<K> { self& ->
             var result: Array<K> = Array::fill<K>(self._size)
             for i in 0..<self._size {
                 result[i] = self.keys[i]
@@ -626,7 +626,7 @@ friend zone std {
             return result
         }
 
-        func values(): List<V> { ref self ->
+        func values(): List<V> { self& ->
             var result: Array<V> = Array::fill<V>(self._size)
             for i in 0..<self._size {
                 result[i] = self.values[i]
@@ -634,7 +634,7 @@ friend zone std {
             return result
         }
 
-        func forEach(action: (ref K, ref V) -> Unit) { ref self ->
+        func forEach(action: (K&, V&) -> Unit) { self& ->
             for i in 0..<self._size {
                 action(self.keys[i], self.values[i])
             }
@@ -642,29 +642,29 @@ friend zone std {
     }
 
     impl MutableMap<K, V> for LinkedHashMap<K, V> {
-        func put(key: K, value: V): V? { mut ref self ->
+        func put(key: K, value: V): V? { self! ->
             return self.putValue(key, value)
         }
 
-        func putAll(other: ref Map<K, V>) { mut ref self ->
+        func putAll(other: Map<K, V>&) { self! ->
             fin all = other.entries()
             for i in 0..<all.size {
                 self.putValue(all[i].key, all[i].value)
             }
         }
 
-        func remove(key: ref K): V? { mut ref self ->
+        func remove(key: K&): V? { self! ->
             return self.removeValue(key)
         }
 
-        func clear() { mut ref self ->
+        func clear() { self! ->
             self._size = 0
             for i in 0..<self.bucketCapacity {
                 self.buckets[i] = -1
             }
         }
 
-        func getOrPut(key: K, defaultValue: () -> V): V { mut ref self ->
+        func getOrPut(key: K, defaultValue: () -> V): V { self! ->
             fin index = self.findIndex(key)
             if index >= 0 { return self.values[index] }
             fin value = defaultValue()
@@ -677,7 +677,7 @@ friend zone std {
     // TreeMap implementation (AVL balanced tree)
     // ---------------------------------------------------------------------
 
-    impl dtor() for TreeMap<K, V> { ref self ->
+    impl dtor() for TreeMap<K, V> { self& ->
         drop self.keys
         drop self.values
         drop self.left
@@ -688,12 +688,12 @@ friend zone std {
     }
 
     impl TreeMap<K, V> {
-        confine func elemHeight(elem: Int): Int { ref self ->
+        confine func elemHeight(elem: Int): Int { self& ->
             if elem < 0 { return 0 }
             return self.heights[elem]
         }
 
-        confine func updateHeight(elem: Int) { mut ref self ->
+        confine func updateHeight(elem: Int) { self! ->
             if elem < 0 { return }
             fin leftHeight = self.elemHeight(self.left[elem])
             fin rightHeight = self.elemHeight(self.right[elem])
@@ -704,7 +704,7 @@ friend zone std {
             }
         }
 
-        confine func grow() { mut ref self ->
+        confine func grow() { self! ->
             fin newCapacity = self.capacity * 2
             fin newKeys = alloc K[newCapacity]
             fin newValues = alloc V[newCapacity]
@@ -739,7 +739,7 @@ friend zone std {
             self.capacity = newCapacity
         }
 
-        confine func allocateNode(key: K, value: V, parent: Int): Int { mut ref self ->
+        confine func allocateNode(key: K, value: V, parent: Int): Int { self! ->
             var elem = self.freeHead
             if elem >= 0 {
                 self.freeHead = self.freeNext[elem]
@@ -760,13 +760,13 @@ friend zone std {
             return elem
         }
 
-        confine func releaseNode(elem: Int) { mut ref self ->
+        confine func releaseNode(elem: Int) { self! ->
             self.freeNext[elem] = self.freeHead
             self.freeHead = elem
             self._size -= 1
         }
 
-        confine func replaceParentChild(parent: Int, oldChild: Int, newChild: Int) { mut ref self ->
+        confine func replaceParentChild(parent: Int, oldChild: Int, newChild: Int) { self! ->
             if parent < 0 {
                 self.root = newChild
             } else if self.left[parent] == oldChild {
@@ -777,7 +777,7 @@ friend zone std {
             if newChild >= 0 { self.parent[newChild] = parent }
         }
 
-        confine func rotateLeft(elem: Int): Int { mut ref self ->
+        confine func rotateLeft(elem: Int): Int { self! ->
             fin pivot = self.right[elem]
             fin oldParent = self.parent[elem]
             self.right[elem] = self.left[pivot]
@@ -793,7 +793,7 @@ friend zone std {
             return pivot
         }
 
-        confine func rotateRight(elem: Int): Int { mut ref self ->
+        confine func rotateRight(elem: Int): Int { self! ->
             fin pivot = self.left[elem]
             fin oldParent = self.parent[elem]
             self.left[elem] = self.right[pivot]
@@ -809,7 +809,7 @@ friend zone std {
             return pivot
         }
 
-        confine func rebalanceFrom(start: Int) { mut ref self ->
+        confine func rebalanceFrom(start: Int) { self! ->
             var elem = start
             while elem >= 0 {
                 self.updateHeight(elem)
@@ -832,7 +832,7 @@ friend zone std {
             }
         }
 
-        confine func findNode(key: ref K): Int { ref self ->
+        confine func findNode(key: K&): Int { self& ->
             var elem = self.root
             while elem >= 0 {
                 if key < self.keys[elem] {
@@ -846,7 +846,7 @@ friend zone std {
             return -1
         }
 
-        confine func putValue(key: K, value: V): V? { mut ref self ->
+        confine func putValue(key: K, value: V): V? { self! ->
             if self.root < 0 {
                 self.root = self.allocateNode(key, value, -1)
                 return null
@@ -875,7 +875,7 @@ friend zone std {
             return null
         }
 
-        confine func minimumNode(start: Int): Int { ref self ->
+        confine func minimumNode(start: Int): Int { self& ->
             var elem = start
             if elem < 0 { return -1 }
             while self.left[elem] >= 0 {
@@ -884,7 +884,7 @@ friend zone std {
             return elem
         }
 
-        confine func maximumNode(start: Int): Int { ref self ->
+        confine func maximumNode(start: Int): Int { self& ->
             var elem = start
             if elem < 0 { return -1 }
             while self.right[elem] >= 0 {
@@ -893,7 +893,7 @@ friend zone std {
             return elem
         }
 
-        confine func removeValue(key: ref K): V? { mut ref self ->
+        confine func removeValue(key: K&): V? { self! ->
             var elem = self.findNode(key)
             if elem < 0 { return null }
             fin previous = self.values[elem]
@@ -917,7 +917,7 @@ friend zone std {
             return previous
         }
 
-        confine func entrySnapshot(): Array<MapEntry<K, V>> { ref self ->
+        confine func entrySnapshot(): Array<MapEntry<K, V>> { self& ->
             var result: Array<MapEntry<K, V>> = Array::fill<MapEntry<K, V>>(self._size)
             fin stack = alloc Int[self._size]
             var stackSize = 0
@@ -945,11 +945,11 @@ friend zone std {
         prop isEmpty: Bool = self._size == 0
         prop isNotEmpty: Bool = self._size > 0
 
-        func containsKey(key: ref K): Bool { ref self ->
+        func containsKey(key: K&): Bool { self& ->
             return self.findNode(key) >= 0
         }
 
-        func containsValue(value: ref V): Bool { ref self ->
+        func containsValue(value: V&): Bool { self& ->
             fin all = self.entrySnapshot()
             for i in 0..<all.size {
                 if all[i].value == value { return true }
@@ -957,21 +957,21 @@ friend zone std {
             return false
         }
 
-        func get(key: ref K): V? { ref self ->
+        func get(key: K&): V? { self& ->
             fin elem = self.findNode(key)
             if elem < 0 { return null }
             return self.values[elem]
         }
 
-        func getOrDefault(key: ref K, defaultValue: V): V { ref self ->
+        func getOrDefault(key: K&, defaultValue: V): V { self& ->
             fin elem = self.findNode(key)
             if elem < 0 { return defaultValue }
             return self.values[elem]
         }
 
-        func entries(): Array<MapEntry<K, V>> { ref self -> return self.entrySnapshot() }
+        func entries(): Array<MapEntry<K, V>> { self& -> return self.entrySnapshot() }
 
-        func keys(): List<K> { ref self ->
+        func keys(): List<K> { self& ->
             fin all = self.entries()
             var result: Array<K> = Array::fill<K>(all.size)
             for i in 0..<all.size {
@@ -980,7 +980,7 @@ friend zone std {
             return result
         }
 
-        func values(): List<V> { ref self ->
+        func values(): List<V> { self& ->
             fin all = self.entrySnapshot()
             var result: Array<V> = Array::fill<V>(all.size)
             for i in 0..<all.size {
@@ -989,7 +989,7 @@ friend zone std {
             return result
         }
 
-        func forEach(action: (ref K, ref V) -> Unit) { ref self ->
+        func forEach(action: (K&, V&) -> Unit) { self& ->
             fin all = self.entrySnapshot()
             for i in 0..<all.size {
                 action(all[i].key, all[i].value)
@@ -998,27 +998,27 @@ friend zone std {
     }
 
     impl MutableMap<K, V> for TreeMap<K, V> {
-        func put(key: K, value: V): V? { mut ref self ->
+        func put(key: K, value: V): V? { self! ->
             return self.putValue(key, value)
         }
 
-        func putAll(other: ref Map<K, V>) { mut ref self ->
+        func putAll(other: Map<K, V>&) { self! ->
             fin all = other.entries()
             for i in 0..<all.size {
                 self.putValue(all[i].key, all[i].value)
             }
         }
 
-        func remove(key: ref K): V? { mut ref self -> return self.removeValue(key) }
+        func remove(key: K&): V? { self! -> return self.removeValue(key) }
 
-        func clear() { mut ref self ->
+        func clear() { self! ->
             self.root = -1
             self.freeHead = -1
             self.elemCount = 0
             self._size = 0
         }
 
-        func getOrPut(key: K, defaultValue: () -> V): V { mut ref self ->
+        func getOrPut(key: K, defaultValue: () -> V): V { self! ->
             fin elem = self.findNode(key)
             if elem >= 0 { return self.values[elem] }
             fin value = defaultValue()
@@ -1028,19 +1028,19 @@ friend zone std {
     }
 
     impl SortedMap<K, V> for TreeMap<K, V> {
-        func firstKey(): K? { ref self ->
+        func firstKey(): K? { self& ->
             fin elem = self.minimumNode(self.root)
             if elem < 0 { return null }
             return self.keys[elem]
         }
 
-        func lastKey(): K? { ref self ->
+        func lastKey(): K? { self& ->
             fin elem = self.maximumNode(self.root)
             if elem < 0 { return null }
             return self.keys[elem]
         }
 
-        func lowerKey(key: ref K): K? { ref self ->
+        func lowerKey(key: K&): K? { self& ->
             var elem = self.root
             var candidate = -1
             while elem >= 0 {
@@ -1055,19 +1055,19 @@ friend zone std {
             return self.keys[candidate]
         }
 
-        func floorKey(key: ref K): K? { ref self ->
+        func floorKey(key: K&): K? { self& ->
             fin exact = self.findNode(key)
             if exact >= 0 { return self.keys[exact] }
             return self.lowerKey(key)
         }
 
-        func ceilingKey(key: ref K): K? { ref self ->
+        func ceilingKey(key: K&): K? { self& ->
             fin exact = self.findNode(key)
             if exact >= 0 { return self.keys[exact] }
             return self.higherKey(key)
         }
 
-        func higherKey(key: ref K): K? { ref self ->
+        func higherKey(key: K&): K? { self& ->
             var elem = self.root
             var candidate = -1
             while elem >= 0 {
@@ -1083,19 +1083,19 @@ friend zone std {
             return self.keys[candidate]
         }
 
-        func firstEntry(): MapEntry<K, V>? { ref self ->
+        func firstEntry(): MapEntry<K, V>? { self& ->
             fin elem = self.minimumNode(self.root)
             if elem < 0 { return null }
             return MapEntry(self.keys[elem], self.values[elem])
         }
 
-        func lastEntry(): MapEntry<K, V>? { ref self ->
+        func lastEntry(): MapEntry<K, V>? { self& ->
             fin elem = self.maximumNode(self.root)
             if elem < 0 { return null }
             return MapEntry(self.keys[elem], self.values[elem])
         }
 
-        func headMap(toKey: ref K, inclusive: Bool = false): SortedMap<K, V> { ref self ->
+        func headMap(toKey: K&, inclusive: Bool = false): SortedMap<K, V> { self& ->
             var result = TreeMap<K, V>()
             fin all = self.entrySnapshot()
             for i in 0..<all.size {
@@ -1105,7 +1105,7 @@ friend zone std {
             return result
         }
 
-        func tailMap(fromKey: ref K, inclusive: Bool = true): SortedMap<K, V> { ref self ->
+        func tailMap(fromKey: K&, inclusive: Bool = true): SortedMap<K, V> { self& ->
             var result = TreeMap<K, V>()
             fin all = self.entrySnapshot()
             for i in 0..<all.size {
@@ -1115,7 +1115,7 @@ friend zone std {
             return result
         }
 
-        func subMap(fromKey: ref K, fromInclusive: Bool, toKey: ref K, toInclusive: Bool): SortedMap<K, V> { ref self ->
+        func subMap(fromKey: K&, fromInclusive: Bool, toKey: K&, toInclusive: Bool): SortedMap<K, V> { self& ->
             assert !(toKey < fromKey) { "subMap start must not be greater than end" }
             var result = TreeMap<K, V>()
             fin all = self.entrySnapshot()
@@ -1129,7 +1129,7 @@ friend zone std {
     }
 
     impl MutableSortedMap<K, V> for TreeMap<K, V> {
-        func pollFirstEntry(): MapEntry<K, V>? { mut ref self ->
+        func pollFirstEntry(): MapEntry<K, V>? { self! ->
             fin elem = self.minimumNode(self.root)
             if elem < 0 { return null }
             fin result = MapEntry(self.keys[elem], self.values[elem])
@@ -1137,7 +1137,7 @@ friend zone std {
             return result
         }
 
-        func pollLastEntry(): MapEntry<K, V>? { mut ref self ->
+        func pollLastEntry(): MapEntry<K, V>? { self! ->
             fin elem = self.maximumNode(self.root)
             if elem < 0 { return null }
             fin result = MapEntry(self.keys[elem], self.values[elem])
@@ -1162,7 +1162,7 @@ friend zone std {
      * naturally: `std::hashMapOf(1 to "a", 2 to "b")`.
      */
     @Experimental(sinceAzora: "0.0.4")
-    infx<K, V> K.to(that: V): MapEntry<K, V> { ref self ->
+    infx<K, V> K.to(that: V): MapEntry<K, V> { self& ->
         return std::mapEntry(self, that)
     }
 
@@ -1255,38 +1255,38 @@ friend zone std {
     // ---------------------------------------------------------------------
 
     @Experimental(sinceAzora: "0.0.4")
-    impl oper[] for HashMap<K, V> { ref self, key ->
+    impl oper[] for HashMap<K, V> { self&, key ->
         return self.get(key)
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    impl oper[]= for HashMap<K, V> { mut ref self, key, value ->
+    impl oper[]= for HashMap<K, V> { self!, key, value ->
         self.put(key, value)
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    impl oper[] for LinkedHashMap<K, V> { ref self, key ->
+    impl oper[] for LinkedHashMap<K, V> { self&, key ->
         return self.get(key)
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    impl oper[]= for LinkedHashMap<K, V> { mut ref self, key, value ->
+    impl oper[]= for LinkedHashMap<K, V> { self!, key, value ->
         self.put(key, value)
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    impl oper[] for TreeMap<K, V> { ref self, key ->
+    impl oper[] for TreeMap<K, V> { self&, key ->
         return self.get(key)
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    impl oper[]= for TreeMap<K, V> { mut ref self, key, value ->
+    impl oper[]= for TreeMap<K, V> { self!, key, value ->
         self.put(key, value)
     }
 
     /** Slicing is over current iteration order and returns an ordered snapshot. */
     @Experimental(sinceAzora: "0.0.4")
-    impl oper[:] by MapSlice for HashMap<K, V> { ref self, slice ->
+    impl oper[:] by MapSlice for HashMap<K, V> { self&, slice ->
         assert slice.step != 0 { "Map slice step cannot be zero" }
         fin all = self.entries()
         var result = LinkedHashMap<K, V>()
@@ -1301,7 +1301,7 @@ friend zone std {
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    impl oper[:] by MapSlice for LinkedHashMap<K, V> { ref self, slice ->
+    impl oper[:] by MapSlice for LinkedHashMap<K, V> { self&, slice ->
         assert slice.step != 0 { "Map slice step cannot be zero" }
         var result = LinkedHashMap<K, V>()
         var i = slice.start
@@ -1315,7 +1315,7 @@ friend zone std {
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    impl oper[:] by MapSlice for TreeMap<K, V> { ref self, slice ->
+    impl oper[:] by MapSlice for TreeMap<K, V> { self&, slice ->
         assert slice.step != 0 { "Map slice step cannot be zero" }
         fin all = self.entries()
         var result = LinkedHashMap<K, V>()
@@ -1330,7 +1330,7 @@ friend zone std {
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    impl oper+ by MapEntry<K, V> for HashMap<K, V> { ref self, entry ->
+    impl oper+ by MapEntry<K, V> for HashMap<K, V> { self&, entry ->
         var result = hashMapOf<K, V>()
         result.putAll(self)
         result.put(entry.key, entry.value)
@@ -1338,7 +1338,7 @@ friend zone std {
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    impl oper- by K for HashMap<K, V> { ref self, key ->
+    impl oper- by K for HashMap<K, V> { self&, key ->
         var result = hashMapOf<K, V>()
         result.putAll(self)
         result.remove(key)
@@ -1346,7 +1346,7 @@ friend zone std {
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    impl oper+ by MapEntry<K, V> for LinkedHashMap<K, V> { ref self, entry ->
+    impl oper+ by MapEntry<K, V> for LinkedHashMap<K, V> { self&, entry ->
         var result = linkedHashMapOf<K, V>()
         result.putAll(self)
         result.put(entry.key, entry.value)
@@ -1354,7 +1354,7 @@ friend zone std {
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    impl oper- by K for LinkedHashMap<K, V> { ref self, key ->
+    impl oper- by K for LinkedHashMap<K, V> { self&, key ->
         var result = linkedHashMapOf<K, V>()
         result.putAll(self)
         result.remove(key)
@@ -1362,7 +1362,7 @@ friend zone std {
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    impl oper+ by MapEntry<K, V> for TreeMap<K, V> { ref self, entry ->
+    impl oper+ by MapEntry<K, V> for TreeMap<K, V> { self&, entry ->
         var result = treeMapOf<K, V>()
         result.putAll(self)
         result.put(entry.key, entry.value)
@@ -1370,7 +1370,7 @@ friend zone std {
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    impl oper- by K for TreeMap<K, V> { ref self, key ->
+    impl oper- by K for TreeMap<K, V> { self&, key ->
         var result = treeMapOf<K, V>()
         result.putAll(self)
         result.remove(key)
@@ -1378,7 +1378,7 @@ friend zone std {
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    impl oper== by Map<K, V> for HashMap<K, V> { ref self, rhs ->
+    impl oper== by Map<K, V> for HashMap<K, V> { self&, rhs ->
         if self.size != rhs.size { return false }
         fin all = self.entries()
         for i in 0..<all.size {
@@ -1390,12 +1390,12 @@ friend zone std {
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    impl oper!= by Map<K, V> for HashMap<K, V> { ref self, rhs ->
+    impl oper!= by Map<K, V> for HashMap<K, V> { self&, rhs ->
         return !(self == rhs)
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    impl oper# for HashMap<K, V> { ref self ->
+    impl oper# for HashMap<K, V> { self& ->
         fin all = self.entries()
         var result = 0 as ULong
         for i in 0..<all.size {
@@ -1405,7 +1405,7 @@ friend zone std {
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    impl oper== by Map<K, V> for LinkedHashMap<K, V> { ref self, rhs ->
+    impl oper== by Map<K, V> for LinkedHashMap<K, V> { self&, rhs ->
         if self.size != rhs.size { return false }
         for i in 0..<self._size {
             if !rhs.containsKey(self.keys[i]) || rhs.get(self.keys[i]) != self.values[i] {
@@ -1416,12 +1416,12 @@ friend zone std {
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    impl oper!= by Map<K, V> for LinkedHashMap<K, V> { ref self, rhs ->
+    impl oper!= by Map<K, V> for LinkedHashMap<K, V> { self&, rhs ->
         return !(self == rhs)
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    impl oper# for LinkedHashMap<K, V> { ref self ->
+    impl oper# for LinkedHashMap<K, V> { self& ->
         var result = 0 as ULong
         for i in 0..<self._size {
             result = result + (#self.keys[i] ^ #self.values[i])
@@ -1430,7 +1430,7 @@ friend zone std {
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    impl oper== by Map<K, V> for TreeMap<K, V> { ref self, rhs ->
+    impl oper== by Map<K, V> for TreeMap<K, V> { self&, rhs ->
         if self.size != rhs.size { return false }
         fin all = self.entries()
         for i in 0..<all.size {
@@ -1440,12 +1440,12 @@ friend zone std {
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    impl oper!= by Map<K, V> for TreeMap<K, V> { ref self, rhs ->
+    impl oper!= by Map<K, V> for TreeMap<K, V> { self&, rhs ->
         return !(self == rhs)
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    impl oper# for TreeMap<K, V> { ref self ->
+    impl oper# for TreeMap<K, V> { self& ->
         fin all = self.entries()
         var result = 0 as ULong
         for i in 0..<all.size {

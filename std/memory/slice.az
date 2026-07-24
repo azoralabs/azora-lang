@@ -23,13 +23,13 @@ friend zone std {
     }
 
     @Experimental(sinceAzora: "0.0.3")
-    impl oper[] for Slice<T> { ref self, index ->
+    impl oper[] for Slice<T> { self&, index ->
         assert index >= 0 && index < self.count { "Slice index out of bounds" }
         return self.raw[index]
     }
 
     @Experimental(sinceAzora: "0.0.3")
-    impl oper[]= for Slice<T> { mut ref self, index, value ->
+    impl oper[]= for Slice<T> { self!, index, value ->
         assert index >= 0 && index < self.count { "Slice index out of bounds" }
         self.raw[index] = value
     }

@@ -164,7 +164,7 @@ class LlvmAggregateExecTest {
         """
         import std.io
         func main() {
-            fin arr = arr![1, 2, 3, 4]
+            fin arr = arr@[1, 2, 3, 4]
             std::println(arr[2])
             std::println(arr.length)
         }
@@ -176,7 +176,7 @@ class LlvmAggregateExecTest {
         """
         import std.io
         func main() {
-            var arr = arr![1, 2, 3]
+            var arr = arr@[1, 2, 3]
             arr[1] = 9
             std::println(arr[1])
         }
@@ -188,7 +188,7 @@ class LlvmAggregateExecTest {
         """
         import std.io
         func main() {
-            var nums = arr![1, 2, 3, 4]
+            var nums = arr@[1, 2, 3, 4]
             var sum = 0
             for n in nums {
                 sum = sum + n
@@ -216,7 +216,7 @@ class LlvmAggregateExecTest {
         """
         import std.io
         func main() {
-            var arr = arr![10, 20, 30]
+            var arr = arr@[10, 20, 30]
             arr.add(40)
             std::println(arr.length)
             std::println(arr[3])
@@ -229,7 +229,7 @@ class LlvmAggregateExecTest {
         """
         import std.io
         func main() {
-            var arr = arr![10, 20, 30]
+            var arr = arr@[10, 20, 30]
             arr.add(arr.length)
             std::println(arr[3])
         }
@@ -244,7 +244,7 @@ class LlvmAggregateExecTest {
             var values: Array<Int>
         }
         func main() {
-            var bucket = Bucket(arr![10, 20])
+            var bucket = Bucket(arr@[10, 20])
             bucket.values.add(30)
             std::println(bucket.values.length)
             std::println(bucket.values[2])
@@ -257,7 +257,7 @@ class LlvmAggregateExecTest {
         """
         import std.io
         func main() {
-            var arr = arr![1]
+            var arr = arr@[1]
             std::println(arr.isEmpty)
             std::println(arr.isNotEmpty)
             std::println(arr.isEmpty())
@@ -271,7 +271,7 @@ class LlvmAggregateExecTest {
         """
         import std.io
         func main() {
-            var nums = arr![1, 2, 3]
+            var nums = arr@[1, 2, 3]
             var words = ["one", "two"]
             std::println(nums.contains(2))
             std::println(nums.contains(9))
@@ -310,7 +310,7 @@ class LlvmAggregateExecTest {
         """
         import std.io
         func main() {
-            var values = arr![1: "one", 2: "two"]
+            var values = arr@[1: "one", 2: "two"]
             std::println(values[1])
             std::println(values[2])
         }
@@ -334,7 +334,7 @@ class LlvmAggregateExecTest {
         """
         import std.io
         func main() {
-            var values = arr![1: 10, 2: 20]
+            var values = arr@[1: 10, 2: 20]
             values[3] = 30
             std::println(values[3] / 10)
             std::println(values[3])
@@ -390,7 +390,7 @@ class LlvmAggregateExecTest {
         "6",
         """
         import std.io
-        fin values = arr![1, 2, 3]
+        fin values = arr@[1, 2, 3]
         func main() {
             std::println(values[0] + values[1] + values[2])
         }
@@ -437,7 +437,7 @@ class LlvmAggregateExecTest {
         """
         import std.io
         func main() {
-            var numbers: List<Int> = arr![10, 20, 30]
+            var numbers: List<Int> = arr@[10, 20, 30]
             var unique: Set<Int> = ![1, 2, 2]
             var names: Map<String, Int> = ["a": 1, "b": 2]
             std::println(numbers.size)
@@ -524,7 +524,7 @@ class LlvmAggregateExecTest {
         """
         import std.io
         func main() {
-            var array = arr![1c, 2c]
+            var array = arr@[1c, 2c]
             array.add(3c)
             std::println(array[2])
             var map = ["value": 4c]
@@ -553,7 +553,7 @@ class LlvmAggregateExecTest {
         """
         import std.io
         func main() {
-            fin arr = arr![0.5, 1.5, 2.5]
+            fin arr = arr@[0.5, 1.5, 2.5]
             var sum = 0.0
             var i = 0
             while i < arr.length {

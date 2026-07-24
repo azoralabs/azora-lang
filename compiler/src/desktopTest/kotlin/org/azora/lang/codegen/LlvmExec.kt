@@ -27,11 +27,11 @@ import kotlin.test.fail
  * LLVM interpreter (`lli`), returning the program's standard output.
  *
  * The LLVM backend lowers the **un-optimized** IR (`result.ir`) — the same IR
- * the arr![org.azora.lang.backend.IrInterpreter] tests run against — so backend
+ * the arr@[org.azora.lang.backend.IrInterpreter] tests run against — so backend
  * output can be cross-checked against interpreter semantics without the
  * optimizer interfering.
  *
- * If no LLVM toolchain is present the harness reports arr![available] as `false`
+ * If no LLVM toolchain is present the harness reports arr@[available] as `false`
  * and execution tests skip themselves, so the suite stays green on machines
  * without LLVM installed.
  */
@@ -60,7 +60,7 @@ object LlvmExec {
     }
 
     /**
-     * Compiles arr![source] and returns the generated LLVM IR text.
+     * Compiles arr@[source] and returns the generated LLVM IR text.
      *
      * @param optimized when `true`, lowers the optimizer's output (release path);
      *   otherwise lowers the raw IR, matching the interpreter test convention.

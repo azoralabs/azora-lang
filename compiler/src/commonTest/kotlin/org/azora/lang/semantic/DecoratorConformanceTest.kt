@@ -54,7 +54,7 @@ class DecoratorConformanceTest {
                 fin value: Long
             }
             impl Serializable for UserId {
-                func generated(): Unit { ref self ->
+                func generated(): Unit { self& ->
                     return
                 }
             }
@@ -87,7 +87,7 @@ class DecoratorConformanceTest {
                 fin encodeDefaults: Bool = true
             }
             spec Serializer<T> {
-                func encode(value: ref T): String
+                func encode(value: T&): String
             }
             @Serializable
             pack UserId {
@@ -123,7 +123,7 @@ class DecoratorConformanceTest {
     @Test fun manualSerializerImplementationRecordsGenericConformance() {
         val result = analyze("""
             spec Serializer<T> {
-                func encode(value: ref T): String
+                func encode(value: T&): String
                 func decode(value: String): T
             }
             pack User {
@@ -131,10 +131,10 @@ class DecoratorConformanceTest {
             }
             pack UserSerializer
             impl Serializer<User> for UserSerializer {
-                func encode(value: ref User): String { ref self ->
+                func encode(value: User&): String { self& ->
                     return value.name
                 }
-                func decode(value: String): User { ref self ->
+                func decode(value: String): User { self& ->
                     return User(value)
                 }
             }

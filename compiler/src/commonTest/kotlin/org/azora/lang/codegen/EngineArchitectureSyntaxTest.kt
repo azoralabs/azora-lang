@@ -63,7 +63,7 @@ class EngineArchitectureSyntaxTest {
                 value: Ty
             }
         }
-        impl<...T> deref for Single { ref self ->
+        impl<...T> deref for Single { self& ->
             return self.value
         }
 
@@ -95,8 +95,8 @@ class EngineArchitectureSyntaxTest {
             @System(.Update)
             func move(
                 time: res Time
-                mut ref player: Single<mut ref Transform> with Player
-                mut ref query: query [mut ref Transform, ref Player]
+                mut ref player: Single<Transform!> with Player
+                mut ref query: query [mut ref Transform, Player&]
             ) {
                 player.translation.x = 2.0
             }

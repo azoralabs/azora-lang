@@ -534,7 +534,7 @@ class TypeResolver(private val table: SymbolTable) {
                     }
                     val selfTarget = stmt.target as? Expr.Identifier
                     if (selfTarget?.name == "self" && table.lookupVariable("self")?.mutable == false) {
-                        errors.add("line ${stmt.line}: cannot mutate '${stmt.name}' through ref self")
+                        errors.add("line ${stmt.line}: cannot mutate '${stmt.name}' through an immutable 'self&' receiver (use 'self!')")
                         return
                     }
                     if (!canAccessMember(targetType.name, field.visibility)) {

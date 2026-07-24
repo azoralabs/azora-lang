@@ -25,7 +25,7 @@ class Feature003SyntaxTest {
             pack Counter {
                 shield var value: Int
             }
-            func Counter.peek(): Int { ref self ->
+            func Counter.peek(): Int { self& ->
                 return self.value
             }
             func main() {
@@ -41,7 +41,7 @@ class Feature003SyntaxTest {
             pack Counter {
                 shield var value: Int
             }
-            func Counter.bump() { mut ref self ->
+            func Counter.bump() { self! ->
                 self.value = self.value + 1
             }
             func main() {
@@ -98,7 +98,7 @@ class Feature003SyntaxTest {
             pack Counter {
                 var value: Int
             }
-            func Counter.bump() { ref self ->
+            func Counter.bump() { self& ->
                 self.value = self.value + 1
             }
             func main() {
@@ -107,7 +107,7 @@ class Feature003SyntaxTest {
             }
         """.trimIndent())
         assertIs<CompilationResult.Failure>(result)
-        assertTrue(result.errors.any { "ref self" in it }, "errors: ${result.errors}")
+        assertTrue(result.errors.any { "self&" in it }, "errors: ${result.errors}")
     }
 
     @Test fun loopIteratorContinueSkipsReset() {
@@ -161,12 +161,12 @@ class Feature003SyntaxTest {
             pack Label {
                 var value: String
             }
-            spec Into<T>: T ( ref self ) use as "to${'$'}{T.typeName}"
-            spec From<T>: T ( ref self ) use as "from${'$'}{T.typeName}"
-            impl Into<String> for Label { ref self ->
+            spec Into<T>: T ( self& ) use as "to${'$'}{T.typeName}"
+            spec From<T>: T ( self& ) use as "from${'$'}{T.typeName}"
+            impl Into<String> for Label { self& ->
                 return "Label(" + self.value + ")"
             }
-            impl From<String> for Label { ref self ->
+            impl From<String> for Label { self& ->
                 return "Label(" + self.value + ")"
             }
             func main() {
@@ -183,10 +183,10 @@ class Feature003SyntaxTest {
             pack Label {
                 var value: String
             }
-            impl Show<String> for Label { ref self ->
+            impl Show<String> for Label { self& ->
                 return "Label(" + self.value + ")"
             }
-            spec Show<T>: T ( ref self ) use as "show${'$'}{T.typeName}"
+            spec Show<T>: T ( self& ) use as "show${'$'}{T.typeName}"
             func main() {
                 var label = Label("ok")
                 std::println(label.showString)
@@ -200,8 +200,8 @@ class Feature003SyntaxTest {
             pack Label {
                 var value: String
             }
-            spec Render<T>: T ( ref self ) use as "render"
-            impl Render<String> for Label { ref self ->
+            spec Render<T>: T ( self& ) use as "render"
+            impl Render<String> for Label { self& ->
                 return "Label(" + self.value + ")"
             }
             func main() {
@@ -217,8 +217,8 @@ class Feature003SyntaxTest {
             pack Label {
                 var value: String
             }
-            spec Into<T>: T ( ref self ) use as "to${'$'}{T.typeName}"
-            impl Into<String> for Label { ref self ->
+            spec Into<T>: T ( self& ) use as "to${'$'}{T.typeName}"
+            impl Into<String> for Label { self& ->
                 return self.value
             }
             func main() {
@@ -236,8 +236,8 @@ class Feature003SyntaxTest {
             pack Box {
                 var value: Int
             }
-            spec Extract<T>(): T ( ref self ) use as "extract${'$'}{T.typeName}"
-            impl Extract<Int> for Box { ref self ->
+            spec Extract<T>(): T ( self& ) use as "extract${'$'}{T.typeName}"
+            impl Extract<Int> for Box { self& ->
                 return self.value
             }
             func main() {
@@ -251,8 +251,8 @@ class Feature003SyntaxTest {
             pack Box {
                 var value: Int
             }
-            spec Extract<T>(): T ( ref self ) use as "extract${'$'}{T.typeName}"
-            impl Extract<Int> for Box { ref self ->
+            spec Extract<T>(): T ( self& ) use as "extract${'$'}{T.typeName}"
+            impl Extract<Int> for Box { self& ->
                 return self.value
             }
             func main() {
@@ -270,7 +270,7 @@ class Feature003SyntaxTest {
             pack Label {
                 var value: String
             }
-            impl as String for Label { ref self ->
+            impl as String for Label { self& ->
                 return "cast:" + self.value
             }
             func main() {
@@ -286,7 +286,7 @@ class Feature003SyntaxTest {
             pack Label {
                 var value: String
             }
-            impl as String for Label { ref self ->
+            impl as String for Label { self& ->
                 return "cast:" + self.value
             }
             func main() {
@@ -370,7 +370,7 @@ class Feature003SyntaxTest {
                     self.value = self.value + 1
                 }
             }
-            func Counter.peek(): Int { ref self ->
+            func Counter.peek(): Int { self& ->
                 return self.value
             }
             func main() {

@@ -573,11 +573,11 @@ class IrGenerator(private val table: SymbolTable) {
         activeEffects.clear()
         val mangledParams = symbol.params.map { (name, type) ->
             val m = registerName(name)
-            val mutable = name != "self" || method.receiverModifier != "ref"
+            val mutable = name != method.receiverName || method.receiverModifier != "ref"
             table.defineVariable(VariableSymbol(name, type, mutable = mutable))
             m to type
         }
-        contextualValues.addLast(listOf(IrExpr.Var(resolveName("self"), IrType.Named(typeName))))
+        contextualValues.addLast(listOf(IrExpr.Var(resolveName(method.receiverName), IrType.Named(typeName))))
         val body = try {
             lowerBody(method.body)
         } finally {

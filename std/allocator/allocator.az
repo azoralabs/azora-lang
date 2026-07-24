@@ -125,7 +125,7 @@ friend zone std {
     impl ctor(capacity: Int) for Arena
     in {
         assert capacity > 0 { "Arena capacity must be positive" }
-    } zone { mut self ->
+    } zone { self! ->
         self.capacity = capacity
         self.offset = 0
         self.allocCount = 0
@@ -162,12 +162,12 @@ friend zone std {
          * @return The byte offset of the allocated region.
          */
         @Experimental(sinceAzora: "0.0.2")
-        func alloc(size: Int): Int!AllocError
+        func alloc(size: Int): Int ?! AllocError
         in {
             assert size > 0 { "Allocation size must be positive" }
         } zone {
             if offset + size > capacity {
-                fail return .OutOfMemory
+                return .OutOfMemory
             }
             fin position = offset
             self.offset = offset + size
@@ -190,7 +190,7 @@ friend zone std {
          * @return The byte offset of the aligned allocation.
          */
         @Experimental(sinceAzora: "0.0.2")
-        func allocAligned(size: Int, alignment: Int): Int!AllocError
+        func allocAligned(size: Int, alignment: Int): Int ?! AllocError
         in {
             assert size > 0 { "Allocation size must be positive" }
             assert alignment > 0 { "Alignment must be positive" }
@@ -199,7 +199,7 @@ friend zone std {
             fin padding = if remainder == 0 { 0 } else { alignment - remainder }
             fin aligned = offset + padding
             if aligned + size > capacity {
-                fail return .OutOfMemory
+                return .OutOfMemory
             }
             self.offset = aligned + size
             self.allocCount = allocCount + 1
@@ -305,7 +305,7 @@ friend zone std {
     in {
         assert slotSize > 0 { "Slot size must be positive" }
         assert slotCount > 0 { "Slot count must be positive" }
-    } zone { mut self ->
+    } zone { self! ->
         self.slotSize = slotSize
         self.slotCount = slotCount
         self.freeStack = alloc Int[slotCount]
@@ -319,7 +319,7 @@ friend zone std {
 
     @Experimental(sinceAzora: "0.0.2")
     impl dtor() for Pool {
-        ref self -> drop self.freeStack
+        self& -> drop self.freeStack
     }
 
     impl Pool {
@@ -350,9 +350,9 @@ friend zone std {
          * @return The index of the acquired slot.
          */
         @Experimental(sinceAzora: "0.0.2")
-        func acquire(): Int!AllocError {
+        func acquire(): Int ?! AllocError {
             if freeCount == 0 {
-                fail return .PoolExhausted
+                return .PoolExhausted
             }
             self.freeCount = freeCount - 1
             fin slotIndex = (*freeStack)[freeCount]
@@ -451,7 +451,7 @@ friend zone std {
     impl ctor(capacity: Int) for StackAllocator
     in {
         assert capacity > 0 { "StackAllocator capacity must be positive" }
-    } zone { mut self ->
+    } zone { self! ->
         self.capacity = capacity
         self.offset = 0
         self.allocCount = 0
@@ -478,12 +478,12 @@ friend zone std {
          * @return The byte offset of the allocation.
          */
         @Experimental(sinceAzora: "0.0.2")
-        func alloc(size: Int): Int!AllocError
+        func alloc(size: Int): Int ?! AllocError
         in {
             assert size > 0 { "Allocation size must be positive" }
         } zone {
             if offset + size > capacity {
-                fail return .OutOfMemory
+                return .OutOfMemory
             }
             fin position = offset
             self.offset = offset + size

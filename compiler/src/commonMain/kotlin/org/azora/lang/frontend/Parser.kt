@@ -542,24 +542,18 @@ class Parser(
         var receiverModifier = "ref"
         val params = mutableListOf<Param>()
         if (match(TokenType.L_PAREN)) {
-            receiverModifier = parseImplReceiverModifier()
-            val recv = consumeIdentifierLike("Expected receiver name")
-            if (recv != "self") error("Expected receiver to be named 'self' at line ${peek().line}")
+            receiverModifier = parseReceiverBinding().modifier
             if (match(TokenType.COMMA)) params.addAll(parseParams())
             consume(TokenType.R_PAREN, "Expected ')' after receiver")
         }
         val body = mutableListOf<Stmt>()
         if (match(TokenType.L_BRACE)) {
             skipNewlines()
-            // In-brace receiver form: `{ mod self -> body }` or, for operator
-            // overloads, `{ mod self, operand[, operand] -> body }`.
-            if (isInBraceReceiverAhead()) {
-                receiverModifier = parseImplReceiverModifier()
-                consumeIdentifierLike("Expected receiver name")
-                while (match(TokenType.COMMA)) {
-                    val pmod = parseImplReceiverModifier()
-                    params.add(Param(consumeIdentifierLike("Expected parameter name"), TypeRef.Named("Any"), modifier = pmod))
-                }
+            // In-brace receiver form: `{ self& -> body }` or, for operator overloads,
+            // `{ self&, operand[: Type][, …] -> body }`.
+            if (isSelfReceiverHeaderAhead()) {
+                receiverModifier = parseReceiverBinding().modifier
+                parseReceiverOperands(params)
                 consume(TokenType.ARROW, "Expected '->' after in-brace receiver")
                 skipNewlines()
             }
@@ -576,14 +570,25 @@ class Parser(
     private fun isInBraceReceiverAhead(): Boolean {
         var i = current
         if (tokens.getOrNull(i)?.type in setOf(TokenType.REF, TokenType.MUT)) {
+            // Old prefix form: `[mut] ref self …`.
             if (tokens.getOrNull(i)?.type == TokenType.MUT && tokens.getOrNull(i + 1)?.type == TokenType.REF) i++
             i++
+            if (tokens.getOrNull(i)?.lexeme != "self") return false
+            i++
+        } else if (tokens.getOrNull(i)?.lexeme == "self") {
+            // New postfix form: `self& …` / `self! …` / `self …`.
+            i++
+            if (tokens.getOrNull(i)?.type in setOf(TokenType.AMP, TokenType.BANG)) i++
         } else return false
-        if (tokens.getOrNull(i)?.lexeme != "self") return false
-        i++
         // Skip `, operand` pairs (operator operands) before the `->`.
         while (tokens.getOrNull(i)?.type == TokenType.COMMA) {
-            i += 2 // `, name` (the name token; modifiers are rare in this position)
+            i++ // ','
+            if (tokens.getOrNull(i)?.type in setOf(TokenType.REF, TokenType.MUT)) {
+                if (tokens.getOrNull(i)?.type == TokenType.MUT && tokens.getOrNull(i + 1)?.type == TokenType.REF) i++
+                i++
+            }
+            i++ // operand name
+            if (tokens.getOrNull(i)?.type in setOf(TokenType.AMP, TokenType.BANG)) i++
         }
         return tokens.getOrNull(i)?.type == TokenType.ARROW
     }
@@ -1029,9 +1034,9 @@ class Parser(
     }
 
     private fun parseComptimeListTerm(): List<String> {
-        // `arr![...]` — the array-literal macro used as a compile-time list; accept the
-        // `Name !` prefix and parse the bracket body as a list literal of values.
-        val isMacro = check(TokenType.IDENTIFIER) && peekNext()?.type == TokenType.BANG
+        // `arr@[...]` — the array-literal macro used as a compile-time list; accept the
+        // `Name @` prefix and parse the bracket body as a list literal of values.
+        val isMacro = check(TokenType.IDENTIFIER) && peekNext()?.type == TokenType.AT
         if (isMacro) { advance(); advance() }
         if (match(TokenType.L_BRACKET)) {
             val values = mutableListOf<String>()
@@ -1041,7 +1046,7 @@ class Parser(
                         // Plain `[…]` groups *types* only; string/int value lists must
                         // be written `arr![…]`.
                         check(TokenType.STRING_LITERAL) || check(TokenType.INT_LITERAL) -> {
-                            if (!isMacro) error("value lists must use 'arr![…]'; plain '[…]' only groups types at line ${peek().line}")
+                            if (!isMacro) error("value lists must use 'arr@[…]'; plain '[…]' only groups types at line ${peek().line}")
                             if (check(TokenType.STRING_LITERAL)) advance().literal as String
                             else (advance().literal as NumericLiteral).value.toString()
                         }
@@ -1790,9 +1795,7 @@ class Parser(
             }
             consume(TokenType.L_BRACE, "Expected '{' before ctor impl body")
             skipNewlines()
-            val receiverModifier = parseImplReceiverModifier()
-            val receiverName = consumeIdentifierLike("Expected ctor receiver name")
-            if (receiverName != "self") error("Expected ctor receiver to be named 'self' at line ${peek().line}")
+            val receiverModifier = parseReceiverBinding("ctor receiver").modifier
             consume(TokenType.ARROW, "Expected '->' after ctor receiver")
             skipNewlines()
             val body = mutableListOf<Stmt>()
@@ -1827,9 +1830,7 @@ class Parser(
             }
             consume(TokenType.L_BRACE, "Expected '{' before dtor impl body")
             skipNewlines()
-            val receiverModifier = parseImplReceiverModifier()
-            val receiverName = consumeIdentifierLike("Expected dtor receiver name")
-            if (receiverName != "self") error("Expected dtor receiver to be named 'self' at line ${peek().line}")
+            val receiverModifier = parseReceiverBinding("dtor receiver").modifier
             consume(TokenType.ARROW, "Expected '->' after dtor receiver")
             skipNewlines()
             val body = mutableListOf<Stmt>()
@@ -1859,12 +1860,10 @@ class Parser(
             val methodName = castMethodName(targetType)
             consume(TokenType.L_BRACE, "Expected '{' before cast impl body")
             skipNewlines()
-            val receiverModifier = parseImplReceiverModifier()
+            val receiverModifier = parseReceiverBinding("cast receiver").modifier
             if (receiverModifier != "ref") {
-                error("impl cast receivers are always 'ref self' at line ${asStart.line}")
+                error("impl cast receivers are always 'self&' at line ${asStart.line}")
             }
-            val receiverName = consumeIdentifierLike("Expected cast receiver name")
-            if (receiverName != "self") error("Expected cast receiver to be named 'self' at line ${peek().line}")
             consume(TokenType.ARROW, "Expected '->' after cast receiver")
             skipNewlines()
             val body = mutableListOf<Stmt>()
@@ -1929,13 +1928,20 @@ class Parser(
             val params = mutableListOf<Param>()
             var pidx = 0
             do {
-                val modifier = when {
+                val prefixMod = when {
                     check(TokenType.MUT) && peekNext()?.type == TokenType.REF -> { advance(); advance(); "mut ref" }
                     match(TokenType.REF) -> "ref"
                     match(TokenType.MUT) -> "mut"
                     else -> ""
                 }
                 val name = consumeIdentifierLike("Expected parameter name in oper impl")
+                // New postfix borrow on the operand: `self&` / `index!`.
+                val modifier = when {
+                    prefixMod.isNotEmpty() -> prefixMod
+                    match(TokenType.AMP) -> "ref"
+                    match(TokenType.BANG) -> "mut ref"
+                    else -> ""
+                }
                 val explicitType = if (match(TokenType.COLON)) parseTypeName() else null
                 params.add(Param(name, explicitType ?: paramTypes.getOrElse(pidx) { TypeRef.Named("Any") }, modifier = modifier))
                 pidx++
@@ -1971,13 +1977,19 @@ class Parser(
             skipNewlines()
             val params = mutableListOf<Param>()
             do {
-                val modifier = when {
+                val prefixMod = when {
                     check(TokenType.MUT) && peekNext()?.type == TokenType.REF -> { advance(); advance(); "mut ref" }
                     match(TokenType.REF) -> "ref"
                     match(TokenType.MUT) -> "mut"
                     else -> ""
                 }
                 val name = consumeIdentifierLike("Expected receiver name in deref impl")
+                val modifier = when {
+                    prefixMod.isNotEmpty() -> prefixMod
+                    match(TokenType.AMP) -> "ref"
+                    match(TokenType.BANG) -> "mut ref"
+                    else -> ""
+                }
                 params.add(Param(name, TypeRef.Named(typeName), modifier = modifier))
             } while (match(TokenType.COMMA))
             consume(TokenType.ARROW, "Expected '->' after deref receiver")
@@ -2065,12 +2077,10 @@ class Parser(
         consume(TokenType.L_BRACE, "Expected '{' after impl type")
         skipNewlines()
         if (traitName != null && isSelfReceiverHeaderAhead()) {
-            val receiverModifier = parseImplReceiverModifier()
+            val receiverModifier = parseReceiverBinding("callback receiver").modifier
             if (receiverModifier != "ref") {
-                error("spec callback impl receivers are always 'ref self' at line ${start.line}")
+                error("spec callback impl receivers are always 'self&' at line ${start.line}")
             }
-            val receiverName = consumeIdentifierLike("Expected callback receiver name")
-            if (receiverName != "self") error("Expected callback receiver to be named 'self' at line ${peek().line}")
             consume(TokenType.ARROW, "Expected '->' after callback receiver")
             skipNewlines()
             val body = mutableListOf<Stmt>()
@@ -2251,9 +2261,7 @@ class Parser(
         // (`{ ref self -> … }`), like an extension function, so `self` is the
         // receiver value inside the body.
         val receiverModifier = if (universal) {
-            val mod = parseExtensionReceiverModifier()
-            val receiverName = consumeIdentifierLike("Expected infx receiver name")
-            if (receiverName != "self") error("Expected infx receiver to be named 'self' at line ${peek().line}")
+            val mod = parseReceiverBinding("infx receiver").modifier
             consume(TokenType.ARROW, "Expected '->' after infx receiver")
             skipNewlines()
             mod
@@ -2309,9 +2317,7 @@ class Parser(
         }
         consume(TokenType.L_BRACE, "Expected '{' before extension body")
         skipNewlines()
-        val receiverModifier = parseExtensionReceiverModifier()
-        val receiverName = consumeIdentifierLike("Expected extension receiver name")
-        if (receiverName != "self") error("Expected extension receiver to be named 'self' at line ${peek().line}")
+        val receiverModifier = parseReceiverBinding("extension receiver").modifier
         consume(TokenType.ARROW, "Expected '->' after extension receiver")
         skipNewlines()
         val body = mutableListOf<Stmt>()
@@ -2356,6 +2362,52 @@ class Parser(
             match(TokenType.MUT) -> "mut ref"
             else -> "mut ref"
         }
+
+    /** New postfix receiver/operand borrow: `self&`/`x&` → immutable, `self!`/`x!` → mutable. */
+    private fun parsePostfixReceiverModifier(): String =
+        when {
+            match(TokenType.AMP) -> "ref"
+            match(TokenType.BANG) -> "mut ref"
+            else -> "mut ref"
+        }
+
+    /** A receiver binding: the receiver's name (always `self`) and its borrow modifier. */
+    private data class ReceiverBinding(val name: String, val modifier: String)
+
+    /**
+     * Parses the `self` receiver binding in either the new postfix form (`self&` /
+     * `self!` / `self`) or the old prefix form (`[mut] ref self`), consuming through
+     * the receiver name. The receiver is always named `self`.
+     */
+    private fun parseReceiverBinding(what: String = "receiver"): ReceiverBinding {
+        // New postfix form: `self` directly followed by a borrow marker or delimiter.
+        val postfix = peek().lexeme == "self"
+        val mod: String
+        if (postfix) {
+            consumeIdentifierLike("Expected $what name")
+            mod = parsePostfixReceiverModifier()
+        } else {
+            mod = parseImplReceiverModifier()
+            val name = consumeIdentifierLike("Expected $what name")
+            if (name != "self") error("Expected $what to be named 'self' at line ${peek().line}")
+        }
+        return ReceiverBinding("self", mod)
+    }
+
+    /**
+     * Parses the operands that can follow the receiver in a `{ self&, … -> }` block:
+     * `, name: Type` (the type may carry a borrow, e.g. `Animal&`) or `, name[&|!]`.
+     */
+    private fun parseReceiverOperands(params: MutableList<Param>) {
+        while (match(TokenType.COMMA)) {
+            val name = consumeIdentifierLike("Expected operand name in receiver block")
+            if (match(TokenType.COLON)) {
+                params.add(Param(name, parseTypeName()))
+            } else {
+                params.add(Param(name, TypeRef.Named("Any"), modifier = parsePostfixReceiverModifier()))
+            }
+        }
+    }
 
     private fun parseSpecReceiverModifier(): String =
         when {
@@ -2847,8 +2899,8 @@ class Parser(
             // Callback receiver in parens: `spec Into<T>: T (ref self) use as "…"`.
             consume(TokenType.L_PAREN, "Expected '(' after spec callback signature")
             skipNewlines()
-            val receiverModifier = parseSpecReceiverModifier()
-            val receiverName = consumeIdentifierLike("Expected spec callback receiver name")
+            val receiverBinding = parseReceiverBinding("spec callback receiver")
+            val receiverModifier = receiverBinding.modifier
             consume(TokenType.R_PAREN, "Expected ')' after spec callback receiver")
             val useAsTemplate = if (check(TokenType.USE) && peekNext()?.type == TokenType.AS) {
                 advance()
@@ -2863,7 +2915,7 @@ class Parser(
                 requiresParens = hasCallParens,
                 params = callbackParams,
                 receiverModifier = receiverModifier,
-                receiverName = receiverName,
+                receiverName = receiverBinding.name,
                 useAsTemplate = useAsTemplate,
                 typeParams = typeParams.names,
             )
@@ -3067,6 +3119,7 @@ class Parser(
         }
         val minVariadicLength = parseVariadicWhereClause()
         var receiverModifier: ParamModifier = "mut ref"
+        var receiverName = "self"
 
         // Optional contract clauses before the body: `in { ... }` preconditions and
         // `out { r -> ... }` postconditions. A contract-style declaration then
@@ -3101,9 +3154,8 @@ class Parser(
             consume(TokenType.L_BRACE, "Expected '{' before function body")
             skipNewlines()
             if (isSelfReceiverHeaderAhead()) {
-                receiverModifier = parseImplReceiverModifier()
-                val receiverName = consumeIdentifierLike("Expected receiver name")
-                if (receiverName != "self") error("Expected receiver to be named 'self' at line ${peek().line}")
+                receiverModifier = parseReceiverBinding().modifier
+                parseReceiverOperands(params)
                 consume(TokenType.ARROW, "Expected '->' after receiver")
                 skipNewlines()
             }
@@ -3145,6 +3197,7 @@ class Parser(
             isUnsafe = isUnsafe,
             visibility = visibility,
             receiverModifier = receiverModifier,
+            receiverName = receiverName,
             variadicParam = variadicParam,
             minVariadicLength = minVariadicLength,
             constParams = constParams,
@@ -3152,16 +3205,40 @@ class Parser(
     }
 
     private fun isSelfReceiverHeaderAhead(): Boolean {
-        val i = current
-        fun token(offset: Int): TokenType? = tokens.getOrNull(i + offset)?.type
-        fun lexeme(offset: Int): String? = tokens.getOrNull(i + offset)?.lexeme
-        return when {
-            token(0) == TokenType.REF && lexeme(1) == "self" && token(2) == TokenType.ARROW -> true
-            token(0) == TokenType.MUT && token(1) == TokenType.REF && lexeme(2) == "self" && token(3) == TokenType.ARROW -> true
-            token(0) == TokenType.MUT && lexeme(1) == "self" && token(2) == TokenType.ARROW -> true
-            lexeme(0) == "self" && token(1) == TokenType.ARROW -> true
-            else -> false
+        fun type(j: Int): TokenType? = tokens.getOrNull(j)?.type
+        fun lexeme(j: Int): String? = tokens.getOrNull(j)?.lexeme
+        // The receiver is always named `self`. A `,` after it introduces operands
+        // (`{ self&, x: Int, y: Animal& -> }`), so scan past `self[borrow]` and any
+        // `, operand[: Type][borrow]` pairs, and require a terminating `->`.
+        var j = current
+        when {
+            type(j) == TokenType.REF && lexeme(j + 1) == "self" -> j += 2
+            type(j) == TokenType.MUT && type(j + 1) == TokenType.REF && lexeme(j + 2) == "self" -> j += 3
+            type(j) == TokenType.MUT && lexeme(j + 1) == "self" -> j += 2
+            lexeme(j) == "self" -> {
+                j += 1
+                if (type(j) in setOf(TokenType.AMP, TokenType.BANG)) j += 1
+            }
+            else -> return false
         }
+        while (type(j) == TokenType.COMMA) {
+            j += 1
+            if (type(j) != TokenType.IDENTIFIER) return false
+            j += 1
+            if (type(j) == TokenType.COLON) {
+                // Skip the operand type; nested generics balance `<`/`>`.
+                j += 1
+                var depth = 0
+                while (true) {
+                    val t = type(j) ?: return false
+                    if (t == TokenType.LESS) depth++
+                    else if (t == TokenType.GREATER) depth--
+                    else if (depth == 0 && (t == TokenType.COMMA || t == TokenType.ARROW)) break
+                    j += 1
+                }
+            } else if (type(j) in setOf(TokenType.AMP, TokenType.BANG)) j += 1
+        }
+        return type(j) == TokenType.ARROW
     }
 
     private fun parseUseAsTemplate(): String {
@@ -3480,8 +3557,8 @@ class Parser(
             base = when {
                 match(TokenType.QMARK) -> TypeRef.Nullable(base)
                 check(TokenType.STAR) -> { advance(); TypeRef.Pointer(base) }
-                check(TokenType.BANG) && peekNext()?.type in setOf(TokenType.IDENTIFIER, TokenType.L_BRACKET) -> {
-                    advance() // '!'
+                // Failable (error) type: `T ?! E` or `T ?! [E1, E2]`.
+                match(TokenType.QMARK_BANG) -> {
                     val errSets = if (match(TokenType.L_BRACKET)) {
                         val names = mutableListOf<String>()
                         do {
@@ -3493,10 +3570,15 @@ class Parser(
                         }
                         names
                     } else {
-                        listOf(consume(TokenType.IDENTIFIER, "Expected error-set name after '!'").lexeme)
+                        listOf(consume(TokenType.IDENTIFIER, "Expected error-set name after '?!'").lexeme)
                     }
                     TypeRef.Failable(base, errSets)
                 }
+                // Postfix borrows: `T&` (immutable), `T!` (mutable). Replace the old
+                // `ref T` / `mut ref T` prefix forms. Errors are `T ?! E` now, so a
+                // `!` in type position is always a mutable borrow.
+                match(TokenType.AMP) -> TypeRef.Reference(TypeRef.RefKind.BORROWED, base)
+                match(TokenType.BANG) -> TypeRef.Reference(TypeRef.RefKind.MUTABLE, base)
                 else -> return base
             }
         }
@@ -3639,12 +3721,10 @@ class Parser(
                     typeName = consume(TokenType.IDENTIFIER, "Expected type name after '::' in type path").lexeme
                     qualifiedName += "__$typeName"
                 }
-                // `Type!(args)` — a compile-time type-function (macro) call. A `!`
-                // NOT followed by `(` is a failable type (`Type!ErrSet`), handled by
-                // parseTypeSuffixes; leave it for that pass.
-                if (check(TokenType.BANG) && peekNext()?.type == TokenType.L_PAREN) {
-                    advance() // '!'
-                    consume(TokenType.L_PAREN, "Expected '(' after '$typeName!'")
+                // `Type@(args)` — a compile-time type-function (macro) call.
+                if (check(TokenType.AT) && peekNext()?.type == TokenType.L_PAREN) {
+                    advance() // '@'
+                    consume(TokenType.L_PAREN, "Expected '(' after '$typeName@'")
                     val args = mutableListOf<TypeRef>()
                     if (!check(TokenType.R_PAREN)) {
                         do { args.add(parseTypeName()) } while (match(TokenType.COMMA))
@@ -3749,7 +3829,6 @@ class Parser(
             check(TokenType.THROW) -> parseThrow()
             check(TokenType.PANIC) -> parsePanicStmt()
             check(TokenType.FAIL) && peekNext()?.type == TokenType.DEFER -> parseFailDefer()
-            check(TokenType.FAIL) && peekNext()?.type == TokenType.RETURN -> parseFailReturn()
             check(TokenType.FAIL) -> parseFailThrow()
             check(TokenType.UNSAFE) -> parseUnsafe()
             check(TokenType.DROP) -> parseDrop()
@@ -3983,17 +4062,6 @@ class Parser(
         val value = parseExpr()
         consumeNewline()
         return Stmt.Throw(value, start.line, start.column)
-    }
-
-    /** `fail return .Variant` — return by failing the function with an error variant. */
-    private fun parseFailReturn(): Stmt.Throw {
-        val start = peek()
-        consume(TokenType.FAIL, "Expected 'fail'")
-        consume(TokenType.RETURN, "Expected 'return' after 'fail'")
-        match(TokenType.DOT)
-        val variant = consume(TokenType.IDENTIFIER, "Expected error variant after 'fail return'").lexeme
-        consumeNewline()
-        return Stmt.Throw(Expr.StringLiteral(variant, start.line), start.line, start.column)
     }
 
     /**
@@ -4500,8 +4568,8 @@ class Parser(
             return TypeFunctionExpr.Conditional(condition, thenValue, elseValue)
         }
         val name = consume(TokenType.IDENTIFIER, "Expected a type value").lexeme
-        if (match(TokenType.BANG)) {
-            consume(TokenType.L_PAREN, "Expected '(' after '$name!'")
+        if (match(TokenType.AT)) {
+            consume(TokenType.L_PAREN, "Expected '(' after '$name@'")
             val args = mutableListOf<TypeFunctionExpr>()
             if (!check(TokenType.R_PAREN)) {
                 do { args.add(parseTypeFunctionExpr()) } while (match(TokenType.COMMA))
@@ -4520,8 +4588,8 @@ class Parser(
     private fun parseTypeFunctionCondition(): TypeFunctionCondition {
         fun operand(): Pair<TypeFunctionExpr, Boolean> {
             val name = consume(TokenType.IDENTIFIER, "Expected a type value in type comparison").lexeme
-            val expression = if (match(TokenType.BANG)) {
-                consume(TokenType.L_PAREN, "Expected '(' after '$name!'")
+            val expression = if (match(TokenType.AT)) {
+                consume(TokenType.L_PAREN, "Expected '(' after '$name@'")
                 val args = mutableListOf<TypeFunctionExpr>()
                 if (!check(TokenType.R_PAREN)) {
                     do { args.add(parseTypeFunctionExpr()) } while (match(TokenType.COMMA))
@@ -5075,6 +5143,15 @@ class Parser(
     private fun parseReturn(): Stmt {
         val start = peek()
         consume(TokenType.RETURN, "Expected 'return'")
+        // `return .Variant` — fail the function with an error-set variant. This is
+        // the only way to return an error (the old `fail return .Variant` form is
+        // gone); a plain `return value` always yields the success value.
+        if (check(TokenType.DOT) && peekNext()?.type == TokenType.IDENTIFIER) {
+            advance() // '.'
+            val variant = consume(TokenType.IDENTIFIER, "Expected error variant after 'return .'").lexeme
+            consumeNewline()
+            return Stmt.Throw(Expr.StringLiteral(variant, start.line), start.line, start.column)
+        }
         val value = if (check(TokenType.NEWLINE) || check(TokenType.R_BRACE) || isAtEnd()) null
                     else parseExpr()
         consumeNewline()
@@ -5517,17 +5594,17 @@ class Parser(
         var pendingCallTypeArgs: List<TypeRef> = emptyList()
         while (true) {
             when {
-                // Macro invocation `name!(…)`, `name![…]`, `name!{…}`. `!=` is its
-                // own token, so a lone `BANG` immediately after an identifier and a
-                // delimiter is unambiguously a macro call. The delimiter is ergonomic
-                // only; all three forms feed args to the same arms (dropped at parse).
-                expr is Expr.Identifier && check(TokenType.BANG) && peekNext()?.type in setOf(
+                // Macro invocation `name@(…)`, `name@[…]`, `name@{…}`. An `@`
+                // immediately after an identifier and a delimiter is unambiguously a
+                // macro call (a decorator is `@name`, the other way around). The
+                // delimiter is ergonomic only; all three forms feed the same arms.
+                expr is Expr.Identifier && check(TokenType.AT) && peekNext()?.type in setOf(
                     TokenType.L_PAREN, TokenType.L_BRACKET, TokenType.L_BRACE,
                 ) -> {
-                    val bang = advance() // '!'
+                    val at = advance() // '@'
                     val args = parseMacroInvokeArgs()
                     usedMetaInvoke = true
-                    expr = Expr.MetaInvoke(expr.name, args, expr.line, expr.column, bang.column + 1)
+                    expr = Expr.MetaInvoke(expr.name, args, expr.line, expr.column, at.column + 1)
                 }
                 check(TokenType.DOT) -> {
                     val dot = advance()

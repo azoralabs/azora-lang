@@ -223,7 +223,7 @@ class SymbolCollector {
                     for (method in item.methods) {
                         val mangled = "${item.name}_${method.name}"
                         val params = mutableListOf<Pair<String, IrType>>()
-                        params.add("self" to IrType.Named(item.name))
+                        params.add(method.receiverName to IrType.Named(item.name))
                         for (p in method.params) params.add(p.name to resolveType(p.type))
                         val returnType = when (val rt = method.returnType) {
                             is TypeAnnotation.Explicit -> resolveType(rt.ref)
@@ -318,7 +318,7 @@ class SymbolCollector {
                         // Named/pointer type. Struct targets stay Named(<Type>).
                         val selfType = resolveType(TypeRef.Named(item.typeName))
                         val params = mutableListOf<Pair<String, IrType>>()
-                        params.add("self" to selfType)
+                        params.add(method.receiverName to selfType)
                         // An operator's `by <Spec>` clause names the operand type
                         // (`impl oper== by List<T> for ArrayList { ref self, rhs -> }`),
                         // so the operand param(s) — written without a type in the body

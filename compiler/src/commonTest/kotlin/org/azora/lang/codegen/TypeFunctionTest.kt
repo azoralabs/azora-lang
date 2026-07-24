@@ -29,7 +29,7 @@ class TypeFunctionTest {
             type wider(a: Type, b: Type) {
                 return if a.rank >= b.rank { a } else { b }
             }
-            func result(): wider!(Int, Real) { return 1.0 }
+            func result(): wider@(Int, Real) { return 1.0 }
         """.trimIndent()).tokenize()).parse()
 
         val declaration = program.typeFunctions.single()
@@ -47,7 +47,7 @@ class TypeFunctionTest {
     fun stdlibPromoteSelectsHighestRankedType() {
         assertIs<CompilationResult.Success>(compile("""
             import std.traits
-            func result(): std::promote!(Byte, Int, Long, Real) {
+            func result(): std::promote@(Byte, Int, Long, Real) {
                 return 1.0
             }
         """))
@@ -57,7 +57,7 @@ class TypeFunctionTest {
     fun stdlibPromoteRequiresTwoTypes() {
         val failure = assertIs<CompilationResult.Failure>(compile("""
             import std.traits
-            func invalid(): std::promote!(Int) { return 1 }
+            func invalid(): std::promote@(Int) { return 1 }
         """))
         assertTrue(failure.errors.any { "requires T.length >= 2" in it }, failure.errors.toString())
     }
@@ -65,7 +65,7 @@ class TypeFunctionTest {
     @Test
     fun stdlibPromoteRequiresImport() {
         val failure = assertIs<CompilationResult.Failure>(compile("""
-            func invalid(): std::promote!(Int, Real) { return 1.0 }
+            func invalid(): std::promote@(Int, Real) { return 1.0 }
         """))
         assertTrue(failure.errors.any { "Unknown type function 'std__promote'" in it }, failure.errors.toString())
     }
@@ -73,7 +73,7 @@ class TypeFunctionTest {
     @Test
     fun fullyQualifiedStdlibPromoteDoesNotRequireImport() {
         assertIs<CompilationResult.Success>(compile("""
-            func result(): std.traits.std::promote!(Int, Real) { return 1.0 }
+            func result(): std.traits.std::promote@(Int, Real) { return 1.0 }
         """))
     }
 
@@ -81,7 +81,7 @@ class TypeFunctionTest {
     fun importingModuleDoesNotExposeBareZoneMember() {
         val failure = assertIs<CompilationResult.Failure>(compile("""
             import std.traits
-            func invalid(): promote!(Int, Real) { return 1.0 }
+            func invalid(): promote@(Int, Real) { return 1.0 }
         """))
         assertTrue(failure.errors.any { "Unknown type function 'promote'" in it }, failure.errors.toString())
     }
@@ -92,7 +92,7 @@ class TypeFunctionTest {
             type wider(a: Type, b: Type) {
                 return if a.rank >= b.rank { a } else { b }
             }
-            func result(): wider!(Int, Real) {
+            func result(): wider@(Int, Real) {
                 return 2.5
             }
         """))
@@ -105,7 +105,7 @@ class TypeFunctionTest {
             type choose(types: ...Type) where types.length >= 2 {
                 return types.1
             }
-            func result(): choose!(String, Int) {
+            func result(): choose@(String, Int) {
                 return "fixed"
             }
         """))
@@ -117,8 +117,8 @@ class TypeFunctionTest {
             type numericResult(a: Type, b: Type) {
                 return if a.rank >= b.rank { a } else { b }
             }
-            type forwarded(a: Type, b: Type) { return numericResult!(a, b) }
-            func result(): forwarded!(Int, Real) { return 4.5 }
+            type forwarded(a: Type, b: Type) { return numericResult@(a, b) }
+            func result(): forwarded@(Int, Real) { return 4.5 }
         """))
     }
 
@@ -132,7 +132,7 @@ class TypeFunctionTest {
                 }
                 return Result
             }
-            func result(): widest!(Byte, Long, Real, Int) {
+            func result(): widest@(Byte, Long, Real, Int) {
                 return 3.5
             }
         """))
@@ -142,7 +142,7 @@ class TypeFunctionTest {
     fun genericFunctionCallUsesTypeFunctionForItsResult() {
         assertIs<CompilationResult.Success>(compile("""
             import std.traits
-            func<T, U> greater(a: T, b: U): std::promote!(T, U) {
+            func<T, U> greater(a: T, b: U): std::promote@(T, U) {
                 return a + b
             }
             func main() {
@@ -157,7 +157,7 @@ class TypeFunctionTest {
             type widest(types: ...Type) where types.length >= 2 {
                 return types.0
             }
-            func invalid(): widest!(Int) { return 1 }
+            func invalid(): widest@(Int) { return 1 }
         """))
         assertTrue(failure.errors.any { "requires types.length >= 2" in it }, failure.errors.toString())
     }
@@ -165,7 +165,7 @@ class TypeFunctionTest {
     @Test
     fun unknownTypeFunctionProducesDiagnostic() {
         val failure = assertIs<CompilationResult.Failure>(compile("""
-            func invalid(): missing!(Int) { return 1 }
+            func invalid(): missing@(Int) { return 1 }
         """))
         assertTrue(failure.errors.any { "Unknown type function 'missing'" in it }, failure.errors.toString())
     }
@@ -173,9 +173,9 @@ class TypeFunctionTest {
     @Test
     fun recursiveTypeFunctionProducesDiagnostic() {
         val failure = assertIs<CompilationResult.Failure>(compile("""
-            type first(value: Type) { return second!(value) }
-            type second(value: Type) { return first!(value) }
-            func invalid(): first!(Int) { return 1 }
+            type first(value: Type) { return second@(value) }
+            type second(value: Type) { return first@(value) }
+            func invalid(): first@(Int) { return 1 }
         """))
         assertTrue(failure.errors.any { "Recursive type-function call" in it }, failure.errors.toString())
     }

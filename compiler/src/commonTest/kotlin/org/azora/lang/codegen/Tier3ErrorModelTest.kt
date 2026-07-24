@@ -17,10 +17,10 @@ import kotlin.test.*
 /**
  * Tier 3 — fail-set error model (foundation).
  *
- * `fail ErrSet { … }` declares an error set; `T!ErrSet` annotates a failable return
+ * `fail ErrSet { … }` declares an error set; `T ?! ErrSet` annotates a failable return
  * type; `fail ErrSet.Variant` (or `throw`) raises an error; `try/catch` and
  * `expr catch fallback` handle them. Errors propagate via the existing exception
- * machinery, so the IR type of `T!ErrSet` is just `T`.
+ * machinery, so the IR type of `T ?! ErrSet` is just `T`.
  */
 class Tier3ErrorModelTest {
 
@@ -36,7 +36,7 @@ class Tier3ErrorModelTest {
             fail E {
                 Bad
             }
-            func f(): Int!E {
+            func f(): Int ?! E {
                 fail E.Bad
                 return 0
             }
@@ -56,7 +56,7 @@ class Tier3ErrorModelTest {
             fail E {
                 Bad
             }
-            func g(x: Int): Int!E {
+            func g(x: Int): Int ?! E {
                 if x < 0 {
                     fail E.Bad
                 }
@@ -73,11 +73,11 @@ class Tier3ErrorModelTest {
             fail E {
                 Bad
             }
-            func inner(): Int!E {
+            func inner(): Int ?! E {
                 fail E.Bad
                 return 0
             }
-            func outer(): Int!E {
+            func outer(): Int ?! E {
                 return try inner()
             }
             func main() {}
@@ -103,7 +103,7 @@ class Tier3ErrorModelTest {
             fail MathError {
                 DivByZero
             }
-            func divide(a: Int, b: Int): Int!MathError {
+            func divide(a: Int, b: Int): Int ?! MathError {
                 if b == 0 {
                     fail MathError.DivByZero
                 }
@@ -143,7 +143,7 @@ class Tier3ErrorModelTest {
             fail E {
                 Bad
             }
-            func risky(): Int!E {
+            func risky(): Int ?! E {
                 defer { std::println("always") }
                 fail defer { std::println("only on fail") }
                 fail E.Bad
@@ -165,7 +165,7 @@ class Tier3ErrorModelTest {
             fail E {
                 Bad
             }
-            func ok(): Int!E {
+            func ok(): Int ?! E {
                 defer { std::println("always") }
                 fail defer { std::println("only on fail") }
                 return 5
@@ -177,7 +177,7 @@ class Tier3ErrorModelTest {
     }
 
     @Test fun tFlagEnforcementRejectsWrongErrorSet() {
-        // A `T!E` function may only fail with errors from set E.
+        // A `T ?! E` function may only fail with errors from set E.
         val result = Compiler().compile("""
             import std.io
             fail E {
@@ -186,16 +186,16 @@ class Tier3ErrorModelTest {
             fail Other {
                 X
             }
-            func bad(): Int!E {
+            func bad(): Int ?! E {
                 fail Other.X
                 return 0
             }
             func main() {
             }
         """.trimIndent())
-        assertIs<CompilationResult.Failure>(result, "Expected compilation to fail due to T!E mismatch")
+        assertIs<CompilationResult.Failure>(result, "Expected compilation to fail due to T ?! E mismatch")
         val errors = (result as CompilationResult.Failure).errors.joinToString()
-        assertTrue("'!E'" in errors || "Other" in errors, "Expected a T!E enforcement error, got: $errors")
+        assertTrue("'!E'" in errors || "Other" in errors, "Expected a T ?! E enforcement error, got: $errors")
     }
 
     @Test fun tFlagEnforcementAcceptsMatchingErrorSet() {
@@ -204,7 +204,7 @@ class Tier3ErrorModelTest {
             fail E {
                 Bad
             }
-            func good(): Int!E {
+            func good(): Int ?! E {
                 fail E.Bad
                 return 0
             }
@@ -224,7 +224,7 @@ class Tier3ErrorModelTest {
             fail A { Q W E }
             fail B { S D F }
 
-            func choose(first: Bool): Unit![A, B] {
+            func choose(first: Bool): Unit ?! [A, B] {
                 if first { fail A.Q }
                 fail B.S
             }
@@ -242,7 +242,7 @@ class Tier3ErrorModelTest {
             fail B { S }
             fail C { Z }
 
-            func invalid(): Unit![A, B] {
+            func invalid(): Unit ?! [A, B] {
                 fail C.Z
             }
         """.trimIndent())
@@ -254,7 +254,7 @@ class Tier3ErrorModelTest {
     @Test fun duplicateErrorSetInBracketListIsRejected() {
         val result = Compiler().compile("""
             fail A { Q }
-            func invalid(): Unit![A, A] {}
+            func invalid(): Unit ?! [A, A] {}
         """.trimIndent())
 
         assertIs<CompilationResult.Failure>(result)

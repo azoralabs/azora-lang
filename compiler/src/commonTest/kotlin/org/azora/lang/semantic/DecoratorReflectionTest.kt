@@ -74,7 +74,7 @@ class DecoratorReflectionTest {
                 inline if (std::reflect<value>).hasDeco<Marker> { return 1 } else { return 0 }
             }
 
-            func explicit(value: ref Marked): Int {
+            func explicit(value: Marked&): Int {
                 inline if (std::reflect<value>).hasDeco<Marker> { return 2 } else { return 0 }
             }
 

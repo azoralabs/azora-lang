@@ -21,7 +21,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * Regression tests for specific arr![org.azora.lang.backend.LlvmCodegen] fixes,
+ * Regression tests for specific arr@[org.azora.lang.backend.LlvmCodegen] fixes,
  * executed with `lli` (skipped when no LLVM toolchain is available).
  *
  * - `when` over a String must compare **contents** (strcmp), not pointer
@@ -104,7 +104,7 @@ class LlvmRegressionExecTest {
         "42",
         """
         import std.io
-        threadlocal var numbers = arr![41]
+        threadlocal var numbers = arr@[41]
         task read(): Int { return numbers[0] + 1 }
         task main() {
             std::println(await read())
@@ -241,7 +241,7 @@ class LlvmRegressionExecTest {
     @Test fun threadLocalAggregatesUseTlsAndRuntimeInitialization() {
         val source = """
             import std.io
-            threadlocal var numbers = arr![1, 2, 3]
+            threadlocal var numbers = arr@[1, 2, 3]
             threadlocal var names = ["first": 10, "second": 20]
             threadlocal var unique = ![1, 2, 2, 3]
             func main() {
@@ -268,7 +268,7 @@ class LlvmRegressionExecTest {
         "3\n2\n3",
         """
         import std.io
-        threadlocal var numbers: List<Int> = arr![1, 2, 3]
+        threadlocal var numbers: List<Int> = arr@[1, 2, 3]
         threadlocal var names: Map<String, Int> = ["first": 10, "second": 20]
         threadlocal var unique: Set<Int> = ![1, 2, 2, 3]
         func main() {
@@ -284,7 +284,7 @@ class LlvmRegressionExecTest {
             """
             import std.io
             func main() {
-                var array = arr![1.5D, 2.5D]
+                var array = arr@[1.5D, 2.5D]
                 var map = ["value": 3.5D]
                 var set = ![1.5D, 2.5D]
                 array[0] = map["value"]

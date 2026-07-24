@@ -40,7 +40,7 @@ friend zone std {
     }
 
     @Experimental(sinceAzora: "0.0.3")
-    impl deref for Ptr<T> { ref self ->
+    impl deref for Ptr<T> { self& ->
         return deref self.raw
     }
 

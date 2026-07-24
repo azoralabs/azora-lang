@@ -30,7 +30,7 @@ import kotlin.test.fail
  * the same IR the interpreter tests run against — so backend output can be
  * cross-checked against interpreter semantics.
  *
- * If no `node` is present the harness reports arr![available] as `false` and
+ * If no `node` is present the harness reports arr@[available] as `false` and
  * execution tests skip themselves.
  */
 object NodeExec {
@@ -54,7 +54,7 @@ object NodeExec {
         return candidates.firstOrNull { runCatching { File(it).canExecute() }.getOrDefault(false) }
     }
 
-    /** Compiles arr![source] and returns the generated JavaScript text. */
+    /** Compiles arr@[source] and returns the generated JavaScript text. */
     fun compile(source: String): String {
         val result = Compiler().compile(source, release = false)
         if (result !is CompilationResult.Success) {

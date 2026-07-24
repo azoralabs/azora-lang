@@ -1399,8 +1399,10 @@ data class FuncDecl(
     val isUnsafe: Boolean = false,
     /** Visibility exported to import/member access rules. */
     val visibility: Visibility = Visibility.EXPOSE,
-    /** Receiver mutability for impl/extension methods: `ref self` or `mut ref self`. */
+    /** Receiver mutability for impl/extension methods: `self&` (immutable) or `self!` (mutable). */
     val receiverModifier: ParamModifier = "mut ref",
+    /** Receiver name for impl/extension methods (conventionally `self`, but arbitrary). */
+    val receiverName: String = "self",
     /** Name of the variadic type param (`T` in `func<...T>`), or null for a fixed function. */
     val variadicParam: String? = null,
     /** Minimum element count from a `where <var>.length >= N` clause, or null if unconstrained. */

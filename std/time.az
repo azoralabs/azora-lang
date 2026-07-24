@@ -142,11 +142,11 @@ friend zone std {
 
     @Experimental(sinceAzora: "0.0.4")
     impl Clock for SystemClock {
-        func now(): Instant { ref self ->
+        func now(): Instant { self& ->
             return instantFromEpochNanoseconds(az_time_unix_nanoseconds())
         }
 
-        func monotonicNow(): MonotonicInstant { ref self ->
+        func monotonicNow(): MonotonicInstant { self& ->
             return MonotonicInstant(az_time_monotonic_nanoseconds())
         }
     }
@@ -202,12 +202,12 @@ friend zone std {
         prop inWholeMilliseconds: Long = self.seconds * 1000L + (self.nanosecondAdjustment / 1000000) as Long
 
         /** Returns the magnitude with its sign reversed. */
-        func negated(): Duration { ref self ->
+        func negated(): Duration { self& ->
             return duration(0L - self.seconds, 0L - self.nanosecondAdjustment as Long)
         }
 
         /** Adds another exact duration. */
-        func plus(other: ref Duration): Duration { ref self ->
+        func plus(other: Duration&): Duration { self& ->
             return duration(
                 self.seconds + other.seconds,
                 self.nanosecondAdjustment as Long + other.nanosecondAdjustment as Long
@@ -215,7 +215,7 @@ friend zone std {
         }
 
         /** Subtracts another exact duration. */
-        func minus(other: ref Duration): Duration { ref self ->
+        func minus(other: Duration&): Duration { self& ->
             return self.plus(other.negated())
         }
     }
@@ -246,7 +246,7 @@ friend zone std {
         prop epochMilliseconds: Long = self.epochSecond * 1000L + (self.nanosecond / 1000000) as Long
 
         /** Adds an exact duration while retaining the normalized representation. */
-        func plus(value: ref Duration): Instant { ref self ->
+        func plus(value: Duration&): Instant { self& ->
             return instant(
                 self.epochSecond + value.seconds,
                 self.nanosecond as Long + value.nanosecondAdjustment as Long
@@ -254,12 +254,12 @@ friend zone std {
         }
 
         /** Subtracts an exact duration. */
-        func minus(value: ref Duration): Instant { ref self ->
+        func minus(value: Duration&): Instant { self& ->
             return self.plus(value.negated())
         }
 
         /** Returns the exact elapsed duration from `earlier` to this instant. */
-        func durationSince(earlier: ref Instant): Duration { ref self ->
+        func durationSince(earlier: Instant&): Duration { self& ->
             return duration(
                 self.epochSecond - earlier.epochSecond,
                 self.nanosecond as Long - earlier.nanosecond as Long
@@ -267,20 +267,20 @@ friend zone std {
         }
 
         /** Converts this instant to civil time at a fixed UTC offset. */
-        func atOffset(offset: UtcOffset): DateTime { ref self ->
+        func atOffset(offset: UtcOffset): DateTime { self& ->
             return std::atOffset(self, offset)
         }
 
         /** Formats this instant as canonical UTC ISO-8601 text. */
-        func formatIso(): String { ref self ->
+        func formatIso(): String { self& ->
             return std::formatIsoInstant(self)
         }
     }
 
     impl MonotonicInstant {
         /** Returns elapsed time; fails if the readings are not ordered. */
-        func elapsedSince(earlier: ref MonotonicInstant): Duration!TimeError { ref self ->
-            if self.readingNanoseconds < earlier.readingNanoseconds { fail return .InvalidDuration }
+        func elapsedSince(earlier: MonotonicInstant&): Duration ?! TimeError { self& ->
+            if self.readingNanoseconds < earlier.readingNanoseconds { return .InvalidDuration }
             return nanoseconds(self.readingNanoseconds - earlier.readingNanoseconds)
         }
     }
@@ -293,8 +293,8 @@ friend zone std {
 
     /** Returns the number of days in a validated month. */
     @Experimental(sinceAzora: "0.0.4")
-    func daysInMonth(year: Int, month: Int): Int!TimeError {
-        if month < 1 || month > 12 { fail return .InvalidDate }
+    func daysInMonth(year: Int, month: Int): Int ?! TimeError {
+        if month < 1 || month > 12 { return .InvalidDate }
         if month == 2 {
             if isLeapYear(year) { return 29 }
             return 28
@@ -305,38 +305,38 @@ friend zone std {
 
     /** Creates and validates a Gregorian date. */
     @Experimental(sinceAzora: "0.0.4")
-    func localDate(year: Int, month: Int, day: Int): LocalDate!TimeError {
-        if day < 1 || day > try daysInMonth(year, month) { fail return .InvalidDate }
+    func localDate(year: Int, month: Int, day: Int): LocalDate ?! TimeError {
+        if day < 1 || day > try daysInMonth(year, month) { return .InvalidDate }
         return LocalDate(year, month, day)
     }
 
     /** Creates and validates a local time of day. Leap seconds are not accepted. */
     @Experimental(sinceAzora: "0.0.4")
-    func localTime(hour: Int, minute: Int, second: Int, nanosecond: Int = 0): LocalTime!TimeError {
-        if hour < 0 || hour > 23 { fail return .InvalidTime }
-        if minute < 0 || minute > 59 { fail return .InvalidTime }
-        if second < 0 || second > 59 { fail return .InvalidTime }
-        if nanosecond < 0 || nanosecond > 999999999 { fail return .InvalidTime }
+    func localTime(hour: Int, minute: Int, second: Int, nanosecond: Int = 0): LocalTime ?! TimeError {
+        if hour < 0 || hour > 23 { return .InvalidTime }
+        if minute < 0 || minute > 59 { return .InvalidTime }
+        if second < 0 || second > 59 { return .InvalidTime }
+        if nanosecond < 0 || nanosecond > 999999999 { return .InvalidTime }
         return LocalTime(hour, minute, second, nanosecond)
     }
 
     /** Creates a validated fixed UTC offset. */
     @Experimental(sinceAzora: "0.0.4")
-    func utcOffset(totalSeconds: Int): UtcOffset!TimeError {
-        if totalSeconds < -64800 || totalSeconds > 64800 { fail return .InvalidOffset }
+    func utcOffset(totalSeconds: Int): UtcOffset ?! TimeError {
+        if totalSeconds < -64800 || totalSeconds > 64800 { return .InvalidOffset }
         return UtcOffset(totalSeconds)
     }
 
     /** Creates a validated fixed UTC offset from signed hours and minutes. */
     @Experimental(sinceAzora: "0.0.4")
-    func utcOffsetOf(hours: Int, minutes: Int = 0): UtcOffset!TimeError {
-        if minutes < 0 || minutes > 59 { fail return .InvalidOffset }
-        if hours < -18 || hours > 18 { fail return .InvalidOffset }
+    func utcOffsetOf(hours: Int, minutes: Int = 0): UtcOffset ?! TimeError {
+        if minutes < 0 || minutes > 59 { return .InvalidOffset }
+        if hours < -18 || hours > 18 { return .InvalidOffset }
         var sign = 1
         if hours < 0 { sign = -1 }
         var absoluteHours = hours
         if hours < 0 { absoluteHours = 0 - hours }
-        if absoluteHours == 18 && minutes != 0 { fail return .InvalidOffset }
+        if absoluteHours == 18 && minutes != 0 { return .InvalidOffset }
         return utcOffset(sign * (absoluteHours * 3600 + minutes * 60))
     }
 
@@ -353,19 +353,19 @@ friend zone std {
 
     impl DateTime {
         /** Converts this fixed-offset civil value to its unique Unix instant. */
-        func toInstant(): Instant { ref self ->
+        func toInstant(): Instant { self& ->
             return std::toInstant(self)
         }
 
         /** Formats this value as canonical ISO-8601 offset date-time text. */
-        func formatIso(): String { ref self ->
+        func formatIso(): String { self& ->
             return std::formatIsoDateTime(self)
         }
     }
 
     /** Converts a date-time to its unique Unix instant. */
     @Experimental(sinceAzora: "0.0.4")
-    func toInstant(value: ref DateTime): Instant {
+    func toInstant(value: DateTime&): Instant {
         fin epochDay = daysFromCivil(value.date.year, value.date.month, value.date.day)
         fin localSecond = epochDay * 86400L +
             (value.time.hour as Long) * 3600L +
@@ -376,7 +376,7 @@ friend zone std {
 
     /** Converts an instant to a date-time at the requested fixed offset. */
     @Experimental(sinceAzora: "0.0.4")
-    func atOffset(value: ref Instant, offset: UtcOffset): DateTime {
+    func atOffset(value: Instant&, offset: UtcOffset): DateTime {
         fin localSecond = value.epochSecond + offset.totalSeconds as Long
         fin epochDay = floorDiv(localSecond, 86400L)
         fin secondOfDay = localSecond - epochDay * 86400L
@@ -389,7 +389,7 @@ friend zone std {
 
     /** Returns the ISO weekday for a date. */
     @Experimental(sinceAzora: "0.0.4")
-    func weekday(value: ref LocalDate): Weekday {
+    func weekday(value: LocalDate&): Weekday {
         fin epochDay = daysFromCivil(value.year, value.month, value.day)
         fin index = floorMod(epochDay + 3L, 7L) as Int
         if index == 0 { return Weekday.Monday }
@@ -403,7 +403,7 @@ friend zone std {
 
     /** Formats a date-time using the canonical ISO-8601 extended representation. */
     @Experimental(sinceAzora: "0.0.4")
-    func formatIsoDateTime(value: ref DateTime): String {
+    func formatIsoDateTime(value: DateTime&): String {
         var result = pad4(value.date.year) + "-" + pad2(value.date.month) + "-" + pad2(value.date.day) +
             "T" + pad2(value.time.hour) + ":" + pad2(value.time.minute) + ":" + pad2(value.time.second)
         if value.time.nanosecond != 0 { result = result + formatFraction(value.time.nanosecond) }
@@ -422,7 +422,7 @@ friend zone std {
 
     /** Formats an instant in canonical UTC ISO-8601 form. */
     @Experimental(sinceAzora: "0.0.4")
-    func formatIsoInstant(value: ref Instant): String {
+    func formatIsoInstant(value: Instant&): String {
         return formatIsoDateTime(atOffset(value, UtcOffset(0)))
     }
 
@@ -434,17 +434,17 @@ friend zone std {
      * Fractional seconds may contain one through nine digits.
      */
     @Experimental(sinceAzora: "0.0.4")
-    func parseIsoDateTime(value: String): DateTime!TimeError {
+    func parseIsoDateTime(value: String): DateTime ?! TimeError {
         fin length = stringLength(value)
-        if length < 20 { fail return .InvalidFormat }
+        if length < 20 { return .InvalidFormat }
         if charAt(value, 4) != '-' || charAt(value, 7) != '-' ||
             (charAt(value, 10) != 'T' && charAt(value, 10) != 't') ||
             charAt(value, 13) != ':' || charAt(value, 16) != ':' {
-            fail return .InvalidFormat
+            return .InvalidFormat
         }
         if !digitsAt(value, 0, 4) || !digitsAt(value, 5, 2) || !digitsAt(value, 8, 2) ||
             !digitsAt(value, 11, 2) || !digitsAt(value, 14, 2) || !digitsAt(value, 17, 2) {
-            fail return .InvalidFormat
+            return .InvalidFormat
         }
 
         fin year = decimalAt(value, 0, 4)
@@ -461,7 +461,7 @@ friend zone std {
             fin fractionStart = index
             while index < length && charIsDigit(charAt(value, index)) { index += 1 }
             fin digits = index - fractionStart
-            if digits < 1 || digits > 9 { fail return .InvalidFormat }
+            if digits < 1 || digits > 9 { return .InvalidFormat }
             nanosecond = decimalAt(value, fractionStart, digits)
             for scale in digits..<9 {
                 nanosecond *= 10
@@ -473,27 +473,27 @@ friend zone std {
             index += 1
         } else {
             fin remaining = length - index
-            if remaining != 6 && remaining != 9 { fail return .InvalidFormat }
+            if remaining != 6 && remaining != 9 { return .InvalidFormat }
             fin signChar = charAt(value, index)
-            if signChar != '+' && signChar != '-' { fail return .InvalidFormat }
+            if signChar != '+' && signChar != '-' { return .InvalidFormat }
             if charAt(value, index + 3) != ':' || !digitsAt(value, index + 1, 2) || !digitsAt(value, index + 4, 2) {
-                fail return .InvalidFormat
+                return .InvalidFormat
             }
             fin offsetHour = decimalAt(value, index + 1, 2)
             fin offsetMinute = decimalAt(value, index + 4, 2)
-            if offsetHour > 18 || offsetMinute > 59 { fail return .InvalidOffset }
+            if offsetHour > 18 || offsetMinute > 59 { return .InvalidOffset }
             offsetSeconds = offsetHour * 3600 + offsetMinute * 60
             if remaining == 9 {
-                if charAt(value, index + 6) != ':' || !digitsAt(value, index + 7, 2) { fail return .InvalidFormat }
+                if charAt(value, index + 6) != ':' || !digitsAt(value, index + 7, 2) { return .InvalidFormat }
                 fin offsetSecond = decimalAt(value, index + 7, 2)
-                if offsetSecond > 59 { fail return .InvalidOffset }
+                if offsetSecond > 59 { return .InvalidOffset }
                 offsetSeconds += offsetSecond
             }
-            if offsetHour == 18 && offsetSeconds != 64800 { fail return .InvalidOffset }
+            if offsetHour == 18 && offsetSeconds != 64800 { return .InvalidOffset }
             if signChar == '-' { offsetSeconds = 0 - offsetSeconds }
             index += remaining
         }
-        if index != length { fail return .InvalidFormat }
+        if index != length { return .InvalidFormat }
 
         fin date = try localDate(year, month, day)
         fin time = try localTime(hour, minute, second, nanosecond)
@@ -503,7 +503,7 @@ friend zone std {
 
     /** Parses canonical UTC instant text. */
     @Experimental(sinceAzora: "0.0.4")
-    func parseIsoInstant(value: String): Instant!TimeError {
+    func parseIsoInstant(value: String): Instant ?! TimeError {
         return toInstant(try parseIsoDateTime(value))
     }
 
@@ -513,20 +513,20 @@ friend zone std {
 
     @Experimental(sinceAzora: "0.0.4")
     impl Serializer<Instant> for InstantSerializer {
-        func toSerialValue(value: ref Instant): SerialValue!SerializationError { ref self ->
+        func toSerialValue(value: Instant&): SerialValue ?! SerializationError { self& ->
             return SerialValue.Text(formatIsoInstant(value))
         }
 
-        func fromSerialValue(value: ref SerialValue): Instant!SerializationError { ref self ->
+        func fromSerialValue(value: SerialValue&): Instant ?! SerializationError { self& ->
             when value {
                 SerialValue.Text(text) -> {
                     try {
                         return try parseIsoInstant(text)
                     } catch {
-                        fail return .UnexpectedType
+                        return .UnexpectedType
                     }
                 }
-                else -> { fail return .UnexpectedType }
+                else -> { return .UnexpectedType }
             }
         }
     }
@@ -537,20 +537,20 @@ friend zone std {
 
     @Experimental(sinceAzora: "0.0.4")
     impl Serializer<DateTime> for DateTimeSerializer {
-        func toSerialValue(value: ref DateTime): SerialValue!SerializationError { ref self ->
+        func toSerialValue(value: DateTime&): SerialValue ?! SerializationError { self& ->
             return SerialValue.Text(formatIsoDateTime(value))
         }
 
-        func fromSerialValue(value: ref SerialValue): DateTime!SerializationError { ref self ->
+        func fromSerialValue(value: SerialValue&): DateTime ?! SerializationError { self& ->
             when value {
                 SerialValue.Text(text) -> {
                     try {
                         return try parseIsoDateTime(text)
                     } catch {
-                        fail return .UnexpectedType
+                        return .UnexpectedType
                     }
                 }
-                else -> { fail return .UnexpectedType }
+                else -> { return .UnexpectedType }
             }
         }
     }
@@ -561,14 +561,14 @@ friend zone std {
 
     @Experimental(sinceAzora: "0.0.4")
     impl Serializer<Duration> for DurationSerializer {
-        func toSerialValue(value: ref Duration): SerialValue!SerializationError { ref self ->
+        func toSerialValue(value: Duration&): SerialValue ?! SerializationError { self& ->
             var fields = List<SerialField>()
             fields.add(SerialField("seconds", SerialValue.Number(std::convert::toString(value.seconds))))
             fields.add(SerialField("nanosecondAdjustment", SerialValue.Number(std::convert::toString(value.nanosecondAdjustment))))
             return SerialValue.Object(fields)
         }
 
-        func fromSerialValue(value: ref SerialValue): Duration!SerializationError { ref self ->
+        func fromSerialValue(value: SerialValue&): Duration ?! SerializationError { self& ->
             fin secondsValue = try serialField(value, "seconds")
             fin nanosValue = try serialField(value, "nanosecondAdjustment")
             when secondsValue {
@@ -577,10 +577,10 @@ friend zone std {
                         SerialValue.Number(nanosText) -> {
                             return duration(try parseLong(secondsText), try parseLong(nanosText) as Long)
                         }
-                        else -> { fail return .UnexpectedType }
+                        else -> { return .UnexpectedType }
                     }
                 }
-                else -> { fail return .UnexpectedType }
+                else -> { return .UnexpectedType }
             }
         }
     }
@@ -662,19 +662,19 @@ friend zone std {
         return result
     }
 
-    confine func parseLong(value: String): Long!SerializationError {
-        if stringLength(value) == 0 { fail return .InvalidNumber }
+    confine func parseLong(value: String): Long ?! SerializationError {
+        if stringLength(value) == 0 { return .InvalidNumber }
         var sign = 1L
         var index = 0
         if charAt(value, 0) == '-' {
             sign = -1L
             index = 1
         }
-        if index >= stringLength(value) { fail return .InvalidNumber }
+        if index >= stringLength(value) { return .InvalidNumber }
         var result = 0L
         while index < stringLength(value) {
             fin c = charAt(value, index)
-            if !charIsDigit(c) { fail return .InvalidNumber }
+            if !charIsDigit(c) { return .InvalidNumber }
             result = result * 10L + (charToCode(c) - 48) as Long
             index += 1
         }

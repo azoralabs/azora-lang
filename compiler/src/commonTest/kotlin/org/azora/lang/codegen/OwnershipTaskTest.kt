@@ -117,7 +117,7 @@ class OwnershipTaskTest {
         val result = Compiler().compile("""
             import std.io
             pack Buffer { var value: Int }
-            task inspect(input: ref Buffer): Int { return input.value }
+            task inspect(input: Buffer&): Int { return input.value }
             task main() { std::println(0) }
         """.trimIndent())
 
@@ -130,10 +130,10 @@ class OwnershipTaskTest {
         val result = compile("""
             import std.io
             pack Buffer { var value: Int }
-            func read(a: ref Buffer, b: shared ref Buffer, c: weak ref Buffer): Int {
+            func read(a: Buffer&, b: shared ref Buffer, c: weak ref Buffer): Int {
                 return a.value
             }
-            func update(state: mut ref Buffer) {
+            func update(state: Buffer!) {
                 state.value = 42
             }
             func main() {
@@ -157,8 +157,8 @@ class OwnershipTaskTest {
             pack Buffer { var value: Int }
             func main() {
                 var owned: Buffer = Buffer(1)
-                fin borrowed: ref Buffer = owned
-                var exclusive: mut ref Buffer = owned
+                fin borrowed: Buffer& = owned
+                var exclusive: Buffer! = owned
                 fin shared: shared ref Buffer = owned
                 fin weakRef: weak ref Buffer = owned
                 std::println(borrowed.value + exclusive.value + shared.value + weakRef.value)

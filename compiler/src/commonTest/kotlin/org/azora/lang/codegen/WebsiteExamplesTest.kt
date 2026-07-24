@@ -125,7 +125,7 @@ func main() { std::println("Hello, Azora!") }"""))
             var x = 3
             var y = 4
             std::println("${'$'}x + ${'$'}y = ${'$'}{x + y}")
-            var items = arr![10, 20, 30]
+            var items = arr@[10, 20, 30]
             std::println("first is ${'$'}{items[0]}")
             std::println("count is ${'$'}{items.length}")
         }
@@ -145,7 +145,7 @@ func main() { std::println("Hello, Azora!") }"""))
     @Test fun ch7_arrays() = assertEquals("5\n5", run("""
         import std.io
         func main() {
-            var a = arr![1, 2, 3]
+            var a = arr@[1, 2, 3]
             a.add(4)
             a.add(5)
             std::println(a.length)
@@ -432,7 +432,7 @@ func main() { std::println("Hello, Azora!") }"""))
     @Test fun ch26_maps_int_keys() = assertEquals("30\n40", run("""
         import std.io
         func main() {
-            var scores = arr![10: 10, 20: 20, 30: 30]
+            var scores = arr@[10: 10, 20: 20, 30: 30]
             scores[40] = 40
             std::println(scores[30])
             std::println(scores[40])
@@ -484,7 +484,7 @@ func main() { std::println("Hello, Azora!") }"""))
     @Test fun ch29_pointer_arithmetic() = assertEquals("10\n20\n99\n3", run("""
         import std.io
         func main() {
-            var p: Int* = alloc arr![10, 20, 30]
+            var p: Int* = alloc arr@[10, 20, 30]
             std::println(*p)
             std::println(*(p + 1))
             *(p + 2) = 99
@@ -497,7 +497,7 @@ func main() { std::println("Hello, Azora!") }"""))
     @Test fun ch29_isolated() = assertEquals("1", run("""
         import std.io
         func main() {
-            var original = arr![1, 2, 3]
+            var original = arr@[1, 2, 3]
             var copy = isolated(original)
             copy[0] = 99
             std::println(original[0])
@@ -507,7 +507,7 @@ func main() { std::println("Hello, Azora!") }"""))
     @Test fun ch30_error_set() = assertEquals("Bad", run("""
         import std.io
         fail E { Bad }
-        func f(): Int!E {
+        func f(): Int ?! E {
             fail E.Bad
             return 0
         }

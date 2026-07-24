@@ -30,7 +30,7 @@ import std.convert
  *   `intersect`, `difference`), and functional combinators returning fresh
  *   `Set<T>` snapshots.
  * - `MutableSet<T>` adds in-place mutation. Every mutation receives
- *   `mut ref self`, so a caller holding only a shared `ref Set<T>` view
+ *   `self!`, so a caller holding only a shared `ref Set<T>` view
  *   cannot mutate it.
  *
  * `LinkedHashSet<T>` is the single concrete pack implementing both specs. It
@@ -94,7 +94,7 @@ friend zone std {
     /**
      * Mutation behavior implemented by mutable set packs.
      *
-     * Mutation always receives `mut ref self`. Implementing this spec does not
+     * Mutation always receives `self!`. Implementing this spec does not
      * weaken a `ref Set<T>` view: callers holding only a shared reference can
      * still use only read operations.
      *
@@ -136,7 +136,7 @@ friend zone std {
     impl LinkedHashSet<T> {
         /** Doubles the backing buffer, copying existing elements. */
         @Experimental(sinceAzora: "0.0.4")
-        func growSet() { mut ref self ->
+        func growSet() { self! ->
             fin newCap = self.capacity * 2
             fin newData = alloc T[newCap]
             for i in 0..<self.size {
@@ -150,7 +150,7 @@ friend zone std {
 
         /** Returns whether `element` is already stored. */
         @Experimental(sinceAzora: "0.0.4")
-        confine func has(element: T): Bool { ref self ->
+        confine func has(element: T): Bool { self& ->
             for i in 0..<self.size {
                 if self.data[i] == element { return true }
             }
@@ -163,23 +163,23 @@ friend zone std {
         prop isEmpty: Bool = self.size == 0
         prop isNotEmpty: Bool = self.size > 0
 
-        func get(index: Int): T { ref self ->
+        func get(index: Int): T { self& ->
             assert index >= 0 { "Set index must be non-negative" }
             assert index < self.size { "Set index out of bounds" }
             return self.data[index]
         }
 
-        func contains(element: T): Bool { ref self ->
+        func contains(element: T): Bool { self& ->
             return self.has(element)
         }
 
-        func forEach(action: (T) -> Unit) { ref self ->
+        func forEach(action: (T) -> Unit) { self& ->
             for i in 0..<self.size {
                 action(self.data[i])
             }
         }
 
-        func filter(predicate: (T) -> Bool): Set<T> { ref self ->
+        func filter(predicate: (T) -> Bool): Set<T> { self& ->
             var result = LinkedHashSet<T>()
             for i in 0..<self.size {
                 if predicate(self.data[i]) {
@@ -189,21 +189,21 @@ friend zone std {
             return result
         }
 
-        func any(predicate: (T) -> Bool): Bool { ref self ->
+        func any(predicate: (T) -> Bool): Bool { self& ->
             for i in 0..<self.size {
                 if predicate(self.data[i]) { return true }
             }
             return false
         }
 
-        func all(predicate: (T) -> Bool): Bool { ref self ->
+        func all(predicate: (T) -> Bool): Bool { self& ->
             for i in 0..<self.size {
                 if !predicate(self.data[i]) { return false }
             }
             return true
         }
 
-        func union(other: Set<T>): Set<T> { ref self ->
+        func union(other: Set<T>): Set<T> { self& ->
             var result = LinkedHashSet<T>()
             for i in 0..<self.size {
                 result.add(self.data[i])
@@ -214,7 +214,7 @@ friend zone std {
             return result
         }
 
-        func intersect(other: Set<T>): Set<T> { ref self ->
+        func intersect(other: Set<T>): Set<T> { self& ->
             var result = LinkedHashSet<T>()
             for i in 0..<self.size {
                 if other.contains(self.data[i]) {
@@ -224,7 +224,7 @@ friend zone std {
             return result
         }
 
-        func difference(other: Set<T>): Set<T> { ref self ->
+        func difference(other: Set<T>): Set<T> { self& ->
             var result = LinkedHashSet<T>()
             for i in 0..<self.size {
                 if !other.contains(self.data[i]) {
@@ -236,7 +236,7 @@ friend zone std {
     }
 
     impl MutableSet<T> for LinkedHashSet<T> {
-        func add(element: T): Bool { mut ref self ->
+        func add(element: T): Bool { self! ->
             if self.has(element) { return false }
             if self.size >= self.capacity { self.growSet() }
             self.data[self.size] = element
@@ -244,7 +244,7 @@ friend zone std {
             return true
         }
 
-        func remove(element: T): Bool { mut ref self ->
+        func remove(element: T): Bool { self! ->
             var idx = -1
             for i in 0..<self.size {
                 if self.data[i] == element { idx = i }
@@ -257,7 +257,7 @@ friend zone std {
             return true
         }
 
-        func clear() { mut ref self ->
+        func clear() { self! ->
             fin oldData = self.data
             self.data = alloc T[8]
             self.size = 0
@@ -338,7 +338,7 @@ friend zone std {
 
     impl HashSet<T> {
         @Experimental(sinceAzora: "0.0.4")
-        func growSet() { mut ref self ->
+        func growSet() { self! ->
             fin newCap = self.capacity * 2
             fin newData = alloc T[newCap]
             for i in 0..<self.size {
@@ -351,7 +351,7 @@ friend zone std {
         }
 
         @Experimental(sinceAzora: "0.0.4")
-        confine func has(element: T): Bool { ref self ->
+        confine func has(element: T): Bool { self& ->
             for i in 0..<self.size {
                 if self.data[i] == element { return true }
             }
@@ -364,23 +364,23 @@ friend zone std {
         prop isEmpty: Bool = self.size == 0
         prop isNotEmpty: Bool = self.size > 0
 
-        func get(index: Int): T { ref self ->
+        func get(index: Int): T { self& ->
             assert index >= 0 { "Set index must be non-negative" }
             assert index < self.size { "Set index out of bounds" }
             return self.data[index]
         }
 
-        func contains(element: T): Bool { ref self ->
+        func contains(element: T): Bool { self& ->
             return self.has(element)
         }
 
-        func forEach(action: (T) -> Unit) { ref self ->
+        func forEach(action: (T) -> Unit) { self& ->
             for i in 0..<self.size {
                 action(self.data[i])
             }
         }
 
-        func filter(predicate: (T) -> Bool): Set<T> { ref self ->
+        func filter(predicate: (T) -> Bool): Set<T> { self& ->
             var result = HashSet<T>()
             for i in 0..<self.size {
                 if predicate(self.data[i]) {
@@ -390,21 +390,21 @@ friend zone std {
             return result
         }
 
-        func any(predicate: (T) -> Bool): Bool { ref self ->
+        func any(predicate: (T) -> Bool): Bool { self& ->
             for i in 0..<self.size {
                 if predicate(self.data[i]) { return true }
             }
             return false
         }
 
-        func all(predicate: (T) -> Bool): Bool { ref self ->
+        func all(predicate: (T) -> Bool): Bool { self& ->
             for i in 0..<self.size {
                 if !predicate(self.data[i]) { return false }
             }
             return true
         }
 
-        func union(other: Set<T>): Set<T> { ref self ->
+        func union(other: Set<T>): Set<T> { self& ->
             var result = HashSet<T>()
             for i in 0..<self.size {
                 result.add(self.data[i])
@@ -417,7 +417,7 @@ friend zone std {
             return result
         }
 
-        func intersect(other: Set<T>): Set<T> { ref self ->
+        func intersect(other: Set<T>): Set<T> { self& ->
             var result = HashSet<T>()
             for i in 0..<self.size {
                 if other.contains(self.data[i]) {
@@ -427,7 +427,7 @@ friend zone std {
             return result
         }
 
-        func difference(other: Set<T>): Set<T> { ref self ->
+        func difference(other: Set<T>): Set<T> { self& ->
             var result = HashSet<T>()
             for i in 0..<self.size {
                 if !other.contains(self.data[i]) {
@@ -439,7 +439,7 @@ friend zone std {
     }
 
     impl MutableSet<T> for HashSet<T> {
-        func add(element: T): Bool { mut ref self ->
+        func add(element: T): Bool { self! ->
             if self.has(element) { return false }
             if self.size >= self.capacity { self.growSet() }
             self.data[self.size] = element
@@ -447,7 +447,7 @@ friend zone std {
             return true
         }
 
-        func remove(element: T): Bool { mut ref self ->
+        func remove(element: T): Bool { self! ->
             var idx = -1
             for i in 0..<self.size {
                 if self.data[i] == element { idx = i }
@@ -462,7 +462,7 @@ friend zone std {
             return true
         }
 
-        func clear() { mut ref self ->
+        func clear() { self! ->
             fin oldData = self.data
             self.data = alloc T[8]
             self.size = 0
@@ -472,7 +472,7 @@ friend zone std {
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    impl oper[] for HashSet<T> { ref self, index ->
+    impl oper[] for HashSet<T> { self&, index ->
         assert index >= 0 && index < self.size {
             "Set index out of bounds"
         }
@@ -480,7 +480,7 @@ friend zone std {
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    impl Into<String> for HashSet<T> { ref self ->
+    impl Into<String> for HashSet<T> { self& ->
         var s = "{"
         for i in 0..<self.size {
             if i > 0 { s = s + ", " }
@@ -490,7 +490,7 @@ friend zone std {
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    impl oper== by Set<T> for HashSet<T> { ref self, rhs ->
+    impl oper== by Set<T> for HashSet<T> { self&, rhs ->
         if self.size != rhs.size { return false }
         for i in 0..<self.size {
             if !rhs.contains(self.data[i]) { return false }
@@ -499,12 +499,12 @@ friend zone std {
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    impl oper!= by Set<T> for HashSet<T> { ref self, rhs ->
+    impl oper!= by Set<T> for HashSet<T> { self&, rhs ->
         return !(self == rhs)
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    impl oper# for HashSet<T> { ref self ->
+    impl oper# for HashSet<T> { self& ->
         var result = 0 as ULong
         for i in 0..<self.size {
             result = result + #self.data[i]
@@ -538,7 +538,7 @@ friend zone std {
 
     impl TreeSet<T> {
         @Experimental(sinceAzora: "0.0.4")
-        func growSet() { mut ref self ->
+        func growSet() { self! ->
             fin newCap = self.capacity * 2
             fin newData = alloc T[newCap]
             for i in 0..<self.size {
@@ -551,7 +551,7 @@ friend zone std {
         }
 
         @Experimental(sinceAzora: "0.0.4")
-        confine func has(element: T): Bool { ref self ->
+        confine func has(element: T): Bool { self& ->
             for i in 0..<self.size {
                 if self.data[i] == element { return true }
             }
@@ -564,23 +564,23 @@ friend zone std {
         prop isEmpty: Bool = self.size == 0
         prop isNotEmpty: Bool = self.size > 0
 
-        func get(index: Int): T { ref self ->
+        func get(index: Int): T { self& ->
             assert index >= 0 { "Set index must be non-negative" }
             assert index < self.size { "Set index out of bounds" }
             return self.data[index]
         }
 
-        func contains(element: T): Bool { ref self ->
+        func contains(element: T): Bool { self& ->
             return self.has(element)
         }
 
-        func forEach(action: (T) -> Unit) { ref self ->
+        func forEach(action: (T) -> Unit) { self& ->
             for i in 0..<self.size {
                 action(self.data[i])
             }
         }
 
-        func filter(predicate: (T) -> Bool): Set<T> { ref self ->
+        func filter(predicate: (T) -> Bool): Set<T> { self& ->
             var result = TreeSet<T>()
             for i in 0..<self.size {
                 if predicate(self.data[i]) {
@@ -590,21 +590,21 @@ friend zone std {
             return result
         }
 
-        func any(predicate: (T) -> Bool): Bool { ref self ->
+        func any(predicate: (T) -> Bool): Bool { self& ->
             for i in 0..<self.size {
                 if predicate(self.data[i]) { return true }
             }
             return false
         }
 
-        func all(predicate: (T) -> Bool): Bool { ref self ->
+        func all(predicate: (T) -> Bool): Bool { self& ->
             for i in 0..<self.size {
                 if !predicate(self.data[i]) { return false }
             }
             return true
         }
 
-        func union(other: Set<T>): Set<T> { ref self ->
+        func union(other: Set<T>): Set<T> { self& ->
             var result = TreeSet<T>()
             for i in 0..<self.size {
                 result.add(self.data[i])
@@ -617,7 +617,7 @@ friend zone std {
             return result
         }
 
-        func intersect(other: Set<T>): Set<T> { ref self ->
+        func intersect(other: Set<T>): Set<T> { self& ->
             var result = TreeSet<T>()
             for i in 0..<self.size {
                 if other.contains(self.data[i]) {
@@ -627,7 +627,7 @@ friend zone std {
             return result
         }
 
-        func difference(other: Set<T>): Set<T> { ref self ->
+        func difference(other: Set<T>): Set<T> { self& ->
             var result = TreeSet<T>()
             for i in 0..<self.size {
                 if !other.contains(self.data[i]) {
@@ -639,7 +639,7 @@ friend zone std {
     }
 
     impl MutableSet<T> for TreeSet<T> {
-        func add(element: T): Bool { mut ref self ->
+        func add(element: T): Bool { self! ->
             if self.has(element) { return false }
             if self.size >= self.capacity { self.growSet() }
             self.data[self.size] = element
@@ -647,7 +647,7 @@ friend zone std {
             return true
         }
 
-        func remove(element: T): Bool { mut ref self ->
+        func remove(element: T): Bool { self! ->
             var idx = -1
             for i in 0..<self.size {
                 if self.data[i] == element { idx = i }
@@ -662,7 +662,7 @@ friend zone std {
             return true
         }
 
-        func clear() { mut ref self ->
+        func clear() { self! ->
             fin oldData = self.data
             self.data = alloc T[8]
             self.size = 0
@@ -672,7 +672,7 @@ friend zone std {
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    impl oper[] for TreeSet<T> { ref self, index ->
+    impl oper[] for TreeSet<T> { self&, index ->
         assert index >= 0 && index < self.size {
             "Set index out of bounds"
         }
@@ -680,7 +680,7 @@ friend zone std {
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    impl Into<String> for TreeSet<T> { ref self ->
+    impl Into<String> for TreeSet<T> { self& ->
         var s = "{"
         for i in 0..<self.size {
             if i > 0 { s = s + ", " }
@@ -690,7 +690,7 @@ friend zone std {
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    impl oper== by Set<T> for TreeSet<T> { ref self, rhs ->
+    impl oper== by Set<T> for TreeSet<T> { self&, rhs ->
         if self.size != rhs.size { return false }
         for i in 0..<self.size {
             if !rhs.contains(self.data[i]) { return false }
@@ -699,12 +699,12 @@ friend zone std {
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    impl oper!= by Set<T> for TreeSet<T> { ref self, rhs ->
+    impl oper!= by Set<T> for TreeSet<T> { self&, rhs ->
         return !(self == rhs)
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    impl oper# for TreeSet<T> { ref self ->
+    impl oper# for TreeSet<T> { self& ->
         var result = 0 as ULong
         for i in 0..<self.size {
             result = result + #self.data[i]
@@ -717,7 +717,7 @@ friend zone std {
     // ---------------------------------------------------------------------
 
     @Experimental(sinceAzora: "0.0.4")
-    impl oper[] for LinkedHashSet<T> { ref self, index ->
+    impl oper[] for LinkedHashSet<T> { self&, index ->
         assert index >= 0 && index < self.size {
             "Set index out of bounds"
         }
@@ -725,7 +725,7 @@ friend zone std {
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    impl Into<String> for LinkedHashSet<T> { ref self ->
+    impl Into<String> for LinkedHashSet<T> { self& ->
         var s = "{"
         for i in 0..<self.size {
             if i > 0 { s = s + ", " }
@@ -735,7 +735,7 @@ friend zone std {
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    impl oper== by Set<T> for LinkedHashSet<T> { ref self, rhs ->
+    impl oper== by Set<T> for LinkedHashSet<T> { self&, rhs ->
         if self.size != rhs.size { return false }
         for i in 0..<self.size {
             if !rhs.contains(self.data[i]) { return false }
@@ -744,12 +744,12 @@ friend zone std {
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    impl oper!= by Set<T> for LinkedHashSet<T> { ref self, rhs ->
+    impl oper!= by Set<T> for LinkedHashSet<T> { self&, rhs ->
         return !(self == rhs)
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    impl oper# for LinkedHashSet<T> { ref self ->
+    impl oper# for LinkedHashSet<T> { self& ->
         var result = 0 as ULong
         for i in 0..<self.size {
             result = result + #self.data[i]

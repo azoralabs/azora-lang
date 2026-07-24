@@ -22,7 +22,7 @@ module std.container.array
  * Fixed-size contiguous array storage.
  *
  * Defines the canonical `Array<T>` type and the `arrayOf` factory. Array values
- * are built with `std::arrayOf(a, b, c)` or the `arr![a, b, c]` macro (see
+ * are built with `std::arrayOf(a, b, c)` or the `arr@[a, b, c]` macro (see
  * `std.macro`); bracket value literals are not array syntax. Arrays expose their
  * element count through `size` and provide low-level access to contiguous
  * storage through `data`.
@@ -59,7 +59,7 @@ friend zone std {
     /**
      * Creates an array containing `elements` in argument order.
      *
-     * Every element must have the same type. The `arr![first, second, third]`
+     * Every element must have the same type. The `arr@[first, second, third]`
      * macro (see `std.macro`) expands to this call.
      *
      * @param T The element type inferred from the arguments.
@@ -89,6 +89,8 @@ friend zone std {
 
     typealias Array<T> = Array<T, *>
 }
+
+
 
 test "arrayOf preserves values and ordefir" {
     fin values: Array<Int> = std::arrayOf(10, 20, 30)

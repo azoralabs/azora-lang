@@ -38,7 +38,7 @@ class MacroTest {
             import std.io
 
             func main() {
-                fin x = vec![1, 2, 3]
+                fin x = vec@[1, 2, 3]
                 std::println(x.size)
                 std::println(x[0])
                 std::println(x[2])
@@ -56,7 +56,7 @@ class MacroTest {
             import std.io
 
             func main() {
-                fin empty: List<Int> = vec![]
+                fin empty: List<Int> = vec@[]
                 std::println(empty.size)
                 std::println(empty.isEmpty)
             }
@@ -72,9 +72,9 @@ class MacroTest {
             import std.io
 
             func main() {
-                fin a = vec!(1, 2)
-                fin b = vec![1, 2]
-                fin c = vec!{1, 2}
+                fin a = vec@(1, 2)
+                fin b = vec@[1, 2]
+                fin c = vec@{1, 2}
                 std::println(a.size)
                 std::println(b.size)
                 std::println(c.size)
@@ -83,7 +83,7 @@ class MacroTest {
         val expected = "2\n2\n2"
         assertEquals(expected, run(src))
         // Sanity: the three forms compile to identical programs.
-        assertEquals(run(src.replace("vec!(1, 2)", "vec![1, 2]")), run(src.replace("vec!(1, 2)", "vec!{1, 2}")))
+        assertEquals(run(src.replace("vec@(1, 2)", "vec@[1, 2]")), run(src.replace("vec@(1, 2)", "vec@{1, 2}")))
     }
 
     @Test
@@ -94,8 +94,8 @@ class MacroTest {
             import std.io
 
             func main() {
-                fin s = set![1, 2, 3]
-                fin a = arr![10, 20, 30]
+                fin s = set@[1, 2, 3]
+                fin a = arr@[10, 20, 30]
                 std::println(s.size)
                 std::println(a.length)
                 std::println(a[2])
@@ -117,7 +117,7 @@ class MacroTest {
             }
 
             func main() {
-                fin d = dup![1, 2]
+                fin d = dup@[1, 2]
                 std::println(d.size)
                 std::println(d[0])
                 std::println(d[3])
@@ -137,11 +137,11 @@ class MacroTest {
 
             // `box` expands to a `vec!` invocation, which must then itself expand.
             meta box {
-                [...${'$'}xs] => vec![...${'$'}xs]
+                [...${'$'}xs] => vec@[...${'$'}xs]
             }
 
             func main() {
-                fin b = box![4, 5, 6]
+                fin b = box@[4, 5, 6]
                 std::println(b.size)
                 std::println(b[1])
             }
@@ -155,7 +155,7 @@ class MacroTest {
         val result = Compiler().compile(
             """
             func main() {
-                fin x = nope![1, 2, 3]
+                fin x = nope@[1, 2, 3]
             }
             """.trimIndent(),
         )
@@ -178,7 +178,7 @@ class MacroTest {
             }
 
             func main() {
-                fin x = needsArgs![]
+                fin x = needsArgs@[]
             }
             """.trimIndent(),
         )
@@ -196,7 +196,7 @@ class MacroTest {
             import std.container.*
 
             func main() {
-                fin x = vec![1, 2, 3]
+                fin x = vec@[1, 2, 3]
             }
             """,
         )
@@ -206,7 +206,7 @@ class MacroTest {
             program.items.none { it is TopLevel.Meta },
             "TopLevel.Meta should be removed after expansion",
         )
-        // The `vec![1,2,3]` site lowered to a concrete `std__listOf` call, with
+        // The `vec@[1,2,3]` site lowered to a concrete `std__listOf` call, with
         // no residual MetaInvoke anywhere in the program.
         var metaInvokeCount = 0
         var listOfCallCount = 0

@@ -301,7 +301,7 @@ object SerializationDeriver {
         helpers: Helpers,
     ): String = buildString {
         appendLine("impl ${pack.name} {")
-        appendLine("    func toSerialValue(value: ref ${pack.name}): SerialValue!SerializationError { ref self ->")
+        appendLine("    func toSerialValue(value: ref ${pack.name}): SerialValue ?! SerializationError { self& ->")
         appendLine("        var __serialFields = List()")
         fields.filterNot { it.ignored }.forEach { plan ->
             val encoded = appendEncodedField(plan, helpers)
@@ -316,7 +316,7 @@ object SerializationDeriver {
         appendLine("        return SerialValue.Object(__serialFields)")
         appendLine("    }")
         appendLine()
-        appendLine("    func fromSerialValue(value: ref SerialValue): ${pack.name}!SerializationError { ref self ->")
+        appendLine("    func fromSerialValue(value: ref SerialValue): ${pack.name} ?! SerializationError { self& ->")
         appendLine("        when value {")
         appendLine("            SerialValue.Object(__serialFields) -> {")
         fields.filterNot { it.ignored }.forEach { plan ->
@@ -330,20 +330,20 @@ object SerializationDeriver {
         active.forEachIndexed { index, plan ->
             val prefix = if (index == 0) "if" else "else if"
             appendLine("                    $prefix __serialField.name == ${quote(plan.wireName)} {")
-            appendLine("                        if __seen_${plan.field.name} { fail return .DuplicateField }")
+            appendLine("                        if __seen_${plan.field.name} { return .DuplicateField }")
             appendLine("                        __seen_${plan.field.name} = true")
             appendLine("                        __raw_${plan.field.name} = __serialField.value")
             appendLine("                    }")
         }
         if (active.isEmpty()) {
-            if (!ignoreUnknown) appendLine("                    fail return .UnknownField")
+            if (!ignoreUnknown) appendLine("                    return .UnknownField")
         } else if (!ignoreUnknown) {
-            appendLine("                    else { fail return .UnknownField }")
+            appendLine("                    else { return .UnknownField }")
         }
         appendLine("                    __serialIndex += 1")
         appendLine("                }")
         active.filter { it.required || it.field.default == null }.forEach { plan ->
-            appendLine("                if !__seen_${plan.field.name} { fail return .MissingField }")
+            appendLine("                if !__seen_${plan.field.name} { return .MissingField }")
         }
         active.filter { isCollection(it.field.type) }.forEach { plan ->
             appendDecodedCollection(plan, helpers)
@@ -363,7 +363,7 @@ object SerializationDeriver {
         }
         appendLine("                )")
         appendLine("            }")
-        appendLine("            else -> { fail return .UnexpectedType }")
+        appendLine("            else -> { return .UnexpectedType }")
         appendLine("        }")
         appendLine("    }")
         if (formats.json) appendFormatMethods(pack.name, "Json", "Json", "toJson", "fromJson", helpers)
@@ -425,7 +425,7 @@ object SerializationDeriver {
             appendLine("                                $indexName += 1")
             appendLine("                            }")
             appendLine("                        }")
-            appendLine("                        else -> { fail return .UnexpectedType }")
+            appendLine("                        else -> { return .UnexpectedType }")
             appendLine("                    }")
             appendLine("                }")
             return
@@ -445,7 +445,7 @@ object SerializationDeriver {
         appendLine("                                $indexName += 1")
         appendLine("                            }")
         appendLine("                        }")
-        appendLine("                        else -> { fail return .UnexpectedType }")
+        appendLine("                        else -> { return .UnexpectedType }")
         appendLine("                    }")
         appendLine("                }")
     }
@@ -459,12 +459,12 @@ object SerializationDeriver {
         helpers: Helpers,
     ) {
         appendLine()
-        appendLine("    func $encodeMethod(value: ref $typeName, options: ref SerializerOptions): String!SerializationError { ref self ->")
+        appendLine("    func $encodeMethod(value: ref $typeName, options: ref SerializerOptions): String ?! SerializationError { self& ->")
         appendLine("        fin __serialValue = try self.toSerialValue(value)")
         appendLine("        return try ${qualified(helpers.provider, "encodeSerialValue")}(__serialValue, SerializationFormat.$formatName, options)")
         appendLine("    }")
         appendLine()
-        appendLine("    func $decodeMethod(input: String, options: ref SerializerOptions): $typeName!SerializationError { ref self ->")
+        appendLine("    func $decodeMethod(input: String, options: ref SerializerOptions): $typeName ?! SerializationError { self& ->")
         appendLine("        fin __serialValue = try ${qualified(helpers.provider, "decodeSerialValue")}(input, SerializationFormat.$methodSuffix, options)")
         appendLine("        return try self.fromSerialValue(__serialValue)")
         appendLine("    }")
@@ -520,9 +520,9 @@ object SerializationDeriver {
         is TypeRef.Pointer -> "${renderType(type.inner)}*"
         is TypeRef.Function -> type.toString()
         is TypeRef.Failable -> if (type.errSets.size == 1) {
-            "${renderType(type.ok)}!${type.errSets.single()}"
+            "${renderType(type.ok)} ?! ${type.errSets.single()}"
         } else {
-            "${renderType(type.ok)}![${type.errSets.joinToString(", ")}]"
+            "${renderType(type.ok)} ?! [${type.errSets.joinToString(", ")}]"
         }
         is TypeRef.Reference -> "${type.kind.spelling} ${renderType(type.inner)}"
         is TypeRef.Const -> type.value.toString()

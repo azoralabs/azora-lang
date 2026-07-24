@@ -376,6 +376,7 @@ class Lexer(private val source: String) {
             match('?') -> addToken(TokenType.QMARK_QMARK)
             match('.') -> addToken(TokenType.QMARK_DOT)
             match('=') -> addToken(TokenType.QMARK_EQUAL)
+            match('!') -> addToken(TokenType.QMARK_BANG)
             !isAtEnd() && peek() in "+-*/%" -> {
                 val opChar = peek()
                 val afterOp = if (!isAtEnd(1)) source[current + 1] else ' '

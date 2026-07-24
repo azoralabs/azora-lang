@@ -22,7 +22,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 
 /**
- * End-to-end tests for the arr![org.azora.lang.backend.JavaScriptCodegen] backend.
+ * End-to-end tests for the arr@[org.azora.lang.backend.JavaScriptCodegen] backend.
  *
  * Each test compiles a small Azora program to JavaScript, executes it with
  * Node.js, and asserts on the program's standard output — validating that the
@@ -33,7 +33,7 @@ import kotlin.test.assertFalse
  */
 class JavaScriptExecTest {
 
-    /** Runs arr![source] and asserts its stdout equals arr![expected] (skips without `node`). */
+    /** Runs arr@[source] and asserts its stdout equals arr@[expected] (skips without `node`). */
     private fun check(expected: String, source: String) {
         if (!NodeExec.available) return
         assertEquals(expected, NodeExec.run(source))
@@ -93,7 +93,7 @@ class JavaScriptExecTest {
         pack App { var name: String }
 
         impl App {
-            func greet(): String { ref self ->
+            func greet(): String { self& ->
                 return "Hello from ${'$'}{self.name}!"
             }
         }
@@ -342,7 +342,7 @@ class JavaScriptExecTest {
         "25\n3",
         main(
             """
-            let nums = arr![10, 20, 30]
+            let nums = arr@[10, 20, 30]
             nums[1] = 25
             std::println(nums[1])
             std::println(nums.length)

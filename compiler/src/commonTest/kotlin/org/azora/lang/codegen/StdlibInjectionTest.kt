@@ -20,7 +20,7 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /**
- * Tests for arr![org.azora.lang.stdlib.StdlibInjector] under the zone/import model:
+ * Tests for arr@[org.azora.lang.stdlib.StdlibInjector] under the zone/import model:
  *
  * - Library symbols live in zones (`friend zone std::math { ... }`) and are
  *   name-mangled (`std.math::abs` → `std__math__abs`).
@@ -241,7 +241,7 @@ class StdlibInjectionTest {
         assertEquals("3\n2\n2", run("""
             import std.io
             func main() {
-                var xs: List<Int> = arr![1, 2, 3]
+                var xs: List<Int> = arr@[1, 2, 3]
                 var entries: Map<String, Int> = ["a": 1, "b": 2]
                 var seen: Set<Int> = ![1, 2, 2]
                 std::println(xs.size)

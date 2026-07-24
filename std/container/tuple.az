@@ -94,7 +94,7 @@ use friend zone std {
     /**
      * Builds a structural [Tuple].
      *
-     * @0 `tup!(1, "two", 3.0)` expands to `std::tupleOf(1, "two", 3.0)`.
+     * @0 `tup@(1, "two", 3.0)` expands to `std::tupleOf(1, "two", 3.0)`.
      */
     meta tup {
         [...$items] => std::tupleOf(...$items)

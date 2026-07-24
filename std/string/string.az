@@ -62,11 +62,11 @@ friend zone std {
      * @return The character at position index.
      */
     @Experimental(sinceAzora: "0.0.1")
-    func strCharAt(s: String, index: Int): Char!StringError
+    func strCharAt(s: String, index: Int): Char ?! StringError
     in {
         assert index >= 0 { "Index must be non-negative" }
     } zone {
-        if index >= stringLength(s) { fail return .IndexOutOfBounds }
+        if index >= stringLength(s) { return .IndexOutOfBounds }
         return charAt(s, index)
     }
 
@@ -315,9 +315,9 @@ friend zone std {
      * Parses a string as an integer. Returns the parsed value or fails.
      */
     @Experimental(sinceAzora: "0.0.1")
-    func strParseInt(s: String): Int!ParseError {
+    func strParseInt(s: String): Int ?! ParseError {
         if strIsEmpty(s) {
-            fail return .EmptyInput
+            return .EmptyInput
         }
         var result: Int = 0
         var sign: Int = 1
@@ -330,12 +330,12 @@ friend zone std {
             start = 1
         }
         if start >= chars.length {
-            fail return .InvalidFormat
+            return .InvalidFormat
         }
         var i: Int = start
         while i < chars.length {
             if !charIsDigit(chars[i]) {
-                fail return .InvalidFormat
+                return .InvalidFormat
             }
             result = result * 10 + digitToInt(chars[i])
             i += 1
@@ -347,9 +347,9 @@ friend zone std {
      * Parses a string as a real number. Returns the parsed value or fails.
      */
     @Experimental(sinceAzora: "0.0.1")
-    func strParseReal(s: String): Real!ParseError {
+    func strParseReal(s: String): Real ?! ParseError {
         if strIsEmpty(s) {
-            fail return .EmptyInput
+            return .EmptyInput
         }
         var chars: Array<Char> = strToChars(s)
         var sign: Real = 1.0
@@ -364,7 +364,7 @@ friend zone std {
         var i: Int = start
         while i < chars.length && chars[i] != '.' {
             if !charIsDigit(chars[i]) {
-                fail return .InvalidFormat
+                return .InvalidFormat
             }
             intPart = intPart * 10.0 + digitToInt(chars[i])
             i += 1
@@ -375,7 +375,7 @@ friend zone std {
             var divisor: Real = 10.0
             while i < chars.length {
                 if !charIsDigit(chars[i]) {
-                    fail return .InvalidFormat
+                    return .InvalidFormat
                 }
                 fracPart = fracPart + digitToInt(chars[i]) / divisor
                 divisor = divisor * 10.0

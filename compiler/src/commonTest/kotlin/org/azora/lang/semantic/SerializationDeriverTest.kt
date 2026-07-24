@@ -244,36 +244,36 @@ class SerializationDeriverTest {
                 shield var size: Int = 0
             }
             impl List<T> {
-                func add(element: T): Unit { mut ref self ->
+                func add(element: T): Unit { self! ->
                     self.data[self.size] = element
                     self.size += 1
                 }
             }
-            impl oper[] for List<T> { ref self, index -> return self.data[index] }
+            impl oper[] for List<T> { self&, index -> return self.data[index] }
             pack<T> Set {
                 shield var data: T* = alloc T[16]
                 shield var size: Int = 0
             }
             impl Set<T> {
-                func add(element: T): Bool { mut ref self ->
+                func add(element: T): Bool { self! ->
                     self.data[self.size] = element
                     self.size += 1
                     return true
                 }
             }
-            impl oper[] for Set<T> { ref self, index -> return self.data[index] }
+            impl oper[] for Set<T> { self&, index -> return self.data[index] }
             pack<K, V> Map {
                 shield var keysData: K* = alloc K[16]
                 shield var valuesData: V* = alloc V[16]
                 shield var size: Int = 0
             }
             impl Map<K, V> {
-                func put(key: K, value: V): Unit { mut ref self ->
+                func put(key: K, value: V): Unit { self! ->
                     self.keysData[self.size] = key
                     self.valuesData[self.size] = value
                     self.size += 1
                 }
-                func keys(): Array<K> { ref self ->
+                func keys(): Array<K> { self& ->
                     var result = [].fill<K>(self.size)
                     var index = 0
                     while index < self.size {
@@ -283,7 +283,7 @@ class SerializationDeriverTest {
                     return result
                 }
             }
-            impl oper[] for Map<K, V> { ref self, key ->
+            impl oper[] for Map<K, V> { self&, key ->
                 var index = 0
                 while index < self.size {
                     if self.keysData[index] == key { return self.valuesData[index] }
@@ -304,30 +304,30 @@ class SerializationDeriverTest {
                 Object(List<SerialField>)
             }
 
-            func std__serialFieldAt(fields: ref List<SerialField>, index: Int): SerialField {
+            func std__serialFieldAt(fields: List<SerialField>&, index: Int): SerialField {
                 return fields[index]
             }
-            func std__serialFieldCount(fields: ref List<SerialField>): Int { return fields.size }
-            func std__serialValueAt(values: ref List<SerialValue>, index: Int): SerialValue { return values[index] }
-            func std__serialAsText(value: ref SerialValue): String!SerializationError {
+            func std__serialFieldCount(fields: List<SerialField>&): Int { return fields.size }
+            func std__serialValueAt(values: List<SerialValue>&, index: Int): SerialValue { return values[index] }
+            func std__serialAsText(value: SerialValue&): String ?! SerializationError {
                 when value {
                     SerialValue.Text(text) -> { return text }
-                    else -> { fail return .UnexpectedType }
+                    else -> { return .UnexpectedType }
                 }
             }
-            func std__serialAsBool(value: ref SerialValue): Bool!SerializationError {
+            func std__serialAsBool(value: SerialValue&): Bool ?! SerializationError {
                 when value {
                     SerialValue.Bool(boolean) -> { return boolean }
-                    else -> { fail return .UnexpectedType }
+                    else -> { return .UnexpectedType }
                 }
             }
-            func std__serialAsChar(value: ref SerialValue): Char!SerializationError { return 'x' }
-            func std__serialAsLong(value: ref SerialValue): Long!SerializationError { return 7L }
-            func std__serialAsInt(value: ref SerialValue): Int!SerializationError { return 7 }
-            func std__serialAsReal(value: ref SerialValue): Real!SerializationError { return 0.0 }
+            func std__serialAsChar(value: SerialValue&): Char ?! SerializationError { return 'x' }
+            func std__serialAsLong(value: SerialValue&): Long ?! SerializationError { return 7L }
+            func std__serialAsInt(value: SerialValue&): Int ?! SerializationError { return 7 }
+            func std__serialAsReal(value: SerialValue&): Real ?! SerializationError { return 0.0 }
             func std__convert__toString(value: Any): String { return "" }
-            func std__encodeSerialValue(value: ref SerialValue, format: SerializationFormat, options: ref SerializerOptions): String!SerializationError { return "" }
-            func std__decodeSerialValue(input: String, format: SerializationFormat, options: ref SerializerOptions): SerialValue!SerializationError { return SerialValue.Null }
+            func std__encodeSerialValue(value: SerialValue&, format: SerializationFormat, options: SerializerOptions&): String ?! SerializationError { return "" }
+            func std__decodeSerialValue(input: String, format: SerializationFormat, options: SerializerOptions&): SerialValue ?! SerializationError { return SerialValue.Null }
             func std__println(value: Any): Unit {}
 
             @Serializable

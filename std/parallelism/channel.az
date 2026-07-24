@@ -37,7 +37,7 @@ friend zone std {
      * @param T The type of messages in this channel.
      */
     @SinceAzora("0.0.1")
-    pack<T> Channel {
+    pack Channel<T> {
         confine var queue: Queue<T> = Queue<T>()
         confine var mutex: Mutex = Mutex(0)
         confine var closed: Bool = false

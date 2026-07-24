@@ -17,7 +17,7 @@ module std.memory.slice
 
 friend zone std {
     @SinceAzora("0.0.3")
-    pack<T> Slice {
+    pack Slice<T> {
         confine var raw: T*
         shield var count: Int
     }

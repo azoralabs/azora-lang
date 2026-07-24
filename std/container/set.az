@@ -123,7 +123,7 @@ friend zone std {
      */
     @Experimental(sinceAzora: "0.0.4")
     @Serializable
-    pack<T> LinkedHashSet {
+    pack LinkedHashSet<T> {
         shield var data: T* = alloc T[8]
         shield var size: Int = 0
         shield var capacity: Int = 8
@@ -271,17 +271,17 @@ friend zone std {
     // ---------------------------------------------------------------------
 
     @Experimental(sinceAzora: "0.0.4")
-    func<T> emptySet(): Set<T> {
+    func emptySet<T>(): Set<T> {
         return LinkedHashSet<T>()
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    func<T> emptyMutableSet(): MutableSet<T> {
+    func emptyMutableSet<T>(): MutableSet<T> {
         return LinkedHashSet<T>()
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    func<T> setOf(...elements: T): Set<T> {
+    func setOf<T>(...elements: T): Set<T> {
         var result = LinkedHashSet<T>()
         for i in 0..<elements.size {
             result.add(elements[i])
@@ -290,7 +290,7 @@ friend zone std {
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    func<T> mutableSetOf(...elements: T): MutableSet<T> {
+    func mutableSetOf<T>(...elements: T): MutableSet<T> {
         var result = LinkedHashSet<T>()
         for i in 0..<elements.size {
             result.add(elements[i])
@@ -299,7 +299,7 @@ friend zone std {
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    func<T> linkedHashSetOf(...elements: T): LinkedHashSet<T> {
+    func linkedHashSetOf<T>(...elements: T): LinkedHashSet<T> {
         var result = LinkedHashSet<T>()
         for i in 0..<elements.size {
             result.add(elements[i])
@@ -308,7 +308,7 @@ friend zone std {
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    func<T> emptyLinkedHashSet(): MutableSet<T> {
+    func emptyLinkedHashSet<T>(): MutableSet<T> {
         return LinkedHashSet<T>()
     }
 
@@ -316,14 +316,14 @@ friend zone std {
 
     @Experimental(sinceAzora: "0.0.4")
     @Serializable
-    pack<T> HashSet {
+    pack HashSet<T> {
         shield var data: T* = alloc T[8]
         shield var size: Int = 0
         shield var capacity: Int = 8
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    func<T> hashSetOf(...elements: T): HashSet<T> {
+    func hashSetOf<T>(...elements: T): HashSet<T> {
         var result = HashSet<T>()
         for i in 0..<elements.size {
             result.add(elements[i])
@@ -332,7 +332,7 @@ friend zone std {
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    func<T> emptyHashSet(): MutableSet<T> {
+    func emptyHashSet<T>(): MutableSet<T> {
         return HashSet<T>()
     }
 
@@ -516,14 +516,14 @@ friend zone std {
 
     @Experimental(sinceAzora: "0.0.4")
     @Serializable
-    pack<T> TreeSet {
+    pack TreeSet<T> {
         shield var data: T* = alloc T[8]
         shield var size: Int = 0
         shield var capacity: Int = 8
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    func<T> treeSetOf(...elements: T): TreeSet<T> {
+    func treeSetOf<T>(...elements: T): TreeSet<T> {
         var result = TreeSet<T>()
         for i in 0..<elements.size {
             result.add(elements[i])
@@ -532,7 +532,7 @@ friend zone std {
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    func<T> emptyTreeSet(): MutableSet<T> {
+    func emptyTreeSet<T>(): MutableSet<T> {
         return TreeSet<T>()
     }
 

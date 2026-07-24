@@ -212,7 +212,21 @@ class Compiler(
         // stdlib symbols not pulled in by the pre-expansion injection (the macro
         // template's own dependencies). A second injection pass over the expanded
         // program picks those up transitively.
-        val macroReInjected = CallbackImplNormalizer.normalize(libraries.inject(macroExpanded))
+        var macroReInjected = CallbackImplNormalizer.normalize(libraries.inject(macroExpanded))
+        // The re-injection can re-add `meta .Infix("op")` markers (encoded as
+        // `__infix__op` metas) from the stdlib. Collect their operator names and
+        // strip the markers so no `TopLevel.Meta` survives into semantic analysis.
+        run {
+            val reinjectedInfix = macroReInjected.items
+                .filterIsInstance<org.azora.lang.frontend.TopLevel.Meta>()
+                .mapNotNull { it.name.removePrefix("__infix__").takeIf { n -> n != it.name } }
+            if (reinjectedInfix.isNotEmpty() || macroReInjected.items.any { it is org.azora.lang.frontend.TopLevel.Meta }) {
+                macroReInjected = macroReInjected.copy(
+                    items = macroReInjected.items.filterNot { it is org.azora.lang.frontend.TopLevel.Meta },
+                    infixOperators = macroReInjected.infixOperators + reinjectedInfix,
+                )
+            }
+        }
 
         // 2d. Monomorphize variadic generics (e.g. `Tuple<T…>` / `tupleOf(…)`)
         // into concrete per-instantiation declarations before semantic analysis.

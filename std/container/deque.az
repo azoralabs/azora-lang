@@ -38,7 +38,7 @@ friend zone std {
      */
     @SinceAzora("0.0.1")
     @Serializable
-    pack<T> Deque {
+    pack Deque<T> {
         shield var data: T* = alloc T[8]
         shield var head: Int = 0
         shield var tail: Int = 0

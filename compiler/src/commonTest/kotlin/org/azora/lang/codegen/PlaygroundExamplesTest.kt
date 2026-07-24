@@ -234,7 +234,7 @@ func main() {
 
     @Test fun variadic() = assertEquals("6\n100", run("""module playground
 import std.io
-func<...T> sumAll(first: Int, rest: ...T): Int {
+func sumAll<...T>(first: Int, rest: ...T): Int {
     var total = first
     for x in rest { total = total + x }
     return total

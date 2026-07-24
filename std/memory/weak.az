@@ -18,7 +18,7 @@ module std.memory.weak
 
 friend zone std {
     @SinceAzora("0.0.3")
-    pack<T> Weak {
+    pack Weak<T> {
         confine var raw: T*
     }
 

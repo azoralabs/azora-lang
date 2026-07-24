@@ -112,7 +112,7 @@ class MacroTest {
             import std.container.*
             import std.io
 
-            meta dup {
+            meta .Prefix("dup") {
                 [...${'$'}xs] => std::listOf(...${'$'}xs, ...${'$'}xs)
             }
 
@@ -136,7 +136,7 @@ class MacroTest {
             import std.io
 
             // `box` expands to a `vec!` invocation, which must then itself expand.
-            meta box {
+            meta .Prefix("box") {
                 [...${'$'}xs] => vec@[...${'$'}xs]
             }
 
@@ -173,7 +173,7 @@ class MacroTest {
             $$"""
             import std.container.*
 
-            meta needsArgs {
+            meta .Prefix("needsArgs") {
                 [...$xs] => std::listOf(...$xs)
             }
 

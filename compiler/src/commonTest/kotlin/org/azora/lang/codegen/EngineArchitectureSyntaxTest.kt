@@ -42,22 +42,26 @@ class EngineArchitectureSyntaxTest {
         """
         module engine.ecs
 
-        meta type {
+        meta .Type {
             res ${'$'}T => Resource<${'$'}T>
-            mut res ${'$'}T => MutResource<${'$'}T>
+            res! ${'$'}T => MutResource<${'$'}T>
             query [...${'$'}T] => Query<...${'$'}T>
-            ${'$'}Base with ${'$'}Filter => ${'$'}Base
-            ${'$'}Base without ${'$'}Filter => ${'$'}Base
+        }
+        meta .Infix("with") {
+            ${'$'}Base ${'$'}Filter => ${'$'}Base
+        }
+        meta .Infix("without") {
+            ${'$'}Base ${'$'}Filter => ${'$'}Base
         }
 
-        pack<T> Resource { fin value: T }
-        pack<T> MutResource { var value: T }
-        bridge pack<...T> Query
+        pack Resource<T> { fin value: T }
+        pack MutResource<T> { var value: T }
+        bridge pack Query<...T>
         pack Vec3 { var x: Real }
         typealias Vector3 = Vec3
         pack Transform { var translation: Vector3 }
 
-        pack<...T> Single where (...T).length >= 1 {
+        pack Single<...T> where (...T).length >= 1 {
             fin matched: Bool = true
             inline for Ty in ...T {
                 value: Ty
@@ -95,8 +99,8 @@ class EngineArchitectureSyntaxTest {
             @System(.Update)
             func move(
                 time: res Time
-                mut ref player: Single<Transform!> with Player
-                mut ref query: query [mut ref Transform, Player&]
+                player: Single<Transform!>! with Player
+                query: query [Transform!, Player&]!
             ) {
                 player.translation.x = 2.0
             }

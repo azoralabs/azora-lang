@@ -635,7 +635,7 @@ func main() { std::println("Hello, Azora!") }"""))
 
     @Test fun ch35_variadic() = assertEquals("3\n10", run("""
         import std.io
-        func<...T> variadicSum(first: Int, rest: ...T): Int {
+        func variadicSum<...T>(first: Int, rest: ...T): Int {
             var total = first
             for x in rest { total = total + x }
             return total

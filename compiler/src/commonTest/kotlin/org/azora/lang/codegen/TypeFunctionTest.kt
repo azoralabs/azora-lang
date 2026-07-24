@@ -142,7 +142,7 @@ class TypeFunctionTest {
     fun genericFunctionCallUsesTypeFunctionForItsResult() {
         assertIs<CompilationResult.Success>(compile("""
             import std.traits
-            func<T, U> greater(a: T, b: U): std::promote@(T, U) {
+            func greater<T, U>(a: T, b: U): std::promote@(T, U) {
                 return a + b
             }
             func main() {

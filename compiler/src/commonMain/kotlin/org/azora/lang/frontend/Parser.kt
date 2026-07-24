@@ -61,9 +61,16 @@ class Parser(
 
     /** `meta type { … }` arms collected during parsing, surfaced on [Program.typeMacroRules]. */
     private val pendingTypeMacroRules = mutableListOf<TypeTypeArm>()
+    private val pendingInfixMacros = mutableListOf<InfixMacroRule>()
 
-    /** Set whenever a `name!…` macro invocation is parsed; surfaced on [Program.usesMacros]. */
+    /** Set whenever a `name@…` macro invocation is parsed; surfaced on [Program.usesMacros]. */
     private var usedMetaInvoke = false
+
+    /** Tokens after which a trailing `&`/`!` is a call-site borrow, not a binary op. */
+    private val BORROW_TERMINATORS = setOf(
+        TokenType.R_PAREN, TokenType.COMMA, TokenType.R_BRACKET, TokenType.R_BRACE,
+        TokenType.NEWLINE, TokenType.EOF,
+    )
 
     /**
      * Non-friend `zone X` declarations seen in this program (name -> count).
@@ -280,6 +287,7 @@ class Parser(
                 zoneMetaByName.toMap(),
                 typeFunctions = typeFunctions.toList(),
                 typeMacroRules = pendingTypeMacroRules.toList(),
+                infixMacros = pendingInfixMacros.toList(),
                 usesMacros = usedMetaInvoke,
             )
         )
@@ -622,10 +630,9 @@ class Parser(
                     else -> TopLevel.Func(parseFuncDecl(annotations = annotations, isUnsafe = true, visibility = visibility))
                 }
             }
-            isExtensionFuncAhead() -> parseExtensionFunc(visibility)
-            check(TokenType.FUNC) -> TopLevel.Func(parseFuncDecl(annotations = annotations, visibility = visibility))
-            check(TokenType.TASK) -> TopLevel.Func(parseFuncDecl(annotations = annotations, isTask = true, visibility = visibility))
-            check(TokenType.FLOW) -> TopLevel.Func(parseFuncDecl(annotations = annotations, isFlow = true, visibility = visibility))
+            check(TokenType.FUNC) -> funcOrExtension(parseFuncDecl(annotations = annotations, visibility = visibility))
+            check(TokenType.TASK) -> funcOrExtension(parseFuncDecl(annotations = annotations, isTask = true, visibility = visibility))
+            check(TokenType.FLOW) -> funcOrExtension(parseFuncDecl(annotations = annotations, isFlow = true, visibility = visibility))
             check(TokenType.INLINE) -> parseTopLevelInline()
             check(TokenType.DEEPINLINE) -> parseTopLevelDeepInline()
             check(TokenType.TEST) -> parseTestDecl(annotations)
@@ -640,7 +647,6 @@ class Parser(
             check(TokenType.ENUM) -> parseEnumDecl(annotations)
             check(TokenType.FAIL) -> parseFailDecl(annotations)
             check(TokenType.IMPL) -> parseImpl(annotations = annotations)
-            check(TokenType.INFX) -> parseInfx()
             check(TokenType.BRIDGE) && peekNext()?.type == TokenType.IMPL -> {
                 advance(); parseImpl(isBridge = true, annotations = annotations)
             }
@@ -664,6 +670,9 @@ class Parser(
             }
             check(TokenType.BRIDGE) && peekNext()?.type == TokenType.TYPEALIAS -> {
                 advance(); parseTypeAlias(annotations)
+            }
+            check(TokenType.BRIDGE) && peekNext()?.type == TokenType.SLOT -> {
+                advance(); parseSlot(annotations)
             }
             check(TokenType.BRIDGE) && isBridgeFuncAhead() -> parseBridgeFunc(annotations)
             check(TokenType.BRIDGE) -> parseBridge(annotations)
@@ -710,16 +719,36 @@ class Parser(
         val result = mutableListOf<Annotation>()
         while (check(TokenType.AT)) {
             val at = advance() // '@'
-            val name = consume(TokenType.IDENTIFIER, "Expected name after '@'").lexeme
-            if (name.firstOrNull()?.isUpperCase() != true) {
-                error("Decorator names must start with an uppercase letter: use '@${name.replaceFirstChar { it.uppercase() }}' at line ${at.line}")
+            // Grouped form: `@[A, B(args), C]` applies several decorators in one row,
+            // equivalent to stacking `@A` / `@B(args)` / `@C`.
+            if (match(TokenType.L_BRACKET)) {
+                skipNewlines()
+                if (!check(TokenType.R_BRACKET)) {
+                    do {
+                        skipNewlines()
+                        result.add(parseOneAnnotation(at.line, at.column))
+                        skipNewlines()
+                    } while (match(TokenType.COMMA))
+                }
+                consume(TokenType.R_BRACKET, "Expected ']' after grouped decorators")
+                skipNewlines()
+                continue
             }
-            val (args, namedArgs) = if (check(TokenType.L_PAREN)) parseDecoratorArguments()
-            else emptyList<Expr>() to emptyList<Pair<String, Expr>>()
-            result.add(Annotation(name, args, at.line, at.column, namedArgs = namedArgs))
+            result.add(parseOneAnnotation(at.line, at.column))
             skipNewlines()
         }
         return result
+    }
+
+    /** One decorator body (name + optional `(args)`), with the leading `@` already consumed. */
+    private fun parseOneAnnotation(line: Int, column: Int): Annotation {
+        val name = consume(TokenType.IDENTIFIER, "Expected decorator name").lexeme
+        if (name.firstOrNull()?.isUpperCase() != true) {
+            error("Decorator names must start with an uppercase letter: use '@${name.replaceFirstChar { it.uppercase() }}' at line $line")
+        }
+        val (args, namedArgs) = if (check(TokenType.L_PAREN)) parseDecoratorArguments()
+        else emptyList<Expr>() to emptyList<Pair<String, Expr>>()
+        return Annotation(name, args, line, column, namedArgs = namedArgs)
     }
 
     private fun parseDecoratorArguments(): Pair<List<Expr>, List<Pair<String, Expr>>> {
@@ -1326,12 +1355,12 @@ class Parser(
     ): TopLevel.Pack {
         val start = peek()
         consume(TokenType.PACK, "Expected 'pack'")
-        // Type parameters precede the name: `pack<T> Box`, `pack<K, V> Map`.
-        val tp = parseTypeParams()
-        val name = consume(TokenType.IDENTIFIER, "Expected pack name").lexeme
         if (check(TokenType.LESS)) {
-            error("Type parameters go before the pack name: write 'pack<…> $name', not 'pack $name<…>', at line ${peek().line}")
+            error("Type parameters go after the pack name: write 'pack Name<…>', not 'pack<…> Name', at line ${peek().line}")
         }
+        // Type parameters follow the name: `pack Box<T>`, `pack Map<K, V>`.
+        val name = consume(TokenType.IDENTIFIER, "Expected pack name").lexeme
+        val tp = parseTypeParams()
         val minLen = parseVariadicWhereClause()
         val enforceNumFields = annotations.any { it.name == "EnforceNumFields" }
         val effectiveVisibility = if (visibility == Visibility.SHIELD) Visibility.EXPOSE else visibility
@@ -2289,67 +2318,31 @@ class Parser(
         return TopLevel.Impl(typeName, listOf(method), null, start.line, start.column)
     }
 
-    private fun isExtensionFuncAhead(): Boolean =
-        check(TokenType.FUNC) &&
-            peekNext()?.type == TokenType.IDENTIFIER &&
-            tokens.getOrNull(current + 2)?.type == TokenType.DOT &&
-            tokens.getOrNull(current + 3)?.type in setOf(TokenType.IDENTIFIER, TokenType.REM, TokenType.MEM, TokenType.RET)
-
     /**
-     * `func Type.method(args): Ret { ref self -> body }` — external extension method.
-     * The receiver is explicit inside the body header so extensions can choose
-     * `ref self` or `mut ref self`; shielded packs reject the mutable form later.
+     * Wraps a parsed function as either a plain `TopLevel.Func` or, when it declares
+     * a bracketed receiver (`func m()[self: Type&]: R`), an extension `TopLevel.Impl`
+     * on the receiver's type — the desugaring the old `func Type.m()` form used.
      */
-    private fun parseExtensionFunc(visibility: Visibility = Visibility.EXPOSE): TopLevel.Impl {
-        val start = peek()
-        consume(TokenType.FUNC, "Expected 'func'")
-        val typeName = consume(TokenType.IDENTIFIER, "Expected extension receiver type").lexeme
-        skipGenericTypeArgs()
-        consume(TokenType.DOT, "Expected '.' between extension type and method name")
-        val methodName = consumeIdentifierLike("Expected extension method name")
-        consume(TokenType.L_PAREN, "Expected '(' after extension method name")
-        val params = parseParams()
-        consume(TokenType.R_PAREN, "Expected ')' after extension parameters")
-        val returnType: TypeAnnotation = if (match(TokenType.COLON)) {
-            TypeAnnotation.Explicit(parseTypeName())
-        } else {
-            TypeAnnotation.Inferred
+    private fun funcOrExtension(decl: FuncDecl): TopLevel {
+        val recv = decl.extensionReceiver ?: return TopLevel.Func(decl)
+        val (typeName, modifier) = when (val t = recv.type) {
+            is TypeRef.Reference -> namedTypeName(t.inner) to t.kind.spelling
+            else -> namedTypeName(t) to "ref"
         }
-        consume(TokenType.L_BRACE, "Expected '{' before extension body")
-        skipNewlines()
-        val receiverModifier = parseReceiverBinding("extension receiver").modifier
-        consume(TokenType.ARROW, "Expected '->' after extension receiver")
-        skipNewlines()
-        val body = mutableListOf<Stmt>()
-        while (!check(TokenType.R_BRACE) && !isAtEnd()) {
-            body.add(parseStmt())
-            skipNewlines()
-        }
-        consume(TokenType.R_BRACE, "Expected '}' after extension body")
-        consumeNewline()
-        val method = FuncDecl(
-            name = methodName,
-            params = params,
-            returnType = returnType,
-            body = body,
-            line = start.line,
-            column = start.column,
-            visibility = visibility,
-            receiverModifier = receiverModifier,
+        val method = decl.copy(
+            receiverModifier = modifier,
+            receiverName = recv.name,
+            extensionReceiver = null,
         )
-        return TopLevel.Impl(typeName, listOf(method), null, start.line, start.column, isExtension = true)
+        return TopLevel.Impl(typeName, listOf(method), null, decl.line, decl.column, isExtension = true)
     }
 
-    private fun parseExtensionReceiverModifier(): String =
-        when {
-            check(TokenType.MUT) && peekNext()?.type == TokenType.REF -> {
-                advance()
-                advance()
-                "mut ref"
-            }
-            match(TokenType.REF) -> "ref"
-            else -> error("Expected 'ref self' or 'mut ref self' extension receiver at line ${peek().line}")
-        }
+    /** The bare type name of a (possibly generic) named type ref, for extension targets. */
+    private fun namedTypeName(t: TypeRef): String = when (t) {
+        is TypeRef.Named -> t.name
+        is TypeRef.Reference -> namedTypeName(t.inner)
+        else -> error("Extension receiver must be a named type at line ${peek().line}")
+    }
 
     private fun parseImplReceiverModifier(): String =
         when {
@@ -2380,18 +2373,9 @@ class Parser(
      * the receiver name. The receiver is always named `self`.
      */
     private fun parseReceiverBinding(what: String = "receiver"): ReceiverBinding {
-        // New postfix form: `self` directly followed by a borrow marker or delimiter.
-        val postfix = peek().lexeme == "self"
-        val mod: String
-        if (postfix) {
-            consumeIdentifierLike("Expected $what name")
-            mod = parsePostfixReceiverModifier()
-        } else {
-            mod = parseImplReceiverModifier()
-            val name = consumeIdentifierLike("Expected $what name")
-            if (name != "self") error("Expected $what to be named 'self' at line ${peek().line}")
-        }
-        return ReceiverBinding("self", mod)
+        val name = consumeIdentifierLike("Expected $what name")
+        if (name != "self") error("Expected $what to be named 'self' at line ${peek().line}")
+        return ReceiverBinding("self", parsePostfixReceiverModifier())
     }
 
     /**
@@ -2647,42 +2631,97 @@ class Parser(
     private fun parseMeta(): TopLevel.Meta {
         val start = peek()
         consume(TokenType.META, "Expected 'meta'")
-        // `meta type { pattern => template; … }` — a type-level macro declaration.
-        // Patterns are type-sugar forms (`[T]`, `[T; N]`, `{T}`, `[K: V]`, `(...T)`);
-        // templates are types. Rules are stored on the Program (rewriting pass is
-        // scaffolded, not yet active — see [TypeTypeArm]); the declaration itself
-        // emits no runtime item, so return a no-op block.
-        if (check(TokenType.TYPE)) {
-            advance() // 'type'
-            consume(TokenType.L_BRACE, "Expected '{' after 'meta type'")
-            skipNewlines()
-            while (!check(TokenType.R_BRACE) && !isAtEnd()) {
+        // The macro kind is a `Macro` slot variant: `meta .Prefix("name") { … }` (a
+        // value/prefix macro invoked `name@[…]`), `meta .Infix("op") { … }` (an infix
+        // macro, `a op b`), or `meta .Type { … }` (type-sugar macros).
+        consume(TokenType.DOT, "Expected '.Prefix(\"…\")', '.Infix(\"…\")', or '.Type' after 'meta'")
+        val kind = consume(TokenType.IDENTIFIER, "Expected macro kind ('Prefix', 'Infix', or 'Type') after 'meta .'").lexeme
+        when (kind) {
+            "Type" -> {
+                consume(TokenType.L_BRACE, "Expected '{' after 'meta .Type'")
                 skipNewlines()
-                if (check(TokenType.R_BRACE)) break
-                pendingTypeMacroRules.add(parseTypeMacroArm())
-                skipNewlines()
+                while (!check(TokenType.R_BRACE) && !isAtEnd()) {
+                    skipNewlines()
+                    if (check(TokenType.R_BRACE)) break
+                    val arm = parseTypeMacroArm()
+                    if (arm.kind == TypeFormKind.INFIX) {
+                        error("Infix type patterns ('\$A op \$B => …') belong in 'meta .Infix', not 'meta .Type', at line ${start.line}")
+                    }
+                    pendingTypeMacroRules.add(arm)
+                    skipNewlines()
+                }
+                consume(TokenType.R_BRACE, "Expected '}' after 'meta .Type' arms")
+                consumeNewline()
+                return TopLevel.Meta("__type_macro__", emptyList(), start.line, start.column)
             }
-            consume(TokenType.R_BRACE, "Expected '}' after 'meta type' arms")
-            consumeNewline()
-            return TopLevel.Meta("__type_macro__", emptyList(), start.line, start.column)
+            "Infix" -> {
+                val op = parseMacroKindName()
+                // `meta .Infix("op")` registers `op` as an infix operator: a call
+                // `a op b` resolves to the free function `op(self, b)`. An optional
+                // block holds type-infix arms (`$A op $B => Type`).
+                if (match(TokenType.L_BRACE)) {
+                    skipNewlines()
+                    while (!check(TokenType.R_BRACE) && !isAtEnd()) {
+                        skipNewlines()
+                        if (check(TokenType.R_BRACE)) break
+                        // The operator is `op` (from `.Infix("op")`); arms omit it and
+                        // are written `$A $B => TEMPLATE` — no redundant operator token.
+                        // A `Type<…>` template is a type-infix rule; anything else is a
+                        // value-infix macro (`$a $b => expr`), rewriting `a op b`.
+                        val left = consume(TokenType.IDENTIFIER, "Expected left hole '\$…' in 'meta .Infix' arm").lexeme
+                        val right = consume(TokenType.IDENTIFIER, "Expected right hole '\$…' in 'meta .Infix' arm").lexeme
+                        requireTypeMacroHole(left)
+                        requireTypeMacroHole(right)
+                        consume(TokenType.FAT_ARROW, "Expected '=>' after 'meta .Infix' pattern")
+                        // `Type<…>` template → type-infix rule (used in type position,
+                        // e.g. `A with B`). Anything else is a value-infix macro
+                        // (`a op b → expr`). A bare hole (`$Base`) registers both, since
+                        // it is meaningful in either position.
+                        val genericTypeTemplate = check(TokenType.IDENTIFIER) &&
+                            peek().lexeme.firstOrNull()?.isUpperCase() == true &&
+                            peekNext()?.type == TokenType.LESS
+                        if (genericTypeTemplate) {
+                            pendingTypeMacroRules.add(TypeTypeArm(TypeFormKind.INFIX, listOf(left, right), parseTypeName(), name = op))
+                        } else {
+                            val template = parseExpr()
+                            pendingInfixMacros.add(InfixMacroRule(op, left, right, template))
+                            if (template is Expr.Identifier) {
+                                pendingTypeMacroRules.add(TypeTypeArm(TypeFormKind.INFIX, listOf(left, right), TypeRef.Named(template.name), name = op))
+                            }
+                        }
+                        skipNewlines()
+                    }
+                    consume(TokenType.R_BRACE, "Expected '}' after 'meta .Infix' arms")
+                }
+                consumeNewline()
+                // The name `__infix__op` is recognized by SymbolCollector, which wires
+                // the free function `op` as a universal infix.
+                return TopLevel.Meta("__infix__$op", emptyList(), start.line, start.column)
+            }
+            "Prefix" -> {
+                val name = parseMacroKindName()
+                consume(TokenType.L_BRACE, "Expected '{' after 'meta .Prefix(\"$name\")'")
+                skipNewlines()
+                val arms = mutableListOf<MacroArm>()
+                while (!check(TokenType.R_BRACE) && !isAtEnd()) {
+                    skipNewlines()
+                    if (check(TokenType.R_BRACE)) break
+                    arms.add(parseMacroArm())
+                }
+                consume(TokenType.R_BRACE, "Expected '}' after macro arms")
+                consumeNewline()
+                return TopLevel.Meta(name, arms, start.line, start.column)
+            }
+            else -> error("Unknown macro kind '.$kind'; expected '.Prefix', '.Infix', or '.Type' at line ${start.line}")
         }
-        // Optional sigil prefix: `meta mut vec`, `meta # map`, `meta !# set`,
-        // `meta ^ map`. The prefix is folded into the macro's name (e.g. `# map`)
-        // so it matches the equivalently-prefixed invocation.
-        val prefix = parseMetaPrefix()
-        val bareName = consume(TokenType.IDENTIFIER, "Expected macro name after 'meta'").lexeme
-        val name = if (prefix.isEmpty()) bareName else "$prefix $bareName"
-        consume(TokenType.L_BRACE, "Expected '{' after macro name")
-        skipNewlines()
-        val arms = mutableListOf<MacroArm>()
-        while (!check(TokenType.R_BRACE) && !isAtEnd()) {
-            skipNewlines()
-            if (check(TokenType.R_BRACE)) break
-            arms.add(parseMacroArm())
-        }
-        consume(TokenType.R_BRACE, "Expected '}' after macro arms")
-        consumeNewline()
-        return TopLevel.Meta(name, arms, start.line, start.column)
+    }
+
+    /** The string name inside `meta .Prefix("name")` / `.Infix("op")`. */
+    private fun parseMacroKindName(): String {
+        consume(TokenType.L_PAREN, "Expected '(' with a macro name string")
+        val tok = consume(TokenType.STRING_LITERAL, "Expected a string macro name")
+        consume(TokenType.R_PAREN, "Expected ')' after macro name")
+        return tok.literal as? String ?: tok.lexeme.trim('"')
     }
 
     /**
@@ -2690,7 +2729,6 @@ class Parser(
      * `mut`, `#` (hash), `!#` (linked-hash), `^` (tree). Returns "" when absent.
      */
     private fun parseMetaPrefix(): String = when {
-        match(TokenType.MUT) -> "mut"
         match(TokenType.CARET) -> "^"
         check(TokenType.BANG) && peekNext()?.type == TokenType.HASH -> { advance(); advance(); "!#" }
         match(TokenType.HASH) -> "#"
@@ -2705,10 +2743,14 @@ class Parser(
     private fun parseTypeMacroArm(): TypeTypeArm {
         val prefix = parseMetaPrefix()
         val pattern = if (check(TokenType.IDENTIFIER)) {
+            // Named patterns (`res! $T`) carry the mutable `!` on the name itself.
             parseNamedTypeMacroPattern(prefix)
         } else {
             val (kind, holes) = parseTypeMacroPattern()
-            TypeTypeArm(kind, holes, TypeRef.Named("Unit"), prefix)
+            // Anonymous patterns take a trailing `!` (`[T]!`, `{T}!`, `[K: V]!`) as the
+            // mutable variant, folded into the "mut" prefix (mirrors the value `vec!@`).
+            val mutPrefix = if (match(TokenType.BANG)) (if (prefix.isEmpty()) "mut" else "$prefix mut") else prefix
+            TypeTypeArm(kind, holes, TypeRef.Named("Unit"), mutPrefix)
         }
         skipNewlines()
         consume(TokenType.FAT_ARROW, "Expected '=>' after 'meta type' pattern")
@@ -2725,7 +2767,10 @@ class Parser(
      *     $Base with $Filter      => With<$Base, $Filter>
      */
     private fun parseNamedTypeMacroPattern(prefix: String): TypeTypeArm {
-        val first = consume(TokenType.IDENTIFIER, "Expected named type-macro pattern").lexeme
+        var first = consume(TokenType.IDENTIFIER, "Expected named type-macro pattern").lexeme
+        // A trailing `!` on the macro name marks the mutable variant: `res! $T`
+        // (mirrors the value `vec!@`). Folded into the name so it matches invocation.
+        if (!first.startsWith("\$") && match(TokenType.BANG)) first += "!"
         if (first.startsWith("\$")) {
             if (prefix.isNotEmpty()) {
                 error("Infix type-macro patterns cannot use prefix '$prefix' at line ${peek().line}")
@@ -3101,17 +3146,27 @@ class Parser(
             else -> TokenType.FUNC
         }
         consume(keyword, "Expected '${keyword.name.lowercase()}'")
-        val typeParamsBefore = parseTypeParams()
+        if (check(TokenType.LESS)) {
+            error("Type parameters go after the function name: write 'func name<…>(…)', not 'func<…> name(…)', at line ${peek().line}")
+        }
         val name = consumeIdentifierLike("Expected function name")
-        // Type parameters may follow the name (`func abs<T>(x: T)`) or the
-        // keyword (`func<T> abs(x: T)`) — both spellings are accepted.
+        // Type parameters follow the name: `func abs<T>(x: T)`.
         val typeParamsAfter = parseTypeParams()
-        val typeParams = typeParamsBefore.names + typeParamsAfter.names
-        val variadicParam = typeParamsBefore.variadic ?: typeParamsAfter.variadic
-        val constParams = typeParamsBefore.constParams + typeParamsAfter.constParams
+        val typeParams = typeParamsAfter.names
+        val variadicParam = typeParamsAfter.variadic
+        val constParams = typeParamsAfter.constParams
         consume(TokenType.L_PAREN, "Expected '(' after function name")
         val params = parseParams(variadicParam).toMutableList()
         consume(TokenType.R_PAREN, "Expected ')' after parameters")
+        // Bracketed extension receiver: `func m()[self: Type&]: R`. Makes the
+        // function an extension method on Type, callable as `value.m()`.
+        var extensionReceiver: Param? = null
+        if (match(TokenType.L_BRACKET)) {
+            val recvName = consumeIdentifierLike("Expected receiver name in '[…]'")
+            consume(TokenType.COLON, "Expected ':' after extension receiver name")
+            extensionReceiver = Param(recvName, parseTypeName())
+            consume(TokenType.R_BRACKET, "Expected ']' after extension receiver")
+        }
         val returnType: TypeAnnotation = if (match(TokenType.COLON)) {
             TypeAnnotation.Explicit(parseTypeName())
         } else {
@@ -3198,6 +3253,7 @@ class Parser(
             visibility = visibility,
             receiverModifier = receiverModifier,
             receiverName = receiverName,
+            extensionReceiver = extensionReceiver,
             variadicParam = variadicParam,
             minVariadicLength = minVariadicLength,
             constParams = constParams,
@@ -3212,9 +3268,6 @@ class Parser(
         // `, operand[: Type][borrow]` pairs, and require a terminating `->`.
         var j = current
         when {
-            type(j) == TokenType.REF && lexeme(j + 1) == "self" -> j += 2
-            type(j) == TokenType.MUT && type(j + 1) == TokenType.REF && lexeme(j + 2) == "self" -> j += 3
-            type(j) == TokenType.MUT && lexeme(j + 1) == "self" -> j += 2
             lexeme(j) == "self" -> {
                 j += 1
                 if (type(j) in setOf(TokenType.AMP, TokenType.BANG)) j += 1
@@ -3512,33 +3565,9 @@ class Parser(
     }
 
     private fun parseTypeName(): TypeRef {
-        val referenceKind = when {
-            match(TokenType.REF) -> TypeRef.RefKind.BORROWED
-            check(TokenType.MUT) && peekNext()?.type == TokenType.REF -> {
-                advance()
-                advance()
-                TypeRef.RefKind.MUTABLE
-            }
-            match(TokenType.SHARED) -> {
-                consume(TokenType.REF, "Expected 'ref' after 'shared' in reference type")
-                TypeRef.RefKind.SHARED
-            }
-            match(TokenType.WEAK) -> {
-                consume(TokenType.REF, "Expected 'ref' after 'weak' in reference type")
-                TypeRef.RefKind.WEAK
-            }
-            else -> null
-        }
-        if (referenceKind != null) {
-            return TypeRef.Reference(referenceKind, parseTypeName())
-        }
-        if (check(TokenType.MUT) && isNamedTypeMacroInvocationAhead(current + 1)) {
-            advance()
-            return parseTypeInfixes(parseTypeSuffixes(parseNamedTypeMacroInvocation("mut")))
-        }
-        if (match(TokenType.MUT)) {
-            return parseMutableTypeName()
-        }
+        // Reference kinds are postfix now: `T&` (immutable) / `T!` (mutable), handled
+        // by parseTypeSuffixes. The `ref`/`mut`/`shared`/`weak` prefix keywords were
+        // removed (shared/weak reference kinds will return via std.memory).
         // `...T` — variadic type (prefix). Wraps the type in the internal array representation.
         if (match(TokenType.ELLIPSIS)) {
             val inner = parseTypeAtom()
@@ -3546,9 +3575,6 @@ class Parser(
         }
         return parseTypeInfixes(parseTypeSuffixes(parseTypeAtom()))
     }
-
-    private fun parseMutableTypeName(): TypeRef =
-        error("'mut' in a type is only valid as 'mut ref T' at line ${peek().line}")
 
     private fun parseTypeSuffixes(start: TypeRef): TypeRef {
         var base = start
@@ -5594,10 +5620,19 @@ class Parser(
         var pendingCallTypeArgs: List<TypeRef> = emptyList()
         while (true) {
             when {
-                // Macro invocation `name@(…)`, `name@[…]`, `name@{…}`. An `@`
-                // immediately after an identifier and a delimiter is unambiguously a
-                // macro call (a decorator is `@name`, the other way around). The
-                // delimiter is ergonomic only; all three forms feed the same arms.
+                // Call-site borrow markers: `x&` (immutable) / `x!` (mutable), when
+                // directly followed by a delimiter that ends the expression (so `a & b`
+                // stays bitwise-and). Borrows are erased — the language does no call-site
+                // borrow checking yet — so unwrap to the inner expression.
+                (check(TokenType.AMP) || check(TokenType.BANG)) &&
+                    peekNext()?.type in BORROW_TERMINATORS -> {
+                    advance() // '&' or '!'
+                }
+                // Macro invocation `name@(…)`, `name@[…]`, `name@{…}` (immutable) or
+                // `name!@…` (mutable variant, matching a `meta name!` declaration). An
+                // `@` after an identifier and a delimiter is unambiguously a macro call
+                // (a decorator is `@name`, the other way around). The delimiter is
+                // ergonomic only; all three forms feed the same arms.
                 expr is Expr.Identifier && check(TokenType.AT) && peekNext()?.type in setOf(
                     TokenType.L_PAREN, TokenType.L_BRACKET, TokenType.L_BRACE,
                 ) -> {
@@ -5605,6 +5640,17 @@ class Parser(
                     val args = parseMacroInvokeArgs()
                     usedMetaInvoke = true
                     expr = Expr.MetaInvoke(expr.name, args, expr.line, expr.column, at.column + 1)
+                }
+                expr is Expr.Identifier && check(TokenType.BANG) &&
+                    peekNext()?.type == TokenType.AT &&
+                    tokens.getOrNull(current + 2)?.type in setOf(
+                        TokenType.L_PAREN, TokenType.L_BRACKET, TokenType.L_BRACE,
+                    ) -> {
+                    advance() // '!'
+                    val at = advance() // '@'
+                    val args = parseMacroInvokeArgs()
+                    usedMetaInvoke = true
+                    expr = Expr.MetaInvoke("${expr.name}!", args, expr.line, expr.column, at.column + 1)
                 }
                 check(TokenType.DOT) -> {
                     val dot = advance()

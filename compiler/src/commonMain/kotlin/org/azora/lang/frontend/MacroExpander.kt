@@ -45,6 +45,30 @@ internal object MacroExpander {
     /** Per-name macro arms captured from [TopLevel.Meta] declarations (first decl wins). */
     private typealias MacroTable = Map<String, List<MacroArm>>
 
+    /** Value-infix macros active during the current expansion (op → rule). Reset per call. */
+    private var activeInfix: Map<String, InfixMacroRule> = emptyMap()
+
+    /** Replaces the hole identifiers of an infix macro (`$a`, `$b`) with the operands. */
+    private fun substituteInfix(template: Expr, holes: Map<String, Expr>): Expr = when (template) {
+        is Expr.Identifier -> holes[template.name] ?: template
+        is Expr.Call -> template.copy(
+            args = template.args.map { substituteInfix(it, holes) },
+            receiver = template.receiver?.let { substituteInfix(it, holes) },
+        )
+        is Expr.MethodCall -> template.copy(
+            target = substituteInfix(template.target, holes),
+            args = template.args.map { substituteInfix(it, holes) },
+        )
+        is Expr.Member -> template.copy(target = substituteInfix(template.target, holes))
+        is Expr.Binary -> template.copy(left = substituteInfix(template.left, holes), right = substituteInfix(template.right, holes))
+        is Expr.Unary -> template.copy(operand = substituteInfix(template.operand, holes))
+        is Expr.Index -> template.copy(target = substituteInfix(template.target, holes), index = substituteInfix(template.index, holes))
+        is Expr.Grouping -> template.copy(expr = substituteInfix(template.expr, holes))
+        is Expr.Cast -> template.copy(expr = substituteInfix(template.expr, holes))
+        is Expr.NamedArg -> template.copy(value = substituteInfix(template.value, holes))
+        else -> template
+    }
+
     /**
      * Rewrites every [Expr.MetaInvoke] in [program] into its matched arm's
      * template and removes all [TopLevel.Meta] declarations. Returns [program]
@@ -53,21 +77,30 @@ internal object MacroExpander {
     fun expand(program: Program): Program {
         val macros = LinkedHashMap<String, MutableList<MacroArm>>()
         val nonMacros = mutableListOf<TopLevel>()
+        val infixOps = mutableSetOf<String>()
         for (item in program.items) {
             if (item is TopLevel.Meta) {
-                macros.getOrPut(item.name) { mutableListOf() }.addAll(item.arms)
+                // `meta .Infix("op")` is encoded as a meta named `__infix__op`; it
+                // carries no invocable arms, only the infix-operator registration.
+                val op = item.name.removePrefix("__infix__")
+                if (op != item.name) infixOps.add(op)
+                else macros.getOrPut(item.name) { mutableListOf() }.addAll(item.arms)
             } else {
                 nonMacros.add(item)
             }
+        }
+        val withInfix: (Program) -> Program = {
+            if (infixOps.isEmpty()) it else it.copy(infixOperators = it.infixOperators + infixOps)
         }
         // Fast path: nothing to do when there are no macro declarations AND the
         // program never invokes a macro. (A program that *uses* `name!` without
         // defining/importing a macro still needs to run, so the use site can fail
         // clearly with "macro 'name' is not defined" rather than leaking
         // MetaInvoke into semantic analysis.)
-        if (macros.isEmpty() && !program.usesMacros) return program
+        activeInfix = program.infixMacros.associateBy { it.op }
+        if (macros.isEmpty() && activeInfix.isEmpty() && !program.usesMacros) return withInfix(program)
         val table: MacroTable = macros
-        return program.copy(items = nonMacros.map { rewriteItem(it, table, 0) })
+        return withInfix(program.copy(items = nonMacros.map { rewriteItem(it, table, 0) }))
     }
 
     // ------------------------------------------------------------------
@@ -369,10 +402,21 @@ internal object MacroExpander {
             is Expr.Spread -> expr.copy(array = rewriteExpr(expr.array, macros, depth))
             is Expr.NamedArg -> expr.copy(value = rewriteExpr(expr.value, macros, depth))
             is Expr.Call -> expr.copy(args = expr.args.map { rewriteExpr(it, macros, depth) })
-            is Expr.MethodCall -> expr.copy(
-                target = rewriteExpr(expr.target, macros, depth),
-                args = expr.args.map { rewriteExpr(it, macros, depth) },
-            )
+            is Expr.MethodCall -> {
+                // Value-infix macro: `a op b` (parsed as `a.op(b)`) rewrites to the
+                // `meta .Infix("op") { $a $b => … }` template.
+                val infix = activeInfix[expr.name]
+                if (infix != null && expr.args.size == 1) {
+                    val target = rewriteExpr(expr.target, macros, depth)
+                    val arg = rewriteExpr(expr.args[0], macros, depth)
+                    rewriteExpr(substituteInfix(infix.template, mapOf(infix.left to target, infix.right to arg)), macros, depth)
+                } else {
+                    expr.copy(
+                        target = rewriteExpr(expr.target, macros, depth),
+                        args = expr.args.map { rewriteExpr(it, macros, depth) },
+                    )
+                }
+            }
             is Expr.ArrayLiteral -> expr.copy(elements = expr.elements.map { rewriteExpr(it, macros, depth) })
             is Expr.SetLiteral -> expr.copy(elements = expr.elements.map { rewriteExpr(it, macros, depth) })
             is Expr.TupleLit -> expr.copy(elements = expr.elements.map { rewriteExpr(it, macros, depth) })

@@ -149,7 +149,7 @@ friend zone std {
      */
     @Experimental(sinceAzora: "0.0.4")
     @Serializable
-    pack<T> ArrayList {
+    pack ArrayList<T> {
         shield var data: T* = alloc T[8]
         shield var size: Int = 0
         shield var capacity: Int = 8
@@ -356,17 +356,17 @@ friend zone std {
     // ---------------------------------------------------------------------
 
     @Experimental(sinceAzora: "0.0.4")
-    func<T> emptyList(): List<T> {
+    func emptyList<T>(): List<T> {
         return ArrayList<T>()
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    func<T> emptyMutableList(): MutableList<T> {
+    func emptyMutableList<T>(): MutableList<T> {
         return ArrayList<T>()
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    func<T> listOf(...elements: T): List<T> {
+    func listOf<T>(...elements: T): List<T> {
         var result = ArrayList<T>()
         for i in 0..<elements.size {
             result.add(elements[i])
@@ -375,7 +375,7 @@ friend zone std {
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    func<T> mutableListOf(...elements: T): MutableList<T> {
+    func mutableListOf<T>(...elements: T): MutableList<T> {
         var result = ArrayList<T>()
         for i in 0..<elements.size {
             result.add(elements[i])
@@ -384,7 +384,7 @@ friend zone std {
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    func<T> arrayListOf(...elements: T): ArrayList<T> {
+    func arrayListOf<T>(...elements: T): ArrayList<T> {
         var result = ArrayList<T>()
         for i in 0..<elements.size {
             result.add(elements[i])

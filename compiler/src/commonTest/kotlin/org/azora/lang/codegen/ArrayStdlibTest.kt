@@ -141,7 +141,7 @@ class ArrayStdlibTest {
     fun homogeneousVarargsUseValueSideEllipsisOnly() {
         val valid = Compiler().compile(
             """
-            func<T> collect(...elements: T): Array<T> {
+            func collect<T>(...elements: T): Array<T> {
                 return elements
             }
 
@@ -155,7 +155,7 @@ class ArrayStdlibTest {
 
         val invalid = Compiler().compile(
             """
-            func<T> collect(elements: ...T): Array<T> {
+            func collect<T>(elements: ...T): Array<T> {
                 return elements
             }
             """.trimIndent(),

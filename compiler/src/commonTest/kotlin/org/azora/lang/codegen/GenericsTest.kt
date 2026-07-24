@@ -18,7 +18,7 @@ class GenericsTest {
     @Test fun genericIdentity() {
         assertEquals("5", run("""
             import std.io
-            func<T> identity(x: T): T {
+            func identity<T>(x: T): T {
                 return x
             }
             func main() {
@@ -30,7 +30,7 @@ class GenericsTest {
     @Test fun genericIdentityString() {
         assertEquals("hello", run("""
             import std.io
-            func<T> identity(x: T): T {
+            func identity<T>(x: T): T {
                 return x
             }
             func main() {
@@ -42,7 +42,7 @@ class GenericsTest {
     @Test fun genericTwoParams() {
         assertEquals("10", run("""
             import std.io
-            func<T, U> first(a: T, b: U): T {
+            func first<T, U>(a: T, b: U): T {
                 return a
             }
             func main() {
@@ -54,7 +54,7 @@ class GenericsTest {
     @Test fun genericStruct() {
         assertEquals("42", run("""
             import std.io
-            pack<T> Box {
+            pack Box<T> {
                 var value: T
             }
             func main() {
@@ -67,7 +67,7 @@ class GenericsTest {
     @Test fun genericStructString() {
         assertEquals("hello", run("""
             import std.io
-            pack<T> Box {
+            pack Box<T> {
                 var value: T
             }
             func main() {
@@ -80,7 +80,7 @@ class GenericsTest {
     @Test fun genericUsedInArithmetic() {
         assertEquals("43", run("""
             import std.io
-            func<T> identity(x: T): T {
+            func identity<T>(x: T): T {
                 return x
             }
             func main() {
@@ -95,7 +95,7 @@ class GenericsTest {
             """
             import std.io
 
-            pack<T> Store {
+            pack Store<T> {
                 var value: T
             }
 
@@ -103,7 +103,7 @@ class GenericsTest {
                 var health: Int
             }
 
-            func<T> get(store: Store<T>): T {
+            func get<T>(store: Store<T>): T {
                 return store.value
             }
 

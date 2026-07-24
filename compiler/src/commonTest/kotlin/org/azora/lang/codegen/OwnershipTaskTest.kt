@@ -130,7 +130,7 @@ class OwnershipTaskTest {
         val result = compile("""
             import std.io
             pack Buffer { var value: Int }
-            func read(a: Buffer&, b: shared ref Buffer, c: weak ref Buffer): Int {
+            func read(a: Buffer&, b: Buffer!): Int {
                 return a.value
             }
             func update(state: Buffer!) {
@@ -144,7 +144,7 @@ class OwnershipTaskTest {
         """.trimIndent())
 
         val read = result.ast.functions.first { it.name == "read" }
-        assertEquals(listOf("ref", "shared ref", "weak ref"), read.params.map { it.modifier })
+        assertEquals(listOf("ref", "mut ref"), read.params.map { it.modifier })
         val update = result.ast.functions.first { it.name == "update" }
         assertEquals("mut ref", update.params.single().modifier)
         assertEquals("42", IrInterpreter().interpret(result.ir).trim())
@@ -159,9 +159,7 @@ class OwnershipTaskTest {
                 var owned: Buffer = Buffer(1)
                 fin borrowed: Buffer& = owned
                 var exclusive: Buffer! = owned
-                fin shared: shared ref Buffer = owned
-                fin weakRef: weak ref Buffer = owned
-                std::println(borrowed.value + exclusive.value + shared.value + weakRef.value)
+                std::println(borrowed.value + exclusive.value)
             }
         """.trimIndent())
 
@@ -177,12 +175,10 @@ class OwnershipTaskTest {
         assertEquals(
             listOf(
                 TypeRef.RefKind.BORROWED,
-                TypeRef.RefKind.MUTABLE,
-                TypeRef.RefKind.SHARED,
-                TypeRef.RefKind.WEAK
+                TypeRef.RefKind.MUTABLE
             ),
             refs.map { it.kind }
         )
-        assertEquals("4", IrInterpreter().interpret(result.ir).trim())
+        assertEquals("2", IrInterpreter().interpret(result.ir).trim())
     }
 }

@@ -25,12 +25,12 @@ use friend zone std {
      * @0 `arr@[]` expands to `std::emptyArray()`.
      * @1 `arr@[1, 2, 3]` expands to `std::arrayOf(1, 2, 3)`.
      */
-    meta arr {
+    meta .Prefix("arr") {
         [] => std::emptyArray()
         [...$items] => std::arrayOf(...$items)
     }
 
-    meta type {
+    meta .Type {
         [T;] => std::Array<T>
         [T; *] => std::Array<T, *>
         [T; N] => std::Array<T, N>
@@ -42,7 +42,7 @@ use friend zone std {
      * @0 `vec@[]` expands to `std::emptyList()`.
      * @1 `vec@[1, 2, 3]` expands to `std::listOf(1, 2, 3)`.
      */
-    meta vec {
+    meta .Prefix("vec") {
         [] => std::emptyList()
         [...$items] => std::listOf(...$items)
     }
@@ -50,17 +50,17 @@ use friend zone std {
     /**
      * Builds an mutable [List].
      *
-     * @0 `mut vec@[]` expands to `std::emptyMutableList()`.
-     * @1 `mut vec@[1, 2, 3]` expands to `std::mutableListOf(1, 2, 3)`.
+     * @0 `vec!@[]` expands to `std::emptyMutableList()`.
+     * @1 `vec!@[1, 2, 3]` expands to `std::mutableListOf(1, 2, 3)`.
      */
-    meta mut vec {
+    meta .Prefix("vec!") {
         [] => std::emptyMutableList()
         [...$items] => std::mutableListOf(...$items)
     }
 
-    meta type {
+    meta .Type {
         [T] => std::List<T>
-        mut [T] => std::MutableList<T>
+        [T]! => std::MutableList<T>
     }
 
     /**
@@ -69,7 +69,7 @@ use friend zone std {
      * @0 `set@[]` expands to `std::emptySet()`.
      * @1 `set@[1, 2, 3]` expands to `std::setOf(1, 2, 3)`.
      */
-    meta set {
+    meta .Prefix("set") {
         [] => std::emptySet()
         [...$items] => std::setOf(...$items)
     }
@@ -77,10 +77,10 @@ use friend zone std {
     /**
      * Builds an mutable [Set].
      *
-     * @0 `mut set@[]` expands to `std::emptyMutableSet()`.
-     * @1 `mut set@[1, 2, 3]` expands to `std::mutableSetOf(1, 2, 3)`.
+     * @0 `set!@[]` expands to `std::emptyMutableSet()`.
+     * @1 `set!@[1, 2, 3]` expands to `std::mutableSetOf(1, 2, 3)`.
      */
-    meta mut set {
+    meta .Prefix("set!") {
         [] => std::emptyMutableSet()
         [...$items] => std::mutableSetOf(...$items)
     }
@@ -91,7 +91,7 @@ use friend zone std {
      * @0 `# set@[]` expands to `std::emptyHashSet()`.
      * @1 `# set@[1, 2, 3]` expands to `std::hashSetOf(1, 2, 3)`.
      */
-    meta # set {
+    meta .Prefix("# set") {
         [] => std::emptyHashSet()
         [...$items] => std::hashSetOf(...$items)
     }
@@ -102,7 +102,7 @@ use friend zone std {
      * @0 `!# set@[]` expands to `std::emptyLinkedHashSet()`.
      * @1 `!# set@[1, 2, 3]` expands to `std::linkedHashSetOf(1, 2, 3)`.
      */
-    meta !# set {
+    meta .Prefix("!# set") {
         [] => std::emptyLinkedHashSet()
         [...$items] => std::linkedHashSetOf(...$items)
     }
@@ -113,14 +113,14 @@ use friend zone std {
      * @0 `^ set@[]` expands to `std::emptyTreeSet()`.
      * @1 `^ set@[1, 2, 3]` expands to `std::treeSetOf(1, 2, 3)`.
      */
-    meta ^ set {
+    meta .Prefix("^ set") {
         [] => std::emptyTreeSet()
         [...$items] => std::treeSetOf(...$items)
     }
 
-    meta type {
+    meta .Type {
         {T} => std::Set<T>
-        mut {T} => std::MutableSet<T>
+        {T}! => std::MutableSet<T>
         # {T} => std::HashSet<T>
         !# {T} => std::LinkedHashSet<T>
         ^ {T} => std::TreeSet<T>
@@ -132,7 +132,7 @@ use friend zone std {
      * @0 `map@[]` expands to `std::emptyMap()`.
      * @1 `map@["One": 1, "Two": 2]` expands to `std::mapOf("One" to 1, "Two" to 2)`. // todo. to infx like in Kotlin
      */
-    meta map {
+    meta .Prefix("map") {
         [] => std::emptyMap()
         [...${key: value}] => std::mapOf(...std::mapEntry($key, $value))
     }
@@ -140,10 +140,10 @@ use friend zone std {
     /**
      * Builds an mutable [Map].
      *
-     * @0 `mut map@[]` expands to `std::emptyMutableMap()`.
-     * @1 `mut map@["One": 1, "Two": 2]` expands to `std::mutableMapOf("One" to 1, "Two" to 2)`.
+     * @0 `map!@[]` expands to `std::emptyMutableMap()`.
+     * @1 `map!@["One": 1, "Two": 2]` expands to `std::mutableMapOf("One" to 1, "Two" to 2)`.
      */
-    meta mut map {
+    meta .Prefix("map!") {
         [] => std::emptyMutableMap()
         [...${key: value}] => std::mutableMapOf(...std::mapEntry($key, $value))
     }
@@ -154,7 +154,7 @@ use friend zone std {
      * @0 `# map@[]` expands to `std::emptyHashMap()`.
      * @1 `# map@["One": 1, "Two": 2]` expands to `std::hashMapOf("One" to 1, "Two" to 2)`.
      */
-    meta # map {
+    meta .Prefix("# map") {
         [] => std::emptyHashMap()
         [...${key: value}] => std::hashMapOf(...std::mapEntry($key, $value))
     }
@@ -165,7 +165,7 @@ use friend zone std {
      * @0 `!# map@[]` expands to `std::emptyLinkedHashMap()`.
      * @1 `!# map@["One": 1, "Two": 2]` expands to `std::linkedHashMapOf("One" to 1, "Two" to 2)`.
      */
-    meta !# map {
+    meta .Prefix("!# map") {
         [] => std::emptyLinkedHashMap()
         [...${key: value}] => std::linkedHashMapOf(...std::mapEntry($key, $value))
     }
@@ -176,14 +176,14 @@ use friend zone std {
      * @0 `^ map@[]` expands to `std::emptyTreeMap()`.
      * @1 `^ map@["One": 1, "Two": 2]` expands to `std::treeMapOf("One" to 1, "Two" to 2)`.
      */
-    meta ^ map {
+    meta .Prefix("^ map") {
         [] => std::emptyTreeMap()
         [...$items] => std::treeMapOf(...$items)
     }
 
-    meta type {
+    meta .Type {
         [K: V] => std::Map<K, V>
-        mut [K: V] => std::MutableMap<K, V>
+        [K: V]! => std::MutableMap<K, V>
         # [K: V] => std::HashMap<K, V>
         !# [K: V] => std::LinkedHashMap<K, V>
         ^ [K: V] => std::TreeMap<K, V>

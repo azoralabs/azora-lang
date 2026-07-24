@@ -386,7 +386,8 @@ class Tier1PolishTest {
             pack Box {
                 var v: Int
             }
-            infx Box.combine(other: Box): Int {
+            meta .Infix("combine")
+            func combine(self: Box, other: Box): Int {
                 return self.v * other.v
             }
             func main() {
@@ -404,7 +405,8 @@ class Tier1PolishTest {
                 var x: Int
                 var y: Int
             }
-            infx Vec.add(other: Vec): Vec {
+            meta .Infix("add")
+            func add(self: Vec, other: Vec): Vec {
                 return Vec(self.x + other.x, self.y + other.y)
             }
             func main() {
@@ -424,7 +426,8 @@ class Tier1PolishTest {
                 var a: Int
                 var b: Int
             }
-            infx Pair.merged(other: Pair): Int {
+            meta .Infix("merged")
+            func merged(self: Pair, other: Pair): Int {
                 return self.a + other.b
             }
             func main() {

@@ -19,7 +19,7 @@ class ParamModifiersTest {
     @Test fun mutParamCanBeReassigned() {
         assertEquals("20", run("""
             import std.io
-            func increment(mut n: Int): Int {
+            func increment(n: Int!): Int {
                 n = n + 10
                 return n
             }
@@ -32,7 +32,7 @@ class ParamModifiersTest {
     @Test fun refParamPropagatesBack() {
         assertEquals("10\n99", run("""
             import std.io
-            func modify(ref x: Int) {
+            func modify(x: Int!) {
                 x = 99
             }
             func main() {
@@ -63,7 +63,7 @@ class ParamModifiersTest {
         // Swap two variables via ref params.
         assertEquals("70\n30", run("""
             import std.io
-            func swap(ref a: Int, ref b: Int) {
+            func swap(a: Int!, b: Int!) {
                 var tmp = a
                 a = b
                 b = tmp

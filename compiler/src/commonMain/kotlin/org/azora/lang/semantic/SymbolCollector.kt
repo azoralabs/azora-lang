@@ -153,6 +153,10 @@ class SymbolCollector {
             }
         }
 
+        // Infix operators declared via `meta .Infix("op")`: a free function named
+        // `op` is then callable as `a op b`.
+        val infixOps = program.infixOperators
+
         for (func in program.functions) {
             try {
                 val tpSet = func.typeParams.toSet()
@@ -187,7 +191,7 @@ class SymbolCollector {
                 // A generic `infx` (`infx<K,V> K.to(v)`) is callable as an infix
                 // method on any receiver; record it under the (short) method name
                 // written at call sites (`a to b`), pointing at the real function.
-                if (func.isUniversalInfix) table.defineUniversalInfix(shortName, func.name)
+                if (func.isUniversalInfix || shortName in infixOps) table.defineUniversalInfix(shortName, func.name)
             } catch (e: Exception) {
                 errors.add("line ${func.line}: ${e.message}")
             }

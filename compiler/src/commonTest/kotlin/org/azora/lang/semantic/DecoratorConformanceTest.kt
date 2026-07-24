@@ -209,7 +209,7 @@ class DecoratorConformanceTest {
             spec Codec<T, Format>
             deco Json bind Codec<String> {}
             @Json
-            pack<T> Box {
+            pack Box<T> {
                 fin value: T
             }
             func main() {}

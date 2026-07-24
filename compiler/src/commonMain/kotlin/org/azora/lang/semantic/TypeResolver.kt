@@ -816,6 +816,13 @@ class TypeResolver(private val table: SymbolTable) {
                         for (arg in expr.args) { resolveExpr(arg) ?: return null }
                         return IrType.Any
                     }
+                    // Inside `with value { … }`, a bare call may be an extension method
+                    // on one of the contextual values: `with c { bump() }` == `c.bump()`.
+                    for ((ctxExpr, ctxType) in contextualValues.asReversed().flatten()) {
+                        if (ctxType is IrType.Named && table.lookupMethod(ctxType.name, expr.callee) != null) {
+                            return resolveExpr(Expr.MethodCall(ctxExpr, expr.callee, expr.args, expr.line, expr.column))
+                        }
+                    }
                     errors.add("line ${expr.line}: undefined function '${expr.callee}'")
                     return null
                 }

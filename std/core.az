@@ -151,15 +151,12 @@ use friend zone std {
         fin deferGeneric: Bool = false
     }
 
-    /**
-     * Primitive text and character operations supplied directly by every backend
-     * (`bridge func`, target [BridgeTarget.Compiler]). They are bodyless; each backend
-     * lowers calls by name.
-     *
-     * These form the allocation-aware substrate used to implement `std.string`,
-     * parsers, and serializers. They are declared here because Root is available
-     * to every module; applications normally prefer the higher-level stdlib API.
-     */
+    @Experimental(sinceAzora: "0.0.4")
+    bridge slot Macro {
+        Prefix(String)
+        Infix(String)
+        Type
+    }
 
     /** Number of characters in `value`. */
     @Experimental(sinceAzora: "0.0.4")

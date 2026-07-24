@@ -36,19 +36,19 @@ use friend zone std {
      * - `Func[Context] -> R`
      */
     @SinceAzora("0.0.4")
-    bridge pack<PARAMS, RETURN_TYPE, RECEIVERS> Func
+    bridge pack Func<PARAMS, RETURN_TYPE, RECEIVERS>
 
     /**
      * A storable asynchronous callable with the same parameter and contextual
      * receiver model as `Func`.
      */
     @SinceAzora("0.0.4")
-    bridge pack<PARAMS, RETURN_TYPE, RECEIVERS> Task
+    bridge pack Task<PARAMS, RETURN_TYPE, RECEIVERS>
 
     /**
      * A storable yielding callable with the same parameter and contextual
      * receiver model as `Func`.
      */
     @SinceAzora("0.0.4")
-    bridge pack<PARAMS, RETURN_TYPE, RECEIVERS> Flow
+    bridge pack Flow<PARAMS, RETURN_TYPE, RECEIVERS>
 }

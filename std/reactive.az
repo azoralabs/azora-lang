@@ -69,7 +69,7 @@ friend zone std {
      * anything about a renderer.
      */
     @Experimental(sinceAzora: "0.0.4")
-    pack<T> ReactiveSnapshot {
+    pack ReactiveSnapshot<T> {
         fin key: String
         fin value: T
         fin lifetime: ReactiveLifetime

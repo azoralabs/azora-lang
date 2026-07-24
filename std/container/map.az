@@ -54,7 +54,7 @@ friend zone std {
      * @param V The value type.
      */
     @Experimental(sinceAzora: "0.0.4")
-    pack<K, V> MapEntry {
+    pack MapEntry<K, V> {
         fin key: K
         fin value: V
     }
@@ -200,7 +200,7 @@ friend zone std {
 
     /** Hash table with unspecified iteration order. `K` requires `oper#` and `oper==`. */
     @Experimental(sinceAzora: "0.0.4")
-    pack<K, V> HashMap {
+    pack HashMap<K, V> {
         shield var keys: K* = alloc K[16]
         shield var values: V* = alloc V[16]
         shield var hashes: ULong* = alloc ULong[16]
@@ -211,7 +211,7 @@ friend zone std {
 
     /** Hash table whose dense entry storage preserves insertion order. */
     @Experimental(sinceAzora: "0.0.4")
-    pack<K, V> LinkedHashMap {
+    pack LinkedHashMap<K, V> {
         shield var keys: K* = alloc K[16]
         shield var values: V* = alloc V[16]
         shield var hashes: ULong* = alloc ULong[16]
@@ -223,7 +223,7 @@ friend zone std {
 
     /** AVL tree map ordered exclusively through `oper<` for `K`. */
     @Experimental(sinceAzora: "0.0.4")
-    pack<K, V> TreeMap {
+    pack TreeMap<K, V> {
         shield var keys: K* = alloc K[16]
         shield var values: V* = alloc V[16]
         shield var left: Int* = alloc Int[16]
@@ -1151,7 +1151,7 @@ friend zone std {
     // ---------------------------------------------------------------------
 
     @Experimental(sinceAzora: "0.0.4")
-    func<K, V> mapEntry(key: K, value: V): MapEntry<K, V> {
+    func mapEntry<K, V>(key: K, value: V): MapEntry<K, V> {
         return MapEntry(key, value)
     }
 
@@ -1162,12 +1162,12 @@ friend zone std {
      * naturally: `std::hashMapOf(1 to "a", 2 to "b")`.
      */
     @Experimental(sinceAzora: "0.0.4")
-    infx<K, V> K.to(that: V): MapEntry<K, V> { self& ->
-        return std::mapEntry(self, that)
+    meta .Infix("to") {
+        $a $b => std::mapEntry($a, $b)
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    func<K, V> hashMapOf(...entries: MapEntry<K, V>): HashMap<K, V> {
+    func hashMapOf<K, V>(...entries: MapEntry<K, V>): HashMap<K, V> {
         var result = HashMap<K, V>()
         for i in 0..<entries.size {
             result.put(entries[i].key, entries[i].value)
@@ -1176,7 +1176,7 @@ friend zone std {
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    func<K, V> linkedHashMapOf(...entries: MapEntry<K, V>): LinkedHashMap<K, V> {
+    func linkedHashMapOf<K, V>(...entries: MapEntry<K, V>): LinkedHashMap<K, V> {
         var result = LinkedHashMap<K, V>()
         for i in 0..<entries.size {
             result.put(entries[i].key, entries[i].value)
@@ -1185,7 +1185,7 @@ friend zone std {
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    func<K, V> treeMapOf(...entries: MapEntry<K, V>): TreeMap<K, V> {
+    func treeMapOf<K, V>(...entries: MapEntry<K, V>): TreeMap<K, V> {
         var result = TreeMap<K, V>()
         for i in 0..<entries.size {
             result.put(entries[i].key, entries[i].value)
@@ -1201,7 +1201,7 @@ friend zone std {
      * keep the last supplied value.
      */
     @Experimental(sinceAzora: "0.0.4")
-    func<K, V> mapOf(...entries: MapEntry<K, V>): Map<K, V> {
+    func mapOf<K, V>(...entries: MapEntry<K, V>): Map<K, V> {
         var result = LinkedHashMap<K, V>()
         for i in 0..<entries.size {
             result.put(entries[i].key, entries[i].value)
@@ -1217,7 +1217,7 @@ friend zone std {
      * the last supplied value.
      */
     @Experimental(sinceAzora: "0.0.4")
-    func<K, V> mutableMapOf(...entries: MapEntry<K, V>): MutableMap<K, V> {
+    func mutableMapOf<K, V>(...entries: MapEntry<K, V>): MutableMap<K, V> {
         var result = LinkedHashMap<K, V>()
         for i in 0..<entries.size {
             result.put(entries[i].key, entries[i].value)
@@ -1226,27 +1226,27 @@ friend zone std {
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    func<K, V> emptyMap(): Map<K, V> {
+    func emptyMap<K, V>(): Map<K, V> {
         return LinkedHashMap<K, V>()
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    func<K, V> emptyMutableMap(): MutableMap<K, V> {
+    func emptyMutableMap<K, V>(): MutableMap<K, V> {
         return LinkedHashMap<K, V>()
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    func<K, V> emptyHashMap(): MutableMap<K, V> {
+    func emptyHashMap<K, V>(): MutableMap<K, V> {
         return HashMap<K, V>()
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    func<K, V> emptyLinkedHashMap(): MutableMap<K, V> {
+    func emptyLinkedHashMap<K, V>(): MutableMap<K, V> {
         return LinkedHashMap<K, V>()
     }
 
     @Experimental(sinceAzora: "0.0.4")
-    func<K, V> emptyTreeMap(): MutableMap<K, V> {
+    func emptyTreeMap<K, V>(): MutableMap<K, V> {
         return TreeMap<K, V>()
     }
 

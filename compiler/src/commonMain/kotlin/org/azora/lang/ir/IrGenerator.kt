@@ -1427,6 +1427,19 @@ class IrGenerator(private val table: SymbolTable) {
                     val args = expr.args.map { stringifyEnum(lowerExpr(it)) }
                     return IrExpr.Call("std__convert__toString", args, IrType.String)
                 }
+                // Extension method reached through a `with value { … }` scope:
+                // `with c { bump() }` lowers to `Counter_bump(c)`.
+                for (ctx in contextualValues.asReversed().flatten()) {
+                    val ct = ctx.type
+                    if (ct is IrType.Named) {
+                        val mangled = table.lookupMethod(ct.name, expr.callee)
+                        if (mangled != null) {
+                            val func = table.lookupFunction(mangled)!!
+                            val args = expr.args.map { lowerExpr(it) }
+                            return IrExpr.Call(mangled, listOf(ctx) + args, func.returnType)
+                        }
+                    }
+                }
                 error("undefined function or variable '${expr.callee}'")
             }
             is Expr.Grouping -> lowerExpr(expr.expr)

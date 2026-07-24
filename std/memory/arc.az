@@ -35,7 +35,7 @@ friend zone std {
      * @param T the pointee type.
      */
     @SinceAzora("0.0.3")
-    pack<T> Arc {
+    pack Arc<T> {
         shield var raw: T*
         shield var count: Int
     }

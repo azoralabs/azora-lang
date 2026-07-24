@@ -17,7 +17,7 @@ module std.memory.unique
 
 friend zone std {
     @SinceAzora("0.0.3")
-    pack<T> Unique {
+    pack Unique<T> {
         confine var raw: T*
         shield var active: Bool = true
     }

@@ -1403,7 +1403,14 @@ data class FuncDecl(
     val receiverModifier: ParamModifier = "mut ref",
     /** Receiver name for impl/extension methods (conventionally `self`, but arbitrary). */
     val receiverName: String = "self",
-    /** Name of the variadic type param (`T` in `func<...T>`), or null for a fixed function. */
+    /**
+     * Bracketed extension receiver: `func m()[self: Type&]: R`. When present, the
+     * function is an extension method on the receiver's type (callable as
+     * `value.m()` or inside `with value { m() }`). The param's type carries the
+     * borrow (`Type&` → `ref`, `Type!` → `mut ref`).
+     */
+    val extensionReceiver: Param? = null,
+    /** Name of the variadic type param (`T` in `func name<...T>`), or null for a fixed function. */
     val variadicParam: String? = null,
     /** Minimum element count from a `where <var>.length >= N` clause, or null if unconstrained. */
     val minVariadicLength: Int? = null,
@@ -1468,6 +1475,12 @@ sealed class MacroPattern {
  * @property template the expansion expression (ordinary [Expr], may reference captures)
  */
 data class MacroArm(val delimiter: MacroDelimiter, val pattern: MacroPattern, val template: Expr)
+
+/**
+ * A value-level infix macro arm from `meta .Infix("op") { $a $b => template }`.
+ * A use `x op y` rewrites to [template] with `$a`→x and `$b`→y.
+ */
+data class InfixMacroRule(val op: String, val left: String, val right: String, val template: Expr)
 
 /**
  * Which built-in type-sugar form a [TypeTypeArm] pattern matches. Used by the
@@ -1948,6 +1961,14 @@ data class Program(
      * and stored; the rewriting pass is not yet active (see [TypeTypeArm]).
      */
     val typeMacroRules: List<TypeTypeArm> = emptyList(),
+    /**
+     * Infix operator names declared via `meta .Infix("op")`. A free function
+     * named `op` becomes callable as `a op b`. Survives macro expansion (which
+     * strips the `meta` declarations themselves).
+     */
+    val infixOperators: Set<String> = emptySet(),
+    /** Value-level infix macros from `meta .Infix("op") { $a $b => expr }`. */
+    val infixMacros: List<InfixMacroRule> = emptyList(),
     /**
      * True if this unit contains any `name!…` macro invocation. Lets
      * [MacroExpander] skip the rewrite pass for programs that neither declare

@@ -151,6 +151,9 @@ class StdlibInjector private constructor(
         val typeFunctionsByName = LinkedHashMap<String, MutableList<TypeFunctionDecl>>()
         val alwaysTypeFunctions = mutableListOf<TypeFunctionDecl>()
         val alwaysTypeMacros = mutableListOf<TypeTypeArm>()
+        /** Infix operators/macros from every library module (small, additive, always available). */
+        val allInfixOperators = LinkedHashSet<String>()
+        val allInfixMacros = mutableListOf<org.azora.lang.frontend.InfixMacroRule>()
         /** Flat name → item view (first module wins), for transitive resolution. */
         val items = LinkedHashMap<String, TopLevel>()
         /** name → module that provides it, for import hints. */
@@ -259,6 +262,8 @@ class StdlibInjector private constructor(
             val moduleItems = idx.modules.getOrPut(module) { LinkedHashMap() }
             idx.typeFunctionsByModule.getOrPut(module) { mutableListOf() }.addAll(program.typeFunctions)
             idx.typeMacrosByModule.getOrPut(module) { mutableListOf() }.addAll(program.typeMacroRules)
+            idx.allInfixOperators.addAll(program.infixOperators)
+            idx.allInfixMacros.addAll(program.infixMacros)
             for (declaration in program.typeFunctions) {
                 idx.typeFunctionsByName.getOrPut(declaration.name) { mutableListOf() }.add(declaration)
                 val shortName = declaration.name.substringAfterLast("__")
@@ -640,6 +645,8 @@ class StdlibInjector private constructor(
             items = program.items + declarations + externDeclarations + alwaysDeclarations,
             typeFunctions = typeFunctions,
             typeMacroRules = typeMacros,
+            infixOperators = program.infixOperators + index.allInfixOperators,
+            infixMacros = program.infixMacros + index.allInfixMacros,
         ))
     }
 

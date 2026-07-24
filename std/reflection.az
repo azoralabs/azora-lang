@@ -43,7 +43,7 @@ friend zone std {
      * resolved by the compiler; `bridge pack` means no struct is emitted.
      */
     @Experimental(sinceAzora: "0.0.4")
-    bridge pack<T> Reflected
+    bridge pack Reflected<T>
 
     impl<T> Reflected {
         /** Whether the reflected declaration `T` carries decorator `D`. */
@@ -75,7 +75,7 @@ friend zone std {
      * from base declarations when set.
      */
     @Experimental(sinceAzora: "0.0.4")
-    bridge func<T> reflect(includeInherited: Bool = false): Reflected<T>
+    bridge func reflect<T>(includeInherited: Bool = false): Reflected<T>
 
      /** Compile-time handle for a lexical zone, from `std::reflect<T>.enclosingZone`. */
     @Experimental(sinceAzora: "0.0.4")

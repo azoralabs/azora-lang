@@ -239,7 +239,7 @@ class SerializationDeriverTest {
                 Azon
             }
             pack SerializerOptions
-            pack<T> List {
+            pack List<T> {
                 shield var data: T* = alloc T[16]
                 shield var size: Int = 0
             }
@@ -250,7 +250,7 @@ class SerializationDeriverTest {
                 }
             }
             impl oper[] for List<T> { self&, index -> return self.data[index] }
-            pack<T> Set {
+            pack Set<T> {
                 shield var data: T* = alloc T[16]
                 shield var size: Int = 0
             }
@@ -262,7 +262,7 @@ class SerializationDeriverTest {
                 }
             }
             impl oper[] for Set<T> { self&, index -> return self.data[index] }
-            pack<K, V> Map {
+            pack Map<K, V> {
                 shield var keysData: K* = alloc K[16]
                 shield var valuesData: V* = alloc V[16]
                 shield var size: Int = 0

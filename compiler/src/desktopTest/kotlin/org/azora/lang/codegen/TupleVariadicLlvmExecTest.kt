@@ -6,7 +6,7 @@ import kotlin.test.assertTrue
 
 /**
  * Executes variadic-tuple programs through the LLVM backend (`lli`) to confirm
- * the monomorphized `__Tuple_*` packs and numeric field access work natively.
+ * the monomorphized `__std_Tuple_*` packs and numeric field access work natively.
  */
 class TupleVariadicLlvmExecTest {
 
@@ -48,6 +48,6 @@ class TupleVariadicLlvmExecTest {
             }
         """.trimIndent())
         // The monomorphized struct must be emitted and referenced by name.
-        assertTrue(ir.contains("__Tuple_Int_Int"), ir)
+        assertTrue(ir.contains("__std_Tuple_Int_Int"), ir)
     }
 }

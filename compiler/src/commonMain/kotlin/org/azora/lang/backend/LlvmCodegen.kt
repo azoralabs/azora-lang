@@ -161,7 +161,7 @@ class LlvmCodegen {
     private val stringIntrinsics = setOf(
         "stringLength", "charAt", "ord", "chr", "isDigit", "isAlpha", "substring",
         "startsWith", "endsWith", "contains", "indexOf", "toUpper", "toLower", "trim",
-        "replace", "split", "toChars", "fromChars", "Array__fill",
+        "replace", "split", "toChars", "fromChars",
     )
     private var usesSnprintf = false
     private var usesStrConcat = false
@@ -457,12 +457,12 @@ class LlvmCodegen {
                     name = name,
                     type = type,
                     initializer = initializer,
-                    threadLocal = name.startsWith("__tl__"),
+                    threadLocal = name.startsWith("__tl_"),
                 )
                 "zeroinitializer"
             }
         }
-        val storage = if (name.startsWith("__tl__")) "thread_local global" else "global"
+        val storage = if (name.startsWith("__tl_")) "thread_local global" else "global"
         line("@$name = $storage $llvmType $value")
     }
 
@@ -3439,7 +3439,7 @@ class LlvmCodegen {
         // `Array::fill<T>(count)` allocates `[ i64 length, T×count ]` (the array
         // layout used by `emitArrayLiteral`); handled inline since element size
         // varies per instantiation.
-        if (expr.name == "Array__fill") {
+        if (expr.name == "__std_Array_fill") {
             val elemType = (expr.type as? IrType.Array)?.element ?: IrType.Any
             val elemSize = sizeOfScalar(elemType)
             val count = emitExpr(expr.args[0])
@@ -3451,8 +3451,8 @@ class LlvmCodegen {
             emit("  store i64 $count64, i64* $lenPtr")
             return raw
         }
-        if (expr.name == "std__println") return emitPrintln(expr)
-        if (expr.name == "std__print") return emitPrintln(expr, newline = false)
+        if (expr.name == "__std_println") return emitPrintln(expr)
+        if (expr.name == "__std_print") return emitPrintln(expr, newline = false)
         if (expr.name == "async") {
             val lambda = expr.args.singleOrNull() as? IrExpr.Lambda
                 ?: error("LLVM async lowering requires a task block")
@@ -3483,7 +3483,7 @@ class LlvmCodegen {
             emit("  ; drop — advisory for raw pointers; arenas/task scopes own native cleanup")
             return "void"
         }
-        if (expr.name == "std__concurrency__cancel") {
+        if (expr.name == "__std_concurrency_cancel") {
             usesTaskRuntime = true
             val handle = emitExpr(expr.args.single())
             emit("  call void @__azora_task_cancel(%azora.task* $handle)")
@@ -3493,7 +3493,7 @@ class LlvmCodegen {
         // Coerce arguments to the callee's declared parameter types (numeric
         // widening such as an Int literal passed to a Real/Long parameter).
         val declared = funcParamTypes[expr.name]
-        if (expr.name == "std__convert__toString" && expr.args.size == 1) {
+        if (expr.name == "__std_convert_toString" && expr.args.size == 1) {
             emitExpr(expr.args.single())
             emit("  ; erased generic toString — no native generic stringification ABI yet")
             return gepString(addStringConstant(""))
@@ -3851,7 +3851,7 @@ class LlvmCodegen {
             sb.appendLine()
         }
 
-        if (globalVars.keys.any { it.startsWith("__tl__") } || usesArenaRuntime) {
+        if (globalVars.keys.any { it.startsWith("__tl_") } || usesArenaRuntime) {
             sb.appendLine("; runtime: lli fallback for Mach-O emulated TLS lookup")
             sb.appendLine("define i8* @__emutls_get_address(i8* %control) {")
             sb.appendLine("entry:")

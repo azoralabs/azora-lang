@@ -382,12 +382,14 @@ class IrGenerator(private val table: SymbolTable) {
                     else {
                         val tpSet = item.typeParams.toSet()
                         val fields = item.fields.map { IrField(it.name, resolveType(it.type, tpSet), it.mutable) }
-                        listOf(IrTopLevel.Struct(item.name, fields))
+                        listOf(IrTopLevel.Struct(item.name, fields, program.zoneTypeNamespaces[item.name]))
                     }
                 }
                 is TopLevel.Solo -> {
                     val fields = item.fields.map { IrField(it.name, resolveType(it.type), it.mutable) }
-                    val result = mutableListOf<IrTopLevel>(IrTopLevel.Struct(item.name, fields))
+                    val result = mutableListOf<IrTopLevel>(
+                        IrTopLevel.Struct(item.name, fields, program.zoneTypeNamespaces[item.name]),
+                    )
                     // Lower methods as free functions Name_method (like impl).
                     for (method in item.methods) {
                         if (!method.isInline) result.add(IrTopLevel.Func(lowerMethod(item.name, method)))
@@ -451,11 +453,12 @@ class IrGenerator(private val table: SymbolTable) {
         } else {
             runtimeItems + enumItems
         }
-        return IrProgram(
+        val lowered = IrProgram(
             program.moduleName,
             generatedTraceFunctions.map { IrTopLevel.Func(it) } + orderedItems,
             buildSpecTables(),
         )
+        return IrSymbolCanonicalizer.canonicalize(lowered, program.zoneTypeNamespaces)
     }
 
     /**
@@ -1610,6 +1613,14 @@ class IrGenerator(private val table: SymbolTable) {
                         val args = expr.args.map(::lowerExpr) +
                             contextualArguments(callableField, expr.args.size)
                         return IrExpr.Call("", args, callableField.ret, receiver = member)
+                    }
+                }
+                if (tt !is IrType.Named) {
+                    val mangled = table.lookupMethod(tt.toString(), expr.name)
+                    if (mangled != null) {
+                        val func = table.lookupFunction(mangled)!!
+                        val args = expr.args.map { lowerExpr(it) }
+                        return IrExpr.Call(mangled, listOf(target) + args, func.returnType)
                     }
                 }
                 // Call on a spec-typed value (`p.build()` where `p: Plugin`): no

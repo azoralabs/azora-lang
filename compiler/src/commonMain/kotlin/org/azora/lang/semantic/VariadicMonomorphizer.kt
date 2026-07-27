@@ -26,6 +26,7 @@ import org.azora.lang.frontend.Param
 import org.azora.lang.frontend.Parser
 import org.azora.lang.frontend.Program
 import org.azora.lang.frontend.Stmt
+import org.azora.lang.frontend.TokenType
 import org.azora.lang.frontend.TopLevel
 import org.azora.lang.frontend.TypeAnnotation
 import org.azora.lang.frontend.TypeFormKind
@@ -94,8 +95,8 @@ internal object VariadicMonomorphizer {
                 implTemplates.getOrPut(item.typeName) { mutableListOf() }.add(item)
             }
         }
-        val namedTypeMacroRules = program.typeMacroRules.filter { it.name != null }
-        if (packTemplates.isEmpty() && funcTemplates.isEmpty() && namedTypeMacroRules.isEmpty()) return program
+        val typeMacroRules = program.typeMacroRules
+        if (packTemplates.isEmpty() && funcTemplates.isEmpty() && typeMacroRules.isEmpty()) return program
 
         val methodReturns = linkedMapOf<Pair<String, String>, CallableReturn>()
         for (item in program.items) {
@@ -124,10 +125,14 @@ internal object VariadicMonomorphizer {
             functionReturns,
             methodReturns,
             implTemplates,
-            namedTypeMacroRules,
+            typeMacroRules,
+            program.zoneTypeNamespaces,
         )
         val rewritten = program.items.mapNotNull { ctx.rewriteTopLevel(it) }
-        return program.copy(items = rewritten + ctx.packs.values + ctx.funcs.values + ctx.expandImpls())
+        return program.copy(
+            items = rewritten + ctx.packs.values + ctx.funcs.values + ctx.expandImpls(),
+            zoneTypeNamespaces = program.zoneTypeNamespaces + ctx.generatedPackNamespaces,
+        )
     }
 
     private fun explicitReturnType(decl: FuncDecl): TypeRef? =
@@ -152,10 +157,12 @@ private class MonoContext(
     private val functionReturns: Map<String, CallableReturn>,
     private val methodReturns: Map<Pair<String, String>, CallableReturn>,
     private val implTemplates: Map<String, List<TopLevel.Impl>>,
-    private val namedTypeMacroRules: List<TypeTypeArm>,
+    private val typeMacroRules: List<TypeTypeArm>,
+    private val typeNamespaces: Map<String, String>,
 ) {
     val packs = linkedMapOf<String, TopLevel.Pack>()
     val funcs = linkedMapOf<String, TopLevel.Func>()
+    val generatedPackNamespaces = linkedMapOf<String, String>()
     private val packArguments = linkedMapOf<String, List<TypeRef>>()
 
     /**
@@ -180,6 +187,7 @@ private class MonoContext(
             val concreteArgs = args.map(::rewriteType)
             packArguments[mangled] = concreteArgs
             packs[mangled] = expandPack(mangled, template, concreteArgs)
+            typeNamespaces[templateName]?.let { generatedPackNamespaces[mangled] = it }
         }
         return mangled
     }
@@ -522,7 +530,8 @@ private class MonoContext(
     // Rewriting
     // ------------------------------------------------------------------
 
-    fun rewriteTopLevel(item: TopLevel): TopLevel? = when (item) {
+    fun rewriteTopLevel(item: TopLevel): TopLevel? = withSourceLine(item.sourceLine()) {
+        when (item) {
         // Drop variadic templates — they are replaced by their monomorphized instances.
         is TopLevel.Pack -> if (item.variadicParam != null) null
             else item.copy(fields = item.fields.map { it.copy(type = rewriteType(it.type)) })
@@ -546,12 +555,13 @@ private class MonoContext(
             level = item.level?.let(::rewriteExpr),
         )
         else -> item
+        }
     }
 
-    private fun rewriteFuncDecl(decl: FuncDecl): FuncDecl {
+    private fun rewriteFuncDecl(decl: FuncDecl): FuncDecl = withSourceLine(decl.line) {
         bindings.clear()
         for (p in decl.params) bindings[p.name] = p.type
-        return decl.copy(
+        decl.copy(
             params = decl.params.map(::rewriteParam),
             returnType = rewriteTypeAnnotation(decl.returnType),
             body = decl.body.map(::rewriteStmt),
@@ -589,7 +599,7 @@ private class MonoContext(
             ret = rewriteType(ref.ret),
             receivers = ref.receivers.map(::rewriteType),
         )
-        is TypeRef.Tuple -> ref.copy(elements = ref.elements.map(::rewriteType))
+        is TypeRef.Tuple -> expandShapeTypeMacro(TypeFormKind.TUPLE, ref.elements)
         is TypeRef.Nullable -> ref.copy(inner = rewriteType(ref.inner))
         is TypeRef.Failable -> ref.copy(ok = rewriteType(ref.ok))
         is TypeRef.Pointer -> ref.copy(inner = rewriteType(ref.inner))
@@ -605,7 +615,7 @@ private class MonoContext(
         }
         val name = NamedTypeMacroCall.name(call)
         val modifier = NamedTypeMacroCall.modifier(call)
-        val matches = namedTypeMacroRules.filter {
+        val matches = typeMacroRules.filter {
             it.kind == expectedKind && it.name == name && it.prefix == modifier
         }
         if (matches.isEmpty()) {
@@ -627,6 +637,34 @@ private class MonoContext(
                 rule.holes.zip(rewrittenArgs.map(::listOf)).toMap()
             else -> error(
                 "type macro '$name' expects ${rule.holes.size} type argument(s), got ${rewrittenArgs.size}",
+            )
+        }
+        return rewriteType(substituteTypeMacroTemplate(rule.template, bindings))
+    }
+
+    private fun expandShapeTypeMacro(kind: TypeFormKind, arguments: List<TypeRef>): TypeRef {
+        val matches = typeMacroRules.filter {
+            it.kind == kind && it.name == null && it.prefix.isEmpty()
+        }
+        if (matches.isEmpty()) {
+            typeMacroError(
+                "no visible 'meta .Type' rule matches the parenthesized type form; " +
+                    "import the module that declares this grammar",
+            )
+        }
+        if (matches.size > 1) {
+            typeMacroError("ambiguous parenthesized type form: ${matches.size} matching 'meta .Type' rules are visible")
+        }
+        val rule = matches.single()
+        val rewrittenArguments = arguments.map(::rewriteType)
+        val bindings = when {
+            rule.holes.size == 1 ->
+                mapOf(rule.holes.single() to rewrittenArguments)
+            rule.holes.size == rewrittenArguments.size ->
+                rule.holes.zip(rewrittenArguments.map(::listOf)).toMap()
+            else -> error(
+                "parenthesized type form expects ${rule.holes.size} type argument(s), " +
+                    "got ${rewrittenArguments.size}",
             )
         }
         return rewriteType(substituteTypeMacroTemplate(rule.template, bindings))
@@ -749,6 +787,7 @@ private class MonoContext(
         is Expr.CharLiteral -> TypeRef.Named("Char")
         is Expr.Identifier -> bindings[e.name]
         is Expr.Grouping -> inferExprType(e.expr)
+        is Expr.Binary -> inferBinaryType(e)
         is Expr.TupleAccess -> inferExprType(e.target)?.let { tupleElementType(it, e.index) }
         // Positional tuple access parses as a `Member` with a numeric field name
         // (`v.0`, `v.1`); resolve it against the target's tuple element types.
@@ -773,6 +812,46 @@ private class MonoContext(
         }
         is Expr.StringTemplate -> TypeRef.Named("String")
         else -> null
+    }
+
+    private fun inferBinaryType(expr: Expr.Binary): TypeRef? {
+        if (expr.op in setOf(
+                TokenType.EQUAL_EQUAL,
+                TokenType.BANG_EQUAL,
+                TokenType.LESS,
+                TokenType.LESS_EQUAL,
+                TokenType.GREATER,
+                TokenType.GREATER_EQUAL,
+                TokenType.AND_AND,
+                TokenType.OR_OR,
+            )
+        ) {
+            return TypeRef.Named("Bool")
+        }
+        val left = inferExprType(expr.left) as? TypeRef.Named ?: return null
+        val right = inferExprType(expr.right) as? TypeRef.Named ?: return null
+        if (left == right) return left
+        if (expr.op == TokenType.PLUS && (left.name == "String" || right.name == "String")) {
+            return TypeRef.Named("String")
+        }
+        val rank = mapOf(
+            "Byte" to 0,
+            "UByte" to 0,
+            "Short" to 1,
+            "UShort" to 1,
+            "Int" to 2,
+            "UInt" to 2,
+            "Long" to 3,
+            "ULong" to 3,
+            "Cent" to 4,
+            "UCent" to 4,
+            "Float" to 5,
+            "Real" to 6,
+            "Decimal" to 7,
+        )
+        val leftRank = rank[left.name] ?: return null
+        val rightRank = rank[right.name] ?: return null
+        return if (leftRank >= rightRank) left else right
     }
 
     private fun resolveCallableReturn(callable: CallableReturn, typeArgs: List<TypeRef>): TypeRef {
@@ -815,7 +894,8 @@ private class MonoContext(
         if (t != null) bindings[name] = t
     }
 
-    fun rewriteStmt(s: Stmt): Stmt = when (s) {
+    fun rewriteStmt(s: Stmt): Stmt = withSourceLine(s.line) {
+        when (s) {
         is Stmt.VarDecl -> { recordBinding(s.name, s.type, s.initializer); s.copy(type = rewriteTypeAnnotation(s.type), initializer = rewriteExpr(s.initializer)) }
         is Stmt.FinDecl -> { recordBinding(s.name, s.type, s.initializer); s.copy(type = rewriteTypeAnnotation(s.type), initializer = rewriteExpr(s.initializer)) }
         is Stmt.LetDecl -> { recordBinding(s.name, s.type, s.initializer); s.copy(type = rewriteTypeAnnotation(s.type), initializer = rewriteExpr(s.initializer)) }
@@ -858,6 +938,55 @@ private class MonoContext(
         is Stmt.WithContext -> s.copy(values = s.values.map(::rewriteExpr), body = s.body.map(::rewriteStmt))
         is Stmt.NoInline -> s.copy(stmt = rewriteStmt(s.stmt))
         is Stmt.Break, is Stmt.Continue -> s
+        }
+    }
+
+    private var currentSourceLine: Int? = null
+
+    private inline fun <T> withSourceLine(line: Int?, block: () -> T): T {
+        val previous = currentSourceLine
+        if (line != null && line > 0) currentSourceLine = line
+        return try {
+            block()
+        } finally {
+            currentSourceLine = previous
+        }
+    }
+
+    private fun typeMacroError(message: String): Nothing {
+        val line = currentSourceLine
+        error(if (line != null) "line $line: $message" else message)
+    }
+
+    private fun TopLevel.sourceLine(): Int? = when (this) {
+        is TopLevel.Func -> decl.line
+        is TopLevel.VarDecl -> line
+        is TopLevel.FinDecl -> line
+        is TopLevel.LetDecl -> line
+        is TopLevel.InlineVar -> line
+        is TopLevel.InlineFin -> line
+        is TopLevel.InlineLet -> line
+        is TopLevel.InlineAssignment -> line
+        is TopLevel.InlineIf -> line
+        is TopLevel.InlineBlock -> line
+        is TopLevel.DeepInlineBlock -> line
+        is TopLevel.DeepInlineIf -> line
+        is TopLevel.Test -> line
+        is TopLevel.Pack -> line
+        is TopLevel.Deco -> line
+        is TopLevel.Bridge -> line
+        is TopLevel.Solo -> line
+        is TopLevel.Wrap -> line
+        is TopLevel.UseImport -> line
+        is TopLevel.Enum -> line
+        is TopLevel.Fail -> line
+        is TopLevel.Impl -> line
+        is TopLevel.Spec -> line
+        is TopLevel.TypeAlias -> line
+        is TopLevel.Slot -> line
+        is TopLevel.Meta -> line
+        is TopLevel.InlineAssert -> line
+        is TopLevel.InlineTrace -> line
     }
 
     // ------------------------------------------------------------------

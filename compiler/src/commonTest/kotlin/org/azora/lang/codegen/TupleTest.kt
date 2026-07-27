@@ -15,7 +15,7 @@ class TupleTest {
             import std.container.tuple
             import std.*
 
-            func swap(value: Tuple<Int, String>): Tuple<String, Int> {
+            func swap(value: std::Tuple<Int, String>): std::Tuple<String, Int> {
                 return std::tupleOf(value.1, value.0)
             }
 

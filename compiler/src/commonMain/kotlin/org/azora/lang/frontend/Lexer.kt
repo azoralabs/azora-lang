@@ -67,6 +67,7 @@ class Lexer(private val source: String) {
             "by" to TokenType.BY,
             "reverse" to TokenType.REVERSE,
             "with" to TokenType.WITH,
+            "infx" to TokenType.INFX,
             "oper" to TokenType.OPER,
             "deco" to TokenType.DECO,
             "bind" to TokenType.BIND,

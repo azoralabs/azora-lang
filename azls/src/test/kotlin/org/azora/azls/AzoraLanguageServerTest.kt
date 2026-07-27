@@ -54,9 +54,11 @@ class AzoraLanguageServerTest {
     fun highlightsKeywordsStringsNumbersComments() {
         val source = """
             // greet the world
-            func main() {
+            func greet(name: String) {
                 var count = 42
-                println("hi")
+                fin label = "hi"
+                greet(name)
+                missing(count)
             }
         """.trimIndent()
         val all = spans(source)
@@ -67,8 +69,44 @@ class AzoraLanguageServerTest {
         assertTrue(all.any { it.type == "keyword" && textOf(it) == "var" })
         assertTrue(all.any { it.type == "number" && textOf(it) == "42" })
         assertTrue(all.any { it.type == "string" && textOf(it) == "\"hi\"" })
-        assertTrue(all.any { it.type == "function" && textOf(it) == "main" })
+        assertEquals(2, all.count { it.type == "function" && textOf(it) == "greet" })
+        assertTrue(all.any { it.type == "parameter" && textOf(it) == "name" })
+        assertTrue(all.any { it.type == "variable" && textOf(it) == "count" })
+        assertTrue(all.none { it.type == "function" && textOf(it) == "missing" })
+    }
+
+    @Test
+    fun declarationsInsideCommentsAndStringsDoNotCreateFunctions() {
+        val source = """
+            // func hidden() {}
+            fin text = "func alsoHidden() {}"
+
+            func main() {
+                hidden()
+                alsoHidden()
+            }
+        """.trimIndent()
+        val all = spans(source)
+        fun textOf(span: HighlightSpan) = source.substring(span.start, span.end)
+
+        assertTrue(all.none { it.type == "function" && textOf(it) == "hidden" })
+        assertTrue(all.none { it.type == "function" && textOf(it) == "alsoHidden" })
+    }
+
+    @Test
+    fun importedFunctionsAreHighlightedButUnknownCallsAreNot() {
+        val source = """
+            import std.io
+            func main() {
+                std::println("known")
+                notDeclared("unknown")
+            }
+        """.trimIndent()
+        val all = spans(source)
+        fun textOf(span: HighlightSpan) = source.substring(span.start, span.end)
+
         assertTrue(all.any { it.type == "function" && textOf(it) == "println" })
+        assertTrue(all.none { it.type == "function" && textOf(it) == "notDeclared" })
     }
 
     @Test
@@ -78,6 +116,15 @@ class AzoraLanguageServerTest {
         val interp = all.filter { it.type == "interpolation" }
         assertEquals(1, interp.size)
         assertEquals("\$total", source.substring(interp[0].start, interp[0].end))
+    }
+
+    @Test
+    fun highlightsCompilerMacrosAsOneToken() {
+        val source = """fin tuple = tup@(1, 2)
+fin array = collect_all@(tuple)"""
+        val macros = spans(source).filter { it.type == "macro" }
+
+        assertEquals(listOf("tup@", "collect_all@"), macros.map { source.substring(it.start, it.end) })
     }
 
     @Test

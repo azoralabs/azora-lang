@@ -233,8 +233,8 @@ class LlvmRegressionExecTest {
         """.trimIndent()
         for (optimized in listOf(false, true)) {
             val ir = LlvmExec.compile(source, optimized)
-            assertTrue("@__tl__counter = thread_local global i32 0" in ir)
-            assertTrue("store i32 5, i32* @__tl__counter" in ir)
+            assertTrue("@__tl_counter = thread_local global i32 0" in ir)
+            assertTrue("store i32 5, i32* @__tl_counter" in ir)
         }
     }
 
@@ -252,13 +252,13 @@ class LlvmRegressionExecTest {
         """.trimIndent()
         for (optimized in listOf(false, true)) {
             val ir = LlvmExec.compile(source, optimized)
-            assertTrue("@__tl__numbers = thread_local global i8* zeroinitializer" in ir)
-            assertTrue("@__tl__names = thread_local global i8* zeroinitializer" in ir)
-            assertTrue("@__tl__unique = thread_local global i8* zeroinitializer" in ir)
+            assertTrue("@__tl_numbers = thread_local global i8* zeroinitializer" in ir)
+            assertTrue("@__tl_names = thread_local global i8* zeroinitializer" in ir)
+            assertTrue("@__tl_unique = thread_local global i8* zeroinitializer" in ir)
             assertTrue("define void @__azora_init_threadlocals()" in ir)
-            assertTrue("store i8*" in ir && "i8** @__tl__numbers" in ir)
-            assertTrue("store i8*" in ir && "i8** @__tl__names" in ir)
-            assertTrue("store i8*" in ir && "i8** @__tl__unique" in ir)
+            assertTrue("store i8*" in ir && "i8** @__tl_numbers" in ir)
+            assertTrue("store i8*" in ir && "i8** @__tl_names" in ir)
+            assertTrue("store i8*" in ir && "i8** @__tl_unique" in ir)
             assertTrue("call void @__azora_init_threadlocals()" in ir)
             assertTrue("define i8* @__emutls_get_address" in ir)
         }

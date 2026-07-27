@@ -525,9 +525,9 @@ class WasmCodegen {
                 "(local.set $closure ${emitExpr(expr.receiver)}) " +
                 "(call_indirect (type \$$typeName) $operands))"
         }
-        if ((expr.name == "std__println" || expr.name == "std__print") && expr.args.size == 1) {
+        if ((expr.name == "__std_println" || expr.name == "__std_print") && expr.args.size == 1) {
             val arg = expr.args.single()
-            val operation = if (expr.name == "std__print") "write" else "print"
+            val operation = if (expr.name == "__std_print") "write" else "print"
             val fn = when {
                 arg.type == IrType.String -> "${operation}_str"
                 arg.type == IrType.Bool -> "${operation}_bool"
@@ -540,7 +540,7 @@ class WasmCodegen {
         }
         if (expr.name == "__isCheck") usesIsCheck = true
         // `Array::fill<T>(count)` → `[ len, T×count ]` (all cells i32 in Wasm).
-        if (expr.name == "Array__fill") {
+        if (expr.name == "__std_Array_fill") {
             usesAlloc = true
             val t = newTemp("i32")
             val count = emitExpr(expr.args[0])

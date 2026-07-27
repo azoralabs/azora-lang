@@ -1009,12 +1009,41 @@ sealed class TypeRef {
         WEAK("weak ref")
     }
 
-    /** A named type, optionally generic: `Int`, `List<Int>`. */
-    data class Named(val name: String, val args: List<TypeRef> = emptyList(), val variadic: Boolean = false) : TypeRef() {
+    /**
+     * A named type, optionally generic.
+     *
+     * [qualifier] preserves the source-level zone path (`std` in
+     * `std::Tuple<Int, String>`). Semantic passes still use [name] as the
+     * canonical declaration name, while visibility checks can distinguish a
+     * qualified type reference from a bare one.
+     */
+    data class Named(
+        val name: String,
+        val args: List<TypeRef> = emptyList(),
+        val variadic: Boolean = false,
+        val qualifier: String? = null,
+    ) : TypeRef() {
         override fun toString() = when {
             TypeFunctionCall.isCall(this) -> "${TypeFunctionCall.name(this)}!(${args.joinToString(", ")})"
-            args.isEmpty() -> name
-            else -> "$name<${args.joinToString(", ")}>"
+            args.isEmpty() -> qualifiedName()
+            else -> "${qualifiedName()}<${args.joinToString(", ")}>"
+        }
+
+        private fun qualifiedName(): String = qualifier?.let { "$it::$name" } ?: name
+
+        /*
+         * A qualifier is source-level access metadata, not part of type
+         * identity. `std::Tuple<Int, Int>` must resolve to the same semantic
+         * type as the Tuple declaration's own `Tuple<Int, Int>` references.
+         */
+        override fun equals(other: Any?): Boolean =
+            other is Named && name == other.name && args == other.args && variadic == other.variadic
+
+        override fun hashCode(): Int {
+            var result = name.hashCode()
+            result = 31 * result + args.hashCode()
+            result = 31 * result + variadic.hashCode()
+            return result
         }
     }
 
@@ -1493,11 +1522,9 @@ enum class TypeFormKind { ARRAY, ARRAY_SIZED, SET, MAP, TUPLE, PREFIX, PREFIX_LI
  * of [kind]'s shape appears, expand it to [template] substituting [holes]
  * positionally with the actual type arguments.
  *
- * NOTE: the rewriting pass is scaffolded, not yet wired — `meta type`
- * declarations currently parse and store their rules (so the stdlib builds)
- * without repurposing any built-in type syntax. Activating the rewrite is the
- * next stage (it requires migrating stdlib usage of `[T]`/`[K: V]`/tuples to
- * explicit `Array<T>`/`std::mapOf`/etc. first).
+ * Shape rules are expanded after library injection, so syntax is available
+ * only when the module declaring its rule is imported. This keeps the parser
+ * independent of library types such as Tuple.
  */
 data class TypeTypeArm(
     val kind: TypeFormKind,
@@ -1976,6 +2003,12 @@ data class Program(
      * use sites with a clear error.
      */
     val usesMacros: Boolean = false,
+    /**
+     * Named type declaration → source-level zone path for declarations inside
+     * `zone X` / `friend zone X`. Declarations in `use zone` remain bare and
+     * therefore do not appear here.
+     */
+    val zoneTypeNamespaces: Map<String, String> = emptyMap(),
 ) {
     /** Convenience — returns only the resolved function declarations. */
     val functions: List<FuncDecl> get() = items.filterIsInstance<TopLevel.Func>().map { it.decl }

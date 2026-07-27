@@ -231,14 +231,14 @@ class IrInterpreter {
         for (item in program.items) {
             when (item) {
                 is IrTopLevel.Global -> {
-                    // Thread-local variables (`__tl__` prefix) go into per-ExecState storage.
+                    // Thread-local variables (`__tl_` prefix) go into per-ExecState storage.
                     val name = when (val stmt = item.stmt) {
                         is IrStmt.VarDecl -> stmt.name
                         is IrStmt.FinDecl -> stmt.name
                         is IrStmt.LetDecl -> stmt.name
                         else -> null
                     }
-                    if (name != null && name.startsWith("__tl__")) {
+                    if (name != null && name.startsWith("__tl_")) {
                         executeStmt(item.stmt) // evaluates initializer, stores in global scope
                         // Move from global scope to threadLocals so child coroutines get fresh copies.
                         val value = state().scopes.first()[name]
@@ -300,7 +300,7 @@ class IrInterpreter {
 
     private suspend fun assignVar(name: String, value: Any?) {
         // Thread-local variables: store in the per-ExecState map.
-        if (name.startsWith("__tl__") && name in state().threadLocals) {
+        if (name.startsWith("__tl_") && name in state().threadLocals) {
             state().threadLocals[name] = value
             return
         }
@@ -332,7 +332,7 @@ class IrInterpreter {
 
     private suspend fun lookupVar(name: String): Any? {
         // Thread-local variables: each ExecState has its own independent copy.
-        if (name.startsWith("__tl__") && name in state().threadLocals) return state().threadLocals[name]
+        if (name.startsWith("__tl_") && name in state().threadLocals) return state().threadLocals[name]
         val s = state().scopes
         for (i in s.indices.reversed()) {
             if (name in s[i]) {
@@ -1155,7 +1155,7 @@ class IrInterpreter {
             val cached = azSync(singletons) { singletons[typeName] }
             if (cached != null) return cached
             // Slow path: create the singleton via its factory (outside the lock).
-            val factoryName = "__singleton_$typeName"
+            val factoryName = "__singleton_${typeName.removePrefix("__")}"
             val factory = functions[factoryName]
                 ?: error("No singleton factory for '$typeName' — is it declared as `solo`?")
             val instance = executeFunction(factory, emptyList())
@@ -1195,11 +1195,11 @@ class IrInterpreter {
             debugHost?.onLine(((args.firstOrNull() as? Long) ?: 0L).toInt(), snapshotLocals())
             return null
         }
-        if (expr.name == "std__print" || expr.name == "std__println") {
+        if (expr.name == "__std_print" || expr.name == "__std_println") {
             val value = args.firstOrNull()
             val text = formatValue(value)
             azSync(output) {
-                if (expr.name == "std__println") output.appendLine(text) else output.append(text)
+                if (expr.name == "__std_println") output.appendLine(text) else output.append(text)
             }
             outputListener?.invoke(text)
             return null
@@ -1208,7 +1208,7 @@ class IrInterpreter {
             // Unrecoverable runtime abort.
             throw AzoraPanicException(formatValue(args.firstOrNull()))
         }
-        if (expr.name == "std__convert__toString") {
+        if (expr.name == "__std_convert_toString") {
             return formatValue(args.firstOrNull())
         }
         if (expr.name == "stringLength") return (args[0] as String).length.toLong()
@@ -1236,7 +1236,7 @@ class IrInterpreter {
         }
         if (expr.name == "isAlpha") return (args[0] as Char).isLetter()
         // `Array::fill<T>(count)` — allocate `count` default (null) slots.
-        if (expr.name == "Array__fill") {
+        if (expr.name == "__std_Array_fill") {
             val count = (args[0] as Number).toInt()
             return MutableList<Any?>(count) { null }
         }
@@ -1245,7 +1245,7 @@ class IrInterpreter {
             val scope = coroutineScope ?: error("async used outside of the interpreter's structured scope")
             return TaskHandle(scope.async(context = childState()) { invokeClosure(thunk) })
         }
-        if (expr.name == "std__concurrency__cancel") {
+        if (expr.name == "__std_concurrency_cancel") {
             (args.firstOrNull() as? TaskHandle)?.deferred?.cancel()
             return null
         }
@@ -1366,7 +1366,7 @@ class IrInterpreter {
 
     private fun formatMapValue(value: Map<*, *>): String {
         val internalType = value["__type"] as? String
-        if (internalType?.startsWith("__Tuple_") != true) return value.toString()
+        if (internalType == null || !isTupleStruct(internalType)) return value.toString()
         val fields = structs[internalType]?.fields
         val values = if (fields != null) {
             fields.map { field -> value[field.name] }
@@ -1403,13 +1403,19 @@ class IrInterpreter {
         if (internalName in visiting) return internalName
         val struct = structs[internalName] ?: return internalName
         val nextVisiting = visiting + internalName
-        return struct.fields.joinToString(", ", "Tuple<", ">") { field ->
+        val qualifiedName = struct.namespace?.let { "$it::Tuple" } ?: "Tuple"
+        return struct.fields.joinToString(", ", "$qualifiedName<", ">") { field ->
             sourceTypeName(field.type, nextVisiting)
         }
     }
 
+    private fun isTupleStruct(name: String): Boolean =
+        structs[name]?.fields?.let { fields ->
+            fields.size >= 2 && fields.withIndex().all { (index, field) -> field.name == index.toString() }
+        } == true
+
     private fun sourceTypeName(type: IrType, visiting: Set<String>): String = when (type) {
-        is IrType.Named -> if (type.name.startsWith("__Tuple_")) tupleTypeName(type.name, visiting) else type.name
+        is IrType.Named -> if (isTupleStruct(type.name)) tupleTypeName(type.name, visiting) else type.name
         else -> type.toString()
     }
 

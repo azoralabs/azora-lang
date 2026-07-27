@@ -34,6 +34,20 @@ class InfixFunctionsTest {
         """.trimIndent()))
     }
 
+    @Test fun topLevelInfxDeclarationIsCallable() {
+        assertEquals("42", run("""
+            import std.io
+
+            infx Int.scaledBy(factor: Int): Int {
+                return self * factor
+            }
+
+            func main() {
+                std::println(6 scaledBy 7)
+            }
+        """.trimIndent()))
+    }
+
     @Test fun infixWithArithmetic() {
         assertEquals("11", run("""
             import std.io

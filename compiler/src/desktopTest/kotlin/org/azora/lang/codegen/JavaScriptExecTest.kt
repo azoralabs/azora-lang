@@ -84,7 +84,7 @@ class JavaScriptExecTest {
         check("Hello, 7!", main("std::print(\"Hello, \" )\nstd::print(7)\nstd::println(\"!\")"))
 
     @Test fun tuplePrintMatchesAzoraStructuralFormat() = check(
-        "Tuple<String, String>(\"Hello from Azora!\", \":)\")",
+        "std::Tuple<String, String>(\"Hello from Azora!\", \":)\")",
         """
         module playground
         import std.io
@@ -123,6 +123,109 @@ class JavaScriptExecTest {
         assertContains(javascript, "new __azoraPack_HostValue(7)")
         assertFalse("class Array {" in javascript)
     }
+
+    @Test fun pointerArithmeticUsesTheSameAllocation() = check(
+        "10\n20\n99\n2",
+        """
+        import std.io
+
+        func main() {
+            var p: Int* = alloc arr@[10, 20, 30]
+            std::println(*p)
+            std::println(*(p + 1))
+            *(p + 2) = 99
+            std::println(*(p + 2))
+            std::println((p + 2) - p)
+        }
+        """.trimIndent(),
+    )
+
+    @Test fun nullableValuesUseJavaScriptNull() = check(
+        "empty",
+        """
+        import std.io
+
+        func value(): Int? {
+            return null
+        }
+
+        func main() {
+            fin result = value()
+            if result == null { std::println("empty") }
+        }
+        """.trimIndent(),
+    )
+
+    @Test fun flowsYieldIterableValues() = check(
+        "30",
+        """
+        import std.io
+
+        flow squares(n: Int): Int {
+            for i in 0..<n { yield i * i }
+        }
+
+        func main() {
+            var sum = 0
+            for value in squares(5) { sum += value }
+            std::println(sum)
+        }
+        """.trimIndent(),
+    )
+
+    @Test fun dependencyInjectionReusesSingleton() = check(
+        "1\n2",
+        """
+        import std.io
+
+        solo Counter {
+            var value: Int = 0
+            func next(): Int {
+                self.value += 1
+                return self.value
+            }
+        }
+
+        func main() {
+            std::println(inject Counter.next())
+            std::println(inject Counter.next())
+        }
+        """.trimIndent(),
+    )
+
+    @Test fun stdlibMutableListUsesSpecDispatchAndPointerStorage() = check(
+        "20\n99\n3",
+        """
+        import std.io
+        import std.container.list
+
+        func main() {
+            var values = std::mutableListOf<Int>()
+            values.add(10)
+            values.add(20)
+            values.add(30)
+            values.set(0, 99)
+            std::println(values.get(1))
+            std::println(values[0])
+            std::println(values.size)
+        }
+        """.trimIndent(),
+    )
+
+    @Test fun testDeclarationsRegisterWithoutRunningDuringMain() = check(
+        "main",
+        """
+        import std.io
+
+        test "not part of normal execution" {
+            panic "test body ran"
+        }
+
+        func main() {
+            std::println("main")
+        }
+        """.trimIndent(),
+    )
 
     @Test fun arithmetic() =
         check("14", main("""std::println(2 + 3 * 4)"""))

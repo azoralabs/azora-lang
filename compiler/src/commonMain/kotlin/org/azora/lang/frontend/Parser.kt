@@ -85,6 +85,8 @@ class Parser(
     private val zoneStack = mutableListOf<ZoneFrame>()
     /** Declaration name → its innermost zone, for `(reflect X).zone` reflection. */
     private val zoneMetaByName = mutableMapOf<String, ZoneMeta>()
+    /** Type declaration name → named namespace path (`std`, `std::container`, ...). */
+    private val zoneTypeNamespaces = linkedMapOf<String, String>()
 
     /** Builds the [ZoneMeta] chain for the current [zoneStack] (innermost outward). */
     private fun currentZoneMeta(): ZoneMeta? {
@@ -289,6 +291,7 @@ class Parser(
                 typeMacroRules = pendingTypeMacroRules.toList(),
                 infixMacros = pendingInfixMacros.toList(),
                 usesMacros = usedMetaInvoke,
+                zoneTypeNamespaces = zoneTypeNamespaces.toMap(),
             )
         )
         return IntraZoneRewriter.rewrite(normalized)
@@ -387,6 +390,9 @@ class Parser(
                     check(TokenType.TYPE) -> parseTypeFunction(prefix)
                     else -> {
                         val parsed = parseTopLevel()
+                        if (mangle) {
+                            declaredTypeName(parsed)?.let { zoneTypeNamespaces[it] = prefix.replace("__", "::") }
+                        }
                         result.add(if (mangle) mangleTopLevel(parsed, prefix) else parsed)
                         if (pendingTopLevels.isNotEmpty()) {
                             result.addAll(pendingTopLevels)
@@ -399,6 +405,18 @@ class Parser(
             typeFunctionNamespacePrefix = previousTypeNamespace
         }
         return result
+    }
+
+    private fun declaredTypeName(item: TopLevel): String? = when (item) {
+        is TopLevel.Pack -> item.name
+        is TopLevel.Enum -> item.name
+        is TopLevel.Fail -> item.name
+        is TopLevel.Spec -> item.name
+        is TopLevel.Deco -> item.name
+        is TopLevel.Slot -> item.name
+        is TopLevel.Solo -> item.name
+        is TopLevel.TypeAlias -> item.name
+        else -> null
     }
 
     /** Qualifies a top-level item's name with [prefix] (e.g. `PI` → `Math__PI`). */
@@ -633,6 +651,7 @@ class Parser(
             check(TokenType.FUNC) -> funcOrExtension(parseFuncDecl(annotations = annotations, visibility = visibility))
             check(TokenType.TASK) -> funcOrExtension(parseFuncDecl(annotations = annotations, isTask = true, visibility = visibility))
             check(TokenType.FLOW) -> funcOrExtension(parseFuncDecl(annotations = annotations, isFlow = true, visibility = visibility))
+            check(TokenType.INFX) -> parseInfx()
             check(TokenType.INLINE) -> parseTopLevelInline()
             check(TokenType.DEEPINLINE) -> parseTopLevelDeepInline()
             check(TokenType.TEST) -> parseTestDecl(annotations)
@@ -3701,7 +3720,7 @@ class Parser(
                 }
             }
             check(TokenType.L_PAREN) -> {
-                advance() // consume '('
+                val start = advance() // consume '('
                 val elements = mutableListOf<TypeRef>()
                 if (!check(TokenType.R_PAREN)) {
                     do { elements.add(parseTypeName()) } while (match(TokenType.COMMA))
@@ -3712,9 +3731,9 @@ class Parser(
                     TypeRef.Function(elements, ret)
                 } else {
                     when (elements.size) {
-                        0 -> error("Empty type '()' at line ${peek().line}")
+                        0 -> error("Empty type '()' at line ${start.line}")
                         1 -> elements[0] // grouping
-                        else -> error("Tuple type syntax '(A, B)' was removed; use 'Tuple<A, B>' at line ${peek().line}")
+                        else -> TypeRef.Tuple(elements)
                     }
                 }
             }
@@ -3747,6 +3766,10 @@ class Parser(
                     typeName = consume(TokenType.IDENTIFIER, "Expected type name after '::' in type path").lexeme
                     qualifiedName += "__$typeName"
                 }
+                val zoneQualifier = qualifiedName
+                    .takeIf { it != typeName }
+                    ?.substringBeforeLast("__")
+                    ?.replace("__", "::")
                 // `Type@(args)` — a compile-time type-function (macro) call.
                 if (check(TokenType.AT) && peekNext()?.type == TokenType.L_PAREN) {
                     advance() // '@'
@@ -3786,12 +3809,12 @@ class Parser(
                         check(TokenType.SHIFT_RIGHT) -> { advance(); pendingGreater = true }
                         else -> consume(TokenType.GREATER, "Expected '>' to close generic type arguments")
                     }
-                    TypeRef.Named(typeName, a, variadic)
+                    TypeRef.Named(typeName, a, variadic, zoneQualifier)
                 } else {
                     if (modulePath != null) {
                         error("A module-qualified path must name a callable type function at line ${peek().line}")
                     }
-                    TypeRef.Named(typeName)
+                    TypeRef.Named(typeName, qualifier = zoneQualifier)
                 }
             }
             else -> error("Expected type name at line ${peek().line}, got '${peek().lexeme}'")

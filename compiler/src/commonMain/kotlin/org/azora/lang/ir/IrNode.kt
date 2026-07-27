@@ -1009,7 +1009,12 @@ sealed class IrTopLevel {
      * @property name the struct name
      * @property fields the ordered list of fields
      */
-    data class Struct(val name: String, val fields: List<IrField>) : IrTopLevel()
+    data class Struct(
+        val name: String,
+        val fields: List<IrField>,
+        /** Source namespace used for user-facing type names; null for global packs. */
+        val namespace: String? = null,
+    ) : IrTopLevel()
 
     /**
      * An extern (`bridge`) function declaration — a signature with no body, emitted so

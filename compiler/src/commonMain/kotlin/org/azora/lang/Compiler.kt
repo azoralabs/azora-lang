@@ -175,6 +175,10 @@ class Compiler(
         if (importErrors.isNotEmpty()) {
             return CompilationResult.Failure(importErrors)
         }
+        val typeAccessErrors = libraries.validateTypeAccess(parsed)
+        if (typeAccessErrors.isNotEmpty()) {
+            return CompilationResult.Failure(typeAccessErrors)
+        }
 
         // 2b. Standard library: append the stdlib declarations the program
         // actually references (transitively); user definitions shadow stdlib.

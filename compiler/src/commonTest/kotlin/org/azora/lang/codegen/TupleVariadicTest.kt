@@ -67,7 +67,7 @@ class TupleVariadicTest {
                 std::println(x.1)
             }
         """.trimIndent())
-        assertContains(out.javascript, "__Tuple_Int_Real")
+        assertContains(out.javascript, "__std_Tuple_Int_Real")
         assertEquals("1\n2.0", IrInterpreter().interpret(out.ir).trim())
     }
 
@@ -76,13 +76,13 @@ class TupleVariadicTest {
             import std.io
             import std.container.*
             func main() {
-                fin x: Tuple<Int, Real> = std::tupleOf(1, 2.0)
+                fin x: std::Tuple<Int, Real> = std::tupleOf(1, 2.0)
                 std::println(x.0)
                 std::println(x.1)
             }
         """.trimIndent()
         val out = compile(src)
-        assertContains(out.javascript, "__Tuple_Int_Real")
+        assertContains(out.javascript, "__std_Tuple_Int_Real")
         assertEquals("1\n2.0", IrInterpreter().interpret(out.ir).trim())
     }
 
@@ -91,7 +91,7 @@ class TupleVariadicTest {
             import std.io
             import std.container.*
             func main() {
-                fin x: Tuple<Int, Real> = std::tupleOf<Int, Real>(1, 2.0)
+                fin x: std::Tuple<Int, Real> = std::tupleOf<Int, Real>(1, 2.0)
                 std::println(x.0)
                 std::println(x.1)
             }
@@ -120,7 +120,7 @@ class TupleVariadicTest {
             }
         """.trimIndent())
         // Numeric field names must use bracket access, never `this.0` / `target.0`.
-        assertTrue("__Tuple_Int_Real" in out.javascript, out.javascript)
+        assertTrue("__std_Tuple_Int_Real" in out.javascript, out.javascript)
         assertContains(out.javascript, "this[0]")
         assertContains(out.javascript, "this[1]")
         assertFalse(out.javascript.contains("this.0"), "invalid JS `this.0` in:\n${out.javascript}")
@@ -151,7 +151,7 @@ class TupleVariadicTest {
             }
         """.trimIndent()
         val out = compile(src)
-        assertContains(out.javascript, "__Tuple_Bool_String_Int")
+        assertContains(out.javascript, "__std_Tuple_Bool_String_Int")
         assertEquals("true\nhi\n42", IrInterpreter().interpret(out.ir).trim())
     }
 
@@ -171,7 +171,7 @@ class TupleVariadicTest {
         """.trimIndent()
         val out = compile(src)
         assertEquals("ok0\nok1\nok2", IrInterpreter().interpret(out.ir).trim())
-        assertContains(out.javascript, "__Tuple_Int_Real_String")
+        assertContains(out.javascript, "__std_Tuple_Int_Real_String")
     }
 
     @Test fun tupleModuleImportExposesTuple() {
@@ -208,9 +208,9 @@ class TupleVariadicTest {
             }
         """.trimIndent())
 
-        assertContains(out.javascript, "__Tuple_String_String")
+        assertContains(out.javascript, "__std_Tuple_String_String")
         assertEquals(
-            "Tuple<String, String>(\"Hello from Azora!\", \":)\")",
+            "std::Tuple<String, String>(\"Hello from Azora!\", \":)\")",
             IrInterpreter().interpret(out.ir).trim(),
         )
     }
@@ -267,7 +267,7 @@ class TupleVariadicTest {
         val src = """
             import std.io
             import std.container.tuple
-            func swap(t: Tuple<Int, Real>): Tuple<Real, Int> {
+            func swap(t: std::Tuple<Int, Real>): std::Tuple<Real, Int> {
                 return std::tupleOf<Real, Int>(t.1, t.0)
             }
             func main() {
@@ -278,6 +278,134 @@ class TupleVariadicTest {
         """.trimIndent()
         val out = compile(src)
         assertEquals("9.0\n7", IrInterpreter().interpret(out.ir).trim())
+    }
+
+    @Test fun tupleElementTypesInferFromArithmeticExpressions() {
+        val out = compile("""
+            import std.io
+            import std.container.tuple
+
+            func divmod(a: Int, b: Int): std::Tuple<Int, Int> {
+                return std::tupleOf(a / b, a % b)
+            }
+
+            func main() {
+                fin result = divmod(17, 5)
+                std::println(result.0)
+                std::println(result.1)
+            }
+        """.trimIndent())
+
+        assertEquals("3\n2", IrInterpreter().interpret(out.ir).trim())
+    }
+
+    @Test fun tupleOutputIncludesItsFullZoneQualifiedSignature() {
+        val out = compile("""
+            import std.io
+            import std.container.tuple
+
+            func main() {
+                std::println(std::tupleOf(17 / 5, 17 % 5))
+            }
+        """.trimIndent())
+
+        assertEquals(
+            "std::Tuple<Int, Int>(3, 2)",
+            IrInterpreter().interpret(out.ir).trim(),
+        )
+    }
+
+    @Test fun qualifiedSymbolsUseCanonicalIrNames() {
+        val out = compile("""
+            import std.io
+            import std.container.tuple
+
+            func main() {
+                std::println(std::tupleOf(17 / 5, 17 % 5))
+            }
+        """.trimIndent())
+
+        val ir = out.ir.prettyPrint()
+        assertContains(ir, "pack __std_Tuple_Int_Int")
+        assertContains(ir, "func __std_tupleOf_Int_Int")
+        assertContains(ir, "bridge func __std_println")
+        assertContains(ir, "__std_println(__std_tupleOf_Int_Int")
+        assertFalse("std__println" in ir, ir)
+        assertFalse("__std__tupleOf" in ir, ir)
+        assertFalse("pack __Tuple_Int_Int" in ir, ir)
+    }
+
+    @Test fun importedTupleTypeMacroDefinesParenthesizedTypeSyntax() {
+        val out = compile("""
+            import std.io
+            import std.container.tuple
+
+            func divmod(a: Int, b: Int): (Int, Int) {
+                return std::tupleOf(a / b, a % b)
+            }
+
+            func main() {
+                std::println(divmod(17, 5))
+            }
+        """.trimIndent())
+
+        assertEquals(
+            "std::Tuple<Int, Int>(3, 2)",
+            IrInterpreter().interpret(out.ir).trim(),
+        )
+    }
+
+    @Test fun parenthesizedTypeSyntaxRequiresAVisibleTypeMacro() {
+        val result = Compiler().compile("""
+            func divmod(a: Int, b: Int): (Int, Int) {
+                return 0
+            }
+        """.trimIndent(), release = false)
+
+        val failure = assertIs<CompilationResult.Failure>(result)
+        assertEquals(
+            listOf(
+                "line 1: no visible 'meta .Type' rule matches the parenthesized type form; " +
+                    "import the module that declares this grammar",
+            ),
+            failure.errors,
+        )
+    }
+
+    @Test fun tupleTypeRequiresItsDeclaredZone() {
+        val result = Compiler().compile("""
+            import std.container.tuple
+
+            func divmod(a: Int, b: Int): Tuple<Int, Int> {
+                return std::tupleOf(a / b, a % b)
+            }
+        """.trimIndent(), release = false)
+
+        val failure = assertIs<CompilationResult.Failure>(result)
+        assertEquals(
+            listOf("line 3: undefined type 'Tuple'; 'Tuple' is part of zone 'std', use 'std::Tuple' instead"),
+            failure.errors,
+        )
+    }
+
+    @Test fun tupleZoneQualifierSurvivesParsingWithoutChangingTypeIdentity() {
+        val program = Parser(Lexer("""
+            func divmod(a: Int, b: Int): std::Tuple<Int, Int> {
+                return std::tupleOf(a / b, a % b)
+            }
+        """.trimIndent()).tokenize()).parse()
+
+        val returnType = assertIs<org.azora.lang.frontend.TypeAnnotation.Explicit>(
+            program.functions.single().returnType,
+        ).ref
+        val tuple = assertIs<org.azora.lang.frontend.TypeRef.Named>(returnType)
+        assertEquals("Tuple", tuple.name)
+        assertEquals("std", tuple.qualifier)
+        assertEquals(
+            org.azora.lang.frontend.TypeRef.Named("Tuple", tuple.args),
+            tuple,
+            "source qualification must not create a different semantic type",
+        )
     }
 
     @Test fun nestedTuple() {

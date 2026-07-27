@@ -537,6 +537,18 @@ class IrOptimizer {
             val func = funcMap[name] ?: continue
             val refs = collectReferencedNames(func.body)
             usedNames.addAll(refs)
+            // `inject Type` lowers to `__inject("Type")`, so the matching
+            // `__singleton_Type` factory is reached indirectly rather than by
+            // an ordinary IR call. Preserve singleton factories whenever DI is
+            // reachable; the runtime selects the requested one by type name.
+            if ("__inject" in refs) {
+                funcMap.keys
+                    .filter { it.startsWith("__singleton_") }
+                    .forEach { singleton ->
+                        usedNames.add(singleton)
+                        worklist.add(singleton)
+                    }
+            }
             // Enqueue called functions
             for (ref in refs) {
                 if (ref in funcMap) worklist.add(ref)

@@ -24,7 +24,8 @@ import kotlinx.serialization.Serializable
  * @property start inclusive character offset
  * @property end exclusive character offset
  * @property type one of `keyword`, `string`, `interpolation`, `number`,
- *   `comment`, `function`, `type`, `annotation`, `char`
+ *   `comment`, `function`, `variable`, `parameter`, `type`, `annotation`,
+ *   `char`
  */
 @Serializable
 data class HighlightSpan(val start: Int, val end: Int, val type: String)

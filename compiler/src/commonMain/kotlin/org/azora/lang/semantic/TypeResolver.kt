@@ -121,8 +121,67 @@ class TypeResolver(private val table: SymbolTable) {
         return errors
     }
 
+    private fun validateSignatureType(ref: TypeRef, line: Int, typeParams: Set<String>): Boolean {
+        var valid = true
+
+        fun visit(type: TypeRef) {
+            when (type) {
+                is TypeRef.Named -> {
+                    val known = org.azora.lang.frontend.TypeFunctionCall.isCall(type) ||
+                        type.name == "*" ||
+                        type.name in typeParams ||
+                        IrType.isPrimitiveName(type.name) ||
+                        table.lookupStruct(type.name) != null ||
+                        table.lookupEnum(type.name) != null ||
+                        table.lookupFail(type.name) != null ||
+                        table.lookupSpec(type.name) != null ||
+                        table.lookupAlias(type.name) != null ||
+                        table.lookupSlot(type.name) != null
+                    if (!known) {
+                        errors.add("line $line: undefined type '${type.displayName()}'")
+                        valid = false
+                    }
+                    type.args.forEach(::visit)
+                }
+                is TypeRef.Array -> visit(type.element)
+                is TypeRef.Map -> {
+                    visit(type.key)
+                    visit(type.value)
+                }
+                is TypeRef.Set -> visit(type.element)
+                is TypeRef.Function -> {
+                    type.params.forEach(::visit)
+                    type.receivers.forEach(::visit)
+                    visit(type.ret)
+                }
+                is TypeRef.Tuple -> type.elements.forEach(::visit)
+                is TypeRef.Nullable -> visit(type.inner)
+                is TypeRef.Failable -> visit(type.ok)
+                is TypeRef.Pointer -> visit(type.inner)
+                is TypeRef.Reference -> visit(type.inner)
+                is TypeRef.Const -> {}
+            }
+        }
+
+        visit(ref)
+        return valid
+    }
+
     private fun resolveFunction(func: FuncDecl) {
         val symbol = table.lookupFunction(func.name) ?: return
+        val typeParams = func.typeParams.toSet()
+        var signatureValid = true
+        for (param in func.params) {
+            if (!validateSignatureType(param.type, func.line, typeParams)) signatureValid = false
+        }
+        val explicitReturn = func.returnType as? TypeAnnotation.Explicit
+        if (explicitReturn != null &&
+            !validateSignatureType(explicitReturn.ref, func.line, typeParams)
+        ) {
+            signatureValid = false
+        }
+        if (!signatureValid) return
+
         table.pushScope()
 
         // Register parameters as local variables
@@ -1252,6 +1311,30 @@ class TypeResolver(private val table: SymbolTable) {
                             }
                         }
                         return specMethod.returnType
+                    }
+                }
+                // Primitive impl/infx targets use their source type name as the
+                // method-table key (`infx Int.scaledBy(...)`). They are native
+                // IR types rather than Named packs, but otherwise follow the
+                // same call contract: an implicit receiver followed by args.
+                if (targetType !is IrType.Named) {
+                    val mangled = table.lookupMethod(targetType.toString(), expr.name)
+                    if (mangled != null) {
+                        val func = table.lookupFunction(mangled)!!
+                        if (!requireReactiveCaller(func, expr.line)) return null
+                        val declared = func.params.size - 1
+                        if (expr.args.size != declared) {
+                            errors.add("line ${expr.line}: method '${expr.name}' expects $declared args, got ${expr.args.size}")
+                            return null
+                        }
+                        for (i in expr.args.indices) {
+                            val argType = resolveExpr(expr.args[i]) ?: return null
+                            val paramType = func.params[i + 1].second
+                            if (!isCompatible(paramType, argType)) {
+                                errors.add("line ${expr.line}: arg ${i + 1} of '${expr.name}': expected $paramType, got $argType")
+                            }
+                        }
+                        return func.returnType
                     }
                 }
                 // Universal infix (`a to b` → `to(a, b)`): a generic `infx` that

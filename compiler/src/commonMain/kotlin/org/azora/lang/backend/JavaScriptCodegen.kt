@@ -45,14 +45,40 @@ class JavaScriptCodegen {
     private var usesVirtualDom = false
     private var whenCounter = 0
     private var structsByName: Map<String, IrTopLevel.Struct> = emptyMap()
+    private var specTypeNames: Set<String> = emptySet()
 
-    private val POINTER_RUNTIME = setOf("__alloc", "__deref", "__derefAssign", "__isolated")
+    private val POINTER_RUNTIME = setOf(
+        "__alloc",
+        "__allocBuffer",
+        "__deref",
+        "__derefAssign",
+        "__ptrAdd",
+        "__ptrSub",
+        "__ptrDiff",
+        "__drop",
+        "__isolated",
+    )
 
     private val pointerPreamble: String = """
-        class AzoraPtr { constructor(value) { this.value = value; } }
+        class AzoraPtr {
+          constructor(value, index = 0) {
+            this.buffer = Array.isArray(value) ? value : [value];
+            this.index = index;
+          }
+          get value() { return this.buffer[this.index]; }
+          set value(value) { this.buffer[this.index] = value; }
+        }
         function __alloc(v) { return new AzoraPtr(v); }
+        function __allocBuffer(count) { return new AzoraPtr(Array(Number(count)).fill(null)); }
         function __deref(p) { return p.value; }
         function __derefAssign(p, v) { p.value = v; }
+        function __ptrAdd(p, n) { return new AzoraPtr(p.buffer, p.index + Number(n)); }
+        function __ptrSub(p, n) { return new AzoraPtr(p.buffer, p.index - Number(n)); }
+        function __ptrDiff(a, b) {
+          if (a.buffer !== b.buffer) throw new Error("cannot subtract pointers to different allocations");
+          return a.index - b.index;
+        }
+        function __drop(_value) {}
         // NOTE: __isolated is a shallow copy in the JavaScript backend.
         function __isolated(v) { return v; }
     """.trimIndent()
@@ -223,6 +249,7 @@ class JavaScriptCodegen {
         whenCounter = 0
         usesTasks = program.functions.any { it.isTask }
         structsByName = program.items.filterIsInstance<IrTopLevel.Struct>().associateBy { it.name }
+        specTypeNames = program.specTables.mapTo(mutableSetOf()) { it.specName }
 
         if (program.moduleName != null) {
             line("// module: ${program.moduleName}")
@@ -236,14 +263,36 @@ class JavaScriptCodegen {
         line("return v.__type + \"(\" + keys.map(k =>")
         indent++
         line("(typeof v[k] === \"string\" ? JSON.stringify(v[k]) :")
-        line("(v[k] != null && typeof v[k] === \"object\" && typeof v[k].__type === \"string\" && v[k].__type.startsWith(\"Tuple<\")")
+        line("(__azoraIsTuple(v[k])")
         line("? __azoraFormatTuple(v[k]) : String(v[k])))).join(\", \" ) + \")\";")
         indent--
         indent--
         line("}")
+        line("function __azoraIsTuple(v) {")
+        indent++
+        line("return v != null && typeof v === \"object\" && typeof v.__type === \"string\" && /(^|::)Tuple</.test(v.__type);")
+        indent--
+        line("}")
         line("function __azoraFormatValue(v) {")
         indent++
-        line("return v != null && typeof v === \"object\" && typeof v.__type === \"string\" && v.__type.startsWith(\"Tuple<\") ? __azoraFormatTuple(v) : String(v);")
+        line("return __azoraIsTuple(v) ? __azoraFormatTuple(v) : String(v);")
+        indent--
+        line("}")
+        line("function __azoraHash(value) {")
+        indent++
+        line("if (value == null) return 0n;")
+        line("if (typeof value === \"bigint\") return value;")
+        line("if (typeof value === \"number\") return BigInt(Math.trunc(value));")
+        line("if (typeof value === \"boolean\") return value ? 1n : 0n;")
+        line("const text = typeof value === \"string\" ? value : JSON.stringify(value);")
+        line("let hash = 1469598103934665603n;")
+        line("for (let i = 0; i < text.length; i++) {")
+        indent++
+        line("hash ^= BigInt(text.charCodeAt(i));")
+        line("hash = BigInt.asUintN(64, hash * 1099511628211n);")
+        indent--
+        line("}")
+        line("return hash;")
         indent--
         line("}")
         line("let __azoraPendingOutput = \"\";")
@@ -263,6 +312,62 @@ class JavaScriptCodegen {
         indent--
         line("}")
         line("")
+        val specDispatchEntries = program.specTables
+            .flatMap { it.impls }
+            .flatMap { impl ->
+                impl.methodFuncs.map { (method, function) ->
+                    "${impl.typeName}.$method" to function
+                }
+            }
+            .distinctBy { it.first }
+        if (specDispatchEntries.isNotEmpty()) {
+            line("const __azoraSpecMethods = new Map([")
+            indent++
+            specDispatchEntries.forEach { (key, function) ->
+                line("[\"${escapeString(key)}\", $function],")
+            }
+            indent--
+            line("]);")
+            line("function __azoraDispatch(receiver, method, args) {")
+            indent++
+            line("if (receiver == null) throw new Error(\"cannot call '\" + method + \"' on null\");")
+            line("const function_ = __azoraSpecMethods.get(receiver.__type + \".\" + method);")
+            line("if (!function_) throw new Error(\"no implementation for \" + receiver.__type + \".\" + method);")
+            line("return function_(receiver, ...args);")
+            indent--
+            line("}")
+            line("")
+        }
+        if (program.tests.isNotEmpty()) {
+            line("const __azoraTests = [];")
+            line("function test(name, body) { __azoraTests.push({ name, body }); }")
+            line("")
+        }
+        val singletonFactories = program.functions
+            .filter { it.name.startsWith("__singleton_") }
+        if (singletonFactories.isNotEmpty()) {
+            line("const __azoraSingletons = new Map();")
+            line("const __azoraSingletonFactories = new Map([")
+            indent++
+            singletonFactories.forEach { factory ->
+                val typeName = (factory.returnType as? IrType.Named)?.name
+                    ?: factory.name.removePrefix("__singleton_")
+                line("[\"${escapeString(typeName)}\", ${factory.name}],")
+            }
+            indent--
+            line("]);")
+            line("function __inject(typeName) {")
+            indent++
+            line("if (__azoraSingletons.has(typeName)) return __azoraSingletons.get(typeName);")
+            line("const factory = __azoraSingletonFactories.get(typeName);")
+            line("if (!factory) throw new Error(\"No singleton factory for '\" + typeName + \"'\");")
+            line("const instance = factory();")
+            line("__azoraSingletons.set(typeName, instance);")
+            line("return instance;")
+            indent--
+            line("}")
+            line("")
+        }
         if (usesTasks) {
             line("const __azoraChildren = new Set();")
             line("function cancel(_task) {}")
@@ -309,8 +414,10 @@ class JavaScriptCodegen {
                     val params = item.fields.mapIndexed { idx, f -> if (isNumericFieldName(f.name)) "_$idx" else f.name }.joinToString(", ")
                     line("constructor($params) {")
                     indent++
-                    if (item.name.startsWith("__Tuple_")) {
+                    if (isTupleStruct(item)) {
                         line("this.__type = \"${escapeString(tupleTypeName(item.name))}\";")
+                    } else {
+                        line("this.__type = \"${escapeString(item.name)}\";")
                     }
                     for ((idx, f) in item.fields.withIndex()) {
                         val param = if (isNumericFieldName(f.name)) "_$idx" else f.name
@@ -388,8 +495,12 @@ class JavaScriptCodegen {
 
     private fun emitFunction(func: IrFunction) {
         val params = func.params.joinToString(", ") { (name, _) -> jsIdent(name) }
-        val async = if (func.isTask) "async " else ""
-        line("${async}function ${func.name}($params) {")
+        val functionKind = when {
+            func.isTask -> "async function"
+            func.isFlow -> "function*"
+            else -> "function"
+        }
+        line("$functionKind ${func.name}($params) {")
         indent++
         if (containsDefer(func.body)) {
             line("const __az_defer = [];")
@@ -448,7 +559,18 @@ class JavaScriptCodegen {
             is IrStmt.FinDecl -> line("const ${jsIdent(stmt.name)} = ${emitExpr(stmt.initializer)};")
             is IrStmt.LetDecl -> line("const ${jsIdent(stmt.name)} = ${emitExpr(stmt.initializer)};")
             is IrStmt.Assignment -> line("${jsIdent(stmt.name)} = ${emitExpr(stmt.value)};")
-            is IrStmt.IndexAssign -> line("${emitExpr(stmt.target)}[${emitExpr(stmt.index)}] = ${emitExpr(stmt.value)};")
+            is IrStmt.IndexAssign -> {
+                val target = emitExpr(stmt.target)
+                val index = emitExpr(stmt.index)
+                val value = emitExpr(stmt.value)
+                when {
+                    stmt.target.type is IrType.Pointer ->
+                        line("__derefAssign(__ptrAdd($target, $index), $value);")
+                    isSpecType(stmt.target.type) ->
+                        line("__azoraDispatch($target, \"set\", [$index, $value]);")
+                    else -> line("$target[$index] = $value;")
+                }
+            }
             is IrStmt.MemberAssign -> line("${emitExpr(stmt.target)}.${stmt.name} = ${emitExpr(stmt.value)};")
             is IrStmt.When -> if (stmt.branches.any { b -> b.patterns.any { it is IrExpr.SlotPattern } }) {
                 // Slot matches lower to an if/else chain: a switch can't tag-check a
@@ -620,7 +742,7 @@ class JavaScriptCodegen {
                 indent--
                 line("} });")
             }
-            is IrStmt.Yield -> {}
+            is IrStmt.Yield -> line("yield ${emitExpr(stmt.value)};")
             is IrStmt.Break -> line(if (stmt.label != null) "break ${stmt.label};" else "break;")
             is IrStmt.Continue -> line(if (stmt.label != null) "continue ${stmt.label};" else "continue;")
         }
@@ -637,7 +759,7 @@ class JavaScriptCodegen {
         is IrExpr.BoolLiteral -> "${expr.value}"
         is IrExpr.CharLiteral -> "\"${escapeString(expr.value.toString())}\""
         is IrExpr.EnumToString -> emitExpr(expr.value)
-        is IrExpr.Var -> jsIdent(expr.name)
+        is IrExpr.Var -> if (expr.name == "__null") "null" else jsIdent(expr.name)
         is IrExpr.Unary -> {
             val op = when (expr.op) {
                 IrUnaryOp.NEG -> "-"
@@ -690,15 +812,18 @@ class JavaScriptCodegen {
                 else -> {
                     if (expr.name == "engineUiDomMount") usesVirtualDom = true
                     val name = when (expr.name) {
-                        "std__print" -> "__azoraPrint"
-                        "std__println" -> "__azoraPrintln"
-                        "std__convert__toString" -> "String"
+                        "__std_print" -> "__azoraPrint"
+                        "__std_println" -> "__azoraPrintln"
+                        "__std_convert_toString" -> "String"
+                        "__std_Array_fill" -> "Array"
                         "engineUiDomMount" -> "__azoraEngineUiDomMount"
                         else -> expr.name
                     }
-                    if (expr.name == "async" && expr.args.size == 1) {
+                    if (expr.name == "__std_Array_fill" && expr.args.size == 1) {
+                        "Array(${emitExpr(expr.args.single())}).fill(null)"
+                    } else if (expr.name == "async" && expr.args.size == 1) {
                         "__azoraSpawn(${emitExpr(expr.args.single())})"
-                    } else if (expr.name == "std__concurrency__cancel" && expr.args.size == 1) {
+                    } else if (expr.name == "__std_concurrency_cancel" && expr.args.size == 1) {
                         "cancel(${emitExpr(expr.args.single())})"
                     } else if (expr.name == "__panic") {
                         "(console.error(${emitExpr(expr.args.single())}), process.exit(1))"
@@ -715,27 +840,57 @@ class JavaScriptCodegen {
         is IrExpr.ArrayLiteral -> "[${expr.elements.joinToString(", ") { emitExpr(it) }}]"
         is IrExpr.SetLit -> "new Set([${expr.elements.joinToString(", ") { emitExpr(it) }}])"
         is IrExpr.MapLit -> "({ ${expr.entries.joinToString(", ") { "[${emitExpr(it.first)}]: ${emitExpr(it.second)}" }} })"
-        is IrExpr.Index -> "${emitExpr(expr.target)}[${emitExpr(expr.index)}]"
+        is IrExpr.Index -> {
+            val target = emitExpr(expr.target)
+            val index = emitExpr(expr.index)
+            when {
+                expr.target.type is IrType.Pointer -> "__deref(__ptrAdd($target, $index))"
+                isSpecType(expr.target.type) -> "__azoraDispatch($target, \"get\", [$index])"
+                else -> "$target[$index]"
+            }
+        }
         is IrExpr.Member -> {
             val target = emitExpr(expr.target)
             when (expr.name) {
-                "isEmpty" -> "$target.length === 0"
-                "isNotEmpty" -> "$target.length !== 0"
-                "size" -> "$target.length"
-                "data" -> target
+                "isEmpty" -> when (expr.target.type) {
+                    is IrType.Map -> "Object.keys($target).length === 0"
+                    is IrType.Set -> "$target.size === 0"
+                    is IrType.Array, IrType.String -> "$target.length === 0"
+                    else -> "$target.isEmpty"
+                }
+                "isNotEmpty" -> when (expr.target.type) {
+                    is IrType.Map -> "Object.keys($target).length !== 0"
+                    is IrType.Set -> "$target.size !== 0"
+                    is IrType.Array, IrType.String -> "$target.length !== 0"
+                    else -> "$target.isNotEmpty"
+                }
+                "size" -> when (expr.target.type) {
+                    is IrType.Map -> "Object.keys($target).length"
+                    is IrType.Set -> "$target.size"
+                    is IrType.Array, IrType.String -> "$target.length"
+                    else -> "$target.size"
+                }
+                "data" -> if (expr.target.type is IrType.Array) target else "$target.data"
                 // Numeric field (tuple `.0`/`.1`) — must use bracket access in JS.
                 else -> if (isNumericFieldName(expr.name)) "$target[${expr.name}]" else "$target.${expr.name}"
             }
         }
         is IrExpr.MethodCall -> {
-            val call = when (expr.name) {
-                "add" -> "push(${expr.args.joinToString(", ") { emitExpr(it) }})"
-                "isEmpty" -> "length === 0"
-                "isNotEmpty" -> "length !== 0"
-                "size" -> "length"
-                else -> "${expr.name}(${expr.args.joinToString(", ") { emitExpr(it) }})"
+            if (expr.name == "oper#") {
+                "__azoraHash(${emitExpr(expr.target)})"
+            } else if (isSpecType(expr.target.type)) {
+                val args = expr.args.joinToString(", ") { emitExpr(it) }
+                "__azoraDispatch(${emitExpr(expr.target)}, \"${escapeString(expr.name)}\", [$args])"
+            } else {
+                val call = when (expr.name) {
+                    "add" -> "push(${expr.args.joinToString(", ") { emitExpr(it) }})"
+                    "isEmpty" -> "length === 0"
+                    "isNotEmpty" -> "length !== 0"
+                    "size" -> "length"
+                    else -> "${expr.name}(${expr.args.joinToString(", ") { emitExpr(it) }})"
+                }
+                "${emitExpr(expr.target)}.$call"
             }
-            "${emitExpr(expr.target)}.$call"
         }
         is IrExpr.StructCtor ->
             if (expr.fieldNames.firstOrNull() == "__tag") {
@@ -824,6 +979,9 @@ class JavaScriptCodegen {
         IrType.Any -> "any"
     }
 
+    private fun isSpecType(type: IrType): Boolean =
+        type is IrType.Named && type.name in specTypeNames
+
     /** Emits [block] into a scratch region of [out] and returns (and removes) the produced text. */
     private fun capture(block: () -> Unit): String {
         val start = out.length
@@ -837,13 +995,21 @@ class JavaScriptCodegen {
         if (internalName in visiting) return internalName
         val struct = structsByName[internalName] ?: return internalName
         val nextVisiting = visiting + internalName
-        return struct.fields.joinToString(", ", "Tuple<", ">") { field ->
+        val qualifiedName = struct.namespace?.let { "$it::Tuple" } ?: "Tuple"
+        return struct.fields.joinToString(", ", "$qualifiedName<", ">") { field ->
             sourceTypeName(field.type, nextVisiting)
         }
     }
 
+    private fun isTupleStruct(struct: IrTopLevel.Struct): Boolean =
+        struct.fields.size >= 2 &&
+            struct.fields.withIndex().all { (index, field) -> field.name == index.toString() }
+
+    private fun isTupleStruct(name: String): Boolean =
+        structsByName[name]?.let(::isTupleStruct) == true
+
     private fun sourceTypeName(type: IrType, visiting: Set<String>): String = when (type) {
-        is IrType.Named -> if (type.name.startsWith("__Tuple_")) tupleTypeName(type.name, visiting) else type.name
+        is IrType.Named -> if (isTupleStruct(type.name)) tupleTypeName(type.name, visiting) else type.name
         else -> type.toString()
     }
 

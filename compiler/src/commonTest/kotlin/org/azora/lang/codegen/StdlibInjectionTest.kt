@@ -382,6 +382,41 @@ class StdlibInjectionTest {
         assertEquals("42", IrInterpreter().interpret(result.ir))
     }
 
+    @Test fun externalZoneTypesRequireTheirDeclaredQualifier() {
+        val library = LibrarySource(
+            "engine/model.az",
+            """
+                module engine.model
+                friend zone engine {
+                    pack Handle {
+                        fin id: Int
+                    }
+                }
+            """.trimIndent(),
+        )
+        val compiler = Compiler(listOf(library))
+
+        val bare = compiler.compile("""
+            import engine.model
+            func inspect(value: Handle): Int { return value.id }
+        """.trimIndent())
+        val failure = assertIs<CompilationResult.Failure>(bare)
+        assertEquals(
+            listOf("line 2: undefined type 'Handle'; 'Handle' is part of zone 'engine', use 'engine::Handle' instead"),
+            failure.errors,
+        )
+
+        val qualified = compiler.compile("""
+            import engine.model
+            func inspect(value: engine::Handle): Int { return value.id }
+            func main() {}
+        """.trimIndent())
+        assertIs<CompilationResult.Success>(
+            qualified,
+            "qualified external zone type failed: ${(qualified as? CompilationResult.Failure)?.errors}",
+        )
+    }
+
     @Test fun externalLibraryModulesResolveTheirOwnImports() {
         val libraries = listOf(
             LibrarySource(

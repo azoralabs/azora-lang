@@ -125,7 +125,7 @@ test "tuple fields are fixed positional members" {
 
 test "tuple string representation includes type and fields" {
     fin value = std::tupleOf("a", "b")
-    assert std::convert::toString(value) == "Tuple<String, String>(\"a\", \"b\")" {
+    assert std::convert::toString(value) == "std::Tuple<String, String>(\"a\", \"b\")" {
         "tuple diagnostic representation changed"
     }
 }

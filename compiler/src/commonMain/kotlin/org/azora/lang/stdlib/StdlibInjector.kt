@@ -58,6 +58,14 @@ class StdlibInjector private constructor(
     private val programs: List<Program>,
     private val configOverrides: Map<String, String>,
 ) {
+    private data class ZoneTypeExport(
+        val shortName: String,
+        val qualifier: String,
+        val module: String,
+        val declaration: TopLevel,
+    ) {
+        val qualifiedName: String get() = "$qualifier::$shortName"
+    }
 
     companion object {
         private val standard: StdlibInjector by lazy {
@@ -158,6 +166,10 @@ class StdlibInjector private constructor(
         val items = LinkedHashMap<String, TopLevel>()
         /** name → module that provides it, for import hints. */
         val moduleOfName = LinkedHashMap<String, String>()
+        /** Source-level qualified type path → declaration and import metadata. */
+        val zoneTypesByQualifiedName = LinkedHashMap<String, ZoneTypeExport>()
+        /** Bare type name → every zone-scoped declaration with that short name. */
+        val zoneTypesByShortName = LinkedHashMap<String, MutableList<ZoneTypeExport>>()
         /** module → its declared visibility, for import gating. */
         val moduleVisibility = LinkedHashMap<String, ModuleVisibility>()
         /** Items from a library's conventional `<root>.core` module. */
@@ -251,6 +263,412 @@ class StdlibInjector private constructor(
         return errors
     }
 
+    /**
+     * Validates source-level type qualification independently from declaration
+     * injection. Importing a module makes a type visible, but a type declared in
+     * a named zone must still be written as `Zone::Type` outside that zone.
+     */
+    fun validateTypeAccess(program: Program): List<String> {
+        val visibleDeclarations = importedItems(program).values.toSet()
+        val localGlobalTypes = program.items.mapNotNull(::typeDeclarationName)
+            .filterTo(mutableSetOf()) { it !in program.zoneTypeNamespaces }
+        val errors = linkedSetOf<String>()
+
+        class Validator {
+            fun type(ref: TypeRef, line: Int, typeParams: Set<String>, currentZone: String?) {
+                when (ref) {
+                    is TypeRef.Named -> {
+                        if (!TypeFunctionCall.isCall(ref) &&
+                            ref.name !in typeParams &&
+                            ref.name !in localGlobalTypes
+                        ) {
+                            val localZone = program.zoneTypeNamespaces[ref.name]
+                            val exports = index.zoneTypesByShortName[ref.name].orEmpty()
+                            val visibleExports = exports.filter { it.declaration in visibleDeclarations }
+                            if (localZone != null) {
+                                when {
+                                    ref.qualifier == null && currentZone != localZone ->
+                                        errors.add(
+                                            "line $line: undefined type '${ref.name}'; '${ref.name}' is part of " +
+                                                "zone '$localZone', use '$localZone::${ref.name}' instead",
+                                        )
+                                    ref.qualifier != null && ref.qualifier != localZone ->
+                                        errors.add(
+                                            "line $line: undefined type '${ref.qualifier}::${ref.name}'; " +
+                                                "'${ref.name}' is part of zone '$localZone'",
+                                        )
+                                }
+                            } else if (ref.qualifier == null) {
+                                visibleExports.firstOrNull()?.let { export ->
+                                    errors.add(
+                                        "line $line: undefined type '${ref.name}'; '${ref.name}' is part of " +
+                                            "zone '${export.qualifier}', use '${export.qualifiedName}' instead",
+                                    )
+                                }
+                            } else {
+                                val qualified = "${ref.qualifier}::${ref.name}"
+                                val export = index.zoneTypesByQualifiedName[qualified]
+                                when {
+                                    export != null && export.declaration !in visibleDeclarations ->
+                                        errors.add(
+                                            "line $line: undefined type '$qualified' — '${ref.name}' is provided by " +
+                                                "'${export.module}': add 'import ${export.module}'",
+                                        )
+                                    export == null && visibleExports.isNotEmpty() -> {
+                                        val declared = visibleExports.first()
+                                        errors.add(
+                                            "line $line: undefined type '$qualified'; '${ref.name}' is part of " +
+                                                "zone '${declared.qualifier}'",
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        ref.args.forEach { type(it, line, typeParams, currentZone) }
+                    }
+                    is TypeRef.Array -> type(ref.element, line, typeParams, currentZone)
+                    is TypeRef.Map -> {
+                        type(ref.key, line, typeParams, currentZone)
+                        type(ref.value, line, typeParams, currentZone)
+                    }
+                    is TypeRef.Set -> type(ref.element, line, typeParams, currentZone)
+                    is TypeRef.Function -> {
+                        ref.params.forEach { type(it, line, typeParams, currentZone) }
+                        ref.receivers.forEach { type(it, line, typeParams, currentZone) }
+                        type(ref.ret, line, typeParams, currentZone)
+                    }
+                    is TypeRef.Tuple -> ref.elements.forEach { type(it, line, typeParams, currentZone) }
+                    is TypeRef.Nullable -> type(ref.inner, line, typeParams, currentZone)
+                    is TypeRef.Failable -> type(ref.ok, line, typeParams, currentZone)
+                    is TypeRef.Pointer -> type(ref.inner, line, typeParams, currentZone)
+                    is TypeRef.Reference -> type(ref.inner, line, typeParams, currentZone)
+                    is TypeRef.Const -> {}
+                }
+            }
+
+            fun annotation(value: TypeAnnotation, line: Int, typeParams: Set<String>, currentZone: String?) {
+                if (value is TypeAnnotation.Explicit) type(value.ref, line, typeParams, currentZone)
+            }
+
+            fun function(func: FuncDecl, currentZone: String?) {
+                val typeParams = func.typeParams.toSet()
+                func.params.forEach {
+                    type(it.type, func.line, typeParams, currentZone)
+                    it.defaultValue?.let { value -> expression(value, typeParams, currentZone) }
+                }
+                annotation(func.returnType, func.line, typeParams, currentZone)
+                func.body.forEach { statement(it, typeParams, currentZone) }
+            }
+
+            fun expression(expr: Expr, typeParams: Set<String>, currentZone: String?) {
+                when (expr) {
+                    is Expr.Binary -> {
+                        expression(expr.left, typeParams, currentZone)
+                        expression(expr.right, typeParams, currentZone)
+                    }
+                    is Expr.Unary -> expression(expr.operand, typeParams, currentZone)
+                    is Expr.Call -> {
+                        expr.typeArgs.forEach { type(it, expr.line, typeParams, currentZone) }
+                        expr.args.forEach { expression(it, typeParams, currentZone) }
+                        expr.receiver?.let { expression(it, typeParams, currentZone) }
+                    }
+                    is Expr.Grouping -> expression(expr.expr, typeParams, currentZone)
+                    is Expr.Range -> {
+                        expression(expr.from, typeParams, currentZone)
+                        expression(expr.to, typeParams, currentZone)
+                    }
+                    is Expr.ArrayLiteral -> expr.elements.forEach { expression(it, typeParams, currentZone) }
+                    is Expr.SetLiteral -> expr.elements.forEach { expression(it, typeParams, currentZone) }
+                    is Expr.Index -> {
+                        expression(expr.target, typeParams, currentZone)
+                        expression(expr.index, typeParams, currentZone)
+                    }
+                    is Expr.Member -> expression(expr.target, typeParams, currentZone)
+                    is Expr.MethodCall -> {
+                        expression(expr.target, typeParams, currentZone)
+                        expr.args.forEach { expression(it, typeParams, currentZone) }
+                    }
+                    is Expr.StringTemplate -> expr.parts.forEach {
+                        if (it is Expr.StringTemplatePart.Expr) {
+                            expression(it.expr, typeParams, currentZone)
+                        }
+                    }
+                    is Expr.TupleLit -> expr.elements.forEach { expression(it, typeParams, currentZone) }
+                    is Expr.VariantLit -> expr.elements.forEach { expression(it, typeParams, currentZone) }
+                    is Expr.TupleAccess -> expression(expr.target, typeParams, currentZone)
+                    is Expr.CatchExpr -> {
+                        expression(expr.expr, typeParams, currentZone)
+                        expression(expr.fallback, typeParams, currentZone)
+                    }
+                    is Expr.TryPropagate -> expression(expr.expr, typeParams, currentZone)
+                    is Expr.IfExpr -> {
+                        expression(expr.condition, typeParams, currentZone)
+                        expression(expr.thenExpr, typeParams, currentZone)
+                        expression(expr.elseExpr, typeParams, currentZone)
+                    }
+                    is Expr.Lambda -> {
+                        expr.params.forEach {
+                            type(it.type, expr.line, typeParams, currentZone)
+                            it.defaultValue?.let { value -> expression(value, typeParams, currentZone) }
+                        }
+                        expr.receivers.forEach { type(it.type, expr.line, typeParams, currentZone) }
+                        expr.body.forEach { statement(it, typeParams, currentZone) }
+                    }
+                    is Expr.NamedArg -> expression(expr.value, typeParams, currentZone)
+                    is Expr.NullCoalesce -> {
+                        expression(expr.left, typeParams, currentZone)
+                        expression(expr.right, typeParams, currentZone)
+                    }
+                    is Expr.SafeMember -> expression(expr.target, typeParams, currentZone)
+                    is Expr.Cast -> {
+                        expression(expr.expr, typeParams, currentZone)
+                        type(expr.targetType, expr.line, typeParams, currentZone)
+                    }
+                    is Expr.IsCheck -> expression(expr.expr, typeParams, currentZone)
+                    is Expr.MapLit -> expr.entries.forEach { (key, value) ->
+                        expression(key, typeParams, currentZone)
+                        expression(value, typeParams, currentZone)
+                    }
+                    is Expr.Alloc -> expression(expr.value, typeParams, currentZone)
+                    is Expr.AllocBuffer -> expression(expr.count, typeParams, currentZone)
+                    is Expr.Deref -> expression(expr.target, typeParams, currentZone)
+                    is Expr.Isolated -> expression(expr.value, typeParams, currentZone)
+                    is Expr.Await -> expression(expr.value, typeParams, currentZone)
+                    is Expr.Spread -> expression(expr.array, typeParams, currentZone)
+                    is Expr.MetaInvoke -> expr.args.forEach { expression(it, typeParams, currentZone) }
+                    is Expr.Slice -> {
+                        expression(expr.target, typeParams, currentZone)
+                        expr.start?.let { expression(it, typeParams, currentZone) }
+                        expr.stop?.let { expression(it, typeParams, currentZone) }
+                        expr.step?.let { expression(it, typeParams, currentZone) }
+                    }
+                    else -> {}
+                }
+            }
+
+            fun statement(stmt: Stmt, typeParams: Set<String>, currentZone: String?) {
+                when (stmt) {
+                    is Stmt.VarDecl -> {
+                        annotation(stmt.type, stmt.line, typeParams, currentZone)
+                        expression(stmt.initializer, typeParams, currentZone)
+                    }
+                    is Stmt.FinDecl -> {
+                        annotation(stmt.type, stmt.line, typeParams, currentZone)
+                        expression(stmt.initializer, typeParams, currentZone)
+                    }
+                    is Stmt.LetDecl -> {
+                        annotation(stmt.type, stmt.line, typeParams, currentZone)
+                        expression(stmt.initializer, typeParams, currentZone)
+                    }
+                    is Stmt.InlineVar -> {
+                        annotation(stmt.type, stmt.line, typeParams, currentZone)
+                        expression(stmt.initializer, typeParams, currentZone)
+                    }
+                    is Stmt.InlineFin -> {
+                        annotation(stmt.type, stmt.line, typeParams, currentZone)
+                        expression(stmt.initializer, typeParams, currentZone)
+                    }
+                    is Stmt.InlineLet -> {
+                        annotation(stmt.type, stmt.line, typeParams, currentZone)
+                        expression(stmt.initializer, typeParams, currentZone)
+                    }
+                    is Stmt.RemDecl -> {
+                        annotation(stmt.type, stmt.line, typeParams, currentZone)
+                        expression(stmt.initializer, typeParams, currentZone)
+                    }
+                    is Stmt.InlineAssignment -> expression(stmt.value, typeParams, currentZone)
+                    is Stmt.Assignment -> expression(stmt.value, typeParams, currentZone)
+                    is Stmt.Return -> stmt.value?.let { expression(it, typeParams, currentZone) }
+                    is Stmt.ExprStmt -> expression(stmt.expr, typeParams, currentZone)
+                    is Stmt.If -> {
+                        expression(stmt.condition, typeParams, currentZone)
+                        stmt.thenBranch.forEach { statement(it, typeParams, currentZone) }
+                        stmt.elseBranch?.forEach { statement(it, typeParams, currentZone) }
+                    }
+                    is Stmt.InlineIf -> {
+                        expression(stmt.condition, typeParams, currentZone)
+                        stmt.thenBranch.forEach { statement(it, typeParams, currentZone) }
+                        stmt.elseBranch?.forEach { statement(it, typeParams, currentZone) }
+                    }
+                    is Stmt.DeepInlineIf -> {
+                        expression(stmt.condition, typeParams, currentZone)
+                        stmt.thenBranch.forEach { statement(it, typeParams, currentZone) }
+                        stmt.elseBranch?.forEach { statement(it, typeParams, currentZone) }
+                    }
+                    is Stmt.Assert -> {
+                        expression(stmt.condition, typeParams, currentZone)
+                        expression(stmt.message, typeParams, currentZone)
+                    }
+                    is Stmt.Trace -> {
+                        expression(stmt.message, typeParams, currentZone)
+                        stmt.level?.let { expression(it, typeParams, currentZone) }
+                    }
+                    is Stmt.InlineAssert -> {
+                        expression(stmt.condition, typeParams, currentZone)
+                        expression(stmt.message, typeParams, currentZone)
+                    }
+                    is Stmt.InlineTrace -> {
+                        expression(stmt.message, typeParams, currentZone)
+                        stmt.level?.let { expression(it, typeParams, currentZone) }
+                    }
+                    is Stmt.While -> {
+                        expression(stmt.condition, typeParams, currentZone)
+                        stmt.body.forEach { statement(it, typeParams, currentZone) }
+                    }
+                    is Stmt.For -> {
+                        expression(stmt.iterable, typeParams, currentZone)
+                        stmt.step?.let { expression(it, typeParams, currentZone) }
+                        stmt.body.forEach { statement(it, typeParams, currentZone) }
+                    }
+                    is Stmt.InlineFor -> {
+                        expression(stmt.iterable, typeParams, currentZone)
+                        stmt.body.forEach { statement(it, typeParams, currentZone) }
+                    }
+                    is Stmt.Loop -> {
+                        stmt.iterable?.let { expression(it, typeParams, currentZone) }
+                        stmt.body.forEach { statement(it, typeParams, currentZone) }
+                    }
+                    is Stmt.IndexAssign -> {
+                        expression(stmt.target, typeParams, currentZone)
+                        expression(stmt.index, typeParams, currentZone)
+                        expression(stmt.value, typeParams, currentZone)
+                    }
+                    is Stmt.MemberAssign -> {
+                        expression(stmt.target, typeParams, currentZone)
+                        expression(stmt.value, typeParams, currentZone)
+                    }
+                    is Stmt.When -> {
+                        expression(stmt.scrutinee, typeParams, currentZone)
+                        stmt.branches.forEach { branch ->
+                            branch.patterns.forEach { expression(it, typeParams, currentZone) }
+                            branch.body.forEach { statement(it, typeParams, currentZone) }
+                        }
+                        stmt.elseBranch?.forEach { statement(it, typeParams, currentZone) }
+                    }
+                    is Stmt.Throw -> expression(stmt.value, typeParams, currentZone)
+                    is Stmt.Panic -> expression(stmt.message, typeParams, currentZone)
+                    is Stmt.DerefAssign -> {
+                        expression(stmt.target, typeParams, currentZone)
+                        expression(stmt.value, typeParams, currentZone)
+                    }
+                    is Stmt.Yield -> expression(stmt.value, typeParams, currentZone)
+                    is Stmt.Try -> {
+                        stmt.body.forEach { statement(it, typeParams, currentZone) }
+                        stmt.catchBody?.forEach { statement(it, typeParams, currentZone) }
+                    }
+                    is Stmt.Defer -> stmt.body.forEach { statement(it, typeParams, currentZone) }
+                    is Stmt.Zone -> stmt.body.forEach { statement(it, typeParams, currentZone) }
+                    is Stmt.FriendZone -> stmt.body.forEach { statement(it, typeParams, currentZone) }
+                    is Stmt.InlineBlock -> stmt.body.forEach { statement(it, typeParams, currentZone) }
+                    is Stmt.DeepInlineBlock -> stmt.body.forEach { statement(it, typeParams, currentZone) }
+                    is Stmt.Effect -> {
+                        stmt.dependencies?.forEach { expression(it, typeParams, currentZone) }
+                        stmt.body.forEach { statement(it, typeParams, currentZone) }
+                    }
+                    is Stmt.WithContext -> {
+                        stmt.values.forEach { expression(it, typeParams, currentZone) }
+                        stmt.body.forEach { statement(it, typeParams, currentZone) }
+                    }
+                    is Stmt.NoInline -> statement(stmt.stmt, typeParams, currentZone)
+                    else -> {}
+                }
+            }
+        }
+
+        val validator = Validator()
+        for (item in program.items) {
+            val currentZone = itemZone(item)
+                ?: typeDeclarationName(item)?.let(program.zoneTypeNamespaces::get)
+            when (item) {
+                is TopLevel.Func -> validator.function(item.decl, currentZone)
+                is TopLevel.FinDecl -> {
+                    item.type?.let { validator.type(it, item.line, emptySet(), currentZone) }
+                    validator.expression(item.initializer, emptySet(), currentZone)
+                }
+                is TopLevel.LetDecl -> {
+                    item.type?.let { validator.type(it, item.line, emptySet(), currentZone) }
+                    validator.expression(item.initializer, emptySet(), currentZone)
+                }
+                is TopLevel.VarDecl -> {
+                    item.type?.let { validator.type(it, item.line, emptySet(), currentZone) }
+                    validator.expression(item.initializer, emptySet(), currentZone)
+                }
+                is TopLevel.Test -> item.body.forEach { validator.statement(it, emptySet(), currentZone) }
+                is TopLevel.Pack -> {
+                    val typeParams = item.typeParams.toSet()
+                    item.fields.forEach {
+                        validator.type(it.type, item.line, typeParams, currentZone)
+                        it.default?.let { value -> validator.expression(value, typeParams, currentZone) }
+                    }
+                }
+                is TopLevel.Solo -> {
+                    item.fields.forEach {
+                        validator.type(it.type, item.line, emptySet(), currentZone)
+                        it.default?.let { value -> validator.expression(value, emptySet(), currentZone) }
+                    }
+                    item.methods.forEach { validator.function(it, currentZone) }
+                }
+                is TopLevel.Impl -> {
+                    val typeParams = item.typeParams.toSet()
+                    item.traitArgs.forEach { validator.type(it, item.line, typeParams, currentZone) }
+                    item.decoratorArgs.forEach { validator.expression(it, typeParams, currentZone) }
+                    item.decoratorNamedArgs.forEach { (_, value) ->
+                        validator.expression(value, typeParams, currentZone)
+                    }
+                    item.methods.forEach { validator.function(it, currentZone) }
+                }
+                is TopLevel.Spec -> item.methods.forEach { validator.function(it, currentZone) }
+                is TopLevel.Deco -> item.fields.forEach {
+                    validator.type(it.type, item.line, emptySet(), currentZone)
+                }
+                is TopLevel.Slot -> item.variants.forEach { variant ->
+                    variant.payloadTypes.forEach {
+                        validator.type(it, item.line, emptySet(), currentZone)
+                    }
+                }
+                is TopLevel.TypeAlias ->
+                    validator.type(item.type, item.line, item.typeParams.toSet(), currentZone)
+                is TopLevel.Bridge -> item.funcs.forEach { signature ->
+                    val typeParams = signature.typeParams.toSet()
+                    signature.params.forEach {
+                        validator.type(it.type, signature.line, typeParams, currentZone)
+                    }
+                    validator.type(signature.returnType, signature.line, typeParams, currentZone)
+                }
+                else -> {}
+            }
+        }
+        return errors.toList()
+    }
+
+    private fun typeDeclarationName(item: TopLevel): String? = when (item) {
+        is TopLevel.Pack -> item.name
+        is TopLevel.Enum -> item.name
+        is TopLevel.Fail -> item.name
+        is TopLevel.Spec -> item.name
+        is TopLevel.Deco -> item.name
+        is TopLevel.Slot -> item.name
+        is TopLevel.Solo -> item.name
+        is TopLevel.TypeAlias -> item.name
+        else -> null
+    }
+
+    private fun itemZone(item: TopLevel): String? {
+        if (item is TopLevel.Impl) {
+            return item.zonePrefix?.replace("__", "::")
+        }
+        val mangledName = when (item) {
+            is TopLevel.Func -> item.decl.name
+            is TopLevel.FinDecl -> item.name
+            is TopLevel.LetDecl -> item.name
+            is TopLevel.VarDecl -> item.name
+            else -> return null
+        }
+        return mangledName.substringBeforeLast("__", "")
+            .takeIf { it.isNotEmpty() }
+            ?.replace("__", "::")
+    }
+
     private fun buildIndex(): Index {
         val idx = Index()
         val boolOverrides = configOverrides.mapValues { it.value.trim() == "true" }
@@ -338,6 +756,12 @@ class StdlibInjector private constructor(
                         if (alwaysOn) idx.alwaysInjectedItems.add(item)
                     else -> {}
                 }
+            }
+            for ((shortName, qualifier) in program.zoneTypeNamespaces) {
+                val declaration = moduleItems[shortName] ?: continue
+                val export = ZoneTypeExport(shortName, qualifier, module, declaration)
+                idx.zoneTypesByQualifiedName.putIfAbsentCompat(export.qualifiedName, export)
+                idx.zoneTypesByShortName.getOrPut(shortName) { mutableListOf() }.add(export)
             }
             // Record this module's `export import …` re-exports for transitive
             // import propagation, and (if always-on) the module name itself.
@@ -634,6 +1058,16 @@ class StdlibInjector private constructor(
         val externDeclarations = injectedExterns.values.distinct().filter { existingIdentities.add(itemIdentity(it)) }
         // Exported/core compile-time blocks are injected unconditionally.
         val alwaysDeclarations = index.alwaysInjectedItems.filter { existingIdentities.add(itemIdentity(it)) }
+        val injectedZoneTypeNamespaces = buildMap {
+            for (declaration in declarations + alwaysDeclarations) {
+                val name = typeDeclarationName(declaration) ?: continue
+                val qualifier = index.zoneTypesByShortName[name]
+                    ?.firstOrNull { it.declaration === declaration }
+                    ?.qualifier
+                    ?: continue
+                put(name, qualifier)
+            }
+        }
         if (
             declarations.isEmpty() &&
             externDeclarations.isEmpty() &&
@@ -647,6 +1081,7 @@ class StdlibInjector private constructor(
             typeMacroRules = typeMacros,
             infixOperators = program.infixOperators + index.allInfixOperators,
             infixMacros = program.infixMacros + index.allInfixMacros,
+            zoneTypeNamespaces = program.zoneTypeNamespaces + injectedZoneTypeNamespaces,
         ))
     }
 

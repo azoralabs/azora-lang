@@ -123,8 +123,16 @@ class AzoraLanguageServer {
     // Highlighting
     // -----------------------------------------------------------------
 
-    fun highlight(source: String): String =
-        json.encodeToString(ListSerializer(HighlightSpan.serializer()), AzHighlighter.highlight(source))
+    fun highlight(source: String): String {
+        val imports = importsOf(source)
+        val visibleFunctions = stdlibIndex.functions.keys.filterTo(mutableSetOf()) { name ->
+            moduleVisible(stdlibIndex.origins[name], imports)
+        }
+        return json.encodeToString(
+            ListSerializer(HighlightSpan.serializer()),
+            AzHighlighter.highlight(source, visibleFunctions),
+        )
+    }
 
     // -----------------------------------------------------------------
     // Diagnostics

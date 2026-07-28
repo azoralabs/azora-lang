@@ -111,11 +111,19 @@ class AzoraLanguageServerTest {
 
     @Test
     fun highlightsInterpolationInsideStrings() {
-        val source = """println("total: ${'$'}total done")"""
+        val source = """
+            func greet(name: String): String {
+                return "Hello ${'$'}name from ${'$'}{self.name}!"
+            }
+        """.trimIndent()
         val all = spans(source)
-        val interp = all.filter { it.type == "interpolation" }
-        assertEquals(1, interp.size)
-        assertEquals("\$total", source.substring(interp[0].start, interp[0].end))
+        fun textOf(span: HighlightSpan) = source.substring(span.start, span.end)
+
+        assertEquals(4, all.count { it.type == "interpolation-punctuation" })
+        assertTrue(all.any { it.type == "parameter" && textOf(it) == "name" })
+        assertTrue(all.any { it.type == "parameter" && textOf(it) == "self" })
+        assertTrue(all.any { it.type == "variable" && textOf(it) == "name" })
+        assertTrue(all.filter { it.type == "string" }.none { "self.name" in textOf(it) })
     }
 
     @Test

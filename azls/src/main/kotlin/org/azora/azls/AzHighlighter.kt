@@ -24,9 +24,9 @@ package org.azora.azls
  * stray characters) and must classify comments, which the lexer discards.
  * The scanner never throws — any unrecognized character is simply skipped.
  *
- * Span types (see [HighlightSpan.type]): `keyword`, `string`, `interpolation`,
- * `number`, `comment`, `function`, `variable`, `parameter`, `type`,
- * `annotation`, `macro`, `char`.
+ * Span types (see [HighlightSpan.type]): `keyword`, `string`,
+ * `interpolation-punctuation`, `number`, `comment`, `function`, `variable`,
+ * `parameter`, `type`, `annotation`, `macro`, `char`.
  */
 object AzHighlighter {
 
@@ -60,6 +60,41 @@ object AzHighlighter {
 
         fun peek(offset: Int = 0): Char = if (i + offset < n) source[i + offset] else '\u0000'
 
+        fun addInterpolationExpression(start: Int, end: Int) {
+            var cursor = start
+            while (cursor < end) {
+                when {
+                    source[cursor].isWhitespace() -> cursor++
+                    source[cursor].isDigit() -> {
+                        val tokenStart = cursor++
+                        while (cursor < end &&
+                            (source[cursor].isDigit() || source[cursor] == '_' || source[cursor] == '.')
+                        ) {
+                            cursor++
+                        }
+                        spans.add(HighlightSpan(tokenStart, cursor, "number"))
+                    }
+                    source[cursor].isIdentStart() -> {
+                        val tokenStart = cursor++
+                        while (cursor < end && source[cursor].isIdentPart()) cursor++
+                        val word = source.substring(tokenStart, cursor)
+                        var next = cursor
+                        while (next < end && source[next].isWhitespace()) next++
+                        val type = when {
+                            word in KEYWORDS -> "keyword"
+                            word == "self" || word == "it" -> "parameter"
+                            semantics.isParameter(word, tokenStart) -> "parameter"
+                            next < end && source[next] == '(' && word in semantics.functions -> "function"
+                            word in BUILTIN_TYPES || word in semantics.types -> "type"
+                            else -> "variable"
+                        }
+                        spans.add(HighlightSpan(tokenStart, cursor, type))
+                    }
+                    else -> cursor++
+                }
+            }
+        }
+
         while (i < n) {
             val c = source[i]
             when {
@@ -85,22 +120,45 @@ object AzHighlighter {
                         when {
                             source[i] == '\\' && i + 1 < n -> i += 2
                             source[i] == '$' && i + 1 < n && (source[i + 1] == '{' || source[i + 1].isIdentStart()) -> {
-                                // close the string segment before the interpolation
-                                spans.add(HighlightSpan(segStart, i, "string"))
-                                val interpStart = i
+                                if (segStart < i) spans.add(HighlightSpan(segStart, i, "string"))
+                                spans.add(HighlightSpan(i, i + 1, "interpolation-punctuation"))
                                 i++
                                 if (i < n && source[i] == '{') {
+                                    spans.add(HighlightSpan(i, i + 1, "interpolation-punctuation"))
                                     var depth = 1
                                     i++
+                                    val expressionStart = i
                                     while (i < n && depth > 0 && source[i] != '\n') {
-                                        if (source[i] == '{') depth++
-                                        if (source[i] == '}') depth--
+                                        when {
+                                            source[i] == '\\' && i + 1 < n -> i += 2
+                                            source[i] == '"' || source[i] == '\'' -> {
+                                                val quote = source[i++]
+                                                while (i < n && source[i] != quote && source[i] != '\n') {
+                                                    if (source[i] == '\\' && i + 1 < n) i += 2 else i++
+                                                }
+                                                if (i < n && source[i] == quote) i++
+                                            }
+                                            source[i] == '{' -> {
+                                                depth++
+                                                i++
+                                            }
+                                            source[i] == '}' -> {
+                                                depth--
+                                                if (depth > 0) i++
+                                            }
+                                            else -> i++
+                                        }
+                                    }
+                                    addInterpolationExpression(expressionStart, i)
+                                    if (i < n && source[i] == '}') {
+                                        spans.add(HighlightSpan(i, i + 1, "interpolation-punctuation"))
                                         i++
                                     }
                                 } else {
+                                    val expressionStart = i
                                     while (i < n && source[i].isIdentPart()) i++
+                                    addInterpolationExpression(expressionStart, i)
                                 }
-                                spans.add(HighlightSpan(interpStart, i, "interpolation"))
                                 segStart = i
                             }
                             else -> i++
@@ -159,6 +217,7 @@ object AzHighlighter {
                         isMacro -> "macro"
                         word in KEYWORDS -> "keyword"
                         start in semantics.functionDeclarations -> "function"
+                        word == "self" || word == "it" -> "parameter"
                         semantics.isParameter(word, start) -> "parameter"
                         j < n && source[j] == '(' && word in semantics.functions -> "function"
                         word in BUILTIN_TYPES || word in semantics.types -> "type"

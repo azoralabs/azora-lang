@@ -472,37 +472,63 @@ func addStringHighlights(
     return result
 }
 
-/** Semantic highlighting generated entirely by AZLS. */
-func azlsHighlight(source: String, corpus: String): String {
+/**
+ * Generates semantic highlights whose token starts fall inside a source range.
+ *
+ * Scanning still begins at the start of the file so multiline literals,
+ * comments, and declaration context remain correct. Tokens before the requested
+ * range are parsed without performing corpus resolution or building output.
+ */
+func azlsHighlightRange(
+    source: String,
+    corpus: String,
+    rangeStartInput: Int,
+    rangeEndInput: Int
+): String {
     var result = "["
     var index = 0
     var expectedDeclarationKind = ""
-    while index < stringLength(source) {
+    var rangeStart = rangeStartInput
+    var rangeEnd = rangeEndInput
+    if rangeStart < 0 { rangeStart = 0 }
+    if rangeStart > stringLength(source) { rangeStart = stringLength(source) }
+    if rangeEnd < rangeStart { rangeEnd = rangeStart }
+    if rangeEnd > stringLength(source) { rangeEnd = stringLength(source) }
+
+    while index < rangeEnd {
         fin c = charAt(source, index)
         if isSpace(c) { index += 1 }
         else if c == '/' {
             fin end = skipComment(source, stringLength(source), index)
             if end > index {
-                result = addHighlight(result, index, end, "comment")
+                if index >= rangeStart {
+                    result = addHighlight(result, index, end, "comment")
+                }
                 index = end
             }
             else { index += 1 }
         }
         else if c == '"' {
             fin end = skipString(source, stringLength(source), index)
-            result = addStringHighlights(result, source, index, end, corpus)
+            if index >= rangeStart {
+                result = addStringHighlights(result, source, index, end, corpus)
+            }
             index = end
         }
         else if c == '\'' {
             fin end = skipString(source, stringLength(source), index)
-            result = addHighlight(result, index, end, "char")
+            if index >= rangeStart {
+                result = addHighlight(result, index, end, "char")
+            }
             index = end
         }
         else if c == '@' {
             fin start = index
             index += 1
             while index < stringLength(source) && isIdentifierPart(charAt(source, index)) { index += 1 }
-            result = addHighlight(result, start, index, "annotation")
+            if start >= rangeStart {
+                result = addHighlight(result, start, index, "annotation")
+            }
         }
         else if isDigit(c) {
             fin start = index
@@ -511,12 +537,15 @@ func azlsHighlight(source: String, corpus: String): String {
                 fin n = charAt(source, index)
                 if isDigit(n) || n == '_' || n == '.' { index += 1 } else { break }
             }
-            result = addHighlight(result, start, index, "number")
+            if start >= rangeStart {
+                result = addHighlight(result, start, index, "number")
+            }
         }
         else if isIdentifierStart(c) {
             fin start = index
             index += 1
             while index < stringLength(source) && isIdentifierPart(charAt(source, index)) { index += 1 }
+            fin emit = start >= rangeStart
             var kind = "identifier"
             if index < stringLength(source) && charAt(source, index) == '@' &&
                 ((c >= 'a' && c <= 'z') || c == '_') {
@@ -524,25 +553,27 @@ func azlsHighlight(source: String, corpus: String): String {
                 kind = "macro"
             }
             else if isKeywordRange(source, start, index) { kind = "keyword" }
-            else if expectedDeclarationKind == "function" { kind = "function" }
-            else if expectedDeclarationKind == "type" || expectedDeclarationKind == "enum" ||
-                expectedDeclarationKind == "interface" { kind = "type" }
-            else if expectedDeclarationKind == "annotation" { kind = "annotation" }
-            else if expectedDeclarationKind != "" { kind = "variable" }
-            else if rangeIs(source, start, index, "self") ||
-                rangeIs(source, start, index, "it") ||
-                parameterReferenceIsKnown(source, start, index) { kind = "parameter" }
-            else if ord(charAt(source, start)) >= 65 && ord(charAt(source, start)) <= 90 &&
-                typeReferenceIsKnown(source, start, index, corpus) { kind = "type" }
-            else {
-                var next = index
-                while next < stringLength(source) && isSpace(charAt(source, next)) { next += 1 }
-                if next < stringLength(source) && charAt(source, next) == '(' &&
-                    functionReferenceIsKnown(source, start, index, corpus) {
-                    kind = "function"
+            else if emit {
+                if expectedDeclarationKind == "function" { kind = "function" }
+                else if expectedDeclarationKind == "type" || expectedDeclarationKind == "enum" ||
+                    expectedDeclarationKind == "interface" { kind = "type" }
+                else if expectedDeclarationKind == "annotation" { kind = "annotation" }
+                else if expectedDeclarationKind != "" { kind = "variable" }
+                else if rangeIs(source, start, index, "self") ||
+                    rangeIs(source, start, index, "it") ||
+                    parameterReferenceIsKnown(source, start, index) { kind = "parameter" }
+                else if ord(charAt(source, start)) >= 65 && ord(charAt(source, start)) <= 90 &&
+                    typeReferenceIsKnown(source, start, index, corpus) { kind = "type" }
+                else {
+                    var next = index
+                    while next < stringLength(source) && isSpace(charAt(source, next)) { next += 1 }
+                    if next < stringLength(source) && charAt(source, next) == '(' &&
+                        functionReferenceIsKnown(source, start, index, corpus) {
+                        kind = "function"
+                    }
                 }
             }
-            result = addHighlight(result, start, index, kind)
+            if emit { result = addHighlight(result, start, index, kind) }
             if isDeclarationRange(source, start, index) {
                 expectedDeclarationKind = declarationKind(source, start, index)
             }
@@ -551,6 +582,11 @@ func azlsHighlight(source: String, corpus: String): String {
         else { index += 1 }
     }
     return result + "]"
+}
+
+/** Semantic highlighting generated entirely by AZLS. */
+func azlsHighlight(source: String, corpus: String): String {
+    return azlsHighlightRange(source, corpus, 0, stringLength(source))
 }
 
 func skipGenericHeader(source: String, documentEnd: Int, start: Int): Int {

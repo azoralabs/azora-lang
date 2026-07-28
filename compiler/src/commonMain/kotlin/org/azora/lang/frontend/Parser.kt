@@ -2787,9 +2787,16 @@ class Parser(
      */
     private fun parseNamedTypeMacroPattern(prefix: String): TypeTypeArm {
         var first = consume(TokenType.IDENTIFIER, "Expected named type-macro pattern").lexeme
-        // A trailing `!` on the macro name marks the mutable variant: `res! $T`
-        // (mirrors the value `vec!@`). Folded into the name so it matches invocation.
-        if (!first.startsWith("\$") && match(TokenType.BANG)) first += "!"
+        // A borrow sigil on the macro name selects a variant: `res& $T` is the
+        // shared form and `res! $T` the mutable one, mirroring the borrow
+        // markers on types themselves (and the value macro `vec!@`). The sigil
+        // is folded into the name so the pattern matches the invocation.
+        if (!first.startsWith("\$")) {
+            when {
+                match(TokenType.BANG) -> first += "!"
+                match(TokenType.AMP) -> first += "&"
+            }
+        }
         if (first.startsWith("\$")) {
             if (prefix.isNotEmpty()) {
                 error("Infix type-macro patterns cannot use prefix '$prefix' at line ${peek().line}")
@@ -3653,7 +3660,11 @@ class Parser(
     private fun isNamedTypeMacroInvocationAhead(index: Int = current): Boolean {
         val macro = tokens.getOrNull(index) ?: return false
         if (macro.type != TokenType.IDENTIFIER || macro.lexeme.firstOrNull()?.isLowerCase() != true) return false
-        val next = tokens.getOrNull(index + 1)?.type ?: return false
+        // A borrow sigil binds to the macro name (`res& T`, `res! T`), so look
+        // past it for the operand that makes this an invocation.
+        var offset = index + 1
+        if (tokens.getOrNull(offset)?.type in setOf(TokenType.AMP, TokenType.BANG)) offset++
+        val next = tokens.getOrNull(offset)?.type ?: return false
         return next == TokenType.L_BRACKET || next in setOf(
             TokenType.IDENTIFIER,
             TokenType.REF,
@@ -3666,7 +3677,13 @@ class Parser(
     }
 
     private fun parseNamedTypeMacroInvocation(modifier: String = ""): TypeRef {
-        val name = consume(TokenType.IDENTIFIER, "Expected type-macro name").lexeme
+        var name = consume(TokenType.IDENTIFIER, "Expected type-macro name").lexeme
+        // Fold the borrow sigil into the name so `res& T` resolves against the
+        // `res&` arm, exactly as the declaration spelled it.
+        when {
+            match(TokenType.BANG) -> name += "!"
+            match(TokenType.AMP) -> name += "&"
+        }
         if (match(TokenType.L_BRACKET)) {
             val args = mutableListOf<TypeRef>()
             skipNewlines()

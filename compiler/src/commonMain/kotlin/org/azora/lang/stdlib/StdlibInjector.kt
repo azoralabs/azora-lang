@@ -102,33 +102,56 @@ class StdlibInjector private constructor(
         fun moduleOf(name: String): String? = standard.moduleOf(name)
 
         /**
-         * Enforces that a source file's whole path matches its declared module: a
-         * file declaring `module a.b.c` must live at `a/b/c.az`. The one exception
-         * is a folder-index file `a/b/b.az` (named after its own folder), which
-         * represents `module a.b`. Files without a `module` declaration are
-         * unconstrained. Throws [IllegalArgumentException] on a mismatch (e.g.
-         * `engine/input/az_input.az` declaring `module engine.input`).
+         * Enforces that a source file's path agrees with its declared module.
+         *
+         * A `src` directory is a **module root**: it is where a package's own
+         * sources begin, so it never appears in a module path. Everything below
+         * it must match the *end* of the declared module, and the leading
+         * segments the path does not spell are the package's own prefix. In a
+         * multi-package workspace that is what lets
+         * `azora-render/src/render.az` declare `module engine.render` — the
+         * package supplies `engine`, the file supplies `render`.
+         *
+         * Without a `src` root the whole path must match, so a single-directory
+         * project still gets the strict `a/b/c.az` → `module a.b.c` rule. A
+         * folder-index file `a/b/b.az` represents `module a.b` in either case.
+         * Files with no `module` declaration are unconstrained.
+         *
+         * @throws IllegalArgumentException when the path cannot denote the module.
          */
         fun checkFileMatchesModule(path: String, moduleName: String?) {
             if (moduleName == null) return
             val segments = path.replace('\\', '/').removeSuffix(".azora").removeSuffix(".az")
-                .split('/').filter { it.isNotEmpty() && it != "." }
+                .split('/')
+                .filter { it.isNotEmpty() && it != "." && it != SOURCE_ROOT }
             if (segments.isEmpty()) return
             val moduleSegments = moduleName.split('.')
-            // `a/b/c.az` → `module a.b.c`.
-            val fullMatch = segments == moduleSegments
-            // Folder-index `a/b/b.az` → `module a.b` (the folder's own module).
-            val folderIndexMatch = segments.size >= 2 &&
+            if (segments.size > moduleSegments.size) {
+                throw mismatch(path, moduleName, moduleSegments.takeLast(segments.size))
+            }
+
+            // The path spells the end of the module; the segments it leaves out
+            // are the package prefix, which a single source root cannot know.
+            if (segments == moduleSegments.takeLast(segments.size)) return
+            // Folder-index `b/b.az` denotes `module ….b`.
+            if (segments.size >= 2 &&
                 segments.last() == segments[segments.size - 2] &&
-                segments.dropLast(1) == moduleSegments
-            if (fullMatch || folderIndexMatch) return
-            val expectedPath = moduleName.replace('.', '/') + ".az"
-            val indexPath = (moduleSegments + moduleSegments.last()).joinToString("/") + ".az"
-            throw IllegalArgumentException(
-                "file path '$path' does not match module '$moduleName': a file declaring " +
-                    "'module $moduleName' must be located at '$expectedPath' (or the folder-index '$indexPath')",
-            )
+                segments.dropLast(1) == moduleSegments.takeLast(segments.size - 1)
+            ) {
+                return
+            }
+            throw mismatch(path, moduleName, moduleSegments.takeLast(segments.size))
         }
+
+        private fun mismatch(path: String, moduleName: String, expected: List<String>) =
+            IllegalArgumentException(
+                "file path '$path' does not match module '$moduleName': a file declaring " +
+                    "'module $moduleName' must be located at '${expected.joinToString("/")}.az' " +
+                    "relative to its source root",
+            )
+
+        /** The directory name that starts a package's own module namespace. */
+        private const val SOURCE_ROOT = "src"
     }
 
     private val implicitCollectionTypes = setOf("List", "MutableList", "Set", "MutableSet", "Map", "MutableMap")

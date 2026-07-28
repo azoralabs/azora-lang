@@ -121,6 +121,9 @@ class LlvmCodegen {
     /** Extra named context structs discovered while outlining async blocks. */
     private val lateTypeDefinitions = linkedSetOf<String>()
 
+    /** The closure representation: a function pointer plus its captured environment. */
+    private val CLOSURE_TYPE_DEFINITION = "%azora.closure = type { i8*, i8* }"
+
     /** Outlined async/task helper functions emitted after source functions. */
     private val deferredFunctions = mutableListOf<String>()
 
@@ -1565,7 +1568,7 @@ class LlvmCodegen {
     private fun emitClosure(lambda: IrExpr.Lambda): String {
         val callableType = lambda.type as IrType.Function
         usesAllocatorRuntime = true
-        lateTypeDefinitions.add("%azora.closure = type { i8*, i8* }")
+        lateTypeDefinitions.add(CLOSURE_TYPE_DEFINITION)
         val id = taskContextCounter++
         val bodyName = "__azora_lambda_body_$id"
         val ctxType = "%azora.lambda.ctx.$id"
@@ -4359,7 +4362,14 @@ class LlvmCodegen {
         IrType.Any -> "i8*"
         is IrType.Array -> "i8*"
         is IrType.Map, is IrType.Set -> "i8*"
-        is IrType.Function -> "%azora.closure*"
+        is IrType.Function -> {
+            // Declaring the type here, rather than only where a lambda is
+            // emitted, is what keeps a *struct field* of function type valid:
+            // the field spells `%azora.closure*` without any closure ever being
+            // constructed, and LLVM rejects a pointer to an undefined type.
+            lateTypeDefinitions.add(CLOSURE_TYPE_DEFINITION)
+            "%azora.closure*"
+        }
         is IrType.Task -> {
             usesTaskRuntime = true
             "%azora.task*"

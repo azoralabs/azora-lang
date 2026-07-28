@@ -380,7 +380,6 @@ class AzoraLanguageServer {
                 is TopLevel.Pack -> out.add(DocumentSymbol(item.name, "pack", item.line, packDetail(item)))
                 is TopLevel.Enum -> out.add(DocumentSymbol(item.name, "enum", item.line, "enum ${item.name}"))
                 is TopLevel.Solo -> out.add(DocumentSymbol(item.name, "solo", item.line))
-                is TopLevel.Node -> out.add(DocumentSymbol(item.name, "node", item.line))
                 is TopLevel.Test -> out.add(DocumentSymbol(item.name, "test", item.line))
                 is TopLevel.VarDecl -> out.add(DocumentSymbol(item.name, "variable", item.line))
                 is TopLevel.LetDecl -> out.add(DocumentSymbol(item.name, "variable", item.line))

@@ -123,7 +123,11 @@ private data class SourceCompilation(
 )
 
 private fun resolveCompilation(entryFile: File): SourceCompilation {
-    val sourceDir = entryFile.parentFile ?: return SourceCompilation(entryFile.readText(), emptyList())
+    // `File("main.az").parentFile` is null, so a bare relative entry path must be
+    // absolutized first. Without this, sibling discovery silently finds nothing
+    // and every cross-module `import` fails with "undefined function".
+    val sourceDir = entryFile.absoluteFile.parentFile
+        ?: return SourceCompilation(entryFile.readText(), emptyList())
 
     // Find all `.az` files in the source directory and subdirectories (except the entry file itself)
     val siblingFiles = sourceDir.walkTopDown()

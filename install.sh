@@ -165,13 +165,26 @@ fi
 
 # ---------------------------------------------------------------------------
 # Copy Internal directory (stdlib, engine, tests)
+#
+# A release archive ships a ready-made `Internal/`. The git repository keeps the
+# standard library in `std/` instead, so a source install assembles the same
+# `Internal/Std` layout from it. Tooling depends on these sources being present:
+# the IDE plugin indexes `Internal/Std` for stdlib completion and navigation, so
+# an install without them looks like a standard library with no symbols.
 # ---------------------------------------------------------------------------
 if [ -d "$INTERNAL_DIR" ]; then
     echo "  Copying standard library..."
     cp -R "$INTERNAL_DIR" "$INSTALL_DIR/Internal"
-    rm -rf "$INSTALL_DIR/Internal/Std/docs/node_modules" 2>/dev/null || true
-    rm -rf "$INSTALL_DIR/Internal/Std/docs/dist" 2>/dev/null || true
+elif [ -d "$SCRIPT_DIR/std" ]; then
+    echo "  Copying standard library (from std/)..."
+    mkdir -p "$INSTALL_DIR/Internal"
+    cp -R "$SCRIPT_DIR/std" "$INSTALL_DIR/Internal/Std"
+else
+    echo "  Warning: no standard library sources found; IDE tooling will not"
+    echo "           be able to resolve std symbols."
 fi
+rm -rf "$INSTALL_DIR/Internal/Std/docs/node_modules" 2>/dev/null || true
+rm -rf "$INSTALL_DIR/Internal/Std/docs/dist" 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
 # Write VERSION

@@ -126,15 +126,19 @@ class StdlibInjector private constructor(
                 .filter { it.isNotEmpty() && it != "." && it != SOURCE_ROOT }
             if (segments.isEmpty()) return
             val moduleSegments = moduleName.split('.')
-            if (segments.size > moduleSegments.size) {
-                throw mismatch(path, moduleName, moduleSegments.takeLast(segments.size))
-            }
 
             // The path spells the end of the module; the segments it leaves out
             // are the package prefix, which a single source root cannot know.
-            if (segments == moduleSegments.takeLast(segments.size)) return
-            // Folder-index `b/b.az` denotes `module ….b`.
+            if (segments.size <= moduleSegments.size &&
+                segments == moduleSegments.takeLast(segments.size)
+            ) {
+                return
+            }
+            // Folder-index `b/b.az` denotes `module ….b`, so the path carries one
+            // segment more than the module — which is why this is checked before
+            // any length guard rejects it.
             if (segments.size >= 2 &&
+                segments.size <= moduleSegments.size + 1 &&
                 segments.last() == segments[segments.size - 2] &&
                 segments.dropLast(1) == moduleSegments.takeLast(segments.size - 1)
             ) {

@@ -140,7 +140,6 @@ enum class TokenType {
     // Object model: `prop name: T { }`, `ctor(params) { }`, `dtor { }`.
     PROP, CTOR, DTOR,
     // Alternating execution: `flip { } flop { }`.
-    FLIP, FLOP,
     // Ownership/reference modifiers: `ref T`, `mut ref T`, `shared ref T`, `weak ref T`.
     REF, OUT, MUT, SHARED, WEAK,
     // Visibility: `expose` (public), `confine` (private), `protect` (protected).

@@ -38,7 +38,7 @@ object AzHighlighter {
         "infx", "oper", "deco", "fail", "alloc", "drop", "unsafe", "isolated",
         "flow", "yield", "task", "await", "launch", "bridge", "solo", "inject", "wrap",
         "rescue", "node", "leaf", "repl", "virt", "base", "rem", "effect", "view",
-        "hook", "prop", "ctor", "dtor", "flip", "flop", "ref", "out", "mut",
+        "hook", "prop", "ctor", "dtor", "ref", "out", "mut",
         "expose", "confine", "protect", "module", "threadlocal",
         "pack", "enum", "when", "throw", "try", "catch", "impl", "spec",
         "defer", "typealias", "slot", "as", "guard", "is", "null", "use",

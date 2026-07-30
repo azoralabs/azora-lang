@@ -48,15 +48,15 @@ zone std {
 
         /** The number of messages currently in the channel. */
         @SinceAzora("0.0.1")
-        prop length: Int = queue.length
+        prop length[self&]: Int = queue.length
 
         /** Whether the channel has no messages. */
         @SinceAzora("0.0.1")
-        prop isEmpty: Bool = queue.isEmpty
+        prop isEmpty[self&]: Bool = queue.isEmpty
 
         /** Whether the channel has been closed. */
         @SinceAzora("0.0.1")
-        prop isClosed: Bool = closed
+        prop isClosed[self&]: Bool = closed
 
         // --- Operations ---
 

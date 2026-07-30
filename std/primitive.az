@@ -119,7 +119,7 @@ use zone std {
      */
     @SinceAzora("0.0.4")
     prot Number {
-        prop rank: Int
+        prop rank[self&]: Int
     }
 
     /**
@@ -428,7 +428,7 @@ use zone std {
          */
         @SinceAzora("0.0.4")
         impl Number as zone for Ty {
-            prop rank: Int = ${ranks[index]}
+            prop rank[self&]: Int = ${ranks[index]}
         }
     }
 

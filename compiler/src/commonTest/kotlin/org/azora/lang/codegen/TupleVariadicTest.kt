@@ -27,7 +27,7 @@ class TupleVariadicTest {
         val program = Parser(Lexer("""
             prot PrettyPrint { prop pretty: String }
             impl<...T> PrettyPrint for Tuple {
-                prop pretty: String {
+                prop pretty[self&]: String {
                     inline for field in reflect<Self>.fields with index {
                         trace { field.value }
                     }

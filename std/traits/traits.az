@@ -148,6 +148,6 @@ zone std {
 
     @SinceAzora("0.0.4")
     prot PrettyPrint {
-        prop pretty: String
+        prop pretty[self&]: String
     }
 }

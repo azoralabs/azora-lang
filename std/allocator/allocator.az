@@ -138,19 +138,19 @@ zone std {
          * The number of bytes remaining in the arena.
          */
         @SinceAzora("0.0.2")
-        prop remaining: Int = capacity - offset
+        prop remaining[self&]: Int = capacity - offset
 
         /**
          * The number of bytes currently in use.
          */
         @SinceAzora("0.0.2")
-        prop used: Int = offset
+        prop used[self&]: Int = offset
 
         /**
          * Whether the arena has no allocations.
          */
         @SinceAzora("0.0.2")
-        prop isEmpty: Bool = offset == 0
+        prop isEmpty[self&]: Bool = offset == 0
 
         /**
          * Requests `size` bytes from the arena.
@@ -327,19 +327,19 @@ zone std {
          * Whether the pool is completely exhausted.
          */
         @SinceAzora("0.0.2")
-        prop isFull: Bool = freeCount == 0
+        prop isFull[self&]: Bool = freeCount == 0
 
         /**
          * Whether the pool has no acquired slots.
          */
         @SinceAzora("0.0.2")
-        prop isEmpty: Bool = acquiredCount == 0
+        prop isEmpty[self&]: Bool = acquiredCount == 0
 
         /**
          * Whether a slot can be acquired without failing.
          */
         @SinceAzora("0.0.2")
-        prop canAcquire: Bool = freeCount > 0
+        prop canAcquire[self&]: Bool = freeCount > 0
 
         /**
          * Acquires a slot from the pool.
@@ -463,13 +463,13 @@ zone std {
          * The number of bytes remaining.
          */
         @SinceAzora("0.0.2")
-        prop remaining: Int = capacity - offset
+        prop remaining[self&]: Int = capacity - offset
 
         /**
          * Whether the stack has no allocations.
          */
         @SinceAzora("0.0.2")
-        prop isEmpty: Bool = offset == 0
+        prop isEmpty[self&]: Bool = offset == 0
 
         /**
          * Allocates `size` bytes from the top of the stack.

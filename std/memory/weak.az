@@ -31,18 +31,18 @@ zone std {
     impl Weak<T> {
         /** Returns the referenced value (panics if the pointer is null). */
         @Experimental(sinceAzora: "0.0.3")
-        prop get: T {
+        prop get[self&]: T {
             assert self._raw != null { "Weak pointer is null" }
             return deref self._raw
         }
 
         /** Returns the raw `T*` (may be null). */
         @SinceAzora("0.0.3")
-        prop ptr: T* = self._raw
+        prop ptr[self&]: T* = self._raw
 
         /** `true` when the pointer is null (does not own a reference). */
         @SinceAzora("0.0.3")
-        prop isNull: Bool = self._raw == null
+        prop isNull[self&]: Bool = self._raw == null
     }
 
     /** Wraps a raw `T*` as a non-owning `Weak<T>`. */

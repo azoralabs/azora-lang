@@ -62,11 +62,11 @@ zone std {
 
         /** Whether the queue contains no elements. */
         @SinceAzora("0.0.1")
-        prop isEmpty: Bool = size == 0
+        prop isEmpty[self&]: Bool = size == 0
 
         /** Whether the queue contains at least one element. */
         @SinceAzora("0.0.1")
-        prop isNotEmpty: Bool = size > 0
+        prop isNotEmpty[self&]: Bool = size > 0
 
         // --- Internal ---
 

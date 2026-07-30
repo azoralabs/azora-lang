@@ -72,13 +72,13 @@ zone std {
     @Experimental(sinceAzora: "0.0.4")
     prot Map<K, V> {
         /** Number of unique keys. */
-        prop size: Int
+        prop size[self&]: Int
 
         /** Whether this map has no entries. */
-        prop isEmpty: Bool
+        prop isEmpty[self&]: Bool
 
         /** Whether this map has at least one entry. */
-        prop isNotEmpty: Bool
+        prop isNotEmpty[self&]: Bool
 
         /** Returns whether `key` is present. */
         func containsKey(key: K&): Bool
@@ -378,9 +378,9 @@ zone std {
     }
 
     impl Map<K, V> for HashMap<K, V> {
-        prop size: Int = self.__size
-        prop isEmpty: Bool = self.__size == 0
-        prop isNotEmpty: Bool = self.__size > 0
+        prop size[self&]: Int = self.__size
+        prop isEmpty[self&]: Bool = self.__size == 0
+        prop isNotEmpty[self&]: Bool = self.__size > 0
 
         func containsKey(key: K&): Bool { self& -> return self._findIndex(key) >= 0 }
 
@@ -587,9 +587,9 @@ zone std {
     }
 
     impl Map<K, V> for LinkedHashMap<K, V> {
-        prop size: Int = self.__size
-        prop isEmpty: Bool = self.__size == 0
-        prop isNotEmpty: Bool = self.__size > 0
+        prop size[self&]: Int = self.__size
+        prop isEmpty[self&]: Bool = self.__size == 0
+        prop isNotEmpty[self&]: Bool = self.__size > 0
 
         func containsKey(key: K&): Bool { self& ->
             return self._findIndex(key) >= 0
@@ -941,9 +941,9 @@ zone std {
     }
 
     impl Map<K, V> for TreeMap<K, V> {
-        prop size: Int = self.__size
-        prop isEmpty: Bool = self.__size == 0
-        prop isNotEmpty: Bool = self.__size > 0
+        prop size[self&]: Int = self.__size
+        prop isEmpty[self&]: Bool = self.__size == 0
+        prop isNotEmpty[self&]: Bool = self.__size > 0
 
         func containsKey(key: K&): Bool { self& ->
             return self._findNode(key) >= 0

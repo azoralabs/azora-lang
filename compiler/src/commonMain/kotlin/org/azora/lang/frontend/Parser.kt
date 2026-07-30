@@ -2083,12 +2083,13 @@ class Parser(
                 check(TokenType.PROP) -> {
                     advance()
                     val propName = consume(TokenType.IDENTIFIER, "Expected property name").lexeme
+                    val propReceiver = parsePropReceiver()
                     val propType: TypeAnnotation = if (match(TokenType.COLON)) TypeAnnotation.Explicit(parseTypeName()) else TypeAnnotation.Inferred
                     if (match(TokenType.EQUAL)) {
                         // `prop name: T = expr` — expression-body property (returns the expression).
                         val expr = parseExpr()
                         consumeNewline()
-                        methods.add(FuncDecl(propName, emptyList(), propType, listOf(Stmt.Return(expr, expr.line, expr.column)), false, emptyList(), methodStart.line, methodStart.column, annotations = memberAnnotations, visibility = visibility, receiverModifier = ParamModifier.SHARED, memberCallStyle = MemberCallStyle.PROPERTY))
+                        methods.add(FuncDecl(propName, emptyList(), propType, listOf(Stmt.Return(expr, expr.line, expr.column)), false, emptyList(), methodStart.line, methodStart.column, annotations = memberAnnotations, visibility = visibility, receiverModifier = propReceiver.modifier, receiverName = propReceiver.name, memberCallStyle = MemberCallStyle.PROPERTY))
                     } else {
                         val contracts = parseContractClauses()
                         run {
@@ -2106,7 +2107,7 @@ class Parser(
                         val propBody = parseBlock()
                         consume(TokenType.R_BRACE, "Expected '}' after prop body")
                         consumeNewline()
-                        methods.add(FuncDecl(propName, emptyList(), propType, applyContracts(propBody, contracts), false, emptyList(), methodStart.line, methodStart.column, annotations = memberAnnotations, visibility = visibility, receiverModifier = ParamModifier.SHARED, memberCallStyle = MemberCallStyle.PROPERTY))
+                        methods.add(FuncDecl(propName, emptyList(), propType, applyContracts(propBody, contracts), false, emptyList(), methodStart.line, methodStart.column, annotations = memberAnnotations, visibility = visibility, receiverModifier = propReceiver.modifier, receiverName = propReceiver.name, memberCallStyle = MemberCallStyle.PROPERTY))
                     }
                 }
                 // `bridge prop<D> name: T` / `bridge func<D> name(params): T` — a
@@ -2979,6 +2980,7 @@ class Parser(
             if (check(TokenType.PROP)) {
                 advance()
                 val pname = consumeIdentifierLike("Expected property name in prot")
+                val preceiver = parsePropReceiver()
                 consume(TokenType.COLON, "Expected ':' after prot property name")
                 val ptype = parseTypeName()
                 consumeNewline()
@@ -4441,15 +4443,75 @@ class Parser(
      * which reparse their members as top-level items; mangling then turns the
      * name into `Type__name`, reachable as `Type::name`.
      */
-    private fun parsePropAsFin(annotations: List<Annotation>, visibility: Visibility): TopLevel.FinDecl {
+    /** A `prop` receiver: its borrow, and the type it extends (null inside an `impl`). */
+    private data class PropReceiver(val name: String, val type: TypeRef?, val modifier: ParamModifier)
+
+    /**
+     * Parses a `prop`'s bracketed receiver: `[self: Int&]` names the type the
+     * property extends, `[self&]` takes it from the enclosing `impl`.
+     *
+     * Every `prop` carries one. Spelling the receiver is what gives the body
+     * `self`, and writing it the same way everywhere means a property reads the
+     * same whether it extends a type or sits inside its `impl`.
+     */
+    private fun parsePropReceiver(): PropReceiver {
+        consume(TokenType.L_BRACKET, "Expected '[' — a prop declares its receiver, as in 'prop name[self&]'")
+        val name = consumeIdentifierLike("Expected receiver name in '[…]'")
+        var type: TypeRef? = null
+        var modifier = ParamModifier.SHARED
+        if (match(TokenType.COLON)) {
+            // `[self: Int&]` — the borrow rides on the type.
+            val parsed = parseTypeName()
+            if (parsed is TypeRef.Reference) {
+                type = parsed.inner
+                modifier = parsed.kind.paramModifier
+            } else {
+                type = parsed
+            }
+        }
+        // `[self&]` / `[self!]` — the borrow rides on the name.
+        when {
+            match(TokenType.AMP) -> modifier = ParamModifier.SHARED
+            match(TokenType.BANG) -> modifier = ParamModifier.EXCLUSIVE
+        }
+        consume(TokenType.R_BRACKET, "Expected ']' after prop receiver")
+        return PropReceiver(name, type, modifier)
+    }
+
+    private fun parsePropAsFin(annotations: List<Annotation>, visibility: Visibility): TopLevel {
         val start = peek()
         consume(TokenType.PROP, "Expected 'prop'")
         val name = consume(TokenType.IDENTIFIER, "Expected name after 'prop'").lexeme
+        val receiver = parsePropReceiver()
         val type = if (match(TokenType.COLON)) parseTypeName() else null
         consume(TokenType.EQUAL, "Expected '=' in prop declaration")
         val init = parseExpr()
         consumeNewline()
-        return TopLevel.FinDecl(name, type, init, start.line, start.column, annotations, visibility = visibility)
+
+        // `prop name[self: Type&]: T = …` — an extension property on Type, read as
+        // `value.name`. Without a receiver type there is no type to extend, so the
+        // declaration is a zone-mangled constant instead (the `impl … as zone`
+        // bodies that reparse their members as top-level items rely on this).
+        val receiverType = receiver.type
+            ?: return TopLevel.FinDecl(name, type, init, start.line, start.column, annotations, visibility = visibility)
+
+        val decl = FuncDecl(
+            name,
+            emptyList(),
+            type?.let { TypeAnnotation.Explicit(it) } ?: TypeAnnotation.Inferred,
+            listOf(Stmt.Return(init, init.line, init.column)),
+            false,
+            emptyList(),
+            start.line,
+            start.column,
+            annotations = annotations,
+            visibility = visibility,
+            receiverModifier = receiver.modifier,
+            receiverName = receiver.name,
+            memberCallStyle = MemberCallStyle.PROPERTY,
+            extensionReceiver = Param(receiver.name, receiverType),
+        )
+        return funcOrExtension(decl)
     }
 
     private fun parseTypeAlias(annotations: List<Annotation> = emptyList()): TopLevel.TypeAlias {

@@ -56,7 +56,7 @@ zone std {
 
         /** The enclosing lexical zone of `T`, or null at global scope. */
         @Experimental(sinceAzora: "0.0.4")
-        bridge prop enclosingZone: Zone?
+        bridge prop enclosingZone[self&]: Zone?
 
         /**
          * Every program type carrying decorator `D`. Read from the whole-program
@@ -84,14 +84,14 @@ zone std {
     impl Zone {
         /** The zone's label, or null for the global scope / an unlabeled zone. */
         @Experimental(sinceAzora: "0.0.4")
-        bridge prop label: String?
+        bridge prop label[self&]: String?
 
         /** Whether this is an inline (compile-time) zone. */
         @Experimental(sinceAzora: "0.0.4")
-        bridge prop isInline: Bool
+        bridge prop isInline[self&]: Bool
 
         /** The enclosing parent zone, or null at the global scope. */
         @Experimental(sinceAzora: "0.0.4")
-        bridge prop parent: Zone?
+        bridge prop parent[self&]: Zone?
     }
 }

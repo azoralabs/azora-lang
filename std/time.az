@@ -193,13 +193,13 @@ zone std {
 
     impl Duration {
         /** Whether this duration is exactly zero. */
-        prop isZero: Bool = self.seconds == 0L && self.nanosecondAdjustment == 0
+        prop isZero[self&]: Bool = self.seconds == 0L && self.nanosecondAdjustment == 0
 
         /** Whether this duration is strictly negative. */
-        prop isNegative: Bool = self.seconds < 0L
+        prop isNegative[self&]: Bool = self.seconds < 0L
 
         /** Whole milliseconds truncated toward negative infinity. */
-        prop inWholeMilliseconds: Long = self.seconds * 1000L + (self.nanosecondAdjustment / 1000000) as Long
+        prop inWholeMilliseconds[self&]: Long = self.seconds * 1000L + (self.nanosecondAdjustment / 1000000) as Long
 
         /** Returns the magnitude with its sign reversed. */
         func negated(): Duration { self& ->
@@ -243,7 +243,7 @@ zone std {
 
     impl Instant {
         /** Whole Unix milliseconds, truncated toward negative infinity. */
-        prop epochMilliseconds: Long = self.epochSecond * 1000L + (self.nanosecond / 1000000) as Long
+        prop epochMilliseconds[self&]: Long = self.epochSecond * 1000L + (self.nanosecond / 1000000) as Long
 
         /** Adds an exact duration while retaining the normalized representation. */
         func plus(value: Duration&): Instant { self& ->
@@ -348,7 +348,7 @@ zone std {
 
     impl LocalDate {
         /** ISO weekday corresponding to this date. */
-        prop weekday: Weekday = std::weekday(self)
+        prop weekday[self&]: Weekday = std::weekday(self)
     }
 
     impl DateTime {

@@ -23,7 +23,7 @@ class ObjectModelTest {
                 var v: Int
             }
             impl Box {
-                prop doubled: Int {
+                prop doubled[self&]: Int {
                     return self.v + self.v
                 }
             }

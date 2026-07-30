@@ -514,7 +514,7 @@ zone std {
     }
 
     impl _SerialReader {
-        prop isAtEnd: Bool = self.index >= stringLength(self.input)
+        prop isAtEnd[self&]: Bool = self.index >= stringLength(self.input)
 
         func skipWhitespace(): Unit { self! ->
             while !self.isAtEnd {

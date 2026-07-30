@@ -31,7 +31,7 @@ zone std {
     impl Unique<T> {
         /** Returns the owned value (panics if already released). */
         @Experimental(sinceAzora: "0.0.3")
-        prop get: T {
+        prop get[self&]: T {
             assert active { "Unique pointer was released" }
             return deref self._raw
         }
@@ -45,7 +45,7 @@ zone std {
 
         /** Returns the raw `T*` without relinquishing ownership. */
         @Experimental(sinceAzora: "0.0.3")
-        prop ptr: T* {
+        prop ptr[self&]: T* {
             assert active { "Unique pointer was released" }
             return self._raw
         }

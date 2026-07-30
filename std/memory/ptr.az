@@ -47,7 +47,7 @@ zone std {
     impl Ptr<T> {
         /** The pointed-to value. */
         @SinceAzora("0.0.3")
-        prop get: T = deref self._raw
+        prop get[self&]: T = deref self._raw
 
         /** Replaces the pointed-to value. */
         @Experimental(sinceAzora: "0.0.3")
@@ -55,11 +55,11 @@ zone std {
 
         /** The underlying `T*` (escapes the wrapper). */
         @SinceAzora("0.0.3")
-        prop ptr: T* = self._raw
+        prop ptr[self&]: T* = self._raw
 
         /** Whether this wrapper holds a non-null pointer. */
         @SinceAzora("0.0.3")
-        prop isNull: Bool = self._raw == null
+        prop isNull[self&]: Bool = self._raw == null
     }
 
     @Experimental(sinceAzora: "0.0.3")

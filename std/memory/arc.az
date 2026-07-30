@@ -48,7 +48,7 @@ zone std {
     impl Arc<T> {
         /** The pointed-to value. */
         @SinceAzora("0.0.3")
-        prop get: T = deref self.raw
+        prop get[self&]: T = deref self.raw
 
         /** Replaces the pointed-to value without changing ownership. */
         @Experimental(sinceAzora: "0.0.3")
@@ -73,11 +73,11 @@ zone std {
 
         /** The current number of live references. */
         @SinceAzora("0.0.3")
-        prop refCount: Int = self.count
+        prop refCount[self&]: Int = self.count
 
         /** The underlying `T*` (escapes the counting). */
         @SinceAzora("0.0.3")
-        prop ptr: T* = self.raw
+        prop ptr[self&]: T* = self.raw
     }
 
     @Experimental(sinceAzora: "0.0.3")

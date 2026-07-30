@@ -52,22 +52,22 @@ zone std {
     @Experimental(sinceAzora: "0.0.4")
     prot List<T> {
         /** Number of elements. */
-        prop size: Int
+        prop size[self&]: Int
 
         /** Whether this list has no elements. */
-        prop isEmpty: Bool
+        prop isEmpty[self&]: Bool
 
         /** Whether this list has at least one element. */
-        prop isNotEmpty: Bool
+        prop isNotEmpty[self&]: Bool
 
         /** The first element. Asserts when empty. */
-        prop first: T
+        prop first[self&]: T
 
         /** The last element. Asserts when empty. */
-        prop last: T
+        prop last[self&]: T
 
         /** A new list with the elements of this one in reverse order. */
-        prop reversed: List<T>
+        prop reversed[self&]: List<T>
 
         /** Returns the element at `index`. Asserts on an out-of-bounds index. */
         func get(index: Int): T
@@ -176,21 +176,21 @@ zone std {
     }
 
     impl List<T> for ArrayList<T> {
-        prop size: Int = self.size
-        prop isEmpty: Bool = self.size == 0
-        prop isNotEmpty: Bool = self.size > 0
+        prop size[self&]: Int = self.size
+        prop isEmpty[self&]: Bool = self.size == 0
+        prop isNotEmpty[self&]: Bool = self.size > 0
 
-        prop first: T {
+        prop first[self&]: T {
             assert self.size > 0 { "List is empty" }
             return self.data[0]
         }
 
-        prop last: T {
+        prop last[self&]: T {
             assert self.size > 0 { "List is empty" }
             return self.data[self.size - 1]
         }
 
-        prop reversed: List<T> {
+        prop reversed[self&]: List<T> {
             var result = ArrayList<T>()
             var i = self.size - 1
             while i >= 0 {

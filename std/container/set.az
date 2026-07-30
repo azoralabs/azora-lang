@@ -55,13 +55,13 @@ zone std {
     @Experimental(sinceAzora: "0.0.4")
     prot Set<T> {
         /** Number of unique elements. */
-        prop size: Int
+        prop size[self&]: Int
 
         /** Whether this set has no elements. */
-        prop isEmpty: Bool
+        prop isEmpty[self&]: Bool
 
         /** Whether this set has at least one element. */
-        prop isNotEmpty: Bool
+        prop isNotEmpty[self&]: Bool
 
         /** Returns the element at `index` in iteration order. Asserts out of bounds. */
         func get(index: Int): T
@@ -159,9 +159,9 @@ zone std {
     }
 
     impl Set<T> for LinkedHashSet<T> {
-        prop size: Int = self.size
-        prop isEmpty: Bool = self.size == 0
-        prop isNotEmpty: Bool = self.size > 0
+        prop size[self&]: Int = self.size
+        prop isEmpty[self&]: Bool = self.size == 0
+        prop isNotEmpty[self&]: Bool = self.size > 0
 
         func get(index: Int): T { self& ->
             assert index >= 0 { "Set index must be non-negative" }
@@ -360,9 +360,9 @@ zone std {
     }
 
     impl Set<T> for HashSet<T> {
-        prop size: Int = self.size
-        prop isEmpty: Bool = self.size == 0
-        prop isNotEmpty: Bool = self.size > 0
+        prop size[self&]: Int = self.size
+        prop isEmpty[self&]: Bool = self.size == 0
+        prop isNotEmpty[self&]: Bool = self.size > 0
 
         func get(index: Int): T { self& ->
             assert index >= 0 { "Set index must be non-negative" }
@@ -560,9 +560,9 @@ zone std {
     }
 
     impl Set<T> for TreeSet<T> {
-        prop size: Int = self.size
-        prop isEmpty: Bool = self.size == 0
-        prop isNotEmpty: Bool = self.size > 0
+        prop size[self&]: Int = self.size
+        prop isEmpty[self&]: Bool = self.size == 0
+        prop isNotEmpty[self&]: Bool = self.size > 0
 
         func get(index: Int): T { self& ->
             assert index >= 0 { "Set index must be non-negative" }

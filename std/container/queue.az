@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-module std.container.queue
+mod std.container.queue
 
 import std.serializer
 import std.convert
@@ -31,7 +31,7 @@ import std.convert
  * @since 0.0.1
  */
 
-friend zone std {
+zone std {
     /**
      * A generic first-in-first-out (FIFO) queue.
      *

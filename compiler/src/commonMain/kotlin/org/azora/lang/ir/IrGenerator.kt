@@ -641,31 +641,31 @@ class IrGenerator(private val table: SymbolTable) {
      * a name scope across all friend zones in the same body.
      */
     private fun lowerBody(stmts: List<Stmt>): List<IrStmt> {
-        val hasFriendZones = stmts.any { it is Stmt.FriendZone }
+        val hasZones = stmts.any { it is Stmt.Zone }
         val savedFriendScope = friendNameScope
 
-        if (hasFriendZones) {
+        if (hasZones) {
             friendNameScope = mutableMapOf()
         }
 
-        // Shared symbol table scope for friend zones (persists variables between blocks)
+        // Bindings that persist from one zone block to the next.
         val friendSymbols = mutableMapOf<String, VariableSymbol>()
 
         val result = mutableListOf<IrStmt>()
         for (stmt in stmts) {
-            if (stmt is Stmt.FriendZone) {
-                // Push shared friend name scope + symbol table scope
+            if (stmt is Stmt.Zone) {
+                // Push the shared zone name scope + symbol table scope
                 table.pushScope()
                 nameScopes.addLast(friendNameScope!!)
-                // Restore previously saved friend variables
+                // Restore bindings left by an earlier zone in this body
                 for ((_, sym) in friendSymbols) table.defineVariable(sym)
                 val lowered = stmt.body.map { lowerStmt(it) }
-                // Save variables back for next friend zone
+                // Hand them on to the next zone in this body
                 table.exportCurrentScope(friendSymbols)
                 nameScopes.removeLast()
                 table.popScope()
                 if (stmt.alloc) {
-                    // `friend zone alloc { }` — arena scoping on top of shared friend scope.
+                    // `zone alloc { }` — arena scoping on top of the shared scope.
                     result.add(IrStmt.Zone(lowered, alloc = true))
                 } else {
                     result.addAll(lowered)
@@ -769,10 +769,6 @@ class IrGenerator(private val table: SymbolTable) {
                 popNameScope()
                 table.popScope()
                 IrStmt.Zone(stmts, stmt.alloc)
-            }
-            is Stmt.FriendZone -> {
-                // Should be handled by lowerBody — if we get here, it's a bug
-                error("FriendZone should be handled by lowerBody, not lowerStmt")
             }
             is Stmt.Assert -> {
                 val cond = lowerExpr(stmt.condition)

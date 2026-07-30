@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-module std.time
+mod std.time
 
 import std.char
 import std.container.list
@@ -39,7 +39,7 @@ import std.string
  * sub-second arithmetic exact.
  */
 
-friend zone std {
+zone std {
     /** Errors raised by validation, parsing, and unsafe temporal arithmetic. */
     @Experimental(sinceAzora: "0.0.4")
     fail TimeError {

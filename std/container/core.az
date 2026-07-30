@@ -14,11 +14,11 @@
  * limitations under the License.
  */
 
-export module std.container.core
+export mod std.container.core
 
 export import std.container.{array, list, map, set}
 
-use friend zone std {
+use zone std {
     /**
      * Builds a fixed [Array].
      *

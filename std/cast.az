@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-module std.cast
+mod std.cast
 
 /**
  * @file std/cast
@@ -30,7 +30,7 @@ module std.cast
  * @since 0.0.4
  */
 
-friend zone std {
+zone std {
     /** Converting cast (`static_cast`). Numeric conversions, stringify, up/down casts. */
     @SinceAzora("0.0.4")
     bridge func cast<T, U>(value: U): T

@@ -14,11 +14,11 @@
  * limitations under the License.
  */
 
-module std.convert
+mod std.convert
 
 export import std.convert.core
 
-friend zone std {
+zone std {
     /**
      * Declares conversion into `T`.
      *

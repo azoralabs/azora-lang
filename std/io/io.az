@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-module std.io
+mod std.io
 
 /**
  * @file std/io/io
@@ -27,8 +27,8 @@ module std.io
  * @since 0.0.1
  */
 
-friend zone std {
-    friend zone fmt {
+zone std {
+    zone fmt {
         /** A newline character. */
         @SinceAzora("0.0.1")
         fin newline = "\n"

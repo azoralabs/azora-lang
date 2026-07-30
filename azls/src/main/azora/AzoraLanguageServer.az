@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  */
 
-module azora.language.server
+mod azora.language.server
 
 /**
  * Browser AZLS implementation compiled from Azora to WebAssembly.
@@ -75,7 +75,7 @@ func isKeywordRange(source: String, start: Int, end: Int): Bool {
         rangeIs(source, start, end, "return") || rangeIs(source, start, end, "if") ||
         rangeIs(source, start, end, "else") || rangeIs(source, start, end, "inline") ||
         rangeIs(source, start, end, "deepinline") || rangeIs(source, start, end, "noinline") ||
-        rangeIs(source, start, end, "zone") || rangeIs(source, start, end, "friend") ||
+        rangeIs(source, start, end, "zone") ||
         rangeIs(source, start, end, "test") || rangeIs(source, start, end, "assert") ||
         rangeIs(source, start, end, "trace") || rangeIs(source, start, end, "panic") ||
         rangeIs(source, start, end, "meta") || rangeIs(source, start, end, "for") ||
@@ -108,7 +108,7 @@ func isKeywordRange(source: String, start: Int, end: Int): Bool {
         rangeIs(source, start, end, "expose") || rangeIs(source, start, end, "confine") ||
         rangeIs(source, start, end, "protect") || rangeIs(source, start, end, "shield") ||
         rangeIs(source, start, end, "protected") || rangeIs(source, start, end, "opaque") ||
-        rangeIs(source, start, end, "module") || rangeIs(source, start, end, "export") ||
+        rangeIs(source, start, end, "mod") || rangeIs(source, start, end, "export") ||
         rangeIs(source, start, end, "threadlocal") || rangeIs(source, start, end, "deco") ||
         rangeIs(source, start, end, "bind") || rangeIs(source, start, end, "true") ||
         rangeIs(source, start, end, "false") || rangeIs(source, start, end, "null")
@@ -740,7 +740,7 @@ func declarationIsSpecAt(
 }
 
 func moduleStart(source: String, documentStart: Int, documentEnd: Int): Int {
-    fin marker = "module"
+    fin marker = "mod"
     var index = documentStart
     while index < documentEnd {
         fin found = findFrom(source, index, documentEnd, marker)
@@ -887,8 +887,8 @@ func useIsInsideZone(
 }
 
 /**
- * Named zones require `Zone::Type`. A declaration in `use zone` or
- * `use friend zone` intentionally remains bare-accessible. Code already
+ * Named zones require `Zone::Type`. A declaration in a `use zone`
+ * intentionally remains bare-accessible. Code already
  * inside the same named zone also has direct access to that zone's members.
  */
 func declarationZoneAllows(
@@ -923,9 +923,6 @@ func declarationZoneAllows(
             if rangeIs(declarationSource, start, index, "zone") {
                 fin isUsed = previousStart >= 0 &&
                     rangeIs(declarationSource, previousStart, previousEnd, "use")
-                fin isUsedFriend = previousStart >= 0 && beforePreviousStart >= 0 &&
-                    rangeIs(declarationSource, previousStart, previousEnd, "friend") &&
-                    rangeIs(declarationSource, beforePreviousStart, beforePreviousEnd, "use")
                 var pathStart = index
                 while pathStart < documentEnd && isSpace(charAt(declarationSource, pathStart)) {
                     pathStart += 1
@@ -940,7 +937,7 @@ func declarationZoneAllows(
                 if pathEnd > pathStart && open < documentEnd &&
                     charAt(declarationSource, open) == '{' {
                     fin close = matchingBraceEnd(declarationSource, documentEnd, open)
-                    if open < declaration && declaration < close && !isUsed && !isUsedFriend {
+                    if open < declaration && declaration < close && !isUsed {
                         required = true
                         matches = qualifierMatches(
                             source,

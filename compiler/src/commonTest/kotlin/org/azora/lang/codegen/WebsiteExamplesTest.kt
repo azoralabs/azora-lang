@@ -281,11 +281,11 @@ func main() { std::println("Hello, Azora!") }"""))
     @Test fun ch11_friend_zone() = assertEquals("15", run("""
         import std.io
         func main() {
-            friend zone {
+            zone {
                 var total = 0
                 total += 10
             }
-            friend zone {
+            zone {
                 total += 5
                 std::println(total)
             }

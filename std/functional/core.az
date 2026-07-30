@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-export module std.functional.core
+export mod std.functional.core
 
 /**
  * @file std.functional.core
@@ -23,7 +23,7 @@ export module std.functional.core
  * their representation and invocation ABI; `bridge` makes that contract
  * explicit to source code and tooling.
  */
-use friend zone std {
+use zone std {
     /**
      * A storable synchronous callable.
      *

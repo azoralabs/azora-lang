@@ -12,9 +12,9 @@ class IrSymbolCanonicalizerTest {
     fun nestedZoneSymbolsUseOneCanonicalIrSeparatorConvention() {
         val result = Compiler().compile(
             """
-            module naming
+            mod naming
 
-            friend zone acme::math {
+            zone acme::math {
                 pack Point {
                     fin x: Int
                 }
@@ -57,7 +57,7 @@ class IrSymbolCanonicalizerTest {
     fun generatedAndCompilerOwnedSymbolsUseTheSameCanonicalForm() {
         val result = Compiler().compile(
             """
-            friend zone acme::ops {
+            zone acme::ops {
                 func choose<...T>(...values: ...T): Int {
                     return 7
                 }
@@ -87,7 +87,7 @@ class IrSymbolCanonicalizerTest {
     fun namespacedSingletonFactoriesUseTheCanonicalTypeIdentity() {
         val result = Compiler().compile(
             """
-            friend zone acme::config {
+            zone acme::config {
                 solo Settings {
                     fin value: Int = 9
                 }

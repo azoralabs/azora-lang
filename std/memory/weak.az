@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  */
 
-module std.memory.weak
+mod std.memory.weak
 
 /**
  * @file std/memory/weak
@@ -16,7 +16,7 @@ module std.memory.weak
  * @since 0.0.3
  */
 
-friend zone std {
+zone std {
     @SinceAzora("0.0.3")
     pack Weak<T> {
         confine var raw: T*

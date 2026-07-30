@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-module std.memory.ptr
+mod std.memory.ptr
 
 /**
  * @file std/memory/ptr
@@ -28,7 +28,7 @@ module std.memory.ptr
  * @since 0.0.3
  */
 
-friend zone std {
+zone std {
     /**
      * An owning wrapper around a raw `T*`.
      *

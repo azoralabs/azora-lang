@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-module std.io.convert
+mod std.io.convert
 
 import std.convert
 import std.container.array
@@ -30,7 +30,7 @@ import std.container.array
  * @since 0.0.1
  */
 
-friend zone std {
+zone std {
     /**
      * Converts an integer to its string representation.
      *

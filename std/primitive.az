@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-export module std.primitive
+export mod std.primitive
 
 import std.traits
 
@@ -38,7 +38,7 @@ import std.traits
  * @since 0.0.4
  */
 
-use friend zone std {
+use zone std {
     /** Boolean truth value: `true` or `false`. */
     @SinceAzora("0.0.4")
     bridge pack Bool

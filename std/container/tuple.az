@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-module std.container.tuple
+mod std.container.tuple
 
 import std.serializer
 import std.convert
@@ -32,7 +32,7 @@ import std.reflection
  * @since 0.0.3
  */
 
-friend zone std {
+zone std {
     /**
      * A fixed-size, ordered collection of heterogeneous values.
      *
@@ -90,7 +90,7 @@ friend zone std {
     }
 }
 
-use friend zone std {
+use zone std {
     /**
      * Builds a structural [Tuple].
      *

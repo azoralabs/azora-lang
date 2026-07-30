@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-module std.pareallelism.sync
+mod std.pareallelism.sync
 
 /**
  * @file std/parallelism/sync
@@ -28,7 +28,7 @@ module std.pareallelism.sync
  * @since 0.0.1
  */
 
-friend zone std {
+zone std {
     /**
      * A mutex-protected value that provides safe concurrent access.
      *

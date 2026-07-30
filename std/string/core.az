@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-export module std.string.core
+export mod std.string.core
 
-use friend zone std {
+use zone std {
     @SinceAzora("0.0.4")
     bridge pack String
 }

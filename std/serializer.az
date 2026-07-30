@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-module std.serializer
+mod std.serializer
 
 import std.container.list
 import std.char
@@ -41,7 +41,7 @@ import std.string
  * so data written today can remain readable as the implementation evolves.
  */
 
-friend zone std {
+zone std {
     /** Text encodings supported by the standard serializer. */
     @Experimental(sinceAzora: "0.0.4")
     enum SerializationFormat {

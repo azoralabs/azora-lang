@@ -10,7 +10,7 @@ import kotlin.test.*
  *
  * - A named `zone X { ... }` namespaces its members (`X::member`). Members are
  *   reached via the qualified `X::name` path; bare access is rejected.
- * - `friend zone X { ... }` may be declared in multiple blocks (and across
+ * - `zone X { ... }` may be declared in multiple blocks (and across
  *   modules); the contributions merge into one logical zone.
  * - Visibility modifiers (`expose`/`confine`/`protect`) still constrain access.
  */
@@ -20,6 +20,44 @@ class ModulesTest {
         val result = Compiler().compile(source)
         assertIs<CompilationResult.Success>(result, "Compilation failed: ${(result as? CompilationResult.Failure)?.errors}")
         return IrInterpreter().interpret(result.ir).trim()
+    }
+
+    // -- `mod` is contextual, not reserved ----
+
+    @Test fun modDeclaresTheModuleAndIsStillAnOrdinaryName() {
+        // `mod` opens a module declaration only where it is followed by a name
+        // at the top of a file. Everywhere else it is just an identifier, so a
+        // reasonable name for a modulus is not taken away by the module syntax.
+        assertEquals("7\n2\n3", run("""
+            mod arithmetic
+            import std.io
+
+            pack Wheel {
+                var mod: Int
+            }
+
+            func mod(a: Int, b: Int): Int {
+                return a % b
+            }
+
+            func main() {
+                var mod = 7
+                std::println(mod)
+                std::println(mod(17, 5))
+                std::println(Wheel(3).mod)
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun theModuleNameMayItselfBeMod() {
+        assertEquals("ok", run("""
+            mod mod
+            import std.io
+
+            func main() {
+                std::println("ok")
+            }
+        """.trimIndent()))
     }
 
     // -- qualified zone access (no bare aliases) ----
@@ -89,12 +127,12 @@ class ModulesTest {
     @Test fun friendZoneMergesAcrossBlocks() {
         assertEquals("3\n42", run("""
             import std.io
-            friend zone std {
+            zone std {
                 func triple(x: Int): Int {
                     return x * 3
                 }
             }
-            friend zone std {
+            zone std {
                 fin answer = 42
             }
             func main() {
@@ -106,7 +144,7 @@ class ModulesTest {
 
     @Test fun nonFriendZoneRedeclarationIsRejected() {
         // A non-friend `zone X` is exclusive: two declarations collide. The fix
-        // is to make both `friend zone X` so they merge.
+        // is to make both `zone X` so they merge.
         val err = assertFailsWith<IllegalStateException> {
             Compiler().compile("""
                 import std.io
@@ -186,7 +224,7 @@ class ModulesTest {
 
     @Test fun moduleKeywordAsPackageAlias() {
         assertEquals("ok", run("""
-            module myapp
+            mod myapp
             import std.io
             func main() {
                 std::println("ok")

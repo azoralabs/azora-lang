@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-export module std.result
+export mod std.result
 
 /**
  * @file std/result
@@ -28,7 +28,7 @@ export module std.result
  * @since 0.0.1
  */
 
-friend zone std {
+zone std {
     /**
      * Represents either a success or failure outcome.
      */

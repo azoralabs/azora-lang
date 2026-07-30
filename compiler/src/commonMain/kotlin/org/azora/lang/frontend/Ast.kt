@@ -603,24 +603,6 @@ sealed class Stmt {
     ) : Stmt()
 
     /**
-     * Friend zone block (`friend zone { ... }`).
-     *
-     * Multiple friend zone blocks in the same parent scope share a persistent
-     * variable scope. Variables declared in one friend zone are visible in
-     * other friend zones, but not in the regular code between them.
-     *
-     * @property body the statements inside the friend zone
-     */
-    data class FriendZone(
-        val body: List<Stmt>,
-        override val line: Int,
-        override val column: Int = 0,
-        override val length: Int = 0,
-        /** `friend zone alloc { }` — shared-scope + arena. */
-        val alloc: Boolean = false
-    ) : Stmt()
-
-    /**
      * Runtime if/else statement.
      *
      * @property condition the boolean condition expression

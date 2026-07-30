@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-module std.container.set
+mod std.container.set
 
 import std.serializer
 import std.convert
@@ -42,7 +42,7 @@ import std.convert
  * @since 0.0.4
  */
 
-friend zone std {
+zone std {
     /**
      * Read-only behavior shared by every set implementation.
      *

@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  */
 
-module std.memory.unique
+mod std.memory.unique
 
 /**
  * @file std/memory/unique
@@ -15,7 +15,7 @@ module std.memory.unique
  * @since 0.0.3
  */
 
-friend zone std {
+zone std {
     @SinceAzora("0.0.3")
     pack Unique<T> {
         confine var raw: T*

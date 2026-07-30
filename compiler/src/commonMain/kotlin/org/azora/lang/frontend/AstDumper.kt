@@ -267,10 +267,6 @@ private fun dumpStmt(sb: StringBuilder, stmt: Stmt, indent: String) {
             sb.appendLine("${indent}Zone")
             for (s in stmt.body) dumpStmt(sb, s, "$indent    ")
         }
-        is Stmt.FriendZone -> {
-            sb.appendLine("${indent}FriendZone")
-            for (s in stmt.body) dumpStmt(sb, s, "$indent    ")
-        }
         is Stmt.If -> {
             sb.appendLine("${indent}If")
             sb.appendLine("$indent    condition:")

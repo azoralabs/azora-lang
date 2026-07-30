@@ -458,7 +458,6 @@ private class MonoContext(
             is Stmt.Try -> stmt.copy(body = nested(stmt.body), catchBody = stmt.catchBody?.let(::nested))
             is Stmt.Defer -> stmt.copy(body = nested(stmt.body))
             is Stmt.Zone -> stmt.copy(body = nested(stmt.body))
-            is Stmt.FriendZone -> stmt.copy(body = nested(stmt.body))
             is Stmt.InlineBlock -> stmt.copy(body = nested(stmt.body))
             is Stmt.DeepInlineBlock -> stmt.copy(body = nested(stmt.body))
             is Stmt.Effect -> stmt.copy(
@@ -928,7 +927,6 @@ private class MonoContext(
         is Stmt.Try -> s.copy(body = s.body.map(::rewriteStmt), catchBody = s.catchBody?.map(::rewriteStmt))
         is Stmt.Defer -> s.copy(body = s.body.map(::rewriteStmt))
         is Stmt.Zone -> s.copy(body = s.body.map(::rewriteStmt))
-        is Stmt.FriendZone -> s.copy(body = s.body.map(::rewriteStmt))
         is Stmt.InlineBlock -> s.copy(body = s.body.map(::rewriteStmt))
         is Stmt.DeepInlineBlock -> s.copy(body = s.body.map(::rewriteStmt))
         is Stmt.Effect -> s.copy(

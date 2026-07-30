@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-module std.algorithm
+mod std.algorithm
 
 import std.container.array
 
@@ -26,7 +26,7 @@ import std.container.array
  * @since 0.0.1
  */
 
-friend zone std {
+zone std {
     /**
      * Merge sort - O(n log n) stable sorting algorithm.
      */

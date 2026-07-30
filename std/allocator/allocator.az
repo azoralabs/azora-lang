@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-module std.allocator
+mod std.allocator
 
 import std.convert
 
@@ -36,7 +36,7 @@ import std.convert
  * @since 0.0.2
  */
 
-friend zone std {
+zone std {
 
     // -----------------------------------------------------------------------
     // Error Set

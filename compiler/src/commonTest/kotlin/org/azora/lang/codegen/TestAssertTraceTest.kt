@@ -173,7 +173,7 @@ class TestAssertTraceTest {
     @Test
     fun trace_liftsBodiesIntoTypedIrFunctions() {
         val result = compile("""
-            module playground
+            mod playground
             func main() {
                 trace .Info { "Any bridge works" }
                 var level = LogLevel.Warn
@@ -188,7 +188,7 @@ class TestAssertTraceTest {
             .first { it.name == "level" }
 
         assertEquals(IrType.Named("LogLevel"), level.type)
-        assertTrue(ir.startsWith("module playground\n\nfunc __main_lmbda0"), ir)
+        assertTrue(ir.startsWith("mod playground\n\nfunc __main_lmbda0"), ir)
         assertTrue("""
             func __main_lmbda0(level: LogLevel): String {
                 return "Any bridge works"

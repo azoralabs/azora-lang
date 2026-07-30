@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-module std.algorithm.sort
+mod std.algorithm.sort
 
 import std.container.array
 
@@ -29,7 +29,7 @@ import std.container.array
  * @since 0.0.1
  */
 
-friend zone std {
+zone std {
     /**
      * Sorts an array in ascending order using insertion sort.
      *

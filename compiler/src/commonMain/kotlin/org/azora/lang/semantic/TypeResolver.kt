@@ -345,29 +345,35 @@ class TypeResolver(private val table: SymbolTable) {
     }
 
     /**
-     * Resolves a list of statements, handling friend zones by sharing
-     * a scope across all friend zones in the same body.
+     * Resolves a list of statements, sharing one scope across every zone block
+     * in the body.
+     *
+     * Sibling zones see each other's bindings; the ordinary code between them
+     * does not. That is what makes a zone a place to group related work rather
+     * than just an extra pair of braces.
      */
     private fun resolveBody(stmts: List<Stmt>, returnType: IrType) {
-        val hasFriendZones = stmts.any { it is Stmt.FriendZone }
+        val hasZones = stmts.any { it is Stmt.Zone }
 
-        if (!hasFriendZones) {
+        if (!hasZones) {
             for (stmt in stmts) resolveStmt(stmt, returnType)
             return
         }
 
-        // Create a shared friend scope that persists across friend zone blocks
-        val friendScope = mutableMapOf<String, VariableSymbol>()
+        // Bindings that persist from one zone block to the next.
+        val zoneScope = mutableMapOf<String, VariableSymbol>()
 
         for (stmt in stmts) {
-            if (stmt is Stmt.FriendZone) {
-                // Push the friend scope — inject saved variables
+            if (stmt is Stmt.Zone) {
                 table.pushScope()
-                for ((_, sym) in friendScope) table.defineVariable(sym)
-                // Resolve the friend zone body
+                for ((_, sym) in zoneScope) table.defineVariable(sym)
+                // `zone unsafe { }` is still the boundary it was; sharing the
+                // scope must not quietly drop the opt-in.
+                val savedUnsafe = unsafeContext
+                if (stmt.unsafe) unsafeContext = true
                 for (s in stmt.body) resolveStmt(s, returnType)
-                // Save any new variables back to the friend scope
-                table.exportCurrentScope(friendScope)
+                unsafeContext = savedUnsafe
+                table.exportCurrentScope(zoneScope)
                 table.popScope()
             } else {
                 resolveStmt(stmt, returnType)
@@ -465,12 +471,6 @@ class TypeResolver(private val table: SymbolTable) {
                 if (stmt.unsafe) unsafeContext = true
                 resolveBody(stmt.body, returnType)
                 unsafeContext = savedUnsafe
-                table.popScope()
-            }
-            is Stmt.FriendZone -> {
-                // Handled by resolveBody — should not reach here in normal flow
-                table.pushScope()
-                resolveBody(stmt.body, returnType)
                 table.popScope()
             }
             is Stmt.Assert -> {

@@ -1095,7 +1095,7 @@ data class IrProgram(
     fun prettyPrint(): String {
         val sb = StringBuilder()
         if (moduleName != null) {
-            sb.appendLine("module $moduleName")
+            sb.appendLine("mod $moduleName")
             sb.appendLine()
         }
         for ((i, item) in items.withIndex()) {

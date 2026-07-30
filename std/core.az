@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-export module std.core
+export mod std.core
 
 /**
  * @file std/core.az
@@ -25,7 +25,7 @@ export module std.core
  * provided and never dispatch at runtime.
  */
 
-use friend zone std {
+use zone std {
     @SinceAzora("0.0.4")
     bridge pack Unit
 

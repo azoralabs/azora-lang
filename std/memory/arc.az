@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-module std.memory.arc
+mod std.memory.arc
 
 /**
  * @file std/memory/arc
@@ -28,7 +28,7 @@ module std.memory.arc
  * @since 0.0.3
  */
 
-friend zone std {
+zone std {
     /**
      * A reference-counted pointer to a `T`.
      *

@@ -182,12 +182,12 @@ class Tier3MemoryTest {
     }
 
     @Test fun friendZoneAllocFreesAtExit() {
-        // `friend zone alloc { }` — arena scoping on top of shared friend scope.
+        // `zone alloc { }` — arena scoping on top of shared friend scope.
         assertEquals("7\nnull", run("""
             import std.io
             func main() {
                 var q: Int* = alloc 0
-                friend zone alloc {
+                zone alloc {
                     q = alloc 7
                     std::println(*q)
                 }

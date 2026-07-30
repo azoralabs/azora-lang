@@ -468,10 +468,6 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 val (newBody, changed) = foldScopedBody(stmt.body, program, errors)
                 Pair(listOf(stmt.copy(body = newBody)), changed)
             }
-            is Stmt.FriendZone -> {
-                val (newBody, changed) = foldScopedBody(stmt.body, program, errors)
-                Pair(listOf(stmt.copy(body = newBody)), changed)
-            }
             is Stmt.Assert -> {
                 val (newCond, condChanged) = foldExpr(stmt.condition, program)
                 val (newMsg, msgChanged) = foldExpr(stmt.message, program)
@@ -1485,10 +1481,6 @@ class CtfeEvaluator(private val table: SymbolTable) {
                     env[stmt.name] = value
                 }
                 is Stmt.Zone -> {
-                    val result = interpretBody(stmt.body, env, program, line)
-                    if (result != null) return result
-                }
-                is Stmt.FriendZone -> {
                     val result = interpretBody(stmt.body, env, program, line)
                     if (result != null) return result
                 }

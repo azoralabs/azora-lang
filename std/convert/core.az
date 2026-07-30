@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-export module std.convert.core
+export mod std.convert.core
 
-use friend zone std {
+use zone std {
     @Experimental(sinceAzora: "0.0.4")
     bridge deco UncheckedCast for [.Func, .Prop, .Task, .Flow, .Var, .Fin, .ImplOper]
 }

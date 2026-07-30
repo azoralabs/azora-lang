@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-export module std.traits.core
+export mod std.traits.core
 
-use friend zone std {
+use zone std {
     inline for Ty in Numbers {
         @UncheckedCast
         bridge impl oper [.. by 1, reverse.. by 1] for Ty

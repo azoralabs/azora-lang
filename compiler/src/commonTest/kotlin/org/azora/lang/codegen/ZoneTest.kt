@@ -29,14 +29,14 @@ class ZoneTest {
                 var y = 3
                 std::println(x)
                 std::println(::x)
-                friend zone {
+                zone {
                     var x = 5
                     std::println(x)
                     std::println(::x)
                     std::println(::_::x)
                 }
                 std::println("----")
-                friend zone {
+                zone {
                     std::println(x)
                 }
             }
@@ -50,11 +50,11 @@ class ZoneTest {
         val output = run("""
             import std.io
             func main() {
-                friend zone {
+                zone {
                     var a = 10
                     var b = 20
                 }
-                friend zone {
+                zone {
                     std::println(a)
                     std::println(b)
                 }
@@ -69,11 +69,11 @@ class ZoneTest {
         val output = run("""
             import std.io
             func main() {
-                friend zone {
+                zone {
                     var x = 1
                     std::println(x)
                 }
-                friend zone {
+                zone {
                     x = 99
                     std::println(x)
                 }
@@ -89,14 +89,14 @@ class ZoneTest {
             import std.io
             func main() {
                 var x = 42
-                friend zone {
+                zone {
                     var x = 7
                 }
                 std::println(x)
             }
         """.trimIndent())
 
-        // Parent x should still be 42 — friend zone's x is separate
+        // Parent x should still be 42 — zone's x is separate
         assertEquals("42", output)
     }
 

@@ -33,13 +33,13 @@ object AzHighlighter {
     /** Every azora keyword, mirroring the compiler lexer's keyword table. */
     val KEYWORDS: Set<String> = setOf(
         "var", "fin", "let", "func", "return", "package", "if", "else",
-        "inline", "deepinline", "noinline", "zone", "friend", "test", "assert", "trace",
+        "inline", "deepinline", "noinline", "zone", "test", "assert", "trace",
         "for", "while", "loop", "in", "break", "continue", "by", "reverse",
         "infx", "oper", "deco", "fail", "alloc", "drop", "unsafe", "isolated",
         "flow", "yield", "task", "await", "launch", "bridge", "solo", "inject", "wrap",
         "rescue", "node", "leaf", "repl", "virt", "base", "rem", "effect", "view",
         "hook", "prop", "ctor", "dtor", "ref", "out", "mut",
-        "expose", "confine", "protect", "module", "threadlocal",
+        "expose", "confine", "protect", "mod", "threadlocal",
         "pack", "enum", "when", "throw", "try", "catch", "impl", "prot",
         "defer", "typealias", "slot", "as", "guard", "is", "null", "use",
         "true", "false"

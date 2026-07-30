@@ -144,7 +144,7 @@ class TupleVariadicTest {
 
     @Test fun qualifiedTupleModuleImportExposesTupleOf() {
         val out = compile("""
-            module playground            
+            mod playground
             import std.io
             import std.container.tuple
 
@@ -172,7 +172,7 @@ class TupleVariadicTest {
 
     @Test fun tuplePrettyUsesReflectedFields() {
         val result = compile("""
-            module playground
+            mod playground
             import std.io
             import std.container.tuple
 

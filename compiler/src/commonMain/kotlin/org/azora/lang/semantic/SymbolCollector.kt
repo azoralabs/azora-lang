@@ -548,7 +548,6 @@ class SymbolCollector {
                     stmt.elseBranch?.let { result.addAll(collectReturnExprs(it)) }
                 }
                 is Stmt.Zone -> result.addAll(collectReturnExprs(stmt.body))
-                is Stmt.FriendZone -> result.addAll(collectReturnExprs(stmt.body))
                 else -> {}
             }
         }

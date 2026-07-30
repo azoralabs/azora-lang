@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-export module std.reactive
+export mod std.reactive
 
 /**
  * @file std.reactive
@@ -46,7 +46,7 @@ export module std.reactive
 @Experimental(sinceAzora: "0.0.4")
 bridge deco Reactive for [.Infx, .Task, .Func]
 
-friend zone std {
+zone std {
     /**
      * Describes the distinct lifetime selected by a reactive declaration.
      */

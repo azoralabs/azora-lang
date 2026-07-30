@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-module std.reflection
+mod std.reflection
 
 /**
  * @file std/reflection
@@ -36,7 +36,7 @@ module std.reflection
  * @since 0.0.4
  */
 
-friend zone std {
+zone std {
     /**
      * Compile-time reflection handle for the declaration `T`, produced by
      * `std::reflect<T>`. Its members (`.hasDeco<D>`, `.decoMeta<D>`, `.enclosingZone`) are

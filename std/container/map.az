@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-module std.container.map
+mod std.container.map
 
 import std.container.array
 
@@ -46,7 +46,7 @@ import std.container.list
  * @since 0.0.4
  */
 
-friend zone std {
+zone std {
     /**
      * One immutable key-value association.
      *

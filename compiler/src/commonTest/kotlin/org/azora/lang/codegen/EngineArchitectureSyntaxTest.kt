@@ -32,7 +32,8 @@ class EngineArchitectureSyntaxTest {
     private val facade = LibrarySource(
         "engine.az",
         """
-        module engine
+        mod engine
+
         export import engine.ecs
         """.trimIndent(),
     )
@@ -40,7 +41,7 @@ class EngineArchitectureSyntaxTest {
     private val ecs = LibrarySource(
         "engine/ecs.az",
         """
-        module engine.ecs
+        mod engine.ecs
 
         meta .Type {
             res ${'$'}T => Resource<${'$'}T>

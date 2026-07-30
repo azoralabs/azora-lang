@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-module std.container.list
+mod std.container.list
 
 import std.serializer
 import std.convert
@@ -40,7 +40,7 @@ import std.convert
  * @since 0.0.4
  */
 
-friend zone std {
+zone std {
     /**
      * Read-only behavior shared by every list implementation.
      *

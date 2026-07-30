@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-module std.parallelism.channel
+mod std.parallelism.channel
 
 /**
  * @file std/parallelism/channel
@@ -27,7 +27,7 @@ module std.parallelism.channel
  * @since 0.0.1
  */
 
-friend zone std {
+zone std {
     /**
      * A thread-safe FIFO message channel for inter-thread communication.
      *

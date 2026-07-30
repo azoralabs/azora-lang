@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-module std.math
+mod std.math
 
 import std.container.array
 
@@ -30,7 +30,7 @@ import std.container.array
  * @since 0.0.1
  */
 
-friend zone std::math {
+zone std::math {
     /**
      * The ratio of a circle's circumference to its diameter.
      */
@@ -514,7 +514,7 @@ friend zone std::math {
     }
 }
 
-friend zone std::math {
+zone std::math {
     bridge [.C, .WebAssembly] {
         /** Sine of [x] (radians). */
         func sin(x: Real): Real

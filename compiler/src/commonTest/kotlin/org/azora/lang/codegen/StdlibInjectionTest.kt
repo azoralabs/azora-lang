@@ -22,7 +22,7 @@ import kotlin.test.assertTrue
 /**
  * Tests for arr@[org.azora.lang.stdlib.StdlibInjector] under the zone/import model:
  *
- * - Library symbols live in zones (`friend zone std::math { ... }`) and are
+ * - Library symbols live in zones (`zone std::math { ... }`) and are
  *   name-mangled (`std.math::abs` → `std__math__abs`).
  * - `import std.math` makes that module's symbols visible; references must use
  *   the qualified `Zone::name` form. Bare references are rejected.
@@ -50,7 +50,7 @@ class StdlibInjectionTest {
     }
 
     @Test fun printlnIsDeclaredAsCompilerBridge() {
-        val source = AzStdlib.sources.single { Regex("(?m)^module std\\.io$").containsMatchIn(it) }
+        val source = AzStdlib.sources.single { Regex("(?m)^mod std\\.io$").containsMatchIn(it) }
         val io = Parser(Lexer(source).tokenize()).parse()
 
         assertTrue(io.items.none { it is TopLevel.Func && it.decl.name == "std__println" })
@@ -97,7 +97,7 @@ class StdlibInjectionTest {
     }
 
     @Test fun rootModuleContainsCompilerPredefinedDeclarations() {
-        val source = AzStdlib.sources.single { "module std.core" in it }
+        val source = AzStdlib.sources.single { "mod std.core" in it }
         val root = Parser(Lexer(source).tokenize()).parse()
 
         assertTrue(root.items.any { it is TopLevel.Pack && it.name == "Unit" && it.isBridge })
@@ -140,7 +140,7 @@ class StdlibInjectionTest {
     }
 
     @Test fun serializerSourceAndEmbeddedUnitTestsParse() {
-        val source = AzStdlib.sources.single { "module std.serializer" in it }
+        val source = AzStdlib.sources.single { "mod std.serializer" in it }
         val serializer = Parser(Lexer(source).tokenize()).parse()
         val validationErrors = AstValidator().validate(serializer)
 
@@ -155,7 +155,7 @@ class StdlibInjectionTest {
     }
 
     @Test fun serializerFixturesProduceGeneratedCodecMethods() {
-        val source = AzStdlib.sources.single { "module std.serializer" in it }
+        val source = AzStdlib.sources.single { "mod std.serializer" in it }
         val serializer = Parser(Lexer(source).tokenize()).parse()
         val derived = SerializationDeriver.derive(serializer)
 
@@ -181,7 +181,8 @@ class StdlibInjectionTest {
 
     @Test fun serializerImportSelectsDecoratorMarker() {
         val result = Compiler().compile("""
-            module serializer_marker_test
+            mod serializer_marker_test
+
             import std.serializer
 
             pack UserId {
@@ -198,7 +199,8 @@ class StdlibInjectionTest {
 
     @Test fun importedSerializerDecoratorCanBeAppliedToPack() {
         val result = Compiler().compile("""
-            module serializer_decorator_test
+            mod serializer_decorator_test
+
             import std.serializer
 
             @Serializable
@@ -216,7 +218,8 @@ class StdlibInjectionTest {
 
     @Test fun importedPackCarriesItsFieldDecoratorImplementations() {
         val result = Compiler().compile("""
-            module serializer_field_impl_test
+            mod serializer_field_impl_test
+
             import std.serializer
 
             func decorated(): Int {
@@ -271,7 +274,7 @@ class StdlibInjectionTest {
 
     @Test fun importedZoneMemberRequiresQualifiedAccess() {
         val result = Compiler().compile("""
-            module playground
+            mod playground
 
             import std.io
 
@@ -297,7 +300,7 @@ class StdlibInjectionTest {
                 func first(): String { return "local" }
             }
 
-            use friend zone merged {
+            use zone merged {
                 func second(): String { return "shared" }
             }
 
@@ -308,7 +311,7 @@ class StdlibInjectionTest {
         """.trimIndent()))
 
     @Test fun plainZonesDoNotExposeBareMembers() {
-        for (declaration in listOf("zone local", "friend zone local")) {
+        for (declaration in listOf("zone local", "zone local")) {
             val result = Compiler().compile("""
                 $declaration {
                     func hidden(): Int { return 1 }
@@ -364,8 +367,9 @@ class StdlibInjectionTest {
         val library = LibrarySource(
             "engine/render.az",
             """
-                module engine.render
-                friend zone engine {
+                mod engine.render
+
+                zone engine {
                     func answer(): Int { return 42 }
                 }
             """.trimIndent(),
@@ -386,8 +390,9 @@ class StdlibInjectionTest {
         val library = LibrarySource(
             "engine/model.az",
             """
-                module engine.model
-                friend zone engine {
+                mod engine.model
+
+                zone engine {
                     pack Handle {
                         fin id: Int
                     }
@@ -422,16 +427,18 @@ class StdlibInjectionTest {
             LibrarySource(
                 "engine/shaders.az",
                 """
-                    module engine.shaders
+                    mod engine.shaders
+
                     func shaderValue(): Int { return 7 }
                 """.trimIndent(),
             ),
             LibrarySource(
                 "engine/render.az",
                 """
-                    module engine.render
+                    mod engine.render
+
                     import engine.shaders
-                    friend zone engine {
+                    zone engine {
                         func shaderCount(): Int { return shaderValue() }
                     }
                 """.trimIndent(),

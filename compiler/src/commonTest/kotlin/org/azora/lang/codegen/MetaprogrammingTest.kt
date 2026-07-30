@@ -17,7 +17,8 @@ class MetaprogrammingTest {
     @Test
     fun inlineFunc_bodySubstitutedAtCallSite() {
         val result = compile("""
-            module playground            
+            mod playground
+
             import std.io
             inline func a() {
                 std::println("Hello from A")
@@ -34,7 +35,7 @@ class MetaprogrammingTest {
         """.trimIndent())
 
         val expectedIr = """
-            module playground
+            mod playground
 
             func b(): Unit {
                 std__println("Hello from B")
@@ -49,7 +50,7 @@ class MetaprogrammingTest {
         """.trimIndent()
 
         val expectedOptimizedIr = """
-            module playground
+            mod playground
 
             func b(): Unit {
                 std__println("Hello from B")
@@ -96,7 +97,8 @@ class MetaprogrammingTest {
     @Test
     fun inlineBlocks_funcInliningRules() {
         val result = compile("""
-            module playground            
+            mod playground
+
             import std.io
             inline fin x = 2
 
@@ -167,7 +169,8 @@ class MetaprogrammingTest {
     @Test
     fun runtimeGlobals_finSurvivesInIr() {
         val result = compile("""
-            module playground            
+            mod playground
+
             import std.io
             inline fin x = 2
 
@@ -212,7 +215,8 @@ class MetaprogrammingTest {
     @Test
     fun fullMetaprogramming_allInlineRulesWithGlobals() {
         val result = compile("""
-            module playground            
+            mod playground
+
             import std.io
             inline fin x = 2
 
@@ -268,7 +272,7 @@ class MetaprogrammingTest {
         """.trimIndent())
 
         val expectedIr = """
-            module playground
+            mod playground
 
             fin aa: Int = 2
             fin c1: Int = 0
@@ -339,7 +343,7 @@ class MetaprogrammingTest {
         """.trimIndent()
 
         val expectedOptimizedIr = """
-            module playground
+            mod playground
 
             func c(): Unit {
                 std__println("Hello from C")

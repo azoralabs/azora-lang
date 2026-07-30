@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-module std.char
+mod std.char
 
 /**
  * @file std/char
@@ -30,7 +30,7 @@ module std.char
 
 export import std.char.core
 
-friend zone std {
+zone std {
     /**
      * Returns the Unicode code point of a character.
      *

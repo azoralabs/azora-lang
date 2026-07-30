@@ -171,7 +171,6 @@ class AllocDropAnalyzer {
                 defined.add(stmt.name)
             }
             is Stmt.Zone -> stmt.body.forEach { analyzeStmt(it, defined, used, errors) }
-            is Stmt.FriendZone -> stmt.body.forEach { analyzeStmt(it, defined, used, errors) }
             is Stmt.Assert -> {
                 collectUsedVars(stmt.condition, used)
                 collectUsedVars(stmt.message, used)

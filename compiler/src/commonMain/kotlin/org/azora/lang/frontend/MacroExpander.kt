@@ -309,7 +309,6 @@ internal object MacroExpander {
             body = rewriteStmts(stmt.body, macros, depth),
         )
         is Stmt.Zone -> stmt.copy(body = rewriteStmts(stmt.body, macros, depth))
-        is Stmt.FriendZone -> stmt.copy(body = rewriteStmts(stmt.body, macros, depth))
         is Stmt.InlineBlock -> stmt.copy(body = rewriteStmts(stmt.body, macros, depth))
         is Stmt.DeepInlineBlock -> stmt.copy(body = rewriteStmts(stmt.body, macros, depth))
         is Stmt.Effect -> stmt.copy(
@@ -646,7 +645,6 @@ internal object MacroExpander {
             body = stmt.body.map { substituteStmt(it, bindings, invokeLine) },
         )
         is Stmt.Zone -> stmt.copy(body = stmt.body.map { substituteStmt(it, bindings, invokeLine) })
-        is Stmt.FriendZone -> stmt.copy(body = stmt.body.map { substituteStmt(it, bindings, invokeLine) })
         is Stmt.InlineBlock -> stmt.copy(body = stmt.body.map { substituteStmt(it, bindings, invokeLine) })
         is Stmt.DeepInlineBlock -> stmt.copy(body = stmt.body.map { substituteStmt(it, bindings, invokeLine) })
         is Stmt.Effect -> stmt.copy(

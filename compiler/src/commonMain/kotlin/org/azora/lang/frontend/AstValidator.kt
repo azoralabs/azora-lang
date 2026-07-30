@@ -236,7 +236,6 @@ class AstValidator {
             is Stmt.InlineAssignment -> {}
             is Stmt.LetDecl -> {}
             is Stmt.Zone -> stmt.body.forEach { validateStmt(it, funcName, errors) }
-            is Stmt.FriendZone -> stmt.body.forEach { validateStmt(it, funcName, errors) }
             is Stmt.Assert -> {}
             is Stmt.Trace -> {}
             is Stmt.InlineAssert -> {}
@@ -279,7 +278,6 @@ class AstValidator {
             is Stmt.DeepInlineIf -> hasReturnInBody(stmt.thenBranch) ||
                     (stmt.elseBranch != null && hasReturnInBody(stmt.elseBranch))
             is Stmt.Zone -> hasReturnInBody(stmt.body)
-            is Stmt.FriendZone -> hasReturnInBody(stmt.body)
             is Stmt.While -> hasReturnInBody(stmt.body)
             is Stmt.For -> hasReturnInBody(stmt.body)
             is Stmt.Loop -> hasReturnInBody(stmt.body)

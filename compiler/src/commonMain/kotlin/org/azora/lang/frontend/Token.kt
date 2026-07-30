@@ -145,9 +145,9 @@ enum class TokenType {
     // `shield` — a pack/field modifier: externally read-only, internally mutable.
     // `opaque pack` forces every field to confine.
     EXPOSE, CONFINE, PROTECT, SHIELD, OPAQUE,
-    // Module: `module Name`. `export module Name` publishes the module so that
+    // Module: `mod Name`. `export mod Name` publishes the module so that
     // its declarations are auto-imported into every unit (like `std.core`).
-    MODULE, EXPORT,
+    EXPORT,
     // Thread-local storage: `threadlocal var x = 0` / `threadlocal fin y = 42`.
     THREADLOCAL,
     // `deco Name [bind Spec] { fields }` — decorator/annotation declaration.

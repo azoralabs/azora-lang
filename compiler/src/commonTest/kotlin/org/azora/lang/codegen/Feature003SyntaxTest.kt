@@ -301,7 +301,7 @@ class Feature003SyntaxTest {
     @Test fun friendZoneAcceptsDoubleColonPath() {
         assertEquals("3", run("""
             import std.io
-            friend zone std::math {
+            zone std::math {
                 func abs(x: Int): Int {
                     if x < 0 { return -x }
                     return x

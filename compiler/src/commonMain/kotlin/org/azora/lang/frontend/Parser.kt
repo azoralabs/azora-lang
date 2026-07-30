@@ -78,7 +78,6 @@ class Parser(
      * concatenated modules) is a redeclaration. `friend zone X` is exempt (it
      * merges across blocks/modules). Checked at the end of [parse].
      */
-    private val namedZoneDeclarations = mutableMapOf<String, Int>()
 
     /** Enclosing labeled/anonymous zones while parsing (outermost first). */
     private data class ZoneFrame(val label: String?, val isInline: Boolean)
@@ -164,7 +163,7 @@ class Parser(
             if (check(TokenType.R_BRACE)) break
             when {
                 isZoneBlockAhead() -> body.addAll(parseZoneBlock())
-                check(TokenType.ZONE) && peekNext()?.type == TokenType.IDENTIFIER -> body.addAll(parseNamedZone())
+                isZoneNamespaceAhead() -> body.addAll(parseZoneNamespace())
                 check(TokenType.TYPE) -> parseTypeFunction()
                 isInline -> body.add(parseTopLevelBlockItem(deepInline = true))
                 else -> body.add(parseTopLevel())
@@ -253,17 +252,15 @@ class Parser(
         while (!isAtEnd()) {
             skipNewlines()
             if (isAtEnd()) break
-            if (isNamedZoneNamespaceAhead()) {
+            if (isZoneNamespaceAhead()) {
                 // `[use] zone Name { … }` — a named zone is a namespace. Plain
                 // declarations use qualified names; `use zone` keeps members bare.
-                items.addAll(parseNamedZone())
+                items.addAll(parseZoneNamespace())
             } else if (isZoneBlockAhead()) {
                 // `[inline|deepinline] zone ["label"] { … }` — a labeled/anonymous
                 // zone; members stay top-level, the zone only adds reflection
                 // metadata (and inline semantics for the inline forms).
                 items.addAll(parseZoneBlock())
-            } else if (isFriendZoneNamespaceAhead()) {
-                items.addAll(parseFriendZoneNamespace())
             } else if (check(TokenType.TYPE)) {
                 parseTypeFunction()
             } else {
@@ -273,9 +270,6 @@ class Parser(
                 items.addAll(pendingTopLevels)
                 pendingTopLevels.clear()
             }
-        }
-        namedZoneDeclarations.entries.firstOrNull { it.value > 1 }?.let { (name, _) ->
-            error("zone '$name' is declared more than once; use 'friend zone $name' to merge the same zone across blocks/modules")
         }
         val localPackNames = items.filterIsInstance<TopLevel.Pack>().mapTo(mutableSetOf()) { it.name }
         val normalized = CallbackImplNormalizer.normalize(
@@ -297,36 +291,11 @@ class Parser(
         return IntraZoneRewriter.rewrite(normalized)
     }
 
-    private fun isNamedZoneNamespaceAhead(): Boolean {
-        val offset = if (check(TokenType.USE)) 1 else 0
-        return tokens.getOrNull(current + offset)?.type == TokenType.ZONE &&
-            tokens.getOrNull(current + offset + 1)?.type == TokenType.IDENTIFIER
-    }
-
-    /**
-     * `[use] zone Name { items }` — a named zone acts as a namespace. Desugared at
-     * parse time: a plain zone member becomes `Name__member` (and is accessed as
-     * `Name::member`), while `use zone` deliberately keeps member names bare.
-     */
-    private fun parseNamedZone(): List<TopLevel> {
-        val useBare = match(TokenType.USE)
-        consume(TokenType.ZONE, "Expected 'zone'")
-        val name = consume(TokenType.IDENTIFIER, "Expected zone name").lexeme
-        namedZoneDeclarations[name] = (namedZoneDeclarations[name] ?: 0) + 1
-        consume(TokenType.L_BRACE, "Expected '{' after zone name")
-        skipNewlines()
-        val items = parseZoneBody(name, mangle = !useBare)
-        consume(TokenType.R_BRACE, "Expected '}' after zone")
-        consumeNewline()
-        return items
-    }
-
-    private fun isFriendZoneNamespaceAhead(): Boolean {
-        // Optional `use` prefix (`use friend zone …`) — members stay bare-accessible.
+    private fun isZoneNamespaceAhead(): Boolean {
+        // Optional `use` prefix (`use zone …`) — members stay bare-accessible.
         val f0 = if (check(TokenType.USE)) current + 1 else current
-        if (tokens.getOrNull(f0)?.type != TokenType.FRIEND) return false
-        if (tokens.getOrNull(f0 + 1)?.type != TokenType.ZONE) return false
-        var i = f0 + 2
+        if (tokens.getOrNull(f0)?.type != TokenType.ZONE) return false
+        var i = f0 + 1
         if (tokens.getOrNull(i)?.type != TokenType.IDENTIFIER) return false
         i++
         while (tokens.getOrNull(i)?.type == TokenType.DOUBLE_COLON &&
@@ -338,32 +307,34 @@ class Parser(
     }
 
     /**
-     * `friend zone Name (:: Name)* { items }` — a shared namespace contribution.
-     * Like a named `zone`, it mangles each member with the zone path
-     * (`friend zone std { friend zone math { fin PI } }` → `std__math__PI`, reached
-     * as `std::math::PI`). Unlike a named `zone`, the same zone path may be
-     * declared across multiple modules and the contributions merge (the
-     * "friend" grant); the exclusivity check lives in semantic analysis.
+     * `zone Name (:: Name)* { items }` — a namespace contribution.
      *
-     * The `use` prefix (`use friend zone std { … }`) keeps members at their bare
-     * short names (no mangling), so importing the module makes them callable
-     * without the `Zone::` qualifier — e.g. `vec![…]` rather than `std::vec![…]`.
+     * Each member is mangled with the zone path (`zone std { zone math { fin PI } }`
+     * → `std__math__PI`, reached as `std::math::PI`). The same zone path may be
+     * opened as many times as it likes, in as many modules as it likes, and the
+     * contributions merge — a zone is a name a package agrees on, not a block
+     * one file owns.
+     *
+     * The `use` prefix (`use zone std { … }`) keeps members at their bare short
+     * names (no mangling), so importing the module makes them callable without
+     * the `Zone::` qualifier — e.g. `vec![…]` rather than `std::vec![…]`. An
+     * inner zone inherits that choice: a bare-name zone that started mangling
+     * halfway down would be surprising.
      */
-    private fun parseFriendZoneNamespace(outerPrefix: String = ""): List<TopLevel> {
+    private fun parseZoneNamespace(outerPrefix: String = "", inheritMangle: Boolean = true): List<TopLevel> {
         val useBare = match(TokenType.USE) // optional 'use' → members stay bare (unmangled)
-        consume(TokenType.FRIEND, "Expected 'friend'")
-        consume(TokenType.ZONE, "Expected 'zone' after 'friend'")
-        val first = consume(TokenType.IDENTIFIER, "Expected zone name after 'friend zone'").lexeme
-        val friendPath = StringBuilder(first).apply {
+        consume(TokenType.ZONE, "Expected 'zone'")
+        val first = consume(TokenType.IDENTIFIER, "Expected zone name after 'zone'").lexeme
+        val zonePath = StringBuilder(first).apply {
             while (match(TokenType.DOUBLE_COLON)) {
-                append("__").append(consume(TokenType.IDENTIFIER, "Expected zone name after '::' in friend zone path").lexeme)
+                append("__").append(consume(TokenType.IDENTIFIER, "Expected zone name after '::' in zone path").lexeme)
             }
         }.toString()
-        val prefix = if (outerPrefix.isEmpty()) friendPath else "${outerPrefix}__$friendPath"
-        consume(TokenType.L_BRACE, "Expected '{' after friend zone name")
+        val prefix = if (outerPrefix.isEmpty()) zonePath else "${outerPrefix}__$zonePath"
+        consume(TokenType.L_BRACE, "Expected '{' after zone name")
         skipNewlines()
-        val items = parseZoneBody(prefix, mangle = !useBare)
-        consume(TokenType.R_BRACE, "Expected '}' after friend zone")
+        val items = parseZoneBody(prefix, mangle = inheritMangle && !useBare)
+        consume(TokenType.R_BRACE, "Expected '}' after zone")
         consumeNewline()
         return items
     }
@@ -377,16 +348,7 @@ class Parser(
                 skipNewlines()
                 if (check(TokenType.R_BRACE)) break
                 when {
-                    isFriendZoneNamespaceAhead() -> result.addAll(parseFriendZoneNamespace(prefix))
-                    check(TokenType.ZONE) && peekNext()?.type == TokenType.IDENTIFIER -> {
-                        consume(TokenType.ZONE, "Expected 'zone'")
-                        val inner = consume(TokenType.IDENTIFIER, "Expected zone name").lexeme
-                        consume(TokenType.L_BRACE, "Expected '{' after zone name")
-                        skipNewlines()
-                        result.addAll(parseZoneBody("${prefix}__$inner", mangle))
-                        consume(TokenType.R_BRACE, "Expected '}' after nested zone")
-                        skipNewlines()
-                    }
+                    isZoneNamespaceAhead() -> result.addAll(parseZoneNamespace(prefix, mangle))
                     check(TokenType.TYPE) -> parseTypeFunction(prefix)
                     else -> {
                         val parsed = parseTopLevel()
@@ -3239,31 +3201,46 @@ class Parser(
     }
 
     /**
+     * True when [index] holds a `mod` that opens a module declaration.
+     *
+     * `mod` is contextual, not reserved: it lexes as an ordinary identifier, so
+     * `func mod()` and `var mod = 7` mean what they say. A module header is the
+     * one place the word is followed by another name, which is what
+     * distinguishes it — and it is only ever looked for at the top of a file,
+     * where a bare identifier could not begin a declaration anyway.
+     */
+    private fun isModuleWordAt(index: Int): Boolean {
+        val word = tokens.getOrNull(index) ?: return false
+        if (word.type != TokenType.IDENTIFIER || word.lexeme != "mod") return false
+        val next = tokens.getOrNull(index + 1) ?: return false
+        return next.type == TokenType.IDENTIFIER
+    }
+
+    /**
      * True when a module header begins here: an optional `export`, an optional
-     * `expose`/`intern`/`protect`/`confine` visibility, then `module`. Lets those
+     * `expose`/`intern`/`protect`/`confine` visibility, then `mod`. Lets those
      * words keep their ordinary meaning as declaration modifiers everywhere else.
      */
     private fun isModuleHeaderAhead(): Boolean {
         var i = current
         if (tokens.getOrNull(i)?.type == TokenType.EXPORT) i++
-        // `export if COND \n module …` — the newline before `module` is mandatory.
+        // `export if COND \n mod …` — the newline before `mod` is mandatory.
         if (tokens.getOrNull(i)?.type == TokenType.IF) {
             var j = i + 1
             while (j < tokens.size && tokens[j].type != TokenType.NEWLINE) j++
-            // exactly one newline, then `module`
-            return tokens.getOrNull(j)?.type == TokenType.NEWLINE &&
-                tokens.getOrNull(j + 1)?.type == TokenType.MODULE
+            // exactly one newline, then `mod`
+            return tokens.getOrNull(j)?.type == TokenType.NEWLINE && isModuleWordAt(j + 1)
         }
         if (tokens.getOrNull(i)?.type in setOf(
                 TokenType.EXPOSE, TokenType.PROTECT, TokenType.CONFINE
             )
         ) i++
-        return tokens.getOrNull(i)?.type == TokenType.MODULE
+        return isModuleWordAt(i)
     }
 
     private fun parseModule(): String {
-        consume(TokenType.MODULE, "Expected 'module'")
-        // Qualified names are allowed: `module std.math`. Segments use
+        consume(TokenType.IDENTIFIER, "Expected 'mod'")
+        // Qualified names are allowed: `mod std.math`. Segments use
         // [consumeIdentifierLike] so soft keywords (e.g. `weak`) are accepted.
         val name = StringBuilder(consumeIdentifierLike("Expected module name"))
         while (match(TokenType.DOT)) {
@@ -3532,7 +3509,6 @@ class Parser(
                 catchBody = stmt.catchBody?.map { rewriteContractResults(it, contracts, rewriteYields) },
             )
             is Stmt.Zone -> stmt.copy(body = stmt.body.map { rewriteContractResults(it, contracts, rewriteYields) })
-            is Stmt.FriendZone -> stmt.copy(body = stmt.body.map { rewriteContractResults(it, contracts, rewriteYields) })
             else -> stmt
         }
     }
@@ -3999,7 +3975,6 @@ class Parser(
             check(TokenType.DEEPINLINE) -> parseDeepInlineStmt()
             check(TokenType.NOINLINE) -> parseNoInline()
             check(TokenType.ZONE) -> parseZone()
-            check(TokenType.FRIEND) -> parseFriendZone()
             check(TokenType.IF) -> parseIf()
             check(TokenType.AT) -> parseLabeledStmt()
             check(TokenType.WHILE) -> parseWhile()
@@ -4123,7 +4098,6 @@ class Parser(
             stmt.line, stmt.column, stmt.length
         )
         is Stmt.Zone -> Stmt.Zone(rewriteBreaksForElse(stmt.body, flag), stmt.line, stmt.column, stmt.length)
-        is Stmt.FriendZone -> Stmt.FriendZone(rewriteBreaksForElse(stmt.body, flag), stmt.line, stmt.column, stmt.length)
         is Stmt.Try -> Stmt.Try(
             rewriteBreaksForElse(stmt.body, flag), stmt.catchName,
             stmt.catchBody?.let { rewriteBreaksForElse(it, flag) }, stmt.line, stmt.column, stmt.length
@@ -4965,19 +4939,6 @@ class Parser(
         consume(TokenType.R_BRACE, "Expected '}'")
         consumeNewline()
         return Stmt.Zone(body, start.line, start.column, alloc = isAlloc)
-    }
-
-    private fun parseFriendZone(): Stmt.FriendZone {
-        val start = peek()
-        consume(TokenType.FRIEND, "Expected 'friend'")
-        consume(TokenType.ZONE, "Expected 'zone' after 'friend'")
-        val isAlloc = match(TokenType.ALLOC) // `friend zone alloc { }`
-        consume(TokenType.L_BRACE, "Expected '{' after 'friend zone'")
-        skipNewlines()
-        val body = parseBlock()
-        consume(TokenType.R_BRACE, "Expected '}'")
-        consumeNewline()
-        return Stmt.FriendZone(body, start.line, start.column, alloc = isAlloc)
     }
 
     private fun parseNoInline(): Stmt.NoInline {

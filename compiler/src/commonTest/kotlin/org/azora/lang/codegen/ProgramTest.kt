@@ -203,11 +203,11 @@ class ProgramTest {
         val output = run("""
             import std.io
             func main() {
-                friend zone {
+                zone {
                     var shared = 10
                     std::println(shared)
                 }
-                friend zone {
+                zone {
                     shared = shared + 5
                     std::println(shared)
                 }

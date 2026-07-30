@@ -164,7 +164,6 @@ class EffectChecker {
                 collectCallsFromExpr(stmt.initializer, calls)
             }
             is Stmt.Zone -> stmt.body.forEach { collectCallsFromStmt(it, calls) }
-            is Stmt.FriendZone -> stmt.body.forEach { collectCallsFromStmt(it, calls) }
             is Stmt.Assert -> {
                 collectCallsFromExpr(stmt.condition, calls)
                 collectCallsFromExpr(stmt.message, calls)

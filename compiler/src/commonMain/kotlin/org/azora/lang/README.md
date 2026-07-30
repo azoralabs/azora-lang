@@ -336,7 +336,7 @@ Reserved words in the language (see `frontend/Token.kt`):
 - **Memory/FFI/DI**: `alloc` `drop` `unsafe` `isolated` `bridge` `solo` `wrap` `inject`
 - **Reactivity/object model**: `mem` `rem` `ret` `effect` `hook` `prop` `ctor` `dtor`
 - **Metaprogramming**: `inline` `deepinline` `noinline`
-- **Scoping/modules**: `zone` `friend` `module` `import`
+- **Scoping/modules**: `zone` `friend` `mod` `import`
 - **Modifiers/visibility**: `mut` `ref` `out` `shared` `weak` `expose` `confine` `protect`
 - **Operators-as-keywords**: `oper` `infx` `as` `is` `null` `deco`
 - **Testing**: `test` `assert` `trace`

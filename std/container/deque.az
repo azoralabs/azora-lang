@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-module std.container.deque
+mod std.container.deque
 
 import std.serializer
 import std.convert
@@ -28,7 +28,7 @@ import std.convert
  * @since 0.0.1
  */
 
-friend zone std {
+zone std {
     /**
      * A double-ended queue: elements can be added and removed from both ends in O(1) amortized.
      *

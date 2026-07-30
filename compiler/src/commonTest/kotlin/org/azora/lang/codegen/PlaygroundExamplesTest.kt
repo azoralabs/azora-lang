@@ -20,11 +20,11 @@ class PlaygroundExamplesTest {
         return IrInterpreter().interpret(result.ir).trim()
     }
 
-    @Test fun hello() = assertEquals("Hello, world!", run("""module playground
+    @Test fun hello() = assertEquals("Hello, world!", run("""mod playground
 import std.io
 func main() { std::println("Hello, world!") }"""))
 
-    @Test fun variables() = assertEquals("Hello, Azora!" + "\n" + "count is 6", run("""module playground
+    @Test fun variables() = assertEquals("Hello, Azora!" + "\n" + "count is 6", run("""mod playground
 import std.io
 func main() {
     var count = 0
@@ -36,7 +36,7 @@ func main() {
     std::println("count is ${'$'}{count}")
 }"""))
 
-    @Test fun functions() = assertEquals("7" + "\n" + "120", run("""module playground
+    @Test fun functions() = assertEquals("7" + "\n" + "120", run("""mod playground
 import std.io
 func add(a: Int, b: Int): Int { return a + b }
 func factorial(n: Int): Int {
@@ -48,7 +48,7 @@ func main() {
     std::println("${'$'}{factorial(5)}")
 }"""))
 
-    @Test fun controlFlow() = assertEquals("sum 1..10 = 55" + "\n" + "stopped at 7" + "\n" + "even count = 5", run("""module playground
+    @Test fun controlFlow() = assertEquals("sum 1..10 = 55" + "\n" + "stopped at 7" + "\n" + "even count = 5", run("""mod playground
 import std.io
 func main() {
     var sum = 0
@@ -68,7 +68,7 @@ func main() {
     std::println("even count = ${'$'}{evens}")
 }"""))
 
-    @Test fun arrays() = assertEquals("10" + "\n" + "3" + "\n" + "4" + "\n" + "99" + "\n" + "total = 189", run("""module playground
+    @Test fun arrays() = assertEquals("10" + "\n" + "3" + "\n" + "4" + "\n" + "99" + "\n" + "total = 189", run("""mod playground
 import std.io
 func main() {
     var nums = arr@[10, 20, 30]
@@ -83,7 +83,7 @@ func main() {
     std::println("total = ${'$'}{total}")
 }"""))
 
-    @Test fun strings() = assertEquals("Hello, Azora!" + "\n" + "3 x 3 = 9" + "\n" + "ababab" + "\n" + "length is 5", run("""module playground
+    @Test fun strings() = assertEquals("Hello, Azora!" + "\n" + "3 x 3 = 9" + "\n" + "ababab" + "\n" + "length is 5", run("""mod playground
 import std.io
 func main() {
     var name = "Azora"
@@ -94,7 +94,7 @@ func main() {
     std::println("length is ${'$'}{name.length}")
 }"""))
 
-    @Test fun structs() = assertEquals("3, 4" + "\n" + "10, 5" + "\n" + "last = 3, 3", run("""module playground
+    @Test fun structs() = assertEquals("3, 4" + "\n" + "10, 5" + "\n" + "last = 3, 3", run("""mod playground
 import std.io
 pack Point {
     var x: Int
@@ -110,7 +110,7 @@ func main() {
     std::println("last = ${'$'}{points[2].x}, ${'$'}{points[2].y}")
 }"""))
 
-    @Test fun operators() = assertEquals("30" + "\n" + "3" + "\n" + "2" + "\n" + "sum 1..<5 = 10", run("""module playground
+    @Test fun operators() = assertEquals("30" + "\n" + "3" + "\n" + "2" + "\n" + "sum 1..<5 = 10", run("""mod playground
 import std.io
 func main() {
     var n = 10
@@ -124,7 +124,7 @@ func main() {
     std::println("sum 1..<5 = ${'$'}{sum}")
 }"""))
 
-    @Test fun scopes() = assertEquals("inner 2" + "\n" + "outer 1" + "\n" + "after 1", run("""module playground
+    @Test fun scopes() = assertEquals("inner 2" + "\n" + "outer 1" + "\n" + "after 1", run("""mod playground
 import std.io
 func main() {
     var x = 1
@@ -136,7 +136,7 @@ func main() {
     std::println("after ${'$'}{x}")
 }"""))
 
-    @Test fun ctce() = assertEquals("size: 8" + "\n" + "squared: 25", run("""module playground
+    @Test fun ctce() = assertEquals("size: 8" + "\n" + "squared: 25", run("""mod playground
 import std.io
 inline func square(x: Int): Int { return x * x }
 func main() {
@@ -145,7 +145,7 @@ func main() {
     std::println("squared: ${'$'}{square(5)}")
 }"""))
 
-    @Test fun testing() = assertEquals("running tests...", run("""module playground
+    @Test fun testing() = assertEquals("running tests...", run("""mod playground
 import std.io
 func factorial(n: Int): Int {
     if n <= 1 { return 1 }
@@ -163,7 +163,7 @@ func main() { std::println("running tests...") }"""))
 
     // ── Modern-language examples (chapters 26–35 era) ───────────────────────
 
-    @Test fun maps() = assertEquals("90\n75\n80", run("""module playground
+    @Test fun maps() = assertEquals("90\n75\n80", run("""mod playground
 import std.io
 func main() {
     var scores = ["alice": 90, "bob": 75]
@@ -174,7 +174,7 @@ func main() {
     std::println(scores["bob"])
 }"""))
 
-    @Test fun taggedUnions() = assertEquals("75\n24\n0", run("""module playground
+    @Test fun taggedUnions() = assertEquals("75\n24\n0", run("""mod playground
 import std.io
 slot Shape {
     Circle(Int)
@@ -194,7 +194,7 @@ func main() {
     std::println(area(Shape.Empty))
 }"""))
 
-    @Test fun generators() = assertEquals("30", run("""module playground
+    @Test fun generators() = assertEquals("30", run("""mod playground
 import std.io
 flow squares(n: Int): Int {
     for i in 0..<n { yield i * i }
@@ -205,7 +205,7 @@ func main() {
     std::println(sum)
 }"""))
 
-    @Test fun dependencyInjection() = assertEquals("1\n2", run("""module playground
+    @Test fun dependencyInjection() = assertEquals("1\n2", run("""mod playground
 import std.io
 solo Counter {
     var n: Int = 0
@@ -219,7 +219,7 @@ func main() {
     std::println(inject Counter.inc())
 }"""))
 
-    @Test fun pointers() = assertEquals("10\n20\n99", run("""module playground
+    @Test fun pointers() = assertEquals("10\n20\n99", run("""mod playground
 import std.io
 func main() {
     var p: Int* = alloc arr@[10, 20, 30]
@@ -229,7 +229,7 @@ func main() {
     std::println(*(p + 2))
 }"""))
 
-    @Test fun variadic() = assertEquals("6\n100", run("""module playground
+    @Test fun variadic() = assertEquals("6\n100", run("""mod playground
 import std.io
 func sumAll<...T>(first: Int, rest: ...T): Int {
     var total = first

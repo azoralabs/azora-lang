@@ -109,12 +109,12 @@ class StdlibInjector private constructor(
          * it must match the *end* of the declared module, and the leading
          * segments the path does not spell are the package's own prefix. In a
          * multi-package workspace that is what lets
-         * `azora-render/src/render.az` declare `module engine.render` — the
+         * `azora-render/src/render.az` declare `mod engine.render` — the
          * package supplies `engine`, the file supplies `render`.
          *
          * Without a `src` root the whole path must match, so a single-directory
-         * project still gets the strict `a/b/c.az` → `module a.b.c` rule. A
-         * folder-index file `a/b/b.az` represents `module a.b` in either case.
+         * project still gets the strict `a/b/c.az` → `mod a.b.c` rule. A
+         * folder-index file `a/b/b.az` represents `mod a.b` in either case.
          * Files with no `module` declaration are unconstrained.
          *
          * @throws IllegalArgumentException when the path cannot denote the module.
@@ -134,7 +134,7 @@ class StdlibInjector private constructor(
             ) {
                 return
             }
-            // Folder-index `b/b.az` denotes `module ….b`, so the path carries one
+            // Folder-index `b/b.az` denotes `mod ….b`, so the path carries one
             // segment more than the module — which is why this is checked before
             // any length guard rejects it.
             if (segments.size >= 2 &&
@@ -150,7 +150,7 @@ class StdlibInjector private constructor(
         private fun mismatch(path: String, moduleName: String, expected: List<String>) =
             IllegalArgumentException(
                 "file path '$path' does not match module '$moduleName': a file declaring " +
-                    "'module $moduleName' must be located at '${expected.joinToString("/")}.az' " +
+                    "'mod $moduleName' must be located at '${expected.joinToString("/")}.az' " +
                     "relative to its source root",
             )
 
@@ -585,7 +585,6 @@ class StdlibInjector private constructor(
                     }
                     is Stmt.Defer -> stmt.body.forEach { statement(it, typeParams, currentZone) }
                     is Stmt.Zone -> stmt.body.forEach { statement(it, typeParams, currentZone) }
-                    is Stmt.FriendZone -> stmt.body.forEach { statement(it, typeParams, currentZone) }
                     is Stmt.InlineBlock -> stmt.body.forEach { statement(it, typeParams, currentZone) }
                     is Stmt.DeepInlineBlock -> stmt.body.forEach { statement(it, typeParams, currentZone) }
                     is Stmt.Effect -> {
@@ -1400,7 +1399,6 @@ class StdlibInjector private constructor(
             }
             is Stmt.Defer -> stmt.body.forEach { collectNamesFromStmt(it, names) }
             is Stmt.Zone -> stmt.body.forEach { collectNamesFromStmt(it, names) }
-            is Stmt.FriendZone -> stmt.body.forEach { collectNamesFromStmt(it, names) }
             is Stmt.InlineBlock -> stmt.body.forEach { collectNamesFromStmt(it, names) }
             is Stmt.DeepInlineBlock -> stmt.body.forEach { collectNamesFromStmt(it, names) }
             is Stmt.Effect -> {

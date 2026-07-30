@@ -134,7 +134,6 @@ internal object IntraZoneRewriter {
             is Stmt.Try -> { s.body.forEach { collectStmtNames(it, names) }; s.catchBody?.forEach { collectStmtNames(it, names) } }
             is Stmt.Defer -> s.body.forEach { collectStmtNames(it, names) }
             is Stmt.Zone -> s.body.forEach { collectStmtNames(it, names) }
-            is Stmt.FriendZone -> s.body.forEach { collectStmtNames(it, names) }
             else -> {}
         }
     }
@@ -218,7 +217,6 @@ internal object IntraZoneRewriter {
         is Stmt.Try -> s.copy(body = s.body.map { stmt(it, prefix, mangled, shadowed) }, catchBody = s.catchBody?.map { stmt(it, prefix, mangled, shadowed) })
         is Stmt.Defer -> s.copy(body = s.body.map { stmt(it, prefix, mangled, shadowed) })
         is Stmt.Zone -> s.copy(body = s.body.map { stmt(it, prefix, mangled, shadowed) })
-        is Stmt.FriendZone -> s.copy(body = s.body.map { stmt(it, prefix, mangled, shadowed) })
         else -> s
     }
 

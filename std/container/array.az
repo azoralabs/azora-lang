@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-module std.container.array
+mod std.container.array
 
 /**
  * @file std/container/array
@@ -30,7 +30,7 @@ module std.container.array
  * @since 0.0.4
  */
 
-friend zone std {
+zone std {
     /**
      * A contiguous, ordered collection whose elements all have type `T`.
      *

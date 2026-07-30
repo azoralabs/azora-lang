@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  */
 
-module std.memory.slice
+mod std.memory.slice
 
 /**
  * @file std/memory/slice
@@ -15,7 +15,7 @@ module std.memory.slice
  * @since 0.0.3
  */
 
-friend zone std {
+zone std {
     @SinceAzora("0.0.3")
     pack Slice<T> {
         confine var raw: T*

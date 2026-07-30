@@ -29,9 +29,9 @@ class OwnershipTaskTest {
     fun namedTasksStartAndAwaitInTaskMain() {
         val source = """
             use std.io
-            task loadUser(): Int { return 20 }
-            task loadPosts(): Int { return 22 }
-            task main() {
+            async func loadUser(): Int { return 20 }
+            async func loadPosts(): Int { return 22 }
+            async func main() {
                 fin user = loadUser()
                 fin posts = loadPosts()
                 fin userValue = await user
@@ -51,8 +51,8 @@ class OwnershipTaskTest {
     fun directAwaitOfTaskCall() {
         assertEquals("42", run("""
             use std.io
-            task answer(): Int { return 42 }
-            task main() {
+            async func answer(): Int { return 42 }
+            async func main() {
                 fin value = await answer()
                 std::println(value)
             }
@@ -63,7 +63,7 @@ class OwnershipTaskTest {
     fun asyncBlockProducesTaskHandle() {
         val source = """
             use std.io
-            task main() {
+            async func main() {
                 fin left = async { 19 }
                 fin right = async { 23 }
                 fin a = await left
@@ -80,8 +80,8 @@ class OwnershipTaskTest {
     fun taskAndUnsafeFlagsSurviveIntoIr() {
         val result = compile("""
             use std.io
-            unsafe task compute(): Int { return 7 }
-            task main() { std::println(7) }
+            unsafe async func compute(): Int { return 7 }
+            async func main() { std::println(7) }
         """.trimIndent())
 
         val compute = result.ir.functions.first { it.name == "compute" }
@@ -114,8 +114,8 @@ class OwnershipTaskTest {
         val result = Compiler().compile("""
             use std.io
             pack Buffer { var value: Int }
-            task inspect(input: Buffer&): Int { return input.value }
-            task main() { std::println(0) }
+            async func inspect(input: Buffer&): Int { return input.value }
+            async func main() { std::println(0) }
         """.trimIndent())
 
         assertIs<CompilationResult.Failure>(result)

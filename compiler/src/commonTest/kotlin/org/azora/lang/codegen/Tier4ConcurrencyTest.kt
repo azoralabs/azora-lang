@@ -19,6 +19,26 @@ class Tier4ConcurrencyTest {
         return IrInterpreter().interpret(result.ir).trim()
     }
 
+    @Test fun asyncIsContextualNotReserved() {
+        // `async` names a task only when a `func` follows it; on its own it is
+        // still the builtin that spawns a lambda, and still a usable name.
+        assertEquals("5\n21\n20", run("""
+            use std.io
+
+            async func compute(n: Int): Int {
+                return n * 2
+            }
+
+            func main() {
+                var async = 5
+                std::println(async)
+                fin handle = async func { 21 }
+                std::println(await handle)
+                std::println(await compute(10))
+            }
+        """.trimIndent()))
+    }
+
     @Test fun flowYieldsValuesIteratedByForLoop() {
         assertEquals("0\n1\n4\n9", run("""
             use std.io
@@ -115,7 +135,7 @@ class Tier4ConcurrencyTest {
         assertEquals("42", run("""
             use std.io
             func main() {
-                var t = task {
+                var t = async func {
                     42
                 }
                 std::println(await t)
@@ -130,7 +150,7 @@ class Tier4ConcurrencyTest {
                 return a * b
             }
             func main() {
-                var t = task {
+                var t = async func {
                     compute(5, 6)
                 }
                 std::println(await t)
@@ -142,8 +162,8 @@ class Tier4ConcurrencyTest {
         assertEquals("10\n20", run("""
             use std.io
             func main() {
-                var t1 = task { 10 }
-                var t2 = task { 20 }
+                var t1 = async func { 10 }
+                var t2 = async func { 20 }
                 std::println(await t1)
                 std::println(await t2)
             }
@@ -175,7 +195,7 @@ class Tier4ConcurrencyTest {
             }
             func main() {
                 var ch = channel()
-                var p = task {
+                var p = async func {
                     produce(ch)
                 }
                 await p
@@ -225,8 +245,8 @@ class Tier4ConcurrencyTest {
         assertEquals("300", run("""
             use std.io
             func main() {
-                var t1 = task { 100 }
-                var t2 = task { 200 }
+                var t1 = async func { 100 }
+                var t2 = async func { 200 }
                 std::println(await t1 + await t2)
             }
         """.trimIndent()))

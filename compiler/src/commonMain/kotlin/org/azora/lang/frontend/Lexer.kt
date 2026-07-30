@@ -78,7 +78,6 @@ class Lexer(private val source: String) {
             "isolated" to TokenType.ISOLATED,
             "flow" to TokenType.FLOW,
             "yield" to TokenType.YIELD,
-            "task" to TokenType.TASK,
             "await" to TokenType.AWAIT,
             "launch" to TokenType.LAUNCH,
             "bridge" to TokenType.BRIDGE,

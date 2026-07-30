@@ -36,7 +36,7 @@ object AzHighlighter {
         "inline", "deepinline", "noinline", "zone", "test", "assert", "trace",
         "for", "while", "loop", "in", "break", "continue", "by", "reverse",
         "infx", "oper", "deco", "fail", "alloc", "drop", "unsafe", "isolated",
-        "flow", "yield", "task", "await", "launch", "bridge", "solo", "inject", "wrap",
+        "flow", "yield", "async", "await", "launch", "bridge", "solo", "inject", "wrap",
         "rescue", "node", "leaf", "repl", "virt", "base", "rem", "effect", "view",
         "hook", "prop", "ctor", "dtor", "ref", "out", "mut",
         "expose", "confine", "mod", "threadlocal",
@@ -261,7 +261,7 @@ object AzHighlighter {
         val declarations = mutableSetOf<Int>()
         val scopes = mutableListOf<ParameterScope>()
         val declaredTypes = mutableSetOf<String>()
-        val callable = Regex("""\b(?:func|task|flow|hook)\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:<[^>{}\n]*>)?\s*\(([^)]*)\)""")
+        val callable = Regex("""\b(?:func|flow|hook)\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:<[^>{}\n]*>)?\s*\(([^)]*)\)""")
         val parameter = Regex("""(?:\.\.\.)?([A-Za-z_][A-Za-z0-9_]*)\s*:""")
         val typeDeclaration = Regex("""\b(?:pack|enum|spec|solo|node|slot)\s+([A-Za-z_][A-Za-z0-9_]*)""")
 

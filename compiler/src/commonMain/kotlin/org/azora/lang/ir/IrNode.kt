@@ -986,7 +986,7 @@ data class IrFunction(
     fun prettyPrint(sb: StringBuilder, indent: Int) {
         val pad = "    ".repeat(indent)
         val params = params.joinToString(", ") { (name, type) -> "$name: $type" }
-        val keyword = if (isTask) "task" else "func"
+        val keyword = if (isTask) "async func" else "func"
         val unsafe = if (isUnsafe) "unsafe " else ""
         sb.appendLine("$pad$unsafe$keyword $name($params): $returnType {")
         for (stmt in body) stmt.prettyPrint(sb, indent + 1)

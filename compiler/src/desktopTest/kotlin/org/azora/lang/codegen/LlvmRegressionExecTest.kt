@@ -43,8 +43,8 @@ class LlvmRegressionExecTest {
         "42",
         """
         use std.io
-        task answer(): Int { return 42 }
-        task main() {
+        async func answer(): Int { return 42 }
+        async func main() {
             fin value = await answer()
             std::println(value)
         }
@@ -55,8 +55,8 @@ class LlvmRegressionExecTest {
         "42",
         """
         use std.io
-        task add(a: Int, b: Int): Int { return a + b }
-        task main() {
+        async func add(a: Int, b: Int): Int { return a + b }
+        async func main() {
             fin value = await add(19, 23)
             std::println(value)
         }
@@ -67,7 +67,7 @@ class LlvmRegressionExecTest {
         "42",
         """
         use std.io
-        task main() {
+        async func main() {
             fin value = async { 42 }
             std::println(await value)
         }
@@ -78,7 +78,7 @@ class LlvmRegressionExecTest {
         "42",
         """
         use std.io
-        task main() {
+        async func main() {
             fin seed = 40
             fin value = async { seed + 2 }
             std::println(await value)
@@ -90,11 +90,11 @@ class LlvmRegressionExecTest {
         "42",
         """
         use std.io
-        task child(): Int {
+        async func child(): Int {
             std::println(42)
             return 0
         }
-        task main() {
+        async func main() {
             child()
         }
         """.trimIndent()
@@ -105,8 +105,8 @@ class LlvmRegressionExecTest {
         """
         use std.io
         threadlocal var numbers = arr@[41]
-        task read(): Int { return numbers[0] + 1 }
-        task main() {
+        async func read(): Int { return numbers[0] + 1 }
+        async func main() {
             std::println(await read())
         }
         """.trimIndent()
@@ -116,7 +116,7 @@ class LlvmRegressionExecTest {
         "42",
         """
         use std.io
-        task main() {
+        async func main() {
             zone alloc {
                 var p: Int* = alloc 41
                 fin value = async { *p + 1 }
@@ -151,8 +151,8 @@ class LlvmRegressionExecTest {
         use std.io
         use std.concurrency.async
 
-        task answer(): Int { return 42 }
-        task main() {
+        async func answer(): Int { return 42 }
+        async func main() {
             fin value = answer()
             std::println(await value)
             std::concurrency::cancel(value)
@@ -166,8 +166,8 @@ class LlvmRegressionExecTest {
             use std.io
             use std.concurrency.async
 
-            task answer(): Int { return 42 }
-            task main() {
+            async func answer(): Int { return 42 }
+            async func main() {
                 fin value = answer()
                 std::concurrency::cancel(value)
             }

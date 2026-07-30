@@ -37,7 +37,7 @@ zone std {
      * @param action The function to execute after the delay.
      */
     @Experimental(sinceAzora: "0.0.1")
-    task delayed(ms: Int, action: () -> Unit) {
+    async func delayed(ms: Int, action: () -> Unit) {
         suspend ms
         action()
     }

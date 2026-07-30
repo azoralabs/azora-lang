@@ -96,7 +96,7 @@ func isKeywordRange(source: String, start: Int, end: Int): Bool {
         rangeIs(source, start, end, "alloc") || rangeIs(source, start, end, "drop") ||
         rangeIs(source, start, end, "deref") || rangeIs(source, start, end, "unsafe") ||
         rangeIs(source, start, end, "isolated") || rangeIs(source, start, end, "flow") ||
-        rangeIs(source, start, end, "yield") || rangeIs(source, start, end, "task") ||
+        rangeIs(source, start, end, "yield") || rangeIs(source, start, end, "async") ||
         rangeIs(source, start, end, "await") || rangeIs(source, start, end, "launch") ||
         rangeIs(source, start, end, "bridge") || rangeIs(source, start, end, "solo") ||
         rangeIs(source, start, end, "inject") || rangeIs(source, start, end, "wrap") ||
@@ -113,7 +113,7 @@ func isKeywordRange(source: String, start: Int, end: Int): Bool {
 }
 
 func isDeclarationRange(source: String, start: Int, end: Int): Bool {
-    return rangeIs(source, start, end, "func") || rangeIs(source, start, end, "task") ||
+    return rangeIs(source, start, end, "func") || rangeIs(source, start, end, "async") ||
         rangeIs(source, start, end, "flow") || rangeIs(source, start, end, "pack") ||
         rangeIs(source, start, end, "enum") || rangeIs(source, start, end, "prot") ||
         rangeIs(source, start, end, "deco") || rangeIs(source, start, end, "node") ||
@@ -124,12 +124,12 @@ func isDeclarationRange(source: String, start: Int, end: Int): Bool {
 }
 
 func isFunctionDeclarationRange(source: String, start: Int, end: Int): Bool {
-    return rangeIs(source, start, end, "func") || rangeIs(source, start, end, "task") ||
+    return rangeIs(source, start, end, "func") || rangeIs(source, start, end, "async") ||
         rangeIs(source, start, end, "flow") || rangeIs(source, start, end, "hook")
 }
 
 func declarationKind(source: String, start: Int, end: Int): String {
-    if rangeIs(source, start, end, "func") || rangeIs(source, start, end, "task") ||
+    if rangeIs(source, start, end, "func") || rangeIs(source, start, end, "async") ||
         rangeIs(source, start, end, "flow") || rangeIs(source, start, end, "hook") { return "function" }
     if rangeIs(source, start, end, "pack") || rangeIs(source, start, end, "node") ||
         rangeIs(source, start, end, "solo") || rangeIs(source, start, end, "typealias") { return "type" }

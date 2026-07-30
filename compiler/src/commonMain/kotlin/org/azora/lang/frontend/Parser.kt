@@ -594,16 +594,17 @@ class Parser(
             // Compile-time list bindings (`let X: [Type]`, `inline fin ranks: [Int]`)
             // must be recognised before the general `inline`/`fin`/`let` handlers.
             isTypeListBindingAhead() -> parseTypeListBinding()
-            check(TokenType.UNSAFE) && peekNext()?.type in setOf(TokenType.FUNC, TokenType.TASK, TokenType.FLOW) -> {
+            check(TokenType.UNSAFE) && (peekNext()?.type in setOf(TokenType.FUNC, TokenType.FLOW) || isAsyncFuncAt(current + 1)) -> {
                 advance()
                 when {
-                    check(TokenType.TASK) -> TopLevel.Func(parseFuncDecl(annotations = annotations, isTask = true, isUnsafe = true, visibility = visibility))
+                    isAsyncFuncAt(current) -> TopLevel.Func(parseFuncDecl(annotations = annotations, isTask = true, isUnsafe = true, visibility = visibility))
                     check(TokenType.FLOW) -> TopLevel.Func(parseFuncDecl(annotations = annotations, isFlow = true, isUnsafe = true, visibility = visibility))
                     else -> TopLevel.Func(parseFuncDecl(annotations = annotations, isUnsafe = true, visibility = visibility))
                 }
             }
             check(TokenType.FUNC) -> funcOrExtension(parseFuncDecl(annotations = annotations, visibility = visibility))
-            check(TokenType.TASK) -> funcOrExtension(parseFuncDecl(annotations = annotations, isTask = true, visibility = visibility))
+            isAsyncFuncAt(current) ->
+                funcOrExtension(parseFuncDecl(annotations = annotations, isTask = true, visibility = visibility))
             check(TokenType.FLOW) -> funcOrExtension(parseFuncDecl(annotations = annotations, isFlow = true, visibility = visibility))
             check(TokenType.INFX) -> parseInfx()
             check(TokenType.INLINE) -> parseTopLevelInline()
@@ -2161,7 +2162,7 @@ class Parser(
                 }
                 check(TokenType.OPER) -> error("oper[] overloads are only allowed as standalone 'impl oper[] for ${typeName} { ... }' at line ${peek().line}")
                 check(TokenType.FUNC) -> methods.add(parseFuncDecl(isInline, annotations = memberAnnotations, isVirtual = isVirt, visibility = visibility))
-                check(TokenType.TASK) -> methods.add(parseFuncDecl(isInline, annotations = memberAnnotations, isVirtual = isVirt, isTask = true, visibility = visibility))
+                isAsyncFuncAt(current) -> methods.add(parseFuncDecl(isInline, annotations = memberAnnotations, isVirtual = isVirt, isTask = true, visibility = visibility))
                 check(TokenType.FLOW) -> methods.add(parseFuncDecl(isInline, annotations = memberAnnotations, isVirtual = isVirt, isFlow = true, visibility = visibility))
                 else -> error("Expected 'prop', 'func', 'task', or 'flow' in impl block at line ${peek().line}")
             }
@@ -3229,12 +3230,15 @@ class Parser(
         visibility: Visibility = Visibility.PUBLIC,
     ): FuncDecl {
         val start = peek()
-        val keyword = when {
-            isFlow -> TokenType.FLOW
-            isTask -> TokenType.TASK
-            else -> TokenType.FUNC
+        // `async func name(…)` — `async` qualifies `func` rather than replacing
+        // it, so an asynchronous declaration still reads as a function.
+        if (isTask) {
+            consume(TokenType.IDENTIFIER, "Expected 'async'")
+            consume(TokenType.FUNC, "Expected 'func' after 'async'")
+        } else {
+            val keyword = if (isFlow) TokenType.FLOW else TokenType.FUNC
+            consume(keyword, "Expected '${keyword.name.lowercase()}'")
         }
-        consume(keyword, "Expected '${keyword.name.lowercase()}'")
         if (check(TokenType.LESS)) {
             error("Type parameters go after the function name: write 'func name<…>(…)', not 'func<…> name(…)', at line ${peek().line}")
         }
@@ -3517,10 +3521,23 @@ class Parser(
     private fun consumeMemberName(message: String): String =
         if (check(TokenType.ZONE)) advance().lexeme else consumeIdentifierLike(message)
 
+    /**
+     * True when [index] starts `async func` — an asynchronous declaration.
+     *
+     * `async` is contextual, not reserved: on its own it is the builtin that
+     * spawns a task (`async { … }`), and it only qualifies a declaration when a
+     * `func` follows it.
+     */
+    private fun isAsyncFuncAt(index: Int): Boolean {
+        val word = tokens.getOrNull(index) ?: return false
+        if (word.type != TokenType.IDENTIFIER || word.lexeme != "async") return false
+        return tokens.getOrNull(index + 1)?.type == TokenType.FUNC
+    }
+
     private fun consumeIdentifierLike(message: String): String {
         val t = peek()
         val soft = t.type == TokenType.REVERSE ||
-            t.type == TokenType.TASK || t.type == TokenType.PROP ||
+            t.type == TokenType.PROP ||
             t.type == TokenType.DROP || t.type == TokenType.MEM || t.type == TokenType.REM || t.type == TokenType.RET ||
             t.type == TokenType.ALLOC || t.type == TokenType.DEREF || t.type == TokenType.TEST ||
             t.type == TokenType.SHARED || t.type == TokenType.WEAK || t.type == TokenType.META
@@ -6178,6 +6195,10 @@ class Parser(
             TokenType.TRUE -> { advance(); Expr.BoolLiteral(true, tok.line, tok.column, tok.lexeme.length) }
             TokenType.FALSE -> { advance(); Expr.BoolLiteral(false, tok.line, tok.column, tok.lexeme.length) }
             TokenType.NULL -> { advance(); Expr.NullLiteral }
+            // `async func { … }` — an asynchronous lambda. Must be tested before
+            // the general identifier branch, and is distinct from the `async { … }`
+            // builtin, which spawns the lambda it is handed.
+            TokenType.IDENTIFIER if isAsyncFuncAt(current) -> parseCallableLambda(CallableKind.TASK)
             TokenType.IDENTIFIER, TokenType.SHARED, TokenType.WEAK,
             TokenType.REVERSE -> {
                 advance()
@@ -6230,7 +6251,6 @@ class Parser(
                 }
             }
             TokenType.L_BRACE -> parseLambda(tok.line, tok.column)
-            TokenType.TASK -> parseCallableLambda(CallableKind.TASK)
             TokenType.FLOW -> parseCallableLambda(CallableKind.FLOW)
             // `launch { body }` — fire-and-forget task; desugars to a __launch(thunk) call.
             TokenType.LAUNCH -> {
@@ -6256,6 +6276,9 @@ class Parser(
      */
     private fun parseCallableLambda(kind: CallableKind): Expr.Lambda {
         val start = advance()
+        // `async func { … }` — `async` is a qualifier, so the `func` follows it
+        // here exactly as it does on a declaration.
+        if (kind == CallableKind.TASK) consume(TokenType.FUNC, "Expected 'func' after 'async'")
         val params = if (match(TokenType.L_PAREN)) {
             val parsed = if (check(TokenType.R_PAREN)) emptyList() else parseParams()
             consume(TokenType.R_PAREN, "Expected ')' after callable parameters")

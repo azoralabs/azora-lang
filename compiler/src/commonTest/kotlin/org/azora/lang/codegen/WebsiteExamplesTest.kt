@@ -539,7 +539,7 @@ func main() { std::println("Hello, Azora!") }"""))
         }
         func main() {
             var ch = channel()
-            var p = task { produce(ch) }
+            var p = async func { produce(ch) }
             await p
             std::println(ch.receive())
             std::println(ch.receive())

@@ -153,7 +153,7 @@ checking; `guard cond else { }`; `break`/`continue`.
 `hook name { }` (lifecycle callback), `prop name: T { }` (computed property),
 `ctor(params) { }` (secondary constructor), and `dtor { }` (destructor).
 Inside ordinary `impl Type { }`
-blocks only `prop`, `func`, `task`, and `flow` members are accepted. Index
+blocks only `prop`, `func`, `async func`, and `flow` members are accepted. Index
 overloading is standalone: `impl oper[] for Type { ref self, index -> ... }`
 and `impl oper[]= for Type { mut ref self, index, value -> ... }`. Extension
 methods use `func Type.method(...) { ref self -> }`, and infix extension
@@ -206,9 +206,9 @@ it is used by `value as String` casts and does not create `.toString`.
 
 ### Concurrency
 
-`flow` generators (lazy, suspend at `yield`), `task { }` / `await t`
+`flow` generators (lazy, suspend at `yield`), `async func { }` / `await t`
 (cooperative async with **real parallelism** on `Dispatchers.Default` — each
-task gets isolated execution state), `channel()` + `.send`/`.receive`/`.close`,
+each task gets isolated execution state), `channel()` + `.send`/`.receive`/`.close`,
 `launch { }` (fire-and-forget, joined before exit).
 
 ### Error handling
@@ -339,7 +339,7 @@ Reserved words in the language (see `frontend/Token.kt`):
 - **Bindings**: `var` `fin` `let` `threadlocal`
 - **Functions/types**: `func` `return` `pack` `enum` `slot` `typealias` `impl` `prot` `node` `leaf` `virt` `repl` `base`
 - **Control**: `if` `else` `for` `while` `loop` `in` `by` `reverse` `break` `continue` `when` `guard`
-- **Errors/concurrency**: `throw` `try` `catch` `rescue` `fail` `defer` `flow` `yield` `task` `await` `launch`
+- **Errors/concurrency**: `throw` `try` `catch` `rescue` `fail` `defer` `flow` `yield` `async` `await` `launch`
 - **Memory/FFI/DI**: `alloc` `drop` `unsafe` `isolated` `bridge` `solo` `wrap` `inject`
 - **Reactivity/object model**: `mem` `rem` `ret` `effect` `hook` `prop` `ctor` `dtor`
 - **Metaprogramming**: `inline` `deepinline` `noinline`

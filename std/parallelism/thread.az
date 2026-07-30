@@ -34,7 +34,7 @@ zone std {
      * @param ms The delay in milliseconds.
      */
     @Experimental(sinceAzora: "0.0.1")
-    task sleep<T>(ms: T) {
+    async func sleep<T>(ms: T) {
         suspend ms
     }
 
@@ -45,7 +45,7 @@ zone std {
      * @param action The function to execute.
      */
     @Experimental(sinceAzora: "0.0.1")
-    task spawnAsync<T>(ms: T, action: () -> Unit) {
+    async func spawnAsync<T>(ms: T, action: () -> Unit) {
         fin handle = async { action() }
         suspend ms
         await(handle)
@@ -58,7 +58,7 @@ zone std {
      * @param count The delay in milliseconds.
      */
     @Experimental(sinceAzora: "0.0.1")
-    task joinAll<T>(count: T) {
+    async func joinAll<T>(count: T) {
         suspend count
     }
 }

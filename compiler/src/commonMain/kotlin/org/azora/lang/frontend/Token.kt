@@ -89,7 +89,7 @@ enum class TokenType {
     FOR, WHILE, LOOP, IN, BREAK, CONTINUE,
     PACK, ENUM, WHEN,
     THROW, TRY, CATCH,
-    IMPL, SPEC,
+    IMPL, PROT,
     DEFER, TYPE, TYPEALIAS,
     SLOT,
 
@@ -139,7 +139,6 @@ enum class TokenType {
     MEM, REM, RET, EFFECT,
     // Object model: `prop name: T { }`, `ctor(params) { }`, `dtor { }`.
     PROP, CTOR, DTOR,
-    // Alternating execution: `flip { } flop { }`.
     // Ownership/reference modifiers: `ref T`, `mut ref T`, `shared ref T`, `weak ref T`.
     REF, OUT, MUT, SHARED, WEAK,
     // Visibility: `expose` (public), `confine` (private), `protect` (protected).

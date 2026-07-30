@@ -341,7 +341,7 @@ class SymbolCollector {
                         // An operator's `by <Spec>` clause names the operand type
                         // (`impl oper== by List<T> for ArrayList { ref self, rhs -> }`),
                         // so the operand param(s) — written without a type in the body
-                        // header — take that spec type rather than erasing to Any.
+                        // header — take that prot type rather than erasing to Any.
                         val operandType = if (method.name.startsWith("oper") && item.traitName != null) {
                             resolveType(TypeRef.Named(item.traitName!!), tpSet)
                         } else null
@@ -380,28 +380,28 @@ class SymbolCollector {
         val contractNames = mutableSetOf<String>()
         for (item in program.items.filterIsInstance<TopLevel.Spec>()) {
             if (!contractNames.add(item.name)) {
-                errors.add("line ${item.line}: duplicate spec or decorator '${item.name}'")
+                errors.add("line ${item.line}: duplicate prot or decorator '${item.name}'")
             } else {
                 // Capture each requirement's declared return type so member access
-                // on a spec-typed value (e.g. `map.size` on a `Map<K,V>`) resolves.
+                // on a prot-typed value (e.g. `map.size` on a `Map<K,V>`) resolves.
                 val tpSet = item.typeParams.toSet()
                 val ownPropTypes = item.methods.mapNotNull { m ->
                     val ref = (m.returnType as? TypeAnnotation.Explicit)?.ref
                     if (ref != null) m.name to IrType.resolve(ref, tpSet) else null
                 }.toMap()
-                // Full signatures so method calls on a spec-typed value type-check
+                // Full signatures so method calls on a prot-typed value type-check
                 // and yield the declared (erased) return type.
                 val ownMethodSigs = item.methods.associate { m ->
                     val ret = (m.returnType as? TypeAnnotation.Explicit)?.ref?.let { IrType.resolve(it, tpSet) } ?: IrType.Unit
                     val params = m.params.map { IrType.resolve(it.type, tpSet) }
                     m.name to SpecMethodSig(params, ret, m.memberCallStyle == MemberCallStyle.PROPERTY)
                 }
-                // Spec inheritance (`spec Mutable: Read`): store only own members
+                // Spec inheritance (`prot Mutable: Read`): store only own members
                 // plus the parent name. Inherited members resolve by walking the
                 // parent chain at query time, so registration order (which the
                 // stdlib injector may reorder) does not matter. methodNames stays
                 // own-only — the `impl … for Type` completeness check requires only
-                // this spec's own methods; inherited ones are satisfied by the
+                // this prot's own methods; inherited ones are satisfied by the
                 // separate `impl Parent for Type` block.
                 val parentName = (item.parent as? TypeRef.Named)?.name
                 val methodNames = item.methods.map { it.name }
@@ -410,7 +410,7 @@ class SymbolCollector {
         }
         for (item in program.items.filterIsInstance<TopLevel.Deco>()) {
             if (!contractNames.add(item.name)) {
-                errors.add("line ${item.line}: duplicate spec or decorator '${item.name}'")
+                errors.add("line ${item.line}: duplicate prot or decorator '${item.name}'")
             } else {
                 table.defineDecorator(item.name, item.targets, item.bindings, item.isBridge)
             }
@@ -434,8 +434,8 @@ class SymbolCollector {
         for (item in program.items) {
             if (item is TopLevel.Impl && item.traitName != null) {
                 // Oper overloads with a `by <Type>` clause (e.g. `impl oper== by Map for
-                // HashMap`) are NOT spec conformances — the `by` type names the operand,
-                // not the contract. Skip spec validation for oper-style methods entirely.
+                // HashMap`) are NOT prot conformances — the `by` type names the operand,
+                // not the contract. Skip prot validation for oper-style methods entirely.
                 val isOperOverload = item.methods.any {
                     it.name.startsWith("oper") || it.name in setOf("slice", "index", "indexSet")
                 }
@@ -443,13 +443,13 @@ class SymbolCollector {
                 val contract = table.lookupSpec(item.traitName)
                 if (contract == null) {
                     // The traitName may be a `by <Type>` annotation on an operator
-                    // overload (e.g. `impl oper+ by MapEntry for Type`), not a spec
+                    // overload (e.g. `impl oper+ by MapEntry for Type`), not a prot
                     // conformance — skip validation for oper-style methods.
                     val isOperOverload = item.methods.any {
                         it.name.startsWith("oper") || it.name in setOf("slice", "index", "indexSet")
                     }
                     if (!isOperOverload) {
-                        errors.add("line ${item.line}: unknown spec or decorator '${item.traitName}'")
+                        errors.add("line ${item.line}: unknown prot or decorator '${item.traitName}'")
                     }
                 } else if (contract.isDecorator) {
                     // Decorator impls are validated and expanded by DecoratorResolver.
@@ -464,7 +464,7 @@ class SymbolCollector {
                     if (item.decoratorArgs.isNotEmpty() || item.decoratorNamedArgs.isNotEmpty()) {
                         errors.add(
                             "line ${item.line}: implementation values are only allowed for decorators; " +
-                                "'${item.traitName}' is a spec"
+                                "'${item.traitName}' is a prot"
                         )
                         continue
                     }

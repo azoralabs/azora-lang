@@ -1553,9 +1553,9 @@ data class Annotation(
 )
 
 /**
- * A decorator-to-spec binding declared by `deco D bind Spec<...Args>`.
+ * A decorator-to-prot binding declared by `deco D bind Spec<...Args>`.
  *
- * The decorated declaration's type is inserted as the bound spec's first
+ * The decorated declaration's type is inserted as the bound prot's first
  * generic argument. [trailingTypeArgs] supply any remaining generic arguments.
  */
 /** Declaration categories accepted by decorator and binding `for` clauses. */
@@ -1573,12 +1573,12 @@ data class DecoratorBinding(
 )
 
 /**
- * Compact callback form for specs such as
- * `spec Into<T>: T { ref self } use as "to${T.typeName}"`.
+ * Compact callback form for prots such as
+ * `prot Into<T>: T { ref self } use as "to${T.typeName}"`.
  *
- * The spec has no body; implementations provide one callback body directly in
+ * The prot has no body; implementations provide one callback body directly in
  * `impl Into<String> for X { ref self -> ... }`. [requiresParens] is true only
- * when the spec itself declares a parameter list (`spec Into<T>(): T ...`).
+ * when the prot itself declares a parameter list (`prot Into<T>(): T ...`).
  */
 data class SpecCallback(
     val returnType: TypeRef,
@@ -1775,7 +1775,7 @@ sealed class TopLevel {
         val isOpaque: Boolean = false,
     ) : TopLevel()
 
-    /** `deco Name [bind Spec] { fields }` — an annotation type and optional derived spec contract. */
+    /** `deco Name [bind Spec] { fields }` — an annotation type and optional derived prot contract. */
     data class Deco(
         val name: String,
         val fields: List<PackField>,
@@ -1867,7 +1867,7 @@ sealed class TopLevel {
         val isPackImpl: Boolean = false,
         /** `func X.name(...) { ref self -> ... }` extension implementation form. */
         val isExtension: Boolean = false,
-        /** Generic arguments on the implemented spec, e.g. `String` in `Into<String>`. */
+        /** Generic arguments on the implemented prot, e.g. `String` in `Into<String>`. */
         val traitArgs: List<TypeRef> = emptyList(),
         /** Positional compile-time metadata values on `impl Decorator(...) for Type`. */
         val decoratorArgs: List<Expr> = emptyList(),
@@ -1885,7 +1885,7 @@ sealed class TopLevel {
         val zonePrefix: String? = null,
     ) : TopLevel()
 
-    /** `spec Name { func method(params): Ret; ... }` or compact callback `spec Name<T>: T { ref self } use as "to${T.typeName}"`. */
+    /** `prot Name { func method(params): Ret; ... }` or compact callback `prot Name<T>: T { ref self } use as "to${T.typeName}"`. */
     data class Spec(
         val name: String,
         val methods: List<FuncDecl>,
@@ -1893,7 +1893,7 @@ sealed class TopLevel {
         val column: Int = 0,
         val callback: SpecCallback? = null,
         val typeParams: List<String> = emptyList(),
-        /** Parent spec this one inherits every member from (`spec Mutable: Read {…}`). */
+        /** Parent prot this one inherits every member from (`prot Mutable: Read {…}`). */
         val parent: TypeRef? = null,
     ) : TopLevel()
 

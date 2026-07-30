@@ -33,7 +33,7 @@ import std.convert
  *   cannot mutate it.
  *
  * `ArrayList<T>` is the single concrete dynamic-array pack implementing both
- * specs. The `listOf`, `mutableListOf`, `emptyList`, and `arrayListOf`
+ * prots. The `listOf`, `mutableListOf`, `emptyList`, and `arrayListOf`
  * factories construct it; `listOf` and `emptyList` expose the read-only
  * `List<T>` view, `mutableListOf` exposes `MutableList<T>`.
  *
@@ -50,7 +50,7 @@ friend zone std {
      * @param T The element type.
      */
     @Experimental(sinceAzora: "0.0.4")
-    spec List<T> {
+    prot List<T> {
         /** Number of elements. */
         prop size: Int
 
@@ -109,14 +109,14 @@ friend zone std {
     /**
      * Mutation behavior implemented by mutable list packs.
      *
-     * Mutation always receives `self!`. Implementing this spec does not
+     * Mutation always receives `self!`. Implementing this prot does not
      * weaken a `ref List<T>` view: callers holding only a shared reference can
      * still use only read operations.
      *
      * @param T The element type.
      */
     @Experimental(sinceAzora: "0.0.4")
-    spec MutableList<T> : List<T> {
+    prot MutableList<T> : List<T> {
         /** Appends `element` to the end. */
         func add(element: T)
 

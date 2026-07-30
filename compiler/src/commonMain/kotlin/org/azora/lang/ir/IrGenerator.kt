@@ -486,11 +486,11 @@ class IrGenerator(private val table: SymbolTable) {
     }
 
     /**
-     * Collects a dynamic-dispatch table for every spec that has at least one
+     * Collects a dynamic-dispatch table for every prot that has at least one
      * concrete `pack` implementer whose `impl` methods all resolve to real
      * functions. Backends without native trait objects use this to emit a
      * type-id switch; the interpreter/JS ignore it. Decorator contracts and
-     * marker specs (no method signatures) are skipped.
+     * marker prots (no method signatures) are skipped.
      */
     private fun buildSpecTables(): List<IrSpecTable> {
         val bySpec = table.allConformances()
@@ -1187,7 +1187,7 @@ class IrGenerator(private val table: SymbolTable) {
                     expr.kind == CastKind.STATIC && target == IrType.String ->
                         IrExpr.StringTemplate(listOf(IrExpr.IrTemplatePart.Expr(inner)))
                     target == innerType -> inner
-                    // Upcast a concrete `pack` to a spec it implements: mark it as a
+                    // Upcast a concrete `pack` to a prot it implements: mark it as a
                     // representation coercion so native backends can box it into a fat
                     // pointer for dynamic dispatch. The interpreter/JS treat a NumCast
                     // of a non-numeric as identity (the value keeps its `__type`).
@@ -1685,11 +1685,11 @@ class IrGenerator(private val table: SymbolTable) {
                         return IrExpr.Call(mangled, listOf(target) + args, func.returnType)
                     }
                 }
-                // Call on a spec-typed value (`p.build()` where `p: Plugin`): no
-                // concrete method exists on the spec name, so keep it as a
+                // Call on a prot-typed value (`p.build()` where `p: Plugin`): no
+                // concrete method exists on the prot name, so keep it as a
                 // `MethodCall` for dynamic dispatch. The interpreter resolves it via
-                // the receiver's `__type`; native backends via the spec table. We
-                // still stamp the erased return type from the spec signature.
+                // the receiver's `__type`; native backends via the prot table. We
+                // still stamp the erased return type from the prot signature.
                 if (tt is IrType.Named) {
                     val sig = table.lookupSpecMethod(tt.name, expr.name)
                     if (sig != null && !sig.isProperty) {

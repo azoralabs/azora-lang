@@ -86,7 +86,7 @@ class DecoratorConformanceTest {
                 fin ignoreUnknownFields: Bool = false
                 fin encodeDefaults: Bool = true
             }
-            spec Serializer<T> {
+            prot Serializer<T> {
                 func encode(value: T&): String
             }
             @Serializable
@@ -106,7 +106,7 @@ class DecoratorConformanceTest {
     @Test fun decoratorImplAlsoDerivesBoundSpecConformance() {
         val result = analyze("""
             deco Serializable bind Serializer {}
-            spec Serializer<T>
+            prot Serializer<T>
             pack UserId {
                 fin value: Long
             }
@@ -122,7 +122,7 @@ class DecoratorConformanceTest {
 
     @Test fun manualSerializerImplementationRecordsGenericConformance() {
         val result = analyze("""
-            spec Serializer<T> {
+            prot Serializer<T> {
                 func encode(value: T&): String
                 func decode(value: String): T
             }
@@ -153,7 +153,7 @@ class DecoratorConformanceTest {
 
     @Test fun ordinarySpecImplRejectsDecoratorMetadataValues() {
         val result = analyze("""
-            spec Serializer<T>
+            prot Serializer<T>
             pack User
             pack UserSerializer
             impl Serializer<User>(enabled: true) for UserSerializer
@@ -169,7 +169,7 @@ class DecoratorConformanceTest {
 
     @Test fun ordinarySpecImplRejectsMemberSelectors() {
         val result = analyze("""
-            spec Readable
+            prot Readable
             pack User { fin name: String = "" }
             impl Readable for User::name
             func main() {}
@@ -184,9 +184,9 @@ class DecoratorConformanceTest {
 
     @Test fun decoratorImplDerivesEverySerializerContract() {
         val result = analyze("""
-            spec Serializer<T>
-            spec JsonSerializer<T>
-            spec AzonSerializer<T>
+            prot Serializer<T>
+            prot JsonSerializer<T>
+            prot AzonSerializer<T>
             deco Serializable for .Pack bind [Serializer, JsonSerializer, AzonSerializer] {
                 fin ignoreUnknownFields: Bool = false
                 fin encodeDefaults: Bool = true
@@ -206,7 +206,7 @@ class DecoratorConformanceTest {
 
     @Test fun genericTargetAndTrailingBindingArgumentsArePreserved() {
         val result = analyze("""
-            spec Codec<T, Format>
+            prot Codec<T, Format>
             deco Json bind Codec<String> {}
             @Json
             pack Box<T> {
@@ -224,7 +224,7 @@ class DecoratorConformanceTest {
 
     @Test fun boundDecoratorRequiresMatchingGenericArity() {
         val result = analyze("""
-            spec Codec<T, Format>
+            prot Codec<T, Format>
             deco Serializable bind Codec {}
             @Serializable
             pack UserId {
@@ -247,7 +247,7 @@ class DecoratorConformanceTest {
             func main() {}
         """.trimIndent())
 
-        assertTrue(result.errors.any { "binds unknown spec or decorator 'MissingSpec'" in it }, result.errors.toString())
+        assertTrue(result.errors.any { "binds unknown prot or decorator 'MissingSpec'" in it }, result.errors.toString())
     }
 
     @Test fun unusedDecoratorBindingIsStillValidated() {
@@ -256,6 +256,6 @@ class DecoratorConformanceTest {
             func main() {}
         """.trimIndent())
 
-        assertTrue(result.errors.any { "decorator 'Broken' binds unknown spec or decorator 'MissingSpec'" in it }, result.errors.toString())
+        assertTrue(result.errors.any { "decorator 'Broken' binds unknown prot or decorator 'MissingSpec'" in it }, result.errors.toString())
     }
 }

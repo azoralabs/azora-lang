@@ -28,7 +28,7 @@ class TraitsTest {
                 var x: Int
                 var y: Int
             }
-            spec Describable {
+            prot Describable {
                 func describe(): String
             }
             impl Describable for Point {
@@ -50,7 +50,7 @@ class TraitsTest {
                 var color: String
                 var brightness: Int
             }
-            spec Device {
+            prot Device {
                 func status(): String
                 func level(): Int
             }
@@ -73,7 +73,7 @@ class TraitsTest {
     @Test fun specMissingMethodFails() {
         val errors = expectFailure("""
             import std.io
-            spec Describable {
+            prot Describable {
                 func describe(): String
                 func detail(): String
             }
@@ -103,7 +103,7 @@ class TraitsTest {
             }
             func main() { std::println("hi") }
         """.trimIndent())
-        assertTrue(errors.any { it.contains("NonExistent") }, "Expected unknown spec error, got: $errors")
+        assertTrue(errors.any { it.contains("NonExistent") }, "Expected unknown prot error, got: $errors")
     }
 
     @Test fun implWithoutTraitWorksAsBefore() {

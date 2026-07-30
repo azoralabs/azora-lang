@@ -23,23 +23,23 @@ friend zone std {
      * Declares conversion into `T`.
      *
      * Implementing `Into<String>` for a type creates a property-style member
-     * named from the `use as` template. For `T = String`, this spec exposes
+     * named from the `use as` template. For `T = String`, this prot exposes
      * `.toString` without parentheses.
      *
      * @param T target type produced by the conversion.
      */
     @Experimental(sinceAzora: "0.0.3")
-    spec Into<T>: T (self&) use as "to${T.typeName}"
+    prot Into<T>: T (self&) use as "to${T.typeName}"
 
     /**
      * Declares conversion from `T`.
      *
      * Implementing `From<String>` for a type creates a property-style member
-     * named from the `use as` template. For `T = String`, this spec exposes
+     * named from the `use as` template. For `T = String`, this prot exposes
      * `.fromString` without parentheses.
      *
      * @param T source type represented by the conversion.
      */
     @Experimental(sinceAzora: "0.0.3")
-    spec From<T>: T (self&) use as "from${T.typeName}"
+    prot From<T>: T (self&) use as "from${T.typeName}"
 }

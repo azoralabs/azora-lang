@@ -745,7 +745,7 @@ class IrInterpreter {
                             return@evalExpr (receiver as Map<String, Any?>)[expr.name]
                         }
                         // A computed property (`prop size = self._size`) is dispatched
-                        // before the generic map fallbacks so a spec-typed value (e.g.
+                        // before the generic map fallbacks so a prot-typed value (e.g.
                         // `m: Map` backed by a `LinkedHashMap`) reads the pack's own
                         // `.size`, not the struct field count.
                         if (typeName != null) {
@@ -857,7 +857,7 @@ class IrInterpreter {
                 val args = expr.args.map { evalExpr(it) }
                 if (receiver is Map<*, *>) {
                     // A pack instance carries its concrete type in `__type`; dispatch a
-                    // spec-typed call (e.g. `xs.add(4)` where `xs: MutableList`) to the
+                    // prot-typed call (e.g. `xs.add(4)` where `xs: MutableList`) to the
                     // concrete impl (`ArrayList_add`) rather than a builtin.
                     val structType = receiver["__type"] as? String
                     if (structType != null) {
@@ -918,7 +918,7 @@ class IrInterpreter {
                         }
                         when (expr.name) {
                             "add" -> { list.add(args[0]); null }
-                            // `List`/`MutableList` positional access (spec methods).
+                            // `List`/`MutableList` positional access (prot methods).
                             "get" -> list[(args[0] as Long).toInt()]
                             "set" -> { list[(args[0] as Long).toInt()] = args[1]; null }
                             "removeAt" -> list.removeAt((args[0] as Long).toInt())

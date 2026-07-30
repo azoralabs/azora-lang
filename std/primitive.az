@@ -27,7 +27,7 @@ import std.traits
  * every backend supplies its representation and machine operations directly. The
  * declarations here give the primitives a reflectable site (so `std::reflect<Int>`
  * and decorator metadata work), a set of `Type::CONSTANT` limits via `impl zone`,
- * the numeric `spec`s (`Number`, `Integer`, …), and — generated with `inline for`
+ * the numeric `prot`s (`Number`, `Integer`, …), and — generated with `inline for`
  * metaprogramming — the full operator surface. The operators are `bridge impl`s:
  * declarations the compiler recognises and lowers to native machine instructions,
  * so their bodies are never executed.
@@ -95,21 +95,21 @@ use friend zone std {
     @SinceAzora("0.0.4")
     bridge pack Decimal
 
-    /** Marker spec for the integer types (signed and unsigned). */
+    /** Marker prot for the integer types (signed and unsigned). */
     @SinceAzora("0.0.4")
-    spec Integer
+    prot Integer
 
-    /** Marker spec for the unsigned integer types. */
+    /** Marker prot for the unsigned integer types. */
     @SinceAzora("0.0.4")
-    spec UnsignedInteger
+    prot UnsignedInteger
 
-    /** Marker spec for the signed integer types. */
+    /** Marker prot for the signed integer types. */
     @SinceAzora("0.0.4")
-    spec SignedInteger
+    prot SignedInteger
 
-    /** Marker spec for the floating-point types. */
+    /** Marker prot for the floating-point types. */
     @SinceAzora("0.0.4")
-    spec FloatingPoint
+    prot FloatingPoint
 
     /**
      * Common contract for every numeric type.
@@ -118,7 +118,7 @@ use friend zone std {
      *   the higher `rank` is chosen as the result type (see `promote!`).
      */
     @SinceAzora("0.0.4")
-    spec Number {
+    prot Number {
         prop rank: Int
     }
 

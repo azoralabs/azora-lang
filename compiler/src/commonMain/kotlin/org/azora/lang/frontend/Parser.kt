@@ -473,8 +473,8 @@ class Parser(
     private fun parseOperatorImpl(start: Token, isBridge: Boolean, annotations: List<Annotation> = emptyList()): TopLevel.Impl {
         consume(TokenType.OPER, "Expected 'oper'")
         val opName = parseOperatorName()
-        // `impl oper<OP> by <Spec> for Type` — an optional spec/operand-type clause.
-        val bySpec = if (match(TokenType.BY)) consume(TokenType.IDENTIFIER, "Expected spec name after 'by'").lexeme else null
+        // `impl oper<OP> by <Spec> for Type` — an optional prot/operand-type clause.
+        val bySpec = if (match(TokenType.BY)) consume(TokenType.IDENTIFIER, "Expected prot name after 'by'").lexeme else null
         skipGenericTypeArgs()
         consume(TokenType.FOR, "Expected 'for' after 'impl oper$opName'")
         val typeName = consume(TokenType.IDENTIFIER, "Expected type name after 'for'").lexeme
@@ -510,12 +510,12 @@ class Parser(
     }
 
     /**
-     * `impl oper[spec, spec, ...] for Type` — declares several operators at once.
-     * Each spec is `[reverse] (.. | ..<) [by <expr>]`. `..` and `..<` are one
+     * `impl oper[prot, prot, ...] for Type` — declares several operators at once.
+     * Each prot is `[reverse] (.. | ..<) [by <expr>]`. `..` and `..<` are one
      * operator (the inclusive/exclusive flag lives on the range node); `reverse..`
      * is the reverse-range operator. The optional `by <expr>` is declarative step
      * metadata (parsed, then discarded). The expansion produces one `TopLevel.Impl`
-     * per spec via the `pendingTopLevels` queue (first returned, rest queued).
+     * per prot via the `pendingTopLevels` queue (first returned, rest queued).
      * `oper` and the leading `[` have already been consumed by the caller.
      */
     private fun parseMultiOperImpl(start: Token, isBridge: Boolean, annotations: List<Annotation>): TopLevel.Impl {
@@ -526,13 +526,13 @@ class Parser(
             val opName = when {
                 match(TokenType.DOT_DOT) -> ".."
                 match(TokenType.DOT_DOT_LESS) -> ".."
-                else -> error("Expected '..' or 'reverse..' in oper spec at line ${peek().line}")
+                else -> error("Expected '..' or 'reverse..' in oper prot at line ${peek().line}")
             }
             // `by <expr>` — declarative default-step metadata; parsed then discarded.
             if (match(TokenType.BY)) parseExpr()
             specs.add(OpSpec("oper" + (if (reversed) "reverse" else "") + opName))
         } while (match(TokenType.COMMA))
-        consume(TokenType.R_BRACKET, "Expected ']' after oper spec list")
+        consume(TokenType.R_BRACKET, "Expected ']' after oper prot list")
         consume(TokenType.FOR, "Expected 'for' after 'impl oper[...]'")
         val typeName = consume(TokenType.IDENTIFIER, "Expected type name after 'for'").lexeme
         skipGenericTypeArgs()
@@ -671,7 +671,7 @@ class Parser(
             }
             // `bridge <decl>` marks a declaration as compiler-provided. `bridge pack`
             // and `bridge func` are bodyless (no struct / no body emitted); `bridge`
-            // on the compile-time kinds (enum/deco/spec/typealias) is an accepted
+            // on the compile-time kinds (enum/deco/prot/typealias) is an accepted
             // marker that otherwise parses normally. Plain `bridge [.Target] { … }`
             // remains the FFI block form.
             check(TokenType.BRIDGE) && peekNext()?.type == TokenType.PACK -> {
@@ -684,7 +684,7 @@ class Parser(
             check(TokenType.BRIDGE) && peekNext()?.type == TokenType.DECO -> {
                 advance(); parseDeco(annotations, isBridge = true)
             }
-            check(TokenType.BRIDGE) && peekNext()?.type == TokenType.SPEC -> {
+            check(TokenType.BRIDGE) && peekNext()?.type == TokenType.PROT -> {
                 advance(); parseSpec()
             }
             check(TokenType.BRIDGE) && peekNext()?.type == TokenType.TYPEALIAS -> {
@@ -698,7 +698,7 @@ class Parser(
             check(TokenType.SOLO) -> parseSolo(visibility, annotations)
             check(TokenType.WRAP) -> parseWrap()
             check(TokenType.THREADLOCAL) -> parseThreadLocal(visibility)
-            check(TokenType.SPEC) -> parseSpec()
+            check(TokenType.PROT) -> parseSpec()
             check(TokenType.SLOT) -> parseSlot(annotations)
             check(TokenType.TYPEALIAS) -> parseTypeAlias(annotations)
             check(TokenType.META) -> parseMeta()
@@ -816,7 +816,7 @@ class Parser(
     }
 
     private fun parseDecoratorBinding(): DecoratorBinding {
-        val name = consume(TokenType.IDENTIFIER, "Expected spec or decorator name after 'bind'").lexeme
+        val name = consume(TokenType.IDENTIFIER, "Expected prot or decorator name after 'bind'").lexeme
         val typeArgs = parseGenericTypeArgsIfPresent()
         val targets = if (match(TokenType.FOR)) parseDecoTargets() else emptySet()
         return DecoratorBinding(name, typeArgs, targets)
@@ -1281,7 +1281,7 @@ class Parser(
             check(TokenType.FAIL) -> parseFailDecl(annotations)
             check(TokenType.TYPEALIAS) -> parseTypeAlias(annotations)
             check(TokenType.SLOT) -> parseSlot(annotations)
-            check(TokenType.SPEC) -> parseSpec()
+            check(TokenType.PROT) -> parseSpec()
             check(TokenType.INLINE) -> parseTopLevelInline()
             check(TokenType.DEEPINLINE) -> parseTopLevelDeepInline()
             check(TokenType.ASSERT) -> {
@@ -1769,19 +1769,19 @@ class Parser(
         consume(TokenType.IMPL, "Expected 'impl'")
         val implTypeParams = parseTypeParams()
         // `impl <Spec> as zone for Type { members }` — type-scoped static members
-        // attributed to a spec/category (e.g. `impl Number as zone for Ty`). Like
+        // attributed to a prot/category (e.g. `impl Number as zone for Ty`). Like
         // `impl zone for Type`, members desugar to mangled top-level items
-        // (`Type__member`) per target, reached as `Type::member`. The spec name is
+        // (`Type__member`) per target, reached as `Type::member`. The prot name is
         // informational (parsed and dropped).
         if (check(TokenType.IDENTIFIER) && peekNext()?.type == TokenType.AS &&
             tokens.getOrNull(current + 2)?.type == TokenType.ZONE
         ) {
-            advance() // spec name (e.g. Number)
+            advance() // prot name (e.g. Number)
             advance() // 'as'
             advance() // 'zone'
-            consume(TokenType.FOR, "Expected 'for' after 'impl <spec> as zone'")
+            consume(TokenType.FOR, "Expected 'for' after 'impl <prot> as zone'")
             val targets = expandTypeListTargets(parseImplTargets())
-            consume(TokenType.L_BRACE, "Expected '{' after 'impl <spec> as zone for …'")
+            consume(TokenType.L_BRACE, "Expected '{' after 'impl <prot> as zone for …'")
             skipNewlines()
             val bodyTokens = captureBraceBody()
             consumeNewline()
@@ -1939,16 +1939,16 @@ class Parser(
             advance() // 'oper'
             consume(TokenType.L_BRACKET, "Expected '[' after 'oper'")
             // Multi-oper form: `impl oper[.. by 1, reverse.. by 1] for Ty` expands to one
-            // impl per spec. Routed here (before oper[]/oper[:]/oper[]=) only when the
-            // bracket content is an operator spec, so the index/slice forms stay intact.
+            // impl per prot. Routed here (before oper[]/oper[:]/oper[]=) only when the
+            // bracket content is an operator prot, so the index/slice forms stay intact.
             if (peek().type in setOf(TokenType.DOT_DOT, TokenType.DOT_DOT_LESS, TokenType.REVERSE)) {
                 return parseMultiOperImpl(operStart, isBridge, annotations)
             }
             // `oper[:]` — the Python-style slice overload (`a[1:3]`, `a[:]`, …).
             val isSlice = match(TokenType.COLON)
             consume(TokenType.R_BRACKET, "Expected ']' after 'oper['")
-            // `oper[:] by <Spec>` — an optional spec providing the slicing logic.
-            val bySpec = if (match(TokenType.BY)) consume(TokenType.IDENTIFIER, "Expected spec name after 'by'").lexeme else null
+            // `oper[:] by <Spec>` — an optional prot providing the slicing logic.
+            val bySpec = if (match(TokenType.BY)) consume(TokenType.IDENTIFIER, "Expected prot name after 'by'").lexeme else null
             val isSet = match(TokenType.EQUAL)
             val methodName = when {
                 isSlice -> "slice"
@@ -2088,7 +2088,7 @@ class Parser(
         var traitArgs = emptyList<TypeRef>()
         var implementationTargets = listOf(first)
         if (match(TokenType.FOR)) {
-            if (isPackImpl) error("'impl pack' cannot be used for spec implementations at line ${peek().line}")
+            if (isPackImpl) error("'impl pack' cannot be used for prot implementations at line ${peek().line}")
             traitName = first
             traitArgs = firstArgs
             implementationTargets = expandTypeListTargets(parseImplTargets())
@@ -2127,7 +2127,7 @@ class Parser(
         if (traitName != null && isSelfReceiverHeaderAhead()) {
             val receiverModifier = parseReceiverBinding("callback receiver").modifier
             if (receiverModifier != "ref") {
-                error("spec callback impl receivers are always 'self&' at line ${start.line}")
+                error("prot callback impl receivers are always 'self&' at line ${start.line}")
             }
             consume(TokenType.ARROW, "Expected '->' after callback receiver")
             skipNewlines()
@@ -2136,9 +2136,9 @@ class Parser(
                 body.add(parseStmt())
                 skipNewlines()
             }
-            consume(TokenType.R_BRACE, "Expected '}' after spec callback impl body")
+            consume(TokenType.R_BRACE, "Expected '}' after prot callback impl body")
             consumeNewline()
-            // The callback's declared `ref self` would type `self` as the spec's
+            // The callback's declared `ref self` would type `self` as the prot's
             // (erased) self type. Drop it so SymbolCollector injects `self` with the
             // impl's concrete type (e.g. Int), matching the oper/cast impl convention.
             val callbackParams = callbackTraitParams(traitName, traitArgs).toMutableList()
@@ -2421,7 +2421,7 @@ class Parser(
             }
             match(TokenType.REF) -> "ref"
             match(TokenType.MUT) -> "mut"
-            else -> error("Expected 'ref self' or 'mut ref self' in spec callback at line ${peek().line}")
+            else -> error("Expected 'ref self' or 'mut ref self' in prot callback at line ${peek().line}")
         }
 
     /**
@@ -3012,16 +3012,16 @@ class Parser(
         return MacroArm(delimiter, pattern, template)
     }
 
-    /** `spec Name { func method(params): Ret ... }` or compact callback `spec Into<T>: T { ref self } use as "..."`. */
+    /** `prot Name { func method(params): Ret ... }` or compact callback `prot Into<T>: T { ref self } use as "..."`. */
     private fun parseSpec(): TopLevel.Spec {
         val start = peek()
-        consume(TokenType.SPEC, "Expected 'spec'")
-        val name = consume(TokenType.IDENTIFIER, "Expected spec name").lexeme
-        val typeParams = parseTypeParams() // `spec Comparable<T>` — type parameters accepted (erased for now)
+        consume(TokenType.PROT, "Expected 'prot'")
+        val name = consume(TokenType.IDENTIFIER, "Expected prot name").lexeme
+        val typeParams = parseTypeParams() // `prot Comparable<T>` — type parameters accepted (erased for now)
         val hasCallParens = match(TokenType.L_PAREN)
         val callbackParams = if (hasCallParens) {
             val parsed = parseParams()
-            consume(TokenType.R_PAREN, "Expected ')' after spec callback parameters")
+            consume(TokenType.R_PAREN, "Expected ')' after prot callback parameters")
             parsed
         } else {
             emptyList()
@@ -3029,18 +3029,18 @@ class Parser(
         var parentSpec: TypeRef? = null
         if (match(TokenType.COLON)) {
             val returnType = parseTypeName()
-            // `spec MutableList<T>: List<T> { … }` — spec inheritance: the child
+            // `prot MutableList<T>: List<T> { … }` — prot inheritance: the child
             // includes every member of the parent. A `(` instead means this is a
-            // callback spec (`spec Into<T>: T (ref self)`), handled below.
+            // callback prot (`prot Into<T>: T (ref self)`), handled below.
             if (!check(TokenType.L_PAREN)) {
                 parentSpec = returnType
             } else {
-            // Callback receiver in parens: `spec Into<T>: T (ref self) use as "…"`.
-            consume(TokenType.L_PAREN, "Expected '(' after spec callback signature")
+            // Callback receiver in parens: `prot Into<T>: T (ref self) use as "…"`.
+            consume(TokenType.L_PAREN, "Expected '(' after prot callback signature")
             skipNewlines()
-            val receiverBinding = parseReceiverBinding("spec callback receiver")
+            val receiverBinding = parseReceiverBinding("prot callback receiver")
             val receiverModifier = receiverBinding.modifier
-            consume(TokenType.R_PAREN, "Expected ')' after spec callback receiver")
+            consume(TokenType.R_PAREN, "Expected ')' after prot callback receiver")
             val useAsTemplate = if (check(TokenType.USE) && peekNext()?.type == TokenType.AS) {
                 advance()
                 advance()
@@ -3070,13 +3070,13 @@ class Parser(
             }
         }
         if (hasCallParens) {
-            error("Expected ':' after spec callback parameters at line ${peek().line}")
+            error("Expected ':' after prot callback parameters at line ${peek().line}")
         }
         if (!check(TokenType.L_BRACE)) {
             consumeNewline()
             return TopLevel.Spec(name, emptyList(), start.line, start.column, typeParams = typeParams.names, parent = parentSpec)
         }
-        consume(TokenType.L_BRACE, "Expected '{' after spec name")
+        consume(TokenType.L_BRACE, "Expected '{' after prot name")
         skipNewlines()
         val methods = mutableListOf<FuncDecl>()
         while (!check(TokenType.R_BRACE) && !isAtEnd()) {
@@ -3086,8 +3086,8 @@ class Parser(
             // `prop name: Type` — a property requirement (a zero-arg getter).
             if (check(TokenType.PROP)) {
                 advance()
-                val pname = consumeIdentifierLike("Expected property name in spec")
-                consume(TokenType.COLON, "Expected ':' after spec property name")
+                val pname = consumeIdentifierLike("Expected property name in prot")
+                consume(TokenType.COLON, "Expected ':' after prot property name")
                 val ptype = parseTypeName()
                 consumeNewline()
                 methods.add(FuncDecl(
@@ -3096,7 +3096,7 @@ class Parser(
                 ))
                 continue
             }
-            consume(TokenType.FUNC, "Expected 'func' or 'prop' in spec")
+            consume(TokenType.FUNC, "Expected 'func' or 'prop' in prot")
             val mname = consume(TokenType.IDENTIFIER, "Expected method name").lexeme
             consume(TokenType.L_PAREN, "Expected '('")
             val params = parseParams()
@@ -3109,7 +3109,7 @@ class Parser(
             consumeNewline()
             methods.add(FuncDecl(mname, params, returnType, emptyList(), false, emptyList(), start.line, start.column))
         }
-        consume(TokenType.R_BRACE, "Expected '}' after spec methods")
+        consume(TokenType.R_BRACE, "Expected '}' after prot methods")
         consumeNewline()
         return TopLevel.Spec(name, methods, start.line, start.column, typeParams = typeParams.names, parent = parentSpec)
     }
@@ -4602,7 +4602,7 @@ class Parser(
                 val constrained = consume(TokenType.IDENTIFIER, "Expected parameter name in 'where' constraint").lexeme
                 when {
                     // `<var> is Spec` — a conformance constraint (accepted; enforced by the evaluator).
-                    match(TokenType.IS) -> consume(TokenType.IDENTIFIER, "Expected spec name after 'is'")
+                    match(TokenType.IS) -> consume(TokenType.IDENTIFIER, "Expected prot name after 'is'")
                     match(TokenType.DOT) -> {
                         val property = consume(TokenType.IDENTIFIER, "Expected 'length' in type-function constraint")
                         if (property.lexeme != "length") error("Expected 'length' in type-function constraint at line ${property.line}")

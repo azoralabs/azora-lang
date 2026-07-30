@@ -70,7 +70,7 @@ friend zone std {
      * @param V The value type.
      */
     @Experimental(sinceAzora: "0.0.4")
-    spec Map<K, V> {
+    prot Map<K, V> {
         /** Number of unique keys. */
         prop size: Int
 
@@ -108,7 +108,7 @@ friend zone std {
     /**
      * Mutation behavior implemented by mutable map packs.
      *
-     * Mutation always receives `self!`. Implementing this spec does not
+     * Mutation always receives `self!`. Implementing this prot does not
      * weaken a `ref Map<K, V>` view: callers holding only a shared reference can
      * still use only read operations.
      *
@@ -116,7 +116,7 @@ friend zone std {
      * @param V The value type.
      */
     @Experimental(sinceAzora: "0.0.4")
-    spec MutableMap<K, V> : Map<K, V> {
+    prot MutableMap<K, V> : Map<K, V> {
         /** Associates `key` with `value` and returns the replaced value, if any. */
         func put(key: K, value: V): V?
 
@@ -144,7 +144,7 @@ friend zone std {
      * @param V The value type.
      */
     @Experimental(sinceAzora: "0.0.4")
-    spec SortedMap<K, V> {
+    prot SortedMap<K, V> {
         /** Returns the smallest key, or `null` when empty. */
         func firstKey(): K?
 
@@ -190,7 +190,7 @@ friend zone std {
      * Polling removes and returns a boundary entry in one tree operation.
      */
     @Experimental(sinceAzora: "0.0.4")
-    spec MutableSortedMap<K, V> : SortedMap<K, V> {
+    prot MutableSortedMap<K, V> : SortedMap<K, V> {
         /** Removes and returns the smallest entry, or `null` when empty. */
         func pollFirstEntry(): MapEntry<K, V>?
 

@@ -1,11 +1,11 @@
 package org.azora.lang.frontend
 
 /**
- * Rewrites compact callback spec impls after all files/libraries have been
+ * Rewrites compact callback prot impls after all files/libraries have been
  * assembled into one [Program].
  *
  * This is intentionally a whole-program step: an `impl Into<String> for X {
- * ref self -> ... }` can live in a different file from `spec Into<T> ... use
+ * ref self -> ... }` can live in a different file from `prot Into<T> ... use
  * as ...`, so parser-local state is not enough to produce the final member
  * name reliably.
  */

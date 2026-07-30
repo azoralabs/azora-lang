@@ -1120,7 +1120,7 @@ class StdlibInjector private constructor(
         is TopLevel.Pack -> "pack:${item.name}"
         is TopLevel.Enum -> "enum:${item.name}"
         is TopLevel.Fail -> "fail:${item.name}"
-        is TopLevel.Spec -> "spec:${item.name}"
+        is TopLevel.Spec -> "prot:${item.name}"
         is TopLevel.Deco -> "deco:${item.name}"
         is TopLevel.Slot -> "slot:${item.name}"
         is TopLevel.Meta -> "meta:${item.name}"

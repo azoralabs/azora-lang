@@ -61,7 +61,8 @@ friend zone std {
         UnexpectedEnd,
         TrailingContent,
         DuplicateField,
-        MissingField,
+        MissingFiel
+        d,
         UnknownField,
         UnexpectedType,
         MaxDepthExceeded,
@@ -200,14 +201,14 @@ friend zone std {
     /**
      * Bidirectional codec for `T`.
      *
-     * Implement this spec when a type needs a custom representation. Generated
+     * Implement this prot when a type needs a custom representation. Generated
      * serializers created by `@Serializable` implement the same contract.
      * Implementations must not retain references to `value` after returning.
      *
      * @param T The value type handled by this serializer.
      */
     @Experimental(sinceAzora: "0.0.4")
-    spec Serializer<T> {
+    prot Serializer<T> {
         /** Converts a typed value into the format-independent value tree. */
         func toSerialValue(value: T&): SerialValue ?! SerializationError
 
@@ -218,7 +219,7 @@ friend zone std {
     /**
      * Bidirectional JSON codec for `T`.
      *
-     * Implement this spec when JSON is the type's primary representation and a
+     * Implement this prot when JSON is the type's primary representation and a
      * format-independent `SerialValue` adapter would add no value. Generated
      * implementations created by `@Serializable` and `@JsonSerializable` obey
      * the same strict limits as `decodeSerialValue`.
@@ -226,7 +227,7 @@ friend zone std {
      * @param T The value type handled by this JSON codec.
      */
     @Experimental(sinceAzora: "0.0.4")
-    spec JsonSerializer<T> {
+    prot JsonSerializer<T> {
         /** Encodes `value` as one complete JSON document. */
         func toJson(value: T&, options: SerializerOptions&): String ?! SerializationError
 
@@ -244,7 +245,7 @@ friend zone std {
      * @param T The value type handled by this AZON codec.
      */
     @Experimental(sinceAzora: "0.0.4")
-    spec AzonSerializer<T> {
+    prot AzonSerializer<T> {
         /** Encodes `value` as one complete AZON document. */
         func toAzon(value: T&, options: SerializerOptions&): String ?! SerializationError
 

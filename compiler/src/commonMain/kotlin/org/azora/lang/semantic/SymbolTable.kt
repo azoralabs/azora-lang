@@ -104,7 +104,7 @@ data class StructType(
     fun field(name: String): StructField? = fields.find { it.name == name }
 }
 
-/** A registered spec signature. Callback specs use compact syntax such as `spec Into<T>: T { ref self } use as "to${T.typeName}"`. */
+/** A registered prot signature. Callback prots use compact syntax such as `prot Into<T>: T { ref self } use as "to${T.typeName}"`. */
 data class SpecSymbol(
     val methodNames: List<String>,
     val callback: org.azora.lang.frontend.SpecCallback? = null,
@@ -113,16 +113,16 @@ data class SpecSymbol(
     val typeParams: List<String> = emptyList(),
     val decoratorTargets: Set<DecoTarget> = emptySet(),
     val decoratorBindings: List<org.azora.lang.frontend.DecoratorBinding> = emptyList(),
-    /** Property/requirement name → return type, for member access on a spec-typed value. */
+    /** Property/requirement name → return type, for member access on a prot-typed value. */
     val propTypes: Map<String, org.azora.lang.ir.IrType> = emptyMap(),
-    /** Method name → signature, for method calls on a spec-typed value. */
+    /** Method name → signature, for method calls on a prot-typed value. */
     val methodSigs: Map<String, SpecMethodSig> = emptyMap(),
-    /** Parent spec inherited from (`spec Mutable: Read`), resolved at query time. */
+    /** Parent prot inherited from (`prot Mutable: Read`), resolved at query time. */
     val parentName: String? = null,
     val isBridge: Boolean = false,
 )
 
-/** A spec method's erased signature, used to type-check calls on a spec-typed value. */
+/** A prot method's erased signature, used to type-check calls on a prot-typed value. */
 data class SpecMethodSig(
     val paramTypes: List<org.azora.lang.ir.IrType>,
     val returnType: org.azora.lang.ir.IrType,
@@ -154,7 +154,7 @@ class SymbolTable {
     private val enums = mutableMapOf<String, List<String>>()
     // type name -> (method name -> mangled function name "Type_method")
     private val methods = mutableMapOf<String, MutableMap<String, String>>()
-    private val specs = mutableMapOf<String, SpecSymbol>() // spec name → method names/callback
+    private val specs = mutableMapOf<String, SpecSymbol>() // prot name → method names/callback
     private val conformances = mutableListOf<TraitConformance>()
     private val lambdaTypes = mutableMapOf<Pair<Int, Int>, IrType.Function>()
     // slot name → list of (variant name → payload types)
@@ -286,9 +286,9 @@ class SymbolTable {
     }
 
     /**
-     * Resolves a spec method signature, walking the parent chain
-     * (`spec Mutable: Read`) so inherited members resolve regardless of the
-     * order specs were registered in.
+     * Resolves a prot method signature, walking the parent chain
+     * (`prot Mutable: Read`) so inherited members resolve regardless of the
+     * order prots were registered in.
      */
     fun lookupSpecMethod(specName: String, methodName: String): SpecMethodSig? {
         var current: String? = specName
@@ -301,7 +301,7 @@ class SymbolTable {
         return null
     }
 
-    /** Resolves a spec property's type, walking the parent chain. */
+    /** Resolves a prot property's type, walking the parent chain. */
     fun lookupSpecProp(specName: String, propName: String): org.azora.lang.ir.IrType? {
         var current: String? = specName
         val seen = mutableSetOf<String>()
@@ -341,7 +341,7 @@ class SymbolTable {
         return true
     }
 
-    /** Returns whether [typeName] implements the requested spec or decorator contract. */
+    /** Returns whether [typeName] implements the requested prot or decorator contract. */
     fun implements(
         typeName: String,
         contractName: String,
@@ -352,8 +352,8 @@ class SymbolTable {
 
     /**
      * Returns whether [typeName] implements [contractName], ignoring type
-     * arguments — used for subtype checks (a pack usable as a spec it implements)
-     * where the spec's generic arguments are erased.
+     * arguments — used for subtype checks (a pack usable as a prot it implements)
+     * where the prot's generic arguments are erased.
      */
     fun conformsTo(typeName: String, contractName: String): Boolean =
         conformances.any { it.typeName == typeName && it.contractName == contractName }

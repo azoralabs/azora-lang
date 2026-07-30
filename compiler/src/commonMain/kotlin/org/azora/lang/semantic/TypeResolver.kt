@@ -1174,9 +1174,9 @@ class TypeResolver(private val table: SymbolTable) {
                     expr.name == "data" && targetType is IrType.Array -> IrType.Pointer(targetType.element)
                     (expr.name == "isEmpty" || expr.name == "isNotEmpty") && (targetType is IrType.Array || targetType is IrType.Map || targetType is IrType.Set) -> IrType.Bool
                     targetType is IrType.Named -> {
-                        // Spec-typed value: a property/requirement declared by the spec
-                        // (e.g. `map.size` where `map: Map<K,V>` — a spec) resolves to
-                        // the spec's declared prop type and dispatches to the impl.
+                        // Spec-typed value: a property/requirement declared by the prot
+                        // (e.g. `map.size` where `map: Map<K,V>` — a prot) resolves to
+                        // the prot's declared prop type and dispatches to the impl.
                         val specProp = table.lookupSpecProp(targetType.name, expr.name)
                         if (specProp != null) return specProp
                         val struct = table.lookupStruct(targetType.name)
@@ -1315,9 +1315,9 @@ class TypeResolver(private val table: SymbolTable) {
                             expr.line,
                         )
                     }
-                    // Spec-typed value: dispatch to a method declared by the spec
+                    // Spec-typed value: dispatch to a method declared by the prot
                     // (e.g. `list.get(0)` where `list: List<T>`). The concrete impl
-                    // is selected at runtime; here we type-check against the spec.
+                    // is selected at runtime; here we type-check against the prot.
                     val specMethod = table.lookupSpecMethod(targetType.name, expr.name)
                     if (specMethod != null) {
                         if (specMethod.isProperty) {
@@ -1804,8 +1804,8 @@ class TypeResolver(private val table: SymbolTable) {
         if (declared is IrType.Named && actual is IrType.Named) {
             if (actual.name == declared.name) return true
         }
-        // Spec conformance: a pack that implements a spec is usable wherever that
-        // spec type is expected (e.g. returning `ArrayList<T>` for `List<T>`, just
+        // Spec conformance: a pack that implements a prot is usable wherever that
+        // prot type is expected (e.g. returning `ArrayList<T>` for `List<T>`, just
         // as a class implementing an interface is returned as the interface).
         if (declared is IrType.Named && actual is IrType.Named &&
             table.lookupSpec(declared.name) != null &&

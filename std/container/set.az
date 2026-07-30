@@ -33,7 +33,7 @@ import std.convert
  *   `self!`, so a caller holding only a shared `ref Set<T>` view
  *   cannot mutate it.
  *
- * `LinkedHashSet<T>` is the single concrete pack implementing both specs. It
+ * `LinkedHashSet<T>` is the single concrete pack implementing both prots. It
  * stores unique elements in insertion order, so indexed access is stable. The
  * `setOf`, `mutableSetOf`, `emptySet`, and `linkedHashSetOf` factories
  * construct it; `setOf` and `emptySet` expose the read-only `Set<T>` view,
@@ -53,7 +53,7 @@ friend zone std {
      * @param T The element type.
      */
     @Experimental(sinceAzora: "0.0.4")
-    spec Set<T> {
+    prot Set<T> {
         /** Number of unique elements. */
         prop size: Int
 
@@ -94,14 +94,14 @@ friend zone std {
     /**
      * Mutation behavior implemented by mutable set packs.
      *
-     * Mutation always receives `self!`. Implementing this spec does not
+     * Mutation always receives `self!`. Implementing this prot does not
      * weaken a `ref Set<T>` view: callers holding only a shared reference can
      * still use only read operations.
      *
      * @param T The element type.
      */
     @Experimental(sinceAzora: "0.0.4")
-    spec MutableSet<T> : Set<T> {
+    prot MutableSet<T> : Set<T> {
         /** Adds `element`; returns whether membership changed. */
         func add(element: T): Bool
 

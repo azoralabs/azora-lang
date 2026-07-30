@@ -119,9 +119,9 @@ checking; `guard cond else { }`; `break`/`continue`.
 | `pack Tuple<...T> where (...T).length >= 2 { inline for Ty in ...T with index { mixin "$index: $Ty" } }` | variadic tuple template |
 | `enum Color { Red; Green }` | enum |
 | `slot Option { Some(Int); None }` | tagged union |
-| `impl pack Name { methods }` / `impl Spec for Name` | pack methods in the declaring file + trait impls |
+| `impl pack Name { methods }` / `impl Prot for Name` | pack methods in the declaring file + trait impls |
 | `func Name.method(args) { ref self -> body }` | extension method outside the declaring file |
-| `spec Name { signatures }` / `spec Into<T>: T { ref self } use as "to${T.typeName}"` | trait or compact callback spec |
+| `prot Name { signatures }` / `prot Into<T>: T { ref self } use as "to${T.typeName}"` | trait or compact callback prot |
 | `node Name(params) { … }` | inheritable type (base class) |
 | `leaf Name(params) : Parent(args) { repl func … }` | final subclass (single inheritance) |
 | `virt func` / `repl func` / `base.method()` | virtual / override / super-call |
@@ -132,7 +132,7 @@ checking; `guard cond else { }`; `break`/`continue`.
 | `impl Decorator(field: value) for Type` | implements a decorator with immutable compile-time metadata |
 | `impl Decorator for Type::field` / `impl Decorator for Type::*` | decorates one field / every declared pack field |
 | `impl [A, B] for [Type::x, Type::y]` | applies the decorator/target cross-product |
-| `deco Name bind Spec { fields }` | binds a decorator to a spec; the decorated type becomes generic argument zero |
+| `deco Name bind Prot { fields }` | binds a decorator to a prot; the decorated type becomes generic argument zero |
 | `deco Name for [.Pack, .Node] bind [X for .Pack, Y for .Node]` | constrains decorator applications and individual transitive bindings by target |
 | `solo Name { … }` / `wrap Name { … }` / `inject Type` | DI singleton / container / resolve |
 | `flow name(p): T { … yield v }` | lazy generator |
@@ -144,8 +144,8 @@ checking; `guard cond else { }`; `break`/`continue`.
 ### Object-model members (inside `impl`/`node`/`solo` bodies)
 
 `hook name { }` (lifecycle callback), `prop name: T { }` (computed property),
-`ctor(params) { }` (secondary constructor), `dtor { }` (destructor), and
-`flip { } flop { }` (alternating execution). Inside ordinary `impl Type { }`
+`ctor(params) { }` (secondary constructor), and `dtor { }` (destructor).
+Inside ordinary `impl Type { }`
 blocks only `prop`, `func`, `task`, and `flow` members are accepted. Index
 overloading is standalone: `impl oper[] for Type { ref self, index -> ... }`
 and `impl oper[]= for Type { mut ref self, index, value -> ... }`. Extension
@@ -170,21 +170,21 @@ element's static type. The generated fields are numeric (`tuple.0`, `tuple.1`,
 ...) and the `where (...T).length >= 2` constraint rejects single-element
 tuples.
 
-### Conversion specs
+### Conversion prots
 
-`std.convert` defines compact callback specs:
+`std.convert` defines compact callback prots:
 
 ```azora
-spec Into<T>: T { ref self } use as "to${T.typeName}"
-spec From<T>: T { ref self } use as "from${T.typeName}"
+prot Into<T>: T { ref self } use as "to${T.typeName}"
+prot From<T>: T { ref self } use as "from${T.typeName}"
 ```
 
 The `: T` is the callback return type, `{ ref self }` declares the receiver, and
 `use as` declares a generated member name template. It can be any literal member
 name (`use as "render"`) or include type-parameter placeholders such as
-`${T.typeName}`. Without parentheses in the spec header,
+`${T.typeName}`. Without parentheses in the prot header,
 `impl Into<String> for List<T> { ref self -> ... }` generates property-style
-`.toString`. If the spec header includes parentheses, the generated callback
+`.toString`. If the prot header includes parentheses, the generated callback
 requires a normal call such as `.toString()`. `impl as String for Type { ref self
 -> ... }` is separate:
 it is used by `value as String` casts and does not create `.toString`.
@@ -278,7 +278,7 @@ impl Serializable(
 
 The compiler applies the same field-name, duplicate-argument, required-field,
 and type validation used by `@Serializable(...)`. Value arguments are rejected
-on ordinary spec implementations because only decorators define metadata.
+on ordinary prot implementations because only decorators define metadata.
 
 Decorator implementations can also select pack fields. Lists are normalized to
 one application for every decorator/target pair, and `Pack::*` selects only the
@@ -330,11 +330,11 @@ string interpolation `"$name"`, `"${expr}"`.
 Reserved words in the language (see `frontend/Token.kt`):
 
 - **Bindings**: `var` `fin` `let` `threadlocal`
-- **Functions/types**: `func` `return` `pack` `shield` `enum` `slot` `typealias` `impl` `spec` `node` `leaf` `virt` `repl` `base`
+- **Functions/types**: `func` `return` `pack` `shield` `enum` `slot` `typealias` `impl` `prot` `node` `leaf` `virt` `repl` `base`
 - **Control**: `if` `else` `for` `while` `loop` `in` `by` `reverse` `break` `continue` `when` `guard`
 - **Errors/concurrency**: `throw` `try` `catch` `rescue` `fail` `defer` `flow` `yield` `task` `await` `launch`
 - **Memory/FFI/DI**: `alloc` `drop` `unsafe` `isolated` `bridge` `solo` `wrap` `inject`
-- **Reactivity/object model**: `mem` `rem` `ret` `effect` `hook` `prop` `ctor` `dtor` `flip` `flop`
+- **Reactivity/object model**: `mem` `rem` `ret` `effect` `hook` `prop` `ctor` `dtor`
 - **Metaprogramming**: `inline` `deepinline` `noinline`
 - **Scoping/modules**: `zone` `friend` `module` `import`
 - **Modifiers/visibility**: `mut` `ref` `out` `shared` `weak` `expose` `confine` `protect`
@@ -373,7 +373,7 @@ or type inference happens here.
   `Assignment`/`MemberAssign`/`IndexAssign`/`DerefAssign`, `Return`, `ExprStmt`,
   `If`, `For`, `While`, `Loop`, `Break`/`Continue` (labeled), `When`, `Zone`/
   `FriendZone`, `Defer`, `Throw`/`Try`, `Assert`/`Trace`, the `Inline*` family,
-  `Hook`/`Flip`/`Flop`, `Effect`, …
+  `Hook`, `Effect`, …
 - **Top-level** (`TopLevel`): `Func`, `Pack`, `Enum`, `Slot`, `Impl`, `Spec`,
   `Node`, `TypeAlias`, `Fail`, `Deco`, `Solo`, `Wrap`, `Bridge`, `View`,
   `Test`, `UseImport`, plus the inline-construct top-levels.

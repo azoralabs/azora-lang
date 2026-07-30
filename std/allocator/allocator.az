@@ -30,7 +30,7 @@ import std.convert
  * - Pool: fixed-size object pool for uniform allocations
  * - StackAllocator: LIFO allocator for short-lived scratch data
  *
- * All allocators implement the allocator spec and work with the
+ * All allocators implement the allocator prot and work with the
  * `alloc T(args) in allocator` syntax.
  *
  * @since 0.0.2
@@ -69,7 +69,7 @@ friend zone std {
      *     var p = alloc Point(1.0, 2.0) in arena
      */
     @SinceAzora("0.0.2")
-    spec Allocator
+    prot Allocator
 
     // -----------------------------------------------------------------------
     // Arena allocator

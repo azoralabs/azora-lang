@@ -93,9 +93,9 @@ class LlvmCodegen {
     private val structDefs = mutableMapOf<String, IrTopLevel.Struct>()
 
     /**
-     * Dynamic dispatch for spec-typed values (Rust-style `dyn Trait`). A spec
-     * type has no native struct; a spec-typed value is a heap `{ i32 typeId,
-     * i8* data }` fat pointer. [specDispatch] maps a spec name to its dispatch
+     * Dynamic dispatch for prot-typed values (Rust-style `dyn Trait`). A prot
+     * type has no native struct; a prot-typed value is a heap `{ i32 typeId,
+     * i8* data }` fat pointer. [specDispatch] maps a prot name to its dispatch
      * table; [specTypeIds] assigns each concrete implementer a stable non-zero id.
      */
     private val specDispatch = mutableMapOf<String, IrSpecTable>()
@@ -2242,9 +2242,9 @@ class LlvmCodegen {
 
     private fun coerceNumeric(value: String, from: IrType, to: IrType): String {
         if (from == to) return value
-        // Upcast a concrete `pack` to a spec it implements: box into a fat pointer
+        // Upcast a concrete `pack` to a prot it implements: box into a fat pointer
         // `{ i32 typeId, i8* data }` so the value carries its runtime type for
-        // dynamic dispatch. (A spec→spec pass-through keeps the existing box.)
+        // dynamic dispatch. (A prot→prot pass-through keeps the existing box.)
         if (to is IrType.Named && to.name in specDispatch &&
             from is IrType.Named && from.name in specTypeIds
         ) {
@@ -2558,12 +2558,12 @@ class LlvmCodegen {
         emit("  ; member assign .${stmt.name} on ${stmt.target.type} — not lowered")
     }
 
-    /** The LLVM symbol name of a spec method's dynamic-dispatch stub. */
+    /** The LLVM symbol name of a prot method's dynamic-dispatch stub. */
     private fun specDispatcherName(spec: String, method: String) =
         "__dyn_${sanitizeName(spec)}_${sanitizeName(method)}"
 
     /**
-     * Emits a dynamic-dispatch stub for one spec method. The receiver is a fat
+     * Emits a dynamic-dispatch stub for one prot method. The receiver is a fat
      * pointer `{ i32 typeId, i8* data }`; the stub loads the id, switches to the
      * matching implementer, unpacks the concrete `self`, and tail-calls its
      * `impl` body. Unknown ids return a zero value (unreachable in practice).

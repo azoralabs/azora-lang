@@ -40,7 +40,7 @@ object AzHighlighter {
         "rescue", "node", "leaf", "repl", "virt", "base", "rem", "effect", "view",
         "hook", "prop", "ctor", "dtor", "ref", "out", "mut",
         "expose", "confine", "protect", "module", "threadlocal",
-        "pack", "enum", "when", "throw", "try", "catch", "impl", "spec",
+        "pack", "enum", "when", "throw", "try", "catch", "impl", "prot",
         "defer", "typealias", "slot", "as", "guard", "is", "null", "use",
         "true", "false"
     )

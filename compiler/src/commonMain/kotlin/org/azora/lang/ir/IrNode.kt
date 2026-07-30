@@ -998,19 +998,19 @@ data class IrFunction(
 data class IrField(val name: String, val type: IrType, val mutable: Boolean)
 
 /**
- * One method of a spec, with its erased signature — enough for a backend to
+ * One method of a prot, with its erased signature — enough for a backend to
  * generate a dynamic-dispatch stub. [paramTypes] excludes the implicit `self`.
  */
 data class IrSpecMethod(val name: String, val paramTypes: List<IrType>, val returnType: IrType)
 
 /**
- * A concrete implementer of a spec: its type name plus, per method, the mangled
+ * A concrete implementer of a prot: its type name plus, per method, the mangled
  * free-function name of the `impl` body (`Type_method`).
  */
 data class IrSpecImpl(val typeName: String, val methodFuncs: Map<String, String>)
 
 /**
- * The dynamic-dispatch table for one spec: its methods and every concrete `pack`
+ * The dynamic-dispatch table for one prot: its methods and every concrete `pack`
  * that conforms to it. Backends that lack native trait objects (LLVM) use this to
  * emit a type-id switch; the interpreter/JS ignore it (they dispatch on `__type`).
  */
@@ -1079,7 +1079,7 @@ sealed class IrTopLevel {
 data class IrProgram(
     val moduleName: String?,
     val items: List<IrTopLevel>,
-    /** Dynamic-dispatch tables for specs with concrete `pack` implementers. */
+    /** Dynamic-dispatch tables for prots with concrete `pack` implementers. */
     val specTables: List<IrSpecTable> = emptyList()
 ) {
     /** Convenience — returns only the global statements. */

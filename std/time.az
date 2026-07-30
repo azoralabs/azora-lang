@@ -128,7 +128,7 @@ friend zone std {
 
     /** Source of wall-clock and monotonic time. Injectable clocks make tests deterministic. */
     @Experimental(sinceAzora: "0.0.4")
-    spec Clock {
+    prot Clock {
         /** Returns the current Unix instant. */
         func now(): Instant
 

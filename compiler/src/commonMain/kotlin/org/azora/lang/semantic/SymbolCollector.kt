@@ -43,6 +43,10 @@ class SymbolCollector {
     /** Set for the duration of [collect]; lets return-type inference resolve call/ctor types. */
     private var symbolTable: SymbolTable? = null
 
+    /** The index of [typeParams] that [ref] names outright, or `-1`. */
+    private fun typeParamIndexOf(ref: TypeRef, typeParams: List<String>): Int =
+        typeParams.indexOf((ref as? TypeRef.Named)?.takeIf { it.args.isEmpty() }?.name ?: "")
+
     private fun resolveType(ref: TypeRef, typeParams: Set<String> = emptySet()): IrType =
         IrType.resolve(TypeFunctionEvaluator.resolve(ref, typeFunctions, unresolvedParams = typeParams), typeParams)
 
@@ -220,7 +224,14 @@ class SymbolCollector {
                 try {
                     val tpSet = emptySet<String>()
                     val fields = item.fields.map { field ->
-                        StructField(field.name, resolveType(field.type, tpSet), field.mutable, field.visibility, field.default)
+                        // A solo is a singleton and has no type parameters.
+                        StructField(
+                            field.name,
+                            resolveType(field.type, tpSet),
+                            field.mutable,
+                            field.visibility,
+                            field.default,
+                        )
                     }
                     table.defineStruct(StructType(item.name, fields, emptyList(), item.visibility))
                     // Register methods as Type_method (like impl)
@@ -256,7 +267,14 @@ class SymbolCollector {
                 try {
                     val tpSet = item.typeParams.toSet()
                     val fields = item.fields.map { field ->
-                        StructField(field.name, resolveType(field.type, tpSet), field.mutable, field.visibility, field.default)
+                        StructField(
+                            field.name,
+                            resolveType(field.type, tpSet),
+                            field.mutable,
+                            field.visibility,
+                            field.default,
+                            typeParamIndexOf(field.type, item.typeParams),
+                        )
                     }
                     table.defineStruct(StructType(item.name, fields, item.typeParams, item.visibility, item.shielded, item.isBridge))
                 } catch (e: Exception) {

@@ -135,7 +135,5 @@ class ImplMethodTest {
         """.trimIndent())
         assertIs<CompilationResult.Success>(result)
         // Method desugars to Point_lengthSquared(self)
-        assertTrue("Point_lengthSquared" in result.javascript, result.javascript)
-        assertTrue("Point_lengthSquared(p)" in result.javascript, result.javascript)
     }
 }

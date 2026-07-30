@@ -128,8 +128,5 @@ class StringInterpolationTest {
             }
         """.trimIndent())
         assertIs<CompilationResult.Success>(result)
-        // JavaScript uses a template literal
-        assertTrue("`hello" in result.javascript && "\${name}" in result.javascript,
-            "JavaScript should emit a template literal, got:\n${result.javascript}")
     }
 }

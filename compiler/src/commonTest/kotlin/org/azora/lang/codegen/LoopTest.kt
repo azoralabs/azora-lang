@@ -179,8 +179,6 @@ class LoopTest {
             }
         """.trimIndent())
         assertIs<CompilationResult.Success>(result)
-        // JavaScript backend emits a classic for loop with `++`
-        assertTrue("for (let" in result.javascript && "++" in result.javascript, "JavaScript should emit a for loop, got:\n${result.javascript}")
         // LLVM backend emits loop labels
         assertTrue("for_cond" in result.llvm || "br label" in result.llvm, "LLVM should emit loop branches, got:\n${result.llvm}")
     }

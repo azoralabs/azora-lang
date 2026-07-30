@@ -47,19 +47,6 @@ class DeferTypeAliasTest {
         """.trimIndent()))
     }
 
-    @Test fun deferLowersToJavaScriptRuntimeStack() {
-        val result = Compiler().compile("""
-            import std.io
-            func main() {
-                defer { std::println("cleanup") }
-                std::println("body")
-            }
-        """.trimIndent(), release = false)
-        assertIs<CompilationResult.Success>(result)
-        assertTrue("__az_defer.push" in result.javascript)
-        assertTrue("finally" in result.javascript)
-    }
-
     @Test fun typeAliasInt() {
         assertEquals("42", run("""
             import std.io

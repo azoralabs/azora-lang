@@ -403,7 +403,6 @@ func main() { std::println("Hello, Azora!") }"""))
                 std::println(add(2, 3))
             }
         """.trimIndent())
-        assertTrue("function add(a, b)" in r.javascript, r.javascript)
         // The other backends are produced too.
         assertTrue(r.wasm.isNotBlank())
         assertTrue(r.llvm.isNotBlank())

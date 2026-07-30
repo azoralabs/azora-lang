@@ -17,7 +17,6 @@
 package org.azora.lang.codegen
 
 import org.azora.lang.backend.IrInterpreter
-import org.azora.lang.backend.JavaScriptCodegen
 import org.azora.lang.backend.LlvmCodegen
 import org.azora.lang.frontend.AstValidator
 import org.azora.lang.frontend.Lexer
@@ -87,11 +86,6 @@ class TestMethodTest {
 
         assertEquals(listOf("everything"), ir.tests.map { it.name })
         assertEquals(2, ir.tests.single().body.filterIsInstance<IrStmt.Zone>().size)
-
-        val javascript = JavaScriptCodegen().generate(ir)
-        assertTrue("test(\"everything\"" in javascript, javascript)
-        assertTrue("test(\"first\"" !in javascript, javascript)
-        assertTrue("test(\"second\"" !in javascript, javascript)
 
         val llvm = LlvmCodegen().generate(ir)
         assertTrue("@test_everything" in llvm, llvm)

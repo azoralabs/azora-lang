@@ -101,12 +101,6 @@ func main() { var c: Char = '\u0041' }""".trimIndent())
         assertTrue("'A'" in ir, "\\u0041 should be 'A', got:\n$ir")
     }
 
-    @Test
-    fun char_javascriptEmit() {
-        val result = compile("import std.io\nfunc main() { var c: Char = 'z' }".trimIndent())
-        assertTrue("\"z\"" in result.javascript, "JavaScript should emit char as string \"z\", got:\n${result.javascript}")
-    }
-
     // -----------------------------------------------------------------------
     // Short (16-bit signed, suffix: s)
     // -----------------------------------------------------------------------
@@ -151,12 +145,6 @@ func main() { var c: Char = '\u0041' }""".trimIndent())
         val result = compile("import std.io\nfunc main() { var x: Long = 42L }".trimIndent())
         val ir = result.ir.prettyPrint()
         assertTrue("Long" in ir, "Type should be Long, got:\n$ir")
-    }
-
-    @Test
-    fun long_javascriptEmit() {
-        val result = compile("import std.io\nfunc main() { var x: Long = 42L }".trimIndent())
-        assertTrue("42n" in result.javascript, "JavaScript should emit 42n (bigint), got:\n${result.javascript}")
     }
 
     @Test

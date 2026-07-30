@@ -21,7 +21,6 @@ deepinline zone {
     enum CompilerTarget {
         Interpret,
         Native,
-        JavaScript,
         WebAssembly
     }
 

@@ -235,6 +235,25 @@ class TypeResolver(private val table: SymbolTable) {
         return false
     }
 
+    /**
+     * The type a field really has, given the arguments on the referring type.
+     *
+     * A field declared as a type parameter resolves to `Any`, so `Box<Real>.value`
+     * would otherwise type as `Any` and be consumed as an opaque word. The
+     * referring type still carries `Real`, which is the answer.
+     */
+    private fun substituteFieldType(
+        struct: StructType,
+        fieldName: String,
+        referring: IrType.Named,
+        declared: IrType,
+    ): IrType {
+        if (referring.args.isEmpty() || struct.typeParams.isEmpty()) return declared
+        val position = struct.field(fieldName)?.typeParamIndex ?: -1
+        if (position < 0 || position >= referring.args.size) return declared
+        return referring.args[position]
+    }
+
     private fun canAccessMember(ownerType: String, visibility: Visibility): Boolean = when (visibility) {
         Visibility.EXPOSE -> true
         Visibility.SHIELD -> true // shielded fields are publicly readable (readonly-style)
@@ -853,7 +872,12 @@ class TypeResolver(private val table: SymbolTable) {
                             }
                         }
                     }
-                    return IrType.Named(struct.name)
+                    // Keep the explicit type arguments so a later field read
+                    // knows what a generic pack's erased slot actually holds.
+                    return IrType.Named(
+                        struct.name,
+                        expr.typeArgs.map { IrType.resolve(it) },
+                    )
                 }
                 // `std::convert::toString(x)` is a compiler builtin (special-cased in
                 // CTCE and every backend); it stringifies any value.
@@ -1162,7 +1186,7 @@ class TypeResolver(private val table: SymbolTable) {
                                 reportInaccessible(expr.line, "field", targetType.name, expr.name, field.visibility)
                                 null
                             } else {
-                                field.type
+                                substituteFieldType(struct, expr.name, targetType, field.type)
                             }
                         } else {
                             // Check for a computed property/callback member.

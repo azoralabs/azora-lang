@@ -39,11 +39,6 @@ class ProgramTest {
 
         val ir = result.ir.prettyPrint()
         assertTrue("println(\"Hello, world!\")" in ir)
-
-        val js = result.javascript
-        assertTrue("function main()" in js)
-        assertTrue("console.log(\"Hello, world!\")" in js)
-        assertTrue(js.trimEnd().endsWith("main()"), "JavaScript should append main() call")
     }
 
     // -----------------------------------------------------------------------
@@ -60,11 +55,9 @@ class ProgramTest {
             }
         """.trimIndent())
 
-        val js = result.javascript
-        // JavaScript emits main directly and appends the entry-point call.
-        assertTrue("function main()" in js, "Should emit main function, got:\n$js")
-        assertTrue("return 0;" in js, "Should preserve the return, got:\n$js")
-        assertTrue(js.trimEnd().endsWith("main()"), "JavaScript should append main() call, got:\n$js")
+        val ir = result.ir.prettyPrint()
+        assertTrue("main" in ir, "Should emit a main function, got:\n$ir")
+        assertTrue("return 0" in ir, "Should preserve the return, got:\n$ir")
     }
 
     // -----------------------------------------------------------------------

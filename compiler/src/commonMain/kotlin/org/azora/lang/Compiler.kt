@@ -16,7 +16,6 @@
 
 package org.azora.lang
 
-import org.azora.lang.backend.JavaScriptCodegen
 import org.azora.lang.backend.LlvmCodegen
 import org.azora.lang.backend.WasmCodegen
 import org.azora.lang.frontend.AstValidator
@@ -61,8 +60,8 @@ import org.azora.lang.semantic.VariadicMonomorphizer
  *     9.  AST → typed IR
  *     10. IR optimization (constant folding, constant propagation, DCE)
  *
- *   Phase 4 — Backend (one optimized IR → three codegen targets)
- *     11. IR → JavaScript, Wasm, LLVM
+ *   Phase 4 — Backend (one optimized IR → two codegen targets)
+ *     11. IR → Wasm, LLVM
  */
 /**
  * The result of compiling Azora source code through the full pipeline.
@@ -71,7 +70,6 @@ sealed class CompilationResult {
     /**
      * Successful compilation result containing all generated outputs and metadata.
      *
-     * @property javascript the generated JavaScript source code
      * @property wasm the generated WebAssembly text (WAT)
      * @property llvm the generated LLVM IR text
      * @property ast the CTCE-stabilized AST after semantic analysis
@@ -81,7 +79,6 @@ sealed class CompilationResult {
      * @property warnings any non-fatal warnings collected during compilation
      */
     data class Success(
-        val javascript: String,
         val wasm: String,
         val llvm: String,
         val ast: Program,
@@ -107,8 +104,8 @@ data class LibrarySource(val path: String, val source: String)
  *
  * Drives all four phases: frontend (lexer, parser, AST validation),
  * semantic analysis (multi-pass with CTCE), IR generation with optimization,
- * and backend code generation to three targets — JavaScript, WebAssembly, and
- * LLVM IR — all from one optimized IR.
+ * and backend code generation to two targets — WebAssembly and LLVM IR — both
+ * from one optimized IR.
  */
 class Compiler(
     private val librarySources: List<LibrarySource> = emptyList(),
@@ -286,20 +283,17 @@ class Compiler(
 
         val backendIr = optimizedIr
 
-        // 11. IR → JavaScript
-        val javascript = JavaScriptCodegen().generate(backendIr)
-
-        // 12. IR → WebAssembly text (WAT). A feature a backend cannot yet lower
+        // 11. IR → WebAssembly text (WAT). A feature a backend cannot yet lower
         // (e.g. indirect value calls) degrades only that target's output rather
         // than failing the whole compilation, so the interpreter and other targets
         // remain usable.
         val wasm = try { WasmCodegen().generate(backendIr) }
             catch (e: IllegalStateException) { "(; WebAssembly codegen unsupported: ${e.message} ;)" }
 
-        // 13. IR → LLVM IR
+        // 12. IR → LLVM IR
         val llvm = try { LlvmCodegen().generate(backendIr) }
             catch (e: IllegalStateException) { "; LLVM codegen unsupported: ${e.message}" }
 
-        return CompilationResult.Success(javascript, wasm, llvm, semantic.program, ir, optimizedIr, semantic.effects, warnings)
+        return CompilationResult.Success(wasm, llvm, semantic.program, ir, optimizedIr, semantic.effects, warnings)
     }
 }

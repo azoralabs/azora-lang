@@ -76,6 +76,13 @@ data class StructField(
     val visibility: Visibility = Visibility.EXPOSE,
     /** Default initializer (for `Pack<T>()` construction with omitted fields). */
     val default: org.azora.lang.frontend.Expr? = null,
+    /**
+     * Index of the owning pack's type parameter this field was declared as, or
+     * `-1`. A parameter resolves to `Any`, so which one it was cannot be
+     * recovered from [type]; it is recorded here so `Box<Real>.value` can be
+     * typed as `Real` rather than as an opaque word.
+     */
+    val typeParamIndex: Int = -1,
 )
 
 /**

@@ -289,6 +289,17 @@ class IrGenerator(private val table: SymbolTable) {
      * @param program the CTCE-stabilized, type-checked AST
      * @return the lowered [IrProgram]
      */
+    /**
+     * Top-level constants whose initializer is a literal.
+     *
+     * A default argument is lowered in the *caller's* scope, so a default that
+     * names a constant declared in another module resolves to nothing there and
+     * degrades to an untyped global reference. Substituting the literal keeps a
+     * default what it reads as — a compile-time constant — and avoids emitting a
+     * cross-module global that the unit never defines.
+     */
+    private val constantLiterals = mutableMapOf<String, IrExpr>()
+
     fun generate(program: Program): IrProgram {
         typeFunctions = program.typeFunctions
         functionDecls = program.functions.associateBy { it.name }
@@ -302,6 +313,7 @@ class IrGenerator(private val table: SymbolTable) {
         pushNameScope() // global scope
 
         // Register global names
+        constantLiterals.clear()
         for (item in program.items) {
             when (item) {
                 is TopLevel.FinDecl -> if (item.threadlocal) nameScopes.last()[item.name] = "__tl__${item.name}" else registerName(item.name)
@@ -309,6 +321,7 @@ class IrGenerator(private val table: SymbolTable) {
                 is TopLevel.LetDecl -> registerName(item.name)
                 else -> {}
             }
+            literalConstant(item)?.let { (name, value) -> constantLiterals[name] = value }
         }
 
         // Register import aliases in the global name scope so `import Zone.Item` resolves.
@@ -382,7 +395,18 @@ class IrGenerator(private val table: SymbolTable) {
                     else {
                         val tpSet = item.typeParams.toSet()
                         val fields = item.fields.map { IrField(it.name, resolveType(it.type, tpSet), it.mutable) }
-                        listOf(IrTopLevel.Struct(item.name, fields, program.zoneTypeNamespaces[item.name]))
+                        val slots = item.fields.map { field ->
+                            item.typeParams.indexOf((field.type as? TypeRef.Named)?.name ?: "")
+                        }
+                        listOf(
+                            IrTopLevel.Struct(
+                                item.name,
+                                fields,
+                                program.zoneTypeNamespaces[item.name],
+                                item.typeParams,
+                                slots,
+                            )
+                        )
                     }
                 }
                 is TopLevel.Solo -> {
@@ -542,8 +566,15 @@ class IrGenerator(private val table: SymbolTable) {
             func.isFlow,
             refParams,
             func.isTask,
-            func.isUnsafe
+            func.isUnsafe,
+            isFailable = declaredFailable(func)
         )
+    }
+
+    /** True when [func] declares a `T ?! E` return type. */
+    private fun declaredFailable(func: FuncDecl): Boolean {
+        val ref = (func.returnType as? TypeAnnotation.Explicit)?.ref
+        return ref is TypeRef.Failable
     }
 
     /** The current node type being lowered (for `base` resolution). Null outside a node method. */
@@ -593,7 +624,13 @@ class IrGenerator(private val table: SymbolTable) {
             table.popScope()
             currentTraceOwner = previousOwner
         }
-        return IrFunction(mangled, mangledParams, symbol.returnType, body)
+        return IrFunction(
+            mangled,
+            mangledParams,
+            symbol.returnType,
+            body,
+            isFailable = declaredFailable(method),
+        )
     }
 
     /** A shared friend name scope, or null if no friend zones encountered yet. */
@@ -1313,7 +1350,17 @@ class IrGenerator(private val table: SymbolTable) {
                         }
                         padded
                     }
-                    return IrExpr.StructCtor(realCallee, struct.fields.map { it.name }, args, IrType.Named(realCallee))
+                    // Keep the explicit type arguments (`Box<Real>(…)`) on the
+                    // result type: a generic pack erases its fields to pointer
+                    // slots, and this is what later tells a read that the slot
+                    // holds a Real.
+                    val ctorArgs = expr.typeArgs.map { resolveType(it, currentGenericTypeParams) }
+                    return IrExpr.StructCtor(
+                        realCallee,
+                        struct.fields.map { it.name },
+                        args,
+                        IrType.Named(realCallee, ctorArgs),
+                    )
                 }
                 val func = table.lookupFunction(expr.callee)
                 if (func != null) {
@@ -1360,8 +1407,17 @@ class IrGenerator(private val table: SymbolTable) {
                     } else if (args.size < func.params.size && func.defaults.isNotEmpty()) {
                         val result = args.toMutableList()
                         for (i in args.size until func.params.size) {
-                            val default = func.defaults[i]
-                            result.add(if (default != null) lowerExpr(default) else error("Missing arg ${func.params[i].first} of '${expr.callee}'"))
+                            // The symbol table's copy of a default was captured
+                            // before compile-time folding ran, so it can still
+                            // name an `inline` constant that no longer exists.
+                            // The declaration in the current AST is the folded
+                            // one, and is the authority here.
+                            val default = functionDecls[expr.callee]?.params?.getOrNull(i)?.defaultValue
+                                ?: func.defaults[i]
+                            result.add(
+                                if (default != null) lowerDefaultArgument(default, func.params[i].second)
+                                else error("Missing arg ${func.params[i].first} of '${expr.callee}'")
+                            )
                         }
                         result
                     } else args
@@ -1560,9 +1616,15 @@ class IrGenerator(private val table: SymbolTable) {
                     // Concrete pack fields win over property-style callbacks. This matters
                     // for stdlib containers that expose field-backed storage and also define
                     // methods such as keys()/values().
-                    val field = table.lookupStruct(tt2.name)?.field(expr.name)
+                    val owner = table.lookupStruct(tt2.name)
+                    val field = owner?.field(expr.name)
                     if (field != null) {
-                        return IrExpr.Member(target, expr.name, field.type)
+                        // A field declared as a type parameter resolves to `Any`;
+                        // the referring type still carries the argument, which is
+                        // what the value really is.
+                        val slot = field.typeParamIndex
+                        val concrete = if (slot >= 0 && slot < tt2.args.size) tt2.args[slot] else field.type
+                        return IrExpr.Member(target, expr.name, concrete)
                     }
                     // Check for a computed property (prop): `Type_name` zero-arg method.
                     val mangled = table.lookupMethod(tt2.name, expr.name)
@@ -1891,6 +1953,58 @@ class IrGenerator(private val table: SymbolTable) {
     }
 
     /** Provides a default (zero) value for solo fields without explicit defaults. */
+    /**
+     * Lowers a default-argument expression at a call site.
+     *
+     * A bare name that resolves to a literal constant becomes that literal, so
+     * the value travels with the call rather than as a reference the caller's
+     * module may not be able to see.
+     */
+    private fun lowerDefaultArgument(default: Expr, paramType: IrType): IrExpr {
+        if (default is Expr.Identifier) {
+            constantLiterals[default.name]?.let { return it }
+        }
+        val lowered = lowerExpr(default)
+        // A default that still came out untyped would be emitted as an opaque
+        // pointer; the parameter's own type is the authority here.
+        if (lowered is IrExpr.Var && lowered.type == IrType.Any && paramType != IrType.Any) {
+            constantLiterals[lowered.name]?.let { return it }
+        }
+        return lowered
+    }
+
+    /** A top-level `fin`/`let`/`inline fin` bound directly to a literal. */
+    private fun literalConstant(item: TopLevel): Pair<String, IrExpr>? {
+        val (name, initializer) = when (item) {
+            is TopLevel.FinDecl -> if (item.threadlocal) return null else item.name to item.initializer
+            is TopLevel.LetDecl -> item.name to item.initializer
+            is TopLevel.InlineFin -> item.name to item.initializer
+            else -> return null
+        }
+        val value = when (initializer) {
+            is Expr.IntLiteral -> IrExpr.IntLiteral(initializer.value)
+            is Expr.RealLiteral -> IrExpr.RealLiteral(initializer.value)
+            is Expr.BoolLiteral -> IrExpr.BoolLiteral(initializer.value)
+            is Expr.CharLiteral -> IrExpr.CharLiteral(initializer.value)
+            is Expr.StringLiteral -> IrExpr.StringLiteral(initializer.value)
+            // `fin X = -1` parses as a negation of a literal, which is still a
+            // constant and is by far the most common non-trivial default.
+            is Expr.Unary -> negatedLiteral(initializer)
+            else -> null
+        } ?: return null
+        return name to value
+    }
+
+    /** `-<literal>` folded to a literal, or null when it is anything else. */
+    private fun negatedLiteral(expr: Expr.Unary): IrExpr? {
+        if (expr.op != TokenType.MINUS) return null
+        return when (val operand = expr.operand) {
+            is Expr.IntLiteral -> IrExpr.IntLiteral(-operand.value)
+            is Expr.RealLiteral -> IrExpr.RealLiteral(-operand.value)
+            else -> null
+        }
+    }
+
     private fun defaultValueForType(type: IrType): IrExpr = when (type) {
         is IrType.Int -> IrExpr.IntLiteral(0, type)
         is IrType.Long -> IrExpr.IntLiteral(0, type)

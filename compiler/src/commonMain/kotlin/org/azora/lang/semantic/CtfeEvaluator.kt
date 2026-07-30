@@ -132,6 +132,10 @@ class CtfeEvaluator(private val table: SymbolTable) {
         inlineEnv.clear()
         val (resolvedItems, topChanged) = resolveTopLevelItems(program.items, program, errors)
         if (topChanged) changed = true
+        // Phase A consumed the top-level `inline` items, so their values live
+        // only here now. Carry them into Phase B or every use inside a function
+        // — body or parameter default — resolves to a constant that is gone.
+        val topLevelEnv = inlineEnv.toMap()
 
         // Phase B: Resolve inline constructs inside function bodies
         val newItems = resolvedItems.map { item ->
@@ -140,17 +144,33 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 // Seed top-level compile-time constants (e.g. exported `std.config`
                 // flags) so they resolve inside function bodies too.
                 inlineEnv.putAll(seedConstants)
+                inlineEnv.putAll(topLevelEnv)
                 reflectionTypes.clear()
                 item.decl.params.forEach { reflectionTypes[it.name] = it.type.displayName() }
+                // A parameter default is code the caller runs, so it has to be
+                // folded like a body. Leaving it alone lets a default that names
+                // an `inline fin` survive as a reference to a constant that no
+                // longer exists — the item was consumed in Phase A.
+                val newParams = item.decl.params.map { param ->
+                    val default = param.defaultValue
+                    if (default == null) {
+                        param
+                    } else {
+                        val (foldedDefault, defaultChanged) = foldCompileTimeExpr(default, program)
+                        if (defaultChanged) changed = true
+                        param.copy(defaultValue = foldedDefault)
+                    }
+                }
                 val (newBody, bodyChanged) = foldBody(item.decl.body, program, errors)
                 if (bodyChanged) changed = true
-                TopLevel.Func(item.decl.copy(body = newBody))
+                TopLevel.Func(item.decl.copy(params = newParams, body = newBody))
             } else if (item is TopLevel.Test) {
                 // Test bodies may contain compile-time constructs (e.g.
                 // `inline assert (reflect<T>).hasDeco<D>`); fold them too so they
                 // are evaluated rather than left for runtime.
                 inlineEnv.clear()
                 inlineEnv.putAll(seedConstants)
+                inlineEnv.putAll(topLevelEnv)
                 reflectionTypes.clear()
                 val (newBody, bodyChanged) = foldBody(item.body, program, errors)
                 if (bodyChanged) changed = true
@@ -1344,6 +1364,11 @@ class CtfeEvaluator(private val table: SymbolTable) {
         // Tasks/flows are execution boundaries, not pure value expressions. Folding
         // them would erase scheduling, cancellation, and Task<T> from the type graph.
         if (funcDecl.isTask || funcDecl.isFlow || funcDecl.isUnsafe) return null
+        // A `T ?! E` function can fail, and failure is not a value this evaluator
+        // models — it would interpret straight past a `return .Variant` and fold
+        // the call to whatever the success path happens to produce. Leave the
+        // call for runtime, where the error transport observes it.
+        if ((funcDecl.returnType as? TypeAnnotation.Explicit)?.ref is TypeRef.Failable) return null
         // Runtime intrinsics now live in std (std::println, std::convert::toString,
         // std::concurrency::async/channel/cancel). Their .az bodies are dead placeholders
         // (each backend/interpreter intercepts the call by mangled name); folding them at

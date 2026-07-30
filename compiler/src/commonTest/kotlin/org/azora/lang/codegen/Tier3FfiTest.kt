@@ -64,7 +64,6 @@ class Tier3FfiTest {
             "extern func" in result.ir.prettyPrint(),
             "Azora IR must not expose backend extern terminology, got:\n${result.ir.prettyPrint()}",
         )
-        assertTrue("// extern function sqrt" in result.javascript, "JavaScript should emit an extern comment, got:\n${result.javascript}")
         assertTrue("declare" in result.llvm && "sqrt" in result.llvm, "LLVM should emit declare, got:\n${result.llvm}")
     }
 }

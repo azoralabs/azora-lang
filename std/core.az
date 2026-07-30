@@ -100,7 +100,6 @@ use friend zone std {
         Compiler,
         C,
         ObjectiveC,
-        JavaScript,
         WebAssembly
     }
 

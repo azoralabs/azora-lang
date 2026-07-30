@@ -682,7 +682,7 @@ friend zone std {
     }
 }
 
-bridge [.C, .JavaScript, .WebAssembly] {
+bridge [.C, .WebAssembly] {
     /** Host runtime hook returning Unix time as signed nanoseconds. */
     func azora_time_unix_nanoseconds use as az_time_unix_nanoseconds(): Long
 

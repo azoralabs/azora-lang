@@ -648,7 +648,7 @@ friend zone std {
 
         func readArray(depth: Int): SerialValue ?! SerializationError { self! ->
             try self.expect('[')
-            var values = List<SerialValue>()
+            var values = std::ArrayList<SerialValue>()
             self.skipWhitespace()
             if !self.isAtEnd && charAt(self.input, self.index) == ']' {
                 self.index += 1
@@ -666,7 +666,7 @@ friend zone std {
 
         func readObject(depth: Int): SerialValue ?! SerializationError { self! ->
             try self.expect('{')
-            var fields = List<SerialField>()
+            var fields = std::ArrayList<SerialField>()
             self.skipWhitespace()
             if !self.isAtEnd && charAt(self.input, self.index) == '}' {
                 self.index += 1

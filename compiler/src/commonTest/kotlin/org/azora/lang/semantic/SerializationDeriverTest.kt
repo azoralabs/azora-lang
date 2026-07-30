@@ -11,7 +11,6 @@
 package org.azora.lang.semantic
 
 import org.azora.lang.backend.IrInterpreter
-import org.azora.lang.backend.JavaScriptCodegen
 import org.azora.lang.backend.LlvmCodegen
 import org.azora.lang.backend.WasmCodegen
 import org.azora.lang.frontend.Lexer
@@ -430,7 +429,6 @@ class SerializationDeriverTest {
             "7\ndisplay_name\nAlice\nBob\n7\nfalse\n1\n1\n1\nBobby\nCluj\n\nunknown-rejected\nrequired-missing\nAccepted",
             output,
         )
-        assertTrue("User_toSerialValue" in JavaScriptCodegen().generate(ir))
         assertTrue("User_toSerialValue" in WasmCodegen().generate(ir))
         assertTrue("User_toSerialValue" in LlvmCodegen().generate(ir))
     }

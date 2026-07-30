@@ -31,18 +31,18 @@ import org.azora.lang.LibrarySource
 import org.azora.lang.backend.IrInterpreter
 
 /**
- * JavaScript/WASM bridge for the playground (`code.azoralang.org`).
+ * Browser bridge for the playground (`code.azoralang.org`).
  *
  * Each exported function takes Azora source and returns a JSON string of the form
  * `{"success":Boolean,"output":String,"errors":String}`, matching the contract the
  * playground's `wasmLoader.js` expects (`az*` exports on the `globalThis.compiler` global).
  *
- * The compiler lowers one IR to JavaScript, WebAssembly, and LLVM IR, plus the
- * IR interpreter. Each codegen target has an `azGenerate*` export. Execution
+ * The compiler lowers one IR to WebAssembly and LLVM IR, plus the IR
+ * interpreter. Each codegen target has an `azGenerate*` export. Execution
  * (`azInterpret` / `azRunTests`) runs the suspend interpreter
- * ([IrInterpreter.interpretSuspend]). Wasm/JS cannot `runBlocking`, and exporting `suspend`
- * functions directly exposes Kotlin's continuation ABI, so the public bridge returns JavaScript
- * promises that resolve to plain JS strings.
+ * ([IrInterpreter.interpretSuspend]). The browser cannot `runBlocking`, and exporting `suspend`
+ * functions directly exposes Kotlin's continuation ABI, so the public bridge returns
+ * promises that resolve to plain strings.
  */
 private const val AZORA_VERSION = "0.0.4"
 
@@ -196,11 +196,6 @@ fun azRunTests(source: String): Promise<JsString> =
         try { IrInterpreter().interpretSuspend(it.ir) } catch (e: Throwable) { "Runtime error: ${e.message ?: e.toString()}" }
     } }
 
-/** Generates JavaScript source. */
-@JsExport
-fun azGenerateJavaScript(source: String): String =
-    withCompiled(source) { it.javascript }
-
 /** Generates LLVM IR text. */
 @JsExport
 fun azGenerateLlvmIr(source: String): String =
@@ -230,11 +225,6 @@ fun azRunTestsWithLibrary(source: String, libraryPath: String, librarySource: St
         try { IrInterpreter().interpretSuspend(it.ir) } catch (e: Throwable) { "Runtime error: ${e.message ?: e.toString()}" }
     } }
 
-/** Generates JavaScript with one external library module available for imports. */
-@JsExport
-fun azGenerateJavaScriptWithLibrary(source: String, libraryPath: String, librarySource: String): String =
-    withCompiledLibrary(source, libraryPath, librarySource) { it.javascript }
-
 /** Generates LLVM IR with one external library module available for imports. */
 @JsExport
 fun azGenerateLlvmIrWithLibrary(source: String, libraryPath: String, librarySource: String): String =
@@ -263,11 +253,6 @@ fun azRunTestsWithLibraries(source: String, libraryBundle: String): Promise<JsSt
     promisedJson { withCompiledLibrariesSuspend(source, libraryBundle) {
         try { IrInterpreter().interpretSuspend(it.ir) } catch (e: Throwable) { "Runtime error: ${e.message ?: e.toString()}" }
     } }
-
-/** Generates JavaScript with an arbitrary encoded set of external library modules. */
-@JsExport
-fun azGenerateJavaScriptWithLibraries(source: String, libraryBundle: String): String =
-    withCompiledLibraries(source, libraryBundle) { it.javascript }
 
 /** Generates LLVM IR with an arbitrary encoded set of external library modules. */
 @JsExport

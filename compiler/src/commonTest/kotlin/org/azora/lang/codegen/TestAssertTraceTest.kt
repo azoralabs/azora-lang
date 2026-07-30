@@ -60,19 +60,6 @@ class TestAssertTraceTest {
     }
 
     @Test
-    fun test_javascriptEmit() {
-        val result = compile("""
-            import std.io
-            test "my test" {
-                assert 1 == 1 { "fail" }
-            }
-            func main() {}
-        """.trimIndent())
-        assertTrue("test(" in result.javascript, "JavaScript should emit test(), got:\n${result.javascript}")
-        assertTrue("\"my test\"" in result.javascript, "JavaScript should include test name, got:\n${result.javascript}")
-    }
-
-    @Test
     fun test_llvmEmit() {
         val result = compile("""
             import std.io
@@ -136,17 +123,6 @@ class TestAssertTraceTest {
             }
         """.trimIndent())
         assertTrue(errors.any { "String" in it }, "Should require String message, got: $errors")
-    }
-
-    @Test
-    fun assert_javascriptEmit() {
-        val result = compile("""
-            import std.io
-            func main() {
-                assert 1 == 1 { "ok" }
-            }
-        """.trimIndent())
-        assertTrue("throw new Error" in result.javascript, "JavaScript should emit throw, got:\n${result.javascript}")
     }
 
     @Test
@@ -315,18 +291,6 @@ class TestAssertTraceTest {
         """.trimIndent())
 
         assertTrue(errors.any { "trace level must be LogLevel, got String" in it }, errors.toString())
-    }
-
-    @Test
-    fun trace_javascriptEmit() {
-        val result = compile("""
-            import std.io
-            func main() {
-                trace { "debug" }
-            }
-        """.trimIndent())
-        assertTrue("console.log" in result.javascript, "JavaScript should emit console.log, got:\n${result.javascript}")
-        assertTrue("toUpperCase" in result.javascript, "JavaScript should normalize the log level, got:\n${result.javascript}")
     }
 
     @Test

@@ -515,7 +515,7 @@ friend zone std::math {
 }
 
 friend zone std::math {
-    bridge [.C, .JavaScript, .WebAssembly] {
+    bridge [.C, .WebAssembly] {
         /** Sine of [x] (radians). */
         func sin(x: Real): Real
         /** Cosine of [x] (radians). */

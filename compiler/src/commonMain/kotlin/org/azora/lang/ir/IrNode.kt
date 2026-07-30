@@ -138,7 +138,30 @@ sealed class IrType {
     data class Pointer(val inner: IrType) : IrType() { override fun toString() = "$inner*" }
 
     /** A user-defined or unresolved named type (struct, enum, generic base). */
-    data class Named(val name: kotlin.String) : IrType() { override fun toString() = name }
+    /**
+     * A user-declared type, with any type arguments it was written with.
+     *
+     * The arguments are retained because a generic pack is *erased* at the
+     * storage level — every type parameter becomes a pointer slot — so the only
+     * way a field read can know it is holding a `Real` rather than an address is
+     * for the referring type to still say `Box<Real>`.
+     */
+    data class Named(
+        val name: kotlin.String,
+        val args: List<IrType> = emptyList(),
+    ) : IrType() {
+        override fun toString() = name
+
+        // Identity is nominal: `Box` and `Box<Real>` are the same type to every
+        // check in the compiler, exactly as they were before the arguments were
+        // retained. The arguments ride along for code generation, which needs
+        // them to un-erase a field, and must not make two references to the same
+        // pack compare unequal.
+        override fun equals(other: kotlin.Any?): kotlin.Boolean =
+            this === other || (other is Named && other.name == name)
+
+        override fun hashCode(): kotlin.Int = name.hashCode()
+    }
 
     /** The dynamic / erased type, used when a precise type is unknown. */
     object Any : IrType() { override fun toString() = "Any" }
@@ -227,7 +250,10 @@ sealed class IrType {
                 }
                 else if (ref.name == "Var" && ref.args.size >= 2) Variant(ref.args.map { resolve(it, typeParams) })
                 else if (ref.args.isEmpty() && isPrimitiveName(ref.name)) fromName(ref.name)
-                else Named(ref.name)
+                // Keep the type arguments: a generic pack erases its fields to
+                // pointer slots, so `Box<Real>` is the only remaining record
+                // that the slot holds a double rather than an address.
+                else Named(ref.name, ref.args.map { resolve(it, typeParams) })
             }
             is TypeRef.Array -> Array(resolve(ref.element, typeParams))
             is TypeRef.Map -> Map(resolve(ref.key, typeParams), resolve(ref.value, typeParams))
@@ -947,6 +973,14 @@ data class IrFunction(
     val refParams: Set<Int> = emptySet(),
     val isTask: Boolean = false,
     val isUnsafe: Boolean = false,
+    /**
+     * Declared `T ?! E` — the function can fail.
+     *
+     * The success type is unchanged, so this carries no representational cost;
+     * it tells a call site that the error flag has to be checked after the call
+     * returns.
+     */
+    val isFailable: Boolean = false,
 ) {
     /** Pretty-prints this function as Azora IR text. */
     fun prettyPrint(sb: StringBuilder, indent: Int) {
@@ -1014,6 +1048,16 @@ sealed class IrTopLevel {
         val fields: List<IrField>,
         /** Source namespace used for user-facing type names; null for global packs. */
         val namespace: String? = null,
+        /** Declared type parameters, in order, for substituting a field's type. */
+        val typeParams: List<String> = emptyList(),
+        /**
+         * Per field, the index of the type parameter it was declared as, or `-1`.
+         *
+         * A parameter resolves to `Any` in the IR, so the parameter it came from
+         * cannot be recovered from the field's type alone — it is recorded here
+         * instead, which is what lets a `Box<Real>` field read convert back.
+         */
+        val typeParamSlots: List<Int> = emptyList(),
     ) : IrTopLevel()
 
     /**

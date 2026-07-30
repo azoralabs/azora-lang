@@ -121,8 +121,6 @@ class TypeRefTest {
     @Test
     fun arrayGenericTypeLoweredToAllBackends() {
         val result = compile("func f(x: Array<Int>): Int { return 0 }")
-        // JavaScript is untyped, so the array parameter carries no type annotation.
-        assertTrue("function f(x)" in result.javascript, "JavaScript backend should emit function f(x), got:\n${result.javascript}")
     }
 
     @Test

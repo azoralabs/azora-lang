@@ -1273,6 +1273,11 @@ class StdlibInjector private constructor(
         func.params.forEach {
             collectNamesFromAnnotations(it.annotations, names)
             collectNamesFromTypeAnnotation(TypeAnnotation.Explicit(it.type), names)
+            // A default value is real code that runs at every call site which
+            // omits the argument, so whatever it names has to be injected too —
+            // otherwise a constant used *only* as a default is never pulled in
+            // and the call lowers to a reference this unit never defines.
+            it.defaultValue?.let { default -> collectNamesFromExpr(default, names) }
         }
         collectNamesFromTypeAnnotation(func.returnType, names)
         func.body.forEach { collectNamesFromStmt(it, names) }

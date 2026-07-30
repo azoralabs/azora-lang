@@ -2,7 +2,7 @@
 
 A multi-phase, IR-based compiler for the Azora language: multi-pass semantic
 analysis with compile-time function execution (CTCE), a target-agnostic typed
-IR, and the active JavaScript, WebAssembly, and LLVM source backends plus an
+IR, and the active WebAssembly and LLVM source backends plus an
 in-memory interpreter — all driven from one optimized IR per compile.
 
 Source lives under `compiler/src/commonMain/kotlin/org/azora/lang/`
@@ -27,8 +27,8 @@ Source → Lexer → Parser → AST Validator
   JS    Wasm   LLVM   Interpreter (IR dump)
 ```
 
-Every `Compiler.compile()` lowers the (optimized) IR to JavaScript,
-WebAssembly, and LLVM IR in one pass and returns them together. Adding a target
+Every `Compiler.compile()` lowers the (optimized) IR to WebAssembly and LLVM
+IR in one pass and returns them together. Adding a target
 = one new file under `backend/` plus one field on `CompilationResult.Success`.
 
 ### Phase boundaries (see `Compiler.kt`)
@@ -37,7 +37,7 @@ WebAssembly, and LLVM IR in one pass and returns them together. Adding a target
 2. **Semantic** — multi-pass: symbol collection → import resolution →
    type-resolution ⇄ CTCE fixed-point loop → alloc/drop → effect checking.
 3. **IR** — AST → typed IR → optimization (constant fold/propagate, DCE, unused-symbol elimination).
-4. **Backend** — IR → JavaScript, WebAssembly, LLVM (+ interpreter, + IR/AST dump).
+4. **Backend** — IR → WebAssembly, LLVM (+ interpreter, + IR/AST dump).
 
 ---
 
@@ -307,8 +307,8 @@ keys, unsupported types, and numeric overflow are diagnosed.
 Generated value-tree codecs currently cover scalar primitives, nullable scalar
 primitives, nested serializable packs, `List<T>`/`Set<T>` with primitive
 elements, and `Map<String, V>` with primitive values. The methods become normal
-typed IR and therefore share behavior across the interpreter, JavaScript,
-WebAssembly, and LLVM backends.
+typed IR and therefore share behavior across the interpreter, WebAssembly,
+and LLVM backends.
 
 ### Testing & debugging
 
@@ -436,7 +436,6 @@ All backends are thin lowering passes from the same optimized IR.
 
 | File | Target | Notes |
 |------|--------|-------|
-| `JavaScriptCodegen.kt` | JavaScript | Full. Emits plain JS and appends `main()`. |
 | `WasmCodegen.kt` | WebAssembly (WAT) | Full; folded S-exprs, linear memory + host imports. |
 | `LlvmCodegen.kt` | LLVM IR (`.ll`) | Partial — placeholders for closures, defer, compound types, pointers. `lli`/`clang`/`llc` ready. |
 | `IrInterpreter.kt` | (in-memory) | Full direct execution — drives tests, REPL, and the playground. Concurrency runs on `Dispatchers.Default` with real parallelism. |
@@ -450,7 +449,6 @@ Orchestrates all four phases and returns every generated output at once:
 ```kotlin
 when (val result = Compiler().compile(source, release = true)) {
     is CompilationResult.Success -> {
-        result.javascript   // generated JavaScript
         result.wasm         // WebAssembly text (WAT)
         result.llvm         // LLVM IR text
         result.ast          // CTCE-stabilized AST after semantic analysis
@@ -536,7 +534,6 @@ compiler/src/commonMain/kotlin/org/azora/lang/
 │   └── IrOptimizer.kt           Constant fold → propagate → DCE → unused-symbol elim
 │
 └── backend/
-    ├── JavaScriptCodegen.kt     IR → JavaScript
     ├── WasmCodegen.kt           IR → WebAssembly (WAT)
     ├── LlvmCodegen.kt           IR → LLVM IR text
     └── IrInterpreter.kt         IR → direct execution (tests, REPL, playground)

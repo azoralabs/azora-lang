@@ -164,9 +164,6 @@ class Tier3MemoryTest {
             }
         """.trimIndent())
         assertIs<CompilationResult.Success>(result)
-        // JavaScript backend must define the pointer runtime helpers it calls.
-        assertTrue("__alloc" in result.javascript && "AzoraPtr" in result.javascript,
-            "JavaScript should emit a pointer runtime preamble, got:\n${result.javascript}")
     }
 
     @Test fun zoneAllocFreesAtExit() {

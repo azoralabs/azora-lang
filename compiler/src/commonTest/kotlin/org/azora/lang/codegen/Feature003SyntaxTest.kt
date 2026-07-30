@@ -381,7 +381,6 @@ class Feature003SyntaxTest {
             }
         """.trimIndent())
         val success = assertIs<CompilationResult.Success>(result, "Compilation failed: ${(result as? CompilationResult.Failure)?.errors}")
-        assertTrue(success.javascript.isNotBlank())
         assertTrue(success.wasm.isNotBlank())
         assertTrue(success.llvm.isNotBlank())
     }

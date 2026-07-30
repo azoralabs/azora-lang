@@ -145,8 +145,11 @@ object SerializationDeriver {
         }
 
         if (errors.isNotEmpty()) return Result(program, errors.distinct())
+        // The generated bodies build their field and element collections with
+        // `std::List`, so the module that declares it has to travel with them —
+        // a derived pack's own file has no reason to have imported it.
         val dependencyImports = if (generated.isEmpty()) emptyList() else
-            listOf(helpers.providerModule, helpers.conversionModule)
+            listOf(helpers.providerModule, helpers.conversionModule, "std.container.list")
                 .filter { it.isNotEmpty() }
                 .distinct()
                 .map { module -> TopLevel.UseImport(listOf(module to null), line = 0) }
@@ -301,8 +304,8 @@ object SerializationDeriver {
         helpers: Helpers,
     ): String = buildString {
         appendLine("impl ${pack.name} {")
-        appendLine("    func toSerialValue(value: ref ${pack.name}): SerialValue ?! SerializationError { self& ->")
-        appendLine("        var __serialFields = List()")
+        appendLine("    func toSerialValue(value: ${pack.name}&): SerialValue ?! SerializationError { self& ->")
+        appendLine("        var __serialFields = std::ArrayList<SerialField>()")
         fields.filterNot { it.ignored }.forEach { plan ->
             val encoded = appendEncodedField(plan, helpers)
             if (!encodeDefaults && plan.defaultSource != null && !plan.required) {
@@ -316,7 +319,7 @@ object SerializationDeriver {
         appendLine("        return SerialValue.Object(__serialFields)")
         appendLine("    }")
         appendLine()
-        appendLine("    func fromSerialValue(value: ref SerialValue): ${pack.name} ?! SerializationError { self& ->")
+        appendLine("    func fromSerialValue(value: SerialValue&): ${pack.name} ?! SerializationError { self& ->")
         appendLine("        when value {")
         appendLine("            SerialValue.Object(__serialFields) -> {")
         fields.filterNot { it.ignored }.forEach { plan ->
@@ -378,7 +381,7 @@ object SerializationDeriver {
             val fieldsName = "__encoded_${plan.field.name}"
             val keysName = "__keys_${plan.field.name}"
             val indexName = "__encode_${plan.field.name}_index"
-            appendLine("        var $fieldsName = List()")
+            appendLine("        var $fieldsName = std::ArrayList<SerialField>()")
             appendLine("        fin $keysName = value.${plan.field.name}.keys()")
             appendLine("        var $indexName = 0")
             appendLine("        while $indexName < $keysName.length {")
@@ -396,7 +399,7 @@ object SerializationDeriver {
         val element = type.args.single()
         val valuesName = "__encoded_${plan.field.name}"
         val indexName = "__encode_${plan.field.name}_index"
-        appendLine("        var $valuesName = List()")
+        appendLine("        var $valuesName = std::ArrayList<SerialValue>()")
         appendLine("        var $indexName = 0")
         appendLine("        while $indexName < value.${plan.field.name}.size {")
         val elementValue = "value.${plan.field.name}[$indexName] as ${renderType(element)}"
@@ -459,12 +462,12 @@ object SerializationDeriver {
         helpers: Helpers,
     ) {
         appendLine()
-        appendLine("    func $encodeMethod(value: ref $typeName, options: ref SerializerOptions): String ?! SerializationError { self& ->")
+        appendLine("    func $encodeMethod(value: $typeName&, options: SerializerOptions&): String ?! SerializationError { self& ->")
         appendLine("        fin __serialValue = try self.toSerialValue(value)")
         appendLine("        return try ${qualified(helpers.provider, "encodeSerialValue")}(__serialValue, SerializationFormat.$formatName, options)")
         appendLine("    }")
         appendLine()
-        appendLine("    func $decodeMethod(input: String, options: ref SerializerOptions): $typeName ?! SerializationError { self& ->")
+        appendLine("    func $decodeMethod(input: String, options: SerializerOptions&): $typeName ?! SerializationError { self& ->")
         appendLine("        fin __serialValue = try ${qualified(helpers.provider, "decodeSerialValue")}(input, SerializationFormat.$methodSuffix, options)")
         appendLine("        return try self.fromSerialValue(__serialValue)")
         appendLine("    }")

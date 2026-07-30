@@ -198,8 +198,5 @@ class ArrayTest {
             }
         """.trimIndent())
         assertIs<CompilationResult.Success>(result)
-        // JavaScript backend emits an array literal and index access
-        assertTrue("[1, 2, 3]" in result.javascript, "JavaScript should emit an array literal, got:\n${result.javascript}")
-        assertTrue("a[0]" in result.javascript, "JavaScript should emit a[0], got:\n${result.javascript}")
     }
 }

@@ -239,8 +239,5 @@ class EnumWhenTest {
             }
         """.trimIndent())
         assertIs<CompilationResult.Success>(result)
-        // JavaScript: enum value is a string literal, switch on a string
-        assertTrue("\"Red\"" in result.javascript, result.javascript)
-        assertTrue("switch" in result.javascript, result.javascript)
     }
 }

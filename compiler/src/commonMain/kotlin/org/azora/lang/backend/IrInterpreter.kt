@@ -94,7 +94,22 @@ class IrInterpreter {
         "ceil" to { a -> kotlin.math.ceil(a[0] as Double) },
         "round" to { a -> kotlin.math.round(a[0] as Double) },
         "abs" to { a -> if (a[0] is Long) kotlin.math.abs(a[0] as Long) else kotlin.math.abs(a[0] as Double) },
-        "pow" to { a -> (a[0] as Double).pow(a[1] as Double) }
+        "pow" to { a -> (a[0] as Double).pow(a[1] as Double) },
+        // The libm spellings, so a `bridge .C` that names the C function rather
+        // than its Azora alias still runs under the interpreter — otherwise a
+        // test covering such code can only be run by a native build.
+        "fabs" to { a -> kotlin.math.abs(a[0] as Double) },
+        "fmod" to { a -> (a[0] as Double).mod(a[1] as Double) },
+        "fmin" to { a -> kotlin.math.min(a[0] as Double, a[1] as Double) },
+        "fmax" to { a -> kotlin.math.max(a[0] as Double, a[1] as Double) },
+        "atan2" to { a -> kotlin.math.atan2(a[0] as Double, a[1] as Double) },
+        "hypot" to { a -> kotlin.math.hypot(a[0] as Double, a[1] as Double) },
+        "log2" to { a -> kotlin.math.log2(a[0] as Double) },
+        "log10" to { a -> kotlin.math.log10(a[0] as Double) },
+        "sinh" to { a -> kotlin.math.sinh(a[0] as Double) },
+        "cosh" to { a -> kotlin.math.cosh(a[0] as Double) },
+        "tanh" to { a -> kotlin.math.tanh(a[0] as Double) },
+        "trunc" to { a -> kotlin.math.truncate(a[0] as Double) }
     )
 
     /** The runBlocking coroutine scope — used by `task`/`await` for cooperative concurrency. */

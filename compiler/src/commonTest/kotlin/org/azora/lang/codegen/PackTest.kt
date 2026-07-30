@@ -166,8 +166,5 @@ class PackTest {
             }
         """.trimIndent())
         assertIs<CompilationResult.Success>(result)
-        // JavaScript backend emits a class with a constructor
-        assertTrue("class Point {" in result.javascript, "JavaScript should emit a Point class, got:\n${result.javascript}")
-        assertTrue("new Point(1, 2)" in result.javascript, "JavaScript should construct new Point, got:\n${result.javascript}")
     }
 }

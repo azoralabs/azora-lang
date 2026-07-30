@@ -23,16 +23,6 @@ class TupleVariadicTest {
         return result
     }
 
-    private fun runJs(source: String): String {
-        val out = compile(source)
-        val tmp = File.createTempFile("azora", ".js").apply { writeText(out.javascript); deleteOnExit() }
-        val proc = ProcessBuilder("node", tmp.absolutePath).redirectErrorStream(true).start()
-        val ok = proc.waitFor() == 0
-        val output = proc.inputStream.bufferedReader().readText().trim()
-        assertTrue(ok, "node failed:\n$output")
-        return output
-    }
-
     @Test fun genericImplReflectedFieldLoopParses() {
         val program = Parser(Lexer("""
             spec PrettyPrint { prop pretty: String }
@@ -67,7 +57,6 @@ class TupleVariadicTest {
                 std::println(x.1)
             }
         """.trimIndent())
-        assertContains(out.javascript, "__std_Tuple_Int_Real")
         assertEquals("1\n2.0", IrInterpreter().interpret(out.ir).trim())
     }
 
@@ -82,7 +71,6 @@ class TupleVariadicTest {
             }
         """.trimIndent()
         val out = compile(src)
-        assertContains(out.javascript, "__std_Tuple_Int_Real")
         assertEquals("1\n2.0", IrInterpreter().interpret(out.ir).trim())
     }
 
@@ -109,36 +97,6 @@ class TupleVariadicTest {
         assertEquals("1\n2.0", IrInterpreter().interpret(b.ir).trim())
     }
 
-    @Test fun jsBackendEmitsValidNumericFieldAccess() {
-        val out = compile("""
-            import std.io
-            import std.container.*
-            func main() {
-                fin x = std::tupleOf(1, 2.0)
-                std::println(x.0)
-                std::println(x.1)
-            }
-        """.trimIndent())
-        // Numeric field names must use bracket access, never `this.0` / `target.0`.
-        assertTrue("__std_Tuple_Int_Real" in out.javascript, out.javascript)
-        assertContains(out.javascript, "this[0]")
-        assertContains(out.javascript, "this[1]")
-        assertFalse(out.javascript.contains("this.0"), "invalid JS `this.0` in:\n${out.javascript}")
-        assertFalse(out.javascript.contains("this.1"), "invalid JS `this.1` in:\n${out.javascript}")
-    }
-
-    @Test fun jsBackendRunsViaNode() {
-        assertEquals("7\n3.5", runJs("""
-            import std.io
-            import std.container.*
-            func main() {
-                fin x = std::tupleOf(7, 3.5)
-                std::println(x.0)
-                std::println(x.1)
-            }
-        """.trimIndent()))
-    }
-
     @Test fun tupleOfThreeElementsAndMutation() {
         val src = """
             import std.io
@@ -151,7 +109,6 @@ class TupleVariadicTest {
             }
         """.trimIndent()
         val out = compile(src)
-        assertContains(out.javascript, "__std_Tuple_Bool_String_Int")
         assertEquals("true\nhi\n42", IrInterpreter().interpret(out.ir).trim())
     }
 
@@ -171,7 +128,6 @@ class TupleVariadicTest {
         """.trimIndent()
         val out = compile(src)
         assertEquals("ok0\nok1\nok2", IrInterpreter().interpret(out.ir).trim())
-        assertContains(out.javascript, "__std_Tuple_Int_Real_String")
     }
 
     @Test fun tupleModuleImportExposesTuple() {
@@ -208,7 +164,6 @@ class TupleVariadicTest {
             }
         """.trimIndent())
 
-        assertContains(out.javascript, "__std_Tuple_String_String")
         assertEquals(
             "std::Tuple<String, String>(\"Hello from Azora!\", \":)\")",
             IrInterpreter().interpret(out.ir).trim(),
@@ -232,10 +187,6 @@ class TupleVariadicTest {
         assertFalse("__reflect" in irText, irText)
         assertFalse("Self" in irText, irText)
         assertFalse("field.value" in irText, irText)
-        for (generated in listOf(result.javascript, result.wasm, result.llvm)) {
-            assertFalse("__reflect" in generated, generated)
-            assertFalse("field.value" in generated, generated)
-        }
     }
 
     @Test fun stringAppendAssignmentConvertsItsOperand() {

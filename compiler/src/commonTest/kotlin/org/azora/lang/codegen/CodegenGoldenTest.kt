@@ -24,7 +24,7 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /**
- * Golden (full-output) tests for the JavaScript, WASM and LLVM backends.
+ * Golden (full-output) tests for the WASM and LLVM backends.
  *
  * Unlike the substring assertions elsewhere, these compare the **entire**
  * generated source text, so any unintended codegen change — formatting,
@@ -99,81 +99,6 @@ class CodegenGoldenTest {
     """.trimIndent()
 
     // -----------------------------------------------------------------------
-    // JavaScript
-    // -----------------------------------------------------------------------
-
-    @Test
-    fun javascriptFullOutputScalar() {
-        val expected = """
-            function classify(n) {
-                if ((n < 0)) {
-                    return "negative";
-                } else if ((n === 0)) {
-                    return "zero";
-                }
-                return "positive";
-            }
-
-            function main() {
-                const sum = 5;
-                console.log(`sum = ${'$'}{sum}`);
-                let total = 0;
-                for (let i = 1; i <= 5; i++) {
-                    total = (total + i);
-                }
-                console.log(total);
-                while ((total > 10)) {
-                    total = (total - 4);
-                }
-                console.log(total);
-                console.log(classify(5));
-                console.log(2);
-            }
-
-            main()
-        """.trimIndent()
-        assertEquals(expected, compile(scalarProgram).javascript)
-    }
-
-    @Test
-    fun javascriptFullOutputAggregate() {
-        val expected = """
-            class Point {
-                constructor(x, y) {
-                    this.x = x;
-                    this.y = y;
-                }
-            }
-
-            function main() {
-                const p = new Point(3, 4);
-                p.x = (p.x + 1);
-                console.log(p.x);
-                const nums = arr@[10, 20, 30];
-                nums[1] = 25;
-                console.log(nums[1]);
-                switch (2) {
-                    case 1: {
-                        console.log("one");
-                        break;
-                    }
-                    case 2:
-                    case 3: {
-                        console.log("two or three");
-                        break;
-                    }
-                    default: {
-                        console.log("other");
-                    }
-                }
-            }
-
-            main()
-        """.trimIndent()
-        assertEquals(expected, compile(aggregateProgram).javascript)
-    }
-
-    // -----------------------------------------------------------------------
     // WASM (WAT) — structural assertions (full behaviour is covered by the
     // WasmCodegenExecTest end-to-end suite).
     // -----------------------------------------------------------------------
@@ -206,7 +131,7 @@ class CodegenGoldenTest {
     fun wasmDeclaresReferencedBridgeFunctionsAsTypedHostImports() {
         val wat = compile(
             """
-            bridge WebGL {
+            bridge .WebAssembly {
                 func webClear(r: Real, g: Real, b: Real): Unit
                 func webWave(time: Real, speed: Real): Real
                 func unused(value: Int): Unit

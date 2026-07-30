@@ -146,6 +146,24 @@ class LlvmCodegen {
     /** True while emitting `main` (which is always lowered as `i32 @main`). */
     private var currentIsMain = false
 
+    /** True when the function currently being emitted declares `T ?! E`. */
+    private var currentIsFailable = false
+
+    /** Names of functions that can fail; a call to one needs an error check. */
+    private val failableFunctions = mutableSetOf<String>()
+
+    /**
+     * Labels of the enclosing error handlers, innermost last.
+     *
+     * A failable call branches to the top of this stack. When it is empty the
+     * error either propagates (the caller is itself failable) or aborts, which
+     * is what an unhandled error means.
+     */
+    private val errorHandlers = mutableListOf<String>()
+
+    /** True once anything in this module reads or writes the error slot. */
+    private var usesErrorSlot = false
+
     // Which libc declarations / runtime helpers are referenced.
     private var usesPuts = false
     private var usesPrintf = false
@@ -243,6 +261,9 @@ class LlvmCodegen {
 
         structDefs.clear()
         funcParamTypes.clear()
+        failableFunctions.clear()
+        errorHandlers.clear()
+        usesErrorSlot = false
         globalVars.clear()
         dynamicGlobalInitializers.clear()
         lateTypeDefinitions.clear()
@@ -278,6 +299,7 @@ class LlvmCodegen {
             when (item) {
                 is IrTopLevel.Func -> {
                     funcParamTypes[item.function.name] = item.function.params.map { it.second }
+                    if (item.function.isFailable) failableFunctions += item.function.name
                     if (item.function.isTask && item.function.name != "main") {
                         usesTaskRuntime = true
                     }
@@ -371,9 +393,27 @@ class LlvmCodegen {
             body.appendLine()
         }
 
+        // A test body can contain a lambda too, and emitting it queues the
+        // closure's body the same way a function's does. Draining only before
+        // the tests would leave those queued bodies unwritten, and the module
+        // would reference a `@__azora_lambda_body_N` that is never defined.
+        while (deferredIndex < deferredFunctions.size) {
+            body.append(deferredFunctions[deferredIndex])
+            body.appendLine()
+            deferredIndex++
+        }
+
         // Runtime helpers (appended after the body so string-constant ids are stable).
         if (usesTaskRuntime || usesArenaRuntime) usesAllocatorRuntime = true
         val helpers = buildRuntimeHelpers()
+
+        // The error slot for `T ?! E`. One module-level pointer: null when no
+        // error is pending, otherwise the raised variant's name.
+        val errSlot = StringBuilder()
+        if (usesErrorSlot) {
+            errSlot.appendLine("; Error transport")
+            errSlot.appendLine("@__azora_err = global i8* null")
+        }
 
         // String constants
         val strConsts = StringBuilder()
@@ -422,6 +462,7 @@ class LlvmCodegen {
         if (usesTaskRuntime || usesArenaRuntime || lateTypeDefinitions.isNotEmpty()) line("")
         out.append(body)
         if (helpers.isNotEmpty()) out.append(helpers)
+        out.append(errSlot)
         out.append(strConsts)
 
         return out.toString().trimEnd()
@@ -595,6 +636,8 @@ class LlvmCodegen {
         // so the produced executable / `lli` run yields a clean exit code.
         val isMain = func.name == "main"
         currentIsMain = isMain
+        currentIsFailable = func.isFailable
+        errorHandlers.clear()
         currentReturnType = if (isMain) null else func.returnType
         val retType = if (isMain) "i32" else mapType(func.returnType)
 
@@ -856,18 +899,144 @@ class LlvmCodegen {
             is IrStmt.Defer -> emit("  ; defer — not lowered")
             is IrStmt.Yield -> emit("  ; yield — not lowered (interpreter-only)")
             is IrStmt.ForEach -> emitForEach(stmt)
-            is IrStmt.Throw -> {
-                emitExpr(stmt.value)
-                emit("  ; throw — lowered to abort")
-                usesAbort = true
-                emit("  call void @abort()")
-                emitTerminator("  unreachable")
-            }
-            is IrStmt.Try -> {
-                emit("  ; try { ... } — body emitted, exception handling not lowered")
-                emitStmts(stmt.body)
-            }
+            is IrStmt.Throw -> emitThrow(stmt)
+            is IrStmt.Try -> emitTry(stmt)
         }
+    }
+
+    /**
+     * Raises an error: record it, then leave the function by the normal path.
+     *
+     * `T ?! E` keeps the success type, so there is no room in the return value
+     * for a failure. The error travels in a module-level slot instead and the
+     * function returns its zero value — a caller that can observe the error
+     * checks the slot immediately after the call and never looks at that value.
+     */
+    private fun emitThrow(stmt: IrStmt.Throw) {
+        usesErrorSlot = true
+        val value = emitExpr(stmt.value)
+        val slot = nextTmp()
+        emit("  $slot = bitcast ${mapType(stmt.value.type)} $value to i8*")
+        emit("  store i8* $slot, i8** @__azora_err")
+        // A `throw` inside a `try` is caught here rather than unwinding.
+        if (errorHandlers.isNotEmpty()) {
+            emitTerminator("  br label %${errorHandlers.last()}")
+            return
+        }
+        emitFunctionExitCleanup()
+        emitReturnZero()
+    }
+
+    /** Returns the current function's zero value, for a failure exit. */
+    private fun emitReturnZero() {
+        if (currentIsMain) {
+            emitTerminator("  ret i32 0")
+            return
+        }
+        val declared = currentReturnType
+        if (declared == null || declared == IrType.Unit) {
+            emitTerminator("  ret void")
+            return
+        }
+        emitTerminator("  ret ${mapType(declared)} ${defaultValue(declared)}")
+    }
+
+    /**
+     * `try { … } catch { … }`.
+     *
+     * The body runs with a handler pushed, so every failable call and every
+     * `throw` inside it branches to the catch block. The handler clears the
+     * slot first: an error that has been handled must not still be pending when
+     * the next call checks.
+     */
+    private fun emitTry(stmt: IrStmt.Try) {
+        val catchBody = stmt.catchBody
+        if (catchBody == null) {
+            emitStmts(stmt.body)
+            return
+        }
+        usesErrorSlot = true
+        val handler = nextLabel("catch")
+        val done = nextLabel("try.done")
+
+        errorHandlers.add(handler)
+        emitStmts(stmt.body)
+        errorHandlers.removeAt(errorHandlers.size - 1)
+        emitTerminator("  br label %$done")
+
+        startBlock(handler)
+        emit("  store i8* null, i8** @__azora_err")
+        emitStmts(catchBody)
+        emitTerminator("  br label %$done")
+
+        startBlock(done)
+    }
+
+    /**
+     * Checks the error slot after a call that could have failed.
+     *
+     * With a handler in scope the error is caught; otherwise it propagates when
+     * the current function is itself failable, and aborts when it is not —
+     * which is what an error nobody can observe means.
+     */
+    private fun emitErrorCheck() {
+        usesErrorSlot = true
+        val raised = nextTmp()
+        emit("  $raised = load i8*, i8** @__azora_err")
+        val failed = nextTmp()
+        emit("  $failed = icmp ne i8* $raised, null")
+        val onError = nextLabel("err")
+        val onOk = nextLabel("ok")
+        emitTerminator("  br i1 $failed, label %$onError, label %$onOk")
+
+        startBlock(onError)
+        if (errorHandlers.isNotEmpty()) {
+            emitTerminator("  br label %${errorHandlers.last()}")
+        } else if (currentIsFailable) {
+            // Leave the slot set: the caller's own check sees the same error.
+            emitFunctionExitCleanup()
+            emitReturnZero()
+        } else {
+            usesAbort = true
+            emit("  call void @abort()")
+            emitTerminator("  unreachable")
+        }
+
+        startBlock(onOk)
+    }
+
+    /**
+     * `expr catch fallback` — the expression's value, or the fallback if it failed.
+     *
+     * The primary is emitted under its own handler so a failure inside it lands
+     * on the fallback rather than escaping. Both arms meet in a phi, so the
+     * result is a single value whichever way it went.
+     */
+    private fun emitCatchExpr(expr: IrExpr.CatchExpr): String {
+        usesErrorSlot = true
+        val handler = nextLabel("catch.expr")
+        val done = nextLabel("catch.done")
+        val type = mapType(expr.type)
+
+        errorHandlers.add(handler)
+        val primary = emitExpr(expr.expr)
+        errorHandlers.removeAt(errorHandlers.size - 1)
+        val primaryValue = coerceNumeric(primary, expr.expr.type, expr.type)
+        val primaryBlock = currentBlock
+        emitTerminator("  br label %$done")
+
+        startBlock(handler)
+        emit("  store i8* null, i8** @__azora_err")
+        val fallback = emitExpr(expr.fallback)
+        val fallbackValue = coerceNumeric(fallback, expr.fallback.type, expr.type)
+        val fallbackBlock = currentBlock
+        emitTerminator("  br label %$done")
+
+        startBlock(done)
+        if (expr.type == IrType.Unit) return ""
+        val result = nextTmp()
+        emit("  $result = phi $type [ $primaryValue, %$primaryBlock ], [ $fallbackValue, %$fallbackBlock ]")
+        return result
     }
 
     private fun emitZone(stmt: IrStmt.Zone) {
@@ -1545,10 +1714,7 @@ class LlvmCodegen {
             emit("  ; tuple access .${expr.index} — not lowered")
             defaultValue(expr.type)
         }
-        is IrExpr.CatchExpr -> {
-            // The fallback path is not lowered; evaluate the primary expression.
-            emitExpr(expr.expr)
-        }
+        is IrExpr.CatchExpr -> emitCatchExpr(expr)
         is IrExpr.NumCast -> coerceNumeric(emitExpr(expr.value), expr.value.type, expr.type)
         is IrExpr.IfExpr -> emitIfExpr(expr)
         is IrExpr.SlotPattern -> "0"
@@ -2111,6 +2277,26 @@ class LlvmCodegen {
         if (fromPtr && toPtr) {
             val t = nextTmp(); emit("  $t = bitcast $ft $value to $tt"); return t
         }
+        // Float ↔ pointer. An erased generic slot is a pointer, so a `Real` has
+        // to travel as its own bit pattern: reinterpreting a double *as* an
+        // address is not well-formed IR. Integers already take the `inttoptr`
+        // path above; floats need the bitcast first.
+        if (fromFloat && toPtr) {
+            val width = sizeOfScalar(from) * 8
+            val bits = nextTmp(); emit("  $bits = bitcast $ft $value to i$width")
+            val wide = if (width == 64) bits else {
+                val w = nextTmp(); emit("  $w = zext i$width $bits to i64"); w
+            }
+            val t = nextTmp(); emit("  $t = inttoptr i64 $wide to $tt"); return t
+        }
+        if (fromPtr && toFloat) {
+            val width = sizeOfScalar(to) * 8
+            val wide = nextTmp(); emit("  $wide = ptrtoint $ft $value to i64")
+            val bits = if (width == 64) wide else {
+                val b = nextTmp(); emit("  $b = trunc i64 $wide to i$width"); b
+            }
+            val t = nextTmp(); emit("  $t = bitcast i$width $bits to $tt"); return t
+        }
         val inst = when {
             fromInt && toFloat -> if (isUnsigned(from)) "uitofp" else "sitofp"
             fromFloat && toInt -> if (isUnsigned(to)) "fptoui" else "fptosi"
@@ -2179,8 +2365,11 @@ class LlvmCodegen {
             if (fi < 0) continue // metadata field (e.g. node __type/__chain) not in the layout
             val field = def.fields[fi]
             val (rawVal, argType) = argVals[i]
-            val value = coerceNumeric(rawVal, argType, field.type)
             val ft = mapType(field.type)
+            // The constructed type's own arguments say what a generic field
+            // really holds; the slot itself stays erased.
+            val concrete = concreteFieldType(def, fi, expr.type as? IrType.Named ?: IrType.Named(expr.name))
+            val value = coerceToField(rawVal, argType, concrete, ft)
             val fp = nextTmp()
             emit("  $fp = getelementptr $st, $st* $ptr, i32 0, i32 $fi")
             emit("  store $ft $value, $ft* $fp")
@@ -2265,7 +2454,44 @@ class LlvmCodegen {
         val ptr = emitExpr(target)
         val fp = nextTmp()
         emit("  $fp = getelementptr $st, $st* $ptr, i32 0, i32 $fi")
-        return Triple(fp, def.fields[fi].type, mapType(def.fields[fi].type))
+        // The declared field type is what the *slot* holds; for a generic pack
+        // that is an erased pointer. The concrete type comes from the referring
+        // type's arguments, and is what the value has to be converted to.
+        return Triple(fp, concreteFieldType(def, fi, tt), mapType(def.fields[fi].type))
+    }
+
+    /**
+     * The type field [index] of [def] actually holds, given the arguments on the
+     * referring type.
+     *
+     * A field declared as a type parameter is stored erased, so `Box<Real>.value`
+     * is a pointer slot that really contains a double. Substituting the argument
+     * here is what lets the read and the write convert in opposite directions
+     * instead of handing out an address.
+     */
+    private fun concreteFieldType(def: IrTopLevel.Struct, index: Int, referring: IrType.Named): IrType {
+        val declared = def.fields[index].type
+        if (referring.args.isEmpty()) return declared
+        // Only a field declared *as* a parameter is substituted; a nested
+        // generic (`List<T>` inside the pack) keeps its erased element type,
+        // which the collection paths already handle.
+        val position = def.typeParamSlots.getOrNull(index) ?: -1
+        if (position < 0 || position >= referring.args.size) return declared
+        return referring.args[position]
+    }
+
+    /**
+     * Converts [raw] for storage in a field whose slot is [slotLlvm].
+     *
+     * For an ordinary field the slot and the field agree and this is the usual
+     * numeric coercion. For a substituted generic field the slot is an erased
+     * pointer, so the value is converted to its declared type first and then
+     * into the pointer slot — the exact inverse of what the read does.
+     */
+    private fun coerceToField(raw: String, from: IrType, fieldType: IrType, slotLlvm: String): String {
+        val typed = coerceNumeric(raw, from, fieldType)
+        if (mapType(fieldType) == slotLlvm) return typed
+        return coerceNumeric(typed, fieldType, IrType.Any)
     }
 
     private fun emitMemberRead(expr: IrExpr.Member): String {
@@ -2299,9 +2525,15 @@ class LlvmCodegen {
         // Struct field read.
         val fieldPtr = emitFieldPtr(expr.target, expr.name)
         if (fieldPtr != null) {
-            val (fp, _, ft) = fieldPtr
+            val (fp, fieldType, ft) = fieldPtr
             val tmp = nextTmp()
             emit("  $tmp = load $ft, $ft* $fp")
+            // A substituted generic field is stored erased, so the slot's type
+            // and the field's real type disagree; convert back. An ordinary
+            // field's types already agree and is left exactly as it was.
+            if (mapType(fieldType) != ft) {
+                return coerceNumeric(tmp, IrType.Any, fieldType)
+            }
             return tmp
         }
         emitExpr(expr.target)
@@ -2314,7 +2546,7 @@ class LlvmCodegen {
         if (fieldPtr != null) {
             val (fp, fieldType, ft) = fieldPtr
             val raw = emitExpr(stmt.value)
-            val value = coerceNumeric(raw, stmt.value.type, fieldType)
+            val value = coerceToField(raw, stmt.value.type, fieldType, ft)
             emit("  store $ft $value, $ft* $fp")
             // The receiver may outlive the current `zone alloc`; keep the stored
             // pointer alive past the arena's free_all.
@@ -2375,7 +2607,21 @@ class LlvmCodegen {
         return sb.toString()
     }
 
+    /**
+     * Lowers a method call, checking the error slot when the method can fail.
+     *
+     * Methods are lowered to free functions named `Type_method`, so a failable
+     * one is recognised by that mangled name — a call through the receiver has
+     * to check exactly as a plain call does.
+     */
     private fun emitMethodCall(expr: IrExpr.MethodCall): String {
+        val result = emitMethodCallValue(expr)
+        val owner = (expr.target.type as? IrType.Named)?.name
+        if (owner != null && "${owner}_${expr.name}" in failableFunctions) emitErrorCheck()
+        return result
+    }
+
+    private fun emitMethodCallValue(expr: IrExpr.MethodCall): String {
         // Spec-typed receiver → dynamic dispatch through the fat pointer.
         val recvType = expr.target.type
         if (recvType is IrType.Named && recvType.name in specDispatch) {
@@ -3402,7 +3648,19 @@ class LlvmCodegen {
         return acc ?: gepString(addStringConstant(""))
     }
 
+    /**
+     * Lowers a call, checking the error slot when the callee can fail.
+     *
+     * The check goes here rather than at every use of the result so that a
+     * failed call never reaches the code that would consume its value.
+     */
     private fun emitCall(expr: IrExpr.Call): String {
+        val result = emitCallValue(expr)
+        if (expr.name in failableFunctions) emitErrorCheck()
+        return result
+    }
+
+    private fun emitCallValue(expr: IrExpr.Call): String {
         if (expr.receiver != null) {
             val functionType = expr.receiver.type as? IrType.Function
                 ?: error("indirect call receiver is not a callable type")

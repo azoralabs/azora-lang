@@ -722,7 +722,7 @@ class Parser(
                 consume(TokenType.NEWLINE, "Expected a newline after 'export if <condition>'")
                 parseImport(exported = true, condition = cond)
             }
-            check(TokenType.FIN) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); TopLevel.FinDecl(name, type, init, start.line, start.column, annotations, visibility = visibility) }
+            check(TokenType.FIN) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); noteBridgeTargetConstant(name, init); TopLevel.FinDecl(name, type, init, start.line, start.column, annotations, visibility = visibility) }
             check(TokenType.VAR) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); TopLevel.VarDecl(name, type, init, start.line, start.column, annotations, visibility = visibility) }
             check(TokenType.LET) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); TopLevel.LetDecl(name, type, init, start.line, start.column, annotations, visibility) }
             else -> error("Expected 'func', 'fin', 'var', 'let', 'test', 'inline', or 'deepinline' at top level, got '${peek().lexeme}' at line ${peek().line}")
@@ -871,7 +871,7 @@ class Parser(
             TokenType.IF -> parseTopLevelInlineIf()
             TokenType.ASSERT -> parseTopLevelInlineAssert()
             TokenType.TRACE -> parseTopLevelInlineTrace()
-            TokenType.FIN -> { val start = peek(); advance(); advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); TopLevel.InlineFin(name, init, start.line, start.column) }
+            TokenType.FIN -> { val start = peek(); advance(); advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); noteBridgeTargetConstant(name, init); TopLevel.InlineFin(name, init, start.line, start.column) }
             TokenType.LET -> { val start = peek(); advance(); advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); TopLevel.InlineLet(name, init, start.line, start.column) }
             TokenType.VAR -> { val start = peek(); advance(); advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); TopLevel.InlineVar(name, init, start.line, start.column) }
             TokenType.IDENTIFIER -> { val start = peek(); advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; consume(TokenType.EQUAL, "Expected '='"); val value = parseExpr(); consumeNewline(); TopLevel.InlineAssignment(name, value, start.line, start.column) }
@@ -1298,7 +1298,7 @@ class Parser(
                 advance() // consume 'noinline'
                 when {
                     check(TokenType.FUNC) -> TopLevel.Func(parseFuncDecl(isInline = false))
-                    check(TokenType.FIN) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); TopLevel.FinDecl(name, type, init, start.line, start.column) }
+                    check(TokenType.FIN) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); noteBridgeTargetConstant(name, init); TopLevel.FinDecl(name, type, init, start.line, start.column) }
                     check(TokenType.VAR) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); TopLevel.VarDecl(name, type, init, start.line, start.column) }
                     check(TokenType.LET) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); TopLevel.LetDecl(name, type, init, start.line, start.column) }
                     else -> error("Expected 'func', 'fin', 'var', or 'let' after 'noinline' at line ${peek().line}")
@@ -1306,7 +1306,7 @@ class Parser(
             }
             // Bare declarations: inline if deepInline, runtime otherwise
             check(TokenType.VAR) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); if (deepInline) TopLevel.InlineVar(name, init, start.line, start.column) else TopLevel.VarDecl(name, type, init, start.line, start.column) }
-            check(TokenType.FIN) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); if (deepInline) TopLevel.InlineFin(name, init, start.line, start.column) else TopLevel.FinDecl(name, type, init, start.line, start.column) }
+            check(TokenType.FIN) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); noteBridgeTargetConstant(name, init); if (deepInline) TopLevel.InlineFin(name, init, start.line, start.column) else TopLevel.FinDecl(name, type, init, start.line, start.column) }
             check(TokenType.LET) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); if (deepInline) TopLevel.InlineLet(name, init, start.line, start.column) else TopLevel.LetDecl(name, type, init, start.line, start.column) }
             check(TokenType.IF) -> {
                 consume(TokenType.IF, "Expected 'if'")
@@ -2440,25 +2440,93 @@ class Parser(
                 i += 2
                 if (tokens.getOrNull(i)?.type == TokenType.IDENTIFIER) i++
             }
+            // A constant bound to a `Target` member is a target too, so
+            // `bridge Native func …` is the single-function form as well.
+            tokens.getOrNull(i)?.type == TokenType.IDENTIFIER &&
+                bridgeTargetConstants.containsKey(tokens.getOrNull(i)!!.lexeme) -> i++
         }
         return tokens.getOrNull(i)?.type == TokenType.FUNC
     }
 
     /**
-     * A single bridge target after `bridge` / inside a `[…]` list. Accepts
-     * `.Variant` (e.g. `.C`), a qualified `Enum.Variant` (e.g. `Target.C`), or a
-     * bare `Variant` (e.g. `C`). Returns the bare variant name; any enum qualifier
-     * is accepted and discarded.
+     * The target of a `bridge`, which is always a `std::Target` value.
+     *
+     * Because the type is fixed, the enum is in context, so the target is
+     * written as a leading-dot member (`.C`), as a fully qualified one
+     * (`Target.C`), or as a compile-time constant already bound to one
+     * (`inline fin Native = Target.C` … `bridge Native { … }`).
+     *
+     * A bare `C` is *not* accepted: an enum member is reached through its enum,
+     * and a lone identifier is a variable reference — reading it as a variant
+     * name would make `bridge Native` and `bridge C` mean different things for
+     * no visible reason.
      */
     private fun parseBridgeTarget(): String {
+        val at = peek()
         if (match(TokenType.DOT)) {
-            return consume(TokenType.IDENTIFIER, "Expected bridge target after '.' (e.g. '.C', '.JavaScript')").lexeme
+            val member = consume(TokenType.IDENTIFIER, "Expected bridge target after '.' (e.g. '.C', '.WebAssembly')").lexeme
+            return checkedBridgeTarget(member, at)
         }
-        val first = consume(TokenType.IDENTIFIER, "Expected bridge target (e.g. '.C', 'Target.C', or 'C')").lexeme
-        // `Enum.Variant` — the leading name is the enum qualifier; keep the variant.
-        return if (match(TokenType.DOT)) {
-            consume(TokenType.IDENTIFIER, "Expected bridge target variant after '.'").lexeme
-        } else first
+        val first = consume(TokenType.IDENTIFIER, "Expected bridge target ('.C', 'Target.C', or a constant bound to one)").lexeme
+        // `Target.C` — the leading name is the enum qualifier; keep the member.
+        if (match(TokenType.DOT)) {
+            val member = consume(TokenType.IDENTIFIER, "Expected bridge target variant after '.'").lexeme
+            return checkedBridgeTarget(member, at)
+        }
+        // A lone identifier is only a target if it is a compile-time constant
+        // already bound to a `Target` member.
+        val bound = bridgeTargetConstants[first]
+        if (bound != null) {
+            return bound
+        }
+        error(
+            "'$first' is not a bridge target at line ${at.line} — write '.$first' for the " +
+                "Target member, 'Target.$first' in full, or bind it first with " +
+                "'inline fin $first = Target.<Variant>'"
+        )
+    }
+
+    /**
+     * The members of `std::Target`, which is what a `bridge` target must name.
+     *
+     * Mirrored here because a bridge is parsed long before the standard library
+     * is available to consult; keep it in step with the `Target` enum in
+     * `std/core.az`.
+     */
+    private val bridgeTargetMembers = setOf(
+        "Compiler",
+        "C",
+        "ObjectiveC",
+        "WebAssembly",
+    )
+
+    /** [member] if it names a `Target`; otherwise a parse error naming the real ones. */
+    private fun checkedBridgeTarget(member: String, at: Token): String {
+        if (member in bridgeTargetMembers) {
+            return member
+        }
+        error(
+            "'$member' is not a member of Target at line ${at.line} — a bridge target is one of " +
+                bridgeTargetMembers.joinToString(", ") { ".$it" }
+        )
+    }
+
+    /**
+     * Compile-time constants bound to a `Target` member, for `bridge X { … }`.
+     *
+     * Filled as top-level declarations are parsed, so a constant has to be
+     * declared before the bridge that names it — which is the same order the
+     * rest of the file already reads in.
+     */
+    private val bridgeTargetConstants = mutableMapOf<String, String>()
+
+    /** Records `fin`/`inline fin X = Target.C` so `bridge X { … }` can resolve. */
+    private fun noteBridgeTargetConstant(name: String, initializer: Expr) {
+        val member = initializer as? Expr.Member ?: return
+        val qualifier = member.target as? Expr.Identifier ?: return
+        if (qualifier.name == "Target" && member.name in bridgeTargetMembers) {
+            bridgeTargetConstants[name] = member.name
+        }
     }
 
     /**
@@ -2495,7 +2563,7 @@ class Parser(
         // Target forms after `bridge`:
         //   `bridge { … }`                       → default `Compiler`
         //   `bridge .C { … }` / `bridge Target.C { … }`
-        //   `bridge [.C, .JavaScript] { … }` / `bridge [Target.C, .JavaScript] { … }`
+        //   `bridge [.C, .WebAssembly] { … }` / `bridge [Target.C, .WebAssembly] { … }`
         // A bracketed list means the declaration is provided by several backends;
         // multiple targets are stored comma-joined.
         val target = when {
@@ -3049,40 +3117,90 @@ class Parser(
     /** `when scrutinee { patterns -> { body } ... else -> { body } }`. */
     private fun parseWhen(): Stmt.When {
         val start = peek()
+        val scrutinee = parseWhenHead()
+        val parts = parseWhenBranches(scrutinee) { parseWhenStatementBody() }
+        consumeNewline()
+        return Stmt.When(
+            scrutinee,
+            parts.branches(start),
+            parts.elseBody,
+            start.line,
+            start.column
+        )
+    }
+
+    /** `when <scrutinee>` — the shared head of all three `when` forms. */
+    private fun parseWhenHead(): Expr {
         consume(TokenType.WHEN, "Expected 'when'")
+        // A branch's `{` must not be mistaken for a trailing lambda on a
+        // scrutinee that ends in a call.
         allowTrailingLambda = false
         val scrutinee = parseExpr()
         allowTrailingLambda = true
+        return scrutinee
+    }
+
+    /** A statement-form branch body: `-> { statements }`. */
+    private fun parseWhenStatementBody(): List<Stmt> {
+        consume(TokenType.L_BRACE, "Expected '{' after '->'")
+        skipNewlines()
+        val body = parseBlock()
+        consume(TokenType.R_BRACE, "Expected '}'")
+        return body
+    }
+
+    /**
+     * The branches of a `when`, with each body read by [parseBody].
+     *
+     * The three `when` forms — statement, `return when`, and expression — differ
+     * only in what a branch body *is* and what the branches are assembled into.
+     * Everything else (patterns, `is` checks, comma-separated multi-pattern
+     * branches, `else`, the newline handling) is identical, so it lives here
+     * once rather than being re-scanned per form.
+     */
+    private fun <B> parseWhenBranches(scrutinee: Expr, parseBody: () -> B): WhenParts<B> {
         consume(TokenType.L_BRACE, "Expected '{' after when scrutinee")
         skipNewlines()
-        val branches = mutableListOf<Stmt.WhenBranch>()
-        var elseBranch: List<Stmt>? = null
+        val patterns = mutableListOf<List<Expr>>()
+        val bodies = mutableListOf<B>()
+        var elseBody: B? = null
         while (!check(TokenType.R_BRACE) && !isAtEnd()) {
             skipNewlines()
             if (check(TokenType.R_BRACE)) break
             if (match(TokenType.ELSE)) {
                 consume(TokenType.ARROW, "Expected '->' after else")
-                consume(TokenType.L_BRACE, "Expected '{' after '->'")
-                skipNewlines()
-                elseBranch = parseBlock()
-                consume(TokenType.R_BRACE, "Expected '}'")
+                elseBody = parseBody()
                 skipNewlines()
                 break
             }
-            val patterns = mutableListOf<Expr>()
-            patterns.add(parseWhenPattern(scrutinee))
-            while (match(TokenType.COMMA)) patterns.add(parseWhenPattern(scrutinee))
+            val group = mutableListOf<Expr>()
+            group.add(parseWhenPattern(scrutinee))
+            while (match(TokenType.COMMA)) group.add(parseWhenPattern(scrutinee))
             consume(TokenType.ARROW, "Expected '->' after when patterns")
-            consume(TokenType.L_BRACE, "Expected '{' after '->'")
+            patterns.add(group)
+            bodies.add(parseBody())
             skipNewlines()
-            val body = parseBlock()
-            consume(TokenType.R_BRACE, "Expected '}'")
-            skipNewlines()
-            branches.add(Stmt.WhenBranch(patterns, body, start.line, start.column))
         }
         consume(TokenType.R_BRACE, "Expected '}' after when body")
-        consumeNewline()
-        return Stmt.When(scrutinee, branches, elseBranch, start.line, start.column)
+        return WhenParts(patterns, bodies, elseBody)
+    }
+
+    /** One `when`'s parsed branches, before they are assembled into a form. */
+    private class WhenParts<B>(
+        val patterns: List<List<Expr>>,
+        val bodies: List<B>,
+        val elseBody: B?,
+    )
+
+    /** The branches of a statement-shaped `when`, in AST form. */
+    private fun WhenParts<List<Stmt>>.branches(start: Token): List<Stmt.WhenBranch> {
+        val out = mutableListOf<Stmt.WhenBranch>()
+        var i = 0
+        while (i < this.patterns.size) {
+            out.add(Stmt.WhenBranch(this.patterns[i], this.bodies[i], start.line, start.column))
+            i++
+        }
+        return out
     }
 
     /** Parses one `when` pattern. `is Type` becomes an [Expr.IsCheck] against the [scrutinee]
@@ -5218,10 +5336,197 @@ class Parser(
             consumeNewline()
             return Stmt.Throw(Expr.StringLiteral(variant, start.line), start.line, start.column)
         }
+        // `return when …` — a `when` in return position, where every branch is a
+        // value rather than a block.
+        if (check(TokenType.WHEN)) {
+            return parseReturnWhen(start)
+        }
         val value = if (check(TokenType.NEWLINE) || check(TokenType.R_BRACE) || isAtEnd()) null
                     else parseExpr()
         consumeNewline()
         return Stmt.Return(value, start.line, start.column)
+    }
+
+    /**
+     * `return when scrutinee { pattern -> value … else -> value }`.
+     *
+     * Desugars to the statement form with every branch body a `return`, so
+     * patterns, slot destructuring, multi-pattern branches and `else` behave
+     * exactly as they do in a statement `when` — the only difference is that a
+     * branch carries a value instead of a block. Lowering here rather than
+     * adding an expression node keeps every later stage (semantics, IR and all
+     * three backends) seeing the `when` they already handle.
+     */
+    private fun parseReturnWhen(start: Token): Stmt {
+        val scrutinee = parseWhenHead()
+        val parts = parseWhenBranches(scrutinee) { parseWhenReturnValue() }
+        consumeNewline()
+        return Stmt.When(
+            scrutinee,
+            parts.branches(start),
+            parts.elseBody,
+            start.line,
+            start.column
+        )
+    }
+
+    /**
+     * One `return when` branch body.
+     *
+     * `-> expr` is the common single-value form. `-> { … }` is a full block
+     * whose trailing expression is the value, so a branch that needs a couple
+     * of locals to compute its answer does not have to be hoisted out into a
+     * helper function.
+     */
+    private fun parseWhenReturnValue(): List<Stmt> {
+        val at = peek()
+        if (!check(TokenType.L_BRACE)) {
+            return listOf(Stmt.Return(parseExpr(), at.line, at.column))
+        }
+        advance() // '{'
+        skipNewlines()
+        val body = parseBlock()
+        consume(TokenType.R_BRACE, "Expected '}' after when branch body")
+        if (body.isEmpty()) {
+            error("a `when` branch must produce a value (line ${at.line})")
+        }
+        val last = body[body.size - 1]
+        if (last !is Stmt.ExprStmt) {
+            // A branch that already returns, throws or panics is complete.
+            if (branchBodyYields(last)) {
+                return body
+            }
+            // Anything else cannot produce the branch's value. `if` and `when`
+            // are the traps here: in statement position they parse as
+            // statements, so a branch ending in one would silently fall out of
+            // the function with no value at all.
+            error(
+                "a `when` branch block must end in a value at line ${last.line} — " +
+                    "assign the trailing '${branchTailName(last)}' to a `fin` and end with that, " +
+                    "or return from inside it"
+            )
+        }
+        val lifted = body.subList(0, body.size - 1).toMutableList()
+        lifted.add(Stmt.Return(last.expr, last.line, last.column))
+        return lifted
+    }
+
+    /** True when [stmt] already leaves the function, so a branch needs no value. */
+    private fun branchBodyYields(stmt: Stmt): Boolean = when (stmt) {
+        is Stmt.Return -> true
+        is Stmt.Throw -> true
+        is Stmt.Panic -> true
+        is Stmt.Yield -> true
+        else -> false
+    }
+
+    /** A human name for the statement a branch block wrongly ended on. */
+    private fun branchTailName(stmt: Stmt): String = when (stmt) {
+        is Stmt.If -> "if"
+        is Stmt.When -> "when"
+        is Stmt.While -> "while"
+        is Stmt.For -> "for"
+        else -> "statement"
+    }
+
+    /** One `when`-branch value: `-> expr` or `-> { expr }`. */
+    private fun parseWhenBranchValue(): Expr {
+        if (match(TokenType.L_BRACE)) {
+            skipNewlines()
+            val value = parseExpr()
+            skipNewlines()
+            consume(TokenType.R_BRACE, "Expected '}' after when branch value")
+            return value
+        }
+        return parseExpr()
+    }
+
+    /**
+     * `when` in expression position — `fin x = when k { A -> 1  else -> 2 }`.
+     *
+     * Desugars to a chain of if-expressions, so every later stage keeps seeing
+     * the `IfExpr` it already handles. A pattern becomes an `==` against the
+     * scrutinee (which covers enum members, literals, and the `when true { … }`
+     * guard form), and `is T` stays a type check.
+     *
+     * A branch that *destructures* a slot payload cannot be written this way:
+     * an expression has nowhere to put the binding. Those are rejected here
+     * with that advice rather than silently comparing against a constructor
+     * call — `return when` and the statement `when` both handle them.
+     *
+     * An `else` is optional. Without one the final branch becomes the fallback
+     * and its test is dropped, which is what exhaustiveness means in practice:
+     * when every case of an enum is listed, testing the last one is redundant,
+     * and demanding a dead `else` after it only invites an unreachable branch
+     * that later drifts out of step with the enum.
+     */
+    private fun parseWhenExpr(): Expr {
+        val start = peek()
+        val scrutinee = parseWhenHead()
+        val parts = parseWhenBranches(scrutinee) { parseWhenBranchValue() }
+
+        val values = parts.bodies
+        val elseValue = parts.elseBody
+        if (values.isEmpty()) {
+            error("a `when` expression needs at least one branch (line ${start.line})")
+        }
+
+        // Each branch's patterns become one condition on the scrutinee.
+        val conditions = mutableListOf<Expr>()
+        for (group in parts.patterns) {
+            var condition = whenExprCondition(scrutinee, group[0], start)
+            var p = 1
+            while (p < group.size) {
+                condition = Expr.Binary(
+                    condition,
+                    TokenType.OR_OR,
+                    whenExprCondition(scrutinee, group[p], start),
+                    start.line,
+                    start.column
+                )
+                p++
+            }
+            conditions.add(condition)
+        }
+        // No `else`: the last branch is the fallback, so an exhaustive `when`
+        // over an enum needs no dead catch-all after its final case.
+        var result: Expr = elseValue ?: values[values.size - 1]
+        var i = if (elseValue == null) conditions.size - 2 else conditions.size - 1
+        while (i >= 0) {
+            result = Expr.IfExpr(conditions[i], values[i], result, start.line, start.column)
+            i--
+        }
+        return result
+    }
+
+    /**
+     * One already-parsed `when` pattern, as a condition on the scrutinee.
+     *
+     * `is T` is already a test against the scrutinee and passes through; every
+     * other pattern becomes an equality. A pattern that *destructures* a slot
+     * payload is refused: a binding has nowhere to live in an expression, and
+     * comparing against the constructor call would quietly never match.
+     */
+    private fun whenExprCondition(scrutinee: Expr, pattern: Expr, start: Token): Expr {
+        if (pattern is Expr.IsCheck) {
+            return pattern
+        }
+        // `Shape.Circle(r)` parses as a method call on the slot, and a plain
+        // `Circle(r)` as a call; either shape with arguments is a destructuring
+        // pattern rather than a value to compare against.
+        val destructures = when (pattern) {
+            is Expr.MethodCall -> pattern.args.isNotEmpty()
+            is Expr.Call -> pattern.args.isNotEmpty()
+            else -> false
+        }
+        if (destructures) {
+            error(
+                "a `when` expression cannot destructure a slot payload at line ${start.line} — " +
+                    "a binding has nowhere to live in an expression. Use `return when …` or a " +
+                    "statement `when` instead."
+            )
+        }
+        return Expr.Binary(scrutinee, TokenType.EQUAL_EQUAL, pattern, start.line, start.column)
     }
 
     private fun parseExprStmt(): Stmt {
@@ -5921,7 +6226,11 @@ class Parser(
      */
     private fun parseIfExpr(): Expr {
         val start = consume(TokenType.IF, "Expected 'if'")
+        // The branch's `{` must not be mistaken for a trailing lambda on a
+        // condition that ends in a call — `if ready() { a } else { b }`.
+        allowTrailingLambda = false
         val condition = parseExpr()
+        allowTrailingLambda = true
         consume(TokenType.L_BRACE, "Expected '{' after if-expression condition")
         skipNewlines()
         val thenExpr = parseExpr()
@@ -5955,6 +6264,7 @@ class Parser(
         }
         return when (tok.type) {
             TokenType.IF -> parseIfExpr()
+            TokenType.WHEN -> parseWhenExpr()
             TokenType.FUNC -> parseCallableLambda(CallableKind.FUNC)
             TokenType.INT_LITERAL -> {
                 advance()

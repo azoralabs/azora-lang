@@ -16,6 +16,7 @@
 
 package org.azora.lang.semantic
 
+import org.azora.lang.frontend.ParamModifier
 import org.azora.lang.frontend.Annotation
 import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.FuncDecl
@@ -572,7 +573,7 @@ private class MonoContext(
         return if (reference != null) {
             param.copy(
                 type = reference.inner,
-                modifier = if (param.modifier.isEmpty()) reference.kind.spelling else param.modifier,
+                modifier = if (param.modifier == ParamModifier.NONE) reference.kind.paramModifier else param.modifier,
             )
         } else {
             param.copy(type = rewritten)

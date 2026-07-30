@@ -998,7 +998,11 @@ sealed class TypeRef {
         BORROWED("ref"),
         MUTABLE("mut ref"),
         SHARED("shared ref"),
-        WEAK("weak ref")
+        WEAK("weak ref");
+
+        /** The parameter/receiver borrow this reference kind stands for. */
+        val paramModifier: ParamModifier
+            get() = if (this == MUTABLE) ParamModifier.EXCLUSIVE else ParamModifier.SHARED
     }
 
     /**
@@ -1196,11 +1200,6 @@ object TypeFunctionCall {
 
 /**
  * Internal encoding for a library-defined named type-macro invocation.
- *
- * The parser records surface forms such as `res Time`, `mut res Time`,
- * `query [ref A, mut ref B]`, and `A with B` without assigning semantics to
- * their names. Imported `meta type` rules expand these calls before semantic
- * analysis, leaving ordinary [TypeRef] nodes for every backend.
  */
 object NamedTypeMacroCall {
     private const val PREFIX = "__azora_named_type_macro__"
@@ -1331,14 +1330,35 @@ enum class CallableKind(val surfaceName: String) {
 /** Test execution mode mirrored by the compiler-predefined `TestMethod` enum. */
 enum class TestMethod { This, All }
 
-/** Parameter modifier: `""` (default), `"ref"` (by-reference), `"out"` (output), `"mut"` (mutable). */
-typealias ParamModifier = String
+/**
+ * How a parameter or receiver borrows its argument.
+ *
+ * Written as a postfix sigil on the name — `x&` borrows for reading, `x!`
+ * borrows exclusively — so none of these has a keyword behind it. [NONE] is a
+ * plain by-value parameter.
+ */
+enum class ParamModifier {
+    NONE,
+    /** `x&` — shared, read-only. */
+    SHARED,
+    /** `x!` — exclusive; the callee may write through it. */
+    EXCLUSIVE;
+
+    val writable: Boolean get() = this == EXCLUSIVE
+
+    /** How the borrow is written at the parameter: `&`, `!`, or nothing. */
+    val sigil: String get() = when (this) {
+        NONE -> ""
+        SHARED -> "&"
+        EXCLUSIVE -> "!"
+    }
+}
 
 data class Param(
     val name: String,
     val type: TypeRef,
     val defaultValue: Expr? = null,
-    val modifier: ParamModifier = "",
+    val modifier: ParamModifier = ParamModifier.NONE,
     /** True when declared with the `...T` variadic syntax (call sites pack extra args). */
     val variadic: Boolean = false,
     /** Parameter-level decorators, parsed from `name: @Decorator Type`. */
@@ -1430,7 +1450,7 @@ data class FuncDecl(
     /** Visibility exported to import/member access rules. */
     val visibility: Visibility = Visibility.PUBLIC,
     /** Receiver mutability for impl/extension methods: `self&` (immutable) or `self!` (mutable). */
-    val receiverModifier: ParamModifier = "mut ref",
+    val receiverModifier: ParamModifier = ParamModifier.EXCLUSIVE,
     /** Receiver name for impl/extension methods (conventionally `self`, but arbitrary). */
     val receiverName: String = "self",
     /**

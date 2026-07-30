@@ -384,9 +384,9 @@ use zone std {
     @SinceAzora("0.0.4")
     let SignedIntegers: [Type] = [Byte, Short, Int, Long, Cent]
 
-    /** All integer types. `~` appends two compile-time type lists (as in D). */
+    /** All integer types. `+` appends two compile-time type lists. */
     @SinceAzora("0.0.4")
-    let Integers: [Type] = UnsignedIntegers ~ SignedIntegers
+    let Integers: [Type] = UnsignedIntegers + SignedIntegers
 
     /** The floating-point types, in ascending width. */
     @SinceAzora("0.0.4")
@@ -394,7 +394,7 @@ use zone std {
 
     /** Every numeric type: integers followed by floating-point types. */
     @SinceAzora("0.0.4")
-    let Numbers: [Type] = Integers ~ FloatingPoints
+    let Numbers: [Type] = Integers + FloatingPoints
 
     /** Every unsigned integer type conforms to `UnsignedInteger`. */
     @SinceAzora("0.0.4")

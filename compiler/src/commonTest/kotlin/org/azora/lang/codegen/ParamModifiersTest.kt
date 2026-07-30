@@ -44,10 +44,27 @@ class ParamModifiersTest {
         """.trimIndent()))
     }
 
-    @Test fun outParamSetsValue() {
-        assertEquals("hello\n42", run("""
+    @Test fun aWriteOnlyOutputParameterIsRejected() {
+        // There is no `out`: a function that produces a value returns it, and a
+        // function that updates its caller's variable takes a `!` borrow. A
+        // parameter you may only write to is neither.
+        val result = Compiler().compile("""
             use std.io
             func produce(out result: Int) {
+                result = 42
+            }
+            func main() {
+                var r = 0
+                produce(r)
+            }
+        """.trimIndent())
+        assertIs<CompilationResult.Failure>(result, "`out` must not be a parameter modifier")
+    }
+
+    @Test fun aMutableBorrowReplacesTheOutParameter() {
+        assertEquals("hello\n42", run("""
+            use std.io
+            func produce(result: Int!) {
                 result = 42
             }
             func main() {

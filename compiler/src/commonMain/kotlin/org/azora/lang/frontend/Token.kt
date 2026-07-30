@@ -101,7 +101,7 @@ enum class TokenType {
     DOT, DOT_DOT, DOT_DOT_LESS,
     PLUS_EQUAL, MINUS_EQUAL, STAR_EQUAL, SLASH_EQUAL, PERCENT_EQUAL,
     PLUS_PLUS, MINUS_MINUS,
-    AMP, PIPE, CARET, TILDE, TILDE_EQUAL, SHIFT_LEFT, SHIFT_RIGHT,
+    AMP, PIPE, CARET, TILDE, SHIFT_LEFT, SHIFT_RIGHT,
     AS, GUARD, IS,
     QMARK, QMARK_QMARK, QMARK_DOT, QMARK_EQUAL, QMARK_BANG,
     // Null-conditional compound assignment / inc-dec: ?+= ?-= ?*= ?/= ?%= ?++ ?--
@@ -138,8 +138,8 @@ enum class TokenType {
     MEM, REM, RET, EFFECT,
     // Object model: `prop name: T { }`, `ctor(params) { }`, `dtor { }`.
     PROP, CTOR, DTOR,
-    // Ownership/reference modifiers: `ref T`, `mut ref T`, `shared ref T`, `weak ref T`.
-    REF, OUT, MUT, SHARED, WEAK,
+    // `out { … }` postcondition contracts.
+    OUT,
     // Visibility: `expose` (public), `confine` (private), `protect` (protected).
     // `shield` — a pack/field modifier: externally read-only, internally mutable.
     // Visibility: public by default, `confine` narrows to the package. A

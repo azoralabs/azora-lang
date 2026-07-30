@@ -521,8 +521,8 @@ class Parser(
      * receiver modifier (default `ref`), the parameters, and the body statements
      * (empty for a bodyless declaration).
      */
-    private fun parseReceiverAndBody(): Triple<String, List<Param>, List<Stmt>> {
-        var receiverModifier = "ref"
+    private fun parseReceiverAndBody(): Triple<ParamModifier, List<Param>, List<Stmt>> {
+        var receiverModifier = ParamModifier.SHARED
         val params = mutableListOf<Param>()
         if (match(TokenType.L_PAREN)) {
             receiverModifier = parseReceiverBinding().modifier
@@ -547,29 +547,19 @@ class Parser(
     }
 
     /**
-     * True when the current brace body opens with a `[mut] ref/mut self` receiver,
-     * optionally followed by operand params (`self, x -> …`) before the `->`.
+     * True when the current brace body opens with a `self` receiver, optionally
+     * followed by operand params (`self, x -> …`) before the `->`.
      */
     private fun isInBraceReceiverAhead(): Boolean {
         var i = current
-        if (tokens.getOrNull(i)?.type in setOf(TokenType.REF, TokenType.MUT)) {
-            // Old prefix form: `[mut] ref self …`.
-            if (tokens.getOrNull(i)?.type == TokenType.MUT && tokens.getOrNull(i + 1)?.type == TokenType.REF) i++
-            i++
-            if (tokens.getOrNull(i)?.lexeme != "self") return false
-            i++
-        } else if (tokens.getOrNull(i)?.lexeme == "self") {
-            // New postfix form: `self& …` / `self! …` / `self …`.
+        if (tokens.getOrNull(i)?.lexeme == "self") {
+            // `self& …` / `self! …` / `self …`.
             i++
             if (tokens.getOrNull(i)?.type in setOf(TokenType.AMP, TokenType.BANG)) i++
         } else return false
         // Skip `, operand` pairs (operator operands) before the `->`.
         while (tokens.getOrNull(i)?.type == TokenType.COMMA) {
             i++ // ','
-            if (tokens.getOrNull(i)?.type in setOf(TokenType.REF, TokenType.MUT)) {
-                if (tokens.getOrNull(i)?.type == TokenType.MUT && tokens.getOrNull(i + 1)?.type == TokenType.REF) i++
-                i++
-            }
             i++ // operand name
             if (tokens.getOrNull(i)?.type in setOf(TokenType.AMP, TokenType.BANG)) i++
         }
@@ -968,10 +958,10 @@ class Parser(
         return parseComptimeListValue()
     }
 
-    /** `term (~ term)*` — a compile-time list value (terms are `[…]` literals or list variables). */
+    /** `term (+ term)*` — a compile-time list value (terms are `[…]` literals or list variables). */
     private fun parseComptimeListValue(): List<String> {
         val result = parseComptimeListTerm().toMutableList()
-        while (match(TokenType.TILDE)) result.addAll(parseComptimeListTerm())
+        while (match(TokenType.PLUS)) result.addAll(parseComptimeListTerm())
         return result
     }
 
@@ -1843,7 +1833,7 @@ class Parser(
             consume(TokenType.L_BRACE, "Expected '{' before cast impl body")
             skipNewlines()
             val receiverModifier = parseReceiverBinding("cast receiver").modifier
-            if (receiverModifier != "ref") {
+            if (receiverModifier != ParamModifier.SHARED) {
                 error("impl cast receivers are always 'self&' at line ${asStart.line}")
             }
             consume(TokenType.ARROW, "Expected '->' after cast receiver")
@@ -1862,7 +1852,7 @@ class Parser(
                 body = body,
                 line = asStart.line,
                 column = asStart.column,
-                receiverModifier = "ref",
+                receiverModifier = ParamModifier.SHARED,
             )
             return TopLevel.Impl(typeName, listOf(method), null, asStart.line, asStart.column)
         }
@@ -1910,19 +1900,12 @@ class Parser(
             val params = mutableListOf<Param>()
             var pidx = 0
             do {
-                val prefixMod = when {
-                    check(TokenType.MUT) && peekNext()?.type == TokenType.REF -> { advance(); advance(); "mut ref" }
-                    match(TokenType.REF) -> "ref"
-                    match(TokenType.MUT) -> "mut"
-                    else -> ""
-                }
                 val name = consumeIdentifierLike("Expected parameter name in oper impl")
                 // New postfix borrow on the operand: `self&` / `index!`.
                 val modifier = when {
-                    prefixMod.isNotEmpty() -> prefixMod
-                    match(TokenType.AMP) -> "ref"
-                    match(TokenType.BANG) -> "mut ref"
-                    else -> ""
+                    match(TokenType.AMP) -> ParamModifier.SHARED
+                    match(TokenType.BANG) -> ParamModifier.EXCLUSIVE
+                    else -> ParamModifier.NONE
                 }
                 val explicitType = if (match(TokenType.COLON)) parseTypeName() else null
                 params.add(Param(name, explicitType ?: paramTypes.getOrElse(pidx) { TypeRef.Named("Any") }, modifier = modifier))
@@ -1959,18 +1942,11 @@ class Parser(
             skipNewlines()
             val params = mutableListOf<Param>()
             do {
-                val prefixMod = when {
-                    check(TokenType.MUT) && peekNext()?.type == TokenType.REF -> { advance(); advance(); "mut ref" }
-                    match(TokenType.REF) -> "ref"
-                    match(TokenType.MUT) -> "mut"
-                    else -> ""
-                }
                 val name = consumeIdentifierLike("Expected receiver name in deref impl")
                 val modifier = when {
-                    prefixMod.isNotEmpty() -> prefixMod
-                    match(TokenType.AMP) -> "ref"
-                    match(TokenType.BANG) -> "mut ref"
-                    else -> ""
+                    match(TokenType.AMP) -> ParamModifier.SHARED
+                    match(TokenType.BANG) -> ParamModifier.EXCLUSIVE
+                    else -> ParamModifier.NONE
                 }
                 params.add(Param(name, TypeRef.Named(typeName), modifier = modifier))
             } while (match(TokenType.COMMA))
@@ -2060,7 +2036,7 @@ class Parser(
         skipNewlines()
         if (traitName != null && isSelfReceiverHeaderAhead()) {
             val receiverModifier = parseReceiverBinding("callback receiver").modifier
-            if (receiverModifier != "ref") {
+            if (receiverModifier != ParamModifier.SHARED) {
                 error("prot callback impl receivers are always 'self&' at line ${start.line}")
             }
             consume(TokenType.ARROW, "Expected '->' after callback receiver")
@@ -2084,7 +2060,7 @@ class Parser(
                 body = body,
                 line = start.line,
                 column = start.column,
-                receiverModifier = "ref",
+                receiverModifier = ParamModifier.SHARED,
                 memberCallStyle = callbackTraitCallStyle(traitName),
             )
             return TopLevel.Impl(
@@ -2112,7 +2088,7 @@ class Parser(
                         // `prop name: T = expr` — expression-body property (returns the expression).
                         val expr = parseExpr()
                         consumeNewline()
-                        methods.add(FuncDecl(propName, emptyList(), propType, listOf(Stmt.Return(expr, expr.line, expr.column)), false, emptyList(), methodStart.line, methodStart.column, annotations = memberAnnotations, visibility = visibility, receiverModifier = "ref", memberCallStyle = MemberCallStyle.PROPERTY))
+                        methods.add(FuncDecl(propName, emptyList(), propType, listOf(Stmt.Return(expr, expr.line, expr.column)), false, emptyList(), methodStart.line, methodStart.column, annotations = memberAnnotations, visibility = visibility, receiverModifier = ParamModifier.SHARED, memberCallStyle = MemberCallStyle.PROPERTY))
                     } else {
                         val contracts = parseContractClauses()
                         run {
@@ -2130,7 +2106,7 @@ class Parser(
                         val propBody = parseBlock()
                         consume(TokenType.R_BRACE, "Expected '}' after prop body")
                         consumeNewline()
-                        methods.add(FuncDecl(propName, emptyList(), propType, applyContracts(propBody, contracts), false, emptyList(), methodStart.line, methodStart.column, annotations = memberAnnotations, visibility = visibility, receiverModifier = "ref", memberCallStyle = MemberCallStyle.PROPERTY))
+                        methods.add(FuncDecl(propName, emptyList(), propType, applyContracts(propBody, contracts), false, emptyList(), methodStart.line, methodStart.column, annotations = memberAnnotations, visibility = visibility, receiverModifier = ParamModifier.SHARED, memberCallStyle = MemberCallStyle.PROPERTY))
                     }
                 }
                 // `bridge prop<D> name: T` / `bridge func<D> name(params): T` — a
@@ -2144,7 +2120,7 @@ class Parser(
                             val propName = consumeIdentifierLike("Expected property name after 'bridge prop'")
                             val propType: TypeAnnotation = if (match(TokenType.COLON)) TypeAnnotation.Explicit(parseTypeName()) else TypeAnnotation.Inferred
                             consumeNewline()
-                            methods.add(FuncDecl(propName, emptyList(), propType, emptyList(), false, tp.names, methodStart.line, methodStart.column, annotations = memberAnnotations, visibility = visibility, receiverModifier = "ref", memberCallStyle = MemberCallStyle.PROPERTY))
+                            methods.add(FuncDecl(propName, emptyList(), propType, emptyList(), false, tp.names, methodStart.line, methodStart.column, annotations = memberAnnotations, visibility = visibility, receiverModifier = ParamModifier.SHARED, memberCallStyle = MemberCallStyle.PROPERTY))
                         }
                         check(TokenType.FUNC) -> {
                             advance()
@@ -2155,7 +2131,7 @@ class Parser(
                             consume(TokenType.R_PAREN, "Expected ')' after bridge parameters")
                             val ret: TypeAnnotation = if (match(TokenType.COLON)) TypeAnnotation.Explicit(parseTypeName()) else TypeAnnotation.Explicit(TypeRef.Named("Unit"))
                             consumeNewline()
-                            methods.add(FuncDecl(fnName, params, ret, emptyList(), false, tp.names, methodStart.line, methodStart.column, annotations = memberAnnotations, visibility = visibility, receiverModifier = "ref"))
+                            methods.add(FuncDecl(fnName, params, ret, emptyList(), false, tp.names, methodStart.line, methodStart.column, annotations = memberAnnotations, visibility = visibility, receiverModifier = ParamModifier.SHARED))
                         }
                         else -> error("Expected 'prop' or 'func' after 'bridge' in impl block at line ${peek().line}")
                     }
@@ -2247,7 +2223,7 @@ class Parser(
             consume(TokenType.ARROW, "Expected '->' after infx receiver")
             skipNewlines()
             mod
-        } else "mut ref"
+        } else ParamModifier.EXCLUSIVE
         val body = mutableListOf<Stmt>()
         while (!check(TokenType.R_BRACE) && !isAtEnd()) {
             body.add(parseStmt())
@@ -2279,8 +2255,8 @@ class Parser(
     private fun funcOrExtension(decl: FuncDecl): TopLevel {
         val recv = decl.extensionReceiver ?: return TopLevel.Func(decl)
         val (typeName, modifier) = when (val t = recv.type) {
-            is TypeRef.Reference -> namedTypeName(t.inner) to t.kind.spelling
-            else -> namedTypeName(t) to "ref"
+            is TypeRef.Reference -> namedTypeName(t.inner) to t.kind.paramModifier
+            else -> namedTypeName(t) to ParamModifier.SHARED
         }
         val method = decl.copy(
             receiverModifier = modifier,
@@ -2297,28 +2273,19 @@ class Parser(
         else -> error("Extension receiver must be a named type at line ${peek().line}")
     }
 
-    private fun parseImplReceiverModifier(): String =
-        when {
-            check(TokenType.MUT) && peekNext()?.type == TokenType.REF -> {
-                advance()
-                advance()
-                "mut ref"
-            }
-            match(TokenType.REF) -> "ref"
-            match(TokenType.MUT) -> "mut ref"
-            else -> "mut ref"
-        }
+    /** An impl receiver is an exclusive borrow unless a postfix sigil says otherwise. */
+    private fun parseImplReceiverModifier(): ParamModifier = ParamModifier.EXCLUSIVE
 
     /** New postfix receiver/operand borrow: `self&`/`x&` → immutable, `self!`/`x!` → mutable. */
-    private fun parsePostfixReceiverModifier(): String =
+    private fun parsePostfixReceiverModifier(): ParamModifier =
         when {
-            match(TokenType.AMP) -> "ref"
-            match(TokenType.BANG) -> "mut ref"
-            else -> "mut ref"
+            match(TokenType.AMP) -> ParamModifier.SHARED
+            match(TokenType.BANG) -> ParamModifier.EXCLUSIVE
+            else -> ParamModifier.EXCLUSIVE
         }
 
     /** A receiver binding: the receiver's name (always `self`) and its borrow modifier. */
-    private data class ReceiverBinding(val name: String, val modifier: String)
+    private data class ReceiverBinding(val name: String, val modifier: ParamModifier)
 
     /**
      * Parses the `self` receiver binding in either the new postfix form (`self&` /
@@ -2346,17 +2313,8 @@ class Parser(
         }
     }
 
-    private fun parseSpecReceiverModifier(): String =
-        when {
-            check(TokenType.MUT) && peekNext()?.type == TokenType.REF -> {
-                advance()
-                advance()
-                "mut ref"
-            }
-            match(TokenType.REF) -> "ref"
-            match(TokenType.MUT) -> "mut"
-            else -> error("Expected 'ref self' or 'mut ref self' in prot callback at line ${peek().line}")
-        }
+    /** A prot callback receiver carries its borrow as a postfix sigil on `self`. */
+    private fun parseSpecReceiverModifier(): ParamModifier = ParamModifier.EXCLUSIVE
 
     /**
      * `bridge <target> { func sigs }` — declares extern functions for FFI.
@@ -3026,7 +2984,7 @@ class Parser(
                 consumeNewline()
                 methods.add(FuncDecl(
                     pname, emptyList(), TypeAnnotation.Explicit(ptype), emptyList(), false, emptyList(),
-                    start.line, start.column, receiverModifier = "ref", memberCallStyle = MemberCallStyle.PROPERTY,
+                    start.line, start.column, receiverModifier = ParamModifier.SHARED, memberCallStyle = MemberCallStyle.PROPERTY,
                 ))
                 continue
             }
@@ -3266,7 +3224,7 @@ class Parser(
             TypeAnnotation.Inferred
         }
         val minVariadicLength = parseVariadicWhereClause()
-        var receiverModifier: ParamModifier = "mut ref"
+        var receiverModifier: ParamModifier = ParamModifier.EXCLUSIVE
         var receiverName = "self"
 
         // Optional contract clauses before the body: `in { ... }` preconditions and
@@ -3540,7 +3498,7 @@ class Parser(
             t.type == TokenType.PROP ||
             t.type == TokenType.DROP || t.type == TokenType.MEM || t.type == TokenType.REM || t.type == TokenType.RET ||
             t.type == TokenType.ALLOC || t.type == TokenType.DEREF || t.type == TokenType.TEST ||
-            t.type == TokenType.SHARED || t.type == TokenType.WEAK || t.type == TokenType.META
+            t.type == TokenType.META
         if (t.type == TokenType.IDENTIFIER || soft) {
             advance()
             return t.lexeme
@@ -3553,19 +3511,9 @@ class Parser(
         if (check(TokenType.R_PAREN)) return emptyList()
         val params = mutableListOf<Param>()
         while (!check(TokenType.R_PAREN)) {
-            // Optional modifier: ref/out/mut before the name. `mut ref name`
-            // is one exclusive-borrow modifier, not two separate parameters.
-            val modifier = when {
-                check(TokenType.MUT) && peekNext()?.type == TokenType.REF -> {
-                    advance()
-                    advance()
-                    "mut ref"
-                }
-                match(TokenType.REF) -> "ref"
-                match(TokenType.OUT) -> "out"
-                match(TokenType.MUT) -> "mut"
-                else -> ""
-            }
+            // A borrow is a postfix sigil on the name (`x&`, `x!`), not a prefix
+            // modifier, so nothing precedes the parameter name.
+            val modifier = ParamModifier.NONE
             // Optional `...name` spread marker for a variadic parameter.
             val nameSpread = match(TokenType.ELLIPSIS)
             val name = consumeIdentifierLike("Expected parameter name")
@@ -3593,7 +3541,7 @@ class Parser(
             } else {
                 unwrappedType
             }
-            val normalizedModifier = reference?.kind?.spelling ?: modifier
+            val normalizedModifier = reference?.kind?.paramModifier ?: modifier
             val default = if (match(TokenType.EQUAL)) parseExpr() else null
             params.add(Param(name, type, default, normalizedModifier, variadic = isVariadic, annotations = annotations))
             val previousLine = tokens.getOrNull(current - 1)?.line ?: peek().line
@@ -3745,10 +3693,6 @@ class Parser(
         val next = tokens.getOrNull(offset)?.type ?: return false
         return next == TokenType.L_BRACKET || next in setOf(
             TokenType.IDENTIFIER,
-            TokenType.REF,
-            TokenType.MUT,
-            TokenType.SHARED,
-            TokenType.WEAK,
             TokenType.L_PAREN,
             TokenType.ELLIPSIS,
         )
@@ -5443,7 +5387,6 @@ class Parser(
                 buildAssignment(expr, value, start.line, start.column)
             }
             TokenType.PLUS_EQUAL, TokenType.MINUS_EQUAL, TokenType.STAR_EQUAL,
-            TokenType.TILDE_EQUAL,
             TokenType.SLASH_EQUAL, TokenType.PERCENT_EQUAL -> {
                 advance()
                 val op = when (opTok.type) {
@@ -5452,16 +5395,12 @@ class Parser(
                     TokenType.STAR_EQUAL -> TokenType.STAR
                     TokenType.SLASH_EQUAL -> TokenType.SLASH
                     TokenType.PERCENT_EQUAL -> TokenType.PERCENT
-                    TokenType.TILDE_EQUAL -> TokenType.PLUS
                     else -> error("unreachable compound assignment")
                 }
                 val value = parseExpr()
                 consumeNewline()
                 // Desugar `target op= value` into `target = target op value`
-                val operand = if (opTok.type == TokenType.TILDE_EQUAL) {
-                    Expr.Cast(value, TypeRef.Named("String"), CastKind.STATIC, value.line, value.column, value.length)
-                } else value
-                val rhs = Expr.Binary(expr, op, operand, start.line, start.column, start.lexeme.length)
+                val rhs = Expr.Binary(expr, op, value, start.line, start.column, start.lexeme.length)
                 buildAssignment(expr, rhs, start.line, start.column)
             }
             // Null-conditional coalescing assignment: `target ?= value` → `target = target ?: value`
@@ -5630,7 +5569,7 @@ class Parser(
 
     private fun parseBitwiseOr(): Expr {
         var left = parseBitwiseXor()
-        while (check(TokenType.PIPE) || check(TokenType.TILDE)) {
+        while (check(TokenType.PIPE)) {
             val op = advance().type
             val right = parseBitwiseXor()
             left = Expr.Binary(left, op, right, left.line)
@@ -6199,7 +6138,7 @@ class Parser(
             // the general identifier branch, and is distinct from the `async { … }`
             // builtin, which spawns the lambda it is handed.
             TokenType.IDENTIFIER if isAsyncFuncAt(current) -> parseCallableLambda(CallableKind.TASK)
-            TokenType.IDENTIFIER, TokenType.SHARED, TokenType.WEAK,
+            TokenType.IDENTIFIER,
             TokenType.REVERSE -> {
                 advance()
                 Expr.Identifier(tok.lexeme, tok.line, tok.column, tok.lexeme.length)

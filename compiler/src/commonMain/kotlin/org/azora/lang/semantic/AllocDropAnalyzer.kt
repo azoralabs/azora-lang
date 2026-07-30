@@ -16,6 +16,7 @@
 
 package org.azora.lang.semantic
 
+import org.azora.lang.frontend.ParamModifier
 import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.FuncDecl
 import org.azora.lang.frontend.TopLevel
@@ -80,10 +81,10 @@ class AllocDropAnalyzer {
         }
         if (func.isTask && !func.isUnsafe) {
             for (param in func.params) {
-                if (param.modifier in setOf("ref", "mut ref", "out")) {
+                if (param.modifier != ParamModifier.NONE) {
                     errors.add(
-                        "line ${func.line}: task '${func.name}' cannot suspend with ${param.modifier} parameter '${param.name}'; " +
-                            "use shared ref, pass ownership, or mark the task unsafe"
+                        "line ${func.line}: async func '${func.name}' cannot suspend while holding the borrow " +
+                            "'${param.name}${param.modifier.sigil}'; pass ownership instead, or mark it unsafe"
                     )
                 }
             }

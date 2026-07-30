@@ -16,6 +16,7 @@
 
 package org.azora.lang.semantic
 
+import org.azora.lang.frontend.ParamModifier
 import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.FuncDecl
 import org.azora.lang.frontend.MemberCallStyle
@@ -328,7 +329,7 @@ class SymbolCollector {
                 for (method in item.methods) {
                     val mangled = mangleMethodSymbol("${item.typeName}_${method.name}")
                     try {
-                        if (item.isExtension && struct != null && struct.fields.none { it.visibility == Visibility.PUBLIC && !it.name.startsWith("_") } && method.receiverModifier == "mut ref") {
+                        if (item.isExtension && struct != null && struct.fields.none { it.visibility == Visibility.PUBLIC && !it.name.startsWith("_") } && method.receiverModifier == ParamModifier.EXCLUSIVE) {
                             errors.add("line ${method.line}: pack '${item.typeName}' has no exposed fields, so extension '${method.name}' cannot use mut ref self")
                             continue
                         }

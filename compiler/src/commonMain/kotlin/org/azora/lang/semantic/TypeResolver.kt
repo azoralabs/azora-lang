@@ -16,6 +16,7 @@
 
 package org.azora.lang.semantic
 
+import org.azora.lang.frontend.ParamModifier
 import org.azora.lang.frontend.CastKind
 import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.FuncDecl
@@ -100,7 +101,7 @@ class TypeResolver(private val table: SymbolTable) {
                     val func = table.lookupFunction(mangled) ?: continue
                     table.pushScope()
                     for ((name, type) in func.params) {
-                        val mutable = name != "self" || method.receiverModifier != "ref"
+                        val mutable = name != "self" || method.receiverModifier != ParamModifier.SHARED
                         table.defineVariable(VariableSymbol(name, type, mutable = mutable))
                     }
                     val savedReceiver = currentReceiverType
@@ -187,12 +188,13 @@ class TypeResolver(private val table: SymbolTable) {
         // Register parameters as local variables
         for (i in symbol.params.indices) {
             val (name, type) = symbol.params[i]
-            val modifier = func.params.getOrNull(i)?.modifier.orEmpty()
-            val mutable = modifier in setOf("mut", "out", "ref", "mut ref")
+            // Only an exclusive borrow (`x!`) lets the callee write through it.
+            val modifier = func.params.getOrNull(i)?.modifier ?: ParamModifier.NONE
+            val mutable = modifier.writable
             table.defineVariable(VariableSymbol(name, type, mutable))
         }
 
-        // `T!ErrSet` enforcement: track the function's declared error set so that
+        // `T ?! ErrSet` enforcement: track the function's declared error set so that
         // `fail`/`throw` of an error variant can be checked against it.
         val savedFailSets = declaredFailSets
         declaredFailSets = (func.returnType as? TypeAnnotation.Explicit)

@@ -1,5 +1,6 @@
 package org.azora.lang.codegen
 
+import org.azora.lang.frontend.ParamModifier
 import org.azora.lang.CompilationResult
 import org.azora.lang.Compiler
 import org.azora.lang.backend.IrInterpreter
@@ -119,7 +120,10 @@ class OwnershipTaskTest {
         """.trimIndent())
 
         assertIs<CompilationResult.Failure>(result)
-        assertTrue(result.errors.any { "cannot suspend with ref parameter" in it })
+        assertTrue(
+            result.errors.any { "cannot suspend while holding the borrow 'input&'" in it },
+            "${'$'}{result.errors}",
+        )
     }
 
     @Test
@@ -141,9 +145,9 @@ class OwnershipTaskTest {
         """.trimIndent())
 
         val read = result.ast.functions.first { it.name == "read" }
-        assertEquals(listOf("ref", "mut ref"), read.params.map { it.modifier })
+        assertEquals(listOf(ParamModifier.SHARED, ParamModifier.EXCLUSIVE), read.params.map { it.modifier })
         val update = result.ast.functions.first { it.name == "update" }
-        assertEquals("mut ref", update.params.single().modifier)
+        assertEquals(ParamModifier.EXCLUSIVE, update.params.single().modifier)
         assertEquals("42", IrInterpreter().interpret(result.ir).trim())
     }
 

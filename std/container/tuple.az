@@ -64,11 +64,11 @@ zone std {
             var res = "("
             inline for field in reflect<Self>.fields with index {
                 if index > 0 {
-                    res ~= ", "
+                    res += ", "
                 }
-                res ~= field.value as String
+                res += field.value as String
             }
-            res ~= ")"
+            res += ")"
             return res
         }
     }

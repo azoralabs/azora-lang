@@ -16,6 +16,23 @@ class StringInterpolationTest {
         return IrInterpreter().interpret(result.ir).trim()
     }
 
+    @Test fun plusConcatenatesAndTildeStaysBitwise() {
+        // `~` and `~=` are gone: `+`/`+=` concatenate strings and add numbers,
+        // and `~` keeps its one remaining job as bitwise complement.
+        assertEquals("abc\n3\n-1", run("""
+            use std.io
+            func main() {
+                var s = "a"
+                s += "b"
+                std::println(s + "c")
+                var n = 1
+                n += 2
+                std::println(n)
+                std::println(~0)
+            }
+        """.trimIndent()))
+    }
+
     @Test
     fun dollarIdentifierInterpolation() {
         assertEquals("hello Azora", run("""

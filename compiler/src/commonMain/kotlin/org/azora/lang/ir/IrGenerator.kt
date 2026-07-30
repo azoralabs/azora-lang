@@ -16,6 +16,7 @@
 
 package org.azora.lang.ir
 
+import org.azora.lang.frontend.ParamModifier
 import org.azora.lang.frontend.CastKind
 import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.FuncDecl
@@ -526,9 +527,9 @@ class IrGenerator(private val table: SymbolTable) {
         currentTraceOwner = func.name
         currentGenericTypeParams = func.typeParams.toSet()
         knownEnumValues.clear()
-        // Collect ref/out param indices from the AST FuncDecl.
+        // Borrowed parameters are passed by reference.
         val refParams = func.params.indices.filter {
-            func.params[it].modifier in setOf("ref", "out", "mut ref")
+            func.params[it].modifier != ParamModifier.NONE
         }.toSet()
         table.pushScope()
         pushNameScope()
@@ -539,7 +540,6 @@ class IrGenerator(private val table: SymbolTable) {
 
         // Register parameters
         val mangledParams = symbol.params.map { (name, type) ->
-            val mutable = func.params.getOrNull(symbol.params.indexOfFirst { it.first == name })?.modifier == "mut"
             val mangled = registerName(name)
             table.defineVariable(VariableSymbol(name, type, mutable = true)) // all params mutable for simplicity; mut is enforced at type level
             mangled to type
@@ -607,7 +607,7 @@ class IrGenerator(private val table: SymbolTable) {
         activeEffects.clear()
         val mangledParams = symbol.params.map { (name, type) ->
             val m = registerName(name)
-            val mutable = name != method.receiverName || method.receiverModifier != "ref"
+            val mutable = name != method.receiverName || method.receiverModifier != ParamModifier.SHARED
             table.defineVariable(VariableSymbol(name, type, mutable = mutable))
             m to type
         }

@@ -195,7 +195,7 @@ class TupleVariadicTest {
 
             func main() {
                 var value = "count="
-                value ~= 7
+                value += 7
                 std::println(value)
             }
         """.trimIndent())

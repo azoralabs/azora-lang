@@ -19,6 +19,7 @@ package org.azora.lang.codegen
 import org.azora.lang.CompilationResult
 import org.azora.lang.Compiler
 import org.azora.lang.LibrarySource
+import org.azora.lang.frontend.ParamModifier
 import org.azora.lang.frontend.TopLevel
 import org.azora.lang.frontend.TypeRef
 import kotlin.test.Test
@@ -112,9 +113,9 @@ class EngineArchitectureSyntaxTest {
 
         val move = result.ast.items.filterIsInstance<TopLevel.Func>().single { it.decl.name == "move" }.decl
         assertEquals(listOf("time", "player", "query"), move.params.map { it.name })
-        assertEquals("", move.params[0].modifier)
-        assertEquals("mut ref", move.params[1].modifier)
-        assertEquals("mut ref", move.params[2].modifier)
+        assertEquals(ParamModifier.NONE, move.params[0].modifier)
+        assertEquals(ParamModifier.EXCLUSIVE, move.params[1].modifier)
+        assertEquals(ParamModifier.EXCLUSIVE, move.params[2].modifier)
         assertEquals("Resource", assertIs<TypeRef.Named>(move.params[0].type).name)
         assertTrue(assertIs<TypeRef.Named>(move.params[1].type).name.startsWith("__Single_"))
         assertTrue(assertIs<TypeRef.Named>(move.params[2].type).name.startsWith("__Query_"))

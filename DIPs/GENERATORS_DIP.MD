@@ -1,11 +1,11 @@
-Remove flow and yield keywords
+Remove flow, yield and launch keywords
 
 Implement this in std.concurrency.generators - make it similar to kotlin:
 
 and model streams as a standard-library builder and type, like Kotlin:
 examples:
 
-```
+```azora
 func countdown(from: Int): Flow<Int> = flow {
     reverse for n in from..0 {
         emit(n)
@@ -17,7 +17,7 @@ func countdown(from: Int): Flow<Int> = flow {
 The builder body is suspend-capable because flow {} accepts an asynchronous producer lambda.
 Collection:
 
-```
+```azora
 async func main() {
     countdown(5).collect { number ->
         io::println(number)
@@ -27,7 +27,7 @@ async func main() {
 
 That gives you the clean Kotlin distinction:
 
-```
+```azora
 func values(): Sequence<Int> = sequence {
     yield(1)
     yield(2)
@@ -44,7 +44,7 @@ Notice that both declarations remain ordinary funcs. The returned type describes
 * async func ...: T — asynchronous computation producing one value
   So the recommended Azora model is:
 
-```
+```azora
 func calculate(): Int
 async func download(): Bytes
 func observeMessages(): Flow<Message>
@@ -52,7 +52,7 @@ func observeMessages(): Flow<Message>
 
 I would also keep Kotlin’s familiar builder vocabulary:
 
-```
+```azora
 flow { emit(value) }
 sequence { yield(value) }
 ```

@@ -16,11 +16,11 @@
 
 mod std.time
 
-import std.char
-import std.container.list
-import std.convert
-import std.serializer
-import std.string
+use std.char
+use std.container.list
+use std.convert
+use std.serializer
+use std.string
 
 /**
  * @file std/time
@@ -73,48 +73,48 @@ zone std {
     @Experimental(sinceAzora: "0.0.4")
     @Serializable
     pack Duration {
-        shield fin seconds: Long = 0L
-        shield fin nanosecondAdjustment: Int = 0
+        fin seconds: Long = 0L
+        fin nanosecondAdjustment: Int = 0
     }
 
     /** A point on the Unix time line, independent of any calendar or offset. */
     @Experimental(sinceAzora: "0.0.4")
     @Serializable
     pack Instant {
-        shield fin epochSecond: Long
-        shield fin nanosecond: Int = 0
+        fin epochSecond: Long
+        fin nanosecond: Int = 0
     }
 
     /** Opaque reading from a monotonic clock, used only for elapsed time. */
     @Experimental(sinceAzora: "0.0.4")
     pack MonotonicInstant {
-        shield fin readingNanoseconds: Long
+        fin readingNanoseconds: Long
     }
 
     /** A validated proleptic-Gregorian calendar date. */
     @Experimental(sinceAzora: "0.0.4")
     @Serializable
     pack LocalDate {
-        shield fin year: Int
-        shield fin month: Int
-        shield fin day: Int
+        fin year: Int
+        fin month: Int
+        fin day: Int
     }
 
     /** A validated time of day with nanosecond precision. */
     @Experimental(sinceAzora: "0.0.4")
     @Serializable
     pack LocalTime {
-        shield fin hour: Int
-        shield fin minute: Int
-        shield fin second: Int
-        shield fin nanosecond: Int = 0
+        fin hour: Int
+        fin minute: Int
+        fin second: Int
+        fin nanosecond: Int = 0
     }
 
     /** Fixed displacement from UTC, constrained to the ISO range of +/-18:00. */
     @Experimental(sinceAzora: "0.0.4")
     @Serializable
     pack UtcOffset {
-        shield fin totalSeconds: Int = 0
+        fin totalSeconds: Int = 0
     }
 
     /** A local civil date and time paired with a fixed UTC offset. */
@@ -366,7 +366,7 @@ zone std {
     /** Converts a date-time to its unique Unix instant. */
     @Experimental(sinceAzora: "0.0.4")
     func toInstant(value: DateTime&): Instant {
-        fin epochDay = daysFromCivil(value.date.year, value.date.month, value.date.day)
+        fin epochDay = _daysFromCivil(value.date.year, value.date.month, value.date.day)
         fin localSecond = epochDay * 86400L +
             (value.time.hour as Long) * 3600L +
             (value.time.minute as Long) * 60L +
@@ -378,9 +378,9 @@ zone std {
     @Experimental(sinceAzora: "0.0.4")
     func atOffset(value: Instant&, offset: UtcOffset): DateTime {
         fin localSecond = value.epochSecond + offset.totalSeconds as Long
-        fin epochDay = floorDiv(localSecond, 86400L)
+        fin epochDay = _floorDiv(localSecond, 86400L)
         fin secondOfDay = localSecond - epochDay * 86400L
-        fin date = civilFromDays(epochDay)
+        fin date = _civilFromDays(epochDay)
         fin hour = (secondOfDay / 3600L) as Int
         fin minute = ((secondOfDay % 3600L) / 60L) as Int
         fin second = (secondOfDay % 60L) as Int
@@ -390,8 +390,8 @@ zone std {
     /** Returns the ISO weekday for a date. */
     @Experimental(sinceAzora: "0.0.4")
     func weekday(value: LocalDate&): Weekday {
-        fin epochDay = daysFromCivil(value.year, value.month, value.day)
-        fin index = floorMod(epochDay + 3L, 7L) as Int
+        fin epochDay = _daysFromCivil(value.year, value.month, value.day)
+        fin index = _floorMod(epochDay + 3L, 7L) as Int
         if index == 0 { return Weekday.Monday }
         if index == 1 { return Weekday.Tuesday }
         if index == 2 { return Weekday.Wednesday }
@@ -404,9 +404,9 @@ zone std {
     /** Formats a date-time using the canonical ISO-8601 extended representation. */
     @Experimental(sinceAzora: "0.0.4")
     func formatIsoDateTime(value: DateTime&): String {
-        var result = pad4(value.date.year) + "-" + pad2(value.date.month) + "-" + pad2(value.date.day) +
-            "T" + pad2(value.time.hour) + ":" + pad2(value.time.minute) + ":" + pad2(value.time.second)
-        if value.time.nanosecond != 0 { result = result + formatFraction(value.time.nanosecond) }
+        var result = _pad4(value.date.year) + "-" + _pad2(value.date.month) + "-" + _pad2(value.date.day) +
+            "T" + _pad2(value.time.hour) + ":" + _pad2(value.time.minute) + ":" + _pad2(value.time.second)
+        if value.time.nanosecond != 0 { result = result + _formatFraction(value.time.nanosecond) }
         if value.offset.totalSeconds == 0 { return result + "Z" }
         var offset = value.offset.totalSeconds
         var sign = "+"
@@ -415,8 +415,8 @@ zone std {
             offset = 0 - offset
         }
         fin offsetSecond = offset % 60
-        var suffix = sign + pad2(offset / 3600) + ":" + pad2((offset % 3600) / 60)
-        if offsetSecond != 0 { suffix = suffix + ":" + pad2(offsetSecond) }
+        var suffix = sign + _pad2(offset / 3600) + ":" + _pad2((offset % 3600) / 60)
+        if offsetSecond != 0 { suffix = suffix + ":" + _pad2(offsetSecond) }
         return result + suffix
     }
 
@@ -442,17 +442,17 @@ zone std {
             charAt(value, 13) != ':' || charAt(value, 16) != ':' {
             return .InvalidFormat
         }
-        if !digitsAt(value, 0, 4) || !digitsAt(value, 5, 2) || !digitsAt(value, 8, 2) ||
-            !digitsAt(value, 11, 2) || !digitsAt(value, 14, 2) || !digitsAt(value, 17, 2) {
+        if !_digitsAt(value, 0, 4) || !_digitsAt(value, 5, 2) || !_digitsAt(value, 8, 2) ||
+            !_digitsAt(value, 11, 2) || !_digitsAt(value, 14, 2) || !_digitsAt(value, 17, 2) {
             return .InvalidFormat
         }
 
-        fin year = decimalAt(value, 0, 4)
-        fin month = decimalAt(value, 5, 2)
-        fin day = decimalAt(value, 8, 2)
-        fin hour = decimalAt(value, 11, 2)
-        fin minute = decimalAt(value, 14, 2)
-        fin second = decimalAt(value, 17, 2)
+        fin year = _decimalAt(value, 0, 4)
+        fin month = _decimalAt(value, 5, 2)
+        fin day = _decimalAt(value, 8, 2)
+        fin hour = _decimalAt(value, 11, 2)
+        fin minute = _decimalAt(value, 14, 2)
+        fin second = _decimalAt(value, 17, 2)
         var nanosecond = 0
         var index = 19
 
@@ -462,7 +462,7 @@ zone std {
             while index < length && charIsDigit(charAt(value, index)) { index += 1 }
             fin digits = index - fractionStart
             if digits < 1 || digits > 9 { return .InvalidFormat }
-            nanosecond = decimalAt(value, fractionStart, digits)
+            nanosecond = _decimalAt(value, fractionStart, digits)
             for scale in digits..<9 {
                 nanosecond *= 10
             }
@@ -476,16 +476,16 @@ zone std {
             if remaining != 6 && remaining != 9 { return .InvalidFormat }
             fin signChar = charAt(value, index)
             if signChar != '+' && signChar != '-' { return .InvalidFormat }
-            if charAt(value, index + 3) != ':' || !digitsAt(value, index + 1, 2) || !digitsAt(value, index + 4, 2) {
+            if charAt(value, index + 3) != ':' || !_digitsAt(value, index + 1, 2) || !_digitsAt(value, index + 4, 2) {
                 return .InvalidFormat
             }
-            fin offsetHour = decimalAt(value, index + 1, 2)
-            fin offsetMinute = decimalAt(value, index + 4, 2)
+            fin offsetHour = _decimalAt(value, index + 1, 2)
+            fin offsetMinute = _decimalAt(value, index + 4, 2)
             if offsetHour > 18 || offsetMinute > 59 { return .InvalidOffset }
             offsetSeconds = offsetHour * 3600 + offsetMinute * 60
             if remaining == 9 {
-                if charAt(value, index + 6) != ':' || !digitsAt(value, index + 7, 2) { return .InvalidFormat }
-                fin offsetSecond = decimalAt(value, index + 7, 2)
+                if charAt(value, index + 6) != ':' || !_digitsAt(value, index + 7, 2) { return .InvalidFormat }
+                fin offsetSecond = _decimalAt(value, index + 7, 2)
                 if offsetSecond > 59 { return .InvalidOffset }
                 offsetSeconds += offsetSecond
             }
@@ -575,7 +575,7 @@ zone std {
                 SerialValue.Number(secondsText) -> {
                     when nanosValue {
                         SerialValue.Number(nanosText) -> {
-                            return duration(try parseLong(secondsText), try parseLong(nanosText) as Long)
+                            return duration(try _parseLong(secondsText), try _parseLong(nanosText) as Long)
                         }
                         else -> { return .UnexpectedType }
                     }
@@ -585,22 +585,22 @@ zone std {
         }
     }
 
-    confine func floorDiv(value: Long, divisor: Long): Long {
+    func _floorDiv(value: Long, divisor: Long): Long {
         var quotient = value / divisor
         fin remainder = value % divisor
         if remainder != 0L && ((remainder < 0L) != (divisor < 0L)) { quotient -= 1L }
         return quotient
     }
 
-    confine func floorMod(value: Long, divisor: Long): Long {
-        return value - floorDiv(value, divisor) * divisor
+    func _floorMod(value: Long, divisor: Long): Long {
+        return value - _floorDiv(value, divisor) * divisor
     }
 
-    confine func daysFromCivil(year: Int, month: Int, day: Int): Long {
+    func _daysFromCivil(year: Int, month: Int, day: Int): Long {
         var y = year as Long
         fin m = month as Long
         if m <= 2L { y -= 1L }
-        fin era = floorDiv(y, 400L)
+        fin era = _floorDiv(y, 400L)
         fin yearOfEra = y - era * 400L
         var adjustedMonth = m - 3L
         if m <= 2L { adjustedMonth = m + 9L }
@@ -609,9 +609,9 @@ zone std {
         return era * 146097L + dayOfEra - 719468L
     }
 
-    confine func civilFromDays(epochDay: Long): LocalDate {
+    func _civilFromDays(epochDay: Long): LocalDate {
         fin z = epochDay + 719468L
-        fin era = floorDiv(z, 146097L)
+        fin era = _floorDiv(z, 146097L)
         fin dayOfEra = z - era * 146097L
         fin yearOfEra = (dayOfEra - dayOfEra / 1460L + dayOfEra / 36524L - dayOfEra / 146096L) / 365L
         var year = yearOfEra + era * 400L
@@ -624,12 +624,12 @@ zone std {
         return LocalDate(year as Int, month as Int, day as Int)
     }
 
-    confine func pad2(value: Int): String {
+    func _pad2(value: Int): String {
         if value < 10 { return "0" + std::convert::toString(value) }
         return std::convert::toString(value)
     }
 
-    confine func pad4(value: Int): String {
+    func _pad4(value: Int): String {
         fin text = std::convert::toString(value)
         if value < 0 || value > 9999 { return text }
         if value < 10 { return "000" + text }
@@ -638,7 +638,7 @@ zone std {
         return text
     }
 
-    confine func formatFraction(value: Int): String {
+    func _formatFraction(value: Int): String {
         var text = std::convert::toString(value)
         while stringLength(text) < 9 { text = "0" + text }
         var end = stringLength(text)
@@ -646,7 +646,7 @@ zone std {
         return "." + substring(text, 0, end)
     }
 
-    confine func digitsAt(value: String, start: Int, count: Int): Bool {
+    func _digitsAt(value: String, start: Int, count: Int): Bool {
         if start < 0 || count < 0 || start + count > stringLength(value) { return false }
         for i in start..<start + count {
             if !charIsDigit(charAt(value, i)) { return false }
@@ -654,7 +654,7 @@ zone std {
         return true
     }
 
-    confine func decimalAt(value: String, start: Int, count: Int): Int {
+    func _decimalAt(value: String, start: Int, count: Int): Int {
         var result = 0
         for i in start..<start + count {
             result = result * 10 + charToCode(charAt(value, i)) - 48
@@ -662,7 +662,7 @@ zone std {
         return result
     }
 
-    confine func parseLong(value: String): Long ?! SerializationError {
+    func _parseLong(value: String): Long ?! SerializationError {
         if stringLength(value) == 0 { return .InvalidNumber }
         var sign = 1L
         var index = 0

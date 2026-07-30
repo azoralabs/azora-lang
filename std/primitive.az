@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-export mod std.primitive
+expose mod std.primitive
 
-import std.traits
+use std.traits
 
 /**
  * @file std/primitive
@@ -32,8 +32,8 @@ import std.traits
  * declarations the compiler recognises and lowers to native machine instructions,
  * so their bodies are never executed.
  *
- * Because this is an `export module`, everything here is available in every unit
- * without an import.
+ * Because this is an `expose mod`, everything here is available in every unit
+ * without a `use`.
  *
  * @since 0.0.4
  */

@@ -16,8 +16,8 @@
 
 mod std.traits
 
-export import std.traits.core
-import std.convert
+expose use std.traits.core
+use std.convert
 
 /**
  * @file std/traits/traits

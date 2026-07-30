@@ -16,8 +16,8 @@
 
 mod std.container.set
 
-import std.serializer
-import std.convert
+use std.serializer
+use std.convert
 
 /**
  * @file std/container/set
@@ -124,9 +124,9 @@ zone std {
     @Experimental(sinceAzora: "0.0.4")
     @Serializable
     pack LinkedHashSet<T> {
-        shield var data: T* = alloc T[8]
-        shield var size: Int = 0
-        shield var capacity: Int = 8
+        var data: T* = alloc T[8]
+        var size: Int = 0
+        var capacity: Int = 8
     }
 
     // ---------------------------------------------------------------------
@@ -150,7 +150,7 @@ zone std {
 
         /** Returns whether `element` is already stored. */
         @Experimental(sinceAzora: "0.0.4")
-        confine func has(element: T): Bool { self& ->
+        func has(element: T): Bool { self& ->
             for i in 0..<self.size {
                 if self.data[i] == element { return true }
             }
@@ -317,9 +317,9 @@ zone std {
     @Experimental(sinceAzora: "0.0.4")
     @Serializable
     pack HashSet<T> {
-        shield var data: T* = alloc T[8]
-        shield var size: Int = 0
-        shield var capacity: Int = 8
+        var data: T* = alloc T[8]
+        var size: Int = 0
+        var capacity: Int = 8
     }
 
     @Experimental(sinceAzora: "0.0.4")
@@ -351,7 +351,7 @@ zone std {
         }
 
         @Experimental(sinceAzora: "0.0.4")
-        confine func has(element: T): Bool { self& ->
+        func has(element: T): Bool { self& ->
             for i in 0..<self.size {
                 if self.data[i] == element { return true }
             }
@@ -517,9 +517,9 @@ zone std {
     @Experimental(sinceAzora: "0.0.4")
     @Serializable
     pack TreeSet<T> {
-        shield var data: T* = alloc T[8]
-        shield var size: Int = 0
-        shield var capacity: Int = 8
+        var data: T* = alloc T[8]
+        var size: Int = 0
+        var capacity: Int = 8
     }
 
     @Experimental(sinceAzora: "0.0.4")
@@ -551,7 +551,7 @@ zone std {
         }
 
         @Experimental(sinceAzora: "0.0.4")
-        confine func has(element: T): Bool { self& ->
+        func has(element: T): Bool { self& ->
             for i in 0..<self.size {
                 if self.data[i] == element { return true }
             }

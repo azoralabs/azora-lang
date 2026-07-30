@@ -42,7 +42,7 @@ class CodegenGoldenTest {
 
     /** Program 1 — functions, if/else-if, for, while, interpolation, int division. */
     private val scalarProgram = """
-        import std.io
+        use std.io
         func add(a: Int, b: Int): Int {
             return a + b
         }
@@ -76,7 +76,7 @@ class CodegenGoldenTest {
 
     /** Program 2 — pack (struct), array literal/index, when with multi-pattern branch. */
     private val aggregateProgram = """
-        import std.io
+        use std.io
         pack Point {
             var x: Int
             var y: Int

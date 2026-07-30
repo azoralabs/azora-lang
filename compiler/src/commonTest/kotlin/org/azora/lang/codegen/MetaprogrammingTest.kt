@@ -19,7 +19,7 @@ class MetaprogrammingTest {
         val result = compile("""
             mod playground
 
-            import std.io
+            use std.io
             inline func a() {
                 std::println("Hello from A")
             }
@@ -99,7 +99,7 @@ class MetaprogrammingTest {
         val result = compile("""
             mod playground
 
-            import std.io
+            use std.io
             inline fin x = 2
 
             inline {
@@ -153,7 +153,7 @@ class MetaprogrammingTest {
         assertTrue("c" in irFuncNames, "inline if { func c() } should be in IR")
         assertFalse("d" in irFuncNames, "deepinline if { func d() } should not be in IR")
         assertTrue("e" in irFuncNames, "noinline func e() should be in IR")
-        assertTrue("main" in irFuncNames, "import std.io\nfunc main() should be in IR")
+        assertTrue("main" in irFuncNames, "use std.io\nfunc main() should be in IR")
 
         // main() should have a, b, d inlined as zone blocks, and call c, e directly
         val mainBody = result.ir.functions.first { it.name == "main" }.body
@@ -171,7 +171,7 @@ class MetaprogrammingTest {
         val result = compile("""
             mod playground
 
-            import std.io
+            use std.io
             inline fin x = 2
 
             inline if x == 2 {
@@ -217,7 +217,7 @@ class MetaprogrammingTest {
         val result = compile("""
             mod playground
 
-            import std.io
+            use std.io
             inline fin x = 2
 
             fin aa = 2

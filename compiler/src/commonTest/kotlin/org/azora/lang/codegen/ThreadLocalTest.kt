@@ -18,7 +18,7 @@ class ThreadLocalTest {
 
     @Test fun threadLocalFinAccessible() {
         assertEquals("42", run("""
-            import std.io
+            use std.io
             threadlocal fin answer = 42
             func main() {
                 std::println(answer)
@@ -28,7 +28,7 @@ class ThreadLocalTest {
 
     @Test fun threadLocalVarAccessible() {
         val result = Compiler().compile("""
-            import std.io
+            use std.io
             threadlocal var counter = 0
             func main() {
                 counter = 5
@@ -48,7 +48,7 @@ class ThreadLocalTest {
         // Each task gets its own fresh copy of the thread-local variable.
         // With parallel execution the output order is nondeterministic; sort lines.
         val output = run("""
-            import std.io
+            use std.io
             threadlocal var counter = 0
             func main() {
                 var t1 = task {
@@ -71,7 +71,7 @@ class ThreadLocalTest {
 
     @Test fun threadLocalWithTypedAnnotation() {
         assertEquals("hello", run("""
-            import std.io
+            use std.io
             threadlocal var msg: String = "hello"
             func main() {
                 std::println(msg)

@@ -641,7 +641,7 @@ class IrGenerator(private val table: SymbolTable) {
      * a name scope across all friend zones in the same body.
      */
     private fun lowerBody(stmts: List<Stmt>): List<IrStmt> {
-        val hasZones = stmts.any { it is Stmt.Zone }
+        val hasZones = stmts.any { it is Stmt.Zone && it.shared }
         val savedFriendScope = friendNameScope
 
         if (hasZones) {
@@ -653,7 +653,7 @@ class IrGenerator(private val table: SymbolTable) {
 
         val result = mutableListOf<IrStmt>()
         for (stmt in stmts) {
-            if (stmt is Stmt.Zone) {
+            if (stmt is Stmt.Zone && stmt.shared) {
                 // Push the shared zone name scope + symbol table scope
                 table.pushScope()
                 nameScopes.addLast(friendNameScope!!)

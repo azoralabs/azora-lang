@@ -46,7 +46,7 @@ class TypeFunctionTest {
     @Test
     fun stdlibPromoteSelectsHighestRankedType() {
         assertIs<CompilationResult.Success>(compile("""
-            import std.traits
+            use std.traits
             func result(): std::promote@(Byte, Int, Long, Real) {
                 return 1.0
             }
@@ -56,7 +56,7 @@ class TypeFunctionTest {
     @Test
     fun stdlibPromoteRequiresTwoTypes() {
         val failure = assertIs<CompilationResult.Failure>(compile("""
-            import std.traits
+            use std.traits
             func invalid(): std::promote@(Int) { return 1 }
         """))
         assertTrue(failure.errors.any { "requires T.length >= 2" in it }, failure.errors.toString())
@@ -80,7 +80,7 @@ class TypeFunctionTest {
     @Test
     fun importingModuleDoesNotExposeBareZoneMember() {
         val failure = assertIs<CompilationResult.Failure>(compile("""
-            import std.traits
+            use std.traits
             func invalid(): promote@(Int, Real) { return 1.0 }
         """))
         assertTrue(failure.errors.any { "Unknown type function 'promote'" in it }, failure.errors.toString())
@@ -141,7 +141,7 @@ class TypeFunctionTest {
     @Test
     fun genericFunctionCallUsesTypeFunctionForItsResult() {
         assertIs<CompilationResult.Success>(compile("""
-            import std.traits
+            use std.traits
             func greater<T, U>(a: T, b: U): std::promote@(T, U) {
                 return a + b
             }

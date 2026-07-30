@@ -114,11 +114,11 @@ zone std {
      * concurrency intrinsics.
      *
      * These are real, importable std symbols (so they participate in the
-     * zone/import model like every other library function) whose bodies are
+     * zone/use model like every other library function) whose bodies are
      * never emitted: each backend and the interpreter intercepts the call by
      * its zone-mangled name and lowers it to the native runtime operation.
      * Reach them as `std::concurrency::cancel`, etc., after
-     * `import std.concurrency`.
+     * `use std.concurrency`.
      */
     zone concurrency {
         /**

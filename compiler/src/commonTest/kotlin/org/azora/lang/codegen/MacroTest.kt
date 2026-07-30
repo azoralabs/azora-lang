@@ -34,8 +34,8 @@ class MacroTest {
     fun vecMacroExpandsToListOf() {
         val out = run(
             """
-            import std.container.*
-            import std.io
+            use std.container.*
+            use std.io
 
             func main() {
                 fin x = vec@[1, 2, 3]
@@ -52,8 +52,8 @@ class MacroTest {
     fun vecMacroEmptyArmExpandsToEmptyList() {
         val out = run(
             """
-            import std.container.*
-            import std.io
+            use std.container.*
+            use std.io
 
             func main() {
                 fin empty: List<Int> = vec@[]
@@ -68,8 +68,8 @@ class MacroTest {
     @Test
     fun allThreeDelimitersAreEquivalent() {
         val src = """
-            import std.container.*
-            import std.io
+            use std.container.*
+            use std.io
 
             func main() {
                 fin a = vec@(1, 2)
@@ -90,8 +90,8 @@ class MacroTest {
     fun setTupleArrMacrosExpandToConstructors() {
         val out = run(
             """
-            import std.container.*
-            import std.io
+            use std.container.*
+            use std.io
 
             func main() {
                 fin s = set@[1, 2, 3]
@@ -109,8 +109,8 @@ class MacroTest {
     fun userMacroSplicesCaptureIntoMultiplePositions() {
         val out = run(
             """
-            import std.container.*
-            import std.io
+            use std.container.*
+            use std.io
 
             meta .Prefix("dup") {
                 [...${'$'}xs] => std::listOf(...${'$'}xs, ...${'$'}xs)
@@ -132,8 +132,8 @@ class MacroTest {
     fun nestedMacroExpandsRecursively() {
         val out = run(
             """
-            import std.container.*
-            import std.io
+            use std.container.*
+            use std.io
 
             // `box` expands to a `vec!` invocation, which must then itself expand.
             meta .Prefix("box") {
@@ -171,7 +171,7 @@ class MacroTest {
         // A macro with only a spread arm cannot match an empty invocation.
         val result = Compiler().compile(
             $$"""
-            import std.container.*
+            use std.container.*
 
             meta .Prefix("needsArgs") {
                 [...$xs] => std::listOf(...$xs)
@@ -193,7 +193,7 @@ class MacroTest {
     fun expandedProgramContainsNoMacroNodes() {
         val result = compile(
             """
-            import std.container.*
+            use std.container.*
 
             func main() {
                 fin x = vec@[1, 2, 3]

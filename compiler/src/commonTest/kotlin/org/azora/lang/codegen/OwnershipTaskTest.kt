@@ -28,7 +28,7 @@ class OwnershipTaskTest {
     @Test
     fun namedTasksStartAndAwaitInTaskMain() {
         val source = """
-            import std.io
+            use std.io
             task loadUser(): Int { return 20 }
             task loadPosts(): Int { return 22 }
             task main() {
@@ -50,7 +50,7 @@ class OwnershipTaskTest {
     @Test
     fun directAwaitOfTaskCall() {
         assertEquals("42", run("""
-            import std.io
+            use std.io
             task answer(): Int { return 42 }
             task main() {
                 fin value = await answer()
@@ -62,7 +62,7 @@ class OwnershipTaskTest {
     @Test
     fun asyncBlockProducesTaskHandle() {
         val source = """
-            import std.io
+            use std.io
             task main() {
                 fin left = async { 19 }
                 fin right = async { 23 }
@@ -79,7 +79,7 @@ class OwnershipTaskTest {
     @Test
     fun taskAndUnsafeFlagsSurviveIntoIr() {
         val result = compile("""
-            import std.io
+            use std.io
             unsafe task compute(): Int { return 7 }
             task main() { std::println(7) }
         """.trimIndent())
@@ -93,7 +93,7 @@ class OwnershipTaskTest {
     @Test
     fun unsafeCallsRequireExplicitBoundary() {
         val rejected = Compiler().compile("""
-            import std.io
+            use std.io
             unsafe func raw(): Int { return 7 }
             func main() { std::println(raw()) }
         """.trimIndent())
@@ -101,7 +101,7 @@ class OwnershipTaskTest {
         assertTrue(rejected.errors.any { "requires an unsafe block" in it })
 
         assertEquals("7", run("""
-            import std.io
+            use std.io
             unsafe func raw(): Int { return 7 }
             func main() {
                 unsafe { std::println(raw()) }
@@ -112,7 +112,7 @@ class OwnershipTaskTest {
     @Test
     fun safeTaskRejectsBorrowAcrossSuspensionBoundary() {
         val result = Compiler().compile("""
-            import std.io
+            use std.io
             pack Buffer { var value: Int }
             task inspect(input: Buffer&): Int { return input.value }
             task main() { std::println(0) }
@@ -125,7 +125,7 @@ class OwnershipTaskTest {
     @Test
     fun referenceParameterSpellingsAreNormalized() {
         val result = compile("""
-            import std.io
+            use std.io
             pack Buffer { var value: Int }
             func read(a: Buffer&, b: Buffer!): Int {
                 return a.value
@@ -150,7 +150,7 @@ class OwnershipTaskTest {
     @Test
     fun referenceDeclarationAnnotationsRetainOwnershipKind() {
         val result = compile("""
-            import std.io
+            use std.io
             pack Buffer { var value: Int }
             func main() {
                 var owned: Buffer = Buffer(1)

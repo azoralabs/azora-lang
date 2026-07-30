@@ -89,7 +89,7 @@ func isKeywordRange(source: String, start: Int, end: Int): Bool {
         rangeIs(source, start, end, "impl") || rangeIs(source, start, end, "prot") ||
         rangeIs(source, start, end, "defer") || rangeIs(source, start, end, "type") ||
         rangeIs(source, start, end, "typealias") || rangeIs(source, start, end, "slot") ||
-        rangeIs(source, start, end, "use") || rangeIs(source, start, end, "import") ||
+        rangeIs(source, start, end, "use") ||
         rangeIs(source, start, end, "as") || rangeIs(source, start, end, "guard") ||
         rangeIs(source, start, end, "is") || rangeIs(source, start, end, "infx") ||
         rangeIs(source, start, end, "oper") || rangeIs(source, start, end, "fail") ||
@@ -106,9 +106,7 @@ func isKeywordRange(source: String, start: Int, end: Int): Bool {
         rangeIs(source, start, end, "prop") || rangeIs(source, start, end, "ctor") ||
         rangeIs(source, start, end, "dtor") || rangeIs(source, start, end, "out") ||
         rangeIs(source, start, end, "expose") || rangeIs(source, start, end, "confine") ||
-        rangeIs(source, start, end, "protect") || rangeIs(source, start, end, "shield") ||
-        rangeIs(source, start, end, "protected") || rangeIs(source, start, end, "opaque") ||
-        rangeIs(source, start, end, "mod") || rangeIs(source, start, end, "export") ||
+        rangeIs(source, start, end, "mod") ||
         rangeIs(source, start, end, "threadlocal") || rangeIs(source, start, end, "deco") ||
         rangeIs(source, start, end, "bind") || rangeIs(source, start, end, "true") ||
         rangeIs(source, start, end, "false") || rangeIs(source, start, end, "null")
@@ -774,7 +772,7 @@ func importStart(source: String, offset: Int): Int {
     while lineEnd < stringLength(source) && charAt(source, lineEnd) != '\n' { lineEnd += 1 }
     var index = lineStart
     while index < lineEnd && isSpace(charAt(source, index)) { index += 1 }
-    if rangeStarts(source, index, lineEnd, "import") { index += 6 }
+    if rangeStarts(source, index, lineEnd, "use") { index += 3 }
     else if rangeStarts(source, index, lineEnd, "use") { index += 3 }
     else { return -1 }
     while index < lineEnd && isSpace(charAt(source, index)) { index += 1 }
@@ -967,7 +965,7 @@ func declarationZoneAllows(
 
 func moduleIsExported(source: String, documentStart: Int, moduleNameStart: Int): Bool {
     fin start = lineStartAt(source, documentStart, moduleNameStart)
-    fin found = findFrom(source, start, moduleNameStart, "export")
+    fin found = findFrom(source, start, moduleNameStart, "expose")
     if found < 0 { return false }
     fin end = found + 6
     fin beforeOk = found == start || !isIdentifierPart(charAt(source, found - 1))
@@ -995,7 +993,7 @@ func sourceImportsModule(
             while index < stringLength(source) && isIdentifierPart(charAt(source, index)) {
                 index += 1
             }
-            if rangeIs(source, start, index, "import") || rangeIs(source, start, index, "use") {
+            if rangeIs(source, start, index, "use") {
                 while index < stringLength(source) && isSpace(charAt(source, index)) { index += 1 }
                 fin pathStart = index
                 while index < stringLength(source) {

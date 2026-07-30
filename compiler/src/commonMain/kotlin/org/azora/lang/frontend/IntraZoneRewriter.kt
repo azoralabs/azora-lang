@@ -20,7 +20,7 @@ package org.azora.lang.frontend
  * Rewrites bare references that appear INSIDE a zone member's body to their
  * zone-mangled form, so that sibling declarations resolve without qualification.
  *
- * Zones desugar at parse time to flat mangled top-level items (`friend zone
+ * Zones desugar at parse time to flat mangled top-level items (`zone
  * std::math { func floor(){...} }` → `std__math__floor`). A sibling call like
  * `floor()` inside `std__math__round` would otherwise fail to resolve, because
  * the reference stays bare while the declaration is mangled.
@@ -32,7 +32,7 @@ package org.azora.lang.frontend
  * `func pow(value, exp)` has a parameter `exp` that must not be rewritten to a
  * hypothetical `std__math__exp` sibling). Bare names with no mangled sibling
  * are left untouched. This gives zone members bare sibling access while keeping
- * cross-zone access qualified — the "friend" visibility rule.
+ * cross-zone access qualified.
  */
 internal object IntraZoneRewriter {
 

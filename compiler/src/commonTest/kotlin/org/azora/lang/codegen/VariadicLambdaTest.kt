@@ -17,7 +17,7 @@ class VariadicLambdaTest {
 
     @Test fun variadicLambdaLength() {
         assertEquals("0\n1\n3", run("""
-            import std.io
+            use std.io
             func main() {
                 fin len = <...T>{ it.length }
                 std::println(len())
@@ -29,7 +29,7 @@ class VariadicLambdaTest {
 
     @Test fun variadicLambdaFirst() {
         assertEquals("42\n10", run("""
-            import std.io
+            use std.io
             func main() {
                 fin first = <...T>{ it[0] }
                 std::println(first(42))
@@ -41,7 +41,7 @@ class VariadicLambdaTest {
     @Test fun variadicLambdaSum() {
         // A `for` body inside a lambda now sees the lambda's locals.
         assertEquals("6\n100", run("""
-            import std.io
+            use std.io
             func main() {
                 fin sum = <...T>{
                     var total = 0
@@ -57,7 +57,7 @@ class VariadicLambdaTest {
     @Test fun regularLambdaForLocalScoping() {
         // Regression: a non-variadic lambda with a for loop + local accumulator.
         assertEquals("6", run("""
-            import std.io
+            use std.io
             func main() {
                 fin f = { xs: Array<Int> ->
                     var total = 0

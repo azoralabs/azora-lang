@@ -23,7 +23,7 @@ class Tier3MemoryTest {
 
     @Test fun allocDerefAndStoreInt() {
         assertEquals("5\n99", run("""
-            import std.io
+            use std.io
             func main() {
                 var p = alloc 5
                 std::println(*p)
@@ -35,7 +35,7 @@ class Tier3MemoryTest {
 
     @Test fun allocStructMutateThroughPointer() {
         assertEquals("10\n20", run("""
-            import std.io
+            use std.io
             pack P {
                 var v: Int
             }
@@ -50,7 +50,7 @@ class Tier3MemoryTest {
 
     @Test fun unsafeBlockDesugarsToZone() {
         assertEquals("11", run("""
-            import std.io
+            use std.io
             func main() {
                 var x = 1
                 unsafe {
@@ -63,7 +63,7 @@ class Tier3MemoryTest {
 
     @Test fun dropIsAdvisoryNoOp() {
         assertEquals("5", run("""
-            import std.io
+            use std.io
             func main() {
                 var p = alloc 5
                 drop p
@@ -74,7 +74,7 @@ class Tier3MemoryTest {
 
     @Test fun pointerTypeAnnotation() {
         assertEquals("42", run("""
-            import std.io
+            use std.io
             func main() {
                 var p: Int* = alloc 42
                 std::println(*p)
@@ -84,7 +84,7 @@ class Tier3MemoryTest {
 
     @Test fun derefKeywordReadsAndWritesRawPointer() {
         assertEquals("5\n12", run("""
-            import std.io
+            use std.io
             func main() {
                 var p = alloc 5
                 std::println(deref p)
@@ -96,8 +96,8 @@ class Tier3MemoryTest {
 
     @Test fun ptrSmartPointerUsesDerefImpl() {
         assertEquals("41\n42", run("""
-            import std.io
-            import std.memory.*
+            use std.io
+            use std.memory.*
             func main() {
                 var p = std::ptrOf(41)
                 std::println(deref p)
@@ -109,8 +109,8 @@ class Tier3MemoryTest {
 
     @Test fun sliceIndexesPointerBuffer() {
         assertEquals("9\n4", run("""
-            import std.io
-            import std.memory.*
+            use std.io
+            use std.memory.*
             func main() {
                 var p = alloc Int[3]
                 p[0] = 7
@@ -127,7 +127,7 @@ class Tier3MemoryTest {
     @Test fun isolatedProducesIndependentDeepCopy() {
         // Mutating the isolated copy must not affect the original.
         assertEquals("[1, 2, 3]\n[1, 2, 3, 99]", run("""
-            import std.io
+            use std.io
             func main() {
                 var a = arr@[1, 2, 3]
                 var b = isolated(a)
@@ -140,7 +140,7 @@ class Tier3MemoryTest {
 
     @Test fun isolatedDeepCopiesNestedStruct() {
         assertEquals("7\n1", run("""
-            import std.io
+            use std.io
             pack Box {
                 var v: Int
             }
@@ -156,7 +156,7 @@ class Tier3MemoryTest {
 
     @Test fun pointerOpsEmitRuntimePreambleInBackends() {
         val result = Compiler().compile("""
-            import std.io
+            use std.io
             func main() {
                 var p = alloc 5
                 *p = 99
@@ -169,7 +169,7 @@ class Tier3MemoryTest {
     @Test fun zoneAllocFreesAtExit() {
         // `zone alloc { }` tracks allocations and frees them at exit.
         assertEquals("5\nnull", run("""
-            import std.io
+            use std.io
             func main() {
                 var p: Int* = alloc 0
                 zone alloc {
@@ -184,7 +184,7 @@ class Tier3MemoryTest {
     @Test fun friendZoneAllocFreesAtExit() {
         // `zone alloc { }` — arena scoping on top of shared friend scope.
         assertEquals("7\nnull", run("""
-            import std.io
+            use std.io
             func main() {
                 var q: Int* = alloc 0
                 zone alloc {
@@ -198,7 +198,7 @@ class Tier3MemoryTest {
 
     @Test fun pointerArithmeticOffsetAndDeref() {
         assertEquals("10\n20\n30", run("""
-            import std.io
+            use std.io
             func main() {
                 var p: Int* = alloc arr@[10, 20, 30]
                 std::println(*p)
@@ -211,7 +211,7 @@ class Tier3MemoryTest {
 
     @Test fun pointerArithmeticSubtract() {
         assertEquals("30\n20", run("""
-            import std.io
+            use std.io
             func main() {
                 var p: Int* = alloc arr@[10, 20, 30]
                 var end = p + 2
@@ -224,7 +224,7 @@ class Tier3MemoryTest {
 
     @Test fun pointerArithmeticWriteThroughOffset() {
         assertEquals("99", run("""
-            import std.io
+            use std.io
             func main() {
                 var p: Int* = alloc arr@[10, 20, 30]
                 *(p + 1) = 99
@@ -235,7 +235,7 @@ class Tier3MemoryTest {
 
     @Test fun pointerArithmeticDistance() {
         assertEquals("3", run("""
-            import std.io
+            use std.io
             func main() {
                 var p: Int* = alloc arr@[10, 20, 30, 40]
                 var q = p + 3

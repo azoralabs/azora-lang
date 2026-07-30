@@ -37,7 +37,7 @@ class WasmCodegenExecTest {
         assertEquals(expected, WasmExec.run(source))
     }
 
-    private fun main(body: String): String = "import std.io\nfunc main() {\n$body\n}"
+    private fun main(body: String): String = "use std.io\nfunc main() {\n$body\n}"
 
     @Test fun printsHello() = check("hello", main("""std::println("hello")"""))
     @Test fun traceUsesRuntimeLevelAndImplicitReceiver() = check(
@@ -79,7 +79,7 @@ class WasmCodegenExecTest {
     @Test fun ifElseChain() = check(
         "positive",
         """
-        import std.io
+        use std.io
         func classify(n: Int): String {
             if n < 0 { return "negative" } else if n == 0 { return "zero" }
             return "positive"
@@ -114,7 +114,7 @@ class WasmCodegenExecTest {
     @Test fun recursion() = check(
         "120",
         """
-        import std.io
+        use std.io
         func fact(n: Int): Int {
             if n <= 1 { return 1 }
             return n * fact(n - 1)
@@ -126,7 +126,7 @@ class WasmCodegenExecTest {
     @Test fun structFieldMutation() = check(
         "4\n7",
         """
-        import std.io
+        use std.io
         pack Point { var x: Int
             var y: Int }
         func main() { let p = Point(3, 4)
@@ -143,7 +143,7 @@ class WasmCodegenExecTest {
     @Test fun functionCalls() = check(
         "25",
         """
-        import std.io
+        use std.io
         func square(n: Int): Int { return n * n }
         func main() { var n = 5
             std::println(square(n)) }

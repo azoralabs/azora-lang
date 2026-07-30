@@ -5,8 +5,8 @@ import kotlin.test.assertEquals
 
 class ArrayStdlibExecTest {
     private val source = """
-        import std.container.array
-        import std.io
+        use std.container.array
+        use std.io
 
         func main() {
             fin values: Array<Int> = std::arrayOf(5, 8, 13)

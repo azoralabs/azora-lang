@@ -39,7 +39,7 @@ object AzHighlighter {
         "flow", "yield", "task", "await", "launch", "bridge", "solo", "inject", "wrap",
         "rescue", "node", "leaf", "repl", "virt", "base", "rem", "effect", "view",
         "hook", "prop", "ctor", "dtor", "ref", "out", "mut",
-        "expose", "confine", "protect", "mod", "threadlocal",
+        "expose", "confine", "mod", "threadlocal",
         "pack", "enum", "when", "throw", "try", "catch", "impl", "prot",
         "defer", "typealias", "slot", "as", "guard", "is", "null", "use",
         "true", "false"

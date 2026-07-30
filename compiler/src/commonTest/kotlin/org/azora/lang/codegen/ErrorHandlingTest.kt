@@ -18,7 +18,7 @@ class ErrorHandlingTest {
 
     @Test fun tryCatchCatchesThrow() {
         assertEquals("caught: boom", run("""
-            import std.io
+            use std.io
             func main() {
                 try {
                     throw "boom"
@@ -31,7 +31,7 @@ class ErrorHandlingTest {
 
     @Test fun noThrowRunsBody() {
         assertEquals("ok", run("""
-            import std.io
+            use std.io
             func main() {
                 try {
                     std::println("ok")
@@ -44,7 +44,7 @@ class ErrorHandlingTest {
 
     @Test fun catchWithoutBinding() {
         assertEquals("recovered", run("""
-            import std.io
+            use std.io
             func main() {
                 try {
                     throw "anything"
@@ -57,7 +57,7 @@ class ErrorHandlingTest {
 
     @Test fun catchExprFallback() {
         assertEquals("-1", run("""
-            import std.io
+            use std.io
             func safeDiv(a: Int, b: Int): Int {
                 if b == 0 { throw "div0" }
                 return a / b
@@ -70,7 +70,7 @@ class ErrorHandlingTest {
 
     @Test fun catchExprSuccess() {
         assertEquals("5", run("""
-            import std.io
+            use std.io
             func safeDiv(a: Int, b: Int): Int {
                 if b == 0 { throw "div0" }
                 return a / b
@@ -83,7 +83,7 @@ class ErrorHandlingTest {
 
     @Test fun throwEscapesUncaught() {
         val result = Compiler().compile("""
-            import std.io
+            use std.io
             func main() {
                 throw "uncaught"
             }

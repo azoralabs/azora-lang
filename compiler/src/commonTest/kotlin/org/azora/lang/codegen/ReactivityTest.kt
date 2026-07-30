@@ -22,7 +22,7 @@ class ReactivityTest {
 
     @Test fun reactiveStateKindsAreAvailableInsideReactiveFunctions() {
         assertEquals("6", run("""
-            import std.io
+            use std.io
             @Reactive
             func calculate(): Int {
                 mem a = 1
@@ -39,7 +39,7 @@ class ReactivityTest {
 
     @Test fun automaticEffectRunsInitiallyAndAfterChanges() {
         assertEquals("1\n7", run("""
-            import std.io
+            use std.io
             @Reactive
             func observe() {
                 rem value = 1
@@ -57,7 +57,7 @@ class ReactivityTest {
 
     @Test fun automaticEffectTracksOnlyReactiveValuesReadByItsBody() {
         assertEquals("1\n2", run("""
-            import std.io
+            use std.io
             @Reactive
             func observe() {
                 rem observed = 1
@@ -77,7 +77,7 @@ class ReactivityTest {
 
     @Test fun explicitSingleAndListDependenciesAreSelective() {
         assertEquals("11\n11\n12\n22\n22", run("""
-            import std.io
+            use std.io
             @Reactive
             func observe() {
                 rem x = 1
@@ -96,7 +96,7 @@ class ReactivityTest {
 
     @Test fun deferredEffectRunsOnOwnerExit() {
         assertEquals("cleanup", run("""
-            import std.io
+            use std.io
             @Reactive
             func work() {
                 effect defer {
@@ -133,7 +133,7 @@ class ReactivityTest {
 
     @Test fun viewIsAnOrdinaryIdentifierNotAKeyword() {
         assertEquals("4", run("""
-            import std.io
+            use std.io
             func view(value: Int): Int = value * 2
             func main() {
                 std::println(view(2))

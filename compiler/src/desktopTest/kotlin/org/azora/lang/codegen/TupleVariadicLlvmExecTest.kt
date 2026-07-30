@@ -13,8 +13,8 @@ class TupleVariadicLlvmExecTest {
     @Test fun tupleOfInferredRunsViaLli() {
         if (!LlvmExec.available) return
         assertEquals("1\n2", LlvmExec.run("""
-            import std.io
-            import std.container.*
+            use std.io
+            use std.container.*
             func main() {
                 fin x = std::tupleOf(1, 2)
                 std::println(x.0)
@@ -26,8 +26,8 @@ class TupleVariadicLlvmExecTest {
     @Test fun tupleOfThreeElementsRunsViaLli() {
         if (!LlvmExec.available) return
         assertEquals("1\n2\n3", LlvmExec.run("""
-            import std.io
-            import std.container.*
+            use std.io
+            use std.container.*
             func main() {
                 fin t = std::tupleOf(1, 2, 3)
                 std::println(t.0)
@@ -40,8 +40,8 @@ class TupleVariadicLlvmExecTest {
     @Test fun llvmEmitsMonomorphizedStruct() {
         if (!LlvmExec.available) return
         val ir = LlvmExec.compile("""
-            import std.io
-            import std.container.*
+            use std.io
+            use std.container.*
             func main() {
                 fin x = std::tupleOf(1, 2)
                 std::println(x.0)

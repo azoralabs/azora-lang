@@ -18,7 +18,7 @@ class ObjectModelTest {
 
     @Test fun propComputesValue() {
         assertEquals("10", run("""
-            import std.io
+            use std.io
             pack Box {
                 var v: Int
             }

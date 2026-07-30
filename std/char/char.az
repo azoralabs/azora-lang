@@ -28,7 +28,7 @@ mod std.char
  * @since 0.0.1
  */
 
-export import std.char.core
+expose use std.char.core
 
 zone std {
     /**

@@ -20,7 +20,7 @@ class Tier2MetaprogrammingTest {
 
     @Test fun inlineForUnrollsExclusiveRange() {
         assertEquals("0\n1\n2", run("""
-            import std.io
+            use std.io
             func main() {
                 inline for x in 0..<3 {
                     std::println(x)
@@ -31,7 +31,7 @@ class Tier2MetaprogrammingTest {
 
     @Test fun inlineForUnrollsInclusiveRange() {
         assertEquals("1\n2\n3\n4", run("""
-            import std.io
+            use std.io
             func main() {
                 inline for x in 1..4 {
                     std::println(x)
@@ -42,7 +42,7 @@ class Tier2MetaprogrammingTest {
 
     @Test fun inlineForAccumulatesIntoRuntimeVar() {
         assertEquals("10", run("""
-            import std.io
+            use std.io
             func main() {
                 var sum = 0
                 inline for x in 1..4 {
@@ -56,7 +56,7 @@ class Tier2MetaprogrammingTest {
     @Test fun inlineFromBodyUsesLoopVarInCompileTimeExpr() {
         // The loop var feeds an `inline fin`, which is folded per iteration.
         assertEquals("2\n4\n6", run("""
-            import std.io
+            use std.io
             func main() {
                 inline for x in 1..3 {
                     inline fin doubled = x * 2
@@ -68,7 +68,7 @@ class Tier2MetaprogrammingTest {
 
     @Test fun inlineForBoundsFromCompileTimeVar() {
         assertEquals("0\n1\n2\n3\n4", run("""
-            import std.io
+            use std.io
             func main() {
                 inline fin count = 5
                 inline for x in 0..<count {
@@ -81,7 +81,7 @@ class Tier2MetaprogrammingTest {
     @Test fun inlineForDoesNotLeakLoopVar() {
         // After the unrolled loop, `x` must not be substituted into later code.
         assertEquals("0\n1\n2\n99", run("""
-            import std.io
+            use std.io
             func main() {
                 inline for x in 0..<3 {
                     std::println(x)
@@ -96,7 +96,7 @@ class Tier2MetaprogrammingTest {
 
     @Test fun decoDeclarationAndAnnotatedFunc() {
         assertEquals("hi", run("""
-            import std.io
+            use std.io
             deco Log {
                 fin msg: String
             }
@@ -112,7 +112,7 @@ class Tier2MetaprogrammingTest {
 
     @Test fun annotationOnVarAndPack() {
         assertEquals("3\n5", run("""
-            import std.io
+            use std.io
             deco Cached { }
             deco Deprecated { }
             @Cached
@@ -131,7 +131,7 @@ class Tier2MetaprogrammingTest {
 
     @Test fun multipleAnnotationsOnOneDecl() {
         assertEquals("done", run("""
-            import std.io
+            use std.io
             deco A { }
             deco B { }
             @A
@@ -149,7 +149,7 @@ class Tier2MetaprogrammingTest {
 
     @Test fun namedZoneNamespaceConstAndFunc() {
         assertEquals("314\n10", run("""
-            import std.io
+            use std.io
             zone Math {
                 fin PI = 314
                 func double(x: Int): Int {
@@ -165,7 +165,7 @@ class Tier2MetaprogrammingTest {
 
     @Test fun nestedNamedZones() {
         assertEquals("42", run("""
-            import std.io
+            use std.io
             zone Outer {
                 zone Inner {
                     fin VALUE = 42
@@ -179,7 +179,7 @@ class Tier2MetaprogrammingTest {
 
     @Test fun namedZoneMemberReferencesAnotherMember() {
         assertEquals("25", run("""
-            import std.io
+            use std.io
             zone Geom {
                 fin R = 5
                 func area(): Int {
@@ -195,7 +195,7 @@ class Tier2MetaprogrammingTest {
     @Test fun anonymousZoneStillBlockScopes() {
         // Anonymous `zone { … }` keeps its existing block-scope meaning.
         assertEquals("7", run("""
-            import std.io
+            use std.io
             func main() {
                 var x = 5
                 zone {

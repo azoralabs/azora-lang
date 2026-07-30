@@ -21,9 +21,9 @@ class Feature003SyntaxTest {
 
     @Test fun packWithoutExposedFieldsAllowsReadOnlyExtension() {
         assertEquals("7", run("""
-            import std.io
+            use std.io
             pack Counter {
-                shield var value: Int
+                var value: Int
             }
             func peek()[self: Counter&]: Int {
                 return self.value
@@ -37,12 +37,12 @@ class Feature003SyntaxTest {
 
     @Test fun packWithoutExposedFieldsRejectsMutableExtensionReceiver() {
         val result = compile("""
-            import std.io
+            use std.io
             pack Counter {
-                shield var value: Int
+                var _value: Int
             }
             func bump()[self: Counter!] {
-                self.value = self.value + 1
+                self._value = self._value + 1
             }
             func main() {
                 var c = Counter(0)
@@ -55,9 +55,9 @@ class Feature003SyntaxTest {
 
     @Test fun implPackCanMutatePackInDeclaringFile() {
         assertEquals("2", run("""
-            import std.io
+            use std.io
             pack Counter {
-                shield var value: Int
+                var value: Int
             }
             impl pack Counter {
                 func bump() {
@@ -77,8 +77,8 @@ class Feature003SyntaxTest {
 
     @Test fun implPackCannotTargetImportedStdlibPack() {
         val result = compile("""
-            import std.io
-            import std.string
+            use std.io
+            use std.string
             impl pack StringBuilder {
                 func steal() {
                 }
@@ -94,7 +94,7 @@ class Feature003SyntaxTest {
 
     @Test fun refExtensionCannotMutateSelf() {
         val result = compile("""
-            import std.io
+            use std.io
             pack Counter {
                 var value: Int
             }
@@ -112,7 +112,7 @@ class Feature003SyntaxTest {
 
     @Test fun loopIteratorContinueSkipsReset() {
         assertEquals("2\n0", run("""
-            import std.io
+            use std.io
             pack Iter {
                 var i: Int
                 var resets: Int
@@ -142,7 +142,7 @@ class Feature003SyntaxTest {
 
     @Test fun memRemRetAreReactiveBindings() {
         assertEquals("15", run("""
-            import std.io
+            use std.io
             func main() {
                 mem a: Int = 1
                 rem b: Int = 2
@@ -157,7 +157,7 @@ class Feature003SyntaxTest {
 
     @Test fun compactConversionSpecsGeneratePropertyStyleMethods() {
         assertEquals("Label(ok)\nLabel(ok)", run("""
-            import std.io
+            use std.io
             pack Label {
                 var value: String
             }
@@ -179,7 +179,7 @@ class Feature003SyntaxTest {
 
     @Test fun compactConversionSpecUseAsWorksBeforeSpecDeclaration() {
         assertEquals("Label(ok)", run("""
-            import std.io
+            use std.io
             pack Label {
                 var value: String
             }
@@ -196,7 +196,7 @@ class Feature003SyntaxTest {
 
     @Test fun compactConversionSpecUseAsAcceptsLiteralMemberName() {
         assertEquals("Label(ok)", run("""
-            import std.io
+            use std.io
             pack Label {
                 var value: String
             }
@@ -213,7 +213,7 @@ class Feature003SyntaxTest {
 
     @Test fun compactConversionSpecsRejectParenthesesWhenSpecHasNoParens() {
         val result = Compiler().compile("""
-            import std.io
+            use std.io
             pack Label {
                 var value: String
             }
@@ -232,7 +232,7 @@ class Feature003SyntaxTest {
 
     @Test fun compactConversionSpecsWithParensRequireCallSyntax() {
         assertEquals("7", run("""
-            import std.io
+            use std.io
             pack Box {
                 var value: Int
             }
@@ -247,7 +247,7 @@ class Feature003SyntaxTest {
         """.trimIndent()))
 
         val result = Compiler().compile("""
-            import std.io
+            use std.io
             pack Box {
                 var value: Int
             }
@@ -266,7 +266,7 @@ class Feature003SyntaxTest {
 
     @Test fun implAsStringIsCastOnly() {
         assertEquals("cast:x", run("""
-            import std.io
+            use std.io
             pack Label {
                 var value: String
             }
@@ -282,7 +282,7 @@ class Feature003SyntaxTest {
 
     @Test fun implAsStringDoesNotCreateToString() {
         val result = compile("""
-            import std.io
+            use std.io
             pack Label {
                 var value: String
             }
@@ -300,7 +300,7 @@ class Feature003SyntaxTest {
 
     @Test fun friendZoneAcceptsDoubleColonPath() {
         assertEquals("3", run("""
-            import std.io
+            use std.io
             zone std::math {
                 func abs(x: Int): Int {
                     if x < 0 { return -x }
@@ -315,7 +315,7 @@ class Feature003SyntaxTest {
 
     @Test fun emptyPackCanOmitBody() {
         assertEquals("ok", run("""
-            import std.io
+            use std.io
             pack Marker
             func main() {
                 var marker = Marker()
@@ -326,7 +326,7 @@ class Feature003SyntaxTest {
 
     @Test fun getAndSetKeywordsRemainSoftForMembers() {
         assertEquals("7", run("""
-            import std.io
+            use std.io
             pack Accessors {
                 var get: Int
                 var set: Int
@@ -341,7 +341,7 @@ class Feature003SyntaxTest {
     @Test fun operInsideRegularImplIsRejected() {
         val error = assertFailsWith<IllegalStateException> {
             compile("""
-            import std.io
+            use std.io
             pack Box {
                 var value: Int
             }
@@ -361,8 +361,8 @@ class Feature003SyntaxTest {
 
     @Test fun activeCodegenTargetsAreProducedForNewSyntax() {
         val result = compile("""
-            import std.io
-            shield pack Counter {
+            use std.io
+            pack Counter {
                 var value: Int
             }
             impl pack Counter {

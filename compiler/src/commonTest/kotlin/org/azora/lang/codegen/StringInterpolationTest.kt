@@ -19,7 +19,7 @@ class StringInterpolationTest {
     @Test
     fun dollarIdentifierInterpolation() {
         assertEquals("hello Azora", run("""
-            import std.io
+            use std.io
             func main() {
                 var name = "Azora"
                 std::println("hello ${'$'}name")
@@ -30,7 +30,7 @@ class StringInterpolationTest {
     @Test
     fun braceExpressionInterpolation() {
         assertEquals("n+1 = 6", run("""
-            import std.io
+            use std.io
             func main() {
                 var n = 5
                 std::println("n+1 = ${'$'}{n + 1}")
@@ -41,7 +41,7 @@ class StringInterpolationTest {
     @Test
     fun mixedInterpolation() {
         assertEquals("3 + 4 = 7", run("""
-            import std.io
+            use std.io
             func main() {
                 var x = 3
                 var y = 4
@@ -53,7 +53,7 @@ class StringInterpolationTest {
     @Test
     fun interpolationWithArithmetic() {
         assertEquals("count: 100", run("""
-            import std.io
+            use std.io
             func main() {
                 std::println("count: ${'$'}{10 * 10}")
             }
@@ -63,7 +63,7 @@ class StringInterpolationTest {
     @Test
     fun interpolationWithStructField() {
         assertEquals("point x = 3", run("""
-            import std.io
+            use std.io
             pack Point {
                 var x: Int
                 var y: Int
@@ -78,7 +78,7 @@ class StringInterpolationTest {
     @Test
     fun interpolationWithArrayIndex() {
         assertEquals("first = 10", run("""
-            import std.io
+            use std.io
             func main() {
                 var a = arr@[10, 20, 30]
                 std::println("first = ${'$'}{a[0]}")
@@ -89,7 +89,7 @@ class StringInterpolationTest {
     @Test
     fun plainStringWithoutDollarStillWorks() {
         assertEquals("just text", run("""
-            import std.io
+            use std.io
             func main() {
                 std::println("just text")
             }
@@ -99,7 +99,7 @@ class StringInterpolationTest {
     @Test
     fun escapedDollarIsLiteral() {
         assertEquals("price is $5", run("""
-            import std.io
+            use std.io
             func main() {
                 std::println("price is ${'$'}${'$'}5")
             }
@@ -109,7 +109,7 @@ class StringInterpolationTest {
     @Test
     fun interpolationSurvivesOptimization() {
         assertEquals("3 + 4 = 7", run("""
-            import std.io
+            use std.io
             func main() {
                 var x = 3
                 var y = 4
@@ -121,7 +121,7 @@ class StringInterpolationTest {
     @Test
     fun interpolationLoweredToBackends() {
         val result = Compiler().compile("""
-            import std.io
+            use std.io
             func main() {
                 var name = "Azora"
                 std::println("hello ${'$'}name")

@@ -41,7 +41,7 @@ data class FunctionSymbol(
     val isVariadic: Boolean = false,
     val isTask: Boolean = false,
     val isUnsafe: Boolean = false,
-    val visibility: Visibility = Visibility.EXPOSE,
+    val visibility: Visibility = Visibility.PUBLIC,
     val memberCallStyle: MemberCallStyle = MemberCallStyle.NORMAL,
     /** Source return type retained for generic compile-time type-function evaluation. */
     val returnTypeRef: TypeRef? = null,
@@ -59,7 +59,7 @@ data class VariableSymbol(
     val name: String,
     val type: IrType,
     val mutable: Boolean = true,
-    val visibility: Visibility = Visibility.EXPOSE,
+    val visibility: Visibility = Visibility.PUBLIC,
 )
 
 /**
@@ -73,7 +73,7 @@ data class StructField(
     val name: String,
     val type: IrType,
     val mutable: Boolean,
-    val visibility: Visibility = Visibility.EXPOSE,
+    val visibility: Visibility = Visibility.PUBLIC,
     /** Default initializer (for `Pack<T>()` construction with omitted fields). */
     val default: org.azora.lang.frontend.Expr? = null,
     /**
@@ -95,8 +95,7 @@ data class StructType(
     val name: String,
     val fields: List<StructField>,
     val typeParams: List<String> = emptyList(),
-    val visibility: Visibility = Visibility.EXPOSE,
-    val shielded: Boolean = false,
+    val visibility: Visibility = Visibility.PUBLIC,
     /** Compiler-provided type declaration with no ordinary runtime constructor. */
     val isBridge: Boolean = false,
 ) {

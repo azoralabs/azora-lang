@@ -16,8 +16,8 @@
 
 mod std.container.list
 
-import std.serializer
-import std.convert
+use std.serializer
+use std.convert
 
 /**
  * @file std/container/list
@@ -150,9 +150,9 @@ zone std {
     @Experimental(sinceAzora: "0.0.4")
     @Serializable
     pack ArrayList<T> {
-        shield var data: T* = alloc T[8]
-        shield var size: Int = 0
-        shield var capacity: Int = 8
+        var data: T* = alloc T[8]
+        var size: Int = 0
+        var capacity: Int = 8
     }
 
     // ---------------------------------------------------------------------

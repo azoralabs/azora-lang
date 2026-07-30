@@ -60,7 +60,7 @@ class GenericRealTest {
 
     @Test fun aRealSurvivesAGenericField() {
         assertEquals("2.5", run("""
-            import std.io
+            use std.io
             $box
             func main() {
                 fin b = Box<Real>(2.5)
@@ -71,7 +71,7 @@ class GenericRealTest {
 
     @Test fun aRealFieldCanBeReassigned() {
         assertEquals("7.25", run("""
-            import std.io
+            use std.io
             $box
             func main() {
                 var b = Box<Real>(0.0)
@@ -83,7 +83,7 @@ class GenericRealTest {
 
     @Test fun theOtherInstantiationsStillWork() {
         assertEquals("42\nok", run("""
-            import std.io
+            use std.io
             $box
             func main() {
                 std::println(Box<Int>(42).value)
@@ -96,7 +96,7 @@ class GenericRealTest {
         // Both orders, so a mixed pack cannot pass by substituting positionally
         // from the wrong end.
         assertEquals("1.5 3\n3 1.5", run("""
-            import std.io
+            use std.io
             pack Pair<A, B> {
                 var first: A
                 var second: B
@@ -112,7 +112,7 @@ class GenericRealTest {
 
     @Test fun aRealCrossesAGenericFunctionBoundary() {
         assertEquals("1.5", run("""
-            import std.io
+            use std.io
             func identity<T>(value: T): T {
                 return value
             }
@@ -124,8 +124,8 @@ class GenericRealTest {
 
     @Test fun aGenericPackNests() {
         assertEquals("10.0 20.0", run("""
-            import std.io
-            import std.container.array
+            use std.io
+            use std.container.array
             pack Keyframe<T> {
                 var time: Real
                 var value: T
@@ -144,7 +144,7 @@ class GenericRealTest {
     @Test fun theSlotIsErasedAndTheValueConverted() {
         val ir = llvm("""
             $box
-            import std.io
+            use std.io
             func main() {
                 fin b = Box<Real>(2.5)
                 std::println(b.value)
@@ -160,7 +160,7 @@ class GenericRealTest {
         // The un-erasing must not fire for a plain pack, whose slot already has
         // the right type.
         assertEquals("3.5", run("""
-            import std.io
+            use std.io
             pack Plain {
                 var value: Real
             }

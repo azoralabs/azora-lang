@@ -21,7 +21,7 @@ class Tier4ConcurrencyTest {
 
     @Test fun flowYieldsValuesIteratedByForLoop() {
         assertEquals("0\n1\n4\n9", run("""
-            import std.io
+            use std.io
             flow squares(n: Int): Int {
                 for i in 0..<n {
                     yield i * i
@@ -38,7 +38,7 @@ class Tier4ConcurrencyTest {
     @Test fun flowResultIsConsumable() {
         // A flow result is a lazy producer; consume by iteration.
         assertEquals("3", run("""
-            import std.io
+            use std.io
             flow upto(n: Int): Int {
                 var i = 0
                 while i < n {
@@ -60,7 +60,7 @@ class Tier4ConcurrencyTest {
         // A lazy flow's body runs only as far as consumed: stopping early must not
         // force the rest. We break after the first value and observe the side effect.
         assertEquals("0", run("""
-            import std.io
+            use std.io
             flow naturals(): Int {
                 var i = 0
                 loop {
@@ -79,7 +79,7 @@ class Tier4ConcurrencyTest {
 
     @Test fun flowWithConditionalYield() {
         assertEquals("0\n2\n4", run("""
-            import std.io
+            use std.io
             flow evens(): Int {
                 for i in 0..<6 {
                     if i % 2 == 0 {
@@ -97,7 +97,7 @@ class Tier4ConcurrencyTest {
 
     @Test fun flowCanTakeArguments() {
         assertEquals("3\n4\n5", run("""
-            import std.io
+            use std.io
             flow rangeFrom(a: Int, b: Int): Int {
                 for i in a..<b {
                     yield i
@@ -113,7 +113,7 @@ class Tier4ConcurrencyTest {
 
     @Test fun taskAwaitReturnsResult() {
         assertEquals("42", run("""
-            import std.io
+            use std.io
             func main() {
                 var t = task {
                     42
@@ -125,7 +125,7 @@ class Tier4ConcurrencyTest {
 
     @Test fun taskAwaitComputedResult() {
         assertEquals("30", run("""
-            import std.io
+            use std.io
             func compute(a: Int, b: Int): Int {
                 return a * b
             }
@@ -140,7 +140,7 @@ class Tier4ConcurrencyTest {
 
     @Test fun multipleTasksAwaited() {
         assertEquals("10\n20", run("""
-            import std.io
+            use std.io
             func main() {
                 var t1 = task { 10 }
                 var t2 = task { 20 }
@@ -152,7 +152,7 @@ class Tier4ConcurrencyTest {
 
     @Test fun channelSendAndReceive() {
         assertEquals("1\n2", run("""
-            import std.io
+            use std.io
             func main() {
                 var ch = channel()
                 ch.send(1)
@@ -166,7 +166,7 @@ class Tier4ConcurrencyTest {
     @Test fun channelWithProducerTask() {
         // A producer task sends values; the consumer receives them via await ordering.
         assertEquals("10\n20", run("""
-            import std.io
+            use std.io
             func produce(ch: Channel): Int {
                 ch.send(10)
                 ch.send(20)
@@ -190,7 +190,7 @@ class Tier4ConcurrencyTest {
         // With real parallelism the ordering of `main` vs `launched` is nondeterministic,
         // so check that both lines appear (in any order).
         val output = run("""
-            import std.io
+            use std.io
             func main() {
                 std::println("main")
                 launch {
@@ -205,7 +205,7 @@ class Tier4ConcurrencyTest {
     @Test fun launchProducerWithChannelConsumer() {
         // A launched producer feeds a channel that main consumes cooperatively.
         assertEquals("1\n2", run("""
-            import std.io
+            use std.io
             func main() {
                 var ch = channel()
                 launch {
@@ -223,7 +223,7 @@ class Tier4ConcurrencyTest {
         // Two independent tasks run in parallel (Dispatchers.Default); both are awaited
         // and their results combined.
         assertEquals("300", run("""
-            import std.io
+            use std.io
             func main() {
                 var t1 = task { 100 }
                 var t2 = task { 200 }

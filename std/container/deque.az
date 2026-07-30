@@ -16,8 +16,8 @@
 
 mod std.container.deque
 
-import std.serializer
-import std.convert
+use std.serializer
+use std.convert
 
 /**
  * @file std/container/deque
@@ -39,11 +39,11 @@ zone std {
     @SinceAzora("0.0.1")
     @Serializable
     pack Deque<T> {
-        shield var data: T* = alloc T[8]
-        shield var head: Int = 0
-        shield var tail: Int = 0
-        shield var size: Int = 0
-        shield var capacity: Int = 8
+        var data: T* = alloc T[8]
+        var head: Int = 0
+        var tail: Int = 0
+        var size: Int = 0
+        var capacity: Int = 8
     }
 
     /** Deque operations: push/pop at both ends, peek, clear, and string conversion. */
@@ -61,7 +61,7 @@ zone std {
         @Experimental(sinceAzora: "0.0.1")
         func pushFront(value: T): Unit {
             if self.size >= self.capacity {
-                self.growDeque()
+                self._growDeque()
             }
             self.head = (self.head - 1 + self.capacity) % self.capacity
             self.data[self.head] = value
@@ -72,7 +72,7 @@ zone std {
         @Experimental(sinceAzora: "0.0.1")
         func pushBack(value: T): Unit {
             if self.size >= self.capacity {
-                self.growDeque()
+                self._growDeque()
             }
             self.data[self.tail] = value
             self.tail = (self.tail + 1) % self.capacity
@@ -120,7 +120,7 @@ zone std {
 
         /** Doubles the circular buffer's capacity and re-linearizes it. */
         @Experimental(sinceAzora: "0.0.1")
-        confine func growDeque(): Unit {
+        func _growDeque(): Unit {
             var newCap: Int = self.capacity * 2
             var newData: T* = alloc T[newCap]
             for i in 0..<self.size {

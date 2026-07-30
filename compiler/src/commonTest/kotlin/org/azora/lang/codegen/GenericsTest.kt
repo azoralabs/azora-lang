@@ -17,7 +17,7 @@ class GenericsTest {
 
     @Test fun genericIdentity() {
         assertEquals("5", run("""
-            import std.io
+            use std.io
             func identity<T>(x: T): T {
                 return x
             }
@@ -29,7 +29,7 @@ class GenericsTest {
 
     @Test fun genericIdentityString() {
         assertEquals("hello", run("""
-            import std.io
+            use std.io
             func identity<T>(x: T): T {
                 return x
             }
@@ -41,7 +41,7 @@ class GenericsTest {
 
     @Test fun genericTwoParams() {
         assertEquals("10", run("""
-            import std.io
+            use std.io
             func first<T, U>(a: T, b: U): T {
                 return a
             }
@@ -53,7 +53,7 @@ class GenericsTest {
 
     @Test fun genericStruct() {
         assertEquals("42", run("""
-            import std.io
+            use std.io
             pack Box<T> {
                 var value: T
             }
@@ -66,7 +66,7 @@ class GenericsTest {
 
     @Test fun genericStructString() {
         assertEquals("hello", run("""
-            import std.io
+            use std.io
             pack Box<T> {
                 var value: T
             }
@@ -79,7 +79,7 @@ class GenericsTest {
 
     @Test fun genericUsedInArithmetic() {
         assertEquals("43", run("""
-            import std.io
+            use std.io
             func identity<T>(x: T): T {
                 return x
             }
@@ -93,7 +93,7 @@ class GenericsTest {
     @Test fun explicitGenericReturnKeepsConcretePackTypeInLlvm() {
         val result = Compiler().compile(
             """
-            import std.io
+            use std.io
 
             pack Store<T> {
                 var value: T

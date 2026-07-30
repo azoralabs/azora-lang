@@ -18,14 +18,14 @@ mod std.memory.unique
 zone std {
     @SinceAzora("0.0.3")
     pack Unique<T> {
-        confine var raw: T*
-        shield var active: Bool = true
+        var _raw: T*
+        var active: Bool = true
     }
 
     @Experimental(sinceAzora: "0.0.3")
     impl deref for Unique<T> { self& ->
         assert self.active { "Unique pointer was released" }
-        return deref self.raw
+        return deref self._raw
     }
 
     impl Unique<T> {
@@ -33,21 +33,21 @@ zone std {
         @Experimental(sinceAzora: "0.0.3")
         prop get: T {
             assert active { "Unique pointer was released" }
-            return deref self.raw
+            return deref self._raw
         }
 
         /** Overwrites the owned value (panics if already released). */
         @Experimental(sinceAzora: "0.0.3")
         func set(value: T) {
             assert active { "Unique pointer was released" }
-            self.raw[0] = value
+            self._raw[0] = value
         }
 
         /** Returns the raw `T*` without relinquishing ownership. */
         @Experimental(sinceAzora: "0.0.3")
         prop ptr: T* {
             assert active { "Unique pointer was released" }
-            return self.raw
+            return self._raw
         }
 
         /**
@@ -58,14 +58,14 @@ zone std {
         func release(): T* {
             assert active { "Unique pointer was already released" }
             self.active = false
-            return self.raw
+            return self._raw
         }
 
         /** Frees the owned value now (a no-op if already released/disposed). */
         @Experimental(sinceAzora: "0.0.3")
         func dispose() {
             if active {
-                drop self.raw
+                drop self._raw
                 self.active = false
             }
         }

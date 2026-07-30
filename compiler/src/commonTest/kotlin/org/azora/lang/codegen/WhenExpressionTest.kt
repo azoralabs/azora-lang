@@ -51,7 +51,7 @@ class WhenExpressionTest {
 
     @Test fun whenIsAnExpressionInAnInitializer() {
         assertEquals("2", run("""
-            import std.io
+            use std.io
             enum Kind { A, B, C }
             func pick(k: Kind): Int {
                 fin v = when k {
@@ -69,7 +69,7 @@ class WhenExpressionTest {
 
     @Test fun whenIsAnExpressionInAnArgument() {
         assertEquals("14", run("""
-            import std.io
+            use std.io
             enum Kind { A, B }
             func doubled(n: Int): Int { return n * 2 }
             func main() {
@@ -80,7 +80,7 @@ class WhenExpressionTest {
 
     @Test fun elseIsOptionalOnceEveryCaseIsListed() {
         assertEquals("30", run("""
-            import std.io
+            use std.io
             enum Kind { A, B, C }
             func pick(k: Kind): Int {
                 fin v = when k {
@@ -98,7 +98,7 @@ class WhenExpressionTest {
 
     @Test fun theGuardFormSelectsOnConditions() {
         assertEquals("negative\nzero\npositive", run("""
-            import std.io
+            use std.io
             func label(n: Int): String {
                 return when true {
                     n < 0 -> "negative"
@@ -116,7 +116,7 @@ class WhenExpressionTest {
 
     @Test fun aBranchTakesSeveralPatterns() {
         assertEquals("10\n10\n20", run("""
-            import std.io
+            use std.io
             enum Kind { A, B, C }
             func pick(k: Kind): Int {
                 return when k {
@@ -134,7 +134,7 @@ class WhenExpressionTest {
 
     @Test fun whenExpressionsNest() {
         assertEquals("100\n50\n0", run("""
-            import std.io
+            use std.io
             enum Kind { A, B }
             func pick(k: Kind, n: Int): Int {
                 fin v = when k {
@@ -156,7 +156,7 @@ class WhenExpressionTest {
 
     @Test fun returnWhenDestructuresASlotPayload() {
         assertEquals("12\n25\n0", run("""
-            import std.io
+            use std.io
             slot Shape {
                 Circle(r: Int)
                 Rect(w: Int, h: Int)
@@ -179,7 +179,7 @@ class WhenExpressionTest {
 
     @Test fun aReturnWhenBranchTakesABlockEndingInItsValue() {
         assertEquals("25", run("""
-            import std.io
+            use std.io
             enum Kind { A, B }
             func pick(k: Kind): Int {
                 return when k {
@@ -198,7 +198,7 @@ class WhenExpressionTest {
 
     @Test fun statementWhenStillWorksUnchanged() {
         assertEquals("hit B", run("""
-            import std.io
+            use std.io
             enum Kind { A, B }
             func main() {
                 when Kind.B {
@@ -253,7 +253,7 @@ class WhenExpressionTest {
     @Test fun anIfExpressionConditionMayEndInACall() {
         // The branch's `{` must not be taken for a trailing lambda on the call.
         assertEquals("yes", run("""
-            import std.io
+            use std.io
             func ready(): Bool { return true }
             func main() {
                 fin answer = if ready() { "yes" } else { "no" }
@@ -264,7 +264,7 @@ class WhenExpressionTest {
 
     @Test fun aWhenScrutineeMayEndInACall() {
         assertEquals("two", run("""
-            import std.io
+            use std.io
             func value(): Int { return 2 }
             func main() {
                 fin name = when value() {

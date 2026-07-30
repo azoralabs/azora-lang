@@ -16,7 +16,7 @@
 
 mod std.math
 
-import std.container.array
+use std.container.array
 
 /**
  * @file std/math

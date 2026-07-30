@@ -23,7 +23,7 @@ class ContractsTest {
     @Test
     fun inOutZoneContractsRunOnSuccess() {
         assertEquals("0\n5\n10", run("""
-            import std.io
+            use std.io
             func clamp(x: Int, lo: Int, hi: Int): Int
             in {
                 assert lo <= hi { "lo must be <= hi" }
@@ -48,7 +48,7 @@ class ContractsTest {
     fun preconditionFailureStopsBeforeBody() {
         val failure = assertFailsWith<IllegalStateException> {
             run("""
-                import std.io
+                use std.io
                 func value(x: Int): Int
                 in {
                     assert x > 0 { "x must be positive" }
@@ -65,7 +65,7 @@ class ContractsTest {
     fun postconditionFailureSeesResultValue() {
         val failure = assertFailsWith<IllegalStateException> {
             run("""
-                import std.io
+                use std.io
                 func value(): Int
                 out { r ->
                     assert r > 10 { "result too small" }
@@ -81,7 +81,7 @@ class ContractsTest {
     @Test
     fun postconditionRunsForNestedBranchReturns() {
         assertEquals("12\n20", run("""
-            import std.io
+            use std.io
             func choose(flag: Bool): Int
             out { r ->
                 assert r >= 10 { "branch result too small" }
@@ -102,7 +102,7 @@ class ContractsTest {
     @Test
     fun computedPropertiesSupportContracts() {
         assertEquals("7", run("""
-            import std.io
+            use std.io
             pack Counter { var value: Int }
             impl Counter {
                 prop current: Int

@@ -239,8 +239,8 @@ class SerializationDeriverTest {
             }
             pack SerializerOptions
             pack List<T> {
-                shield var data: T* = alloc T[16]
-                shield var size: Int = 0
+                var data: T* = alloc T[16]
+                var size: Int = 0
             }
             impl List<T> {
                 func add(element: T): Unit { self! ->
@@ -250,8 +250,8 @@ class SerializationDeriverTest {
             }
             impl oper[] for List<T> { self&, index -> return self.data[index] }
             pack Set<T> {
-                shield var data: T* = alloc T[16]
-                shield var size: Int = 0
+                var data: T* = alloc T[16]
+                var size: Int = 0
             }
             impl Set<T> {
                 func add(element: T): Bool { self! ->
@@ -262,9 +262,9 @@ class SerializationDeriverTest {
             }
             impl oper[] for Set<T> { self&, index -> return self.data[index] }
             pack Map<K, V> {
-                shield var keysData: K* = alloc K[16]
-                shield var valuesData: V* = alloc V[16]
-                shield var size: Int = 0
+                var keysData: K* = alloc K[16]
+                var valuesData: V* = alloc V[16]
+                var size: Int = 0
             }
             impl Map<K, V> {
                 func put(key: K, value: V): Unit { self! ->

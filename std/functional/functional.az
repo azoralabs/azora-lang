@@ -16,7 +16,7 @@
 
 mod std.functional
 
-import std.container.array
+use std.container.array
 
 /**
  * @file std/functional

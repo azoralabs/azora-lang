@@ -224,7 +224,6 @@ private class MonoContext(
             column = template.column,
             annotations = if (enforce) listOf(Annotation("EnforceNumFields")) else template.annotations,
             visibility = template.visibility,
-            shielded = template.shielded,
         )
     }
 

@@ -16,10 +16,10 @@
 
 mod std.serializer
 
-import std.container.list
-import std.char
-import std.convert
-import std.string
+use std.container.list
+use std.char
+use std.convert
+use std.string
 
 /**
  * @file std/serializer
@@ -281,12 +281,12 @@ zone std {
     }
 
     /** Returns one typed object field by positional index. */
-    confine func serialFieldAt(fields: List<SerialField>&, index: Int): SerialField {
+    func _serialFieldAt(fields: List<SerialField>&, index: Int): SerialField {
         return fields[index]
     }
 
     /** Returns one typed serialized array element by positional index. */
-    confine func serialValueAt(values: List<SerialValue>&, index: Int): SerialValue {
+    func _serialValueAt(values: List<SerialValue>&, index: Int): SerialValue {
         return values[index]
     }
 
@@ -357,35 +357,35 @@ zone std {
     }
 
     /** Extracts a range-checked signed byte. */
-    confine func serialAsByte(value: SerialValue&): Byte ?! SerializationError {
+    func _serialAsByte(value: SerialValue&): Byte ?! SerializationError {
         fin parsed = try serialAsLong(value)
         if parsed < -128L || parsed > 127L { return .InvalidNumber }
         return parsed as Byte
     }
 
     /** Extracts a range-checked unsigned byte. */
-    confine func serialAsUByte(value: SerialValue&): UByte ?! SerializationError {
+    func _serialAsUByte(value: SerialValue&): UByte ?! SerializationError {
         fin parsed = try serialAsLong(value)
         if parsed < 0L || parsed > 255L { return .InvalidNumber }
         return parsed as UByte
     }
 
     /** Extracts a range-checked signed short. */
-    confine func serialAsShort(value: SerialValue&): Short ?! SerializationError {
+    func _serialAsShort(value: SerialValue&): Short ?! SerializationError {
         fin parsed = try serialAsLong(value)
         if parsed < -32768L || parsed > 32767L { return .InvalidNumber }
         return parsed as Short
     }
 
     /** Extracts a range-checked unsigned short. */
-    confine func serialAsUShort(value: SerialValue&): UShort ?! SerializationError {
+    func _serialAsUShort(value: SerialValue&): UShort ?! SerializationError {
         fin parsed = try serialAsLong(value)
         if parsed < 0L || parsed > 65535L { return .InvalidNumber }
         return parsed as UShort
     }
 
     /** Extracts a range-checked signed integer. */
-    confine func serialAsInt(value: SerialValue&): Int ?! SerializationError {
+    func _serialAsInt(value: SerialValue&): Int ?! SerializationError {
         fin parsed = try serialAsLong(value)
         if (parsed < 0L && parsed + 2147483648L < 0L) || parsed > 2147483647L {
             return .InvalidNumber
@@ -394,26 +394,26 @@ zone std {
     }
 
     /** Extracts a range-checked unsigned integer. */
-    confine func serialAsUInt(value: SerialValue&): UInt ?! SerializationError {
+    func _serialAsUInt(value: SerialValue&): UInt ?! SerializationError {
         fin parsed = try serialAsLong(value)
         if parsed < 0L || parsed > 4294967295L { return .InvalidNumber }
         return parsed as UInt
     }
 
     /** Extracts a non-negative value representable by the current ULong runtime. */
-    confine func serialAsULong(value: SerialValue&): ULong ?! SerializationError {
+    func _serialAsULong(value: SerialValue&): ULong ?! SerializationError {
         fin parsed = try serialAsLong(value)
         if parsed < 0L { return .InvalidNumber }
         return parsed as ULong
     }
 
     /** Extracts a signed 128-bit value from the supported integer token range. */
-    confine func serialAsCent(value: SerialValue&): Cent ?! SerializationError {
+    func _serialAsCent(value: SerialValue&): Cent ?! SerializationError {
         return try serialAsLong(value) as Cent
     }
 
     /** Extracts an unsigned 128-bit value from the supported integer token range. */
-    confine func serialAsUCent(value: SerialValue&): UCent ?! SerializationError {
+    func _serialAsUCent(value: SerialValue&): UCent ?! SerializationError {
         fin parsed = try serialAsLong(value)
         if parsed < 0L { return .InvalidNumber }
         return parsed as UCent
@@ -480,7 +480,7 @@ zone std {
         format: SerializationFormat,
         options: SerializerOptions&
     ): String ?! SerializationError {
-        return try encodeSerialValueAtDepth(value, format, options, 0)
+        return try _encodeSerialValueAtDepth(value, format, options, 0)
     }
 
     /**
@@ -498,7 +498,7 @@ zone std {
         options: SerializerOptions&
     ): SerialValue ?! SerializationError {
         if stringLength(input) > options.maxInputLength { return .InputTooLarge }
-        var reader = SerialReader(input, 0, format, options)
+        var reader = _SerialReader(input, 0, format, options)
         fin value = try reader.readValue(0)
         reader.skipWhitespace()
         if !reader.isAtEnd { return .TrailingContent }
@@ -506,14 +506,14 @@ zone std {
     }
 
     /** Internal cursor used by the strict text decoder. */
-    confine pack SerialReader {
+    pack _SerialReader {
         var input: String
         var index: Int
         fin format: SerializationFormat
         fin options: SerializerOptions
     }
 
-    confine impl SerialReader {
+    impl _SerialReader {
         prop isAtEnd: Bool = self.index >= stringLength(self.input)
 
         func skipWhitespace(): Unit { self! ->
@@ -684,7 +684,7 @@ zone std {
 
                 var duplicate = false
                 for i in 0..<fields.size {
-                    if serialFieldAt(fields, i).name == name { duplicate = true }
+                    if _serialFieldAt(fields, i).name == name { duplicate = true }
                 }
                 if duplicate && !self.options.allowDuplicateFields { return .DuplicateField }
                 fields.add(SerialField(name, value))
@@ -698,7 +698,7 @@ zone std {
         }
     }
 
-    confine func encodeSerialValueAtDepth(
+    func _encodeSerialValueAtDepth(
         value: SerialValue&,
         format: SerializationFormat,
         options: SerializerOptions&,
@@ -712,15 +712,15 @@ zone std {
                 if !isValidSerialNumber(v) { return .InvalidNumber }
                 return v
             }
-            SerialValue.Text(v) -> { return quoteSerialString(v) }
+            SerialValue.Text(v) -> { return _quoteSerialString(v) }
             SerialValue.Array(values) -> {
                 var result = "["
                 for i in 0..<values.size {
                     if i > 0 { result = result + "," }
-                    if options.pretty { result = result + "\n" + repeatIndent(options.indent, depth + 1) }
-                    result = result + try encodeSerialValueAtDepth(values[i], format, options, depth + 1)
+                    if options.pretty { result = result + "\n" + _repeatIndent(options.indent, depth + 1) }
+                    result = result + try _encodeSerialValueAtDepth(values[i], format, options, depth + 1)
                 }
-                if options.pretty && values.size > 0 { result = result + "\n" + repeatIndent(options.indent, depth) }
+                if options.pretty && values.size > 0 { result = result + "\n" + _repeatIndent(options.indent, depth) }
                 return result + "]"
             }
             SerialValue.Object(fields) -> {
@@ -728,7 +728,7 @@ zone std {
                 var i = 0
                 var written = 0
                 while i < fields.size {
-                    fin field = serialFieldAt(fields, i)
+                    fin field = _serialFieldAt(fields, i)
                     var include = true
                     when field.value {
                         SerialValue.Null -> { include = options.encodeNulls }
@@ -736,23 +736,23 @@ zone std {
                     }
                     if include {
                         if written > 0 { result = result + "," }
-                        if options.pretty { result = result + "\n" + repeatIndent(options.indent, depth + 1) }
-                        result = result + quoteSerialString(field.name)
+                        if options.pretty { result = result + "\n" + _repeatIndent(options.indent, depth + 1) }
+                        result = result + _quoteSerialString(field.name)
                         result = result + ":"
                         if options.pretty { result = result + " " }
-                        result = result + try encodeSerialValueAtDepth(field.value, format, options, depth + 1)
+                        result = result + try _encodeSerialValueAtDepth(field.value, format, options, depth + 1)
                         written += 1
                     }
                     i += 1
                 }
-                if options.pretty && written > 0 { result = result + "\n" + repeatIndent(options.indent, depth) }
+                if options.pretty && written > 0 { result = result + "\n" + _repeatIndent(options.indent, depth) }
                 return result + "}"
             }
         }
         return .UnexpectedType
     }
 
-    confine func quoteSerialString(value: String): String {
+    func _quoteSerialString(value: String): String {
         var result = "\""
         for i in 0..<stringLength(value) {
             fin c = charAt(value, i)
@@ -763,13 +763,13 @@ zone std {
             else if c == '\n' { result = result + "\\n" }
             else if c == '\r' { result = result + "\\r" }
             else if c == '\t' { result = result + "\\t" }
-            else if charToCode(c) < 32 { result = result + "\\u" + hex4(charToCode(c)) }
+            else if charToCode(c) < 32 { result = result + "\\u" + _hex4(charToCode(c)) }
             else { result = result + std::convert::toString(c) }
         }
         return result + "\""
     }
 
-    confine func repeatIndent(indent: String, count: Int): String {
+    func _repeatIndent(indent: String, count: Int): String {
         var result = ""
         for i in 0..<count {
             result = result + indent
@@ -777,7 +777,7 @@ zone std {
         return result
     }
 
-    confine func hex4(value: Int): String {
+    func _hex4(value: Int): String {
         fin digits = "0123456789abcdef"
         return std::convert::toString(charAt(digits, (value / 4096) % 16)) +
             std::convert::toString(charAt(digits, (value / 256) % 16)) +
@@ -818,7 +818,7 @@ zone std {
 // ---------------------------------------------------------------------------
 
 @Serializable(ignoreUnknownFields: true, encodeDefaults: false)
-confine pack SerializerMetadataFixture {
+pack SerializerMetadataFixture {
     @SerialIgnore
     fin secret: String = ""
 
@@ -827,85 +827,85 @@ confine pack SerializerMetadataFixture {
 }
 
 @JsonSerializable(ignoreUnknownFields: false, encodeDefaults: true)
-confine pack JsonMetadataFixture
+pack _JsonMetadataFixture
 
 @AzonSerializable(ignoreUnknownFields: true, encodeDefaults: true)
-confine pack AzonMetadataFixture
+pack _AzonMetadataFixture
 
-confine pack ManualTextValue {
+pack _ManualTextValue {
     fin value: String
 }
 
-confine pack ManualTextSerializer
+pack _ManualTextSerializer
 
-impl Serializer<ManualTextValue> for ManualTextSerializer {
-    func toSerialValue(value: ManualTextValue&): SerialValue ?! SerializationError { self& ->
+impl Serializer<_ManualTextValue> for _ManualTextSerializer {
+    func toSerialValue(value: _ManualTextValue&): SerialValue ?! SerializationError { self& ->
         return SerialValue.Text(value.value)
     }
 
-    func fromSerialValue(value: SerialValue&): ManualTextValue ?! SerializationError { self& ->
+    func fromSerialValue(value: SerialValue&): _ManualTextValue ?! SerializationError { self& ->
         when value {
-            SerialValue.Text(text) -> { return ManualTextValue(text) }
+            SerialValue.Text(text) -> { return _ManualTextValue(text) }
             else -> { return .UnexpectedType }
         }
     }
 }
 
-confine pack ImplSerializableFixture {
+pack _ImplSerializableFixture {
     fin value: String
 }
 
 impl Serializable(
     ignoreUnknownFields: true,
     encodeDefaults: false
-) for ImplSerializableFixture
+) for _ImplSerializableFixture
 
-confine pack DefaultSerializableFixture {
+pack _DefaultSerializableFixture {
     fin value: String
 }
 
-impl Serializable for DefaultSerializableFixture
+impl Serializable for _DefaultSerializableFixture
 
-confine pack DirectFieldDecoratorFixture {
+pack _DirectFieldDecoratorFixture {
     fin name: String = ""
     fin password: String = ""
 }
 
-impl SerialName(value: "display_name") for DirectFieldDecoratorFixture::name
+impl SerialName(value: "display_name") for _DirectFieldDecoratorFixture::name
 
-confine pack GroupedDecoratorFixture {
+pack _GroupedDecoratorFixture {
     fin name: String = ""
 }
 
-impl [SerialName, SerialRequired] for GroupedDecoratorFixture::name
+impl [SerialName, SerialRequired] for _GroupedDecoratorFixture::name
 
-confine pack GroupedTargetFixture {
-    fin name: String = ""
-    fin password: String = ""
-}
-
-impl SerialIgnore for [GroupedTargetFixture::name, GroupedTargetFixture::password]
-
-confine pack CrossProductDecoratorFixture {
+pack _GroupedTargetFixture {
     fin name: String = ""
     fin password: String = ""
 }
 
-impl [SerialName, SerialRequired] for [CrossProductDecoratorFixture::name, CrossProductDecoratorFixture::password]
+impl SerialIgnore for [_GroupedTargetFixture::name, _GroupedTargetFixture::password]
 
-confine pack WildcardDecoratorFixture {
+pack _CrossProductDecoratorFixture {
+    fin name: String = ""
+    fin password: String = ""
+}
+
+impl [SerialName, SerialRequired] for [_CrossProductDecoratorFixture::name, _CrossProductDecoratorFixture::password]
+
+pack WildcardDecoratorFixture {
     fin name: String = ""
     fin password: String = ""
 }
 
 impl SerialIgnore for WildcardDecoratorFixture::*
 
-confine pack GroupedWildcardDecoratorFixture {
+pack _GroupedWildcardDecoratorFixture {
     fin name: String = ""
     fin password: String = ""
 }
 
-impl [SerialName, SerialRequired] for GroupedWildcardDecoratorFixture::*
+impl [SerialName, SerialRequired] for _GroupedWildcardDecoratorFixture::*
 
 // ---------------------------------------------------------------------------
 // Unit tests
@@ -938,111 +938,111 @@ test "serial name exposes its immutable value" {
 }
 
 test "json-only decorator is independent" {
-    inline assert (std::reflect<JsonMetadataFixture>).hasDeco<JsonSerializable> {
+    inline assert (std::reflect<_JsonMetadataFixture>).hasDeco<JsonSerializable> {
         "JSON-only metadata must be present"
     }
-    inline assert !(std::reflect<JsonMetadataFixture>).hasDeco<AzonSerializable> {
+    inline assert !(std::reflect<_JsonMetadataFixture>).hasDeco<AzonSerializable> {
         "JSON-only metadata must not imply AZON metadata"
     }
 }
 
 test "azon-only decorator is independent" {
-    inline assert (std::reflect<AzonMetadataFixture>).hasDeco<AzonSerializable> {
+    inline assert (std::reflect<_AzonMetadataFixture>).hasDeco<AzonSerializable> {
         "AZON-only metadata must be present"
     }
-    inline assert !(std::reflect<AzonMetadataFixture>).hasDeco<JsonSerializable> {
+    inline assert !(std::reflect<_AzonMetadataFixture>).hasDeco<JsonSerializable> {
         "AZON-only metadata must not imply JSON metadata"
     }
 }
 
 test "manual Serializer impl converts a typed value" {
-    fin serializer = ManualTextSerializer()
-    fin value = serializer.toSerialValue(ManualTextValue("Azora")) catch SerialValue.Null
+    fin serializer = _ManualTextSerializer()
+    fin value = serializer.toSerialValue(_ManualTextValue("Azora")) catch SerialValue.Null
     fin encoded = std::encodeSerialValue(value, SerializationFormat.Json, std::serializerOptions()) catch "error"
     assert encoded == "\"Azora\"" { "Serializer.toSerialValue must use the implementation body" }
 }
 
 test "manual Serializer impl reconstructs a typed value" {
-    fin serializer = ManualTextSerializer()
+    fin serializer = _ManualTextSerializer()
     fin serial = SerialValue.Text("Azora")
-    fin value = serializer.fromSerialValue(serial) catch ManualTextValue("fallback")
+    fin value = serializer.fromSerialValue(serial) catch _ManualTextValue("fallback")
     assert value.value == "Azora" { "Serializer.fromSerialValue must reconstruct the value" }
 }
 
 test "manual Serializer impl reports unexpected value types" {
-    fin serializer = ManualTextSerializer()
-    fin value = serializer.fromSerialValue(SerialValue.Bool(true)) catch ManualTextValue("failed")
+    fin serializer = _ManualTextSerializer()
+    fin value = serializer.fromSerialValue(SerialValue.Bool(true)) catch _ManualTextValue("failed")
     assert value.value == "failed" { "the serializer must fail for an incompatible SerialValue" }
 }
 
 test "manual Serializer impl round trips through JSON" {
-    fin serializer = ManualTextSerializer()
+    fin serializer = _ManualTextSerializer()
     fin options = std::serializerOptions()
-    fin tree = serializer.toSerialValue(ManualTextValue("round-trip")) catch SerialValue.Null
+    fin tree = serializer.toSerialValue(_ManualTextValue("round-trip")) catch SerialValue.Null
     fin json = std::encodeSerialValue(tree, SerializationFormat.Json, options) catch "error"
     fin decodedTree = std::decodeSerialValue(json, SerializationFormat.Json, options) catch SerialValue.Null
-    fin decoded = serializer.fromSerialValue(decodedTree) catch ManualTextValue("failed")
+    fin decoded = serializer.fromSerialValue(decodedTree) catch _ManualTextValue("failed")
     assert decoded.value == "round-trip" { "custom serializers must compose with wire formats" }
 }
 
 test "impl Serializable accepts configured decorator metadata" {
-    inline assert (std::reflect<ImplSerializableFixture>).hasDeco<Serializable> {
+    inline assert (std::reflect<_ImplSerializableFixture>).hasDeco<Serializable> {
         "bodyless decorator implementations must be visible through hasDeco"
     }
-    inline assert (std::reflect<ImplSerializableFixture>).decoMeta<Serializable>.ignoreUnknownFields {
+    inline assert (std::reflect<_ImplSerializableFixture>).decoMeta<Serializable>.ignoreUnknownFields {
         "configured decorator implementations must expose named metadata"
     }
-    inline assert !(std::reflect<ImplSerializableFixture>).decoMeta<Serializable>.encodeDefaults {
+    inline assert !(std::reflect<_ImplSerializableFixture>).decoMeta<Serializable>.encodeDefaults {
         "configured decorator implementations must override defaults"
     }
 }
 
 test "impl Serializable still uses omitted metadata defaults" {
-    inline assert (std::reflect<DefaultSerializableFixture>).hasDeco<Serializable> {
+    inline assert (std::reflect<_DefaultSerializableFixture>).hasDeco<Serializable> {
         "unconfigured decorator implementations must remain valid"
     }
-    inline assert !(std::reflect<DefaultSerializableFixture>).decoMeta<Serializable>.ignoreUnknownFields {
+    inline assert !(std::reflect<_DefaultSerializableFixture>).decoMeta<Serializable>.ignoreUnknownFields {
         "omitted ignoreUnknownFields must use its default"
     }
-    inline assert (std::reflect<DefaultSerializableFixture>).decoMeta<Serializable>.encodeDefaults {
+    inline assert (std::reflect<_DefaultSerializableFixture>).decoMeta<Serializable>.encodeDefaults {
         "omitted encodeDefaults must use its default"
     }
 }
 
 test "decorator impl targets one pack field" {
-    inline assert (std::reflect<DirectFieldDecoratorFixture::name>).hasDeco<SerialName> {
+    inline assert (std::reflect<_DirectFieldDecoratorFixture::name>).hasDeco<SerialName> {
         "field implementation must apply SerialName to the selected field"
     }
-    inline fin name = (std::reflect<DirectFieldDecoratorFixture::name>).decoMeta<SerialName>.value
+    inline fin name = (std::reflect<_DirectFieldDecoratorFixture::name>).decoMeta<SerialName>.value
     inline assert name == "display_name" { "field implementation must preserve configured metadata" }
-    inline assert !(std::reflect<DirectFieldDecoratorFixture::password>).hasDeco<SerialName> {
+    inline assert !(std::reflect<_DirectFieldDecoratorFixture::password>).hasDeco<SerialName> {
         "field implementation must not affect sibling fields"
     }
 }
 
 test "decorator impl accepts a decorator list" {
-    inline assert (std::reflect<GroupedDecoratorFixture::name>).hasDeco<SerialName> {
+    inline assert (std::reflect<_GroupedDecoratorFixture::name>).hasDeco<SerialName> {
         "decorator lists must apply every listed decorator"
     }
-    inline assert (std::reflect<GroupedDecoratorFixture::name>).hasDeco<SerialRequired> {
+    inline assert (std::reflect<_GroupedDecoratorFixture::name>).hasDeco<SerialRequired> {
         "decorator lists must preserve all marker contracts"
     }
 }
 
 test "decorator impl accepts a field target list" {
-    inline assert (std::reflect<GroupedTargetFixture::name>).hasDeco<SerialIgnore> {
+    inline assert (std::reflect<_GroupedTargetFixture::name>).hasDeco<SerialIgnore> {
         "target lists must decorate their first field"
     }
-    inline assert (std::reflect<GroupedTargetFixture::password>).hasDeco<SerialIgnore> {
+    inline assert (std::reflect<_GroupedTargetFixture::password>).hasDeco<SerialIgnore> {
         "target lists must decorate every selected field"
     }
 }
 
 test "decorator and target lists form a cross product" {
-    inline assert (std::reflect<CrossProductDecoratorFixture::name>).hasDeco<SerialName> &&
-        (std::reflect<CrossProductDecoratorFixture::name>).hasDeco<SerialRequired> &&
-        (std::reflect<CrossProductDecoratorFixture::password>).hasDeco<SerialName> &&
-        (std::reflect<CrossProductDecoratorFixture::password>).hasDeco<SerialRequired> {
+    inline assert (std::reflect<_CrossProductDecoratorFixture::name>).hasDeco<SerialName> &&
+        (std::reflect<_CrossProductDecoratorFixture::name>).hasDeco<SerialRequired> &&
+        (std::reflect<_CrossProductDecoratorFixture::password>).hasDeco<SerialName> &&
+        (std::reflect<_CrossProductDecoratorFixture::password>).hasDeco<SerialRequired> {
         "each listed decorator must apply to each listed field"
     }
 }
@@ -1055,10 +1055,10 @@ test "field wildcard applies a decorator to every pack field" {
 }
 
 test "field wildcard accepts a decorator list" {
-    inline assert (std::reflect<GroupedWildcardDecoratorFixture::name>).hasDeco<SerialName> &&
-        (std::reflect<GroupedWildcardDecoratorFixture::name>).hasDeco<SerialRequired> &&
-        (std::reflect<GroupedWildcardDecoratorFixture::password>).hasDeco<SerialName> &&
-        (std::reflect<GroupedWildcardDecoratorFixture::password>).hasDeco<SerialRequired> {
+    inline assert (std::reflect<_GroupedWildcardDecoratorFixture::name>).hasDeco<SerialName> &&
+        (std::reflect<_GroupedWildcardDecoratorFixture::name>).hasDeco<SerialRequired> &&
+        (std::reflect<_GroupedWildcardDecoratorFixture::password>).hasDeco<SerialName> &&
+        (std::reflect<_GroupedWildcardDecoratorFixture::password>).hasDeco<SerialRequired> {
         "decorator lists must apply to every field selected by Pack::*"
     }
 }
@@ -1111,8 +1111,8 @@ test "serial long extraction accepts the minimum value" {
 }
 
 test "serial integer extraction rejects narrowing overflow" {
-    fin valid = std::serialAsInt(SerialValue.Number("2147483647")) catch -1
-    fin overflow = std::serialAsInt(SerialValue.Number("2147483648")) catch -2
+    fin valid = std::_serialAsInt(SerialValue.Number("2147483647")) catch -1
+    fin overflow = std::_serialAsInt(SerialValue.Number("2147483648")) catch -2
     assert valid == 2147483647 { "serialAsInt must accept Int.MAX_VALUE" }
     assert overflow == -2 { "serialAsInt must reject values above Int" }
 }

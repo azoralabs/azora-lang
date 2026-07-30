@@ -161,7 +161,7 @@ class StdlibInjector private constructor(
     private val implicitCollectionTypes = setOf("List", "MutableList", "Set", "MutableSet", "Map", "MutableMap")
 
     /**
-     * Evaluates an `export if COND` condition against the boolean CLI overrides.
+     * Evaluates an `expose if COND` condition against the boolean CLI overrides.
      * `null` (unconditional) and `true` keep the export; an unresolvable or `false`
      * condition drops it. (config.az defaults like `AUTO_IMPORT_MACROS = false` are
      * captured by the `false` fallback when no override is present.)
@@ -203,7 +203,7 @@ class StdlibInjector private constructor(
         val implicitRootItems = LinkedHashMap<String, TopLevel>()
         /**
          * Top-level items that must be injected into every unit unconditionally,
-         * gathered from `export module …` declarations (and the conventional
+         * gathered from `expose mod …` declarations (and the conventional
          * `<root>.core` module). Kept as raw items — in particular a `deepinline
          * zone { … }` block is injected whole so CTCE flattens it downstream,
          * exactly as it would inside its own module.
@@ -214,8 +214,8 @@ class StdlibInjector private constructor(
         /** struct/pack name → its `impl` blocks (methods/oper overloads), injected alongside the pack. */
         val implsByType = LinkedHashMap<String, MutableList<TopLevel.Impl>>()
         /**
-         * Per-module `export import …` re-exports. When a program imports [module]
-         * (or [module] is auto-injected via `export module`), each (path, selected)
+         * Per-module `expose use …` re-exports. When a program imports [module]
+         * (or [module] is auto-injected via `expose mod`), each (path, selected)
          * pair here is also imported transitively — e.g. `std.char` re-exporting
          * `std.char.core` so a bare `import std.char` suffices.
          */
@@ -667,6 +667,15 @@ class StdlibInjector private constructor(
         return errors.toList()
     }
 
+    /** The name a top-level item declares, whatever kind of declaration it is. */
+    private fun declaredNameOf(item: TopLevel): String? = when (item) {
+        is TopLevel.Func -> item.decl.name
+        is TopLevel.FinDecl -> item.name
+        is TopLevel.LetDecl -> item.name
+        is TopLevel.VarDecl -> item.name
+        else -> typeDeclarationName(item)
+    }
+
     private fun typeDeclarationName(item: TopLevel): String? = when (item) {
         is TopLevel.Pack -> item.name
         is TopLevel.Enum -> item.name
@@ -731,11 +740,11 @@ class StdlibInjector private constructor(
             }
             // A module is auto-imported into downstream/user units when it is
             // declared `export expose module …` (the default visibility). The module
-            // name is irrelevant. `export intern`/`export protect` auto-import only
+            // name is irrelevant. `expose confine` auto-imports only
             // within the library/folder, so they are not injected into external units
-            // here; `export confine` is rejected at parse time.
+            // here; `expose confine` is rejected at parse time.
             val alwaysOn = program.isExported && evalExportIf(program.exportCondition, boolOverrides) &&
-                program.moduleVisibility == ModuleVisibility.EXPOSE
+                program.moduleVisibility == ModuleVisibility.PUBLIC
             for (item in program.items) {
                 when (item) {
                     is TopLevel.Func -> register(item.decl.name, item)
@@ -789,7 +798,7 @@ class StdlibInjector private constructor(
                 idx.zoneTypesByQualifiedName.putIfAbsentCompat(export.qualifiedName, export)
                 idx.zoneTypesByShortName.getOrPut(shortName) { mutableListOf() }.add(export)
             }
-            // Record this module's `export import …` re-exports for transitive
+            // Record this module's `expose use …` re-exports for transitive
             // import propagation, and (if always-on) the module name itself.
             for (item in program.items) {
                 if (item is TopLevel.UseImport && item.exported && evalExportIf(item.condition, boolOverrides)) {
@@ -817,8 +826,8 @@ class StdlibInjector private constructor(
     private fun importedItems(program: Program): Map<String, TopLevel> {
         val visible = LinkedHashMap<String, TopLevel>()
         // Seed with the program's own imports, plus the re-exports of any
-        // `export module` library that is auto-injected into every unit — its
-        // `export import …` declarations apply to importers transitively.
+        // `expose mod` library that is auto-injected into every unit — its
+        // `expose use …` declarations apply to importers transitively.
         val seeds = ArrayDeque<Pair<String, String?>>()
         for (item in program.items) {
             if (item is TopLevel.UseImport && !item.exported) seeds.addAll(item.imports)
@@ -909,7 +918,7 @@ class StdlibInjector private constructor(
      * the module did not exist.
      */
     private fun isExternallyImportable(module: String): Boolean =
-        index.moduleVisibility[module]?.let { it == ModuleVisibility.EXPOSE } ?: true
+        index.moduleVisibility[module]?.let { it == ModuleVisibility.PUBLIC } ?: true
 
     private fun itemsVisibleFromImport(path: String, selected: String?): Map<String, TopLevel> {
         // `import path.*` — wildcard: the exact module at `path` (if any) plus every
@@ -1152,6 +1161,68 @@ class StdlibInjector private constructor(
     }
 
     // -----------------------------------------------------------------
+    // -----------------------------------------------------------------
+    // Underscore privacy
+    // -----------------------------------------------------------------
+
+    /**
+     * True when [name] belongs to the module that declares it and nowhere else.
+     *
+     * A leading underscore is the whole rule, but zone members arrive mangled,
+     * so the underscore to look at is the member's, not the separator's.
+     */
+    private fun isPrivateName(name: String): Boolean = memberSegmentOf(name).startsWith("_")
+
+    /**
+     * The member part of a possibly zone-mangled name.
+     *
+     * `zone Secret { func _hidden }` mangles to `Secret___hidden` — a `__`
+     * separator immediately followed by the member's own underscore. Splitting on
+     * the last `__` would swallow that underscore and report the member as
+     * public, so the separator is the last `__` that is not itself preceded by
+     * one: `Secret___hidden` → `_hidden`, `std__math__PI` → `PI`.
+     */
+    private fun memberSegmentOf(name: String): String {
+        for (i in name.length - 2 downTo 1) {
+            if (name[i] == '_' && name[i + 1] == '_' && name[i - 1] != '_') return name.substring(i + 2)
+        }
+        return name
+    }
+
+    /**
+     * Rejects references to another module's private declarations.
+     *
+     * The declaration is still *injected* — a public function that calls its own
+     * module's `_helper` has to keep working for whoever imports it. What is
+     * withheld is the right to name it from outside, which is what privacy
+     * actually means here.
+     */
+    fun validatePrivateAccess(program: Program): List<String> {
+        val imported = importedItems(program)
+        val privateNames = imported.keys.filterTo(mutableSetOf()) { isPrivateName(it) }
+        if (privateNames.isEmpty()) return emptyList()
+
+        // The program's own declarations shadow imports, so a local `_helper`
+        // is the caller's own and never someone else's private one.
+        val ownNames = program.items.mapNotNullTo(mutableSetOf()) { declaredNameOf(it) }
+
+        val referenced = mutableSetOf<String>()
+        for (item in program.items) collectNamesFromItem(item, referenced)
+
+        val errors = linkedSetOf<String>()
+        for (name in referenced) {
+            if (name !in privateNames || name in ownNames) continue
+            val owner = index.moduleOfName[name]
+            val shown = name.replace("__", "::")
+            errors.add(
+                "'$shown' is private to ${owner?.let { "module '$it'" } ?: "the module that declares it"} — " +
+                    "a leading underscore keeps a declaration inside the module that writes it",
+            )
+        }
+        return errors.toList()
+    }
+
+    // -----------------------------------------------------------------
     // Reference collection
     // -----------------------------------------------------------------
 
@@ -1255,7 +1326,7 @@ class StdlibInjector private constructor(
                 // A `meta` is a compile-time macro definition, not a dependency
                 // root. Registering its name keeps it available to the macro
                 // expander, but its arm templates must NOT be treated as injection
-                // dependencies: an arm like `arr![…] => std::arrayOf(…)` references
+                // dependencies: an arm like `arr@[…] => std::arrayOf(…)` references
                 // every collection factory the macro *could* expand to, and pulling
                 // those eagerly drags the whole container library into every program
                 // (including un-optimized builds where dead-code elimination cannot

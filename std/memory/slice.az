@@ -18,20 +18,20 @@ mod std.memory.slice
 zone std {
     @SinceAzora("0.0.3")
     pack Slice<T> {
-        confine var raw: T*
-        shield var count: Int
+        var _raw: T*
+        var count: Int
     }
 
     @Experimental(sinceAzora: "0.0.3")
     impl oper[] for Slice<T> { self&, index ->
         assert index >= 0 && index < self.count { "Slice index out of bounds" }
-        return self.raw[index]
+        return self._raw[index]
     }
 
     @Experimental(sinceAzora: "0.0.3")
     impl oper[]= for Slice<T> { self!, index, value ->
         assert index >= 0 && index < self.count { "Slice index out of bounds" }
-        self.raw[index] = value
+        self._raw[index] = value
     }
 
     impl Slice<T> {
@@ -45,7 +45,7 @@ zone std {
 
         /** Returns the raw underlying `T*`. */
         @SinceAzora("0.0.3")
-        prop ptr: T* = self.raw
+        prop ptr: T* = self._raw
 
         /** Returns a sub-slice `[start, start+count)`; asserts bounds. */
         @Experimental(sinceAzora: "0.0.3")
@@ -53,7 +53,7 @@ zone std {
             assert start >= 0 { "Slice start must be non-negative" }
             assert count >= 0 { "Slice count must be non-negative" }
             assert start + count <= self.count { "Slice range out of bounds" }
-            return Slice(self.raw + start, count)
+            return Slice(self._raw + start, count)
         }
     }
 

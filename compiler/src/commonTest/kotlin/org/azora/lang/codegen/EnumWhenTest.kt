@@ -18,7 +18,7 @@ class EnumWhenTest {
 
     @Test fun enumValuePrints() {
         assertEquals("Color.Red", run("""
-            import std.io
+            use std.io
             enum Color {
                 Red
                 Green
@@ -44,7 +44,7 @@ class EnumWhenTest {
 
     @Test fun enumEquality() {
         assertEquals("true\nfalse", run("""
-            import std.io
+            use std.io
             enum Color {
                 Red
                 Green
@@ -60,7 +60,7 @@ class EnumWhenTest {
 
     @Test fun whenMatchesEnum() {
         assertEquals("stop", run("""
-            import std.io
+            use std.io
             enum Light {
                 Red
                 Yellow
@@ -80,7 +80,7 @@ class EnumWhenTest {
 
     @Test fun whenMatchesEnumClean() {
         assertEquals("slow", run("""
-            import std.io
+            use std.io
             enum Light {
                 Red
                 Yellow
@@ -100,7 +100,7 @@ class EnumWhenTest {
 
     @Test fun whenElseFallback() {
         assertEquals("unknown", run("""
-            import std.io
+            use std.io
             enum E {
                 A
                 B
@@ -117,7 +117,7 @@ class EnumWhenTest {
 
     @Test fun enumWhenExhaustiveNoElse() {
         assertEquals("a", run("""
-            import std.io
+            use std.io
             enum E {
                 A
                 B
@@ -136,7 +136,7 @@ class EnumWhenTest {
 
     @Test fun enumWhenNonExhaustiveErrors() {
         val result = Compiler().compile("""
-            import std.io
+            use std.io
             enum E {
                 A
                 B
@@ -157,7 +157,7 @@ class EnumWhenTest {
 
     @Test fun whenMatchesInteger() {
         assertEquals("two", run("""
-            import std.io
+            use std.io
             func main() {
                 var n = 2
                 when n {
@@ -172,7 +172,7 @@ class EnumWhenTest {
 
     @Test fun whenMultiPattern() {
         assertEquals("small", run("""
-            import std.io
+            use std.io
             func main() {
                 var n = 2
                 when n {
@@ -185,7 +185,7 @@ class EnumWhenTest {
 
     @Test fun enumPassedToFunction() {
         assertEquals("go", run("""
-            import std.io
+            use std.io
             enum Light {
                 Red
                 Yellow
@@ -206,7 +206,7 @@ class EnumWhenTest {
 
     @Test fun enumWhenSurvivesOptimization() {
         assertEquals("stop", run("""
-            import std.io
+            use std.io
             enum Light {
                 Red
                 Yellow
@@ -225,7 +225,7 @@ class EnumWhenTest {
 
     @Test fun enumLoweredToBackends() {
         val result = Compiler().compile("""
-            import std.io
+            use std.io
             enum Color {
                 Red
                 Green

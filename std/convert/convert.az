@@ -16,7 +16,7 @@
 
 mod std.convert
 
-export import std.convert.core
+expose use std.convert.core
 
 zone std {
     /**

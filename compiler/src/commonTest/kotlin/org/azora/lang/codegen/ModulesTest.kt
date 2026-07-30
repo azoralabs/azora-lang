@@ -22,6 +22,56 @@ class ModulesTest {
         return IrInterpreter().interpret(result.ir).trim()
     }
 
+    // -- visibility: public by default, `_` is private ----
+
+    @Test fun everythingIsPublicWithoutSayingSo() {
+        assertEquals("7", run("""
+            use std.io
+            pack Body {
+                var mass: Int
+            }
+            func main() {
+                std::println(Body(7).mass)
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun aLeadingUnderscoreKeepsAMemberInsideItsType() {
+        val result = Compiler().compile("""
+            use std.io
+            pack Body {
+                var _cache: Int
+            }
+            func main() {
+                std::println(Body(7)._cache)
+            }
+        """.trimIndent())
+        assertIs<CompilationResult.Failure>(result)
+        assertTrue(
+            result.errors.any { "private field '_cache' of Body" in it },
+            "expected the underscore to make it private, got: ${'$'}{result.errors}",
+        )
+    }
+
+    @Test fun aTypeReachesItsOwnPrivateMembers() {
+        // The restriction is on other types, not on the declaring one — otherwise
+        // a private field would be write-only.
+        assertEquals("8", run("""
+            use std.io
+            pack Body {
+                var _cache: Int
+            }
+            impl Body {
+                func bumped(): Int {
+                    return self._cache + 1
+                }
+            }
+            func main() {
+                std::println(Body(7).bumped())
+            }
+        """.trimIndent()))
+    }
+
     // -- `mod` is contextual, not reserved ----
 
     @Test fun modDeclaresTheModuleAndIsStillAnOrdinaryName() {
@@ -30,7 +80,7 @@ class ModulesTest {
         // reasonable name for a modulus is not taken away by the module syntax.
         assertEquals("7\n2\n3", run("""
             mod arithmetic
-            import std.io
+            use std.io
 
             pack Wheel {
                 var mod: Int
@@ -52,7 +102,7 @@ class ModulesTest {
     @Test fun theModuleNameMayItselfBeMod() {
         assertEquals("ok", run("""
             mod mod
-            import std.io
+            use std.io
 
             func main() {
                 std::println("ok")
@@ -64,7 +114,7 @@ class ModulesTest {
 
     @Test fun qualifiedZoneFunctionAndConstant() {
         assertEquals("3\n14159", run("""
-            import std.io
+            use std.io
             zone Math {
                 fin PI = 14159
                 func triple(x: Int): Int {
@@ -80,7 +130,7 @@ class ModulesTest {
 
     @Test fun qualifiedZoneAccessForFuncsAndFins() {
         assertEquals("hello\n42", run("""
-            import std.io
+            use std.io
             zone Utils {
                 func greet(): String {
                     return "hello"
@@ -96,7 +146,7 @@ class ModulesTest {
 
     @Test fun bareZoneAccessIsRejected() {
         val result = Compiler().compile("""
-            import std.io
+            use std.io
             zone Const {
                 fin five = 5
             }
@@ -108,14 +158,14 @@ class ModulesTest {
         assertTrue(result.errors.any { "five" in it }, "bare zone access should be rejected: ${'$'}{result.errors}")
     }
 
-    @Test fun importDoesNotCreateBareAlias() {
-        // `import Const` is a no-op for user zones; bare `five` must still be rejected.
+    @Test fun useDoesNotCreateBareAlias() {
+        // `use Const` is a no-op for user zones; bare `five` must still be rejected.
         val result = Compiler().compile("""
-            import std.io
+            use std.io
             zone Const {
                 fin five = 5
             }
-            import Const
+            use Const
             func main() {
                 std::println(five)
             }
@@ -126,7 +176,7 @@ class ModulesTest {
 
     @Test fun friendZoneMergesAcrossBlocks() {
         assertEquals("3\n42", run("""
-            import std.io
+            use std.io
             zone std {
                 func triple(x: Int): Int {
                     return x * 3
@@ -142,27 +192,27 @@ class ModulesTest {
         """.trimIndent()))
     }
 
-    @Test fun nonFriendZoneRedeclarationIsRejected() {
-        // A non-friend `zone X` is exclusive: two declarations collide. The fix
-        // is to make both `zone X` so they merge.
-        val err = assertFailsWith<IllegalStateException> {
-            Compiler().compile("""
-                import std.io
-                zone x {
-                    func a(): Int { return 1 }
-                }
-                zone x {
-                    func b(): Int { return 2 }
-                }
-                func main() { std::println(1) }
-            """.trimIndent())
-        }
-        assertTrue(err.message.orEmpty().contains("zone 'x' is declared more than once"), err.message)
+    @Test fun reopeningAZoneMergesItsContributions() {
+        // A zone is a name a package agrees on, not a block one file owns, so
+        // opening it twice adds to it rather than colliding.
+        assertEquals("1\n2", run("""
+            use std.io
+            zone x {
+                func a(): Int { return 1 }
+            }
+            zone x {
+                func b(): Int { return 2 }
+            }
+            func main() {
+                std::println(x::a())
+                std::println(x::b())
+            }
+        """.trimIndent()))
     }
 
     @Test fun scopeIsJustAnIdentifierNotANamespaceKeyword() {
         assertEquals("7", run("""
-            import std.io
+            use std.io
             func main() {
                 var scope = 7
                 std::println(scope)
@@ -171,7 +221,7 @@ class ModulesTest {
 
         assertFailsWith<IllegalStateException> {
             Compiler().compile("""
-                import std.io
+                use std.io
                 scope Old {
                     func nope(): Int {
                         return 1
@@ -185,8 +235,8 @@ class ModulesTest {
 
     @Test fun exposeFuncWorks() {
         assertEquals("ok", run("""
-            import std.io
-            expose func helper(): String {
+            use std.io
+            func helper(): String {
                 return "ok"
             }
             func main() {
@@ -197,7 +247,7 @@ class ModulesTest {
 
     @Test fun confineFuncWorksInSameFile() {
         assertEquals("private", run("""
-            import std.io
+            use std.io
             confine func secret(): String {
                 return "private"
             }
@@ -209,7 +259,7 @@ class ModulesTest {
 
     @Test fun confinePackFieldCannotBeReadExternally() {
         val result = Compiler().compile("""
-            import std.io
+            use std.io
             pack Secret {
                 confine var value: Int
             }
@@ -225,7 +275,7 @@ class ModulesTest {
     @Test fun moduleKeywordAsPackageAlias() {
         assertEquals("ok", run("""
             mod myapp
-            import std.io
+            use std.io
             func main() {
                 std::println("ok")
             }
@@ -234,8 +284,8 @@ class ModulesTest {
 
     @Test fun visibilityOnPack() {
         assertEquals("42", run("""
-            import std.io
-            expose pack Container {
+            use std.io
+            pack Container {
                 var v: Int
             }
             func main() {

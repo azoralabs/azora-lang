@@ -17,7 +17,7 @@ class SlotsTest {
     @Test fun slotConstructionOnly() {
         // Test just construction — no when matching
         run("""
-            import std.io
+            use std.io
             slot Option {
                 Some(Int)
                 None
@@ -32,7 +32,7 @@ class SlotsTest {
     @Test fun slotWhenNoBindings() {
         // Test when matching without bindings (no-payload variant)
         assertEquals("nothing", run("""
-            import std.io
+            use std.io
             slot Option {
                 Some(Int)
                 None
@@ -49,7 +49,7 @@ class SlotsTest {
 
     @Test fun slotSomeWithPayload() {
         assertEquals("42", run("""
-            import std.io
+            use std.io
             slot Option {
                 Some(Int)
                 None
@@ -66,7 +66,7 @@ class SlotsTest {
 
     @Test fun slotMultiplePayloads() {
         assertEquals("7", run("""
-            import std.io
+            use std.io
             slot Shape {
                 Circle(Int)
                 Rect(Int, Int)
@@ -85,7 +85,7 @@ class SlotsTest {
 
     @Test fun slotNoPayloadVariant() {
         assertEquals("0", run("""
-            import std.io
+            use std.io
             slot Shape {
                 Circle(Int)
                 Rect(Int, Int)

@@ -16,7 +16,7 @@ run in the browser (the playground builds it to WASM).
 ```
 Source → Lexer → Parser → AST Validator
                   ↓
-           Stdlib Injection (only modules you `import`, transitively)
+           Stdlib Injection (only modules you `use`, transitively)
                   ↓
            Symbol Collection → Type Resolution ⇄ CTCE (fixed point) → Alloc/Drop → Effects
                   ↓
@@ -34,7 +34,7 @@ IR in one pass and returns them together. Adding a target
 ### Phase boundaries (see `Compiler.kt`)
 
 1. **Frontend** — Lexer → Parser → (debug instrumentation) → Stdlib injection → AST validation.
-2. **Semantic** — multi-pass: symbol collection → import resolution →
+2. **Semantic** — multi-pass: symbol collection → use resolution →
    type-resolution ⇄ CTCE fixed-point loop → alloc/drop → effect checking.
 3. **IR** — AST → typed IR → optimization (constant fold/propagate, DCE, unused-symbol elimination).
 4. **Backend** — IR → WebAssembly, LLVM (+ interpreter, + IR/AST dump).
@@ -63,10 +63,17 @@ root `README.md`; this section is a keyword/construct reference for compiler wor
 Top-level `fin`/`var`/`let`: `fin` (immutable global) is allowed; `var`/`let`
 globals are rejected (not thread-safe).
 
-### Visibility (declaration prefixes)
+### Visibility
 
-`expose` (public), `confine` (private), `protect` (protected). Applied to
-top-level declarations and members.
+Everything is public by default — there is no keyword for it. A leading
+underscore on the name is what makes a declaration private, and it is private
+to the zone or type that declares it: `pack Body { var _cache: Real }` is
+readable from `Body`'s own `impl` blocks and nowhere else. `confine` narrows a
+declaration to its package.
+
+`expose` is not a visibility modifier. It marks a `mod` or a top-level `use` as
+auto-imported everywhere, so `expose mod std.core` and `expose use std.container`
+reach every unit without being asked for.
 
 ### Functions
 
@@ -138,7 +145,7 @@ checking; `guard cond else { }`; `break`/`continue`.
 | `flow name(p): T { … yield v }` | lazy generator |
 | `@Reactive func name() { }` | rendering-independent reactive owner |
 | `bridge target { func sigs }` | FFI extern declarations |
-| `zone Name { … }` / `friend zone std::math { … }` | named namespace (`Name::member`) / shared namespace contribution |
+| `zone Name { … }` / `zone std::math { … }` | named namespace (`Name::member`); the same path may be opened many times and merges |
 | `test "name" { }` / `test .All "suite"` | one test / bodyless file-level aggregate suite |
 
 ### Object-model members (inside `impl`/`node`/`solo` bodies)
@@ -194,7 +201,7 @@ it is used by `value as String` casts and does not create `.toString`.
 `alloc <expr>` (heap pointer; `alloc [a,b,c]` enables pointer arithmetic),
 `deref ptr` / `*ptr` deref, `*ptr = v` store, `drop <expr>` (advisory free under GC),
 `unsafe { }`, `isolated(expr)` (deep copy), `zone alloc { }` /
-`friend zone alloc { }` (scoped arenas). Pointer arithmetic: `ptr + n`,
+`zone alloc { }` (scoped arenas). Pointer arithmetic: `ptr + n`,
 `ptr - n`, `ptr1 - ptr2`, `ptr1 == ptr2`.
 
 ### Concurrency
@@ -247,7 +254,7 @@ inline if (reflect User).hasDeco<Persisted> {
 ```
 
 `Root`, `DecoTarget`, `HasDeco`, `DecoMetadata`, and `derive` are compiler-predefined in
-`Root.az` and injected into every module without an `import` declaration.
+`Root.az` and injected into every module without a `use` declaration.
 
 `@derive(generator: "name", role: "role", provider: "zone",
 providerModule: "module")` connects a library decorator to an installed compiler
@@ -330,14 +337,14 @@ string interpolation `"$name"`, `"${expr}"`.
 Reserved words in the language (see `frontend/Token.kt`):
 
 - **Bindings**: `var` `fin` `let` `threadlocal`
-- **Functions/types**: `func` `return` `pack` `shield` `enum` `slot` `typealias` `impl` `prot` `node` `leaf` `virt` `repl` `base`
+- **Functions/types**: `func` `return` `pack` `enum` `slot` `typealias` `impl` `prot` `node` `leaf` `virt` `repl` `base`
 - **Control**: `if` `else` `for` `while` `loop` `in` `by` `reverse` `break` `continue` `when` `guard`
 - **Errors/concurrency**: `throw` `try` `catch` `rescue` `fail` `defer` `flow` `yield` `task` `await` `launch`
 - **Memory/FFI/DI**: `alloc` `drop` `unsafe` `isolated` `bridge` `solo` `wrap` `inject`
 - **Reactivity/object model**: `mem` `rem` `ret` `effect` `hook` `prop` `ctor` `dtor`
 - **Metaprogramming**: `inline` `deepinline` `noinline`
-- **Scoping/modules**: `zone` `friend` `mod` `import`
-- **Modifiers/visibility**: `mut` `ref` `out` `shared` `weak` `expose` `confine` `protect`
+- **Scoping/modules**: `zone` `mod` `use` `expose`
+- **Modifiers/visibility**: `mut` `ref` `out` `shared` `weak` `confine` (a leading `_` on the name is private)
 - **Operators-as-keywords**: `oper` `infx` `as` `is` `null` `deco`
 - **Testing**: `test` `assert` `trace`
 
@@ -372,7 +379,7 @@ or type inference happens here.
 - **Statements** (`Stmt`): declarations (`VarDecl`/`FinDecl`/`LetDecl`/`RemDecl`),
   `Assignment`/`MemberAssign`/`IndexAssign`/`DerefAssign`, `Return`, `ExprStmt`,
   `If`, `For`, `While`, `Loop`, `Break`/`Continue` (labeled), `When`, `Zone`/
-  `FriendZone`, `Defer`, `Throw`/`Try`, `Assert`/`Trace`, the `Inline*` family,
+  `Defer`, `Throw`/`Try`, `Assert`/`Trace`, the `Inline*` family,
   `Hook`, `Effect`, …
 - **Top-level** (`TopLevel`): `Func`, `Pack`, `Enum`, `Slot`, `Impl`, `Spec`,
   `Node`, `TypeAlias`, `Fail`, `Deco`, `Solo`, `Wrap`, `Bridge`, `View`,

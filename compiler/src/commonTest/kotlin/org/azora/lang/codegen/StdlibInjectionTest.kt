@@ -24,7 +24,7 @@ import kotlin.test.assertTrue
  *
  * - Library symbols live in zones (`zone std::math { ... }`) and are
  *   name-mangled (`std.math::abs` → `std__math__abs`).
- * - `import std.math` makes that module's symbols visible; references must use
+ * - `use std.math` makes that module's symbols visible; references must use
  *   the qualified `Zone::name` form. Bare references are rejected.
  * - Qualified access without the matching import is rejected.
  */
@@ -39,13 +39,13 @@ class StdlibInjectionTest {
     // ---- qualified math access (requires import) ----
 
     @Test fun qualifiedMathFunctionsWork() =
-        assertEquals("5\n7", run("import std.io\nimport std.math\nfunc main() {\n    std::println(std::math::abs(-5))\n    std::println(std::math::abs(7))\n}"))
+        assertEquals("5\n7", run("use std.io\nuse std.math\nfunc main() {\n    std::println(std::math::abs(-5))\n    std::println(std::math::abs(7))\n}"))
 
     @Test fun printWritesWithoutNewline() =
-        assertEquals("Hello, 7!", run("import std.io\nfunc main() {\n    std::print(\"Hello, \" )\n    std::print(7)\n    std::println(\"!\")\n}"))
+        assertEquals("Hello, 7!", run("use std.io\nfunc main() {\n    std::print(\"Hello, \" )\n    std::print(7)\n    std::println(\"!\")\n}"))
 
     @Test fun stdlibZoneMemberCallsSiblingBare() {
-        val result = Compiler().compile("import std.io\nfunc main() {\n    std::header(\"Title\", 4)\n}")
+        val result = Compiler().compile("use std.io\nfunc main() {\n    std::header(\"Title\", 4)\n}")
         assertIs<CompilationResult.Success>(result, (result as? CompilationResult.Failure)?.errors.toString())
     }
 
@@ -67,16 +67,16 @@ class StdlibInjectionTest {
     }
 
     @Test fun qualifiedMinMaxWork() =
-        assertEquals("2\n9", run("import std.io\nimport std.math\nfunc main() {\n    std::println(std::math::min(2, 9))\n    std::println(std::math::max(2, 9))\n}"))
+        assertEquals("2\n9", run("use std.io\nuse std.math\nfunc main() {\n    std::println(std::math::min(2, 9))\n    std::println(std::math::max(2, 9))\n}"))
 
     @Test fun qualifiedFloorCeilRound() =
-        assertEquals("3\n4\n4", run("import std.io\nimport std.math\nfunc main() {\n    std::println(std::math::floor(3.7))\n    std::println(std::math::ceil(3.2))\n    std::println(std::math::round(3.6))\n}"))
+        assertEquals("3\n4\n4", run("use std.io\nuse std.math\nfunc main() {\n    std::println(std::math::floor(3.7))\n    std::println(std::math::ceil(3.2))\n    std::println(std::math::round(3.6))\n}"))
 
     @Test fun qualifiedFactorialGcd() =
-        assertEquals("120\n6", run("import std.io\nimport std.math\nfunc main() {\n    std::println(std::math::factorial(5))\n    std::println(std::math::gcd(54, 24))\n}"))
+        assertEquals("120\n6", run("use std.io\nuse std.math\nfunc main() {\n    std::println(std::math::factorial(5))\n    std::println(std::math::gcd(54, 24))\n}"))
 
     @Test fun qualifiedConstantInjects() {
-        val out = run("import std.io\nimport std.math\nfunc main() {\n    std::println(std::math::PI)\n}")
+        val out = run("use std.io\nuse std.math\nfunc main() {\n    std::println(std::math::PI)\n}")
         assertTrue(out.startsWith("3.14159"), out)
     }
 
@@ -84,11 +84,11 @@ class StdlibInjectionTest {
 
     @Test fun transitiveStdlibCallsResolve() {
         // std::math::lcm uses std::math::gcd internally — both must inject.
-        assertEquals("36", run("import std.io\nimport std.math\nfunc main() {\n    std::println(std::math::lcm(12, 18))\n}"))
+        assertEquals("36", run("use std.io\nuse std.math\nfunc main() {\n    std::println(std::math::lcm(12, 18))\n}"))
     }
 
     @Test fun userDefinitionShadowsStdlib() =
-        assertEquals("99", run("import std.io\nimport std.math\nfunc abs(x: Int): Int {\n    return 99\n}\nfunc main() {\n    std::println(abs(-5))\n}"))
+        assertEquals("99", run("use std.io\nuse std.math\nfunc abs(x: Int): Int {\n    return 99\n}\nfunc main() {\n    std::println(abs(-5))\n}"))
 
     @Test fun programsWithoutStdlibAreUntouched() {
         val result = Compiler().compile("func main() {\n    var x = 1\n}")
@@ -183,7 +183,7 @@ class StdlibInjectionTest {
         val result = Compiler().compile("""
             mod serializer_marker_test
 
-            import std.serializer
+            use std.serializer
 
             pack UserId {
                 fin value: Long
@@ -201,7 +201,7 @@ class StdlibInjectionTest {
         val result = Compiler().compile("""
             mod serializer_decorator_test
 
-            import std.serializer
+            use std.serializer
 
             @Serializable
             pack UserId {
@@ -220,7 +220,7 @@ class StdlibInjectionTest {
         val result = Compiler().compile("""
             mod serializer_field_impl_test
 
-            import std.serializer
+            use std.serializer
 
             func decorated(): Int {
                 inline if (std::reflect<DirectFieldDecoratorFixture::name>).hasDeco<SerialName> {
@@ -242,7 +242,7 @@ class StdlibInjectionTest {
 
     @Test fun collectionTypeAnnotationsInjectPacksAndImpls() =
         assertEquals("3\n2\n2", run("""
-            import std.io
+            use std.io
             func main() {
                 var xs: List<Int> = arr@[1, 2, 3]
                 var entries: Map<String, Int> = ["a": 1, "b": 2]
@@ -256,18 +256,18 @@ class StdlibInjectionTest {
     // ---- if-expressions (language feature the stdlib relies on) ----
 
     @Test fun ifExpressionInUserCode() =
-        assertEquals("small", run("import std.io\nfunc main() {\n    let label = if 3 > 10 { \"big\" } else { \"small\" }\n    std::println(label)\n}"))
+        assertEquals("small", run("use std.io\nfunc main() {\n    let label = if 3 > 10 { \"big\" } else { \"small\" }\n    std::println(label)\n}"))
 
     @Test fun ifExpressionElseIfChain() =
-        assertEquals("mid", run("import std.io\nfunc pick(x: Int): String = if x > 10 { \"big\" } else if x > 3 { \"mid\" } else { \"small\" }\nfunc main() {\n    std::println(pick(5))\n}"))
+        assertEquals("mid", run("use std.io\nfunc pick(x: Int): String = if x > 10 { \"big\" } else if x > 3 { \"mid\" } else { \"small\" }\nfunc main() {\n    std::println(pick(5))\n}"))
 
     @Test fun expressionBodiedFunction() =
-        assertEquals("14", run("import std.io\nfunc twice(x: Int): Int = x * 2\nfunc main() {\n    std::println(twice(7))\n}"))
+        assertEquals("14", run("use std.io\nfunc twice(x: Int): Int = x * 2\nfunc main() {\n    std::println(twice(7))\n}"))
 
     // ---- bare access is rejected ----
 
     @Test fun bareStdlibAccessIsRejected() {
-        val result = Compiler().compile("import std.io\nimport std.math\nfunc main() {\n    std::println(abs(-5))\n}")
+        val result = Compiler().compile("use std.io\nuse std.math\nfunc main() {\n    std::println(abs(-5))\n}")
         assertIs<CompilationResult.Failure>(result)
         assertTrue(result.errors.any { "undefined" in it && "abs" in it }, "bare access should be rejected: ${'$'}{result.errors}")
     }
@@ -276,7 +276,7 @@ class StdlibInjectionTest {
         val result = Compiler().compile("""
             mod playground
 
-            import std.io
+            use std.io
 
             func main() {
                 println("Hello, world!")
@@ -294,7 +294,7 @@ class StdlibInjectionTest {
 
     @Test fun explicitlyUsedZonesExposeBareMembers() =
         assertEquals("local\nshared", run("""
-            import std.io
+            use std.io
 
             use zone local {
                 func first(): String { return "local" }
@@ -328,22 +328,22 @@ class StdlibInjectionTest {
     }
 
     @Test fun qualifiedAccessWithoutImportIsRejected() {
-        val result = Compiler().compile("import std.io\nfunc main() {\n    std::println(std::math::abs(-5))\n}")
+        val result = Compiler().compile("use std.io\nfunc main() {\n    std::println(std::math::abs(-5))\n}")
         assertIs<CompilationResult.Failure>(result)
         assertTrue(result.errors.any { "abs" in it }, "qualified access without import should be rejected: ${'$'}{result.errors}")
     }
 
     @Test fun wrongZoneQualificationIsRejected() {
         // `abs` lives in std.math, not std — `std::abs` must fail.
-        val result = Compiler().compile("import std.io\nimport std.math\nfunc main() {\n    std::println(std::abs(-5))\n}")
+        val result = Compiler().compile("use std.io\nuse std.math\nfunc main() {\n    std::println(std::abs(-5))\n}")
         assertIs<CompilationResult.Failure>(result)
     }
 
     @Test fun importStdWildcardExposesAllModules() =
-        assertEquals("5\n9", run("import std.io\nimport std.*\nfunc main() {\n    std::println(std::math::abs(-5))\n    std::println(std::math::max(2, 9))\n}"))
+        assertEquals("5\n9", run("use std.io\nuse std.*\nfunc main() {\n    std::println(std::math::abs(-5))\n    std::println(std::math::max(2, 9))\n}"))
 
     @Test fun importStdNamespaceWithoutModuleIsRejected() {
-        val result = Compiler().compile("import std\nfunc main() {}")
+        val result = Compiler().compile("use std\nfunc main() {}")
         assertIs<CompilationResult.Failure>(result)
         assertTrue(result.errors.any { "'std' is a namespace" in it }, result.errors.toString())
     }
@@ -352,15 +352,92 @@ class StdlibInjectionTest {
 
     @Test fun importRejectsDoubleColonSyntax() {
         val err = assertFailsWith<IllegalStateException> {
-            Compiler().compile("import std.io\nimport std.math::abs\nfunc main() {\n    std::println(std::math::abs(-5))\n}")
+            Compiler().compile("use std.io\nuse std.math::abs\nfunc main() {\n    std::println(std::math::abs(-5))\n}")
         }
         assertTrue(err.message.orEmpty().contains("Use dotted import paths"), err.message)
     }
 
     @Test fun dottedStdAccessIsNotNamespaceAccess() {
-        val result = Compiler().compile("import std.io\nfunc main() {\n    std::println(std.math.abs(-5))\n}")
+        val result = Compiler().compile("use std.io\nfunc main() {\n    std::println(std.math.abs(-5))\n}")
         assertIs<CompilationResult.Failure>(result)
         assertTrue(result.errors.any { "std" in it }, "${'$'}{result.errors}")
+    }
+
+    // -- underscore privacy across modules ----
+
+    private val privateLibrary = LibrarySource(
+        "lib/lib.az",
+        """
+            mod lib.lib
+
+            pack Body {
+                var mass: Int
+                var _cache: Int
+            }
+
+            func _helper(): Int { return 41 }
+            func openHelper(): Int { return _helper() }
+
+            zone Secret {
+                func _hidden(): Int { return 7 }
+                func shown(): Int { return _hidden() }
+            }
+
+            pack _Internal { var v: Int }
+        """.trimIndent(),
+    )
+
+    private fun privateAccess(body: String): List<String> {
+        val result = Compiler(listOf(privateLibrary)).compile(
+            """
+            use std.io
+            use lib.lib
+            func main() {
+            $body
+            }
+            """.trimIndent()
+        )
+        assertIs<CompilationResult.Failure>(result, "expected the underscore to be enforced")
+        return result.errors
+    }
+
+    @Test fun anotherModulesPrivateFunctionCannotBeNamed() {
+        assertTrue(
+            privateAccess("    std::println(_helper())").any { "'_helper' is private to module 'lib.lib'" in it },
+            "expected _helper to be private",
+        )
+    }
+
+    @Test fun anotherModulesPrivateZoneMemberCannotBeNamed() {
+        // The mangled form is `Secret___hidden`; the message has to name it the
+        // way the source does.
+        assertTrue(
+            privateAccess("    std::println(Secret::_hidden())").any { "'Secret::_hidden' is private to module 'lib.lib'" in it },
+            "expected Secret::_hidden to be private",
+        )
+    }
+
+    @Test fun anotherModulesPrivateTypeCannotBeNamed() {
+        assertTrue(
+            privateAccess("    std::println(_Internal(3).v)").any { "'_Internal' is private to module 'lib.lib'" in it },
+            "expected _Internal to be private",
+        )
+    }
+
+    @Test fun aModuleStillReachesItsOwnPrivateDeclarations() {
+        // Privacy withholds the right to *name* it; the declaration is still
+        // injected, or a public function that uses it would stop working.
+        val result = Compiler(listOf(privateLibrary)).compile("""
+            use std.io
+            use lib.lib
+            func main() {
+                std::println(openHelper())
+                std::println(Secret::shown())
+                std::println(Body(1, 2).mass)
+            }
+        """.trimIndent())
+        assertIs<CompilationResult.Success>(result, (result as? CompilationResult.Failure)?.errors.toString())
+        assertEquals("41\n7\n1", IrInterpreter().interpret(result.ir).trim())
     }
 
     @Test fun compilerLoadsExternalLibraryModulesPerInstance() {
@@ -375,8 +452,8 @@ class StdlibInjectionTest {
             """.trimIndent(),
         )
         val result = Compiler(listOf(library)).compile("""
-            import std.io
-            import engine.render
+            use std.io
+            use engine.render
             func main() {
                 std::println(engine::answer())
             }
@@ -402,7 +479,7 @@ class StdlibInjectionTest {
         val compiler = Compiler(listOf(library))
 
         val bare = compiler.compile("""
-            import engine.model
+            use engine.model
             func inspect(value: Handle): Int { return value.id }
         """.trimIndent())
         val failure = assertIs<CompilationResult.Failure>(bare)
@@ -412,7 +489,7 @@ class StdlibInjectionTest {
         )
 
         val qualified = compiler.compile("""
-            import engine.model
+            use engine.model
             func inspect(value: engine::Handle): Int { return value.id }
             func main() {}
         """.trimIndent())
@@ -437,7 +514,7 @@ class StdlibInjectionTest {
                 """
                     mod engine.render
 
-                    import engine.shaders
+                    use engine.shaders
                     zone engine {
                         func shaderCount(): Int { return shaderValue() }
                     }
@@ -445,8 +522,8 @@ class StdlibInjectionTest {
             ),
         )
         val result = Compiler(libraries).compile("""
-            import std.io
-            import engine.render
+            use std.io
+            use engine.render
             func main() { std::println(engine::shaderCount()) }
         """.trimIndent())
 

@@ -31,7 +31,7 @@ class ProgramTest {
     @Test
     fun helloWorld() {
         val result = compile("""
-            import std.io
+            use std.io
             func main() {
                 std::println("Hello, world!")
             }
@@ -48,7 +48,7 @@ class ProgramTest {
     @Test
     fun helloWorldWithReturn() {
         val result = compile("""
-            import std.io
+            use std.io
             func main(): Int {
                 std::println("Hello")
                 return 0
@@ -67,7 +67,7 @@ class ProgramTest {
     @Test
     fun arithmeticAndVariables() {
         val output = run("""
-            import std.io
+            use std.io
             func main() {
                 var x = 10
                 fin y = 3
@@ -89,7 +89,7 @@ class ProgramTest {
     @Test
     fun functionCalls() {
         val output = run("""
-            import std.io
+            use std.io
             func double(n: Int): Int {
                 return n * 2
             }
@@ -114,7 +114,7 @@ class ProgramTest {
     @Test
     fun ifElse() {
         val output = run("""
-            import std.io
+            use std.io
             func abs(n: Int): Int {
                 if n < 0 {
                     return 0 - n
@@ -139,7 +139,7 @@ class ProgramTest {
     @Test
     fun stringOperations() {
         val output = run("""
-            import std.io
+            use std.io
             func main() {
                 fin greeting = "Hello"
                 fin name = "World"
@@ -157,7 +157,7 @@ class ProgramTest {
     @Test
     fun globalFin() {
         val output = run("""
-            import std.io
+            use std.io
             fin x = 9
 
             func main() {
@@ -175,7 +175,7 @@ class ProgramTest {
     @Test
     fun scopeResolution() {
         val output = run("""
-            import std.io
+            use std.io
             fin x = 9
 
             func main() {
@@ -201,7 +201,7 @@ class ProgramTest {
     @Test
     fun friendZone() {
         val output = run("""
-            import std.io
+            use std.io
             func main() {
                 zone {
                     var shared = 10
@@ -224,7 +224,7 @@ class ProgramTest {
     @Test
     fun releaseVsDebug() {
         val source = """
-            import std.io
+            use std.io
             func unused() {
                 std::println("never called")
             }
@@ -254,7 +254,7 @@ class ProgramTest {
     @Test
     fun topLevelVarRejected() {
         val errors = expectFailure("""
-            import std.io
+            use std.io
             var x = 5
             func main() {
                 std::println(x)
@@ -271,7 +271,7 @@ class ProgramTest {
     @Test
     fun redeclarationRejected() {
         val errors = expectFailure("""
-            import std.io
+            use std.io
             func main() {
                 var x = 1
                 var x = 2

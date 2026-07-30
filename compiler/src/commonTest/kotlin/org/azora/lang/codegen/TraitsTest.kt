@@ -23,7 +23,7 @@ class TraitsTest {
 
     @Test fun specAndImplFor() {
         assertEquals("Point(3, 4)", run("""
-            import std.io
+            use std.io
             pack Point {
                 var x: Int
                 var y: Int
@@ -45,7 +45,7 @@ class TraitsTest {
 
     @Test fun specWithMultipleMethods() {
         assertEquals("green\n0", run("""
-            import std.io
+            use std.io
             pack Light {
                 var color: String
                 var brightness: Int
@@ -72,7 +72,7 @@ class TraitsTest {
 
     @Test fun specMissingMethodFails() {
         val errors = expectFailure("""
-            import std.io
+            use std.io
             prot Describable {
                 func describe(): String
                 func detail(): String
@@ -92,7 +92,7 @@ class TraitsTest {
 
     @Test fun unknownSpecFails() {
         val errors = expectFailure("""
-            import std.io
+            use std.io
             pack P {
                 var x: Int
             }
@@ -108,7 +108,7 @@ class TraitsTest {
 
     @Test fun implWithoutTraitWorksAsBefore() {
         assertEquals("42", run("""
-            import std.io
+            use std.io
             pack P {
                 var x: Int
             }

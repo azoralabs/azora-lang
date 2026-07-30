@@ -144,7 +144,7 @@ func totalArea(shapes: Array<Shape>): Real {
     return t
 }
 
-fin shapes: Array<Shape> = arr![Circle(1.0) as Shape, Square(2.0) as Shape]
+fin shapes: Array<Shape> = arr@[Circle(1.0) as Shape, Square(2.0) as Shape]
 ```
 
 - Store a concrete value as a spec via `value as Spec`.

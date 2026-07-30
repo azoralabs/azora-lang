@@ -16,8 +16,8 @@
 
 mod std.io.convert
 
-import std.convert
-import std.container.array
+use std.convert
+use std.container.array
 
 /**
  * @file std/io/convert

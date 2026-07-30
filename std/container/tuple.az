@@ -16,10 +16,10 @@
 
 mod std.container.tuple
 
-import std.serializer
-import std.convert
-import std.traits
-import std.reflection
+use std.serializer
+use std.convert
+use std.traits
+use std.reflection
 
 /**
  * @file std/container/tuple

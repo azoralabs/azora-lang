@@ -16,7 +16,7 @@
 
 mod std.random
 
-import std.container.array
+use std.container.array
 
 /**
  * @file std/random

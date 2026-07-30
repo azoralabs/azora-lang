@@ -254,21 +254,25 @@ class TypeResolver(private val table: SymbolTable) {
         return referring.args[position]
     }
 
-    private fun canAccessMember(ownerType: String, visibility: Visibility): Boolean = when (visibility) {
-        Visibility.EXPOSE -> true
-        Visibility.SHIELD -> true // shielded fields are publicly readable (readonly-style)
-        Visibility.CONFINE -> currentReceiverType == ownerType
-        Visibility.PROTECT -> currentReceiverType == ownerType
+    /**
+     * Whether [name] on [ownerType] is reachable from where we are.
+     *
+     * A leading underscore is what makes a member private, and it is private to
+     * the type that declares it: only that type's own `impl` blocks may touch
+     * it. Putting the restriction in the name means a reader sees it at the use
+     * site, not only at the declaration.
+     */
+    private fun canAccessMember(ownerType: String, name: String, visibility: Visibility): Boolean = when {
+        name.startsWith("_") -> currentReceiverType == ownerType
+        visibility == Visibility.CONFINE -> currentReceiverType == ownerType
+        else -> true
     }
 
     private fun reportInaccessible(line: Int, kind: String, ownerType: String, name: String, visibility: Visibility) {
-        val label = when (visibility) {
-            Visibility.EXPOSE -> "exposed"
-            Visibility.SHIELD -> "shielded"
-            Visibility.PROTECT -> "protected"
-            Visibility.CONFINE -> "confined"
-        }
-        errors.add("line $line: cannot access $label $kind '$name' on $ownerType")
+        val reason =
+            if (name.startsWith("_")) "private $kind '$name' of $ownerType — the leading underscore keeps it inside $ownerType"
+            else "confined $kind '$name' of $ownerType"
+        errors.add("line $line: cannot access $reason")
     }
 
     /**
@@ -353,7 +357,7 @@ class TypeResolver(private val table: SymbolTable) {
      * than just an extra pair of braces.
      */
     private fun resolveBody(stmts: List<Stmt>, returnType: IrType) {
-        val hasZones = stmts.any { it is Stmt.Zone }
+        val hasZones = stmts.any { it is Stmt.Zone && it.shared }
 
         if (!hasZones) {
             for (stmt in stmts) resolveStmt(stmt, returnType)
@@ -364,7 +368,7 @@ class TypeResolver(private val table: SymbolTable) {
         val zoneScope = mutableMapOf<String, VariableSymbol>()
 
         for (stmt in stmts) {
-            if (stmt is Stmt.Zone) {
+            if (stmt is Stmt.Zone && stmt.shared) {
                 table.pushScope()
                 for ((_, sym) in zoneScope) table.defineVariable(sym)
                 // `zone unsafe { }` is still the boundary it was; sharing the
@@ -615,7 +619,7 @@ class TypeResolver(private val table: SymbolTable) {
                         errors.add("line ${stmt.line}: cannot mutate '${stmt.name}' through an immutable 'self&' receiver (use 'self!')")
                         return
                     }
-                    if (!canAccessMember(targetType.name, field.visibility)) {
+                    if (!canAccessMember(targetType.name, stmt.name, field.visibility)) {
                         reportInaccessible(stmt.line, "field", targetType.name, stmt.name, field.visibility)
                         return
                     }
@@ -1182,7 +1186,7 @@ class TypeResolver(private val table: SymbolTable) {
                         val struct = table.lookupStruct(targetType.name)
                         val field = struct?.field(expr.name)
                         if (field != null) {
-                            if (!canAccessMember(targetType.name, field.visibility)) {
+                            if (!canAccessMember(targetType.name, expr.name, field.visibility)) {
                                 reportInaccessible(expr.line, "field", targetType.name, expr.name, field.visibility)
                                 null
                             } else {
@@ -1194,7 +1198,7 @@ class TypeResolver(private val table: SymbolTable) {
                             if (mangled != null) {
                                 val func = table.lookupFunction(mangled)
                                 if (func != null && func.params.size == 1 && func.memberCallStyle != MemberCallStyle.METHOD) {
-                                    if (!canAccessMember(targetType.name, func.visibility)) {
+                                    if (!canAccessMember(targetType.name, expr.name, func.visibility)) {
                                         reportInaccessible(expr.line, "property", targetType.name, expr.name, func.visibility)
                                         null
                                     } else {
@@ -1274,7 +1278,7 @@ class TypeResolver(private val table: SymbolTable) {
                             errors.add("line ${expr.line}: property '${expr.name}' must be accessed without parentheses")
                             return null
                         }
-                        if (!canAccessMember(targetType.name, func.visibility)) {
+                        if (!canAccessMember(targetType.name, expr.name, func.visibility)) {
                             reportInaccessible(expr.line, "method", targetType.name, expr.name, func.visibility)
                             return null
                         }
@@ -1520,7 +1524,7 @@ class TypeResolver(private val table: SymbolTable) {
                     IrType.Nullable(IrType.Int)
                 } else if (inner is IrType.Named) {
                     val field = table.lookupStruct(inner.name)?.field(expr.name)
-                    if (field != null && !canAccessMember(inner.name, field.visibility)) {
+                    if (field != null && !canAccessMember(inner.name, expr.name, field.visibility)) {
                         reportInaccessible(expr.line, "field", inner.name, expr.name, field.visibility)
                         null
                     } else {

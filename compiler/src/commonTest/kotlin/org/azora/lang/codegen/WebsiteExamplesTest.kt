@@ -22,11 +22,11 @@ class WebsiteExamplesTest {
 
     private fun run(source: String): String = IrInterpreter().interpret(compile(source).ir).trim()
 
-    @Test fun ch1_hello() = assertEquals("Hello, Azora!", run("""import std.io
+    @Test fun ch1_hello() = assertEquals("Hello, Azora!", run("""use std.io
 func main() { std::println("Hello, Azora!") }"""))
 
     @Test fun ch2_program() = assertEquals("Hello, Azora!\nversion 1.0.0", run("""
-        import std.io
+        use std.io
         fin VERSION = "1.0.0"
         func greet(name: String): String {
             return "Hello, " + name + "!"
@@ -38,7 +38,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch3_bindings() = assertEquals("15\n100\n3", run("""
-        import std.io
+        use std.io
         func main() {
             var count = 0
             count = 10
@@ -52,7 +52,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch4_literals() = assertEquals("255\n63\n10\n1000000\n3.14\n1500.0", run("""
-        import std.io
+        use std.io
         func main() {
             std::println(0xFF)
             std::println(0o77)
@@ -64,7 +64,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch4_char() = assertEquals("true\ntrue", run("""
-        import std.io
+        use std.io
         func main() {
             fin grade = 'A'
             std::println(grade == 'A')
@@ -73,7 +73,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch5_arithmetic() = assertEquals("5\n6\n20\n3\n2\n-7", run("""
-        import std.io
+        use std.io
         func main() {
             std::println(2 + 3)
             std::println(10 - 4)
@@ -85,7 +85,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch5_string_ops() = assertEquals("hello world\nababab", run("""
-        import std.io
+        use std.io
         func main() {
             std::println("hello " + "world")
             std::println("ab" * 3)
@@ -93,7 +93,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch5_compound() = assertEquals("3", run("""
-        import std.io
+        use std.io
         func main() {
             var n = 10
             n += 5
@@ -106,7 +106,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch5_ranges() = assertEquals("15\n5", run("""
-        import std.io
+        use std.io
         func main() {
             var sum = 0
             for i in 1..5 { sum += i }
@@ -118,7 +118,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch6_interpolation() = assertEquals("Hello, Azora!\n3 + 4 = 7\nfirst is 10\ncount is 3", run("""
-        import std.io
+        use std.io
         func main() {
             var name = "Azora"
             std::println("Hello, ${'$'}name!")
@@ -132,7 +132,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch6_concat() = assertEquals("Hello, World!\n13", run("""
-        import std.io
+        use std.io
         func main() {
             var first = "Hello"
             var second = "World"
@@ -143,7 +143,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch7_arrays() = assertEquals("5\n5", run("""
-        import std.io
+        use std.io
         func main() {
             var a = arr@[1, 2, 3]
             a.add(4)
@@ -154,7 +154,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch7_iteration() = assertEquals("apple\nbanana\ncherry\nate 3 fruits", run("""
-        import std.io
+        use std.io
         func main() {
             var fruits = ["apple", "banana", "cherry"]
             var total = 0
@@ -167,7 +167,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch8_classify() = assertEquals("B\nF", run("""
-        import std.io
+        use std.io
         func classify(score: Int): String {
             if score >= 90 { return "A" }
             else if score >= 80 { return "B" }
@@ -181,7 +181,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch8_loop_break() = assertEquals("8\n42", run("""
-        import std.io
+        use std.io
         func main() {
             var i = 0
             var found = -1
@@ -204,7 +204,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch9_functions() = assertEquals("25\n42", run("""
-        import std.io
+        use std.io
         func square(n: Int) { std::println(n * n) }
         func double(n: Int) { return n * 2 }
         func main() {
@@ -214,7 +214,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch9_recursion() = assertEquals("120", run("""
-        import std.io
+        use std.io
         func factorial(n: Int): Int {
             if n <= 1 { return 1 }
             return n * factorial(n - 1)
@@ -223,7 +223,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch10_structs() = assertEquals("0\n15", run("""
-        import std.io
+        use std.io
         pack Counter {
             var count: Int
             fin label: String
@@ -238,7 +238,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch10_structs_in_array() = assertEquals("3\n0", run("""
-        import std.io
+        use std.io
         pack Point {
             var x: Int
             var y: Int
@@ -254,7 +254,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch11_zone() = assertEquals("3\n1", run("""
-        import std.io
+        use std.io
         func main() {
             var x = 1
             zone {
@@ -266,7 +266,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch11_shadowing() = assertEquals("2\n1\n1", run("""
-        import std.io
+        use std.io
         func main() {
             var x = 1
             zone {
@@ -279,7 +279,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch11_friend_zone() = assertEquals("15", run("""
-        import std.io
+        use std.io
         func main() {
             zone {
                 var total = 0
@@ -293,7 +293,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch12_inline_fin() = assertEquals("8", run("""
-        import std.io
+        use std.io
         func main() {
             inline fin SIZE = 8
             std::println(SIZE)
@@ -301,7 +301,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch12_inline_fin_computed() = assertEquals("64", run("""
-        import std.io
+        use std.io
         func main() {
             inline fin AREA = 8 * 8
             std::println(AREA)
@@ -309,7 +309,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch12_inline_if() = assertEquals("== debug mode ==", run("""
-        import std.io
+        use std.io
         inline fin DEBUG = true
 
         deepinline if DEBUG {
@@ -324,7 +324,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch12_inline_block() = assertEquals("hello", run("""
-        import std.io
+        use std.io
         func main() {
             inline {
                 fin GREETING = "hello"
@@ -334,7 +334,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch12_inline_func() = assertEquals("42", run("""
-        import std.io
+        use std.io
         inline func double(x: Int): Int {
             return x * 2
         }
@@ -342,7 +342,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch12_deepinline_noinline() = assertEquals("limit exceeded", run("""
-        import std.io
+        use std.io
         func main() {
             deepinline {
                 fin LIMIT = 10
@@ -356,7 +356,7 @@ func main() { std::println("Hello, Azora!") }"""))
     @Test fun ch13_test_assert() {
         // Tests run after main; assert must pass. Output is "running".
         assertEquals("running", run("""
-            import std.io
+            use std.io
             func add(a: Int, b: Int): Int { return a + b }
             test "addition works" {
                 fin result = add(2, 3)
@@ -367,7 +367,7 @@ func main() { std::println("Hello, Azora!") }"""))
     }
 
     @Test fun ch13_divide_assert() = assertEquals("5", run("""
-        import std.io
+        use std.io
         func divide(a: Int, b: Int): Int {
             assert b != 0 { "division by zero" }
             return a / b
@@ -376,7 +376,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch13_trace() = assertEquals("[DEBUG] processing value\n10", run("""
-        import std.io
+        use std.io
         func process(x: Int): Int {
             trace { "processing value" }
             return x * 2
@@ -385,7 +385,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch13_inline_assert() = assertEquals("16", run("""
-        import std.io
+        use std.io
         func main() {
             inline fin SIZE = 16
             inline assert SIZE > 0 { "SIZE must be positive" }
@@ -395,7 +395,7 @@ func main() { std::println("Hello, Azora!") }"""))
 
     @Test fun ch14_targets() {
         val r = compile("""
-            import std.io
+            use std.io
             func add(a: Int, b: Int): Int {
                 return a + b
             }
@@ -411,7 +411,7 @@ func main() { std::println("Hello, Azora!") }"""))
     // ── Chapters 26–35 (modern language) ────────────────────────────────────
 
     @Test fun ch26_maps_read() = assertEquals("1\n3", run("""
-        import std.io
+        use std.io
         func main() {
             var m = ["a": 1, "b": 2, "c": 3]
             std::println(m["a"])
@@ -420,7 +420,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch26_maps_update() = assertEquals("99", run("""
-        import std.io
+        use std.io
         func main() {
             var m = ["a": 1, "b": 2, "c": 3]
             m["b"] = 99
@@ -429,7 +429,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch26_maps_int_keys() = assertEquals("30\n40", run("""
-        import std.io
+        use std.io
         func main() {
             var scores = arr@[10: 10, 20: 20, 30: 30]
             scores[40] = 40
@@ -439,7 +439,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch27_slot_destructure() = assertEquals("42", run("""
-        import std.io
+        use std.io
         slot Option {
             Some(Int)
             None
@@ -454,7 +454,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch27_slot_multi_payload() = assertEquals("7", run("""
-        import std.io
+        use std.io
         slot Shape {
             Circle(Int)
             Rect(Int, Int)
@@ -471,7 +471,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch29_alloc_scalar() = assertEquals("42\n99", run("""
-        import std.io
+        use std.io
         func main() {
             var p: Int* = alloc 42
             std::println(*p)
@@ -481,7 +481,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch29_pointer_arithmetic() = assertEquals("10\n20\n99\n3", run("""
-        import std.io
+        use std.io
         func main() {
             var p: Int* = alloc arr@[10, 20, 30]
             std::println(*p)
@@ -494,7 +494,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch29_isolated() = assertEquals("1", run("""
-        import std.io
+        use std.io
         func main() {
             var original = arr@[1, 2, 3]
             var copy = isolated(original)
@@ -504,7 +504,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch30_error_set() = assertEquals("Bad", run("""
-        import std.io
+        use std.io
         fail E { Bad }
         func f(): Int ?! E {
             fail E.Bad
@@ -520,7 +520,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch31_flow() = assertEquals("0\n1\n4\n9", run("""
-        import std.io
+        use std.io
         flow squares(n: Int): Int {
             for i in 0..<n { yield i * i }
         }
@@ -530,7 +530,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch31_channel() = assertEquals("10\n20", run("""
-        import std.io
+        use std.io
         func produce(ch: Channel): Int {
             ch.send(10)
             ch.send(20)
@@ -547,7 +547,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch32_solo_get() = assertEquals("42", run("""
-        import std.io
+        use std.io
         solo Config {
             var value: Int = 42
             func get(): Int { return self.value }
@@ -558,7 +558,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch32_solo_shared_instance() = assertEquals("1\n2\n3", run("""
-        import std.io
+        use std.io
         solo Counter {
             var n: Int = 0
             func inc(): Int {
@@ -576,7 +576,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch33_bridge_math() = assertEquals("4.0\n0.0", run("""
-        import std.io
+        use std.io
         bridge .C {
             func sqrt(x: Real): Real
             func sin(x: Real): Real
@@ -588,7 +588,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch33_bridge_pow() = assertEquals("1024.0", run("""
-        import std.io
+        use std.io
         bridge .C {
             func pow(val: Real, exp: Real): Real
         }
@@ -598,7 +598,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch34_rem() = assertEquals("0\n42", run("""
-        import std.io
+        use std.io
         @Reactive
         func main() {
             rem count: Int = 0
@@ -609,7 +609,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch34_effect() = assertEquals("hello\ndone", run("""
-        import std.io
+        use std.io
         @Reactive
         func main() {
             rem msg: String = "hello"
@@ -621,7 +621,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch34_reactiveFunction() = assertEquals("Hello, World!", run("""
-        import std.io
+        use std.io
         @Reactive
         func greet(name: String) {
             std::println("Hello, " + name + "!")
@@ -633,7 +633,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch35_variadic() = assertEquals("3\n10", run("""
-        import std.io
+        use std.io
         func variadicSum<...T>(first: Int, rest: ...T): Int {
             var total = first
             for x in rest { total = total + x }
@@ -646,7 +646,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch35_deco() = assertEquals("hi", run("""
-        import std.io
+        use std.io
         deco Log { fin msg: String }
         @Log("entry")
         func greet(): String { return "hi" }
@@ -656,8 +656,8 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch35_visibility() = assertEquals("ok\nprivate", run("""
-        import std.io
-        expose func helper(): String { return "ok" }
+        use std.io
+        func helper(): String { return "ok" }
         confine func secret(): String { return "private" }
         func main() {
             std::println(helper())
@@ -666,7 +666,7 @@ func main() { std::println("Hello, Azora!") }"""))
     """.trimIndent()))
 
     @Test fun ch35_threadlocal() = assertEquals("42", run("""
-        import std.io
+        use std.io
         threadlocal fin answer = 42
         func main() {
             std::println(answer)

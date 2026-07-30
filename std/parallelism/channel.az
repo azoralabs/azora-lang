@@ -38,9 +38,9 @@ zone std {
      */
     @SinceAzora("0.0.1")
     pack Channel<T> {
-        confine var queue: Queue<T> = Queue<T>()
-        confine var mutex: Mutex = Mutex(0)
-        confine var closed: Bool = false
+        var _queue: Queue<T> = Queue<T>()
+        var _mutex: Mutex = Mutex(0)
+        var _closed: Bool = false
     }
 
     impl Channel<T> {
@@ -112,7 +112,7 @@ zone std {
          */
         @SinceAzora("0.0.1")
         func close() {
-            self.closed = true
+            self._closed = true
         }
     }
 }

@@ -63,7 +63,7 @@ class LlvmTypeOperationMatrixExecTest(
             NumericType("Decimal", "D"),
         )
 
-        private fun program(body: String): String = "import std.io\nfunc main() {\n$body\n}"
+        private fun program(body: String): String = "use std.io\nfunc main() {\n$body\n}"
 
         private fun expressionCase(name: String, expected: String, expression: String): Case =
             Case(name, expected, program("std::println($expression)"))

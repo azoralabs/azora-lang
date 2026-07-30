@@ -36,8 +36,8 @@ zone std {
      */
     @SinceAzora("0.0.3")
     pack Arc<T> {
-        shield var raw: T*
-        shield var count: Int
+        var raw: T*
+        var count: Int
     }
 
     @Experimental(sinceAzora: "0.0.3")

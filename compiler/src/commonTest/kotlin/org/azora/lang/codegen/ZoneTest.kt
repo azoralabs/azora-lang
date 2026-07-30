@@ -21,7 +21,7 @@ class ZoneTest {
     @Test
     fun friendZone_sharedScope() {
         val output = run("""
-            import std.io
+            use std.io
             fin x = 9
 
             func main() {
@@ -48,7 +48,7 @@ class ZoneTest {
     @Test
     fun friendZone_multipleDeclarations() {
         val output = run("""
-            import std.io
+            use std.io
             func main() {
                 zone {
                     var a = 10
@@ -67,7 +67,7 @@ class ZoneTest {
     @Test
     fun friendZone_mutation() {
         val output = run("""
-            import std.io
+            use std.io
             func main() {
                 zone {
                     var x = 1
@@ -86,7 +86,7 @@ class ZoneTest {
     @Test
     fun friendZone_notVisibleOutside() {
         val output = run("""
-            import std.io
+            use std.io
             func main() {
                 var x = 42
                 zone {
@@ -101,9 +101,9 @@ class ZoneTest {
     }
 
     @Test
-    fun zone_regularScopesAreIndependent() {
+    fun zone_siblingBlocksShareOneScope() {
         val output = run("""
-            import std.io
+            use std.io
             func main() {
                 var x = 1
                 zone {
@@ -116,14 +116,34 @@ class ZoneTest {
             }
         """.trimIndent())
 
-        // Second zone sees parent x=1, NOT the first zone's x=2
-        assertEquals("2\n1", output)
+        // Sibling zones share one scope, so the second sees the binding the
+        // first made. That sharing is the whole point of a zone — otherwise it
+        // would just be an extra pair of braces.
+        assertEquals("2\n2", output)
+    }
+
+    @Test
+    fun zone_bindingsDoNotReachTheCodeBetweenBlocks() {
+        val output = run("""
+            use std.io
+            func main() {
+                var x = 1
+                zone {
+                    var inner = 9
+                    std::println(inner)
+                }
+                std::println(x)
+            }
+        """.trimIndent())
+
+        // Ordinary code between zones does not see what a zone declared.
+        assertEquals("9\n1", output)
     }
 
     @Test
     fun scopeResolution_withZonesAndGlobals() {
         val output = run("""
-            import std.io
+            use std.io
             fin x = 9
 
             func main() {

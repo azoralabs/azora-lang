@@ -16,7 +16,7 @@ class LambdaTest {
 
     @Test fun lambdaAssignedAndCalled() {
         assertEquals("10", run("""
-            import std.io
+            use std.io
             func main() {
                 var double = { x: Int -> x * 2 }
                 std::println(double(5))
@@ -26,7 +26,7 @@ class LambdaTest {
 
     @Test fun higherOrderFunction() {
         assertEquals("16", run("""
-            import std.io
+            use std.io
             func apply(f: (Int) -> Int, x: Int): Int {
                 return f(x)
             }
@@ -38,7 +38,7 @@ class LambdaTest {
 
     @Test fun closureCapturesParameter() {
         assertEquals("15", run("""
-            import std.io
+            use std.io
             func makeAdder(n: Int): (Int) -> Int {
                 return { x: Int -> x + n }
             }
@@ -51,7 +51,7 @@ class LambdaTest {
 
     @Test fun closureCapturesLocalVar() {
         assertEquals("7", run("""
-            import std.io
+            use std.io
             func main() {
                 var offset = 3
                 var add = { x: Int -> x + offset }
@@ -62,7 +62,7 @@ class LambdaTest {
 
     @Test fun lambdaInInterpolation() {
         assertEquals("25", run("""
-            import std.io
+            use std.io
             func apply(f: (Int) -> Int, x: Int): Int {
                 return f(x)
             }
@@ -74,7 +74,7 @@ class LambdaTest {
 
     @Test fun noParamLambda() {
         assertEquals("hi", run("""
-            import std.io
+            use std.io
             func run(g: () -> String): String {
                 return g()
             }
@@ -86,7 +86,7 @@ class LambdaTest {
 
     @Test fun callableKindsAreStorablePackFields() {
         assertEquals("5\n2", run("""
-            import std.io
+            use std.io
 
             pack Calculator {
                 fin add: Func[Int, Int] -> Int =
@@ -105,7 +105,7 @@ class LambdaTest {
 
     @Test fun withSuppliesContextualReceivers() {
         assertEquals("5", run("""
-            import std.io
+            use std.io
 
             fin add: Func[Int, Int] -> Int =
                 func { x: Int, y: Int -> x + y }
@@ -120,7 +120,7 @@ class LambdaTest {
 
     @Test fun ordinaryAndContextualParametersCanBeCombined() {
         assertEquals("10\n14", run("""
-            import std.io
+            use std.io
 
             fin scale: Func[Int](Int) -> Int =
                 func(value: Int) { factor: Int -> value * factor }
@@ -136,7 +136,7 @@ class LambdaTest {
 
     @Test fun nonGenericVariadicFunctionsValidateEachElement() {
         assertEquals("3", run("""
-            import std.io
+            use std.io
             func sum(...values: Int): Int {
                 var result = 0
                 for value in values {

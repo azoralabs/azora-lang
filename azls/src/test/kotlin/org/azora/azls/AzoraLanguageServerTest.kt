@@ -96,7 +96,7 @@ class AzoraLanguageServerTest {
     @Test
     fun importedFunctionsAreHighlightedButUnknownCallsAreNot() {
         val source = """
-            import std.io
+            use std.io
             func main() {
                 std::println("known")
                 notDeclared("unknown")

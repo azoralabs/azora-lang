@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-export mod std.convert.core
+expose mod std.convert.core
 
 use zone std {
     @Experimental(sinceAzora: "0.0.4")

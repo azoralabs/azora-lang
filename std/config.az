@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-export mod std.config
+expose mod std.config
 
 deepinline zone {
     @SinceAzora("0.0.4")

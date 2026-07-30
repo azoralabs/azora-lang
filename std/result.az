@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-export mod std.result
+expose mod std.result
 
 /**
  * @file std/result

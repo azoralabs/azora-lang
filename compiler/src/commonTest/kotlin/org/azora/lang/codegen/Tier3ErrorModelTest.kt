@@ -32,7 +32,7 @@ class Tier3ErrorModelTest {
 
     @Test fun failableFunctionThrowsAndCaught() {
         assertEquals("Bad", run("""
-            import std.io
+            use std.io
             fail E {
                 Bad
             }
@@ -52,7 +52,7 @@ class Tier3ErrorModelTest {
 
     @Test fun failableFunctionSucceedsNormally() {
         assertEquals("10", run("""
-            import std.io
+            use std.io
             fail E {
                 Bad
             }
@@ -99,7 +99,7 @@ class Tier3ErrorModelTest {
 
     @Test fun catchFallbackExpression() {
         assertEquals("-1\n5", run("""
-            import std.io
+            use std.io
             fail MathError {
                 DivByZero
             }
@@ -122,7 +122,7 @@ class Tier3ErrorModelTest {
 
     @Test fun errorVariantAccessibleAsString() {
         assertEquals("NotFound", run("""
-            import std.io
+            use std.io
             fail Lookup {
                 NotFound
                 OutOfRange
@@ -139,7 +139,7 @@ class Tier3ErrorModelTest {
 
     @Test fun failDeferRunsOnlyOnError() {
         assertEquals("only on fail\nalways\nBad", run("""
-            import std.io
+            use std.io
             fail E {
                 Bad
             }
@@ -161,7 +161,7 @@ class Tier3ErrorModelTest {
 
     @Test fun failDeferSkippedOnNormalReturn() {
         assertEquals("always\n5", run("""
-            import std.io
+            use std.io
             fail E {
                 Bad
             }
@@ -179,7 +179,7 @@ class Tier3ErrorModelTest {
     @Test fun tFlagEnforcementRejectsWrongErrorSet() {
         // A `T ?! E` function may only fail with errors from set E.
         val result = Compiler().compile("""
-            import std.io
+            use std.io
             fail E {
                 Bad
             }
@@ -200,7 +200,7 @@ class Tier3ErrorModelTest {
 
     @Test fun tFlagEnforcementAcceptsMatchingErrorSet() {
         assertEquals("ok", run("""
-            import std.io
+            use std.io
             fail E {
                 Bad
             }
@@ -220,7 +220,7 @@ class Tier3ErrorModelTest {
 
     @Test fun bracketedErrorSetAcceptsEveryDeclaredSet() {
         assertEquals("Q\nS", run("""
-            import std.io
+            use std.io
             fail A { Q W E }
             fail B { S D F }
 
@@ -263,7 +263,7 @@ class Tier3ErrorModelTest {
 
     @Test fun rescueSuppressesErrorAndContinues() {
         assertEquals("rescued!\nok", run("""
-            import std.io
+            use std.io
             fail E {
                 Bad
             }

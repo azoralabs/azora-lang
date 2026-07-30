@@ -16,7 +16,7 @@
 
 mod std.allocator
 
-import std.convert
+use std.convert
 
 /**
  * @file std/allocator/allocator
@@ -107,11 +107,11 @@ zone std {
      */
     @SinceAzora("0.0.2")
     pack Arena {
-        shield var capacity: Int = 0,
-        shield var offset: Int = 0,
-        shield var allocCount: Int = 0,
-        shield var peakUsage: Int = 0,
-        shield var totalAllocated: Int = 0
+        var capacity: Int = 0,
+        var offset: Int = 0,
+        var allocCount: Int = 0,
+        var peakUsage: Int = 0,
+        var totalAllocated: Int = 0
     }
 
     impl Allocator for Arena
@@ -283,12 +283,12 @@ zone std {
      */
     @SinceAzora("0.0.2")
     pack Pool {
-        shield var slotSize: Int = 0
-        shield var slotCount: Int = 0
-        shield var freeCount: Int = 0
-        shield var freeStack: Int* = alloc Int[0]
-        shield var acquiredCount: Int = 0
-        shield var peakAcquired: Int = 0
+        var slotSize: Int = 0
+        var slotCount: Int = 0
+        var freeCount: Int = 0
+        var freeStack: Int* = alloc Int[0]
+        var acquiredCount: Int = 0
+        var peakAcquired: Int = 0
     }
 
     @SinceAzora("0.0.2")
@@ -433,10 +433,10 @@ zone std {
      */
     @SinceAzora("0.0.2")
     pack StackAllocator {
-        shield var capacity: Int = 0
-        shield var offset: Int = 0
-        shield var allocCount: Int = 0
-        shield var peakUsage: Int = 0
+        var capacity: Int = 0
+        var offset: Int = 0
+        var allocCount: Int = 0
+        var peakUsage: Int = 0
     }
 
     @SinceAzora("0.0.2")

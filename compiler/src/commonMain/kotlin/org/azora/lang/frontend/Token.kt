@@ -84,7 +84,7 @@ enum class TokenType {
     IDENTIFIER,
 
     // Keywords
-    VAR, FIN, LET, FUNC, RETURN, IF, ELSE, INLINE, DEEPINLINE, NOINLINE, ZONE, FRIEND,
+    VAR, FIN, LET, FUNC, RETURN, IF, ELSE, INLINE, DEEPINLINE, NOINLINE, ZONE,
     TEST, ASSERT, TRACE, PANIC, META,
     FOR, WHILE, LOOP, IN, BREAK, CONTINUE,
     PACK, ENUM, WHEN,
@@ -109,7 +109,6 @@ enum class TokenType {
     QMARK_PLUS_PLUS, QMARK_MINUS_MINUS,
     NULL,
     USE,
-    IMPORT,
     // `for x by N in ...` (step) and `reverse for` / `for x in reverse ...`
     BY,
     REVERSE,
@@ -143,11 +142,10 @@ enum class TokenType {
     REF, OUT, MUT, SHARED, WEAK,
     // Visibility: `expose` (public), `confine` (private), `protect` (protected).
     // `shield` — a pack/field modifier: externally read-only, internally mutable.
-    // `opaque pack` forces every field to confine.
-    EXPOSE, CONFINE, PROTECT, SHIELD, OPAQUE,
-    // Module: `mod Name`. `export mod Name` publishes the module so that
-    // its declarations are auto-imported into every unit (like `std.core`).
-    EXPORT,
+    // Visibility: public by default, `confine` narrows to the package. A
+    // leading underscore on the name is what makes a member private.
+    // `expose` marks a `mod` or a `use` as auto-imported everywhere.
+    EXPOSE, CONFINE,
     // Thread-local storage: `threadlocal var x = 0` / `threadlocal fin y = 42`.
     THREADLOCAL,
     // `deco Name [bind Spec] { fields }` — decorator/annotation declaration.

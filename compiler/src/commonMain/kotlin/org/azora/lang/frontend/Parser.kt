@@ -72,12 +72,6 @@ class Parser(
         TokenType.NEWLINE, TokenType.EOF,
     )
 
-    /**
-     * Non-friend `zone X` declarations seen in this program (name -> count).
-     * A non-friend zone is exclusive: declaring `zone X` twice (even across
-     * concatenated modules) is a redeclaration. `friend zone X` is exempt (it
-     * merges across blocks/modules). Checked at the end of [parse].
-     */
 
     /** Enclosing labeled/anonymous zones while parsing (outermost first). */
     private data class ZoneFrame(val label: String?, val isInline: Boolean)
@@ -226,24 +220,25 @@ class Parser(
     fun parse(): Program {
         skipNewlines()
         var isExported = false
-        var moduleVisibility = ModuleVisibility.EXPOSE
+        var moduleVisibility = ModuleVisibility.PUBLIC
         var exportCondition: Expr? = null
         val moduleName = if (isModuleHeaderAhead()) {
-            if (match(TokenType.EXPORT)) isExported = true
+            // `expose mod x` — auto-imported everywhere, rather than only where
+            // it is asked for. It says nothing about visibility: a module is
+            // reachable by default, and `confine` is what narrows it.
+            if (match(TokenType.EXPOSE)) isExported = true
             if (check(TokenType.IF)) {
-                // `export if COND \n module …` — comptime-conditional export.
+                // `expose if COND \n mod …` — comptime-conditional auto-import.
                 advance() // 'if'
                 exportCondition = parseExpr()
-                consume(TokenType.NEWLINE, "Expected a newline after 'export if <condition>'")
+                consume(TokenType.NEWLINE, "Expected a newline after 'expose if <condition>'")
             } else {
                 moduleVisibility = when {
-                    match(TokenType.EXPOSE) -> ModuleVisibility.EXPOSE
-                    match(TokenType.PROTECT) -> ModuleVisibility.PROTECT
                     match(TokenType.CONFINE) -> ModuleVisibility.CONFINE
-                    else -> ModuleVisibility.EXPOSE
+                    else -> ModuleVisibility.PUBLIC
                 }
                 if (isExported && moduleVisibility == ModuleVisibility.CONFINE) {
-                    error("'export confine module' is contradictory: a confined module is private and cannot be exported")
+                    error("'expose confine mod' is contradictory: a confined module is package-private and cannot be auto-imported everywhere")
                 }
             }
             parseModule()
@@ -582,11 +577,8 @@ class Parser(
     }
 
     private fun parseVisibility(): Visibility = when {
-        match(TokenType.EXPOSE) -> Visibility.EXPOSE
         match(TokenType.CONFINE) -> Visibility.CONFINE
-        match(TokenType.PROTECT) -> Visibility.PROTECT
-        match(TokenType.SHIELD) -> Visibility.SHIELD
-        else -> Visibility.EXPOSE
+        else -> Visibility.PUBLIC
     }
 
     // -----------------------------------------------------------------------
@@ -595,7 +587,7 @@ class Parser(
 
     private fun parseTopLevel(): TopLevel {
         val annotations = parseAnnotations()
-        // Optional visibility modifier: expose (default), confine (private), protect/protected.
+        // Optional visibility modifier; public unless `confine` narrows it to the package.
         val visibility = parseVisibility()
         val start = peek()
         return when {
@@ -619,12 +611,6 @@ class Parser(
             check(TokenType.TEST) -> parseTestDecl(annotations)
             check(TokenType.DECO) -> parseDeco(annotations)
             check(TokenType.PACK) -> parsePack(annotations, visibility)
-            // `opaque pack X { … }` — every field is forced to confine; no field
-            // visibility modifier may be written.
-            check(TokenType.OPAQUE) && peekNext()?.type == TokenType.PACK -> {
-                advance()
-                parsePack(annotations, visibility, isOpaque = true)
-            }
             check(TokenType.ENUM) -> parseEnumDecl(annotations)
             check(TokenType.FAIL) -> parseFailDecl(annotations)
             check(TokenType.IMPL) -> parseImpl(annotations = annotations)
@@ -668,21 +654,22 @@ class Parser(
             // for Type` / `impl zone for Type` bodies (which reparse members as
             // top-level items); desugars to a `fin` so it mangles to `Type__name`.
             check(TokenType.PROP) -> parsePropAsFin(annotations, visibility)
-            check(TokenType.IMPORT) -> parseImport()
-            // `export import …` — re-export the import so importers of this module
-            // also receive it transitively (e.g. std.macro re-exporting std.container).
-            check(TokenType.EXPORT) && peekNext()?.type == TokenType.IMPORT -> {
-                advance() // 'export'
-                parseImport(exported = true)
+            check(TokenType.USE) -> parseUse()
+            // `expose use …` — the import travels on to whoever imports this
+            // module, so a package can offer one entry point instead of making
+            // every caller name its internals (e.g. std.macro and std.container).
+            check(TokenType.EXPOSE) && peekNext()?.type == TokenType.USE -> {
+                advance() // 'expose'
+                parseUse(exported = true)
             }
-            // `export if COND \n import …` — comptime-conditional re-export. The
-            // newline before `import` is mandatory.
-            check(TokenType.EXPORT) && peekNext()?.type == TokenType.IF -> {
-                advance() // 'export'
+            // `expose if COND \n use …` — comptime-conditional. The newline
+            // before `use` is mandatory.
+            check(TokenType.EXPOSE) && peekNext()?.type == TokenType.IF -> {
+                advance() // 'expose'
                 advance() // 'if'
                 val cond = parseExpr()
-                consume(TokenType.NEWLINE, "Expected a newline after 'export if <condition>'")
-                parseImport(exported = true, condition = cond)
+                consume(TokenType.NEWLINE, "Expected a newline after 'expose if <condition>'")
+                parseUse(exported = true, condition = cond)
             }
             check(TokenType.FIN) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); noteBridgeTargetConstant(name, init); TopLevel.FinDecl(name, type, init, start.line, start.column, annotations, visibility = visibility) }
             check(TokenType.VAR) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); TopLevel.VarDecl(name, type, init, start.line, start.column, annotations, visibility = visibility) }
@@ -1012,13 +999,13 @@ class Parser(
             if (tokens.getOrNull(i)?.type != TokenType.R_BRACKET) return false
             return elem.lexeme == "Type" || hasInline
         }
-        // `Array<Elem>` — an `inline` compile-time value list (`inline fin ranks: Array<Int> = arr![…]`).
+        // `Array<Elem>` — an `inline` compile-time value list (`inline fin ranks: Array<Int> = arr@[…]`).
         if (t?.type == TokenType.IDENTIFIER && t.lexeme == "Array") return hasInline
         return false
     }
 
     /**
-     * `[inline] let X: [Elem] = <list>` / `inline fin X: Array<Elem> = arr![…]` —
+     * `[inline] let X: [Elem] = <list>` / `inline fin X: Array<Elem> = arr@[…]` —
      * records a compile-time list; emits no runtime item.
      */
     private fun parseTypeListBinding(): TopLevel {
@@ -1054,7 +1041,7 @@ class Parser(
                 do {
                     values.add(when {
                         // Plain `[…]` groups *types* only; string/int value lists must
-                        // be written `arr![…]`.
+                        // be written `arr@[…]`.
                         check(TokenType.STRING_LITERAL) || check(TokenType.INT_LITERAL) -> {
                             if (!isMacro) error("value lists must use 'arr@[…]'; plain '[…]' only groups types at line ${peek().line}")
                             if (check(TokenType.STRING_LITERAL)) advance().literal as String
@@ -1330,9 +1317,8 @@ class Parser(
      */
     private fun parsePack(
         annotations: List<Annotation> = emptyList(),
-        visibility: Visibility = Visibility.EXPOSE,
+        visibility: Visibility = Visibility.PUBLIC,
         isBridge: Boolean = false,
-        isOpaque: Boolean = false,
     ): TopLevel.Pack {
         val start = peek()
         consume(TokenType.PACK, "Expected 'pack'")
@@ -1344,7 +1330,6 @@ class Parser(
         val tp = parseTypeParams()
         val minLen = parseVariadicWhereClause()
         val enforceNumFields = annotations.any { it.name == "EnforceNumFields" }
-        val effectiveVisibility = if (visibility == Visibility.SHIELD) Visibility.EXPOSE else visibility
         if (!check(TokenType.L_BRACE)) {
             consumeNewline()
             return TopLevel.Pack(
@@ -1354,14 +1339,12 @@ class Parser(
                 line = start.line,
                 column = start.column,
                 annotations = annotations,
-                visibility = effectiveVisibility,
-                shielded = visibility == Visibility.SHIELD,
+                visibility = visibility,
                 variadicParam = tp.variadic,
                 minVariadicLength = minLen,
                 constParams = tp.constParams,
                 fieldTemplate = null,
                 isBridge = isBridge,
-                isOpaque = isOpaque,
             )
         }
         consume(TokenType.L_BRACE, "Expected '{' after pack name")
@@ -1379,7 +1362,7 @@ class Parser(
                 }
                 fieldTemplate = parseVariadicFieldTemplate()
             } else {
-                fields.add(parsePackField(enforceNumFields = enforceNumFields, forceConfine = isOpaque))
+                fields.add(parsePackField(enforceNumFields = enforceNumFields))
                 match(TokenType.COMMA)
             }
             skipNewlines()
@@ -1393,13 +1376,11 @@ class Parser(
             line = start.line,
             column = start.column,
             annotations = annotations,
-            visibility = effectiveVisibility,
-            shielded = visibility == Visibility.SHIELD,
+            visibility = visibility,
             variadicParam = tp.variadic,
             minVariadicLength = minLen,
             constParams = tp.constParams,
             fieldTemplate = fieldTemplate,
-            isOpaque = isOpaque,
         )
     }
 
@@ -1448,19 +1429,9 @@ class Parser(
         enforceNumFields: Boolean = false,
         preparsedAnnotations: List<Annotation>? = null,
         requireFin: Boolean = false,
-        forceConfine: Boolean = false,
     ): PackField {
         val annotations = preparsedAnnotations ?: parseAnnotations()
-        val wroteVisibility = peek().type in setOf(
-            TokenType.EXPOSE, TokenType.CONFINE, TokenType.PROTECT, TokenType.SHIELD,
-        )
-        val parsedVisibility = preparsedVisibility ?: parseVisibility()
-        if (forceConfine) {
-            if (wroteVisibility && parsedVisibility != Visibility.CONFINE) {
-                error("opaque pack fields are confine; remove the visibility modifier at line ${peek().line}")
-            }
-        }
-        val visibility = if (forceConfine) Visibility.CONFINE else parsedVisibility
+        val visibility = preparsedVisibility ?: parseVisibility()
         if (requireFin && !check(TokenType.FIN)) {
             error("Decorator fields must be declared with 'fin' at line ${peek().line}")
         }
@@ -2214,7 +2185,7 @@ class Parser(
      * overloads inside an impl. Registered as the methods `index` / `indexSet`, so
      * `target[i]` / `target[i] = v` resolve to `Type_index(self, i)` / `Type_indexSet(self, i, v)`.
      */
-    private fun parseOperMethod(start: Token, visibility: Visibility = Visibility.EXPOSE): FuncDecl {
+    private fun parseOperMethod(start: Token, visibility: Visibility = Visibility.PUBLIC): FuncDecl {
         consume(TokenType.OPER, "Expected 'oper'")
         consume(TokenType.L_BRACKET, "Expected '[' after 'oper'")
         consume(TokenType.R_BRACKET, "Expected ']' after 'oper['")
@@ -2570,7 +2541,7 @@ class Parser(
     }
 
     /** `solo Name { fields; methods }` — a singleton struct with one shared instance. */
-    private fun parseSolo(visibility: Visibility = Visibility.EXPOSE, annotations: List<Annotation> = emptyList()): TopLevel.Solo {
+    private fun parseSolo(visibility: Visibility = Visibility.PUBLIC, annotations: List<Annotation> = emptyList()): TopLevel.Solo {
         val start = consume(TokenType.SOLO, "Expected 'solo'")
         val name = consume(TokenType.IDENTIFIER, "Expected solo name").lexeme
         consume(TokenType.L_BRACE, "Expected '{' after solo name")
@@ -3217,24 +3188,21 @@ class Parser(
     }
 
     /**
-     * True when a module header begins here: an optional `export`, an optional
-     * `expose`/`intern`/`protect`/`confine` visibility, then `mod`. Lets those
-     * words keep their ordinary meaning as declaration modifiers everywhere else.
+     * True when a module header begins here: an optional `expose`, an optional
+     * `confine`, then `mod`. Lets those words keep their ordinary meaning as
+     * declaration modifiers everywhere else.
      */
     private fun isModuleHeaderAhead(): Boolean {
         var i = current
-        if (tokens.getOrNull(i)?.type == TokenType.EXPORT) i++
-        // `export if COND \n mod …` — the newline before `mod` is mandatory.
+        if (tokens.getOrNull(i)?.type == TokenType.EXPOSE) i++
+        // `expose if COND \n mod …` — the newline before `mod` is mandatory.
         if (tokens.getOrNull(i)?.type == TokenType.IF) {
             var j = i + 1
             while (j < tokens.size && tokens[j].type != TokenType.NEWLINE) j++
             // exactly one newline, then `mod`
             return tokens.getOrNull(j)?.type == TokenType.NEWLINE && isModuleWordAt(j + 1)
         }
-        if (tokens.getOrNull(i)?.type in setOf(
-                TokenType.EXPOSE, TokenType.PROTECT, TokenType.CONFINE
-            )
-        ) i++
+        if (tokens.getOrNull(i)?.type == TokenType.CONFINE) i++
         return isModuleWordAt(i)
     }
 
@@ -3258,7 +3226,7 @@ class Parser(
         isVirtual: Boolean = false,
         isTask: Boolean = false,
         isUnsafe: Boolean = false,
-        visibility: Visibility = Visibility.EXPOSE,
+        visibility: Visibility = Visibility.PUBLIC,
     ): FuncDecl {
         val start = peek()
         val keyword = when {
@@ -4397,7 +4365,7 @@ class Parser(
      * Each coroutine (main + each task/launch/flow) gets its own independent copy.
      * Desugars to a regular top-level VarDecl/FinDecl with a `__tl__` name prefix.
      */
-    private fun parseThreadLocal(visibility: Visibility = Visibility.EXPOSE): TopLevel {
+    private fun parseThreadLocal(visibility: Visibility = Visibility.PUBLIC): TopLevel {
         val start = consume(TokenType.THREADLOCAL, "Expected 'threadlocal'")
         return when {
             check(TokenType.VAR) -> {
@@ -4443,25 +4411,25 @@ class Parser(
      * `import zone path` — same import form with an explicit namespace marker.
      * `import path.*` — import all items below a path.
      * `import path.{child, other}` — import grouped child paths.
-     * `import path.item` — import a dotted path; semantic passes decide whether the
+     * `use path.item` — import a dotted path; semantic passes decide whether the
      * path names a module or a selected item. `::` is only for zone access
      * expressions, never import syntax.
      */
-    private fun parseImport(exported: Boolean = false, condition: Expr? = null): TopLevel {
-        val start = consume(TokenType.IMPORT, "Expected 'import'")
-        // `import zone std` — the optional marker reads naturally and is skipped.
+    private fun parseUse(exported: Boolean = false, condition: Expr? = null): TopLevel {
+        val start = consume(TokenType.USE, "Expected 'use'")
+        // `use zone std` — the optional marker reads naturally and is skipped.
         if (check(TokenType.ZONE) && peekNext()?.type == TokenType.IDENTIFIER) {
             advance()
         }
         val imports = mutableListOf<Pair<String, String?>>() // (zoneName, itemName or null for all)
         do {
-            val base = StringBuilder(consumeIdentifierLike("Expected zone name after 'import'"))
+            val base = StringBuilder(consumeIdentifierLike("Expected zone name after 'use'"))
             var completed = false
             usePath@ while (match(TokenType.DOT)) {
                 when {
                     match(TokenType.STAR) -> {
-                        // `import path.*` — wildcard. Marked with the "*" selector so
-                        // it stays distinct from a plain `import path` (which must name
+                        // `use path.*` — wildcard. Marked with the "*" selector so
+                        // it stays distinct from a plain `use path` (which must name
                         // an actual module file, not just a namespace/folder).
                         imports.add(base.toString() to "*")
                         completed = true
@@ -4480,7 +4448,7 @@ class Parser(
 
             val zoneName = base.toString()
             if (match(TokenType.DOUBLE_COLON)) {
-                error("Use dotted import paths such as 'import module.item' or 'import module.{a, b}'; '::' is for zone access expressions")
+                error("Use dotted paths such as 'use module.item' or 'use module.{a, b}'; '::' is for zone access expressions")
             } else {
                 addDottedUsePath(zoneName, imports)
             }
@@ -4938,7 +4906,7 @@ class Parser(
         val body = parseBlock()
         consume(TokenType.R_BRACE, "Expected '}'")
         consumeNewline()
-        return Stmt.Zone(body, start.line, start.column, alloc = isAlloc)
+        return Stmt.Zone(body, start.line, start.column, alloc = isAlloc, shared = true)
     }
 
     private fun parseNoInline(): Stmt.NoInline {
@@ -6233,8 +6201,8 @@ class Parser(
                 if (check(TokenType.COMMA)) {
                     // Tuple-literal sugar `(a, b, …)` was removed: parentheses only
                     // group a single expression. Build tuples with `std::tupleOf(…)`
-                    // or the `tup!` macro.
-                    error("tuple literal '(a, b, …)' is not supported; use 'std::tupleOf(a, b, …)' or 'tup!(a, b, …)' at line ${tok.line}")
+                    // or the `tup@` macro.
+                    error("tuple literal '(a, b, …)' is not supported; use 'std::tupleOf(a, b, …)' or 'tup@(a, b, …)' at line ${tok.line}")
                 }
                 consume(TokenType.R_PAREN, "Expected ')'")
                 Expr.Grouping(first, tok.line, tok.column)
@@ -6242,7 +6210,7 @@ class Parser(
             TokenType.L_BRACKET -> {
                 advance()
                 if (check(TokenType.R_BRACKET)) {
-                    error("array literal '[]' is not valid; use 'arr![]' at line ${tok.line}")
+                    error("array literal '[]' is not valid; use 'arr@[]' at line ${tok.line}")
                 }
                 val first = parseExpr()
                 if (match(TokenType.COLON)) {
@@ -6257,8 +6225,8 @@ class Parser(
                     Expr.MapLit(entries, tok.line, tok.column)
                 } else {
                     // Value array literals are not a bracket sugar — `[…]` only groups
-                    // types. Values use the `arr!` macro: `[1, 2, 3]`.
-                    error("array literal '[…]' is not valid; use 'arr![…]' at line ${tok.line}")
+                    // types. Values use the `arr@` macro: `[1, 2, 3]`.
+                    error("array literal '[…]' is not valid; use 'arr@[…]' at line ${tok.line}")
                 }
             }
             TokenType.L_BRACE -> parseLambda(tok.line, tok.column)

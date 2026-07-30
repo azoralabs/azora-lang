@@ -96,12 +96,7 @@ class Lexer(private val source: String) {
             "out" to TokenType.OUT,
             "expose" to TokenType.EXPOSE,
             "confine" to TokenType.CONFINE,
-            "protect" to TokenType.PROTECT,
-            "shield" to TokenType.SHIELD,
-            "opaque" to TokenType.OPAQUE,
-            "protected" to TokenType.PROTECT,
-                        "export" to TokenType.EXPORT,
-            "threadlocal" to TokenType.THREADLOCAL,
+                        "threadlocal" to TokenType.THREADLOCAL,
             "pack" to TokenType.PACK,
             "enum" to TokenType.ENUM,
             "when" to TokenType.WHEN,
@@ -119,7 +114,6 @@ class Lexer(private val source: String) {
             "is" to TokenType.IS,
             "null" to TokenType.NULL,
             "use" to TokenType.USE,
-            "import" to TokenType.IMPORT,
             "true" to TokenType.TRUE,
             "false" to TokenType.FALSE
         )

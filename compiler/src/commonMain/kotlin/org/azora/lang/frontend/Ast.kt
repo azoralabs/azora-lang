@@ -599,7 +599,17 @@ sealed class Stmt {
         /** `zone alloc { }` — allocations inside are tracked and freed at exit. */
         val alloc: Boolean = false,
         /** Explicit opt-in boundary for operations whose contracts cannot be proven safe. */
-        val unsafe: Boolean = false
+        val unsafe: Boolean = false,
+        /**
+         * True for a zone the source actually wrote.
+         *
+         * Sibling written zones share one scope, so a binding made in the first
+         * is visible in the second. The compiler also builds zones of its own —
+         * to scope an inlined body, an `unsafe { }` block, a desugared for-else
+         * — and those must stay independent, or two inlined calls would collide
+         * on their locals.
+         */
+        val shared: Boolean = false
     ) : Stmt()
 
     /**
@@ -1259,21 +1269,30 @@ sealed class TypeAnnotation {
  * @property name the parameter name
  * @property type the structured type reference as written in source
  */
-enum class Visibility { EXPOSE, PROTECT, CONFINE, SHIELD }
+/**
+ * How widely a declaration can be reached.
+ *
+ * [PUBLIC] is the default and needs no keyword: a declaration is reachable
+ * unless something says otherwise. [CONFINE] narrows it to the declaring
+ * package. Anything narrower than that is spelled with a leading underscore on
+ * the name itself, which keeps the restriction where a reader is already
+ * looking.
+ */
+enum class Visibility { PUBLIC, CONFINE }
 
 /**
- * Visibility of a whole module (`[export] [expose|intern|protect|confine] module x`).
+ * Visibility of a whole module (`[expose] [confine] mod x`).
  *
  * - [EXPOSE] (default): importable everywhere, including downstream libraries.
  * - [PROTECT]: importable only within the declaring folder.
  * - [CONFINE]: private — not importable anywhere (e.g. a test file or an app's
  *   `main` module).
  *
- * Orthogonal to `export` (see [Program.isExported]): `export` auto-imports the
- * module into every unit within its visibility scope. `export confine` is
+ * Orthogonal to `export` (see [Program.isExported]): `expose` auto-imports the
+ * module into every unit within its visibility scope. `expose confine` is
  * contradictory and rejected at parse time.
  */
-enum class ModuleVisibility { EXPOSE, PROTECT, CONFINE }
+enum class ModuleVisibility { PUBLIC, CONFINE }
 
 /**
  * Compile-time metadata for a declaration's enclosing zone, surfaced by
@@ -1342,7 +1361,7 @@ data class PackField(
     val type: TypeRef,
     val mutable: Boolean,
     val default: Expr?,
-    val visibility: Visibility = Visibility.EXPOSE,
+    val visibility: Visibility = Visibility.PUBLIC,
     val annotations: List<Annotation> = emptyList(),
 )
 
@@ -1409,7 +1428,7 @@ data class FuncDecl(
     /** Declaration requires an explicit unsafe calling context. */
     val isUnsafe: Boolean = false,
     /** Visibility exported to import/member access rules. */
-    val visibility: Visibility = Visibility.EXPOSE,
+    val visibility: Visibility = Visibility.PUBLIC,
     /** Receiver mutability for impl/extension methods: `self&` (immutable) or `self!` (mutable). */
     val receiverModifier: ParamModifier = "mut ref",
     /** Receiver name for impl/extension methods (conventionally `self`, but arbitrary). */
@@ -1592,17 +1611,17 @@ sealed class TopLevel {
     data class Func(val decl: FuncDecl) : TopLevel()
 
     /** Runtime top-level mutable binding (`var`). Survives CTCE. */
-    data class VarDecl(val name: String, val type: TypeRef?, val initializer: Expr, val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList(), val threadlocal: Boolean = false, val visibility: Visibility = Visibility.EXPOSE) : TopLevel() {
+    data class VarDecl(val name: String, val type: TypeRef?, val initializer: Expr, val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList(), val threadlocal: Boolean = false, val visibility: Visibility = Visibility.PUBLIC) : TopLevel() {
         /** Convenience: the type name as written in source, or null. */
         val typeName: String? get() = type?.displayName()
     }
     /** Runtime top-level deeply immutable binding (`fin`). Survives CTCE. */
-    data class FinDecl(val name: String, val type: TypeRef?, val initializer: Expr, val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList(), val threadlocal: Boolean = false, val visibility: Visibility = Visibility.EXPOSE) : TopLevel() {
+    data class FinDecl(val name: String, val type: TypeRef?, val initializer: Expr, val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList(), val threadlocal: Boolean = false, val visibility: Visibility = Visibility.PUBLIC) : TopLevel() {
         /** Convenience: the type name as written in source, or null. */
         val typeName: String? get() = type?.displayName()
     }
     /** Runtime top-level immutable binding (`let`). Survives CTCE. */
-    data class LetDecl(val name: String, val type: TypeRef?, val initializer: Expr, val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList(), val visibility: Visibility = Visibility.EXPOSE) : TopLevel() {
+    data class LetDecl(val name: String, val type: TypeRef?, val initializer: Expr, val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList(), val visibility: Visibility = Visibility.PUBLIC) : TopLevel() {
         /** Convenience: the type name as written in source, or null. */
         val typeName: String? get() = type?.displayName()
     }
@@ -1729,9 +1748,8 @@ sealed class TopLevel {
         val line: Int,
         val column: Int = 0,
         val annotations: List<Annotation> = emptyList(),
-        val visibility: Visibility = Visibility.EXPOSE,
+        val visibility: Visibility = Visibility.PUBLIC,
         /** `shield pack X {}` prevents external extensions from taking `mut ref self`. */
-        val shielded: Boolean = false,
         /** Name of the variadic type param (`T` in `pack Tuple<...T>`), or null for a fixed pack. */
         val variadicParam: String? = null,
         /** Minimum element count from a `where <var>.length >= N` clause, or null if unconstrained. */
@@ -1749,12 +1767,6 @@ sealed class TopLevel {
          * No struct is emitted; it exists as a reflectable/declared type only.
          */
         val isBridge: Boolean = false,
-        /**
-         * `opaque pack X` — every field is forced to [Visibility.CONFINE] and no
-         * other field visibility modifier may be written. The pack’s fields are
-         * an implementation detail invisible outside the declaring file.
-         */
-        val isOpaque: Boolean = false,
     ) : TopLevel()
 
     /** `deco Name [bind Spec] { fields }` — an annotation type and optional derived prot contract. */
@@ -1778,7 +1790,7 @@ sealed class TopLevel {
     data class Bridge(val target: String, val funcs: List<BridgeSig>, val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList()) : TopLevel()
 
     /** `solo Name { fields; methods }` — declares a singleton struct with one lazily-created shared instance. */
-    data class Solo(val name: String, val fields: List<PackField>, val methods: List<FuncDecl>, val line: Int, val column: Int = 0, val visibility: Visibility = Visibility.EXPOSE, val annotations: List<Annotation> = emptyList()) : TopLevel()
+    data class Solo(val name: String, val fields: List<PackField>, val methods: List<FuncDecl>, val line: Int, val column: Int = 0, val visibility: Visibility = Visibility.PUBLIC, val annotations: List<Annotation> = emptyList()) : TopLevel()
 
     /** A singleton registration inside a `wrap` block: `solo Type(args) [bind Spec]`. */
     data class WrapReg(val typeName: String, val args: List<Expr>, val bindSpec: String? = null, val line: Int = 0, val column: Int = 0)
@@ -1791,7 +1803,7 @@ sealed class TopLevel {
      * accessible without the `ZoneName::` prefix. [imports] is a list of (zoneName, itemName)
      * pairs where itemName is null for "import all".
      *
-     * When [exported] is true (written `export import …`), the import is re-exported:
+     * When [exported] is true (written `expose use …`), the import is re-exported:
      * any module that imports this module also transitively imports [imports]. This lets
      * a library forward its dependencies (e.g. `std.char` re-exporting `std.char.core`).
      */
@@ -1929,7 +1941,7 @@ sealed class TopLevel {
  *
  * @property moduleName the declared module name, or `null` if no `module` declaration is present
  * @property items the list of top-level items (functions and compile-time constructs)
- * @property isExported whether the module was declared `export module …`, making its
+ * @property isExported whether the module was declared `expose mod …`, making its
  *   declarations auto-imported into every unit (as `std.core` is)
  */
 data class Program(
@@ -1941,19 +1953,19 @@ data class Program(
      */
     val localPackNames: Set<String> = emptySet(),
     /**
-     * `export module …` — the module's declarations are published to every
+     * `expose mod …` — the module's declarations are published to every
      * compilation unit that uses this library, with no explicit `import`.
      */
     val isExported: Boolean = false,
     /**
-     * Module-level visibility from `[expose|intern|protect|confine] module …`
-     * (default [ModuleVisibility.EXPOSE]). Bounds how far the module — and its
-     * `export` auto-import — reaches.
+     * Module-level visibility from `[confine] mod …`
+     * (default [ModuleVisibility.PUBLIC]). Bounds how far the module — and its
+     * `expose` auto-import — reaches.
      */
-    val moduleVisibility: ModuleVisibility = ModuleVisibility.EXPOSE,
+    val moduleVisibility: ModuleVisibility = ModuleVisibility.PUBLIC,
     /**
      * Comptime condition on `export if COND \n module …` (null = unconditional
-     * `export module`). Evaluated against config constants + CLI defines; when it
+     * `expose mod`). Evaluated against config constants + CLI defines; when it
      * folds to `false`, [isExported] is cleared before stdlib indexing.
      */
     val exportCondition: Expr? = null,
@@ -1987,7 +1999,7 @@ data class Program(
     val usesMacros: Boolean = false,
     /**
      * Named type declaration → source-level zone path for declarations inside
-     * `zone X` / `friend zone X`. Declarations in `use zone` remain bare and
+     * `zone X`. Declarations in `use zone` remain bare and
      * therefore do not appear here.
      */
     val zoneTypeNamespaces: Map<String, String> = emptyMap(),

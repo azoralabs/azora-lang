@@ -16,7 +16,7 @@
 
 mod std.algorithm.sort
 
-import std.container.array
+use std.container.array
 
 /**
  * @file std/algorithm/sort

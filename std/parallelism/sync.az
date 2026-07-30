@@ -39,8 +39,8 @@ zone std {
      */
     @SinceAzora("0.0.1")
     pack Guard<T> {
-        confine var mutex: Mutex = Mutex(0)
-        confine var value: T
+        var _mutex: Mutex = Mutex(0)
+        var _value: T
     }
 
     impl Guard<T> {
@@ -64,7 +64,7 @@ zone std {
         @Experimental(sinceAzora: "0.0.1")
         func write(action: (T) -> T) {
             mutex.lock()
-            self.value = action(value)
+            self._value = action(value)
             mutex.unlock()
         }
 
@@ -91,7 +91,7 @@ zone std {
     @SinceAzora("0.0.1")
     pack CountDownLatch<T> {
         var count: T
-        confine var atomic: Atomic = Atomic(0)
+        var _atomic: Atomic = Atomic(0)
     }
 
     impl CountDownLatch<T> {
@@ -120,7 +120,7 @@ zone std {
      */
     @SinceAzora("0.0.1")
     pack SpinLock<T> {
-        confine var flag: Atomic = Atomic(0)
+        var _flag: Atomic = Atomic(0)
     }
 
     impl SpinLock<T> {

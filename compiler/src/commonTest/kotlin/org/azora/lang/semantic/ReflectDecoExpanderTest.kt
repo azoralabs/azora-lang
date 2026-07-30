@@ -61,7 +61,7 @@ class ReflectDecoExpanderTest {
 
     @Test fun decoratedFunctionsAreEnumeratedAndCalled() {
         assertEquals("alpha\nbeta", run("""
-            import std.io
+            use std.io
             $marked
 
             @Marked
@@ -80,7 +80,7 @@ class ReflectDecoExpanderTest {
 
     @Test fun decoratedPacksAreStillEnumerated() {
         assertEquals("7\n7", run("""
-            import std.io
+            use std.io
             $marked
 
             @Marked
@@ -99,7 +99,7 @@ class ReflectDecoExpanderTest {
 
     @Test fun theBoundDeclarationKnowsItsOwnName() {
         assertEquals("alpha\nbeta", run("""
-            import std.io
+            use std.io
             $marked
 
             @Marked
@@ -121,7 +121,7 @@ class ReflectDecoExpanderTest {
         // the decorator declaration is as much a source of the value as the
         // application is.
         assertEquals("alpha 3 first\nbeta 0 none", run("""
-            import std.io
+            use std.io
             $marked
 
             @Marked(order: 3, tag: "first")
@@ -140,7 +140,7 @@ class ReflectDecoExpanderTest {
 
     @Test fun anEnumValuedDecoratorFieldSurvives() {
         assertEquals("draw true\ntick false", run("""
-            import std.io
+            use std.io
             enum Phase {
                 Update
                 Render
@@ -165,7 +165,7 @@ class ReflectDecoExpanderTest {
 
     @Test fun hasDecoAnswersForTheBoundDeclaration() {
         assertEquals("true false", run("""
-            import std.io
+            use std.io
             $marked
             deco Other for .Func
 
@@ -185,7 +185,7 @@ class ReflectDecoExpanderTest {
         // The whole indexed-dispatch scheme rests on this: a slot number picked
         // while walking one loop has to name the same declaration in the other.
         assertEquals("0 alpha\n1 beta\n2 gamma\npicked beta", run("""
-            import std.io
+            use std.io
             $marked
 
             @Marked
@@ -219,7 +219,7 @@ class ReflectDecoExpanderTest {
     @Test fun theLoopUnrollsInsideAnOrdinaryFunction() {
         // Not just in `main`: a library's own function is where this is useful.
         assertEquals("alpha 5\nbeta 5", run("""
-            import std.io
+            use std.io
             $marked
 
             @Marked
@@ -242,7 +242,7 @@ class ReflectDecoExpanderTest {
 
     @Test fun aDecoratorNothingCarriesUnrollsToNothing() {
         assertEquals("done", run("""
-            import std.io
+            use std.io
             deco Unused for .Func
 
             func main() {
@@ -258,7 +258,7 @@ class ReflectDecoExpanderTest {
         // The loop is what supplies the compile-time context. Without one, an
         // ordinary runtime position must still be rejected rather than folded.
         val reported = errors("""
-            import std.io
+            use std.io
             $marked
 
             @Marked(order: 3)

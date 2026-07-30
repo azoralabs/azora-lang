@@ -36,30 +36,30 @@ zone std {
      */
     @SinceAzora("0.0.3")
     pack Ptr<T> {
-        confine var raw: T*
+        var _raw: T*
     }
 
     @Experimental(sinceAzora: "0.0.3")
     impl deref for Ptr<T> { self& ->
-        return deref self.raw
+        return deref self._raw
     }
 
     impl Ptr<T> {
         /** The pointed-to value. */
         @SinceAzora("0.0.3")
-        prop get: T = deref self.raw
+        prop get: T = deref self._raw
 
         /** Replaces the pointed-to value. */
         @Experimental(sinceAzora: "0.0.3")
-        func set(value: T) { self.raw[0] = value }
+        func set(value: T) { self._raw[0] = value }
 
         /** The underlying `T*` (escapes the wrapper). */
         @SinceAzora("0.0.3")
-        prop ptr: T* = self.raw
+        prop ptr: T* = self._raw
 
         /** Whether this wrapper holds a non-null pointer. */
         @SinceAzora("0.0.3")
-        prop isNull: Bool = self.raw == null
+        prop isNull: Bool = self._raw == null
     }
 
     @Experimental(sinceAzora: "0.0.3")

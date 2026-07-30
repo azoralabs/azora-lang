@@ -16,8 +16,8 @@ class ResultUnwrapOrTest {
 
     @Test fun unwrapOrReturnsOkValue() {
         assertEquals("42", run("""
-            import std.io
-            import std.result
+            use std.io
+            use std.result
             func main() {
                 fin r = std::ok(42)
                 std::println(std::unwrapOr(r, 0))
@@ -27,8 +27,8 @@ class ResultUnwrapOrTest {
 
     @Test fun unwrapOrReturnsDefaultOnErr() {
         assertEquals("0", run("""
-            import std.io
-            import std.result
+            use std.io
+            use std.result
             func main() {
                 fin r = std::err(1, "boom")
                 std::println(std::unwrapOr(r, 0))

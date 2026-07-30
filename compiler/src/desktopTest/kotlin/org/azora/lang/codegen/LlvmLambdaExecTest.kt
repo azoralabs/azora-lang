@@ -31,7 +31,7 @@ class LlvmLambdaExecTest {
     fun storedLambdaCallsNatively() = check(
         "10",
         """
-        import std.io
+        use std.io
         func main() {
             fin double = func(value: Int) { return value * 2 }
             std::println(double(5))
@@ -43,7 +43,7 @@ class LlvmLambdaExecTest {
     fun closureCapturesLocalByValue() = check(
         "7",
         """
-        import std.io
+        use std.io
         func main() {
             fin offset = 3
             fin add = func(value: Int) { return value + offset }
@@ -56,7 +56,7 @@ class LlvmLambdaExecTest {
     fun contextualCallablePackField() = check(
         "5",
         """
-        import std.io
+        use std.io
         pack Calculator {
             fin add: Func[Int, Int] -> Int =
                 func { left: Int, right: Int -> left + right }

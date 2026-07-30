@@ -57,7 +57,7 @@ zone std {
      * Console output intrinsic.
      *
      * A real, importable bridge whose implementation is supplied by each
-     * backend and the interpreter. Reach as `std::println` after `import std.io`.
+     * backend and the interpreter. Reach as `std::println` after `use std.io`.
      * Accepts `Any` so it prints every type; the backend dispatches on the
      * argument's concrete type.
      */

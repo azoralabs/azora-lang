@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-export mod std.container.core
+expose mod std.container.core
 
-export import std.container.{array, list, map, set}
+expose use std.container.{array, list, map, set}
 
 use zone std {
     /**
@@ -77,10 +77,10 @@ use zone std {
     /**
      * Builds an mutable [Set].
      *
-     * @0 `set!@[]` expands to `std::emptyMutableSet()`.
-     * @1 `set!@[1, 2, 3]` expands to `std::mutableSetOf(1, 2, 3)`.
+     * @0 `set@[]` expands to `std::emptyMutableSet()`.
+     * @1 `set@[1, 2, 3]` expands to `std::mutableSetOf(1, 2, 3)`.
      */
-    meta .Prefix("set!") {
+    meta .Prefix("set") {
         [] => std::emptyMutableSet()
         [...$items] => std::mutableSetOf(...$items)
     }
@@ -140,10 +140,10 @@ use zone std {
     /**
      * Builds an mutable [Map].
      *
-     * @0 `map!@[]` expands to `std::emptyMutableMap()`.
-     * @1 `map!@["One": 1, "Two": 2]` expands to `std::mutableMapOf("One" to 1, "Two" to 2)`.
+     * @0 `map@[]` expands to `std::emptyMutableMap()`.
+     * @1 `map@["One": 1, "Two": 2]` expands to `std::mutableMapOf("One" to 1, "Two" to 2)`.
      */
-    meta .Prefix("map!") {
+    meta .Prefix("map") {
         [] => std::emptyMutableMap()
         [...${key: value}] => std::mutableMapOf(...std::mapEntry($key, $value))
     }

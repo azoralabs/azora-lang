@@ -67,7 +67,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
     /**
      * Compile-time constants folded by the top-level pass ([evaluateTopLevel]).
      * These come from top-level `deepinline`/`inline` bindings — including those
-     * auto-imported from an `export module` such as `std.config` — and are exposed
+     * auto-imported from an `expose mod` such as `std.config` — and are exposed
      * so the fixed-point pass can seed them into every function body via
      * [seedConstants]. Without this, top-level compile-time constants are removed
      * before symbol collection and would be invisible inside functions.

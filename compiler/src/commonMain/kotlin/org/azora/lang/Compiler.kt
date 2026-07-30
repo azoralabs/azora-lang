@@ -177,6 +177,14 @@ class Compiler(
             return CompilationResult.Failure(typeAccessErrors)
         }
 
+        // 2a-ter. A leading underscore keeps a declaration inside the module
+        // that writes it, so naming another module's `_helper` is an error even
+        // though the declaration is still injected for the code that owns it.
+        val privateAccessErrors = libraries.validatePrivateAccess(parsed)
+        if (privateAccessErrors.isNotEmpty()) {
+            return CompilationResult.Failure(privateAccessErrors)
+        }
+
         // 2b. Standard library: append the stdlib declarations the program
         // actually references (transitively); user definitions shadow stdlib.
         val initiallyInjected = CallbackImplNormalizer.normalize(libraries.inject(parsed))

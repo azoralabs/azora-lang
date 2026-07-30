@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
-export mod std.string
+expose mod std.string
 
-export import std.string.core
-import std.container.array
+expose use std.string.core
+use std.container.array
 
 /**
  * @file std/string

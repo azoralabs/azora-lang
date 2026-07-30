@@ -16,7 +16,7 @@ class NullableTest {
 
     @Test fun nullCoalesceLeft() {
         assertEquals("5", run("""
-            import std.io
+            use std.io
             func main() {
                 var x: Int? = null
                 std::println(x ?? 5)
@@ -26,7 +26,7 @@ class NullableTest {
 
     @Test fun nullCoalesceRight() {
         assertEquals("10", run("""
-            import std.io
+            use std.io
             func main() {
                 var x: Int? = 10
                 std::println(x ?? 5)
@@ -36,7 +36,7 @@ class NullableTest {
 
     @Test fun nullCoalesceChained() {
         assertEquals("default", run("""
-            import std.io
+            use std.io
             func main() {
                 var a: String? = null
                 var b: String? = null
@@ -47,7 +47,7 @@ class NullableTest {
 
     @Test fun safeMemberAccess() {
         assertEquals("0", run("""
-            import std.io
+            use std.io
             pack Point {
                 var x: Int
                 var y: Int
@@ -61,7 +61,7 @@ class NullableTest {
 
     @Test fun safeMemberNonNull() {
         assertEquals("3", run("""
-            import std.io
+            use std.io
             pack Point {
                 var x: Int
                 var y: Int
@@ -75,7 +75,7 @@ class NullableTest {
 
     @Test fun nullableInParameter() {
         assertEquals("42", run("""
-            import std.io
+            use std.io
             func defaultIfNull(x: Int?, fallback: Int): Int {
                 return x ?? fallback
             }

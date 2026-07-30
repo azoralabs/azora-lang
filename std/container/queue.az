@@ -16,8 +16,8 @@
 
 mod std.container.queue
 
-import std.serializer
-import std.convert
+use std.serializer
+use std.convert
 
 /**
  * @file std/container/queue
@@ -43,9 +43,9 @@ zone std {
     @SinceAzora("0.0.1")
     @Serializable
     pack Queue<T> {
-        shield var data: T* = alloc T[8]
-        shield var size: Int = 0
-        shield var capacity: Int = 8
+        var data: T* = alloc T[8]
+        var size: Int = 0
+        var capacity: Int = 8
     }
 
     /** Constructs an empty `Queue<T>` with default capacity. */

@@ -34,7 +34,7 @@ class EngineArchitectureSyntaxTest {
         """
         mod engine
 
-        export import engine.ecs
+        expose use engine.ecs
         """.trimIndent(),
     )
 
@@ -84,7 +84,7 @@ class EngineArchitectureSyntaxTest {
     fun libraryDefinedResourceAndQueryTypesExpandAfterImportResolution() {
         val result = Compiler(listOf(facade, ecs)).compile(
             """
-            import engine
+            use engine
 
             @Component
             pack Player {

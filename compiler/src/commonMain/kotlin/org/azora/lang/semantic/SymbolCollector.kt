@@ -273,7 +273,7 @@ class SymbolCollector {
                             typeParamIndexOf(field.type, item.typeParams),
                         )
                     }
-                    table.defineStruct(StructType(item.name, fields, item.typeParams, item.visibility, item.shielded, item.isBridge))
+                    table.defineStruct(StructType(item.name, fields, item.typeParams, item.visibility, item.isBridge))
                 } catch (e: Exception) {
                     errors.add("line ${item.line}: ${e.message}")
                 }
@@ -328,7 +328,7 @@ class SymbolCollector {
                 for (method in item.methods) {
                     val mangled = mangleMethodSymbol("${item.typeName}_${method.name}")
                     try {
-                        if (item.isExtension && struct != null && struct.fields.none { it.visibility == Visibility.EXPOSE } && method.receiverModifier == "mut ref") {
+                        if (item.isExtension && struct != null && struct.fields.none { it.visibility == Visibility.PUBLIC && !it.name.startsWith("_") } && method.receiverModifier == "mut ref") {
                             errors.add("line ${method.line}: pack '${item.typeName}' has no exposed fields, so extension '${method.name}' cannot use mut ref self")
                             continue
                         }

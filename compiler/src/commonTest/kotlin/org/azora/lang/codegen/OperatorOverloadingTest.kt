@@ -16,7 +16,7 @@ class OperatorOverloadingTest {
 
     @Test fun plusOverload() {
         assertEquals("4\n6", run("""
-            import std.io
+            use std.io
             pack Vec2 {
                 var x: Int
                 var y: Int
@@ -38,7 +38,7 @@ class OperatorOverloadingTest {
 
     @Test fun minusOverload() {
         assertEquals("2\n2", run("""
-            import std.io
+            use std.io
             pack Vec2 {
                 var x: Int
                 var y: Int
@@ -60,7 +60,7 @@ class OperatorOverloadingTest {
 
     @Test fun timesOverload() {
         assertEquals("3\n6", run("""
-            import std.io
+            use std.io
             pack Vec2 {
                 var x: Int
                 var y: Int
@@ -82,7 +82,7 @@ class OperatorOverloadingTest {
 
     @Test fun equalsOverload() {
         assertEquals("true\nfalse", run("""
-            import std.io
+            use std.io
             pack Vec2 {
                 var x: Int
                 var y: Int
@@ -104,7 +104,7 @@ class OperatorOverloadingTest {
 
     @Test fun notEqualsOverload() {
         assertEquals("false\ntrue", run("""
-            import std.io
+            use std.io
             pack Vec2 {
                 var x: Int
                 var y: Int
@@ -126,7 +126,7 @@ class OperatorOverloadingTest {
 
     @Test fun chainedOperatorOverloads() {
         assertEquals("6", run("""
-            import std.io
+            use std.io
             pack Vec2 {
                 var x: Int
                 var y: Int

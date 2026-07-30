@@ -20,7 +20,7 @@ class StringIndexTest {
     @Test
     fun indexReturnsChar() {
         assertEquals("e", run("""
-            import std.io
+            use std.io
             func main() {
                 let s = "hello"
                 std::println("${'$'}{s[1]}")
@@ -31,7 +31,7 @@ class StringIndexTest {
     @Test
     fun indexScansStringInLoop() {
         assertEquals("digits=3", run("""
-            import std.io
+            use std.io
             func isDigit(c: Char): Bool {
                 return c >= '0' && c <= '9'
             }
@@ -53,7 +53,7 @@ class StringIndexTest {
         // The right operand indexes past the end; `&&` must short-circuit so the
         // out-of-bounds read never happens (this used to throw in the interpreter).
         assertEquals("hits=1", run("""
-            import std.io
+            use std.io
             func main() {
                 let s = "ab"
                 var i = 0
@@ -71,7 +71,7 @@ class StringIndexTest {
     fun stringIndexingLowersToLlvm() {
         val result = Compiler().compile(
             """
-            import std.io
+            use std.io
             func main() {
                 let s = "hi"
                 std::println("${'$'}{s[0]}")

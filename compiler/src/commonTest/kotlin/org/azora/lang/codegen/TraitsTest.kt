@@ -29,7 +29,7 @@ class TraitsTest {
                 var y: Int
             }
             prot Describable {
-                func describe(): String
+                func describe[self&](): String
             }
             impl Describable for Point {
                 func describe(): String {
@@ -51,8 +51,8 @@ class TraitsTest {
                 var brightness: Int
             }
             prot Device {
-                func status(): String
-                func level(): Int
+                func status[self&](): String
+                func level[self&](): Int
             }
             impl Device for Light {
                 func status(): String {
@@ -74,8 +74,8 @@ class TraitsTest {
         val errors = expectFailure("""
             use std.io
             prot Describable {
-                func describe(): String
-                func detail(): String
+                func describe[self&](): String
+                func detail[self&](): String
             }
             pack P {
                 var x: Int

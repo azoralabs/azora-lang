@@ -266,6 +266,16 @@ class Parser(
                 pendingTopLevels.clear()
             }
         }
+        // Stamp each pack and impl with the module it was written in. A private
+        // member is reachable only from its own module, and that is the only
+        // place the two sides can be compared later.
+        for (i in items.indices) {
+            when (val item = items[i]) {
+                is TopLevel.Pack -> items[i] = item.copy(declaringModule = moduleName)
+                is TopLevel.Impl -> items[i] = item.copy(declaringModule = moduleName)
+                else -> {}
+            }
+        }
         val localPackNames = items.filterIsInstance<TopLevel.Pack>().mapTo(mutableSetOf()) { it.name }
         val normalized = CallbackImplNormalizer.normalize(
             Program(
@@ -416,6 +426,8 @@ class Parser(
         match(TokenType.CARET) -> "^"
         match(TokenType.TILDE) -> "~"
         match(TokenType.HASH) -> "#"
+        // `oper$` — what `"$value"` calls. Named after the sigil you actually write.
+        check(TokenType.IDENTIFIER) && peek().lexeme == "$" -> { advance(); "$" }
         else -> error("Expected an operator after 'oper' at line ${peek().line}")
     }
 
@@ -427,6 +439,44 @@ class Parser(
      * the declaration is accepted but emits no method, so the backend's native
      * operator handling stands.
      */
+    /**
+     * `oper<OP> [self: Type&](operands): Ret { body }` at top level.
+     *
+     * The bracketed receiver names the type the operator belongs to, which is
+     * what an `impl … for Type` clause used to say. Declaring it beside the type
+     * rather than inside it is what lets a file add an operator to a type it
+     * merely uses.
+     */
+    private fun parseFreeOperator(annotations: List<Annotation>, visibility: Visibility): TopLevel {
+        val start = peek()
+        consume(TokenType.OPER, "Expected 'oper'")
+        val opName = parseOperatorName()
+        val recv = parsePropReceiver()
+        val typeName = (recv.type as? TypeRef.Named)?.name
+            ?: error("An operator's receiver must name a type, as in 'oper+ [self: Model&]', at line ${start.line}")
+        val operands = if (match(TokenType.L_PAREN)) {
+            val parsed = if (check(TokenType.R_PAREN)) emptyList() else parseParams()
+            consume(TokenType.R_PAREN, "Expected ')' after operator operands")
+            parsed
+        } else emptyList()
+        val ret: TypeAnnotation = if (match(TokenType.COLON)) {
+            skipNewlines()
+            TypeAnnotation.Explicit(parseTypeName())
+        } else TypeAnnotation.Inferred
+        consume(TokenType.L_BRACE, "Expected '{' after operator declaration")
+        skipNewlines()
+        val body = parseBlock()
+        consume(TokenType.R_BRACE, "Expected '}' after operator body")
+        consumeNewline()
+        val method = FuncDecl(
+            "oper$opName", operands, ret, body, false, emptyList(),
+            start.line, start.column,
+            annotations = annotations, visibility = visibility,
+            receiverModifier = recv.modifier, receiverName = recv.name,
+        )
+        return TopLevel.Impl(typeName, listOf(method), null, start.line, start.column)
+    }
+
     private fun parseOperatorImpl(start: Token, isBridge: Boolean, annotations: List<Annotation> = emptyList()): TopLevel.Impl {
         consume(TokenType.OPER, "Expected 'oper'")
         val opName = parseOperatorName()
@@ -645,6 +695,10 @@ class Parser(
             // for Type` / `impl zone for Type` bodies (which reparse members as
             // top-level items); desugars to a `fin` so it mangles to `Type__name`.
             check(TokenType.PROP) -> parsePropAsFin(annotations, visibility)
+            // `oper+ [self: Model&](rhs: Model): Model { … }` — an operator declared
+            // beside the type rather than inside its impl. The receiver names the
+            // type, so no `for` clause is needed.
+            check(TokenType.OPER) -> parseFreeOperator(annotations, visibility)
             check(TokenType.USE) -> parseUse()
             // `expose use …` — the import travels on to whoever imports this
             // module, so a package can offer one entry point instead of making
@@ -2119,9 +2173,10 @@ class Parser(
                             advance()
                             val tp = parseTypeParams()
                             val propName = consumeIdentifierLike("Expected property name after 'bridge prop'")
+                            val bridgeReceiver = parsePropReceiver()
                             val propType: TypeAnnotation = if (match(TokenType.COLON)) TypeAnnotation.Explicit(parseTypeName()) else TypeAnnotation.Inferred
                             consumeNewline()
-                            methods.add(FuncDecl(propName, emptyList(), propType, emptyList(), false, tp.names, methodStart.line, methodStart.column, annotations = memberAnnotations, visibility = visibility, receiverModifier = ParamModifier.SHARED, memberCallStyle = MemberCallStyle.PROPERTY))
+                            methods.add(FuncDecl(propName, emptyList(), propType, emptyList(), false, tp.names, methodStart.line, methodStart.column, annotations = memberAnnotations, visibility = visibility, receiverModifier = bridgeReceiver.modifier, receiverName = bridgeReceiver.name, memberCallStyle = MemberCallStyle.PROPERTY))
                         }
                         check(TokenType.FUNC) -> {
                             advance()
@@ -2137,10 +2192,76 @@ class Parser(
                         else -> error("Expected 'prop' or 'func' after 'bridge' in impl block at line ${peek().line}")
                     }
                 }
-                check(TokenType.OPER) -> error("oper[] overloads are only allowed as standalone 'impl oper[] for ${typeName} { ... }' at line ${peek().line}")
-                check(TokenType.FUNC) -> methods.add(parseFuncDecl(isInline, annotations = memberAnnotations, isVirtual = isVirt, visibility = visibility))
-                isAsyncFuncAt(current) -> methods.add(parseFuncDecl(isInline, annotations = memberAnnotations, isVirtual = isVirt, isTask = true, visibility = visibility))
-                check(TokenType.FLOW) -> methods.add(parseFuncDecl(isInline, annotations = memberAnnotations, isVirtual = isVirt, isFlow = true, visibility = visibility))
+                // `ctor [self: Self!](…) { … }` — a constructor is a member of the
+                // type it builds, so it lives in the impl beside everything else.
+                check(TokenType.CTOR) -> {
+                    val ctorStart = advance()
+                    val recv = parsePropReceiver()
+                    val ctorParams = if (match(TokenType.L_PAREN)) {
+                        val parsed = if (check(TokenType.R_PAREN)) emptyList() else parseParams()
+                        consume(TokenType.R_PAREN, "Expected ')' after ctor parameters")
+                        parsed
+                    } else emptyList()
+                    val contracts = parseContractClauses()
+                    consume(TokenType.L_BRACE, "Expected '{' after ctor")
+                    skipNewlines()
+                    val ctorBody = parseBlock()
+                    consume(TokenType.R_BRACE, "Expected '}' after ctor body")
+                    consumeNewline()
+                    methods.add(FuncDecl(
+                        "ctor", ctorParams, TypeAnnotation.Inferred, applyContracts(ctorBody, contracts),
+                        false, emptyList(), ctorStart.line, ctorStart.column,
+                        annotations = memberAnnotations, visibility = visibility,
+                        receiverModifier = recv.modifier, receiverName = recv.name,
+                    ))
+                }
+                // `dtor [self: Self&] { … }` — teardown, with no parameters to take.
+                check(TokenType.DTOR) -> {
+                    val dtorStart = advance()
+                    val recv = parsePropReceiver()
+                    consume(TokenType.L_BRACE, "Expected '{' after dtor")
+                    skipNewlines()
+                    val dtorBody = parseBlock()
+                    consume(TokenType.R_BRACE, "Expected '}' after dtor body")
+                    consumeNewline()
+                    methods.add(FuncDecl(
+                        "dtor", emptyList(), TypeAnnotation.Inferred, dtorBody,
+                        false, emptyList(), dtorStart.line, dtorStart.column,
+                        annotations = memberAnnotations, visibility = visibility,
+                        receiverModifier = recv.modifier, receiverName = recv.name,
+                    ))
+                }
+                check(TokenType.OPER) -> {
+                    val operStart = advance()
+                    val opName = parseOperatorName()
+                    if (!check(TokenType.L_BRACKET)) {
+                        error("oper[] overloads are only allowed as standalone 'impl oper[] for ${typeName} { ... }' at line ${peek().line}")
+                    }
+                    val recv = parsePropReceiver()
+                    val operands = if (match(TokenType.L_PAREN)) {
+                        val parsed = if (check(TokenType.R_PAREN)) emptyList() else parseParams()
+                        consume(TokenType.R_PAREN, "Expected ')' after operator operands")
+                        parsed
+                    } else emptyList()
+                    val ret: TypeAnnotation = if (match(TokenType.COLON)) {
+                        skipNewlines()
+                        TypeAnnotation.Explicit(parseTypeName())
+                    } else TypeAnnotation.Inferred
+                    consume(TokenType.L_BRACE, "Expected '{' after operator declaration")
+                    skipNewlines()
+                    val operBody = parseBlock()
+                    consume(TokenType.R_BRACE, "Expected '}' after operator body")
+                    consumeNewline()
+                    methods.add(FuncDecl(
+                        "oper$opName", operands, ret, operBody, false, emptyList(),
+                        operStart.line, operStart.column,
+                        annotations = memberAnnotations, visibility = visibility,
+                        receiverModifier = recv.modifier, receiverName = recv.name,
+                    ))
+                }
+                check(TokenType.FUNC) -> methods.add(parseFuncDecl(isInline, annotations = memberAnnotations, isVirtual = isVirt, visibility = visibility, inImplBlock = true))
+                isAsyncFuncAt(current) -> methods.add(parseFuncDecl(isInline, annotations = memberAnnotations, isVirtual = isVirt, isTask = true, visibility = visibility, inImplBlock = true))
+                check(TokenType.FLOW) -> methods.add(parseFuncDecl(isInline, annotations = memberAnnotations, isVirtual = isVirt, isFlow = true, visibility = visibility, inImplBlock = true))
                 else -> error("Expected 'prop', 'func', 'task', or 'flow' in impl block at line ${peek().line}")
             }
             skipNewlines()
@@ -2148,7 +2269,7 @@ class Parser(
         consume(TokenType.R_BRACE, "Expected '}' after impl methods")
         consumeNewline()
         return TopLevel.Impl(
-            typeName, methods, traitName, start.line, start.column,
+            typeName, bindSelf(methods, typeName), traitName, start.line, start.column,
             isPackImpl = isPackImpl,
             traitArgs = traitArgs,
             decoratorArgs = decoratorArgs,
@@ -2255,9 +2376,12 @@ class Parser(
      */
     private fun funcOrExtension(decl: FuncDecl): TopLevel {
         val recv = decl.extensionReceiver ?: return TopLevel.Func(decl)
+        // A bracketed receiver already carries its borrow (`[self: T!]` parsed the
+        // sigil off the type), so trust what the declaration says rather than
+        // re-deriving it and silently downgrading `!` to a shared borrow.
         val (typeName, modifier) = when (val t = recv.type) {
             is TypeRef.Reference -> namedTypeName(t.inner) to t.kind.paramModifier
-            else -> namedTypeName(t) to ParamModifier.SHARED
+            else -> namedTypeName(t) to decl.receiverModifier
         }
         val method = decl.copy(
             receiverModifier = modifier,
@@ -2986,12 +3110,14 @@ class Parser(
                 consumeNewline()
                 methods.add(FuncDecl(
                     pname, emptyList(), TypeAnnotation.Explicit(ptype), emptyList(), false, emptyList(),
-                    start.line, start.column, receiverModifier = ParamModifier.SHARED, memberCallStyle = MemberCallStyle.PROPERTY,
+                    start.line, start.column, receiverModifier = preceiver.modifier,
+                    receiverName = preceiver.name, memberCallStyle = MemberCallStyle.PROPERTY,
                 ))
                 continue
             }
             consume(TokenType.FUNC, "Expected 'func' or 'prop' in prot")
             val mname = consume(TokenType.IDENTIFIER, "Expected method name").lexeme
+            val mreceiver = parsePropReceiver()
             consume(TokenType.L_PAREN, "Expected '('")
             val params = parseParams()
             consume(TokenType.R_PAREN, "Expected ')'")
@@ -3001,7 +3127,10 @@ class Parser(
                 TypeAnnotation.Inferred
             }
             consumeNewline()
-            methods.add(FuncDecl(mname, params, returnType, emptyList(), false, emptyList(), start.line, start.column))
+            methods.add(FuncDecl(
+                mname, params, returnType, emptyList(), false, emptyList(), start.line, start.column,
+                receiverModifier = mreceiver.modifier, receiverName = mreceiver.name,
+            ))
         }
         consume(TokenType.R_BRACE, "Expected '}' after prot methods")
         consumeNewline()
@@ -3188,6 +3317,7 @@ class Parser(
         isTask: Boolean = false,
         isUnsafe: Boolean = false,
         visibility: Visibility = Visibility.PUBLIC,
+        inImplBlock: Boolean = false,
     ): FuncDecl {
         val start = peek()
         // `async func name(…)` — `async` qualifies `func` rather than replacing
@@ -3208,26 +3338,31 @@ class Parser(
         val typeParams = typeParamsAfter.names
         val variadicParam = typeParamsAfter.variadic
         val constParams = typeParamsAfter.constParams
+        // Bracketed receiver: `func m[self: Type&](…): R`. It sits between the name
+        // and the parameters, exactly where `prop`, `ctor`, `dtor` and `oper` put
+        // theirs, so every member reads the same way. Naming a type makes the
+        // function an extension on it, callable as `value.m()`.
+        var extensionReceiver: Param? = null
+        var bracketReceiver: PropReceiver? = null
+        if (check(TokenType.L_BRACKET)) {
+            bracketReceiver = parsePropReceiver()
+            if (!inImplBlock) {
+                bracketReceiver.type?.let { extensionReceiver = Param(bracketReceiver!!.name, it) }
+            }
+        }
         consume(TokenType.L_PAREN, "Expected '(' after function name")
         val params = parseParams(variadicParam).toMutableList()
         consume(TokenType.R_PAREN, "Expected ')' after parameters")
-        // Bracketed extension receiver: `func m()[self: Type&]: R`. Makes the
-        // function an extension method on Type, callable as `value.m()`.
-        var extensionReceiver: Param? = null
-        if (match(TokenType.L_BRACKET)) {
-            val recvName = consumeIdentifierLike("Expected receiver name in '[…]'")
-            consume(TokenType.COLON, "Expected ':' after extension receiver name")
-            extensionReceiver = Param(recvName, parseTypeName())
-            consume(TokenType.R_BRACKET, "Expected ']' after extension receiver")
-        }
         val returnType: TypeAnnotation = if (match(TokenType.COLON)) {
             TypeAnnotation.Explicit(parseTypeName())
         } else {
             TypeAnnotation.Inferred
         }
         val minVariadicLength = parseVariadicWhereClause()
-        var receiverModifier: ParamModifier = ParamModifier.EXCLUSIVE
-        var receiverName = "self"
+        // A bracketed receiver states the borrow and the receiver's name; without
+        // one the in-brace `{ self& -> … }` form below still applies.
+        var receiverModifier: ParamModifier = bracketReceiver?.modifier ?: ParamModifier.EXCLUSIVE
+        var receiverName = bracketReceiver?.name ?: "self"
 
         // Optional contract clauses before the body: `in { ... }` preconditions and
         // `out { r -> ... }` postconditions. A contract-style declaration then
@@ -4443,6 +4578,50 @@ class Parser(
      * which reparse their members as top-level items; mangling then turns the
      * name into `Type__name`, reachable as `Type::name`.
      */
+    /**
+     * Binds `Self` to [typeName] throughout an impl block's members.
+     *
+     * Inside `impl Model`, `Self` means `Model` — the compiler supplies the
+     * binding so nobody has to write `typealias Self = Model`, and it holds in
+     * every impl for the type, including `impl Area for Model`.
+     */
+    private fun bindSelf(methods: List<FuncDecl>, typeName: String): List<FuncDecl> {
+        if (methods.none { declMentionsSelf(it) }) return methods
+        val target = TypeRef.Named(typeName)
+        return methods.map { m ->
+            m.copy(
+                params = m.params.map { it.copy(type = selfTo(it.type, target)) },
+                returnType = when (val rt = m.returnType) {
+                    is TypeAnnotation.Explicit -> TypeAnnotation.Explicit(selfTo(rt.ref, target))
+                    else -> rt
+                },
+                extensionReceiver = m.extensionReceiver?.let { it.copy(type = selfTo(it.type, target)) },
+            )
+        }
+    }
+
+    private fun declMentionsSelf(m: FuncDecl): Boolean =
+        m.params.any { mentionsSelf(it.type) } ||
+            (m.returnType as? TypeAnnotation.Explicit)?.let { mentionsSelf(it.ref) } == true ||
+            m.extensionReceiver?.let { mentionsSelf(it.type) } == true
+
+    private fun mentionsSelf(t: TypeRef): Boolean = when (t) {
+        is TypeRef.Named -> t.name == "Self" || t.args.any { mentionsSelf(it) }
+        is TypeRef.Array -> mentionsSelf(t.element)
+        is TypeRef.Nullable -> mentionsSelf(t.inner)
+        is TypeRef.Reference -> mentionsSelf(t.inner)
+        else -> false
+    }
+
+    private fun selfTo(t: TypeRef, target: TypeRef.Named): TypeRef = when (t) {
+        is TypeRef.Named -> if (t.name == "Self" && t.args.isEmpty()) target
+            else t.copy(args = t.args.map { selfTo(it, target) })
+        is TypeRef.Array -> t.copy(element = selfTo(t.element, target))
+        is TypeRef.Nullable -> t.copy(inner = selfTo(t.inner, target))
+        is TypeRef.Reference -> t.copy(inner = selfTo(t.inner, target))
+        else -> t
+    }
+
     /** A `prop` receiver: its borrow, and the type it extends (null inside an `impl`). */
     private data class PropReceiver(val name: String, val type: TypeRef?, val modifier: ParamModifier)
 

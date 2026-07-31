@@ -445,6 +445,36 @@ class IrGenerator(private val table: SymbolTable) {
                 else -> emptyList() // Inline constructs already resolved by CTCE
             }
         } +
+        // A declared `ctor` builds the value it is a member of, so calling
+        // `Model(w, h)` must run it rather than filling fields positionally.
+        // Each one gets a factory that allocates with field defaults, runs the
+        // ctor against the fresh value, and hands it back — a plain function, so
+        // every backend gets the behaviour without knowing about constructors.
+        program.items.filterIsInstance<TopLevel.Impl>().flatMap { item ->
+            val struct = table.lookupStruct(item.typeName)
+            item.methods.filter { it.name == "ctor" && it.params.isNotEmpty() }.mapNotNull { ctor ->
+                if (struct == null) return@mapNotNull null
+                val type = IrType.Named(item.typeName)
+                val params = ctor.params.map { it.name to resolveType(it.type) }
+                val defaults = struct.fields.map { f ->
+                    f.default?.let { lowerExpr(it) } ?: defaultValueForType(f.type)
+                }
+                IrTopLevel.Func(IrFunction(
+                    ctorFactoryName(item.typeName, params.size),
+                    params,
+                    type,
+                    listOf(
+                        IrStmt.VarDecl("__self", type, IrExpr.StructCtor(item.typeName, struct.fields.map { it.name }, defaults, type)),
+                        IrStmt.ExprStmt(IrExpr.Call(
+                            "${item.typeName}_ctor",
+                            listOf(IrExpr.Var("__self", type)) + params.map { IrExpr.Var(it.first, it.second) },
+                            IrType.Unit,
+                        )),
+                        IrStmt.Return(IrExpr.Var("__self", type)),
+                    ),
+                ))
+            }
+        } +
         // Emit __singleton factories for `wrap` registrations (DI container wiring).
         program.items.filterIsInstance<TopLevel.Wrap>().flatMap { wrap ->
             wrap.registrations.mapNotNull { reg ->
@@ -1135,6 +1165,9 @@ class IrGenerator(private val table: SymbolTable) {
         return IrStmt.Trace(level, call, variants, displayLevel = displayLevel)
     }
 
+    /** The factory that runs a declared `ctor` of the given arity. */
+    private fun ctorFactoryName(typeName: String, arity: Int): String = "__ctor_${typeName}_$arity"
+
     private fun lowerExpr(expr: Expr): IrExpr {
         return when (expr) {
             is Expr.IntLiteral -> IrExpr.IntLiteral(expr.value, suffixToIntType(expr.suffix))
@@ -1345,6 +1378,17 @@ class IrGenerator(private val table: SymbolTable) {
                             padded.add(lowerExpr(struct.fields[i].default ?: Expr.NullLiteral))
                         }
                         padded
+                    }
+                    // A declared `ctor` of the same arity takes precedence over
+                    // filling fields positionally — it is the constructor the
+                    // author wrote, and skipping it would leave its work undone.
+                    val declaredCtor = table.lookupFunction(ctorFactoryName(realCallee, expr.args.size))
+                    if (declaredCtor != null && expr.args.none { it is Expr.NamedArg }) {
+                        return IrExpr.Call(
+                            declaredCtor.name,
+                            expr.args.map { lowerExpr(it) },
+                            IrType.Named(realCallee),
+                        )
                     }
                     // Keep the explicit type arguments (`Box<Real>(…)`) on the
                     // result type: a generic pack erases its fields to pointer

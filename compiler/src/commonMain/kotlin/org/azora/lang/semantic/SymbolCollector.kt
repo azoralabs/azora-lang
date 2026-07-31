@@ -369,6 +369,19 @@ class SymbolCollector {
                             ))
                         }
                         table.defineMethod(item.typeName, method.name, mangled)
+                        // A declared `ctor` also gets a factory, so `Model(w, h)`
+                        // can resolve to it instead of filling fields positionally.
+                        // The IR generator emits the body; this is what lets the
+                        // call site find it.
+                        if (method.name == "ctor" && method.params.isNotEmpty() && !item.isBridge) {
+                            table.defineFunction(FunctionSymbol(
+                                "__ctor_${item.typeName}_${method.params.size}",
+                                params.drop(1),
+                                selfType,
+                                false,
+                                visibility = method.visibility,
+                            ))
+                        }
                     } catch (e: Exception) {
                         errors.add("line ${method.line}: ${e.message}")
                     }

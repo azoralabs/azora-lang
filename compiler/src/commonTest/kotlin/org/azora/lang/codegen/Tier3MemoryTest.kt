@@ -94,15 +94,30 @@ class Tier3MemoryTest {
         """.trimIndent()))
     }
 
-    @Test fun ptrSmartPointerUsesDerefImpl() {
-        assertEquals("41\n42", run("""
+    @Test fun sharedCountsOwnersWithoutSynchronisation() {
+        assertEquals("41\n42\n2\n1", run("""
             use std.io
             use std.memory.*
             func main() {
-                var p = std::ptrOf(41)
+                var p = std::sharedOf(41)
                 std::println(deref p)
                 p.set(42)
                 std::println(p.get)
+                std::println(p.retain())
+                std::println(p.release())
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun syncSharedCountsOwnersAcrossThreads() {
+        assertEquals("41\n2\n1", run("""
+            use std.io
+            use std.memory.*
+            func main() {
+                var p = std::syncSharedOf(41)
+                std::println(p.get)
+                std::println(p.retain())
+                std::println(p.release())
             }
         """.trimIndent()))
     }

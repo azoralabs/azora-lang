@@ -64,31 +64,31 @@ zone std {
         prop isNotEmpty[self&]: Bool
 
         /** Returns the element at `index` in iteration order. Asserts out of bounds. */
-        func get(index: Int): T
+        func get[self&](index: Int): T
 
         /** Returns whether `element` is present. */
-        func contains(element: T): Bool
+        func contains[self&](element: T): Bool
 
         /** Invokes `action` once for every element in iteration order. */
-        func forEach(action: (T) -> Unit)
+        func forEach[self&](action: (T) -> Unit)
 
         /** Returns a new set with only elements satisfying `predicate`. */
-        func filter(predicate: (T) -> Bool): Set<T>
+        func filter[self&](predicate: (T) -> Bool): Set<T>
 
         /** Returns whether at least one element satisfies `predicate`. */
-        func any(predicate: (T) -> Bool): Bool
+        func any[self&](predicate: (T) -> Bool): Bool
 
         /** Returns whether every element satisfies `predicate`. */
-        func all(predicate: (T) -> Bool): Bool
+        func all[self&](predicate: (T) -> Bool): Bool
 
         /** Returns a new set with all unique elements from both sets. */
-        func union(other: Set<T>): Set<T>
+        func union[self&](other: Set<T>): Set<T>
 
         /** Returns a new set with only elements present in both sets. */
-        func intersect(other: Set<T>): Set<T>
+        func intersect[self&](other: Set<T>): Set<T>
 
         /** Returns a new set with elements here that are absent from `other`. */
-        func difference(other: Set<T>): Set<T>
+        func difference[self&](other: Set<T>): Set<T>
     }
 
     /**
@@ -103,13 +103,13 @@ zone std {
     @Experimental(sinceAzora: "0.0.4")
     prot MutableSet<T> : Set<T> {
         /** Adds `element`; returns whether membership changed. */
-        func add(element: T): Bool
+        func add[self&](element: T): Bool
 
         /** Removes `element`; returns whether membership changed. */
-        func remove(element: T): Bool
+        func remove[self&](element: T): Bool
 
         /** Removes every element while retaining reusable internal capacity. */
-        func clear()
+        func clear[self&]()
     }
 
     /**

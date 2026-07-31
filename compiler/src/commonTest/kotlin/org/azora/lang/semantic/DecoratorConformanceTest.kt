@@ -87,7 +87,7 @@ class DecoratorConformanceTest {
                 fin encodeDefaults: Bool = true
             }
             prot Serializer<T> {
-                func encode(value: T&): String
+                func encode[self&](value: T&): String
             }
             @Serializable
             pack UserId {
@@ -123,8 +123,8 @@ class DecoratorConformanceTest {
     @Test fun manualSerializerImplementationRecordsGenericConformance() {
         val result = analyze("""
             prot Serializer<T> {
-                func encode(value: T&): String
-                func decode(value: String): T
+                func encode[self&](value: T&): String
+                func decode[self&](value: String): T
             }
             pack User {
                 fin name: String

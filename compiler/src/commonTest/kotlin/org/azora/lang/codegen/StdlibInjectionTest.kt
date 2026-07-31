@@ -401,6 +401,55 @@ class StdlibInjectionTest {
         return result.errors
     }
 
+    private val modelLibrary = LibrarySource(
+        "lib/model.az",
+        """
+            mod lib.model
+
+            pack Model {
+                var width = 0.0
+                var _secret = 42.0
+            }
+
+            impl Model {
+                prop secret[self: Self&]: Real = self._secret
+            }
+        """.trimIndent(),
+    )
+
+    @Test fun anExtensionInAnotherModuleSeesOnlyThePublicSurface() {
+        // The underscore is scoped to the declaring module, not to the type — an
+        // `impl` written elsewhere names the same type but is not inside it.
+        val result = Compiler(listOf(modelLibrary)).compile("""
+            use std.io
+            use lib.model
+            prop leaked[self: Model&]: Real = self._secret
+            func main() {
+                std::println(Model(3.0, 1.0).leaked)
+            }
+        """.trimIndent())
+        assertIs<CompilationResult.Failure>(result)
+        assertTrue(
+            result.errors.any { "private field '_secret' of Model" in it },
+            "${'$'}{result.errors}",
+        )
+    }
+
+    @Test fun anExtensionInAnotherModuleStillReachesPublicFields() {
+        val result = Compiler(listOf(modelLibrary)).compile("""
+            use std.io
+            use lib.model
+            prop doubled[self: Model&]: Real = self.width * 2.0
+            func main() {
+                fin m = Model(3.0, 1.0)
+                std::println(m.doubled)
+                std::println(m.secret)
+            }
+        """.trimIndent())
+        assertIs<CompilationResult.Success>(result, (result as? CompilationResult.Failure)?.errors.toString())
+        assertEquals("6.0\n1.0", IrInterpreter().interpret(result.ir).trim())
+    }
+
     @Test fun anotherModulesPrivateFunctionCannotBeNamed() {
         assertTrue(
             privateAccess("    std::println(_helper())").any { "'_helper' is private to module 'lib.lib'" in it },

@@ -25,7 +25,7 @@ class Feature003SyntaxTest {
             pack Counter {
                 var value: Int
             }
-            func peek()[self: Counter&]: Int {
+            func peek[self: Counter&](): Int {
                 return self.value
             }
             func main() {
@@ -41,7 +41,7 @@ class Feature003SyntaxTest {
             pack Counter {
                 var _value: Int
             }
-            func bump()[self: Counter!] {
+            func bump[self: Counter!]() {
                 self._value = self._value + 1
             }
             func main() {
@@ -98,7 +98,7 @@ class Feature003SyntaxTest {
             pack Counter {
                 var value: Int
             }
-            func bump()[self: Counter&] {
+            func bump[self: Counter&]() {
                 self.value = self.value + 1
             }
             func main() {
@@ -370,7 +370,7 @@ class Feature003SyntaxTest {
                     self.value = self.value + 1
                 }
             }
-            func peek()[self: Counter&]: Int {
+            func peek[self: Counter&](): Int {
                 return self.value
             }
             func main() {

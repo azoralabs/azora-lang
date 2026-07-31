@@ -210,10 +210,10 @@ zone std {
     @Experimental(sinceAzora: "0.0.4")
     prot Serializer<T> {
         /** Converts a typed value into the format-independent value tree. */
-        func toSerialValue(value: T&): SerialValue ?! SerializationError
+        func toSerialValue[self&](value: T&): SerialValue ?! SerializationError
 
         /** Reconstructs a typed value, validating all required fields and types. */
-        func fromSerialValue(value: SerialValue&): T ?! SerializationError
+        func fromSerialValue[self&](value: SerialValue&): T ?! SerializationError
     }
 
     /**
@@ -229,10 +229,10 @@ zone std {
     @Experimental(sinceAzora: "0.0.4")
     prot JsonSerializer<T> {
         /** Encodes `value` as one complete JSON document. */
-        func toJson(value: T&, options: SerializerOptions&): String ?! SerializationError
+        func toJson[self&](value: T&, options: SerializerOptions&): String ?! SerializationError
 
         /** Decodes one complete JSON document into `T`. */
-        func fromJson(input: String, options: SerializerOptions&): T ?! SerializationError
+        func fromJson[self&](input: String, options: SerializerOptions&): T ?! SerializationError
     }
 
     /**
@@ -247,10 +247,10 @@ zone std {
     @Experimental(sinceAzora: "0.0.4")
     prot AzonSerializer<T> {
         /** Encodes `value` as one complete AZON document. */
-        func toAzon(value: T&, options: SerializerOptions&): String ?! SerializationError
+        func toAzon[self&](value: T&, options: SerializerOptions&): String ?! SerializationError
 
         /** Decodes one complete AZON document into `T`. */
-        func fromAzon(input: String, options: SerializerOptions&): T ?! SerializationError
+        func fromAzon[self&](input: String, options: SerializerOptions&): T ?! SerializationError
     }
 
     /** Creates conservative defaults suitable for processing untrusted input. */

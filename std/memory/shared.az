@@ -14,55 +14,60 @@
  * limitations under the License.
  */
 
-mod std.memory.arc
+mod std.memory.shared
 
 /**
- * @file std/memory/arc
+ * @file std/memory/shared
  *
- * An automatically reference-counted pointer (`Arc<T>`).
+ * A shared pointer counted on one thread (`Shared<T>`).
  *
- * `Arc` shares one heap allocation across multiple owners, keeping a count of live references.
- * `retain()` records a new owner; `release()` drops one and reclaims the allocation when the count
- * reaches zero. The single-threaded interpreter counts plainly; native backends may use atomics.
+ * One heap allocation, many owners: `retain()` records a new owner, `release()`
+ * gives one up and reclaims the allocation when the last one leaves.
  *
- * @since 0.0.3
+ * The count is a plain integer, so handing a `Shared` to another thread races on
+ * it — two owners releasing at once can both read the same count and free twice,
+ * or neither can and the allocation leaks. Use [std::SyncShared] when the owners
+ * are not all on one thread; this type exists because most of them are, and the
+ * synchronisation is not free.
+ *
+ * @since 0.0.4
  */
 
 zone std {
     /**
-     * A reference-counted pointer to a `T`.
+     * A reference-counted pointer to a `T`, counted without synchronisation.
      *
      * @param T the pointee type.
      */
-    @SinceAzora("0.0.3")
-    pack Arc<T> {
+    @Experimental(sinceAzora: "0.0.4")
+    pack Shared<T> {
         var raw: T*
         var count: Int
     }
 
-    @Experimental(sinceAzora: "0.0.3")
-    impl deref for Arc<T> { self& ->
+    @Experimental(sinceAzora: "0.0.4")
+    impl deref for Shared<T> { self& ->
         return deref self.raw
     }
 
-    impl Arc<T> {
+    impl Shared<T> {
         /** The pointed-to value. */
-        @SinceAzora("0.0.3")
+        @Experimental(sinceAzora: "0.0.4")
         prop get[self&]: T = deref self.raw
 
         /** Replaces the pointed-to value without changing ownership. */
-        @Experimental(sinceAzora: "0.0.3")
+        @Experimental(sinceAzora: "0.0.4")
         func set(value: T) { self.raw[0] = value }
 
         /** Records a new shared owner. Returns the new reference count. */
-        @Experimental(sinceAzora: "0.0.3")
+        @Experimental(sinceAzora: "0.0.4")
         func retain(): Int {
             self.count = self.count + 1
             return self.count
         }
 
-        /** Drops a shared owner; reclaims the allocation when the count reaches zero. */
-        @Experimental(sinceAzora: "0.0.3")
+        /** Gives up one owner; reclaims the allocation when the last one leaves. */
+        @Experimental(sinceAzora: "0.0.4")
         func release(): Int {
             self.count = self.count - 1
             if self.count <= 0 {
@@ -72,16 +77,17 @@ zone std {
         }
 
         /** The current number of live references. */
-        @SinceAzora("0.0.3")
+        @Experimental(sinceAzora: "0.0.4")
         prop refCount[self&]: Int = self.count
 
         /** The underlying `T*` (escapes the counting). */
-        @SinceAzora("0.0.3")
+        @Experimental(sinceAzora: "0.0.4")
         prop ptr[self&]: T* = self.raw
     }
 
-    @Experimental(sinceAzora: "0.0.3")
-    func arcOf<T>(value: T): Arc<T> {
-        return Arc(alloc value, 1)
+    /** A `Shared<T>` owning a fresh copy of [value], with one live reference. */
+    @Experimental(sinceAzora: "0.0.4")
+    func sharedOf<T>(value: T): Shared<T> {
+        return Shared(alloc value, 1)
     }
 }

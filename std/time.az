@@ -130,10 +130,10 @@ zone std {
     @Experimental(sinceAzora: "0.0.4")
     prot Clock {
         /** Returns the current Unix instant. */
-        func now(): Instant
+        func now[self&](): Instant
 
         /** Returns an opaque monotonic reading. */
-        func monotonicNow(): MonotonicInstant
+        func monotonicNow[self&](): MonotonicInstant
     }
 
     /** Host-backed implementation of `Clock`. */

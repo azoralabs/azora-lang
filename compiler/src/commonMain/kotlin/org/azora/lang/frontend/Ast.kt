@@ -1787,6 +1787,13 @@ sealed class TopLevel {
          * No struct is emitted; it exists as a reflectable/declared type only.
          */
         val isBridge: Boolean = false,
+        /**
+         * The module that declares this, or null before the parser tags it.
+         *
+         * A private member is reachable only from its own declaring module, so
+         * the check needs to know where each side was written.
+         */
+        val declaringModule: String? = null
     ) : TopLevel()
 
     /** `deco Name [bind Spec] { fields }` — an annotation type and optional derived prot contract. */
@@ -1897,6 +1904,13 @@ sealed class TopLevel {
         val variadicParam: String? = null,
         /** Lexical zone containing this implementation, used for same-zone lookup. */
         val zonePrefix: String? = null,
+        /**
+         * The module that declares this, or null before the parser tags it.
+         *
+         * A private member is reachable only from its own declaring module, so
+         * the check needs to know where each side was written.
+         */
+        val declaringModule: String? = null
     ) : TopLevel()
 
     /** `prot Name { func method(params): Ret; ... }` or compact callback `prot Name<T>: T { ref self } use as "to${T.typeName}"`. */

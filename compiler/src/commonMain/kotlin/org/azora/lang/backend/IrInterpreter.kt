@@ -770,7 +770,17 @@ class IrInterpreter {
                         }
                         result
                     }
-                    else -> error("no member '${expr.name}' on $receiver")
+                    else -> {
+                        // A primitive has no runtime type tag, so a property
+                        // extension on one (`prop seconds[self: Int&]`) is found
+                        // through the receiver's static type instead.
+                        val propFunc = functions["${expr.target.type}_${expr.name}"]
+                        if (propFunc != null && propFunc.params.size == 1) {
+                            executeFunction(propFunc, listOf(receiver))
+                        } else {
+                            error("no member '${expr.name}' on $receiver")
+                        }
+                    }
                 }
             }
             is IrExpr.StructCtor -> {

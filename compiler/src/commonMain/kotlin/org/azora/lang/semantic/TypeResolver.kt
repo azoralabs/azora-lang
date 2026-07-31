@@ -48,6 +48,12 @@ import kotlin.collections.iterator
 class TypeResolver(private val table: SymbolTable) {
     private var unsafeContext = false
     private var currentReceiverType: String? = null
+
+    /** The module the impl under resolution was written in, for the privacy check. */
+    private var currentModule: String? = null
+
+    /** Where each pack was declared, so a private member can tell same-module from not. */
+    private var packModules: Map<String, String?> = emptyMap()
     private var reactiveContext = false
 
     private val errors = mutableListOf<String>()
@@ -55,6 +61,8 @@ class TypeResolver(private val table: SymbolTable) {
 
     fun resolve(program: Program): List<String> {
         this.program = program
+        packModules = program.items.filterIsInstance<TopLevel.Pack>()
+            .associate { it.name to it.declaringModule }
         for (func in program.functions) {
             resolveFunction(func)
         }
@@ -106,7 +114,9 @@ class TypeResolver(private val table: SymbolTable) {
                     }
                     val savedReceiver = currentReceiverType
                     val savedReactive = reactiveContext
+                    val savedModule = currentModule
                     currentReceiverType = item.typeName
+                    currentModule = item.declaringModule
                     reactiveContext = hasReactiveContract(method.annotations)
                     contextualValues.addLast(
                         listOf(Expr.Identifier("self", method.line, method.column) to IrType.Named(item.typeName)),
@@ -114,6 +124,7 @@ class TypeResolver(private val table: SymbolTable) {
                     resolveBody(method.body, func.returnType)
                     contextualValues.removeLast()
                     currentReceiverType = savedReceiver
+                    currentModule = savedModule
                     reactiveContext = savedReactive
                     table.popScope()
                 }
@@ -265,14 +276,22 @@ class TypeResolver(private val table: SymbolTable) {
      * site, not only at the declaration.
      */
     private fun canAccessMember(ownerType: String, name: String, visibility: Visibility): Boolean = when {
-        name.startsWith("_") -> currentReceiverType == ownerType
+        // A leading underscore keeps a member inside the module that declares
+        // the type. An `impl` written elsewhere — an extension, or another
+        // package's addition — sees only the public surface.
+        name.startsWith("_") -> currentReceiverType == ownerType && inOwningModule(ownerType)
         visibility == Visibility.CONFINE -> currentReceiverType == ownerType
         else -> true
     }
 
+    private fun inOwningModule(ownerType: String): Boolean {
+        val owner = packModules[ownerType] ?: return true // unknown provenance: don't invent a rule
+        return owner == currentModule
+    }
+
     private fun reportInaccessible(line: Int, kind: String, ownerType: String, name: String, visibility: Visibility) {
         val reason =
-            if (name.startsWith("_")) "private $kind '$name' of $ownerType — the leading underscore keeps it inside $ownerType"
+            if (name.startsWith("_")) "private $kind '$name' of $ownerType — the leading underscore keeps it inside the module that declares $ownerType"
             else "confined $kind '$name' of $ownerType"
         errors.add("line $line: cannot access $reason")
     }
@@ -1236,8 +1255,21 @@ class TypeResolver(private val table: SymbolTable) {
                         }
                     }
                     else -> {
-                        errors.add("line ${expr.line}: no member '${expr.name}' on $targetType")
-                        null
+                        // A primitive receiver keys the method table by its source
+                        // type name (`impl Int { prop seconds[self&] }`), the same
+                        // way a method call on one does. Without this a property
+                        // extension on Int would parse and lower but never resolve.
+                        val mangled = table.lookupMethod(targetType.toString(), expr.name)
+                        val prop = mangled?.let { table.lookupFunction(it) }
+                        if (prop != null && prop.params.size == 1 && prop.memberCallStyle != MemberCallStyle.METHOD) {
+                            prop.returnType
+                        } else if (prop != null) {
+                            errors.add("line ${expr.line}: member '${expr.name}' on $targetType requires a method call")
+                            null
+                        } else {
+                            errors.add("line ${expr.line}: no member '${expr.name}' on $targetType")
+                            null
+                        }
                     }
                 }
             }

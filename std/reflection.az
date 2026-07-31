@@ -48,11 +48,11 @@ zone std {
     impl<T> Reflected {
         /** Whether the reflected declaration `T` carries decorator `D`. */
         @Experimental(sinceAzora: "0.0.4")
-        bridge prop<D> hasDeco: Bool
+        bridge prop<D> hasDeco[self&]: Bool
 
         /** Immutable compile-time metadata from decorator `D` on `T`. */
         @Experimental(sinceAzora: "0.0.4")
-        bridge prop<D> decoMeta: D
+        bridge prop<D> decoMeta[self&]: D
 
         /** The enclosing lexical zone of `T`, or null at global scope. */
         @Experimental(sinceAzora: "0.0.4")
@@ -66,7 +66,7 @@ zone std {
          * no runtime cost and no function values, so it lowers to every backend.
          */
         @Experimental(sinceAzora: "0.0.4")
-        bridge prop<D> withDeco: Array<Type>
+        bridge prop<D> withDeco[self&]: Array<Type>
     }
 
     /**

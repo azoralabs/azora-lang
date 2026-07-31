@@ -81,28 +81,28 @@ zone std {
         prop isNotEmpty[self&]: Bool
 
         /** Returns whether `key` is present. */
-        func containsKey(key: K&): Bool
+        func containsKey[self&](key: K&): Bool
 
         /** Returns whether an equal value is present. Requires `oper==` for `V`. */
-        func containsValue(value: V&): Bool
+        func containsValue[self&](value: V&): Bool
 
         /** Returns the value associated with `key`, or `null` when absent. */
-        func get(key: K&): V?
+        func get[self&](key: K&): V?
 
         /** Returns the associated value, or `defaultValue` when absent. */
-        func getOrDefault(key: K&, defaultValue: V): V
+        func getOrDefault[self&](key: K&, defaultValue: V): V
 
         /** Returns an iteration-order snapshot of all entries. */
-        func entries(): Array<MapEntry<K, V>>
+        func entries[self&](): Array<MapEntry<K, V>>
 
         /** Returns an iteration-order snapshot of all keys. */
-        func keys(): List<K>
+        func keys[self&](): List<K>
 
         /** Returns an iteration-order snapshot of all values. */
-        func values(): List<V>
+        func values[self&](): List<V>
 
         /** Invokes `action` once for every entry in iteration order. */
-        func forEach(action: (K&, V&) -> Unit)
+        func forEach[self&](action: (K&, V&) -> Unit)
     }
 
     /**
@@ -118,19 +118,19 @@ zone std {
     @Experimental(sinceAzora: "0.0.4")
     prot MutableMap<K, V> : Map<K, V> {
         /** Associates `key` with `value` and returns the replaced value, if any. */
-        func put(key: K, value: V): V?
+        func put[self&](key: K, value: V): V?
 
         /** Copies all entries from `other`, replacing equal keys. */
-        func putAll(other: Map<K, V>&)
+        func putAll[self&](other: Map<K, V>&)
 
         /** Removes `key` and returns its previous value, or `null` when absent. */
-        func remove(key: K&): V?
+        func remove[self&](key: K&): V?
 
         /** Removes every entry while retaining reusable internal capacity. */
-        func clear()
+        func clear[self&]()
 
         /** Returns the existing value or inserts and returns `defaultValue()`. */
-        func getOrPut(key: K, defaultValue: () -> V): V
+        func getOrPut[self&](key: K, defaultValue: () -> V): V
     }
 
     /**
@@ -146,37 +146,37 @@ zone std {
     @Experimental(sinceAzora: "0.0.4")
     prot SortedMap<K, V> {
         /** Returns the smallest key, or `null` when empty. */
-        func firstKey(): K?
+        func firstKey[self&](): K?
 
         /** Returns the greatest key, or `null` when empty. */
-        func lastKey(): K?
+        func lastKey[self&](): K?
 
         /** Returns the greatest key strictly below `key`. */
-        func lowerKey(key: K&): K?
+        func lowerKey[self&](key: K&): K?
 
         /** Returns the greatest key below or equivalent to `key`. */
-        func floorKey(key: K&): K?
+        func floorKey[self&](key: K&): K?
 
         /** Returns the smallest key equivalent to or above `key`. */
-        func ceilingKey(key: K&): K?
+        func ceilingKey[self&](key: K&): K?
 
         /** Returns the smallest key strictly above `key`. */
-        func higherKey(key: K&): K?
+        func higherKey[self&](key: K&): K?
 
         /** Returns the entry with the smallest key, or `null` when empty. */
-        func firstEntry(): MapEntry<K, V>?
+        func firstEntry[self&](): MapEntry<K, V>?
 
         /** Returns the entry with the greatest key, or `null` when empty. */
-        func lastEntry(): MapEntry<K, V>?
+        func lastEntry[self&](): MapEntry<K, V>?
 
         /** Returns an ascending read-only view below `toKey`. */
-        func headMap(toKey: K&, inclusive: Bool = false): SortedMap<K, V>
+        func headMap[self&](toKey: K&, inclusive: Bool = false): SortedMap<K, V>
 
         /** Returns an ascending read-only view above `fromKey`. */
-        func tailMap(fromKey: K&, inclusive: Bool = true): SortedMap<K, V>
+        func tailMap[self&](fromKey: K&, inclusive: Bool = true): SortedMap<K, V>
 
         /** Returns an ascending read-only view between two key boundaries. */
-        func subMap(
+        func subMap[self&](
             fromKey: K&,
             fromInclusive: Bool,
             toKey: K&,
@@ -192,10 +192,10 @@ zone std {
     @Experimental(sinceAzora: "0.0.4")
     prot MutableSortedMap<K, V> : SortedMap<K, V> {
         /** Removes and returns the smallest entry, or `null` when empty. */
-        func pollFirstEntry(): MapEntry<K, V>?
+        func pollFirstEntry[self&](): MapEntry<K, V>?
 
         /** Removes and returns the greatest entry, or `null` when empty. */
-        func pollLastEntry(): MapEntry<K, V>?
+        func pollLastEntry[self&](): MapEntry<K, V>?
     }
 
     /** Hash table with unspecified iteration order. `K` requires `oper#` and `oper==`. */

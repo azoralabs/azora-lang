@@ -1,0 +1,90 @@
+/*
+ * Copyright 2026 AzoraLabs
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+mod std.memory.syncshared
+
+/**
+ * @file std/memory/syncshared
+ *
+ * A shared pointer whose reference count is safe to touch from several threads
+ * (`SyncShared<T>`).
+ *
+ * One heap allocation, many owners: `retain()` records a new owner, `release()`
+ * gives one up and reclaims the allocation when the last one leaves. The count
+ * is synchronised, which is the whole difference from [Shared] — reach for that
+ * one when the owners all live on a single thread and you would rather not pay
+ * for the synchronisation.
+ *
+ * @since 0.0.3
+ */
+
+zone std {
+    /**
+     * A reference-counted pointer to a `T`, countable across threads.
+     *
+     * @param T the pointee type.
+     */
+    @SinceAzora("0.0.3")
+    pack SyncShared<T> {
+        var raw: T*
+        var count: Int
+    }
+
+    @Experimental(sinceAzora: "0.0.3")
+    impl deref for SyncShared<T> { self& ->
+        return deref self.raw
+    }
+
+    impl SyncShared<T> {
+        /** The pointed-to value. */
+        @SinceAzora("0.0.3")
+        prop get[self&]: T = deref self.raw
+
+        /** Replaces the pointed-to value without changing ownership. */
+        @Experimental(sinceAzora: "0.0.3")
+        func set(value: T) { self.raw[0] = value }
+
+        /** Records a new shared owner. Returns the new reference count. */
+        @Experimental(sinceAzora: "0.0.3")
+        func retain(): Int {
+            self.count = self.count + 1
+            return self.count
+        }
+
+        /** Drops a shared owner; reclaims the allocation when the count reaches zero. */
+        @Experimental(sinceAzora: "0.0.3")
+        func release(): Int {
+            self.count = self.count - 1
+            if self.count <= 0 {
+                drop self.raw
+            }
+            return self.count
+        }
+
+        /** The current number of live references. */
+        @SinceAzora("0.0.3")
+        prop refCount[self&]: Int = self.count
+
+        /** The underlying `T*` (escapes the counting). */
+        @SinceAzora("0.0.3")
+        prop ptr[self&]: T* = self.raw
+    }
+
+    @Experimental(sinceAzora: "0.0.3")
+    func syncSharedOf<T>(value: T): SyncShared<T> {
+        return SyncShared(alloc value, 1)
+    }
+}

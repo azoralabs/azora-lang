@@ -6,10 +6,10 @@ and model streams as a standard-library builder and type, like Kotlin:
 examples:
 
 ```azora
-func countdown(from: Int): Flow<Int> = flow {
+func countdown(from: Int): std::Flow<Int> = flow {
     reverse for n in from..0 {
-        emit(n)
-        delay(1.seconds) // seconds to be in std.time an extension to Int (prop) and be type Duration, something like this: "func seconds[self: Int]() = Duration(self)"
+        std::emit(n)
+        std::delay(1.seconds) // seconds to be in std.time an extension to Int (prop) and be type Duration, something like this: "func seconds[self: Int]() = Duration(self)"
     }
 }
 ```
@@ -20,7 +20,7 @@ Collection:
 ```azora
 async func main() {
     countdown(5).collect { number ->
-        io::println(number)
+        std::println(number)
     }
 }
 ```
@@ -28,13 +28,13 @@ async func main() {
 That gives you the clean Kotlin distinction:
 
 ```azora
-func values(): Sequence<Int> = sequence {
-    yield(1)
-    yield(2)
+func values(): std::Sequence<Int> = std::sequence {
+    std::yield(1)
+    std::yield(2)
 }
 
-func events(): Flow<Event> = flow {
-    emit(readEvent())
+func events(): std::Flow<Event> = std::flow {
+    std::emit(readEvent())
 }
 ```
 
@@ -47,14 +47,49 @@ Notice that both declarations remain ordinary funcs. The returned type describes
 ```azora
 func calculate(): Int
 async func download(): Bytes
-func observeMessages(): Flow<Message>
+func observeMessages(): std::Flow<Message>
 ```
 
 I would also keep Kotlin’s familiar builder vocabulary:
 
 ```azora
-flow { emit(value) }
-sequence { yield(value) }
+std::flow { std::emit(value) }
+std::sequence { std::yield(value) }
 ```
 
 This is clearer than adding a third declaration keyword and keeps asynchronous streams as a library abstraction rather than baking them deeply into the language.
+
+// new type form:  ([Flow<T>]() -> Unit)
+
+For callback declaration we will use only this syntax build inside the compiler:
+```azora
+fin f1 = () -> Unit
+fin f2 = (Real, Bool) -> Int
+fin f3 = (...Real) -> Unit
+fin f4 = (Int, ...Real) -> Bool
+fin f5 = (T) -> R
+fin f6 = [T](S) -> R
+fin f7 = [T, Q](...S) -> R
+```
+
+```azora
+fin f1 = async () -> Unit
+fin f2 = async (Real, Bool) -> Int
+fin f3 = async (...Real) -> Unit
+fin f4 = async (Int, ...Real) -> Bool
+fin f5 = async (T) -> R
+fin f6 = async [T](S) -> R
+fin f7 = async [T, Q](...S) -> R
+```
+
+I gave just some examples but all combinations should be possible:
+And for callback implementation:
+
+```azora
+func main() {
+    fin add1 = { x: Int, y: Int -> x + y }
+    fin add2 = [self: Vec2&]{ self.x + self.y } // only use in Vec2 context
+    fin add3 = [self: Vec2&]{ other: Vec2& -> self + other } // only use in Vec2 context
+    fin add4: [Vec2&](Vec2&) -> Vec2 = [self: Vec2&]{ other: Vec2& -> self + other } // only use in Vec2 context
+}
+```

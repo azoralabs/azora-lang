@@ -16,7 +16,9 @@
 
 package org.azora.lang.ir
 
+import org.azora.lang.frontend.Param
 import org.azora.lang.frontend.ParamModifier
+import org.azora.lang.frontend.lambdaReceiverName
 import org.azora.lang.frontend.CastKind
 import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.FuncDecl
@@ -517,11 +519,11 @@ class IrGenerator(private val table: SymbolTable) {
     }
 
     /**
-     * Collects a dynamic-dispatch table for every prot that has at least one
+     * Collects a dynamic-dispatch table for every spec that has at least one
      * concrete `pack` implementer whose `impl` methods all resolve to real
      * functions. Backends without native trait objects use this to emit a
      * type-id switch; the interpreter/JS ignore it. Decorator contracts and
-     * marker prots (no method signatures) are skipped.
+     * marker specs (no method signatures) are skipped.
      */
     private fun buildSpecTables(): List<IrSpecTable> {
         val bySpec = table.allConformances()
@@ -530,20 +532,34 @@ class IrGenerator(private val table: SymbolTable) {
         val tables = mutableListOf<IrSpecTable>()
         for ((specName, confs) in bySpec) {
             val spec = table.lookupSpec(specName) ?: continue
-            val methods = spec.methodSigs
+            val callable = spec.methodSigs
                 .filterNot { it.value.isProperty }
                 .map { (name, sig) -> IrSpecMethod(name, sig.paramTypes, sig.returnType) }
+            // A spec property (`prop size[self: Self&]: Int`) dispatches exactly
+            // like a nullary method — the backend reads `value.size` through the
+            // same stub. An implementer that satisfies the property with a plain
+            // field has no getter to point at; that one type drops out of the
+            // property's switch rather than out of the table, so its ordinary
+            // method dispatch is unaffected.
+            val properties = spec.methodSigs
+                .filter { it.value.isProperty }
+                .map { (name, sig) -> IrSpecMethod(name, emptyList(), sig.returnType) }
+            val methods = callable + properties
             if (methods.isEmpty()) continue
             val impls = mutableListOf<IrSpecImpl>()
             for (typeName in confs.map { it.typeName }.distinct()) {
                 val methodFuncs = mutableMapOf<String, String>()
                 var complete = true
-                for (m in methods) {
+                for (m in callable) {
                     val fn = table.lookupMethod(typeName, m.name)
                     if (fn == null) { complete = false; break }
                     methodFuncs[m.name] = fn
                 }
-                if (complete) impls.add(IrSpecImpl(typeName, methodFuncs))
+                if (!complete) continue
+                for (p in properties) {
+                    table.lookupMethod(typeName, p.name)?.let { methodFuncs[p.name] = it }
+                }
+                impls.add(IrSpecImpl(typeName, methodFuncs))
             }
             if (impls.isNotEmpty()) tables.add(IrSpecTable(specName, methods, impls))
         }
@@ -1216,7 +1232,7 @@ class IrGenerator(private val table: SymbolTable) {
                     expr.kind == CastKind.STATIC && target == IrType.String ->
                         IrExpr.StringTemplate(listOf(IrExpr.IrTemplatePart.Expr(inner)))
                     target == innerType -> inner
-                    // Upcast a concrete `pack` to a prot it implements: mark it as a
+                    // Upcast a concrete `pack` to a spec it implements: mark it as a
                     // representation coercion so native backends can box it into a fat
                     // pointer for dynamic dispatch. The interpreter/JS treat a NumCast
                     // of a non-numeric as identity (the value keeps its `__type`).
@@ -1577,7 +1593,7 @@ class IrGenerator(private val table: SymbolTable) {
                 val target = lowerExpr(expr.target)
                 val targetType = target.type
                 if (targetType is IrType.Named) {
-                    val mangled = table.lookupMethod(targetType.name, "deref")
+                    val mangled = table.lookupMethod(targetType.name, "operDeref")
                     if (mangled != null) {
                         val func = table.lookupFunction(mangled)!!
                         return IrExpr.Call(mangled, listOf(target), func.returnType)
@@ -1675,6 +1691,12 @@ class IrGenerator(private val table: SymbolTable) {
                             return IrExpr.Call(mangled, listOf(target), func.returnType)
                         }
                     }
+                    // A property required by a spec (`list.size` where `list: List<T>`)
+                    // has neither a field nor a single impl to name here — the backend
+                    // dispatches it. Carry the spec's declared type so arithmetic and
+                    // comparisons on the result still lower.
+                    val specProp = table.lookupSpecProp(tt2.name, expr.name)
+                    if (specProp != null) return IrExpr.Member(target, expr.name, specProp)
                 }
                 val memberType = when {
                     expr.name in setOf("length", "size") && (target.type is IrType.Array || target.type is IrType.Map || target.type is IrType.Set || target.type == IrType.String) -> IrType.Int
@@ -1725,11 +1747,11 @@ class IrGenerator(private val table: SymbolTable) {
                         return IrExpr.Call(mangled, listOf(target) + args, func.returnType)
                     }
                 }
-                // Call on a prot-typed value (`p.build()` where `p: Plugin`): no
-                // concrete method exists on the prot name, so keep it as a
+                // Call on a spec-typed value (`p.build()` where `p: Plugin`): no
+                // concrete method exists on the spec name, so keep it as a
                 // `MethodCall` for dynamic dispatch. The interpreter resolves it via
-                // the receiver's `__type`; native backends via the prot table. We
-                // still stamp the erased return type from the prot signature.
+                // the receiver's `__type`; native backends via the spec table. We
+                // still stamp the erased return type from the spec signature.
                 if (tt is IrType.Named) {
                     val sig = table.lookupSpecMethod(tt.name, expr.name)
                     if (sig != null && !sig.isProperty) {
@@ -1809,13 +1831,29 @@ class IrGenerator(private val table: SymbolTable) {
                     table.defineVariable(VariableSymbol(p.name, t))
                     m to t
                 }
-                val receiverParams = expr.receivers.mapIndexed { index, p ->
+                // A lambda that inherits its receivers (`std::sequence { std::yield(1) }`)
+                // declares none, so the bindings are synthesized here under the name the
+                // resolver already used, and made available to calls in the body exactly
+                // as a `with` block would.
+                val inheritsReceivers = expr.receivers.isEmpty() && callableType.receivers.isNotEmpty()
+                val receiverSources = if (inheritsReceivers) {
+                    callableType.receivers.indices.map {
+                        Param(lambdaReceiverName(expr.line, expr.column, it), TypeRef.Named("Any"))
+                    }
+                } else {
+                    expr.receivers
+                }
+                val receiverParams = receiverSources.mapIndexed { index, p ->
                     val t = callableType.receivers.getOrNull(index) ?: resolveType(p.type)
                     val m = registerName(p.name)
                     table.defineVariable(VariableSymbol(p.name, t, mutable = false))
                     m to t
                 }
+                if (inheritsReceivers) {
+                    contextualValues.addLast(receiverParams.map { (name, t) -> IrExpr.Var(name, t) })
+                }
                 val body = lowerBody(expr.body)
+                if (inheritsReceivers) contextualValues.removeLast()
                 popNameScope()
                 table.popScope()
                 val retType = body.mapNotNull { (it as? IrStmt.Return)?.value?.type }.firstOrNull() ?: IrType.Unit
@@ -1872,7 +1910,7 @@ class IrGenerator(private val table: SymbolTable) {
         }
         if (direct) return target
 
-        val derefName = table.lookupMethod(wrapper.name, "deref") ?: return target
+        val derefName = table.lookupMethod(wrapper.name, "operDeref") ?: return target
         val deref = table.lookupFunction(derefName) ?: return target
         val inner = deref.returnType as? IrType.Named ?: return target
         if (inner.name == wrapper.name) return target
@@ -1960,6 +1998,7 @@ class IrGenerator(private val table: SymbolTable) {
         val rank = mapOf(
             IrType.Byte to 1, IrType.UByte to 1, IrType.Short to 2, IrType.UShort to 2,
             IrType.Int to 3, IrType.UInt to 3, IrType.Long to 4, IrType.ULong to 4,
+            IrType.ISize to 4, IrType.USize to 4,
             IrType.Cent to 5, IrType.UCent to 5,
         )
         return if ((rank[a] ?: 0) >= (rank[b] ?: 0)) a else b
@@ -2051,7 +2090,7 @@ class IrGenerator(private val table: SymbolTable) {
         is IrType.Byte -> IrExpr.IntLiteral(0, type)
         is IrType.Short -> IrExpr.IntLiteral(0, type)
         is IrType.UInt -> IrExpr.IntLiteral(0, type)
-        is IrType.ULong -> IrExpr.IntLiteral(0, type)
+        is IrType.ULong, is IrType.ISize, is IrType.USize -> IrExpr.IntLiteral(0, type)
         is IrType.Real -> IrExpr.RealLiteral(0.0, type)
         is IrType.Float -> IrExpr.RealLiteral(0.0, type)
         is IrType.String -> IrExpr.StringLiteral("")

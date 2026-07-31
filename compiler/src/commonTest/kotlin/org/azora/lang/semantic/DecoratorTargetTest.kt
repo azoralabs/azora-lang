@@ -63,8 +63,8 @@ class DecoratorTargetTest {
 
     @Test fun decoratorChainsAndMixedBindingsExpandTransitively() {
         val result = analyze("""
-            prot X<T>
-            prot Y<T>
+            spec X<T>
+            spec Y<T>
             deco A bind X
             deco B bind Y
             deco C bind A
@@ -95,7 +95,7 @@ class DecoratorTargetTest {
 
     @Test fun duplicateTransitiveBindingsAreRejected() {
         val result = analyze("""
-            prot X<T>
+            spec X<T>
             deco A bind X
             deco B bind X
             deco D bind [A, B]
@@ -152,16 +152,16 @@ class DecoratorTargetTest {
 
     @Test fun duplicateContractDeclarationIsRejected() {
         val result = analyze("""
-            prot A<T>
+            spec A<T>
             deco A
             func main() {}
         """.trimIndent())
-        assertTrue(result.errors.any { "duplicate prot or decorator 'A'" in it }, result.errors.toString())
+        assertTrue(result.errors.any { "duplicate spec or decorator 'A'" in it }, result.errors.toString())
     }
 
     @Test fun unreachableBindingFilterIsRejected() {
         val result = analyze("""
-            prot X<T>
+            spec X<T>
             deco A for .Pack bind X for .Func
             func main() {}
         """.trimIndent())

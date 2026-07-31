@@ -51,11 +51,11 @@ zone std {
     impl Deque<T> {
         /** `true` when the deque holds no elements. */
         @SinceAzora("0.0.1")
-        prop isEmpty[self&]: Bool = self.size == 0
+        prop isEmpty[self: Self&]: Bool = self.size == 0
 
         /** `true` when the deque holds at least one element. */
         @SinceAzora("0.0.1")
-        prop isNotEmpty[self&]: Bool = self.size > 0
+        prop isNotEmpty[self: Self&]: Bool = self.size > 0
 
         /** Inserts [value] at the front; O(1) amortized. */
         @Experimental(sinceAzora: "0.0.1")
@@ -127,7 +127,7 @@ zone std {
                 var idx: Int = (self.head + i) % self.capacity
                 newData[i] = self.data[idx]
             }
-            drop self.data
+            purge self.data
             self.data = newData
             self.head = 0
             self.tail = self.size

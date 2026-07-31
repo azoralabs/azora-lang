@@ -27,7 +27,7 @@ use std.traits
  * every backend supplies its representation and machine operations directly. The
  * declarations here give the primitives a reflectable site (so `std::reflect<Int>`
  * and decorator metadata work), a set of `Type::CONSTANT` limits via `impl zone`,
- * the numeric `prot`s (`Number`, `Integer`, …), and — generated with `inline for`
+ * the numeric `spec`s (`Number`, `Integer`, …), and — generated with `inline for`
  * metaprogramming — the full operator surface. The operators are `bridge impl`s:
  * declarations the compiler recognises and lowers to native machine instructions,
  * so their bodies are never executed.
@@ -83,6 +83,20 @@ use zone std {
     @SinceAzora("0.0.4")
     bridge pack UCent
 
+    /**
+     * Signed integer as wide as a pointer on the target.
+     *
+     * Sizes, offsets and alignments are pointer-width by definition. Spelling
+     * them `Long` happens to be right on a 64-bit target and wrong elsewhere,
+     * so they get a type that is right by construction.
+     */
+    @Experimental(sinceAzora: "0.0.5")
+    bridge pack ISize
+
+    /** Unsigned integer as wide as a pointer on the target. */
+    @Experimental(sinceAzora: "0.0.5")
+    bridge pack USize
+
     /** 32-bit IEEE-754 binary floating-point number. */
     @SinceAzora("0.0.4")
     bridge pack Float
@@ -95,21 +109,21 @@ use zone std {
     @SinceAzora("0.0.4")
     bridge pack Decimal
 
-    /** Marker prot for the integer types (signed and unsigned). */
+    /** Marker spec for the integer types (signed and unsigned). */
     @SinceAzora("0.0.4")
-    prot Integer
+    spec Integer
 
-    /** Marker prot for the unsigned integer types. */
+    /** Marker spec for the unsigned integer types. */
     @SinceAzora("0.0.4")
-    prot UnsignedInteger
+    spec UnsignedInteger
 
-    /** Marker prot for the signed integer types. */
+    /** Marker spec for the signed integer types. */
     @SinceAzora("0.0.4")
-    prot SignedInteger
+    spec SignedInteger
 
-    /** Marker prot for the floating-point types. */
+    /** Marker spec for the floating-point types. */
     @SinceAzora("0.0.4")
-    prot FloatingPoint
+    spec FloatingPoint
 
     /**
      * Common contract for every numeric type.
@@ -118,8 +132,8 @@ use zone std {
      *   the higher `rank` is chosen as the result type (see `promote!`).
      */
     @SinceAzora("0.0.4")
-    prot Number {
-        prop rank[self&]: Int
+    spec Number {
+        prop rank[self: Self&]: Int
     }
 
     /**
@@ -129,7 +143,7 @@ use zone std {
      * @member MAX_VALUE The largest representable value, `127`.
      */
     @SinceAzora("0.0.4")
-    impl zone for Byte {
+    impl Byte:: {
         inline fin MIN_VALUE: Int = -128
         inline fin MAX_VALUE: Int = 127
     }
@@ -141,7 +155,7 @@ use zone std {
      * @member MAX_VALUE The largest representable value, `255`.
      */
     @SinceAzora("0.0.4")
-    impl zone for UByte {
+    impl UByte:: {
         inline fin MIN_VALUE: Int = 0
         inline fin MAX_VALUE: Int = 255
     }
@@ -153,7 +167,7 @@ use zone std {
      * @member SIZE_BITS Size in bits, `8`.
      */
     @SinceAzora("0.0.4")
-    impl zone for [Byte, UByte] {
+    impl [Byte, UByte]:: {
         inline fin SIZE_BYTES: Int = 1
         inline fin SIZE_BITS: Int = 8
     }
@@ -165,7 +179,7 @@ use zone std {
      * @member MAX_VALUE The largest representable value, `32_767`.
      */
     @SinceAzora("0.0.4")
-    impl zone for Short {
+    impl Short:: {
         inline fin MIN_VALUE: Int = -32_768
         inline fin MAX_VALUE: Int = 32_767
     }
@@ -177,7 +191,7 @@ use zone std {
      * @member MAX_VALUE The largest representable value, `65_535`.
      */
     @SinceAzora("0.0.4")
-    impl zone for UShort {
+    impl UShort:: {
         inline fin MIN_VALUE: Int = 0
         inline fin MAX_VALUE: Int = 65_535
     }
@@ -189,7 +203,7 @@ use zone std {
      * @member SIZE_BITS Size in bits, `16`.
      */
     @SinceAzora("0.0.4")
-    impl zone for [Short, UShort] {
+    impl [Short, UShort]:: {
         inline fin SIZE_BYTES: Int = 2
         inline fin SIZE_BITS: Int = 16
     }
@@ -201,7 +215,7 @@ use zone std {
      * @member MAX_VALUE The largest representable value, `2_147_483_647`.
      */
     @SinceAzora("0.0.4")
-    impl zone for Int {
+    impl Int:: {
         inline fin MIN_VALUE: Int = -2_147_483_648
         inline fin MAX_VALUE: Int = 2_147_483_647
     }
@@ -213,7 +227,7 @@ use zone std {
      * @member MAX_VALUE The largest representable value, `4_294_967_295`.
      */
     @SinceAzora("0.0.4")
-    impl zone for UInt {
+    impl UInt:: {
         inline fin MIN_VALUE: Int = 0
         inline fin MAX_VALUE: Int = 4_294_967_295
     }
@@ -225,7 +239,7 @@ use zone std {
      * @member SIZE_BITS Size in bits, `32`.
      */
     @SinceAzora("0.0.4")
-    impl zone for [Int, UInt] {
+    impl [Int, UInt]:: {
         inline fin SIZE_BYTES: Int = 4
         inline fin SIZE_BITS: Int = 32
     }
@@ -237,7 +251,7 @@ use zone std {
      * @member MAX_VALUE The largest representable value, `2^63 - 1`.
      */
     @SinceAzora("0.0.4")
-    impl zone for Long {
+    impl Long:: {
         inline fin MIN_VALUE: Long = -9_223_372_036_854_775_807L -1L
         inline fin MAX_VALUE: Long = 9_223_372_036_854_775_807L
     }
@@ -249,7 +263,7 @@ use zone std {
      * @member MAX_VALUE The largest representable value, `2^64 - 1`.
      */
     @SinceAzora("0.0.4")
-    impl zone for ULong {
+    impl ULong:: {
         inline fin MIN_VALUE: Long = 0
         inline fin MAX_VALUE: Long = 18_446_744_073_709_551_615L
     }
@@ -261,7 +275,7 @@ use zone std {
      * @member SIZE_BITS Size in bits, `64`.
      */
     @SinceAzora("0.0.4")
-    impl zone for [Long, ULong] {
+    impl [Long, ULong]:: {
         inline fin SIZE_BYTES: Int = 8
         inline fin SIZE_BITS: Int = 64
     }
@@ -273,7 +287,7 @@ use zone std {
      * @member MAX_VALUE The largest representable value, `2^127 - 1`.
      */
     @SinceAzora("0.0.4")
-    impl zone for Cent {
+    impl Cent:: {
         // Pending 128-bit literal support (the literal pipeline is currently Long-wide):
         // inline fin MIN_VALUE: Cent = -170_141_183_460_469_231_731_687_303_715_884_105_728c
         // inline fin MAX_VALUE: Cent = 170_141_183_460_469_231_731_687_303_715_884_105_727c
@@ -286,7 +300,7 @@ use zone std {
      * @member MAX_VALUE The largest representable value, `2^128 - 1`.
      */
     @SinceAzora("0.0.4")
-    impl zone for UCent {
+    impl UCent:: {
         inline fin MIN_VALUE: UCent = 0uc
         // Pending 128-bit literal support (the literal pipeline is currently Long-wide):
         // inline fin MAX_VALUE: UCent = 340_282_366_920_938_463_463_374_607_431_768_211_455uc
@@ -299,7 +313,7 @@ use zone std {
      * @member SIZE_BITS Size in bits, `128`.
      */
     @SinceAzora("0.0.4")
-    impl zone for [Cent, UCent] {
+    impl [Cent, UCent]:: {
         inline fin SIZE_BYTES: Int = 16
         inline fin SIZE_BITS: Int = 128
     }
@@ -316,7 +330,7 @@ use zone std {
      * @member SIZE_BITS Size in bits, `32`.
      */
     @SinceAzora("0.0.4")
-    impl zone for Float {
+    impl Float:: {
         inline fin MIN_VALUE: Float = 1.4E-45f
         inline fin MAX_VALUE: Float = 3.4028235E38f
         inline fin POSITIVE_INFINITY: Float = 1f/0f
@@ -338,7 +352,7 @@ use zone std {
      * @member SIZE_BITS Size in bits, `64`.
      */
     @SinceAzora("0.0.4")
-    impl zone for Real {
+    impl Real:: {
         inline fin MIN_VALUE: Real = 4.9E-324
         inline fin MAX_VALUE: Real = 1.7976931348623157E308
         inline fin POSITIVE_INFINITY: Real = 1./0.
@@ -363,7 +377,7 @@ use zone std {
      * @member MAX_EXPONENT The largest decimal exponent, `6144`.
      */
     @SinceAzora("0.0.4")
-    impl zone for Decimal {
+    impl Decimal:: {
         inline fin MIN_VALUE: Decimal = -9.999999999999999999999999999999999E6144D
         inline fin MAX_VALUE: Decimal =  9.999999999999999999999999999999999E6144D
         inline fin POSITIVE_INFINITY: Decimal = 1D / 0D
@@ -427,8 +441,8 @@ use zone std {
          * @member rank The promotion rank of `$Ty`.
          */
         @SinceAzora("0.0.4")
-        impl Number as zone for Ty {
-            prop rank[self&]: Int = ${ranks[index]}
+        impl Ty:: {
+            prop rank[self: Ty&]: Int = ${ranks[index]}
         }
     }
 

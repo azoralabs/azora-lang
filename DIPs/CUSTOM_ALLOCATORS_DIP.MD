@@ -26,6 +26,63 @@ A low-level allocator should work with bytes, sizes, and alignment:
 
 ```azora
 prot Allocator {
-    unsafe func allocate(self: Self!, size: USize, align: USize)
+    unsafe func allocate(self: Self!, size: USize, align: USize): Byte^?
+    
+    unsafe func resize(self: Self!, memory: Byte^, oldSize: USize, newSize: USize, align: USize): Byte^?
+
+    unsafe func deallocate(self: Self!, memory: Byte^, size: USize, align: USize)
+}
+
+pack ArenaAllocator {
+    var _backing: Allocator!
+    var _memory: Byte^
+    var _capacity: USize
+    var _offset: USize
+}
+
+impl Allocator for ArenaAllocator {
+    // implement them
 }
 ```
+
+```azora
+unsafe func allocWith<T>(allocator: std::Allocator!, value: T): T^ ?! AllocError {
+    fin memory = try allocator.allocate(T.sizeof, T.alignof) catch { return .OutOfMemory }
+    fin pointer = std::bitcast<T^>(memory)
+    pointer.^ = mov value // you need to add "mov" keyword like rust "move"
+    return pointer
+}
+
+unsafe func purgeWith<T>(allocator: std::Allocator!, pointer: T^) {
+    drop pointer.^
+    allocator.deallocate(std::bitcast<Byte^>(pointer), T.sizeof, T.alignof)
+}
+```
+
+```azora
+unsafe func main() {
+    var allocator = std::SystemAllocator()
+
+    fin user: User^ = std::allocWith(
+        allocator!,
+        User("Gabriel", 30)
+    )
+
+    defer std::purgeWith(allocator!, user)
+
+    println(user.^.name)
+}
+```
+
+Then also add allocators to smart pointers like:
+
+```azora
+pack Unique<T> {
+    var _pointer: T^
+    var _allocator: Allocator!
+}
+
+// Unique<User, ArenaAllocator>
+```
+
+// and to containers and so on

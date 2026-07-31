@@ -294,7 +294,8 @@ sealed class Expr {
     data class MapLit(val entries: List<Pair<Expr, Expr>>, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 
     /** `alloc <expr>` — heap-allocate a value and return a pointer to it. */
-    data class Alloc(val value: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+    /** `alloc* value` → `T*` (read-only), `alloc^ value` → `T^` (mutable). */
+    data class Alloc(val value: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0, val mutable: Boolean = false) : Expr()
 
     /** `alloc T(count)` — allocate a buffer of `count` elements of type T (C++-style), returning `T*`. */
     data class AllocBuffer(val typeName: String, val count: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
@@ -1066,14 +1067,14 @@ sealed class TypeRef {
         val kind: CallableKind = CallableKind.FUNC,
     ) : TypeRef() {
         override fun toString(): String {
-            val name = kind.surfaceName
+            val prefix = if (kind == CallableKind.FUNC) "" else "${kind.surfaceName} "
             val context = if (receivers.isEmpty()) "" else receivers.joinToString(", ", "[", "]")
             val arguments = if (params.isEmpty()) {
                 if (receivers.isEmpty()) "()" else ""
             } else {
                 params.joinToString(", ", "(", ")")
             }
-            return "$name$context$arguments -> $ret"
+            return "$prefix$context$arguments -> $ret"
         }
     }
 
@@ -1106,7 +1107,15 @@ sealed class TypeRef {
     }
 
     /** Pointer type `T*` — a reference to a heap value of [inner]. */
-    data class Pointer(val inner: TypeRef) : TypeRef() {
+    /**
+     * Pointer type `T*` (read-only) or `T^` (mutable).
+     *
+     * The sigil is the whole difference and it is carried at every site — the
+     * type, the allocation that produced it, and the dereference that reads it —
+     * so a mutation through a pointer is visible without consulting the
+     * declaration.
+     */
+    data class Pointer(val inner: TypeRef, val mutable: Boolean = false) : TypeRef() {
         override fun toString() = "$inner*"
     }
 
@@ -1322,9 +1331,9 @@ enum class ReactiveKind { MEM, REM, RET }
 
 /** Surface callable families supported by first-class lambda values. */
 enum class CallableKind(val surfaceName: String) {
-    FUNC("Func"),
-    TASK("Task"),
-    FLOW("Flow"),
+    FUNC(""),
+    TASK("async"),
+    FLOW("flow"),
 }
 
 /** Test execution mode mirrored by the compiler-predefined `TestMethod` enum. */
@@ -1574,9 +1583,9 @@ data class Annotation(
 )
 
 /**
- * A decorator-to-prot binding declared by `deco D bind Spec<...Args>`.
+ * A decorator-to-spec binding declared by `deco D bind Spec<...Args>`.
  *
- * The decorated declaration's type is inserted as the bound prot's first
+ * The decorated declaration's type is inserted as the bound spec's first
  * generic argument. [trailingTypeArgs] supply any remaining generic arguments.
  */
 /** Declaration categories accepted by decorator and binding `for` clauses. */
@@ -1594,12 +1603,12 @@ data class DecoratorBinding(
 )
 
 /**
- * Compact callback form for prots such as
- * `prot Into<T>: T { ref self } use as "to${T.typeName}"`.
+ * Compact callback form for specs such as
+ * `spec Into<T>: T { ref self } use as "to${T.typeName}"`.
  *
- * The prot has no body; implementations provide one callback body directly in
+ * The spec has no body; implementations provide one callback body directly in
  * `impl Into<String> for X { ref self -> ... }`. [requiresParens] is true only
- * when the prot itself declares a parameter list (`prot Into<T>(): T ...`).
+ * when the spec itself declares a parameter list (`spec Into<T>(): T ...`).
  */
 data class SpecCallback(
     val returnType: TypeRef,
@@ -1796,7 +1805,7 @@ sealed class TopLevel {
         val declaringModule: String? = null
     ) : TopLevel()
 
-    /** `deco Name [bind Spec] { fields }` — an annotation type and optional derived prot contract. */
+    /** `deco Name [bind Spec] { fields }` — an annotation type and optional derived spec contract. */
     data class Deco(
         val name: String,
         val fields: List<PackField>,
@@ -1888,7 +1897,7 @@ sealed class TopLevel {
         val isPackImpl: Boolean = false,
         /** `func X.name(...) { ref self -> ... }` extension implementation form. */
         val isExtension: Boolean = false,
-        /** Generic arguments on the implemented prot, e.g. `String` in `Into<String>`. */
+        /** Generic arguments on the implemented spec, e.g. `String` in `Into<String>`. */
         val traitArgs: List<TypeRef> = emptyList(),
         /** Positional compile-time metadata values on `impl Decorator(...) for Type`. */
         val decoratorArgs: List<Expr> = emptyList(),
@@ -1913,7 +1922,7 @@ sealed class TopLevel {
         val declaringModule: String? = null
     ) : TopLevel()
 
-    /** `prot Name { func method(params): Ret; ... }` or compact callback `prot Name<T>: T { ref self } use as "to${T.typeName}"`. */
+    /** `spec Name { func method(params): Ret; ... }` or compact callback `spec Name<T>: T { ref self } use as "to${T.typeName}"`. */
     data class Spec(
         val name: String,
         val methods: List<FuncDecl>,
@@ -1921,7 +1930,7 @@ sealed class TopLevel {
         val column: Int = 0,
         val callback: SpecCallback? = null,
         val typeParams: List<String> = emptyList(),
-        /** Parent prot this one inherits every member from (`prot Mutable: Read {…}`). */
+        /** Parent spec this one inherits every member from (`spec Mutable: Read {…}`). */
         val parent: TypeRef? = null,
     ) : TopLevel()
 
@@ -2044,3 +2053,15 @@ data class Program(
     /** Convenience — returns only the test declarations. */
     val tests: List<TopLevel.Test> get() = items.filterIsInstance<TopLevel.Test>()
 }
+
+/**
+ * The name given to a contextual receiver that a lambda inherits rather than
+ * declares — `std::sequence { std::yield(1) }` names no receiver, but the
+ * closure still has to carry one.
+ *
+ * The frontend and the IR generator both synthesize these bindings and must
+ * agree on the name; deriving it from the lambda's own source position keeps
+ * them in step without threading a counter between passes.
+ */
+fun lambdaReceiverName(line: Int, column: Int, index: Int): String =
+    "__ctx${index}__${line}_$column"

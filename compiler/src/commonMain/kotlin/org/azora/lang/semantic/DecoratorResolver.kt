@@ -27,7 +27,7 @@ import org.azora.lang.frontend.TopLevel
 import org.azora.lang.frontend.TypeAnnotation
 import org.azora.lang.frontend.TypeRef
 
-/** Resolves decorator targets and transitive decorator/prot binding graphs. */
+/** Resolves decorator targets and transitive decorator/spec binding graphs. */
 class DecoratorResolver {
     private data class Site(
         val identity: String,
@@ -277,7 +277,7 @@ class DecoratorResolver {
                 if (!allows(binding.targets, target)) continue
                 val bound = table.lookupSpec(binding.name)
                 if (bound == null) {
-                    errors.add("line $line: decorator '$name' binds unknown prot or decorator '${binding.name}'")
+                    errors.add("line $line: decorator '$name' binds unknown spec or decorator '${binding.name}'")
                     continue
                 }
                 if (bound.isDecorator) {

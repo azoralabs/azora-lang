@@ -93,9 +93,9 @@ class LlvmCodegen {
     private val structDefs = mutableMapOf<String, IrTopLevel.Struct>()
 
     /**
-     * Dynamic dispatch for prot-typed values (Rust-style `dyn Trait`). A prot
-     * type has no native struct; a prot-typed value is a heap `{ i32 typeId,
-     * i8* data }` fat pointer. [specDispatch] maps a prot name to its dispatch
+     * Dynamic dispatch for spec-typed values (Rust-style `dyn Trait`). A spec
+     * type has no native struct; a spec-typed value is a heap `{ i32 typeId,
+     * i8* data }` fat pointer. [specDispatch] maps a spec name to its dispatch
      * table; [specTypeIds] assigns each concrete implementer a stable non-zero id.
      */
     private val specDispatch = mutableMapOf<String, IrSpecTable>()
@@ -379,11 +379,34 @@ class LlvmCodegen {
 
         // Extern (`bridge`) function declarations (intrinsics we define ourselves
         // are emitted as runtime helpers below, so skip their `declare`).
-        for (item in program.items.filterIsInstance<IrTopLevel.Extern>()) {
+        val externs = program.items.filterIsInstance<IrTopLevel.Extern>()
+        val mathIntrinsicsUsed = externs.mapNotNullTo(linkedSetOf()) { mathIntrinsicOf(it) }
+        for (libm in mathIntrinsicsUsed) {
+            val params = List(LIBM_INTRINSICS.getValue(libm)) { "double" }.joinToString(", ")
+            body.appendLine("declare double @$libm($params)")
+        }
+        for (item in externs) {
             if (item.name in stringIntrinsics) continue
+            // `zone std::math { bridge func sqrt(…) }` mangles to `__std_math_sqrt`,
+            // a symbol nothing provides. The compiler supplies these itself rather
+            // than linking a hand-written C shim: declare the libm function and
+            // define the mangled name as a call to it.
+            val libm = mathIntrinsicOf(item)
+            if (libm != null) {
+                val ps = item.params.mapIndexed { i, (_, t) -> "${mapType(t)} %a$i" }
+                val args = item.params.mapIndexed { i, (_, t) -> "${mapType(t)} %a$i" }
+                val ret = mapType(item.returnType)
+                body.appendLine("define $ret @${item.name}(${ps.joinToString(", ")}) {")
+                body.appendLine("entry:")
+                body.appendLine("  %r = call $ret @$libm(${args.joinToString(", ")})")
+                body.appendLine("  ret $ret %r")
+                body.appendLine("}")
+                continue
+            }
             val params = item.params.joinToString(", ") { (_, t) -> mapType(t) }
             body.appendLine("declare ${mapType(item.returnType)} @${item.name}($params)")
         }
+
 
         // Tests
         for (item in program.items.filterIsInstance<IrTopLevel.Test>()) {
@@ -2242,9 +2265,9 @@ class LlvmCodegen {
 
     private fun coerceNumeric(value: String, from: IrType, to: IrType): String {
         if (from == to) return value
-        // Upcast a concrete `pack` to a prot it implements: box into a fat pointer
+        // Upcast a concrete `pack` to a spec it implements: box into a fat pointer
         // `{ i32 typeId, i8* data }` so the value carries its runtime type for
-        // dynamic dispatch. (A prot→prot pass-through keeps the existing box.)
+        // dynamic dispatch. (A spec→spec pass-through keeps the existing box.)
         if (to is IrType.Named && to.name in specDispatch &&
             from is IrType.Named && from.name in specTypeIds
         ) {
@@ -2494,6 +2517,24 @@ class LlvmCodegen {
         return coerceNumeric(typed, fieldType, IrType.Any)
     }
 
+    /**
+     * The libm function a `bridge func` stands for, or null when it is an
+     * ordinary extern.
+     *
+     * Matching is on the declaration's final name segment so both the bare
+     * spelling and the `zone std::math` mangling resolve, and only when the
+     * signature is all-`Real` — an unrelated user extern that happens to be
+     * called `log` keeps its own linkage.
+     */
+    private fun mathIntrinsicOf(item: IrTopLevel.Extern): String? {
+        val name = item.name.substringAfterLast('_')
+        val arity = LIBM_INTRINSICS[name] ?: return null
+        if (item.params.size != arity) return null
+        if (item.returnType != IrType.Real) return null
+        if (item.params.any { it.second != IrType.Real }) return null
+        return name
+    }
+
     private fun emitMemberRead(expr: IrExpr.Member): String {
         val targetType = expr.target.type
         // Array/string length.
@@ -2536,6 +2577,19 @@ class LlvmCodegen {
             }
             return tmp
         }
+        // Spec-typed receiver → the property's dynamic-dispatch stub. `list.size`
+        // where `list: List<T>` has no field to address; the concrete getter is
+        // chosen at runtime from the fat pointer's type id.
+        if (targetType is IrType.Named && targetType.name in specDispatch) {
+            val table = specDispatch.getValue(targetType.name)
+            val property = table.methods.firstOrNull { it.name == expr.name && it.paramTypes.isEmpty() }
+            if (property != null) {
+                val box = emitExpr(expr.target)
+                val r = nextTmp()
+                emit("  $r = call ${mapType(property.returnType)} @${specDispatcherName(targetType.name, expr.name)}(i8* $box)")
+                return r
+            }
+        }
         emitExpr(expr.target)
         emit("  ; member .${expr.name} on ${expr.target.type} — not lowered")
         return defaultValue(expr.type)
@@ -2558,12 +2612,12 @@ class LlvmCodegen {
         emit("  ; member assign .${stmt.name} on ${stmt.target.type} — not lowered")
     }
 
-    /** The LLVM symbol name of a prot method's dynamic-dispatch stub. */
+    /** The LLVM symbol name of a spec method's dynamic-dispatch stub. */
     private fun specDispatcherName(spec: String, method: String) =
         "__dyn_${sanitizeName(spec)}_${sanitizeName(method)}"
 
     /**
-     * Emits a dynamic-dispatch stub for one prot method. The receiver is a fat
+     * Emits a dynamic-dispatch stub for one spec method. The receiver is a fat
      * pointer `{ i32 typeId, i8* data }`; the stub loads the id, switches to the
      * matching implementer, unpacks the concrete `self`, and tail-calls its
      * `impl` body. Unknown ids return a zero value (unreachable in practice).
@@ -3541,7 +3595,11 @@ class LlvmCodegen {
                 // Unsupported operand type (e.g. arithmetic on a nullable/boxed
                 // value). The LLVM backend has no unboxing model yet, so degrade
                 // to a stub — consistent with how other aggregate ops are handled.
+                // The stub still has to *define* its temporary: callers may phi on
+                // it from a later block, and an undefined name is invalid IR that
+                // fails at load time rather than where the gap actually is.
                 emit("  ; binary ${expr.op} on ${expr.left.type} — not lowered (nullable aggregate)")
+                emit("  $tmp = select i1 true, ${mapType(expr.type)} ${defaultValue(expr.type)}, ${mapType(expr.type)} ${defaultValue(expr.type)}")
             }
         }
         return tmp
@@ -3739,7 +3797,7 @@ class LlvmCodegen {
             emitPointerAssign(expr.args[0], expr.args[1])
             return "void"
         }
-        if (expr.name == "__drop") {
+        if (expr.name == "__purge") {
             emitExpr(expr.args.single())
             emit("  ; drop — advisory for raw pointers; arenas/task scopes own native cleanup")
             return "void"
@@ -3953,7 +4011,7 @@ class LlvmCodegen {
         IrType.Char, IrType.UByte, IrType.UShort -> {
             val t = nextTmp(); emit("  $t = zext ${mapType(type)} $value to i32"); t
         }
-        IrType.Long, IrType.ULong -> {
+        IrType.Long, IrType.ULong, IrType.ISize, IrType.USize -> {
             val t = nextTmp(); emit("  $t = trunc i64 $value to i32"); t
         }
         IrType.Cent, IrType.UCent -> {
@@ -4005,7 +4063,7 @@ class LlvmCodegen {
     }
 
     private fun widenToI64(value: String, type: IrType): String = when (type) {
-        IrType.Long, IrType.ULong -> value
+        IrType.Long, IrType.ULong, IrType.ISize, IrType.USize -> value
         IrType.Cent, IrType.UCent -> { val t = nextTmp(); emit("  $t = trunc i128 $value to i64"); t }
         IrType.UInt, IrType.UByte, IrType.UShort, IrType.Char ->
             { val t = nextTmp(); emit("  $t = zext ${mapType(type)} $value to i64"); t }
@@ -4613,6 +4671,7 @@ class LlvmCodegen {
         IrType.UShort -> "i16"
         IrType.Long -> "i64"
         IrType.ULong -> "i64"
+        IrType.ISize, IrType.USize -> "i64"   // pointer-width on every supported target
         IrType.Cent -> "i128"
         IrType.UCent -> "i128"
         IrType.Float -> "float"
@@ -4640,7 +4699,7 @@ class LlvmCodegen {
     }
 
     private fun isUnsigned(type: IrType): Boolean = when (type) {
-        IrType.UInt, IrType.UByte, IrType.UShort, IrType.ULong, IrType.UCent -> true
+        IrType.UInt, IrType.UByte, IrType.UShort, IrType.ULong, IrType.UCent, IrType.USize -> true
         else -> false
     }
 
@@ -4781,3 +4840,20 @@ class LlvmCodegen {
         out.appendLine(text)
     }
 }
+
+/**
+ * Floating-point functions the compiler provides itself, mapped to their arity.
+ *
+ * Every one is a standard libm symbol, so the backend can define the Azora
+ * declaration as a direct call rather than requiring a C or WASM shim.
+ */
+private val LIBM_INTRINSICS = mapOf(
+    "sin" to 1, "cos" to 1, "tan" to 1,
+    "asin" to 1, "acos" to 1, "atan" to 1, "atan2" to 2,
+    "sinh" to 1, "cosh" to 1, "tanh" to 1,
+    "sqrt" to 1, "cbrt" to 1, "hypot" to 2,
+    "log" to 1, "log2" to 1, "log10" to 1,
+    "exp" to 1, "exp2" to 1, "pow" to 2,
+    "floor" to 1, "ceil" to 1, "trunc" to 1, "round" to 1,
+    "fabs" to 1, "fmod" to 2, "fmin" to 2, "fmax" to 2,
+)

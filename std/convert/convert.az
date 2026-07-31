@@ -23,23 +23,23 @@ zone std {
      * Declares conversion into `T`.
      *
      * Implementing `Into<String>` for a type creates a property-style member
-     * named from the `use as` template. For `T = String`, this prot exposes
+     * named from the `use as` template. For `T = String`, this spec exposes
      * `.toString` without parentheses.
      *
      * @param T target type produced by the conversion.
      */
     @Experimental(sinceAzora: "0.0.3")
-    prot Into<T>: T (self&) use as "to${T.typeName}"
+    spec Into<T>: T (self&) use as "to${T.typeName}"
 
     /**
      * Declares conversion from `T`.
      *
      * Implementing `From<String>` for a type creates a property-style member
-     * named from the `use as` template. For `T = String`, this prot exposes
+     * named from the `use as` template. For `T = String`, this spec exposes
      * `.fromString` without parentheses.
      *
      * @param T source type represented by the conversion.
      */
     @Experimental(sinceAzora: "0.0.3")
-    prot From<T>: T (self&) use as "from${T.typeName}"
+    spec From<T>: T (self&) use as "from${T.typeName}"
 }

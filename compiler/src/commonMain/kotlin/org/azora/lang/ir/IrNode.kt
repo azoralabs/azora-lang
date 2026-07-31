@@ -43,6 +43,7 @@ import org.azora.lang.frontend.CallableKind
  * - [UShort] -- 16-bit unsigned integer
  * - [Long] -- 64-bit signed integer
  * - [ULong] -- 64-bit unsigned integer
+ * - [ISize]/[USize] -- signed/unsigned integers as wide as a pointer
  * - [Cent] -- 128-bit signed integer
  * - [UCent] -- 128-bit unsigned integer
  * - [Float] -- 32-bit single-precision floating point
@@ -75,6 +76,18 @@ sealed class IrType {
     object Long : IrType() { override fun toString() = "Long" }
     /** 64-bit unsigned integer type. */
     object ULong : IrType() { override fun toString() = "ULong" }
+
+    /**
+     * A signed integer as wide as a pointer on the target.
+     *
+     * Sizes, offsets and alignments are pointer-width by definition, so they get
+     * their own type rather than borrowing `Long` and being wrong on a 32-bit
+     * target.
+     */
+    object ISize : IrType() { override fun toString() = "ISize" }
+
+    /** An unsigned integer as wide as a pointer on the target. */
+    object USize : IrType() { override fun toString() = "USize" }
     /** 128-bit signed integer type. */
     object Cent : IrType() { override fun toString() = "Cent" }
     /** 128-bit unsigned integer type. */
@@ -117,7 +130,8 @@ sealed class IrType {
             } else {
                 params.joinToString(", ", "(", ")")
             }
-            return "${kind.surfaceName}$context$arguments -> $ret"
+            val prefix = if (kind == CallableKind.FUNC) "" else "${kind.surfaceName} "
+            return "$prefix$context$arguments -> $ret"
         }
     }
 
@@ -134,8 +148,14 @@ sealed class IrType {
     /** Nullable type `T?`. */
     data class Nullable(val inner: IrType) : IrType() { override fun toString() = "$inner?" }
 
-    /** Pointer type `T*` — a heap reference to [inner]. Runtime representation is a mutable cell. */
-    data class Pointer(val inner: IrType) : IrType() { override fun toString() = "$inner*" }
+    /**
+     * Pointer type `T*` (read-only) or `T^` (mutable) — a heap reference to
+     * [inner]. Runtime representation is a mutable cell either way; [mutable]
+     * is what the write check consults.
+     */
+    data class Pointer(val inner: IrType, val mutable: Boolean = false) : IrType() {
+        override fun toString() = if (mutable) "$inner^" else "$inner*"
+    }
 
     /** A user-defined or unresolved named type (struct, enum, generic base). */
     /**
@@ -170,10 +190,10 @@ sealed class IrType {
         /** Type aliases registered by the compiler (cleared per compilation). */
         val aliases = mutableMapOf<kotlin.String, TypeRef>()
         /** The set of all numeric types (integer + floating-point). */
-        val numericTypes: kotlin.collections.Set<IrType> = setOf(Int, UInt, Real, Byte, UByte, Short, UShort, Long, ULong, Cent, UCent, Float, Decimal)
+        val numericTypes: kotlin.collections.Set<IrType> = setOf(Int, UInt, Real, Byte, UByte, Short, UShort, Long, ULong, Cent, UCent, ISize, USize, Float, Decimal)
 
         /** The set of all integer numeric types. */
-        val integerTypes: kotlin.collections.Set<IrType> = setOf(Int, UInt, Byte, UByte, Short, UShort, Long, ULong, Cent, UCent)
+        val integerTypes: kotlin.collections.Set<IrType> = setOf(Int, UInt, Byte, UByte, Short, UShort, Long, ULong, Cent, UCent, ISize, USize)
 
         /** The set of all floating-point numeric types. */
         val floatTypes: kotlin.collections.Set<IrType> = setOf(Real, Float, Decimal)
@@ -199,6 +219,8 @@ sealed class IrType {
             "UShort" -> UShort
             "Long" -> Long
             "ULong" -> ULong
+            "ISize" -> ISize
+            "USize" -> USize
             "Cent" -> Cent
             "UCent" -> UCent
             "Float" -> Float
@@ -266,7 +288,7 @@ sealed class IrType {
             )
             is TypeRef.Tuple -> Tuple(ref.elements.map { resolve(it, typeParams) })
             is TypeRef.Nullable -> Nullable(resolve(ref.inner, typeParams))
-            is TypeRef.Pointer -> Pointer(resolve(ref.inner, typeParams))
+            is TypeRef.Pointer -> Pointer(resolve(ref.inner, typeParams), ref.mutable)
             // Checked references are erased after ownership/lifetime analysis. Backends
             // receive the referenced value ABI while the AST retains the qualifier.
             is TypeRef.Reference -> resolve(ref.inner, typeParams)
@@ -998,19 +1020,19 @@ data class IrFunction(
 data class IrField(val name: String, val type: IrType, val mutable: Boolean)
 
 /**
- * One method of a prot, with its erased signature — enough for a backend to
+ * One method of a spec, with its erased signature — enough for a backend to
  * generate a dynamic-dispatch stub. [paramTypes] excludes the implicit `self`.
  */
 data class IrSpecMethod(val name: String, val paramTypes: List<IrType>, val returnType: IrType)
 
 /**
- * A concrete implementer of a prot: its type name plus, per method, the mangled
+ * A concrete implementer of a spec: its type name plus, per method, the mangled
  * free-function name of the `impl` body (`Type_method`).
  */
 data class IrSpecImpl(val typeName: String, val methodFuncs: Map<String, String>)
 
 /**
- * The dynamic-dispatch table for one prot: its methods and every concrete `pack`
+ * The dynamic-dispatch table for one spec: its methods and every concrete `pack`
  * that conforms to it. Backends that lack native trait objects (LLVM) use this to
  * emit a type-id switch; the interpreter/JS ignore it (they dispatch on `__type`).
  */
@@ -1079,7 +1101,7 @@ sealed class IrTopLevel {
 data class IrProgram(
     val moduleName: String?,
     val items: List<IrTopLevel>,
-    /** Dynamic-dispatch tables for prots with concrete `pack` implementers. */
+    /** Dynamic-dispatch tables for specs with concrete `pack` implementers. */
     val specTables: List<IrSpecTable> = emptyList()
 ) {
     /** Convenience — returns only the global statements. */

@@ -33,7 +33,7 @@ use std.convert
  *   cannot mutate it.
  *
  * `ArrayList<T>` is the single concrete dynamic-array pack implementing both
- * prots. The `listOf`, `mutableListOf`, `emptyList`, and `arrayListOf`
+ * specs. The `listOf`, `mutableListOf`, `emptyList`, and `arrayListOf`
  * factories construct it; `listOf` and `emptyList` expose the read-only
  * `List<T>` view, `mutableListOf` exposes `MutableList<T>`.
  *
@@ -50,93 +50,93 @@ zone std {
      * @param T The element type.
      */
     @Experimental(sinceAzora: "0.0.4")
-    prot List<T> {
+    spec List<T> {
         /** Number of elements. */
-        prop size[self&]: Int
+        prop size[self: Self&]: Int
 
         /** Whether this list has no elements. */
-        prop isEmpty[self&]: Bool
+        prop isEmpty[self: Self&]: Bool
 
         /** Whether this list has at least one element. */
-        prop isNotEmpty[self&]: Bool
+        prop isNotEmpty[self: Self&]: Bool
 
         /** The first element. Asserts when empty. */
-        prop first[self&]: T
+        prop first[self: Self&]: T
 
         /** The last element. Asserts when empty. */
-        prop last[self&]: T
+        prop last[self: Self&]: T
 
         /** A new list with the elements of this one in reverse order. */
-        prop reversed[self&]: List<T>
+        prop reversed[self: Self&]: List<T>
 
         /** Returns the element at `index`. Asserts on an out-of-bounds index. */
-        func get[self&](index: Int): T
+        func get[self: Self&](index: Int): T
 
         /** Returns whether `element` is present. */
-        func contains[self&](element: T): Bool
+        func contains[self: Self&](element: T): Bool
 
         /** Returns the first index of `element`, or `-1` when absent. */
-        func indexOf[self&](element: T): Int
+        func indexOf[self: Self&](element: T): Int
 
         /** Returns the last index of `element`, or `-1` when absent. */
-        func lastIndexOf[self&](element: T): Int
+        func lastIndexOf[self: Self&](element: T): Int
 
         /** Invokes `action` once for every element in order. */
-        func forEach[self&](action: (T) -> Unit)
+        func forEach[self: Self&](action: (T) -> Unit)
 
         /** Returns a new list with each element transformed by `transform`. */
-        func map[self&](transform: (T) -> T): List<T>
+        func map[self: Self&](transform: (T) -> T): List<T>
 
         /** Returns a new list with only elements satisfying `predicate`. */
-        func filter[self&](predicate: (T) -> Bool): List<T>
+        func filter[self: Self&](predicate: (T) -> Bool): List<T>
 
         /** Returns whether at least one element satisfies `predicate`. */
-        func any[self&](predicate: (T) -> Bool): Bool
+        func any[self: Self&](predicate: (T) -> Bool): Bool
 
         /** Returns whether every element satisfies `predicate`. */
-        func all[self&](predicate: (T) -> Bool): Bool
+        func all[self: Self&](predicate: (T) -> Bool): Bool
 
         /** Returns whether no element satisfies `predicate`. */
-        func none[self&](predicate: (T) -> Bool): Bool
+        func none[self: Self&](predicate: (T) -> Bool): Bool
 
         /** Counts the elements satisfying `predicate`. */
-        func count[self&](predicate: (T) -> Bool): Int
+        func count[self: Self&](predicate: (T) -> Bool): Int
 
         /** Returns a half-open `[from, to)` snapshot of this list. */
-        func subList[self&](from: Int, to: Int): List<T>
+        func subList[self: Self&](from: Int, to: Int): List<T>
     }
 
     /**
      * Mutation behavior implemented by mutable list packs.
      *
-     * Mutation always receives `self!`. Implementing this prot does not
+     * Mutation always receives `self!`. Implementing this spec does not
      * weaken a `ref List<T>` view: callers holding only a shared reference can
      * still use only read operations.
      *
      * @param T The element type.
      */
     @Experimental(sinceAzora: "0.0.4")
-    prot MutableList<T> : List<T> {
+    spec MutableList<T> : List<T> {
         /** Appends `element` to the end. */
-        func add[self&](element: T)
+        func add[self: Self&](element: T)
 
         /** Inserts `element` at `index`, shifting the suffix right. */
-        func insert[self&](index: Int, element: T)
+        func insert[self: Self&](index: Int, element: T)
 
         /** Replaces the element at `index`. */
-        func set[self&](index: Int, element: T)
+        func set[self: Self&](index: Int, element: T)
 
         /** Removes and returns the element at `index`. */
-        func removeAt[self&](index: Int): T
+        func removeAt[self: Self&](index: Int): T
 
         /** Removes and returns the first element. */
-        func removeFirst[self&](): T
+        func removeFirst[self: Self&](): T
 
         /** Removes and returns the last element. */
-        func removeLast[self&](): T
+        func removeLast[self: Self&](): T
 
         /** Removes every element while retaining reusable internal capacity. */
-        func clear[self&]()
+        func clear[self: Self&]()
     }
 
     /**
@@ -171,26 +171,26 @@ zone std {
             fin oldData = self.data
             self.data = newData
             self.capacity = newCap
-            drop oldData
+            purge oldData
         }
     }
 
     impl List<T> for ArrayList<T> {
-        prop size[self&]: Int = self.size
-        prop isEmpty[self&]: Bool = self.size == 0
-        prop isNotEmpty[self&]: Bool = self.size > 0
+        prop size[self: Self&]: Int = self.size
+        prop isEmpty[self: Self&]: Bool = self.size == 0
+        prop isNotEmpty[self: Self&]: Bool = self.size > 0
 
-        prop first[self&]: T {
+        prop first[self: Self&]: T {
             assert self.size > 0 { "List is empty" }
             return self.data[0]
         }
 
-        prop last[self&]: T {
+        prop last[self: Self&]: T {
             assert self.size > 0 { "List is empty" }
             return self.data[self.size - 1]
         }
 
-        prop reversed[self&]: List<T> {
+        prop reversed[self: Self&]: List<T> {
             var result = ArrayList<T>()
             var i = self.size - 1
             while i >= 0 {
@@ -347,7 +347,7 @@ zone std {
             self.data = alloc T[8]
             self.size = 0
             self.capacity = 8
-            drop oldData
+            purge oldData
         }
     }
 

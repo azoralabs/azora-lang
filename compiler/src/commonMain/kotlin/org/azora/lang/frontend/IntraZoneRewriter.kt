@@ -78,11 +78,20 @@ internal object IntraZoneRewriter {
         else -> null
     }
 
-    /** `std__math__floor` → `std__math`; a bare name with no `__` → null. */
+    /**
+     * `std__math__floor` → `std__math`; a bare name with no `__` → null.
+     *
+     * A private member carries its own leading underscore into the mangled name
+     * (`zone std { func _quote }` → `std___quote`), so the separator is the last
+     * `__` that is not itself preceded by one. Splitting on the plain last `__`
+     * would yield `std_`, match no sibling, and silently leave every bare call in
+     * that member's body unrewritten.
+     */
     private fun String.zonePrefix(): String? {
-        val idx = lastIndexOf("__")
-        if (idx <= 0) return null
-        return substring(0, idx)
+        for (i in length - 2 downTo 1) {
+            if (this[i] == '_' && this[i + 1] == '_' && this[i - 1] != '_') return substring(0, i)
+        }
+        return null
     }
 
     /**

@@ -184,7 +184,7 @@ zone std {
     @Experimental(sinceAzora: "0.0.1")
     func drop<T>(arr: Array<T>, n: Int): Array<T>
     in {
-        assert n >= 0 { "drop count must be non-negative" }
+        assert n >= 0 { "purge count must be non-negative" }
     } zone {
         fin start = if n < arr.length { n } else { arr.length }
         var result: Array<T> = Array::fill<T>(arr.length - start)

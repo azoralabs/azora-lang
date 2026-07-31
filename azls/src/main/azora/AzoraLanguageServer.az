@@ -86,7 +86,7 @@ func isKeywordRange(source: String, start: Int, end: Int): Bool {
         rangeIs(source, start, end, "enum") || rangeIs(source, start, end, "when") ||
         rangeIs(source, start, end, "throw") || rangeIs(source, start, end, "try") ||
         rangeIs(source, start, end, "catch") || rangeIs(source, start, end, "rescue") ||
-        rangeIs(source, start, end, "impl") || rangeIs(source, start, end, "prot") ||
+        rangeIs(source, start, end, "impl") || rangeIs(source, start, end, "spec") ||
         rangeIs(source, start, end, "defer") || rangeIs(source, start, end, "type") ||
         rangeIs(source, start, end, "typealias") || rangeIs(source, start, end, "slot") ||
         rangeIs(source, start, end, "use") ||
@@ -115,7 +115,7 @@ func isKeywordRange(source: String, start: Int, end: Int): Bool {
 func isDeclarationRange(source: String, start: Int, end: Int): Bool {
     return rangeIs(source, start, end, "func") || rangeIs(source, start, end, "async") ||
         rangeIs(source, start, end, "flow") || rangeIs(source, start, end, "pack") ||
-        rangeIs(source, start, end, "enum") || rangeIs(source, start, end, "prot") ||
+        rangeIs(source, start, end, "enum") || rangeIs(source, start, end, "spec") ||
         rangeIs(source, start, end, "deco") || rangeIs(source, start, end, "node") ||
         rangeIs(source, start, end, "solo") || rangeIs(source, start, end, "prop") ||
         rangeIs(source, start, end, "hook") || rangeIs(source, start, end, "var") ||
@@ -134,7 +134,7 @@ func declarationKind(source: String, start: Int, end: Int): String {
     if rangeIs(source, start, end, "pack") || rangeIs(source, start, end, "node") ||
         rangeIs(source, start, end, "solo") || rangeIs(source, start, end, "typealias") { return "type" }
     if rangeIs(source, start, end, "enum") { return "enum" }
-    if rangeIs(source, start, end, "prot") { return "interface" }
+    if rangeIs(source, start, end, "spec") { return "interface" }
     if rangeIs(source, start, end, "deco") { return "annotation" }
     if rangeIs(source, start, end, "prop") { return "property" }
     return "variable"
@@ -157,7 +157,7 @@ func contextualWhereIsKeyword(source: String, start: Int, end: Int): Bool {
                 rangeIs(source, index, wordEnd, "pack") ||
                 rangeIs(source, index, wordEnd, "node") ||
                 rangeIs(source, index, wordEnd, "solo") ||
-                rangeIs(source, index, wordEnd, "prot") ||
+                rangeIs(source, index, wordEnd, "spec") ||
                 rangeIs(source, index, wordEnd, "deco") ||
                 rangeIs(source, index, wordEnd, "impl") ||
                 rangeIs(source, index, wordEnd, "prop") ||

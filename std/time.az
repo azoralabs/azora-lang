@@ -128,12 +128,12 @@ zone std {
 
     /** Source of wall-clock and monotonic time. Injectable clocks make tests deterministic. */
     @Experimental(sinceAzora: "0.0.4")
-    prot Clock {
+    spec Clock {
         /** Returns the current Unix instant. */
-        func now[self&](): Instant
+        func now[self: Self&](): Instant
 
         /** Returns an opaque monotonic reading. */
-        func monotonicNow[self&](): MonotonicInstant
+        func monotonicNow[self: Self&](): MonotonicInstant
     }
 
     /** Host-backed implementation of `Clock`. */
@@ -191,15 +191,75 @@ zone std {
     @Experimental(sinceAzora: "0.0.4")
     func days(value: Long): Duration = duration(value * 86400L)
 
+    // Unit suffixes: `250.milliseconds` reads as the value it denotes, so a call
+    // site states its unit instead of leaving a bare number to be interpreted.
+    // Each one delegates to the factory of the same name above.
+
+    /** This many whole nanoseconds, as a [Duration]. */
+    @Experimental(sinceAzora: "0.0.5")
+    prop nanoseconds[self: Int&]: Duration = nanoseconds(self as Long)
+
+    /** This many whole microseconds, as a [Duration]. */
+    @Experimental(sinceAzora: "0.0.5")
+    prop microseconds[self: Int&]: Duration = microseconds(self as Long)
+
+    /** This many whole milliseconds, as a [Duration]. */
+    @Experimental(sinceAzora: "0.0.5")
+    prop milliseconds[self: Int&]: Duration = milliseconds(self as Long)
+
+    /** This many whole seconds, as a [Duration]. */
+    @Experimental(sinceAzora: "0.0.5")
+    prop seconds[self: Int&]: Duration = seconds(self as Long)
+
+    /** This many whole minutes, as a [Duration]. */
+    @Experimental(sinceAzora: "0.0.5")
+    prop minutes[self: Int&]: Duration = minutes(self as Long)
+
+    /** This many fixed 60-minute hours, as a [Duration]. */
+    @Experimental(sinceAzora: "0.0.5")
+    prop hours[self: Int&]: Duration = hours(self as Long)
+
+    /** This many fixed 24-hour days, as a [Duration]. */
+    @Experimental(sinceAzora: "0.0.5")
+    prop days[self: Int&]: Duration = days(self as Long)
+
+    /** This many whole nanoseconds, as a [Duration]. */
+    @Experimental(sinceAzora: "0.0.5")
+    prop nanoseconds[self: Long&]: Duration = nanoseconds(self)
+
+    /** This many whole microseconds, as a [Duration]. */
+    @Experimental(sinceAzora: "0.0.5")
+    prop microseconds[self: Long&]: Duration = microseconds(self)
+
+    /** This many whole milliseconds, as a [Duration]. */
+    @Experimental(sinceAzora: "0.0.5")
+    prop milliseconds[self: Long&]: Duration = milliseconds(self)
+
+    /** This many whole seconds, as a [Duration]. */
+    @Experimental(sinceAzora: "0.0.5")
+    prop seconds[self: Long&]: Duration = seconds(self)
+
+    /** This many whole minutes, as a [Duration]. */
+    @Experimental(sinceAzora: "0.0.5")
+    prop minutes[self: Long&]: Duration = minutes(self)
+
+    /** This many fixed 60-minute hours, as a [Duration]. */
+    @Experimental(sinceAzora: "0.0.5")
+    prop hours[self: Long&]: Duration = hours(self)
+
+    /** This many fixed 24-hour days, as a [Duration]. */
+    @Experimental(sinceAzora: "0.0.5")
+    prop days[self: Long&]: Duration = days(self)
+
     impl Duration {
         /** Whether this duration is exactly zero. */
-        prop isZero[self&]: Bool = self.seconds == 0L && self.nanosecondAdjustment == 0
+        prop isZero[self: Self&]: Bool = self.seconds == 0L && self.nanosecondAdjustment == 0
 
         /** Whether this duration is strictly negative. */
-        prop isNegative[self&]: Bool = self.seconds < 0L
+        prop isNegative[self: Self&]: Bool = self.seconds < 0L
 
         /** Whole milliseconds truncated toward negative infinity. */
-        prop inWholeMilliseconds[self&]: Long = self.seconds * 1000L + (self.nanosecondAdjustment / 1000000) as Long
+        prop inWholeMilliseconds[self: Self&]: Long = self.seconds * 1000L + (self.nanosecondAdjustment / 1000000) as Long
 
         /** Returns the magnitude with its sign reversed. */
         func negated(): Duration { self& ->
@@ -243,7 +303,7 @@ zone std {
 
     impl Instant {
         /** Whole Unix milliseconds, truncated toward negative infinity. */
-        prop epochMilliseconds[self&]: Long = self.epochSecond * 1000L + (self.nanosecond / 1000000) as Long
+        prop epochMilliseconds[self: Self&]: Long = self.epochSecond * 1000L + (self.nanosecond / 1000000) as Long
 
         /** Adds an exact duration while retaining the normalized representation. */
         func plus(value: Duration&): Instant { self& ->
@@ -348,7 +408,7 @@ zone std {
 
     impl LocalDate {
         /** ISO weekday corresponding to this date. */
-        prop weekday[self&]: Weekday = std::weekday(self)
+        prop weekday[self: Self&]: Weekday = std::weekday(self)
     }
 
     impl DateTime {
@@ -712,6 +772,25 @@ test "duration factories use fixed SI units" {
     assert std::minutes(2L).seconds == 120L { "minutes must contain 60 seconds" }
     assert std::hours(2L).seconds == 7200L { "hours must contain 3,600 seconds" }
     assert std::days(2L).seconds == 172800L { "fixed days must contain 86,400 seconds" }
+}
+
+test "unit suffixes match the factory of the same name" {
+    assert 2.microseconds.nanosecondAdjustment == 2000 { "Int.microseconds must scale by 1,000" }
+    assert 250.milliseconds.inWholeMilliseconds == 250L { "Int.milliseconds must scale by 1,000,000" }
+    assert 2.minutes.seconds == 120L { "Int.minutes must contain 60 seconds" }
+    assert 3.hours.seconds == 10800L { "Int.hours must contain 3,600 seconds" }
+    assert 2.days.seconds == 172800L { "Int.days must contain 86,400 seconds" }
+}
+
+test "unit suffixes accept a Long receiver" {
+    assert 3L.hours.seconds == 10800L { "Long.hours must contain 3,600 seconds" }
+    assert 1L.nanoseconds.nanosecondAdjustment == 1 { "Long.nanoseconds must be exact" }
+    assert 90L.seconds.seconds == 90L { "Long.seconds must pass through unscaled" }
+}
+
+test "unit suffixes compose with duration arithmetic" {
+    fin total = 1.seconds.plus(500.milliseconds)
+    assert total.inWholeMilliseconds == 1500L { "unit suffixes must produce ordinary durations" }
 }
 
 test "duration arithmetic preserves normalization" {

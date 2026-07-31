@@ -126,9 +126,9 @@ checking; `guard cond else { }`; `break`/`continue`.
 | `pack Tuple<...T> where (...T).length >= 2 { inline for Ty in ...T with index { mixin "$index: $Ty" } }` | variadic tuple template |
 | `enum Color { Red; Green }` | enum |
 | `slot Option { Some(Int); None }` | tagged union |
-| `impl pack Name { methods }` / `impl Prot for Name` | pack methods in the declaring file + trait impls |
+| `impl pack Name { methods }` / `impl Spec for Name` | pack methods in the declaring file + trait impls |
 | `func Name.method(args) { ref self -> body }` | extension method outside the declaring file |
-| `prot Name { signatures }` / `prot Into<T>: T { ref self } use as "to${T.typeName}"` | trait or compact callback prot |
+| `spec Name { signatures }` / `spec Into<T>: T { ref self } use as "to${T.typeName}"` | trait or compact callback spec |
 | `node Name(params) { … }` | inheritable type (base class) |
 | `leaf Name(params) : Parent(args) { repl func … }` | final subclass (single inheritance) |
 | `virt func` / `repl func` / `base.method()` | virtual / override / super-call |
@@ -139,7 +139,7 @@ checking; `guard cond else { }`; `break`/`continue`.
 | `impl Decorator(field: value) for Type` | implements a decorator with immutable compile-time metadata |
 | `impl Decorator for Type::field` / `impl Decorator for Type::*` | decorates one field / every declared pack field |
 | `impl [A, B] for [Type::x, Type::y]` | applies the decorator/target cross-product |
-| `deco Name bind Prot { fields }` | binds a decorator to a prot; the decorated type becomes generic argument zero |
+| `deco Name bind Spec { fields }` | binds a decorator to a spec; the decorated type becomes generic argument zero |
 | `deco Name for [.Pack, .Node] bind [X for .Pack, Y for .Node]` | constrains decorator applications and individual transitive bindings by target |
 | `solo Name { … }` / `wrap Name { … }` / `inject Type` | DI singleton / container / resolve |
 | `flow name(p): T { … yield v }` | lazy generator |
@@ -177,21 +177,21 @@ element's static type. The generated fields are numeric (`tuple.0`, `tuple.1`,
 ...) and the `where (...T).length >= 2` constraint rejects single-element
 tuples.
 
-### Conversion prots
+### Conversion specs
 
-`std.convert` defines compact callback prots:
+`std.convert` defines compact callback specs:
 
 ```azora
-prot Into<T>: T { ref self } use as "to${T.typeName}"
-prot From<T>: T { ref self } use as "from${T.typeName}"
+spec Into<T>: T { ref self } use as "to${T.typeName}"
+spec From<T>: T { ref self } use as "from${T.typeName}"
 ```
 
 The `: T` is the callback return type, `{ ref self }` declares the receiver, and
 `use as` declares a generated member name template. It can be any literal member
 name (`use as "render"`) or include type-parameter placeholders such as
-`${T.typeName}`. Without parentheses in the prot header,
+`${T.typeName}`. Without parentheses in the spec header,
 `impl Into<String> for List<T> { ref self -> ... }` generates property-style
-`.toString`. If the prot header includes parentheses, the generated callback
+`.toString`. If the spec header includes parentheses, the generated callback
 requires a normal call such as `.toString()`. `impl as String for Type { ref self
 -> ... }` is separate:
 it is used by `value as String` casts and does not create `.toString`.
@@ -285,7 +285,7 @@ impl Serializable(
 
 The compiler applies the same field-name, duplicate-argument, required-field,
 and type validation used by `@Serializable(...)`. Value arguments are rejected
-on ordinary prot implementations because only decorators define metadata.
+on ordinary spec implementations because only decorators define metadata.
 
 Decorator implementations can also select pack fields. Lists are normalized to
 one application for every decorator/target pair, and `Pack::*` selects only the
@@ -337,7 +337,7 @@ string interpolation `"$name"`, `"${expr}"`.
 Reserved words in the language (see `frontend/Token.kt`):
 
 - **Bindings**: `var` `fin` `let` `threadlocal`
-- **Functions/types**: `func` `return` `pack` `enum` `slot` `typealias` `impl` `prot` `node` `leaf` `virt` `repl` `base`
+- **Functions/types**: `func` `return` `pack` `enum` `slot` `typealias` `impl` `spec` `node` `leaf` `virt` `repl` `base`
 - **Control**: `if` `else` `for` `while` `loop` `in` `by` `reverse` `break` `continue` `when` `guard`
 - **Errors/concurrency**: `throw` `try` `catch` `rescue` `fail` `defer` `flow` `yield` `async` `await` `launch`
 - **Memory/FFI/DI**: `alloc` `drop` `unsafe` `isolated` `bridge` `solo` `wrap` `inject`

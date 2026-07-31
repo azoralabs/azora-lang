@@ -56,7 +56,7 @@ class WasmLambdaExecTest {
         "16",
         """
         use std.io
-        func apply(operation: Func(Int) -> Int, value: Int): Int {
+        func apply(operation: (Int) -> Int, value: Int): Int {
             return operation(value)
         }
         func main() {
@@ -87,7 +87,7 @@ class WasmLambdaExecTest {
         "10",
         """
         use std.io
-        fin scale: Func[Int](Int) -> Int =
+        fin scale: [Int](Int) -> Int =
             func(value: Int) { factor: Int -> value * factor }
 
         func main() {

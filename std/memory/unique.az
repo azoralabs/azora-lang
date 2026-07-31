@@ -23,17 +23,17 @@ zone std {
     }
 
     @Experimental(sinceAzora: "0.0.3")
-    impl deref for Unique<T> { self& ->
+    oper.* [self: Unique<T>&]: T {
         assert self.active { "Unique pointer was released" }
-        return deref self._raw
+        return self._raw.*
     }
 
     impl Unique<T> {
         /** Returns the owned value (panics if already released). */
         @Experimental(sinceAzora: "0.0.3")
-        prop get[self&]: T {
+        prop get[self: Self&]: T {
             assert active { "Unique pointer was released" }
-            return deref self._raw
+            return self._raw.*
         }
 
         /** Overwrites the owned value (panics if already released). */
@@ -45,7 +45,7 @@ zone std {
 
         /** Returns the raw `T*` without relinquishing ownership. */
         @Experimental(sinceAzora: "0.0.3")
-        prop ptr[self&]: T* {
+        prop ptr[self: Self&]: T* {
             assert active { "Unique pointer was released" }
             return self._raw
         }
@@ -65,7 +65,7 @@ zone std {
         @Experimental(sinceAzora: "0.0.3")
         func dispose() {
             if active {
-                drop self._raw
+                purge self._raw
                 self.active = false
             }
         }

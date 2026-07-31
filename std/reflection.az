@@ -48,15 +48,15 @@ zone std {
     impl<T> Reflected {
         /** Whether the reflected declaration `T` carries decorator `D`. */
         @Experimental(sinceAzora: "0.0.4")
-        bridge prop<D> hasDeco[self&]: Bool
+        bridge prop<D> hasDeco[self: Self&]: Bool
 
         /** Immutable compile-time metadata from decorator `D` on `T`. */
         @Experimental(sinceAzora: "0.0.4")
-        bridge prop<D> decoMeta[self&]: D
+        bridge prop<D> decoMeta[self: Self&]: D
 
         /** The enclosing lexical zone of `T`, or null at global scope. */
         @Experimental(sinceAzora: "0.0.4")
-        bridge prop enclosingZone[self&]: Zone?
+        bridge prop enclosingZone[self: Self&]: Zone?
 
         /**
          * Every program type carrying decorator `D`. Read from the whole-program
@@ -66,7 +66,7 @@ zone std {
          * no runtime cost and no function values, so it lowers to every backend.
          */
         @Experimental(sinceAzora: "0.0.4")
-        bridge prop<D> withDeco[self&]: Array<Type>
+        bridge prop<D> withDeco[self: Self&]: Array<Type>
     }
 
     /**
@@ -84,14 +84,14 @@ zone std {
     impl Zone {
         /** The zone's label, or null for the global scope / an unlabeled zone. */
         @Experimental(sinceAzora: "0.0.4")
-        bridge prop label[self&]: String?
+        bridge prop label[self: Self&]: String?
 
         /** Whether this is an inline (compile-time) zone. */
         @Experimental(sinceAzora: "0.0.4")
-        bridge prop isInline[self&]: Bool
+        bridge prop isInline[self: Self&]: Bool
 
         /** The enclosing parent zone, or null at the global scope. */
         @Experimental(sinceAzora: "0.0.4")
-        bridge prop parent[self&]: Zone?
+        bridge prop parent[self: Self&]: Zone?
     }
 }

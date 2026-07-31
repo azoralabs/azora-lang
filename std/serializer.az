@@ -201,25 +201,25 @@ zone std {
     /**
      * Bidirectional codec for `T`.
      *
-     * Implement this prot when a type needs a custom representation. Generated
+     * Implement this spec when a type needs a custom representation. Generated
      * serializers created by `@Serializable` implement the same contract.
      * Implementations must not retain references to `value` after returning.
      *
      * @param T The value type handled by this serializer.
      */
     @Experimental(sinceAzora: "0.0.4")
-    prot Serializer<T> {
+    spec Serializer<T> {
         /** Converts a typed value into the format-independent value tree. */
-        func toSerialValue[self&](value: T&): SerialValue ?! SerializationError
+        func toSerialValue[self: Self&](value: T&): SerialValue ?! SerializationError
 
         /** Reconstructs a typed value, validating all required fields and types. */
-        func fromSerialValue[self&](value: SerialValue&): T ?! SerializationError
+        func fromSerialValue[self: Self&](value: SerialValue&): T ?! SerializationError
     }
 
     /**
      * Bidirectional JSON codec for `T`.
      *
-     * Implement this prot when JSON is the type's primary representation and a
+     * Implement this spec when JSON is the type's primary representation and a
      * format-independent `SerialValue` adapter would add no value. Generated
      * implementations created by `@Serializable` and `@JsonSerializable` obey
      * the same strict limits as `decodeSerialValue`.
@@ -227,12 +227,12 @@ zone std {
      * @param T The value type handled by this JSON codec.
      */
     @Experimental(sinceAzora: "0.0.4")
-    prot JsonSerializer<T> {
+    spec JsonSerializer<T> {
         /** Encodes `value` as one complete JSON document. */
-        func toJson[self&](value: T&, options: SerializerOptions&): String ?! SerializationError
+        func toJson[self: Self&](value: T&, options: SerializerOptions&): String ?! SerializationError
 
         /** Decodes one complete JSON document into `T`. */
-        func fromJson[self&](input: String, options: SerializerOptions&): T ?! SerializationError
+        func fromJson[self: Self&](input: String, options: SerializerOptions&): T ?! SerializationError
     }
 
     /**
@@ -245,12 +245,12 @@ zone std {
      * @param T The value type handled by this AZON codec.
      */
     @Experimental(sinceAzora: "0.0.4")
-    prot AzonSerializer<T> {
+    spec AzonSerializer<T> {
         /** Encodes `value` as one complete AZON document. */
-        func toAzon[self&](value: T&, options: SerializerOptions&): String ?! SerializationError
+        func toAzon[self: Self&](value: T&, options: SerializerOptions&): String ?! SerializationError
 
         /** Decodes one complete AZON document into `T`. */
-        func fromAzon[self&](input: String, options: SerializerOptions&): T ?! SerializationError
+        func fromAzon[self: Self&](input: String, options: SerializerOptions&): T ?! SerializationError
     }
 
     /** Creates conservative defaults suitable for processing untrusted input. */
@@ -272,7 +272,7 @@ zone std {
         when value {
             SerialValue.Object(fields) -> {
                 for i in 0..<fields.size {
-                    if fields[i].name == name { return fields[i].value }
+                    if fields.get(i).name == name { return fields.get(i).value }
                 }
                 return .MissingField
             }
@@ -281,13 +281,13 @@ zone std {
     }
 
     /** Returns one typed object field by positional index. */
-    func _serialFieldAt(fields: List<SerialField>&, index: Int): SerialField {
-        return fields[index]
+    func serialFieldAt(fields: List<SerialField>&, index: Int): SerialField {
+        return fields.get(index)
     }
 
     /** Returns one typed serialized array element by positional index. */
-    func _serialValueAt(values: List<SerialValue>&, index: Int): SerialValue {
-        return values[index]
+    func serialValueAt(values: List<SerialValue>&, index: Int): SerialValue {
+        return values.get(index)
     }
 
     /** Extracts a text value or reports an incompatible serialized type. */
@@ -357,35 +357,35 @@ zone std {
     }
 
     /** Extracts a range-checked signed byte. */
-    func _serialAsByte(value: SerialValue&): Byte ?! SerializationError {
+    func serialAsByte(value: SerialValue&): Byte ?! SerializationError {
         fin parsed = try serialAsLong(value)
         if parsed < -128L || parsed > 127L { return .InvalidNumber }
         return parsed as Byte
     }
 
     /** Extracts a range-checked unsigned byte. */
-    func _serialAsUByte(value: SerialValue&): UByte ?! SerializationError {
+    func serialAsUByte(value: SerialValue&): UByte ?! SerializationError {
         fin parsed = try serialAsLong(value)
         if parsed < 0L || parsed > 255L { return .InvalidNumber }
         return parsed as UByte
     }
 
     /** Extracts a range-checked signed short. */
-    func _serialAsShort(value: SerialValue&): Short ?! SerializationError {
+    func serialAsShort(value: SerialValue&): Short ?! SerializationError {
         fin parsed = try serialAsLong(value)
         if parsed < -32768L || parsed > 32767L { return .InvalidNumber }
         return parsed as Short
     }
 
     /** Extracts a range-checked unsigned short. */
-    func _serialAsUShort(value: SerialValue&): UShort ?! SerializationError {
+    func serialAsUShort(value: SerialValue&): UShort ?! SerializationError {
         fin parsed = try serialAsLong(value)
         if parsed < 0L || parsed > 65535L { return .InvalidNumber }
         return parsed as UShort
     }
 
     /** Extracts a range-checked signed integer. */
-    func _serialAsInt(value: SerialValue&): Int ?! SerializationError {
+    func serialAsInt(value: SerialValue&): Int ?! SerializationError {
         fin parsed = try serialAsLong(value)
         if (parsed < 0L && parsed + 2147483648L < 0L) || parsed > 2147483647L {
             return .InvalidNumber
@@ -394,26 +394,26 @@ zone std {
     }
 
     /** Extracts a range-checked unsigned integer. */
-    func _serialAsUInt(value: SerialValue&): UInt ?! SerializationError {
+    func serialAsUInt(value: SerialValue&): UInt ?! SerializationError {
         fin parsed = try serialAsLong(value)
         if parsed < 0L || parsed > 4294967295L { return .InvalidNumber }
         return parsed as UInt
     }
 
     /** Extracts a non-negative value representable by the current ULong runtime. */
-    func _serialAsULong(value: SerialValue&): ULong ?! SerializationError {
+    func serialAsULong(value: SerialValue&): ULong ?! SerializationError {
         fin parsed = try serialAsLong(value)
         if parsed < 0L { return .InvalidNumber }
         return parsed as ULong
     }
 
     /** Extracts a signed 128-bit value from the supported integer token range. */
-    func _serialAsCent(value: SerialValue&): Cent ?! SerializationError {
+    func serialAsCent(value: SerialValue&): Cent ?! SerializationError {
         return try serialAsLong(value) as Cent
     }
 
     /** Extracts an unsigned 128-bit value from the supported integer token range. */
-    func _serialAsUCent(value: SerialValue&): UCent ?! SerializationError {
+    func serialAsUCent(value: SerialValue&): UCent ?! SerializationError {
         fin parsed = try serialAsLong(value)
         if parsed < 0L { return .InvalidNumber }
         return parsed as UCent
@@ -514,7 +514,7 @@ zone std {
     }
 
     impl _SerialReader {
-        prop isAtEnd[self&]: Bool = self.index >= stringLength(self.input)
+        prop isAtEnd[self: Self&]: Bool = self.index >= stringLength(self.input)
 
         func skipWhitespace(): Unit { self! ->
             while !self.isAtEnd {
@@ -684,7 +684,7 @@ zone std {
 
                 var duplicate = false
                 for i in 0..<fields.size {
-                    if _serialFieldAt(fields, i).name == name { duplicate = true }
+                    if serialFieldAt(fields, i).name == name { duplicate = true }
                 }
                 if duplicate && !self.options.allowDuplicateFields { return .DuplicateField }
                 fields.add(SerialField(name, value))
@@ -718,7 +718,7 @@ zone std {
                 for i in 0..<values.size {
                     if i > 0 { result = result + "," }
                     if options.pretty { result = result + "\n" + _repeatIndent(options.indent, depth + 1) }
-                    result = result + try _encodeSerialValueAtDepth(values[i], format, options, depth + 1)
+                    result = result + try _encodeSerialValueAtDepth(values.get(i), format, options, depth + 1)
                 }
                 if options.pretty && values.size > 0 { result = result + "\n" + _repeatIndent(options.indent, depth) }
                 return result + "]"
@@ -728,7 +728,7 @@ zone std {
                 var i = 0
                 var written = 0
                 while i < fields.size {
-                    fin field = _serialFieldAt(fields, i)
+                    fin field = serialFieldAt(fields, i)
                     var include = true
                     when field.value {
                         SerialValue.Null -> { include = options.encodeNulls }
@@ -1111,8 +1111,8 @@ test "serial long extraction accepts the minimum value" {
 }
 
 test "serial integer extraction rejects narrowing overflow" {
-    fin valid = std::_serialAsInt(SerialValue.Number("2147483647")) catch -1
-    fin overflow = std::_serialAsInt(SerialValue.Number("2147483648")) catch -2
+    fin valid = std::serialAsInt(SerialValue.Number("2147483647")) catch -1
+    fin overflow = std::serialAsInt(SerialValue.Number("2147483648")) catch -2
     assert valid == 2147483647 { "serialAsInt must accept Int.MAX_VALUE" }
     assert overflow == -2 { "serialAsInt must reject values above Int" }
 }

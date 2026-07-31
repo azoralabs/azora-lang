@@ -69,8 +69,10 @@ class EngineArchitectureSyntaxTest {
                 value: Ty
             }
         }
-        impl<...T> deref for Single { self& ->
-            return self.value
+        impl<...T> Single {
+            oper.* [self: Self&] {
+                return self.value
+            }
         }
 
         enum SystemPhase { Update }

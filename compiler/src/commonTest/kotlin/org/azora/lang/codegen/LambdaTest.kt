@@ -89,9 +89,9 @@ class LambdaTest {
             use std.io
 
             pack Calculator {
-                fin add: Func[Int, Int] -> Int =
+                fin add: [Int, Int] -> Int =
                     func { x: Int, y: Int -> x + y }
-                fin sub: Func(Int, Int) -> Int =
+                fin sub: (Int, Int) -> Int =
                     func(x: Int, y: Int) { return x - y }
             }
 
@@ -107,7 +107,7 @@ class LambdaTest {
         assertEquals("5", run("""
             use std.io
 
-            fin add: Func[Int, Int] -> Int =
+            fin add: [Int, Int] -> Int =
                 func { x: Int, y: Int -> x + y }
 
             func main() {
@@ -118,11 +118,69 @@ class LambdaTest {
         """.trimIndent()))
     }
 
+    @Test fun aLambdaArgumentKeepsItsStatementsSeparate() {
+        // A `{` reopens statement context, so newlines inside a lambda written
+        // inline as a call argument still separate statements rather than being
+        // swallowed by the call's parentheses.
+        assertEquals("1\n2", run("""
+            use std.io
+
+            func twice(action: (Int) -> Unit) {
+                action(1)
+                action(2)
+            }
+
+            func main() {
+                twice({ n ->
+                    std::println(n)
+                })
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun aReceiverLambdaBindsItsContextByName() {
+        assertEquals("5", run("""
+            use std.io
+
+            pack Vec2 { fin x = 0 fin y = 0 }
+
+            func apply(v: Vec2&, f: [Vec2&] -> Int): Int {
+                var acc = 0
+                with v { acc = f() }
+                return acc
+            }
+
+            func main() {
+                fin add = [self: Vec2&]{ self.x + self.y }
+                std::println(apply(Vec2(2, 3), add))
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun aReceiverLambdaTakesOrdinaryParametersToo() {
+        assertEquals("22", run("""
+            use std.io
+
+            pack Vec2 { fin x = 0 fin y = 0 }
+
+            func apply(v: Vec2&, o: Vec2&, f: [Vec2&](Vec2&) -> Int): Int {
+                var acc = 0
+                with v { acc = f(o) }
+                return acc
+            }
+
+            func main() {
+                fin add = [self: Vec2&]{ other: Vec2& -> self.x + other.y }
+                std::println(apply(Vec2(2, 3), Vec2(10, 20), add))
+            }
+        """.trimIndent()))
+    }
+
     @Test fun ordinaryAndContextualParametersCanBeCombined() {
         assertEquals("10\n14", run("""
             use std.io
 
-            fin scale: Func[Int](Int) -> Int =
+            fin scale: [Int](Int) -> Int =
                 func(value: Int) { factor: Int -> value * factor }
 
             func main() {

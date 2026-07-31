@@ -21,11 +21,52 @@ class Tier3MemoryTest {
         return IrInterpreter().interpret(result.ir).trim()
     }
 
+    @Test fun aMutablePointerCanBeWrittenThrough() {
+        assertEquals("4\n10", run("""
+            use std.io
+            unsafe func main() {
+                var y: Int^ = alloc^ 4
+                std::println(y.^)
+                y.^ = 10
+                std::println(y.^)
+                purge y
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun aReadOnlyPointerCannotBeWrittenThrough() {
+        // The sigil carries the difference at every site — the type, the
+        // allocation, and the dereference — so the write site alone says whether
+        // it is allowed.
+        val result = Compiler().compile("""
+            use std.io
+            unsafe func main() {
+                fin x: Int* = alloc* 4
+                x.* = 10
+            }
+        """.trimIndent())
+        assertIs<CompilationResult.Failure>(result)
+        assertTrue(
+            result.errors.any { "cannot write through 'Int*'" in it },
+            "${'$'}{result.errors}",
+        )
+    }
+
+    @Test fun aReadOnlyPointerStillReads() {
+        assertEquals("4", run("""
+            use std.io
+            unsafe func main() {
+                fin x: Int* = alloc* 4
+                std::println(x.*)
+            }
+        """.trimIndent()))
+    }
+
     @Test fun allocDerefAndStoreInt() {
         assertEquals("5\n99", run("""
             use std.io
             func main() {
-                var p = alloc 5
+                var p = alloc^ 5
                 std::println(*p)
                 *p = 99
                 std::println(*p)
@@ -40,7 +81,7 @@ class Tier3MemoryTest {
                 var v: Int
             }
             func main() {
-                var p = alloc P(10)
+                var p = alloc^ P(10)
                 std::println((*p).v)
                 (*p).v = 20
                 std::println((*p).v)
@@ -65,8 +106,8 @@ class Tier3MemoryTest {
         assertEquals("5", run("""
             use std.io
             func main() {
-                var p = alloc 5
-                drop p
+                var p = alloc^ 5
+                purge p
                 std::println(*p)
             }
         """.trimIndent()))
@@ -76,7 +117,7 @@ class Tier3MemoryTest {
         assertEquals("42", run("""
             use std.io
             func main() {
-                var p: Int* = alloc 42
+                var p: Int^ = alloc^ 42
                 std::println(*p)
             }
         """.trimIndent()))
@@ -86,10 +127,10 @@ class Tier3MemoryTest {
         assertEquals("5\n12", run("""
             use std.io
             func main() {
-                var p = alloc 5
-                std::println(deref p)
-                deref p = 12
-                std::println(deref p)
+                var p = alloc^ 5
+                std::println(p.*)
+                p.* = 12
+                std::println(p.*)
             }
         """.trimIndent()))
     }
@@ -100,7 +141,7 @@ class Tier3MemoryTest {
             use std.memory.*
             func main() {
                 var p = std::sharedOf(41)
-                std::println(deref p)
+                std::println(p.*)
                 p.set(42)
                 std::println(p.get)
                 std::println(p.retain())
@@ -127,7 +168,7 @@ class Tier3MemoryTest {
             use std.io
             use std.memory.*
             func main() {
-                var p = alloc Int[3]
+                var p = alloc^ Int[3]
                 p[0] = 7
                 p[1] = 8
                 p[2] = 9
@@ -173,7 +214,7 @@ class Tier3MemoryTest {
         val result = Compiler().compile("""
             use std.io
             func main() {
-                var p = alloc 5
+                var p = alloc^ 5
                 *p = 99
                 std::println(*p)
             }
@@ -186,9 +227,9 @@ class Tier3MemoryTest {
         assertEquals("5\nnull", run("""
             use std.io
             func main() {
-                var p: Int* = alloc 0
+                var p: Int^ = alloc^ 0
                 zone alloc {
-                    p = alloc 5
+                    p = alloc^ 5
                     std::println(*p)
                 }
                 std::println(*p)
@@ -201,9 +242,9 @@ class Tier3MemoryTest {
         assertEquals("7\nnull", run("""
             use std.io
             func main() {
-                var q: Int* = alloc 0
+                var q: Int^ = alloc^ 0
                 zone alloc {
-                    q = alloc 7
+                    q = alloc^ 7
                     std::println(*q)
                 }
                 std::println(*q)
@@ -215,7 +256,7 @@ class Tier3MemoryTest {
         assertEquals("10\n20\n30", run("""
             use std.io
             func main() {
-                var p: Int* = alloc arr@[10, 20, 30]
+                var p: Int^ = alloc^ arr@[10, 20, 30]
                 std::println(*p)
                 var p1 = p + 1
                 std::println(*p1)
@@ -228,7 +269,7 @@ class Tier3MemoryTest {
         assertEquals("30\n20", run("""
             use std.io
             func main() {
-                var p: Int* = alloc arr@[10, 20, 30]
+                var p: Int^ = alloc^ arr@[10, 20, 30]
                 var end = p + 2
                 std::println(*end)
                 var back = end - 1
@@ -241,7 +282,7 @@ class Tier3MemoryTest {
         assertEquals("99", run("""
             use std.io
             func main() {
-                var p: Int* = alloc arr@[10, 20, 30]
+                var p: Int^ = alloc^ arr@[10, 20, 30]
                 *(p + 1) = 99
                 std::println(*(p + 1))
             }
@@ -252,7 +293,7 @@ class Tier3MemoryTest {
         assertEquals("3", run("""
             use std.io
             func main() {
-                var p: Int* = alloc arr@[10, 20, 30, 40]
+                var p: Int^ = alloc^ arr@[10, 20, 30, 40]
                 var q = p + 3
                 std::println(q - p)
             }

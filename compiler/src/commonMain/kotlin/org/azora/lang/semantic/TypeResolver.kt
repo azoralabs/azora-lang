@@ -16,6 +16,7 @@
 
 package org.azora.lang.semantic
 
+import org.azora.lang.frontend.lambdaReceiverName
 import org.azora.lang.frontend.ParamModifier
 import org.azora.lang.frontend.CastKind
 import org.azora.lang.frontend.Expr
@@ -313,6 +314,17 @@ class TypeResolver(private val table: SymbolTable) {
      * When null, `return` statements are validated against the enclosing function's declared type.
      */
     private var lambdaReturnTypes: MutableList<IrType>? = null
+
+    /**
+     * The synthetic name of an inherited lambda receiver.
+     *
+     * A lambda that inherits its receivers never names them, but every later pass
+     * has to agree on what they are called; deriving the name from the lambda's
+     * own position keeps the frontend and IR generator in step without threading
+     * a counter between them.
+     */
+    private fun lambdaReceiverRef(lambda: Expr.Lambda, index: Int): Expr.Identifier =
+        Expr.Identifier(lambdaReceiverName(lambda.line, lambda.column, index), lambda.line, lambda.column)
 
     private fun inferredContexts(expected: List<IrType>): List<Pair<Expr, IrType>>? {
         if (expected.isEmpty()) return emptyList()
@@ -614,8 +626,16 @@ class TypeResolver(private val table: SymbolTable) {
                 }
             }
             is Stmt.DerefAssign -> {
-                resolveExpr(stmt.target) ?: return
+                val target = resolveExpr(stmt.target) ?: return
                 resolveExpr(stmt.value) ?: return
+                // `p.^ = v` writes through the pointer, which a `T*` does not permit.
+                // The sigil at the write site already says which one this is.
+                if (target is IrType.Pointer && !target.mutable) {
+                    errors.add(
+                        "line ${stmt.line}: cannot write through '$target' — " +
+                            "a read-only pointer. Allocate it with 'alloc^' to get a '${target.inner}^'",
+                    )
+                }
             }
             is Stmt.MemberAssign -> {
                 val resolvedTarget = resolveExpr(stmt.target) ?: return
@@ -1199,9 +1219,9 @@ class TypeResolver(private val table: SymbolTable) {
                     expr.name == "data" && targetType is IrType.Array -> IrType.Pointer(targetType.element)
                     (expr.name == "isEmpty" || expr.name == "isNotEmpty") && (targetType is IrType.Array || targetType is IrType.Map || targetType is IrType.Set) -> IrType.Bool
                     targetType is IrType.Named -> {
-                        // Spec-typed value: a property/requirement declared by the prot
-                        // (e.g. `map.size` where `map: Map<K,V>` — a prot) resolves to
-                        // the prot's declared prop type and dispatches to the impl.
+                        // Spec-typed value: a property/requirement declared by the spec
+                        // (e.g. `map.size` where `map: Map<K,V>` — a spec) resolves to
+                        // the spec's declared prop type and dispatches to the impl.
                         val specProp = table.lookupSpecProp(targetType.name, expr.name)
                         if (specProp != null) return specProp
                         val struct = table.lookupStruct(targetType.name)
@@ -1353,9 +1373,9 @@ class TypeResolver(private val table: SymbolTable) {
                             expr.line,
                         )
                     }
-                    // Spec-typed value: dispatch to a method declared by the prot
+                    // Spec-typed value: dispatch to a method declared by the spec
                     // (e.g. `list.get(0)` where `list: List<T>`). The concrete impl
-                    // is selected at runtime; here we type-check against the prot.
+                    // is selected at runtime; here we type-check against the spec.
                     val specMethod = table.lookupSpecMethod(targetType.name, expr.name)
                     if (specMethod != null) {
                         if (specMethod.isProperty) {
@@ -1503,7 +1523,7 @@ class TypeResolver(private val table: SymbolTable) {
                 val inner = resolveExpr(expr.value) ?: return null
                 // alloc [a, b, c] → pointer to the element type (buffer), not pointer to array.
                 val pointee = (inner as? IrType.Array)?.element ?: inner
-                IrType.Pointer(pointee)
+                IrType.Pointer(pointee, mutable = expr.mutable)
             }
             is Expr.AllocBuffer -> {
                 resolveExpr(expr.count) ?: return null
@@ -1515,7 +1535,7 @@ class TypeResolver(private val table: SymbolTable) {
                 when (target) {
                     is IrType.Pointer -> target.inner
                     is IrType.Named -> {
-                        val mangled = table.lookupMethod(target.name, "deref")
+                        val mangled = table.lookupMethod(target.name, "operDeref")
                         table.lookupFunction(mangled ?: "")?.returnType ?: IrType.Any
                     }
                     else -> IrType.Any
@@ -1577,31 +1597,67 @@ class TypeResolver(private val table: SymbolTable) {
                     if (p.type == TypeRef.Named("Any") && expected != null) expected
                     else resolveDeclaredType(p.type)
                 }
-                val receiverTypes = expr.receivers.mapIndexed { i, p ->
+                val declaredReceivers = expr.receivers.mapIndexed { i, p ->
                     val expected = expectedReceivers?.getOrNull(i)
                     if (p.type == TypeRef.Named("Any") && expected != null) expected
                     else resolveDeclaredType(p.type)
                 }
+                // `std::sequence { std::yield(1) }` — a lambda passed where contextual
+                // receivers are expected inherits them even though it names none. The
+                // body cannot refer to them by name, but a call inside it can take them
+                // as its own contextual receivers, which is what the builder APIs rely on.
+                val inheritsReceivers = expr.receivers.isEmpty() && !expectedReceivers.isNullOrEmpty()
+                val receiverTypes = if (inheritsReceivers) expectedReceivers!! else declaredReceivers
+                // `{ body }` with no parameter list carries the parser's implicit `it`.
+                // Where the expected callable takes no parameters there is nothing for
+                // `it` to stand for, so it is dropped rather than reported as an arity
+                // mismatch against a lambda the author never gave parameters to.
+                val implicitItOnly = expr.params.size == 1 &&
+                    expr.params[0].name == "it" &&
+                    expr.params[0].type == TypeRef.Named("Any")
+                val dropsImplicitIt = implicitItOnly && expectedParams != null && expectedParams.isEmpty()
+                val effectiveParams = if (dropsImplicitIt) emptyList() else expr.params
+                val effectiveParamTypes = if (dropsImplicitIt) emptyList() else paramTypes
                 // Only the outer call seeds these; nested lambdas resolve on their own.
                 expectedLambdaParamTypes = null
                 expectedLambdaReceiverTypes = null
                 table.pushScope()
-                for (i in expr.params.indices) {
-                    table.defineVariable(VariableSymbol(expr.params[i].name, paramTypes[i]))
+                for (i in effectiveParams.indices) {
+                    table.defineVariable(VariableSymbol(effectiveParams[i].name, effectiveParamTypes[i]))
                 }
                 for (i in expr.receivers.indices) {
                     table.defineVariable(VariableSymbol(expr.receivers[i].name, receiverTypes[i], mutable = false))
+                }
+                if (inheritsReceivers) {
+                    receiverTypes.forEachIndexed { i, t ->
+                        table.defineVariable(
+                            VariableSymbol(lambdaReceiverName(expr.line, expr.column, i), t, mutable = false),
+                        )
+                    }
                 }
                 // Resolve the body with locals in scope, capturing return-value types to infer retType.
                 val captured = mutableListOf<IrType>()
                 val savedReturns = lambdaReturnTypes
                 lambdaReturnTypes = captured
+                // A lambda's receivers are in scope for its body the same way `with`
+                // makes a value's extensions callable bare, so `[sk: Sink!]{ push(1) }`
+                // and an inherited receiver both reach `push` without naming it.
+                val bodyContexts = receiverTypes.mapIndexed { i, t ->
+                    val ref = if (inheritsReceivers) {
+                        lambdaReceiverRef(expr, i)
+                    } else {
+                        Expr.Identifier(expr.receivers[i].name, expr.line, expr.column)
+                    }
+                    ref as Expr to t
+                }
+                if (bodyContexts.isNotEmpty()) contextualValues.addLast(bodyContexts)
                 resolveBody(expr.body, IrType.Unit)
+                if (bodyContexts.isNotEmpty()) contextualValues.removeLast()
                 lambdaReturnTypes = savedReturns
                 table.popScope()
                 val retType = captured.firstOrNull() ?: IrType.Unit
                 val type = IrType.Function(
-                    paramTypes,
+                    effectiveParamTypes,
                     retType,
                     variadic = expr.variadic,
                     receivers = receiverTypes,
@@ -1625,7 +1681,7 @@ class TypeResolver(private val table: SymbolTable) {
 
     /** Return type of a user-defined `impl deref`, guarded against cycles/erasure. */
     private fun userDerefType(type: IrType.Named): IrType.Named? {
-        val method = table.lookupMethod(type.name, "deref") ?: return null
+        val method = table.lookupMethod(type.name, "operDeref") ?: return null
         val result = table.lookupFunction(method)?.returnType as? IrType.Named ?: return null
         return result.takeIf { it.name != type.name && it != IrType.Named("Any") }
     }
@@ -1842,8 +1898,8 @@ class TypeResolver(private val table: SymbolTable) {
         if (declared is IrType.Named && actual is IrType.Named) {
             if (actual.name == declared.name) return true
         }
-        // Spec conformance: a pack that implements a prot is usable wherever that
-        // prot type is expected (e.g. returning `ArrayList<T>` for `List<T>`, just
+        // Spec conformance: a pack that implements a spec is usable wherever that
+        // spec type is expected (e.g. returning `ArrayList<T>` for `List<T>`, just
         // as a class implementing an interface is returned as the interface).
         if (declared is IrType.Named && actual is IrType.Named &&
             table.lookupSpec(declared.name) != null &&
@@ -1876,6 +1932,7 @@ class TypeResolver(private val table: SymbolTable) {
         // Integer promotion: Byte < Short < Int < Long < Cent
         val rank = mapOf(IrType.Byte to 0, IrType.UByte to 0, IrType.Short to 1, IrType.UShort to 1,
             IrType.Int to 2, IrType.UInt to 2, IrType.Long to 3, IrType.ULong to 3,
+            IrType.ISize to 3, IrType.USize to 3,
             IrType.Cent to 4, IrType.UCent to 4)
         val ra = rank[a] ?: return null
         val rb = rank[b] ?: return null
@@ -1897,6 +1954,8 @@ class TypeResolver(private val table: SymbolTable) {
         IrType.UShort -> TypeRef.Named("UShort")
         IrType.Long -> TypeRef.Named("Long")
         IrType.ULong -> TypeRef.Named("ULong")
+        IrType.ISize -> TypeRef.Named("ISize")
+        IrType.USize -> TypeRef.Named("USize")
         IrType.Cent -> TypeRef.Named("Cent")
         IrType.UCent -> TypeRef.Named("UCent")
         IrType.Float -> TypeRef.Named("Float")

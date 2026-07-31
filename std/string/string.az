@@ -431,7 +431,7 @@ zone std {
          * Returns the number of parts.
          */
         @SinceAzora("0.0.1")
-        prop length[self&]: Int = self.count
+        prop length[self: Self&]: Int = self.count
 
         /**
          * Clears the builder.

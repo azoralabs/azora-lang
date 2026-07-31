@@ -71,7 +71,7 @@ zone std {
         return elements
     }
 
-    impl zone for Array {
+    impl Array:: {
         /**
          * Pre-allocates an array of `count` slots.
          *

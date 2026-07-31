@@ -473,7 +473,7 @@ func main() { std::println("Hello, Azora!") }"""))
     @Test fun ch29_alloc_scalar() = assertEquals("42\n99", run("""
         use std.io
         func main() {
-            var p: Int* = alloc 42
+            var p: Int^ = alloc^ 42
             std::println(*p)
             *p = 99
             std::println(*p)
@@ -483,7 +483,7 @@ func main() { std::println("Hello, Azora!") }"""))
     @Test fun ch29_pointer_arithmetic() = assertEquals("10\n20\n99\n3", run("""
         use std.io
         func main() {
-            var p: Int* = alloc arr@[10, 20, 30]
+            var p: Int^ = alloc^ arr@[10, 20, 30]
             std::println(*p)
             std::println(*(p + 1))
             *(p + 2) = 99

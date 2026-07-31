@@ -145,9 +145,22 @@ class WasmCodegen {
         sb.appendLine("  (import \"env\" \"write_str\" (func \$write_str (param i32)))")
         for (name in neededExterns) {
             val extern = externs.getValue(name)
+            // A `bridge func` that names a float operation WebAssembly has natively
+            // is defined here rather than imported: the compiler supplies these
+            // itself, so a program using `std::math` needs nothing from the host.
+            if (wasmFloatOpFor(extern) != null) continue
             val params = extern.params.joinToString("") { " (param ${wasmType(it.second)})" }
             val result = if (extern.returnType == IrType.Unit) "" else " (result ${wasmType(extern.returnType)})"
             sb.appendLine("  (import \"env\" \"$name\" (func \$$name$params$result))")
+        }
+        for (name in neededExterns) {
+            val extern = externs.getValue(name)
+            val op = wasmFloatOpFor(extern) ?: continue
+            val ps = extern.params.indices.joinToString("") { " (param \$a$it f64)" }
+            sb.appendLine("  (func \$$name$ps (result f64)")
+            extern.params.indices.forEach { sb.appendLine("    (local.get \$a$it)") }
+            sb.appendLine("    ($op)")
+            sb.appendLine("  )")
         }
         for ((callable, name) in closureTypes) {
             val params = (callable.params + callable.receivers + IrType.Any)
@@ -680,7 +693,14 @@ class WasmCodegen {
         expr.type == IrType.String -> emitExpr(expr)
         expr.type == IrType.Bool -> "(if (result i32) ${emitExpr(expr)} (then (i32.const ${internString("true")})) (else (i32.const ${internString("false")})))"
         wasmType(expr.type) == "i32" -> { usesAlloc = true; usesIntToStr = true; "(call \$__int_to_str ${emitExpr(expr)})" }
-        else -> "(i32.const ${internString("")})"
+        // Anything else has no WAT rendering yet. Interpolating it used to yield an
+        // empty string, so a program printing a `Real` silently lost it while the
+        // interpreter and LLVM printed the value; failing here keeps a missing
+        // conversion visible instead of turning it into wrong output.
+        else -> error(
+            "wasm: cannot interpolate a value of type ${expr.type} — " +
+                "only Int, String and Bool have a WAT string conversion so far",
+        )
     }
 
     private fun emitNumCast(expr: IrExpr.NumCast): String {
@@ -940,8 +960,34 @@ class WasmCodegen {
 
     // ── Types ─────────────────────────────────────────────────────────────
 
+    /**
+     * The WebAssembly float instruction a `bridge func` stands for, or null when
+     * it has no native equivalent.
+     *
+     * Only the operations Wasm implements directly are listed; the
+     * transcendentals have no opcode and still come from the host.
+     */
+    private fun wasmFloatOpFor(extern: IrTopLevel.Extern): String? {
+        val op = when (extern.name.substringAfterLast('_')) {
+            "sqrt" -> "f64.sqrt"
+            "fabs", "abs" -> "f64.abs"
+            "floor" -> "f64.floor"
+            "ceil" -> "f64.ceil"
+            "trunc" -> "f64.trunc"
+            "round" -> "f64.nearest"
+            "fmin" -> "f64.min"
+            "fmax" -> "f64.max"
+            else -> return null
+        }
+        val arity = if (op == "f64.min" || op == "f64.max") 2 else 1
+        if (extern.params.size != arity) return null
+        if (extern.returnType != IrType.Real) return null
+        if (extern.params.any { it.second != IrType.Real }) return null
+        return op
+    }
+
     private fun wasmType(type: IrType): String = when (type) {
-        IrType.Long, IrType.ULong, IrType.Cent, IrType.UCent -> "i64"
+        IrType.Long, IrType.ULong, IrType.Cent, IrType.UCent, IrType.ISize, IrType.USize -> "i64"
         IrType.Real, IrType.Decimal -> "f64"
         IrType.Float -> "f32"
         is IrType.Task -> wasmType(type.result)
@@ -953,7 +999,7 @@ class WasmCodegen {
 
     private fun isUnsigned(type: IrType): Boolean =
         type == IrType.UInt || type == IrType.UByte || type == IrType.UShort ||
-            type == IrType.ULong || type == IrType.UCent || type == IrType.Char
+            type == IrType.ULong || type == IrType.UCent || type == IrType.USize || type == IrType.Char
 
     private fun line(text: String) {
         repeat(indent) { out.append("  ") }

@@ -58,7 +58,7 @@ class LlvmLambdaExecTest {
         """
         use std.io
         pack Calculator {
-            fin add: Func[Int, Int] -> Int =
+            fin add: [Int, Int] -> Int =
                 func { left: Int, right: Int -> left + right }
         }
         func main() {

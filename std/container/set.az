@@ -33,7 +33,7 @@ use std.convert
  *   `self!`, so a caller holding only a shared `ref Set<T>` view
  *   cannot mutate it.
  *
- * `LinkedHashSet<T>` is the single concrete pack implementing both prots. It
+ * `LinkedHashSet<T>` is the single concrete pack implementing both specs. It
  * stores unique elements in insertion order, so indexed access is stable. The
  * `setOf`, `mutableSetOf`, `emptySet`, and `linkedHashSetOf` factories
  * construct it; `setOf` and `emptySet` expose the read-only `Set<T>` view,
@@ -53,63 +53,63 @@ zone std {
      * @param T The element type.
      */
     @Experimental(sinceAzora: "0.0.4")
-    prot Set<T> {
+    spec Set<T> {
         /** Number of unique elements. */
-        prop size[self&]: Int
+        prop size[self: Self&]: Int
 
         /** Whether this set has no elements. */
-        prop isEmpty[self&]: Bool
+        prop isEmpty[self: Self&]: Bool
 
         /** Whether this set has at least one element. */
-        prop isNotEmpty[self&]: Bool
+        prop isNotEmpty[self: Self&]: Bool
 
         /** Returns the element at `index` in iteration order. Asserts out of bounds. */
-        func get[self&](index: Int): T
+        func get[self: Self&](index: Int): T
 
         /** Returns whether `element` is present. */
-        func contains[self&](element: T): Bool
+        func contains[self: Self&](element: T): Bool
 
         /** Invokes `action` once for every element in iteration order. */
-        func forEach[self&](action: (T) -> Unit)
+        func forEach[self: Self&](action: (T) -> Unit)
 
         /** Returns a new set with only elements satisfying `predicate`. */
-        func filter[self&](predicate: (T) -> Bool): Set<T>
+        func filter[self: Self&](predicate: (T) -> Bool): Set<T>
 
         /** Returns whether at least one element satisfies `predicate`. */
-        func any[self&](predicate: (T) -> Bool): Bool
+        func any[self: Self&](predicate: (T) -> Bool): Bool
 
         /** Returns whether every element satisfies `predicate`. */
-        func all[self&](predicate: (T) -> Bool): Bool
+        func all[self: Self&](predicate: (T) -> Bool): Bool
 
         /** Returns a new set with all unique elements from both sets. */
-        func union[self&](other: Set<T>): Set<T>
+        func union[self: Self&](other: Set<T>): Set<T>
 
         /** Returns a new set with only elements present in both sets. */
-        func intersect[self&](other: Set<T>): Set<T>
+        func intersect[self: Self&](other: Set<T>): Set<T>
 
         /** Returns a new set with elements here that are absent from `other`. */
-        func difference[self&](other: Set<T>): Set<T>
+        func difference[self: Self&](other: Set<T>): Set<T>
     }
 
     /**
      * Mutation behavior implemented by mutable set packs.
      *
-     * Mutation always receives `self!`. Implementing this prot does not
+     * Mutation always receives `self!`. Implementing this spec does not
      * weaken a `ref Set<T>` view: callers holding only a shared reference can
      * still use only read operations.
      *
      * @param T The element type.
      */
     @Experimental(sinceAzora: "0.0.4")
-    prot MutableSet<T> : Set<T> {
+    spec MutableSet<T> : Set<T> {
         /** Adds `element`; returns whether membership changed. */
-        func add[self&](element: T): Bool
+        func add[self: Self&](element: T): Bool
 
         /** Removes `element`; returns whether membership changed. */
-        func remove[self&](element: T): Bool
+        func remove[self: Self&](element: T): Bool
 
         /** Removes every element while retaining reusable internal capacity. */
-        func clear[self&]()
+        func clear[self: Self&]()
     }
 
     /**
@@ -145,7 +145,7 @@ zone std {
             fin oldData = self.data
             self.data = newData
             self.capacity = newCap
-            drop oldData
+            purge oldData
         }
 
         /** Returns whether `element` is already stored. */
@@ -159,9 +159,9 @@ zone std {
     }
 
     impl Set<T> for LinkedHashSet<T> {
-        prop size[self&]: Int = self.size
-        prop isEmpty[self&]: Bool = self.size == 0
-        prop isNotEmpty[self&]: Bool = self.size > 0
+        prop size[self: Self&]: Int = self.size
+        prop isEmpty[self: Self&]: Bool = self.size == 0
+        prop isNotEmpty[self: Self&]: Bool = self.size > 0
 
         func get(index: Int): T { self& ->
             assert index >= 0 { "Set index must be non-negative" }
@@ -262,7 +262,7 @@ zone std {
             self.data = alloc T[8]
             self.size = 0
             self.capacity = 8
-            drop oldData
+            purge oldData
         }
     }
 
@@ -347,7 +347,7 @@ zone std {
             fin oldData = self.data
             self.data = newData
             self.capacity = newCap
-            drop oldData
+            purge oldData
         }
 
         @Experimental(sinceAzora: "0.0.4")
@@ -360,9 +360,9 @@ zone std {
     }
 
     impl Set<T> for HashSet<T> {
-        prop size[self&]: Int = self.size
-        prop isEmpty[self&]: Bool = self.size == 0
-        prop isNotEmpty[self&]: Bool = self.size > 0
+        prop size[self: Self&]: Int = self.size
+        prop isEmpty[self: Self&]: Bool = self.size == 0
+        prop isNotEmpty[self: Self&]: Bool = self.size > 0
 
         func get(index: Int): T { self& ->
             assert index >= 0 { "Set index must be non-negative" }
@@ -467,7 +467,7 @@ zone std {
             self.data = alloc T[8]
             self.size = 0
             self.capacity = 8
-            drop oldData
+            purge oldData
         }
     }
 
@@ -547,7 +547,7 @@ zone std {
             fin oldData = self.data
             self.data = newData
             self.capacity = newCap
-            drop oldData
+            purge oldData
         }
 
         @Experimental(sinceAzora: "0.0.4")
@@ -560,9 +560,9 @@ zone std {
     }
 
     impl Set<T> for TreeSet<T> {
-        prop size[self&]: Int = self.size
-        prop isEmpty[self&]: Bool = self.size == 0
-        prop isNotEmpty[self&]: Bool = self.size > 0
+        prop size[self: Self&]: Int = self.size
+        prop isEmpty[self: Self&]: Bool = self.size == 0
+        prop isNotEmpty[self: Self&]: Bool = self.size > 0
 
         func get(index: Int): T { self& ->
             assert index >= 0 { "Set index must be non-negative" }
@@ -667,7 +667,7 @@ zone std {
             self.data = alloc T[8]
             self.size = 0
             self.capacity = 8
-            drop oldData
+            purge oldData
         }
     }
 

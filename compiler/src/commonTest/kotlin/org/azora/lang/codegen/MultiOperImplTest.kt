@@ -10,7 +10,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * Covers `impl oper arr@[prot, prot, ...] for Type` expansion and the oper.. range gate
+ * Covers `impl oper arr@[spec, spec, ...] for Type` expansion and the oper.. range gate
  * introduced so range iteration works only where `impl oper .. for T` is declared.
  */
 class MultiOperImplTest {
@@ -22,7 +22,7 @@ class MultiOperImplTest {
         val src = "bridge impl oper [.. by 1, reverse.. by 1] for Int\n"
         val program = Parser(Lexer(src).tokenize()).parse()
         val operImpls = program.items.filterIsInstance<TopLevel.Impl>()
-        assertEquals(2, operImpls.size, "expected one impl per oper prot")
+        assertEquals(2, operImpls.size, "expected one impl per oper spec")
         val methodNames = operImpls.flatMap { it.methods.map { m -> m.name } }.toSet()
         assertEquals(setOf("oper..", "operreverse.."), methodNames)
         assertTrue(operImpls.all { it.isBridge }, "every expanded oper impl must be a bridge marker")

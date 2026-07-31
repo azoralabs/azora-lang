@@ -30,7 +30,7 @@ use std.container.array
  * @since 0.0.1
  */
 
-zone std::math {
+zone std {
     /**
      * The ratio of a circle's circumference to its diameter.
      */
@@ -512,39 +512,39 @@ zone std::math {
         }
         return x
     }
-}
 
-zone std::math {
-    bridge [.C, .WebAssembly] {
-        /** Sine of [x] (radians). */
-        func sin(x: Real): Real
-        /** Cosine of [x] (radians). */
-        func cos(x: Real): Real
-        /** Tangent of [x] (radians). */
-        func tan(x: Real): Real
-        /** Arc sine of [x] in radians; [x] must be in [-1, 1]. */
-        func asin(x: Real): Real
-        /** Arc cosine of [x] in radians; [x] must be in [-1, 1]. */
-        func acos(x: Real): Real
-        /** Arc tangent of [x] in radians. */
-        func atan(x: Real): Real
-        /** Angle (radians) of the point (x, y) — the 2-argument arc tangent. */
-        func atan2(y: Real, x: Real): Real
-        /** Square root of [x]. */
-        func sqrt(x: Real): Real
-        /** Cube root of [x]. */
-        func cbrt(x: Real): Real
-        /** Natural (base-e) logarithm of [x]. */
-        func log(x: Real): Real
-        /** Base-2 logarithm of [x]. */
-        func log2(x: Real): Real
-        /** Base-10 logarithm of [x]. */
-        func log10(x: Real): Real
-        /** e raised to the power [x]. */
-        func exp(x: Real): Real
-        /** 2 raised to the power [x]. */
-        func exp2(x: Real): Real
-        /** sqrt(x*x + y*y) without overflow/underflow. */
-        func hypot(x: Real, y: Real): Real
+    func radians(degrees: Real): Real {
+        return degrees * PI / 180.0
     }
+
+    /** Sine of [x] (radians). */
+    bridge func sin(x: Real): Real
+    /** Cosine of [x] (radians). */
+    bridge func cos(x: Real): Real
+    /** Tangent of [x] (radians). */
+    bridge func tan(x: Real): Real
+    /** Arc sine of [x] in radians; [x] must be in [-1, 1]. */
+    bridge func asin(x: Real): Real
+    /** Arc cosine of [x] in radians; [x] must be in [-1, 1]. */
+    bridge func acos(x: Real): Real
+    /** Arc tangent of [x] in radians. */
+    bridge func atan(x: Real): Real
+    /** Angle (radians) of the point (x, y) — the 2-argument arc tangent. */
+    bridge func atan2(y: Real, x: Real): Real
+    /** Square root of [x]. */
+    bridge func sqrt(x: Real): Real
+    /** Cube root of [x]. */
+    bridge func cbrt(x: Real): Real
+    /** Natural (base-e) logarithm of [x]. */
+    bridge func log(x: Real): Real
+    /** Base-2 logarithm of [x]. */
+    bridge func log2(x: Real): Real
+    /** Base-10 logarithm of [x]. */
+    bridge func log10(x: Real): Real
+    /** e raised to the power [x]. */
+    bridge func exp(x: Real): Real
+    /** 2 raised to the power [x]. */
+    bridge func exp2(x: Real): Real
+    /** sqrt(x*x + y*y) without overflow/underflow. */
+    bridge func hypot(x: Real, y: Real): Real
 }

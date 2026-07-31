@@ -62,11 +62,11 @@ zone std {
 
         /** Whether the stack contains no elements. */
         @SinceAzora("0.0.1")
-        prop isEmpty[self&]: Bool = size == 0
+        prop isEmpty[self: Self&]: Bool = size == 0
 
         /** Whether the stack contains at least one element. */
         @SinceAzora("0.0.1")
-        prop isNotEmpty[self&]: Bool = size > 0
+        prop isNotEmpty[self: Self&]: Bool = size > 0
 
         // --- Internal ---
 
@@ -81,7 +81,7 @@ zone std {
             fin oldData = data
             self.data = newData
             self.capacity = newCap
-            drop oldData
+            purge oldData
         }
 
         // --- Operations ---
@@ -131,7 +131,7 @@ zone std {
             self.data = alloc T[8]
             self.size = 0
             self.capacity = 8
-            drop oldData
+            purge oldData
         }
 
         // --- String ---

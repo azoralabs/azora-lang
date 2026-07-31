@@ -222,7 +222,7 @@ func main() {
     @Test fun pointers() = assertEquals("10\n20\n99", run("""mod playground
 use std.io
 func main() {
-    var p: Int* = alloc arr@[10, 20, 30]
+    var p: Int^ = alloc^ arr@[10, 20, 30]
     std::println(*p)
     std::println(*(p + 1))
     *(p + 2) = 99

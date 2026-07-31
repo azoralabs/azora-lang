@@ -28,8 +28,8 @@ class TraitsTest {
                 var x: Int
                 var y: Int
             }
-            prot Describable {
-                func describe[self&](): String
+            spec Describable {
+                func describe[self: Self&](): String
             }
             impl Describable for Point {
                 func describe(): String {
@@ -50,9 +50,9 @@ class TraitsTest {
                 var color: String
                 var brightness: Int
             }
-            prot Device {
-                func status[self&](): String
-                func level[self&](): Int
+            spec Device {
+                func status[self: Self&](): String
+                func level[self: Self&](): Int
             }
             impl Device for Light {
                 func status(): String {
@@ -73,9 +73,9 @@ class TraitsTest {
     @Test fun specMissingMethodFails() {
         val errors = expectFailure("""
             use std.io
-            prot Describable {
-                func describe[self&](): String
-                func detail[self&](): String
+            spec Describable {
+                func describe[self: Self&](): String
+                func detail[self: Self&](): String
             }
             pack P {
                 var x: Int
@@ -103,7 +103,7 @@ class TraitsTest {
             }
             func main() { std::println("hi") }
         """.trimIndent())
-        assertTrue(errors.any { it.contains("NonExistent") }, "Expected unknown prot error, got: $errors")
+        assertTrue(errors.any { it.contains("NonExistent") }, "Expected unknown spec error, got: $errors")
     }
 
     @Test fun implWithoutTraitWorksAsBefore() {

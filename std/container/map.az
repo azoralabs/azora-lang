@@ -70,45 +70,45 @@ zone std {
      * @param V The value type.
      */
     @Experimental(sinceAzora: "0.0.4")
-    prot Map<K, V> {
+    spec Map<K, V> {
         /** Number of unique keys. */
-        prop size[self&]: Int
+        prop size[self: Self&]: Int
 
         /** Whether this map has no entries. */
-        prop isEmpty[self&]: Bool
+        prop isEmpty[self: Self&]: Bool
 
         /** Whether this map has at least one entry. */
-        prop isNotEmpty[self&]: Bool
+        prop isNotEmpty[self: Self&]: Bool
 
         /** Returns whether `key` is present. */
-        func containsKey[self&](key: K&): Bool
+        func containsKey[self: Self&](key: K&): Bool
 
         /** Returns whether an equal value is present. Requires `oper==` for `V`. */
-        func containsValue[self&](value: V&): Bool
+        func containsValue[self: Self&](value: V&): Bool
 
         /** Returns the value associated with `key`, or `null` when absent. */
-        func get[self&](key: K&): V?
+        func get[self: Self&](key: K&): V?
 
         /** Returns the associated value, or `defaultValue` when absent. */
-        func getOrDefault[self&](key: K&, defaultValue: V): V
+        func getOrDefault[self: Self&](key: K&, defaultValue: V): V
 
         /** Returns an iteration-order snapshot of all entries. */
-        func entries[self&](): Array<MapEntry<K, V>>
+        func entries[self: Self&](): Array<MapEntry<K, V>>
 
         /** Returns an iteration-order snapshot of all keys. */
-        func keys[self&](): List<K>
+        func keys[self: Self&](): List<K>
 
         /** Returns an iteration-order snapshot of all values. */
-        func values[self&](): List<V>
+        func values[self: Self&](): List<V>
 
         /** Invokes `action` once for every entry in iteration order. */
-        func forEach[self&](action: (K&, V&) -> Unit)
+        func forEach[self: Self&](action: (K&, V&) -> Unit)
     }
 
     /**
      * Mutation behavior implemented by mutable map packs.
      *
-     * Mutation always receives `self!`. Implementing this prot does not
+     * Mutation always receives `self!`. Implementing this spec does not
      * weaken a `ref Map<K, V>` view: callers holding only a shared reference can
      * still use only read operations.
      *
@@ -116,21 +116,21 @@ zone std {
      * @param V The value type.
      */
     @Experimental(sinceAzora: "0.0.4")
-    prot MutableMap<K, V> : Map<K, V> {
+    spec MutableMap<K, V> : Map<K, V> {
         /** Associates `key` with `value` and returns the replaced value, if any. */
-        func put[self&](key: K, value: V): V?
+        func put[self: Self&](key: K, value: V): V?
 
         /** Copies all entries from `other`, replacing equal keys. */
-        func putAll[self&](other: Map<K, V>&)
+        func putAll[self: Self&](other: Map<K, V>&)
 
         /** Removes `key` and returns its previous value, or `null` when absent. */
-        func remove[self&](key: K&): V?
+        func remove[self: Self&](key: K&): V?
 
         /** Removes every entry while retaining reusable internal capacity. */
-        func clear[self&]()
+        func clear[self: Self&]()
 
         /** Returns the existing value or inserts and returns `defaultValue()`. */
-        func getOrPut[self&](key: K, defaultValue: () -> V): V
+        func getOrPut[self: Self&](key: K, defaultValue: () -> V): V
     }
 
     /**
@@ -144,39 +144,39 @@ zone std {
      * @param V The value type.
      */
     @Experimental(sinceAzora: "0.0.4")
-    prot SortedMap<K, V> {
+    spec SortedMap<K, V> {
         /** Returns the smallest key, or `null` when empty. */
-        func firstKey[self&](): K?
+        func firstKey[self: Self&](): K?
 
         /** Returns the greatest key, or `null` when empty. */
-        func lastKey[self&](): K?
+        func lastKey[self: Self&](): K?
 
         /** Returns the greatest key strictly below `key`. */
-        func lowerKey[self&](key: K&): K?
+        func lowerKey[self: Self&](key: K&): K?
 
         /** Returns the greatest key below or equivalent to `key`. */
-        func floorKey[self&](key: K&): K?
+        func floorKey[self: Self&](key: K&): K?
 
         /** Returns the smallest key equivalent to or above `key`. */
-        func ceilingKey[self&](key: K&): K?
+        func ceilingKey[self: Self&](key: K&): K?
 
         /** Returns the smallest key strictly above `key`. */
-        func higherKey[self&](key: K&): K?
+        func higherKey[self: Self&](key: K&): K?
 
         /** Returns the entry with the smallest key, or `null` when empty. */
-        func firstEntry[self&](): MapEntry<K, V>?
+        func firstEntry[self: Self&](): MapEntry<K, V>?
 
         /** Returns the entry with the greatest key, or `null` when empty. */
-        func lastEntry[self&](): MapEntry<K, V>?
+        func lastEntry[self: Self&](): MapEntry<K, V>?
 
         /** Returns an ascending read-only view below `toKey`. */
-        func headMap[self&](toKey: K&, inclusive: Bool = false): SortedMap<K, V>
+        func headMap[self: Self&](toKey: K&, inclusive: Bool = false): SortedMap<K, V>
 
         /** Returns an ascending read-only view above `fromKey`. */
-        func tailMap[self&](fromKey: K&, inclusive: Bool = true): SortedMap<K, V>
+        func tailMap[self: Self&](fromKey: K&, inclusive: Bool = true): SortedMap<K, V>
 
         /** Returns an ascending read-only view between two key boundaries. */
-        func subMap[self&](
+        func subMap[self: Self&](
             fromKey: K&,
             fromInclusive: Bool,
             toKey: K&,
@@ -190,12 +190,12 @@ zone std {
      * Polling removes and returns a boundary entry in one tree operation.
      */
     @Experimental(sinceAzora: "0.0.4")
-    prot MutableSortedMap<K, V> : SortedMap<K, V> {
+    spec MutableSortedMap<K, V> : SortedMap<K, V> {
         /** Removes and returns the smallest entry, or `null` when empty. */
-        func pollFirstEntry[self&](): MapEntry<K, V>?
+        func pollFirstEntry[self: Self&](): MapEntry<K, V>?
 
         /** Removes and returns the greatest entry, or `null` when empty. */
-        func pollLastEntry[self&](): MapEntry<K, V>?
+        func pollLastEntry[self: Self&](): MapEntry<K, V>?
     }
 
     /** Hash table with unspecified iteration order. `K` requires `oper#` and `oper==`. */
@@ -258,10 +258,10 @@ zone std {
 
     impl dtor() for HashMap<K, V> {
         self& ->
-        drop self.keys
-        drop self.values
-        drop self.hashes
-        drop self.occupied
+        purge self.keys
+        purge self.values
+        purge self.hashes
+        purge self.occupied
     }
 
     impl HashMap<K, V> {
@@ -324,10 +324,10 @@ zone std {
                 }
                 i += 1
             }
-            drop oldKeys
-            drop oldValues
-            drop oldHashes
-            drop oldOccupied
+            purge oldKeys
+            purge oldValues
+            purge oldHashes
+            purge oldOccupied
         }
 
         func _ensureInsertCapacity() { self! ->
@@ -378,9 +378,9 @@ zone std {
     }
 
     impl Map<K, V> for HashMap<K, V> {
-        prop size[self&]: Int = self.__size
-        prop isEmpty[self&]: Bool = self.__size == 0
-        prop isNotEmpty[self&]: Bool = self.__size > 0
+        prop size[self: Self&]: Int = self.__size
+        prop isEmpty[self: Self&]: Bool = self.__size == 0
+        prop isNotEmpty[self: Self&]: Bool = self.__size > 0
 
         func containsKey(key: K&): Bool { self& -> return self._findIndex(key) >= 0 }
 
@@ -475,10 +475,10 @@ zone std {
     }
 
     impl dtor() for LinkedHashMap<K, V> { self& ->
-        drop self.keys
-        drop self.values
-        drop self.hashes
-        drop self.buckets
+        purge self.keys
+        purge self.values
+        purge self.hashes
+        purge self.buckets
     }
 
     impl LinkedHashMap<K, V> {
@@ -516,7 +516,7 @@ zone std {
                 self._insertBucket(i)
                 i += 1
             }
-            drop oldBuckets
+            purge oldBuckets
         }
 
         func _growEntries() { self! ->
@@ -536,9 +536,9 @@ zone std {
             self.values = newValues
             self.hashes = newHashes
             self.capacity = newCapacity
-            drop oldKeys
-            drop oldValues
-            drop oldHashes
+            purge oldKeys
+            purge oldValues
+            purge oldHashes
         }
 
         func _putValue(key: K, value: V): V? { self! ->
@@ -587,9 +587,9 @@ zone std {
     }
 
     impl Map<K, V> for LinkedHashMap<K, V> {
-        prop size[self&]: Int = self.__size
-        prop isEmpty[self&]: Bool = self.__size == 0
-        prop isNotEmpty[self&]: Bool = self.__size > 0
+        prop size[self: Self&]: Int = self.__size
+        prop isEmpty[self: Self&]: Bool = self.__size == 0
+        prop isNotEmpty[self: Self&]: Bool = self.__size > 0
 
         func containsKey(key: K&): Bool { self& ->
             return self._findIndex(key) >= 0
@@ -678,13 +678,13 @@ zone std {
     // ---------------------------------------------------------------------
 
     impl dtor() for TreeMap<K, V> { self& ->
-        drop self.keys
-        drop self.values
-        drop self.left
-        drop self.right
-        drop self.parent
-        drop self.heights
-        drop self.freeNext
+        purge self.keys
+        purge self.values
+        purge self.left
+        purge self.right
+        purge self.parent
+        purge self.heights
+        purge self.freeNext
     }
 
     impl TreeMap<K, V> {
@@ -722,13 +722,13 @@ zone std {
                 newHeights[i] = self.heights[i]
                 newFreeNext[i] = self.freeNext[i]
             }
-            drop self.keys
-            drop self.values
-            drop self.left
-            drop self.right
-            drop self.parent
-            drop self.heights
-            drop self.freeNext
+            purge self.keys
+            purge self.values
+            purge self.left
+            purge self.right
+            purge self.parent
+            purge self.heights
+            purge self.freeNext
             self.keys = newKeys
             self.values = newValues
             self.left = newLeft
@@ -935,15 +935,15 @@ zone std {
                 output += 1
                 elem = self.right[elem]
             }
-            drop stack
+            purge stack
             return result
         }
     }
 
     impl Map<K, V> for TreeMap<K, V> {
-        prop size[self&]: Int = self.__size
-        prop isEmpty[self&]: Bool = self.__size == 0
-        prop isNotEmpty[self&]: Bool = self.__size > 0
+        prop size[self: Self&]: Int = self.__size
+        prop isEmpty[self: Self&]: Bool = self.__size == 0
+        prop isNotEmpty[self: Self&]: Bool = self.__size > 0
 
         func containsKey(key: K&): Bool { self& ->
             return self._findNode(key) >= 0
@@ -1471,12 +1471,12 @@ test "hash map put replaces existing keys" {
     assert m.size == 1 && m.get(1) == "b" { "put must replace, not insert" }
 }
 
-test "hash map remove and clear drop entries" {
+test "hash map remove and clear purge entries" {
     var m = HashMap<Int, String>()
     m.put(1, "a")
     m.put(2, "b")
     m.remove(1)
-    assert m.size == 1 && !m.containsKey(1) { "remove must drop the entry" }
+    assert m.size == 1 && !m.containsKey(1) { "remove must purge the entry" }
     m.clear()
     assert m.isEmpty { "clear must empty the map" }
 }

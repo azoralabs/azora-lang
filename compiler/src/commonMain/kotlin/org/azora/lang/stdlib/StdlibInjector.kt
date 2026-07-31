@@ -68,6 +68,8 @@ class StdlibInjector private constructor(
     }
 
     companion object {
+        internal var DEBUG_INJECT = false
+
         private val standard: StdlibInjector by lazy {
             StdlibInjector(AzStdlib.loadPrograms(), emptyMap())
         }
@@ -339,7 +341,7 @@ class StdlibInjector private constructor(
                                     export != null && export.declaration !in visibleDeclarations ->
                                         errors.add(
                                             "line $line: undefined type '$qualified' — '${ref.name}' is provided by " +
-                                                "'${export.module}': add 'import ${export.module}'",
+                                                "'${export.module}': add 'use ${export.module}'",
                                         )
                                     export == null && visibleExports.isNotEmpty() -> {
                                         val declared = visibleExports.first()
@@ -852,6 +854,36 @@ class StdlibInjector private constructor(
         return visible
     }
 
+    /**
+     * Every library module this [program] can name — its own imports expanded
+     * transitively through re-exports, plus the always-on modules.
+     *
+     * Used to decide whether an extension declared on a common type is actually
+     * within reach. It mirrors [importedItems]'s traversal but keeps the module
+     * names rather than the declarations they contribute.
+     */
+    private fun reachableModules(program: Program): Set<String> {
+        val reached = mutableSetOf<String>()
+        reached.addAll(index.alwaysOnModules)
+        val seeds = ArrayDeque<Pair<String, String?>>()
+        for (item in program.items) {
+            if (item is TopLevel.UseImport && !item.exported) seeds.addAll(item.imports)
+        }
+        for (module in index.alwaysOnModules) {
+            seeds.addAll(index.exportedImportsByModule[module].orEmpty())
+        }
+        val visited = mutableSetOf<String>()
+        while (seeds.isNotEmpty()) {
+            val (path, selected) = seeds.removeFirst()
+            if (!visited.add("$path::${selected ?: "*"}")) continue
+            for (module in modulesForPath(path)) {
+                reached.add(module)
+                seeds.addAll(index.exportedImportsByModule[module].orEmpty())
+            }
+        }
+        return reached
+    }
+
     /** The library module(s) an import [path] reaches: itself if exact, else descendant modules. */
     private fun modulesForPath(path: String): List<String> =
         if (index.modules.containsKey(path)) listOf(path)
@@ -1011,6 +1043,7 @@ class StdlibInjector private constructor(
         val typeMacrosChanged = typeMacros.size != program.typeMacroRules.size
 
         val shadowed = userDeclaredNames(program)
+        val reachable = reachableModules(program)
 
         val visible = LinkedHashMap<String, TopLevel>().apply {
             putAll(index.implicitRootItems)
@@ -1036,18 +1069,25 @@ class StdlibInjector private constructor(
                 val item = visible[name] ?: index.items[name]
                 if (item != null) {
                     injected[name] = item
-                    attachImplsForType(name, injected, next)
+                    attachImplsForType(name, injected, next, reachable)
                     val transitive = mutableSetOf<String>()
                     collectNamesFromItem(item, transitive)
                     next.addAll(transitive)
                     continue
                 }
-                attachImplsForType(name, injected, next)
+                attachImplsForType(name, injected, next, reachable)
                 if (name !in injectedExterns) {
                     index.externs[name]?.let { injectedExterns[name] = it }
                 }
             }
             frontier = next
+        }
+        if (StdlibInjector.DEBUG_INJECT) {
+            println("[inject] shadowed=${shadowed.filter { "erial" in it }}")
+            println("[inject] visibleSerial=${visible.keys.filter { "erial" in it }.sorted()}")
+            println("[inject] referencedSerial=${referenced.filter { "erial" in it }.sorted()}")
+            println("[inject] injectedSerial=${injected.keys.filter { "erial" in it }.sorted()}")
+            println("[inject] indexHasIsValid=${index.items.containsKey("isValidSerialNumber")}")
         }
 
         // Runtime declarations may depend on private compile-time type functions.
@@ -1128,7 +1168,7 @@ class StdlibInjector private constructor(
         is TopLevel.Pack -> "pack:${item.name}"
         is TopLevel.Enum -> "enum:${item.name}"
         is TopLevel.Fail -> "fail:${item.name}"
-        is TopLevel.Spec -> "prot:${item.name}"
+        is TopLevel.Spec -> "spec:${item.name}"
         is TopLevel.Deco -> "deco:${item.name}"
         is TopLevel.Slot -> "slot:${item.name}"
         is TopLevel.Meta -> "meta:${item.name}"
@@ -1141,10 +1181,20 @@ class StdlibInjector private constructor(
         typeName: String,
         injected: LinkedHashMap<String, TopLevel>,
         next: MutableList<String>,
+        reachableModules: Set<String>? = null,
     ) {
         val keys = linkedSetOf(typeName, normalizedTypeName(typeName))
         for (keyName in keys) {
-            index.implsByType[keyName]?.forEach { impl ->
+            index.implsByType[keyName]?.filter { impl ->
+                // An impl on a widely-used type (`Int`, `String`) must not arrive
+                // just because the program mentions that type: a unit-suffix
+                // extension in an unimported module would otherwise drag its whole
+                // module's transitive closure into every program. A module the
+                // program cannot see contributes nothing it could have called.
+                reachableModules == null ||
+                    impl.declaringModule == null ||
+                    impl.declaringModule in reachableModules
+            }?.forEach { impl ->
                 // Include the member names: a multi-operator impl (`oper[.. , reverse..]`)
                 // expands to several impls sharing one source position, so position
                 // alone would collapse them into one.

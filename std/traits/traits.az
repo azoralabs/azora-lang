@@ -24,7 +24,7 @@ use std.convert
  *
  * Core type traits and promotion system.
  *
- * Defines the Numeric prot for arithmetic types and the
+ * Defines the Numeric spec for arithmetic types and the
  * compile-time type promotion function for mixed-type expressions.
  *
  * @since 0.0.1
@@ -38,13 +38,13 @@ zone std {
      * and the promote type function.
      */
     @SinceAzora("0.0.1")
-    prot Numeric
+    spec Numeric
 
-    /** Int satisfies the Numeric prot. */
+    /** Int satisfies the Numeric spec. */
     @SinceAzora("0.0.1")
     impl Numeric for Int
 
-    /** Real satisfies the Numeric prot. */
+    /** Real satisfies the Numeric spec. */
     @SinceAzora("0.0.1")
     impl Numeric for Real
 
@@ -68,7 +68,7 @@ zone std {
 
     /** Types that can be hashed. */
     @SinceAzora("0.0.1")
-    prot Hashable
+    spec Hashable
 
     /** Int is hashable. */
     @SinceAzora("0.0.1")
@@ -88,7 +88,7 @@ zone std {
 
     /** Types that can be copied. */
     @SinceAzora("0.0.1")
-    prot Copyable
+    spec Copyable
 
     /** Int is copyable. */
     @SinceAzora("0.0.1")
@@ -112,7 +112,7 @@ zone std {
 
     /** Types that support deep copying. */
     @SinceAzora("0.0.1")
-    prot Cloneable
+    spec Cloneable
 
     /** Int is cloneable. */
     @SinceAzora("0.0.1")
@@ -138,16 +138,16 @@ zone std {
      * Types that can be iterated over.
      */
     @SinceAzora("0.0.1")
-    prot Iterable
+    spec Iterable
 
     /**
      * An iterator that produces values one at a time.
      */
     @SinceAzora("0.0.1")
-    prot Iterator
+    spec Iterator
 
     @SinceAzora("0.0.4")
-    prot PrettyPrint {
-        prop pretty[self&]: String
+    spec PrettyPrint {
+        prop pretty[self: Self&]: String
     }
 }

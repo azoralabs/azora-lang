@@ -131,7 +131,7 @@ class Compiler(
             return "$message; '$name' is part of zone '$zone', use '$qualified' instead"
         }
         val module = libraries.moduleOf(name) ?: return message
-        return "$message — '$name' is provided by '$module': add 'import $module'"
+        return "$message — '$name' is provided by '$module': add 'use $module'"
     }
 
     fun compile(source: String, warningsAsErrors: Boolean = false, release: Boolean = true, debug: Boolean = false, defines: Map<String, String> = emptyMap()): CompilationResult {

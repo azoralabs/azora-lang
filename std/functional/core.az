@@ -31,24 +31,22 @@ use zone std {
      * result, and `RECEIVERS` is the contextual receiver type list.
      *
      * Surface forms:
-     * - `Func(A, B) -> R`
-     * - `Func[Context](A, B) -> R`
-     * - `Func[Context] -> R`
+     * - `(A, B) -> R`
+     * - `(...A) -> R`
+     * - `[Context](A, B) -> R`
+     * - `[Context] -> R`
      */
     @SinceAzora("0.0.4")
     bridge pack Func<PARAMS, RETURN_TYPE, RECEIVERS>
 
     /**
      * A storable asynchronous callable with the same parameter and contextual
-     * receiver model as `Func`.
+     * receiver model as [Func], written with an `async` prefix.
+     *
+     * Surface forms:
+     * - `async (A, B) -> R`
+     * - `async [Context](A) -> R`
      */
     @SinceAzora("0.0.4")
     bridge pack Task<PARAMS, RETURN_TYPE, RECEIVERS>
-
-    /**
-     * A storable yielding callable with the same parameter and contextual
-     * receiver model as `Func`.
-     */
-    @SinceAzora("0.0.4")
-    bridge pack Flow<PARAMS, RETURN_TYPE, RECEIVERS>
 }

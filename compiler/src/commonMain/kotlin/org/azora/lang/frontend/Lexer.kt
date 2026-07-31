@@ -39,6 +39,9 @@ class Lexer(private val source: String) {
     private var startColumn = 1
     private var bracketDepth = 0
 
+    /** Bracket depth saved at each open brace, restored at its match. */
+    private val enclosingBracketDepths = ArrayDeque<Int>()
+
     companion object {
         private val keywords = mapOf(
             "var" to TokenType.VAR,
@@ -72,8 +75,7 @@ class Lexer(private val source: String) {
             "bind" to TokenType.BIND,
             "fail" to TokenType.FAIL,
             "alloc" to TokenType.ALLOC,
-            "drop" to TokenType.DROP,
-            "deref" to TokenType.DEREF,
+            "purge" to TokenType.PURGE,
             "unsafe" to TokenType.UNSAFE,
             "isolated" to TokenType.ISOLATED,
             "flow" to TokenType.FLOW,
@@ -103,7 +105,7 @@ class Lexer(private val source: String) {
             "try" to TokenType.TRY,
             "catch" to TokenType.CATCH,
             "impl" to TokenType.IMPL,
-            "prot" to TokenType.PROT,
+            "spec" to TokenType.SPEC,
             "defer" to TokenType.DEFER,
             "type" to TokenType.TYPE,
             "typealias" to TokenType.TYPEALIAS,
@@ -158,8 +160,13 @@ class Lexer(private val source: String) {
         when (val c = advance()) {
             '(' -> { bracketDepth++; addToken(TokenType.L_PAREN) }
             ')' -> { if (bracketDepth > 0) bracketDepth--; addToken(TokenType.R_PAREN) }
-            '{' -> addToken(TokenType.L_BRACE)  // braces don't suppress newlines (statement blocks)
-            '}' -> addToken(TokenType.R_BRACE)
+            // A brace opens a statement block, where newlines separate statements
+            // again even inside an enclosing `(`/`[`. Without resetting the depth a
+            // lambda written inline as an argument — `run({ a() \n b() })` — would
+            // have its newlines swallowed by the call's parentheses and its
+            // statements joined into one expression.
+            '{' -> { enclosingBracketDepths.addLast(bracketDepth); bracketDepth = 0; addToken(TokenType.L_BRACE) }
+            '}' -> { bracketDepth = enclosingBracketDepths.removeLastOrNull() ?: 0; addToken(TokenType.R_BRACE) }
             '[' -> { bracketDepth++; addToken(TokenType.L_BRACKET) }
             ']' -> { if (bracketDepth > 0) bracketDepth--; addToken(TokenType.R_BRACKET) }
             ',' -> addToken(TokenType.COMMA)

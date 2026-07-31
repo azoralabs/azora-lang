@@ -100,7 +100,7 @@ class DecoratorReflectionTest {
             pack Counter {}
             impl Counter {
                 @Seen
-                prop answer[self&]: Int { return 42 }
+                prop answer[self: Self&]: Int { return 42 }
             }
 
             func declarations(): Int {

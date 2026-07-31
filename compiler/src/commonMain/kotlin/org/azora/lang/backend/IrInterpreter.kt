@@ -109,8 +109,21 @@ class IrInterpreter {
         "sinh" to { a -> kotlin.math.sinh(a[0] as Double) },
         "cosh" to { a -> kotlin.math.cosh(a[0] as Double) },
         "tanh" to { a -> kotlin.math.tanh(a[0] as Double) },
-        "trunc" to { a -> kotlin.math.truncate(a[0] as Double) }
+        "trunc" to { a -> kotlin.math.truncate(a[0] as Double) },
+        "cbrt" to { a -> kotlin.math.cbrt(a[0] as Double) },
+        "exp2" to { a -> 2.0.pow(a[0] as Double) },
     )
+
+    /**
+     * The intrinsic behind a `bridge func`, found by name.
+     *
+     * `zone std::math` mangles its members (`sqrt` → `__std_math_sqrt`), and the
+     * table is keyed by the mathematical name, so a mangled call falls back to
+     * its final segment. Nothing outside `externImpls` matches, so an ordinary
+     * user function with an underscore in its name is unaffected.
+     */
+    private fun externImplFor(name: String): ((List<Any?>) -> Any?)? =
+        externImpls[name] ?: externImpls[name.substringAfterLast('_')]
 
     /** The runBlocking coroutine scope — used by `task`/`await` for cooperative concurrency. */
     private var coroutineScope: CoroutineScope? = null
@@ -745,7 +758,7 @@ class IrInterpreter {
                             return@evalExpr (receiver as Map<String, Any?>)[expr.name]
                         }
                         // A computed property (`prop size = self._size`) is dispatched
-                        // before the generic map fallbacks so a prot-typed value (e.g.
+                        // before the generic map fallbacks so a spec-typed value (e.g.
                         // `m: Map` backed by a `LinkedHashMap`) reads the pack's own
                         // `.size`, not the struct field count.
                         if (typeName != null) {
@@ -827,7 +840,7 @@ class IrInterpreter {
                     IrType.Int, IrType.UInt -> n.toInt().toLong()
                     IrType.Byte, IrType.UByte -> n.toByte().toLong()
                     IrType.Short, IrType.UShort -> n.toShort().toLong()
-                    IrType.Long, IrType.ULong, IrType.Cent, IrType.UCent -> n.toLong()
+                    IrType.Long, IrType.ULong, IrType.Cent, IrType.UCent, IrType.ISize, IrType.USize -> n.toLong()
                     IrType.Float -> n.toFloat()
                     IrType.Real, IrType.Decimal -> n.toDouble()
                     IrType.Char -> n.toInt().toChar()
@@ -867,7 +880,7 @@ class IrInterpreter {
                 val args = expr.args.map { evalExpr(it) }
                 if (receiver is Map<*, *>) {
                     // A pack instance carries its concrete type in `__type`; dispatch a
-                    // prot-typed call (e.g. `xs.add(4)` where `xs: MutableList`) to the
+                    // spec-typed call (e.g. `xs.add(4)` where `xs: MutableList`) to the
                     // concrete impl (`ArrayList_add`) rather than a builtin.
                     val structType = receiver["__type"] as? String
                     if (structType != null) {
@@ -928,7 +941,7 @@ class IrInterpreter {
                         }
                         when (expr.name) {
                             "add" -> { list.add(args[0]); null }
-                            // `List`/`MutableList` positional access (prot methods).
+                            // `List`/`MutableList` positional access (spec methods).
                             "get" -> list[(args[0] as Long).toInt()]
                             "set" -> { list[(args[0] as Long).toInt()] = args[1]; null }
                             "removeAt" -> list.removeAt((args[0] as Long).toInt())
@@ -1085,7 +1098,7 @@ class IrInterpreter {
             val value = args[0]
             val typeName = args[1] as String
             val result = when (typeName) {
-                "Int", "UInt", "Byte", "UByte", "Short", "UShort", "Long", "ULong", "Cent", "UCent" -> value is Long
+                "Int", "UInt", "Byte", "UByte", "Short", "UShort", "Long", "ULong", "Cent", "UCent", "ISize", "USize" -> value is Long
                 "Real", "Float", "Decimal" -> value is Double
                 "String" -> value is String
                 "Bool" -> value is Boolean
@@ -1102,7 +1115,7 @@ class IrInterpreter {
             val value = args[0]
             val typeName = args[1] as String
             val matches = when (typeName) {
-                "Int", "UInt", "Byte", "UByte", "Short", "UShort", "Long", "ULong", "Cent", "UCent" -> value is Long
+                "Int", "UInt", "Byte", "UByte", "Short", "UShort", "Long", "ULong", "Cent", "UCent", "ISize", "USize" -> value is Long
                 "Real", "Float", "Decimal" -> value is Double
                 "String" -> value is String
                 "Bool" -> value is Boolean
@@ -1134,8 +1147,8 @@ class IrInterpreter {
             (args[0] as Pointer).setValue(args[1])
             return null
         }
-        if (expr.name == "__drop") {
-            // `drop <expr>` — if the value is a Map (struct/node instance), call its dtor if one exists.
+        if (expr.name == "__purge") {
+            // `purge <expr>` — if the value is a Map (struct/node instance), call its dtor if one exists.
             val value = args[0]
             if (value is Map<*, *>) {
                 val typeName = value["__type"] as? String
@@ -1337,7 +1350,7 @@ class IrInterpreter {
             return (result as? ReturnSignal)?.value
         }
         // Extern (`bridge`) function: resolve to a known implementation (e.g. C-math).
-        val extern = externImpls[expr.name]
+        val extern = externImplFor(expr.name)
         if (extern != null) return extern(args)
         error("Undefined function: ${expr.name}")
     }

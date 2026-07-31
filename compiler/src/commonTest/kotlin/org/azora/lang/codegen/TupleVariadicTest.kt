@@ -25,9 +25,9 @@ class TupleVariadicTest {
 
     @Test fun genericImplReflectedFieldLoopParses() {
         val program = Parser(Lexer("""
-            prot PrettyPrint { prop pretty[self&]: String }
+            spec PrettyPrint { prop pretty[self: Self&]: String }
             impl<...T> PrettyPrint for Tuple {
-                prop pretty[self&]: String {
+                prop pretty[self: Self&]: String {
                     inline for field in reflect<Self>.fields with index {
                         trace { field.value }
                     }

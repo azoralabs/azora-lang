@@ -60,7 +60,7 @@ zone std {
          * @return This tuple formatted as `(fields...)`.
          */
         @Experimental(sinceAzora: "0.0.4")
-        prop pretty[self&]: String {
+        prop pretty[self: Self&]: String {
             var res = "("
             inline for field in reflect<Self>.fields with index {
                 if index > 0 {

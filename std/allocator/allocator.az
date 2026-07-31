@@ -30,7 +30,7 @@ use std.convert
  * - Pool: fixed-size object pool for uniform allocations
  * - StackAllocator: LIFO allocator for short-lived scratch data
  *
- * All allocators implement the allocator prot and work with the
+ * All allocators implement the allocator spec and work with the
  * `alloc T(args) in allocator` syntax.
  *
  * @since 0.0.2
@@ -69,7 +69,7 @@ zone std {
      *     var p = alloc Point(1.0, 2.0) in arena
      */
     @SinceAzora("0.0.2")
-    prot Allocator
+    spec Allocator
 
     // -----------------------------------------------------------------------
     // Arena allocator
@@ -138,19 +138,19 @@ zone std {
          * The number of bytes remaining in the arena.
          */
         @SinceAzora("0.0.2")
-        prop remaining[self&]: Int = capacity - offset
+        prop remaining[self: Self&]: Int = capacity - offset
 
         /**
          * The number of bytes currently in use.
          */
         @SinceAzora("0.0.2")
-        prop used[self&]: Int = offset
+        prop used[self: Self&]: Int = offset
 
         /**
          * Whether the arena has no allocations.
          */
         @SinceAzora("0.0.2")
-        prop isEmpty[self&]: Bool = offset == 0
+        prop isEmpty[self: Self&]: Bool = offset == 0
 
         /**
          * Requests `size` bytes from the arena.
@@ -319,7 +319,7 @@ zone std {
 
     @Experimental(sinceAzora: "0.0.2")
     impl dtor() for Pool {
-        self& -> drop self.freeStack
+        self& -> purge self.freeStack
     }
 
     impl Pool {
@@ -327,19 +327,19 @@ zone std {
          * Whether the pool is completely exhausted.
          */
         @SinceAzora("0.0.2")
-        prop isFull[self&]: Bool = freeCount == 0
+        prop isFull[self: Self&]: Bool = freeCount == 0
 
         /**
          * Whether the pool has no acquired slots.
          */
         @SinceAzora("0.0.2")
-        prop isEmpty[self&]: Bool = acquiredCount == 0
+        prop isEmpty[self: Self&]: Bool = acquiredCount == 0
 
         /**
          * Whether a slot can be acquired without failing.
          */
         @SinceAzora("0.0.2")
-        prop canAcquire[self&]: Bool = freeCount > 0
+        prop canAcquire[self: Self&]: Bool = freeCount > 0
 
         /**
          * Acquires a slot from the pool.
@@ -463,13 +463,13 @@ zone std {
          * The number of bytes remaining.
          */
         @SinceAzora("0.0.2")
-        prop remaining[self&]: Int = capacity - offset
+        prop remaining[self: Self&]: Int = capacity - offset
 
         /**
          * Whether the stack has no allocations.
          */
         @SinceAzora("0.0.2")
-        prop isEmpty[self&]: Bool = offset == 0
+        prop isEmpty[self: Self&]: Bool = offset == 0
 
         /**
          * Allocates `size` bytes from the top of the stack.

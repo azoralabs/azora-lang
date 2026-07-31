@@ -89,7 +89,7 @@ enum class TokenType {
     FOR, WHILE, LOOP, IN, BREAK, CONTINUE,
     PACK, ENUM, WHEN,
     THROW, TRY, CATCH,
-    IMPL, PROT,
+    IMPL, SPEC,
     DEFER, TYPE, TYPEALIAS,
     SLOT,
 
@@ -122,8 +122,8 @@ enum class TokenType {
     OPER,
     // `fail ErrSet { … }` — error-set declaration; also `fail <expr>` throw sugar.
     FAIL,
-    // Memory model: `alloc <expr>`, `drop <expr>`, `deref <expr>`, `unsafe { }`, `isolated(expr)`.
-    ALLOC, DROP, DEREF, UNSAFE, ISOLATED,
+    // Memory model: `alloc <expr>`, `purge <expr>`, `deref <expr>`, `unsafe { }`, `isolated(expr)`.
+    ALLOC, PURGE, UNSAFE, ISOLATED,
     // Concurrency: `flow name(...) { … yield v }` generators, `task { }` / `await`, `launch { }`.
     FLOW, YIELD, AWAIT, LAUNCH,
     // FFI: `bridge <target> { func sigs }` — extern function declarations.

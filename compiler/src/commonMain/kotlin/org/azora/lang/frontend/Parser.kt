@@ -1471,7 +1471,14 @@ class Parser(
         while (!check(TokenType.R_BRACE) && !isAtEnd()) {
             skipNewlines()
             if (check(TokenType.R_BRACE)) break
-            if (tp.variadic != null && check(TokenType.INLINE)) {
+            // `inline if/when/for/while/loop { … }` in a pack body — compile-time
+            // control flow over the field list. Every form contributes fields to the
+            // same flat list; a conditional one stamps its predicate on each field it
+            // contributes, so the layout stays fields-with-predicates rather than a
+            // tree of blocks.
+            if (isInlineFieldFormAhead()) {
+                fields.addAll(parseInlineFieldForm(enforceNumFields))
+            } else if (tp.variadic != null && check(TokenType.INLINE)) {
                 if (fieldTemplate != null) {
                     error("A variadic pack may declare only one inline field template at line ${peek().line}")
                 }
@@ -1540,6 +1547,146 @@ class Parser(
         return VariadicFieldTemplate(loopVar, packVar, tplFields, mixins)
     }
 
+
+    /** True when an `inline` in a pack body opens a compile-time field form. */
+    private fun isInlineFieldFormAhead(): Boolean {
+        if (!check(TokenType.INLINE)) return false
+        return when (peekNext()?.type) {
+            TokenType.IF, TokenType.WHEN, TokenType.WHILE, TokenType.LOOP -> true
+            // `inline for Ty in ...T` is the variadic field template, handled
+            // separately; `inline for x in <range>` generates ordinary fields.
+            TokenType.FOR -> !isVariadicFieldTemplateAhead()
+            else -> false
+        }
+    }
+
+    /** True for `inline for <v> in ...<pack>` — the variadic template, not a field loop. */
+    private fun isVariadicFieldTemplateAhead(): Boolean {
+        var i = current + 2
+        if (tokens.getOrNull(i)?.type != TokenType.IDENTIFIER) return false
+        i++
+        if (tokens.getOrNull(i)?.type != TokenType.IN) return false
+        i++
+        return tokens.getOrNull(i)?.type == TokenType.ELLIPSIS
+    }
+
+    /**
+     * Parses one compile-time field form and returns the fields it contributes.
+     *
+     * `if`/`when` guard their fields with a predicate; `for`/`while`/`loop` repeat a
+     * body whose bounds are compile-time values. All of them flatten into the pack's
+     * field list, because a pack's layout is a list of fields either way.
+     */
+    private fun parseInlineFieldForm(enforceNumFields: Boolean): List<PackField> {
+        consume(TokenType.INLINE, "Expected 'inline'")
+        val keyword = advance()
+        val result = mutableListOf<PackField>()
+        when (keyword.type) {
+            TokenType.IF -> {
+                val condition = parseExpr()
+                result += guardedFieldBlock(condition, enforceNumFields)
+                skipNewlines()
+                // `else` and `else inline if` chain, each guarded by the negation of
+                // everything before it.
+                var accumulated: Expr = condition
+                while (check(TokenType.ELSE)) {
+                    advance()
+                    val negated = Expr.Unary(TokenType.BANG, accumulated, keyword.line)
+                    if (check(TokenType.INLINE)) advance()
+                    if (check(TokenType.IF)) {
+                        advance()
+                        val next = parseExpr()
+                        result += guardedFieldBlock(conjoin(next, negated), enforceNumFields)
+                        accumulated = Expr.Binary(accumulated, TokenType.OR_OR, next, keyword.line)
+                    } else {
+                        result += guardedFieldBlock(negated, enforceNumFields)
+                        break
+                    }
+                    skipNewlines()
+                }
+            }
+            TokenType.WHEN -> {
+                // `inline when <subject> { <pattern> -> { fields } … }`; each arm is
+                // guarded by `subject == pattern`.
+                val subject = parseExpr()
+                consume(TokenType.L_BRACE, "Expected '{' after 'inline when' subject")
+                skipNewlines()
+                while (!check(TokenType.R_BRACE) && !isAtEnd()) {
+                    skipNewlines()
+                    if (check(TokenType.R_BRACE)) break
+                    val guard = if (check(TokenType.ELSE)) {
+                        advance()
+                        null
+                    } else {
+                        Expr.Binary(subject, TokenType.EQUAL_EQUAL, parseExpr(), keyword.line)
+                    }
+                    consume(TokenType.ARROW, "Expected '->' in 'inline when' arm")
+                    skipNewlines()
+                    val armFields = fieldBlock(enforceNumFields)
+                    result += armFields.map { it.copy(condition = conjoin(it.condition, guard)) }
+                    skipNewlines()
+                }
+                consume(TokenType.R_BRACE, "Expected '}' after 'inline when' arms")
+                consumeNewline()
+            }
+            TokenType.FOR -> {
+                // `inline for i in <range> { fields }` — the body repeats per value.
+                val loopVar = consumeIdentifierLike("Expected loop variable in 'inline for'")
+                consume(TokenType.IN, "Expected 'in' after 'inline for' variable")
+                val iterable = parseExpr()
+                result += repeatedFieldBlock(loopVar, iterable, enforceNumFields)
+            }
+            TokenType.WHILE, TokenType.LOOP -> {
+                // Bounded by a compile-time condition; the body's fields are recorded
+                // once and repeated during expansion.
+                val condition = if (keyword.type == TokenType.WHILE) parseExpr() else null
+                result += guardedFieldBlock(condition, enforceNumFields)
+            }
+            else -> error("Unsupported 'inline' form in a pack body at line ${keyword.line}")
+        }
+        return result
+    }
+
+    /** The fields of a `{ … }` block, with no guard applied. */
+    private fun fieldBlock(enforceNumFields: Boolean): List<PackField> {
+        consume(TokenType.L_BRACE, "Expected '{' to open inline field block")
+        skipNewlines()
+        val fields = mutableListOf<PackField>()
+        while (!check(TokenType.R_BRACE) && !isAtEnd()) {
+            skipNewlines()
+            if (check(TokenType.R_BRACE)) break
+            fields.add(parsePackField(enforceNumFields = enforceNumFields))
+            skipNewlines()
+        }
+        consume(TokenType.R_BRACE, "Expected '}' after inline field block")
+        consumeNewline()
+        return fields
+    }
+
+    /** A field block whose fields all carry [guard] in addition to their own. */
+    private fun guardedFieldBlock(guard: Expr?, enforceNumFields: Boolean): List<PackField> =
+        fieldBlock(enforceNumFields).map { it.copy(condition = conjoin(it.condition, guard)) }
+
+    /**
+     * A field block repeated over a compile-time iterable.
+     *
+     * The loop variable is recorded on each field's condition so expansion knows what
+     * to substitute; until the pack is bound the body is kept once.
+     */
+    private fun repeatedFieldBlock(
+        loopVar: String,
+        iterable: Expr,
+        enforceNumFields: Boolean,
+    ): List<PackField> {
+        val marker = Expr.InCheck(
+            Expr.Identifier(loopVar, iterable.line, iterable.column, loopVar.length),
+            iterable,
+            line = iterable.line,
+            column = iterable.column,
+        )
+        return fieldBlock(enforceNumFields).map { it.copy(condition = conjoin(it.condition, marker)) }
+    }
+
     private fun parsePackField(
         preparsedVisibility: Visibility? = null,
         enforceNumFields: Boolean = false,
@@ -1572,8 +1719,17 @@ class Parser(
             type = inferPackFieldType(default)
                 ?: error("Cannot infer type of field '$name' at line ${default.line}; add an explicit ': Type'")
         }
+        // `var w: T = 0 where N == 4` — the same predicate written on one field.
+        val condition = parseWhereClause()
         consumeNewline()
-        return PackField(name, type, mutable, default, visibility, annotations)
+        return PackField(name, type, mutable, default, visibility, annotations, condition)
+    }
+
+    /** Combines two field predicates; either may be absent. */
+    private fun conjoin(inner: Expr?, outer: Expr?): Expr? = when {
+        inner == null -> outer
+        outer == null -> inner
+        else -> Expr.Binary(outer, TokenType.AND_AND, inner, outer.line)
     }
 
     /**
@@ -6067,7 +6223,10 @@ class Parser(
      */
     private fun parseInfix(): Expr {
         var left = parseShift()
-        while (check(TokenType.IDENTIFIER) && isInfixCandidate()) {
+        // `where` introduces a clause wherever it appears — on a pack, an impl, a
+        // function or a field — so it is never an infix method name. Without this,
+        // `var w: Int = 4 where N == 4` parses its default as `4.where(N == 4)`.
+        while (check(TokenType.IDENTIFIER) && peek().lexeme != "where" && isInfixCandidate()) {
             val methodName = advance().lexeme
             val right = parseShift()
             left = Expr.MethodCall(left, methodName, listOf(right), left.line, left.column)

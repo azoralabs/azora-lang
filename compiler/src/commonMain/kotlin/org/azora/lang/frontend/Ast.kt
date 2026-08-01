@@ -1409,6 +1409,15 @@ data class PackField(
     val default: Expr?,
     val visibility: Visibility = Visibility.PUBLIC,
     val annotations: List<Annotation> = emptyList(),
+    /**
+     * When set, the field exists only for argument bindings satisfying it.
+     *
+     * `inline if N >= 3 { var z: T = 0 }` and `var w: T = 0 where N == 4` both put
+     * their condition here, so a conditional field is one field with a predicate
+     * rather than a separate kind of declaration. Evaluated by
+     * ConstraintEvaluator against the same bindings a `where` clause uses.
+     */
+    val condition: Expr? = null,
 )
 
 /**

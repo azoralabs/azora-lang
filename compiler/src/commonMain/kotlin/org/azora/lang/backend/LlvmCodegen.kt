@@ -2530,7 +2530,8 @@ class LlvmCodegen {
      * called `log` keeps its own linkage.
      */
     private fun mathIntrinsicOf(item: IrTopLevel.Extern): String? {
-        val name = item.name.substringAfterLast('_')
+        // `powr` is Azora's real-exponent power; libm spells it `pow`.
+        val name = item.name.substringAfterLast('_').let { if (it == "powr") "pow" else it }
         val arity = LIBM_INTRINSICS[name] ?: return null
         if (item.params.size != arity) return null
         if (item.returnType != IrType.Real) return null
@@ -4663,7 +4664,9 @@ class LlvmCodegen {
 
         if (usesRealToStr) {
             usesSnprintf = true
-            val fmt = addStringConstant("%g")
+            // %g alone keeps only six significant digits, silently truncating an
+            // interpolated Real; %.17g round-trips an f64 exactly.
+            val fmt = addStringConstant("%.17g")
             sb.appendLine("; runtime: real to string")
             sb.appendLine("define i8* @__azora_real_to_str(double %v) {")
             sb.appendLine("entry:")

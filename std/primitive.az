@@ -125,6 +125,14 @@ use zone std {
     @SinceAzora("0.0.4")
     spec FloatingPoint
 
+    /** Marker spec for the unsigned integer types and floating-point types. */
+    @SinceAzora("0.0.5")
+    spec UnsignedNumber
+
+    /** Marker spec for the signed integer types and floating-point types. */
+    @SinceAzora("0.0.5")
+    spec SignedNumber
+
     /**
      * Common contract for every numeric type.
      *
@@ -426,7 +434,19 @@ use zone std {
     @SinceAzora("0.0.4")
     impl FloatingPoint for FloatingPoints
 
-    inline fin ranks: Array<Int> = arr@[0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 6, 7]
+    @SinceAzora("0.0.5")
+    impl UnsignedNumber for UnsignedIntegers
+
+    @SinceAzora("0.0.5")
+    impl UnsignedNumber for FloatingPoints
+
+    @SinceAzora("0.0.5")
+    impl SignedNumber for SignedIntegers
+
+    @SinceAzora("0.0.5")
+    impl SignedNumber for FloatingPoints
+
+    inline fin _ranks: Array<Int> = arr@[0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 6, 7]
 
     // Promotion ranks for every numeric type.
     inline for Ty in Numbers with index {
@@ -442,7 +462,7 @@ use zone std {
          */
         @SinceAzora("0.0.4")
         impl Ty:: {
-            prop rank[self: Ty&]: Int = ${ranks[index]}
+            prop rank[self: Ty&]: Int = ${_ranks[index]}
         }
     }
 

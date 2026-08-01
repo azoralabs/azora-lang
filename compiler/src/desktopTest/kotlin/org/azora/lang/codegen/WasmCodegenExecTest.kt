@@ -56,7 +56,7 @@ class WasmCodegenExecTest {
     // Taylor polynomials agrees with the interpreter to ~13 significant digits, which is
     // the accuracy this tier promises; `std::vha::sin` is where exactness belongs.
     @Test fun softwareSinAndCos() = check(
-        "0.0\n0.841470985\n1.0\n-0.989992497",
+        "0.0\n0.841470984807901\n1.0\n-0.989992496600445",
         "use std.math\n" + main(
             "var a = 0.0\nvar b = 1.0\nvar c = 3.0\n" +
                 "std::println(std::sin(a))\nstd::println(std::sin(b))\n" +
@@ -66,7 +66,7 @@ class WasmCodegenExecTest {
 
     // exp/log and everything derived from them, also supplied in software.
     @Test fun softwareExpAndLog() = check(
-        "2.718281828\n1.0\n2.0\n3.0\n8.0\n3.0",
+        "2.718281828459045\n0.999999999999926\n2.0\n3.0\n8.0\n3.0",
         "use std.math\n" + main(
             "var one = 1.0\nvar e = 2.718281828459045\nvar four = 4.0\n" +
                 "var thousand = 1000.0\nvar three = 3.0\nvar twentyseven = 27.0\n" +
@@ -81,13 +81,26 @@ class WasmCodegenExecTest {
     // what `std::vha::` is for. (`std::pow` is a generic `pow<T>`, not a bridge, so it
     // is not part of the software math.)
     @Test fun softwareInverseTrigAndHypot() = check(
-        "0.785398132\n1.570796327\n0.0\n2.356194522\n5.0",
+        "0.785398131668175\n1.570796326794896\n0.0\n2.356194521921618\n5.0",
         "use std.math\n" + main(
             "var one = 1.0\nvar zero = 0.0\nvar neg = 0.0 - 1.0\n" +
                 "var three = 3.0\nvar four = 4.0\nvar two = 2.0\n" +
                 "std::println(std::atan(one))\nstd::println(std::asin(one))\n" +
                 "std::println(std::acos(one))\nstd::println(std::atan2(one, neg))\n" +
                 "std::println(std::hypot(three, four))"
+        )
+    )
+
+    // `std::vha::sin` carries the series two terms further than `std::sin`, which shows
+    // up once the range reduction is exact: against a true sin(1) of 0.841470984807897,
+    // the default lands on ...901 and vha on ...896. cos(3) is exact in both tiers here,
+    // the extra terms mattering only where the argument reduces less kindly.
+    @Test fun vhaTrigIsMoreAccurateThanTheDefault() = check(
+        "0.841470984807901\n0.841470984807896\n-0.989992496600445\n-0.989992496600445",
+        "use std.math\n" + main(
+            "var one = 1.0\nvar three = 3.0\n" +
+                "std::println(std::sin(one))\nstd::println(std::vha::sin(one))\n" +
+                "std::println(std::cos(three))\nstd::println(std::vha::cos(three))"
         )
     )
 

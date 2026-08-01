@@ -16,17 +16,26 @@ import kotlin.test.assertTrue
 class MultiOperImplTest {
 
     @Test
-    fun multiOperExpandsToOneImplPerSpec() {
-        // `bridge impl oper [.. by 1, reverse.. by 1] for Int` expands to two impls
-        // (oper.. and operreverse..), both bridge markers carrying a bodyless method.
-        val src = "bridge impl oper [.. by 1, reverse.. by 1] for Int\n"
+    fun eachRangeOperatorIsDeclaredOnItsOwn() {
+        // Each direction is its own declaration, naming its receiver and trailing its
+        // default step; a bodyless one is a bridge marker the backend supplies.
+        val src = "oper.. [self: Int&](rhs: Int&) by 1\n" +
+            "oper reverse.. [self: Int&](rhs: Int&) by 1\n"
         val program = Parser(Lexer(src).tokenize()).parse()
         val operImpls = program.items.filterIsInstance<TopLevel.Impl>()
-        assertEquals(2, operImpls.size, "expected one impl per oper spec")
+        assertEquals(2, operImpls.size, "expected one impl per oper declaration")
         val methodNames = operImpls.flatMap { it.methods.map { m -> m.name } }.toSet()
         assertEquals(setOf("oper..", "operreverse.."), methodNames)
-        assertTrue(operImpls.all { it.isBridge }, "every expanded oper impl must be a bridge marker")
+        assertTrue(operImpls.all { it.isBridge }, "a bodyless oper declaration must be a bridge marker")
         assertTrue(operImpls.all { it.typeName == "Int" })
+    }
+
+    @Test
+    fun theBracketEnumerationFormIsRejected() {
+        // `impl oper [.. , reverse..] for T` was replaced by one declaration each.
+        val src = "bridge impl oper [.. by 1, reverse.. by 1] for Int\n"
+        val failure = runCatching { Parser(Lexer(src).tokenize()).parse() }.exceptionOrNull()
+        assertTrue(failure != null, "the bracket enumeration form must no longer parse")
     }
 
     @Test

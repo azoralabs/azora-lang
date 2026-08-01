@@ -14,13 +14,10 @@
  * limitations under the License.
  */
 
-expose mod std.traits.core
+mod std.error
 
-use zone std {
-    inline for Ty in Numbers {
-        /** Ascending range over [Ty], stepping by one. */
-        oper.. [self: Ty&](rhs: Ty&) by 1
-        /** Descending range over [Ty], stepping by one. */
-        oper reverse.. [self: Ty&](rhs: Ty&) by 1
+zone std {
+    fail IndexError {
+        OutOfBounds(index: Int, size: Int)
     }
 }

@@ -57,6 +57,15 @@ class Parser(
      * bridge alias wrappers and normalized decorator/target list applications.
      * Drained into the item list after each declaration completes.
      */
+    /**
+     * The error set(s) the function currently being parsed declares with `?!`.
+     *
+     * `return .Variant(args)` needs to name the set that owns the variant, and the
+     * return type is parsed before the body, so the parser knows it without waiting
+     * for semantic analysis.
+     */
+    private var currentFailSets: List<String> = emptyList()
+
     private val pendingTopLevels = mutableListOf<TopLevel>()
 
     /** `meta type { … }` arms collected during parsing, surfaced on [Program.typeMacroRules]. */
@@ -468,6 +477,26 @@ class Parser(
             skipNewlines()
             TypeAnnotation.Explicit(parseTypeName())
         } else TypeAnnotation.Inferred
+        // The step is declarative metadata: parsed so the source states it, then
+        // discarded, exactly as the old bracket form's `by` was.
+        if (match(TokenType.BY)) parseExpr()
+        // A declaration with no body is compiler-provided, the same as `bridge func`:
+        // `oper.. by 1 [self: Ty&](rhs: Ty&)` states that the backend supplies it.
+        if (!check(TokenType.L_BRACE)) {
+            consumeNewline()
+            return TopLevel.Impl(
+                typeName,
+                listOf(
+                    FuncDecl(
+                        "oper$opName", operands, ret, emptyList(), false, emptyList(),
+                        start.line, start.column, receiverModifier = recv.modifier,
+                        receiverName = recv.name, visibility = visibility,
+                        annotations = annotations,
+                    ),
+                ),
+                null, start.line, start.column, isBridge = true,
+            )
+        }
         consume(TokenType.L_BRACE, "Expected '{' after operator declaration")
         skipNewlines()
         val body = parseBlock()
@@ -561,43 +590,6 @@ class Parser(
      * per spec via the `pendingTopLevels` queue (first returned, rest queued).
      * `oper` and the leading `[` have already been consumed by the caller.
      */
-    private fun parseMultiOperImpl(start: Token, isBridge: Boolean, annotations: List<Annotation>): TopLevel.Impl {
-        data class OpSpec(val methodName: String)
-        val specs = mutableListOf<OpSpec>()
-        do {
-            val reversed = match(TokenType.REVERSE)
-            val opName = when {
-                match(TokenType.DOT_DOT) -> ".."
-                match(TokenType.DOT_DOT_LESS) -> ".."
-                else -> error("Expected '..' or 'reverse..' in oper spec at line ${peek().line}")
-            }
-            // `by <expr>` — declarative default-step metadata; parsed then discarded.
-            if (match(TokenType.BY)) parseExpr()
-            specs.add(OpSpec("oper" + (if (reversed) "reverse" else "") + opName))
-        } while (match(TokenType.COMMA))
-        consume(TokenType.R_BRACKET, "Expected ']' after oper spec list")
-        consume(TokenType.FOR, "Expected 'for' after 'impl oper[...]'")
-        val typeName = consume(TokenType.IDENTIFIER, "Expected type name after 'for'").lexeme
-        skipGenericTypeArgs()
-        val (receiverModifier, params, body) = parseReceiverAndBody()
-        consumeNewline()
-        val bridge = isBridge || body.isEmpty()
-        val impls = specs.mapIndexed { idx, sp ->
-            // Distinct columns per operator so downstream position-keyed dedup (e.g.
-            // the stdlib injector) does not collapse the expanded impls into one.
-            val col = start.column + idx
-            val method = FuncDecl(
-                sp.methodName, params, TypeAnnotation.Inferred, body, false, emptyList(),
-                start.line, col, receiverModifier = receiverModifier,
-            )
-            TopLevel.Impl(
-                typeName, listOf(method), null, start.line, col,
-                annotations = annotations, isBridge = bridge,
-            )
-        }
-        if (impls.size > 1) pendingTopLevels.addAll(impls.drop(1))
-        return impls.first()
-    }
 
     /**
      * Parses an optional receiver + parameters + body for a member. The receiver
@@ -1623,17 +1615,52 @@ class Parser(
         skipNewlines()
         val variants = mutableListOf<String>()
         val variantAnns = mutableListOf<List<Annotation>>()
+        val variantPayloads = mutableListOf<List<TypeRef>>()
         while (!check(TokenType.R_BRACE) && !isAtEnd()) {
             skipNewlines()
             if (check(TokenType.R_BRACE)) break
             do {
                 variants.add(consume(TokenType.IDENTIFIER, "Expected variant name").lexeme)
+                // `OutOfBounds(index: Int, size: Int)` — a variant may carry data. The
+                // field names are accepted for readability; payloads stay positional,
+                // exactly as a `slot` variant's do.
+                variantPayloads.add(
+                    if (match(TokenType.L_PAREN)) {
+                        val types = mutableListOf<TypeRef>()
+                        if (!check(TokenType.R_PAREN)) {
+                            do {
+                                if (check(TokenType.IDENTIFIER) && peekNext()?.type == TokenType.COLON) {
+                                    advance(); advance()
+                                }
+                                types.add(parseTypeName())
+                            } while (match(TokenType.COMMA))
+                        }
+                        consume(TokenType.R_PAREN, "Expected ')' after error variant payload")
+                        types
+                    } else {
+                        emptyList()
+                    },
+                )
                 variantAnns.add(parseAnnotations()) // trailing `@ann` on the same line
             } while (match(TokenType.COMMA) && check(TokenType.IDENTIFIER))
         }
         consume(TokenType.R_BRACE, "Expected '}' after error-set variants")
         consumeNewline()
-        return TopLevel.Fail(name, variants, start.line, start.column, annotations, variantAnns)
+        // A payload-carrying error set is also a slot: that is what already models a
+        // named variant with fields, so construction and `when` matching come from the
+        // machinery that exists rather than a parallel implementation.
+        if (variantPayloads.any { it.isNotEmpty() }) {
+            pendingTopLevels.add(
+                TopLevel.Slot(
+                    name,
+                    variants.mapIndexed { i, v -> TopLevel.SlotVariant(v, variantPayloads[i]) },
+                    start.line,
+                    start.column,
+                    annotations,
+                ),
+            )
+        }
+        return TopLevel.Fail(name, variants, start.line, start.column, annotations, variantAnns, variantPayloads)
     }
 
     /** Skips `<T, U>` generic type arguments at the current position (erased at IR). */
@@ -1935,8 +1962,13 @@ class Parser(
             // Multi-oper form: `impl oper[.. by 1, reverse.. by 1] for Ty` expands to one
             // impl per prot. Routed here (before oper[]/oper[:]/oper[]=) only when the
             // bracket content is an operator prot, so the index/slice forms stay intact.
+            // The bracket enumeration `impl oper[.., reverse..] for Ty` is gone: each
+            // operator is declared on its own, as `oper.. [self: Ty&](rhs: Ty&) by 1`.
             if (peek().type in setOf(TokenType.DOT_DOT, TokenType.DOT_DOT_LESS, TokenType.REVERSE)) {
-                return parseMultiOperImpl(operStart, isBridge, annotations)
+                error(
+                    "'impl oper[...] for Type' enumeration was removed at line ${peek().line}; " +
+                        "declare each operator separately, as 'oper.. [self: Type&](rhs: Type&) by 1'",
+                )
             }
             // `oper[:]` — the Python-style slice overload (`a[1:3]`, `a[:]`, …).
             val isSlice = match(TokenType.COLON)
@@ -3356,6 +3388,8 @@ class Parser(
             }
         }
 
+        val savedFailSets = currentFailSets
+        currentFailSets = ((returnType as? TypeAnnotation.Explicit)?.ref as? TypeRef.Failable)?.errSets.orEmpty()
         val body: List<Stmt>
         if (match(TokenType.EQUAL)) {
             // `= inline { … }` / `= deepinline { … }` blocks, or an
@@ -3399,6 +3433,7 @@ class Parser(
             body = stmts
         }
         val contractedBody = applyContracts(body, contracts, rewriteYields = isFlow)
+        currentFailSets = savedFailSets
         return FuncDecl(
             name = name,
             params = params,
@@ -5450,6 +5485,33 @@ class Parser(
         if (check(TokenType.DOT) && peekNext()?.type == TokenType.IDENTIFIER) {
             advance() // '.'
             val variant = consume(TokenType.IDENTIFIER, "Expected error variant after 'return .'").lexeme
+            // `return .OutOfBounds(i, n)` — an error variant carrying data. The error
+            // set owning the variant is the one the signature declares, and a
+            // payload-bearing set is also a slot, so this is that slot's construction:
+            // the thrown value carries its fields instead of only its name.
+            if (check(TokenType.L_PAREN)) {
+                if (currentFailSets.size != 1) {
+                    error(
+                        "cannot tell which error set '$variant' belongs to at line ${peek().line}; " +
+                            "a function returning a payload must declare exactly one '?!' set",
+                    )
+                }
+                advance() // '('
+                val args = mutableListOf<Expr>()
+                if (!check(TokenType.R_PAREN)) {
+                    do { args.add(parseExpr()) } while (match(TokenType.COMMA))
+                }
+                consume(TokenType.R_PAREN, "Expected ')' after error payload")
+                consumeNewline()
+                val set = currentFailSets.single()
+                return Stmt.Throw(
+                    Expr.MethodCall(
+                        Expr.Identifier(set, start.line, start.column, set.length),
+                        variant, args, start.line, start.column,
+                    ),
+                    start.line, start.column,
+                )
+            }
             consumeNewline()
             return Stmt.Throw(Expr.StringLiteral(variant, start.line), start.line, start.column)
         }

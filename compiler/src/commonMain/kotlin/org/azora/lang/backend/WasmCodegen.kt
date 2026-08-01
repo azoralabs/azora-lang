@@ -82,6 +82,7 @@ class WasmCodegen {
     private var usesTrig = false
     private var usesExpLog = false
     private var usesInvTrig = false
+    private var usesVhaTrig = false
     private var usesIsCheck = false
     private val neededIntrinsics = mutableSetOf<String>()
     private val externs = LinkedHashMap<String, IrTopLevel.Extern>()
@@ -107,7 +108,7 @@ class WasmCodegen {
     fun generate(program: IrProgram): String {
         out.clear(); indent = 0
         structs.clear(); globalTypes.clear(); stringConsts.clear(); constCursor = STRING_BASE
-        usesAlloc = false; usesConcat = false; usesStrEq = false; usesRepeat = false; usesIntToStr = false; usesLongToStr = false; usesRealToStr = false; usesTrig = false; usesExpLog = false; usesInvTrig = false; usesIsCheck = false
+        usesAlloc = false; usesConcat = false; usesStrEq = false; usesRepeat = false; usesIntToStr = false; usesLongToStr = false; usesRealToStr = false; usesTrig = false; usesExpLog = false; usesInvTrig = false; usesVhaTrig = false; usesIsCheck = false
         neededIntrinsics.clear(); externs.clear(); neededExterns.clear()
         closureTypes.clear(); closureFunctions.clear()
 
@@ -154,7 +155,7 @@ class WasmCodegen {
             // is defined here rather than imported: the compiler supplies these
             // itself, so a program using `std` needs nothing from the host.
             if (wasmFloatOpFor(extern) != null) continue
-            if (wasmSoftwareMathFor(extern) != null) { usesTrig = true; usesExpLog = true; usesInvTrig = true; continue }
+            if (wasmSoftwareMathFor(extern) != null) { usesTrig = true; usesExpLog = true; usesInvTrig = true; usesVhaTrig = true; continue }
             val params = extern.params.joinToString("") { " (param ${wasmType(it.second)})" }
             val result = if (extern.returnType == IrType.Unit) "" else " (result ${wasmType(extern.returnType)})"
             sb.appendLine("  (import \"env\" \"$name\" (func \$$name$params$result))")
@@ -207,6 +208,7 @@ class WasmCodegen {
         if (usesTrig) sb.append(RT_TRIG)
         if (usesExpLog) sb.append(RT_EXPLOG)
         if (usesInvTrig) sb.append(RT_INVTRIG)
+        if (usesVhaTrig) sb.append(RT_VHA_TRIG)
         if (usesIsCheck) sb.append(RT_IS_CHECK)
         sb.append(wasmStringIntrinsics())
         sb.append(globalInitText)
@@ -1005,10 +1007,13 @@ class WasmCodegen {
      * still comes from the host until its approximation is written.
      */
     private fun wasmSoftwareMathFor(extern: IrTopLevel.Extern): String? {
+        // `zone std::vha` mangles to `__std_vha_sin`; the extra accuracy is what the
+        // zone exists for, so it maps to the longer series where one is implemented.
+        val vha = "_vha_" in extern.name
         val name = when (extern.name.substringAfterLast('_')) {
-            "sin" -> "__soft_sin"
-            "cos" -> "__soft_cos"
-            "tan" -> "__soft_tan"
+            "sin" -> if (vha) "__vha_sin" else "__soft_sin"
+            "cos" -> if (vha) "__vha_cos" else "__soft_cos"
+            "tan" -> if (vha) "__vha_tan" else "__soft_tan"
             "log" -> "__soft_log"
             "log2" -> "__soft_log2"
             "log10" -> "__soft_log10"
@@ -1022,10 +1027,11 @@ class WasmCodegen {
             "acos" -> "__soft_acos"
             "atan" -> "__soft_atan"
             "atan2" -> "__soft_atan2"
+            "powr" -> "__soft_pow"
             "hypot" -> "__soft_hypot"
             else -> return null
         }
-        val expectedArity = if (name in setOf("__soft_atan2", "__soft_hypot")) 2 else 1
+        val expectedArity = if (name in setOf("__soft_atan2", "__soft_hypot", "__soft_pow")) 2 else 1
         if (extern.params.size != expectedArity) return null
         if (extern.returnType != IrType.Real) return null
         if (extern.params.any { it.second != IrType.Real }) return null
@@ -1260,9 +1266,10 @@ class WasmCodegen {
     (local.set ${'$'}v (f64.abs (local.get ${'$'}v)))
     (local.set ${'$'}ip (i64.trunc_f64_u (local.get ${'$'}v)))
     (local.set ${'$'}frac (f64.sub (local.get ${'$'}v) (f64.convert_i64_u (local.get ${'$'}ip))))
-    ;; nine fractional digits, rounded, then trailing zeros trimmed below
-    (local.set ${'$'}fd (i64.trunc_f64_u (f64.nearest (f64.mul (local.get ${'$'}frac) (f64.const 1000000000)))))
-    (if (i64.ge_u (local.get ${'$'}fd) (i64.const 1000000000))
+    ;; fifteen fractional digits, rounded, then trailing zeros trimmed below —
+    ;; enough to show the difference between the default and vha math tiers
+    (local.set ${'$'}fd (i64.trunc_f64_u (f64.nearest (f64.mul (local.get ${'$'}frac) (f64.const 1000000000000000)))))
+    (if (i64.ge_u (local.get ${'$'}fd) (i64.const 1000000000000000))
       (then
         (local.set ${'$'}fd (i64.const 0))
         (local.set ${'$'}ip (i64.add (local.get ${'$'}ip) (i64.const 1)))))
@@ -1275,8 +1282,8 @@ class WasmCodegen {
       (local.set ${'$'}len (i32.add (local.get ${'$'}len) (i32.const 1)))
       (local.set ${'$'}x (i64.div_u (local.get ${'$'}x) (i64.const 10)))
       (br ${'$'}l)))
-    ;; 32 bytes is ample: 20 integer digits + '.' + 9 fraction digits + sign
-    (local.set ${'$'}p (call ${'$'}__alloc (i32.const 36)))
+    ;; 20 integer digits + '.' + 15 fraction digits + sign, plus the length word
+    (local.set ${'$'}p (call ${'$'}__alloc (i32.const 44)))
     (local.set ${'$'}q (i32.add (local.get ${'$'}p) (i32.const 4)))
     (local.set ${'$'}i (i32.const 0))
     (if (local.get ${'$'}neg)
@@ -1372,10 +1379,12 @@ class WasmCodegen {
   (func ${'$'}__trig (param ${'$'}x f64) (param ${'$'}k i32) (result f64)
     (local ${'$'}n f64) (local ${'$'}r f64) (local ${'$'}q i32)
     (local.set ${'$'}n (f64.nearest (f64.mul (local.get ${'$'}x) (f64.const 0.6366197723675814))))
-    ;; two-part pi/2 keeps the reduction exact well past what one constant allows
+    ;; three-part pi/2 (fdlibm's split): the parts must SUM to pi/2 to within the
+    ;; final precision — a low part that is merely small leaves exactly that much
+    ;; error in every result, which is far larger than any polynomial truncation.
     (local.set ${'$'}r (f64.sub (local.get ${'$'}x) (f64.mul (local.get ${'$'}n) (f64.const 1.5707963267341256))))
-    (local.set ${'$'}r (f64.sub (local.get ${'$'}r) (f64.mul (local.get ${'$'}n) (f64.const 0.0000000000606087447221421))))
-    (local.set ${'$'}r (f64.sub (local.get ${'$'}r) (f64.mul (local.get ${'$'}n) (f64.const 0.00000000000000000000015893155911299775))))
+    (local.set ${'$'}r (f64.sub (local.get ${'$'}r) (f64.mul (local.get ${'$'}n) (f64.const 0.0000000000607710050650619224932))))
+    (local.set ${'$'}r (f64.sub (local.get ${'$'}r) (f64.mul (local.get ${'$'}n) (f64.const 0.00000000000000000000202226624879595063154))))
     (local.set ${'$'}q (i32.and (i32.add (i32.trunc_f64_s (local.get ${'$'}n)) (local.get ${'$'}k)) (i32.const 3)))
     (if (result f64) (i32.eq (local.get ${'$'}q) (i32.const 0))
       (then (call ${'$'}__sin_poly (local.get ${'$'}r)))
@@ -1574,6 +1583,46 @@ class WasmCodegen {
     (local.set ${'$'}odd (i32.and (i32.trunc_f64_s (local.get ${'$'}n)) (i32.const 1)))
     (local.set ${'$'}n (call ${'$'}__soft_exp (f64.mul (local.get ${'$'}y) (call ${'$'}__soft_log (f64.neg (local.get ${'$'}x))))))
     (if (result f64) (local.get ${'$'}odd) (then (f64.neg (local.get ${'$'}n))) (else (local.get ${'$'}n))))
+"""
+
+
+    /**
+     * The `std::vha` trigonometry: the same reduction as [RT_TRIG] with the series
+     * carried two terms further, to where an `f64` can no longer tell the
+     * difference over the reduced interval.
+     *
+     * `std::sin` stops earlier because the terms it drops are invisible at float
+     * precision and cost real time in a loop; `std::vha::sin` pays for them.
+     */
+    private val RT_VHA_TRIG = """
+  (func ${'$'}__vha_sin_poly (param ${'$'}r f64) (result f64)
+    (local ${'$'}z f64)
+    (local.set ${'$'}z (f64.mul (local.get ${'$'}r) (local.get ${'$'}r)))
+    (f64.mul (local.get ${'$'}r) (f64.add (f64.const 1) (f64.mul (local.get ${'$'}z) (f64.add (f64.const -0.16666666666666666) (f64.mul (local.get ${'$'}z) (f64.add (f64.const 0.008333333333333333) (f64.mul (local.get ${'$'}z) (f64.add (f64.const -0.0001984126984126984) (f64.mul (local.get ${'$'}z) (f64.add (f64.const 0.0000027557319223985893) (f64.mul (local.get ${'$'}z) (f64.add (f64.const -0.000000025052108385441718) (f64.mul (local.get ${'$'}z) (f64.add (f64.const 0.00000000016059043836821613) (f64.mul (local.get ${'$'}z) (f64.const -0.0000000000007647163731819816)))))))))))))))))
+  (func ${'$'}__vha_cos_poly (param ${'$'}r f64) (result f64)
+    (local ${'$'}z f64)
+    (local.set ${'$'}z (f64.mul (local.get ${'$'}r) (local.get ${'$'}r)))
+    (f64.add (f64.const 1) (f64.mul (local.get ${'$'}z) (f64.add (f64.const -0.5) (f64.mul (local.get ${'$'}z) (f64.add (f64.const 0.041666666666666664) (f64.mul (local.get ${'$'}z) (f64.add (f64.const -0.001388888888888889) (f64.mul (local.get ${'$'}z) (f64.add (f64.const 0.0000248015873015873) (f64.mul (local.get ${'$'}z) (f64.add (f64.const -0.00000027557319223985893) (f64.mul (local.get ${'$'}z) (f64.add (f64.const 0.0000000020876756987868098) (f64.mul (local.get ${'$'}z) (f64.const -0.000000000011470745597729725))))))))))))))))
+  (func ${'$'}__vha_trig (param ${'$'}x f64) (param ${'$'}k i32) (result f64)
+    (local ${'$'}n f64) (local ${'$'}r f64) (local ${'$'}q i32)
+    (local.set ${'$'}n (f64.nearest (f64.mul (local.get ${'$'}x) (f64.const 0.6366197723675814))))
+    (local.set ${'$'}r (f64.sub (local.get ${'$'}x) (f64.mul (local.get ${'$'}n) (f64.const 1.5707963267341256))))
+    (local.set ${'$'}r (f64.sub (local.get ${'$'}r) (f64.mul (local.get ${'$'}n) (f64.const 0.0000000000607710050650619224932))))
+    (local.set ${'$'}r (f64.sub (local.get ${'$'}r) (f64.mul (local.get ${'$'}n) (f64.const 0.00000000000000000000202226624879595063154))))
+    (local.set ${'$'}q (i32.and (i32.add (i32.trunc_f64_s (local.get ${'$'}n)) (local.get ${'$'}k)) (i32.const 3)))
+    (if (result f64) (i32.eq (local.get ${'$'}q) (i32.const 0))
+      (then (call ${'$'}__vha_sin_poly (local.get ${'$'}r)))
+      (else (if (result f64) (i32.eq (local.get ${'$'}q) (i32.const 1))
+        (then (call ${'$'}__vha_cos_poly (local.get ${'$'}r)))
+        (else (if (result f64) (i32.eq (local.get ${'$'}q) (i32.const 2))
+          (then (f64.neg (call ${'$'}__vha_sin_poly (local.get ${'$'}r))))
+          (else (f64.neg (call ${'$'}__vha_cos_poly (local.get ${'$'}r))))))))))
+  (func ${'$'}__vha_sin (param ${'$'}x f64) (result f64)
+    (call ${'$'}__vha_trig (local.get ${'$'}x) (i32.const 0)))
+  (func ${'$'}__vha_cos (param ${'$'}x f64) (result f64)
+    (call ${'$'}__vha_trig (local.get ${'$'}x) (i32.const 1)))
+  (func ${'$'}__vha_tan (param ${'$'}x f64) (result f64)
+    (f64.div (call ${'$'}__vha_sin (local.get ${'$'}x)) (call ${'$'}__vha_cos (local.get ${'$'}x))))
 """
 
 }

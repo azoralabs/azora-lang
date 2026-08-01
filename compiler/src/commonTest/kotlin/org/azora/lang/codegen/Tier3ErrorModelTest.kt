@@ -277,4 +277,48 @@ class Tier3ErrorModelTest {
             }
         """.trimIndent()))
     }
+    @Test
+    fun anErrorVariantCanCarryAPayload() {
+        assertEquals("1\ncaught", run("""
+            use std.io
+
+            fail IndexError {
+                OutOfBounds(index: Int, size: Int)
+                Empty
+            }
+
+            func at(i: Int, n: Int): Int ?! IndexError {
+                if i >= n { return .OutOfBounds(i, n) }
+                return i
+            }
+
+            func main() {
+                fin ok = try at(1, 3)
+                std::println(ok)
+                try {
+                    fin bad = try at(9, 3)
+                    std::println(bad)
+                } catch { e ->
+                    std::println("caught")
+                }
+            }
+        """.trimIndent()))
+    }
+
+    @Test
+    fun aPayloadVariantIsAlsoConstructibleDirectly() {
+        // A payload-bearing error set is also a slot, which is where construction and
+        // `when` matching come from rather than a parallel implementation.
+        assertEquals("made", run("""
+            use std.io
+
+            fail IndexError { OutOfBounds(index: Int, size: Int) }
+
+            func main() {
+                fin e = IndexError.OutOfBounds(9, 3)
+                std::println("made")
+            }
+        """.trimIndent()))
+    }
+
 }

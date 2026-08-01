@@ -123,7 +123,7 @@ class IrInterpreter {
      * user function with an underscore in its name is unaffected.
      */
     private fun externImplFor(name: String): ((List<Any?>) -> Any?)? =
-        externImpls[name] ?: externImpls[name.substringAfterLast('_')]
+        externImpls[name] ?: externImpls[name.substringAfterLast('_').let { if (it == "powr") "pow" else it }]
 
     /** The runBlocking coroutine scope — used by `task`/`await` for cooperative concurrency. */
     private var coroutineScope: CoroutineScope? = null

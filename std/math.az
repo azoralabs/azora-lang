@@ -551,4 +551,61 @@ zone std {
     bridge func exp2(x: Real): Real
     /** sqrt(x*x + y*y) without overflow/underflow. */
     bridge func hypot(x: Real, y: Real): Real
+
+    /**
+     * [x] raised to the real power [y].
+     *
+     * Distinct from `pow(value, exp: Int)`, which is repeated multiplication for a
+     * whole-number exponent. This one accepts any real exponent and is exact only
+     * where the underlying `exp`/`log` are.
+     */
+    @Experimental(since: "0.0.5")
+    bridge func powr(x: Real, y: Real): Real
+}
+
+/**
+ * Very-high-accuracy counterparts of the `std` math functions.
+ *
+ * `std::sin` and friends are the everyday choice: on WebAssembly they are software
+ * approximations carrying float precision, which is what shader-adjacent and
+ * simulation code wants and costs the least. `std::vha::sin` names the same
+ * mathematical function computed to the full accuracy the platform can offer, for
+ * the places where error accumulates — long-running integrators, geodesy, anything
+ * iterating a transform thousands of times.
+ *
+ * Every backend supplies these directly. On native and interpreted targets both
+ * tiers already resolve to the platform's double-precision routine, so `vha` costs
+ * nothing there; only WebAssembly distinguishes them.
+ *
+ * @since 0.0.5
+ */
+zone std::vha {
+    /** Sine of [x] (radians), to full platform accuracy. */
+    bridge func sin(x: Real): Real
+    /** Cosine of [x] (radians), to full platform accuracy. */
+    bridge func cos(x: Real): Real
+    /** Tangent of [x] (radians), to full platform accuracy. */
+    bridge func tan(x: Real): Real
+    /** Arc sine of [x] in radians, to full platform accuracy; [x] must be in [-1, 1]. */
+    bridge func asin(x: Real): Real
+    /** Arc cosine of [x] in radians, to full platform accuracy; [x] must be in [-1, 1]. */
+    bridge func acos(x: Real): Real
+    /** Arc tangent of [x] in radians, to full platform accuracy. */
+    bridge func atan(x: Real): Real
+    /** Angle (radians) of the point (x, y), to full platform accuracy. */
+    bridge func atan2(y: Real, x: Real): Real
+    /** Cube root of [x], to full platform accuracy. */
+    bridge func cbrt(x: Real): Real
+    /** Natural (base-e) logarithm of [x], to full platform accuracy. */
+    bridge func log(x: Real): Real
+    /** Base-2 logarithm of [x], to full platform accuracy. */
+    bridge func log2(x: Real): Real
+    /** Base-10 logarithm of [x], to full platform accuracy. */
+    bridge func log10(x: Real): Real
+    /** e raised to the power [x], to full platform accuracy. */
+    bridge func exp(x: Real): Real
+    /** 2 raised to the power [x], to full platform accuracy. */
+    bridge func exp2(x: Real): Real
+    /** sqrt(x*x + y*y) without overflow/underflow, to full platform accuracy. */
+    bridge func hypot(x: Real, y: Real): Real
 }

@@ -1876,6 +1876,14 @@ sealed class TopLevel {
         val annotations: List<Annotation> = emptyList(),
         /** Per-variant annotations, parallel to [variants] (e.g. `NotFound @Deprecated(...)`). */
         val variantAnnotations: List<List<Annotation>> = emptyList(),
+        /**
+         * Per-variant payload types, parallel to [variants].
+         *
+         * `fail IndexError { OutOfBounds(index: Int, size: Int) }` carries data with
+         * the error rather than only naming it. Empty for a bare variant, which is
+         * still the common case.
+         */
+        val variantPayloads: List<List<TypeRef>> = emptyList(),
     ) : TopLevel()
 
     /**

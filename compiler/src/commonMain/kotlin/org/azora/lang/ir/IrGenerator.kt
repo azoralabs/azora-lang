@@ -1234,6 +1234,15 @@ class IrGenerator(private val table: SymbolTable) {
                     t == IrType.String || t == IrType.Any || t is IrType.Array || t is IrType.Map || t is IrType.Set ||
                         t is IrType.Named || t is IrType.Pointer || t is IrType.Nullable || t is IrType.Tuple
                 val innerType = inner.type
+                // A user-declared `oper as<U> [self: T&]: U` takes precedence over the
+                // built-in conversions: a type that says how it converts should be
+                // asked, rather than reinterpreted.
+                val userCast = (innerType as? IrType.Named)
+                    ?.let { table.lookupMethod(it.name, "operas") }
+                    ?.takeIf { expr.kind == CastKind.STATIC }
+                if (userCast != null) {
+                    return IrExpr.Call(userCast, listOf(inner), target)
+                }
                 when {
                     // `x as? T` / `std::dyncast<T>(x)` — runtime-checked downcast to `T?`:
                     // the value if it is a `T`, otherwise null.

@@ -450,6 +450,9 @@ class Parser(
         // does not survive mangling.
         check(TokenType.DOT) && peekNext()?.type == TokenType.STAR -> { advance(); advance(); "Deref" }
         check(TokenType.DOT) && peekNext()?.type == TokenType.CARET -> { advance(); advance(); "DerefMut" }
+        // `oper as<U>` — what `value as U` calls. The target type is a generic
+        // parameter of the operator, so one declaration converts to every U.
+        match(TokenType.AS) -> "as"
         else -> error("Expected an operator after 'oper' at line ${peek().line}")
     }
 
@@ -473,6 +476,9 @@ class Parser(
         val start = peek()
         consume(TokenType.OPER, "Expected 'oper'")
         val opName = parseOperatorName()
+        // `oper as<U> [self: Vec2&]: U` — an operator may take its own type
+        // parameters, which is what lets one `as` serve every target type.
+        val operatorTypeParams = parseTypeParams()
         val recv = parsePropReceiver()
         val typeName = (recv.type as? TypeRef.Named)?.name
             ?: error("An operator's receiver must name a type, as in 'oper+ [self: Model&]', at line ${start.line}")
@@ -496,7 +502,8 @@ class Parser(
                 typeName,
                 listOf(
                     FuncDecl(
-                        "oper$opName", operands, ret, emptyList(), false, emptyList(),
+                        "oper$opName", operands, ret, emptyList(), false,
+                        operatorTypeParams.names,
                         start.line, start.column, receiverModifier = recv.modifier,
                         receiverName = recv.name, visibility = visibility,
                         annotations = annotations,
@@ -511,7 +518,7 @@ class Parser(
         consume(TokenType.R_BRACE, "Expected '}' after operator body")
         consumeNewline()
         val method = FuncDecl(
-            "oper$opName", operands, ret, body, false, emptyList(),
+            "oper$opName", operands, ret, body, false, operatorTypeParams.names,
             start.line, start.column,
             annotations = annotations, visibility = visibility,
             receiverModifier = recv.modifier, receiverName = recv.name,
@@ -951,15 +958,37 @@ class Parser(
         val start = peek()
         consume(TokenType.INLINE, "Expected 'inline'")
         consume(TokenType.FOR, "Expected 'for'")
-        // A single loop variable. Parallel lists are iterated by binding one list and
-        // reading the others with `${otherList[index]}` under `with index` — the
-        // tuple form `inline for (A, B) in (L1, L2)` is not supported.
         if (check(TokenType.L_PAREN)) {
-            error("tuple 'inline for (A, B) in (L1, L2)' is not supported; use 'inline for A in L1 with index' and index the parallel list as '\${L2[index]}' at line ${start.line}")
+            error("parallel 'inline for' uses brackets: write 'inline for [A, B] in [L1, L2]' at line ${start.line}")
         }
-        val loopVar = consumeIdentifierLike("Expected loop variable after 'inline for'")
+        // `inline for [t, Ty] in [L1, L2]` — parallel lists, zipped by position. One
+        // variable and one list is the common case and stays the same shape; the
+        // bracketed form binds each variable to its own list at the same index.
+        val loopVars = mutableListOf<String>()
+        if (match(TokenType.L_BRACKET)) {
+            do { loopVars.add(consumeIdentifierLike("Expected loop variable in 'inline for [...]'")) }
+            while (match(TokenType.COMMA))
+            consume(TokenType.R_BRACKET, "Expected ']' after 'inline for' variables")
+        } else {
+            loopVars.add(consumeIdentifierLike("Expected loop variable after 'inline for'"))
+        }
         consume(TokenType.IN, "Expected 'in' after 'inline for' variable")
-        val list = parseComptimeForValues()
+        val lists = mutableListOf<List<String>>()
+        if (loopVars.size > 1) {
+            consume(TokenType.L_BRACKET, "Expected '[' — a parallel 'inline for' iterates a list per variable")
+            do { lists.add(parseComptimeForValues()) } while (match(TokenType.COMMA))
+            consume(TokenType.R_BRACKET, "Expected ']' after parallel 'inline for' lists")
+            if (lists.size != loopVars.size) {
+                error(
+                    "'inline for' binds ${loopVars.size} variable(s) but iterates ${lists.size} list(s) " +
+                        "at line ${start.line}",
+                )
+            }
+        } else {
+            lists.add(parseComptimeForValues())
+        }
+        val loopVar = loopVars.first()
+        val list = lists.first()
         // Optional `with index` — binds a 0-based counter usable as `${list[index]}`.
         val indexVar = if (matchWithKeyword()) {
             consumeIdentifierLike("Expected index variable after 'with'")
@@ -972,11 +1001,13 @@ class Parser(
             var rendered = bodyTokens
             // Fold `${…}` interpolations (loop var + index bound bare inside) first.
             val bindings = buildList {
-                add(loopVar to list[i])
+                loopVars.forEachIndexed { slot, name -> add(name to lists[slot][i]) }
                 if (indexVar != null) add(indexVar to i.toString())
             }
             rendered = foldBraceInterpolation(rendered, bindings)
-            rendered = substituteLoopVar(rendered, loopVar, list[i])
+            loopVars.forEachIndexed { slot, name ->
+                rendered = substituteLoopVar(rendered, name, lists[slot][i])
+            }
             if (indexVar != null) rendered = substituteLoopVar(rendered, indexVar, i.toString())
             rendered = foldListIndexing(rendered)
             pendingTopLevels.addAll(

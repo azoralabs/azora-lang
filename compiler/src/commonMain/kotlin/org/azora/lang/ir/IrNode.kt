@@ -169,18 +169,45 @@ sealed class IrType {
     data class Named(
         val name: kotlin.String,
         val args: List<IrType> = emptyList(),
+        /**
+         * The const-generic arguments, parallel to [args].
+         *
+         * An entry holds the value of a concrete const argument (`2` in
+         * `Vec<Int, 2>`) and is null wherever the argument is a type or an
+         * as-yet-unbound const parameter (`N`). Type arguments erase; a const
+         * argument cannot, because it selects the layout — `Vec<Int, 2>` and
+         * `Vec<Int, 3>` are different types, not one type used twice.
+         */
+        val constArgs: List<kotlin.Long?> = emptyList(),
     ) : IrType() {
-        override fun toString() = name
+        override fun toString() =
+            if (constArgs.any { it != null }) {
+                "$name<${constArgs.joinToString(", ") { it?.toString() ?: "_" }}>"
+            } else {
+                name
+            }
 
-        // Identity is nominal: `Box` and `Box<Real>` are the same type to every
-        // check in the compiler, exactly as they were before the arguments were
-        // retained. The arguments ride along for code generation, which needs
-        // them to un-erase a field, and must not make two references to the same
-        // pack compare unequal.
+        // Identity is nominal in its TYPE arguments: `Box` and `Box<Real>` are the
+        // same type to every check in the compiler, and the arguments ride along
+        // only so code generation can un-erase a field. Const arguments are the
+        // exception — they choose between layouts, so two applications differing in
+        // one are genuinely different types.
+        /**
+         * The concrete const arguments, by position.
+         *
+         * Only these take part in identity. An absent list and a list of unbound
+         * parameters both mean "no layout chosen yet", so `Keyframe` and
+         * `Keyframe<T>` stay the same type while `Vec<Int, 2>` and `Vec<Int, 3>` do
+         * not.
+         */
+        private val constIdentity: List<Pair<kotlin.Int, kotlin.Long>>
+            get() = constArgs.withIndex().mapNotNull { (i, v) -> v?.let { i to it } }
+
         override fun equals(other: kotlin.Any?): kotlin.Boolean =
-            this === other || (other is Named && other.name == name)
+            this === other ||
+                (other is Named && other.name == name && other.constIdentity == constIdentity)
 
-        override fun hashCode(): kotlin.Int = name.hashCode()
+        override fun hashCode(): kotlin.Int = 31 * name.hashCode() + constIdentity.hashCode()
     }
 
     /** The dynamic / erased type, used when a precise type is unknown. */
@@ -275,7 +302,14 @@ sealed class IrType {
                 // Keep the type arguments: a generic pack erases its fields to
                 // pointer slots, so `Box<Real>` is the only remaining record
                 // that the slot holds a double rather than an address.
-                else Named(ref.name, ref.args.map { resolve(it, typeParams) })
+                // Keep const arguments beside the erased type arguments: a type
+                // argument may erase to a pointer slot, but a const one chooses the
+                // layout and has to survive as part of the type's identity.
+                else Named(
+                    ref.name,
+                    ref.args.map { resolve(it, typeParams) },
+                    ref.args.map { (it as? TypeRef.Const)?.value },
+                )
             }
             is TypeRef.Array -> Array(resolve(ref.element, typeParams))
             is TypeRef.Map -> Map(resolve(ref.key, typeParams), resolve(ref.value, typeParams))

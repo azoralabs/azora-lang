@@ -1229,6 +1229,15 @@ class TypeResolver(private val table: SymbolTable) {
                         val specProp = table.lookupSpecProp(targetType.name, expr.name)
                         if (specProp != null) return specProp
                         val struct = table.lookupStruct(targetType.name)
+                        // A conditional field belongs to some layouts and not others,
+                        // so membership is asked of the specialization. An application
+                        // that is not yet concrete falls back to the template.
+                        if (!specializedLayoutHasField(targetType, expr.name)) {
+                            errors.add(
+                                "line ${expr.line}: no member '${expr.name}' on $targetType",
+                            )
+                            return null
+                        }
                         val field = struct?.field(expr.name)
                         if (field != null) {
                             if (!canAccessMember(targetType.name, expr.name, field.visibility)) {
@@ -2147,6 +2156,26 @@ class TypeResolver(private val table: SymbolTable) {
             ),
             typeParams,
         )
+    }
+
+
+
+    /** One specializer per resolver, so its cache spans the whole resolution. */
+    internal val packSpecializer by lazy { PackSpecializer(table) }
+
+    /**
+     * Whether [name] belongs to this application's specialized layout.
+     *
+     * Returns true for anything not governed by a condition — an ordinary struct, a
+     * not-yet-concrete application, or an unconditional field — so this only ever
+     * removes members a concrete layout genuinely excludes.
+     */
+    private fun specializedLayoutHasField(targetType: IrType.Named, name: String): Boolean {
+        val declaration = genericDeclarations[targetType.name] ?: return true
+        if (declaration.fields.none { it.condition != null }) return true
+        if (declaration.fields.none { it.name == name }) return true
+        val key = packSpecializer.keyFor(declaration, targetType) ?: return true
+        return packSpecializer.specializeFor(key, declaration, targetType).fields.any { it.name == name }
     }
 
     /** Generic declarations by name, for reading their `where` clauses. */

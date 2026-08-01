@@ -73,7 +73,13 @@ internal object VariadicMonomorphizer {
             when (item) {
                 is TopLevel.Pack -> {
                     constructibleTypes[item.name] = item.typeParams
-                    if (item.variadicParam != null) packTemplates[item.name] = item
+                    // A pack is monomorphised when its layout depends on its arguments:
+                    // a variadic pack generates fields from its element types, and a pack
+                    // with conditional fields has a different layout per binding. An
+                    // ordinary generic still erases to one struct, exactly as before.
+                    if (item.variadicParam != null || item.fields.any { it.condition != null }) {
+                        packTemplates[item.name] = item
+                    }
                 }
                 is TopLevel.Func -> {
                     explicitReturnType(item.decl)?.let {
@@ -161,6 +167,13 @@ private class MonoContext(
     private val typeMacroRules: List<TypeTypeArm>,
     private val typeNamespaces: Map<String, String>,
 ) {
+
+    /**
+     * The one specialization authority, shared with TypeResolver's field lookup so a
+     * layout is computed once and both agree on it.
+     */
+    private val specializer = PackSpecializer(SymbolTable())
+
     val packs = linkedMapOf<String, TopLevel.Pack>()
     val funcs = linkedMapOf<String, TopLevel.Func>()
     val generatedPackNamespaces = linkedMapOf<String, String>()
@@ -191,9 +204,23 @@ private class MonoContext(
         clause: org.azora.lang.frontend.Expr?,
         variadicParam: String?,
         args: List<TypeRef>,
+        declaration: TopLevel.Pack? = null,
     ) {
-        if (clause == null || variadicParam == null) return
-        val bindings = mapOf(variadicParam to ConstraintEvaluator.Binding.Pack(args.size.toLong()))
+        if (clause == null) return
+        // A variadic pack binds only its length; an ordinary generic binds each of
+        // its type and const parameters, so `where T is Number && N in 2..4` is
+        // decided here — before the specialization is published.
+        val bindings = buildMap {
+            if (variadicParam != null) {
+                put(variadicParam, ConstraintEvaluator.Binding.Pack(args.size.toLong()))
+            }
+            declaration?.typeParams?.forEachIndexed { index, parameter ->
+                args.getOrNull(index)?.let { argument ->
+                    ConstraintEvaluator.bindingOf(argument)?.let { put(parameter, it) }
+                }
+            }
+        }
+        if (bindings.isEmpty()) return
         val outcome = ConstraintEvaluator.evaluate(clause, bindings, table = null)
         if (outcome is ConstraintEvaluator.Outcome.Violated) {
             error("$what does not satisfy its 'where' clause: ${outcome.reason}")
@@ -202,16 +229,23 @@ private class MonoContext(
 
     fun instantiatePack(templateName: String, args: List<TypeRef>): String {
         val template = packTemplates[templateName] ?: return templateName
+        // `Vec<T, N>` inside another generic has chosen no layout, so it stays on the
+        // template. PackSpecializer decides what "concrete" means; this must not
+        // re-derive that rule.
+        if (template.variadicParam == null && specializer.keyForRefs(template, args) == null) {
+            return templateName
+        }
         val mangled = mangleTemplate(templateName, args)
         if (mangled !in packs) {
             // One check per unique combination: the mangled name IS the combination,
             // so validating inside this guard runs the clause exactly once per
             // specialization rather than once per use site.
             checkConstraints(
-                "variadic pack '$templateName'",
+                if (template.variadicParam != null) "variadic pack '$templateName'" else "'$templateName'",
                 template.whereClause,
                 template.variadicParam,
                 args,
+                template,
             )
             val concreteArgs = args.map(::rewriteType)
             packArguments[mangled] = concreteArgs
@@ -244,9 +278,41 @@ private class MonoContext(
         return if (ref.variadic && ref.name in packTemplates) ref.name else null
     }
 
+    /** Replaces a declaration's type parameters with the concrete arguments. */
+    private fun substituteParams(ref: TypeRef, bindings: Map<String, TypeRef>): TypeRef = when (ref) {
+        is TypeRef.Named -> bindings[ref.name]
+            ?: ref.copy(args = ref.args.map { substituteParams(it, bindings) })
+        is TypeRef.Array -> ref.copy(element = substituteParams(ref.element, bindings))
+        is TypeRef.Map -> ref.copy(
+            key = substituteParams(ref.key, bindings),
+            value = substituteParams(ref.value, bindings),
+        )
+        is TypeRef.Set -> ref.copy(element = substituteParams(ref.element, bindings))
+        is TypeRef.Nullable -> ref.copy(inner = substituteParams(ref.inner, bindings))
+        is TypeRef.Failable -> ref.copy(ok = substituteParams(ref.ok, bindings))
+        is TypeRef.Pointer -> ref.copy(inner = substituteParams(ref.inner, bindings))
+        is TypeRef.Reference -> ref.copy(inner = substituteParams(ref.inner, bindings))
+        else -> ref
+    }
+
     private fun expandPack(mangled: String, template: TopLevel.Pack, args: List<TypeRef>): TopLevel.Pack {
         val enforce = template.annotations.any { it.name == "EnforceNumFields" }
-        val fields = expandFields(template, args)
+        // A variadic pack generates its fields from the element types; a pack with
+        // conditional fields selects from its own, and PackSpecializer is the single
+        // authority for that selection.
+        val fields = if (template.variadicParam != null) {
+            expandFields(template, args)
+        } else {
+            val key = specializer.keyForRefs(template, args)
+            if (key == null) {
+                template.fields.map { it.copy(type = rewriteType(it.type)) }
+            } else {
+                val substitution = template.typeParams.zip(args).toMap()
+                specializer.specializeForRefs(key, template, args).fields.map {
+                    it.copy(type = rewriteType(substituteParams(it.type, substitution)), condition = null)
+                }
+            }
+        }
         return TopLevel.Pack(
             name = mangled,
             fields = fields,

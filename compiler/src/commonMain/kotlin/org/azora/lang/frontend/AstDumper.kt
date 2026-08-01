@@ -524,6 +524,11 @@ private fun dumpExpr(sb: StringBuilder, expr: Expr, indent: String) {
             sb.appendLine("${indent}IsCheck(${expr.typeName})")
             dumpExpr(sb, expr.expr, "$indent    ")
         }
+        is Expr.InCheck -> {
+            sb.appendLine("${indent}InCheck${if (expr.negated) "(negated)" else ""}")
+            dumpExpr(sb, expr.value, "$indent    ")
+            dumpExpr(sb, expr.collection, "$indent    ")
+        }
         is Expr.MapLit -> {
             sb.appendLine("${indent}MapLit")
             for ((k, v) in expr.entries) { dumpExpr(sb, k, "$indent    "); dumpExpr(sb, v, "$indent    ") }

@@ -263,6 +263,7 @@ class EffectChecker {
             is Expr.NullCoalesce -> { collectCallsFromExpr(expr.left, calls); collectCallsFromExpr(expr.right, calls) }
             is Expr.Cast -> collectCallsFromExpr(expr.expr, calls)
             is Expr.IsCheck -> collectCallsFromExpr(expr.expr, calls)
+            is Expr.InCheck -> { collectCallsFromExpr(expr.value, calls); collectCallsFromExpr(expr.collection, calls) }
             is Expr.MapLit -> { for ((k, v) in expr.entries) { collectCallsFromExpr(k, calls); collectCallsFromExpr(v, calls) } }
             is Expr.Alloc -> collectCallsFromExpr(expr.value, calls)
             is Expr.AllocBuffer -> collectCallsFromExpr(expr.count, calls)

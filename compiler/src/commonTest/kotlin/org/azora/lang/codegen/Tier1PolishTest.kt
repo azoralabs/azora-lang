@@ -187,7 +187,7 @@ class Tier1PolishTest {
         assertEquals("0\n2\n4", run("""
             use std.io
             func main() {
-                for x by 2 in 0..<6 {
+                for x in 0..<6 by 2 {
                     std::println(x)
                 }
             }
@@ -198,7 +198,7 @@ class Tier1PolishTest {
         assertEquals("0\n2\n4\n6\n8\n10", run("""
             use std.io
             func main() {
-                for x by 2 in 0..10 {
+                for x in 0..10 by 2 {
                     std::println(x)
                 }
             }
@@ -220,7 +220,7 @@ class Tier1PolishTest {
         assertEquals("6\n4\n2\n0", run("""
             use std.io
             func main() {
-                reverse for x by 2 in 0..6 {
+                reverse for x in 0..6 by 2 {
                     std::println(x)
                 }
             }
@@ -231,7 +231,7 @@ class Tier1PolishTest {
         assertEquals("0\n2\n6\n8\n10", run("""
             use std.io
             func main() {
-                for x by 2 in 0..10 {
+                for x in 0..10 by 2 {
                     if x == 4 {
                         continue
                     }

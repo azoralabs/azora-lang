@@ -1569,6 +1569,11 @@ class TypeResolver(private val table: SymbolTable) {
                 resolveExpr(expr.expr) ?: return null
                 IrType.Bool
             }
+            is Expr.InCheck -> {
+                resolveExpr(expr.value) ?: return null
+                resolveExpr(expr.collection) ?: return null
+                IrType.Bool
+            }
             is Expr.NullCoalesce -> {
                 val leftType = resolveExpr(expr.left) ?: return null
                 resolveExpr(expr.right) ?: return null

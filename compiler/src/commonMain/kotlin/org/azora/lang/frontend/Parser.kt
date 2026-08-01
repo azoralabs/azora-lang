@@ -66,6 +66,14 @@ class Parser(
      */
     private var currentFailSets: List<String> = emptyList()
 
+    /**
+     * Suppresses `in` as a membership operator.
+     *
+     * A `for` header spells its iterable with `in`, so the step in `for x by 2 in xs`
+     * must stop before it rather than reading `2 in xs` as a membership test.
+     */
+    private var inOperatorEnabled: Boolean = true
+
     private val pendingTopLevels = mutableListOf<TopLevel>()
 
     /** `meta type { … }` arms collected during parsing, surfaced on [Program.typeMacroRules]. */
@@ -3747,23 +3755,39 @@ class Parser(
      * source files.
      * Returns the minimum length, or null if no clause is present.
      */
-    private fun parseVariadicWhereClause(): Int? {
+    /**
+     * `where <expr>` — a declaration's constraints, parsed as an ordinary expression.
+     *
+     * There is no separate constraint grammar: `T is Number && N in 2..4` is an
+     * `&&` over an [Expr.IsCheck] and an [Expr.InCheck], and the older
+     * `(...T).length >= 2` is a comparison over a member access. Keeping one grammar
+     * means a constraint can say anything an expression can, and new forms need no
+     * parser work at all.
+     */
+    private fun parseWhereClause(): Expr? {
         if (peek().type != TokenType.IDENTIFIER || peek().lexeme != "where") return null
         advance() // 'where'
-        if (match(TokenType.L_PAREN)) {
-            match(TokenType.ELLIPSIS)
-            consume(TokenType.IDENTIFIER, "Expected variadic param name after 'where (...'").lexeme
-            consume(TokenType.R_PAREN, "Expected ')' after variadic param in 'where'")
-        } else {
-            consume(TokenType.IDENTIFIER, "Expected variadic param name after 'where'").lexeme
-        }
-        consume(TokenType.DOT, "Expected '.' after variadic param in 'where'")
-        consume(TokenType.IDENTIFIER, "Expected 'length' after variadic param '.'") // 'length'
-        consume(TokenType.GREATER_EQUAL, "Expected '>=' in 'where' length constraint")
-        val n = consume(TokenType.INT_LITERAL, "Expected integer minimum length in 'where'").literal
-        val minLen = (n as? NumericLiteral)?.value?.toString()?.toIntOrNull()
-        return minLen
+        return parseExpr()
     }
+
+    /**
+     * The minimum length a `where` clause requires of a variadic pack, or null when
+     * it constrains something else.
+     *
+     * Recognises `(...T).length >= N` and the older `T.length >= N` within the
+     * general clause, so the variadic check keeps working while every other shape
+     * flows through untouched.
+     */
+    private fun variadicMinLengthOf(clause: Expr?): Int? {
+        val cmp = clause as? Expr.Binary ?: return null
+        if (cmp.op != TokenType.GREATER_EQUAL) return null
+        val member = cmp.left as? Expr.Member ?: return null
+        if (member.name != "length") return null
+        val literal = (cmp.right as? Expr.IntLiteral)?.value ?: return null
+        return literal.toString().toIntOrNull()
+    }
+
+    private fun parseVariadicWhereClause(): Int? = variadicMinLengthOf(parseWhereClause())
 
     private fun parseTypeName(): TypeRef {
         // Reference kinds are postfix now: `T&` (immutable) / `T!` (mutable), handled
@@ -4254,12 +4278,12 @@ class Parser(
         if (reverse) consume(TokenType.REVERSE, "Expected 'reverse'")
         consume(TokenType.FOR, "Expected 'for'")
         val name = consume(TokenType.IDENTIFIER, "Expected loop variable name").lexeme
-        // Optional step: `for x by N in ...`
-        val step = if (match(TokenType.BY)) parseExpr() else null
         consume(TokenType.IN, "Expected 'in' after loop variable")
         allowTrailingLambda = false
         val iterable = parseExpr()
         allowTrailingLambda = true
+        // Optional step, trailing the iterable it applies to: `for x in 0..<6 by 2`.
+        val step = if (match(TokenType.BY)) parseExpr() else null
         consume(TokenType.L_BRACE, "Expected '{' after for iterable")
         skipNewlines()
         val body = parseBlock()
@@ -5856,7 +5880,12 @@ class Parser(
      */
     private fun parseAsIs(): Expr {
         var e = parseUnary()
-        while (check(TokenType.AS) || check(TokenType.IS)) {
+        while (check(TokenType.AS) || check(TokenType.IS) || (inOperatorEnabled && check(TokenType.IN))) {
+            if (check(TokenType.IN)) {
+                val inTok = advance()
+                e = Expr.InCheck(e, parseUnary(), line = inTok.line, column = inTok.column)
+                continue
+            }
             val op = advance()
             if (op.type == TokenType.AS) {
                 // `as` (static), `as?` (dynamic → T?), `as*` (reinterpret).
@@ -6063,6 +6092,12 @@ class Parser(
     }
 
     private fun parseUnary(): Expr {
+        // `...T` in expression position names the variadic pack itself, so
+        // `(...T).length` reads as a question about the pack rather than a spread.
+        if (check(TokenType.ELLIPSIS)) {
+            advance()
+            return parseUnary()
+        }
         if (check(TokenType.TRY)) {
             val at = advance()
             return Expr.TryPropagate(parseUnary(), at.line, at.column, at.lexeme.length)

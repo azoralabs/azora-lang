@@ -392,6 +392,10 @@ internal object MacroExpander {
             )
             is Expr.Cast -> expr.copy(expr = rewriteExpr(expr.expr, macros, depth))
             is Expr.IsCheck -> expr.copy(expr = rewriteExpr(expr.expr, macros, depth))
+            is Expr.InCheck -> expr.copy(
+                value = rewriteExpr(expr.value, macros, depth),
+                collection = rewriteExpr(expr.collection, macros, depth),
+            )
             is Expr.Alloc -> expr.copy(value = rewriteExpr(expr.value, macros, depth))
             is Expr.AllocBuffer -> expr.copy(count = rewriteExpr(expr.count, macros, depth))
             is Expr.Deref -> expr.copy(target = rewriteExpr(expr.target, macros, depth))
@@ -534,6 +538,10 @@ internal object MacroExpander {
         )
         is Expr.Cast -> template.copy(expr = substitute(template.expr, bindings, invokeLine))
         is Expr.IsCheck -> template.copy(expr = substitute(template.expr, bindings, invokeLine))
+        is Expr.InCheck -> template.copy(
+            value = substitute(template.value, bindings, invokeLine),
+            collection = substitute(template.collection, bindings, invokeLine),
+        )
         is Expr.Alloc -> template.copy(value = substitute(template.value, bindings, invokeLine))
         is Expr.AllocBuffer -> template.copy(count = substitute(template.count, bindings, invokeLine))
         is Expr.Deref -> template.copy(target = substitute(template.target, bindings, invokeLine))

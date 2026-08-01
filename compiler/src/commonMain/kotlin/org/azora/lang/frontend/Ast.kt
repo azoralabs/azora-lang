@@ -290,6 +290,22 @@ sealed class Expr {
     /** `expr is Type` — runtime type check, returns Bool. */
     data class IsCheck(val expr: Expr, val typeName: String, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 
+    /**
+     * `value in collection` — membership.
+     *
+     * Written as an ordinary expression so a `where` clause needs no grammar of its
+     * own: `N in 2..4` is this node over a range, and the same spelling works for a
+     * list or a set.
+     */
+    data class InCheck(
+        val value: Expr,
+        val collection: Expr,
+        val negated: Boolean = false,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0,
+    ) : Expr()
+
     /** Map literal `["k": v, "k2": v2]`. */
     data class MapLit(val entries: List<Pair<Expr, Expr>>, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 

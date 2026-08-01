@@ -573,6 +573,7 @@ class SymbolCollector {
      * Only needs to handle literal types and parameter references.
      */
     private fun inferExprType(expr: Expr, env: Map<String, IrType>): IrType? = when (expr) {
+        is Expr.InCheck -> IrType.Bool
         is Expr.IntLiteral -> when (expr.suffix) {
             NumericSuffix.NONE -> IrType.Int
             NumericSuffix.BYTE -> IrType.Byte

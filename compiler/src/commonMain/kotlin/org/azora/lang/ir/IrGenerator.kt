@@ -1251,6 +1251,13 @@ class IrGenerator(private val table: SymbolTable) {
                 val inner = lowerExpr(expr.expr)
                 IrExpr.Call("__isCheck", listOf(inner, IrExpr.StringLiteral(expr.typeName)), IrType.Bool)
             }
+            is Expr.InCheck -> {
+                // `x in xs` — membership, the same shape a `contains` call has.
+                val v = lowerExpr(expr.value)
+                val c = lowerExpr(expr.collection)
+                val call = IrExpr.MethodCall(c, "contains", listOf(v), IrType.Bool)
+                if (expr.negated) IrExpr.Unary(IrUnaryOp.NOT, call, IrType.Bool) else call
+            }
             is Expr.NullCoalesce -> {
                 val left = lowerExpr(expr.left)
                 val right = lowerExpr(expr.right)

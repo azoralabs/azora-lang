@@ -91,7 +91,7 @@ class TypeResolver(private val table: SymbolTable) {
                 val actual = resolveExpr(initializer)
                 expectedLambdaParamTypes = savedParams
                 expectedLambdaReceiverTypes = savedReceivers
-                if (actual != null && !isCompatible(declared, actual)) {
+                if (actual != null && !isCompatible(declared, adoptLiteralType(initializer, actual, declared))) {
                     errors.add(
                         "line ${item.line}: default for '${item.name}.${item.fields[i].name}' " +
                             "expects $declared, got $actual",
@@ -133,6 +133,10 @@ class TypeResolver(private val table: SymbolTable) {
         }
         return errors
     }
+
+    /** `Self` inside an impl names the type the impl is on. */
+    private fun selfToReceiver(name: String): String =
+        if (name == "Self") currentReceiverType ?: name else name
 
     private fun validateSignatureType(ref: TypeRef, line: Int, typeParams: Set<String>): Boolean {
         var valid = true
@@ -456,7 +460,7 @@ class TypeResolver(private val table: SymbolTable) {
                     return
                 }
                 val valueType = resolveExpr(stmt.value) ?: return
-                if (!isCompatible(varSym.type, valueType)) {
+                if (!isCompatible(varSym.type, adoptLiteralType(stmt.value, valueType, varSym.type))) {
                     errors.add("line ${stmt.line}: cannot assign $valueType to '${stmt.name}' of type ${varSym.type}")
                 }
             }
@@ -479,7 +483,7 @@ class TypeResolver(private val table: SymbolTable) {
                     if (capturing != null) {
                         // Inferring a lambda's return type — record it, skip declared-type checking.
                         capturing.add(valueType)
-                    } else if (!isCompatible(returnType, valueType)) {
+                    } else if (!isCompatible(returnType, adoptLiteralType(stmt.value!!, valueType, returnType))) {
                         errors.add("line ${stmt.line}: return type mismatch: expected $returnType but got $valueType")
                     }
                 }
@@ -668,7 +672,7 @@ class TypeResolver(private val table: SymbolTable) {
                         errors.add("line ${stmt.line}: cannot assign to immutable field '${stmt.name}' of struct ${targetType.name}")
                         return
                     }
-                    if (!isCompatible(field.type, valueType)) {
+                    if (!isCompatible(field.type, adoptLiteralType(stmt.value, valueType, field.type))) {
                         errors.add("line ${stmt.line}: cannot assign $valueType to field '${stmt.name}' of type ${field.type}")
                     }
                 } else {
@@ -853,7 +857,12 @@ class TypeResolver(private val table: SymbolTable) {
             is Expr.Binary -> {
                 val leftType = resolveExpr(expr.left) ?: return null
                 val rightType = resolveExpr(expr.right) ?: return null
-                resolveBinaryType(expr.op, leftType, rightType, expr.line)
+                resolveBinaryType(
+                    expr.op,
+                    adoptLiteralType(expr.left, leftType, rightType),
+                    adoptLiteralType(expr.right, rightType, leftType),
+                    expr.line,
+                )
             }
             is Expr.Call -> {
                 // Value call `receiver(args)` — the receiver must be a function value.
@@ -877,8 +886,11 @@ class TypeResolver(private val table: SymbolTable) {
                     errors.add("line ${expr.line}: '${if (expr.callee == "__hasDeco") "hasDeco" else "decoMeta"}' is a compile-time-only property and must be used inside inline code")
                     return null
                 }
-                // Struct construction: `Name(args)` where Name is a pack.
-                val struct = table.lookupStruct(expr.callee)
+                // Struct construction: `Name(args)` where Name is a pack. Inside an
+                // impl, `Self(…)` builds the type the impl is on — the same meaning
+                // `Self` already has in a signature, now in expression position.
+                val calleeName = selfToReceiver(expr.callee)
+                val struct = table.lookupStruct(calleeName)
                 if (struct != null) {
                     if (struct.isBridge) {
                         errors.add("line ${expr.line}: compiler bridge pack '${expr.callee}' cannot be constructed directly")
@@ -941,7 +953,7 @@ class TypeResolver(private val table: SymbolTable) {
                         val argType = resolveExpr(effectiveArgs[i]) ?: return null
                         if (struct.typeParams.isEmpty()) {
                             val fieldType = struct.fields[i].type
-                            if (!isCompatible(fieldType, argType)) {
+                            if (!isCompatible(fieldType, adoptLiteralType(effectiveArgs[i], argType, fieldType))) {
                                 errors.add("line ${expr.line}: field '${struct.fields[i].name}' of '${expr.callee}': expected $fieldType, got $argType")
                             }
                         }
@@ -1083,7 +1095,7 @@ class TypeResolver(private val table: SymbolTable) {
                         } else {
                             declaredType
                         }
-                        if (!isCompatible(paramType, argType)) {
+                        if (!isCompatible(paramType, adoptLiteralType(effectiveArgs[i], argType, paramType))) {
                             errors.add("line ${expr.line}: arg ${i + 1} of '${expr.callee}': expected $paramType, got $argType")
                         }
                     }
@@ -2055,6 +2067,14 @@ class TypeResolver(private val table: SymbolTable) {
         is IrType.Named -> TypeRef.Named(type.name)
     }
 
+    /** The operand-type key an operator overload is registered under. */
+    private fun operandKeyOf(type: IrType): String? = when (type) {
+        is IrType.Named -> type.name
+        is IrType.Pointer -> operandKeyOf(type.inner)
+        is IrType.Nullable -> operandKeyOf(type.inner)
+        else -> type.toString()
+    }
+
     private fun resolveBinaryType(op: TokenType, left: IrType, right: IrType, line: Int): IrType? {
         // Operator overloading on user types.
         if (left is IrType.Named) {
@@ -2062,7 +2082,9 @@ class TypeResolver(private val table: SymbolTable) {
             // (e.g. `oper+`), resolved regardless of the operand type (the `by`
             // clause may declare a different operand, e.g. Map + MapEntry).
             operOverloadName(op)?.let { operName ->
-                val mangled = table.lookupMethod(left.name, operName)
+                // An operator may be overloaded on its operand, so the operand-keyed
+                // member is tried first; the bare name is the single-overload case.
+                val mangled = table.lookupOperator(left.name, operName, operandKeyOf(right))
                 if (mangled != null) return table.lookupFunction(mangled)?.returnType
             }
             // Legacy same-type named-method overloads (e.g. `func plus(ref self, …)`).
@@ -2160,6 +2182,40 @@ class TypeResolver(private val table: SymbolTable) {
         }
     }
 
+    /**
+     * The type an expression takes on when it is an untyped numeric literal.
+     *
+     * `0` is written the same whether it means an `Int`, a `UInt` or a `Real`, so a
+     * literal in a position that wants a numeric type is that type — `var x: Real = 0`
+     * and `x == 0` both read naturally. Only literals are adopted this way: a typed
+     * `Int` value still needs an explicit `as`, so the conversion stays where it can
+     * be seen in the source.
+     */
+    private fun adoptLiteralType(expr: Expr, own: IrType, wanted: IrType): IrType {
+        if (own !in IrType.integerTypes || wanted !in IrType.numericTypes) return own
+        untypedIntLiteral(expr) ?: return own
+        // Only a floating-point target adopts a literal. A sized integer keeps the
+        // language's rule that its width is stated, by suffix or by cast.
+        return if (wanted in IrType.floatTypes) wanted else own
+    }
+
+    /**
+     * The value of an unsuffixed integer literal, or null.
+     *
+     * A suffix (`3L`, `7u`) states a type, so such a literal is not untyped and keeps
+     * what it was written as.
+     */
+    private fun untypedIntLiteral(expr: Expr): Long? = when (expr) {
+        is Expr.IntLiteral -> if (expr.suffix == NumericSuffix.NONE) expr.value else null
+        is Expr.Grouping -> untypedIntLiteral(expr.expr)
+        is Expr.Unary -> when (expr.op) {
+            TokenType.MINUS -> untypedIntLiteral(expr.operand)?.let { -it }
+            TokenType.PLUS -> untypedIntLiteral(expr.operand)
+            else -> null
+        }
+        else -> null
+    }
+
     private fun resolveBinding(name: String, typeAnn: TypeAnnotation, initializer: Expr, line: Int, mutable: Boolean) {
         if (table.lookupVariableInCurrentScope(name) != null) {
             errors.add("line $line: '$name' is already declared in this scope")
@@ -2181,7 +2237,7 @@ class TypeResolver(private val table: SymbolTable) {
         expectedLambdaReceiverTypes = savedReceivers
         when (typeAnn) {
             is TypeAnnotation.Explicit -> {
-                if (!isCompatible(declaredType!!, initType)) {
+                if (!isCompatible(declaredType!!, adoptLiteralType(initializer, initType, declaredType))) {
                     errors.add("line $line: type mismatch in '$name': declared $declaredType but initializer is $initType")
                 }
                 table.defineVariable(VariableSymbol(name, declaredType, mutable))

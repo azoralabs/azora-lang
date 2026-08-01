@@ -24,6 +24,7 @@ import org.azora.lang.frontend.Lexer
 import org.azora.lang.frontend.DebugInstrumenter
 import org.azora.lang.frontend.MacroExpander
 import org.azora.lang.frontend.Parser
+import org.azora.lang.stdlib.AzStdlib
 import org.azora.lang.stdlib.StdlibInjector
 import org.azora.lang.frontend.Program
 import org.azora.lang.ir.IrGenerator
@@ -155,7 +156,11 @@ class Compiler(
         // 1-2. Lexer and parser: malformed source is a compilation failure, never
         // an exception that can crash an editor, build tool, or playground host.
         val rawAst = try {
-            Parser(Lexer(source).tokenize()).parse()
+            // A compile-time list bound by the standard library (`Numbers`) is
+            // usable from a user module's `inline for`, so the stdlib's bindings
+            // seed this parse. Reading the stdlib first is what populates them.
+            AzStdlib.loadPrograms()
+            Parser(Lexer(source).tokenize(), AzStdlib.comptimeLists.toMutableMap()).parse()
         } catch (error: IllegalStateException) {
             return CompilationResult.Failure(listOf(error.message ?: "frontend parsing failed"))
         } catch (error: IllegalArgumentException) {

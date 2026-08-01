@@ -138,7 +138,33 @@ class CtfeEvaluator(private val table: SymbolTable) {
         val topLevelEnv = inlineEnv.toMap()
 
         // Phase B: Resolve inline constructs inside function bodies
+        fun foldDecl(decl: org.azora.lang.frontend.FuncDecl): org.azora.lang.frontend.FuncDecl {
+            inlineEnv.clear()
+            inlineEnv.putAll(seedConstants)
+            inlineEnv.putAll(topLevelEnv)
+            reflectionTypes.clear()
+            decl.params.forEach { reflectionTypes[it.name] = it.type.displayName() }
+            val newParams = decl.params.map { param ->
+                val default = param.defaultValue ?: return@map param
+                val (foldedDefault, defaultChanged) = foldCompileTimeExpr(default, program)
+                if (defaultChanged) changed = true
+                param.copy(defaultValue = foldedDefault)
+            }
+            val (newBody, bodyChanged) = foldBody(decl.body, program, errors)
+            if (bodyChanged) changed = true
+            return decl.copy(params = newParams, body = newBody)
+        }
+
         val newItems = resolvedItems.map { item ->
+            // A member is code like any other: `inline if` inside an impl method has
+            // to fold here, or it survives to IR generation with nothing left to
+            // resolve it.
+            if (item is TopLevel.Impl) {
+                return@map item.copy(methods = item.methods.map(::foldDecl))
+            }
+            if (item is TopLevel.Solo) {
+                return@map item.copy(methods = item.methods.map(::foldDecl))
+            }
             if (item is TopLevel.Func) {
                 inlineEnv.clear()
                 // Seed top-level compile-time constants (e.g. exported `std.config`
@@ -830,7 +856,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
         val paramMap = mutableMapOf<String, Expr>()
         for (i in funcDecl.params.indices) {
             val arg = if (i < expr.args.size) expr.args[i] else return null
-            paramMap[funcDecl.params[i].name] = arg
+            paramMap[funcDecl.params[i].name] = asDeclaredLiteral(arg, funcDecl.params[i].type)
         }
 
         val substituted = funcDecl.body.map { substituteInStmt(it, paramMap) }
@@ -983,6 +1009,74 @@ class CtfeEvaluator(private val table: SymbolTable) {
         if (type != null) reflectionTypes[name] = type
     }
 
+    /**
+     * Whether [typeName] conforms to [specName], or null when [typeName] is not a
+     * declared type at all (a value, or a parameter still unbound).
+     *
+     * Conformance is nominal — an `impl Spec for Type` must exist — and a type that
+     * is declared but implements nothing conforms to nothing, which is a decision,
+     * not an absence of one.
+     */
+    private fun conformanceOf(typeName: String, specName: String, program: Program): Boolean? {
+        val declared = program.items.any {
+            (it is TopLevel.Pack && it.name == typeName) ||
+                (it is TopLevel.Enum && it.name == typeName) ||
+                (it is TopLevel.Spec && it.name == typeName)
+        }
+        if (!declared) return null
+        val seen = mutableSetOf<String>()
+        fun conforms(from: String): Boolean {
+            if (!seen.add(from)) return false
+            val specs = program.items.filterIsInstance<TopLevel.Impl>()
+                .filter { it.typeName == from }
+                .mapNotNull { it.traitName }
+            // A spec may itself refine another (`Integer` is a `Number`), so the
+            // question is reachability, not a single declaration.
+            return specs.any { it == specName || conforms(it) }
+        }
+        return conforms(typeName)
+    }
+
+    /**
+     * Replaces each `inline for` argument with the arguments it stands for.
+     *
+     * `Vec(inline for i in 0..<3 { … })` is three arguments, not one. Only a range
+     * whose bounds are known here can be walked; anything else is left for the pass
+     * that does know (reflection over a pack's fields, for instance).
+     */
+    private fun spliceInlineForArgs(args: List<Expr>, program: Program): Pair<List<Expr>, Boolean> {
+        if (args.none { it is Expr.InlineForArgs }) return args to false
+        var changed = false
+        val result = mutableListOf<Expr>()
+        for (arg in args) {
+            val loop = arg as? Expr.InlineForArgs
+            val values = loop?.let { constantRangeOf(it.iterable, program) }
+            if (loop == null || values == null) {
+                result.add(arg)
+                continue
+            }
+            changed = true
+            for (value in values) {
+                val bound = substituteInExpr(
+                    loop.body,
+                    mapOf(loop.name to Expr.IntLiteral(value, loop.line, loop.column)),
+                )
+                result.add(bound)
+            }
+        }
+        return result to changed
+    }
+
+    /** The values a compile-time range denotes, or null when it is not one. */
+    private fun constantRangeOf(iterable: Expr, program: Program): List<Long>? {
+        val range = iterable as? Expr.Range ?: return null
+        val from = (foldExpr(range.from, program).first as? Expr.IntLiteral)?.value ?: return null
+        val to = (foldExpr(range.to, program).first as? Expr.IntLiteral)?.value ?: return null
+        val last = if (range.inclusive) to else to - 1
+        if (last < from) return emptyList()
+        return (from..last).toList()
+    }
+
     private fun foldExpr(expr: Expr, program: Program): Pair<Expr, Boolean> {
         return when (expr) {
             is Expr.InlineForArgs -> expr to false
@@ -1029,8 +1123,12 @@ class CtfeEvaluator(private val table: SymbolTable) {
                     val applied = DecoratorMetadata.findApplied(site, decoratorName, program) != null
                     return Pair(Expr.BoolLiteral(applied, expr.line, expr.column), true)
                 }
-                val foldedArgs = expr.args.map { foldExpr(it, program) }
-                val anyChanged = foldedArgs.any { it.second }
+                // `Vec(inline for i in 0..<N { … })` supplies one argument per
+                // iteration, so the loop is spliced into the argument list before the
+                // arguments are folded individually.
+                val (splicedArgs, splicedAny) = spliceInlineForArgs(expr.args, program)
+                val foldedArgs = splicedArgs.map { foldExpr(it, program) }
+                val anyChanged = splicedAny || foldedArgs.any { it.second }
                 val newArgs = foldedArgs.map { it.first }
 
                 // Try to evaluate the call at compile time if all args are constants
@@ -1094,7 +1192,19 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 if (text != null) Pair(Expr.StringLiteral(text, expr.line, expr.column, expr.length), true)
                 else Pair(candidate, changed)
             }
-            is Expr.NamedArg, is Expr.NullLiteral, is Expr.IsCheck, is Expr.MapLit, is Expr.Alloc, is Expr.AllocBuffer, is Expr.Deref, is Expr.Isolated, is Expr.Await, is Expr.Inject, is Expr.Spread -> Pair(expr, false)
+            // `T is Number` where `T` is bound to a concrete type: conformance is
+            // nominal, so a declared `impl Number for T` decides it here and the
+            // `inline if` around it folds away.
+            is Expr.IsCheck -> {
+                val subject = (expr.expr as? Expr.Identifier)?.name
+                val decided = subject?.let { conformanceOf(it, expr.typeName, program) }
+                if (decided != null) {
+                    Pair(Expr.BoolLiteral(decided, expr.line, expr.column), true)
+                } else {
+                    Pair(expr, false)
+                }
+            }
+            is Expr.NamedArg, is Expr.NullLiteral, is Expr.MapLit, is Expr.Alloc, is Expr.AllocBuffer, is Expr.Deref, is Expr.Isolated, is Expr.Await, is Expr.Inject, is Expr.Spread -> Pair(expr, false)
             is Expr.TryPropagate -> {
                 val (inner, changed) = foldExpr(expr.expr, program)
                 Pair(if (changed) expr.copy(expr = inner) else expr, changed)
@@ -1361,6 +1471,29 @@ class CtfeEvaluator(private val table: SymbolTable) {
      * Try to evaluate a function call at compile time by interpreting its body.
      * Only works for simple functions with constant arguments.
      */
+    /**
+     * An integer literal bound to a floating-point parameter becomes a real one.
+     *
+     * The resolver lets `half(6)` pass a `Real` parameter, so compile-time
+     * evaluation must agree: without this, `x / 2` inside the body would be integer
+     * division and the folded constant would disagree with the same call left to
+     * run.
+     */
+    private fun asDeclaredLiteral(arg: Expr, declared: TypeRef): Expr {
+        val name = (declared as? TypeRef.Named)?.name ?: return arg
+        if (name != "Real" && name != "Float" && name != "Decimal") return arg
+        return when (arg) {
+            is Expr.IntLiteral -> Expr.RealLiteral(arg.value.toDouble(), arg.line)
+            is Expr.Unary ->
+                if (arg.op == TokenType.MINUS && arg.operand is Expr.IntLiteral) {
+                    Expr.RealLiteral(-(arg.operand as Expr.IntLiteral).value.toDouble(), arg.line)
+                } else {
+                    arg
+                }
+            else -> arg
+        }
+    }
+
     private fun tryEvalCall(name: String, args: List<Expr>, program: Program, line: Int): Expr? {
         val funcDecl = program.functions.find { it.name == name } ?: return null
         // Tasks/flows are execution boundaries, not pure value expressions. Folding
@@ -1386,7 +1519,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
         // Build a compile-time environment: param name → constant value
         val env = mutableMapOf<String, Expr>()
         for (i in funcDecl.params.indices) {
-            env[funcDecl.params[i].name] = args[i]
+            env[funcDecl.params[i].name] = asDeclaredLiteral(args[i], funcDecl.params[i].type)
         }
 
         // Interpret the function body

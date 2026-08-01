@@ -404,6 +404,26 @@ class Parser(
     }
 
     /** Qualifies a top-level item's name with [prefix] (e.g. `PI` → `Math__PI`). */
+    /**
+     * Puts the enclosing impl's type parameters back on a static member.
+     *
+     * A member of `impl Vec<T, N>:: { … }` becomes a free function, and a free
+     * function only knows the parameters it declares itself — so `T` would be an
+     * undefined type in `func axis<I: Int>(value: T)`. The impl's parameters come
+     * first, ahead of the member's own.
+     */
+    private fun withImplTypeParams(item: TopLevel, implTypeParams: List<String>): TopLevel {
+        if (implTypeParams.isEmpty()) return item
+        return when (item) {
+            is TopLevel.Func -> item.copy(
+                decl = item.decl.copy(
+                    typeParams = (implTypeParams + item.decl.typeParams).distinct(),
+                ),
+            )
+            else -> item
+        }
+    }
+
     private fun mangleTopLevel(item: TopLevel, prefix: String): TopLevel = when (item) {
         is TopLevel.Func -> item.copy(decl = item.decl.copy(name = "${prefix}__${item.decl.name}"))
         is TopLevel.FinDecl -> item.copy(name = "${prefix}__${item.name}")
@@ -505,6 +525,14 @@ class Parser(
             skipNewlines()
             TypeAnnotation.Explicit(parseTypeName())
         } else TypeAnnotation.Inferred
+        // `inline if cond { inline "?! E" }` — a fragment spliced into the signature,
+        // the same form an operator inside an impl accepts.
+        var operRet = ret
+        parseSignatureFragment()?.let { fragment ->
+            operRet = applySignatureFragment(operRet, fragment, start)
+        }
+        // An operator may carry its own constraint.
+        parseWhereClause()
         // The step is declarative metadata: parsed so the source states it, then
         // discarded, exactly as the old bracket form's `by` was.
         if (match(TokenType.BY)) parseExpr()
@@ -516,7 +544,7 @@ class Parser(
                 typeName,
                 listOf(
                     FuncDecl(
-                        "oper$opName", operands, ret, emptyList(), false,
+                        "oper$opName", operands, operRet, emptyList(), false,
                         operatorTypeParams.names,
                         start.line, start.column, receiverModifier = recv.modifier,
                         receiverName = recv.name, visibility = visibility,
@@ -532,7 +560,7 @@ class Parser(
         consume(TokenType.R_BRACE, "Expected '}' after operator body")
         consumeNewline()
         val method = FuncDecl(
-            "oper$opName", operands, ret, body, false, operatorTypeParams.names,
+            "oper$opName", operands, operRet, body, false, operatorTypeParams.names,
             start.line, start.column,
             annotations = annotations, visibility = visibility,
             receiverModifier = recv.modifier, receiverName = recv.name,
@@ -601,8 +629,12 @@ class Parser(
                 }
             }
         }
-        return tokens.getOrNull(i)?.type == TokenType.DOUBLE_COLON &&
-            tokens.getOrNull(i + 1)?.type == TokenType.L_BRACE
+        if (tokens.getOrNull(i)?.type != TokenType.DOUBLE_COLON) return false
+        // The block opens directly, or after a `where` clause narrowing the type's
+        // own constraints: `impl Vec<T, N>:: where T is SignedNumber { … }`.
+        val after = tokens.getOrNull(i + 1) ?: return false
+        return after.type == TokenType.L_BRACE ||
+            (after.type == TokenType.IDENTIFIER && after.lexeme == "where")
     }
 
     private fun parseOperatorImpl(start: Token, isBridge: Boolean, annotations: List<Annotation> = emptyList()): TopLevel.Impl {
@@ -1246,11 +1278,23 @@ class Parser(
         // A bare `Ty` is replaced only when the value is a type name (a single
         // identifier), so a value loop variable that collides with a real name (e.g.
         // `prop rank` with loop var `rank`) is untouched — use `$rank` for those.
-        val bareOk = valueTokens.size == 1 && valueTokens[0].type == TokenType.IDENTIFIER
+        // A bare use is replaced by the value itself when the value is a name or a
+        // number — the two things that mean something on their own in code. An
+        // operator (`"+"`) does not, so a bare use of it reads as the string it is.
+        val bareOk = valueTokens.size == 1 && valueTokens[0].type in setOf(
+            TokenType.IDENTIFIER,
+            TokenType.INT_LITERAL,
+            TokenType.REAL_LITERAL,
+        )
         val result = mutableListOf<Token>()
         for (t in tokens) {
             when {
                 bareOk && t.type == TokenType.IDENTIFIER && t.lexeme == varName -> result.addAll(valueTokens)
+                // A loop over `arr@["+", "-"]` binds strings. `$op` splices one as
+                // code; a bare `op` reads it as the value it is, which is what lets
+                // `inline if op == "/"` decide which element the copy is for.
+                t.type == TokenType.IDENTIFIER && t.lexeme == varName ->
+                    result.add(Token(TokenType.STRING_LITERAL, "\"$value\"", t.line, t.column, value))
                 t.type == TokenType.IDENTIFIER && t.lexeme.contains(placeholder) ->
                     result.addAll(Lexer(t.lexeme.replace(placeholder, value)).tokenize().dropLast(1))
                 else -> result.add(t)
@@ -1962,6 +2006,37 @@ class Parser(
     /** Entry point for re-parsing a type built from a signature fragment. */
     internal fun parseTypeNameForFragment(): TypeRef = parseTypeName()
 
+    /**
+     * The suffix that distinguishes one operator overload from another on a type.
+     *
+     * Two things separate overloads of the same operator: the operand it accepts
+     * (`v + v` and `v + scalar`), and — for operators that do not already imply
+     * mutation — whether the receiver is borrowed shared or exclusive (`v[i]` read
+     * against `v[i]` written through). An operator declared once keeps the bare
+     * name, so the common case is unaffected.
+     */
+    private fun operatorOverloadSuffix(
+        opName: String,
+        receiver: ParamModifier,
+        operands: List<Param>,
+    ): String {
+        // `+=` and `[]=` mutate by definition; their receiver says nothing extra.
+        val mutationImplied = opName == "indexSet" ||
+            (opName.endsWith("=") && opName !in setOf("==", "!=", "<=", ">="))
+        val exclusive = if (!mutationImplied && receiver.writable) "!" else ""
+        val operand = operands.singleOrNull()?.let { "@" + operandTypeKey(it.type) } ?: ""
+        return exclusive + operand
+    }
+
+    /** The operand-type key used to distinguish operator overloads. */
+    private fun operandTypeKey(type: TypeRef): String = when (type) {
+        is TypeRef.Named -> type.name
+        is TypeRef.Reference -> operandTypeKey(type.inner)
+        is TypeRef.Pointer -> operandTypeKey(type.inner)
+        is TypeRef.Nullable -> operandTypeKey(type.inner)
+        else -> "_"
+    }
+
     private fun parsePackField(
         preparsedVisibility: Visibility? = null,
         enforceNumFields: Boolean = false,
@@ -2140,14 +2215,34 @@ class Parser(
     }
 
     /** Skips `<T, U>` generic type arguments at the current position (erased at IR). */
+    /**
+     * The type-parameter names of the impl target most recently parsed.
+     *
+     * `impl Vec<T, N>::` erases its arguments — the members it holds are ordinary
+     * generic declarations — but `T` still has to name something inside them, so the
+     * names are kept here for the caller to put back.
+     */
+    private var lastImplTypeParams: List<String> = emptyList()
+
     private fun skipGenericTypeArgs() {
+        lastImplTypeParams = emptyList()
         if (!check(TokenType.LESS)) return
         advance() // '<'
         var depth = 1
+        val names = mutableListOf<String>()
         while (depth > 0) {
+            // At the top level of `<…>`, an identifier that is not part of a nested
+            // application names a parameter; `N: Int` contributes `N`.
+            if (depth == 1 && peek().type == TokenType.IDENTIFIER &&
+                peekNext()?.type != TokenType.LESS &&
+                tokens.getOrNull(current - 1)?.type != TokenType.COLON
+            ) {
+                names.add(peek().lexeme)
+            }
             when (peek().type) { TokenType.LESS -> depth++; TokenType.GREATER -> depth--; else -> {} }
             advance()
         }
+        lastImplTypeParams = names
     }
 
     /** Parses `<T, U>` generic type arguments at the current position. */
@@ -2335,13 +2430,21 @@ class Parser(
         if (isZoneImplAhead()) {
             val targets = expandTypeListTargets(parseImplTargets())
             consume(TokenType.DOUBLE_COLON, "Expected '::' after 'impl <type>'")
+            // `impl Vec<T, N>:: where T is SignedNumber { … }` — a static block may
+            // narrow the type's own constraints, so its members exist only for the
+            // specializations that satisfy it.
+            parseWhereClause()
+            skipNewlines()
             consume(TokenType.L_BRACE, "Expected '{' after 'impl <type>::'")
             skipNewlines()
             val bodyTokens = captureBraceBody()
             consumeNewline()
+            val implTypeParams = lastImplTypeParams
             for (target in targets) {
                 val members = Parser(bodyTokens + Token(TokenType.EOF, "", start.line, start.column), typeListEnv).parse().items
-                members.forEach { pendingTopLevels.add(mangleTopLevel(it, target)) }
+                members.forEach {
+                    pendingTopLevels.add(mangleTopLevel(withImplTypeParams(it, implTypeParams), target))
+                }
             }
             return TopLevel.Impl(targets.first(), emptyList(), null, start.line, start.column)
         }
@@ -2786,6 +2889,7 @@ class Parser(
                     }
                     // `oper as<U> [self: …]` — an operator may take type parameters.
                     val operTypeParams = parseTypeParams()
+                    var operSuffix = ""
                     if (!check(TokenType.L_BRACKET)) {
                         error("an operator declares its receiver, as in 'oper$opName [self: ${typeName}&]', at line ${peek().line}")
                     }
@@ -2795,6 +2899,11 @@ class Parser(
                         consume(TokenType.R_PAREN, "Expected ')' after operator operands")
                         parsed
                     } else emptyList()
+                    // One operator may be overloaded on its operand — `v + v` and
+                    // `v + scalar` are different declarations — so the operand type
+                    // joins the member name. Lookup falls back to the bare name, which
+                    // keeps a single unambiguous overload spelled as it always was.
+                    operSuffix = operatorOverloadSuffix(opName, recv.modifier, operands)
                     var ret: TypeAnnotation = if (match(TokenType.COLON)) {
                         skipNewlines()
                         TypeAnnotation.Explicit(parseTypeName())
@@ -2826,7 +2935,7 @@ class Parser(
                         currentFailSets = savedOperFailSets
                         methods.add(
                             FuncDecl(
-                                "oper$opName", operands, ret, emptyList(), false, operTypeParams.names,
+                                "oper$opName$operSuffix", operands, ret, emptyList(), false, operTypeParams.names,
                                 operStart.line, operStart.column,
                                 annotations = memberAnnotations, visibility = visibility,
                                 receiverModifier = recv.modifier, receiverName = recv.name,
@@ -2848,7 +2957,7 @@ class Parser(
                     currentFailSets = savedOperFailSets
                     consumeNewline()
                     methods.add(FuncDecl(
-                        "oper$opName", operands, ret, operBody, false, emptyList(),
+                        "oper$opName$operSuffix", operands, ret, operBody, false, emptyList(),
                         operStart.line, operStart.column,
                         annotations = memberAnnotations, visibility = visibility,
                         receiverModifier = recv.modifier, receiverName = recv.name,
@@ -4356,7 +4465,11 @@ class Parser(
      * parser work at all.
      */
     private fun parseWhereClause(): Expr? {
-        if (peek().type != TokenType.IDENTIFIER || peek().lexeme != "where") return null
+        // A clause may sit on its own line, after a signature or a spliced fragment.
+        val at = nextMeaningfulIndex()
+        val token = tokens.getOrNull(at) ?: return null
+        if (token.type != TokenType.IDENTIFIER || token.lexeme != "where") return null
+        while (current < at) advance()
         advance() // 'where'
         return parseExpr()
     }

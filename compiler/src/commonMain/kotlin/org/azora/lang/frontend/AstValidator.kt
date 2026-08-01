@@ -271,6 +271,13 @@ class AstValidator {
     private fun hasReturnInBody(body: List<Stmt>): Boolean = body.any { stmt ->
         when (stmt) {
             is Stmt.Return -> true
+            // `return .Variant` fails the function, which leaves it as surely as a
+            // value return does — a body that can only fail still terminates.
+            is Stmt.Throw -> true
+            // `inline for` bodies are expanded later; a return inside one counts.
+            is Stmt.InlineFor -> hasReturnInBody(stmt.body)
+            is Stmt.Try -> hasReturnInBody(stmt.body) ||
+                    (stmt.catchBody != null && hasReturnInBody(stmt.catchBody))
             is Stmt.If -> hasReturnInBody(stmt.thenBranch) ||
                     (stmt.elseBranch != null && hasReturnInBody(stmt.elseBranch))
             is Stmt.InlineIf -> hasReturnInBody(stmt.thenBranch) ||

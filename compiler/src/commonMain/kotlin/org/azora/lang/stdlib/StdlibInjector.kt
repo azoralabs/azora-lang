@@ -84,7 +84,9 @@ class StdlibInjector private constructor(
             configOverrides: Map<String, String> = emptyMap(),
         ): StdlibInjector {
             if (additionalSources.isEmpty() && configOverrides.isEmpty()) return standard
-            val typeListEnv = mutableMapOf<String, List<String>>()
+            // Seeded with the standard library's compile-time lists so a package
+            // source can iterate `Numbers` exactly as a stdlib file does.
+            val typeListEnv = AzStdlib.comptimeLists.toMutableMap()
             val additionalPrograms = additionalSources.map { (path, source) ->
                 val program = try {
                     Parser(Lexer(source).tokenize(), typeListEnv).parse()

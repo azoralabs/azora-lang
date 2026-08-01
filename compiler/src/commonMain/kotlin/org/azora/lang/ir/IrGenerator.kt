@@ -446,7 +446,7 @@ class IrGenerator(private val table: SymbolTable) {
                     }
                     // Emit a __singleton_Name factory that constructs the struct from field defaults.
                     val defaults = item.fields.map { f ->
-                        if (f.default != null) lowerExpr(f.default)
+                        if (f.default != null) coerceToFloat(lowerExpr(f.default), resolveType(f.type))
                         else defaultValueForType(resolveType(f.type))
                     }
                     val factory = IrFunction(
@@ -482,7 +482,7 @@ class IrGenerator(private val table: SymbolTable) {
                 val type = IrType.Named(item.typeName)
                 val params = ctor.params.map { it.name to resolveType(it.type) }
                 val defaults = struct.fields.map { f ->
-                    f.default?.let { lowerExpr(it) } ?: defaultValueForType(f.type)
+                    f.default?.let { coerceToFloat(lowerExpr(it), f.type) } ?: defaultValueForType(f.type)
                 }
                 IrTopLevel.Func(IrFunction(
                     ctorFactoryName(item.typeName, params.size),
@@ -756,7 +756,7 @@ class IrGenerator(private val table: SymbolTable) {
     private fun lowerStmt(stmt: Stmt): IrStmt {
         return when (stmt) {
             is Stmt.VarDecl -> {
-                val init = lowerExpr(stmt.initializer)
+                val init = coerceToFloat(lowerExpr(stmt.initializer), typeAnnotationOrNull(stmt.type))
                 val type = resolveTypeAnnotation(stmt.type, init)
                 val mangled = registerName(stmt.name)
                 table.defineVariable(VariableSymbol(stmt.name, type, mutable = true))
@@ -764,7 +764,7 @@ class IrGenerator(private val table: SymbolTable) {
                 IrStmt.VarDecl(mangled, type, init)
             }
             is Stmt.FinDecl -> {
-                val init = lowerExpr(stmt.initializer)
+                val init = coerceToFloat(lowerExpr(stmt.initializer), typeAnnotationOrNull(stmt.type))
                 val type = resolveTypeAnnotation(stmt.type, init)
                 val mangled = registerName(stmt.name)
                 table.defineVariable(VariableSymbol(stmt.name, type, mutable = false))
@@ -772,7 +772,7 @@ class IrGenerator(private val table: SymbolTable) {
                 IrStmt.FinDecl(mangled, type, init)
             }
             is Stmt.LetDecl -> {
-                val init = lowerExpr(stmt.initializer)
+                val init = coerceToFloat(lowerExpr(stmt.initializer), typeAnnotationOrNull(stmt.type))
                 val type = resolveTypeAnnotation(stmt.type, init)
                 val mangled = registerName(stmt.name)
                 table.defineVariable(VariableSymbol(stmt.name, type, mutable = false))
@@ -788,8 +788,11 @@ class IrGenerator(private val table: SymbolTable) {
             is Stmt.InlineVar -> error("InlineVar should have been resolved by CTCE before IR generation")
             is Stmt.InlineAssignment -> error("InlineAssignment should have been resolved by CTCE before IR generation")
             is Stmt.Assignment -> {
-                val value = lowerExpr(stmt.value)
                 val name = resolveName(stmt.name)
+                val value = coerceToFloat(
+                    lowerExpr(stmt.value),
+                    table.lookupVariable(stmt.name)?.type ?: IrType.Any,
+                )
                 knownEnumValues.remove(name)
                 val assignment = IrStmt.Assignment(name, value)
                 val triggered = if (!loweringEffect && stmt.name in reactiveNames) {
@@ -823,10 +826,13 @@ class IrGenerator(private val table: SymbolTable) {
             }
             is Stmt.MemberAssign -> {
                 val target = autoDerefMemberTarget(lowerExpr(stmt.target), stmt.name, method = false)
-                val value = lowerExpr(stmt.value)
+                val fieldType = (target.type as? IrType.Named)
+                    ?.let { table.lookupStruct(it.name) }
+                    ?.fields?.firstOrNull { it.name == stmt.name }?.type
+                val value = coerceToFloat(lowerExpr(stmt.value), fieldType ?: IrType.Any)
                 IrStmt.MemberAssign(target, stmt.name, value)
             }
-            is Stmt.Return -> IrStmt.Return(stmt.value?.let { lowerExpr(it) })
+            is Stmt.Return -> IrStmt.Return(stmt.value?.let { coerceToFloat(lowerExpr(it), currentReturnType) })
             is Stmt.ExprStmt -> IrStmt.ExprStmt(lowerExpr(stmt.expr))
             is Stmt.If -> {
                 val cond = lowerExpr(stmt.condition)
@@ -834,7 +840,10 @@ class IrGenerator(private val table: SymbolTable) {
                 val elseBranch = stmt.elseBranch?.let { lowerScopedBody(it) }
                 IrStmt.If(cond, thenBranch, elseBranch)
             }
-            is Stmt.InlineIf -> error("InlineIf should have been resolved by CTCE before IR generation")
+            is Stmt.InlineIf -> error(
+                "line ${stmt.line}: 'inline if' condition was not decidable at compile time" +
+                    (currentTraceOwner?.let { " in '$it'" } ?: ""),
+            )
             is Stmt.DeepInlineIf -> error("DeepInlineIf should have been resolved by CTCE before IR generation")
             is Stmt.Zone -> {
                 table.pushScope()
@@ -1362,7 +1371,9 @@ class IrGenerator(private val table: SymbolTable) {
                     // regardless of operand type (a `by <Spec>` overload may differ).
                     val operName = operOverloadName(expr.op)
                     if (operName != null) {
-                        val mangled = table.lookupMethod(lt.name, operName)
+                        // An operator may be overloaded on its operand, so the
+                        // operand-keyed member wins; the bare name is the single case.
+                        val mangled = table.lookupOperator(lt.name, operName, operandKeyOf(right.type))
                         if (mangled != null) {
                             val func = table.lookupFunction(mangled)!!
                             return IrExpr.Call(mangled, listOf(left, right), func.returnType)
@@ -1407,6 +1418,8 @@ class IrGenerator(private val table: SymbolTable) {
                     left = stringifyEnum(left)
                     right = stringifyEnum(right)
                 }
+                left = coerceToFloat(left, right.type)
+                right = coerceToFloat(right, left.type)
                 IrExpr.Binary(left, op, right, type)
             }
             is Expr.Call -> {
@@ -1426,20 +1439,28 @@ class IrGenerator(private val table: SymbolTable) {
                     return IrExpr.EnumLiteral("LogLevel", first)
                 }
                 // Resolve import aliases (`import Zone.Item` maps Item to Zone__Item).
-                val realCallee = table.aliasMap[expr.callee] ?: expr.callee
-                val struct = table.lookupStruct(realCallee) ?: table.lookupStruct(expr.callee)
+                // `Self(…)` inside an impl builds the type the impl is on.
+                val calleeName = if (expr.callee == "Self") currentReceiverType ?: expr.callee else expr.callee
+                val realCallee = table.aliasMap[calleeName] ?: calleeName
+                val struct = table.lookupStruct(realCallee) ?: table.lookupStruct(calleeName)
                 if (struct != null) {
                     // Handle named arguments — reorder to field order; omitted fields use their defaults.
                     val args = if (expr.args.any { it is Expr.NamedArg }) {
                         val slots = mapNamedArguments(expr.args, struct.fields.map { it.name })
                         struct.fields.mapIndexed { index, f ->
-                            lowerExpr(slots[index] ?: f.default ?: Expr.NullLiteral)
+                            coerceToFloat(lowerExpr(slots[index] ?: f.default ?: Expr.NullLiteral), f.type)
                         }
                     } else {
                         // Positional — pad omitted trailing fields with their defaults (`Pack<T>()`).
-                        val padded = expr.args.map { lowerExpr(it) }.toMutableList()
+                        val padded = expr.args.mapIndexed { i, a ->
+                            struct.fields.getOrNull(i)?.let { coerceToFloat(lowerExpr(a), it.type) }
+                                ?: lowerExpr(a)
+                        }.toMutableList()
                         for (i in expr.args.size until struct.fields.size) {
-                            padded.add(lowerExpr(struct.fields[i].default ?: Expr.NullLiteral))
+                            padded.add(coerceToFloat(
+                                lowerExpr(struct.fields[i].default ?: Expr.NullLiteral),
+                                struct.fields[i].type,
+                            ))
                         }
                         padded
                     }
@@ -1450,7 +1471,10 @@ class IrGenerator(private val table: SymbolTable) {
                     if (declaredCtor != null && expr.args.none { it is Expr.NamedArg }) {
                         return IrExpr.Call(
                             declaredCtor.name,
-                            expr.args.map { lowerExpr(it) },
+                            expr.args.mapIndexed { i, a ->
+                                declaredCtor.params.getOrNull(i)
+                                    ?.let { coerceToFloat(lowerExpr(a), it.second) } ?: lowerExpr(a)
+                            },
                             IrType.Named(realCallee),
                         )
                     }
@@ -1556,7 +1580,11 @@ class IrGenerator(private val table: SymbolTable) {
                     val displayArgs = if (func.name == "std__println" || func.name == "std__print") {
                         effectiveArgs.map(::stringifyEnum)
                     } else {
-                        effectiveArgs
+                        // An integer literal passed where a float is declared becomes
+                        // one here, so the callee never receives the wrong machine type.
+                        effectiveArgs.mapIndexed { i, arg ->
+                            func.params.getOrNull(i)?.let { coerceToFloat(arg, it.second) } ?: arg
+                        }
                     }
                     return IrExpr.Call(func.name, displayArgs, callType)
                 }
@@ -2023,6 +2051,14 @@ class IrGenerator(private val table: SymbolTable) {
     }
 
     /** Maps an operator token to the impl method name for operator overloading. */
+    /** The operand-type key an operator overload is registered under. */
+    private fun operandKeyOf(type: IrType): String? = when (type) {
+        is IrType.Named -> type.name
+        is IrType.Pointer -> operandKeyOf(type.inner)
+        is IrType.Nullable -> operandKeyOf(type.inner)
+        else -> type.toString()
+    }
+
     private fun operatorMethodName(op: TokenType): String? = when (op) {
         TokenType.PLUS -> "plus"
         TokenType.MINUS -> "minus"
@@ -2051,6 +2087,37 @@ class IrGenerator(private val table: SymbolTable) {
     }
 
     /** The common type of two numeric operands (wider float wins, else wider int). */
+    /**
+     * Emits [expr] as [target] when it is an integer that a float position wants.
+     *
+     * The resolver lets an untyped integer literal stand for a floating-point value;
+     * this is where that becomes a real float, so backends never see a comparison or
+     * a store mixing an integer with a float.
+     */
+    /** The return type of the function being lowered; [IrType.Any] outside one. */
+    private val currentReturnType: IrType
+        get() = currentTraceOwner?.let { table.lookupFunction(it)?.returnType } ?: IrType.Any
+
+    /** The annotated type, or [IrType.Any] when the declaration infers it. */
+    private fun typeAnnotationOrNull(ann: TypeAnnotation): IrType =
+        (ann as? TypeAnnotation.Explicit)?.let { runCatching { resolveType(it.ref) }.getOrNull() } ?: IrType.Any
+
+    private fun coerceToFloat(expr: IrExpr, target: IrType): IrExpr =
+        if (target in IrType.numericTypes && target != expr.type && expr.type in IrType.integerTypes &&
+            isUntypedIntConstant(expr)
+        ) {
+            IrExpr.NumCast(expr, target)
+        } else {
+            expr
+        }
+
+    /** True for an integer constant the resolver would have let adopt another type. */
+    private fun isUntypedIntConstant(expr: IrExpr): Boolean = when (expr) {
+        is IrExpr.IntLiteral -> expr.type == IrType.Int
+        is IrExpr.Unary -> expr.op == IrUnaryOp.NEG && isUntypedIntConstant(expr.operand)
+        else -> false
+    }
+
     private fun numericResultType(a: IrType, b: IrType): IrType {
         if (a == b) return a
         if (a !in IrType.numericTypes || b !in IrType.numericTypes) return a

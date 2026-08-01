@@ -39,6 +39,14 @@ import org.azora.lang.ir.mangleMethodSymbol
  * in the [SymbolTable]. Does NOT look inside function bodies — that
  * happens in [TypeResolver] (Pass 2).
  */
+/** A global binding being re-inferred once every pack is known. */
+private data class Global(
+    val name: String,
+    val initializer: org.azora.lang.frontend.Expr,
+    val annotated: org.azora.lang.frontend.TypeRef?,
+    val mutable: Boolean,
+)
+
 class SymbolCollector {
     private var typeFunctions = emptyList<org.azora.lang.frontend.TypeFunctionDecl>()
     /** Set for the duration of [collect]; lets return-type inference resolve call/ctor types. */
@@ -281,6 +289,24 @@ class SymbolCollector {
             }
         }
 
+        // Globals were registered before the packs, so a `fin origin = Point(0, 0)`
+        // could not yet see what `Point` is and fell back to Int. Now that every pack
+        // is known, re-infer the ones that were left to inference.
+        for (item in program.items) {
+            val (name, initializer, annotated, mutable) = when {
+                item is TopLevel.FinDecl -> Global(item.name, item.initializer, item.type, false)
+                item is TopLevel.VarDecl && item.threadlocal ->
+                    Global(item.name, item.initializer, item.type, true)
+                else -> continue
+            }
+            if (annotated != null) continue
+            val inferred = try {
+                inferExprType(initializer, emptyMap())
+            } catch (e: Exception) {
+                null
+            } ?: continue
+            table.defineVariable(VariableSymbol(name, inferred, mutable = mutable))
+        }
 
         // Register enum declarations
         for (item in program.items) {

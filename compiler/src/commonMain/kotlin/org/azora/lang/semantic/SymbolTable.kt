@@ -262,6 +262,35 @@ class SymbolTable {
     /** Looks up the mangled function name for a method, or `null`. */
     fun lookupMethod(typeName: String, methodName: String): String? = methods[typeName]?.get(methodName)
 
+    /**
+     * Resolves an operator overload on [typeName] for a right-hand operand.
+     *
+     * Overloads are registered as `oper+@Self`, `oper+@T`, … so one operator can be
+     * declared once per operand type. A declaration with a single overload keeps the
+     * bare `oper+` name and is found unchanged.
+     *
+     * Resolution prefers the overload naming the operand's own type. Failing that it
+     * takes an overload keyed by a type *parameter* — generics are erased, so
+     * `(rhs: T&)` is registered under `T` and matches whatever `T` became. Only when
+     * that leaves exactly one candidate is it chosen, so a genuine ambiguity resolves
+     * to nothing rather than to an arbitrary overload.
+     */
+    fun lookupOperator(typeName: String, operName: String, operandKey: String?): String? {
+        val table = methods[typeName] ?: return null
+        if (operandKey != null) table["$operName@$operandKey"]?.let { return it }
+        table[operName]?.let { return it }
+        val prefix = "$operName@"
+        val candidates = table.keys.filter { it.startsWith(prefix) }
+        if (candidates.isEmpty()) return null
+        val generic = candidates.filter { !isKnownType(it.removePrefix(prefix)) }
+        val chosen = generic.singleOrNull() ?: candidates.singleOrNull() ?: return null
+        return table[chosen]
+    }
+
+    /** True when [name] names a declared type rather than a type parameter. */
+    private fun isKnownType(name: String): Boolean =
+        name in structs || name in enums || name in specs || name == "Self"
+
     // -- Universal infix extensions (`infx<K,V> K.to(v)`) -----------------
     /** Infix method name → the generic free function it desugars to (`self` first). */
     private val universalInfix = mutableMapOf<String, String>()

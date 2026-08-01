@@ -120,6 +120,29 @@ x as* T      // reinterpret (bit) cast
 - `x as? T` yields the value if it is a `T`, otherwise `null`.
 - These desugar to `std::cast<T>(x)` / `std::dyncast<T>(x)` / `std::bitcast<T>(x)`.
 
+A type says how it converts by declaring the matching operator:
+
+```azora
+oper as     // converting / static conversion
+oper as?    // checked runtime conversion
+oper as*    // bit reinterpretation
+```
+
+```azora
+impl Celsius {
+    oper as<U> [self: Self&] = Fahrenheit(self.degrees * 1.8 + 32.0)
+    oper as?<U> [self: Self&] = if self.valid { Fahrenheit(…) } else { null }
+    oper as*<U> [self: Self&] = Fahrenheit(self.degrees)
+}
+```
+
+Each form is its own member, so a type may define any subset and the others keep
+the built-in behaviour. Because the surface syntax and the `std::` intrinsics are
+the same expression, an overload answers both spellings: with `oper as?` declared,
+`c as? Fahrenheit` and `std::dyncast<Fahrenheit>(c)` both call it. A checked cast
+with no overload still falls back to the runtime type test, yielding `null` when
+the value is not a `T`.
+
 ## 10. Type checks
 
 ```azora

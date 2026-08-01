@@ -1245,12 +1245,22 @@ class IrGenerator(private val table: SymbolTable) {
                 val innerType = inner.type
                 // A user-declared `oper as<U> [self: T&]: U` takes precedence over the
                 // built-in conversions: a type that says how it converts should be
-                // asked, rather than reinterpreted.
+                // asked, rather than reinterpreted. Each cast form asks its own
+                // member, so `as`, `as?` and `as*` never stand in for one another.
+                val castMember = when (expr.kind) {
+                    CastKind.STATIC -> "operas"
+                    CastKind.DYNAMIC -> "operas?"
+                    CastKind.REINTERPRET -> "operas*"
+                }
                 val userCast = (innerType as? IrType.Named)
-                    ?.let { table.lookupMethod(it.name, "operas") }
-                    ?.takeIf { expr.kind == CastKind.STATIC }
+                    ?.let { table.lookupMethod(it.name, castMember) }
                 if (userCast != null) {
-                    return IrExpr.Call(userCast, listOf(inner), target)
+                    val declared = table.lookupFunction(userCast)?.returnType
+                    // The operator states what it returns; a checked cast that did not
+                    // say so still yields `T?`, which is what `as?` means.
+                    val result = declared?.takeUnless { it == IrType.Any || it == IrType.Unit }
+                        ?: if (expr.kind == CastKind.DYNAMIC) IrType.Nullable(target) else target
+                    return IrExpr.Call(userCast, listOf(inner), result)
                 }
                 when {
                     // `x as? T` / `std::dyncast<T>(x)` — runtime-checked downcast to `T?`:

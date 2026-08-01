@@ -479,6 +479,11 @@ class Parser(
         check(TokenType.DOT) && peekNext()?.type == TokenType.CARET -> { advance(); advance(); "DerefMut" }
         // `oper as<U>` — what `value as U` calls. The target type is a generic
         // parameter of the operator, so one declaration converts to every U.
+        // `oper as?` and `oper as*` are the checked and reinterpreting forms, each
+        // its own member so a type can say how it converts, how it checks, and how
+        // it reinterprets independently.
+        check(TokenType.AS) && peekNext()?.type == TokenType.QMARK -> { advance(); advance(); "as?" }
+        check(TokenType.AS) && peekNext()?.type == TokenType.STAR -> { advance(); advance(); "as*" }
         match(TokenType.AS) -> "as"
         // Compound assignment: `oper +=` and friends, which a spliced operator name
         // produces (`inline fin assignOp = "${op}="`).

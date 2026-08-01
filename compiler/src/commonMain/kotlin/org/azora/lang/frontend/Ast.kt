@@ -1175,6 +1175,8 @@ data class TypeFunctionDecl(
     val params: List<TypeFunctionParam>,
     val body: List<TypeFunctionStmt>,
     val minVariadicLength: Int? = null,
+    /** The declaration's `where` clause as an expression; see [TopLevel.Pack.whereClause]. */
+    val whereClause: Expr? = null,
     val line: Int,
     val column: Int = 0,
 ) {
@@ -1488,6 +1490,8 @@ data class FuncDecl(
     val variadicParam: String? = null,
     /** Minimum element count from a `where <var>.length >= N` clause, or null if unconstrained. */
     val minVariadicLength: Int? = null,
+    /** The declaration's `where` clause as an expression; see [TopLevel.Pack.whereClause]. */
+    val whereClause: Expr? = null,
     /**
      * Type parameters declared as const value params (`name: Int` in `<…>`), e.g.
      * `N` in `func<T, N: Int>`. They are supplied as [TypeRef.Const] arguments at
@@ -1508,6 +1512,14 @@ enum class MemberCallStyle {
     NORMAL,
     PROPERTY,
     METHOD,
+
+    /**
+     * A property reached through the type rather than a value — `Type::name`.
+     *
+     * A spec requirement written without a receiver (`prop rank: Int`) asks for one
+     * of these, and `impl Spec for Type:: { … }` supplies it.
+     */
+    STATIC_PROPERTY,
 }
 
 /**
@@ -1804,6 +1816,14 @@ sealed class TopLevel {
          * instantiation and folded into dependent types.
          */
         val constParams: Set<String> = emptySet(),
+        /**
+         * The declaration's `where` clause, as an ordinary expression.
+         *
+         * `where T is Number && N in 2..4` is kept as its parse tree so a constraint
+         * can say anything an expression can. [minVariadicLength] is one reading of
+         * this tree, not a separate mechanism.
+         */
+        val whereClause: Expr? = null,
         /** Field generator for a variadic pack body (`inline for Ty in ...T with index { … }`), or null. */
         val fieldTemplate: VariadicFieldTemplate? = null,
         /**

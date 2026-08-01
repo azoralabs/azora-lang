@@ -112,6 +112,61 @@ internal object TypeFunctionEvaluator {
             is TypeRef.Const -> false
         }
 
+        /**
+         * The bindings a type function's `where` clause can be evaluated against.
+         *
+         * Only the variadic pack's length is concrete at this stage; element types
+         * are not, so a clause about them reports `Unknown` and is accepted.
+         */
+        private fun constraintBindings(
+            declaration: TypeFunctionDecl,
+            args: List<TypeRef>,
+        ): Map<String, ConstraintEvaluator.Binding> {
+            val pack = declaration.variadicParam ?: return emptyMap()
+            val fixedCount = declaration.params.indexOfFirst { it.variadic }.takeIf { it >= 0 }
+                ?: declaration.params.size
+            val variadicCount = (args.size - fixedCount).coerceAtLeast(0)
+            return mapOf(pack to ConstraintEvaluator.Binding.Pack(variadicCount.toLong()))
+        }
+
+        /**
+         * Whether [candidate] can serve this call, for overload filtering.
+         *
+         * A constraint mismatch means "not this overload" — never a diagnostic, so
+         * another overload still gets its turn. `Unknown` is applicable: a clause the
+         * evaluator cannot decide must not silently remove a candidate. Constraint
+         * semantics live in [ConstraintEvaluator]; this only maps its outcome onto a
+         * selection decision.
+         */
+        private fun isCandidateApplicable(candidate: TypeFunctionDecl, args: List<TypeRef>): Boolean =
+            ConstraintEvaluator.evaluate(
+                candidate.whereClause,
+                constraintBindings(candidate, args),
+                table = null,
+            ) !is ConstraintEvaluator.Outcome.Violated
+
+        /**
+         * Rejects the chosen specialization when its `where` clause does not hold.
+         *
+         * Runs after selection, so this is the point where a violation is the user's
+         * error rather than a reason to look at another overload — including when
+         * selection fell back to a candidate that was never applicable.
+         */
+        private fun validateSpecialization(
+            name: String,
+            declaration: TypeFunctionDecl,
+            args: List<TypeRef>,
+        ) {
+            val outcome = ConstraintEvaluator.evaluate(
+                declaration.whereClause,
+                constraintBindings(declaration, args),
+                table = null,
+            )
+            if (outcome is ConstraintEvaluator.Outcome.Violated) {
+                error("Type function '$name' does not satisfy its 'where' clause: ${outcome.reason}")
+            }
+        }
+
         private fun evaluateCall(name: String, args: List<TypeRef>): TypeRef {
             val overloads = declarations[name].orEmpty()
             val fixed = overloads.firstOrNull { it.variadicParam == null && it.params.size == args.size }
@@ -120,8 +175,7 @@ internal object TypeFunctionEvaluator {
             }
             val matchingVariadic = variadics.firstOrNull { candidate ->
                 val fixedCount = candidate.params.indexOfFirst { it.variadic }
-                val variadicCount = args.size - fixedCount
-                args.size >= fixedCount && variadicCount >= (candidate.minVariadicLength ?: 0)
+                args.size >= fixedCount && isCandidateApplicable(candidate, args)
             }
             val declaration = fixed ?: matchingVariadic ?: variadics.firstOrNull()
             if (declaration == null) {
@@ -139,11 +193,7 @@ internal object TypeFunctionEvaluator {
                 error("Type function '$name' expects at least $fixedCount argument(s), got ${args.size}")
             }
             val variadicArgs = if (variadicIndex < 0) emptyList() else args.drop(variadicIndex)
-            declaration.minVariadicLength?.let { minimum ->
-                if (variadicArgs.size < minimum) {
-                    error("Type function '$name' requires ${declaration.variadicParam}.length >= $minimum, got ${variadicArgs.size}")
-                }
-            }
+            validateSpecialization(name, declaration, args)
 
             val values = mutableMapOf<String, TypeRef>()
             val packs = mutableMapOf<String, List<TypeRef>>()

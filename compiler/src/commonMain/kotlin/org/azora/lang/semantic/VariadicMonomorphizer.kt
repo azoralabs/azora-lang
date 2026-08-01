@@ -177,14 +177,42 @@ private class MonoContext(
     // Instantiation
     // ------------------------------------------------------------------
 
+    /**
+     * Rejects a specialization whose `where` clause does not hold.
+     *
+     * The only binding a variadic template has is its pack's length, so this is a
+     * thin adapter onto [ConstraintEvaluator] rather than a second implementation:
+     * `(...T).length >= 2` evaluates there as an ordinary comparison. A clause the
+     * evaluator cannot decide is accepted — under-enforcing beats rejecting valid
+     * code.
+     */
+    private fun checkConstraints(
+        what: String,
+        clause: org.azora.lang.frontend.Expr?,
+        variadicParam: String?,
+        args: List<TypeRef>,
+    ) {
+        if (clause == null || variadicParam == null) return
+        val bindings = mapOf(variadicParam to ConstraintEvaluator.Binding.Pack(args.size.toLong()))
+        val outcome = ConstraintEvaluator.evaluate(clause, bindings, table = null)
+        if (outcome is ConstraintEvaluator.Outcome.Violated) {
+            error("$what does not satisfy its 'where' clause: ${outcome.reason}")
+        }
+    }
+
     fun instantiatePack(templateName: String, args: List<TypeRef>): String {
         val template = packTemplates[templateName] ?: return templateName
-        val minLen = template.minVariadicLength ?: 0
-        if (args.size < minLen) {
-            error("variadic pack '$templateName' requires at least $minLen type arguments, got ${args.size}")
-        }
         val mangled = mangleTemplate(templateName, args)
         if (mangled !in packs) {
+            // One check per unique combination: the mangled name IS the combination,
+            // so validating inside this guard runs the clause exactly once per
+            // specialization rather than once per use site.
+            checkConstraints(
+                "variadic pack '$templateName'",
+                template.whereClause,
+                template.variadicParam,
+                args,
+            )
             val concreteArgs = args.map(::rewriteType)
             packArguments[mangled] = concreteArgs
             packs[mangled] = expandPack(mangled, template, concreteArgs)
@@ -195,12 +223,14 @@ private class MonoContext(
 
     fun instantiateFunc(templateName: String, elementTypes: List<TypeRef>): String {
         val template = funcTemplates[templateName] ?: return templateName
-        val minLen = template.decl.minVariadicLength ?: 0
-        if (elementTypes.size < minLen) {
-            error("variadic function '$templateName' requires at least $minLen type arguments, got ${elementTypes.size}")
-        }
         val mangled = mangleTemplate(templateName, elementTypes)
         if (mangled !in funcs) {
+            checkConstraints(
+                "variadic function '$templateName'",
+                template.decl.whereClause,
+                template.decl.variadicParam,
+                elementTypes,
+            )
             val packName = returnedVariadicPackName(template.decl) ?: templateName
             val packMangled = instantiatePack(packName, elementTypes)
             funcs[mangled] = expandFunc(mangled, template.decl, elementTypes, packMangled)

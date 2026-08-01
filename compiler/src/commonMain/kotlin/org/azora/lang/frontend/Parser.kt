@@ -523,6 +523,40 @@ class Parser(
      * True when `impl` is followed by a type (or a `[A, B]` list) and then `::` —
      * the type-scoped member form `impl Vec3:: { … }`.
      */
+    /**
+     * True for `impl Spec for Type:: {` — a spec-attributed static block.
+     *
+     * Distinguished from an ordinary `impl Spec for Type {` by the `::` that the
+     * target carries before the body opens.
+     */
+    /** The name a reparsed static member declares, or null when it declares none. */
+    private fun declaredMemberName(item: TopLevel): String? = when (item) {
+        is TopLevel.FinDecl -> item.name
+        is TopLevel.LetDecl -> item.name
+        is TopLevel.VarDecl -> item.name
+        is TopLevel.Func -> item.decl.name
+        else -> null
+    }
+
+    private fun isSpecStaticImplAhead(): Boolean {
+        if (tokens.getOrNull(current)?.type != TokenType.IDENTIFIER) return false
+        if (tokens.getOrNull(current + 1)?.type != TokenType.FOR) return false
+        var i = current + 2
+        var depth = 0
+        while (i < tokens.size) {
+            when (tokens[i].type) {
+                TokenType.L_BRACKET, TokenType.LESS -> depth++
+                TokenType.R_BRACKET, TokenType.GREATER -> depth--
+                TokenType.DOUBLE_COLON ->
+                    if (depth == 0) return tokens.getOrNull(i + 1)?.type == TokenType.L_BRACE
+                TokenType.L_BRACE, TokenType.NEWLINE, TokenType.EOF -> return false
+                else -> {}
+            }
+            i++
+        }
+        return false
+    }
+
     private fun isZoneImplAhead(): Boolean {
         var i = current
         if (tokens.getOrNull(i)?.type == TokenType.L_BRACKET) {
@@ -1407,7 +1441,8 @@ class Parser(
         // Type parameters follow the name: `pack Box<T>`, `pack Map<K, V>`.
         val name = consume(TokenType.IDENTIFIER, "Expected pack name").lexeme
         val tp = parseTypeParams()
-        val minLen = parseVariadicWhereClause()
+        val whereClause = parseWhereClause()
+        val minLen = variadicMinLengthOf(whereClause)
         val enforceNumFields = annotations.any { it.name == "EnforceNumFields" }
         if (!check(TokenType.L_BRACE)) {
             consumeNewline()
@@ -1421,6 +1456,7 @@ class Parser(
                 visibility = visibility,
                 variadicParam = tp.variadic,
                 minVariadicLength = minLen,
+                whereClause = whereClause,
                 constParams = tp.constParams,
                 fieldTemplate = null,
                 isBridge = isBridge,
@@ -1458,6 +1494,7 @@ class Parser(
             visibility = visibility,
             variadicParam = tp.variadic,
             minVariadicLength = minLen,
+            whereClause = whereClause,
             constParams = tp.constParams,
             fieldTemplate = fieldTemplate,
         )
@@ -1820,6 +1857,46 @@ class Parser(
         val start = peek()
         consume(TokenType.IMPL, "Expected 'impl'")
         val implTypeParams = parseTypeParams()
+        // `impl Spec for Type:: { members }` — type-scoped static members attributed
+        // to a spec, which also records Type's conformance to it. Same desugaring as
+        // `impl Type:: { … }`, with the spec naming what the members are *for*; the
+        // `::` stays on the type because that is where the members are reached.
+        if (isSpecStaticImplAhead()) {
+            val specName = advance().lexeme
+            consume(TokenType.FOR, "Expected 'for' after 'impl <spec>'")
+            val targets = expandTypeListTargets(parseImplTargets())
+            consume(TokenType.DOUBLE_COLON, "Expected '::' after 'impl <spec> for <type>'")
+            consume(TokenType.L_BRACE, "Expected '{' after 'impl <spec> for <type>::'")
+            skipNewlines()
+            val bodyTokens = captureBraceBody()
+            consumeNewline()
+            for (target in targets) {
+                val members = Parser(
+                    bodyTokens + Token(TokenType.EOF, "", start.line, start.column),
+                    typeListEnv,
+                ).parse().items
+                members.forEach { pendingTopLevels.add(mangleTopLevel(it, target)) }
+                // The conformance itself, so `T is Spec` holds nominally. It names the
+                // members the block supplies — they live as mangled statics, but the
+                // conformance check asks what this impl provides, not where it put it.
+                val supplied = members.mapNotNull { member ->
+                    declaredMemberName(member)?.let { memberName ->
+                        FuncDecl(
+                            memberName, emptyList(), TypeAnnotation.Inferred, emptyList(),
+                            false, emptyList(), start.line, start.column,
+                            memberCallStyle = MemberCallStyle.STATIC_PROPERTY,
+                        )
+                    }
+                }
+                pendingTopLevels.add(
+                    TopLevel.Impl(target, supplied, specName, start.line, start.column, isBridge = true),
+                )
+            }
+            // The conformances were queued per target above; this return value is only
+            // the statement's placeholder, so it carries no trait of its own — leaving
+            // one here would ask the checker to verify an impl with no members.
+            return TopLevel.Impl(targets.first(), emptyList(), null, start.line, start.column)
+        }
         // `impl Type:: { members }` (or `impl [A, B]:: { … }`) — type-scoped static
         // members, reached as `Type::member`. The trailing `::` is the same one the
         // use site writes, so the declaration looks like what it produces. Members
@@ -3121,14 +3198,23 @@ class Parser(
             if (check(TokenType.PROP)) {
                 advance()
                 val pname = consumeIdentifierLike("Expected property name in spec")
-                val preceiver = parsePropReceiver()
+                // A receiver-less requirement is STATIC: `prop rank: Int` asks for
+                // `Type::rank`, satisfied by an `impl Spec for Type:: { … }` member,
+                // where `prop rank[self: Self&]: Int` asks for an instance property.
+                val preceiver = if (check(TokenType.L_BRACKET)) {
+                    parsePropReceiver()
+                } else {
+                    PropReceiver("self", null, ParamModifier.SHARED)
+                }
                 consume(TokenType.COLON, "Expected ':' after spec property name")
                 val ptype = parseTypeName()
                 consumeNewline()
                 methods.add(FuncDecl(
                     pname, emptyList(), TypeAnnotation.Explicit(ptype), emptyList(), false, emptyList(),
                     start.line, start.column, receiverModifier = preceiver.modifier,
-                    receiverName = preceiver.name, memberCallStyle = MemberCallStyle.PROPERTY,
+                    receiverName = preceiver.name,
+                    memberCallStyle =
+                        if (preceiver.type == null) MemberCallStyle.STATIC_PROPERTY else MemberCallStyle.PROPERTY,
                 ))
                 continue
             }
@@ -3375,7 +3461,8 @@ class Parser(
         } else {
             TypeAnnotation.Inferred
         }
-        val minVariadicLength = parseVariadicWhereClause()
+        val funcWhereClause = parseWhereClause()
+        val minVariadicLength = variadicMinLengthOf(funcWhereClause)
         // A bracketed receiver states the borrow and the receiver's name; without
         // one the in-brace `{ self& -> … }` form below still applies.
         var receiverModifier: ParamModifier = bracketReceiver?.modifier ?: ParamModifier.EXCLUSIVE
@@ -3464,6 +3551,7 @@ class Parser(
             extensionReceiver = extensionReceiver,
             variadicParam = variadicParam,
             minVariadicLength = minVariadicLength,
+            whereClause = funcWhereClause,
             constParams = constParams,
         )
     }
@@ -3779,7 +3867,15 @@ class Parser(
      * flows through untouched.
      */
     private fun variadicMinLengthOf(clause: Expr?): Int? {
-        val cmp = clause as? Expr.Binary ?: return null
+        val expr = clause ?: return null
+        // The reading has to search the clause, not just its root: in
+        // `T is Number && (...T).length >= 2` the root is `&&` and the comparison is
+        // one conjunct down.
+        if (expr is Expr.Grouping) return variadicMinLengthOf(expr.expr)
+        if (expr is Expr.Binary && expr.op == TokenType.AND_AND) {
+            return variadicMinLengthOf(expr.left) ?: variadicMinLengthOf(expr.right)
+        }
+        val cmp = expr as? Expr.Binary ?: return null
         if (cmp.op != TokenType.GREATER_EQUAL) return null
         val member = cmp.left as? Expr.Member ?: return null
         if (member.name != "length") return null
@@ -4750,7 +4846,10 @@ class Parser(
         val start = peek()
         consume(TokenType.PROP, "Expected 'prop'")
         val name = consume(TokenType.IDENTIFIER, "Expected name after 'prop'").lexeme
-        val receiver = parsePropReceiver()
+        // The receiver is optional here: a top-level `prop name: T = …` with nothing
+        // to extend is a constant, which is what a reparsed `impl Type:: { … }` or
+        // `impl Spec:: for Type { … }` member is.
+        val receiver = if (check(TokenType.L_BRACKET)) parsePropReceiver() else PropReceiver("self", null, ParamModifier.SHARED)
         val type = if (match(TokenType.COLON)) parseTypeName() else null
         consume(TokenType.EQUAL, "Expected '=' in prop declaration")
         val init = parseExpr()
@@ -4826,30 +4925,11 @@ class Parser(
             error("A type function may have one variadic parameter, and it must be last, at line ${start.line}")
         }
 
-        // `where <var>.length >= N` and/or `<var> is Spec`, joined with `&&`.
-        var minimum: Int? = null
-        if (check(TokenType.IDENTIFIER) && peek().lexeme == "where") {
-            advance()
-            val variadic = params.lastOrNull()?.takeIf { it.variadic }?.name
-            do {
-                val constrained = consume(TokenType.IDENTIFIER, "Expected parameter name in 'where' constraint").lexeme
-                when {
-                    // `<var> is Spec` — a conformance constraint (accepted; enforced by the evaluator).
-                    match(TokenType.IS) -> consume(TokenType.IDENTIFIER, "Expected spec name after 'is'")
-                    match(TokenType.DOT) -> {
-                        val property = consume(TokenType.IDENTIFIER, "Expected 'length' in type-function constraint")
-                        if (property.lexeme != "length") error("Expected 'length' in type-function constraint at line ${property.line}")
-                        if (constrained != variadic) {
-                            error("Type-function length constraints require the variadic parameter '$variadic' at line ${start.line}")
-                        }
-                        consume(TokenType.GREATER_EQUAL, "Expected '>=' in type-function constraint")
-                        val value = consume(TokenType.INT_LITERAL, "Expected minimum argument count")
-                        minimum = ((value.literal as NumericLiteral).value as Long).toInt()
-                    }
-                    else -> error("Expected '.length >= N' or 'is Spec' in 'where' constraint at line ${peek().line}")
-                }
-            } while (match(TokenType.AND_AND))
-        }
+        // One `where` grammar for every declaration: parsed as an expression and
+        // handed to ConstraintEvaluator, so type functions enforce constraints
+        // through the same implementation as packs and variadic functions.
+        val tfWhereClause = parseWhereClause()
+        val minimum = variadicMinLengthOf(tfWhereClause)
 
         consume(TokenType.L_BRACE, "Expected '{' before type-function body")
         skipNewlines()
@@ -4864,7 +4944,7 @@ class Parser(
                 (it.variadicParam != null || it.params.size == params.size)
         }
         if (duplicate) error("Type function '$localName' already has this overload at line ${start.line}")
-        typeFunctions.add(TypeFunctionDecl(name, params, body, minimum, start.line, start.column))
+        typeFunctions.add(TypeFunctionDecl(name, params, body, minimum, tfWhereClause, start.line, start.column))
     }
 
     private fun parseTypeFunctionBlock(): List<TypeFunctionStmt> {
@@ -5883,7 +5963,9 @@ class Parser(
         while (check(TokenType.AS) || check(TokenType.IS) || (inOperatorEnabled && check(TokenType.IN))) {
             if (check(TokenType.IN)) {
                 val inTok = advance()
-                e = Expr.InCheck(e, parseUnary(), line = inTok.line, column = inTok.column)
+                // The collection is parsed at range precedence: `N in 2..4` asks about
+                // the whole range, and `parseUnary` would stop at the `2`.
+                e = Expr.InCheck(e, parseRange(), line = inTok.line, column = inTok.column)
                 continue
             }
             val op = advance()

@@ -2137,8 +2137,9 @@ class TypeResolver(private val table: SymbolTable) {
         }
     }
 
-    private fun resolveDeclaredType(ref: TypeRef, typeParams: Set<String> = currentFuncTypeParams): IrType =
-        IrType.resolve(
+    private fun resolveDeclaredType(ref: TypeRef, typeParams: Set<String> = currentFuncTypeParams): IrType {
+        validateGenericInstantiation(ref, typeParams)
+        return IrType.resolve(
             TypeFunctionEvaluator.resolve(
                 ref,
                 program?.typeFunctions.orEmpty(),
@@ -2146,4 +2147,50 @@ class TypeResolver(private val table: SymbolTable) {
             ),
             typeParams,
         )
+    }
+
+    /** Generic declarations by name, for reading their `where` clauses. */
+    private val genericDeclarations: Map<String, TopLevel.Pack> by lazy {
+        program?.items.orEmpty().filterIsInstance<TopLevel.Pack>().associateBy { it.name }
+    }
+
+    /** Combinations already validated, so a repeated use costs one set lookup. */
+    private val validatedSpecializations = mutableSetOf<String>()
+
+    /**
+     * Rejects a generic type application whose `where` clause does not hold.
+     *
+     * This is the ordinary-generic counterpart of variadic specialization
+     * validation, and shares its evaluator. It runs where a declared type is
+     * resolved — after parsing, and never during overload filtering — and only once
+     * per unique combination of arguments.
+     *
+     * A type application stays unvalidated while any argument is still a parameter
+     * of the enclosing declaration: `Vec<T, N>` inside a generic says nothing until
+     * `T` and `N` are concrete, and rejecting it there would reject every generic
+     * that mentions a constrained type.
+     */
+    private fun validateGenericInstantiation(ref: TypeRef, typeParams: Set<String>) {
+        val named = ref as? TypeRef.Named ?: return
+        if (named.args.isEmpty()) return
+        named.args.forEach { validateGenericInstantiation(it, typeParams) }
+        val declaration = genericDeclarations[named.name] ?: return
+        val clause = declaration.whereClause ?: return
+        if (declaration.typeParams.size != named.args.size) return
+
+        val bindings = mutableMapOf<String, ConstraintEvaluator.Binding>()
+        for ((index, param) in declaration.typeParams.withIndex()) {
+            val arg = named.args[index]
+            // Still abstract — the combination is not known yet.
+            if (arg is TypeRef.Named && (arg.name in typeParams || arg.name in declaration.typeParams)) return
+            bindings[param] = ConstraintEvaluator.bindingOf(arg) ?: return
+        }
+
+        val key = "${named.name}<${named.args.joinToString(",")}>"
+        if (!validatedSpecializations.add(key)) return
+        val outcome = ConstraintEvaluator.evaluate(clause, bindings, table)
+        if (outcome is ConstraintEvaluator.Outcome.Violated) {
+            errors.add("line 0: '$key' does not satisfy its 'where' clause: ${outcome.reason}")
+        }
+    }
 }

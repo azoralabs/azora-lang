@@ -548,6 +548,11 @@ class IrGenerator(private val table: SymbolTable) {
             if (methods.isEmpty()) continue
             val impls = mutableListOf<IrSpecImpl>()
             for (typeName in confs.map { it.typeName }.distinct()) {
+                // Dynamic dispatch boxes a concrete value behind a fat pointer, which
+                // needs a struct to cast to. A primitive conforming to a spec (`Int is
+                // Number`) has no struct, so it takes part in constraint checking but
+                // never in a vtable.
+                if (table.lookupStruct(typeName)?.isBridge != false) continue
                 val methodFuncs = mutableMapOf<String, String>()
                 var complete = true
                 for (m in callable) {

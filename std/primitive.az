@@ -141,7 +141,7 @@ use zone std {
      */
     @SinceAzora("0.0.4")
     spec Number {
-        prop rank[self: Self&]: Int
+        prop rank: Int
     }
 
     /**
@@ -461,8 +461,8 @@ use zone std {
          * @member rank The promotion rank of `$Ty`.
          */
         @SinceAzora("0.0.4")
-        impl Ty:: {
-            prop rank[self: Ty&]: Int = ${_ranks[index]}
+        impl Number for Ty:: {
+            prop rank: Int = ${_ranks[index]}
         }
     }
 

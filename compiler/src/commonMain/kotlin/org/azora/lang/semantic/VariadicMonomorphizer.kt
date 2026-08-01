@@ -138,7 +138,10 @@ internal object VariadicMonomorphizer {
             typeMacroRules,
             program.zoneTypeNamespaces,
         )
-        val rewritten = program.items.mapNotNull { ctx.rewriteTopLevel(it) }
+        // An impl on an ordinary pack still needs its reflected loops expanded — the
+        // pack's own fields are known even when it is not monomorphised.
+        val expanded = program.items.map { ctx.expandPlainImplReflection(it, program) }
+        val rewritten = expanded.mapNotNull { ctx.rewriteTopLevel(it) }
         return program.copy(
             items = rewritten + ctx.packs.values + ctx.funcs.values + ctx.expandImpls(),
             zoneTypeNamespaces = program.zoneTypeNamespaces + ctx.generatedPackNamespaces,
@@ -442,6 +445,25 @@ private class MonoContext(
     }
 
     /** Materializes generic impl templates once for every concrete variadic pack. */
+    /**
+     * Expands `inline for … in reflect<Self>.fields` inside an impl on a pack that is
+     * not monomorphised.
+     *
+     * A monomorphised pack goes through [expandImpls], which knows the specialization.
+     * An ordinary pack's fields are already concrete, so the same expansion applies —
+     * this is the only difference between the two cases.
+     */
+    fun expandPlainImplReflection(item: TopLevel, program: Program): TopLevel {
+        if (item !is TopLevel.Impl) return item
+        if (item.typeName in packTemplates) return item
+        val pack = program.items.filterIsInstance<TopLevel.Pack>().firstOrNull { it.name == item.typeName }
+            ?: return item
+        if (pack.fields.isEmpty()) return item
+        return item.copy(
+            methods = item.methods.map { it.copy(body = expandReflectedFields(it.body, pack.fields)) },
+        )
+    }
+
     fun expandImpls(): List<TopLevel.Impl> = packArguments.entries.flatMap { (mangled, _) ->
         val templateName = packTemplates.keys.firstOrNull { mangled.startsWith("__${it}_") }
             ?: return@flatMap emptyList()
@@ -507,7 +529,12 @@ private class MonoContext(
             (call.args.singleOrNull() as? Expr.Identifier)?.name == "Self"
     }
 
-    private fun expandReflectedFields(body: List<Stmt>, fields: List<PackField>): List<Stmt> = body.flatMap { stmt ->
+    private fun expandReflectedFields(body: List<Stmt>, fields: List<PackField>): List<Stmt> {
+        currentFields = fields
+        return expandReflectedFieldsInner(body, fields)
+    }
+
+    private fun expandReflectedFieldsInner(body: List<Stmt>, fields: List<PackField>): List<Stmt> = body.flatMap { stmt ->
         if (stmt is Stmt.InlineFor && reflectedSelfFields(stmt.iterable)) {
             fields.flatMapIndexed { index, field ->
                 val binding = FieldBinding(stmt.name, stmt.indexName, index, field)
@@ -594,6 +621,19 @@ private class MonoContext(
         return binding.field.name
     }
 
+    /** One argument, or several when it is an `inline for` over the reflected fields. */
+    private fun expandArgument(arg: Expr, binding: FieldBinding?): List<Expr> {
+        if (arg !is Expr.InlineForArgs || !reflectedSelfFields(arg.iterable)) {
+            return listOf(substituteReflectedExpr(arg, binding))
+        }
+        return currentFields.mapIndexed { index, field ->
+            substituteReflectedExpr(arg.body, FieldBinding(arg.name, null, index, field))
+        }
+    }
+
+    /** The fields of the pack currently being expanded, for argument splats. */
+    private var currentFields: List<PackField> = emptyList()
+
     private fun substituteReflectedExpr(expr: Expr, binding: FieldBinding?): Expr {
         if (binding != null) {
             if (expr is Expr.Identifier && expr.name == binding.indexName) {
@@ -627,7 +667,9 @@ private class MonoContext(
         }
         return when (expr) {
             is Expr.Binary -> expr.copy(left = substituteReflectedExpr(expr.left, binding), right = substituteReflectedExpr(expr.right, binding))
-            is Expr.Call -> expr.copy(args = expr.args.map { substituteReflectedExpr(it, binding) })
+            // `Self(inline for f in reflect<Self>.fields { … })` — the loop becomes one
+            // argument per field, so a constructor is written once whatever the layout.
+            is Expr.Call -> expr.copy(args = expr.args.flatMap { arg -> expandArgument(arg, binding) })
             is Expr.Unary -> expr.copy(operand = substituteReflectedExpr(expr.operand, binding))
             is Expr.Grouping -> expr.copy(expr = substituteReflectedExpr(expr.expr, binding))
             is Expr.Range -> expr.copy(from = substituteReflectedExpr(expr.from, binding), to = substituteReflectedExpr(expr.to, binding))

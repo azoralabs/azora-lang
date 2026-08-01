@@ -278,6 +278,22 @@ sealed class Expr {
         val kind: CallableKind = CallableKind.FUNC,
     ) : Expr()
 
+    /**
+     * `inline for <name> in <iterable> { <expr> }` written as a call argument.
+     *
+     * Expands to one argument per iteration, so a constructor can be built from a
+     * type's fields without naming them. Replaced during compile-time expansion;
+     * it never reaches semantic analysis.
+     */
+    data class InlineForArgs(
+        val name: String,
+        val iterable: Expr,
+        val body: Expr,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0,
+    ) : Expr()
+
     /** A named argument `name: value` in a call expression. */
     data class NamedArg(val name: String, val value: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 

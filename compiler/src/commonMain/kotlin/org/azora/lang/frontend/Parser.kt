@@ -453,6 +453,13 @@ class Parser(
         // `oper as<U>` — what `value as U` calls. The target type is a generic
         // parameter of the operator, so one declaration converts to every U.
         match(TokenType.AS) -> "as"
+        // Compound assignment: `oper +=` and friends, which a spliced operator name
+        // produces (`inline fin assignOp = "${op}="`).
+        match(TokenType.PLUS_EQUAL) -> "+="
+        match(TokenType.MINUS_EQUAL) -> "-="
+        match(TokenType.STAR_EQUAL) -> "*="
+        match(TokenType.SLASH_EQUAL) -> "/="
+        match(TokenType.PERCENT_EQUAL) -> "%="
         else -> error("Expected an operator after 'oper' at line ${peek().line}")
     }
 
@@ -1803,22 +1810,150 @@ class Parser(
                     result.getOrNull(i + 1)?.type == TokenType.FIN &&
                     result.getOrNull(i + 2)?.type == TokenType.IDENTIFIER &&
                     result.getOrNull(i + 3)?.type == TokenType.EQUAL &&
-                    result.getOrNull(i + 4)?.type.let {
-                        it == TokenType.STRING_LITERAL || it == TokenType.INTERPOLATED_STRING
-                    }
+                    result.getOrNull(i + 4) != null
             } ?: break
             val name = result[at + 2].lexeme
-            val raw = (result[at + 4].literal as? String) ?: result[at + 4].lexeme.removeSurrounding("\"")
-            var value = raw
-            for ((k, v) in known) value = value.replace("\${$k}", v).replace("\$$k", v)
-            known.add(name to value)
-            var end = at + 5
-            if (result.getOrNull(end)?.type == TokenType.NEWLINE) end++
-            result = result.subList(0, at) + result.subList(end, result.size)
-            result = substituteLoopVar(result, name, value)
+            // The value runs to the end of the line.
+            var end = at + 4
+            while (end < result.size && result[end].type != TokenType.NEWLINE) end++
+            val valueTokens = result.subList(at + 4, end)
+            val afterValue = if (end < result.size) end + 1 else end
+            val single = valueTokens.singleOrNull()
+            if (single != null &&
+                (single.type == TokenType.STRING_LITERAL || single.type == TokenType.INTERPOLATED_STRING)
+            ) {
+                // A string binds a NAME: resolve its interpolations against the
+                // bindings in scope and splice it wherever the name is used.
+                var value = (single.literal as? String) ?: single.lexeme.removeSurrounding("\"")
+                for ((k, v) in known) value = value.replace("\${$k}", v).replace("\$$k", v)
+                known.add(name to value)
+                result = result.subList(0, at) + result.subList(afterValue, result.size)
+                result = substituteLoopVar(result, name, value)
+            } else {
+                // Anything else binds an EXPRESSION. It may depend on a type parameter
+                // (`T is Integer`), which is unknown until the pack is specialized, so
+                // the tokens are substituted as-is and evaluated by whatever consumes
+                // the name — the binding is a name for an expression, not a value.
+                val expression = valueTokens.toList()
+                result = result.subList(0, at) + result.subList(afterValue, result.size)
+                result = substituteTokenSequence(result, name, expression)
+            }
         }
         return result
     }
+
+    /** Replaces every bare use of [name] with [replacement], parenthesised. */
+    private fun substituteTokenSequence(
+        tokens: List<Token>,
+        name: String,
+        replacement: List<Token>,
+    ): List<Token> {
+        if (replacement.isEmpty()) return tokens
+        val out = mutableListOf<Token>()
+        for (t in tokens) {
+            if (t.type == TokenType.IDENTIFIER && (t.lexeme == name || t.lexeme == "\$$name")) {
+                out.add(Token(TokenType.L_PAREN, "(", t.line, t.column))
+                out.addAll(replacement)
+                out.add(Token(TokenType.R_PAREN, ")", t.line, t.column))
+            } else {
+                out.add(t)
+            }
+        }
+        return out
+    }
+
+    /**
+     * `inline if <cond> { inline "<fragment>" }` between a signature and its body.
+     *
+     * The fragment is source text spliced into the signature when the condition
+     * holds — `inline "?! MathError"` makes the declaration failable. The condition
+     * may name a type parameter, so it is kept with the declaration and resolved
+     * once the type is concrete; a condition that is statically decidable is folded
+     * here instead.
+     *
+     * Returns the tokens to splice, or null when nothing applies.
+     */
+    private fun parseSignatureFragment(): List<Token>? {
+        val meaningful = nextMeaningfulIndex()
+        if (tokens.getOrNull(meaningful)?.type != TokenType.INLINE) return null
+        if (tokens.getOrNull(meaningful + 1)?.type != TokenType.IF) return null
+        while (current < meaningful) advance()
+        advance() // 'inline'
+        advance() // 'if'
+        val condition = parseExpr()
+        consume(TokenType.L_BRACE, "Expected '{' after 'inline if' signature condition")
+        skipNewlines()
+        consume(TokenType.INLINE, "Expected 'inline \"…\"' inside a signature fragment")
+        val text = consume(TokenType.STRING_LITERAL, "Expected a quoted fragment after 'inline'")
+        skipNewlines()
+        consume(TokenType.R_BRACE, "Expected '}' after signature fragment")
+        // A condition that is already decidable folds now; anything mentioning a type
+        // parameter cannot be, and conservatively does not apply the fragment.
+        val holds = staticTruth(condition) ?: return null
+        if (!holds) return null
+        val body = (text.literal as? String) ?: text.lexeme.removeSurrounding("\"")
+        return Lexer(body).tokenize().dropLast(1)
+    }
+
+    /** The truth of a constant condition, or null when it is not decidable here. */
+    private fun staticTruth(expr: Expr): Boolean? = when (expr) {
+        is Expr.BoolLiteral -> expr.value
+        is Expr.Grouping -> staticTruth(expr.expr)
+        is Expr.Binary -> when (expr.op) {
+            TokenType.AND_AND -> {
+                val l = staticTruth(expr.left)
+                val r = staticTruth(expr.right)
+                when {
+                    l == false || r == false -> false
+                    l == true && r == true -> true
+                    else -> null
+                }
+            }
+            TokenType.OR_OR -> {
+                val l = staticTruth(expr.left)
+                val r = staticTruth(expr.right)
+                when {
+                    l == true || r == true -> true
+                    l == false && r == false -> false
+                    else -> null
+                }
+            }
+            TokenType.EQUAL_EQUAL, TokenType.BANG_EQUAL -> {
+                val l = literalText(expr.left)
+                val r = literalText(expr.right)
+                if (l == null || r == null) null
+                else if (expr.op == TokenType.EQUAL_EQUAL) l == r else l != r
+            }
+            else -> null
+        }
+        else -> null
+    }
+
+    /** The literal text an expression denotes, for constant comparison. */
+    private fun literalText(expr: Expr): String? = when (expr) {
+        is Expr.StringLiteral -> expr.value
+        is Expr.IntLiteral -> expr.value.toString()
+        is Expr.Grouping -> literalText(expr.expr)
+        else -> null
+    }
+
+    /**
+     * Re-reads [ret] with [fragment] appended, so a spliced `?! E` becomes a real
+     * failable return type rather than a special case.
+     */
+    private fun applySignatureFragment(
+        ret: TypeAnnotation,
+        fragment: List<Token>,
+        at: Token,
+    ): TypeAnnotation {
+        val base = (ret as? TypeAnnotation.Explicit)?.ref ?: return ret
+        val rendered = Lexer(base.toString()).tokenize().dropLast(1) + fragment +
+            Token(TokenType.EOF, "", at.line, at.column)
+        return TypeAnnotation.Explicit(Parser(rendered, typeListEnv).parseTypeNameForFragment())
+    }
+
+    /** Entry point for re-parsing a type built from a signature fragment. */
+    internal fun parseTypeNameForFragment(): TypeRef = parseTypeName()
 
     private fun parsePackField(
         preparsedVisibility: Visibility? = null,
@@ -2625,9 +2760,16 @@ class Parser(
                 }
                 check(TokenType.OPER) -> {
                     val operStart = advance()
-                    val opName = parseOperatorName()
+                    // `oper[] [self: Self&](i: Int): T` / `oper[]=` — the index
+                    // operators, written in an impl like any other member.
+                    val opName = if (check(TokenType.L_BRACKET) && peekNext()?.type == TokenType.R_BRACKET) {
+                        advance(); advance()
+                        if (match(TokenType.EQUAL)) "IndexSet" else "Index"
+                    } else {
+                        parseOperatorName()
+                    }
                     if (!check(TokenType.L_BRACKET)) {
-                        error("oper[] overloads are only allowed as standalone 'impl oper[] for ${typeName} { ... }' at line ${peek().line}")
+                        error("an operator declares its receiver, as in 'oper$opName [self: ${typeName}&]', at line ${peek().line}")
                     }
                     val recv = parsePropReceiver()
                     val operands = if (match(TokenType.L_PAREN)) {
@@ -2635,14 +2777,33 @@ class Parser(
                         consume(TokenType.R_PAREN, "Expected ')' after operator operands")
                         parsed
                     } else emptyList()
-                    val ret: TypeAnnotation = if (match(TokenType.COLON)) {
+                    var ret: TypeAnnotation = if (match(TokenType.COLON)) {
                         skipNewlines()
                         TypeAnnotation.Explicit(parseTypeName())
                     } else TypeAnnotation.Inferred
-                    consume(TokenType.L_BRACE, "Expected '{' after operator declaration")
+                    // `inline if <cond> { inline "?! MathError" }` — a fragment spliced
+                    // into the signature. Applied by re-reading the return type with
+                    // the fragment appended, so `?!` means exactly what it always does.
+                    parseSignatureFragment()?.let { fragment ->
+                        ret = applySignatureFragment(ret, fragment, operStart)
+                    }
+                    // An operator may carry its own constraint, like any member.
+                    val operWhere = parseWhereClause()
                     skipNewlines()
-                    val operBody = parseBlock()
-                    consume(TokenType.R_BRACE, "Expected '}' after operator body")
+                    // `oper+ [self: Self&](rhs: Self&): Self = <expr>` — an expression
+                    // body, the same shorthand a `func` has.
+                    val operBody: List<Stmt>
+                    if (match(TokenType.EQUAL)) {
+                        skipNewlines()
+                        val value = parseExpr()
+                        operBody = listOf(Stmt.Return(value, value.line, value.column))
+                        consumeNewline()
+                    } else {
+                        consume(TokenType.L_BRACE, "Expected '{' after operator declaration")
+                        skipNewlines()
+                        operBody = parseBlock()
+                        consume(TokenType.R_BRACE, "Expected '}' after operator body")
+                    }
                     consumeNewline()
                     methods.add(FuncDecl(
                         "oper$opName", operands, ret, operBody, false, emptyList(),
@@ -6721,6 +6882,26 @@ class Parser(
                     // comma as optional, which is what makes the multi-line call form
                     // read the way it is written.
                     while (!check(TokenType.R_PAREN) && !isAtEnd()) {
+                        // `inline for f in … { expr }` as an argument — one argument per
+                        // iteration, expanded when the iteration is known.
+                        if (check(TokenType.INLINE) && peekNext()?.type == TokenType.FOR) {
+                            val forStart = advance()
+                            advance() // 'for'
+                            val loopName = consumeIdentifierLike("Expected loop variable in argument 'inline for'")
+                            consume(TokenType.IN, "Expected 'in' after argument 'inline for' variable")
+                            val iterable = parseExpr()
+                            consume(TokenType.L_BRACE, "Expected '{' to open argument 'inline for' body")
+                            skipNewlines()
+                            val bodyExpr = parseExpr()
+                            skipNewlines()
+                            consume(TokenType.R_BRACE, "Expected '}' after argument 'inline for' body")
+                            args.add(
+                                Expr.InlineForArgs(loopName, iterable, bodyExpr, forStart.line, forStart.column),
+                            )
+                            match(TokenType.COMMA)
+                            skipNewlines()
+                            continue
+                        }
                         // Spread: `...arr` — prefix splat of the array's elements into individual args.
                         val arg = if (match(TokenType.ELLIPSIS)) {
                             val first = parseExpr()

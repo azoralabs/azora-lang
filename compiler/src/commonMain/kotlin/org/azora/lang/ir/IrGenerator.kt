@@ -1288,6 +1288,8 @@ class IrGenerator(private val table: SymbolTable) {
                 val inner = lowerExpr(expr.expr)
                 IrExpr.Call("__isCheck", listOf(inner, IrExpr.StringLiteral(expr.typeName)), IrType.Bool)
             }
+            is Expr.InlineForArgs ->
+                error("'inline for' argument reached IR generation at line ${expr.line}")
             is Expr.InCheck -> {
                 // `x in xs` — membership, the same shape a `contains` call has.
                 val v = lowerExpr(expr.value)

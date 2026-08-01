@@ -58,6 +58,10 @@ private fun Expr.bindTraceReceiver(receiver: Expr, interpolation: Boolean): Expr
     )
     is Expr.SafeMember -> copy(target = target.bindTraceReceiver(receiver, interpolation))
     is Expr.Cast -> copy(expr = expr.bindTraceReceiver(receiver, interpolation))
+    is Expr.InlineForArgs -> copy(
+        iterable = iterable.bindTraceReceiver(receiver, interpolation),
+        body = body.bindTraceReceiver(receiver, interpolation),
+    )
     is Expr.IsCheck -> copy(expr = expr.bindTraceReceiver(receiver, interpolation))
     is Expr.InCheck -> copy(
         value = value.bindTraceReceiver(receiver, interpolation),

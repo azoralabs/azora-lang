@@ -1633,6 +1633,10 @@ class TypeResolver(private val table: SymbolTable) {
                 resolveExpr(expr.expr) ?: return null
                 IrType.Bool
             }
+            is Expr.InlineForArgs -> {
+                errors.add("line ${expr.line}: 'inline for' argument was not expanded at compile time")
+                null
+            }
             is Expr.InCheck -> {
                 resolveExpr(expr.value) ?: return null
                 resolveExpr(expr.collection) ?: return null

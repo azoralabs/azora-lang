@@ -391,6 +391,10 @@ internal object MacroExpander {
                 elseExpr = rewriteExpr(expr.elseExpr, macros, depth),
             )
             is Expr.Cast -> expr.copy(expr = rewriteExpr(expr.expr, macros, depth))
+            is Expr.InlineForArgs -> expr.copy(
+                iterable = rewriteExpr(expr.iterable, macros, depth),
+                body = rewriteExpr(expr.body, macros, depth),
+            )
             is Expr.IsCheck -> expr.copy(expr = rewriteExpr(expr.expr, macros, depth))
             is Expr.InCheck -> expr.copy(
                 value = rewriteExpr(expr.value, macros, depth),
@@ -537,6 +541,10 @@ internal object MacroExpander {
             elseExpr = substitute(template.elseExpr, bindings, invokeLine),
         )
         is Expr.Cast -> template.copy(expr = substitute(template.expr, bindings, invokeLine))
+        is Expr.InlineForArgs -> template.copy(
+            iterable = substitute(template.iterable, bindings, invokeLine),
+            body = substitute(template.body, bindings, invokeLine),
+        )
         is Expr.IsCheck -> template.copy(expr = substitute(template.expr, bindings, invokeLine))
         is Expr.InCheck -> template.copy(
             value = substitute(template.value, bindings, invokeLine),

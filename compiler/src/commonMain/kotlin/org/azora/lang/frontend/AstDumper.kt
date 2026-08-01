@@ -520,6 +520,11 @@ private fun dumpExpr(sb: StringBuilder, expr: Expr, indent: String) {
             sb.appendLine("${indent}Cast(${expr.targetType})")
             dumpExpr(sb, expr.expr, "$indent    ")
         }
+        is Expr.InlineForArgs -> {
+            sb.appendLine("${indent}InlineForArgs(${expr.name})")
+            dumpExpr(sb, expr.iterable, "$indent    ")
+            dumpExpr(sb, expr.body, "$indent    ")
+        }
         is Expr.IsCheck -> {
             sb.appendLine("${indent}IsCheck(${expr.typeName})")
             dumpExpr(sb, expr.expr, "$indent    ")

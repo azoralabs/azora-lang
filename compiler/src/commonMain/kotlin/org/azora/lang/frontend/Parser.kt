@@ -1766,6 +1766,10 @@ class Parser(
             }
             if (indexVar != null) rendered = substituteLoopVar(rendered, indexVar, i.toString())
             rendered = foldListIndexing(rendered)
+            // `inline fin name = "…"` binds a compile-time name for the rest of the
+            // body. Its value is a string whose interpolations refer to the loop
+            // bindings, so it is resolved here rather than left to a later stage.
+            rendered = foldInlineBindings(rendered, bindings)
             // Re-parse through a synthetic impl so the ordinary member parser runs.
             val wrapper = listOf(
                 Token(TokenType.IMPL, "impl", start.line, start.column),
@@ -1779,6 +1783,41 @@ class Parser(
             parsed.filterIsInstance<TopLevel.Impl>().forEach { generated.addAll(it.methods) }
         }
         return generated
+    }
+
+    /**
+     * Folds `inline fin <name> = "<text>"` out of a compile-time body.
+     *
+     * The declaration binds a name, not a member, so it is consumed and its value
+     * substituted into everything after it — `inline fin assignOp = "${op}="` makes
+     * `$assignOp` usable below. Interpolations in the value are resolved against
+     * [bindings], because `substituteLoopVar` rewrites identifiers only and never
+     * looks inside a string token.
+     */
+    private fun foldInlineBindings(body: List<Token>, bindings: List<Pair<String, String>>): List<Token> {
+        var result = body
+        val known = bindings.toMutableList()
+        while (true) {
+            val at = result.indices.firstOrNull { i ->
+                result[i].type == TokenType.INLINE &&
+                    result.getOrNull(i + 1)?.type == TokenType.FIN &&
+                    result.getOrNull(i + 2)?.type == TokenType.IDENTIFIER &&
+                    result.getOrNull(i + 3)?.type == TokenType.EQUAL &&
+                    result.getOrNull(i + 4)?.type.let {
+                        it == TokenType.STRING_LITERAL || it == TokenType.INTERPOLATED_STRING
+                    }
+            } ?: break
+            val name = result[at + 2].lexeme
+            val raw = (result[at + 4].literal as? String) ?: result[at + 4].lexeme.removeSurrounding("\"")
+            var value = raw
+            for ((k, v) in known) value = value.replace("\${$k}", v).replace("\$$k", v)
+            known.add(name to value)
+            var end = at + 5
+            if (result.getOrNull(end)?.type == TokenType.NEWLINE) end++
+            result = result.subList(0, at) + result.subList(end, result.size)
+            result = substituteLoopVar(result, name, value)
+        }
+        return result
     }
 
     private fun parsePackField(

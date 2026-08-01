@@ -888,15 +888,44 @@ class TypeResolver(private val table: SymbolTable) {
                         errors.add("line ${expr.line}: '${expr.callee}' has ${struct.fields.size} fields, got ${expr.args.size} arguments")
                         return null
                     }
-                    // Handle named arguments — reorder to field order
-                    val effectiveArgs = if (expr.args.isNotEmpty() && expr.args[0] is Expr.NamedArg) {
-                        if (!expr.args.all { it is Expr.NamedArg }) {
-                            errors.add("line ${expr.line}: cannot mix named and positional arguments")
-                            return null
+                    // Named and positional arguments mix freely: a named argument goes
+                    // to its own field, and a positional one fills the leftmost field
+                    // no name has claimed. `Size(width: 2, 3)` and `Size(2, height: 3)`
+                    // both mean the same thing.
+                    val effectiveArgs = if (expr.args.any { it is Expr.NamedArg }) {
+                        val slots = arrayOfNulls<Expr>(struct.fields.size)
+                        for (argument in expr.args) {
+                            if (argument !is Expr.NamedArg) continue
+                            val index = struct.fields.indexOfFirst { it.name == argument.name }
+                            if (index < 0) {
+                                errors.add("line ${expr.line}: '${expr.callee}' has no field '${argument.name}'")
+                                return null
+                            }
+                            if (slots[index] != null) {
+                                errors.add("line ${expr.line}: field '${argument.name}' given twice in '${expr.callee}'")
+                                return null
+                            }
+                            slots[index] = argument.value
                         }
-                        val namedMap = expr.args.associate { (it as Expr.NamedArg).name to (it as Expr.NamedArg).value }
-                        struct.fields.map { f -> namedMap[f.name] ?: f.default
-                            ?: run { errors.add("line ${expr.line}: missing field '${f.name}' in '${expr.callee}' (no default)"); return null }
+                        var next = 0
+                        for (argument in expr.args) {
+                            if (argument is Expr.NamedArg) continue
+                            while (next < slots.size && slots[next] != null) next++
+                            if (next >= slots.size) {
+                                errors.add("line ${expr.line}: too many arguments for '${expr.callee}'")
+                                return null
+                            }
+                            slots[next] = argument
+                        }
+                        struct.fields.mapIndexed { index, field ->
+                            slots[index] ?: field.default
+                                ?: run {
+                                    errors.add(
+                                        "line ${expr.line}: missing field '${field.name}' in " +
+                                            "'${expr.callee}' (no default)",
+                                    )
+                                    return null
+                                }
                         }
                     } else {
                         // Positional — pad omitted trailing fields with their defaults (`Pack<T>()`).
@@ -964,9 +993,35 @@ class TypeResolver(private val table: SymbolTable) {
                 }
                 if (!requireReactiveCaller(func, expr.line)) return null
                 // Handle named arguments — reorder to param order
-                val effectiveArgs = if (expr.args.isNotEmpty() && expr.args[0] is Expr.NamedArg && func.paramNames.isNotEmpty()) {
-                    val namedMap = expr.args.associate { (it as Expr.NamedArg).name to (it as Expr.NamedArg).value }
-                    func.paramNames.map { pn -> namedMap[pn] ?: error("Missing arg '$pn'") }
+                // Named and positional arguments mix freely at a call, as they do at a
+                // constructor: a named one takes its parameter, a positional one fills
+                // the leftmost parameter no name has claimed.
+                val effectiveArgs = if (expr.args.any { it is Expr.NamedArg } && func.paramNames.isNotEmpty()) {
+                    val slots = arrayOfNulls<Expr>(func.paramNames.size)
+                    for (argument in expr.args) {
+                        if (argument !is Expr.NamedArg) continue
+                        val index = func.paramNames.indexOf(argument.name)
+                        if (index < 0) {
+                            errors.add("line ${expr.line}: '${expr.callee}' has no parameter '${argument.name}'")
+                            return null
+                        }
+                        if (slots[index] != null) {
+                            errors.add("line ${expr.line}: parameter '${argument.name}' given twice")
+                            return null
+                        }
+                        slots[index] = argument.value
+                    }
+                    var next = 0
+                    for (argument in expr.args) {
+                        if (argument is Expr.NamedArg) continue
+                        while (next < slots.size && slots[next] != null) next++
+                        if (next >= slots.size) {
+                            errors.add("line ${expr.line}: too many arguments for '${expr.callee}'")
+                            return null
+                        }
+                        slots[next] = argument
+                    }
+                    slots.filterNotNull()
                 } else {
                     expr.args
                 }

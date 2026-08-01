@@ -133,6 +133,29 @@ class IrGenerator(private val table: SymbolTable) {
         }
     }
 
+    /**
+     * Maps mixed named and positional arguments onto declared slot [names].
+     *
+     * A named argument takes its own slot; a positional one fills the leftmost slot
+     * no name has claimed, so `Size(width: 2, 3)` and `Size(2, height: 3)` agree.
+     * Returns null for a slot no argument supplied, leaving the default to the caller.
+     */
+    private fun mapNamedArguments(args: List<Expr>, names: List<String>): List<Expr?> {
+        val slots = arrayOfNulls<Expr>(names.size)
+        for (argument in args) {
+            if (argument !is Expr.NamedArg) continue
+            val index = names.indexOf(argument.name)
+            if (index >= 0) slots[index] = argument.value
+        }
+        var next = 0
+        for (argument in args) {
+            if (argument is Expr.NamedArg) continue
+            while (next < slots.size && slots[next] != null) next++
+            if (next < slots.size) slots[next] = argument
+        }
+        return slots.toList()
+    }
+
     private fun dependencyNames(expr: Expr): Set<String> = when (expr) {
         is Expr.Identifier -> setOf(expr.name)
         is Expr.Grouping -> dependencyNames(expr.expr)
@@ -1396,9 +1419,11 @@ class IrGenerator(private val table: SymbolTable) {
                 val struct = table.lookupStruct(realCallee) ?: table.lookupStruct(expr.callee)
                 if (struct != null) {
                     // Handle named arguments — reorder to field order; omitted fields use their defaults.
-                    val args = if (expr.args.isNotEmpty() && expr.args[0] is Expr.NamedArg) {
-                        val namedMap = expr.args.associate { (it as Expr.NamedArg).name to (it as Expr.NamedArg).value }
-                        struct.fields.map { f -> lowerExpr(namedMap[f.name] ?: f.default ?: Expr.NullLiteral) }
+                    val args = if (expr.args.any { it is Expr.NamedArg }) {
+                        val slots = mapNamedArguments(expr.args, struct.fields.map { it.name })
+                        struct.fields.mapIndexed { index, f ->
+                            lowerExpr(slots[index] ?: f.default ?: Expr.NullLiteral)
+                        }
                     } else {
                         // Positional — pad omitted trailing fields with their defaults (`Pack<T>()`).
                         val padded = expr.args.map { lowerExpr(it) }.toMutableList()
@@ -1438,9 +1463,9 @@ class IrGenerator(private val table: SymbolTable) {
                         else listOf(lowerExpr(arg))
                     }
                     // Handle named arguments — reorder to param order (pre-spread only)
-                    val args = if (loweredArgs.isNotEmpty() && expr.args[0] is Expr.NamedArg && func.paramNames.isNotEmpty()) {
-                        val namedMap = expr.args.associate { (it as Expr.NamedArg).name to (it as Expr.NamedArg).value }
-                        func.paramNames.map { pn -> lowerExpr(namedMap[pn]!!) }
+                    val args = if (expr.args.any { it is Expr.NamedArg } && func.paramNames.isNotEmpty()) {
+                        val slots = mapNamedArguments(expr.args, func.paramNames)
+                        func.paramNames.indices.mapNotNull { slots[it]?.let(::lowerExpr) }
                     } else {
                         loweredArgs
                     }

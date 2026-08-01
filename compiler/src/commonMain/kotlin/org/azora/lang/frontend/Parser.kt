@@ -6562,21 +6562,25 @@ class Parser(
                 check(TokenType.L_PAREN) -> {
                     advance()
                     val args = mutableListOf<Expr>()
-                    if (!check(TokenType.R_PAREN)) {
-                        do {
-                            // Spread: `...arr` — prefix splat of the array's elements into individual args.
-                            val arg = if (match(TokenType.ELLIPSIS)) {
-                                val first = parseExpr()
-                                Expr.Spread(first, first.line, first.column, first.length)
-                            } else {
-                                val first = parseExpr()
-                                if (first is Expr.Identifier && check(TokenType.COLON)) {
-                                    advance()
-                                    Expr.NamedArg(first.name, parseExpr(), first.line, first.column, first.length)
-                                } else first
-                            }
-                            args.add(arg)
-                        } while (match(TokenType.COMMA))
+                    // Arguments are separated by a comma or by a line break. A `(`
+                    // suppresses newline tokens, so a line break leaves nothing between
+                    // two arguments — the list therefore runs until `)` and treats the
+                    // comma as optional, which is what makes the multi-line call form
+                    // read the way it is written.
+                    while (!check(TokenType.R_PAREN) && !isAtEnd()) {
+                        // Spread: `...arr` — prefix splat of the array's elements into individual args.
+                        val arg = if (match(TokenType.ELLIPSIS)) {
+                            val first = parseExpr()
+                            Expr.Spread(first, first.line, first.column, first.length)
+                        } else {
+                            val first = parseExpr()
+                            if (first is Expr.Identifier && check(TokenType.COLON)) {
+                                advance()
+                                Expr.NamedArg(first.name, parseExpr(), first.line, first.column, first.length)
+                            } else first
+                        }
+                        args.add(arg)
+                        match(TokenType.COMMA)
                     }
                     consume(TokenType.R_PAREN, "Expected ')' after arguments")
                     // Trailing lambda: f(args) { x -> ... }

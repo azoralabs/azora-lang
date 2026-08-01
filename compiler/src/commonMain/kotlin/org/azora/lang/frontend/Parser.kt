@@ -430,6 +430,13 @@ class Parser(
         match(TokenType.EQUAL_EQUAL) -> "=="
         match(TokenType.BANG_EQUAL) -> "!="
         match(TokenType.SHIFT_LEFT) -> "<<"
+        // `&=`, `|=`, `^=`, `<<=`, `>>=` are not single tokens, so the pair is
+        // recognised here — an operator name is the one place they appear.
+        check(TokenType.AMP) && peekNext()?.type == TokenType.EQUAL -> { advance(); advance(); "&=" }
+        check(TokenType.PIPE) && peekNext()?.type == TokenType.EQUAL -> { advance(); advance(); "|=" }
+        check(TokenType.CARET) && peekNext()?.type == TokenType.EQUAL -> { advance(); advance(); "^=" }
+        check(TokenType.SHIFT_LEFT) && peekNext()?.type == TokenType.EQUAL -> { advance(); advance(); "<<=" }
+        check(TokenType.SHIFT_RIGHT) && peekNext()?.type == TokenType.EQUAL -> { advance(); advance(); ">>=" }
         match(TokenType.SHIFT_RIGHT) -> ">>"
         match(TokenType.LESS) -> "<"
         match(TokenType.GREATER) -> ">"
@@ -2764,7 +2771,7 @@ class Parser(
                     // operators, written in an impl like any other member.
                     val opName = if (check(TokenType.L_BRACKET) && peekNext()?.type == TokenType.R_BRACKET) {
                         advance(); advance()
-                        if (match(TokenType.EQUAL)) "IndexSet" else "Index"
+                        if (match(TokenType.EQUAL)) "indexSet" else "index"
                     } else {
                         parseOperatorName()
                     }

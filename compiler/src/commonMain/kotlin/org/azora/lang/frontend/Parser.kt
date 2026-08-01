@@ -6115,7 +6115,8 @@ class Parser(
         return when (target) {
             is Expr.Identifier -> Stmt.Assignment(target.name, value, line, column)
             is Expr.Index -> Stmt.IndexAssign(target.target, target.index, value, line, column)
-            is Expr.Member -> Stmt.MemberAssign(target.target, target.name, value, line, column)
+            is Expr.Member ->
+                Stmt.MemberAssign(target.target, target.name, value, line, column, nameExpr = target.nameExpr)
             is Expr.Deref -> Stmt.DerefAssign(target.target, value, line, column)
             else -> error("Invalid assignment target at line $line")
         }
@@ -6489,6 +6490,18 @@ class Parser(
                     if (check(TokenType.STAR) || check(TokenType.CARET)) {
                         val sigil = advance()
                         expr = Expr.Deref(expr, expr.line, expr.column, dot.lexeme.length + sigil.lexeme.length)
+                        continue
+                    }
+                    // `target.${ expr }` — the member name is computed. `$` lexes as an
+                    // identifier, so the splice is `$` followed by a brace group.
+                    if (check(TokenType.IDENTIFIER) && peek().lexeme == "$" &&
+                        peekNext()?.type == TokenType.L_BRACE
+                    ) {
+                        advance() // '$'
+                        advance() // '{'
+                        val nameExpr = parseExpr()
+                        consume(TokenType.R_BRACE, "Expected '}' to close a spliced member name")
+                        expr = Expr.Member(expr, "", expr.line, expr.column, 0, nameExpr)
                         continue
                     }
                     if (check(TokenType.INT_LITERAL)) {

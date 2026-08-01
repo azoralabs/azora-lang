@@ -196,7 +196,21 @@ sealed class Expr {
      * @property target the receiver expression
      * @property name the member name
      */
-    data class Member(val target: Expr, val name: String, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+    /**
+     * `target.name`, where the name may be computed.
+     *
+     * [nameExpr] carries a `${ … }` written in name position — `self.${f.name}`.
+     * Compile-time expansion folds it into [name]; every later stage sees an
+     * ordinary member access, so nothing downstream needs to know it was spliced.
+     */
+    data class Member(
+        val target: Expr,
+        val name: String,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0,
+        val nameExpr: Expr? = null,
+    ) : Expr()
 
     /**
      * Method call `target.name(args)`.
@@ -906,7 +920,9 @@ sealed class Stmt {
         val value: Expr,
         override val line: Int,
         override val column: Int = 0,
-        override val length: Int = 0
+        override val length: Int = 0,
+        /** A `${ … }` written in name position; folded into [name] during expansion. */
+        val nameExpr: Expr? = null,
     ) : Stmt()
 
     /**

@@ -98,7 +98,10 @@ internal object VariadicMonomorphizer {
             }
         }
         for (item in program.items.filterIsInstance<TopLevel.Impl>()) {
-            if (item.variadicParam != null && item.typeName in packTemplates) {
+            // Every impl of a monomorphised pack is a template: the methods are
+            // materialised once per specialization, which is what lets a body written
+            // against `Self` see that specialization's own fields.
+            if (item.typeName in packTemplates) {
                 implTemplates.getOrPut(item.typeName) { mutableListOf() }.add(item)
             }
         }
@@ -451,7 +454,9 @@ private class MonoContext(
                     returnType = substituteSelf(method.returnType, selfType),
                     body = expandReflectedFields(method.body, struct.fields),
                     typeParams = method.typeParams.filterNot { it == template.variadicParam },
-                    variadicParam = method.variadicParam?.takeUnless { it == template.variadicParam },
+                    variadicParam = method.variadicParam?.takeUnless {
+                        template.variadicParam != null && it == template.variadicParam
+                    },
                 )
                 rewriteFuncDecl(specialized)
             }
@@ -527,7 +532,15 @@ private class MonoContext(
             is Stmt.Assignment -> stmt.copy(value = expr(stmt.value))
             is Stmt.InlineAssignment -> stmt.copy(value = expr(stmt.value))
             is Stmt.IndexAssign -> stmt.copy(target = expr(stmt.target), index = expr(stmt.index), value = expr(stmt.value))
-            is Stmt.MemberAssign -> stmt.copy(target = expr(stmt.target), value = expr(stmt.value))
+            is Stmt.MemberAssign -> {
+                val folded = stmt.nameExpr?.let { n -> binding?.let { foldFieldNameExpr(n, it) } }
+                stmt.copy(
+                    target = expr(stmt.target),
+                    value = expr(stmt.value),
+                    name = folded ?: stmt.name,
+                    nameExpr = if (folded != null) null else stmt.nameExpr,
+                )
+            }
             is Stmt.DerefAssign -> stmt.copy(target = expr(stmt.target), value = expr(stmt.value))
             is Stmt.Return -> stmt.copy(value = stmt.value?.let(::expr))
             is Stmt.ExprStmt -> stmt.copy(expr = expr(stmt.expr))
@@ -567,10 +580,38 @@ private class MonoContext(
         return listOf(rewritten)
     }
 
+    /**
+     * The field name a spliced name expression denotes, or null when it names
+     * something else.
+     *
+     * `${f.name}` is the field's own name; `${f.value}` would be its value, which is
+     * not a name, so only `.name` folds here.
+     */
+    private fun foldFieldNameExpr(nameExpr: Expr, binding: FieldBinding): String? {
+        val member = nameExpr as? Expr.Member ?: return null
+        if (member.name != "name") return null
+        if ((member.target as? Expr.Identifier)?.name != binding.variable) return null
+        return binding.field.name
+    }
+
     private fun substituteReflectedExpr(expr: Expr, binding: FieldBinding?): Expr {
         if (binding != null) {
             if (expr is Expr.Identifier && expr.name == binding.indexName) {
                 return Expr.IntLiteral(binding.index.toLong(), expr.line, expr.column, expr.length)
+            }
+            // `self.${f.name}` — a spliced member name folds to the field it names, so
+            // everything after this sees an ordinary member access.
+            if (expr is Expr.Member && expr.nameExpr != null) {
+                val folded = foldFieldNameExpr(expr.nameExpr, binding)
+                if (folded != null) {
+                    return Expr.Member(
+                        substituteReflectedExpr(expr.target, binding),
+                        folded,
+                        expr.line,
+                        expr.column,
+                        expr.length,
+                    )
+                }
             }
             if (expr is Expr.Member && expr.name == "value" &&
                 (expr.target as? Expr.Identifier)?.name == binding.variable

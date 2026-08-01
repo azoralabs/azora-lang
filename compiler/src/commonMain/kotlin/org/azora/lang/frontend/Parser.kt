@@ -2673,6 +2673,14 @@ class Parser(
                     val propName = consume(TokenType.IDENTIFIER, "Expected property name").lexeme
                     val propReceiver = parsePropReceiver()
                     val propType: TypeAnnotation = if (match(TokenType.COLON)) TypeAnnotation.Explicit(parseTypeName()) else TypeAnnotation.Inferred
+                    // A property may carry its own constraint, as an operator or a
+                    // function does — `prop normalized[…]: Self ?! E where T is …`.
+                    val propWhere = parseWhereClause()
+                    // A `?!` in the property's type binds the error set for
+                    // `return .Variant(payload)` in its body.
+                    val savedPropFailSets = currentFailSets
+                    currentFailSets =
+                        ((propType as? TypeAnnotation.Explicit)?.ref as? TypeRef.Failable)?.errSets.orEmpty()
                     if (match(TokenType.EQUAL)) {
                         // `prop name: T = expr` — expression-body property (returns the expression).
                         val expr = parseExpr()
@@ -2697,6 +2705,7 @@ class Parser(
                         consumeNewline()
                         methods.add(FuncDecl(propName, emptyList(), propType, applyContracts(propBody, contracts), false, emptyList(), methodStart.line, methodStart.column, annotations = memberAnnotations, visibility = visibility, receiverModifier = propReceiver.modifier, receiverName = propReceiver.name, memberCallStyle = MemberCallStyle.PROPERTY))
                     }
+                    currentFailSets = savedPropFailSets
                 }
                 // `bridge prop<D> name: T` / `bridge func<D> name(params): T` — a
                 // bodyless, compiler-provided member (used by reflection handles).
@@ -3948,6 +3957,10 @@ class Parser(
         consume(TokenType.R_PAREN, "Expected ')' after parameters")
         val returnType: TypeAnnotation = if (match(TokenType.COLON)) {
             TypeAnnotation.Explicit(parseTypeName())
+        } else if (check(TokenType.QMARK_BANG)) {
+            // `func f() ?! E` — a function that yields nothing but may fail. The ok
+            // type is Unit; only the error set is written.
+            TypeAnnotation.Explicit(parseTypeSuffixes(TypeRef.Named("Unit")))
         } else {
             TypeAnnotation.Inferred
         }
@@ -7029,6 +7042,19 @@ class Parser(
      * argument list (`max<T>(…)`) rather than a comparison. True only when a
      * short run of type-ish tokens closes with `>` immediately followed by `(`.
      */
+    /**
+     * Whether the token after a closing `>` continues a generic application.
+     *
+     * `f<T>(args)` is a call; `reflect<T>.fields` reads a member of one. Both are
+     * applications of type arguments, so both keep `<` from being read as
+     * less-than.
+     */
+    private fun closesGenericApplication(closingIndex: Int): Boolean =
+        when (tokens.getOrNull(closingIndex + 1)?.type) {
+            TokenType.L_PAREN, TokenType.DOT -> true
+            else -> false
+        }
+
     private fun isGenericCallAhead(): Boolean {
         var i = current + 1 // token after '<'
         var depth = 1
@@ -7041,12 +7067,12 @@ class Parser(
                 TokenType.LESS -> depth++
                 TokenType.GREATER -> {
                     depth--
-                    if (depth == 0) return tokens.getOrNull(i + 1)?.type == TokenType.L_PAREN
+                    if (depth == 0) return closesGenericApplication(i)
                 }
                 // `>>` closes two nested generic levels at once (e.g. `f<G<T>>(args)`).
                 TokenType.SHIFT_RIGHT -> {
                     depth -= 2
-                    if (depth == 0) return tokens.getOrNull(i + 1)?.type == TokenType.L_PAREN
+                    if (depth == 0) return closesGenericApplication(i)
                     if (depth < 0) return false
                 }
                 else -> return false

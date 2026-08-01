@@ -186,17 +186,25 @@ class Lexer(private val source: String) {
             }
             '<' -> when {
                 match('=') -> addToken(TokenType.LESS_EQUAL)
-                match('<') -> addToken(TokenType.SHIFT_LEFT)
+                match('<') -> addToken(if (match('=')) TokenType.SHIFT_LEFT_EQUAL else TokenType.SHIFT_LEFT)
                 else -> addToken(TokenType.LESS)
             }
             '>' -> when {
                 match('=') -> addToken(TokenType.GREATER_EQUAL)
-                match('>') -> addToken(TokenType.SHIFT_RIGHT)
+                match('>') -> addToken(if (match('=')) TokenType.SHIFT_RIGHT_EQUAL else TokenType.SHIFT_RIGHT)
                 else -> addToken(TokenType.GREATER)
             }
-            '&' -> if (match('&')) addToken(TokenType.AND_AND) else addToken(TokenType.AMP)
-            '|' -> if (match('|')) addToken(TokenType.OR_OR) else addToken(TokenType.PIPE)
-            '^' -> addToken(TokenType.CARET)
+            '&' -> when {
+                match('&') -> addToken(TokenType.AND_AND)
+                match('=') -> addToken(TokenType.AMP_EQUAL)
+                else -> addToken(TokenType.AMP)
+            }
+            '|' -> when {
+                match('|') -> addToken(TokenType.OR_OR)
+                match('=') -> addToken(TokenType.PIPE_EQUAL)
+                else -> addToken(TokenType.PIPE)
+            }
+            '^' -> addToken(if (match('=')) TokenType.CARET_EQUAL else TokenType.CARET)
             '~' -> addToken(TokenType.TILDE)   // unary bitwise complement; `+` concatenates
             '?' -> scanNullableOp()
             '-' -> when {

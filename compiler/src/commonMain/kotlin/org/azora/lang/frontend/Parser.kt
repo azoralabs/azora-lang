@@ -432,11 +432,11 @@ class Parser(
         match(TokenType.SHIFT_LEFT) -> "<<"
         // `&=`, `|=`, `^=`, `<<=`, `>>=` are not single tokens, so the pair is
         // recognised here — an operator name is the one place they appear.
-        check(TokenType.AMP) && peekNext()?.type == TokenType.EQUAL -> { advance(); advance(); "&=" }
-        check(TokenType.PIPE) && peekNext()?.type == TokenType.EQUAL -> { advance(); advance(); "|=" }
-        check(TokenType.CARET) && peekNext()?.type == TokenType.EQUAL -> { advance(); advance(); "^=" }
-        check(TokenType.SHIFT_LEFT) && peekNext()?.type == TokenType.EQUAL -> { advance(); advance(); "<<=" }
-        check(TokenType.SHIFT_RIGHT) && peekNext()?.type == TokenType.EQUAL -> { advance(); advance(); ">>=" }
+        match(TokenType.AMP_EQUAL) -> "&="
+        match(TokenType.PIPE_EQUAL) -> "|="
+        match(TokenType.CARET_EQUAL) -> "^="
+        match(TokenType.SHIFT_LEFT_EQUAL) -> "<<="
+        match(TokenType.SHIFT_RIGHT_EQUAL) -> ">>="
         match(TokenType.SHIFT_RIGHT) -> ">>"
         match(TokenType.LESS) -> "<"
         match(TokenType.GREATER) -> ">"
@@ -2775,6 +2775,8 @@ class Parser(
                     } else {
                         parseOperatorName()
                     }
+                    // `oper as<U> [self: …]` — an operator may take type parameters.
+                    val operTypeParams = parseTypeParams()
                     if (!check(TokenType.L_BRACKET)) {
                         error("an operator declares its receiver, as in 'oper$opName [self: ${typeName}&]', at line ${peek().line}")
                     }
@@ -2796,10 +2798,33 @@ class Parser(
                     }
                     // An operator may carry its own constraint, like any member.
                     val operWhere = parseWhereClause()
+                    // `return .Variant(payload)` in the body needs the error set the
+                    // signature declares, exactly as it does for a `func`.
+                    val savedOperFailSets = currentFailSets
+                    currentFailSets =
+                        ((ret as? TypeAnnotation.Explicit)?.ref as? TypeRef.Failable)?.errSets.orEmpty()
                     skipNewlines()
                     // `oper+ [self: Self&](rhs: Self&): Self = <expr>` — an expression
                     // body, the same shorthand a `func` has.
+                    // A range operator's default step trails the declaration, as it
+                    // does at top level; it is declarative metadata.
+                    if (match(TokenType.BY)) parseExpr()
+                    skipNewlines()
                     val operBody: List<Stmt>
+                    if (!check(TokenType.L_BRACE) && !check(TokenType.EQUAL)) {
+                        // Bodyless: the backend supplies it, like `bridge func`.
+                        consumeNewline()
+                        currentFailSets = savedOperFailSets
+                        methods.add(
+                            FuncDecl(
+                                "oper$opName", operands, ret, emptyList(), false, operTypeParams.names,
+                                operStart.line, operStart.column,
+                                annotations = memberAnnotations, visibility = visibility,
+                                receiverModifier = recv.modifier, receiverName = recv.name,
+                            ),
+                        )
+                        continue
+                    }
                     if (match(TokenType.EQUAL)) {
                         skipNewlines()
                         val value = parseExpr()
@@ -2811,6 +2836,7 @@ class Parser(
                         operBody = parseBlock()
                         consume(TokenType.R_BRACE, "Expected '}' after operator body")
                     }
+                    currentFailSets = savedOperFailSets
                     consumeNewline()
                     methods.add(FuncDecl(
                         "oper$opName", operands, ret, operBody, false, emptyList(),
@@ -6288,7 +6314,9 @@ class Parser(
                 buildAssignment(expr, value, start.line, start.column)
             }
             TokenType.PLUS_EQUAL, TokenType.MINUS_EQUAL, TokenType.STAR_EQUAL,
-            TokenType.SLASH_EQUAL, TokenType.PERCENT_EQUAL -> {
+            TokenType.SLASH_EQUAL, TokenType.PERCENT_EQUAL,
+            TokenType.AMP_EQUAL, TokenType.PIPE_EQUAL, TokenType.CARET_EQUAL,
+            TokenType.SHIFT_LEFT_EQUAL, TokenType.SHIFT_RIGHT_EQUAL -> {
                 advance()
                 val op = when (opTok.type) {
                     TokenType.PLUS_EQUAL -> TokenType.PLUS
@@ -6296,6 +6324,11 @@ class Parser(
                     TokenType.STAR_EQUAL -> TokenType.STAR
                     TokenType.SLASH_EQUAL -> TokenType.SLASH
                     TokenType.PERCENT_EQUAL -> TokenType.PERCENT
+                    TokenType.AMP_EQUAL -> TokenType.AMP
+                    TokenType.PIPE_EQUAL -> TokenType.PIPE
+                    TokenType.CARET_EQUAL -> TokenType.CARET
+                    TokenType.SHIFT_LEFT_EQUAL -> TokenType.SHIFT_LEFT
+                    TokenType.SHIFT_RIGHT_EQUAL -> TokenType.SHIFT_RIGHT
                     else -> error("unreachable compound assignment")
                 }
                 val value = parseExpr()

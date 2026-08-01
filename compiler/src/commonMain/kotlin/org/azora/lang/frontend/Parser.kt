@@ -1718,6 +1718,69 @@ class Parser(
         return fieldBlock(enforceNumFields).map { it.copy(condition = conjoin(it.condition, marker)) }
     }
 
+    /**
+     * `inline for <var> in <compile-time list> { members }` inside an impl.
+     *
+     * Generates one copy of the member block per value. The body is captured as
+     * tokens and re-parsed per iteration through a synthetic impl, so members written
+     * inside the loop go through exactly the same member parser as those written
+     * outside it — there is no second notion of what an impl member is.
+     */
+    private fun parseInlineMemberFor(typeName: String): List<FuncDecl> {
+        val start = peek()
+        consume(TokenType.INLINE, "Expected 'inline'")
+        consume(TokenType.FOR, "Expected 'for'")
+        val loopVars = mutableListOf<String>()
+        if (match(TokenType.L_BRACKET)) {
+            do { loopVars.add(consumeIdentifierLike("Expected loop variable in 'inline for [...]'")) }
+            while (match(TokenType.COMMA))
+            consume(TokenType.R_BRACKET, "Expected ']' after 'inline for' variables")
+        } else {
+            loopVars.add(consumeIdentifierLike("Expected loop variable after 'inline for'"))
+        }
+        consume(TokenType.IN, "Expected 'in' after 'inline for' variable")
+        val lists = mutableListOf<List<String>>()
+        if (loopVars.size > 1) {
+            consume(TokenType.L_BRACKET, "Expected '[' — a parallel 'inline for' iterates a list per variable")
+            do { lists.add(parseComptimeForValues()) } while (match(TokenType.COMMA))
+            consume(TokenType.R_BRACKET, "Expected ']' after parallel 'inline for' lists")
+        } else {
+            lists.add(parseComptimeForValues())
+        }
+        val indexVar = if (matchWithKeyword()) {
+            consumeIdentifierLike("Expected index variable after 'with'")
+        } else null
+        consume(TokenType.L_BRACE, "Expected '{' to open 'inline for' body")
+        val bodyTokens = captureBraceBody()
+        consumeNewline()
+        val generated = mutableListOf<FuncDecl>()
+        for (i in 0 until lists.first().size) {
+            var rendered = bodyTokens
+            val bindings = buildList {
+                loopVars.forEachIndexed { slot, name -> add(name to lists[slot][i]) }
+                if (indexVar != null) add(indexVar to i.toString())
+            }
+            rendered = foldBraceInterpolation(rendered, bindings)
+            loopVars.forEachIndexed { slot, name ->
+                rendered = substituteLoopVar(rendered, name, lists[slot][i])
+            }
+            if (indexVar != null) rendered = substituteLoopVar(rendered, indexVar, i.toString())
+            rendered = foldListIndexing(rendered)
+            // Re-parse through a synthetic impl so the ordinary member parser runs.
+            val wrapper = listOf(
+                Token(TokenType.IMPL, "impl", start.line, start.column),
+                Token(TokenType.IDENTIFIER, typeName, start.line, start.column),
+                Token(TokenType.L_BRACE, "{", start.line, start.column),
+            ) + rendered + listOf(
+                Token(TokenType.R_BRACE, "}", start.line, start.column),
+                Token(TokenType.EOF, "", start.line, start.column),
+            )
+            val parsed = Parser(wrapper, typeListEnv).parse().items
+            parsed.filterIsInstance<TopLevel.Impl>().forEach { generated.addAll(it.methods) }
+        }
+        return generated
+    }
+
     private fun parsePackField(
         preparsedVisibility: Visibility? = null,
         enforceNumFields: Boolean = false,
@@ -2413,6 +2476,13 @@ class Parser(
             if (check(TokenType.R_BRACE)) break
             val memberAnnotations = parseAnnotations()
             val methodStart = peek()
+            // `inline for op in arr@["+", "-"] { … }` inside an impl generates MEMBERS,
+            // one copy of the body per value, exactly as the top-level form generates
+            // declarations. Checked before `inline` is taken as a member modifier.
+            if (check(TokenType.INLINE) && peekNext()?.type == TokenType.FOR) {
+                methods.addAll(parseInlineMemberFor(typeName))
+                continue
+            }
             val isInline = match(TokenType.INLINE)
             val isVirt = false
             val visibility = parseVisibility()

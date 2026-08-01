@@ -18,7 +18,6 @@ expose mod std.traits.core
 
 use zone std {
     inline for Ty in Numbers {
-        @UncheckedCast
         bridge impl oper [.. by 1, reverse.. by 1] for Ty
     }
 }

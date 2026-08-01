@@ -192,6 +192,7 @@ class LlvmCodegen {
     private var usesIntToStr = false
     private var usesUintToStr = false
     private var usesRealToStr = false
+    private var usesTrunc = false
     private var usesCharToStr = false
     private var usesFree = false
     private var usesAllocatorRuntime = false
@@ -248,6 +249,7 @@ class LlvmCodegen {
         usesIntToStr = false
         usesUintToStr = false
         usesRealToStr = false
+        usesTrunc = false
         usesCharToStr = false
         usesFree = false
         usesAllocatorRuntime = false
@@ -387,7 +389,7 @@ class LlvmCodegen {
         }
         for (item in externs) {
             if (item.name in stringIntrinsics) continue
-            // `zone std::math { bridge func sqrt(…) }` mangles to `__std_math_sqrt`,
+            // `zone std { bridge func sqrt(…) }` mangles to `__std_math_sqrt`,
             // a symbol nothing provides. The compiler supplies these itself rather
             // than linking a hand-written C shim: declare the libm function and
             // define the mangled name as a call to it.
@@ -457,6 +459,7 @@ class LlvmCodegen {
         if (usesPuts) line("declare i32 @puts(i8*)")
         if (usesPrintf) line("declare i32 @printf(i8*, ...)")
         if (usesSnprintf) line("declare i32 @snprintf(i8*, i64, i8*, ...)")
+        if (usesTrunc) line("declare double @trunc(double)")
         if (usesAbort) line("declare void @abort() noreturn")
         if (usesMalloc) line("declare i8* @malloc(i64)")
         if (usesFree) line("declare void @free(i8*)")
@@ -2522,7 +2525,7 @@ class LlvmCodegen {
      * ordinary extern.
      *
      * Matching is on the declaration's final name segment so both the bare
-     * spelling and the `zone std::math` mangling resolve, and only when the
+     * spelling and the `zone std` mangling resolve, and only when the
      * signature is all-`Real` — an unrelated user extern that happens to be
      * called `log` keeps its own linkage.
      */
@@ -3407,6 +3410,23 @@ class LlvmCodegen {
 
     private fun emitIndexRead(expr: IrExpr.Index): String {
         val tt = expr.target.type
+        // `values[i]` where `values: List<T>` — a spec-typed receiver has no
+        // storage to address, so the subscript is the spec's own single-argument
+        // accessor, dispatched through the fat pointer like any other requirement.
+        if (tt is IrType.Named && tt.name in specDispatch) {
+            val table = specDispatch.getValue(tt.name)
+            val accessor = table.methods.firstOrNull { it.name == "get" && it.paramTypes.size == 1 }
+            if (accessor != null) {
+                val box = emitExpr(expr.target)
+                val idx = coerceNumeric(emitExpr(expr.index), expr.index.type, accessor.paramTypes[0])
+                val r = nextTmp()
+                emit(
+                    "  $r = call ${mapType(accessor.returnType)} " +
+                        "@${specDispatcherName(tt.name, "get")}(i8* $box, ${mapType(accessor.paramTypes[0])} $idx)",
+                )
+                return r
+            }
+        }
         if (tt is IrType.Array) {
             val et = mapType(tt.element)
             val ep = emitArrayElemPtr(expr.target, expr.index, tt.element)
@@ -3943,19 +3963,19 @@ class LlvmCodegen {
             }
             IrType.Real -> {
                 val v = emitExpr(arg)
-                printfFmt("%g$nl", listOf("double $v"))
+                printReal(v, nl)
             }
             IrType.Float -> {
                 val v = emitExpr(arg)
                 val ext = nextTmp()
                 emit("  $ext = fpext float $v to double")
-                printfFmt("%g$nl", listOf("double $ext"))
+                printReal(ext, nl)
             }
             IrType.Decimal -> {
                 val v = emitExpr(arg)
                 val d = nextTmp()
                 emit("  $d = fptrunc fp128 $v to double")
-                printfFmt("%g$nl", listOf("double $d"))
+                printReal(d, nl)
             }
             IrType.Bool -> {
                 val v = emitExpr(arg)
@@ -3984,6 +4004,30 @@ class LlvmCodegen {
     }
 
     /** Emits a `printf` call with the given format and already-typed arguments. */
+
+
+    /**
+     * Prints a floating-point value as a `Real`.
+     *
+     * `%g` alone renders an integral value as `4`, which reads as an `Int`. An
+     * integral, finite value goes through `%.1f` so it keeps its `.0`; everything
+     * else keeps `%g`'s shortest form.
+     */
+    private fun printReal(value: String, nl: String) {
+        usesPrintf = true
+        usesTrunc = true
+        val whole = nextTmp()
+        emit("  $whole = call double @trunc(double $value)")
+        val isIntegral = nextTmp()
+        emit("  $isIntegral = fcmp oeq double $value, $whole")
+        val intFmt = gepString(addStringConstant("%.1f$nl"))
+        val genFmt = gepString(addStringConstant("%g$nl"))
+        val fmt = nextTmp()
+        emit("  $fmt = select i1 $isIntegral, i8* $intFmt, i8* $genFmt")
+        val unused = nextTmp()
+        emit("  $unused = call i32 (i8*, ...) @printf(i8* $fmt, double $value)")
+    }
+
     private fun printfFmt(fmt: String, args: List<String>) {
         usesPrintf = true
         val ref = addStringConstant(fmt)
@@ -4033,7 +4077,7 @@ class LlvmCodegen {
                 tmp
             }
             IrType.Real, IrType.Float, IrType.Decimal -> {
-                usesRealToStr = true; usesSnprintf = true; usesMalloc = true
+                usesRealToStr = true; usesSnprintf = true; usesMalloc = true; usesTrunc = true
                 val raw = emitExpr(expr)
                 val d = when (expr.type) {
                     IrType.Real -> raw
@@ -4624,7 +4668,14 @@ class LlvmCodegen {
             sb.appendLine("define i8* @__azora_real_to_str(double %v) {")
             sb.appendLine("entry:")
             sb.appendLine("  %buf = call i8* @__azora_alloc(i64 32)")
-            sb.appendLine("  %fmt = getelementptr [${fmt.byteLen} x i8], [${fmt.byteLen} x i8]* ${fmt.name}, i64 0, i64 0")
+            val intFmt = addStringConstant("%.1f")
+            sb.appendLine("  %gfmt = getelementptr [${fmt.byteLen} x i8], [${fmt.byteLen} x i8]* ${fmt.name}, i64 0, i64 0")
+            sb.appendLine("  %ifmt = getelementptr [${intFmt.byteLen} x i8], [${intFmt.byteLen} x i8]* ${intFmt.name}, i64 0, i64 0")
+            // A `Real` prints as a `Real`: an integral value keeps its `.0` so the
+            // output says which type it came from. Anything else uses %g's shortest form.
+            sb.appendLine("  %whole = call double @trunc(double %v)")
+            sb.appendLine("  %isint = fcmp oeq double %v, %whole")
+            sb.appendLine("  %fmt = select i1 %isint, i8* %ifmt, i8* %gfmt")
             sb.appendLine("  %r = call i32 (i8*, i64, i8*, ...) @snprintf(i8* %buf, i64 32, i8* %fmt, double %v)")
             sb.appendLine("  ret i8* %buf")
             sb.appendLine("}")

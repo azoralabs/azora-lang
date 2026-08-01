@@ -77,6 +77,11 @@ class WasmCodegen {
     private var usesStrEq = false
     private var usesRepeat = false
     private var usesIntToStr = false
+    private var usesLongToStr = false
+    private var usesRealToStr = false
+    private var usesTrig = false
+    private var usesExpLog = false
+    private var usesInvTrig = false
     private var usesIsCheck = false
     private val neededIntrinsics = mutableSetOf<String>()
     private val externs = LinkedHashMap<String, IrTopLevel.Extern>()
@@ -102,7 +107,7 @@ class WasmCodegen {
     fun generate(program: IrProgram): String {
         out.clear(); indent = 0
         structs.clear(); globalTypes.clear(); stringConsts.clear(); constCursor = STRING_BASE
-        usesAlloc = false; usesConcat = false; usesStrEq = false; usesRepeat = false; usesIntToStr = false; usesIsCheck = false
+        usesAlloc = false; usesConcat = false; usesStrEq = false; usesRepeat = false; usesIntToStr = false; usesLongToStr = false; usesRealToStr = false; usesTrig = false; usesExpLog = false; usesInvTrig = false; usesIsCheck = false
         neededIntrinsics.clear(); externs.clear(); neededExterns.clear()
         closureTypes.clear(); closureFunctions.clear()
 
@@ -147,14 +152,24 @@ class WasmCodegen {
             val extern = externs.getValue(name)
             // A `bridge func` that names a float operation WebAssembly has natively
             // is defined here rather than imported: the compiler supplies these
-            // itself, so a program using `std::math` needs nothing from the host.
+            // itself, so a program using `std` needs nothing from the host.
             if (wasmFloatOpFor(extern) != null) continue
+            if (wasmSoftwareMathFor(extern) != null) { usesTrig = true; usesExpLog = true; usesInvTrig = true; continue }
             val params = extern.params.joinToString("") { " (param ${wasmType(it.second)})" }
             val result = if (extern.returnType == IrType.Unit) "" else " (result ${wasmType(extern.returnType)})"
             sb.appendLine("  (import \"env\" \"$name\" (func \$$name$params$result))")
         }
         for (name in neededExterns) {
             val extern = externs.getValue(name)
+            val soft = wasmSoftwareMathFor(extern)
+            if (soft != null) {
+                val ps = extern.params.indices.joinToString("") { " (param \$a$it f64)" }
+                val args = extern.params.indices.joinToString(" ") { "(local.get \$a$it)" }
+                sb.appendLine("  (func \$$name$ps (result f64)")
+                sb.appendLine("    (call \$$soft $args)")
+                sb.appendLine("  )")
+                continue
+            }
             val op = wasmFloatOpFor(extern) ?: continue
             val ps = extern.params.indices.joinToString("") { " (param \$a$it f64)" }
             sb.appendLine("  (func \$$name$ps (result f64)")
@@ -187,6 +202,11 @@ class WasmCodegen {
         if (usesStrEq) sb.append(RT_STR_EQ)
         if (usesRepeat) sb.append(RT_REPEAT)
         if (usesIntToStr) sb.append(RT_INT_TO_STR)
+        if (usesLongToStr) sb.append(RT_LONG_TO_STR)
+        if (usesRealToStr) sb.append(RT_REAL_TO_STR)
+        if (usesTrig) sb.append(RT_TRIG)
+        if (usesExpLog) sb.append(RT_EXPLOG)
+        if (usesInvTrig) sb.append(RT_INVTRIG)
         if (usesIsCheck) sb.append(RT_IS_CHECK)
         sb.append(wasmStringIntrinsics())
         sb.append(globalInitText)
@@ -541,12 +561,19 @@ class WasmCodegen {
         if ((expr.name == "__std_println" || expr.name == "__std_print") && expr.args.size == 1) {
             val arg = expr.args.single()
             val operation = if (expr.name == "__std_print") "write" else "print"
+            // A float is rendered by the compiler, not the host: printing one
+            // directly and interpolating it must produce the same digits, and only
+            // `__real_to_str` implements the language's convention.
+            if (wasmType(arg.type) == "f64" || wasmType(arg.type) == "f32") {
+                usesAlloc = true
+                usesRealToStr = true
+                val v = if (wasmType(arg.type) == "f32") "(f64.promote_f32 ${emitExpr(arg)})" else emitExpr(arg)
+                return "(call \$${operation}_str (call \$__real_to_str $v))"
+            }
             val fn = when {
                 arg.type == IrType.String -> "${operation}_str"
                 arg.type == IrType.Bool -> "${operation}_bool"
                 wasmType(arg.type) == "i64" -> "${operation}_i64"
-                wasmType(arg.type) == "f64" -> "${operation}_f64"
-                wasmType(arg.type) == "f32" -> "${operation}_f32"
                 else -> "${operation}_i32"
             }
             return "(call \$$fn ${emitExpr(arg)})"
@@ -693,6 +720,9 @@ class WasmCodegen {
         expr.type == IrType.String -> emitExpr(expr)
         expr.type == IrType.Bool -> "(if (result i32) ${emitExpr(expr)} (then (i32.const ${internString("true")})) (else (i32.const ${internString("false")})))"
         wasmType(expr.type) == "i32" -> { usesAlloc = true; usesIntToStr = true; "(call \$__int_to_str ${emitExpr(expr)})" }
+        wasmType(expr.type) == "i64" -> { usesAlloc = true; usesLongToStr = true; "(call \$__long_to_str ${emitExpr(expr)})" }
+        wasmType(expr.type) == "f64" -> { usesAlloc = true; usesRealToStr = true; "(call \$__real_to_str ${emitExpr(expr)})" }
+        wasmType(expr.type) == "f32" -> { usesAlloc = true; usesRealToStr = true; "(call \$__real_to_str (f64.promote_f32 ${emitExpr(expr)}))" }
         // Anything else has no WAT rendering yet. Interpolating it used to yield an
         // empty string, so a program printing a `Real` silently lost it while the
         // interpreter and LLVM printed the value; failing here keeps a missing
@@ -967,6 +997,41 @@ class WasmCodegen {
      * Only the operations Wasm implements directly are listed; the
      * transcendentals have no opcode and still come from the host.
      */
+    /**
+     * The software implementation a `bridge func` maps to, for the functions
+     * WebAssembly has no opcode for.
+     *
+     * Only the ones actually implemented in [RT_TRIG] are listed; everything else
+     * still comes from the host until its approximation is written.
+     */
+    private fun wasmSoftwareMathFor(extern: IrTopLevel.Extern): String? {
+        val name = when (extern.name.substringAfterLast('_')) {
+            "sin" -> "__soft_sin"
+            "cos" -> "__soft_cos"
+            "tan" -> "__soft_tan"
+            "log" -> "__soft_log"
+            "log2" -> "__soft_log2"
+            "log10" -> "__soft_log10"
+            "exp" -> "__soft_exp"
+            "exp2" -> "__soft_exp2"
+            "sinh" -> "__soft_sinh"
+            "cosh" -> "__soft_cosh"
+            "tanh" -> "__soft_tanh"
+            "cbrt" -> "__soft_cbrt"
+            "asin" -> "__soft_asin"
+            "acos" -> "__soft_acos"
+            "atan" -> "__soft_atan"
+            "atan2" -> "__soft_atan2"
+            "hypot" -> "__soft_hypot"
+            else -> return null
+        }
+        val expectedArity = if (name in setOf("__soft_atan2", "__soft_hypot")) 2 else 1
+        if (extern.params.size != expectedArity) return null
+        if (extern.returnType != IrType.Real) return null
+        if (extern.params.any { it.second != IrType.Real }) return null
+        return name
+    }
+
     private fun wasmFloatOpFor(extern: IrTopLevel.Extern): String? {
         val op = when (extern.name.substringAfterLast('_')) {
             "sqrt" -> "f64.sqrt"
@@ -1136,4 +1201,379 @@ class WasmCodegen {
     (if (local.get ${'$'}neg) (then (i32.store8 (i32.add (local.get ${'$'}p) (i32.const 4)) (i32.const 45))))
     (local.get ${'$'}p))
 """
+
+    /**
+     * `__long_to_str` — the same decimal conversion as [RT_INT_TO_STR] in 64-bit
+     * arithmetic, so a `Long` interpolates to its full value rather than being
+     * truncated through i32.
+     */
+    private val RT_LONG_TO_STR = """
+  (func ${'$'}__long_to_str (param ${'$'}n i64) (result i32)
+    (local ${'$'}neg i32) (local ${'$'}len i32) (local ${'$'}x i64) (local ${'$'}p i32) (local ${'$'}i i32)
+    (if (i64.eqz (local.get ${'$'}n))
+      (then
+        (local.set ${'$'}p (call ${'$'}__alloc (i32.const 5)))
+        (i32.store (local.get ${'$'}p) (i32.const 1))
+        (i32.store8 (i32.add (local.get ${'$'}p) (i32.const 4)) (i32.const 48))
+        (return (local.get ${'$'}p))))
+    (local.set ${'$'}neg (i64.lt_s (local.get ${'$'}n) (i64.const 0)))
+    (local.set ${'$'}x (if (result i64) (local.get ${'$'}neg) (then (i64.sub (i64.const 0) (local.get ${'$'}n))) (else (local.get ${'$'}n))))
+    (local.set ${'$'}len (i32.const 0))
+    (local.set ${'$'}p (i32.const 0))
+    (block ${'$'}c (loop ${'$'}l
+      (br_if ${'$'}c (i64.eqz (local.get ${'$'}x)))
+      (local.set ${'$'}len (i32.add (local.get ${'$'}len) (i32.const 1)))
+      (local.set ${'$'}x (i64.div_u (local.get ${'$'}x) (i64.const 10)))
+      (br ${'$'}l)))
+    (local.set ${'$'}x (if (result i64) (local.get ${'$'}neg) (then (i64.sub (i64.const 0) (local.get ${'$'}n))) (else (local.get ${'$'}n))))
+    (local.set ${'$'}len (i32.add (local.get ${'$'}len) (local.get ${'$'}neg)))
+    (local.set ${'$'}p (call ${'$'}__alloc (i32.add (i32.const 4) (local.get ${'$'}len))))
+    (i32.store (local.get ${'$'}p) (local.get ${'$'}len))
+    (local.set ${'$'}i (i32.sub (local.get ${'$'}len) (i32.const 1)))
+    (block ${'$'}c2 (loop ${'$'}l2
+      (br_if ${'$'}c2 (i64.eqz (local.get ${'$'}x)))
+      (i32.store8 (i32.add (i32.add (local.get ${'$'}p) (i32.const 4)) (local.get ${'$'}i))
+                  (i32.wrap_i64 (i64.add (i64.rem_u (local.get ${'$'}x) (i64.const 10)) (i64.const 48))))
+      (local.set ${'$'}x (i64.div_u (local.get ${'$'}x) (i64.const 10)))
+      (local.set ${'$'}i (i32.sub (local.get ${'$'}i) (i32.const 1)))
+      (br ${'$'}l2)))
+    (if (local.get ${'$'}neg) (then (i32.store8 (i32.add (local.get ${'$'}p) (i32.const 4)) (i32.const 45))))
+    (local.get ${'$'}p))
+"""
+
+
+    /**
+     * `__real_to_str` — decimal rendering of an f64, matching the interpreter and
+     * LLVM: an integral value keeps its `.0`, anything else prints its fractional
+     * digits.
+     *
+     * The integer part is emitted with the same itoa as [RT_LONG_TO_STR]; the
+     * fraction is taken to a fixed number of digits with trailing zeros trimmed,
+     * which covers the values a program prints without needing a shortest
+     * round-trip algorithm in WAT.
+     */
+    private val RT_REAL_TO_STR = """
+  (func ${'$'}__real_to_str (param ${'$'}v f64) (result i32)
+    (local ${'$'}neg i32) (local ${'$'}ip i64) (local ${'$'}frac f64) (local ${'$'}fd i64)
+    (local ${'$'}p i32) (local ${'$'}q i32) (local ${'$'}len i32) (local ${'$'}i i32) (local ${'$'}x i64)
+    (local.set ${'$'}neg (f64.lt (local.get ${'$'}v) (f64.const 0)))
+    (local.set ${'$'}v (f64.abs (local.get ${'$'}v)))
+    (local.set ${'$'}ip (i64.trunc_f64_u (local.get ${'$'}v)))
+    (local.set ${'$'}frac (f64.sub (local.get ${'$'}v) (f64.convert_i64_u (local.get ${'$'}ip))))
+    ;; nine fractional digits, rounded, then trailing zeros trimmed below
+    (local.set ${'$'}fd (i64.trunc_f64_u (f64.nearest (f64.mul (local.get ${'$'}frac) (f64.const 1000000000)))))
+    (if (i64.ge_u (local.get ${'$'}fd) (i64.const 1000000000))
+      (then
+        (local.set ${'$'}fd (i64.const 0))
+        (local.set ${'$'}ip (i64.add (local.get ${'$'}ip) (i64.const 1)))))
+    ;; integer part digit count
+    (local.set ${'$'}len (i32.const 0))
+    (local.set ${'$'}x (local.get ${'$'}ip))
+    (if (i64.eqz (local.get ${'$'}x)) (then (local.set ${'$'}len (i32.const 1))))
+    (block ${'$'}c (loop ${'$'}l
+      (br_if ${'$'}c (i64.eqz (local.get ${'$'}x)))
+      (local.set ${'$'}len (i32.add (local.get ${'$'}len) (i32.const 1)))
+      (local.set ${'$'}x (i64.div_u (local.get ${'$'}x) (i64.const 10)))
+      (br ${'$'}l)))
+    ;; 32 bytes is ample: 20 integer digits + '.' + 9 fraction digits + sign
+    (local.set ${'$'}p (call ${'$'}__alloc (i32.const 36)))
+    (local.set ${'$'}q (i32.add (local.get ${'$'}p) (i32.const 4)))
+    (local.set ${'$'}i (i32.const 0))
+    (if (local.get ${'$'}neg)
+      (then
+        (i32.store8 (local.get ${'$'}q) (i32.const 45))
+        (local.set ${'$'}q (i32.add (local.get ${'$'}q) (i32.const 1)))
+        (local.set ${'$'}i (i32.const 1))))
+    ;; integer digits, written back to front
+    (local.set ${'$'}x (local.get ${'$'}ip))
+    (local.set ${'$'}i (i32.add (local.get ${'$'}i) (local.get ${'$'}len)))
+    (local.set ${'$'}len (i32.sub (local.get ${'$'}len) (i32.const 1)))
+    (block ${'$'}c2 (loop ${'$'}l2
+      (i32.store8 (i32.add (local.get ${'$'}q) (local.get ${'$'}len))
+                  (i32.wrap_i64 (i64.add (i64.rem_u (local.get ${'$'}x) (i64.const 10)) (i64.const 48))))
+      (local.set ${'$'}x (i64.div_u (local.get ${'$'}x) (i64.const 10)))
+      (local.set ${'$'}len (i32.sub (local.get ${'$'}len) (i32.const 1)))
+      (br_if ${'$'}l2 (i32.ge_s (local.get ${'$'}len) (i32.const 0)))
+      (br ${'$'}c2)))
+    (local.set ${'$'}q (i32.add (local.get ${'$'}p) (i32.add (i32.const 4) (local.get ${'$'}i))))
+    (i32.store8 (local.get ${'$'}q) (i32.const 46))
+    (local.set ${'$'}q (i32.add (local.get ${'$'}q) (i32.const 1)))
+    (local.set ${'$'}i (i32.add (local.get ${'$'}i) (i32.const 1)))
+    ;; trim trailing zeros, but always keep one fractional digit
+    (block ${'$'}c3 (loop ${'$'}l3
+      (br_if ${'$'}c3 (i64.eqz (local.get ${'$'}fd)))
+      (br_if ${'$'}c3 (i64.ne (i64.rem_u (local.get ${'$'}fd) (i64.const 10)) (i64.const 0)))
+      (local.set ${'$'}fd (i64.div_u (local.get ${'$'}fd) (i64.const 10)))
+      (br ${'$'}l3)))
+    (local.set ${'$'}len (i32.const 0))
+    (local.set ${'$'}x (local.get ${'$'}fd))
+    (if (i64.eqz (local.get ${'$'}x)) (then (local.set ${'$'}len (i32.const 1))))
+    (block ${'$'}c4 (loop ${'$'}l4
+      (br_if ${'$'}c4 (i64.eqz (local.get ${'$'}x)))
+      (local.set ${'$'}len (i32.add (local.get ${'$'}len) (i32.const 1)))
+      (local.set ${'$'}x (i64.div_u (local.get ${'$'}x) (i64.const 10)))
+      (br ${'$'}l4)))
+    (local.set ${'$'}x (local.get ${'$'}fd))
+    (local.set ${'$'}i (i32.add (local.get ${'$'}i) (local.get ${'$'}len)))
+    (local.set ${'$'}len (i32.sub (local.get ${'$'}len) (i32.const 1)))
+    (block ${'$'}c5 (loop ${'$'}l5
+      (i32.store8 (i32.add (local.get ${'$'}q) (local.get ${'$'}len))
+                  (i32.wrap_i64 (i64.add (i64.rem_u (local.get ${'$'}x) (i64.const 10)) (i64.const 48))))
+      (local.set ${'$'}x (i64.div_u (local.get ${'$'}x) (i64.const 10)))
+      (local.set ${'$'}len (i32.sub (local.get ${'$'}len) (i32.const 1)))
+      (br_if ${'$'}l5 (i32.ge_s (local.get ${'$'}len) (i32.const 0)))
+      (br ${'$'}c5)))
+    (i32.store (local.get ${'$'}p) (local.get ${'$'}i))
+    (local.get ${'$'}p))
+"""
+
+
+    /**
+     * Software `sin`/`cos` for WebAssembly, which has no opcode for either.
+     *
+     * `x` is reduced to `r` in `[-pi/4, pi/4]` by subtracting a whole multiple of
+     * `pi/2`, split Cody-Waite style into a high and low part so the subtraction
+     * stays exact for the arguments a program realistically passes. The quadrant
+     * `n mod 4` then selects between the sine and cosine polynomials and their
+     * signs. Both polynomials are the odd/even Taylor series to the term beyond
+     * which `f64` cannot represent a difference over this interval.
+     */
+    private val RT_TRIG = """
+  (func ${'$'}__sin_poly (param ${'$'}r f64) (result f64)
+    (local ${'$'}z f64)
+    (local.set ${'$'}z (f64.mul (local.get ${'$'}r) (local.get ${'$'}r)))
+    (f64.mul (local.get ${'$'}r)
+      (f64.add (f64.const 1)
+        (f64.mul (local.get ${'$'}z)
+          (f64.add (f64.const -0.16666666666666666)
+            (f64.mul (local.get ${'$'}z)
+              (f64.add (f64.const 0.008333333333333333)
+                (f64.mul (local.get ${'$'}z)
+                  (f64.add (f64.const -0.0001984126984126984)
+                    (f64.mul (local.get ${'$'}z)
+                      (f64.add (f64.const 0.0000027557319223985893)
+                        (f64.mul (local.get ${'$'}z) (f64.const -0.000000025052108385441718)))))))))))))
+  (func ${'$'}__cos_poly (param ${'$'}r f64) (result f64)
+    (local ${'$'}z f64)
+    (local.set ${'$'}z (f64.mul (local.get ${'$'}r) (local.get ${'$'}r)))
+    (f64.add (f64.const 1)
+      (f64.mul (local.get ${'$'}z)
+        (f64.add (f64.const -0.5)
+          (f64.mul (local.get ${'$'}z)
+            (f64.add (f64.const 0.041666666666666664)
+              (f64.mul (local.get ${'$'}z)
+                (f64.add (f64.const -0.001388888888888889)
+                  (f64.mul (local.get ${'$'}z)
+                    (f64.add (f64.const 0.0000248015873015873)
+                      (f64.mul (local.get ${'$'}z)
+                        (f64.add (f64.const -0.00000027557319223985893)
+                          (f64.mul (local.get ${'$'}z) (f64.const 0.0000000020876756987868098))))))))))))))
+  ;; quadrant dispatch shared by sin and cos; ${'$'}k offsets the quadrant (cos = sin + 1)
+  (func ${'$'}__trig (param ${'$'}x f64) (param ${'$'}k i32) (result f64)
+    (local ${'$'}n f64) (local ${'$'}r f64) (local ${'$'}q i32)
+    (local.set ${'$'}n (f64.nearest (f64.mul (local.get ${'$'}x) (f64.const 0.6366197723675814))))
+    ;; two-part pi/2 keeps the reduction exact well past what one constant allows
+    (local.set ${'$'}r (f64.sub (local.get ${'$'}x) (f64.mul (local.get ${'$'}n) (f64.const 1.5707963267341256))))
+    (local.set ${'$'}r (f64.sub (local.get ${'$'}r) (f64.mul (local.get ${'$'}n) (f64.const 0.0000000000606087447221421))))
+    (local.set ${'$'}r (f64.sub (local.get ${'$'}r) (f64.mul (local.get ${'$'}n) (f64.const 0.00000000000000000000015893155911299775))))
+    (local.set ${'$'}q (i32.and (i32.add (i32.trunc_f64_s (local.get ${'$'}n)) (local.get ${'$'}k)) (i32.const 3)))
+    (if (result f64) (i32.eq (local.get ${'$'}q) (i32.const 0))
+      (then (call ${'$'}__sin_poly (local.get ${'$'}r)))
+      (else (if (result f64) (i32.eq (local.get ${'$'}q) (i32.const 1))
+        (then (call ${'$'}__cos_poly (local.get ${'$'}r)))
+        (else (if (result f64) (i32.eq (local.get ${'$'}q) (i32.const 2))
+          (then (f64.neg (call ${'$'}__sin_poly (local.get ${'$'}r))))
+          (else (f64.neg (call ${'$'}__cos_poly (local.get ${'$'}r)))))))))) 
+  (func ${'$'}__soft_sin (param ${'$'}x f64) (result f64)
+    (call ${'$'}__trig (local.get ${'$'}x) (i32.const 0)))
+  (func ${'$'}__soft_cos (param ${'$'}x f64) (result f64)
+    (call ${'$'}__trig (local.get ${'$'}x) (i32.const 1)))
+"""
+
+
+    /**
+     * Software `exp`/`log` for WebAssembly, and the functions built from them.
+     *
+     * `log` splits the operand into `2^k * m` by reading the f64 exponent field
+     * directly, then evaluates `log(m)` on the narrow interval `[sqrt(1/2), sqrt(2)]`
+     * with the atanh series, which converges fast enough there to stay well inside
+     * this tier's accuracy. `exp` reduces by `k = round(x/ln2)` and evaluates the
+     * remainder's Taylor series, reassembling `2^k` by constructing the exponent
+     * bits. `pow` is `exp(y*log(x))`; the rest are one identity each.
+     */
+    private val RT_EXPLOG = """
+  (func ${'$'}__soft_log (param ${'$'}x f64) (result f64)
+    (local ${'$'}bits i64) (local ${'$'}k i32) (local ${'$'}m f64) (local ${'$'}s f64) (local ${'$'}z f64)
+    (if (f64.le (local.get ${'$'}x) (f64.const 0))
+      (then (return (f64.div (f64.const -1) (f64.const 0)))))
+    (local.set ${'$'}bits (i64.reinterpret_f64 (local.get ${'$'}x)))
+    (local.set ${'$'}k (i32.sub (i32.wrap_i64 (i64.and (i64.shr_u (local.get ${'$'}bits) (i64.const 52)) (i64.const 2047))) (i32.const 1023)))
+    ;; mantissa back into [1, 2)
+    (local.set ${'$'}m (f64.reinterpret_i64
+      (i64.or (i64.and (local.get ${'$'}bits) (i64.const 4503599627370495))
+              (i64.const 4607182418800017408))))
+    ;; shift to [sqrt(1/2), sqrt(2)) so the series converges quickly
+    (if (f64.gt (local.get ${'$'}m) (f64.const 1.4142135623730951))
+      (then
+        (local.set ${'$'}m (f64.mul (local.get ${'$'}m) (f64.const 0.5)))
+        (local.set ${'$'}k (i32.add (local.get ${'$'}k) (i32.const 1)))))
+    (local.set ${'$'}s (f64.div (f64.sub (local.get ${'$'}m) (f64.const 1)) (f64.add (local.get ${'$'}m) (f64.const 1))))
+    (local.set ${'$'}z (f64.mul (local.get ${'$'}s) (local.get ${'$'}s)))
+    (f64.add
+      (f64.mul (f64.convert_i32_s (local.get ${'$'}k)) (f64.const 0.6931471805599453))
+      (f64.mul (f64.const 2)
+        (f64.mul (local.get ${'$'}s)
+          (f64.add (f64.const 1)
+            (f64.mul (local.get ${'$'}z)
+              (f64.add (f64.const 0.3333333333333333)
+                (f64.mul (local.get ${'$'}z)
+                  (f64.add (f64.const 0.2)
+                    (f64.mul (local.get ${'$'}z)
+                      (f64.add (f64.const 0.14285714285714285)
+                        (f64.mul (local.get ${'$'}z)
+                          (f64.add (f64.const 0.1111111111111111)
+                            (f64.mul (local.get ${'$'}z)
+                              (f64.add (f64.const 0.09090909090909091)
+                                (f64.mul (local.get ${'$'}z) (f64.const 0.07692307692307693)))))))))))))))))
+  (func ${'$'}__soft_exp (param ${'$'}x f64) (result f64)
+    (local ${'$'}k f64) (local ${'$'}r f64) (local ${'$'}sum f64) (local ${'$'}term f64) (local ${'$'}i i32) (local ${'$'}ki i32)
+    (if (f64.gt (local.get ${'$'}x) (f64.const 709.78))
+      (then (return (f64.div (f64.const 1) (f64.const 0)))))
+    (if (f64.lt (local.get ${'$'}x) (f64.const -745.2))
+      (then (return (f64.const 0))))
+    (local.set ${'$'}k (f64.nearest (f64.mul (local.get ${'$'}x) (f64.const 1.4426950408889634))))
+    (local.set ${'$'}r (f64.sub (local.get ${'$'}x) (f64.mul (local.get ${'$'}k) (f64.const 0.6931471805599453))))
+    (local.set ${'$'}sum (f64.const 1))
+    (local.set ${'$'}term (f64.const 1))
+    (local.set ${'$'}i (i32.const 1))
+    (block ${'$'}c (loop ${'$'}l
+      (br_if ${'$'}c (i32.gt_s (local.get ${'$'}i) (i32.const 16)))
+      (local.set ${'$'}term (f64.div (f64.mul (local.get ${'$'}term) (local.get ${'$'}r)) (f64.convert_i32_s (local.get ${'$'}i))))
+      (local.set ${'$'}sum (f64.add (local.get ${'$'}sum) (local.get ${'$'}term)))
+      (local.set ${'$'}i (i32.add (local.get ${'$'}i) (i32.const 1)))
+      (br ${'$'}l)))
+    ;; multiply by 2^k by building the exponent field directly
+    (local.set ${'$'}ki (i32.trunc_f64_s (local.get ${'$'}k)))
+    (f64.mul (local.get ${'$'}sum)
+      (f64.reinterpret_i64 (i64.shl (i64.extend_i32_s (i32.add (local.get ${'$'}ki) (i32.const 1023))) (i64.const 52)))))
+  (func ${'$'}__soft_log2 (param ${'$'}x f64) (result f64)
+    (f64.mul (call ${'$'}__soft_log (local.get ${'$'}x)) (f64.const 1.4426950408889634)))
+  (func ${'$'}__soft_log10 (param ${'$'}x f64) (result f64)
+    (f64.mul (call ${'$'}__soft_log (local.get ${'$'}x)) (f64.const 0.4342944819032518)))
+  (func ${'$'}__soft_exp2 (param ${'$'}x f64) (result f64)
+    (call ${'$'}__soft_exp (f64.mul (local.get ${'$'}x) (f64.const 0.6931471805599453))))
+  (func ${'$'}__soft_tan (param ${'$'}x f64) (result f64)
+    (f64.div (call ${'$'}__soft_sin (local.get ${'$'}x)) (call ${'$'}__soft_cos (local.get ${'$'}x))))
+  (func ${'$'}__soft_sinh (param ${'$'}x f64) (result f64)
+    (f64.mul (f64.const 0.5) (f64.sub (call ${'$'}__soft_exp (local.get ${'$'}x)) (call ${'$'}__soft_exp (f64.neg (local.get ${'$'}x))))))
+  (func ${'$'}__soft_cosh (param ${'$'}x f64) (result f64)
+    (f64.mul (f64.const 0.5) (f64.add (call ${'$'}__soft_exp (local.get ${'$'}x)) (call ${'$'}__soft_exp (f64.neg (local.get ${'$'}x))))))
+  (func ${'$'}__soft_tanh (param ${'$'}x f64) (result f64)
+    (f64.div (call ${'$'}__soft_sinh (local.get ${'$'}x)) (call ${'$'}__soft_cosh (local.get ${'$'}x))))
+  (func ${'$'}__soft_cbrt (param ${'$'}x f64) (result f64)
+    (local ${'$'}neg i32) (local ${'$'}y f64) (local ${'$'}i i32)
+    (if (f64.eq (local.get ${'$'}x) (f64.const 0)) (then (return (f64.const 0))))
+    (local.set ${'$'}neg (f64.lt (local.get ${'$'}x) (f64.const 0)))
+    (local.set ${'$'}x (f64.abs (local.get ${'$'}x)))
+    (local.set ${'$'}y (call ${'$'}__soft_exp (f64.mul (call ${'$'}__soft_log (local.get ${'$'}x)) (f64.const 0.3333333333333333))))
+    ;; two Newton steps clean up the exp/log round trip
+    (local.set ${'$'}i (i32.const 0))
+    (block ${'$'}c (loop ${'$'}l
+      (br_if ${'$'}c (i32.ge_s (local.get ${'$'}i) (i32.const 2)))
+      (local.set ${'$'}y (f64.div
+        (f64.add (f64.mul (f64.const 2) (local.get ${'$'}y)) (f64.div (local.get ${'$'}x) (f64.mul (local.get ${'$'}y) (local.get ${'$'}y))))
+        (f64.const 3)))
+      (local.set ${'$'}i (i32.add (local.get ${'$'}i) (i32.const 1)))
+      (br ${'$'}l)))
+    (if (result f64) (local.get ${'$'}neg) (then (f64.neg (local.get ${'$'}y))) (else (local.get ${'$'}y))))
+"""
+
+
+    /**
+     * The remaining Wasm software math: inverse trigonometry, `pow` and `hypot`.
+     *
+     * `atan` reduces its argument twice — reciprocal for `|x| > 1`, then the
+     * half-angle identity — so the series only ever runs on `[0, tan(pi/8)]`, where
+     * it converges quickly. `asin`/`acos` come from `atan` by the standard
+     * identities, `pow` is `exp(y*log x)` with the integer-exponent sign cases
+     * handled directly, and `hypot` scales by the larger operand so `x*x` cannot
+     * overflow for values whose hypotenuse is representable.
+     */
+    private val RT_INVTRIG = """
+  (func ${'$'}__atan_core (param ${'$'}x f64) (result f64)
+    (local ${'$'}z f64) (local ${'$'}s f64)
+    (local.set ${'$'}z (f64.mul (local.get ${'$'}x) (local.get ${'$'}x)))
+    (f64.mul (local.get ${'$'}x)
+      (f64.add (f64.const 1)
+        (f64.mul (local.get ${'$'}z)
+          (f64.add (f64.const -0.3333333333333333)
+            (f64.mul (local.get ${'$'}z)
+              (f64.add (f64.const 0.2)
+                (f64.mul (local.get ${'$'}z)
+                  (f64.add (f64.const -0.14285714285714285)
+                    (f64.mul (local.get ${'$'}z)
+                      (f64.add (f64.const 0.1111111111111111)
+                        (f64.mul (local.get ${'$'}z)
+                          (f64.add (f64.const -0.09090909090909091)
+                            (f64.mul (local.get ${'$'}z)
+                              (f64.add (f64.const 0.07692307692307693)
+                                (f64.mul (local.get ${'$'}z) (f64.const -0.06666666666666667)))))))))))))))))
+  (func ${'$'}__soft_atan (param ${'$'}x f64) (result f64)
+    (local ${'$'}neg i32) (local ${'$'}inv i32) (local ${'$'}half i32) (local ${'$'}r f64)
+    (local.set ${'$'}neg (f64.lt (local.get ${'$'}x) (f64.const 0)))
+    (local.set ${'$'}x (f64.abs (local.get ${'$'}x)))
+    (local.set ${'$'}inv (f64.gt (local.get ${'$'}x) (f64.const 1)))
+    (if (local.get ${'$'}inv) (then (local.set ${'$'}x (f64.div (f64.const 1) (local.get ${'$'}x)))))
+    ;; half-angle once more: atan(x) = 2*atan(x / (1 + sqrt(1+x^2)))
+    (local.set ${'$'}half (f64.gt (local.get ${'$'}x) (f64.const 0.41421356237309503)))
+    (if (local.get ${'$'}half)
+      (then (local.set ${'$'}x (f64.div (local.get ${'$'}x)
+              (f64.add (f64.const 1) (f64.sqrt (f64.add (f64.const 1) (f64.mul (local.get ${'$'}x) (local.get ${'$'}x))))))))) 
+    (local.set ${'$'}r (call ${'$'}__atan_core (local.get ${'$'}x)))
+    (if (local.get ${'$'}half) (then (local.set ${'$'}r (f64.mul (local.get ${'$'}r) (f64.const 2)))))
+    (if (local.get ${'$'}inv) (then (local.set ${'$'}r (f64.sub (f64.const 1.5707963267948966) (local.get ${'$'}r)))))
+    (if (result f64) (local.get ${'$'}neg) (then (f64.neg (local.get ${'$'}r))) (else (local.get ${'$'}r))))
+  (func ${'$'}__soft_asin (param ${'$'}x f64) (result f64)
+    (if (f64.ge (f64.abs (local.get ${'$'}x)) (f64.const 1))
+      (then (return (f64.mul (f64.const 1.5707963267948966)
+        (if (result f64) (f64.lt (local.get ${'$'}x) (f64.const 0)) (then (f64.const -1)) (else (f64.const 1)))))))
+    (call ${'$'}__soft_atan (f64.div (local.get ${'$'}x)
+      (f64.sqrt (f64.sub (f64.const 1) (f64.mul (local.get ${'$'}x) (local.get ${'$'}x)))))))
+  (func ${'$'}__soft_acos (param ${'$'}x f64) (result f64)
+    (f64.sub (f64.const 1.5707963267948966) (call ${'$'}__soft_asin (local.get ${'$'}x))))
+  (func ${'$'}__soft_atan2 (param ${'$'}y f64) (param ${'$'}x f64) (result f64)
+    (if (f64.gt (local.get ${'$'}x) (f64.const 0))
+      (then (return (call ${'$'}__soft_atan (f64.div (local.get ${'$'}y) (local.get ${'$'}x))))))
+    (if (f64.lt (local.get ${'$'}x) (f64.const 0))
+      (then
+        (if (f64.ge (local.get ${'$'}y) (f64.const 0))
+          (then (return (f64.add (call ${'$'}__soft_atan (f64.div (local.get ${'$'}y) (local.get ${'$'}x))) (f64.const 3.141592653589793))))
+          (else (return (f64.sub (call ${'$'}__soft_atan (f64.div (local.get ${'$'}y) (local.get ${'$'}x))) (f64.const 3.141592653589793)))))))
+    ;; x == 0
+    (if (f64.gt (local.get ${'$'}y) (f64.const 0)) (then (return (f64.const 1.5707963267948966))))
+    (if (f64.lt (local.get ${'$'}y) (f64.const 0)) (then (return (f64.const -1.5707963267948966))))
+    (f64.const 0))
+  (func ${'$'}__soft_hypot (param ${'$'}x f64) (param ${'$'}y f64) (result f64)
+    (local ${'$'}m f64) (local ${'$'}r f64)
+    (local.set ${'$'}x (f64.abs (local.get ${'$'}x)))
+    (local.set ${'$'}y (f64.abs (local.get ${'$'}y)))
+    (local.set ${'$'}m (f64.max (local.get ${'$'}x) (local.get ${'$'}y)))
+    (if (f64.eq (local.get ${'$'}m) (f64.const 0)) (then (return (f64.const 0))))
+    (local.set ${'$'}r (f64.div (f64.min (local.get ${'$'}x) (local.get ${'$'}y)) (local.get ${'$'}m)))
+    (f64.mul (local.get ${'$'}m) (f64.sqrt (f64.add (f64.const 1) (f64.mul (local.get ${'$'}r) (local.get ${'$'}r))))))
+  (func ${'$'}__soft_pow (param ${'$'}x f64) (param ${'$'}y f64) (result f64)
+    (local ${'$'}n f64) (local ${'$'}odd i32)
+    (if (f64.eq (local.get ${'$'}y) (f64.const 0)) (then (return (f64.const 1))))
+    (if (f64.eq (local.get ${'$'}x) (f64.const 0)) (then (return (f64.const 0))))
+    (if (f64.gt (local.get ${'$'}x) (f64.const 0))
+      (then (return (call ${'$'}__soft_exp (f64.mul (local.get ${'$'}y) (call ${'$'}__soft_log (local.get ${'$'}x)))))))
+    ;; negative base is real only for an integer exponent; the sign follows its parity
+    (local.set ${'$'}n (f64.nearest (local.get ${'$'}y)))
+    (if (f64.ne (local.get ${'$'}n) (local.get ${'$'}y))
+      (then (return (f64.div (f64.const 0) (f64.const 0)))))
+    (local.set ${'$'}odd (i32.and (i32.trunc_f64_s (local.get ${'$'}n)) (i32.const 1)))
+    (local.set ${'$'}n (call ${'$'}__soft_exp (f64.mul (local.get ${'$'}y) (call ${'$'}__soft_log (f64.neg (local.get ${'$'}x))))))
+    (if (result f64) (local.get ${'$'}odd) (then (f64.neg (local.get ${'$'}n))) (else (local.get ${'$'}n))))
+"""
+
 }

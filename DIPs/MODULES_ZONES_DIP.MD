@@ -56,17 +56,17 @@ A `friend zone PATH::SUB { … }` groups declarations under a `::`-separated zon
 path. Members are reached with the full path:
 
 ```azora
-friend zone std::math {
+friend zone std {
     fin PI = 3.14159
     func abs(x: Real): Real { … }
 }
 
 // elsewhere, after `import std.math`:
-fin p = std::math::PI
-fin a = std::math::abs(-2.0)
+fin p = std::PI
+fin a = std::abs(-2.0)
 ```
 
-- The zone path (`std::math`) is independent of the module file path
+- The zone path (`std`) is independent of the module file path
   (`std.math`).
 - Flat convention: many stdlib utilities live in `friend zone std` and are reached
   as `std::name` (e.g. `std::println`, `std::listOf`).

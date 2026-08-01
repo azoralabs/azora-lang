@@ -52,7 +52,7 @@ zone std {
      *
      * @param T The element type.
      */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     spec Set<T> {
         /** Number of unique elements. */
         prop size[self: Self&]: Int
@@ -100,7 +100,7 @@ zone std {
      *
      * @param T The element type.
      */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     spec MutableSet<T> : Set<T> {
         /** Adds `element`; returns whether membership changed. */
         func add[self: Self&](element: T): Bool
@@ -121,7 +121,7 @@ zone std {
      *
      * @param T The element type.
      */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     @Serializable
     pack LinkedHashSet<T> {
         var data: T* = alloc T[8]
@@ -135,7 +135,7 @@ zone std {
 
     impl LinkedHashSet<T> {
         /** Doubles the backing buffer, copying existing elements. */
-        @Experimental(sinceAzora: "0.0.4")
+        @Experimental(since: "0.0.4")
         func growSet() { self! ->
             fin newCap = self.capacity * 2
             fin newData = alloc T[newCap]
@@ -149,7 +149,7 @@ zone std {
         }
 
         /** Returns whether `element` is already stored. */
-        @Experimental(sinceAzora: "0.0.4")
+        @Experimental(since: "0.0.4")
         func has(element: T): Bool { self& ->
             for i in 0..<self.size {
                 if self.data[i] == element { return true }
@@ -270,17 +270,17 @@ zone std {
     // Factories
     // ---------------------------------------------------------------------
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     func emptySet<T>(): Set<T> {
         return LinkedHashSet<T>()
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     func emptyMutableSet<T>(): MutableSet<T> {
         return LinkedHashSet<T>()
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     func setOf<T>(...elements: T): Set<T> {
         var result = LinkedHashSet<T>()
         for i in 0..<elements.size {
@@ -289,7 +289,7 @@ zone std {
         return result
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     func mutableSetOf<T>(...elements: T): MutableSet<T> {
         var result = LinkedHashSet<T>()
         for i in 0..<elements.size {
@@ -298,7 +298,7 @@ zone std {
         return result
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     func linkedHashSetOf<T>(...elements: T): LinkedHashSet<T> {
         var result = LinkedHashSet<T>()
         for i in 0..<elements.size {
@@ -307,14 +307,14 @@ zone std {
         return result
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     func emptyLinkedHashSet<T>(): MutableSet<T> {
         return LinkedHashSet<T>()
     }
 
     // --- HashSet (hash-table, unspecified iteration order; T requires oper# + oper==) ---
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     @Serializable
     pack HashSet<T> {
         var data: T* = alloc T[8]
@@ -322,7 +322,7 @@ zone std {
         var capacity: Int = 8
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     func hashSetOf<T>(...elements: T): HashSet<T> {
         var result = HashSet<T>()
         for i in 0..<elements.size {
@@ -331,13 +331,13 @@ zone std {
         return result
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     func emptyHashSet<T>(): MutableSet<T> {
         return HashSet<T>()
     }
 
     impl HashSet<T> {
-        @Experimental(sinceAzora: "0.0.4")
+        @Experimental(since: "0.0.4")
         func growSet() { self! ->
             fin newCap = self.capacity * 2
             fin newData = alloc T[newCap]
@@ -350,7 +350,7 @@ zone std {
             purge oldData
         }
 
-        @Experimental(sinceAzora: "0.0.4")
+        @Experimental(since: "0.0.4")
         func has(element: T): Bool { self& ->
             for i in 0..<self.size {
                 if self.data[i] == element { return true }
@@ -471,7 +471,7 @@ zone std {
         }
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     impl oper[] for HashSet<T> { self&, index ->
         assert index >= 0 && index < self.size {
             "Set index out of bounds"
@@ -479,7 +479,7 @@ zone std {
         return self.data[index]
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     impl Into<String> for HashSet<T> { self& ->
         var s = "{"
         for i in 0..<self.size {
@@ -489,7 +489,7 @@ zone std {
         return s + "}"
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     impl oper== by Set<T> for HashSet<T> { self&, rhs ->
         if self.size != rhs.size { return false }
         for i in 0..<self.size {
@@ -498,12 +498,12 @@ zone std {
         return true
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     impl oper!= by Set<T> for HashSet<T> { self&, rhs ->
         return !(self == rhs)
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     impl oper# for HashSet<T> { self& ->
         var result = 0 as ULong
         for i in 0..<self.size {
@@ -514,7 +514,7 @@ zone std {
 
     // --- TreeSet (sorted via oper<; T requires oper<) ---
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     @Serializable
     pack TreeSet<T> {
         var data: T* = alloc T[8]
@@ -522,7 +522,7 @@ zone std {
         var capacity: Int = 8
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     func treeSetOf<T>(...elements: T): TreeSet<T> {
         var result = TreeSet<T>()
         for i in 0..<elements.size {
@@ -531,13 +531,13 @@ zone std {
         return result
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     func emptyTreeSet<T>(): MutableSet<T> {
         return TreeSet<T>()
     }
 
     impl TreeSet<T> {
-        @Experimental(sinceAzora: "0.0.4")
+        @Experimental(since: "0.0.4")
         func growSet() { self! ->
             fin newCap = self.capacity * 2
             fin newData = alloc T[newCap]
@@ -550,7 +550,7 @@ zone std {
             purge oldData
         }
 
-        @Experimental(sinceAzora: "0.0.4")
+        @Experimental(since: "0.0.4")
         func has(element: T): Bool { self& ->
             for i in 0..<self.size {
                 if self.data[i] == element { return true }
@@ -671,7 +671,7 @@ zone std {
         }
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     impl oper[] for TreeSet<T> { self&, index ->
         assert index >= 0 && index < self.size {
             "Set index out of bounds"
@@ -679,7 +679,7 @@ zone std {
         return self.data[index]
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     impl Into<String> for TreeSet<T> { self& ->
         var s = "{"
         for i in 0..<self.size {
@@ -689,7 +689,7 @@ zone std {
         return s + "}"
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     impl oper== by Set<T> for TreeSet<T> { self&, rhs ->
         if self.size != rhs.size { return false }
         for i in 0..<self.size {
@@ -698,12 +698,12 @@ zone std {
         return true
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     impl oper!= by Set<T> for TreeSet<T> { self&, rhs ->
         return !(self == rhs)
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     impl oper# for TreeSet<T> { self& ->
         var result = 0 as ULong
         for i in 0..<self.size {
@@ -716,7 +716,7 @@ zone std {
     // Operators
     // ---------------------------------------------------------------------
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     impl oper[] for LinkedHashSet<T> { self&, index ->
         assert index >= 0 && index < self.size {
             "Set index out of bounds"
@@ -724,7 +724,7 @@ zone std {
         return self.data[index]
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     impl Into<String> for LinkedHashSet<T> { self& ->
         var s = "{"
         for i in 0..<self.size {
@@ -734,7 +734,7 @@ zone std {
         return s + "}"
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     impl oper== by Set<T> for LinkedHashSet<T> { self&, rhs ->
         if self.size != rhs.size { return false }
         for i in 0..<self.size {
@@ -743,12 +743,12 @@ zone std {
         return true
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     impl oper!= by Set<T> for LinkedHashSet<T> { self&, rhs ->
         return !(self == rhs)
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     impl oper# for LinkedHashSet<T> { self& ->
         var result = 0 as ULong
         for i in 0..<self.size {

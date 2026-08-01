@@ -301,14 +301,14 @@ class Feature003SyntaxTest {
     @Test fun friendZoneAcceptsDoubleColonPath() {
         assertEquals("3", run("""
             use std.io
-            zone std::math {
+            zone std {
                 func abs(x: Int): Int {
                     if x < 0 { return -x }
                     return x
                 }
             }
             func main() {
-                std::println(std::math::abs(-3))
+                std::println(std::abs(-3))
             }
         """.trimIndent()))
     }

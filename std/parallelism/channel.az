@@ -66,7 +66,7 @@ zone std {
          * @param value The message to send.
          * @throws AssertionError if the channel is closed.
          */
-        @Experimental(sinceAzora: "0.0.1")
+        @Experimental(since: "0.0.1")
         func send(value: T) {
             assert !closed { "Cannot send on closed channel" }
             mutex.lock()
@@ -80,7 +80,7 @@ zone std {
          * @return The next message.
          * @throws AssertionError if the channel is empty.
          */
-        @Experimental(sinceAzora: "0.0.1")
+        @Experimental(since: "0.0.1")
         func receive(): T {
             assert queue.isNotEmpty { "Channel is empty" }
             mutex.lock()
@@ -95,7 +95,7 @@ zone std {
          * @param default The value to return if the channel is empty.
          * @return The next message, or the default value if empty.
          */
-        @Experimental(sinceAzora: "0.0.1")
+        @Experimental(since: "0.0.1")
         func tryReceive(default: T): T {
             mutex.lock()
             if queue.isEmpty {

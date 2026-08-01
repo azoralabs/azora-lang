@@ -38,7 +38,7 @@ zone std {
      * @param action The function to execute.
      * @return true if the action completed, false otherwise.
      */
-    @Experimental(sinceAzora: "0.0.1")
+    @Experimental(since: "0.0.1")
     async func timeout<T>(ms: T, action: () -> Unit): Bool {
         var completed = false
         fin handle = async {
@@ -60,7 +60,7 @@ zone std {
      * @param action The function to execute. Should return true on success.
      * @return true if any attempt succeeded, false if all attempts failed.
      */
-    @Experimental(sinceAzora: "0.0.1")
+    @Experimental(since: "0.0.1")
     async func retry<T>(attempts: T, delayMs: T, action: () -> Bool): Bool {
         for i in 0..<attempts {
             fin result = action()
@@ -79,7 +79,7 @@ zone std {
      * @param a The first action to execute.
      * @param b The second action to execute.
      */
-    @Experimental(sinceAzora: "0.0.1")
+    @Experimental(since: "0.0.1")
     async func parallel<T>(tag: T, a: () -> Unit, b: () -> Unit) {
         fin t1 = async { a() }
         fin t2 = async { b() }
@@ -94,7 +94,7 @@ zone std {
      * @param a The first action to execute.
      * @param b The second action to execute.
      */
-    @Experimental(sinceAzora: "0.0.1")
+    @Experimental(since: "0.0.1")
     async func race<T>(tag: T, a: () -> Unit, b: () -> Unit) {
         var done = false
         fin t1 = async {

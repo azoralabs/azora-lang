@@ -145,7 +145,7 @@ checking; `guard cond else { }`; `break`/`continue`.
 | `flow name(p): T { … yield v }` | lazy generator |
 | `@Reactive func name() { }` | rendering-independent reactive owner |
 | `bridge target { func sigs }` | FFI extern declarations |
-| `zone Name { … }` / `zone std::math { … }` | named namespace (`Name::member`); the same path may be opened many times and merges |
+| `zone Name { … }` / `zone std { … }` | named namespace (`Name::member`); the same path may be opened many times and merges |
 | `test "name" { }` / `test .All "suite"` | one test / bodyless file-level aggregate suite |
 
 ### Object-model members (inside `impl`/`node`/`solo` bodies)

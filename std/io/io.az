@@ -72,7 +72,7 @@ zone std {
      * @param length The number of times to repeat it.
      * @return A string of the given character repeated length times.
      */
-    @Experimental(sinceAzora: "0.0.1")
+    @Experimental(since: "0.0.1")
     func separator(char: String, length: Int): String = char * length
 
     /**
@@ -82,7 +82,7 @@ zone std {
      * @param width The width of the separator lines.
      * @return The title string.
      */
-    @Experimental(sinceAzora: "0.0.1")
+    @Experimental(since: "0.0.1")
     func header(title: String, width: Int): String {
         var line: String = separator("-", width)
         println(line)

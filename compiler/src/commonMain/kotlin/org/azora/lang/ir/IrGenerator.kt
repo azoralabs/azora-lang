@@ -1544,10 +1544,13 @@ class IrGenerator(private val table: SymbolTable) {
                 }
                 // Extension method reached through a `with value { … }` scope:
                 // `with c { bump() }` lowers to `Counter_bump(c)`.
+                // A zone-qualified call reaches its contextual receiver too, matching
+                // how the resolver typed it: `std::yield(1)` names the member `yield`.
+                val contextualName = expr.callee.substringAfterLast("__")
                 for (ctx in contextualValues.asReversed().flatten()) {
                     val ct = ctx.type
                     if (ct is IrType.Named) {
-                        val mangled = table.lookupMethod(ct.name, expr.callee)
+                        val mangled = table.lookupMethod(ct.name, contextualName)
                         if (mangled != null) {
                             val func = table.lookupFunction(mangled)!!
                             val args = expr.args.map { lowerExpr(it) }
@@ -1825,7 +1828,17 @@ class IrGenerator(private val table: SymbolTable) {
                     )
                 table.pushScope()
                 pushNameScope()
-                val ordinaryParams = expr.params.mapIndexed { index, p ->
+                // `{ body }` carries the parser's implicit `it`. When the callable
+                // type has no ordinary parameters there is nothing for it to stand
+                // for, and keeping it would shift every contextual receiver by one
+                // argument at the call site. The resolver drops it from the type;
+                // the closure has to drop it from its parameter list to match.
+                val ordinarySources = if (
+                    callableType.params.isEmpty() &&
+                    expr.params.size == 1 &&
+                    expr.params[0].name == "it"
+                ) emptyList() else expr.params
+                val ordinaryParams = ordinarySources.mapIndexed { index, p ->
                     val t = callableType.params.getOrNull(index) ?: resolveType(p.type)
                     val m = registerName(p.name)
                     table.defineVariable(VariableSymbol(p.name, t))
@@ -1849,11 +1862,14 @@ class IrGenerator(private val table: SymbolTable) {
                     table.defineVariable(VariableSymbol(p.name, t, mutable = false))
                     m to t
                 }
-                if (inheritsReceivers) {
+                // A lambda's receivers are contextual values for its body whether it
+                // named them or inherited them, matching how the resolver typed it —
+                // otherwise a bare call that type-checked would fail to lower.
+                if (receiverParams.isNotEmpty()) {
                     contextualValues.addLast(receiverParams.map { (name, t) -> IrExpr.Var(name, t) })
                 }
                 val body = lowerBody(expr.body)
-                if (inheritsReceivers) contextualValues.removeLast()
+                if (receiverParams.isNotEmpty()) contextualValues.removeLast()
                 popNameScope()
                 table.popScope()
                 val retType = body.mapNotNull { (it as? IrStmt.Return)?.value?.type }.firstOrNull() ?: IrType.Unit

@@ -43,7 +43,7 @@ use std.string
 
 zone std {
     /** Text encodings supported by the standard serializer. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     enum SerializationFormat {
         /** RFC 8259 JSON using `:` between object keys and values. */
         Json
@@ -53,7 +53,7 @@ zone std {
     }
 
     /** Failures reported by text decoders and typed serializers. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     fail SerializationError {
         InvalidSyntax,
         InvalidEscape,
@@ -78,7 +78,7 @@ zone std {
      * metadata and can be inspected from inline code with
      * `(std::reflect<value>).decoMeta<Serializable>.ignoreUnknownFields`.
     */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     @Derive(
         generator: "serializer",
         role: "all",
@@ -97,7 +97,7 @@ zone std {
     }
 
     /** Marks a pack for compiler-generated JSON serialization only. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     @Derive(
         generator: "serializer",
         role: "json",
@@ -116,7 +116,7 @@ zone std {
     }
 
     /** Marks a pack for compiler-generated AZON serialization only. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     @Derive(
         generator: "serializer",
         role: "azon",
@@ -135,7 +135,7 @@ zone std {
     }
 
     /** Overrides the serialized name of a field or type. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     @Derive(generator: "serializer", role: "name")
     deco SerialName for [.Pack, .Enum, .Field] {
         /**
@@ -149,12 +149,12 @@ zone std {
     }
 
     /** Excludes a field from generated serialization and deserialization. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     @Derive(generator: "serializer", role: "ignore")
     deco SerialIgnore for .Field
 
     /** Requires a field to be present even when its Azora field has a default. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     @Derive(generator: "serializer", role: "required")
     deco SerialRequired for .Field
 
@@ -164,7 +164,7 @@ zone std {
      * `maxDepth` and `maxInputLength` are security limits. Applications should
      * lower them for protocols with known payload bounds.
      */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     pack SerializerOptions {
         var pretty: Bool = false
         var indent: String = "  "
@@ -175,7 +175,7 @@ zone std {
     }
 
     /** A named member in an ordered serialized object. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     pack SerialField {
         fin name: String
         fin value: SerialValue
@@ -188,7 +188,7 @@ zone std {
      * which provides deterministic output and permits duplicate detection before
      * a typed decoder consumes the value.
      */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     slot SerialValue {
         Null
         Bool(value: Bool)
@@ -207,7 +207,7 @@ zone std {
      *
      * @param T The value type handled by this serializer.
      */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     spec Serializer<T> {
         /** Converts a typed value into the format-independent value tree. */
         func toSerialValue[self: Self&](value: T&): SerialValue ?! SerializationError
@@ -226,7 +226,7 @@ zone std {
      *
      * @param T The value type handled by this JSON codec.
      */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     spec JsonSerializer<T> {
         /** Encodes `value` as one complete JSON document. */
         func toJson[self: Self&](value: T&, options: SerializerOptions&): String ?! SerializationError
@@ -244,7 +244,7 @@ zone std {
      *
      * @param T The value type handled by this AZON codec.
      */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     spec AzonSerializer<T> {
         /** Encodes `value` as one complete AZON document. */
         func toAzon[self: Self&](value: T&, options: SerializerOptions&): String ?! SerializationError
@@ -254,25 +254,25 @@ zone std {
     }
 
     /** Creates conservative defaults suitable for processing untrusted input. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     func serializerOptions(): SerializerOptions {
         return SerializerOptions()
     }
 
     /** Creates an exact number node after validating the number token. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     func serialNumber(value: String): SerialValue ?! SerializationError {
         if !isValidSerialNumber(value) { return .InvalidNumber }
         return SerialValue.Number(value)
     }
 
     /** Returns the named object field, or fails when it is absent. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     func serialField(value: SerialValue&, name: String): SerialValue ?! SerializationError {
         when value {
             SerialValue.Object(fields) -> {
                 for i in 0..<fields.size {
-                    if fields.get(i).name == name { return fields.get(i).value }
+                    if fields[i].name == name { return fields[i].value }
                 }
                 return .MissingField
             }
@@ -282,16 +282,16 @@ zone std {
 
     /** Returns one typed object field by positional index. */
     func serialFieldAt(fields: List<SerialField>&, index: Int): SerialField {
-        return fields.get(index)
+        return fields[index]
     }
 
     /** Returns one typed serialized array element by positional index. */
     func serialValueAt(values: List<SerialValue>&, index: Int): SerialValue {
-        return values.get(index)
+        return values[index]
     }
 
     /** Extracts a text value or reports an incompatible serialized type. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     func serialAsText(value: SerialValue&): String ?! SerializationError {
         when value {
             SerialValue.Text(text) -> { return text }
@@ -300,7 +300,7 @@ zone std {
     }
 
     /** Extracts a Boolean value or reports an incompatible serialized type. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     func serialAsBool(value: SerialValue&): Bool ?! SerializationError {
         when value {
             SerialValue.Bool(boolean) -> { return boolean }
@@ -309,7 +309,7 @@ zone std {
     }
 
     /** Extracts exactly one character from a serialized text value. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     func serialAsChar(value: SerialValue&): Char ?! SerializationError {
         fin text = try serialAsText(value)
         if stringLength(text) != 1 { return .UnexpectedType }
@@ -322,7 +322,7 @@ zone std {
      * Fractional and exponent forms are rejected even though they are valid
      * serialized real numbers.
      */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     func serialAsLong(value: SerialValue&): Long ?! SerializationError {
         when value {
             SerialValue.Number(text) -> {
@@ -420,7 +420,7 @@ zone std {
     }
 
     /** Extracts a finite real number, including fraction and exponent forms. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     func serialAsReal(value: SerialValue&): Real ?! SerializationError {
         when value {
             SerialValue.Number(text) -> {
@@ -474,7 +474,7 @@ zone std {
     }
 
     /** Encodes a value tree as canonical compact JSON or AZON. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     func encodeSerialValue(
         value: SerialValue&,
         format: SerializationFormat,
@@ -491,7 +491,7 @@ zone std {
      * default. AZON uses the same scalar and collection grammar as JSON, with
      * `=` replacing `:` for object members.
      */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     func decodeSerialValue(
         input: String,
         format: SerializationFormat,
@@ -718,7 +718,7 @@ zone std {
                 for i in 0..<values.size {
                     if i > 0 { result = result + "," }
                     if options.pretty { result = result + "\n" + _repeatIndent(options.indent, depth + 1) }
-                    result = result + try _encodeSerialValueAtDepth(values.get(i), format, options, depth + 1)
+                    result = result + try _encodeSerialValueAtDepth(values[i], format, options, depth + 1)
                 }
                 if options.pretty && values.size > 0 { result = result + "\n" + _repeatIndent(options.indent, depth) }
                 return result + "]"
@@ -786,7 +786,7 @@ zone std {
     }
 
     /** Validates the complete RFC 8259 number grammar without converting it. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     func isValidSerialNumber(value: String): Bool {
         if stringLength(value) == 0 { return false }
         var i = 0

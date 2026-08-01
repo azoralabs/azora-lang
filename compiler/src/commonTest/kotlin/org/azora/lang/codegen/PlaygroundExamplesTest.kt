@@ -196,12 +196,13 @@ func main() {
 
     @Test fun generators() = assertEquals("30", run("""mod playground
 use std.io
-flow squares(n: Int): Int {
-    for i in 0..<n { yield i * i }
-}
+use std.concurrency.generators
+func squares(n: Int): std::Sequence<Int> = std::sequence([s: std::SequenceScope<Int>!]{
+    for i in 0..<n { std::yield(i * i) }
+})
 func main() {
     var sum = 0
-    for x in squares(5) { sum += x }
+    squares(5).collect({ x -> sum += x })
     std::println(sum)
 }"""))
 

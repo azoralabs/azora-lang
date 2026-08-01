@@ -22,7 +22,7 @@ zone std {
         var _raw: T*
     }
 
-    @Experimental(sinceAzora: "0.0.3")
+    @Experimental(since: "0.0.3")
     oper.* [self: Weak<T>&]: T {
         assert self._raw != null { "Weak pointer is null" }
         return self._raw.*
@@ -30,7 +30,7 @@ zone std {
 
     impl Weak<T> {
         /** Returns the referenced value (panics if the pointer is null). */
-        @Experimental(sinceAzora: "0.0.3")
+        @Experimental(since: "0.0.3")
         prop get[self: Self&]: T {
             assert self._raw != null { "Weak pointer is null" }
             return self._raw.*
@@ -46,7 +46,7 @@ zone std {
     }
 
     /** Wraps a raw `T*` as a non-owning `Weak<T>`. */
-    @Experimental(sinceAzora: "0.0.3")
+    @Experimental(since: "0.0.3")
     func weakOf<T>(ptr: T*): Weak<T> {
         return Weak(ptr)
     }

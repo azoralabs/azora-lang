@@ -49,7 +49,7 @@ zone std {
          *
          * @param action The function to execute with the current value.
          */
-        @Experimental(sinceAzora: "0.0.1")
+        @Experimental(since: "0.0.1")
         func read(action: (T) -> Unit) {
             mutex.lock()
             action(value)
@@ -61,7 +61,7 @@ zone std {
          *
          * @param action The function that receives the current value and returns the new value.
          */
-        @Experimental(sinceAzora: "0.0.1")
+        @Experimental(since: "0.0.1")
         func write(action: (T) -> T) {
             mutex.lock()
             self._value = action(value)
@@ -73,7 +73,7 @@ zone std {
          *
          * @return The current value.
          */
-        @Experimental(sinceAzora: "0.0.1")
+        @Experimental(since: "0.0.1")
         func get(): T {
             mutex.lock()
             fin v = value
@@ -98,7 +98,7 @@ zone std {
         /**
          * Decrements the latch count by one.
          */
-        @Experimental(sinceAzora: "0.0.1")
+        @Experimental(since: "0.0.1")
         func countDown() {
             atomic.add(1)
         }
@@ -106,7 +106,7 @@ zone std {
         /**
          * Whether the latch count has been reached.
          */
-        @Experimental(sinceAzora: "0.0.1")
+        @Experimental(since: "0.0.1")
         prop isReached[self: Self&]: Bool = atomic.load() >= count
     }
 
@@ -127,7 +127,7 @@ zone std {
         /**
          * Acquires the lock, spinning until successful.
          */
-        @Experimental(sinceAzora: "0.0.1")
+        @Experimental(since: "0.0.1")
         func acquire() {
             while !flag.cas(0, 1) { }
         }
@@ -135,7 +135,7 @@ zone std {
         /**
          * Releases the lock.
          */
-        @Experimental(sinceAzora: "0.0.1")
+        @Experimental(since: "0.0.1")
         func release() {
             flag.store(0)
         }
@@ -145,7 +145,7 @@ zone std {
          *
          * @param action The function to execute under lock.
          */
-        @Experimental(sinceAzora: "0.0.1")
+        @Experimental(since: "0.0.1")
         func withLock(action: () -> Unit) {
             self.acquire()
             action()
@@ -159,7 +159,7 @@ zone std {
      * @param mutex The mutex to lock.
      * @param action The function to execute while holding the lock.
      */
-    @Experimental(sinceAzora: "0.0.1")
+    @Experimental(since: "0.0.1")
     func withMutex<T>(mutex: T, action: () -> Unit) {
         mutex.lock()
         action()

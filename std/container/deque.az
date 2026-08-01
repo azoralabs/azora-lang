@@ -58,7 +58,7 @@ zone std {
         prop isNotEmpty[self: Self&]: Bool = self.size > 0
 
         /** Inserts [value] at the front; O(1) amortized. */
-        @Experimental(sinceAzora: "0.0.1")
+        @Experimental(since: "0.0.1")
         func pushFront(value: T): Unit {
             if self.size >= self.capacity {
                 self._growDeque()
@@ -69,7 +69,7 @@ zone std {
         }
 
         /** Inserts [value] at the back; O(1) amortized. */
-        @Experimental(sinceAzora: "0.0.1")
+        @Experimental(since: "0.0.1")
         func pushBack(value: T): Unit {
             if self.size >= self.capacity {
                 self._growDeque()
@@ -80,7 +80,7 @@ zone std {
         }
 
         /** Removes and returns the front element; O(1). */
-        @Experimental(sinceAzora: "0.0.1")
+        @Experimental(since: "0.0.1")
         func popFront(): T {
             var value: T = self.data[self.head]
             self.head = (self.head + 1) % self.capacity
@@ -89,7 +89,7 @@ zone std {
         }
 
         /** Removes and returns the back element; O(1). */
-        @Experimental(sinceAzora: "0.0.1")
+        @Experimental(since: "0.0.1")
         func popBack(): T {
             self.tail = (self.tail - 1 + self.capacity) % self.capacity
             var value: T = self.data[self.tail]
@@ -98,13 +98,13 @@ zone std {
         }
 
         /** Returns the front element without removing it. */
-        @Experimental(sinceAzora: "0.0.1")
+        @Experimental(since: "0.0.1")
         func peekFront(): T {
             return self.data[self.head]
         }
 
         /** Returns the back element without removing it. */
-        @Experimental(sinceAzora: "0.0.1")
+        @Experimental(since: "0.0.1")
         func peekBack(): T {
             var idx: Int = (self.tail - 1 + self.capacity) % self.capacity
             return self.data[idx]
@@ -119,7 +119,7 @@ zone std {
         }
 
         /** Doubles the circular buffer's capacity and re-linearizes it. */
-        @Experimental(sinceAzora: "0.0.1")
+        @Experimental(since: "0.0.1")
         func _growDeque(): Unit {
             var newCap: Int = self.capacity * 2
             var newData: T* = alloc T[newCap]
@@ -135,7 +135,7 @@ zone std {
         }
 
         /** Renders the deque as `Deque[e0, e1, …]` in front-to-back order. */
-        @Experimental(sinceAzora: "0.0.1")
+        @Experimental(since: "0.0.1")
         func toString(): String {
             var result: String = "Deque["
             for i in 0..<self.size {

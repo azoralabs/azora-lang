@@ -1,0 +1,201 @@
+/*
+ * Copyright 2026 AzoraLabs
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+mod std.concurrency.generators
+
+use std.container.list
+
+/**
+ * @file std/concurrency/generators
+ *
+ * Stream builders and the types they produce.
+ *
+ * A `Sequence<T>` is a synchronous series of values; a `Flow<T>` is the
+ * asynchronous counterpart. Both are ordinary library types rather than
+ * language constructs, so a producer stays an ordinary `func` and only its
+ * return type says what kind of stream it is:
+ *
+ * ```azora
+ * func values(): std::Sequence<Int> = std::sequence([s: std::SequenceScope<Int>!]{
+ *     std::yield(1)
+ *     std::yield(2)
+ * })
+ *
+ * func countdown(from: Int): std::Flow<Int> = std::flow([c: std::FlowCollector<Int>!]{
+ *     reverse for n in from..0 {
+ *         std::emit(n)
+ *     }
+ * })
+ * ```
+ *
+ * The builder runs its producer to completion when it is called, collecting
+ * every value into the stream. Consumers therefore never observe a partially
+ * produced stream, and a producer that never finishes never returns — an
+ * unbounded `while true { yield … }` does not terminate.
+ *
+ * @since 0.0.5
+ */
+
+zone std {
+    /**
+     * The scope a `sequence` producer emits into.
+     *
+     * Passed to the producer as a contextual receiver, which is what lets the
+     * body call [yield] without naming it.
+     */
+    @Experimental(since: "0.0.5")
+    pack SequenceScope<T> {
+        var items: ArrayList<T>
+    }
+
+    /**
+     * The collector a `flow` producer emits into.
+     *
+     * The asynchronous counterpart of [SequenceScope]; the body calls [emit].
+     */
+    @Experimental(since: "0.0.5")
+    pack FlowCollector<T> {
+        var items: ArrayList<T>
+    }
+
+    /** A synchronous series of values. */
+    @Experimental(since: "0.0.5")
+    pack Sequence<T> {
+        fin items: ArrayList<T>
+    }
+
+    /** An asynchronous series of values. */
+    @Experimental(since: "0.0.5")
+    pack Flow<T> {
+        fin items: ArrayList<T>
+    }
+
+    /**
+     * Adds `value` to the sequence being built.
+     *
+     * Takes its scope contextually, so a producer body calls it unqualified by
+     * the scope: `std::yield(1)`.
+     *
+     * @param scope The sequence under construction.
+     * @param value The value to append.
+     */
+    @Experimental(since: "0.0.5")
+    func yield[scope: SequenceScope<T>!](value: T) {
+        scope.items.add(value)
+    }
+
+    /**
+     * Adds `value` to the flow being built. The [yield] of [flow].
+     *
+     * @param collector The flow under construction.
+     * @param value The value to append.
+     */
+    @Experimental(since: "0.0.5")
+    func emit[collector: FlowCollector<T>!](value: T) {
+        collector.items.add(value)
+    }
+
+    /**
+     * Builds a [Sequence] from a producer that yields its values.
+     *
+     * The producer runs to completion here, so the returned sequence is already
+     * complete when the call returns.
+     *
+     * @param T The element type.
+     * @param builder The producer, which emits with [yield].
+     * @return The sequence of every yielded value, in order.
+     */
+    @Experimental(since: "0.0.5")
+    func sequence<T>(builder: [SequenceScope<T>!] -> Unit): Sequence<T> {
+        var scope = SequenceScope<T>(arrayListOf<T>())
+        with scope { builder() }
+        return Sequence<T>(scope.items)
+    }
+
+    /**
+     * Builds a [Flow] from a producer that emits its values.
+     *
+     * @param T The element type.
+     * @param builder The producer, which emits with [emit].
+     * @return The flow of every emitted value, in order.
+     */
+    @Experimental(since: "0.0.5")
+    func flow<T>(builder: [FlowCollector<T>!] -> Unit): Flow<T> {
+        var collector = FlowCollector<T>(arrayListOf<T>())
+        with collector { builder() }
+        return Flow<T>(collector.items)
+    }
+
+    impl Sequence {
+        /** Number of values in this sequence. */
+        @Experimental(since: "0.0.5")
+        prop size[self: Self&]: Int = self.items.size
+
+        /**
+         * Invokes `action` once for every value, in order.
+         *
+         * @param action Receives each value in turn.
+         */
+        @Experimental(since: "0.0.5")
+        func collect[self: Self&](action: (T) -> Unit) {
+            self.items.forEach(action)
+        }
+    }
+
+    impl Flow {
+        /** Number of values in this flow. */
+        @Experimental(since: "0.0.5")
+        prop size[self: Self&]: Int = self.items.size
+
+        /**
+         * Invokes `action` once for every value, in order.
+         *
+         * @param action Receives each value in turn.
+         */
+        @Experimental(since: "0.0.5")
+        func collect[self: Self&](action: (T) -> Unit) {
+            self.items.forEach(action)
+        }
+    }
+}
+
+test "sequence collects every yielded value in order" {
+    fin values = std::sequence([s: std::SequenceScope<Int>!]{
+        std::yield(1)
+        std::yield(2)
+        std::yield(3)
+    })
+    var seen = ""
+    values.collect({ n -> seen += "$n" })
+    assert seen == "123" { "sequence must preserve yield order" }
+}
+
+test "flow collects every emitted value in order" {
+    fin events = std::flow([c: std::FlowCollector<Int>!]{
+        std::emit(10)
+        std::emit(20)
+    })
+    var total = 0
+    events.collect({ n -> total += n })
+    assert total == 30 { "flow must deliver every emitted value" }
+}
+
+test "an empty producer yields an empty stream" {
+    fin values = std::sequence([s: std::SequenceScope<Int>!]{ })
+    assert values.size == 0 { "a producer that yields nothing must be empty" }
+}
+
+test .All "generators"

@@ -315,7 +315,7 @@ class Parser(
      * `zone Name (:: Name)* { items }` — a namespace contribution.
      *
      * Each member is mangled with the zone path (`zone std { zone math { fin PI } }`
-     * → `std__math__PI`, reached as `std::math::PI`). The same zone path may be
+     * → `std__math__PI`, reached as `std::PI`). The same zone path may be
      * opened as many times as it likes, in as many modules as it likes, and the
      * contributions merge — a zone is a name a package agrees on, not a block
      * one file owns.
@@ -670,18 +670,16 @@ class Parser(
             // Compile-time list bindings (`let X: [Type]`, `inline fin ranks: [Int]`)
             // must be recognised before the general `inline`/`fin`/`let` handlers.
             isTypeListBindingAhead() -> parseTypeListBinding()
-            check(TokenType.UNSAFE) && (peekNext()?.type in setOf(TokenType.FUNC, TokenType.FLOW) || isAsyncFuncAt(current + 1)) -> {
+            check(TokenType.UNSAFE) && (peekNext()?.type == TokenType.FUNC || isAsyncFuncAt(current + 1)) -> {
                 advance()
                 when {
                     isAsyncFuncAt(current) -> TopLevel.Func(parseFuncDecl(annotations = annotations, isTask = true, isUnsafe = true, visibility = visibility))
-                    check(TokenType.FLOW) -> TopLevel.Func(parseFuncDecl(annotations = annotations, isFlow = true, isUnsafe = true, visibility = visibility))
                     else -> TopLevel.Func(parseFuncDecl(annotations = annotations, isUnsafe = true, visibility = visibility))
                 }
             }
             check(TokenType.FUNC) -> funcOrExtension(parseFuncDecl(annotations = annotations, visibility = visibility))
             isAsyncFuncAt(current) ->
                 funcOrExtension(parseFuncDecl(annotations = annotations, isTask = true, visibility = visibility))
-            check(TokenType.FLOW) -> funcOrExtension(parseFuncDecl(annotations = annotations, isFlow = true, visibility = visibility))
             check(TokenType.INFX) -> parseInfx()
             check(TokenType.INLINE) -> parseTopLevelInline()
             check(TokenType.DEEPINLINE) -> parseTopLevelDeepInline()
@@ -2242,7 +2240,6 @@ class Parser(
                 }
                 check(TokenType.FUNC) -> methods.add(parseFuncDecl(isInline, annotations = memberAnnotations, isVirtual = isVirt, visibility = visibility, inImplBlock = true))
                 isAsyncFuncAt(current) -> methods.add(parseFuncDecl(isInline, annotations = memberAnnotations, isVirtual = isVirt, isTask = true, visibility = visibility, inImplBlock = true))
-                check(TokenType.FLOW) -> methods.add(parseFuncDecl(isInline, annotations = memberAnnotations, isVirtual = isVirt, isFlow = true, visibility = visibility, inImplBlock = true))
                 else -> error("Expected 'prop', 'func', 'task', or 'flow' in impl block at line ${peek().line}")
             }
             skipNewlines()
@@ -3306,7 +3303,7 @@ class Parser(
             consume(TokenType.IDENTIFIER, "Expected 'async'")
             consume(TokenType.FUNC, "Expected 'func' after 'async'")
         } else {
-            val keyword = if (isFlow) TokenType.FLOW else TokenType.FUNC
+            val keyword = TokenType.FUNC
             consume(keyword, "Expected '${keyword.name.lowercase()}'")
         }
         if (check(TokenType.LESS)) {
@@ -4099,7 +4096,6 @@ class Parser(
             check(TokenType.FAIL) -> parseFailThrow()
             check(TokenType.UNSAFE) -> parseUnsafe()
             check(TokenType.PURGE) -> parsePurge()
-            check(TokenType.YIELD) -> parseYield()
             check(TokenType.TRY) && peekNext()?.type == TokenType.L_BRACE -> parseTry()
             check(TokenType.DEFER) -> parseDefer()
             check(TokenType.RESCUE) -> parseRescue()
@@ -4385,15 +4381,6 @@ class Parser(
     }
 
     /** `yield <expr>` — emit a value from a `flow` generator. */
-    private fun parseYield(): Stmt.Yield {
-        val start = peek()
-        consume(TokenType.YIELD, "Expected 'yield'")
-        val value = if (check(TokenType.NEWLINE) || check(TokenType.R_BRACE) || isAtEnd()) null else parseExpr()
-        consumeNewline()
-        // A bare `yield` (no value) yields Unit; the common form is `yield <expr>`.
-        return Stmt.Yield(value ?: Expr.TupleLit(emptyList(), start.line, start.column), start.line, start.column)
-    }
-
     private fun parseDefer(): Stmt.Defer {
         val start = peek()
         consume(TokenType.DEFER, "Expected 'defer'")
@@ -6487,20 +6474,7 @@ class Parser(
                 }
             }
             TokenType.L_BRACE -> parseLambda(tok.line, tok.column)
-            TokenType.FLOW -> parseCallableLambda(CallableKind.FLOW)
             // `launch { body }` — fire-and-forget task; desugars to a __launch(thunk) call.
-            TokenType.LAUNCH -> {
-                val t = advance() // 'launch'
-                consume(TokenType.L_BRACE, "Expected '{' after 'launch'")
-                skipNewlines()
-                val body = parseBlock().toMutableList()
-                if (body.isNotEmpty() && body.last() is Stmt.ExprStmt) {
-                    val last = body.removeAt(body.size - 1) as Stmt.ExprStmt
-                    body.add(Stmt.Return(last.expr, last.line, last.column, last.length))
-                }
-                consume(TokenType.R_BRACE, "Expected '}' after launch body")
-                Expr.Call("__launch", listOf(Expr.Lambda(emptyList(), body, t.line, t.column)), t.line, t.column)
-            }
             else -> error("Unexpected token '${tok.lexeme}' at line ${tok.line}")
         }
     }

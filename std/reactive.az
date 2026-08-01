@@ -43,14 +43,14 @@ expose mod std.reactive
  * annotation, so imports, completion, decorator target checks, reflection,
  * and documentation all observe the same symbol.
  */
-@Experimental(sinceAzora: "0.0.4")
+@Experimental(since: "0.0.4")
 bridge deco Reactive for [.Infx, .Task, .Func]
 
 zone std {
     /**
      * Describes the distinct lifetime selected by a reactive declaration.
      */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     enum ReactiveLifetime {
         /** Lives in the current reactive owner and may be recomputed with it. */
         Memory
@@ -68,7 +68,7 @@ zone std {
      * Hosts can use this metadata when persisting `rem` state without knowing
      * anything about a renderer.
      */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     pack ReactiveSnapshot<T> {
         fin key: String
         fin value: T

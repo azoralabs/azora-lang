@@ -125,7 +125,7 @@ enum class TokenType {
     // Memory model: `alloc <expr>`, `purge <expr>`, `deref <expr>`, `unsafe { }`, `isolated(expr)`.
     ALLOC, PURGE, UNSAFE, ISOLATED,
     // Concurrency: `flow name(...) { … yield v }` generators, `task { }` / `await`, `launch { }`.
-    FLOW, YIELD, AWAIT, LAUNCH,
+    AWAIT,
     // FFI: `bridge <target> { func sigs }` — extern function declarations.
     BRIDGE,
     // DI: `solo Name { … }` singleton, `inject Type` resolve, `wrap Name { … }` container.

@@ -1333,7 +1333,6 @@ enum class ReactiveKind { MEM, REM, RET }
 enum class CallableKind(val surfaceName: String) {
     FUNC(""),
     TASK("async"),
-    FLOW("flow"),
 }
 
 /** Test execution mode mirrored by the compiler-predefined `TestMethod` enum. */

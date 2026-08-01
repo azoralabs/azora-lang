@@ -90,11 +90,11 @@ use zone std {
      * them `Long` happens to be right on a 64-bit target and wrong elsewhere,
      * so they get a type that is right by construction.
      */
-    @Experimental(sinceAzora: "0.0.5")
+    @Experimental(since: "0.0.5")
     bridge pack ISize
 
     /** Unsigned integer as wide as a pointer on the target. */
-    @Experimental(sinceAzora: "0.0.5")
+    @Experimental(since: "0.0.5")
     bridge pack USize
 
     /** 32-bit IEEE-754 binary floating-point number. */
@@ -454,7 +454,7 @@ use zone std {
          * @receiver rhs The right Bool operand.
          * @return Bool
          */
-        @Experimental(sinceAzora: "0.0.4")
+        @Experimental(since: "0.0.4")
         bridge impl oper $op for Bool: Bool(self&, rhs: Bool)
     }
 
@@ -466,7 +466,7 @@ use zone std {
              * @receiver self& The operand; the result has the same type.
              * @return the operand type
              */
-            @Experimental(sinceAzora: "0.0.4")
+            @Experimental(since: "0.0.4")
             bridge impl oper $op for Ty: Ty(self&)
         }
     }
@@ -478,7 +478,7 @@ use zone std {
          * @receiver self& The operand; the result has the same type.
          * @return the operand type
          */
-        @Experimental(sinceAzora: "0.0.4")
+        @Experimental(since: "0.0.4")
         bridge impl oper~ for Ty: Ty(self&)
     }
 
@@ -492,7 +492,7 @@ use zone std {
                  * @receiver rhs The right operand (any numeric type).
                  * @return promote@(LhsTy, RhsTy) — the wider of the two operand types
                  */
-                @Experimental(sinceAzora: "0.0.4")
+                @Experimental(since: "0.0.4")
                 bridge impl oper $op for LhsTy: std::promote@(LhsTy, RhsTy)(self&, rhs: RhsTy)
             }
         }
@@ -508,7 +508,7 @@ use zone std {
                  * @receiver rhs The right operand (any integer type).
                  * @return promote@(LhsTy, RhsTy) — the wider of the two operand types
                  */
-                @Experimental(sinceAzora: "0.0.4")
+                @Experimental(since: "0.0.4")
                 bridge impl oper $op for LhsTy: std::promote@(LhsTy, RhsTy) (self&, rhs: RhsTy)
             }
         }
@@ -523,7 +523,7 @@ use zone std {
              * @receiver rhs The shift count.
              * @return the operand type
              */
-            @Experimental(sinceAzora: "0.0.4")
+            @Experimental(since: "0.0.4")
             bridge impl oper $op for Ty: Ty (self&, rhs: UInt)
         }
     }
@@ -538,7 +538,7 @@ use zone std {
                  * @receiver rhs The right operand (any numeric type).
                  * @return Bool
                  */
-                @Experimental(sinceAzora: "0.0.4")
+                @Experimental(since: "0.0.4")
                 bridge impl oper $op for LhsTy: Bool(self&, rhs: RhsTy)
             }
         }

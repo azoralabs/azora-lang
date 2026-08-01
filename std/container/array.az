@@ -45,7 +45,7 @@ zone std {
      *
      * @param T The type shared by every element in the array.
      */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     bridge pack Array<T, N: Int> {
         /**
          * Pointer to the first contiguous element.
@@ -66,7 +66,7 @@ zone std {
      * @param elements The values copied into the resulting array.
      * @return An `Array<T>` containing all supplied elements.
      */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     func arrayOf<T>(...elements: T): Array<T> {
         return elements
     }
@@ -83,7 +83,7 @@ zone std {
          * @param count The number of slots to allocate; must be non-negative.
          * @return An `Array<T>` with `count` slots.
          */
-        @Experimental(sinceAzora: "0.0.4")
+        @Experimental(since: "0.0.4")
         bridge func fill<T>(count: Int): Array<T>
     }
 

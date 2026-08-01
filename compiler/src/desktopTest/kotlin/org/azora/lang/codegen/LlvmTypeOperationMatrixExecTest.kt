@@ -126,11 +126,12 @@ class LlvmTypeOperationMatrixExecTest(
                 }
             }
 
+            // A `Real` prints as a `Real`: an integral result keeps its `.0`.
             val floatArithmetic = listOf(
-                Triple("add", "+", "10"),
-                Triple("subtract", "-", "5"),
+                Triple("add", "+", "10.0"),
+                Triple("subtract", "-", "5.0"),
                 Triple("multiply", "*", "18.75"),
-                Triple("divide", "/", "3"),
+                Triple("divide", "/", "3.0"),
             )
             for (type in floatTypes) {
                 for ((name, operator, expected) in floatArithmetic) {
@@ -168,10 +169,10 @@ class LlvmTypeOperationMatrixExecTest(
                 Triple("UInt_to_UCent", "123u as UCent", "123"),
                 Triple("Cent_to_Int", "123c as Int", "123"),
                 Triple("UCent_to_UInt", "123uc as UInt", "123"),
-                Triple("Int_to_Real", "42 as Real", "42"),
-                Triple("UInt_to_Real", "42u as Real", "42"),
-                Triple("Int_to_Float", "42 as Float", "42"),
-                Triple("Int_to_Decimal", "42 as Decimal", "42"),
+                Triple("Int_to_Real", "42 as Real", "42.0"),
+                Triple("UInt_to_Real", "42u as Real", "42.0"),
+                Triple("Int_to_Float", "42 as Float", "42.0"),
+                Triple("Int_to_Decimal", "42 as Decimal", "42.0"),
                 Triple("Real_to_Int", "3.75 as Int", "3"),
                 Triple("Real_to_UInt", "3.75 as UInt", "3"),
                 Triple("Float_to_Int", "3.75f as Int", "3"),

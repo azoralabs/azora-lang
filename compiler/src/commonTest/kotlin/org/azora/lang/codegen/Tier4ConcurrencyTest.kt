@@ -39,98 +39,6 @@ class Tier4ConcurrencyTest {
         """.trimIndent()))
     }
 
-    @Test fun flowYieldsValuesIteratedByForLoop() {
-        assertEquals("0\n1\n4\n9", run("""
-            use std.io
-            flow squares(n: Int): Int {
-                for i in 0..<n {
-                    yield i * i
-                }
-            }
-            func main() {
-                for x in squares(4) {
-                    std::println(x)
-                }
-            }
-        """.trimIndent()))
-    }
-
-    @Test fun flowResultIsConsumable() {
-        // A flow result is a lazy producer; consume by iteration.
-        assertEquals("3", run("""
-            use std.io
-            flow upto(n: Int): Int {
-                var i = 0
-                while i < n {
-                    yield i
-                    i++
-                }
-            }
-            func main() {
-                var count = 0
-                for x in upto(3) {
-                    count++
-                }
-                std::println(count)
-            }
-        """.trimIndent()))
-    }
-
-    @Test fun flowIsLazyOnlyFirstValuesConsumed() {
-        // A lazy flow's body runs only as far as consumed: stopping early must not
-        // force the rest. We break after the first value and observe the side effect.
-        assertEquals("0", run("""
-            use std.io
-            flow naturals(): Int {
-                var i = 0
-                loop {
-                    yield i
-                    i++
-                }
-            }
-            func main() {
-                for x in naturals() {
-                    std::println(x)
-                    break
-                }
-            }
-        """.trimIndent()))
-    }
-
-    @Test fun flowWithConditionalYield() {
-        assertEquals("0\n2\n4", run("""
-            use std.io
-            flow evens(): Int {
-                for i in 0..<6 {
-                    if i % 2 == 0 {
-                        yield i
-                    }
-                }
-            }
-            func main() {
-                for x in evens() {
-                    std::println(x)
-                }
-            }
-        """.trimIndent()))
-    }
-
-    @Test fun flowCanTakeArguments() {
-        assertEquals("3\n4\n5", run("""
-            use std.io
-            flow rangeFrom(a: Int, b: Int): Int {
-                for i in a..<b {
-                    yield i
-                }
-            }
-            func main() {
-                for x in rangeFrom(3, 6) {
-                    std::println(x)
-                }
-            }
-        """.trimIndent()))
-    }
-
     @Test fun taskAwaitReturnsResult() {
         assertEquals("42", run("""
             use std.io
@@ -199,40 +107,6 @@ class Tier4ConcurrencyTest {
                     produce(ch)
                 }
                 await p
-                std::println(ch.receive())
-                std::println(ch.receive())
-            }
-        """.trimIndent()))
-    }
-
-    @Test fun launchRunsAndIsJoinedAtEnd() {
-        // `launch` is fire-and-forget; its side effect completes before main returns.
-        // With real parallelism the ordering of `main` vs `launched` is nondeterministic,
-        // so check that both lines appear (in any order).
-        val output = run("""
-            use std.io
-            func main() {
-                std::println("main")
-                launch {
-                    std::println("launched")
-                }
-            }
-        """.trimIndent())
-        val lines = output.lines().sorted()
-        assertEquals(listOf("launched", "main"), lines)
-    }
-
-    @Test fun launchProducerWithChannelConsumer() {
-        // A launched producer feeds a channel that main consumes cooperatively.
-        assertEquals("1\n2", run("""
-            use std.io
-            func main() {
-                var ch = channel()
-                launch {
-                    ch.send(1)
-                    ch.send(2)
-                    ch.close()
-                }
                 std::println(ch.receive())
                 std::println(ch.receive())
             }

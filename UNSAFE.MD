@@ -1,13 +1,13 @@
 ```
 // will make code (function call, pack instantiation) callable in safe code even if it contains unsafe code
 // add in std.core
-@Experimental(sinceAzora: "0.0.4")
+@Experimental(since: "0.0.4")
 bridge deco Trusted for [.Pack, .Func] // add more
 ```
 
 ```
 // pointers should not be allowed to be used in safe context so we have to declare the pack as unsafe
-@Experimental(sinceAzora: "0.0.4")
+@Experimental(since: "0.0.4")
 @Trusted
 bridge unsafe pack Array<T, N: Int> {
     /**
@@ -31,7 +31,7 @@ impl zone for Array {
      * @param count The number of slots to allocate; must be non-negative.
      * @return An `Array<T>` with `count` slots.
      */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     @Trusted
     bridge unsafe func fill<T>(count: Int): Array<T>
 }

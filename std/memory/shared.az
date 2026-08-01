@@ -39,35 +39,35 @@ zone std {
      *
      * @param T the pointee type.
      */
-    @Experimental(sinceAzora: "0.0.5")
+    @Experimental(since: "0.0.5")
     pack Shared<T> {
         var raw: T*
         var count: Int
     }
 
-    @Experimental(sinceAzora: "0.0.5")
+    @Experimental(since: "0.0.5")
     oper.* [self: Shared<T>&]: T {
         return self.raw.*
     }
 
     impl Shared<T> {
         /** The pointed-to value. */
-        @Experimental(sinceAzora: "0.0.5")
+        @Experimental(since: "0.0.5")
         prop get[self: Self&]: T = self.raw.*
 
         /** Replaces the pointed-to value without changing ownership. */
-        @Experimental(sinceAzora: "0.0.5")
+        @Experimental(since: "0.0.5")
         func set(value: T) { self.raw[0] = value }
 
         /** Records a new shared owner. Returns the new reference count. */
-        @Experimental(sinceAzora: "0.0.5")
+        @Experimental(since: "0.0.5")
         func retain(): Int {
             self.count = self.count + 1
             return self.count
         }
 
         /** Gives up one owner; reclaims the allocation when the last one leaves. */
-        @Experimental(sinceAzora: "0.0.5")
+        @Experimental(since: "0.0.5")
         func release(): Int {
             self.count = self.count - 1
             if self.count <= 0 {
@@ -77,16 +77,16 @@ zone std {
         }
 
         /** The current number of live references. */
-        @Experimental(sinceAzora: "0.0.5")
+        @Experimental(since: "0.0.5")
         prop refCount[self: Self&]: Int = self.count
 
         /** The underlying `T*` (escapes the counting). */
-        @Experimental(sinceAzora: "0.0.5")
+        @Experimental(since: "0.0.5")
         prop ptr[self: Self&]: T* = self.raw
     }
 
     /** A `Shared<T>` owning a fresh copy of [value], with one live reference. */
-    @Experimental(sinceAzora: "0.0.5")
+    @Experimental(since: "0.0.5")
     func sharedOf<T>(value: T): Shared<T> {
         return Shared(alloc value, 1)
     }

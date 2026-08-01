@@ -49,7 +49,7 @@ zone std {
     }
 
     /** Constructs an empty `Stack<T>` with default capacity. */
-    @Experimental(sinceAzora: "0.0.1")
+    @Experimental(since: "0.0.1")
     impl ctor() for Stack<T> { self! ->
         self.data = alloc T[8]
         self.size = 0
@@ -71,7 +71,7 @@ zone std {
         // --- Internal ---
 
         /** Doubles the backing buffer's capacity, copying existing elements. */
-        @Experimental(sinceAzora: "0.0.1")
+        @Experimental(since: "0.0.1")
         func growStack() {
             fin newCap = capacity * 2
             fin newData = alloc T[newCap]
@@ -91,7 +91,7 @@ zone std {
          *
          * @param element The element to push.
          */
-        @Experimental(sinceAzora: "0.0.1")
+        @Experimental(since: "0.0.1")
         func push(element: T) {
             if size >= capacity { self.growStack() }
             data[size] = element
@@ -104,7 +104,7 @@ zone std {
          * @return The removed top element.
          * @throws AssertionError if the stack is empty.
          */
-        @Experimental(sinceAzora: "0.0.1")
+        @Experimental(since: "0.0.1")
         func pop(): T {
             assert size > 0 { "Stack is empty" }
             fin top = data[size - 1]
@@ -118,14 +118,14 @@ zone std {
          * @return The top element.
          * @throws AssertionError if the stack is empty.
          */
-        @Experimental(sinceAzora: "0.0.1")
+        @Experimental(since: "0.0.1")
         func peek(): T {
             assert size > 0 { "Stack is empty" }
             return data[size - 1]
         }
 
         /** Removes all elements from the stack. */
-        @Experimental(sinceAzora: "0.0.1")
+        @Experimental(since: "0.0.1")
         func clear() {
             fin oldData = data
             self.data = alloc T[8]
@@ -141,7 +141,7 @@ zone std {
          *
          * @return A string in the format "[bottom, ..., top]".
          */
-        @Experimental(sinceAzora: "0.0.1")
+        @Experimental(since: "0.0.1")
         func toString(): String {
             var s = "["
             for i in 0..<size {

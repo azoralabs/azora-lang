@@ -21,7 +21,7 @@ package org.azora.lang.frontend
  * zone-mangled form, so that sibling declarations resolve without qualification.
  *
  * Zones desugar at parse time to flat mangled top-level items (`zone
- * std::math { func floor(){...} }` → `std__math__floor`). A sibling call like
+ * std { func floor(){...} }` → `std__math__floor`). A sibling call like
  * `floor()` inside `std__math__round` would otherwise fail to resolve, because
  * the reference stays bare while the declaration is mangled.
  *

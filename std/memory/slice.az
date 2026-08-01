@@ -22,13 +22,13 @@ zone std {
         var count: Int
     }
 
-    @Experimental(sinceAzora: "0.0.3")
+    @Experimental(since: "0.0.3")
     impl oper[] for Slice<T> { self&, index ->
         assert index >= 0 && index < self.count { "Slice index out of bounds" }
         return self._raw[index]
     }
 
-    @Experimental(sinceAzora: "0.0.3")
+    @Experimental(since: "0.0.3")
     impl oper[]= for Slice<T> { self!, index, value ->
         assert index >= 0 && index < self.count { "Slice index out of bounds" }
         self._raw[index] = value
@@ -48,7 +48,7 @@ zone std {
         prop ptr[self: Self&]: T* = self._raw
 
         /** Returns a sub-slice `[start, start+count)`; asserts bounds. */
-        @Experimental(sinceAzora: "0.0.3")
+        @Experimental(since: "0.0.3")
         func sub(start: Int, count: Int): Slice<T> {
             assert start >= 0 { "Slice start must be non-negative" }
             assert count >= 0 { "Slice count must be non-negative" }
@@ -58,13 +58,13 @@ zone std {
     }
 
     /** Constructs a `Slice<T>` over [length] elements starting at [ptr]. */
-    @Experimental(sinceAzora: "0.0.3")
+    @Experimental(since: "0.0.3")
     func sliceOf<T>(ptr: T*, length: Int): Slice<T> {
         return Slice(ptr, length)
     }
 
     /** Alias of [sliceOf]. */
-    @Experimental(sinceAzora: "0.0.3")
+    @Experimental(since: "0.0.3")
     func ptrSlice<T>(ptr: T*, length: Int): Slice<T> {
         return sliceOf(ptr, length)
     }

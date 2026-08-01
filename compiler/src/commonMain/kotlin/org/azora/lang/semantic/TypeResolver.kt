@@ -946,9 +946,13 @@ class TypeResolver(private val table: SymbolTable) {
                     }
                     // Inside `with value { … }`, a bare call may be an extension method
                     // on one of the contextual values: `with c { bump() }` == `c.bump()`.
+                    // A zone-qualified call reaches its contextual receiver too:
+                    // `std::yield(1)` names the member `yield`, and the zone only
+                    // says where it was declared, not what it is called on.
+                    val contextualName = expr.callee.substringAfterLast("__")
                     for ((ctxExpr, ctxType) in contextualValues.asReversed().flatten()) {
-                        if (ctxType is IrType.Named && table.lookupMethod(ctxType.name, expr.callee) != null) {
-                            return resolveExpr(Expr.MethodCall(ctxExpr, expr.callee, expr.args, expr.line, expr.column))
+                        if (ctxType is IrType.Named && table.lookupMethod(ctxType.name, contextualName) != null) {
+                            return resolveExpr(Expr.MethodCall(ctxExpr, contextualName, expr.args, expr.line, expr.column))
                         }
                     }
                     errors.add("line ${expr.line}: undefined function '${expr.callee}'")

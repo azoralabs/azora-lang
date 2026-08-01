@@ -126,7 +126,7 @@ class AstValidator {
     /**
      * Validates the stability decorators: `@experimental` and `@stable` may not
      * both appear on the same declaration, and when a `since` version is given
-     * (`@Experimental(sinceAzora: "0.0.1")`) it must be a string literal.
+     * (`@Experimental(since: "0.0.1")`) it must be a string literal.
      */
     private fun validateStability(annotations: List<Annotation>, errors: MutableList<String>) {
         for (ann in annotations) {
@@ -142,12 +142,12 @@ class AstValidator {
         }
         // @experimental/@stable already carry `since`; don't also add a standalone @since.
         if (since != null && (experimental != null || stable != null)) {
-            errors.add("line ${since.line}: @since is redundant with @Experimental(sinceAzora:)/@Stable(sinceAzora:) — use only one")
+            errors.add("line ${since.line}: @since is redundant with @Experimental(since:)/@Stable(since:) — use only one")
         }
         for (ann in annotations.filter { it.name == "Experimental" || it.name == "Stable" }) {
             val s = ann.namedArgs.firstOrNull { it.first == "since" }?.second
             if (s != null && s !is Expr.StringLiteral) {
-                errors.add("line ${ann.line}: @${ann.name}(sinceAzora: ...) requires a string version literal")
+                errors.add("line ${ann.line}: @${ann.name}(since: ...) requires a string version literal")
             }
         }
         // `@SinceAzora("0.0.1")` — single positional string argument.
@@ -156,7 +156,7 @@ class AstValidator {
                 errors.add("line ${it.line}: @since requires a single string version argument")
             }
         }
-        // `@Deprecated(sinceAzora: "0.4.0", replacement: "X")` — string named arguments.
+        // `@Deprecated(since: "0.4.0", replacement: "X")` — string named arguments.
         for (ann in annotations.filter { it.name == "Deprecated" }) {
             for ((key, value) in ann.namedArgs) {
                 if (value !is Expr.StringLiteral) {

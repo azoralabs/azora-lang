@@ -42,20 +42,20 @@ zone std {
      * `std::reflect<T>`. Its members (`.hasDeco<D>`, `.decoMeta<D>`, `.enclosingZone`) are
      * resolved by the compiler; `bridge pack` means no struct is emitted.
      */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     bridge pack Reflected<T>
 
     impl<T> Reflected {
         /** Whether the reflected declaration `T` carries decorator `D`. */
-        @Experimental(sinceAzora: "0.0.4")
+        @Experimental(since: "0.0.4")
         bridge prop<D> hasDeco[self: Self&]: Bool
 
         /** Immutable compile-time metadata from decorator `D` on `T`. */
-        @Experimental(sinceAzora: "0.0.4")
+        @Experimental(since: "0.0.4")
         bridge prop<D> decoMeta[self: Self&]: D
 
         /** The enclosing lexical zone of `T`, or null at global scope. */
-        @Experimental(sinceAzora: "0.0.4")
+        @Experimental(since: "0.0.4")
         bridge prop enclosingZone[self: Self&]: Zone?
 
         /**
@@ -65,7 +65,7 @@ zone std {
          * unrolls at compile time into static references to each matching type —
          * no runtime cost and no function values, so it lowers to every backend.
          */
-        @Experimental(sinceAzora: "0.0.4")
+        @Experimental(since: "0.0.4")
         bridge prop<D> withDeco[self: Self&]: Array<Type>
     }
 
@@ -74,24 +74,24 @@ zone std {
      * (`std::reflect<T>`). `includeInherited` also surfaces decorators inherited
      * from base declarations when set.
      */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     bridge func reflect<T>(includeInherited: Bool = false): Reflected<T>
 
      /** Compile-time handle for a lexical zone, from `std::reflect<T>.enclosingZone`. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     bridge pack Zone
 
     impl Zone {
         /** The zone's label, or null for the global scope / an unlabeled zone. */
-        @Experimental(sinceAzora: "0.0.4")
+        @Experimental(since: "0.0.4")
         bridge prop label[self: Self&]: String?
 
         /** Whether this is an inline (compile-time) zone. */
-        @Experimental(sinceAzora: "0.0.4")
+        @Experimental(since: "0.0.4")
         bridge prop isInline[self: Self&]: Bool
 
         /** The enclosing parent zone, or null at the global scope. */
-        @Experimental(sinceAzora: "0.0.4")
+        @Experimental(since: "0.0.4")
         bridge prop parent[self: Self&]: Zone?
     }
 }

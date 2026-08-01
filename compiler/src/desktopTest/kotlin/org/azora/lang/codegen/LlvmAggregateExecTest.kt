@@ -74,7 +74,7 @@ class LlvmAggregateExecTest {
     )
 
     @Test fun nestedStructMemberAssignment() = check(
-        "1.5\n90",
+        "1.5\n90.0",
         """
         use std.io
         pack Vec3 {
@@ -115,7 +115,7 @@ class LlvmAggregateExecTest {
     )
 
     @Test fun implMethodWithImplicitSelf() = check(
-        "38",
+        "38.0",
         """
         use std.io
         pack Vec3 {
@@ -136,7 +136,7 @@ class LlvmAggregateExecTest {
     )
 
     @Test fun operatorOverloadingOnStructs() = check(
-        "22",
+        "22.0",
         """
         use std.io
         pack Vec2 {
@@ -179,6 +179,23 @@ class LlvmAggregateExecTest {
             var arr = arr@[1, 2, 3]
             arr[1] = 9
             std::println(arr[1])
+        }
+        """.trimIndent()
+    )
+
+    @Test fun subscriptOnASpecTypedValueDispatches() = check(
+        "20",
+        """
+        use std.io
+        use std.container.list
+        func pick(xs: std::List<Int>&, i: Int): Int {
+            return xs[i]
+        }
+        func main() {
+            var xs = std::arrayListOf<Int>()
+            xs.add(10)
+            xs.add(20)
+            std::println(pick(xs, 1))
         }
         """.trimIndent()
     )

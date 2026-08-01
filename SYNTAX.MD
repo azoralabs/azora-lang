@@ -51,7 +51,7 @@ func main() {
 ------------
 
 ```
-@Experimental(sinceAzora: "0.0.1")
+@Experimental(since: "0.0.1")
 func min<T>(a: T, b: T): T where T impl oper< {
     return if a < b { a } else { b }
 }
@@ -60,17 +60,17 @@ func min<T>(a: T, b: T): T where T impl oper< {
 ```
 This must be possible:
 
-@Experimental(sinceAzora: "0.0.1")
+@Experimental(since: "0.0.1")
 func min<T>(a: T, b: T): T where T: oper< {
     return if a < b { a } else { b }
 }
 
-@Experimental(sinceAzora: "0.0.1")
+@Experimental(since: "0.0.1")
 func min<T>(a: T, b: T): T where T: oper< && T: oper> && T: oper<= && T: oper>= {
     return if a < b { a } else { b }
 }
 
-@Experimental(sinceAzora: "0.0.1")
+@Experimental(since: "0.0.1")
 func min<T>(a: T, b: T): T where T: [oper<, oper>, oper<=, oper>=] {
     return if a < b { a } else { b }
 }
@@ -89,7 +89,7 @@ typealias Shiftable = [oper<<, oper>>]
 @SinceAzora("0.0.5")
 typealias Iterable = [oper.., oper..<, oper reverse.., oper reverse..<]
 
-@Experimental(sinceAzora: "0.0.1")
+@Experimental(since: "0.0.1")
 func min<T>(a: T, b: T): T where T: Comparable {
     return if a < b { a } else { b }
 }

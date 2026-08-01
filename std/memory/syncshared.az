@@ -43,7 +43,7 @@ zone std {
         var count: Int
     }
 
-    @Experimental(sinceAzora: "0.0.3")
+    @Experimental(since: "0.0.3")
     oper.* [self: SyncShared<T>&]: T {
         return self.raw.*
     }
@@ -54,18 +54,18 @@ zone std {
         prop get[self: Self&]: T = self.raw.*
 
         /** Replaces the pointed-to value without changing ownership. */
-        @Experimental(sinceAzora: "0.0.3")
+        @Experimental(since: "0.0.3")
         func set(value: T) { self.raw[0] = value }
 
         /** Records a new shared owner. Returns the new reference count. */
-        @Experimental(sinceAzora: "0.0.3")
+        @Experimental(since: "0.0.3")
         func retain(): Int {
             self.count = self.count + 1
             return self.count
         }
 
         /** Drops a shared owner; reclaims the allocation when the count reaches zero. */
-        @Experimental(sinceAzora: "0.0.3")
+        @Experimental(since: "0.0.3")
         func release(): Int {
             self.count = self.count - 1
             if self.count <= 0 {
@@ -83,7 +83,7 @@ zone std {
         prop ptr[self: Self&]: T* = self.raw
     }
 
-    @Experimental(sinceAzora: "0.0.3")
+    @Experimental(since: "0.0.3")
     func syncSharedOf<T>(value: T): SyncShared<T> {
         return SyncShared(alloc value, 1)
     }

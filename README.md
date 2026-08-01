@@ -116,7 +116,7 @@ Adding a new target means one new file under `backend/`.
 - **Operator overloading**: `plus`, `minus`, `times`, `div`, `mod`, `equals` → `+`, `-`, `*`, `/`, `%`, `==`, `!=`
 - **Index overloading**: standalone `impl oper[] for Type { ref self, index -> ... }` and `impl oper[]= for Type { mut ref self, index, value -> ... }` make user types indexable (`m[i]`, `m[i] = v`)
 - **Infix functions**: `a plus b` syntax (any method callable infix); `infx Type.method(...) { }` declares an extension method usable infix
-- **Named zones**: `zone Name { … }` is a namespace; members accessed as `Name::member`; shared namespace contributions can use `friend zone std::math { … }`
+- **Named zones**: `zone Name { … }` is a namespace; members accessed as `Name::member`; shared namespace contributions can use `friend zone std { … }`
 
 ### Error Handling
 - `throw value` — raises any value
@@ -237,7 +237,7 @@ import std.math              // unqualified: abs(x), plus math::abs(x)
 import std.{math, string}    // grouped
 import std.*                 // wildcard
 import std.math.abs          // selective
-std::math::abs(x)         // fully qualified — no import needed
+std::abs(x)         // fully qualified — no import needed
 ```
 
 Decorator implementations may target pack fields individually, as a list, or

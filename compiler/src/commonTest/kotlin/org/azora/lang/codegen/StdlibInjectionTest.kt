@@ -22,7 +22,7 @@ import kotlin.test.assertTrue
 /**
  * Tests for arr@[org.azora.lang.stdlib.StdlibInjector] under the zone/import model:
  *
- * - Library symbols live in zones (`zone std::math { ... }`) and are
+ * - Library symbols live in zones (`zone std { ... }`) and are
  *   name-mangled (`std.math::abs` → `std__math__abs`).
  * - `use std.math` makes that module's symbols visible; references must use
  *   the qualified `Zone::name` form. Bare references are rejected.
@@ -39,7 +39,7 @@ class StdlibInjectionTest {
     // ---- qualified math access (requires import) ----
 
     @Test fun qualifiedMathFunctionsWork() =
-        assertEquals("5\n7", run("use std.io\nuse std.math\nfunc main() {\n    std::println(std::math::abs(-5))\n    std::println(std::math::abs(7))\n}"))
+        assertEquals("5\n7", run("use std.io\nuse std.math\nfunc main() {\n    std::println(std::abs(-5))\n    std::println(std::abs(7))\n}"))
 
     @Test fun printWritesWithoutNewline() =
         assertEquals("Hello, 7!", run("use std.io\nfunc main() {\n    std::print(\"Hello, \" )\n    std::print(7)\n    std::println(\"!\")\n}"))
@@ -67,24 +67,24 @@ class StdlibInjectionTest {
     }
 
     @Test fun qualifiedMinMaxWork() =
-        assertEquals("2\n9", run("use std.io\nuse std.math\nfunc main() {\n    std::println(std::math::min(2, 9))\n    std::println(std::math::max(2, 9))\n}"))
+        assertEquals("2\n9", run("use std.io\nuse std.math\nfunc main() {\n    std::println(std::min(2, 9))\n    std::println(std::max(2, 9))\n}"))
 
     @Test fun qualifiedFloorCeilRound() =
-        assertEquals("3\n4\n4", run("use std.io\nuse std.math\nfunc main() {\n    std::println(std::math::floor(3.7))\n    std::println(std::math::ceil(3.2))\n    std::println(std::math::round(3.6))\n}"))
+        assertEquals("3\n4\n4", run("use std.io\nuse std.math\nfunc main() {\n    std::println(std::floor(3.7))\n    std::println(std::ceil(3.2))\n    std::println(std::round(3.6))\n}"))
 
     @Test fun qualifiedFactorialGcd() =
-        assertEquals("120\n6", run("use std.io\nuse std.math\nfunc main() {\n    std::println(std::math::factorial(5))\n    std::println(std::math::gcd(54, 24))\n}"))
+        assertEquals("120\n6", run("use std.io\nuse std.math\nfunc main() {\n    std::println(std::factorial(5))\n    std::println(std::gcd(54, 24))\n}"))
 
     @Test fun qualifiedConstantInjects() {
-        val out = run("use std.io\nuse std.math\nfunc main() {\n    std::println(std::math::PI)\n}")
+        val out = run("use std.io\nuse std.math\nfunc main() {\n    std::println(std::PI)\n}")
         assertTrue(out.startsWith("3.14159"), out)
     }
 
     // ---- transitive + shadowing ----
 
     @Test fun transitiveStdlibCallsResolve() {
-        // std::math::lcm uses std::math::gcd internally — both must inject.
-        assertEquals("36", run("use std.io\nuse std.math\nfunc main() {\n    std::println(std::math::lcm(12, 18))\n}"))
+        // std::lcm uses std::gcd internally — both must inject.
+        assertEquals("36", run("use std.io\nuse std.math\nfunc main() {\n    std::println(std::lcm(12, 18))\n}"))
     }
 
     @Test fun userDefinitionShadowsStdlib() =
@@ -328,19 +328,20 @@ class StdlibInjectionTest {
     }
 
     @Test fun qualifiedAccessWithoutImportIsRejected() {
-        val result = Compiler().compile("use std.io\nfunc main() {\n    std::println(std::math::abs(-5))\n}")
+        val result = Compiler().compile("use std.io\nfunc main() {\n    std::println(std::abs(-5))\n}")
         assertIs<CompilationResult.Failure>(result)
         assertTrue(result.errors.any { "abs" in it }, "qualified access without import should be rejected: ${'$'}{result.errors}")
     }
 
     @Test fun wrongZoneQualificationIsRejected() {
-        // `abs` lives in std.math, not std — `std::abs` must fail.
-        val result = Compiler().compile("use std.io\nuse std.math\nfunc main() {\n    std::println(std::abs(-5))\n}")
+        // `abs` lives in zone `std`, so `std::math::abs` names a zone that does
+        // not exist and must fail even though the module `std.math` is imported.
+        val result = Compiler().compile("use std.io\nuse std.math\nfunc main() {\n    std::println(std::math::abs(-5))\n}")
         assertIs<CompilationResult.Failure>(result)
     }
 
     @Test fun importStdWildcardExposesAllModules() =
-        assertEquals("5\n9", run("use std.io\nuse std.*\nfunc main() {\n    std::println(std::math::abs(-5))\n    std::println(std::math::max(2, 9))\n}"))
+        assertEquals("5\n9", run("use std.io\nuse std.*\nfunc main() {\n    std::println(std::abs(-5))\n    std::println(std::max(2, 9))\n}"))
 
     @Test fun importStdNamespaceWithoutModuleIsRejected() {
         val result = Compiler().compile("use std\nfunc main() {}")
@@ -352,7 +353,7 @@ class StdlibInjectionTest {
 
     @Test fun importRejectsDoubleColonSyntax() {
         val err = assertFailsWith<IllegalStateException> {
-            Compiler().compile("use std.io\nuse std.math::abs\nfunc main() {\n    std::println(std::math::abs(-5))\n}")
+            Compiler().compile("use std.io\nuse std.math::abs\nfunc main() {\n    std::println(std::abs(-5))\n}")
         }
         assertTrue(err.message.orEmpty().contains("Use dotted import paths"), err.message)
     }

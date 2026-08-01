@@ -17,6 +17,6 @@
 expose mod std.convert.core
 
 use zone std {
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     bridge deco UncheckedCast for [.Func, .Prop, .Task, .Flow, .Var, .Fin, .ImplOper]
 }

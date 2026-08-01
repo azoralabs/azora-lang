@@ -70,7 +70,7 @@ class LlvmCodegenExecTest {
         check("3.5", main("""std::println(3.5)"""))
 
     @Test fun printsWholeReal() =
-        check("3", main("""std::println(3.0)"""))
+        check("3.0", main("""std::println(3.0)"""))
 
     // -----------------------------------------------------------------------
     // Integer arithmetic
@@ -455,7 +455,7 @@ class LlvmCodegenExecTest {
     )
 
     @Test fun realArithmetic() =
-        check("7", main("""std::println(3.5 * 2.0)"""))
+        check("7.0", main("""std::println(3.5 * 2.0)"""))
 
     @Test fun realDivision() =
         check("2.5", main("""std::println(5.0 / 2.0)"""))

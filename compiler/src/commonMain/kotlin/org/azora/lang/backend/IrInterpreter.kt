@@ -117,7 +117,7 @@ class IrInterpreter {
     /**
      * The intrinsic behind a `bridge func`, found by name.
      *
-     * `zone std::math` mangles its members (`sqrt` → `__std_math_sqrt`), and the
+     * `zone std` mangles its members (`sqrt` → `__std_math_sqrt`), and the
      * table is keyed by the mathematical name, so a mangled call falls back to
      * its final segment. Nothing outside `externImpls` matches, so an ordinary
      * user function with an underscore in its name is unaffected.

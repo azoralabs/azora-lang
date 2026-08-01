@@ -121,7 +121,7 @@ zone std {
      *
      * @param capacity The size of the arena in bytes. Must be positive.
      */
-    @Experimental(sinceAzora: "0.0.2")
+    @Experimental(since: "0.0.2")
     impl ctor(capacity: Int) for Arena
     in {
         assert capacity > 0 { "Arena capacity must be positive" }
@@ -161,7 +161,7 @@ zone std {
          * @param size The number of bytes to allocate. Must be positive.
          * @return The byte offset of the allocated region.
          */
-        @Experimental(sinceAzora: "0.0.2")
+        @Experimental(since: "0.0.2")
         func alloc(size: Int): Int ?! AllocError
         in {
             assert size > 0 { "Allocation size must be positive" }
@@ -189,7 +189,7 @@ zone std {
          * @param alignment The alignment boundary (must be a power of two).
          * @return The byte offset of the aligned allocation.
          */
-        @Experimental(sinceAzora: "0.0.2")
+        @Experimental(since: "0.0.2")
         func allocAligned(size: Int, alignment: Int): Int ?! AllocError
         in {
             assert size > 0 { "Allocation size must be positive" }
@@ -300,7 +300,7 @@ zone std {
      * @param slotSize The size of each slot in bytes. Must be positive.
      * @param slotCount The number of slots to pre-allocate. Must be positive.
      */
-    @Experimental(sinceAzora: "0.0.2")
+    @Experimental(since: "0.0.2")
     impl ctor(slotSize: Int, slotCount: Int) for Pool
     in {
         assert slotSize > 0 { "Slot size must be positive" }
@@ -317,7 +317,7 @@ zone std {
         }
     }
 
-    @Experimental(sinceAzora: "0.0.2")
+    @Experimental(since: "0.0.2")
     impl dtor() for Pool {
         self& -> purge self.freeStack
     }
@@ -349,7 +349,7 @@ zone std {
          *
          * @return The index of the acquired slot.
          */
-        @Experimental(sinceAzora: "0.0.2")
+        @Experimental(since: "0.0.2")
         func acquire(): Int ?! AllocError {
             if freeCount == 0 {
                 return .PoolExhausted
@@ -369,7 +369,7 @@ zone std {
          * @param slot The index of the slot to release. Must have been
          *             previously acquired.
          */
-        @Experimental(sinceAzora: "0.0.2")
+        @Experimental(since: "0.0.2")
         func release(slotIndex: Int)
         in {
             assert slotIndex >= 0 && slotIndex < slotCount { "Invalid slot index" }
@@ -384,7 +384,7 @@ zone std {
          *
          * All previously acquired slots become invalid.
          */
-        @Experimental(sinceAzora: "0.0.2")
+        @Experimental(since: "0.0.2")
         func reset() {
             for i in 0..<slotCount {
                 (*freeStack)[i] = slotCount - 1 - i
@@ -447,7 +447,7 @@ zone std {
      *
      * @param capacity The total size in bytes. Must be positive.
      */
-    @Experimental(sinceAzora: "0.0.2")
+    @Experimental(since: "0.0.2")
     impl ctor(capacity: Int) for StackAllocator
     in {
         assert capacity > 0 { "StackAllocator capacity must be positive" }
@@ -477,7 +477,7 @@ zone std {
          * @param size The number of bytes to allocate. Must be positive.
          * @return The byte offset of the allocation.
          */
-        @Experimental(sinceAzora: "0.0.2")
+        @Experimental(since: "0.0.2")
         func alloc(size: Int): Int ?! AllocError
         in {
             assert size > 0 { "Allocation size must be positive" }
@@ -502,7 +502,7 @@ zone std {
          * @param size The number of bytes to free. Must match the most
          *             recent allocation.
          */
-        @Experimental(sinceAzora: "0.0.2")
+        @Experimental(since: "0.0.2")
         func free(size: Int)
         in {
             assert size > 0 { "Free size must be positive" }
@@ -574,7 +574,7 @@ zone std {
          * @param size The size of the arena in bytes.
          * @return A new Arena allocator.
          */
-        @Experimental(sinceAzora: "0.0.2")
+        @Experimental(since: "0.0.2")
         func arena(size: Int): Arena
         in {
             assert size > 0 { "Arena size must be positive" }
@@ -589,7 +589,7 @@ zone std {
          * @param count The number of pre-allocated slots.
          * @return A new Pool allocator.
          */
-        @Experimental(sinceAzora: "0.0.2")
+        @Experimental(since: "0.0.2")
         func pool(slotSize: Int, count: Int): Pool
         in {
             assert slotSize > 0 { "Slot size must be positive" }
@@ -604,7 +604,7 @@ zone std {
          * @param size The size of the stack in bytes.
          * @return A new StackAllocator.
          */
-        @Experimental(sinceAzora: "0.0.2")
+        @Experimental(since: "0.0.2")
         func stack(size: Int): StackAllocator
         in {
             assert size > 0 { "Stack size must be positive" }

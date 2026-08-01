@@ -28,7 +28,7 @@ zone std {
      *
      * @param T target type produced by the conversion.
      */
-    @Experimental(sinceAzora: "0.0.3")
+    @Experimental(since: "0.0.3")
     spec Into<T>: T (self&) use as "to${T.typeName}"
 
     /**
@@ -40,6 +40,6 @@ zone std {
      *
      * @param T source type represented by the conversion.
      */
-    @Experimental(sinceAzora: "0.0.3")
+    @Experimental(since: "0.0.3")
     spec From<T>: T (self&) use as "from${T.typeName}"
 }

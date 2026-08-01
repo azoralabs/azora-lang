@@ -122,7 +122,7 @@ class ContractsTest {
     }
 
     @Test
-    fun taskAndFlowSupportContracts() {
+    fun asyncFuncSupportsContracts() {
         compile("""
             async func load(value: Int): Int
             in {
@@ -131,15 +131,6 @@ class ContractsTest {
                 assert result >= 0 { "task result must be non-negative" }
             } zone {
                 return value
-            }
-
-            flow values(value: Int): Int
-            in {
-                assert value >= 0 { "flow input must be non-negative" }
-            } out { item ->
-                assert item >= 0 { "flow item must be non-negative" }
-            } zone {
-                yield value
             }
 
             func main() {}

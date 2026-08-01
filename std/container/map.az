@@ -53,7 +53,7 @@ zone std {
      * @param K The key type.
      * @param V The value type.
      */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     pack MapEntry<K, V> {
         fin key: K
         fin value: V
@@ -69,7 +69,7 @@ zone std {
      * @param K The key type.
      * @param V The value type.
      */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     spec Map<K, V> {
         /** Number of unique keys. */
         prop size[self: Self&]: Int
@@ -115,7 +115,7 @@ zone std {
      * @param K The key type.
      * @param V The value type.
      */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     spec MutableMap<K, V> : Map<K, V> {
         /** Associates `key` with `value` and returns the replaced value, if any. */
         func put[self: Self&](key: K, value: V): V?
@@ -143,7 +143,7 @@ zone std {
      * @param K The ordered key type.
      * @param V The value type.
      */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     spec SortedMap<K, V> {
         /** Returns the smallest key, or `null` when empty. */
         func firstKey[self: Self&](): K?
@@ -189,7 +189,7 @@ zone std {
      *
      * Polling removes and returns a boundary entry in one tree operation.
      */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     spec MutableSortedMap<K, V> : SortedMap<K, V> {
         /** Removes and returns the smallest entry, or `null` when empty. */
         func pollFirstEntry[self: Self&](): MapEntry<K, V>?
@@ -199,7 +199,7 @@ zone std {
     }
 
     /** Hash table with unspecified iteration order. `K` requires `oper#` and `oper==`. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     pack HashMap<K, V> {
         var keys: K* = alloc K[16]
         var values: V* = alloc V[16]
@@ -210,7 +210,7 @@ zone std {
     }
 
     /** Hash table whose dense entry storage preserves insertion order. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     pack LinkedHashMap<K, V> {
         var keys: K* = alloc K[16]
         var values: V* = alloc V[16]
@@ -222,7 +222,7 @@ zone std {
     }
 
     /** AVL tree map ordered exclusively through `oper<` for `K`. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     pack TreeMap<K, V> {
         var keys: K* = alloc K[16]
         var values: V* = alloc V[16]
@@ -239,7 +239,7 @@ zone std {
     }
 
     /** Normalized operands delivered to `oper[:]` for slicing. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     pack MapSlice {
         fin start: Int
         fin end: Int
@@ -1150,7 +1150,7 @@ zone std {
     // Factories
     // ---------------------------------------------------------------------
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     func mapEntry<K, V>(key: K, value: V): MapEntry<K, V> {
         return MapEntry(key, value)
     }
@@ -1161,12 +1161,12 @@ zone std {
      * `1 to "a"` is sugar for `std::mapEntry(1, "a")`, so map factories read
      * naturally: `std::hashMapOf(1 to "a", 2 to "b")`.
      */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     meta .Infix("to") {
         $a $b => std::mapEntry($a, $b)
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     func hashMapOf<K, V>(...entries: MapEntry<K, V>): HashMap<K, V> {
         var result = HashMap<K, V>()
         for i in 0..<entries.size {
@@ -1175,7 +1175,7 @@ zone std {
         return result
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     func linkedHashMapOf<K, V>(...entries: MapEntry<K, V>): LinkedHashMap<K, V> {
         var result = LinkedHashMap<K, V>()
         for i in 0..<entries.size {
@@ -1184,7 +1184,7 @@ zone std {
         return result
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     func treeMapOf<K, V>(...entries: MapEntry<K, V>): TreeMap<K, V> {
         var result = TreeMap<K, V>()
         for i in 0..<entries.size {
@@ -1200,7 +1200,7 @@ zone std {
      * `LinkedHashMap`, exposed through the read-only `Map` view. Equal keys
      * keep the last supplied value.
      */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     func mapOf<K, V>(...entries: MapEntry<K, V>): Map<K, V> {
         var result = LinkedHashMap<K, V>()
         for i in 0..<entries.size {
@@ -1216,7 +1216,7 @@ zone std {
      * `LinkedHashMap`, exposed through the `MutableMap` view. Equal keys keep
      * the last supplied value.
      */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     func mutableMapOf<K, V>(...entries: MapEntry<K, V>): MutableMap<K, V> {
         var result = LinkedHashMap<K, V>()
         for i in 0..<entries.size {
@@ -1225,27 +1225,27 @@ zone std {
         return result
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     func emptyMap<K, V>(): Map<K, V> {
         return LinkedHashMap<K, V>()
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     func emptyMutableMap<K, V>(): MutableMap<K, V> {
         return LinkedHashMap<K, V>()
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     func emptyHashMap<K, V>(): MutableMap<K, V> {
         return HashMap<K, V>()
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     func emptyLinkedHashMap<K, V>(): MutableMap<K, V> {
         return LinkedHashMap<K, V>()
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     func emptyTreeMap<K, V>(): MutableMap<K, V> {
         return TreeMap<K, V>()
     }
@@ -1254,38 +1254,38 @@ zone std {
     // Operators
     // ---------------------------------------------------------------------
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     impl oper[] for HashMap<K, V> { self&, key ->
         return self.get(key)
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     impl oper[]= for HashMap<K, V> { self!, key, value ->
         self.put(key, value)
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     impl oper[] for LinkedHashMap<K, V> { self&, key ->
         return self.get(key)
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     impl oper[]= for LinkedHashMap<K, V> { self!, key, value ->
         self.put(key, value)
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     impl oper[] for TreeMap<K, V> { self&, key ->
         return self.get(key)
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     impl oper[]= for TreeMap<K, V> { self!, key, value ->
         self.put(key, value)
     }
 
     /** Slicing is over current iteration order and returns an ordered snapshot. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     impl oper[:] by MapSlice for HashMap<K, V> { self&, slice ->
         assert slice.step != 0 { "Map slice step cannot be zero" }
         fin all = self.entries()
@@ -1300,7 +1300,7 @@ zone std {
         return result
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     impl oper[:] by MapSlice for LinkedHashMap<K, V> { self&, slice ->
         assert slice.step != 0 { "Map slice step cannot be zero" }
         var result = LinkedHashMap<K, V>()
@@ -1314,7 +1314,7 @@ zone std {
         return result
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     impl oper[:] by MapSlice for TreeMap<K, V> { self&, slice ->
         assert slice.step != 0 { "Map slice step cannot be zero" }
         fin all = self.entries()
@@ -1329,7 +1329,7 @@ zone std {
         return result
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     impl oper+ by MapEntry<K, V> for HashMap<K, V> { self&, entry ->
         var result = hashMapOf<K, V>()
         result.putAll(self)
@@ -1337,7 +1337,7 @@ zone std {
         return result
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     impl oper- by K for HashMap<K, V> { self&, key ->
         var result = hashMapOf<K, V>()
         result.putAll(self)
@@ -1345,7 +1345,7 @@ zone std {
         return result
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     impl oper+ by MapEntry<K, V> for LinkedHashMap<K, V> { self&, entry ->
         var result = linkedHashMapOf<K, V>()
         result.putAll(self)
@@ -1353,7 +1353,7 @@ zone std {
         return result
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     impl oper- by K for LinkedHashMap<K, V> { self&, key ->
         var result = linkedHashMapOf<K, V>()
         result.putAll(self)
@@ -1361,7 +1361,7 @@ zone std {
         return result
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     impl oper+ by MapEntry<K, V> for TreeMap<K, V> { self&, entry ->
         var result = treeMapOf<K, V>()
         result.putAll(self)
@@ -1369,7 +1369,7 @@ zone std {
         return result
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     impl oper- by K for TreeMap<K, V> { self&, key ->
         var result = treeMapOf<K, V>()
         result.putAll(self)
@@ -1377,7 +1377,7 @@ zone std {
         return result
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     impl oper== by Map<K, V> for HashMap<K, V> { self&, rhs ->
         if self.size != rhs.size { return false }
         fin all = self.entries()
@@ -1389,12 +1389,12 @@ zone std {
         return true
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     impl oper!= by Map<K, V> for HashMap<K, V> { self&, rhs ->
         return !(self == rhs)
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     impl oper# for HashMap<K, V> { self& ->
         fin all = self.entries()
         var result = 0 as ULong
@@ -1404,7 +1404,7 @@ zone std {
         return result
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     impl oper== by Map<K, V> for LinkedHashMap<K, V> { self&, rhs ->
         if self.size != rhs.size { return false }
         for i in 0..<self.__size {
@@ -1415,12 +1415,12 @@ zone std {
         return true
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     impl oper!= by Map<K, V> for LinkedHashMap<K, V> { self&, rhs ->
         return !(self == rhs)
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     impl oper# for LinkedHashMap<K, V> { self& ->
         var result = 0 as ULong
         for i in 0..<self.__size {
@@ -1429,7 +1429,7 @@ zone std {
         return result
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     impl oper== by Map<K, V> for TreeMap<K, V> { self&, rhs ->
         if self.size != rhs.size { return false }
         fin all = self.entries()
@@ -1439,12 +1439,12 @@ zone std {
         return true
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     impl oper!= by Map<K, V> for TreeMap<K, V> { self&, rhs ->
         return !(self == rhs)
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     impl oper# for TreeMap<K, V> { self& ->
         fin all = self.entries()
         var result = 0 as ULong

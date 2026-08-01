@@ -50,7 +50,7 @@ use zone std {
     bridge pack Type
 
     /** Declaration categories accepted by decorator `for` constraints. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     bridge enum DecoTarget {
         Pack, Func, Infx, Prop, Task, Flow, Node, Solo, Slot, Enum, EnumValue, Deco,
         Fail, FailValue, Field, Param, Var, Fin, Let, Test, Hook,
@@ -58,7 +58,7 @@ use zone std {
     }
 
     /** Controls whether a test runs its own body or aggregates its source file. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     bridge enum TestMethod {
         /** Runs only this test body. This is the default. */
         This
@@ -67,7 +67,7 @@ use zone std {
         All
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     bridge enum LogLevel {
         /** Detailed diagnostic information. The default level for `trace`. */
         Debug
@@ -95,7 +95,7 @@ use zone std {
      * (e.g. `bridge func`) uses this default, exactly as `test` defaults to the first
      * `TestMethod`.
      */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     bridge enum Target {
         Compiler,
         C,
@@ -104,32 +104,32 @@ use zone std {
     }
 
     /** Marks an API as stable from the optional semantic version onward. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     bridge deco Stable {
-        fin sinceAzora: String = ""
+        fin since: String = ""
     }
 
     /** Marks an API as experimental from the optional semantic version onward. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     bridge deco Experimental {
-        fin sinceAzora: String = ""
+        fin since: String = ""
     }
 
     /** Records the first released version containing a declaration. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     bridge deco SinceAzora {
         fin version: String
     }
 
     /** Marks an API as deprecated and optionally names its replacement. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     bridge deco Deprecated {
-        fin sinceAzora: String = ""
+        fin since: String = ""
         fin replacement: String = ""
     }
 
     /** Allows compile-time generated packs to declare numeric field names. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     bridge deco EnforceNumFields for .Pack
 
     /**
@@ -139,7 +139,7 @@ use zone std {
      * decorator participates in it. Libraries opt in explicitly; generators do
      * not depend on library module paths or decorator names.
      */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     bridge deco Derive for .Deco {
         fin generator: String
         fin role: String
@@ -150,7 +150,7 @@ use zone std {
         fin deferGeneric: Bool = false
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     bridge slot Macro {
         Prefix(String)
         Infix(String)
@@ -158,74 +158,74 @@ use zone std {
     }
 
     /** Number of characters in `value`. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     bridge func stringLength(value: String): Int
 
     /** Character at zero-based `index`. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     bridge func charAt(value: String, index: Int): Char
 
     /** Text from `start` inclusive to `end` exclusive. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     bridge func substring(value: String, start: Int, end: Int): String
 
     /** Unicode scalar value represented by `value`. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     bridge func ord(value: Char): Int
 
     /** Character represented by a valid Unicode scalar value. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     bridge func chr(value: Int): Char
 
     /** Whether `value` is an ASCII decimal digit. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     bridge func isDigit(value: Char): Bool
 
     /** Whether `value` starts with `prefix`. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     bridge func startsWith(value: String, prefix: String): Bool
 
     /** Whether `value` ends with `suffix`. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     bridge func endsWith(value: String, suffix: String): Bool
 
     /** Whether `value` contains `sub`. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     bridge func contains(value: String, sub: String): Bool
 
     /** First index of `sub` in `value`, or `-1` when absent. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     bridge func indexOf(value: String, sub: String): Int
 
     /** `value` with leading and trailing whitespace removed. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     bridge func trim(value: String): String
 
     /** `value` with every character upper-cased. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     bridge func toUpper(value: String): String
 
     /** `value` with every character lower-cased. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     bridge func toLower(value: String): String
 
     /** `value` with each occurrence of `old` replaced by `new`. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     bridge func replace(value: String, old: String, new: String): String
 
     /** `value` split on each occurrence of `delim`. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     bridge func split(value: String, delim: String): Array<String>
 
     /** The characters of `value` as an array. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     bridge func toChars(value: String): Array<Char>
 
     /** A string built by concatenating `chars` in order. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     bridge func fromChars(chars: Array<Char>): String
 
     /** Whether `value` is an ASCII alphabetic character. */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     bridge func isAlpha(value: Char): Bool
 }

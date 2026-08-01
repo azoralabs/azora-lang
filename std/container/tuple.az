@@ -41,7 +41,7 @@ zone std {
      *
      * @param T Variadic type parameter pack for the element types.
      */
-    @Experimental(sinceAzora: "0.0.3")
+    @Experimental(since: "0.0.3")
     @EnforceNumFields
     @Serializable
     pack Tuple<...T> where (...T).length >= 2 {
@@ -59,7 +59,7 @@ zone std {
          *
          * @return This tuple formatted as `(fields...)`.
          */
-        @Experimental(sinceAzora: "0.0.4")
+        @Experimental(since: "0.0.4")
         prop pretty[self: Self&]: String {
             var res = "("
             inline for field in reflect<Self>.fields with index {
@@ -83,7 +83,7 @@ zone std {
      * @param elements Values to store in the tuple.
      * @return A Tuple whose element types match the provided values.
      */
-    @Experimental(sinceAzora: "0.0.3")
+    @Experimental(since: "0.0.3")
     func tupleOf<...T>(...elements: ...T): Tuple<...T>
     where (...T).length >= 2 {
         return Tuple(elements)

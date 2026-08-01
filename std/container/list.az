@@ -49,7 +49,7 @@ zone std {
      *
      * @param T The element type.
      */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     spec List<T> {
         /** Number of elements. */
         prop size[self: Self&]: Int
@@ -115,7 +115,7 @@ zone std {
      *
      * @param T The element type.
      */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     spec MutableList<T> : List<T> {
         /** Appends `element` to the end. */
         func add[self: Self&](element: T)
@@ -147,7 +147,7 @@ zone std {
      *
      * @param T The element type.
      */
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     @Serializable
     pack ArrayList<T> {
         var data: T* = alloc T[8]
@@ -161,7 +161,7 @@ zone std {
 
     impl ArrayList<T> {
         /** Doubles the backing buffer, copying existing elements. */
-        @Experimental(sinceAzora: "0.0.4")
+        @Experimental(since: "0.0.4")
         func grow() { self! ->
             fin newCap = self.capacity * 2
             fin newData = alloc T[newCap]
@@ -355,17 +355,17 @@ zone std {
     // Factories
     // ---------------------------------------------------------------------
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     func emptyList<T>(): List<T> {
         return ArrayList<T>()
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     func emptyMutableList<T>(): MutableList<T> {
         return ArrayList<T>()
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     func listOf<T>(...elements: T): List<T> {
         var result = ArrayList<T>()
         for i in 0..<elements.size {
@@ -374,7 +374,7 @@ zone std {
         return result
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     func mutableListOf<T>(...elements: T): MutableList<T> {
         var result = ArrayList<T>()
         for i in 0..<elements.size {
@@ -383,7 +383,7 @@ zone std {
         return result
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     func arrayListOf<T>(...elements: T): ArrayList<T> {
         var result = ArrayList<T>()
         for i in 0..<elements.size {
@@ -396,7 +396,7 @@ zone std {
     // Operators
     // ---------------------------------------------------------------------
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     impl oper[] for ArrayList<T> { self&, index ->
         assert index >= 0 && index < self.size {
             "List index out of bounds"
@@ -404,7 +404,7 @@ zone std {
         return self.data[index]
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     impl oper[]= for ArrayList<T> { self!, index, element ->
         assert index >= 0 && index < self.size {
             "List index out of bounds"
@@ -412,7 +412,7 @@ zone std {
         self.data[index] = element
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     impl Into<String> for ArrayList<T> { self& ->
         var s = "["
         for i in 0..<self.size {
@@ -422,7 +422,7 @@ zone std {
         return s + "]"
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     impl oper== by List<T> for ArrayList<T> { self&, rhs ->
         if self.size != rhs.size { return false }
         for i in 0..<self.size {
@@ -431,12 +431,12 @@ zone std {
         return true
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     impl oper!= by List<T> for ArrayList<T> { self&, rhs ->
         return !(self == rhs)
     }
 
-    @Experimental(sinceAzora: "0.0.4")
+    @Experimental(since: "0.0.4")
     impl oper# for ArrayList<T> { self& ->
         var result = 0 as ULong
         for i in 0..<self.size {

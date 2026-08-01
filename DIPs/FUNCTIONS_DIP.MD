@@ -367,7 +367,7 @@ flow squares(n: Int): Int {        // generator; `for x in squares(5)` iterates
 ## 8. Decorators on functions
 
 ```azora
-@Experimental(sinceAzora: "0.0.4")
+@Experimental(since: "0.0.4")
 func api() { … }
 
 @[Component, System(.Update)]        // grouped: applies both in one row

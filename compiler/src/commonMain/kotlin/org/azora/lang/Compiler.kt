@@ -160,7 +160,7 @@ class Compiler(
             // usable from a user module's `inline for`, so the stdlib's bindings
             // seed this parse. Reading the stdlib first is what populates them.
             AzStdlib.loadPrograms()
-            Parser(Lexer(source).tokenize(), AzStdlib.comptimeLists.toMutableMap()).parse()
+            Parser(Lexer(source).tokenize(), AzStdlib.comptimeLists.toMutableMap(), AzStdlib.declaredEnums.toMutableMap()).parse()
         } catch (error: IllegalStateException) {
             return CompilationResult.Failure(listOf(error.message ?: "frontend parsing failed"))
         } catch (error: IllegalArgumentException) {

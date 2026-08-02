@@ -139,6 +139,7 @@ internal object VariadicMonomorphizer {
             typeMacroRules,
             program.zoneTypeNamespaces,
             program.items.filterIsInstance<TopLevel.Pack>().associate { it.name to it.fields },
+            program.items.filterIsInstance<TopLevel.Enum>().associate { it.name to it.variants },
         )
         // An impl on an ordinary pack still needs its reflected loops expanded — the
         // pack's own fields are known even when it is not monomorphised.
@@ -188,6 +189,8 @@ private class MonoContext(
     private val typeNamespaces: Map<String, String>,
     /** Every declared pack's fields, so reflection over a named type can answer. */
     private val plainPackFields: Map<String, List<PackField>>,
+    /** Every declared enum's variants, for resolving variant const arguments. */
+    private val enumVariants: Map<String, List<String>>,
 ) {
 
     /**
@@ -211,6 +214,32 @@ private class MonoContext(
     // ------------------------------------------------------------------
     // Instantiation
     // ------------------------------------------------------------------
+
+    /**
+     * Gives each enum-variant argument the position it stands for.
+     *
+     * `.ColumnMajor` may be written in a module that has not seen `MatrixOrder` — a
+     * library declares the enum, a consumer names one of its variants. The whole
+     * program is in view here, so this is where the name becomes a number the
+     * compile-time machinery can compare.
+     */
+    private fun resolveVariantArguments(arguments: List<TypeRef>): List<TypeRef> {
+        if (arguments.none { it is TypeRef.Const && it.unresolved }) return arguments
+        return arguments.map { argument ->
+            val const = argument as? TypeRef.Const ?: return@map argument
+            if (!const.unresolved) return@map argument
+            val variant = const.label ?: return@map argument
+            val owners = enumVariants.filterValues { variant in it }
+            when (owners.size) {
+                1 -> TypeRef.Const(owners.values.first().indexOf(variant).toLong(), variant)
+                0 -> error("no declared enum has a variant '.$variant'")
+                else -> error(
+                    "'.$variant' is ambiguous between ${owners.keys.sorted().joinToString(", ")}; " +
+                        "qualify it, as in '${owners.keys.sorted().first()}.$variant'",
+                )
+            }
+        }
+    }
 
     /**
      * Rejects a specialization whose `where` clause does not hold.
@@ -249,8 +278,11 @@ private class MonoContext(
         }
     }
 
-    fun instantiatePack(templateName: String, args: List<TypeRef>): String {
+    fun instantiatePack(templateName: String, supplied: List<TypeRef>): String {
         val template = packTemplates[templateName] ?: return templateName
+        // A const parameter the use site omitted takes its declared default, so the
+        // specialization is the same one an explicit spelling would name.
+        val args = resolveVariantArguments(specializer.withDefaults(template, supplied))
         // `Vec<T, N>` inside another generic has chosen no layout, so it stays on the
         // template. PackSpecializer decides what "concrete" means; this must not
         // re-derive that rule.

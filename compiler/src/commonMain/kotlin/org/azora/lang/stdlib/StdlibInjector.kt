@@ -90,9 +90,10 @@ class StdlibInjector private constructor(
             // reading the map before that yields nothing to iterate.
             AzStdlib.loadPrograms()
             val typeListEnv = AzStdlib.comptimeLists.toMutableMap()
+            val enumEnv = AzStdlib.declaredEnums.toMutableMap()
             val additionalPrograms = additionalSources.map { (path, source) ->
                 val program = try {
-                    Parser(Lexer(source).tokenize(), typeListEnv).parse()
+                    Parser(Lexer(source).tokenize(), typeListEnv, enumEnv).parse()
                 } catch (error: Exception) {
                     throw IllegalArgumentException(
                         "Failed to parse library source '$path': ${error.message ?: error.toString()}",
@@ -1355,6 +1356,10 @@ class StdlibInjector private constructor(
             }
             is TopLevel.Pack -> {
                 collectNamesFromAnnotations(item.annotations, names)
+                // `O: MatrixOrder` is part of the pack's signature: a use site writes
+                // `.ColumnMajor` and never the enum's name, so nothing else would
+                // bring it in.
+                names.addAll(item.constEnums.values)
                 item.fields.forEach { field ->
                     collectNamesFromAnnotations(field.annotations, names)
                     collectNamesFromTypeAnnotation(TypeAnnotation.Explicit(field.type), names)

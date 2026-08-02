@@ -77,6 +77,38 @@ internal object ConstraintEvaluator {
         return eval(clause, bindings, table)
     }
 
+    /**
+     * The values a compile-time range spans, or null when it is not yet decidable.
+     *
+     * [extra] carries loop variables bound by enclosing repetitions, so an inner
+     * `0..<r` sees the `r` an outer loop is currently on.
+     */
+    fun rangeOf(range: Expr, bindings: Map<String, Binding>, extra: Map<String, Long>): List<Long>? {
+        val env = bindings + extra.mapValues { (_, value) -> Binding.Const(value) }
+        val span = rangeOf(range, env) ?: return null
+        return span.toList()
+    }
+
+    /** Replaces each named value with the number it is bound to. */
+    fun substituteConsts(expr: Expr, values: Map<String, Long>): Expr = when (expr) {
+        is Expr.Identifier -> values[expr.name]?.let { Expr.IntLiteral(it, expr.line, expr.column) } ?: expr
+        is Expr.Binary -> expr.copy(
+            left = substituteConsts(expr.left, values),
+            right = substituteConsts(expr.right, values),
+        )
+        is Expr.Unary -> expr.copy(operand = substituteConsts(expr.operand, values))
+        is Expr.Grouping -> expr.copy(expr = substituteConsts(expr.expr, values))
+        is Expr.InCheck -> expr.copy(
+            value = substituteConsts(expr.value, values),
+            collection = substituteConsts(expr.collection, values),
+        )
+        is Expr.Range -> expr.copy(
+            from = substituteConsts(expr.from, values),
+            to = substituteConsts(expr.to, values),
+        )
+        else -> expr
+    }
+
     /** Converts a [TypeRef] argument into the binding it stands for. */
     fun bindingOf(arg: TypeRef): Binding? = when (arg) {
         is TypeRef.Const -> Binding.Const(arg.value)

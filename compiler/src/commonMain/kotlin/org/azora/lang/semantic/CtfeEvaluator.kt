@@ -573,8 +573,15 @@ class CtfeEvaluator(private val table: SymbolTable) {
             is Stmt.MemberAssign -> {
                 val (newTarget, tc) = foldExpr(stmt.target, program)
                 val (newValue, vc) = foldExpr(stmt.value, program)
-                val changed = tc || vc
-                Pair(listOf(if (changed) stmt.copy(target = newTarget, value = newValue) else stmt), changed)
+                // `self.m$r$c = …` splices on the left as it does on the right.
+                val spliced = spliceName(stmt.name)
+                val changed = tc || vc || spliced != null
+                val updated = if (changed) {
+                    stmt.copy(target = newTarget, value = newValue, name = spliced ?: stmt.name)
+                } else {
+                    stmt
+                }
+                Pair(listOf(updated), changed)
             }
             is Stmt.When -> {
                 var changed = false
@@ -1173,6 +1180,28 @@ class CtfeEvaluator(private val table: SymbolTable) {
         return foldExpr(substituteInExpr(returned, bindings), program).first
     }
 
+    /**
+     * A name with its `$value` splices resolved, or null when it has none to resolve.
+     *
+     * Compile-time bindings are what a splice reads: the loop variable of an
+     * enclosing `inline for`, an `inline fin`, anything in [inlineEnv]. A name that
+     * splices something not bound yet is left alone — a later pass may bind it.
+     */
+    private fun spliceName(name: String): String? {
+        if ('$' !in name) return null
+        var result = name
+        var replaced = false
+        // Longest name first, so `$row` is not read as `$r` followed by `ow`.
+        for (binding in inlineEnv.keys.sortedByDescending { it.length }) {
+            val marker = "$" + binding
+            if (marker !in result) continue
+            val text = constantText(inlineEnv.getValue(binding)) ?: continue
+            result = result.replace(marker, text)
+            replaced = true
+        }
+        return if (replaced) result else null
+    }
+
     private fun foldExpr(expr: Expr, program: Program): Pair<Expr, Boolean> {
         return when (expr) {
             is Expr.InlineForArgs -> expr to false
@@ -1329,6 +1358,13 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 Pair(if (changed) expr.copy(target = t, index = i) else expr, changed)
             }
             is Expr.Member -> {
+                // `m.m$r$c` — a member name may splice compile-time values, the same
+                // way any other name may. Resolving it here means an `inline for` can
+                // walk a family of members by name without a special access form.
+                spliceName(expr.name)?.let { spliced ->
+                    val (target, _) = foldExpr(expr.target, program)
+                    return Pair(expr.copy(target = target, name = spliced), true)
+                }
                 foldZoneTerminal(expr.target, expr.name, program, expr.line)?.let { return Pair(it, true) }
                 val metadataQuery = expr.target as? Expr.Call
                 if (compileTimeDepth > 0 && metadataQuery?.callee == "__decoMeta") {

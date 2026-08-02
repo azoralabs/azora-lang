@@ -1173,8 +1173,31 @@ sealed class TypeRef {
      * element count) at type-argument position. Resolved into the dependent type
      * (e.g. `IrType.Array(_, size = 3)`).
      */
-    data class Const(val value: Long) : TypeRef() {
-        override fun toString() = value.toString()
+    /**
+     * A const-generic *value* argument: `3` in `Array<Int, 3>`.
+     *
+     * [label] names the enum variant the value stands for (`RowMajor` for
+     * `Mat<…, .RowMajor>`), so an enum-typed const argument keeps its name in
+     * diagnostics and in the mangled specialization rather than becoming a bare
+     * ordinal. Comparison is by [value]: the label is how it reads, not what it is.
+     */
+    data class Const(val value: Long, val label: String? = null) : TypeRef() {
+        override fun toString() = label ?: value.toString()
+
+        /** True when the variant's position is not known yet. See [UNRESOLVED]. */
+        val unresolved: Boolean get() = value == UNRESOLVED && label != null
+
+        // Identity is the label when there is one: a variant argument may be written
+        // where its enum is not yet in scope, and `.ColumnMajor` is the same argument
+        // whether or not its position has been looked up.
+        override fun equals(other: Any?): Boolean = this === other ||
+            (other is Const && (if (label != null || other.label != null) label == other.label else value == other.value))
+        override fun hashCode(): Int = label?.hashCode() ?: value.hashCode()
+
+        companion object {
+            /** The position of a variant whose enum has not been seen yet. */
+            const val UNRESOLVED = Long.MIN_VALUE
+        }
     }
 
     /** A checked reference. Ownership is carried by the qualifier, not punctuation. */
@@ -1434,6 +1457,15 @@ data class Param(
  * @property mutable whether the field is `var` (mutable) vs `fin`/`let` (immutable)
  * @property default an optional default-value expression
  */
+/**
+ * One compile-time repetition of a field block.
+ *
+ * `inline for r in 0..<R { var m$r$c: T = 0 }` declares a *family* of fields, not one
+ * field with a predicate: the name varies with the loop variable, so the layout has
+ * as many members as the range has values. Nested loops stack, outermost first.
+ */
+data class FieldRepeat(val variable: String, val range: Expr)
+
 data class PackField(
     val name: String,
     val type: TypeRef,
@@ -1441,6 +1473,15 @@ data class PackField(
     val default: Expr?,
     val visibility: Visibility = Visibility.PUBLIC,
     val annotations: List<Annotation> = emptyList(),
+    /**
+     * Compile-time loops this field is declared inside, outermost first.
+     *
+     * Empty for an ordinary field. When present the declaration is a template: one
+     * field per combination of loop values, with `$var` in [name] replaced by the
+     * value it took. Expanded by PackSpecializer, which is the single authority on
+     * what a pack's concrete layout is.
+     */
+    val repeats: List<FieldRepeat> = emptyList(),
     /**
      * When set, the field exists only for argument bindings satisfying it.
      *
@@ -1539,6 +1580,10 @@ data class FuncDecl(
      * call/instantiation sites and fold into dependent types (e.g. `Array<T, N>`).
      */
     val constParams: Set<String> = emptySet(),
+    /** Default values for const parameters, e.g. `O: MatrixOrder = .RowMajor`. */
+    val constDefaults: Map<String, TypeRef> = emptyMap(),
+    /** Const parameter → the enum whose variants it ranges over, when it has one. */
+    val constEnums: Map<String, String> = emptyMap(),
     /** How this declaration may be invoked when registered as an impl member. */
     val memberCallStyle: MemberCallStyle = MemberCallStyle.NORMAL,
     /**
@@ -1857,6 +1902,10 @@ sealed class TopLevel {
          * instantiation and folded into dependent types.
          */
         val constParams: Set<String> = emptySet(),
+    /** Default values for const parameters, e.g. `O: MatrixOrder = .RowMajor`. */
+    val constDefaults: Map<String, TypeRef> = emptyMap(),
+    /** Const parameter → the enum whose variants it ranges over, when it has one. */
+    val constEnums: Map<String, String> = emptyMap(),
         /**
          * The declaration's `where` clause, as an ordinary expression.
          *

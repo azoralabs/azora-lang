@@ -45,6 +45,13 @@ class Parser(
      * same lists. Purely a parse-time metaprogramming environment.
      */
     private val typeListEnv: MutableMap<String, List<String>> = mutableMapOf(),
+    /**
+     * Enum name → its variants, in declaration order. Shared for the same reason
+     * [typeListEnv] is: an enum-typed const argument (`Mat<…, .ColumnMajor>`) is
+     * resolved against the enums the whole compilation has seen, not only those in
+     * the file being parsed.
+     */
+    private val declaredEnums: MutableMap<String, List<String>> = mutableMapOf(),
 ) {
 
     /** Compile-time type functions are declarations, but never runtime top-level items. */
@@ -1538,6 +1545,7 @@ class Parser(
         // Type parameters follow the name: `pack Box<T>`, `pack Map<K, V>`.
         val name = consume(TokenType.IDENTIFIER, "Expected pack name").lexeme
         val tp = parseTypeParams()
+        constParamEnums = tp.constEnums
         val whereClause = parseWhereClause()
         val minLen = variadicMinLengthOf(whereClause)
         val enforceNumFields = annotations.any { it.name == "EnforceNumFields" }
@@ -1600,6 +1608,8 @@ class Parser(
             minVariadicLength = minLen,
             whereClause = whereClause,
             constParams = tp.constParams,
+            constDefaults = tp.constDefaults,
+            constEnums = tp.constEnums,
             fieldTemplate = fieldTemplate,
         )
     }
@@ -1668,6 +1678,25 @@ class Parser(
     }
 
     /**
+     * One `inline when` arm's pattern.
+     *
+     * `.RowMajor` names a variant of whatever enum the subject ranges over, and
+     * becomes that variant's position — which is what the subject is bound to in a
+     * specialization, so the arm's guard is an ordinary comparison of two numbers.
+     */
+    private fun parseArmPattern(subject: Expr): Expr {
+        val at = peek()
+        if (!check(TokenType.DOT)) return parseExpr()
+        val owner = (subject as? Expr.Identifier)?.name?.let { constParamEnums[it] }
+            ?: error("'.${peekNext()?.lexeme}' needs an enum-typed subject at line ${at.line}")
+        advance() // '.'
+        val variant = consume(TokenType.IDENTIFIER, "Expected enum variant after '.'").lexeme
+        val ordinal = declaredEnums[owner]?.indexOf(variant) ?: -1
+        if (ordinal < 0) error("'$owner' has no variant '$variant', at line ${at.line}")
+        return Expr.IntLiteral(ordinal.toLong(), at.line, at.column)
+    }
+
+    /**
      * Parses one compile-time field form and returns the fields it contributes.
      *
      * `if`/`when` guard their fields with a predicate; `for`/`while`/`loop` repeat a
@@ -1715,9 +1744,11 @@ class Parser(
                         advance()
                         null
                     } else {
-                        Expr.Binary(subject, TokenType.EQUAL_EQUAL, parseExpr(), keyword.line)
+                        Expr.Binary(subject, TokenType.EQUAL_EQUAL, parseArmPattern(subject), keyword.line)
                     }
-                    consume(TokenType.ARROW, "Expected '->' in 'inline when' arm")
+                    if (!match(TokenType.FAT_ARROW) && !match(TokenType.ARROW)) {
+                        error("Expected '=>' in 'inline when' arm at line ${peek().line}")
+                    }
                     skipNewlines()
                     val armFields = fieldBlock(enforceNumFields)
                     result += armFields.map { it.copy(condition = conjoin(it.condition, guard)) }
@@ -1752,7 +1783,14 @@ class Parser(
         while (!check(TokenType.R_BRACE) && !isAtEnd()) {
             skipNewlines()
             if (check(TokenType.R_BRACE)) break
-            fields.add(parsePackField(enforceNumFields = enforceNumFields))
+            // A block may hold further compile-time control flow — an `inline when`
+            // arm containing `inline for`, a loop inside a loop — so the same field
+            // forms are available here as at the top of a pack body.
+            if (isInlineFieldFormAhead()) {
+                fields.addAll(parseInlineFieldForm(enforceNumFields))
+            } else {
+                fields.add(parsePackField(enforceNumFields = enforceNumFields))
+            }
             skipNewlines()
         }
         consume(TokenType.R_BRACE, "Expected '}' after inline field block")
@@ -1775,13 +1813,10 @@ class Parser(
         iterable: Expr,
         enforceNumFields: Boolean,
     ): List<PackField> {
-        val marker = Expr.InCheck(
-            Expr.Identifier(loopVar, iterable.line, iterable.column, loopVar.length),
-            iterable,
-            line = iterable.line,
-            column = iterable.column,
-        )
-        return fieldBlock(enforceNumFields).map { it.copy(condition = conjoin(it.condition, marker)) }
+        // The loop is recorded on each field it contains, outermost first, and the
+        // layout is expanded once the range is a known number of values.
+        val repeat = FieldRepeat(loopVar, iterable)
+        return fieldBlock(enforceNumFields).map { it.copy(repeats = listOf(repeat) + it.repeats) }
     }
 
     /**
@@ -1845,7 +1880,7 @@ class Parser(
                 Token(TokenType.R_BRACE, "}", start.line, start.column),
                 Token(TokenType.EOF, "", start.line, start.column),
             )
-            val parsed = Parser(wrapper, typeListEnv).parse().items
+            val parsed = Parser(wrapper, typeListEnv, declaredEnums).parse().items
             parsed.filterIsInstance<TopLevel.Impl>().forEach { generated.addAll(it.methods) }
         }
         return generated
@@ -2008,7 +2043,7 @@ class Parser(
         val base = (ret as? TypeAnnotation.Explicit)?.ref ?: return ret
         val rendered = Lexer(base.toString()).tokenize().dropLast(1) + fragment +
             Token(TokenType.EOF, "", at.line, at.column)
-        return TypeAnnotation.Explicit(Parser(rendered, typeListEnv).parseTypeNameForFragment())
+        return TypeAnnotation.Explicit(Parser(rendered, typeListEnv, declaredEnums).parseTypeNameForFragment())
     }
 
     /** Entry point for re-parsing a type built from a signature fragment. */
@@ -2080,7 +2115,7 @@ class Parser(
         // `var w: T = 0 where N == 4` — the same predicate written on one field.
         val condition = parseWhereClause()
         consumeNewline()
-        return PackField(name, type, mutable, default, visibility, annotations, condition)
+        return PackField(name, type, mutable, default, visibility, annotations, condition = condition)
     }
 
     /** Combines two field predicates; either may be absent. */
@@ -2162,6 +2197,7 @@ class Parser(
         }
         consume(TokenType.R_BRACE, "Expected '}' after enum variants")
         consumeNewline()
+        declaredEnums[name] = variants
         return TopLevel.Enum(name, variants, start.line, start.column, annotations, variantAnns)
     }
 
@@ -2282,6 +2318,9 @@ class Parser(
             val t = advance()
             TypeRef.Const((t.literal as NumericLiteral).value as Long)
         }
+        // `Mat<Real, 4, 4, .ColumnMajor>` — an enum variant as a const argument.
+        check(TokenType.DOT) || (check(TokenType.IDENTIFIER) && peekNext()?.type == TokenType.DOT &&
+            peek().lexeme in declaredEnums) -> parseConstArgument(null, "type argument")
         check(TokenType.STAR) -> {
             advance()
             TypeRef.Named("*")
@@ -2455,7 +2494,7 @@ class Parser(
             consumeNewline()
             val implTypeParams = lastImplTypeParams
             for (target in targets) {
-                val members = Parser(bodyTokens + Token(TokenType.EOF, "", start.line, start.column), typeListEnv).parse().items
+                val members = Parser(bodyTokens + Token(TokenType.EOF, "", start.line, start.column), typeListEnv, declaredEnums).parse().items
                 members.forEach {
                     pendingTopLevels.add(mangleTopLevel(withImplTypeParams(it, implTypeParams), target))
                 }
@@ -4435,8 +4474,69 @@ class Parser(
         return params
     }
 
+    /**
+     * A const-generic value written as an argument or a default.
+     *
+     * An integer stands for itself; `.RowMajor` stands for its position in the enum
+     * it belongs to, and keeps the name so the specialization reads as the author
+     * wrote it. [enumName] is the declared type when there is one, which is what
+     * lets `.RowMajor` be resolved without repeating `MatrixOrder`.
+     */
+    private fun parseConstArgument(enumName: String?, parameter: String): TypeRef {
+        if (check(TokenType.INT_LITERAL)) {
+            val token = advance()
+            return TypeRef.Const((token.literal as NumericLiteral).value as Long)
+        }
+        val qualifier = if (check(TokenType.IDENTIFIER) && peekNext()?.type == TokenType.DOT) {
+            advance().lexeme
+        } else {
+            null
+        }
+        if (!match(TokenType.DOT)) {
+            error("Expected a value for const parameter '$parameter' at line ${peek().line}")
+        }
+        val variant = consume(TokenType.IDENTIFIER, "Expected enum variant after '.'").lexeme
+        // At a use site (`Mat<Int, 2, 2, .ColumnMajor>`) the parameter's enum is not
+        // in hand, so the variant names it — uniquely, or it must be qualified.
+        // At a use site (`Mat<Int, 2, 2, .ColumnMajor>`) the parameter's enum is not
+        // in hand, so the variant names it — uniquely when the enum has been seen.
+        // A library's enum may not have been parsed yet, so an unknown variant stays
+        // symbolic and is resolved once the whole program is in view.
+        val owner = qualifier ?: enumName ?: run {
+            val owners = declaredEnums.filterValues { variant in it }.keys
+            when (owners.size) {
+                1 -> owners.first()
+                0 -> return TypeRef.Const(TypeRef.Const.UNRESOLVED, variant)
+                else -> error(
+                    "'.$variant' is ambiguous between ${owners.sorted().joinToString(", ")}; " +
+                        "qualify it, as in '${owners.sorted().first()}.$variant', at line ${peek().line}",
+                )
+            }
+        }
+        val variants = declaredEnums[owner]
+            ?: error("'$owner' is not a declared enum, at line ${peek().line}")
+        val ordinal = variants.indexOf(variant)
+        if (ordinal < 0) error("'$owner' has no variant '$variant', at line ${peek().line}")
+        return TypeRef.Const(ordinal.toLong(), variant)
+    }
+
     /** Result of [parseTypeParams]: the names, which (if any) is the variadic pack, and which are const value params. */
-    private data class TypeParams(val names: List<String>, val variadic: String?, val constParams: Set<String> = emptySet())
+    /**
+     * Const parameters of the declaration being parsed, and the enum each ranges over.
+     *
+     * `inline when O { .RowMajor => … }` names a variant without repeating the enum,
+     * so the arm has to know what `O` is to resolve it.
+     */
+    private var constParamEnums: Map<String, String> = emptyMap()
+
+    private data class TypeParams(
+        val names: List<String>,
+        val variadic: String?,
+        val constParams: Set<String> = emptySet(),
+        val constDefaults: Map<String, TypeRef> = emptyMap(),
+        /** Const parameter → the enum whose variants it ranges over, when it has one. */
+        val constEnums: Map<String, String> = emptyMap(),
+    )
 
     /** `<T, U>` type-parameter list. A parameter may be variadic via the `...T` prefix form, or a const value param via `N: Int`. */
     private fun parseTypeParams(): TypeParams {
@@ -4444,6 +4544,8 @@ class Parser(
         advance()
         val names = mutableListOf<String>()
         val constParams = mutableSetOf<String>()
+        val constDefaults = mutableMapOf<String, TypeRef>()
+        val constEnums = mutableMapOf<String, String>()
         var variadic: String? = null
         do {
             val prefixVariadic = match(TokenType.ELLIPSIS) // `...T` prefix form
@@ -4453,16 +4555,31 @@ class Parser(
             }
             // Optional kind/constraint after `:`:
             //  - `N: Int` → a const-generic value parameter (supplied as a `TypeRef.Const` arg).
+            //  - `O: MatrixOrder` → the same, over an enum's variants.
             //  - `T: Spec` → a conformance constraint (accepted, not yet enforced).
+            var constEnum: String? = null
             if (match(TokenType.COLON)) {
                 val constraint = parseTypeName()
-                if ((constraint as? TypeRef.Named)?.name == "Int") constParams.add(name)
+                val constraintName = (constraint as? TypeRef.Named)?.name
+                if (constraintName == "Int") {
+                    constParams.add(name)
+                } else if (constraintName != null && constraintName in declaredEnums) {
+                    constParams.add(name)
+                    constEnum = constraintName
+                    constEnums[name] = constraintName
+                }
+            }
+            // `= <value>` — a default for a const parameter, so `Mat<Real, 4, 4>`
+            // means the same as spelling the order out.
+            if (match(TokenType.EQUAL)) {
+                constDefaults[name] = parseConstArgument(constEnum, name)
+                constParams.add(name)
             }
             if (prefixVariadic) variadic = name
             names.add(name)
         } while (match(TokenType.COMMA))
         consume(TokenType.GREATER, "Expected '>' after type parameters")
-        return TypeParams(names, variadic, constParams)
+        return TypeParams(names, variadic, constParams, constDefaults, constEnums)
     }
 
     /**
@@ -5816,7 +5933,7 @@ class Parser(
         val prefix = Lexer("func __inline_for_body__() {\n").tokenize().dropLast(1) // drop trailing EOF
         val suffix = Lexer("\n}\n").tokenize() // includes EOF
         val tokens = prefix + rendered + suffix
-        val program = Parser(tokens, typeListEnv).parse()
+        val program = Parser(tokens, typeListEnv, declaredEnums).parse()
         val fn = program.items.filterIsInstance<TopLevel.Func>()
             .firstOrNull { it.decl.name == "__inline_for_body__" }
             ?: error("failed to expand 'inline for' body at line ${start.line}")

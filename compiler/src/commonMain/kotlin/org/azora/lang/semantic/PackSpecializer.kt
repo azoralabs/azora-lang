@@ -85,12 +85,29 @@ internal class PackSpecializer(private val table: SymbolTable) {
     }
 
     /**
+     * An argument list with omitted const parameters filled from their defaults.
+     *
+     * `Mat<Real, 4, 4>` and `Mat<Real, 4, 4, .RowMajor>` name the same layout, so a
+     * default is applied here rather than at every place that inspects arguments.
+     */
+    fun withDefaults(declaration: TopLevel.Pack, arguments: List<TypeRef>): List<TypeRef> {
+        if (arguments.size >= declaration.typeParams.size) return arguments
+        if (declaration.constDefaults.isEmpty()) return arguments
+        val completed = arguments.toMutableList()
+        for (index in arguments.size until declaration.typeParams.size) {
+            completed.add(declaration.constDefaults[declaration.typeParams[index]] ?: return arguments)
+        }
+        return completed
+    }
+
+    /**
      * The key for an application written as source types, or null when abstract.
      *
      * The monomorphiser works in [TypeRef]s, the resolver in [IrType]s; both reach
      * the same cache so a layout is computed once however it was asked for.
      */
-    fun keyForRefs(declaration: TopLevel.Pack, arguments: List<TypeRef>): Key? {
+    fun keyForRefs(declaration: TopLevel.Pack, supplied: List<TypeRef>): Key? {
+        val arguments = withDefaults(declaration, supplied)
         if (arguments.size != declaration.typeParams.size) return null
         val rendered = declaration.typeParams.mapIndexed { index, parameter ->
             val argument = arguments[index]
@@ -108,8 +125,9 @@ internal class PackSpecializer(private val table: SymbolTable) {
     fun specializeForRefs(
         key: Key,
         declaration: TopLevel.Pack,
-        arguments: List<TypeRef>,
+        supplied: List<TypeRef>,
     ): Specialization = cache.getOrPut(key) {
+        val arguments = withDefaults(declaration, supplied)
         val bindings = buildMap {
             declaration.typeParams.forEachIndexed { index, parameter ->
                 arguments.getOrNull(index)?.let { argument ->
@@ -117,13 +135,7 @@ internal class PackSpecializer(private val table: SymbolTable) {
                 }
             }
         }
-        Specialization(
-            key,
-            declaration.fields.filter { field ->
-                ConstraintEvaluator.evaluate(field.condition, bindings, table) !is
-                    ConstraintEvaluator.Outcome.Violated
-            },
-        )
+        Specialization(key, concreteFields(declaration, bindings))
     }
 
     /** The bindings a resolved application supplies to a condition. */
@@ -156,12 +168,64 @@ internal class PackSpecializer(private val table: SymbolTable) {
         applied: IrType.Named,
     ): Specialization = cache.getOrPut(key) {
         val bindings = bindingsFor(declaration, applied)
-        Specialization(
-            key,
-            declaration.fields.filter { field ->
-                ConstraintEvaluator.evaluate(field.condition, bindings, table) !is
-                    ConstraintEvaluator.Outcome.Violated
-            },
+        Specialization(key, concreteFields(declaration, bindings))
+    }
+
+    /**
+     * The layout one set of bindings selects: repetitions unrolled, conditions applied.
+     *
+     * Order matters — a repeated field is a family, and the family has to exist before
+     * anything can ask whether a member of it is present.
+     */
+    private fun concreteFields(
+        declaration: TopLevel.Pack,
+        bindings: Map<String, ConstraintEvaluator.Binding>,
+    ): List<PackField> = declaration.fields
+        .flatMap { unroll(it, bindings) }
+        .filter {
+            ConstraintEvaluator.evaluate(it.condition, bindings, table) !is
+                ConstraintEvaluator.Outcome.Violated
+        }
+
+    /**
+     * One field template expanded over its compile-time loops.
+     *
+     * `inline for r in 0..<R { inline for c in 0..<C { var m$r$c: T = 0 } }` becomes
+     * R×C fields named `m00`, `m01`, … Each loop value is substituted into the name
+     * and into everything the field's declaration mentions, so an inner loop bound by
+     * an outer variable works like any nested loop. A range that is not yet a known
+     * span leaves the template alone, for the same reason an unresolved condition
+     * does not reject: nothing has been chosen yet.
+     */
+    private fun unroll(
+        field: PackField,
+        bindings: Map<String, ConstraintEvaluator.Binding>,
+    ): List<PackField> {
+        if (field.repeats.isEmpty()) return listOf(field)
+        var expanded = listOf(field.copy(repeats = emptyList()) to emptyMap<String, Long>())
+        for (repeat in field.repeats) {
+            val next = mutableListOf<Pair<PackField, Map<String, Long>>>()
+            for ((current, values) in expanded) {
+                val span = ConstraintEvaluator.rangeOf(repeat.range, bindings, values)
+                    ?: return listOf(field)
+                for (value in span) {
+                    next.add(current to (values + (repeat.variable to value)))
+                }
+            }
+            expanded = next
+        }
+        return expanded.map { (template, values) -> substitute(template, values) }
+    }
+
+    /** Renders a field template for one combination of loop values. */
+    private fun substitute(field: PackField, values: Map<String, Long>): PackField {
+        var name = field.name
+        for ((variable, value) in values) {
+            name = name.replace("$" + variable, value.toString())
+        }
+        return field.copy(
+            name = name,
+            condition = field.condition?.let { ConstraintEvaluator.substituteConsts(it, values) },
         )
     }
 

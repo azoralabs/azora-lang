@@ -769,7 +769,6 @@ internal class SymbolIndex {
                 is Stmt.When -> { stmt.branches.forEach { walkStmts(it.body, visit) }; stmt.elseBranch?.let { walkStmts(it, visit) } }
                 is Stmt.Try -> { walkStmts(stmt.body, visit); stmt.catchBody?.let { walkStmts(it, visit) } }
                 is Stmt.Zone -> walkStmts(stmt.body, visit)
-                is Stmt.FriendZone -> walkStmts(stmt.body, visit)
                 is Stmt.Defer -> walkStmts(stmt.body, visit)
                 is Stmt.InlineBlock -> walkStmts(stmt.body, visit)
                 is Stmt.DeepInlineBlock -> walkStmts(stmt.body, visit)

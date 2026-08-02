@@ -1075,12 +1075,14 @@ class StdlibInjector private constructor(
                 if (item != null) {
                     injected[name] = item
                     attachImplsForType(name, injected, next, reachable)
+                    attachStaticMembersForType(name, injected, next)
                     val transitive = mutableSetOf<String>()
                     collectNamesFromItem(item, transitive)
                     next.addAll(transitive)
                     continue
                 }
                 attachImplsForType(name, injected, next, reachable)
+                attachStaticMembersForType(name, injected, next)
                 if (name !in injectedExterns) {
                     index.externs[name]?.let { injectedExterns[name] = it }
                 }
@@ -1180,6 +1182,44 @@ class StdlibInjector private constructor(
         is TopLevel.Impl -> "impl:${item.typeName}:${item.traitName.orEmpty()}:${item.line}:${item.column}"
         is TopLevel.Bridge -> "bridge:${item.target}:${item.funcs.joinToString(",") { it.name }}"
         else -> item.toString()
+    }
+
+    /**
+     * Top-level items grouped by the type whose `::` block declared them.
+     *
+     * `impl Vec<T, N>:: { fin zero = … }` becomes the top-level `Vec__zero`, so the
+     * owner is everything before the last `__`.
+     */
+    private val staticMembersByOwner: Map<String, List<String>> by lazy {
+        index.items.keys
+            .filter { "__" in it }
+            .groupBy { it.substringBeforeLast("__") }
+    }
+
+    /**
+     * Pulls in the members a type's `::` block declared.
+     *
+     * They are part of the type in the same way its impls are: `Vec3f::zero` names
+     * one, and nothing else in the consumer's source mentions `Vec__zero` for the
+     * dependency walk to find.
+     */
+    private fun attachStaticMembersForType(
+        typeName: String,
+        injected: LinkedHashMap<String, TopLevel>,
+        next: MutableList<String>,
+    ) {
+        // Only a declared type has a `::` block. Without this, a module-qualified
+        // name (`std__io__println`) would look like a member of a type `std__io`.
+        val owner = index.items[typeName]
+        if (owner !is TopLevel.Pack && owner !is TopLevel.Enum) return
+        for (member in staticMembersByOwner[typeName].orEmpty()) {
+            if (member in injected) continue
+            val item = index.items[member] ?: continue
+            injected[member] = item
+            val names = mutableSetOf<String>()
+            collectNamesFromItem(item, names)
+            next.addAll(names)
+        }
     }
 
     private fun attachImplsForType(
@@ -1545,6 +1585,10 @@ class StdlibInjector private constructor(
             is Expr.Identifier -> {
                 val item = index.items[expr.name]
                 if (item != null && item !is TopLevel.Func) names.add(expr.name)
+                // `Vec3f::zero` is one identifier (`Vec3f__zero`) by the time it gets
+                // here, and the member lives on whatever `Vec3f` names — so the base
+                // has to be pulled in too, the same as for a `Type::member` call.
+                if ("__" in expr.name) names.add(expr.name.substringBeforeLast("__"))
             }
             is Expr.Call -> {
                 names.add(expr.callee)

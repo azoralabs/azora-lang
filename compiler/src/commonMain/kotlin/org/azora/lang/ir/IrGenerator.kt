@@ -1328,8 +1328,14 @@ class IrGenerator(private val table: SymbolTable) {
             is Expr.CharLiteral -> IrExpr.CharLiteral(expr.value)
             is Expr.Identifier -> {
                 val sym = table.lookupVariable(expr.name)
+                // `Vec3f::zero` names a member of whatever `Vec3f` aliases, as it did
+                // when the resolver typed it.
+                val aliased = if (sym == null) throughTypeAlias(expr.name) else null
+                val aliasedSym = aliased?.let { table.lookupVariable(it) }
                 if (sym != null) {
                     IrExpr.Var(resolveName(expr.name), sym.type)
+                } else if (aliasedSym != null) {
+                    IrExpr.Var(resolveName(aliased), aliasedSym.type)
                 } else {
                     // Implicit self: bare field name in an impl method → self.field
                     val field = currentReceiverType?.let { table.lookupStruct(it)?.field(expr.name) }
@@ -1373,6 +1379,19 @@ class IrGenerator(private val table: SymbolTable) {
                 }
                 if (left.type is IrType.Pointer && right.type is IrType.Pointer && expr.op == TokenType.MINUS) {
                     return IrExpr.Call("__ptrDiff", listOf(left, right), IrType.Int)
+                }
+                // A primitive left operand may still have a declared operator, but only
+                // one that names its operand — see the resolver for why.
+                if (left.type !is IrType.Named && left.type in IrType.numericTypes) {
+                    operOverloadName(expr.op)?.let { operName ->
+                        val key = operandKeyOf(right.type)
+                        if (key != null && key != left.type.toString()) {
+                            table.lookupMethod(left.type.toString(), "$operName@$key")?.let { mangled ->
+                                val func = table.lookupFunction(mangled)!!
+                                return IrExpr.Call(mangled, listOf(left, right), func.returnType)
+                            }
+                        }
+                    }
                 }
                 // Operator overloading on user types
                 if (left.type is IrType.Named) {
@@ -2104,6 +2123,16 @@ class IrGenerator(private val table: SymbolTable) {
      * this is where that becomes a real float, so backends never see a comparison or
      * a store mixing an integer with a float.
      */
+    /** `Alias__member` under the type the alias names, or null. See the resolver. */
+    private fun throughTypeAlias(name: String): String? {
+        val separator = name.indexOf("__")
+        if (separator <= 0) return null
+        val owner = name.substring(0, separator)
+        val target = (table.lookupAlias(owner) as? TypeRef.Named)?.name ?: return null
+        if (target == owner) return null
+        return target + name.substring(separator)
+    }
+
     /** The return type of the function being lowered; [IrType.Any] outside one. */
     private val currentReturnType: IrType
         get() = currentTraceOwner?.let { table.lookupFunction(it)?.returnType } ?: IrType.Any
@@ -2113,7 +2142,8 @@ class IrGenerator(private val table: SymbolTable) {
         (ann as? TypeAnnotation.Explicit)?.let { runCatching { resolveType(it.ref) }.getOrNull() } ?: IrType.Any
 
     private fun coerceToFloat(expr: IrExpr, target: IrType): IrExpr =
-        if (target in IrType.numericTypes && target != expr.type && expr.type in IrType.integerTypes &&
+        if (target in IrType.numericTypes && target != expr.type &&
+            (expr.type in IrType.integerTypes || expr.type in IrType.floatTypes) &&
             isUntypedIntConstant(expr)
         ) {
             IrExpr.NumCast(expr, target)
@@ -2123,6 +2153,7 @@ class IrGenerator(private val table: SymbolTable) {
 
     /** True for an integer constant the resolver would have let adopt another type. */
     private fun isUntypedIntConstant(expr: IrExpr): Boolean = when (expr) {
+        is IrExpr.RealLiteral -> expr.type == IrType.Real
         is IrExpr.IntLiteral -> expr.type == IrType.Int
         is IrExpr.Unary -> expr.op == IrUnaryOp.NEG && isUntypedIntConstant(expr.operand)
         else -> false

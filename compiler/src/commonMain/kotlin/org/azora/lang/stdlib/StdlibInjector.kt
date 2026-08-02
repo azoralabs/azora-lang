@@ -85,7 +85,10 @@ class StdlibInjector private constructor(
         ): StdlibInjector {
             if (additionalSources.isEmpty() && configOverrides.isEmpty()) return standard
             // Seeded with the standard library's compile-time lists so a package
-            // source can iterate `Numbers` exactly as a stdlib file does.
+            // source can iterate `Numbers` exactly as a stdlib file does. The lists
+            // are bound while the stdlib is parsed, so it has to be read first —
+            // reading the map before that yields nothing to iterate.
+            AzStdlib.loadPrograms()
             val typeListEnv = AzStdlib.comptimeLists.toMutableMap()
             val additionalPrograms = additionalSources.map { (path, source) ->
                 val program = try {

@@ -134,6 +134,23 @@ class TypeResolver(private val table: SymbolTable) {
         return errors
     }
 
+    /**
+     * `Alias__member` under the type the alias names, or null.
+     *
+     * `Vec3f::zero` reaches here as `Vec3f__zero`, and the member lives on the
+     * specialization `Vec3f` is an alias for. The alias table is the only place that
+     * correspondence exists by this point — the aliases are generated too late for
+     * monomorphization to have rewritten the name.
+     */
+    private fun throughTypeAlias(name: String): String? {
+        val separator = name.indexOf("__")
+        if (separator <= 0) return null
+        val owner = name.substring(0, separator)
+        val target = (table.lookupAlias(owner) as? TypeRef.Named)?.name ?: return null
+        if (target == owner) return null
+        return target + name.substring(separator)
+    }
+
     /** `Self` inside an impl names the type the impl is on. */
     private fun selfToReceiver(name: String): String =
         if (name == "Self") currentReceiverType ?: name else name
@@ -200,6 +217,13 @@ class TypeResolver(private val table: SymbolTable) {
         if (!signatureValid) return
 
         table.pushScope()
+
+        // A const type parameter (`func axis<I: Int>`) is an integer the body may
+        // read. Its value is only known at a call site, but its type is not, so it is
+        // in scope here — otherwise the declaration cannot be checked at all.
+        for (constParam in func.constParams) {
+            table.defineVariable(VariableSymbol(constParam, IrType.Int, mutable = false))
+        }
 
         // Register parameters as local variables
         for (i in symbol.params.indices) {
@@ -811,6 +835,7 @@ class TypeResolver(private val table: SymbolTable) {
             is Expr.CharLiteral -> IrType.Char
             is Expr.Identifier -> {
                 val sym = table.lookupVariable(expr.name)
+                    ?: throughTypeAlias(expr.name)?.let { table.lookupVariable(it) }
                 if (sym == null) {
                     // Implicit self: bare field name in an impl method → self.field
                     val receiverField = currentReceiverType?.let { table.lookupStruct(it)?.field(expr.name) }
@@ -2076,6 +2101,20 @@ class TypeResolver(private val table: SymbolTable) {
     }
 
     private fun resolveBinaryType(op: TokenType, left: IrType, right: IrType, line: Int): IrType? {
+        // An operator may also be declared with a primitive on the left — `2 * vec`
+        // is `impl oper* for Int` taking a Vec. Such an overload must name its
+        // operand, so only the operand-keyed member is consulted: nothing here can
+        // shadow the built-in arithmetic of `2 * 3`.
+        if (left !is IrType.Named && left in IrType.numericTypes) {
+            operOverloadName(op)?.let { operName ->
+                val key = operandKeyOf(right)
+                if (key != null && key != left.toString()) {
+                    table.lookupMethod(left.toString(), "$operName@$key")?.let { mangled ->
+                        return table.lookupFunction(mangled)?.returnType
+                    }
+                }
+            }
+        }
         // Operator overloading on user types.
         if (left is IrType.Named) {
             // `impl oper<OP> [by <Spec>] for Type` overloads — method named `oper<OP>`
@@ -2192,11 +2231,23 @@ class TypeResolver(private val table: SymbolTable) {
      * be seen in the source.
      */
     private fun adoptLiteralType(expr: Expr, own: IrType, wanted: IrType): IrType {
+        // `1.0` is written the same whether it means a `Real` or a `Float`, so an
+        // unsuffixed real literal takes the floating-point type asked for.
+        if (own in IrType.floatTypes && wanted in IrType.floatTypes && isUntypedRealLiteral(expr)) return wanted
         if (own !in IrType.integerTypes || wanted !in IrType.numericTypes) return own
         untypedIntLiteral(expr) ?: return own
-        // Only a floating-point target adopts a literal. A sized integer keeps the
-        // language's rule that its width is stated, by suffix or by cast.
+        // Only a floating-point target adopts an integer literal. A sized integer
+        // keeps the language's rule that its width is stated, by suffix or by cast.
         return if (wanted in IrType.floatTypes) wanted else own
+    }
+
+    /** True for a real literal written without a width suffix. */
+    private fun isUntypedRealLiteral(expr: Expr): Boolean = when (expr) {
+        is Expr.RealLiteral -> expr.suffix == NumericSuffix.NONE
+        is Expr.Grouping -> isUntypedRealLiteral(expr.expr)
+        is Expr.Unary ->
+            expr.op in setOf(TokenType.MINUS, TokenType.PLUS) && isUntypedRealLiteral(expr.operand)
+        else -> false
     }
 
     /**

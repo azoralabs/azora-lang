@@ -569,6 +569,9 @@ class Parser(
             start.line, start.column,
             annotations = annotations, visibility = visibility,
             receiverModifier = recv.modifier, receiverName = recv.name,
+            // `oper * <N: Int>` is generic over a value, and the member has to say so:
+            // the specializations of whatever it mentions are what bind `N`.
+            constParams = operatorTypeParams.constParams,
         )
         return TopLevel.Impl(typeName, listOf(method), null, start.line, start.column)
     }
@@ -2260,7 +2263,13 @@ class Parser(
                 args.add(parseTypeArg())
             } while (match(TokenType.COMMA))
         }
-        consume(TokenType.GREATER, "Expected '>' after generic type arguments")
+        // `Q<T, N>>` lexes its tail as one `>>`, so closing here leaves a `>` for the
+        // enclosing application to consume.
+        when {
+            pendingGreater -> pendingGreater = false
+            check(TokenType.SHIFT_RIGHT) -> { advance(); pendingGreater = true }
+            else -> consume(TokenType.GREATER, "Expected '>' after generic type arguments")
+        }
         return args
     }
 
@@ -2944,6 +2953,7 @@ class Parser(
                                 operStart.line, operStart.column,
                                 annotations = memberAnnotations, visibility = visibility,
                                 receiverModifier = recv.modifier, receiverName = recv.name,
+                                constParams = operTypeParams.constParams,
                             ),
                         )
                         continue
@@ -2962,10 +2972,11 @@ class Parser(
                     currentFailSets = savedOperFailSets
                     consumeNewline()
                     methods.add(FuncDecl(
-                        "oper$opName$operSuffix", operands, ret, operBody, false, emptyList(),
+                        "oper$opName$operSuffix", operands, ret, operBody, false, operTypeParams.names,
                         operStart.line, operStart.column,
                         annotations = memberAnnotations, visibility = visibility,
                         receiverModifier = recv.modifier, receiverName = recv.name,
+                        constParams = operTypeParams.constParams,
                     ))
                 }
                 check(TokenType.FUNC) -> methods.add(parseFuncDecl(isInline, annotations = memberAnnotations, isVirtual = isVirt, visibility = visibility, inImplBlock = true))
@@ -6772,6 +6783,26 @@ class Parser(
             if (tokens.getOrNull(i + 1)?.type != TokenType.IDENTIFIER) return false
             i += 2
         }
+        // `reflect<Vec<U, N>>` — the target may be a generic application, so the
+        // arguments are skipped over before looking for the closing `>`.
+        if (tokens.getOrNull(i)?.type == TokenType.LESS) {
+            // The inner application is skipped whole. A `>>` closes two levels, so it
+            // can end the inner application and the `reflect<…>` around it at once.
+            var depth = 1
+            i++
+            while (depth > 0) {
+                when (tokens.getOrNull(i)?.type) {
+                    TokenType.LESS -> depth++
+                    TokenType.GREATER -> depth--
+                    TokenType.SHIFT_RIGHT -> depth -= 2
+                    null, TokenType.EOF -> return false
+                    else -> {}
+                }
+                i++
+            }
+            // Depth below zero means the `>>` already closed `reflect<…>` too.
+            if (depth < 0) return true
+        }
         return tokens.getOrNull(i)?.type == TokenType.GREATER
     }
 
@@ -6784,8 +6815,14 @@ class Parser(
         while (match(TokenType.DOUBLE_COLON)) {
             name += "__" + consume(TokenType.IDENTIFIER, "Expected name after '::' in 'reflect<...>'").lexeme
         }
+        // A generic application (`reflect<Vec<U, N>>`) keeps its arguments: the layout
+        // being asked about is the one they choose, not the template's.
+        reflectTargetArgs = parseGenericTypeArgsIfPresent()
         return Expr.Identifier(name, start.line, start.column, name.length)
     }
+
+    /** The type arguments of the reflect target most recently parsed. */
+    private var reflectTargetArgs: List<TypeRef> = emptyList()
 
     /**
      * Rewrites a call to a cast intrinsic (`std::cast`/`dyncast`/`bitcast`, mangled
@@ -7019,8 +7056,19 @@ class Parser(
                     val start = expr
                     advance() // '<'
                     val target = parseReflectTarget()
-                    consume(TokenType.GREATER, "Expected '>' to close 'reflect<...>'")
-                    expr = Expr.Call("__reflect", listOf(target), start.line, start.column, start.length)
+                    if (pendingGreater) {
+                        pendingGreater = false
+                    } else {
+                        consume(TokenType.GREATER, "Expected '>' to close 'reflect<...>'")
+                    }
+                    expr = Expr.Call(
+                        "__reflect",
+                        listOf(target),
+                        start.line,
+                        start.column,
+                        start.length,
+                        reflectTargetArgs,
+                    )
                 }
                 check(TokenType.LESS) && isGenericCallAhead() -> {
                     // `f<T, U>(args)` — capture explicit type arguments for the call

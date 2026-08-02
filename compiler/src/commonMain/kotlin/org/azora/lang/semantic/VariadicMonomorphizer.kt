@@ -138,6 +138,7 @@ internal object VariadicMonomorphizer {
             implTemplates,
             typeMacroRules,
             program.zoneTypeNamespaces,
+            program.items.filterIsInstance<TopLevel.Pack>().associate { it.name to it.fields },
         )
         // An impl on an ordinary pack still needs its reflected loops expanded — the
         // pack's own fields are known even when it is not monomorphised.
@@ -145,7 +146,9 @@ internal object VariadicMonomorphizer {
         // `Vec2i::zero` has to reach that specialization's static member. Resolving
         // the aliases first gives every later rewrite the mangled name to use.
         ctx.resolveStaticAliases(program.items)
-        val expanded = program.items.map { ctx.expandPlainImplReflection(it, program) }
+        val expanded = program.items
+            .map { ctx.expandPlainImplReflection(it, program) }
+            .map { ctx.expandConstGenericMembers(it) }
         // A static block's members are parser-mangled to `Pack__member` and, for a
         // monomorphised pack, are templates in exactly the way its methods are: they
         // are held back here and re-emitted once per specialization below.
@@ -183,6 +186,8 @@ private class MonoContext(
     private val implTemplates: Map<String, List<TopLevel.Impl>>,
     private val typeMacroRules: List<TypeTypeArm>,
     private val typeNamespaces: Map<String, String>,
+    /** Every declared pack's fields, so reflection over a named type can answer. */
+    private val plainPackFields: Map<String, List<PackField>>,
 ) {
 
     /**
@@ -508,6 +513,124 @@ private class MonoContext(
         )
     }
 
+    /**
+     * Emits one copy of each member that is generic over its own const parameters.
+     *
+     * `oper * <N: Int> [self: Int&](rhs: Vec<Ty, N>&)` is not a member of a
+     * monomorphised pack — it lives on `Int` — yet its body depends on `N`, which
+     * only a `Vec` specialization fixes. So the specializations are what drive it:
+     * one copy per `Vec<Ty, N>` that exists, with `N` bound.
+     *
+     * The copies are told apart by their operand, which is what
+     * [SymbolTable.lookupOperator] resolves on: `Int * Vec<Int,2>` and
+     * `Int * Vec<Int,3>` reach different members rather than colliding.
+     */
+    fun expandConstGenericMembers(item: TopLevel): TopLevel {
+        if (item !is TopLevel.Impl) return item
+        // A member of a monomorphised pack is expanded by expandImpls instead.
+        if (item.typeName in packTemplates) return item
+        if (item.methods.none { it.constParams.isNotEmpty() }) return item
+        val methods = item.methods.flatMap { method ->
+            if (method.constParams.isEmpty()) return@flatMap listOf(method)
+            val application = signatureApplications(method).firstOrNull { application ->
+                application.name in packTemplates &&
+                    application.args.any { (it as? TypeRef.Named)?.name in method.constParams }
+            } ?: return@flatMap listOf(method)
+            val template = packTemplates[application.name] ?: return@flatMap listOf(method)
+            val copies = packArguments.entries
+                .filter { (mangled, _) -> mangled.startsWith("__${application.name}_") }
+                .mapNotNull { (mangled, concrete) ->
+                    val bindings = matchApplication(application, template, concrete)
+                        ?: return@mapNotNull null
+                    specializeConstGenericMember(method, bindings + (application.name to TypeRef.Named(mangled)), mangled)
+                }
+            // With no specialization to bind it, the member cannot be emitted at all —
+            // its body asks for a layout nothing has chosen.
+            copies.ifEmpty { emptyList() }
+        }
+        return item.copy(methods = methods)
+    }
+
+    /** Every named type application a member's signature mentions. */
+    private fun signatureApplications(method: FuncDecl): List<TypeRef.Named> {
+        val found = mutableListOf<TypeRef.Named>()
+        fun visit(ref: TypeRef) {
+            when (ref) {
+                is TypeRef.Named -> {
+                    if (ref.args.isNotEmpty()) found.add(ref)
+                    ref.args.forEach(::visit)
+                }
+                is TypeRef.Reference -> visit(ref.inner)
+                is TypeRef.Pointer -> visit(ref.inner)
+                is TypeRef.Nullable -> visit(ref.inner)
+                is TypeRef.Failable -> visit(ref.ok)
+                is TypeRef.Array -> visit(ref.element)
+                else -> {}
+            }
+        }
+        method.params.forEach { visit(it.type) }
+        (method.returnType as? TypeAnnotation.Explicit)?.let { visit(it.ref) }
+        return found
+    }
+
+    /**
+     * Binds an application's parameters from one concrete specialization.
+     *
+     * `Vec<Ty, N>` against `Vec<Int, 2>` binds `N` to 2 — and only when `Ty` really is
+     * `Int`, so a member written for one element type is not emitted for another.
+     */
+    private fun matchApplication(
+        application: TypeRef.Named,
+        template: TopLevel.Pack,
+        concrete: List<TypeRef>,
+    ): Map<String, TypeRef>? {
+        if (application.args.size != concrete.size) return null
+        val bindings = mutableMapOf<String, TypeRef>()
+        application.args.forEachIndexed { index, argument ->
+            val actual = concrete[index]
+            val name = (argument as? TypeRef.Named)?.takeIf { it.args.isEmpty() }?.name
+            when {
+                name != null && name in template.constParams -> return@forEachIndexed
+                name != null && bindings[name].let { it == null || it == actual } -> bindings[name] = actual
+                argument.toString() != actual.toString() -> return null
+            }
+        }
+        // A const parameter of the *member* takes its value from the same position.
+        template.typeParams.forEachIndexed { index, parameter ->
+            if (parameter !in template.constParams) return@forEachIndexed
+            val argument = application.args.getOrNull(index) as? TypeRef.Named ?: return@forEachIndexed
+            if (argument.args.isEmpty()) bindings[argument.name] = concrete[index]
+        }
+        return bindings
+    }
+
+    /** One copy of a const-generic member, with its parameters bound. */
+    private fun specializeConstGenericMember(
+        method: FuncDecl,
+        bindings: Map<String, TypeRef>,
+        mangled: String,
+    ): FuncDecl {
+        constBindings = bindings.mapNotNull { (name, ref) ->
+            (ref as? TypeRef.Const)?.let { name to it.value }
+        }.toMap()
+        typeBindings = bindings
+        return try {
+            val bound = method.copy(
+                params = method.params.map { it.copy(type = substituteParams(it.type, bindings)) },
+                returnType = substituteParams(method.returnType, bindings),
+                typeParams = method.typeParams.filterNot { it in bindings },
+                constParams = method.constParams.filterNot { it in bindings }.toSet(),
+                body = expandReflectedFields(method.body, packs[mangled]?.fields.orEmpty()),
+                // Operand-keyed, so the copies coexist on the same receiver.
+                name = if (method.name.startsWith("oper")) "${method.name}@$mangled" else method.name,
+            )
+            rewriteFuncDecl(bound)
+        } finally {
+            constBindings = emptyMap()
+            typeBindings = emptyMap()
+        }
+    }
+
     /** The pack a parser-mangled static member belongs to, or null. */
     private fun staticMemberOwner(item: TopLevel): String? {
         val name = when (item) {
@@ -543,8 +666,8 @@ private class MonoContext(
      * in field count. Each copy has the pack's parameters bound, so `N` is a number
      * the compile-time machinery can act on rather than a name.
      */
-    fun expandStaticMembers(templates: List<TopLevel>): List<TopLevel> =
-        templates.flatMap { template ->
+    fun expandStaticMembers(templates: List<TopLevel>): List<TopLevel> {
+        return templates.flatMap { template ->
             val owner = staticMemberOwner(template) ?: return@flatMap emptyList()
             val declaration = packTemplates[owner] ?: return@flatMap emptyList()
             packArguments.entries
@@ -558,14 +681,20 @@ private class MonoContext(
                         (ref as? TypeRef.Const)?.let { name to it.value }
                     }.toMap()
                     typeBindings = bindings
+                    // One static member may call another (`fin right = axis<0>()`,
+                    // spelled `Vec__axis` by then). Inside a copy, those names mean
+                    // this specialization's members, not the template's.
+                    val previousAlias = staticAliases.put(owner, mangled)
                     try {
                         rewriteTopLevel(bound)
                     } finally {
                         constBindings = emptyMap()
                         typeBindings = emptyMap()
+                        if (previousAlias == null) staticAliases.remove(owner) else staticAliases[owner] = previousAlias
                     }
                 }
         }
+    }
 
     /** Binds the pack's parameters throughout one static member's signature. */
     private fun substituteStaticMember(item: TopLevel, bindings: Map<String, TypeRef>): TopLevel = when (item) {
@@ -595,7 +724,8 @@ private class MonoContext(
         // already turned `Self` into `Vec` by the time an impl gets here, so a member
         // returning `Self` must still land on `Vec<Float, 2>` and not the template.
         val argumentBindings = packTemplate?.typeParams.orEmpty().zip(arguments).toMap() +
-            (templateName to TypeRef.Named(mangled))
+            (templateName to TypeRef.Named(mangled)) +
+            ("Self" to TypeRef.Named(mangled))
         // A member's own `where` narrows which specializations have it: `cross` exists
         // on a 3-vector and nowhere else, so it is not emitted where its clause fails.
         val constraintBindings = packTemplate?.typeParams.orEmpty()
@@ -616,6 +746,13 @@ private class MonoContext(
                 val ownTypeParams = method.typeParams.toSet() - template.typeParams.toSet() -
                     packTemplate?.typeParams.orEmpty().toSet()
                 val bindings = argumentBindings.filterKeys { it !in ownTypeParams }
+                // Bound before the body is touched: reflection over an explicit
+                // application (`reflect<Vec<U, N>>`) needs `N` to pick a layout, and
+                // that happens while the reflected loops expand, not after.
+                constBindings = argumentBindings.mapNotNull { (name, ref) ->
+                    (ref as? TypeRef.Const)?.let { name to it.value }
+                }.toMap()
+                typeBindings = bindings
                 val specialized = method.copy(
                     params = method.params.map {
                         it.copy(type = substituteParams(substituteSelf(it.type, selfType), bindings))
@@ -629,12 +766,6 @@ private class MonoContext(
                         template.variadicParam != null && it == template.variadicParam
                     },
                 )
-                // The body reads the pack's parameters too — `T is Integer` decides
-                // an `inline if` — so they are bound for this rewrite as well.
-                constBindings = argumentBindings.mapNotNull { (name, ref) ->
-                    (ref as? TypeRef.Const)?.let { name to it.value }
-                }.toMap()
-                typeBindings = bindings
                 try {
                     rewriteFuncDecl(specialized)
                 } finally {
@@ -688,12 +819,46 @@ private class MonoContext(
         val field: PackField,
     )
 
-    private fun reflectedSelfFields(expr: Expr): Boolean {
-        val member = expr as? Expr.Member ?: return false
-        if (member.name != "fields") return false
+    private fun reflectedSelfFields(expr: Expr): Boolean = reflectedFieldsOf(expr) != null
+
+    /**
+     * The `__reflect(X).fields` call [expr] is, or null when it is something else.
+     *
+     * `X` is `Self` inside an impl, or a named pack — possibly applied, as in
+     * `reflect<Vec<U, N>>`, where the arguments choose the layout being asked about.
+     */
+    private fun reflectedFieldsOf(expr: Expr): Expr.Call? {
+        val member = expr as? Expr.Member ?: return null
+        if (member.name != "fields") return null
         val call = (member.target as? Expr.Grouping)?.expr ?: member.target
-        return call is Expr.Call && call.callee == "__reflect" &&
-            (call.args.singleOrNull() as? Expr.Identifier)?.name == "Self"
+        if (call !is Expr.Call || call.callee != "__reflect") return null
+        val name = (call.args.singleOrNull() as? Expr.Identifier)?.name ?: return null
+        return if (name == "Self" || name in packTemplates || name in plainPackFields) call else null
+    }
+
+    /**
+     * The fields the reflected type in [expr] has, or [fallback] for `Self`.
+     *
+     * A named pack answers for itself: `reflect<Vec<U, N>>` inside an impl on
+     * `Vec<T, N>` is a different type with the same layout family, and `N` is what
+     * decides which member of it. An argument that is still a parameter leaves its
+     * conditions undecided, which keeps the field rather than dropping it.
+     */
+    private fun reflectedFields(expr: Expr, fallback: List<PackField>): List<PackField> {
+        val call = reflectedFieldsOf(expr) ?: return fallback
+        val name = (call.args.singleOrNull() as? Expr.Identifier)?.name ?: return fallback
+        if (name == "Self") return fallback
+        val template = packTemplates[name] ?: return plainPackFields[name] ?: fallback
+        val arguments = call.typeArgs.map { substituteParams(it, typeBindings) }
+        val bindings = template.typeParams.zip(arguments)
+            .mapNotNull { (parameter, argument) ->
+                ConstraintEvaluator.bindingOf(argument)?.let { parameter to it }
+            }
+            .toMap()
+        return template.fields.filter {
+            ConstraintEvaluator.evaluate(it.condition, bindings, null) !is
+                ConstraintEvaluator.Outcome.Violated
+        }
     }
 
     private fun expandReflectedFields(body: List<Stmt>, fields: List<PackField>): List<Stmt> {
@@ -703,7 +868,7 @@ private class MonoContext(
 
     private fun expandReflectedFieldsInner(body: List<Stmt>, fields: List<PackField>): List<Stmt> = body.flatMap { stmt ->
         if (stmt is Stmt.InlineFor && reflectedSelfFields(stmt.iterable)) {
-            fields.flatMapIndexed { index, field ->
+            reflectedFields(stmt.iterable, fields).flatMapIndexed { index, field ->
                 val binding = FieldBinding(stmt.name, stmt.indexName, index, field)
                 val iteration = stmt.body.flatMap { expandReflectedStmt(it, fields, binding) }
                 // Each iteration is its own scope, as a runtime loop body would be:
@@ -801,7 +966,7 @@ private class MonoContext(
         if (arg !is Expr.InlineForArgs || !reflectedSelfFields(arg.iterable)) {
             return listOf(substituteReflectedExpr(arg, binding))
         }
-        return currentFields.mapIndexed { index, field ->
+        return reflectedFields(arg.iterable, currentFields).mapIndexed { index, field ->
             substituteReflectedExpr(arg.body, FieldBinding(arg.name, null, index, field))
         }
     }
@@ -1109,6 +1274,12 @@ private class MonoContext(
         for (item in items) {
             if (item !is TopLevel.TypeAlias || item.typeParams.isNotEmpty()) continue
             val target = item.type as? TypeRef.Named ?: continue
+            // Monomorphization runs more than once. On a later pass the alias already
+            // names the specialization, and it still has to map `Vec3f::zero` onto it.
+            if (packTemplates.keys.any { target.name.startsWith("__${it}_") }) {
+                staticAliases[item.name] = target.name
+                continue
+            }
             if (target.name !in packTemplates) continue
             val mangled = (rewriteType(target) as? TypeRef.Named)?.name ?: continue
             if (mangled != target.name) staticAliases[item.name] = mangled
@@ -1132,6 +1303,9 @@ private class MonoContext(
                 ?.let { e.copy(name = it.name) }
             ?: e.copy(name = throughStaticAlias(e.name))
         is Expr.Call -> rewriteCall(e)
+        is Expr.Binary -> e.copy(left = rewriteExpr(e.left), right = rewriteExpr(e.right))
+        is Expr.InCheck -> e.copy(value = rewriteExpr(e.value), collection = rewriteExpr(e.collection))
+        is Expr.InlineForArgs -> e.copy(iterable = rewriteExpr(e.iterable), body = rewriteExpr(e.body))
         is Expr.Unary -> e.copy(operand = rewriteExpr(e.operand))
         is Expr.Grouping -> e.copy(expr = rewriteExpr(e.expr))
         is Expr.Range -> e.copy(from = rewriteExpr(e.from), to = rewriteExpr(e.to))
@@ -1179,7 +1353,10 @@ private class MonoContext(
         val rewrittenArgs = e.args.map(::rewriteExpr)
         return if (mangled != null) e.copy(callee = mangled, args = rewrittenArgs, typeArgs = emptyList())
             else e.copy(
-                callee = throughStaticAlias(e.callee),
+                // `Self(…)` in a specialized member builds that specialization.
+                callee = (typeBindings[e.callee] as? TypeRef.Named)
+                    ?.takeIf { it.args.isEmpty() }?.name
+                    ?: throughStaticAlias(e.callee),
                 args = rewrittenArgs,
                 typeArgs = e.typeArgs.map(::rewriteType),
             )

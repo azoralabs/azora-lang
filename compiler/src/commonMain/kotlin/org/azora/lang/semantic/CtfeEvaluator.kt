@@ -230,10 +230,20 @@ class CtfeEvaluator(private val table: SymbolTable) {
         item: TopLevel, program: Program, errors: MutableList<String>
     ): Pair<List<TopLevel>, Boolean> = when (item) {
         is TopLevel.Func -> Pair(listOf(item), false)
-        // Runtime top-level declarations pass through unchanged
-        is TopLevel.VarDecl -> Pair(listOf(item), false)
-        is TopLevel.FinDecl -> Pair(listOf(item), false)
-        is TopLevel.LetDecl -> Pair(listOf(item), false)
+        // A global's initializer is code, and the only place it can be folded: an
+        // `inline func` called there is inlined here or not at all.
+        is TopLevel.VarDecl -> {
+            val (folded, changed) = foldCompileTimeExpr(item.initializer, program)
+            Pair(listOf(if (changed) item.copy(initializer = folded) else item), changed)
+        }
+        is TopLevel.FinDecl -> {
+            val (folded, changed) = foldCompileTimeExpr(item.initializer, program)
+            Pair(listOf(if (changed) item.copy(initializer = folded) else item), changed)
+        }
+        is TopLevel.LetDecl -> {
+            val (folded, changed) = foldCompileTimeExpr(item.initializer, program)
+            Pair(listOf(if (changed) item.copy(initializer = folded) else item), changed)
+        }
         is TopLevel.Pack -> Pair(listOf(item), false)
         is TopLevel.Deco -> Pair(listOf(item), false)
         is TopLevel.Enum -> Pair(listOf(item), false)
@@ -844,6 +854,24 @@ class CtfeEvaluator(private val table: SymbolTable) {
     // -- inline function body substitution -----------------------------------
 
     /**
+     * The const type arguments a call supplies, as the literals they stand for.
+     *
+     * `func axis<I: Int>()` called as `axis<0>()` binds `I` to `0`. A type argument
+     * that is a type rather than a value binds nothing here — it is not something the
+     * body can read.
+     */
+    private fun constTypeArguments(
+        decl: org.azora.lang.frontend.FuncDecl,
+        typeArgs: List<TypeRef>,
+    ): Map<String, Expr> = buildMap {
+        decl.typeParams.forEachIndexed { index, parameter ->
+            if (parameter !in decl.constParams) return@forEachIndexed
+            val value = (typeArgs.getOrNull(index) as? TypeRef.Const)?.value ?: return@forEachIndexed
+            put(parameter, Expr.IntLiteral(value, decl.line, decl.column))
+        }
+    }
+
+    /**
      * If the expression is a call to an inline function, substitute the
      * function body at the call site (replacing parameters with arguments).
      * Returns the substituted statements, or null if not an inline call.
@@ -854,8 +882,15 @@ class CtfeEvaluator(private val table: SymbolTable) {
 
         // Substitute parameters with arguments in the function body
         val paramMap = mutableMapOf<String, Expr>()
+        // A const type parameter is an argument too: `axis<0>()` binds `I` to 0, and
+        // the body reads `I` as that number.
+        paramMap.putAll(constTypeArguments(funcDecl, expr.typeArgs))
         for (i in funcDecl.params.indices) {
-            val arg = if (i < expr.args.size) expr.args[i] else return null
+            val arg = if (i < expr.args.size) {
+                expr.args[i]
+            } else {
+                funcDecl.params[i].defaultValue ?: return null
+            }
             paramMap[funcDecl.params[i].name] = asDeclaredLiteral(arg, funcDecl.params[i].type)
         }
 
@@ -891,17 +926,52 @@ class CtfeEvaluator(private val table: SymbolTable) {
         else -> stmt // inline constructs shouldn't appear in inline function bodies
     }
 
-    private fun substituteInExpr(expr: Expr, paramMap: Map<String, Expr>): Expr = when (expr) {
-        is Expr.Identifier -> paramMap[expr.name] ?: expr
-        is Expr.Binary -> expr.copy(
-            left = substituteInExpr(expr.left, paramMap),
-            right = substituteInExpr(expr.right, paramMap)
-        )
-        is Expr.Unary -> expr.copy(operand = substituteInExpr(expr.operand, paramMap))
-        is Expr.Call -> expr.copy(args = expr.args.map { substituteInExpr(it, paramMap) })
-        is Expr.TryPropagate -> expr.copy(expr = substituteInExpr(expr.expr, paramMap))
-        is Expr.Grouping -> expr.copy(expr = substituteInExpr(expr.expr, paramMap))
-        else -> expr
+    private fun substituteInExpr(expr: Expr, paramMap: Map<String, Expr>): Expr {
+        fun sub(e: Expr) = substituteInExpr(e, paramMap)
+        return when (expr) {
+            is Expr.Identifier -> paramMap[expr.name] ?: expr
+            is Expr.Binary -> expr.copy(left = sub(expr.left), right = sub(expr.right))
+            is Expr.Unary -> expr.copy(operand = sub(expr.operand))
+            is Expr.Call -> expr.copy(args = expr.args.map(::sub))
+            is Expr.TryPropagate -> expr.copy(expr = sub(expr.expr))
+            is Expr.Grouping -> expr.copy(expr = sub(expr.expr))
+            // A substituted name may sit anywhere an expression may, so every form
+            // that holds sub-expressions is walked — `if i == I { … } else { … }` is
+            // as much a place `i` appears as `a + i` is.
+            is Expr.IfExpr -> expr.copy(
+                condition = sub(expr.condition),
+                thenExpr = sub(expr.thenExpr),
+                elseExpr = sub(expr.elseExpr),
+            )
+            is Expr.Member -> expr.copy(target = sub(expr.target), nameExpr = expr.nameExpr?.let(::sub))
+            is Expr.SafeMember -> expr.copy(target = sub(expr.target))
+            is Expr.MethodCall -> expr.copy(target = sub(expr.target), args = expr.args.map(::sub))
+            is Expr.Index -> expr.copy(target = sub(expr.target), index = sub(expr.index))
+            is Expr.Cast -> expr.copy(expr = sub(expr.expr))
+            is Expr.IsCheck -> expr.copy(expr = sub(expr.expr))
+            is Expr.InCheck -> expr.copy(value = sub(expr.value), collection = sub(expr.collection))
+            is Expr.Range -> expr.copy(from = sub(expr.from), to = sub(expr.to))
+            is Expr.ArrayLiteral -> expr.copy(elements = expr.elements.map(::sub))
+            is Expr.SetLiteral -> expr.copy(elements = expr.elements.map(::sub))
+            is Expr.TupleLit -> expr.copy(elements = expr.elements.map(::sub))
+            is Expr.VariantLit -> expr.copy(elements = expr.elements.map(::sub))
+            is Expr.TupleAccess -> expr.copy(target = sub(expr.target))
+            is Expr.MapLit -> expr.copy(entries = expr.entries.map { (k, v) -> sub(k) to sub(v) })
+            is Expr.NamedArg -> expr.copy(value = sub(expr.value))
+            is Expr.NullCoalesce -> expr.copy(left = sub(expr.left), right = sub(expr.right))
+            is Expr.CatchExpr -> expr.copy(expr = sub(expr.expr), fallback = sub(expr.fallback))
+            is Expr.InlineForArgs -> expr.copy(iterable = sub(expr.iterable), body = sub(expr.body))
+            is Expr.StringTemplate -> expr.copy(parts = expr.parts.map { part ->
+                if (part is Expr.StringTemplatePart.Expr) Expr.StringTemplatePart.Expr(sub(part.expr)) else part
+            })
+            is Expr.Deref -> expr.copy(target = sub(expr.target))
+            is Expr.Await -> expr.copy(value = sub(expr.value))
+            is Expr.Isolated -> expr.copy(value = sub(expr.value))
+            is Expr.Spread -> expr.copy(array = sub(expr.array))
+            is Expr.Alloc -> expr.copy(value = sub(expr.value))
+            is Expr.AllocBuffer -> expr.copy(count = sub(expr.count))
+            else -> expr
+        }
     }
 
     // -- inline if (compile-time conditional) ---------------------------------
@@ -1077,6 +1147,32 @@ class CtfeEvaluator(private val table: SymbolTable) {
         return (from..last).toList()
     }
 
+    /**
+     * Inlines a call to an `inline func` that is used as a value.
+     *
+     * Statement position has [tryInlineFuncCall]; this is its expression counterpart,
+     * and it is what binds a const type parameter. `axis<0>()` has to become the
+     * body of `axis` with `I` replaced by `0` — leaving the call intact would compile,
+     * because `I` is an `Int` in the declaration's own scope, and then read an unbound
+     * name at runtime.
+     *
+     * Only a body that is a single `return <expr>` is inlined, since an expression is
+     * what the call site needs. Anything else is left alone and reported by
+     * [residualInlineCallError].
+     */
+    private fun inlineCallAsExpression(call: Expr.Call, args: List<Expr>, program: Program): Expr? {
+        val decl = program.functions.find { it.name == call.callee && it.isInline } ?: return null
+        if (decl.params.any { it.variadic }) return null
+        val returned = (decl.body.singleOrNull() as? Stmt.Return)?.value ?: return null
+        val bindings = mutableMapOf<String, Expr>()
+        bindings.putAll(constTypeArguments(decl, call.typeArgs))
+        for ((index, param) in decl.params.withIndex()) {
+            val argument = args.getOrNull(index) ?: param.defaultValue ?: return null
+            bindings[param.name] = asDeclaredLiteral(argument, param.type)
+        }
+        return foldExpr(substituteInExpr(returned, bindings), program).first
+    }
+
     private fun foldExpr(expr: Expr, program: Program): Pair<Expr, Boolean> {
         return when (expr) {
             is Expr.InlineForArgs -> expr to false
@@ -1131,10 +1227,16 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 val anyChanged = splicedAny || foldedArgs.any { it.second }
                 val newArgs = foldedArgs.map { it.first }
 
+                // An `inline func` used as a value is inlined here. This is the only
+                // way its const type parameters ever get values: `axis<0>()` binds
+                // `I` to 0, and nothing downstream could do it — by runtime `I` is a
+                // name with no binding at all.
+                inlineCallAsExpression(expr, newArgs, program)?.let { return Pair(it, true) }
+
                 // Try to evaluate the call at compile time if all args are constants
                 val allConst = newArgs.all { isConstant(it) }
                 if (allConst) {
-                    val result = tryEvalCall(expr.callee, newArgs, program, expr.line)
+                    val result = tryEvalCall(expr.callee, newArgs, program, expr.line, expr.typeArgs)
                     if (result != null) return Pair(result, true)
                 }
 
@@ -1494,7 +1596,13 @@ class CtfeEvaluator(private val table: SymbolTable) {
         }
     }
 
-    private fun tryEvalCall(name: String, args: List<Expr>, program: Program, line: Int): Expr? {
+    private fun tryEvalCall(
+        name: String,
+        args: List<Expr>,
+        program: Program,
+        line: Int,
+        typeArgs: List<TypeRef> = emptyList(),
+    ): Expr? {
         val funcDecl = program.functions.find { it.name == name } ?: return null
         // Tasks/flows are execution boundaries, not pure value expressions. Folding
         // them would erase scheduling, cancellation, and Task<T> from the type graph.
@@ -1516,8 +1624,14 @@ class CtfeEvaluator(private val table: SymbolTable) {
         if (funcDecl.params.any { it.variadic }) return null
         if (args.size != funcDecl.params.size) return null // arg count mismatch — let TypeResolver report it
 
-        // Build a compile-time environment: param name → constant value
+        // Build a compile-time environment: param name → constant value.
+        // A const type parameter is part of that environment: interpreting the body
+        // without binding `I` would read it as nothing and quietly take whichever
+        // branch that implies.
         val env = mutableMapOf<String, Expr>()
+        val constArguments = constTypeArguments(funcDecl, typeArgs)
+        if (constArguments.size != funcDecl.constParams.size) return null
+        env.putAll(constArguments)
         for (i in funcDecl.params.indices) {
             env[funcDecl.params[i].name] = asDeclaredLiteral(args[i], funcDecl.params[i].type)
         }

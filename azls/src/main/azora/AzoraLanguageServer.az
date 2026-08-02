@@ -15,7 +15,7 @@ mod azora.language.server
  * versioned workspace corpus supplied by the browser.
  */
 
-func azlsVersion(): String { return "0.0.4" }
+func azlsVersion(): String { return "0.0.5" }
 
 /** Allocates an ABI-compatible UTF-8 input buffer for the browser host. */
 func azlsReserve(size: Int): String { return " " * size }
@@ -75,64 +75,57 @@ func isKeywordRange(source: String, start: Int, end: Int): Bool {
         rangeIs(source, start, end, "return") || rangeIs(source, start, end, "if") ||
         rangeIs(source, start, end, "else") || rangeIs(source, start, end, "inline") ||
         rangeIs(source, start, end, "deepinline") || rangeIs(source, start, end, "noinline") ||
-        rangeIs(source, start, end, "zone") ||
-        rangeIs(source, start, end, "test") || rangeIs(source, start, end, "assert") ||
-        rangeIs(source, start, end, "trace") || rangeIs(source, start, end, "panic") ||
-        rangeIs(source, start, end, "meta") || rangeIs(source, start, end, "for") ||
-        rangeIs(source, start, end, "while") || rangeIs(source, start, end, "loop") ||
-        rangeIs(source, start, end, "in") || rangeIs(source, start, end, "by") ||
-        rangeIs(source, start, end, "reverse") || rangeIs(source, start, end, "break") ||
-        rangeIs(source, start, end, "continue") || rangeIs(source, start, end, "pack") ||
-        rangeIs(source, start, end, "enum") || rangeIs(source, start, end, "when") ||
-        rangeIs(source, start, end, "throw") || rangeIs(source, start, end, "try") ||
-        rangeIs(source, start, end, "catch") || rangeIs(source, start, end, "rescue") ||
-        rangeIs(source, start, end, "impl") || rangeIs(source, start, end, "spec") ||
-        rangeIs(source, start, end, "defer") || rangeIs(source, start, end, "type") ||
-        rangeIs(source, start, end, "typealias") || rangeIs(source, start, end, "slot") ||
-        rangeIs(source, start, end, "use") ||
+        rangeIs(source, start, end, "zone") || rangeIs(source, start, end, "test") ||
+        rangeIs(source, start, end, "assert") || rangeIs(source, start, end, "trace") ||
+        rangeIs(source, start, end, "panic") || rangeIs(source, start, end, "meta") ||
+        rangeIs(source, start, end, "for") || rangeIs(source, start, end, "while") ||
+        rangeIs(source, start, end, "loop") || rangeIs(source, start, end, "in") ||
+        rangeIs(source, start, end, "by") || rangeIs(source, start, end, "reverse") ||
+        rangeIs(source, start, end, "break") || rangeIs(source, start, end, "continue") ||
+        rangeIs(source, start, end, "pack") || rangeIs(source, start, end, "enum") ||
+        rangeIs(source, start, end, "when") || rangeIs(source, start, end, "throw") ||
+        rangeIs(source, start, end, "try") || rangeIs(source, start, end, "catch") ||
+        rangeIs(source, start, end, "rescue") || rangeIs(source, start, end, "impl") ||
+        rangeIs(source, start, end, "spec") || rangeIs(source, start, end, "defer") ||
+        rangeIs(source, start, end, "type") || rangeIs(source, start, end, "typealias") ||
+        rangeIs(source, start, end, "slot") || rangeIs(source, start, end, "use") ||
         rangeIs(source, start, end, "as") || rangeIs(source, start, end, "guard") ||
         rangeIs(source, start, end, "is") || rangeIs(source, start, end, "infx") ||
         rangeIs(source, start, end, "oper") || rangeIs(source, start, end, "fail") ||
-        rangeIs(source, start, end, "alloc") || rangeIs(source, start, end, "drop") ||
-        rangeIs(source, start, end, "deref") || rangeIs(source, start, end, "unsafe") ||
-        rangeIs(source, start, end, "isolated") || rangeIs(source, start, end, "flow") ||
-        rangeIs(source, start, end, "yield") || rangeIs(source, start, end, "async") ||
-        rangeIs(source, start, end, "await") || rangeIs(source, start, end, "launch") ||
-        rangeIs(source, start, end, "bridge") || rangeIs(source, start, end, "solo") ||
-        rangeIs(source, start, end, "inject") || rangeIs(source, start, end, "wrap") ||
-        rangeIs(source, start, end, "mem") || rangeIs(source, start, end, "rem") ||
-        rangeIs(source, start, end, "ret") || rangeIs(source, start, end, "effect") ||
-        rangeIs(source, start, end, "with") ||
+        rangeIs(source, start, end, "alloc") || rangeIs(source, start, end, "unsafe") ||
+        rangeIs(source, start, end, "isolated") || rangeIs(source, start, end, "async") ||
+        rangeIs(source, start, end, "await") || rangeIs(source, start, end, "bridge") ||
+        rangeIs(source, start, end, "solo") || rangeIs(source, start, end, "inject") ||
+        rangeIs(source, start, end, "wrap") || rangeIs(source, start, end, "mem") ||
+        rangeIs(source, start, end, "rem") || rangeIs(source, start, end, "ret") ||
+        rangeIs(source, start, end, "effect") || rangeIs(source, start, end, "with") ||
         rangeIs(source, start, end, "prop") || rangeIs(source, start, end, "ctor") ||
         rangeIs(source, start, end, "dtor") || rangeIs(source, start, end, "out") ||
         rangeIs(source, start, end, "expose") || rangeIs(source, start, end, "confine") ||
-        rangeIs(source, start, end, "mod") ||
-        rangeIs(source, start, end, "threadlocal") || rangeIs(source, start, end, "deco") ||
-        rangeIs(source, start, end, "bind") || rangeIs(source, start, end, "true") ||
-        rangeIs(source, start, end, "false") || rangeIs(source, start, end, "null")
+        rangeIs(source, start, end, "mod") || rangeIs(source, start, end, "threadlocal") ||
+        rangeIs(source, start, end, "deco") || rangeIs(source, start, end, "bind") ||
+        rangeIs(source, start, end, "true") || rangeIs(source, start, end, "false") ||
+        rangeIs(source, start, end, "null") || rangeIs(source, start, end, "purge")
 }
 
 func isDeclarationRange(source: String, start: Int, end: Int): Bool {
     return rangeIs(source, start, end, "func") || rangeIs(source, start, end, "async") ||
-        rangeIs(source, start, end, "flow") || rangeIs(source, start, end, "pack") ||
-        rangeIs(source, start, end, "enum") || rangeIs(source, start, end, "spec") ||
-        rangeIs(source, start, end, "deco") || rangeIs(source, start, end, "node") ||
+        rangeIs(source, start, end, "pack") || rangeIs(source, start, end, "enum") ||
+        rangeIs(source, start, end, "spec") || rangeIs(source, start, end, "deco") ||
         rangeIs(source, start, end, "solo") || rangeIs(source, start, end, "prop") ||
-        rangeIs(source, start, end, "hook") || rangeIs(source, start, end, "var") ||
-        rangeIs(source, start, end, "fin") || rangeIs(source, start, end, "let") ||
-        rangeIs(source, start, end, "fail") || rangeIs(source, start, end, "typealias")
+        rangeIs(source, start, end, "var") || rangeIs(source, start, end, "fin") ||
+        rangeIs(source, start, end, "let") || rangeIs(source, start, end, "fail") ||
+        rangeIs(source, start, end, "typealias")
 }
 
 func isFunctionDeclarationRange(source: String, start: Int, end: Int): Bool {
-    return rangeIs(source, start, end, "func") || rangeIs(source, start, end, "async") ||
-        rangeIs(source, start, end, "flow") || rangeIs(source, start, end, "hook")
+    return rangeIs(source, start, end, "func") || rangeIs(source, start, end, "async")
 }
 
 func declarationKind(source: String, start: Int, end: Int): String {
-    if rangeIs(source, start, end, "func") || rangeIs(source, start, end, "async") ||
-        rangeIs(source, start, end, "flow") || rangeIs(source, start, end, "hook") { return "function" }
-    if rangeIs(source, start, end, "pack") || rangeIs(source, start, end, "node") ||
-        rangeIs(source, start, end, "solo") || rangeIs(source, start, end, "typealias") { return "type" }
+    if rangeIs(source, start, end, "func") || rangeIs(source, start, end, "async") { return "function" }
+    if rangeIs(source, start, end, "pack") || rangeIs(source, start, end, "solo") ||
+        rangeIs(source, start, end, "typealias") { return "type" }
     if rangeIs(source, start, end, "enum") { return "enum" }
     if rangeIs(source, start, end, "spec") { return "interface" }
     if rangeIs(source, start, end, "deco") { return "annotation" }

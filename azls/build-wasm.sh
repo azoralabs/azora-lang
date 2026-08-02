@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPOSITORY_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SOURCE_FILE="$SCRIPT_DIR/src/main/azora/AzoraLanguageServer.az"
-VERSION="${AZORA_VERSION:-0.0.4}"
+VERSION="${AZORA_VERSION:-0.0.5}"
 OUTPUT_DIR="${1:-$SCRIPT_DIR/build/wasm/$VERSION}"
 TEMP_DIR="$(mktemp -d)"
 

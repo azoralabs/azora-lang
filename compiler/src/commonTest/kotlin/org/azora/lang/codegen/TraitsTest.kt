@@ -142,7 +142,7 @@ class TraitsTest {
                 fin value: Long
             }
             impl Serializable for UserId {
-                func generated(): Unit { self& ->
+                func generated[self: Self&](): Unit {
                     return
                 }
             }

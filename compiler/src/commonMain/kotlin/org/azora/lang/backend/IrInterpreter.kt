@@ -207,23 +207,36 @@ class IrInterpreter {
         val mainState = resetFor()
         registerStructs(program)
         return azRunBlocking(Dispatchers.Default + mainState) {
-            coroutineScope = this
-            val tests = mutableListOf<IrTopLevel.Test>()
-            for (item in program.items) {
-                when (item) {
-                    is IrTopLevel.Global -> executeStmt(item.stmt)
-                    is IrTopLevel.Func -> functions[item.function.name] = item.function
-                    is IrTopLevel.Test -> tests.add(item)
-                    is IrTopLevel.Struct, is IrTopLevel.Enum, is IrTopLevel.Extern -> {}
-                }
+            runTestBlocks(program)
+        }
+    }
+
+    /** Suspend test entry point for Wasm/JS, where blocking a thread is unavailable. */
+    suspend fun runTestsSuspend(program: IrProgram): List<TestResult> {
+        val mainState = resetFor()
+        registerStructs(program)
+        return kotlinx.coroutines.withContext(Dispatchers.Default + mainState) {
+            runTestBlocks(program)
+        }
+    }
+
+    private suspend fun kotlinx.coroutines.CoroutineScope.runTestBlocks(program: IrProgram): List<TestResult> {
+        coroutineScope = this
+        val tests = mutableListOf<IrTopLevel.Test>()
+        for (item in program.items) {
+            when (item) {
+                is IrTopLevel.Global -> executeStmt(item.stmt)
+                is IrTopLevel.Func -> functions[item.function.name] = item.function
+                is IrTopLevel.Test -> tests.add(item)
+                is IrTopLevel.Struct, is IrTopLevel.Enum, is IrTopLevel.Extern -> {}
             }
-            tests.map { test ->
-                try {
-                    executeTest(test)
-                    TestResult(test.name, passed = true, null)
-                } catch (e: Exception) {
-                    TestResult(test.name, passed = false, e.message ?: e.toString())
-                }
+        }
+        return tests.map { test ->
+            try {
+                executeTest(test)
+                TestResult(test.name, passed = true, null)
+            } catch (e: Exception) {
+                TestResult(test.name, passed = false, e.message ?: e.toString())
             }
         }
     }

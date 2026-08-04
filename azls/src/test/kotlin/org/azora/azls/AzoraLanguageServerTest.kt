@@ -76,6 +76,54 @@ class AzoraLanguageServerTest {
     }
 
     @Test
+    fun keywordColorsFollowCompilerVocabularyAndContext() {
+        val source = """
+            module playground
+
+            func module(ref: Int, where: Int) {
+                fin meta = ref + where
+            }
+
+            async func fetch() where true {
+                return
+            }
+        """.trimIndent()
+        val all = spans(source)
+        fun spansFor(text: String) = all.filter { source.substring(it.start, it.end) == text }
+
+        assertEquals("keyword", spansFor("module").first().type)
+        assertEquals("function", spansFor("module").last().type)
+        assertTrue(spansFor("ref").all { it.type != "keyword" })
+        assertTrue(spansFor("meta").all { it.type != "keyword" })
+        assertEquals("parameter", spansFor("where").first().type)
+        assertEquals("keyword", spansFor("where").last().type)
+        assertEquals("keyword", spansFor("async").single().type)
+    }
+
+    @Test
+    fun bracketReceiverFunctionIsRecognized() {
+        val source = """
+            pack Language { fin name: String }
+
+            impl Language {
+                func greeting[self: Self&](): String {
+                    return self.name
+                }
+            }
+
+            func main() {
+                fin language = Language("Azora")
+                language.greeting()
+            }
+        """.trimIndent()
+        val all = spans(source)
+        fun textOf(span: HighlightSpan) = source.substring(span.start, span.end)
+
+        assertEquals(2, all.count { it.type == "function" && textOf(it) == "greeting" })
+        assertTrue(all.filter { textOf(it) == "self" }.all { it.type == "parameter" })
+    }
+
+    @Test
     fun declarationsInsideCommentsAndStringsDoNotCreateFunctions() {
         val source = """
             // func hidden() {}

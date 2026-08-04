@@ -260,6 +260,7 @@ kotlin {
         commonMain {
             kotlin.srcDir(generateStdlib.map { it.outputs.files.singleFile })
             dependencies {
+                implementation(projects.buildConfig)
                 implementation(libs.kotlinx.coroutines.core)
             }
         }

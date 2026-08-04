@@ -16,6 +16,8 @@
 
 package org.azora.azls
 
+import org.azora.lang.frontend.AzoraSyntaxVocabulary
+
 /**
  * Error-tolerant syntax highlighter for azora-lang.
  *
@@ -30,26 +32,11 @@ package org.azora.azls
  */
 object AzHighlighter {
 
-    /** Every azora keyword, mirroring the compiler lexer's keyword table. */
-    val KEYWORDS: Set<String> = setOf(
-        "var", "fin", "let", "val", "func", "return", "package", "if", "else",
-        "inline", "deepinline", "noinline", "realm", "scope", "test", "assert", "trace",
-        "for", "while", "loop", "in", "break", "continue", "by", "reverse",
-        "infx", "oper", "annot", "error", "alloc", "drop", "unsafe", "isolated",
-        "flow", "yield", "async", "await", "launch", "bridge", "solo", "inject", "wrap",
-        "rescue", "node", "leaf", "repl", "virt", "base", "rem", "effect", "view",
-        "hook", "prop", "ctor", "dtor", "ref", "out", "mut",
-        "expose", "confine", "threadlocal",
-        "pack", "enum", "when", "throw", "try", "catch", "impl", "spec",
-        "defer", "typealias", "variant", "as", "guard", "is", "null",
-        "true", "false",
-        // Contextual: keywords only in the position that opens a declaration,
-        // ordinary identifiers everywhere else.
-        "module", "union",
-        // `use` is not a module import; it opens a realm (`use realm X`) and
-        // names a foreign symbol (`use as "…"`).
-        "use", "import",
-    )
+    /** Reserved words plus contextual words offered by code completion. */
+    val KEYWORDS: Set<String> =
+        AzoraSyntaxVocabulary.reservedKeywords.keys + AzoraSyntaxVocabulary.contextualKeywords
+
+    private val RESERVED_KEYWORDS = AzoraSyntaxVocabulary.reservedKeywords.keys
 
     /** Built-in type names colored as types even without declarations in scope. */
     private val BUILTIN_TYPES = setOf(
@@ -87,7 +74,7 @@ object AzHighlighter {
                         var next = cursor
                         while (next < end && source[next].isWhitespace()) next++
                         val type = when {
-                            word in KEYWORDS -> "keyword"
+                            word in RESERVED_KEYWORDS || isContextualKeyword(source, tokenStart, cursor) -> "keyword"
                             word == "self" || word == "it" -> "parameter"
                             semantics.isParameter(word, tokenStart) -> "parameter"
                             next < end && source[next] == '(' && word in semantics.functions -> "function"
@@ -221,7 +208,7 @@ object AzHighlighter {
                     while (j < n && source[j] == ' ') j++
                     val type = when {
                         isMacro -> "macro"
-                        word in KEYWORDS -> "keyword"
+                        word in RESERVED_KEYWORDS || isContextualKeyword(source, start, i) -> "keyword"
                         start in semantics.functionDeclarations -> "function"
                         word == "self" || word == "it" -> "parameter"
                         semantics.isParameter(word, start) -> "parameter"
@@ -239,6 +226,37 @@ object AzHighlighter {
 
     private fun Char.isIdentStart(): Boolean = isLetter() || this == '_'
     private fun Char.isIdentPart(): Boolean = isLetterOrDigit() || this == '_'
+
+    private fun isContextualKeyword(source: String, start: Int, end: Int): Boolean {
+        val word = source.substring(start, end)
+        fun nextWord(): String? {
+            var index = end
+            while (index < source.length && source[index].isWhitespace()) index++
+            if (index >= source.length || !source[index].isIdentStart()) return null
+            val wordStart = index++
+            while (index < source.length && source[index].isIdentPart()) index++
+            return source.substring(wordStart, index)
+        }
+        val lineStart = source.lastIndexOf('\n', start - 1) + 1
+        val prefix = source.substring(lineStart, start).trim()
+        return when (word) {
+            "module" -> nextWord() != null && prefix in setOf("", "expose", "confine")
+            "union" -> nextWord()?.firstOrNull()?.isUpperCase() == true
+            "async" -> nextWord() == "func"
+            "where" -> {
+                val before = source.substring(lineStart, start)
+                val function = Regex("""\b(?:async\s+)?func\b|\binfx\b""").find(before)
+                if (function != null) {
+                    before.indexOf(')', function.range.last + 1) >= 0
+                } else {
+                    Regex("""\b(?:pack|enum|spec|annot|impl|prop|typealias|variant)\b""")
+                        .containsMatchIn(before)
+                }
+            }
+            "without" -> Regex("""\bbind\b""").containsMatchIn(source.substring(lineStart, start))
+            else -> false
+        }
+    }
 
     private data class ParameterScope(
         val names: Set<String>,
@@ -267,9 +285,9 @@ object AzHighlighter {
         val declarations = mutableSetOf<Int>()
         val scopes = mutableListOf<ParameterScope>()
         val declaredTypes = mutableSetOf<String>()
-        val callable = Regex("""\b(?:func|flow|hook)\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:<[^>{}\n]*>)?\s*\(([^)]*)\)""")
+        val callable = Regex("""\b(?:async\s+)?func\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:<[^>{}\n]*>)?\s*(?:\[[^\]\n]*])?\s*\(([^)]*)\)""")
         val parameter = Regex("""(?:\.\.\.)?([A-Za-z_][A-Za-z0-9_]*)\s*:""")
-        val typeDeclaration = Regex("""\b(?:pack|enum|spec|solo|node|slot)\s+([A-Za-z_][A-Za-z0-9_]*)""")
+        val typeDeclaration = Regex("""\b(?:pack|enum|spec|annot|solo|variant|union)\s+([A-Za-z_][A-Za-z0-9_]*)""")
 
         for (match in callable.findAll(declarationsSource)) {
             val nameGroup = match.groups[1] ?: continue

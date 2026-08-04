@@ -21,6 +21,7 @@ package org.azora.lang.bridge
 import kotlin.js.JsString
 import kotlin.js.Promise
 import kotlin.js.toJsString
+import dev.azora.lang.BuildConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -44,9 +45,13 @@ import org.azora.lang.backend.IrInterpreter
  * functions directly exposes Kotlin's continuation ABI, so the public bridge returns
  * promises that resolve to plain strings.
  */
-private const val AZORA_VERSION = "0.0.4"
-
 private val bridgeScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+private suspend fun runTests(interpreter: IrInterpreter, result: CompilationResult.Success): String =
+    interpreter.runTestsSuspend(result.ir).joinToString("\n") { test ->
+        if (test.passed) "PASS ${test.name}"
+        else "FAIL ${test.name}: ${test.message ?: "test failed"}"
+    }
 
 private fun json(success: Boolean, output: String, errors: String): String =
     "{\"success\":${success},\"output\":${jsonStr(output)},\"errors\":${jsonStr(errors)}}"
@@ -175,7 +180,7 @@ private fun promisedJson(block: suspend () -> String): Promise<JsString> =
 
 /** Version string shown in the playground. */
 @JsExport
-fun azGetVersion(): String = AZORA_VERSION
+fun azGetVersion(): String = BuildConfig.VERSION
 
 /** Returns the compiled Azora IR (pretty-printed) for the "Azora IR" tab. */
 @JsExport
@@ -193,7 +198,7 @@ fun azInterpret(source: String): Promise<JsString> =
 @JsExport
 fun azRunTests(source: String): Promise<JsString> =
     promisedJson { withCompiledSuspend(source) {
-        try { IrInterpreter().interpretSuspend(it.ir) } catch (e: Throwable) { "Runtime error: ${e.message ?: e.toString()}" }
+        try { runTests(IrInterpreter(), it) } catch (e: Throwable) { "Runtime error: ${e.message ?: e.toString()}" }
     } }
 
 /** Generates LLVM IR text. */
@@ -222,7 +227,7 @@ fun azInterpretWithLibrary(source: String, libraryPath: String, librarySource: S
 @JsExport
 fun azRunTestsWithLibrary(source: String, libraryPath: String, librarySource: String): Promise<JsString> =
     promisedJson { withCompiledLibrarySuspend(source, libraryPath, librarySource) {
-        try { IrInterpreter().interpretSuspend(it.ir) } catch (e: Throwable) { "Runtime error: ${e.message ?: e.toString()}" }
+        try { runTests(IrInterpreter(), it) } catch (e: Throwable) { "Runtime error: ${e.message ?: e.toString()}" }
     } }
 
 /** Generates LLVM IR with one external library module available for imports. */
@@ -251,7 +256,7 @@ fun azInterpretWithLibraries(source: String, libraryBundle: String): Promise<JsS
 @JsExport
 fun azRunTestsWithLibraries(source: String, libraryBundle: String): Promise<JsString> =
     promisedJson { withCompiledLibrariesSuspend(source, libraryBundle) {
-        try { IrInterpreter().interpretSuspend(it.ir) } catch (e: Throwable) { "Runtime error: ${e.message ?: e.toString()}" }
+        try { runTests(IrInterpreter(), it) } catch (e: Throwable) { "Runtime error: ${e.message ?: e.toString()}" }
     } }
 
 /** Generates LLVM IR with an arbitrary encoded set of external library modules. */

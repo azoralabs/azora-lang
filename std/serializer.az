@@ -516,7 +516,7 @@ realm std {
     impl _SerialReader {
         prop isAtEnd[self: Self&]: Bool = self.index >= stringLength(self.input)
 
-        func skipWhitespace(): Unit { self! ->
+        func skipWhitespace[self: Self!](): Unit {
             while !self.isAtEnd {
                 fin c = charAt(self.input, self.index)
                 if c != ' ' && c != '\n' && c != '\r' && c != '\t' { return }
@@ -524,19 +524,19 @@ realm std {
             }
         }
 
-        func take(): Char ?! SerializationError { self! ->
+        func take[self: Self!](): Char ?! SerializationError {
             if self.isAtEnd { return .UnexpectedEnd }
             fin c = charAt(self.input, self.index)
             self.index += 1
             return c
         }
 
-        func expect(expected: Char): Unit ?! SerializationError { self! ->
+        func expect[self: Self!](expected: Char): Unit ?! SerializationError {
             fin actual = try self.take()
             if actual != expected { return .InvalidSyntax }
         }
 
-        func readValue(depth: Int): SerialValue ?! SerializationError { self! ->
+        func readValue[self: Self!](depth: Int): SerialValue ?! SerializationError {
             if depth > self.options.maxDepth { return .MaxDepthExceeded }
             self.skipWhitespace()
             if self.isAtEnd { return .UnexpectedEnd }
@@ -562,13 +562,13 @@ realm std {
             return .InvalidSyntax
         }
 
-        func readLiteral(expected: String): Unit ?! SerializationError { self! ->
+        func readLiteral[self: Self!](expected: String): Unit ?! SerializationError {
             for i in 0..<stringLength(expected) {
                 if try self.take() != charAt(expected, i) { return .InvalidSyntax }
             }
         }
 
-        func readString(): String ?! SerializationError { self! ->
+        func readString[self: Self!](): String ?! SerializationError {
             try self.expect('"')
             var result = ""
             while !self.isAtEnd {
@@ -596,7 +596,7 @@ realm std {
             return .UnexpectedEnd
         }
 
-        func readHexUnit(): Int ?! SerializationError { self! ->
+        func readHexUnit[self: Self!](): Int ?! SerializationError {
             var value = 0
             for i in 0..<4 {
                 fin c = try self.take()
@@ -606,7 +606,7 @@ realm std {
             return value
         }
 
-        func readEscapedCodePoint(): Int ?! SerializationError { self! ->
+        func readEscapedCodePoint[self: Self!](): Int ?! SerializationError {
             fin first = try self.readHexUnit()
             if first >= 56320 && first <= 57343 { return .InvalidEscape }
             if first < 55296 || first > 56319 { return first }
@@ -618,7 +618,7 @@ realm std {
             return 65536 + (first - 55296) * 1024 + (second - 56320)
         }
 
-        func readNumber(): String ?! SerializationError { self! ->
+        func readNumber[self: Self!](): String ?! SerializationError {
             fin start = self.index
             if charAt(self.input, self.index) == '-' { self.index += 1 }
             if self.isAtEnd { return .InvalidNumber }
@@ -647,7 +647,7 @@ realm std {
             return substring(self.input, start, self.index)
         }
 
-        func readArray(depth: Int): SerialValue ?! SerializationError { self! ->
+        func readArray[self: Self!](depth: Int): SerialValue ?! SerializationError {
             try self.expect('[')
             var values = std::ArrayList<SerialValue>()
             self.skipWhitespace()
@@ -665,7 +665,7 @@ realm std {
             }
         }
 
-        func readObject(depth: Int): SerialValue ?! SerializationError { self! ->
+        func readObject[self: Self!](depth: Int): SerialValue ?! SerializationError {
             try self.expect('{')
             var fields = std::ArrayList<SerialField>()
             self.skipWhitespace()
@@ -839,11 +839,11 @@ pack _ManualTextValue {
 pack _ManualTextSerializer
 
 impl Serializer<_ManualTextValue> for _ManualTextSerializer {
-    func toSerialValue(value: _ManualTextValue&): SerialValue ?! SerializationError { self& ->
+    func toSerialValue[self: Self&](value: _ManualTextValue&): SerialValue ?! SerializationError {
         return SerialValue.Text(value.value)
     }
 
-    func fromSerialValue(value: SerialValue&): _ManualTextValue ?! SerializationError { self& ->
+    func fromSerialValue[self: Self&](value: SerialValue&): _ManualTextValue ?! SerializationError {
         when value {
             SerialValue.Text(text) -> { return _ManualTextValue(text) }
             else -> { return .UnexpectedType }

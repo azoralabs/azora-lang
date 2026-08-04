@@ -142,11 +142,11 @@ realm std {
 
     @Experimental(since: "0.0.4")
     impl Clock for SystemClock {
-        func now(): Instant { self& ->
+        func now[self: Self&](): Instant {
             return instantFromEpochNanoseconds(az_time_unix_nanoseconds())
         }
 
-        func monotonicNow(): MonotonicInstant { self& ->
+        func monotonicNow[self: Self&](): MonotonicInstant {
             return MonotonicInstant(az_time_monotonic_nanoseconds())
         }
     }
@@ -262,12 +262,12 @@ realm std {
         prop inWholeMilliseconds[self: Self&]: Long = self.seconds * 1000L + (self.nanosecondAdjustment / 1000000) as Long
 
         /** Returns the magnitude with its sign reversed. */
-        func negated(): Duration { self& ->
+        func negated[self: Self&](): Duration {
             return duration(0L - self.seconds, 0L - self.nanosecondAdjustment as Long)
         }
 
         /** Adds another exact duration. */
-        func plus(other: Duration&): Duration { self& ->
+        func plus[self: Self&](other: Duration&): Duration {
             return duration(
                 self.seconds + other.seconds,
                 self.nanosecondAdjustment as Long + other.nanosecondAdjustment as Long
@@ -275,7 +275,7 @@ realm std {
         }
 
         /** Subtracts another exact duration. */
-        func minus(other: Duration&): Duration { self& ->
+        func minus[self: Self&](other: Duration&): Duration {
             return self.plus(other.negated())
         }
     }
@@ -306,7 +306,7 @@ realm std {
         prop epochMilliseconds[self: Self&]: Long = self.epochSecond * 1000L + (self.nanosecond / 1000000) as Long
 
         /** Adds an exact duration while retaining the normalized representation. */
-        func plus(value: Duration&): Instant { self& ->
+        func plus[self: Self&](value: Duration&): Instant {
             return instant(
                 self.epochSecond + value.seconds,
                 self.nanosecond as Long + value.nanosecondAdjustment as Long
@@ -314,12 +314,12 @@ realm std {
         }
 
         /** Subtracts an exact duration. */
-        func minus(value: Duration&): Instant { self& ->
+        func minus[self: Self&](value: Duration&): Instant {
             return self.plus(value.negated())
         }
 
         /** Returns the exact elapsed duration from `earlier` to this instant. */
-        func durationSince(earlier: Instant&): Duration { self& ->
+        func durationSince[self: Self&](earlier: Instant&): Duration {
             return duration(
                 self.epochSecond - earlier.epochSecond,
                 self.nanosecond as Long - earlier.nanosecond as Long
@@ -327,19 +327,19 @@ realm std {
         }
 
         /** Converts this instant to civil time at a fixed UTC offset. */
-        func atOffset(offset: UtcOffset): DateTime { self& ->
+        func atOffset[self: Self&](offset: UtcOffset): DateTime {
             return std::atOffset(self, offset)
         }
 
         /** Formats this instant as canonical UTC ISO-8601 text. */
-        func formatIso(): String { self& ->
+        func formatIso[self: Self&](): String {
             return std::formatIsoInstant(self)
         }
     }
 
     impl MonotonicInstant {
         /** Returns elapsed time; fails if the readings are not ordered. */
-        func elapsedSince(earlier: MonotonicInstant&): Duration ?! TimeError { self& ->
+        func elapsedSince[self: Self&](earlier: MonotonicInstant&): Duration ?! TimeError {
             if self.readingNanoseconds < earlier.readingNanoseconds { return .InvalidDuration }
             return nanoseconds(self.readingNanoseconds - earlier.readingNanoseconds)
         }
@@ -413,12 +413,12 @@ realm std {
 
     impl DateTime {
         /** Converts this fixed-offset civil value to its unique Unix instant. */
-        func toInstant(): Instant { self& ->
+        func toInstant[self: Self&](): Instant {
             return std::toInstant(self)
         }
 
         /** Formats this value as canonical ISO-8601 offset date-time text. */
-        func formatIso(): String { self& ->
+        func formatIso[self: Self&](): String {
             return std::formatIsoDateTime(self)
         }
     }
@@ -573,11 +573,11 @@ realm std {
 
     @Experimental(since: "0.0.4")
     impl Serializer<Instant> for InstantSerializer {
-        func toSerialValue(value: Instant&): SerialValue ?! SerializationError { self& ->
+        func toSerialValue[self: Self&](value: Instant&): SerialValue ?! SerializationError {
             return SerialValue.Text(formatIsoInstant(value))
         }
 
-        func fromSerialValue(value: SerialValue&): Instant ?! SerializationError { self& ->
+        func fromSerialValue[self: Self&](value: SerialValue&): Instant ?! SerializationError {
             when value {
                 SerialValue.Text(text) -> {
                     try {
@@ -597,11 +597,11 @@ realm std {
 
     @Experimental(since: "0.0.4")
     impl Serializer<DateTime> for DateTimeSerializer {
-        func toSerialValue(value: DateTime&): SerialValue ?! SerializationError { self& ->
+        func toSerialValue[self: Self&](value: DateTime&): SerialValue ?! SerializationError {
             return SerialValue.Text(formatIsoDateTime(value))
         }
 
-        func fromSerialValue(value: SerialValue&): DateTime ?! SerializationError { self& ->
+        func fromSerialValue[self: Self&](value: SerialValue&): DateTime ?! SerializationError {
             when value {
                 SerialValue.Text(text) -> {
                     try {
@@ -621,14 +621,14 @@ realm std {
 
     @Experimental(since: "0.0.4")
     impl Serializer<Duration> for DurationSerializer {
-        func toSerialValue(value: Duration&): SerialValue ?! SerializationError { self& ->
+        func toSerialValue[self: Self&](value: Duration&): SerialValue ?! SerializationError {
             var fields = List<SerialField>()
             fields.add(SerialField("seconds", SerialValue.Number(std::convert::toString(value.seconds))))
             fields.add(SerialField("nanosecondAdjustment", SerialValue.Number(std::convert::toString(value.nanosecondAdjustment))))
             return SerialValue.Object(fields)
         }
 
-        func fromSerialValue(value: SerialValue&): Duration ?! SerializationError { self& ->
+        func fromSerialValue[self: Self&](value: SerialValue&): Duration ?! SerializationError {
             fin secondsValue = try serialField(value, "seconds")
             fin nanosValue = try serialField(value, "nanosecondAdjustment")
             when secondsValue {

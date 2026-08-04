@@ -54,7 +54,7 @@ class DecoratorConformanceTest {
                 fin value: Long
             }
             impl Serializable for UserId {
-                func generated(): Unit { self& ->
+                func generated[self: Self&](): Unit {
                     return
                 }
             }
@@ -131,10 +131,10 @@ class DecoratorConformanceTest {
             }
             pack UserSerializer
             impl Serializer<User> for UserSerializer {
-                func encode(value: User&): String { self& ->
+                func encode[self: Self&](value: User&): String {
                     return value.name
                 }
-                func decode(value: String): User { self& ->
+                func decode[self: Self&](value: String): User {
                     return User(value)
                 }
             }

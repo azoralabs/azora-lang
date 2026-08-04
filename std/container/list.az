@@ -162,7 +162,7 @@ realm std {
     impl ArrayList<T> {
         /** Doubles the backing buffer, copying existing elements. */
         @Experimental(since: "0.0.4")
-        func grow() { self! ->
+        func grow[self: Self!]() {
             fin newCap = self.capacity * 2
             let newData = alloc T[newCap]
             for i in 0..<self.size {
@@ -200,27 +200,27 @@ realm std {
             return result
         }
 
-        func get(index: Int): T { self& ->
+        func get[self: Self&](index: Int): T {
             assert index >= 0 { "List index must be non-negative" }
             assert index < self.size { "List index out of bounds" }
             return self.data[index]
         }
 
-        func contains(element: T): Bool { self& ->
+        func contains[self: Self&](element: T): Bool {
             for i in 0..<self.size {
                 if self.data[i] == element { return true }
             }
             return false
         }
 
-        func indexOf(element: T): Int { self& ->
+        func indexOf[self: Self&](element: T): Int {
             for i in 0..<self.size {
                 if self.data[i] == element { return i }
             }
             return -1
         }
 
-        func lastIndexOf(element: T): Int { self& ->
+        func lastIndexOf[self: Self&](element: T): Int {
             var result = -1
             for i in 0..<self.size {
                 if self.data[i] == element { result = i }
@@ -228,13 +228,13 @@ realm std {
             return result
         }
 
-        func forEach(action: (T) -> Unit) { self& ->
+        func forEach[self: Self&](action: (T) -> Unit) {
             for i in 0..<self.size {
                 action(self.data[i])
             }
         }
 
-        func map(transform: (T) -> T): List<T> { self& ->
+        func map[self: Self&](transform: (T) -> T): List<T> {
             var result = ArrayList<T>()
             for i in 0..<self.size {
                 result.add(transform(self.data[i]))
@@ -242,7 +242,7 @@ realm std {
             return result
         }
 
-        func filter(predicate: (T) -> Bool): List<T> { self& ->
+        func filter[self: Self&](predicate: (T) -> Bool): List<T> {
             var result = ArrayList<T>()
             for i in 0..<self.size {
                 if predicate(self.data[i]) {
@@ -252,28 +252,28 @@ realm std {
             return result
         }
 
-        func any(predicate: (T) -> Bool): Bool { self& ->
+        func any[self: Self&](predicate: (T) -> Bool): Bool {
             for i in 0..<self.size {
                 if predicate(self.data[i]) { return true }
             }
             return false
         }
 
-        func all(predicate: (T) -> Bool): Bool { self& ->
+        func all[self: Self&](predicate: (T) -> Bool): Bool {
             for i in 0..<self.size {
                 if !predicate(self.data[i]) { return false }
             }
             return true
         }
 
-        func none(predicate: (T) -> Bool): Bool { self& ->
+        func none[self: Self&](predicate: (T) -> Bool): Bool {
             for i in 0..<self.size {
                 if predicate(self.data[i]) { return false }
             }
             return true
         }
 
-        func count(predicate: (T) -> Bool): Int { self& ->
+        func count[self: Self&](predicate: (T) -> Bool): Int {
             var c = 0
             for i in 0..<self.size {
                 if predicate(self.data[i]) { c += 1 }
@@ -281,11 +281,11 @@ realm std {
             return c
         }
 
-        func subList(from: Int, to: Int): List<T> in {
+        func subList[self: Self&](from: Int, to: Int): List<T> in {
             assert from >= 0 { "subList from must be non-negative" }
             assert to <= self.size { "subList to out of bounds" }
             assert from <= to { "subList from must be <= to" }
-        } scope { self& ->
+        } scope {
             var result = ArrayList<T>()
             for i in from..<to {
                 result.add(self.data[i])
@@ -295,13 +295,13 @@ realm std {
     }
 
     impl MutableList<T> for ArrayList<T> {
-        func add(element: T) { self! ->
+        func add[self: Self!](element: T) {
             if self.size >= self.capacity { self.grow() }
             self.data[self.size] = element
             self.size = self.size + 1
         }
 
-        func insert(index: Int, element: T) { self! ->
+        func insert[self: Self!](index: Int, element: T) {
             assert index >= 0 { "Insert index must be non-negative" }
             assert index <= self.size { "Insert index out of bounds" }
             if self.size >= self.capacity { self.grow() }
@@ -314,13 +314,13 @@ realm std {
             self.size = self.size + 1
         }
 
-        func set(index: Int, element: T) { self! ->
+        func set[self: Self!](index: Int, element: T) {
             assert index >= 0 { "Set index must be non-negative" }
             assert index < self.size { "Set index out of bounds" }
             self.data[index] = element
         }
 
-        func removeAt(index: Int): T { self! ->
+        func removeAt[self: Self!](index: Int): T {
             assert index >= 0 { "Remove index must be non-negative" }
             assert index < self.size { "Remove index out of bounds" }
             fin removed = self.data[index]
@@ -331,19 +331,19 @@ realm std {
             return removed
         }
 
-        func removeFirst(): T { self! ->
+        func removeFirst[self: Self!](): T {
             assert self.size > 0 { "List is empty" }
             return self.removeAt(0)
         }
 
-        func removeLast(): T { self! ->
+        func removeLast[self: Self!](): T {
             assert self.size > 0 { "List is empty" }
             fin removed = self.data[self.size - 1]
             self.size = self.size - 1
             return removed
         }
 
-        func clear() { self! ->
+        func clear[self: Self!]() {
             fin oldData = self.data
             self.data = alloc T[8]
             self.size = 0

@@ -153,7 +153,7 @@ class TupleVariadicTest {
             }
 
             impl App {
-                func greet(): String { self& ->
+                func greet[self: Self&](): String {
                     return "Hello from ${'$'}{self.name}!"
                 }
             }

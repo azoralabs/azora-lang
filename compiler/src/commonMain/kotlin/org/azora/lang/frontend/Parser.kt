@@ -4163,10 +4163,10 @@ class Parser(
         }
         val funcWhereClause = parseWhereClause()
         val minVariadicLength = variadicMinLengthOf(funcWhereClause)
-        // A bracketed receiver states the borrow and the receiver's name; without
-        // one the in-brace `{ self& -> … }` form below still applies.
-        var receiverModifier: ParamModifier = bracketReceiver?.modifier ?: ParamModifier.EXCLUSIVE
-        var receiverName = bracketReceiver?.name ?: "self"
+        // A receiver is part of the declaration signature. Function bodies never
+        // introduce receivers; `func read[self: Self&]()` is the sole spelling.
+        val receiverModifier: ParamModifier = bracketReceiver?.modifier ?: ParamModifier.EXCLUSIVE
+        val receiverName = bracketReceiver?.name ?: "self"
 
         // Optional contract clauses before the body: `in { ... }` preconditions and
         // `out { r -> ... }` postconditions. A contract-style declaration then
@@ -4203,10 +4203,11 @@ class Parser(
             consume(TokenType.L_BRACE, "Expected '{' before function body")
             skipNewlines()
             if (isSelfReceiverHeaderAhead()) {
-                receiverModifier = parseReceiverBinding().modifier
-                parseReceiverOperands(params)
-                consume(TokenType.ARROW, "Expected '->' after receiver")
-                skipNewlines()
+                error(
+                    "Function receivers must be declared in the signature: " +
+                        "write 'func $name[self: Self&](...)', not '{ self& -> ... }', " +
+                        "at line ${peek().line}",
+                )
             }
             // `func main() { ...args[: Type] -> body }` — bind CLI args to a
             // synthetic variadic param. Only main; only when declared with ().

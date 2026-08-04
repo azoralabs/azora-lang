@@ -136,7 +136,7 @@ realm std {
     impl LinkedHashSet<T> {
         /** Doubles the backing buffer, copying existing elements. */
         @Experimental(since: "0.0.4")
-        func growSet() { self! ->
+        func growSet[self: Self!]() {
             fin newCap = self.capacity * 2
             let newData = alloc T[newCap]
             for i in 0..<self.size {
@@ -150,7 +150,7 @@ realm std {
 
         /** Returns whether `element` is already stored. */
         @Experimental(since: "0.0.4")
-        func has(element: T): Bool { self& ->
+        func has[self: Self&](element: T): Bool {
             for i in 0..<self.size {
                 if self.data[i] == element { return true }
             }
@@ -163,23 +163,23 @@ realm std {
         prop isEmpty[self: Self&]: Bool = self.size == 0
         prop isNotEmpty[self: Self&]: Bool = self.size > 0
 
-        func get(index: Int): T { self& ->
+        func get[self: Self&](index: Int): T {
             assert index >= 0 { "Set index must be non-negative" }
             assert index < self.size { "Set index out of bounds" }
             return self.data[index]
         }
 
-        func contains(element: T): Bool { self& ->
+        func contains[self: Self&](element: T): Bool {
             return self.has(element)
         }
 
-        func forEach(action: (T) -> Unit) { self& ->
+        func forEach[self: Self&](action: (T) -> Unit) {
             for i in 0..<self.size {
                 action(self.data[i])
             }
         }
 
-        func filter(predicate: (T) -> Bool): Set<T> { self& ->
+        func filter[self: Self&](predicate: (T) -> Bool): Set<T> {
             var result = LinkedHashSet<T>()
             for i in 0..<self.size {
                 if predicate(self.data[i]) {
@@ -189,21 +189,21 @@ realm std {
             return result
         }
 
-        func any(predicate: (T) -> Bool): Bool { self& ->
+        func any[self: Self&](predicate: (T) -> Bool): Bool {
             for i in 0..<self.size {
                 if predicate(self.data[i]) { return true }
             }
             return false
         }
 
-        func all(predicate: (T) -> Bool): Bool { self& ->
+        func all[self: Self&](predicate: (T) -> Bool): Bool {
             for i in 0..<self.size {
                 if !predicate(self.data[i]) { return false }
             }
             return true
         }
 
-        func union(other: Set<T>): Set<T> { self& ->
+        func union[self: Self&](other: Set<T>): Set<T> {
             var result = LinkedHashSet<T>()
             for i in 0..<self.size {
                 result.add(self.data[i])
@@ -214,7 +214,7 @@ realm std {
             return result
         }
 
-        func intersect(other: Set<T>): Set<T> { self& ->
+        func intersect[self: Self&](other: Set<T>): Set<T> {
             var result = LinkedHashSet<T>()
             for i in 0..<self.size {
                 if other.contains(self.data[i]) {
@@ -224,7 +224,7 @@ realm std {
             return result
         }
 
-        func difference(other: Set<T>): Set<T> { self& ->
+        func difference[self: Self&](other: Set<T>): Set<T> {
             var result = LinkedHashSet<T>()
             for i in 0..<self.size {
                 if !other.contains(self.data[i]) {
@@ -236,7 +236,7 @@ realm std {
     }
 
     impl MutableSet<T> for LinkedHashSet<T> {
-        func add(element: T): Bool { self! ->
+        func add[self: Self!](element: T): Bool {
             if self.has(element) { return false }
             if self.size >= self.capacity { self.growSet() }
             self.data[self.size] = element
@@ -244,7 +244,7 @@ realm std {
             return true
         }
 
-        func remove(element: T): Bool { self! ->
+        func remove[self: Self!](element: T): Bool {
             var idx = -1
             for i in 0..<self.size {
                 if self.data[i] == element { idx = i }
@@ -257,7 +257,7 @@ realm std {
             return true
         }
 
-        func clear() { self! ->
+        func clear[self: Self!]() {
             fin oldData = self.data
             self.data = alloc T[8]
             self.size = 0
@@ -338,7 +338,7 @@ realm std {
 
     impl HashSet<T> {
         @Experimental(since: "0.0.4")
-        func growSet() { self! ->
+        func growSet[self: Self!]() {
             fin newCap = self.capacity * 2
             let newData = alloc T[newCap]
             for i in 0..<self.size {
@@ -351,7 +351,7 @@ realm std {
         }
 
         @Experimental(since: "0.0.4")
-        func has(element: T): Bool { self& ->
+        func has[self: Self&](element: T): Bool {
             for i in 0..<self.size {
                 if self.data[i] == element { return true }
             }
@@ -364,23 +364,23 @@ realm std {
         prop isEmpty[self: Self&]: Bool = self.size == 0
         prop isNotEmpty[self: Self&]: Bool = self.size > 0
 
-        func get(index: Int): T { self& ->
+        func get[self: Self&](index: Int): T {
             assert index >= 0 { "Set index must be non-negative" }
             assert index < self.size { "Set index out of bounds" }
             return self.data[index]
         }
 
-        func contains(element: T): Bool { self& ->
+        func contains[self: Self&](element: T): Bool {
             return self.has(element)
         }
 
-        func forEach(action: (T) -> Unit) { self& ->
+        func forEach[self: Self&](action: (T) -> Unit) {
             for i in 0..<self.size {
                 action(self.data[i])
             }
         }
 
-        func filter(predicate: (T) -> Bool): Set<T> { self& ->
+        func filter[self: Self&](predicate: (T) -> Bool): Set<T> {
             var result = HashSet<T>()
             for i in 0..<self.size {
                 if predicate(self.data[i]) {
@@ -390,21 +390,21 @@ realm std {
             return result
         }
 
-        func any(predicate: (T) -> Bool): Bool { self& ->
+        func any[self: Self&](predicate: (T) -> Bool): Bool {
             for i in 0..<self.size {
                 if predicate(self.data[i]) { return true }
             }
             return false
         }
 
-        func all(predicate: (T) -> Bool): Bool { self& ->
+        func all[self: Self&](predicate: (T) -> Bool): Bool {
             for i in 0..<self.size {
                 if !predicate(self.data[i]) { return false }
             }
             return true
         }
 
-        func union(other: Set<T>): Set<T> { self& ->
+        func union[self: Self&](other: Set<T>): Set<T> {
             var result = HashSet<T>()
             for i in 0..<self.size {
                 result.add(self.data[i])
@@ -417,7 +417,7 @@ realm std {
             return result
         }
 
-        func intersect(other: Set<T>): Set<T> { self& ->
+        func intersect[self: Self&](other: Set<T>): Set<T> {
             var result = HashSet<T>()
             for i in 0..<self.size {
                 if other.contains(self.data[i]) {
@@ -427,7 +427,7 @@ realm std {
             return result
         }
 
-        func difference(other: Set<T>): Set<T> { self& ->
+        func difference[self: Self&](other: Set<T>): Set<T> {
             var result = HashSet<T>()
             for i in 0..<self.size {
                 if !other.contains(self.data[i]) {
@@ -439,7 +439,7 @@ realm std {
     }
 
     impl MutableSet<T> for HashSet<T> {
-        func add(element: T): Bool { self! ->
+        func add[self: Self!](element: T): Bool {
             if self.has(element) { return false }
             if self.size >= self.capacity { self.growSet() }
             self.data[self.size] = element
@@ -447,7 +447,7 @@ realm std {
             return true
         }
 
-        func remove(element: T): Bool { self! ->
+        func remove[self: Self!](element: T): Bool {
             var idx = -1
             for i in 0..<self.size {
                 if self.data[i] == element { idx = i }
@@ -462,7 +462,7 @@ realm std {
             return true
         }
 
-        func clear() { self! ->
+        func clear[self: Self!]() {
             fin oldData = self.data
             self.data = alloc T[8]
             self.size = 0
@@ -538,7 +538,7 @@ realm std {
 
     impl TreeSet<T> {
         @Experimental(since: "0.0.4")
-        func growSet() { self! ->
+        func growSet[self: Self!]() {
             fin newCap = self.capacity * 2
             let newData = alloc T[newCap]
             for i in 0..<self.size {
@@ -551,7 +551,7 @@ realm std {
         }
 
         @Experimental(since: "0.0.4")
-        func has(element: T): Bool { self& ->
+        func has[self: Self&](element: T): Bool {
             for i in 0..<self.size {
                 if self.data[i] == element { return true }
             }
@@ -564,23 +564,23 @@ realm std {
         prop isEmpty[self: Self&]: Bool = self.size == 0
         prop isNotEmpty[self: Self&]: Bool = self.size > 0
 
-        func get(index: Int): T { self& ->
+        func get[self: Self&](index: Int): T {
             assert index >= 0 { "Set index must be non-negative" }
             assert index < self.size { "Set index out of bounds" }
             return self.data[index]
         }
 
-        func contains(element: T): Bool { self& ->
+        func contains[self: Self&](element: T): Bool {
             return self.has(element)
         }
 
-        func forEach(action: (T) -> Unit) { self& ->
+        func forEach[self: Self&](action: (T) -> Unit) {
             for i in 0..<self.size {
                 action(self.data[i])
             }
         }
 
-        func filter(predicate: (T) -> Bool): Set<T> { self& ->
+        func filter[self: Self&](predicate: (T) -> Bool): Set<T> {
             var result = TreeSet<T>()
             for i in 0..<self.size {
                 if predicate(self.data[i]) {
@@ -590,21 +590,21 @@ realm std {
             return result
         }
 
-        func any(predicate: (T) -> Bool): Bool { self& ->
+        func any[self: Self&](predicate: (T) -> Bool): Bool {
             for i in 0..<self.size {
                 if predicate(self.data[i]) { return true }
             }
             return false
         }
 
-        func all(predicate: (T) -> Bool): Bool { self& ->
+        func all[self: Self&](predicate: (T) -> Bool): Bool {
             for i in 0..<self.size {
                 if !predicate(self.data[i]) { return false }
             }
             return true
         }
 
-        func union(other: Set<T>): Set<T> { self& ->
+        func union[self: Self&](other: Set<T>): Set<T> {
             var result = TreeSet<T>()
             for i in 0..<self.size {
                 result.add(self.data[i])
@@ -617,7 +617,7 @@ realm std {
             return result
         }
 
-        func intersect(other: Set<T>): Set<T> { self& ->
+        func intersect[self: Self&](other: Set<T>): Set<T> {
             var result = TreeSet<T>()
             for i in 0..<self.size {
                 if other.contains(self.data[i]) {
@@ -627,7 +627,7 @@ realm std {
             return result
         }
 
-        func difference(other: Set<T>): Set<T> { self& ->
+        func difference[self: Self&](other: Set<T>): Set<T> {
             var result = TreeSet<T>()
             for i in 0..<self.size {
                 if !other.contains(self.data[i]) {
@@ -639,7 +639,7 @@ realm std {
     }
 
     impl MutableSet<T> for TreeSet<T> {
-        func add(element: T): Bool { self! ->
+        func add[self: Self!](element: T): Bool {
             if self.has(element) { return false }
             if self.size >= self.capacity { self.growSet() }
             self.data[self.size] = element
@@ -647,7 +647,7 @@ realm std {
             return true
         }
 
-        func remove(element: T): Bool { self! ->
+        func remove[self: Self!](element: T): Bool {
             var idx = -1
             for i in 0..<self.size {
                 if self.data[i] == element { idx = i }
@@ -662,7 +662,7 @@ realm std {
             return true
         }
 
-        func clear() { self! ->
+        func clear[self: Self!]() {
             fin oldData = self.data
             self.data = alloc T[8]
             self.size = 0

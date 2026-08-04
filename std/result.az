@@ -33,7 +33,7 @@ realm std {
      * Represents either a success or failure outcome.
      */
     @Since("0.0.1")
-    variant Result {
+    variant enum Result {
         Ok(value: Int)
         Err(code: Int, message: String)
     }

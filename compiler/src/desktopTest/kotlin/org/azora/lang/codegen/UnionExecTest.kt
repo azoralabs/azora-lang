@@ -22,9 +22,10 @@ import kotlin.test.assertEquals
 /**
  * End-to-end `lli` tests for `union`.
  *
- * Only a real target can show what an untagged union actually is: one block of
- * storage every member addresses. The interpreter models a union as a single
- * value slot, so the byte-level view is only observable here.
+ * These pin down what an untagged union actually is: one block of storage every
+ * member addresses. The interpreter models a union as a single value slot until
+ * the self-hosted compiler gives it a real memory model, so for now this is the
+ * only place the byte-level view is observable.
  */
 class UnionExecTest {
 
@@ -36,53 +37,61 @@ class UnionExecTest {
 
     @Test fun aMemberSurvivesARoundTrip() = check("42", """
         import std.io
-        union Value {
-            var i: Int
-            var d: Double
+        unsafe union Value {
+            i: Int
+            d: Double
         }
         func main() {
-            var v = Value(i: 42)
-            std::println(v.i)
+            unsafe {
+                var v = Value(i: 42)
+                std::println(v.i)
+            }
         }
     """.trimIndent())
 
     @Test fun writingThenReadingTheSameMemberIsStable() = check("7\n9", """
         import std.io
-        union Value {
-            var i: Int
-            var d: Double
+        unsafe union Value {
+            i: Int
+            d: Double
         }
         func main() {
-            var v = Value(i: 7)
-            std::println(v.i)
-            v.i = 9
-            std::println(v.i)
+            unsafe {
+                var v = Value(i: 7)
+                std::println(v.i)
+                v.i = 9
+                std::println(v.i)
+            }
         }
     """.trimIndent())
 
     @Test fun theMembersShareOneStorageSlot() = check("1", """
         import std.io
-        union Flag {
-            var raw: Int
-            var on: Bool
+        unsafe union Flag {
+            raw: Int
+            on: Bool
         }
         func main() {
-            var f = Flag(on: true)
-            std::println(f.raw)
+            unsafe {
+                var f = Flag(on: true)
+                std::println(f.raw)
+            }
         }
     """.trimIndent())
 
     @Test fun aUnionIsAsWideAsItsWidestMember() = check("1.5", """
         import std.io
-        union Scalar {
-            var small: Byte
-            var wide: Double
+        unsafe union Scalar {
+            small: Byte
+            wide: Double
         }
         func main() {
-            // `wide` is the widest member, so the storage is 8 bytes and the
-            // double survives intact even though `small` is declared first.
-            var n = Scalar(wide: 1.5)
-            std::println(n.wide)
+            unsafe {
+                // `wide` is the widest member, so the storage is 8 bytes and the
+                // double survives intact even though `small` is declared first.
+                var n = Scalar(wide: 1.5)
+                std::println(n.wide)
+            }
         }
     """.trimIndent())
 }

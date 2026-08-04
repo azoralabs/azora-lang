@@ -18,7 +18,7 @@ class SlotsTest {
         // Test just construction — no when matching
         run("""
             import std.io
-            variant Option {
+            variant enum Option {
                 Some(Int)
                 None
             }
@@ -33,7 +33,7 @@ class SlotsTest {
         // Test when matching without bindings (no-payload variant)
         assertEquals("nothing", run("""
             import std.io
-            variant Option {
+            variant enum Option {
                 Some(Int)
                 None
             }
@@ -50,7 +50,7 @@ class SlotsTest {
     @Test fun slotSomeWithPayload() {
         assertEquals("42", run("""
             import std.io
-            variant Option {
+            variant enum Option {
                 Some(Int)
                 None
             }
@@ -67,7 +67,7 @@ class SlotsTest {
     @Test fun slotMultiplePayloads() {
         assertEquals("7", run("""
             import std.io
-            variant Shape {
+            variant enum Shape {
                 Circle(Int)
                 Rect(Int, Int)
                 Point
@@ -86,7 +86,7 @@ class SlotsTest {
     @Test fun slotNoPayloadVariant() {
         assertEquals("0", run("""
             import std.io
-            variant Shape {
+            variant enum Shape {
                 Circle(Int)
                 Rect(Int, Int)
                 Point

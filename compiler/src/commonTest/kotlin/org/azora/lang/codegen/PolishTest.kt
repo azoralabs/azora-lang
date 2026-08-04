@@ -79,7 +79,7 @@ class PolishTest {
     @Test fun nonExhaustiveWhenErrors() {
         val result = Compiler().compile("""
             import std.io
-            variant Opt {
+            variant enum Opt {
                 Some(Int)
                 None
             }

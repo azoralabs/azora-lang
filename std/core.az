@@ -151,7 +151,7 @@ use realm std {
     }
 
     @Experimental(since: "0.0.4")
-    bridge variant Macro {
+    bridge variant enum Macro {
         Prefix(String)
         Infix(String)
         Type

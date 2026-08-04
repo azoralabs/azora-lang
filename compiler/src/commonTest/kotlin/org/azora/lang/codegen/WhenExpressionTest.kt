@@ -157,7 +157,7 @@ class WhenExpressionTest {
     @Test fun returnWhenDestructuresASlotPayload() {
         assertEquals("12\n25\n0", run("""
             import std.io
-            variant Shape {
+            variant enum Shape {
                 Circle(r: Int)
                 Rect(w: Int, h: Int)
                 Empty
@@ -211,7 +211,7 @@ class WhenExpressionTest {
 
     @Test fun destructuringInAnExpressionIsRefusedWithAdvice() {
         val errors = failure("""
-            variant Shape {
+            variant enum Shape {
                 Circle(r: Int)
                 Empty
             }

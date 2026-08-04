@@ -17,8 +17,7 @@ DECL_BORROW  ::= (fin | var) NAME : Type& = owner
                | (fin | var) NAME : Type! = owner
 ```
 
-The `ref` / `mut` / `shared` / `weak` keywords were **removed**; all borrows are
-the postfix `&` / `!` sigils. Shared/weak reference kinds will return via
+All borrows are the postfix `&` / `!` sigils. Shared/weak reference kinds will return via
 `std.memory`.
 
 ---

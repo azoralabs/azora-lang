@@ -206,7 +206,7 @@ func main() { std::println("Hello, Azora!") }"""))
     @Test fun ch9_functions() = assertEquals("25\n42", run("""
         import std.io
         func square(n: Int) { std::println(n * n) }
-        func double(n: Int) { return n * 2 }
+        func double(n: Int): Int { return n * 2 }
         func main() {
             square(5)
             std::println(double(21))
@@ -440,7 +440,7 @@ func main() { std::println("Hello, Azora!") }"""))
 
     @Test fun ch27_slot_destructure() = assertEquals("42", run("""
         import std.io
-        variant Option {
+        variant enum Option {
             Some(Int)
             None
         }
@@ -455,7 +455,7 @@ func main() { std::println("Hello, Azora!") }"""))
 
     @Test fun ch27_slot_multi_payload() = assertEquals("7", run("""
         import std.io
-        variant Shape {
+        variant enum Shape {
             Circle(Int)
             Rect(Int, Int)
             Point

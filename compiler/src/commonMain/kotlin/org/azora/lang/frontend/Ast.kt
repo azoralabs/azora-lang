@@ -1361,7 +1361,16 @@ sealed class TypeAnnotation {
     }
 
     /**
-     * A type that should be inferred by the compiler from context (no annotation present).
+     * No annotation was written.
+     *
+     * What that means depends on where it appears. On a **binding** the type is
+     * inferred from the initializer. On a **`func` or `prop`** it is not
+     * inferred: an omitted return type *is* the annotation, and it says `Unit`
+     * (see `DIPs/DO_NOT_INFER_RETURN_TYPE.MD`). The distinction between "written
+     * `: Unit`" and "wrote nothing" is kept precisely so a `return <value>` in
+     * the second case can be reported as a missing declaration rather than as an
+     * ordinary type mismatch. A **lambda** keeps inference: it has no
+     * declaration to read, so its result type comes from its body.
      */
     object Inferred : TypeAnnotation() {
         override fun toString() = "inferred"
@@ -1585,6 +1594,17 @@ data class FuncDecl(
     val isUnsafe: Boolean = false,
     /** Visibility exported to import/member access rules. */
     val visibility: Visibility = Visibility.PUBLIC,
+    /**
+     * False when the declaration wrote no return type at all.
+     *
+     * An omitted return type means `Unit`, so [returnType] is already correct —
+     * this only records *how* it got there, which is what lets a `return <value>`
+     * be reported as a missing declaration rather than an ordinary mismatch. It
+     * is separate from `returnType is TypeAnnotation.Inferred` because the
+     * failable shorthand `func f() ?! E` also declares nothing, yet must carry an
+     * explicit `Unit ?! E` for the error set.
+     */
+    val returnTypeDeclared: Boolean = true,
     /** Receiver mutability for impl/extension methods: `self&` (immutable) or `self!` (mutable). */
     val receiverModifier: ParamModifier = ParamModifier.EXCLUSIVE,
     /** Receiver name for impl/extension methods (conventionally `self`, but arbitrary). */
@@ -2108,11 +2128,25 @@ sealed class TopLevel {
     /** `typealias Name = Type` — a type alias. */
     data class TypeAlias(val name: String, val type: TypeRef, val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList(), val typeParams: List<String> = emptyList()) : TopLevel()
 
-    /** A variant of a `slot` (tagged union): `VariantName(Type1, Type2)` or `VariantName` (no payload). */
+    /** One case of a tagged union: `Name(Type1, Type2)`, or `Name` with no payload. */
     data class SlotVariant(val name: String, val payloadTypes: List<TypeRef>)
 
-    /** `slot Name { Variant(Type); Variant2(Type1, Type2); Variant3 }` — a tagged union. */
-    data class Slot(val name: String, val variants: List<SlotVariant>, val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList()) : TopLevel()
+    /**
+     * `variant enum Name { … }` / `variant error Name { … }` — a tagged union.
+     *
+     * `variant` is a modifier on the payload-free `enum`/`error` forms: it says
+     * the cases may carry data. [isError] records which of the two it modified —
+     * an error one can be thrown and named in a `?!` set; otherwise they are the
+     * same construct.
+     */
+    data class Slot(
+        val name: String,
+        val variants: List<SlotVariant>,
+        val line: Int,
+        val column: Int = 0,
+        val annotations: List<Annotation> = emptyList(),
+        val isError: Boolean = false,
+    ) : TopLevel()
 
     /**
      * `meta Name { arm; arm; … }` — a pattern-driven macro declaration.

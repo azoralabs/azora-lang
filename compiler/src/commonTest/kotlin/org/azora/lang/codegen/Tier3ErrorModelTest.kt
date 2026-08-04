@@ -282,7 +282,7 @@ class Tier3ErrorModelTest {
         assertEquals("1\ncaught", run("""
             import std.io
 
-            error IndexError {
+            variant error IndexError {
                 OutOfBounds(index: Int, size: Int)
                 Empty
             }
@@ -307,12 +307,12 @@ class Tier3ErrorModelTest {
 
     @Test
     fun aPayloadVariantIsAlsoConstructibleDirectly() {
-        // A payload-bearing error set is also a slot, which is where construction and
+        // A `variant error` is a tagged union, which is where construction and
         // `when` matching come from rather than a parallel implementation.
         assertEquals("made", run("""
             import std.io
 
-            error IndexError { OutOfBounds(index: Int, size: Int) }
+            variant error IndexError { OutOfBounds(index: Int, size: Int) }
 
             func main() {
                 fin e = IndexError.OutOfBounds(9, 3)

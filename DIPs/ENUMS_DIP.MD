@@ -1,7 +1,9 @@
 # Azora Enums — DIP Implementation Profile
 
-`enum` declares a closed set of named variants. For variants that carry payloads
-(tagged unions), see the Variants DIP.
+`enum` declares a closed set of named cases, **none of which carries data**.
+Prefixing it with the `variant` modifier — `variant enum` — is what allows
+payloads; see the Variants DIP. A payload on a plain `enum` is a compile error
+naming that form.
 
 ## Grammar
 
@@ -88,7 +90,7 @@ Enums hold no payload. For variants with associated data (tagged unions /
 sum types), use `variant`:
 
 ```azora
-variant Shape {
+variant enum Shape {
     Circle(Int)
     Rect(Int, Int)
     Empty

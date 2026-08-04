@@ -176,7 +176,9 @@ class SymbolCollector {
                 val params = func.params.map { it.name to resolveType(it.type, tpSet) }
                 val returnType = when (val rt = func.returnType) {
                     is TypeAnnotation.Explicit -> resolveType(rt.ref, tpSet)
-                    is TypeAnnotation.Inferred -> inferReturnType(func, params)
+                    // A declaration's return type is never inferred; see
+                    // [undeclaredReturnType].
+                    is TypeAnnotation.Inferred -> undeclaredReturnType(func, params)
                 }
                 val paramNames = func.params.map { it.name }
                 val defaults = func.params.mapIndexedNotNull { i, p -> p.defaultValue?.let { i to it } }.toMap()
@@ -253,7 +255,7 @@ class SymbolCollector {
                         for (p in method.params) params.add(p.name to resolveType(p.type))
                         val returnType = when (val rt = method.returnType) {
                             is TypeAnnotation.Explicit -> resolveType(rt.ref)
-                            is TypeAnnotation.Inferred -> inferReturnType(method, params)
+                            is TypeAnnotation.Inferred -> undeclaredReturnType(method, params)
                         }
                         table.defineFunction(FunctionSymbol(
                             mangled,
@@ -337,12 +339,16 @@ class SymbolCollector {
             }
         }
 
-        // Register slot (tagged union) declarations
+        // Register tagged unions (`variant enum` / `variant error`)
         for (item in program.items) {
             if (item is TopLevel.Slot) {
                 try {
                     val variants = item.variants.map { v -> v.name to v.payloadTypes.map { resolveType(it) } }
                     table.defineSlot(item.name, variants)
+                    // A `variant error` is also an error set: it can be thrown and
+                    // named in a `?!` clause, which is the whole point of the
+                    // `error` spelling.
+                    if (item.isError) table.defineFail(item.name, item.variants.map { it.name })
                 } catch (e: Exception) {
                     errors.add("line ${item.line}: ${e.message}")
                 }
@@ -385,7 +391,8 @@ class SymbolCollector {
                             // `oper#` (hash) is ULong by contract; its body typically
                             // returns a local accumulator that return-type inference
                             // (params-only) cannot see.
-                            is TypeAnnotation.Inferred -> if (method.name == "oper#") IrType.ULong else inferReturnType(method, params)
+                            is TypeAnnotation.Inferred ->
+                                if (method.name == "oper#") IrType.ULong else undeclaredReturnType(method, params)
                         }
                         // Bridge impls register the member name (so semantic gates like the
                         // range-operator check can find it) but define NO callable function —
@@ -548,6 +555,25 @@ class SymbolCollector {
 
         return errors
     }
+
+    /**
+     * The return type of a declaration that omits `: Type`.
+     *
+     * For a `func` or a `prop` this is `Unit`: Azora does not infer a
+     * declaration's return type, so an omitted annotation is not "work it out
+     * for me" — it *is* the annotation (`DIPs/DO_NOT_INFER_RETURN_TYPE.MD`).
+     * `ctor`/`dtor` and bodyless signatures never name a type either, and Unit
+     * is already what they mean.
+     *
+     * An **operator overload** is the exception the rule deliberately leaves
+     * out. Its result is fixed by the operator's contract rather than chosen by
+     * the author, and some are not nameable at the declaration at all — the
+     * deref of a variadic pack (`oper.* { return self.value }`) has no spelling
+     * for the member's type — so an operator still reads its result from its
+     * body. A lambda infers for the same reason: there is no declaration to read.
+     */
+    private fun undeclaredReturnType(func: FuncDecl, params: List<Pair<String, IrType>>): IrType =
+        if (func.name.startsWith("oper")) inferReturnType(func, params) else IrType.Unit
 
     /**
      * Infer the return type from return statements in the function body.

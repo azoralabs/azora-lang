@@ -26,12 +26,13 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /**
- * `union` — a C-style untagged union.
+ * `unsafe union` — a C-style untagged union.
  *
  * Every member starts at offset 0 and the whole thing is as wide as its widest
  * member, so writing one member and reading another reinterprets the same
- * storage. Nothing records which member is live; that is what separates a
- * `union` from a `variant`.
+ * storage. Nothing records which member is live, so no check can establish that
+ * a read is meaningful — which is why both the declaration and every use ask for
+ * `unsafe`. For a union that *does* record its live case, see `variant enum`.
  */
 class UnionTest {
     private fun compile(source: String): CompilationResult = Compiler().compile(source.trimIndent())
@@ -50,11 +51,14 @@ class UnionTest {
         assertTrue(failure.errors.any { needle in it }, failure.errors.toString())
     }
 
+    private fun run(source: String): String =
+        IrInterpreter().interpret(success(source).ir).trim()
+
     private val value = """
-        union Value {
-            var i: Int
-            var d: Double
-            var b: Bool
+        unsafe union Value {
+            i: Int
+            d: Double
+            b: Bool
         }
     """.trimIndent()
 
@@ -63,7 +67,7 @@ class UnionTest {
         val result = success("""
             $value
             func main() {
-                var v = Value(i: 42)
+                unsafe { var v = Value(i: 42) }
             }
         """)
         val struct = result.ir.items.filterIsInstance<IrTopLevel.Struct>().single { it.name == "Value" }
@@ -73,7 +77,7 @@ class UnionTest {
 
     @Test
     fun unionIsStillUsableAsAnOrdinaryName() {
-        // `union` is contextual: only `union Name {` declares one.
+        // `union` is contextual: only `unsafe union Name {` declares one.
         success("""
             import std.io
             func main() {
@@ -83,96 +87,122 @@ class UnionTest {
         """)
     }
 
+    // -- the unsafe requirement ----------------------------------------------
+
     @Test
-    fun aMemberIsReadBackAfterBeingWritten() {
-        val out = success("""
-            import std.io
-            $value
-            func main() {
+    fun aUnionMustBeDeclaredUnsafe() = rejects("""
+        union Value {
+            i: Int
+        }
+    """, "declare it 'unsafe union Value'")
+
+    @Test
+    fun constructingAUnionNeedsAnUnsafeBlock() = rejects("""
+        $value
+        func main() {
+            var v = Value(i: 42)
+        }
+    """, "union 'Value' can only be used inside an 'unsafe { … }' block")
+
+    @Test
+    fun readingAMemberNeedsAnUnsafeBlock() = rejects("""
+        import std.io
+        $value
+        func main() {
+            unsafe { var v = Value(i: 42) }
+            var w = Value(i: 1)
+        }
+    """, "can only be used inside an 'unsafe { … }' block")
+
+    @Test
+    fun anUnsafeFunctionIsEnoughOfAContext() = assertEquals("42", run("""
+        import std.io
+        $value
+        unsafe func show() {
+            var v = Value(i: 42)
+            std::println(v.i)
+        }
+        func main() { unsafe { show() } }
+    """))
+
+    // -- behaviour -----------------------------------------------------------
+
+    @Test
+    fun aMemberIsReadBackAfterBeingWritten() = assertEquals("42\n7", run("""
+        import std.io
+        $value
+        func main() {
+            unsafe {
                 var v = Value(i: 42)
                 std::println(v.i)
                 v.i = 7
                 std::println(v.i)
             }
-        """)
-        assertEquals("42\n7", run(out))
-    }
+        }
+    """))
 
     @Test
-    fun writingOneMemberIsSeenByTheOthers() {
-        // The members share one slot, so the last write is what every member sees.
-        val out = success("""
-            import std.io
-            $value
-            func main() {
+    fun writingOneMemberIsSeenByTheOthers() = assertEquals("true", run("""
+        import std.io
+        $value
+        func main() {
+            unsafe {
                 var v = Value(i: 1)
                 v.b = true
                 std::println(v.b)
             }
-        """)
-        assertEquals("true", run(out))
-    }
+        }
+    """))
+
+    // -- construction --------------------------------------------------------
 
     @Test
-    fun aUnionIsBuiltFromExactlyOneMember() {
-        rejects("""
-            $value
-            func main() {
-                var v = Value(i: 1, d: 2.0)
-            }
-        """, "is built from exactly one member")
-    }
+    fun aUnionIsBuiltFromExactlyOneMember() = rejects("""
+        $value
+        func main() {
+            unsafe { var v = Value(i: 1, d: 2.0) }
+        }
+    """, "is built from exactly one member")
 
     @Test
-    fun aUnionCannotBeBuiltFromNoMember() {
-        rejects("""
-            $value
-            func main() {
-                var v = Value()
-            }
-        """, "is built from exactly one member")
-    }
+    fun aUnionCannotBeBuiltFromNoMember() = rejects("""
+        $value
+        func main() {
+            unsafe { var v = Value() }
+        }
+    """, "is built from exactly one member")
 
     @Test
-    fun anUnknownMemberIsRejected() {
-        rejects("""
-            $value
-            func main() {
-                var v = Value(nope: 1)
-            }
-        """, "has no member 'nope'")
-    }
+    fun anUnknownMemberIsRejected() = rejects("""
+        $value
+        func main() {
+            unsafe { var v = Value(nope: 1) }
+        }
+    """, "has no member 'nope'")
 
     @Test
-    fun aMemberIsTypeChecked() {
-        rejects("""
-            $value
-            func main() {
-                var v = Value(b: 3)
-            }
-        """, "member 'b' of union 'Value'")
-    }
+    fun aMemberIsTypeChecked() = rejects("""
+        $value
+        func main() {
+            unsafe { var v = Value(b: 3) }
+        }
+    """, "member 'b' of union 'Value'")
 
     @Test
-    fun anEmptyUnionIsRejected() {
-        rejects("""
-            union Nothing {
-            }
-            func main() {}
-        """, "must declare at least one member")
-    }
+    fun anEmptyUnionIsRejected() = rejects("""
+        unsafe union Nothing {
+        }
+        func main() {}
+    """, "must declare at least one member")
 
     @Test
-    fun theValueAxisAppliesToAUnionToo() {
-        rejects("""
-            $value
-            func main() {
+    fun theValueAxisAppliesToAUnionToo() = rejects("""
+        $value
+        func main() {
+            unsafe {
                 fin v = Value(i: 1)
                 v.i = 2
             }
-        """, "cannot assign to member 'i' through 'v'")
-    }
-
-    private fun run(result: CompilationResult.Success): String =
-        IrInterpreter().interpret(result.ir).trim()
+        }
+    """, "cannot assign to member 'i' through 'v'")
 }

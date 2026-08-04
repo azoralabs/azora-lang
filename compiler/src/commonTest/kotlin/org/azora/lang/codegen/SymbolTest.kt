@@ -214,8 +214,11 @@ class SymbolTest {
     }
 
     @Test
-    fun func_inferredReturnType() {
-        val result = compile("""
+    fun func_omittedReturnTypeIsUnitNotInferred() {
+        // An omitted return type is not "work it out for me" — it is the
+        // annotation, and it says Unit. Returning a value is then an error that
+        // names the fix.
+        val result = Compiler().compile("""
             import std.io
             func add(a: Int, b: Int) {
                 return a + b
@@ -224,8 +227,25 @@ class SymbolTest {
                 std::println(add(3, 4))
             }
         """.trimIndent())
-        val ir = result.ir.prettyPrint()
-        assertTrue("func add(a: Int, b: Int): Int" in ir)
+        val failure = assertIs<CompilationResult.Failure>(result)
+        assertTrue(
+            failure.errors.any { "declares no return type" in it && "declare it as ': Int'" in it },
+            failure.errors.toString(),
+        )
+    }
+
+    @Test
+    fun func_declaredReturnTypeIsCarriedIntoTheIr() {
+        val result = compile("""
+            import std.io
+            func add(a: Int, b: Int): Int {
+                return a + b
+            }
+            func main() {
+                std::println(add(3, 4))
+            }
+        """.trimIndent())
+        assertTrue("func add(a: Int, b: Int): Int" in result.ir.prettyPrint())
     }
 
     @Test

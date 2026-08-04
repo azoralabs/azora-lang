@@ -690,10 +690,12 @@ class IrInterpreter {
     /**
      * The key a union member reads and writes.
      *
-     * A union's members share one storage slot, so they share one key. The
-     * interpreter holds values, not bytes, so reading a member other than the
-     * one last written yields that value rather than a reinterpretation of its
-     * bits — the LLVM and Wasm backends model the byte-level view.
+     * A union's members share one storage slot, so they share one key. This
+     * interpreter holds values rather than bytes, so reading a member other than
+     * the one last written currently yields that value instead of a
+     * reinterpretation of its bits. That is a gap here, not in the language:
+     * once the self-hosted compiler gives the interpreter a real memory model
+     * this becomes a genuine reinterpretation, as it already is on LLVM.
      */
     private fun unionSlotKey(receiver: Map<*, *>): String? {
         val typeName = receiver["__type"] as? String ?: return null

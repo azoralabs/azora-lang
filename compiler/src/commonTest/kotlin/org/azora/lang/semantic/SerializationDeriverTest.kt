@@ -294,7 +294,7 @@ class SerializationDeriverTest {
                 fin name: String
                 fin value: SerialValue
             }
-            variant SerialValue {
+            variant enum SerialValue {
                 Null
                 Bool(Bool)
                 Number(String)

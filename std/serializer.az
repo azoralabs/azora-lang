@@ -189,7 +189,7 @@ realm std {
      * a typed decoder consumes the value.
      */
     @Experimental(since: "0.0.4")
-    variant SerialValue {
+    variant enum SerialValue {
         Null
         Bool(value: Bool)
         Number(value: String)

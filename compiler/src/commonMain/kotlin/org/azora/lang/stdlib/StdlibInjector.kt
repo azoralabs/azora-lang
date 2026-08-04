@@ -158,7 +158,7 @@ class StdlibInjector private constructor(
         private fun mismatch(path: String, moduleName: String, expected: List<String>) =
             IllegalArgumentException(
                 "file path '$path' does not match module '$moduleName': a file declaring " +
-                    "'mod $moduleName' must be located at '${expected.joinToString("/")}.az' " +
+                    "'module $moduleName' must be located at '${expected.joinToString("/")}.az' " +
                     "relative to its source root",
             )
 

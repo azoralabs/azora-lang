@@ -176,7 +176,7 @@ func main() {
 
     @Test fun taggedUnions() = assertEquals("75\n24\n0", run("""module playground
 import std.io
-variant Shape {
+variant enum Shape {
     Circle(Int)
     Rect(Int, Int)
     Empty

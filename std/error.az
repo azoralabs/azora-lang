@@ -17,7 +17,7 @@
 module std.error
 
 realm std {
-    error IndexError {
+    variant error IndexError {
         OutOfBounds(index: Int, size: Int)
     }
 }

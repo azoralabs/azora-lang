@@ -123,7 +123,10 @@ class TypeResolver(private val table: SymbolTable) {
                     contextualValues.addLast(
                         listOf(Expr.Identifier("self", method.line, method.column) to IrType.Named(item.typeName)),
                     )
+                    val savedUndeclaredReturn = undeclaredReturnOf
+                    undeclaredReturnOf = undeclaredReturnName(method)
                     resolveBody(method.body, func.returnType)
+                    undeclaredReturnOf = savedUndeclaredReturn
                     contextualValues.removeLast()
                     currentReceiverType = savedReceiver
                     currentModule = savedModule
@@ -157,6 +160,20 @@ class TypeResolver(private val table: SymbolTable) {
         if (name == "Self") currentReceiverType ?: name else name
 
     /** True when [type] names a compile-time type property (`deepinline prop`). */
+    /**
+     * The type of [expr] as far as a local lookup can tell.
+     *
+     * Only used to notice that something is a union before its member access is
+     * resolved, so an identifier is enough — and resolving the expression here
+     * would report its errors twice.
+     */
+    private fun inferredTargetType(expr: Expr): IrType? =
+        (expr as? Expr.Identifier)?.let { table.lookupVariable(it.name)?.type }
+
+    /** Names the union [type] refers to, if it is one. */
+    private fun unionNameOf(type: IrType?): String? =
+        (type as? IrType.Named)?.name?.takeIf { table.lookupStruct(it)?.isUnion == true }
+
     private fun isTypeProperty(type: TypeRef.Named): Boolean =
         TypeFunctionEvaluator.declarationNameFor(type, typePropertyNames) != null
 
@@ -258,7 +275,10 @@ class TypeResolver(private val table: SymbolTable) {
         currentReceiverType = null
         currentFuncTypeParams = func.typeParams.toSet()
         reactiveContext = hasReactiveContract(func.annotations)
+        val savedUndeclaredReturn = undeclaredReturnOf
+        undeclaredReturnOf = undeclaredReturnName(func)
         resolveBody(func.body, symbol.returnType)
+        undeclaredReturnOf = savedUndeclaredReturn
         currentReceiverType = savedReceiver
         currentFuncTypeParams = savedFuncTypeParams
         unsafeContext = savedUnsafe
@@ -353,6 +373,25 @@ class TypeResolver(private val table: SymbolTable) {
      * When null, `return` statements are validated against the enclosing function's declared type.
      */
     private var lambdaReturnTypes: MutableList<IrType>? = null
+
+    /**
+     * The `func`/`prop` being checked, when it omitted its return type.
+     *
+     * An omitted return type means `Unit`, so a `return <value>` inside is a type
+     * error either way — but the useful thing to say is "declare the return
+     * type", not "expected Unit". Null when the declaration wrote one.
+     */
+    private var undeclaredReturnOf: String? = null
+
+    /**
+     * [undeclaredReturnOf] for [decl] — its name when it wrote no return type.
+     *
+     * An operator is left out: its result is fixed by the operator's contract
+     * rather than written by the author, so it still reads its type from its
+     * body (see SymbolCollector.undeclaredReturnType).
+     */
+    private fun undeclaredReturnName(decl: FuncDecl): String? =
+        decl.name.takeIf { !decl.returnTypeDeclared && !it.startsWith("oper") }
 
     /**
      * The synthetic name of an inherited lambda receiver.
@@ -523,7 +562,16 @@ class TypeResolver(private val table: SymbolTable) {
                         // Inferring a lambda's return type — record it, skip declared-type checking.
                         capturing.add(valueType)
                     } else if (!isCompatible(returnType, adoptLiteralType(stmt.value!!, valueType, returnType))) {
-                        errors.add("line ${stmt.line}: return type mismatch: expected $returnType but got $valueType")
+                        val undeclared = undeclaredReturnOf
+                        if (undeclared != null && returnType == IrType.Unit) {
+                            errors.add(
+                                "line ${stmt.line}: '$undeclared' returns $valueType but declares no return type — " +
+                                    "an omitted return type means Unit, it is not inferred; " +
+                                    "declare it as ': $valueType'",
+                            )
+                        } else {
+                            errors.add("line ${stmt.line}: return type mismatch: expected $returnType but got $valueType")
+                        }
                     }
                 }
             }
@@ -682,6 +730,7 @@ class TypeResolver(private val table: SymbolTable) {
                 }
             }
             is Stmt.MemberAssign -> {
+                unionNameOf(inferredTargetType(stmt.target))?.let { requireUnsafeForUnion(it, stmt.line) }
                 if (!checkValueMutable(stmt.target, stmt.line, "assign to member '${stmt.name}'")) return
                 val resolvedTarget = resolveExpr(stmt.target) ?: return
                 // Auto-deref: assigning through a pointer writes through it (`p.v = x` == `(*p).v = x`).
@@ -938,7 +987,10 @@ class TypeResolver(private val table: SymbolTable) {
                         errors.add("line ${expr.line}: compiler bridge pack '${expr.callee}' cannot be constructed directly")
                         return null
                     }
-                    if (struct.isUnion) return resolveUnionCtor(expr, struct)
+                    if (struct.isUnion) {
+                        requireUnsafeForUnion(calleeName, expr.line)
+                        return resolveUnionCtor(expr, struct)
+                    }
                     if (expr.args.size > struct.fields.size) {
                         errors.add("line ${expr.line}: '${expr.callee}' has ${struct.fields.size} fields, got ${expr.args.size} arguments")
                         return null
@@ -1306,6 +1358,8 @@ class TypeResolver(private val table: SymbolTable) {
                 if (targetType is IrType.Array) targetType.element else (targetType as IrType.Set).element
             }
             is Expr.Member -> {
+                // A union member read reinterprets storage; see requireUnsafeForUnion.
+                unionNameOf(inferredTargetType(expr.target))?.let { requireUnsafeForUnion(it, expr.line) }
                 // Enum variant: `Color.Red` → Named type carrying the enum identity
                 // (enables exhaustiveness checking in `when`; runtime value is still a string).
                 if (expr.target is Expr.Identifier) {
@@ -2325,6 +2379,22 @@ class TypeResolver(private val table: SymbolTable) {
                 "declare it 'var' (or 'let' to fix only the name)",
         )
         return false
+    }
+
+    /**
+     * Rejects touching a union outside an `unsafe` block.
+     *
+     * Reading a union member the program did not last write reinterprets bytes,
+     * and nothing in the type records which member is live — so no check can
+     * establish that a read is meaningful. `unsafe` is where the author takes
+     * that on, which is why both the declaration and every use ask for it.
+     */
+    private fun requireUnsafeForUnion(name: String, line: Int) {
+        if (unsafeContext) return
+        errors.add(
+            "line $line: union '$name' can only be used inside an 'unsafe { … }' block — " +
+                "reading a member the program did not last write reinterprets its bytes",
+        )
     }
 
     /**

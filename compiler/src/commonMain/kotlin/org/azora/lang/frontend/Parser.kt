@@ -1540,11 +1540,22 @@ class Parser(
      * mean what they say. A declaration is the one place the word is followed by
      * a type name and then a body or type parameters.
      */
+    /**
+     * True when a union declaration begins here: `unsafe union Name {`.
+     *
+     * `union` is **contextual**, not reserved — `Set.union(other)` and
+     * `fin union = …` mean what they say — so it only opens a declaration when a
+     * type name and a body follow. The `unsafe` prefix is required (see
+     * [parsePack]); a bare `union Name {` is matched here too so it can be
+     * rejected with that explanation rather than a parse error.
+     */
     private fun isUnionDeclAhead(): Boolean {
-        val word = peek()
+        var i = current
+        if (tokens.getOrNull(i)?.type == TokenType.UNSAFE) i++
+        val word = tokens.getOrNull(i) ?: return false
         if (word.type != TokenType.IDENTIFIER || word.lexeme != "union") return false
-        if (peekNext()?.type != TokenType.IDENTIFIER) return false
-        val after = tokens.getOrNull(current + 2)?.type
+        if (tokens.getOrNull(i + 1)?.type != TokenType.IDENTIFIER) return false
+        val after = tokens.getOrNull(i + 2)?.type
         return after == TokenType.L_BRACE || after == TokenType.LESS
     }
 
@@ -1557,6 +1568,16 @@ class Parser(
         val start = peek()
         val keyword = if (isUnion) "union" else "pack"
         if (isUnion) {
+            // A union reinterprets its storage, so nothing about reading one can
+            // be checked — which is exactly what `unsafe` marks. Requiring it on
+            // the declaration means the hazard is stated where the type is
+            // defined, not only where it is used.
+            if (!match(TokenType.UNSAFE)) {
+                error(
+                    "a union reinterprets its storage and cannot be checked; " +
+                        "declare it 'unsafe union ${peekNext()?.lexeme ?: ""}' at line ${peek().line}",
+                )
+            }
             advance() // contextual `union`
         } else {
             consume(TokenType.PACK, "Expected 'pack'")
@@ -1612,6 +1633,12 @@ class Parser(
                 }
                 fieldTemplate = parseVariadicFieldTemplate()
             } else {
+                if (isUnion && peek().type in setOf(TokenType.VAR, TokenType.VAL, TokenType.LET, TokenType.FIN)) {
+                    error(
+                        "a union member is written '${peekNext()?.lexeme ?: "name"}: Type' with no binding keyword — " +
+                            "its members share one slot, so '${peek().lexeme}' says nothing, at line ${peek().line}",
+                    )
+                }
                 fields.add(parsePackField(enforceNumFields = enforceNumFields))
                 match(TokenType.COMMA)
             }
@@ -1624,6 +1651,11 @@ class Parser(
             if (fieldTemplate != null) {
                 error("union '$name' cannot generate its members from a variadic template at line ${start.line}")
             }
+            // Every member addresses the same storage, so "this one is mutable and
+            // that one is not" cannot mean anything. Members are written as bare
+            // `name: Type` and are always writable; whether a *binding* permits the
+            // write is the separate question the value axis already answers.
+            for (i in fields.indices) fields[i] = fields[i].copy(mutable = true)
         }
         return TopLevel.Pack(
             name = name,
@@ -2224,7 +2256,16 @@ class Parser(
             skipNewlines()
             if (check(TokenType.R_BRACE)) break
             do {
-                variants.add(consume(TokenType.IDENTIFIER, "Expected variant name").lexeme)
+                val variant = consume(TokenType.IDENTIFIER, "Expected variant name").lexeme
+                // A payload is what separates the two enum forms, so it is also
+                // where the right one can be named.
+                if (check(TokenType.L_PAREN)) {
+                    error(
+                        "case '$variant' of enum '$name' carries a payload; " +
+                            "write 'variant enum $name { … }' for a tagged union, at line ${peek().line}",
+                    )
+                }
+                variants.add(variant)
                 variantAnns.add(parseAnnotations()) // trailing `@ann` on the same line
             } while (match(TokenType.COMMA) && check(TokenType.IDENTIFIER))
         }
@@ -2248,27 +2289,17 @@ class Parser(
             skipNewlines()
             if (check(TokenType.R_BRACE)) break
             do {
-                variants.add(consume(TokenType.IDENTIFIER, "Expected variant name").lexeme)
-                // `OutOfBounds(index: Int, size: Int)` — a variant may carry data. The
-                // field names are accepted for readability; payloads stay positional,
-                // exactly as a `slot` variant's do.
-                variantPayloads.add(
-                    if (match(TokenType.L_PAREN)) {
-                        val types = mutableListOf<TypeRef>()
-                        if (!check(TokenType.R_PAREN)) {
-                            do {
-                                if (check(TokenType.IDENTIFIER) && peekNext()?.type == TokenType.COLON) {
-                                    advance(); advance()
-                                }
-                                types.add(parseTypeName())
-                            } while (match(TokenType.COMMA))
-                        }
-                        consume(TokenType.R_PAREN, "Expected ')' after error variant payload")
-                        types
-                    } else {
-                        emptyList()
-                    },
-                )
+                val variant = consume(TokenType.IDENTIFIER, "Expected variant name").lexeme
+                // A payload is what separates the two error forms, so it is also
+                // where the right one can be named.
+                if (check(TokenType.L_PAREN)) {
+                    error(
+                        "case '$variant' of error set '$name' carries a payload; " +
+                            "write 'variant error $name { … }' for a tagged union, at line ${peek().line}",
+                    )
+                }
+                variants.add(variant)
+                variantPayloads.add(emptyList())
                 variantAnns.add(parseAnnotations()) // trailing `@ann` on the same line
             } while (match(TokenType.COMMA) && check(TokenType.IDENTIFIER))
         }
@@ -2861,6 +2892,7 @@ class Parser(
                     advance()
                     val propName = consume(TokenType.IDENTIFIER, "Expected property name").lexeme
                     val propReceiver = parsePropReceiver()
+                    val propTypeDeclared = check(TokenType.COLON)
                     val propType: TypeAnnotation = if (match(TokenType.COLON)) TypeAnnotation.Explicit(parseTypeName()) else TypeAnnotation.Inferred
                     // A property may carry its own constraint, as an operator or a
                     // function does — `prop normalized[…]: Self ?! E where T is …`.
@@ -2874,7 +2906,7 @@ class Parser(
                         // `prop name: T = expr` — expression-body property (returns the expression).
                         val expr = parseExpr()
                         consumeNewline()
-                        methods.add(FuncDecl(propName, emptyList(), propType, listOf(Stmt.Return(expr, expr.line, expr.column)), false, emptyList(), methodStart.line, methodStart.column, annotations = memberAnnotations, visibility = visibility, receiverModifier = propReceiver.modifier, receiverName = propReceiver.name, memberCallStyle = MemberCallStyle.PROPERTY))
+                        methods.add(FuncDecl(propName, emptyList(), propType, listOf(Stmt.Return(expr, expr.line, expr.column)), false, emptyList(), methodStart.line, methodStart.column, annotations = memberAnnotations, visibility = visibility, receiverModifier = propReceiver.modifier, receiverName = propReceiver.name, memberCallStyle = MemberCallStyle.PROPERTY, returnTypeDeclared = propTypeDeclared))
                     } else {
                         val contracts = parseContractClauses()
                         run {
@@ -2892,7 +2924,7 @@ class Parser(
                         val propBody = parseBlock()
                         consume(TokenType.R_BRACE, "Expected '}' after prop body")
                         consumeNewline()
-                        methods.add(FuncDecl(propName, emptyList(), propType, applyContracts(propBody, contracts), false, emptyList(), methodStart.line, methodStart.column, annotations = memberAnnotations, visibility = visibility, receiverModifier = propReceiver.modifier, receiverName = propReceiver.name, memberCallStyle = MemberCallStyle.PROPERTY))
+                        methods.add(FuncDecl(propName, emptyList(), propType, applyContracts(propBody, contracts), false, emptyList(), methodStart.line, methodStart.column, annotations = memberAnnotations, visibility = visibility, receiverModifier = propReceiver.modifier, receiverName = propReceiver.name, memberCallStyle = MemberCallStyle.PROPERTY, returnTypeDeclared = propTypeDeclared))
                     }
                     currentFailSets = savedPropFailSets
                 }
@@ -3479,17 +3511,36 @@ class Parser(
     }
 
     /** `slot Name { Variant(Type); Variant2(Type1, Type2); Variant3 }` — a tagged union. */
+    /**
+     * `variant enum Name { … }` / `variant error Name { … }` — a tagged union.
+     *
+     * `variant` is a modifier, not a declaration of its own: it says that the
+     * cases of the `enum` (or `error`) it precedes may carry payloads. A plain
+     * `enum`/`error` is the payload-free Kotlin-style form, and rejects a
+     * payload with a note pointing here.
+     *
+     * Both spellings produce the same tagged union; the only difference is that
+     * an `error` one can be thrown and named in a `?!` set.
+     */
     private fun parseSlot(annotations: List<Annotation> = emptyList()): TopLevel.Slot {
         val start = peek()
-        consume(TokenType.VARIANT, "Expected 'slot'")
-        val name = consume(TokenType.IDENTIFIER, "Expected slot name").lexeme
-        consume(TokenType.L_BRACE, "Expected '{' after slot name")
+        consume(TokenType.VARIANT, "Expected 'variant'")
+        val kind = when {
+            match(TokenType.ENUM) -> "enum"
+            match(TokenType.ERROR) -> "error"
+            else -> error(
+                "'variant' is a modifier: write 'variant enum ${peek().lexeme}' for a tagged union, " +
+                    "or 'variant error ${peek().lexeme}' for one that can be thrown, at line ${peek().line}",
+            )
+        }
+        val name = consume(TokenType.IDENTIFIER, "Expected name after 'variant $kind'").lexeme
+        consume(TokenType.L_BRACE, "Expected '{' after 'variant $kind $name'")
         skipNewlines()
         val variants = mutableListOf<TopLevel.SlotVariant>()
         while (!check(TokenType.R_BRACE) && !isAtEnd()) {
             skipNewlines()
             if (check(TokenType.R_BRACE)) break
-            val vname = consume(TokenType.IDENTIFIER, "Expected variant name").lexeme
+            val vname = consume(TokenType.IDENTIFIER, "Expected case name").lexeme
             val payloadTypes = if (match(TokenType.L_PAREN)) {
                 val types = mutableListOf<TypeRef>()
                 if (!check(TokenType.R_PAREN)) {
@@ -3508,9 +3559,9 @@ class Parser(
             consumeNewline()
             variants.add(TopLevel.SlotVariant(vname, payloadTypes))
         }
-        consume(TokenType.R_BRACE, "Expected '}' after slot variants")
+        consume(TokenType.R_BRACE, "Expected '}' after the cases of '$name'")
         consumeNewline()
-        return TopLevel.Slot(name, variants, start.line, start.column, annotations)
+        return TopLevel.Slot(name, variants, start.line, start.column, annotations, isError = kind == "error")
     }
 
     /**
@@ -4152,13 +4203,19 @@ class Parser(
         consume(TokenType.L_PAREN, "Expected '(' after function name")
         val params = parseParams(variadicParam).toMutableList()
         consume(TokenType.R_PAREN, "Expected ')' after parameters")
+        // Whether the author wrote a return type at all. Both branches below that
+        // do not write one still produce a type — the rule is that an omitted
+        // return type *means* Unit — but the diagnostic needs to know which.
+        var returnTypeDeclared = true
         val returnType: TypeAnnotation = if (match(TokenType.COLON)) {
             TypeAnnotation.Explicit(parseTypeName())
         } else if (check(TokenType.QMARK_BANG)) {
             // `func f() ?! E` — a function that yields nothing but may fail. The ok
             // type is Unit; only the error set is written.
+            returnTypeDeclared = false
             TypeAnnotation.Explicit(parseTypeSuffixes(TypeRef.Named("Unit")))
         } else {
+            returnTypeDeclared = false
             TypeAnnotation.Inferred
         }
         val funcWhereClause = parseWhereClause()
@@ -4254,6 +4311,7 @@ class Parser(
             minVariadicLength = minVariadicLength,
             whereClause = funcWhereClause,
             constParams = constParams,
+            returnTypeDeclared = returnTypeDeclared,
         )
     }
 
@@ -6490,9 +6548,33 @@ class Parser(
     private fun parseReturn(): Stmt {
         val start = peek()
         consume(TokenType.RETURN, "Expected 'return'")
-        // `return .Variant` — fail the function with an error-set variant. This is
-        // the only way to return an error (the old `fail return .Variant` form is
-        // gone); a plain `return value` always yields the success value.
+        // `return when …` / `return if …` — a branching construct in return
+        // position, where every branch carries a value rather than a block.
+        if (check(TokenType.WHEN)) {
+            return parseReturnWhen(start)
+        }
+        if (check(TokenType.IF)) {
+            return parseReturnIf(start)
+        }
+        if (check(TokenType.NEWLINE) || check(TokenType.R_BRACE) || isAtEnd()) {
+            consumeNewline()
+            return Stmt.Return(null, start.line, start.column)
+        }
+        val stmt = parseReturnedValue(start)
+        consumeNewline()
+        return stmt
+    }
+
+    /**
+     * The statement a `return` produces once its value has been read.
+     *
+     * `.Variant` fails the function with an error-set variant — the only way to
+     * return an error (the old `fail return .Variant` form is gone). Anything
+     * else yields the success value. Both spellings are recognized here rather
+     * than in [parseReturn] so that every *branch* in return position — a
+     * `when` arm, an `if` branch — accepts the shorthand on the same terms.
+     */
+    private fun parseReturnedValue(start: Token): Stmt {
         if (check(TokenType.DOT) && peekNext()?.type == TokenType.IDENTIFIER) {
             advance() // '.'
             val variant = consume(TokenType.IDENTIFIER, "Expected error variant after 'return .'").lexeme
@@ -6513,7 +6595,6 @@ class Parser(
                     do { args.add(parseExpr()) } while (match(TokenType.COMMA))
                 }
                 consume(TokenType.R_PAREN, "Expected ')' after error payload")
-                consumeNewline()
                 val set = currentFailSets.single()
                 return Stmt.Throw(
                     Expr.MethodCall(
@@ -6523,18 +6604,114 @@ class Parser(
                     start.line, start.column,
                 )
             }
-            consumeNewline()
             return Stmt.Throw(Expr.StringLiteral(variant, start.line), start.line, start.column)
         }
-        // `return when …` — a `when` in return position, where every branch is a
-        // value rather than a block.
-        if (check(TokenType.WHEN)) {
-            return parseReturnWhen(start)
+        return Stmt.Return(parseExpr(), start.line, start.column)
+    }
+
+    /**
+     * `return if cond { value } else { value }`.
+     *
+     * Desugars to the statement form with every branch body a `return`, exactly
+     * as [parseReturnWhen] does — which is what lets a branch carry the
+     * `.Variant` error shorthand (`return if y == 0 { .DivisionByZero } else { x / y }`).
+     * As an *expression* an if-branch is a value, and `.Variant` is not one:
+     * failing is something a function does, not a value it produces. Lowering
+     * here keeps every later stage seeing the `if` it already handles.
+     */
+    private fun parseReturnIf(start: Token): Stmt {
+        consume(TokenType.IF, "Expected 'if'")
+        // The `{` after the condition is the branch body, never a trailing
+        // lambda of a call in the condition (`if f() { … }`).
+        val savedTrailing = allowTrailingLambda
+        allowTrailingLambda = false
+        val condition = parseExpr()
+        allowTrailingLambda = savedTrailing
+        val thenBranch = parseReturnBranchBody("if")
+        skipNewlines() // tolerate newlines between } and else
+        if (!match(TokenType.ELSE)) {
+            error("'return if' needs an 'else' — every path has to produce a value, at line ${start.line}")
         }
-        val value = if (check(TokenType.NEWLINE) || check(TokenType.R_BRACE) || isAtEnd()) null
-                    else parseExpr()
+        val elseBranch = if (check(TokenType.IF)) {
+            listOf(parseReturnIf(start))
+        } else {
+            parseReturnBranchBody("else")
+        }
         consumeNewline()
-        return Stmt.Return(value, start.line, start.column)
+        return Stmt.If(condition, thenBranch, elseBranch, start.line, start.column)
+    }
+
+    /**
+     * One `{ … }` branch of a `return if`, ending in the value it returns.
+     *
+     * A branch is usually just a value — including a nested if-expression, which
+     * is how `return if a { 1 } else { if b { -1 } else { 0 } }` reads. It may
+     * also open with statements and end in its value, so a branch that needs a
+     * local or two to compute its answer does not have to be hoisted into a
+     * helper. The two are told apart by trying the value first and falling back:
+     * `if` means different things in expression and statement position, so no
+     * amount of lookahead at the first token settles it.
+     */
+    private fun parseReturnBranchBody(what: String): List<Stmt> {
+        consume(TokenType.L_BRACE, "Expected '{' after $what")
+        skipNewlines()
+        val at = peek()
+        // `.Variant` fails the function; it is not a value, so it never reaches
+        // the expression or block parsers below.
+        if (check(TokenType.DOT) && peekNext()?.type == TokenType.IDENTIFIER) {
+            val thrown = parseReturnedValue(at)
+            skipNewlines()
+            consume(TokenType.R_BRACE, "Expected '}' after $what branch")
+            return listOf(thrown)
+        }
+        parseBranchValueOrNull(at)?.let { value ->
+            consume(TokenType.R_BRACE, "Expected '}' after $what branch")
+            return listOf(value)
+        }
+        val body = parseBlock()
+        consume(TokenType.R_BRACE, "Expected '}' after $what branch")
+        if (body.isEmpty()) {
+            error("an 'if' branch in return position must produce a value (line ${at.line})")
+        }
+        val last = body[body.size - 1]
+        if (last !is Stmt.ExprStmt) {
+            // A branch that already returns, throws or panics is complete.
+            if (branchBodyYields(last)) return body
+            error(
+                "an 'if' branch in return position must end in a value at line ${last.line} — " +
+                    "assign the trailing '${branchTailName(last)}' to a `fin` and end with that, " +
+                    "or return from inside it",
+            )
+        }
+        val lifted = body.subList(0, body.size - 1).toMutableList()
+        lifted.add(Stmt.Return(last.expr, last.line, last.column))
+        return lifted
+    }
+
+    /**
+     * The branch's value, if the whole branch is one expression.
+     *
+     * Returns null — leaving the position exactly as it found it — when the
+     * branch is not a lone expression, so the caller can parse it as a block.
+     */
+    private fun parseBranchValueOrNull(at: Token): Stmt? {
+        val savedCurrent = current
+        val savedGreater = pendingGreater
+        val savedTrailing = allowTrailingLambda
+        fun rewind(): Stmt? {
+            current = savedCurrent
+            pendingGreater = savedGreater
+            allowTrailingLambda = savedTrailing
+            return null
+        }
+        val value = try {
+            parseExpr()
+        } catch (_: IllegalStateException) {
+            return rewind()
+        }
+        skipNewlines()
+        if (check(TokenType.R_BRACE)) return Stmt.Return(value, at.line, at.column)
+        return rewind()
     }
 
     /**
@@ -6571,7 +6748,7 @@ class Parser(
     private fun parseWhenReturnValue(): List<Stmt> {
         val at = peek()
         if (!check(TokenType.L_BRACE)) {
-            return listOf(Stmt.Return(parseExpr(), at.line, at.column))
+            return listOf(parseReturnedValue(at))
         }
         advance() // '{'
         skipNewlines()

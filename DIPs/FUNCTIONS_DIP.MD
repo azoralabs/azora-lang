@@ -29,7 +29,7 @@ SAFETY       ::= inline | unsafe | (nothing)
 GENERICS     ::= <T, R, N: Int, ...T>                  (after the name; optional)
 PARAMS       ::= (name: Type [= default], out name: Type, …)
 RECEIVERS    ::= [self: Type&]                          (bracketed extension receiver; optional)
-RETURN_TYPE  ::= Type | (nothing → inferred/Unit)
+RETURN_TYPE  ::= Type | (nothing → Unit; never inferred — see §1.4)
 FAILS        ::= E | [E1, E2]                           (error sets; optional)
 CLAUSE       ::= (...T).length >= N  |  T is Spec       (joined with &&; optional)
 BODY         ::= { statements }  |  = expression  |  in {…} out {r -> …} scope {…}
@@ -52,8 +52,8 @@ func add(a: Int, b: Int): Int {
 
 - `func` keyword, then the **name**, then optional generics, then `(params)`,
   then an optional `: ReturnType`, then the body `{ … }`.
-- With no `: ReturnType`, the return type is inferred (`Unit` if nothing is
-  returned).
+- With no `: ReturnType`, the return type is **`Unit`**. It is not inferred —
+  see §1.4.
 
 ### 1.2 Expression body
 
@@ -61,7 +61,8 @@ func add(a: Int, b: Int): Int {
 func square(x: Int): Int = x * x
 ```
 
-An `=` after the signature makes the single expression the return value.
+An `=` after the signature makes the single expression the return value. The
+return type still has to be written: the expression does not supply it.
 
 ### 1.3 Parameters
 
@@ -91,7 +92,70 @@ func produce(out result: Int) { result = 42 } // write-only out param
 - `out x: T` — write-only output parameter.
 - The old `ref x`/`mut x`/`mut ref x` prefixes are **removed**.
 
-### 1.4 Return type and errors
+### 1.4 Return types are declared, never inferred
+
+A declaration's return type is not something the compiler works out. An omitted
+return type is not a gap to be filled — it **is** the annotation, and it says
+`Unit`:
+
+```azora
+func hello() {                        // : Unit
+    std::println("Hello!")
+}
+```
+
+Returning a value from such a function is an error, and the diagnostic says what
+to write:
+
+```azora
+func add(a: Int, b: Int) {
+    return a + b
+}
+// line 2: 'add' returns Int but declares no return type — an omitted return
+// type means Unit, it is not inferred; declare it as ': Int'
+```
+
+```azora
+func add(a: Int, b: Int): Int {       // the fix
+    return a + b
+}
+```
+
+A bare `return` (no value) is fine in a `Unit` function — it is an early exit,
+not a result.
+
+**A failable function may omit only its ok type.** `?! E` directly after the
+parameter list means `Unit ?! E`: the function yields nothing but may fail.
+
+```azora
+func div(x: Int, y: Int) ?! MathError {          // Unit ?! MathError
+    if y == 0 { return .DivisionByZero }
+    std::println(x / y)
+}
+
+func div(x: Int, y: Int): Int ?! MathError {     // yields a value → declare it
+    return if y == 0 { .DivisionByZero } else { x / y }
+}
+```
+
+`return if` and `return when` desugar to their statement forms with every branch
+returning (§1.5.1), which is why a branch accepts `.Variant`: failing is
+something the function *does*, not a value a branch produces.
+
+**The rule applies to `prop` as well** — a computed property is a declaration,
+so it declares its type too (see the Packs, Impls & Specs DIP).
+
+Two things are deliberately outside the rule, because neither has a declaration
+to read:
+
+| Form | Result type | Why |
+|------|-------------|-----|
+| **lambda** — `{ n: Int -> n * 2 }` | inferred from the body | there is no declaration; the body is all there is |
+| **operator overload** — `oper.* [self: Self&] { … }` | inferred from the body | the result is fixed by the operator's contract, not chosen by the author, and some are not nameable at the declaration (the deref of a variadic pack has no spelling for its member's type) |
+
+See `DIPs/DO_NOT_INFER_RETURN_TYPE.MD`.
+
+### 1.5 Return type and errors
 
 ```azora
 func parse(text: String): Int ?! ParseError {
@@ -106,9 +170,44 @@ func decode(b: Bytes): Value ?! [ParseError, IoError] { … }  // multiple error
 - `T ?! E` — succeeds with `T` or fails with a variant of error set `E`.
 - `return .Variant` **fails** the function with that error variant.
 - `return value` yields the success value.
-- The old `fail return .Variant` form is **removed** (`fail X` still throws).
+- The old `fail return .Variant` form is **removed** (`error X` still throws).
 
-### 1.5 Visibility
+#### 1.5.1 Branching in return position
+
+`return if …` and `return when …` are lowered to the statement forms, with each
+branch returning its own value:
+
+```azora
+func sign(n: Int): Int {
+    return if n < 0 { -1 } else if n == 0 { 0 } else { 1 }
+}
+
+func div(x: Int, y: Int): Int ?! MathError {
+    return if y == 0 { .DivisionByZero } else { x / y }   // a branch may fail
+}
+
+func twice(n: Int): Int ?! MathError {
+    return when n {
+        0 -> .Bad
+        else -> n * 2
+    }
+}
+```
+
+- Every branch carries a value; a `return if` needs its `else`.
+- A branch may open with statements and end in its value:
+  ```azora
+  return if y == 0 { 0 } else {
+      fin doubled = y * 2
+      doubled + 1
+  }
+  ```
+- A branch may instead be `.Variant`, which **fails** the function. That is why
+  the lowering exists: as an if-*expression* a branch is a value, and failing is
+  not a value.
+- Nested if-expressions still read as values: `return if a { 1 } else { if b { -1 } else { 0 } }`.
+
+### 1.6 Visibility
 
 ```azora
 expose func api() { … }    // default; importable everywhere
@@ -119,7 +218,7 @@ protect func internal() { … } // importable within the declaring folder
 `expose` is the default and may be omitted. (`intern`/`shared`/`weak` keywords
 were removed.)
 
-### 1.6 Modifiers
+### 1.7 Modifiers
 
 ```azora
 inline func fastPath(x: Int): Int { … }   // inlined at each call site (CTCE)
@@ -326,6 +425,9 @@ std::println(double(5))                    // 10
 
 - Syntax: `{ param: Type[, …] -> body }`. The body's last expression (or a
   `return`) is the result.
+- A lambda's result type **is** inferred from its body — the one place in the
+  language where a result type is worked out rather than written, because a
+  lambda has no declaration to read (§1.4).
 - Lambdas capture surrounding variables (closures):
   ```azora
   func makeAdder(n: Int): (Int) -> Int {
@@ -422,3 +524,4 @@ delimiter).
 | `name![…]` (macro) | `name@[…]`, mutable `name!@[…]` |
 | `mut vec@[…]` | `vec!@[…]` |
 | `intern` / `shared` / `weak` keywords | removed (memory kinds via `std.memory`, planned) |
+| omitted return type → inferred | omitted return type → **`Unit`** (§1.4); lambdas and operators still infer |

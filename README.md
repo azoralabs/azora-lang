@@ -55,7 +55,7 @@ Adding a new target means one new file under `backend/`.
 ### Types
 - **Primitives**: `Int`, `UInt`, `Long`, `ULong`, `Byte`, `UByte`, `Short`, `UShort`, `Cent`, `UCent`, `Float`, `Double`, `Decimal`, `Bool`, `Char`, `String`, `Unit`
 - **Compound**: fixed arrays `[T]`, immutable collections `List<T>`/`Set<T>`/`Map<K, V>`, mutable collections `mut List<T>`/`mut Set<T>`/`mut Map<K, V>`, tuples `(A, B)`, function types `(A) -> B`, map values `mapOf("k": v)`
-- **User-defined**: `pack` (structs), `enum`, `variant` (tagged unions), `typealias`, `error` (error sets)
+- **User-defined**: `pack` (structs), `enum`, `variant enum` / `variant error` (tagged unions), `typealias`, `error` (error sets)
 - **Type parameters**: generics (`func<T>`, `pack<T>`) with call-site inference
 - **Variadic generics**: `func<T...> name(first: Int, rest: T...)` — the last type param can be variadic; `rest: T...` collects remaining call args into an array
 - **Spread operator**: `f(arr...)` — splat an array's elements as individual call arguments
@@ -156,8 +156,8 @@ Adding a new target means one new file under `backend/`.
 
 ### Data
 - **Enums**: `enum Color { Red; Green; Blue }` — variants as named values
-- **Variants (tagged unions)**: `variant Option { Some(Int); None }` — cases with payloads + destructuring in `when`
-- **Unions (untagged)**: `union Value { var i: Int; var d: Double }` — C-style overlapping storage
+- **Variants (tagged unions)**: `variant enum Option { Some(Int); None }` — cases with payloads + destructuring in `when`; `variant error` for throwable ones
+- **Unions (untagged)**: `unsafe union Value { i: Int; d: Double }` — C-style overlapping storage; usable only in `unsafe { … }`
 - **Tuples**: `(1, "hello")` with positional access `.0`, `.1`
 
 ### Operators

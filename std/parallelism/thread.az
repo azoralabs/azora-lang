@@ -35,7 +35,7 @@ realm std {
      */
     @Experimental(since: "0.0.1")
     async func sleep<T>(ms: T) {
-        suspend ms
+        delay ms
     }
 
     /**
@@ -47,7 +47,7 @@ realm std {
     @Experimental(since: "0.0.1")
     async func spawnAsync<T>(ms: T, action: () -> Unit) {
         fin handle = async { action() }
-        suspend ms
+        delay ms
         await(handle)
     }
 
@@ -59,6 +59,6 @@ realm std {
      */
     @Experimental(since: "0.0.1")
     async func joinAll<T>(count: T) {
-        suspend count
+        delay count
     }
 }

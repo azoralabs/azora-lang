@@ -86,6 +86,10 @@ class SymbolCollector {
         if (table.lookupFunction("__purge") == null) {
             table.defineFunction(FunctionSymbol("__purge", listOf("value" to IrType.Any), IrType.Unit))
         }
+        if (table.lookupFunction("__delay") == null) {
+            // `delay ms` suspends the current task for that many milliseconds.
+            table.defineFunction(FunctionSymbol("__delay", listOf("ms" to IrType.Any), IrType.Unit))
+        }
         if (table.lookupFunction("__launch") == null) {
             // `launch { body }` desugars to __launch(thunk); fire-and-forget, joined at end.
             table.defineFunction(FunctionSymbol("__launch", listOf("thunk" to IrType.Any), IrType.Unit))

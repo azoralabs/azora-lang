@@ -170,6 +170,7 @@ class LlvmCodegen {
     private var usesAbort = false
     private var usesMalloc = false
     private var usesStrlen = false
+    private var usesUsleep = false
     private var usesStrcpy = false
     private var usesStrcat = false
     private var usesStrcmp = false
@@ -234,6 +235,7 @@ class LlvmCodegen {
         usesAbort = false
         usesMalloc = false
         usesStrlen = false
+        usesUsleep = false
         usesStrncmp = false
         usesStrstr = false
         neededIntrinsics.clear()
@@ -470,6 +472,7 @@ class LlvmCodegen {
         if (usesMalloc) line("declare i8* @malloc(i64)")
         if (usesFree) line("declare void @free(i8*)")
         if (usesStrlen) line("declare i64 @strlen(i8*)")
+        if (usesUsleep) line("declare i32 @usleep(i32)")
         if (usesStrcpy) line("declare i8* @strcpy(i8*, i8*)")
         if (usesStrcat) line("declare i8* @strcat(i8*, i8*)")
         if (usesStrcmp) line("declare i32 @strcmp(i8*, i8*)")
@@ -3854,6 +3857,18 @@ class LlvmCodegen {
                 ?: error("LLVM async lowering requires a task block")
             val resultType = (expr.type as? IrType.Task)?.result ?: IrType.Any
             return emitLambdaTaskSpawn(lambda, resultType, "async")
+        }
+        if (expr.name == "__delay") {
+            // `delay ms` — libc sleeps in microseconds, so scale the operand.
+            usesUsleep = true
+            val ms = coerceNumeric(emitExpr(expr.args.single()), expr.args.single().type, IrType.Int)
+            val micros = nextTmp()
+            emit("  $micros = mul i32 $ms, 1000")
+            // `usleep` returns a status this has no use for, but LLVM numbers
+            // every unnamed result, so it still has to be bound.
+            val status = nextTmp()
+            emit("  $status = call i32 @usleep(i32 $micros)")
+            return "void"
         }
         if (expr.name == "__launch") {
             val lambda = expr.args.singleOrNull() as? IrExpr.Lambda

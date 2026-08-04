@@ -4503,6 +4503,9 @@ class Parser(
             t.type == TokenType.PURGE || t.type == TokenType.MEM || t.type == TokenType.REM || t.type == TokenType.RET ||
             t.type == TokenType.ALLOC || t.type == TokenType.TEST ||
             t.type == TokenType.MACRO ||
+            // `func take(…)` / `self.take()` — `take` names a stdlib operation
+            // as well as the ownership-transfer prefix.
+            t.type == TokenType.TAKE ||
             // `module std.error` — a module path segment is a plain name, and
             // `error` reads best as the name of the module that declares the
             // error sets.
@@ -7322,6 +7325,22 @@ class Parser(
             }
             return Expr.Alloc(operand, at.line, at.column, at.lexeme.length, mutable = mutable)
         }
+        // `take <expr>` — transfer ownership out of the operand.
+        //
+        // There is no move checker yet, so this carries no runtime effect: the
+        // value is the operand's. The keyword is accepted now so ownership
+        // transfer can be *written* where it happens, the way the call-site
+        // borrow markers `&`/`!` already are.
+        if (check(TokenType.TAKE)) {
+            advance()
+            return parseUnary()
+        }
+        // `clone <expr>` — an independently owned duplicate. Explicit because it
+        // may be expensive; the same deep copy `isolated(…)` performs.
+        if (check(TokenType.CLONE)) {
+            val at = advance()
+            return Expr.Isolated(parseUnary(), at.line, at.column, at.lexeme.length)
+        }
         // `isolated(expr)` — explicit deep copy.
         if (check(TokenType.ISOLATED)) {
             val at = advance()
@@ -7340,6 +7359,11 @@ class Parser(
             val at = advance()
             val operand = parseUnary()
             return Expr.MethodCall(operand, "oper#", emptyList(), at.line, at.column)
+        }
+        // `delay <ms>` — suspend the current task for that many milliseconds.
+        if (check(TokenType.DELAY)) {
+            val at = advance()
+            return Expr.Call("__delay", listOf(parseUnary()), at.line, at.column, at.lexeme.length)
         }
         // `await task` — suspend until the task completes.
         if (check(TokenType.AWAIT)) {

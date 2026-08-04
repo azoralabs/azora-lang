@@ -32,7 +32,7 @@ realm std {
      * Runs an action with a timeout.
      *
      * Executes the action and checks if it completed within the
-     * specified duration. Uses cooperative scheduling via suspend.
+     * specified duration. Uses cooperative scheduling via `delay`.
      *
      * @param ms The timeout in milliseconds.
      * @param action The function to execute.
@@ -45,7 +45,7 @@ realm std {
             action()
             completed = true
         }
-        suspend ms
+        delay ms
         return completed
     }
 
@@ -66,7 +66,7 @@ realm std {
             fin result = action()
             if result { return true }
             if i < attempts - 1 {
-                suspend delayMs
+                delay delayMs
             }
         }
         return false
@@ -106,7 +106,7 @@ realm std {
             done = true
         }
         while !done {
-            suspend 1
+            delay 1
         }
     }
 

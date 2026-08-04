@@ -34,6 +34,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.channels.SendChannel
 import kotlinx.coroutines.channels.produce
 import kotlinx.coroutines.async
@@ -1319,6 +1320,18 @@ class IrInterpreter {
         if (expr.name == "channel") {
             // A buffered channel (effectively unbounded) for task-to-task communication.
             return AzoraChannel(Channel<Any?>(Channel.UNLIMITED))
+        }
+        if (expr.name == "__delay") {
+            // Cooperative: the task yields the thread for the duration, so other
+            // tasks in the same scope make progress.
+            val ms = when (val v = args.firstOrNull()) {
+                is Long -> v
+                is Int -> v.toLong()
+                is Double -> v.toLong()
+                else -> 0L
+            }
+            if (ms > 0) delay(ms)
+            return null
         }
         if (expr.name == "__launch") {
             // `launch { … }` — start a fire-and-forget task; joined before interpret() returns.

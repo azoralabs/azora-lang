@@ -551,6 +551,12 @@ class WasmCodegen {
     }
 
     private fun emitCall(expr: IrExpr.Call): String {
+        // The MVP target has no host clock to sleep against, so `delay` degrades
+        // to a no-op here rather than a call to a function that does not exist.
+        // Its operand is still evaluated, so any effect in it still happens.
+        if (expr.name == "__delay") {
+            return "(drop ${emitExpr(expr.args.single())})"
+        }
         if (expr.receiver != null) {
             val callable = expr.receiver.type as? IrType.Function
                 ?: error("indirect call receiver is not a callable type")

@@ -23,7 +23,7 @@ import org.azora.lang.frontend.TokenType
 import org.azora.lang.frontend.TopLevel
 import org.azora.lang.frontend.TypeAnnotation
 import org.azora.lang.frontend.TypeRef
-import org.azora.lang.frontend.ZoneMeta
+import org.azora.lang.frontend.RealmMeta
 import org.azora.lang.ir.IrType
 
 /**
@@ -500,7 +500,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 val (newExpr, changed) = foldExpr(stmt.expr, program)
                 Pair(listOf(stmt.copy(expr = newExpr)), changed)
             }
-            is Stmt.Zone -> {
+            is Stmt.Scope -> {
                 val (newBody, changed) = foldScopedBody(stmt.body, program, errors)
                 Pair(listOf(stmt.copy(body = newBody)), changed)
             }
@@ -902,8 +902,8 @@ class CtfeEvaluator(private val table: SymbolTable) {
         }
 
         val substituted = funcDecl.body.map { substituteInStmt(it, paramMap) }
-        // Wrap in a zone (scope block) to avoid variable name collisions
-        return listOf(Stmt.Zone(substituted, expr.line))
+        // Wrap in a realm (scope block) to avoid variable name collisions
+        return listOf(Stmt.Scope(substituted, expr.line))
     }
 
     private fun substituteInStmt(stmt: Stmt, paramMap: Map<String, Expr>): Stmt = when (stmt) {
@@ -1285,7 +1285,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
             }
             is Expr.UpperScopeAccess -> Pair(expr, false)
             // Literals are already folded
-            is Expr.IntLiteral, is Expr.RealLiteral,
+            is Expr.IntLiteral, is Expr.DoubleLiteral,
             is Expr.StringLiteral, is Expr.BoolLiteral,
             is Expr.CharLiteral,
             is Expr.TupleLit, is Expr.TupleAccess, is Expr.VariantLit -> Pair(expr, false)
@@ -1301,8 +1301,8 @@ class CtfeEvaluator(private val table: SymbolTable) {
             }
             is Expr.CatchExpr, is Expr.Lambda -> Pair(expr, false)
             is Expr.SafeMember -> {
-                // `(reflect X).zone?.label` / `?.isInline` — fold the safe terminal.
-                foldZoneTerminal(expr.target, expr.name, program, expr.line)?.let { return Pair(it, true) }
+                // `(reflect X).realm?.label` / `?.isInline` — fold the safe terminal.
+                foldRealmTerminal(expr.target, expr.name, program, expr.line)?.let { return Pair(it, true) }
                 Pair(expr, false)
             }
             is Expr.NullCoalesce -> {
@@ -1365,7 +1365,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
                     val (target, _) = foldExpr(expr.target, program)
                     return Pair(expr.copy(target = target, name = spliced), true)
                 }
-                foldZoneTerminal(expr.target, expr.name, program, expr.line)?.let { return Pair(it, true) }
+                foldRealmTerminal(expr.target, expr.name, program, expr.line)?.let { return Pair(it, true) }
                 val metadataQuery = expr.target as? Expr.Call
                 if (compileTimeDepth > 0 && metadataQuery?.callee == "__decoMeta") {
                     val decoratorName = metadataQuery.typeArgs.singleOrNull()?.displayName()
@@ -1418,7 +1418,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
     // -- Constant folding helpers -------------------------------------------
 
     private fun isConstant(expr: Expr): Boolean = when (expr) {
-        is Expr.IntLiteral, is Expr.RealLiteral,
+        is Expr.IntLiteral, is Expr.DoubleLiteral,
         is Expr.StringLiteral, is Expr.BoolLiteral,
         is Expr.CharLiteral -> true
         is Expr.Member -> {
@@ -1461,7 +1461,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
     private fun constantText(expr: Expr): String? = when (expr) {
         is Expr.StringLiteral -> expr.value
         is Expr.IntLiteral -> expr.value.toString()
-        is Expr.RealLiteral -> expr.value.toString()
+        is Expr.DoubleLiteral -> expr.value.toString()
         is Expr.BoolLiteral -> expr.value.toString()
         is Expr.CharLiteral -> expr.value.toString()
         is Expr.Member -> enumQualifiedName(expr)
@@ -1482,21 +1482,21 @@ class CtfeEvaluator(private val table: SymbolTable) {
         else -> null
     }
 
-    // -- Zone reflection (`(reflect X).zone.label` / `.isInline` / `.zone`) ---
+    // -- Realm reflection (`(reflect X).realm.label` / `.isInline` / `.realm`) ---
 
     /** The implicit top-level scope reported for globally-declared names. */
-    private val globalZone = ZoneMeta("global", isInline = false, parent = null)
+    private val globalRealm = RealmMeta("global", isInline = false, parent = null)
 
-    /** A partially-evaluated `reflect` chain node used to fold zone queries. */
+    /** A partially-evaluated `reflect` chain node used to fold realm queries. */
     private sealed interface ReflectNode {
         data class Decl(val name: String) : ReflectNode
-        data class Zone(val meta: ZoneMeta?) : ReflectNode
+        data class Realm(val meta: RealmMeta?) : ReflectNode
     }
 
     /**
      * Evaluates a `reflect`-rooted expression to a [ReflectNode], or null if it is
-     * not a reflection chain. `reflect X` → [ReflectNode.Decl]; `.zone` advances to
-     * the declaration's zone (global by default) or an enclosing zone's parent.
+     * not a reflection chain. `reflect X` → [ReflectNode.Decl]; `.realm` advances to
+     * the declaration's realm (global by default) or an enclosing realm's parent.
      */
     private fun evalReflectNode(expr: Expr, program: Program): ReflectNode? = when (expr) {
         is Expr.Grouping -> evalReflectNode(expr.expr, program)
@@ -1504,30 +1504,30 @@ class CtfeEvaluator(private val table: SymbolTable) {
             if (expr.callee == "__reflect")
                 (expr.args.singleOrNull() as? Expr.Identifier)?.let { ReflectNode.Decl(it.name) }
             else null
-        is Expr.Member -> stepReflectZone(evalReflectNode(expr.target, program), expr.name, program)
-        is Expr.SafeMember -> stepReflectZone(evalReflectNode(expr.target, program), expr.name, program)
+        is Expr.Member -> stepReflectRealm(evalReflectNode(expr.target, program), expr.name, program)
+        is Expr.SafeMember -> stepReflectRealm(evalReflectNode(expr.target, program), expr.name, program)
         else -> null
     }
 
-    private fun stepReflectZone(base: ReflectNode?, member: String, program: Program): ReflectNode? {
-        // `reflect<T>.enclosingZone` (`zone` is a keyword, so the member is spelled out).
-        if (member != "enclosingZone") return null
+    private fun stepReflectRealm(base: ReflectNode?, member: String, program: Program): ReflectNode? {
+        // `reflect<T>.enclosingRealm` (`realm` is a keyword, so the member is spelled out).
+        if (member != "enclosingRealm") return null
         return when (base) {
-            is ReflectNode.Decl -> ReflectNode.Zone(program.zones[base.name] ?: globalZone)
-            is ReflectNode.Zone -> ReflectNode.Zone(base.meta?.parent)
+            is ReflectNode.Decl -> ReflectNode.Realm(program.realms[base.name] ?: globalRealm)
+            is ReflectNode.Realm -> ReflectNode.Realm(base.meta?.parent)
             null -> null
         }
     }
 
     /**
-     * Folds a terminal zone query `<zone>.label` / `<zone>.isInline` to a constant.
-     * A missing zone (e.g. the global scope's parent, or a safe step off null)
-     * yields `null` so `?:` fallbacks work. Returns null if [target] is not a zone
+     * Folds a terminal realm query `<realm>.label` / `<realm>.isInline` to a constant.
+     * A missing realm (e.g. the global scope's parent, or a safe step off null)
+     * yields `null` so `?:` fallbacks work. Returns null if [target] is not a realm
      * chain, so ordinary members named `label`/`isInline` are left untouched.
      */
-    private fun foldZoneTerminal(target: Expr, member: String, program: Program, line: Int): Expr? {
+    private fun foldRealmTerminal(target: Expr, member: String, program: Program, line: Int): Expr? {
         if (member != "label" && member != "isInline") return null
-        val node = evalReflectNode(target, program) as? ReflectNode.Zone ?: return null
+        val node = evalReflectNode(target, program) as? ReflectNode.Realm ?: return null
         return when (member) {
             "label" -> node.meta?.label?.let { Expr.StringLiteral(it, line) } ?: Expr.NullLiteral
             else -> node.meta?.let { Expr.BoolLiteral(it.isInline, line) } ?: Expr.NullLiteral
@@ -1552,13 +1552,13 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 else -> null
             }
         }
-        // Real op Real
-        if (left is Expr.RealLiteral && right is Expr.RealLiteral) {
+        // Double op Double
+        if (left is Expr.DoubleLiteral && right is Expr.DoubleLiteral) {
             return when (op) {
-                TokenType.PLUS -> Expr.RealLiteral(left.value + right.value, line)
-                TokenType.MINUS -> Expr.RealLiteral(left.value - right.value, line)
-                TokenType.STAR -> Expr.RealLiteral(left.value * right.value, line)
-                TokenType.SLASH -> Expr.RealLiteral(left.value / right.value, line)
+                TokenType.PLUS -> Expr.DoubleLiteral(left.value + right.value, line)
+                TokenType.MINUS -> Expr.DoubleLiteral(left.value - right.value, line)
+                TokenType.STAR -> Expr.DoubleLiteral(left.value * right.value, line)
+                TokenType.SLASH -> Expr.DoubleLiteral(left.value / right.value, line)
                 TokenType.EQUAL_EQUAL -> Expr.BoolLiteral(left.value == right.value, line)
                 TokenType.BANG_EQUAL -> Expr.BoolLiteral(left.value != right.value, line)
                 TokenType.LESS -> Expr.BoolLiteral(left.value < right.value, line)
@@ -1600,7 +1600,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
 
     private fun tryFoldUnary(op: TokenType, operand: Expr, line: Int): Expr? {
         if (op == TokenType.MINUS && operand is Expr.IntLiteral) return Expr.IntLiteral(-operand.value, line)
-        if (op == TokenType.MINUS && operand is Expr.RealLiteral) return Expr.RealLiteral(-operand.value, line)
+        if (op == TokenType.MINUS && operand is Expr.DoubleLiteral) return Expr.DoubleLiteral(-operand.value, line)
         if (op == TokenType.BANG && operand is Expr.BoolLiteral) return Expr.BoolLiteral(!operand.value, line)
         return null
     }
@@ -1612,19 +1612,19 @@ class CtfeEvaluator(private val table: SymbolTable) {
     /**
      * An integer literal bound to a floating-point parameter becomes a real one.
      *
-     * The resolver lets `half(6)` pass a `Real` parameter, so compile-time
+     * The resolver lets `half(6)` pass a `Double` parameter, so compile-time
      * evaluation must agree: without this, `x / 2` inside the body would be integer
      * division and the folded constant would disagree with the same call left to
      * run.
      */
     private fun asDeclaredLiteral(arg: Expr, declared: TypeRef): Expr {
         val name = (declared as? TypeRef.Named)?.name ?: return arg
-        if (name != "Real" && name != "Float" && name != "Decimal") return arg
+        if (name != "Double" && name != "Float" && name != "Decimal") return arg
         return when (arg) {
-            is Expr.IntLiteral -> Expr.RealLiteral(arg.value.toDouble(), arg.line)
+            is Expr.IntLiteral -> Expr.DoubleLiteral(arg.value.toDouble(), arg.line)
             is Expr.Unary ->
                 if (arg.op == TokenType.MINUS && arg.operand is Expr.IntLiteral) {
-                    Expr.RealLiteral(-(arg.operand as Expr.IntLiteral).value.toDouble(), arg.line)
+                    Expr.DoubleLiteral(-(arg.operand as Expr.IntLiteral).value.toDouble(), arg.line)
                 } else {
                     arg
                 }
@@ -1769,7 +1769,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
                     val value = evalExpr(stmt.initializer, env, program) ?: return null
                     env[stmt.name] = value
                 }
-                is Stmt.Zone -> {
+                is Stmt.Scope -> {
                     val result = interpretBody(stmt.body, env, program, line)
                     if (result != null) return result
                 }
@@ -1793,7 +1793,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
 
     private fun evalExpr(expr: Expr, env: Map<String, Expr>, program: Program): Expr? {
         return when (expr) {
-            is Expr.IntLiteral, is Expr.RealLiteral,
+            is Expr.IntLiteral, is Expr.DoubleLiteral,
             is Expr.StringLiteral, is Expr.BoolLiteral,
             is Expr.CharLiteral -> expr
             is Expr.InlineForArgs -> null

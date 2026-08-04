@@ -14,11 +14,11 @@
  * limitations under the License.
  */
 
-mod std.container.map
+module std.container.map
 
-use std.container.array
+import std.container.array
 
-use std.container.list
+import std.container.list
 
 /**
  * @file std/container/map
@@ -46,12 +46,12 @@ use std.container.list
  * @since 0.0.4
  */
 
-zone std {
+realm std {
     /**
      * One immutable key-value association.
      *
-     * @param K The key type.
-     * @param V The value type.
+     * @generic K The key type.
+     * @generic V The value type.
      */
     @Experimental(since: "0.0.4")
     pack MapEntry<K, V> {
@@ -66,8 +66,8 @@ zone std {
      * provide a stronger guarantee. Index access returns `null` for an absent
      * key, matching Kotlin map access.
      *
-     * @param K The key type.
-     * @param V The value type.
+     * @generic K The key type.
+     * @generic V The value type.
      */
     @Experimental(since: "0.0.4")
     spec Map<K, V> {
@@ -112,8 +112,8 @@ zone std {
      * weaken a `ref Map<K, V>` view: callers holding only a shared reference can
      * still use only read operations.
      *
-     * @param K The key type.
-     * @param V The value type.
+     * @generic K The key type.
+     * @generic V The value type.
      */
     @Experimental(since: "0.0.4")
     spec MutableMap<K, V> : Map<K, V> {
@@ -140,8 +140,8 @@ zone std {
      * `oper<`. Keys `a` and `b` are equivalent when neither `a < b` nor `b < a`.
      * `TreeMap` therefore does not require `oper==` for keys.
      *
-     * @param K The ordered key type.
-     * @param V The value type.
+     * @generic K The ordered key type.
+     * @generic V The value type.
      */
     @Experimental(since: "0.0.4")
     spec SortedMap<K, V> {
@@ -521,9 +521,9 @@ zone std {
 
         func _growEntries() { self! ->
             fin newCapacity = self.capacity * 2
-            fin newKeys = alloc K[newCapacity]
-            fin newValues = alloc V[newCapacity]
-            fin newHashes = alloc ULong[newCapacity]
+            let newKeys = alloc K[newCapacity]
+            let newValues = alloc V[newCapacity]
+            let newHashes = alloc ULong[newCapacity]
             for i in 0..<self.__size {
                 newKeys[i] = self.keys[i]
                 newValues[i] = self.values[i]
@@ -706,13 +706,13 @@ zone std {
 
         func _grow() { self! ->
             fin newCapacity = self.capacity * 2
-            fin newKeys = alloc K[newCapacity]
-            fin newValues = alloc V[newCapacity]
-            fin newLeft = alloc Int[newCapacity]
-            fin newRight = alloc Int[newCapacity]
-            fin newParent = alloc Int[newCapacity]
-            fin newHeights = alloc Int[newCapacity]
-            fin newFreeNext = alloc Int[newCapacity]
+            let newKeys = alloc K[newCapacity]
+            let newValues = alloc V[newCapacity]
+            let newLeft = alloc Int[newCapacity]
+            let newRight = alloc Int[newCapacity]
+            let newParent = alloc Int[newCapacity]
+            let newHeights = alloc Int[newCapacity]
+            let newFreeNext = alloc Int[newCapacity]
             for i in 0..<self.elemCount {
                 newKeys[i] = self.keys[i]
                 newValues[i] = self.values[i]
@@ -919,7 +919,7 @@ zone std {
 
         func _entrySnapshot(): Array<MapEntry<K, V>> { self& ->
             var result: Array<MapEntry<K, V>> = Array::fill<MapEntry<K, V>>(self.__size)
-            fin stack = alloc Int[self.__size]
+            let stack = alloc Int[self.__size]
             var stackSize = 0
             var elem = self.root
             var output = 0
@@ -1162,7 +1162,7 @@ zone std {
      * naturally: `std::hashMapOf(1 to "a", 2 to "b")`.
      */
     @Experimental(since: "0.0.4")
-    meta .Infix("to") {
+    macro .Infix("to") {
         $a $b => std::mapEntry($a, $b)
     }
 

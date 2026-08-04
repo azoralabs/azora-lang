@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-mod std.concurrency.async
+module std.concurrency.async
 
 /**
  * @file std/concurrency/async
@@ -27,7 +27,7 @@ mod std.concurrency.async
  * @since 0.0.1
  */
 
-zone std {
+realm std {
     /**
      * Runs an action with a timeout.
      *
@@ -114,19 +114,19 @@ zone std {
      * concurrency intrinsics.
      *
      * These are real, importable std symbols (so they participate in the
-     * zone/use model like every other library function) whose bodies are
+     * realm/import model like every other library function) whose bodies are
      * never emitted: each backend and the interpreter intercepts the call by
-     * its zone-mangled name and lowers it to the native runtime operation.
+     * its realm-mangled name and lowers it to the native runtime operation.
      * Reach them as `std::concurrency::cancel`, etc., after
      * `use std.concurrency`.
      */
-    zone concurrency {
+    realm concurrency {
         /**
          * Requests cancellation of a task handle.
          *
          * @param task The task handle to cancel.
          */
-        @SinceAzora("0.0.3")
+        @Since("0.0.3")
         func cancel(task: Any): Unit { }
     }
 }

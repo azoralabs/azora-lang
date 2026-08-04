@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-expose mod std.reactive
+expose module std.reactive
 
 /**
  * @file std.reactive
@@ -44,9 +44,9 @@ expose mod std.reactive
  * and documentation all observe the same symbol.
  */
 @Experimental(since: "0.0.4")
-bridge deco Reactive for [.Infx, .Task, .Func]
+bridge annot Reactive for [.Infx, .Task, .Func]
 
-zone std {
+realm std {
     /**
      * Describes the distinct lifetime selected by a reactive declaration.
      */

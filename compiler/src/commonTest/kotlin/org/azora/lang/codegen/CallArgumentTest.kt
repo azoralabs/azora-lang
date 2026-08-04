@@ -39,7 +39,7 @@ class CallArgumentTest {
     }
 
     private val decls = """
-        use std.io
+        import std.io
         pack Size { var width: Int  var height: Int }
         func area(width: Int, height: Int): Int { return width * height }
     """.trimIndent()

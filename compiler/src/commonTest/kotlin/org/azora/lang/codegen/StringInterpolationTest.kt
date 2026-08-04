@@ -20,7 +20,7 @@ class StringInterpolationTest {
         // `~` and `~=` are gone: `+`/`+=` concatenate strings and add numbers,
         // and `~` keeps its one remaining job as bitwise complement.
         assertEquals("abc\n3\n-1", run("""
-            use std.io
+            import std.io
             func main() {
                 var s = "a"
                 s += "b"
@@ -36,7 +36,7 @@ class StringInterpolationTest {
     @Test
     fun dollarIdentifierInterpolation() {
         assertEquals("hello Azora", run("""
-            use std.io
+            import std.io
             func main() {
                 var name = "Azora"
                 std::println("hello ${'$'}name")
@@ -47,7 +47,7 @@ class StringInterpolationTest {
     @Test
     fun braceExpressionInterpolation() {
         assertEquals("n+1 = 6", run("""
-            use std.io
+            import std.io
             func main() {
                 var n = 5
                 std::println("n+1 = ${'$'}{n + 1}")
@@ -58,7 +58,7 @@ class StringInterpolationTest {
     @Test
     fun mixedInterpolation() {
         assertEquals("3 + 4 = 7", run("""
-            use std.io
+            import std.io
             func main() {
                 var x = 3
                 var y = 4
@@ -70,7 +70,7 @@ class StringInterpolationTest {
     @Test
     fun interpolationWithArithmetic() {
         assertEquals("count: 100", run("""
-            use std.io
+            import std.io
             func main() {
                 std::println("count: ${'$'}{10 * 10}")
             }
@@ -80,7 +80,7 @@ class StringInterpolationTest {
     @Test
     fun interpolationWithStructField() {
         assertEquals("point x = 3", run("""
-            use std.io
+            import std.io
             pack Point {
                 var x: Int
                 var y: Int
@@ -95,7 +95,7 @@ class StringInterpolationTest {
     @Test
     fun interpolationWithArrayIndex() {
         assertEquals("first = 10", run("""
-            use std.io
+            import std.io
             func main() {
                 var a = arr@[10, 20, 30]
                 std::println("first = ${'$'}{a[0]}")
@@ -106,7 +106,7 @@ class StringInterpolationTest {
     @Test
     fun plainStringWithoutDollarStillWorks() {
         assertEquals("just text", run("""
-            use std.io
+            import std.io
             func main() {
                 std::println("just text")
             }
@@ -116,7 +116,7 @@ class StringInterpolationTest {
     @Test
     fun escapedDollarIsLiteral() {
         assertEquals("price is $5", run("""
-            use std.io
+            import std.io
             func main() {
                 std::println("price is ${'$'}${'$'}5")
             }
@@ -126,7 +126,7 @@ class StringInterpolationTest {
     @Test
     fun interpolationSurvivesOptimization() {
         assertEquals("3 + 4 = 7", run("""
-            use std.io
+            import std.io
             func main() {
                 var x = 3
                 var y = 4
@@ -138,7 +138,7 @@ class StringInterpolationTest {
     @Test
     fun interpolationLoweredToBackends() {
         val result = Compiler().compile("""
-            use std.io
+            import std.io
             func main() {
                 var name = "Azora"
                 std::println("hello ${'$'}name")

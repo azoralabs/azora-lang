@@ -163,8 +163,8 @@ class DecoratorResolver {
             is Expr.BoolLiteral -> name == "Bool"
             is Expr.StringLiteral, is Expr.StringTemplate -> name == "String"
             is Expr.CharLiteral -> name == "Char"
-            is Expr.IntLiteral -> name in integerTypes || name in realTypes
-            is Expr.RealLiteral -> name in realTypes
+            is Expr.IntLiteral -> name in integerTypes || name in floatingTypes
+            is Expr.DoubleLiteral -> name in floatingTypes
             is Expr.Unary -> literalMatches(expected, value.operand)
             else -> true
         }
@@ -400,6 +400,6 @@ class DecoratorResolver {
         val integerTypes = setOf(
             "Byte", "UByte", "Short", "UShort", "Cent", "UCent", "Int", "UInt", "Long", "ULong"
         )
-        val realTypes = setOf("Float", "Real", "Decimal")
+        val floatingTypes = setOf("Float", "Double", "Decimal")
     }
 }

@@ -34,7 +34,7 @@ func main() {
 ```
 Source → Lexer → Parser → AST Validator
                    ↓
-              Stdlib Injection (only the modules you `use`)
+              Stdlib Injection (only the modules you `import`)
                    ↓
               Symbol Collection → Type Resolution ⇄ CTCE → Alloc/Drop → Effect Check
                    ↓
@@ -53,9 +53,9 @@ Adding a new target means one new file under `backend/`.
 ## Implemented Features
 
 ### Types
-- **Primitives**: `Int`, `UInt`, `Long`, `ULong`, `Byte`, `UByte`, `Short`, `UShort`, `Cent`, `UCent`, `Float`, `Real`, `Decimal`, `Bool`, `Char`, `String`, `Unit`
+- **Primitives**: `Int`, `UInt`, `Long`, `ULong`, `Byte`, `UByte`, `Short`, `UShort`, `Cent`, `UCent`, `Float`, `Double`, `Decimal`, `Bool`, `Char`, `String`, `Unit`
 - **Compound**: fixed arrays `[T]`, immutable collections `List<T>`/`Set<T>`/`Map<K, V>`, mutable collections `mut List<T>`/`mut Set<T>`/`mut Map<K, V>`, tuples `(A, B)`, function types `(A) -> B`, map values `mapOf("k": v)`
-- **User-defined**: `pack` (structs), `enum`, `slot` (tagged unions), `typealias`, `fail` (error sets)
+- **User-defined**: `pack` (structs), `enum`, `variant` (tagged unions), `typealias`, `error` (error sets)
 - **Type parameters**: generics (`func<T>`, `pack<T>`) with call-site inference
 - **Variadic generics**: `func<T...> name(first: Int, rest: T...)` — the last type param can be variadic; `rest: T...` collects remaining call args into an array
 - **Spread operator**: `f(arr...)` — splat an array's elements as individual call arguments
@@ -65,7 +65,7 @@ Adding a new target means one new file under `backend/`.
 - **Integer/float promotion**: `2 + 1.5` → `3.5` (auto-widens)
 
 ### Bindings
-- `var` (mutable), `let` (immutable), `fin` (deeply immutable)
+- `var` (rebindable, mutable value), `let` (fixed name, mutable value), `val` (rebindable, frozen value), `fin` (fixed name, frozen value)
 - Type inference: `var x = 5` or `var x: Int = 5`
 - Named arguments: `Point(y: 4, x: 3)`
 
@@ -86,7 +86,7 @@ Adding a new target means one new file under `backend/`.
 - Labeled loops: `@lbl for …`, `break @lbl` / `continue @lbl`
 - `break`, `continue`
 - `when expr { patterns -> { body } else -> { body } }` — pattern matching on enums, slots (with destructuring), and literals
-- Exhaustiveness checking on slot and enum types
+- Exhaustiveness checking on variant and enum types
 
 ### Inheritance
 - `node Name(params) { fields; methods }` — an inheritable type (ctor params are stored as fields)
@@ -113,10 +113,10 @@ Adding a new target means one new file under `backend/`.
 - **Traits** (`spec`): trait declarations with validated implementations (`impl Trait for Type`)
 - **Conversion specs**: compact callback specs such as `spec Into<T>: T { ref self } use as "to${T.typeName}"`; `use as` is a literal member-name template, and `impl Into<String> for Type { ref self -> ... }` adds `.toString`, while `impl as String` is cast-only (`value as String`)
 - **Variadic tuples**: `pack Tuple<T...> where (...T).length >= 2 { inline for Ty in ...T with index { mixin "$index: $Ty" } }`; `tupleOf(elements: ...T): Tuple<...T>` preserves each element's static type
-- **Operator overloading**: `plus`, `minus`, `times`, `div`, `mod`, `equals` → `+`, `-`, `*`, `/`, `%`, `==`, `!=`
+- **Operator overloading**: `plus`, `minus`, `times`, `div`, `module`, `equals` → `+`, `-`, `*`, `/`, `%`, `==`, `!=`
 - **Index overloading**: standalone `impl oper[] for Type { ref self, index -> ... }` and `impl oper[]= for Type { mut ref self, index, value -> ... }` make user types indexable (`m[i]`, `m[i] = v`)
 - **Infix functions**: `a plus b` syntax (any method callable infix); `infx Type.method(...) { }` declares an extension method usable infix
-- **Named zones**: `zone Name { … }` is a namespace; members accessed as `Name::member`; shared namespace contributions can use `friend zone std { … }`
+- **Named realms**: `realm Name { … }` is a namespace; members accessed as `Name::member`; shared namespace contributions can use `use realm std { … }`
 
 ### Error Handling
 - `throw value` — raises any value
@@ -125,7 +125,7 @@ Adding a new target means one new file under `backend/`.
 - `guard condition else { body }` — early exit
 - **Error sets**: `fail ErrSet { V1, V2 }` declares a set of error variants
 - **Failable types**: `T!ErrSet` — a function returning `T` or an error from `ErrSet`; `fail ErrSet.V` raises one (enforced: a `T!E` function's failures must belong to `E`)
-- `fail defer { body }` — defer that runs only when the function exits via an error
+- `error defer { body }` — defer that runs only when the function exits via an error
 - `rescue { body }` — catch-and-suppress: runs on error and swallows it (the function continues normally)
 
 ### Memory Model
@@ -135,7 +135,7 @@ Adding a new target means one new file under `backend/`.
 - `drop <expr>` — release (advisory under GC)
 - `unsafe { … }` — opt-in block
 - `isolated(expr)` — produce an independent deep copy
-- `zone alloc { … }` / `friend zone alloc { … }` — scoped allocation arenas; pointers allocated inside are tracked and freed at zone exit
+- `scope alloc { … }` / `friend scope alloc { … }` — scoped allocation arenas; pointers allocated inside are tracked and freed at realm exit
 - Pointer arithmetic: `ptr + n`, `ptr - n` (offset), `ptr1 - ptr2` (distance), `ptr1 == ptr2` (equality)
 
 ### Concurrency
@@ -145,7 +145,7 @@ Adding a new target means one new file under `backend/`.
 - **Launch**: `launch { … }` — fire-and-forget task (joined before the program exits)
 
 ### Decorators
-- `deco Name { fields }` declares an annotation type
+- `annot Name { fields }` declares an annotation type
 - `@Name`, `@Name(args)`, `@target:Name` applied to declarations (parsed and stored)
 - Accessor names such as `get` and `set` are normal identifiers; property-style callbacks are declared with compact `spec` syntax and `use as`.
 
@@ -156,7 +156,8 @@ Adding a new target means one new file under `backend/`.
 
 ### Data
 - **Enums**: `enum Color { Red; Green; Blue }` — variants as named values
-- **Slots (tagged unions)**: `slot Option { Some(Int); None }` — variants with payloads + destructuring in `when`
+- **Variants (tagged unions)**: `variant Option { Some(Int); None }` — cases with payloads + destructuring in `when`
+- **Unions (untagged)**: `union Value { var i: Int; var d: Double }` — C-style overlapping storage
 - **Tuples**: `(1, "hello")` with positional access `.0`, `.1`
 
 ### Operators
@@ -179,7 +180,7 @@ Adding a new target means one new file under `backend/`.
 - For-in array iteration: `for item in items { }`
 
 ### Metaprogramming (CTCE)
-- `inline fin`, `inline let`, `inline var` — compile-time bindings
+- `inline var`, `inline let`, `inline val`, `inline fin` — compile-time bindings
 - `inline if condition { }` — conditional compilation
 - `inline for x in a..b { … }` — compile-time loop unrolling
 - `inline { }` / `deepinline { }` — compile-time blocks

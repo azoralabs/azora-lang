@@ -46,20 +46,37 @@ data class FunctionSymbol(
     /** Source return type retained for generic compile-time type-function evaluation. */
     val returnTypeRef: TypeRef? = null,
     val isReactive: Boolean = false,
+    /**
+     * Indices of parameters declared `x!` — an exclusive borrow the callee may
+     * write through. Only a binding whose value is mutable can be passed to one.
+     */
+    val exclusiveParams: Set<Int> = emptySet(),
 )
 
 /**
  * A local variable registered during type resolution.
  *
+ * Mutability has two independent axes, one per binding keyword:
+ *
+ * | keyword | [mutable] (rebind) | [valueMutable] (mutate through) |
+ * |---------|--------------------|---------------------------------|
+ * | `var`   | true               | true                            |
+ * | `let`   | false              | true                            |
+ * | `val`   | true               | false                           |
+ * | `fin`   | false              | false                           |
+ *
  * @property name the variable name
  * @property type the resolved type of the variable
- * @property mutable whether this variable can be reassigned (`true` for `var`, `false` for `fin`/`let`)
+ * @property mutable whether the *name* can be rebound (`var`/`val`)
+ * @property valueMutable whether the *value* can be mutated or borrowed mutably
+ *   through this name (`var`/`let`)
  */
 data class VariableSymbol(
     val name: String,
     val type: IrType,
     val mutable: Boolean = true,
     val visibility: Visibility = Visibility.PUBLIC,
+    val valueMutable: Boolean = true,
 )
 
 /**
@@ -79,8 +96,8 @@ data class StructField(
     /**
      * Index of the owning pack's type parameter this field was declared as, or
      * `-1`. A parameter resolves to `Any`, so which one it was cannot be
-     * recovered from [type]; it is recorded here so `Box<Real>.value` can be
-     * typed as `Real` rather than as an opaque word.
+     * recovered from [type]; it is recorded here so `Box<Double>.value` can be
+     * typed as `Double` rather than as an opaque word.
      */
     val typeParamIndex: Int = -1,
 )
@@ -98,6 +115,8 @@ data class StructType(
     val visibility: Visibility = Visibility.PUBLIC,
     /** Compiler-provided type declaration with no ordinary runtime constructor. */
     val isBridge: Boolean = false,
+    /** True for a `union`: the members share one storage slot (see `TopLevel.Pack.isUnion`). */
+    val isUnion: Boolean = false,
 ) {
     /** Looks up a field by name. */
     fun field(name: String): StructField? = fields.find { it.name == name }
@@ -142,7 +161,7 @@ data class TraitConformance(
  * 2. [TypeResolver] uses it to look up functions and manages local scopes.
  *
  * Functions are stored in a flat global namespace. Variables use a stack of
- * scopes (one per function body, block, or zone) to support lexical scoping
+ * scopes (one per function body, block, or realm) to support lexical scoping
  * with inner scopes shadowing outer ones.
  */
 class SymbolTable {
@@ -219,8 +238,8 @@ class SymbolTable {
         structs[struct.name] = struct
     }
 
-    /** Looks up a struct by name. Accepts a zone-qualified name (`std::Deque`
-     *  lowers to `std__Deque`); types are not zone-mangled, so fall back to the
+    /** Looks up a struct by name. Accepts a realm-qualified name (`std::Deque`
+     *  lowers to `std__Deque`); types are not realm-mangled, so fall back to the
      *  final segment when the mangled form is not found. */
     fun lookupStruct(name: String): StructType? =
         structs[name] ?: if ("__" in name) structs[name.substringAfterLast("__")] else null
@@ -413,13 +432,13 @@ class SymbolTable {
 
     /**
      * Pushes a new empty scope onto the scope stack. Called when entering
-     * a function body, block, or zone.
+     * a function body, block, or realm.
      */
     fun pushScope() { scopes.addLast(mutableMapOf()) }
 
     /**
      * Pops the top scope from the scope stack. Called when exiting
-     * a function body, block, or zone.
+     * a function body, block, or realm.
      */
     fun popScope() { scopes.removeLast() }
 
@@ -434,7 +453,7 @@ class SymbolTable {
 
     /**
      * Copies all variables from the current (innermost) scope into the given map.
-     * Used by friend zones to persist their shared scope between blocks.
+     * Used by friend realms to persist their shared scope between blocks.
      */
     fun exportCurrentScope(target: MutableMap<String, VariableSymbol>) {
         scopes.lastOrNull()?.let { target.putAll(it) }

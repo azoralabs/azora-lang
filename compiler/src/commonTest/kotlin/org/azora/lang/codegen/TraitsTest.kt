@@ -23,7 +23,7 @@ class TraitsTest {
 
     @Test fun specAndImplFor() {
         assertEquals("Point(3, 4)", run("""
-            use std.io
+            import std.io
             pack Point {
                 var x: Int
                 var y: Int
@@ -45,7 +45,7 @@ class TraitsTest {
 
     @Test fun specWithMultipleMethods() {
         assertEquals("green\n0", run("""
-            use std.io
+            import std.io
             pack Light {
                 var color: String
                 var brightness: Int
@@ -72,7 +72,7 @@ class TraitsTest {
 
     @Test fun specMissingMethodFails() {
         val errors = expectFailure("""
-            use std.io
+            import std.io
             spec Describable {
                 func describe[self: Self&](): String
                 func detail[self: Self&](): String
@@ -92,7 +92,7 @@ class TraitsTest {
 
     @Test fun unknownSpecFails() {
         val errors = expectFailure("""
-            use std.io
+            import std.io
             pack P {
                 var x: Int
             }
@@ -108,7 +108,7 @@ class TraitsTest {
 
     @Test fun implWithoutTraitWorksAsBefore() {
         assertEquals("42", run("""
-            use std.io
+            import std.io
             pack P {
                 var x: Int
             }
@@ -126,7 +126,7 @@ class TraitsTest {
 
     @Test fun decoratorCanBeImplementedAsMarkerTrait() {
         assertEquals("", run("""
-            deco Serializable {}
+            annot Serializable {}
             pack UserId {
                 fin value: Long
             }
@@ -137,7 +137,7 @@ class TraitsTest {
 
     @Test fun decoratorMarkerImplementationCannotDeclareMethods() {
         val errors = expectFailure("""
-            deco Serializable {}
+            annot Serializable {}
             pack UserId {
                 fin value: Long
             }
@@ -153,7 +153,7 @@ class TraitsTest {
 
     @Test fun duplicateDecoratorImplementationFails() {
         val errors = expectFailure("""
-            deco Serializable {}
+            annot Serializable {}
             pack UserId {
                 fin value: Long
             }

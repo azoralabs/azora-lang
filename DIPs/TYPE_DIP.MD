@@ -33,7 +33,7 @@ TYPEALIAS ::= typealias NAME <...GENERICS>? = TYPE
 var a: Int
 var xs: List<Int>
 var m: Map<String, Int>
-var b: Box<Real>
+var b: Box<Double>
 ```
 
 Const-generic (value) arguments:

@@ -2,7 +2,7 @@ Remove "deref" keyword, remove "drop" keyword, replace "drop" with "purge"
 
 ```azora
 
-use std.memory.*
+import std.memory.*
 
 pack User {
     var name: String

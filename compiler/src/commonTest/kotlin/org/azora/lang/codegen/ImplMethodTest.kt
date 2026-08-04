@@ -17,7 +17,7 @@ class ImplMethodTest {
 
     @Test fun methodReturnsField() {
         assertEquals("3", run("""
-            use std.io
+            import std.io
             pack Point {
                 var x: Int
                 var y: Int
@@ -36,7 +36,7 @@ class ImplMethodTest {
 
     @Test fun methodComputes() {
         assertEquals("25", run("""
-            use std.io
+            import std.io
             pack Point {
                 var x: Int
                 var y: Int
@@ -55,7 +55,7 @@ class ImplMethodTest {
 
     @Test fun methodMutatesSelf() {
         assertEquals("13\n37", run("""
-            use std.io
+            import std.io
             pack Point {
                 var x: Int
                 var y: Int
@@ -80,7 +80,7 @@ class ImplMethodTest {
 
     @Test fun methodInInterpolation() {
         assertEquals("len=25", run("""
-            use std.io
+            import std.io
             pack Point {
                 var x: Int
                 var y: Int
@@ -99,7 +99,7 @@ class ImplMethodTest {
 
     @Test fun methodOnStructInArray() {
         assertEquals("25", run("""
-            use std.io
+            import std.io
             pack Point {
                 var x: Int
                 var y: Int
@@ -118,7 +118,7 @@ class ImplMethodTest {
 
     @Test fun methodLoweredToBackends() {
         val result = Compiler().compile("""
-            use std.io
+            import std.io
             pack Point {
                 var x: Int
                 var y: Int

@@ -32,12 +32,12 @@ class Tier3ErrorModelTest {
 
     @Test fun failableFunctionThrowsAndCaught() {
         assertEquals("Bad", run("""
-            use std.io
-            fail E {
+            import std.io
+            error E {
                 Bad
             }
             func f(): Int ?! E {
-                fail E.Bad
+                error E.Bad
                 return 0
             }
             func main() {
@@ -52,13 +52,13 @@ class Tier3ErrorModelTest {
 
     @Test fun failableFunctionSucceedsNormally() {
         assertEquals("10", run("""
-            use std.io
-            fail E {
+            import std.io
+            error E {
                 Bad
             }
             func g(x: Int): Int ?! E {
                 if x < 0 {
-                    fail E.Bad
+                    error E.Bad
                 }
                 return x * 2
             }
@@ -70,11 +70,11 @@ class Tier3ErrorModelTest {
 
     @Test fun tryExpressionPropagatesFailureToCaller() {
         val program = Parser(Lexer("""
-            fail E {
+            error E {
                 Bad
             }
             func inner(): Int ?! E {
-                fail E.Bad
+                error E.Bad
                 return 0
             }
             func outer(): Int ?! E {
@@ -99,13 +99,13 @@ class Tier3ErrorModelTest {
 
     @Test fun catchFallbackExpression() {
         assertEquals("-1\n5", run("""
-            use std.io
-            fail MathError {
+            import std.io
+            error MathError {
                 DivByZero
             }
             func divide(a: Int, b: Int): Int ?! MathError {
                 if b == 0 {
-                    fail MathError.DivByZero
+                    error MathError.DivByZero
                 }
                 return a / b
             }
@@ -122,14 +122,14 @@ class Tier3ErrorModelTest {
 
     @Test fun errorVariantAccessibleAsString() {
         assertEquals("NotFound", run("""
-            use std.io
-            fail Lookup {
+            import std.io
+            error Lookup {
                 NotFound
                 OutOfRange
             }
             func main() {
                 try {
-                    fail Lookup.NotFound
+                    error Lookup.NotFound
                 } catch {
                     e -> std::println(e)
                 }
@@ -139,14 +139,14 @@ class Tier3ErrorModelTest {
 
     @Test fun failDeferRunsOnlyOnError() {
         assertEquals("only on fail\nalways\nBad", run("""
-            use std.io
-            fail E {
+            import std.io
+            error E {
                 Bad
             }
             func risky(): Int ?! E {
                 defer { std::println("always") }
-                fail defer { std::println("only on fail") }
-                fail E.Bad
+                error defer { std::println("only on fail") }
+                error E.Bad
                 return 0
             }
             func main() {
@@ -161,13 +161,13 @@ class Tier3ErrorModelTest {
 
     @Test fun failDeferSkippedOnNormalReturn() {
         assertEquals("always\n5", run("""
-            use std.io
-            fail E {
+            import std.io
+            error E {
                 Bad
             }
             func ok(): Int ?! E {
                 defer { std::println("always") }
-                fail defer { std::println("only on fail") }
+                error defer { std::println("only on fail") }
                 return 5
             }
             func main() {
@@ -179,15 +179,15 @@ class Tier3ErrorModelTest {
     @Test fun tFlagEnforcementRejectsWrongErrorSet() {
         // A `T ?! E` function may only fail with errors from set E.
         val result = Compiler().compile("""
-            use std.io
-            fail E {
+            import std.io
+            error E {
                 Bad
             }
-            fail Other {
+            error Other {
                 X
             }
             func bad(): Int ?! E {
-                fail Other.X
+                error Other.X
                 return 0
             }
             func main() {
@@ -200,12 +200,12 @@ class Tier3ErrorModelTest {
 
     @Test fun tFlagEnforcementAcceptsMatchingErrorSet() {
         assertEquals("ok", run("""
-            use std.io
-            fail E {
+            import std.io
+            error E {
                 Bad
             }
             func good(): Int ?! E {
-                fail E.Bad
+                error E.Bad
                 return 0
             }
             func main() {
@@ -220,30 +220,30 @@ class Tier3ErrorModelTest {
 
     @Test fun bracketedErrorSetAcceptsEveryDeclaredSet() {
         assertEquals("Q\nS", run("""
-            use std.io
-            fail A { Q W E }
-            fail B { S D F }
+            import std.io
+            error A { Q W E }
+            error B { S D F }
 
             func choose(first: Bool): Unit ?! [A, B] {
-                if first { fail A.Q }
-                fail B.S
+                if first { error A.Q }
+                error B.S
             }
 
             func main() {
-                try { choose(true) } catch { error -> std::println(error) }
-                try { choose(false) } catch { error -> std::println(error) }
+                try { choose(true) } catch { e -> std::println(e) }
+                try { choose(false) } catch { e -> std::println(e) }
             }
         """.trimIndent()))
     }
 
     @Test fun bracketedErrorSetRejectsUndeclaredSet() {
         val result = Compiler().compile("""
-            fail A { Q }
-            fail B { S }
-            fail C { Z }
+            error A { Q }
+            error B { S }
+            error C { Z }
 
             func invalid(): Unit ?! [A, B] {
-                fail C.Z
+                error C.Z
             }
         """.trimIndent())
 
@@ -253,7 +253,7 @@ class Tier3ErrorModelTest {
 
     @Test fun duplicateErrorSetInBracketListIsRejected() {
         val result = Compiler().compile("""
-            fail A { Q }
+            error A { Q }
             func invalid(): Unit ?! [A, A] {}
         """.trimIndent())
 
@@ -263,13 +263,13 @@ class Tier3ErrorModelTest {
 
     @Test fun rescueSuppressesErrorAndContinues() {
         assertEquals("rescued!\nok", run("""
-            use std.io
-            fail E {
+            import std.io
+            error E {
                 Bad
             }
             func risky() {
                 rescue { std::println("rescued!") }
-                fail E.Bad
+                error E.Bad
             }
             func main() {
                 risky()
@@ -280,9 +280,9 @@ class Tier3ErrorModelTest {
     @Test
     fun anErrorVariantCanCarryAPayload() {
         assertEquals("1\ncaught", run("""
-            use std.io
+            import std.io
 
-            fail IndexError {
+            error IndexError {
                 OutOfBounds(index: Int, size: Int)
                 Empty
             }
@@ -310,9 +310,9 @@ class Tier3ErrorModelTest {
         // A payload-bearing error set is also a slot, which is where construction and
         // `when` matching come from rather than a parallel implementation.
         assertEquals("made", run("""
-            use std.io
+            import std.io
 
-            fail IndexError { OutOfBounds(index: Int, size: Int) }
+            error IndexError { OutOfBounds(index: Int, size: Int) }
 
             func main() {
                 fin e = IndexError.OutOfBounds(9, 3)

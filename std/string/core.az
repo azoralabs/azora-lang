@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-expose mod std.string.core
+expose module std.string.core
 
-use zone std {
-    @SinceAzora("0.0.4")
+use realm std {
+    @Since("0.0.4")
     bridge pack String
 }

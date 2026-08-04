@@ -6,7 +6,7 @@ We add to module std/functional/core the following:
  * @generic RETURN_TYPE: the function return type
  * @generic RECEIVERS: a list with function contextual parameters
  */
-@SinceAzora("0.0.4")
+@Since("0.0.4")
 bridge pack Func<[...PARAMS], RETURN_TYPE, [...RECEIVERS]>
 
 /**
@@ -14,7 +14,7 @@ bridge pack Func<[...PARAMS], RETURN_TYPE, [...RECEIVERS]>
  * @generic RETURN_TYPE: the task return type
  * @generic RECEIVERS: a list with task contextual parameters
  */
-@SinceAzora("0.0.4")
+@Since("0.0.4")
 bridge pack Task<[...PARAMS], RETURN_TYPE, [...RECEIVERS]>
 
 /**
@@ -22,14 +22,14 @@ bridge pack Task<[...PARAMS], RETURN_TYPE, [...RECEIVERS]>
  * @generic RETURN_TYPE: the flow return type
  * @generic RECEIVERS: a list with flow contextual parameters
  */
-@SinceAzora("0.0.4")
+@Since("0.0.4")
 bridge pack Flow<[...PARAMS], RETURN_TYPE, [...RECEIVERS]>
 ```
 
 They are all implemented in compiler and with bridge we only make use of them in our code, then we define:
 
 ```
-meta type {
+macro type {
     Func[...$receivers](...$params) -> $returnType
         => Func<[...$params], $returnType, [...$receivers]>
 

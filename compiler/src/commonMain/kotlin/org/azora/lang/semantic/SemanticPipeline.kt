@@ -112,8 +112,8 @@ class SemanticPipeline(
         val topLevelCtfe = CtfeEvaluator(table)
         val topResult = topLevelCtfe.evaluateTopLevel(currentProgram)
         allErrors.addAll(topResult.errors)
-        val topRealErrors = topResult.errors.filter { !it.startsWith("warning:") }
-        if (topRealErrors.isNotEmpty()) {
+        val topDoubleErrors = topResult.errors.filter { !it.startsWith("warning:") }
+        if (topDoubleErrors.isNotEmpty()) {
             return SemanticResult(currentProgram, table, emptyList(), allErrors)
         }
         currentProgram = topResult.program
@@ -171,8 +171,8 @@ class SemanticPipeline(
                 .apply { seedConstants = topLevelConstants }
                 .evaluate(currentProgram)
             allErrors.addAll(ctfeResult.errors)
-            val ctfeRealErrors = ctfeResult.errors.filter { !it.startsWith("warning:") }
-            if (ctfeRealErrors.isNotEmpty()) {
+            val ctfeDoubleErrors = ctfeResult.errors.filter { !it.startsWith("warning:") }
+            if (ctfeDoubleErrors.isNotEmpty()) {
                 return SemanticResult(currentProgram, table, emptyList(), allErrors)
             }
 

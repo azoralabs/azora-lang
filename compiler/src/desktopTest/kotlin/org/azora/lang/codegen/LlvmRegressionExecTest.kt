@@ -37,12 +37,12 @@ class LlvmRegressionExecTest {
         assertEquals(expected, LlvmExec.run(source, optimized = true), "optimized IR")
     }
 
-    private fun main(body: String): String = "use std.io\nfunc main() {\n$body\n}"
+    private fun main(body: String): String = "import std.io\nfunc main() {\n$body\n}"
 
     @Test fun namedTaskAwaitUsesPayloadAbi() = check(
         "42",
         """
-        use std.io
+        import std.io
         async func answer(): Int { return 42 }
         async func main() {
             fin value = await answer()
@@ -54,7 +54,7 @@ class LlvmRegressionExecTest {
     @Test fun namedTaskParametersAreCopiedIntoTaskContext() = check(
         "42",
         """
-        use std.io
+        import std.io
         async func add(a: Int, b: Int): Int { return a + b }
         async func main() {
             fin value = await add(19, 23)
@@ -66,7 +66,7 @@ class LlvmRegressionExecTest {
     @Test fun completedAsyncBlocksRemainValidLlvm() = check(
         "42",
         """
-        use std.io
+        import std.io
         async func main() {
             fin value = async { 42 }
             std::println(await value)
@@ -77,7 +77,7 @@ class LlvmRegressionExecTest {
     @Test fun asyncBlocksCaptureLocalValuesOnSpawn() = check(
         "42",
         """
-        use std.io
+        import std.io
         async func main() {
             fin seed = 40
             fin value = async { seed + 2 }
@@ -89,7 +89,7 @@ class LlvmRegressionExecTest {
     @Test fun unawaitedChildTasksJoinAtScopeExit() = check(
         "42",
         """
-        use std.io
+        import std.io
         async func child(): Int {
             std::println(42)
             return 0
@@ -103,7 +103,7 @@ class LlvmRegressionExecTest {
     @Test fun taskThreadsInitializeThreadLocalAggregates() = check(
         "42",
         """
-        use std.io
+        import std.io
         threadlocal var numbers = arr@[41]
         async func read(): Int { return numbers[0] + 1 }
         async func main() {
@@ -112,12 +112,12 @@ class LlvmRegressionExecTest {
         """.trimIndent()
     )
 
-    @Test fun zoneAllocWaitsForChildTasksBeforeFreeingArena() = check(
+    @Test fun scopeAllocWaitsForChildTasksBeforeFreeingArena() = check(
         "42",
         """
-        use std.io
+        import std.io
         async func main() {
-            zone alloc {
+            scope alloc {
                 var p: Int* = alloc 41
                 fin value = async { *p + 1 }
                 std::println(await value)
@@ -126,13 +126,13 @@ class LlvmRegressionExecTest {
         """.trimIndent()
     )
 
-    @Test fun zoneAllocPropagatesIntoCalledFunctions() {
+    @Test fun scopeAllocPropagatesIntoCalledFunctions() {
         val source = """
-            use std.io
+            import std.io
             pack Box { var value: Int }
             func makeBox(value: Int): Box { return Box(value) }
             func main() {
-                zone alloc {
+                scope alloc {
                     fin box = makeBox(42)
                     std::println(box.value)
                 }
@@ -148,8 +148,8 @@ class LlvmRegressionExecTest {
     @Test fun cancelCallsNativeTaskCancellationRuntime() = check(
         "42",
         """
-        use std.io
-        use std.concurrency.async
+        import std.io
+        import std.concurrency.async
 
         async func answer(): Int { return 42 }
         async func main() {
@@ -163,8 +163,8 @@ class LlvmRegressionExecTest {
     @Test fun cancelLoweringIncludesPthreadCancel() {
         val ir = LlvmExec.compile(
             """
-            use std.io
-            use std.concurrency.async
+            import std.io
+            import std.concurrency.async
 
             async func answer(): Int { return 42 }
             async func main() {
@@ -225,7 +225,7 @@ class LlvmRegressionExecTest {
 
     @Test fun threadLocalAssignmentUsesLlvmTlsStorage() {
         val source = """
-            use std.io
+            import std.io
             threadlocal var counter = 0
             func main() {
                 counter = 5
@@ -240,7 +240,7 @@ class LlvmRegressionExecTest {
 
     @Test fun threadLocalAggregatesUseTlsAndRuntimeInitialization() {
         val source = """
-            use std.io
+            import std.io
             threadlocal var numbers = arr@[1, 2, 3]
             threadlocal var names = ["first": 10, "second": 20]
             threadlocal var unique = ![1, 2, 2, 3]
@@ -267,7 +267,7 @@ class LlvmRegressionExecTest {
     @Test fun threadLocalStdlibCollectionsInitializeObjects() = check(
         "3\n2\n3",
         """
-        use std.io
+        import std.io
         threadlocal var numbers: List<Int> = arr@[1, 2, 3]
         threadlocal var names: Map<String, Int> = ["first": 10, "second": 20]
         threadlocal var unique: Set<Int> = ![1, 2, 2, 3]
@@ -282,7 +282,7 @@ class LlvmRegressionExecTest {
     @Test fun decimalCollectionsUseExplicitPackedAlignment() {
         val ir = LlvmExec.compile(
             """
-            use std.io
+            import std.io
             func main() {
                 var array = arr@[1.5D, 2.5D]
                 var map = ["value": 3.5D]
@@ -299,7 +299,7 @@ class LlvmRegressionExecTest {
     @Test fun whenOnStringMultiPattern() = check(
         "vowel\nother",
         """
-        use std.io
+        import std.io
         func kind(s: String): String {
             when s {
                 "a", "e" -> { return "vowel" }

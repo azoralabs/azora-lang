@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  */
 
-mod std.memory.unique
+module std.memory.unique
 
 /**
  * @file std/memory/unique
@@ -15,8 +15,8 @@ mod std.memory.unique
  * @since 0.0.3
  */
 
-zone std {
-    @SinceAzora("0.0.3")
+realm std {
+    @Since("0.0.3")
     pack Unique<T> {
         var _raw: T*
         var active: Bool = true

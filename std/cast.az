@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-mod std.cast
+module std.cast
 
 /**
  * @file std/cast
@@ -30,19 +30,19 @@ mod std.cast
  * @since 0.0.4
  */
 
-zone std {
+realm std {
     /** Converting cast (`static_cast`). Numeric conversions, stringify, up/down casts. */
-    @SinceAzora("0.0.4")
+    @Since("0.0.4")
     bridge func cast<T, U>(value: U): T
 
     /** Runtime-checked downcast (`dynamic_cast`); null when `value` is not a `T`. */
-    @SinceAzora("0.0.4")
+    @Since("0.0.4")
     bridge func dyncast<T, U>(value: U): T?
 
     /**
      * Bit reinterpretation (`reinterpret_cast`). Requires `T.sizeOf == U.sizeOf`;
      * the compiler enforces this at the lowering site.
      */
-    @SinceAzora("0.0.4")
+    @Since("0.0.4")
     bridge func bitcast<T, U>(value: U): T
 }

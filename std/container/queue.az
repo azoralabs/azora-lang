@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
-mod std.container.queue
+module std.container.queue
 
-use std.serializer
-use std.convert
+import std.serializer
+import std.convert
 
 /**
  * @file std/container/queue
@@ -31,16 +31,16 @@ use std.convert
  * @since 0.0.1
  */
 
-zone std {
+realm std {
     /**
      * A generic first-in-first-out (FIFO) queue.
      *
      * Queue provides pointer-backed storage where elements are
      * added at the back and removed from the front.
      *
-     * @param T The type of elements stored in this queue.
+     * @generic T The type of elements stored in this queue.
      */
-    @SinceAzora("0.0.1")
+    @Since("0.0.1")
     @Serializable
     pack Queue<T> {
         var data: T* = alloc T[8]
@@ -61,11 +61,11 @@ zone std {
         // --- Properties ---
 
         /** Whether the queue contains no elements. */
-        @SinceAzora("0.0.1")
+        @Since("0.0.1")
         prop isEmpty[self: Self&]: Bool = size == 0
 
         /** Whether the queue contains at least one element. */
-        @SinceAzora("0.0.1")
+        @Since("0.0.1")
         prop isNotEmpty[self: Self&]: Bool = size > 0
 
         // --- Internal ---
@@ -74,7 +74,7 @@ zone std {
         @Experimental(since: "0.0.1")
         func growQueue() {
             fin newCap = capacity * 2
-            fin newData = alloc T[newCap]
+            let newData = alloc T[newCap]
             for i in 0..<size {
                 newData[i] = data[i]
             }

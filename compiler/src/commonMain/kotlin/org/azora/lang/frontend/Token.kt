@@ -23,7 +23,7 @@ package org.azora.lang.frontend
  *
  * **Literals** -- values that appear directly in source code:
  * - [INT_LITERAL] -- integer literal (e.g. `42`)
- * - [REAL_LITERAL] -- floating-point literal (e.g. `3.14`)
+ * - [DOUBLE_LITERAL] -- floating-point literal (e.g. `3.14`)
  * - [STRING_LITERAL] -- double-quoted string literal (e.g. `"hello"`)
  * - [CHAR_LITERAL] -- single-quoted character literal (e.g. `'a'`, `'\n'`)
  * - [TRUE] -- boolean literal `true`
@@ -33,9 +33,10 @@ package org.azora.lang.frontend
  * - [IDENTIFIER] -- variable, function, or type name
  *
  * **Keywords** -- reserved words in the language:
- * - [VAR] -- mutable variable declaration
- * - [FIN] -- deeply immutable variable declaration
- * - [LET] -- immutable variable declaration
+ * - [VAR] -- mutable binding, mutable value
+ * - [LET] -- immutable binding, mutable value
+ * - [VAL] -- mutable binding, immutable value
+ * - [FIN] -- immutable binding, immutable value
  * - [FUNC] -- function declaration
  * - [RETURN] -- return statement
  * - [IF] -- conditional branch
@@ -77,21 +78,23 @@ package org.azora.lang.frontend
  */
 enum class TokenType {
     // Literals
-    INT_LITERAL, REAL_LITERAL, STRING_LITERAL, CHAR_LITERAL, TRUE, FALSE,
+    INT_LITERAL, DOUBLE_LITERAL, STRING_LITERAL, CHAR_LITERAL, TRUE, FALSE,
     INTERPOLATED_STRING,
 
     // Identifier
     IDENTIFIER,
 
     // Keywords
-    VAR, FIN, LET, FUNC, RETURN, IF, ELSE, INLINE, DEEPINLINE, NOINLINE, ZONE,
-    TEST, ASSERT, TRACE, PANIC, META,
+    VAR, FIN, LET, VAL, FUNC, RETURN, IF, ELSE, INLINE, DEEPINLINE, NOINLINE, REALM, SCOPE,
+    TEST, ASSERT, TRACE, PANIC, MACRO,
     FOR, WHILE, LOOP, IN, BREAK, CONTINUE,
+    // `pack` structs and `enum` variants. (`union` is contextual — see
+    // Parser.isUnionDeclAhead — so that `Set.union(other)` keeps working.)
     PACK, ENUM, WHEN,
     THROW, TRY, CATCH,
     IMPL, SPEC,
-    DEFER, TYPE, TYPEALIAS,
-    SLOT,
+    DEFER, TYPEALIAS,
+    VARIANT,
 
     // Operators
     PLUS, MINUS, STAR, SLASH, PERCENT,
@@ -109,7 +112,10 @@ enum class TokenType {
     QMARK_PLUS_EQUAL, QMARK_MINUS_EQUAL, QMARK_STAR_EQUAL, QMARK_SLASH_EQUAL, QMARK_PERCENT_EQUAL,
     QMARK_PLUS_PLUS, QMARK_MINUS_MINUS,
     NULL,
-    USE,
+    // `import path` — module imports. `use` is the separate marker that opens a
+    // realm with its members left bare (`use realm std { … }`) and names a foreign
+    // symbol in a bridge or spec (`use as "…"`).
+    IMPORT, USE,
     // `for x by N in ...` (step) and `reverse for` / `for x in reverse ...`
     BY,
     REVERSE,
@@ -121,8 +127,8 @@ enum class TokenType {
     WITH,
     // `oper[]` / `oper[]=` — index-operator overloading inside impl blocks.
     OPER,
-    // `fail ErrSet { … }` — error-set declaration; also `fail <expr>` throw sugar.
-    FAIL,
+    // `error ErrSet { … }` — error-set declaration; also `error <expr>` throw sugar.
+    ERROR,
     // Memory model: `alloc <expr>`, `purge <expr>`, `deref <expr>`, `unsafe { }`, `isolated(expr)`.
     ALLOC, PURGE, UNSAFE, ISOLATED,
     // Concurrency: `flow name(...) { … yield v }` generators, `task { }` / `await`, `launch { }`.
@@ -145,12 +151,12 @@ enum class TokenType {
     // `shield` — a pack/field modifier: externally read-only, internally mutable.
     // Visibility: public by default, `confine` narrows to the package. A
     // leading underscore on the name is what makes a member private.
-    // `expose` marks a `mod` or a `use` as auto-imported everywhere.
+    // `expose` marks a `module` or an `import` as auto-imported everywhere.
     EXPOSE, CONFINE,
     // Thread-local storage: `threadlocal var x = 0` / `threadlocal fin y = 42`.
     THREADLOCAL,
-    // `deco Name [bind Spec] { fields }` — decorator/annotation declaration.
-    DECO, BIND,
+    // `annot Name [bind Spec] { fields }` — decorator/annotation declaration.
+    ANNOT, BIND,
     HASH,
 
     // Delimiters
@@ -166,7 +172,7 @@ enum class TokenType {
  * Enumerates the type suffix attached to a numeric literal.
  *
  * No suffix means the default type: [NONE] maps to `Int` for integer
- * literals and `Real` for floating-point literals.
+ * literals and `Double` for floating-point literals.
  */
 enum class NumericSuffix {
     NONE,
@@ -214,7 +220,7 @@ sealed class StringPart {
  * @property line the 1-based line number where the token starts
  * @property column the 1-based column number where the token starts
  * @property literal the parsed literal value for literal tokens (e.g. [Long] for
- *   [TokenType.INT_LITERAL], [Double] for [TokenType.REAL_LITERAL], [String] for
+ *   [TokenType.INT_LITERAL], [Double] for [TokenType.DOUBLE_LITERAL], [String] for
  *   [TokenType.STRING_LITERAL]), or `null` for non-literal tokens
  */
 data class Token(

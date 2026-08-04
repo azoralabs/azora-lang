@@ -20,7 +20,7 @@ class Tier2MetaprogrammingTest {
 
     @Test fun inlineForUnrollsExclusiveRange() {
         assertEquals("0\n1\n2", run("""
-            use std.io
+            import std.io
             func main() {
                 inline for x in 0..<3 {
                     std::println(x)
@@ -31,7 +31,7 @@ class Tier2MetaprogrammingTest {
 
     @Test fun inlineForUnrollsInclusiveRange() {
         assertEquals("1\n2\n3\n4", run("""
-            use std.io
+            import std.io
             func main() {
                 inline for x in 1..4 {
                     std::println(x)
@@ -42,7 +42,7 @@ class Tier2MetaprogrammingTest {
 
     @Test fun inlineForAccumulatesIntoRuntimeVar() {
         assertEquals("10", run("""
-            use std.io
+            import std.io
             func main() {
                 var sum = 0
                 inline for x in 1..4 {
@@ -56,7 +56,7 @@ class Tier2MetaprogrammingTest {
     @Test fun inlineFromBodyUsesLoopVarInCompileTimeExpr() {
         // The loop var feeds an `inline fin`, which is folded per iteration.
         assertEquals("2\n4\n6", run("""
-            use std.io
+            import std.io
             func main() {
                 inline for x in 1..3 {
                     inline fin doubled = x * 2
@@ -68,7 +68,7 @@ class Tier2MetaprogrammingTest {
 
     @Test fun inlineForBoundsFromCompileTimeVar() {
         assertEquals("0\n1\n2\n3\n4", run("""
-            use std.io
+            import std.io
             func main() {
                 inline fin count = 5
                 inline for x in 0..<count {
@@ -81,7 +81,7 @@ class Tier2MetaprogrammingTest {
     @Test fun inlineForDoesNotLeakLoopVar() {
         // After the unrolled loop, `x` must not be substituted into later code.
         assertEquals("0\n1\n2\n99", run("""
-            use std.io
+            import std.io
             func main() {
                 inline for x in 0..<3 {
                     std::println(x)
@@ -96,8 +96,8 @@ class Tier2MetaprogrammingTest {
 
     @Test fun decoDeclarationAndAnnotatedFunc() {
         assertEquals("hi", run("""
-            use std.io
-            deco Log {
+            import std.io
+            annot Log {
                 fin msg: String
             }
             @Log("entry")
@@ -112,9 +112,9 @@ class Tier2MetaprogrammingTest {
 
     @Test fun annotationOnVarAndPack() {
         assertEquals("3\n5", run("""
-            use std.io
-            deco Cached { }
-            deco Deprecated { }
+            import std.io
+            annot Cached { }
+            annot Deprecated { }
             @Cached
             fin PI = 3
             @Deprecated
@@ -131,9 +131,9 @@ class Tier2MetaprogrammingTest {
 
     @Test fun multipleAnnotationsOnOneDecl() {
         assertEquals("done", run("""
-            use std.io
-            deco A { }
-            deco B { }
+            import std.io
+            annot A { }
+            annot B { }
             @A
             @B
             func run(): String {
@@ -145,12 +145,12 @@ class Tier2MetaprogrammingTest {
         """.trimIndent()))
     }
 
-    // -- named zones as namespaces + :: resolution -------------------------
+    // -- named realms as namespaces + :: resolution -------------------------
 
-    @Test fun namedZoneNamespaceConstAndFunc() {
+    @Test fun namedRealmNamespaceConstAndFunc() {
         assertEquals("314\n10", run("""
-            use std.io
-            zone Math {
+            import std.io
+            realm Math {
                 fin PI = 314
                 func double(x: Int): Int {
                     return x * 2
@@ -163,11 +163,11 @@ class Tier2MetaprogrammingTest {
         """.trimIndent()))
     }
 
-    @Test fun nestedNamedZones() {
+    @Test fun nestedNamedRealms() {
         assertEquals("42", run("""
-            use std.io
-            zone Outer {
-                zone Inner {
+            import std.io
+            realm Outer {
+                realm Inner {
                     fin VALUE = 42
                 }
             }
@@ -177,10 +177,10 @@ class Tier2MetaprogrammingTest {
         """.trimIndent()))
     }
 
-    @Test fun namedZoneMemberReferencesAnotherMember() {
+    @Test fun namedRealmMemberReferencesAnotherMember() {
         assertEquals("25", run("""
-            use std.io
-            zone Geom {
+            import std.io
+            realm Geom {
                 fin R = 5
                 func area(): Int {
                     return Geom::R * Geom::R
@@ -192,13 +192,13 @@ class Tier2MetaprogrammingTest {
         """.trimIndent()))
     }
 
-    @Test fun anonymousZoneStillBlockScopes() {
-        // Anonymous `zone { … }` keeps its existing block-scope meaning.
+    @Test fun anonymousRealmStillBlockScopes() {
+        // Anonymous `scope { … }` keeps its existing block-scope meaning.
         assertEquals("7", run("""
-            use std.io
+            import std.io
             func main() {
                 var x = 5
-                zone {
+                scope {
                     var y = 2
                     x = x + y
                 }

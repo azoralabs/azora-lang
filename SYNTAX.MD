@@ -23,13 +23,13 @@ Also make this possible
 And this
 ```
 var [x, y] = [3, 4.6]
-var [x, y]: [Int, Real] = [3, 4.6]
+var [x, y]: [Int, Double] = [3, 4.6]
 [x, y] = [2, 9.0]
 [x, y] += [1, 4.5]
 [x, y] += 1 // both increase by one, smart cast
 [x, y]++ //both increase by one, smart cast
 var [x, y, z] = 7 // they are all initialized with 7
-var [x, y, z]: [Int, Real, Long] = 7 // All with 7, smart cast
+var [x, y, z]: [Int, Double, Long] = 7 // All with 7, smart cast
 ```
 
 ------------
@@ -37,7 +37,7 @@ var [x, y, z]: [Int, Real, Long] = 7 // All with 7, smart cast
 Add positional parameters the kotlin way but when calling use : instead of =
 
 ```
-func x(a: Int, b: Real) {}
+func x(a: Int, b: Double) {}
 
 func main() {
     x(b: 3.4, a: 1)
@@ -77,16 +77,16 @@ func min<T>(a: T, b: T): T where T: [oper<, oper>, oper<=, oper>=] {
 
 But we also want this in traits.az:
 
-@SinceAzora("0.0.5")
+@Since("0.0.5")
 typealias Comparable = [oper<, oper>, oper<=, oper>=]
 
-@SinceAzora("0.0.5")
+@Since("0.0.5")
 typealias Equtable = [oper==, oper!=]
 
-@SinceAzora("0.0.5")
+@Since("0.0.5")
 typealias Shiftable = [oper<<, oper>>]
 
-@SinceAzora("0.0.5")
+@Since("0.0.5")
 typealias Iterable = [oper.., oper..<, oper reverse.., oper reverse..<]
 
 @Experimental(since: "0.0.1")

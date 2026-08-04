@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-expose mod std.result
+expose module std.result
 
 /**
  * @file std/result
@@ -28,12 +28,12 @@ expose mod std.result
  * @since 0.0.1
  */
 
-zone std {
+realm std {
     /**
      * Represents either a success or failure outcome.
      */
-    @SinceAzora("0.0.1")
-    slot Result {
+    @Since("0.0.1")
+    variant Result {
         Ok(value: Int)
         Err(code: Int, message: String)
     }
@@ -44,7 +44,7 @@ zone std {
      * @param value The success value.
      * @return A Result.Ok variant.
      */
-    @SinceAzora("0.0.1")
+    @Since("0.0.1")
     func ok(value: Int): Result {
         return Result.Ok(value: value)
     }
@@ -56,7 +56,7 @@ zone std {
      * @param message The error description.
      * @return A Result.Err variant.
      */
-    @SinceAzora("0.0.1")
+    @Since("0.0.1")
     func err(code: Int, message: String): Result {
         return Result.Err(code: code, message: message)
     }
@@ -67,7 +67,7 @@ zone std {
      * @param r The result to check.
      * @return true if the result is Ok.
      */
-    @SinceAzora("0.0.1")
+    @Since("0.0.1")
     func isOk(r: Result): Bool {
         return r is Ok
     }
@@ -78,7 +78,7 @@ zone std {
      * @param r The result to check.
      * @return true if the result is Err.
      */
-    @SinceAzora("0.0.1")
+    @Since("0.0.1")
     func isErr(r: Result): Bool {
         return r is Err
     }

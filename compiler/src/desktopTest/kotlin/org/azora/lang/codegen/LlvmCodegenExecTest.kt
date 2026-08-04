@@ -42,7 +42,7 @@ class LlvmCodegenExecTest {
         assertEquals(expected, LlvmExec.run(source))
     }
 
-    private fun main(body: String): String = "use std.io\nfunc main() {\n$body\n}"
+    private fun main(body: String): String = "import std.io\nfunc main() {\n$body\n}"
 
     // -----------------------------------------------------------------------
     // Literals & println
@@ -257,7 +257,7 @@ class LlvmCodegenExecTest {
     @Test fun simpleFunction() = check(
         "7",
         """
-        use std.io
+        import std.io
         func add(a: Int, b: Int): Int { return a + b }
         func main() { std::println(add(3, 4)) }
         """.trimIndent()
@@ -266,7 +266,7 @@ class LlvmCodegenExecTest {
     @Test fun factorialRecursion() = check(
         "120",
         """
-        use std.io
+        import std.io
         func fact(n: Int): Int {
             if n <= 1 { return 1 }
             return n * fact(n - 1)
@@ -278,7 +278,7 @@ class LlvmCodegenExecTest {
     @Test fun fibonacciRecursion() = check(
         "55",
         """
-        use std.io
+        import std.io
         func fib(n: Int): Int {
             if n < 2 { return n }
             return fib(n - 1) + fib(n - 2)
@@ -290,7 +290,7 @@ class LlvmCodegenExecTest {
     @Test fun mutualRecursion() = check(
         "true\ntrue",
         """
-        use std.io
+        import std.io
         func isEven(n: Int): Bool {
             if n == 0 { return true }
             return isOdd(n - 1)
@@ -309,7 +309,7 @@ class LlvmCodegenExecTest {
     @Test fun earlyReturnInsideLoop() = check(
         "4",
         """
-        use std.io
+        import std.io
         func firstAt(limit: Int): Int {
             for i in 0..<limit {
                 if i == 4 { return i }
@@ -323,7 +323,7 @@ class LlvmCodegenExecTest {
     @Test fun voidFunctionWithSideEffect() = check(
         "hi\nhi",
         """
-        use std.io
+        import std.io
         func greet() { std::println("hi") }
         func main() { greet()
         greet() }
@@ -399,7 +399,7 @@ class LlvmCodegenExecTest {
     @Test fun whenSingleMatch() = check(
         "mid",
         """
-        use std.io
+        import std.io
         func grade(n: Int): String {
             when n {
                 1 -> { return "low" }
@@ -415,7 +415,7 @@ class LlvmCodegenExecTest {
     @Test fun whenMultiPattern() = check(
         "low\nlow\nhigh",
         """
-        use std.io
+        import std.io
         func grade(n: Int): String {
             when n {
                 1, 2, 3 -> { return "low" }
@@ -457,7 +457,7 @@ class LlvmCodegenExecTest {
     @Test fun realArithmetic() =
         check("7.0", main("""std::println(3.5 * 2.0)"""))
 
-    @Test fun realDivision() =
+    @Test fun doubleDivision() =
         check("2.5", main("""std::println(5.0 / 2.0)"""))
 
     @Test fun mixedRealExpression() =
@@ -502,7 +502,7 @@ class LlvmCodegenExecTest {
             "Fizz", "Buzz", "11", "Fizz", "13", "14", "FizzBuzz"
         ).joinToString("\n"),
         """
-        use std.io
+        import std.io
         func main() {
             for i in 1..15 {
                 if i % 15 == 0 {
@@ -522,7 +522,7 @@ class LlvmCodegenExecTest {
     @Test fun sumOfSquares() = check(
         "55",
         """
-        use std.io
+        import std.io
         func square(x: Int): Int { return x * x }
         func main() {
             var total = 0
@@ -537,7 +537,7 @@ class LlvmCodegenExecTest {
     @Test fun gcdAlgorithm() = check(
         "14",
         """
-        use std.io
+        import std.io
         func gcd(a: Int, b: Int): Int {
             var x = a
             var y = b

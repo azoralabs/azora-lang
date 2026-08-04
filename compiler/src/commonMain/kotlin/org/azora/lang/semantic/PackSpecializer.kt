@@ -87,7 +87,7 @@ internal class PackSpecializer(private val table: SymbolTable) {
     /**
      * An argument list with omitted const parameters filled from their defaults.
      *
-     * `Mat<Real, 4, 4>` and `Mat<Real, 4, 4, .RowMajor>` name the same layout, so a
+     * `Mat<Double, 4, 4>` and `Mat<Double, 4, 4, .RowMajor>` name the same layout, so a
      * default is applied here rather than at every place that inspects arguments.
      */
     fun withDefaults(declaration: TopLevel.Pack, arguments: List<TypeRef>): List<TypeRef> {

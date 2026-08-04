@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-mod std.math
+module std.math
 
-use std.container.array
+import std.container.array
 
 /**
  * @file std/math
@@ -30,48 +30,48 @@ use std.container.array
  * @since 0.0.1
  */
 
-zone std {
+realm std {
     /**
      * The ratio of a circle's circumference to its diameter.
      */
-    @SinceAzora("0.0.1")
-    fin PI: Real = 3.14159265358979
+    @Since("0.0.1")
+    fin PI: Double = 3.14159265358979
 
     /**
      * Euler's number, the base of natural logarithms.
      */
-    @SinceAzora("0.0.1")
-    fin E: Real = 2.71828182845905
+    @Since("0.0.1")
+    fin E: Double = 2.71828182845905
 
     /**
      * The ratio of a circle's circumference to its radius (2 * PI).
      */
-    @SinceAzora("0.0.1")
-    fin TAU: Real = 6.28318530717959
+    @Since("0.0.1")
+    fin TAU: Double = 6.28318530717959
 
     /**
      * The square root of 2.
      */
-    @SinceAzora("0.0.1")
-    fin SQRT2: Real = 1.41421356237310
+    @Since("0.0.1")
+    fin SQRT2: Double = 1.41421356237310
 
     /**
      * The golden ratio (phi).
      */
-    @SinceAzora("0.0.1")
-    fin PHI: Real = 1.61803398874989
+    @Since("0.0.1")
+    fin PHI: Double = 1.61803398874989
 
     /**
      * Positive infinity representation.
      */
-    @SinceAzora("0.0.1")
-    fin INF: Real = 1.0 / 0.0
+    @Since("0.0.1")
+    fin INF: Double = 1.0 / 0.0
 
     /**
      * The smallest positive real value.
      */
-    @SinceAzora("0.0.1")
-    fin EPSILON: Real = 0.00000000000001
+    @Since("0.0.1")
+    fin EPSILON: Double = 0.00000000000001
 
     /**
      * Returns the absolute value of the given number.
@@ -83,7 +83,7 @@ zone std {
     func abs<T>(x: T): T
     out {
         assert it >= 0 { "abs must return non-negative" }
-    } zone {
+    } scope {
         return if x < 0 { -x } else { x }
     }
 
@@ -123,7 +123,7 @@ zone std {
     func clamp<T>(x: T, lo: T, hi: T): T
     in {
         assert lo <= hi { "clamp lower bound must be <= upper bound" }
-    } zone {
+    } scope {
         return max<T>(lo, min<T>(x, hi))
     }
 
@@ -147,11 +147,11 @@ zone std {
      * @return The interpolated value a + (b - a) * t.
      */
     @Experimental(since: "0.0.1")
-    func lerp(a: Real, b: Real, t: Real): Real
+    func lerp(a: Double, b: Double, t: Double): Double
     in {
         assert t >= 0.0 { "lerp factor must be >= 0.0" }
         assert t <= 1.0 { "lerp factor must be <= 1.0" }
-    } zone {
+    } scope {
         return a + (b - a) * t
     }
 
@@ -162,9 +162,9 @@ zone std {
      * @return The floor value as an integer.
      */
     @Experimental(since: "0.0.1")
-    func floor(x: Real): Int {
+    func floor(x: Double): Int {
         fin i = x as Int
-        return if x < 0.0 && x != (i as Real) { i - 1 } else { i }
+        return if x < 0.0 && x != (i as Double) { i - 1 } else { i }
     }
 
     /**
@@ -174,9 +174,9 @@ zone std {
      * @return The ceiling value as an integer.
      */
     @Experimental(since: "0.0.1")
-    func ceil(x: Real): Int {
+    func ceil(x: Double): Int {
         fin i = x as Int
-        return if x > 0.0 && x != (i as Real) { i + 1 } else { i }
+        return if x > 0.0 && x != (i as Double) { i + 1 } else { i }
     }
 
     /**
@@ -186,7 +186,7 @@ zone std {
      * @return The rounded value.
      */
     @Experimental(since: "0.0.1")
-    func round(x: Real): Int {
+    func round(x: Double): Int {
         return floor(x + 0.5)
     }
 
@@ -197,8 +197,8 @@ zone std {
      * @return The fractional part (x - floor(x)).
      */
     @Experimental(since: "0.0.1")
-    func frac(x: Real): Real {
-        return x - (floor(x) as Real)
+    func frac(x: Double): Double {
+        return x - (floor(x) as Double)
     }
 
     /**
@@ -212,10 +212,10 @@ zone std {
      * @return The mapped value.
      */
     @Experimental(since: "0.0.1")
-    func mapRange(x: Real, inMin: Real, inMax: Real, outMin: Real, outMax: Real): Real
+    func mapRange(x: Double, inMin: Double, inMax: Double, outMin: Double, outMax: Double): Double
     in {
         assert inMax != inMin { "Input range must not be zero-width" }
-    } zone {
+    } scope {
         return outMin + (x - inMin) * (outMax - outMin) / (inMax - inMin)
     }
 
@@ -228,10 +228,10 @@ zone std {
      * @return true if |a - b| < epsilon.
      */
     @Experimental(since: "0.0.1")
-    func approxEqual(a: Real, b: Real, epsilon: Real): Bool
+    func approxEqual(a: Double, b: Double, epsilon: Double): Bool
     in {
         assert epsilon > 0.0 { "epsilon must be positive" }
-    } zone {
+    } scope {
         var diff = a - b
         if diff < 0.0 { diff = -diff }
         return diff < epsilon
@@ -248,7 +248,7 @@ zone std {
     func pow<T>(value: T, exp: Int): T
     in {
         assert exp >= 0 { "Exponent must be non-negative" }
-    } zone {
+    } scope {
         if exp == 0 { return 1 }
         var result = value
         for i in 1..<exp {
@@ -269,7 +269,7 @@ zone std {
         assert n >= 0 { "Factorial requires non-negative input" }
     } out {
         assert it >= 1 { "Factorial result must be >= 1" }
-    } zone {
+    } scope {
         if n <= 1 { return 1 }
         var result = 1
         var i = 2
@@ -291,7 +291,7 @@ zone std {
     func gcd<T>(a: T, b: T): T
     out {
         assert it >= 0 { "GCD must be non-negative" }
-    } zone {
+    } scope {
         var x = a
         if x < 0 { x = -x }
         var y = b
@@ -315,7 +315,7 @@ zone std {
     func lcm<T>(a: T, b: T): T
     out {
         assert it >= 0 { "LCM must be non-negative" }
-    } zone {
+    } scope {
         if a == 0 || b == 0 { return 0 }
         var absA = a
         if absA < 0 {
@@ -408,7 +408,7 @@ zone std {
         assert n >= 0 { "Fibonacci requires non-negative input" }
     } out {
         assert it >= 0 { "Fibonacci result must be non-negative" }
-    } zone {
+    } scope {
         if n == 0 || n == 1 { return n }
         var a = 0
         var b = 1
@@ -432,7 +432,7 @@ zone std {
     func isPrime(n: Int): Bool
     in {
         assert n >= 0 { "isPrime requires non-negative input" }
-    } zone {
+    } scope {
         if n < 2 { return false }
         if n < 4 { return true }
         if n % 2 == 0 { return false }
@@ -453,15 +453,15 @@ zone std {
      * @return The average as a real number.
      */
     @Experimental(since: "0.0.1")
-    func average(arr: Array<Int>): Real
+    func average(arr: Array<Int>): Double
     in {
         assert arr.length > 0 { "Input must not be empty" }
-    } zone {
+    } scope {
         var total = 0
         for i in 0..<arr.length {
             total += arr[i]
         }
-        return (total as Real) / (arr.length as Real)
+        return (total as Double) / (arr.length as Double)
     }
 
     /**
@@ -477,7 +477,7 @@ zone std {
         assert n >= 0 { "n must be non-negative" }
         assert k >= 0 { "k must be non-negative" }
         assert k <= n { "k must be <= n" }
-    } zone {
+    } scope {
         if k == 0 || k == n { return 1 }
         var result = 1
         var i = 0
@@ -502,7 +502,7 @@ zone std {
         assert n >= 0 { "isqrt requires non-negative input" }
     } out {
         assert it * it <= n { "isqrt result squared must be <= n" }
-    } zone {
+    } scope {
         if n == 0 { return 0 }
         var x = n
         var y = (x + 1) / 2
@@ -513,44 +513,44 @@ zone std {
         return x
     }
 
-    func radians(degrees: Real): Real {
+    func radians(degrees: Double): Double {
         return degrees * PI / 180.0
     }
 
-    func degrees(radians: Real): Real {
+    func degrees(radians: Double): Double {
         return radians * 180.0 / PI
     }
 
     /** Sine of [x] (radians). */
-    bridge func sin(x: Real): Real
+    bridge func sin(x: Double): Double
     /** Cosine of [x] (radians). */
-    bridge func cos(x: Real): Real
+    bridge func cos(x: Double): Double
     /** Tangent of [x] (radians). */
-    bridge func tan(x: Real): Real
+    bridge func tan(x: Double): Double
     /** Arc sine of [x] in radians; [x] must be in [-1, 1]. */
-    bridge func asin(x: Real): Real
+    bridge func asin(x: Double): Double
     /** Arc cosine of [x] in radians; [x] must be in [-1, 1]. */
-    bridge func acos(x: Real): Real
+    bridge func acos(x: Double): Double
     /** Arc tangent of [x] in radians. */
-    bridge func atan(x: Real): Real
+    bridge func atan(x: Double): Double
     /** Angle (radians) of the point (x, y) — the 2-argument arc tangent. */
-    bridge func atan2(y: Real, x: Real): Real
+    bridge func atan2(y: Double, x: Double): Double
     /** Square root of [x]. */
-    bridge func sqrt(x: Real): Real
+    bridge func sqrt(x: Double): Double
     /** Cube root of [x]. */
-    bridge func cbrt(x: Real): Real
+    bridge func cbrt(x: Double): Double
     /** Natural (base-e) logarithm of [x]. */
-    bridge func log(x: Real): Real
+    bridge func log(x: Double): Double
     /** Base-2 logarithm of [x]. */
-    bridge func log2(x: Real): Real
+    bridge func log2(x: Double): Double
     /** Base-10 logarithm of [x]. */
-    bridge func log10(x: Real): Real
+    bridge func log10(x: Double): Double
     /** e raised to the power [x]. */
-    bridge func exp(x: Real): Real
+    bridge func exp(x: Double): Double
     /** 2 raised to the power [x]. */
-    bridge func exp2(x: Real): Real
+    bridge func exp2(x: Double): Double
     /** sqrt(x*x + y*y) without overflow/underflow. */
-    bridge func hypot(x: Real, y: Real): Real
+    bridge func hypot(x: Double, y: Double): Double
 
     /**
      * [x] raised to the real power [y].
@@ -560,7 +560,7 @@ zone std {
      * where the underlying `exp`/`log` are.
      */
     @Experimental(since: "0.0.5")
-    bridge func powr(x: Real, y: Real): Real
+    bridge func powr(x: Double, y: Double): Double
 }
 
 /**
@@ -579,33 +579,33 @@ zone std {
  *
  * @since 0.0.5
  */
-zone std::vha {
+realm std::vha {
     /** Sine of [x] (radians), to full platform accuracy. */
-    bridge func sin(x: Real): Real
+    bridge func sin(x: Double): Double
     /** Cosine of [x] (radians), to full platform accuracy. */
-    bridge func cos(x: Real): Real
+    bridge func cos(x: Double): Double
     /** Tangent of [x] (radians), to full platform accuracy. */
-    bridge func tan(x: Real): Real
+    bridge func tan(x: Double): Double
     /** Arc sine of [x] in radians, to full platform accuracy; [x] must be in [-1, 1]. */
-    bridge func asin(x: Real): Real
+    bridge func asin(x: Double): Double
     /** Arc cosine of [x] in radians, to full platform accuracy; [x] must be in [-1, 1]. */
-    bridge func acos(x: Real): Real
+    bridge func acos(x: Double): Double
     /** Arc tangent of [x] in radians, to full platform accuracy. */
-    bridge func atan(x: Real): Real
+    bridge func atan(x: Double): Double
     /** Angle (radians) of the point (x, y), to full platform accuracy. */
-    bridge func atan2(y: Real, x: Real): Real
+    bridge func atan2(y: Double, x: Double): Double
     /** Cube root of [x], to full platform accuracy. */
-    bridge func cbrt(x: Real): Real
+    bridge func cbrt(x: Double): Double
     /** Natural (base-e) logarithm of [x], to full platform accuracy. */
-    bridge func log(x: Real): Real
+    bridge func log(x: Double): Double
     /** Base-2 logarithm of [x], to full platform accuracy. */
-    bridge func log2(x: Real): Real
+    bridge func log2(x: Double): Double
     /** Base-10 logarithm of [x], to full platform accuracy. */
-    bridge func log10(x: Real): Real
+    bridge func log10(x: Double): Double
     /** e raised to the power [x], to full platform accuracy. */
-    bridge func exp(x: Real): Real
+    bridge func exp(x: Double): Double
     /** 2 raised to the power [x], to full platform accuracy. */
-    bridge func exp2(x: Real): Real
+    bridge func exp2(x: Double): Double
     /** sqrt(x*x + y*y) without overflow/underflow, to full platform accuracy. */
-    bridge func hypot(x: Real, y: Real): Real
+    bridge func hypot(x: Double, y: Double): Double
 }

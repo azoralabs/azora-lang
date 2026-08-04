@@ -32,10 +32,10 @@ RECEIVERS    ::= [self: Type&]                          (bracketed extension rec
 RETURN_TYPE  ::= Type | (nothing → inferred/Unit)
 FAILS        ::= E | [E1, E2]                           (error sets; optional)
 CLAUSE       ::= (...T).length >= N  |  T is Spec       (joined with &&; optional)
-BODY         ::= { statements }  |  = expression  |  in {…} out {r -> …} zone {…}
+BODY         ::= { statements }  |  = expression  |  in {…} out {r -> …} scope {…}
 ```
 
-Every slot except `func`/`NAME`/`()` is optional. Method receivers use the block
+Every part except `func`/`NAME`/`()` is optional. Method receivers use the block
 form `{ self& -> … }` instead of the bracketed `[…]` form (see §5).
 
 ---
@@ -140,7 +140,7 @@ func pair<A, B>(a: A, b: B): Tuple<A, B> { … }
 
 - The old `func<T> name` (generics before the name) is **removed** and rejected.
 - The same after-the-name rule applies to every declaration: `pack Box<T>`,
-  `spec Serializer<T>`, `enum Result<T>`, `slot Shape<T>`.
+  `spec Serializer<T>`, `enum Result<T>`, `variant Shape<T>`.
 
 ### 2.1 Const-generic value parameters
 
@@ -193,13 +193,13 @@ pack Single<...T> where (...T).length >= 1 { … }
   elements (checked when the call is monomorphized).
 - The older `where pack.length >= N` spelling (no parens) is still accepted.
 
-### 4.2 Spec conformance (type functions)
+### 4.2 Spec conformance (type properties)
 
-Compile-time `type` functions accept both a length constraint and an
+A compile-time `deepinline prop` accepts both a length constraint and an
 `is Spec` conformance bound, combined with `&&`:
 
 ```azora
-type promote(T: ...Type) where T.length >= 2 && T is Number {
+deepinline prop Promote<...T>: Type where T.length >= 2 && T is Number {
     // choose the widest numeric type in the pack …
 }
 ```
@@ -208,19 +208,19 @@ type promote(T: ...Type) where T.length >= 2 && T is Number {
 - Multiple constraints are joined with `&&`.
 
 (Ordinary runtime functions currently support the `.length` form; the `is Spec`
-bound is evaluated for `type` functions — see the CTCE DIP.)
+bound is evaluated for type properties — see the CTCE DIP.)
 
 ---
 
 ## 4. Contracts
 
-Preconditions (`in`) and postconditions (`out`) precede a `zone { … }` body:
+Preconditions (`in`) and postconditions (`out`) precede a `scope { … }` body:
 
 ```azora
 func alloc(size: Int): Int ?! AllocError
 in {
     assert size > 0 { "Allocation size must be positive" }
-} zone {
+} scope {
     // … the real body …
     return position
 }
@@ -229,7 +229,7 @@ in {
 - `in { … }` runs before the body; each `assert cond { "msg" }` is checked.
 - `out { result -> … }` binds the return value as `result` and checks
   postconditions after the body.
-- When contracts are present, the body is introduced by `zone { … }`.
+- When contracts are present, the body is introduced by `scope { … }`.
 
 ---
 
@@ -388,7 +388,7 @@ add(1, 2)                       // positional
 greet("Ann", punctuation: ".")  // named argument
 sumAll(1, ...more)              // spread a variadic
 value.method(x)                 // method / extension call
-Type::path(x)                   // zone-qualified free function
+Type::path(x)                   // realm-qualified free function
 vec@[1, 2, 3]                   // macro invocation (immutable)
 vec!@[1, 2, 3]                  // macro invocation (mutable variant)
 ```

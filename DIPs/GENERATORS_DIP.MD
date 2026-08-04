@@ -64,9 +64,9 @@ This is clearer than adding a third declaration keyword and keeps asynchronous s
 For callback declaration we will use only this syntax build inside the compiler:
 ```azora
 fin f1 = () -> Unit
-fin f2 = (Real, Bool) -> Int
-fin f3 = (...Real) -> Unit
-fin f4 = (Int, ...Real) -> Bool
+fin f2 = (Double, Bool) -> Int
+fin f3 = (...Double) -> Unit
+fin f4 = (Int, ...Double) -> Bool
 fin f5 = (T) -> R
 fin f6 = [T](S) -> R
 fin f7 = [T, Q](...S) -> R
@@ -74,9 +74,9 @@ fin f7 = [T, Q](...S) -> R
 
 ```azora
 fin f1 = async () -> Unit
-fin f2 = async (Real, Bool) -> Int
-fin f3 = async (...Real) -> Unit
-fin f4 = async (Int, ...Real) -> Bool
+fin f2 = async (Double, Bool) -> Int
+fin f3 = async (...Double) -> Unit
+fin f4 = async (Int, ...Double) -> Bool
 fin f5 = async (T) -> R
 fin f6 = async [T](S) -> R
 fin f7 = async [T, Q](...S) -> R

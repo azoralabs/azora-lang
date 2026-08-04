@@ -19,7 +19,7 @@ class Tier3DiTest {
     @Test fun singletonIsSharedAcrossInjects() {
         // `inject` returns the SAME singleton instance every time.
         assertEquals("1\n2\n3", run("""
-            use std.io
+            import std.io
             solo Counter {
                 var count: Int = 0
                 func inc(): Int {
@@ -39,7 +39,7 @@ class Tier3DiTest {
 
     @Test fun singletonMethodsCallableViaInject() {
         assertEquals("42", run("""
-            use std.io
+            import std.io
             solo Config {
                 var value: Int = 42
                 func get(): Int {
@@ -54,7 +54,7 @@ class Tier3DiTest {
 
     @Test fun singletonFieldsAccessible() {
         assertEquals("hello", run("""
-            use std.io
+            import std.io
             solo Greeting {
                 var msg: String = "hello"
             }
@@ -67,7 +67,7 @@ class Tier3DiTest {
 
     @Test fun wrapContainerConstructsSingletonsWithArgs() {
         assertEquals("APP\npostgres://localhost", run("""
-            use std.io
+            import std.io
             pack Logger {
                 var prefix: String
             }
@@ -89,7 +89,7 @@ class Tier3DiTest {
 
     @Test fun wrapSingletonsAreShared() {
         assertEquals("same", run("""
-            use std.io
+            import std.io
             pack Logger {
                 var prefix: String
             }

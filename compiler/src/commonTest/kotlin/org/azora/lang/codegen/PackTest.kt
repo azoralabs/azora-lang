@@ -26,7 +26,7 @@ class PackTest {
     @Test
     fun structConstructionAndFieldAccess() {
         assertEquals("3", run("""
-            use std.io
+            import std.io
             pack Point {
                 var x: Int
                 var y: Int
@@ -41,7 +41,7 @@ class PackTest {
     @Test
     fun structFieldSum() {
         assertEquals("7", run("""
-            use std.io
+            import std.io
             pack Point {
                 var x: Int
                 var y: Int
@@ -56,7 +56,7 @@ class PackTest {
     @Test
     fun structFieldMutation() {
         assertEquals("10", run("""
-            use std.io
+            import std.io
             pack Point {
                 var x: Int
                 var y: Int
@@ -73,7 +73,7 @@ class PackTest {
     fun structWithImmutableField() {
         // fin field cannot be reassigned
         val errors = expectFailure("""
-            use std.io
+            import std.io
             pack Point {
                 fin x: Int
                 var y: Int
@@ -89,7 +89,7 @@ class PackTest {
     @Test
     fun structReturnedFromFunction() {
         assertEquals("9", run("""
-            use std.io
+            import std.io
             pack Point {
                 var x: Int
                 var y: Int
@@ -108,7 +108,7 @@ class PackTest {
     fun structFieldUpdatedThroughCompoundAssign() {
         // p.y += 100  →  4 + 100 = 104
         assertEquals("104", run("""
-            use std.io
+            import std.io
             pack Point {
                 var x: Int
                 var y: Int
@@ -125,7 +125,7 @@ class PackTest {
     fun structStoredInArray() {
         // 10 + 30 = 40
         assertEquals("40", run("""
-            use std.io
+            import std.io
             pack Point {
                 var x: Int
                 var y: Int
@@ -140,7 +140,7 @@ class PackTest {
     @Test
     fun structOperationsSurviveOptimization() {
         assertEquals("7", run("""
-            use std.io
+            import std.io
             pack Point {
                 var x: Int
                 var y: Int
@@ -155,7 +155,7 @@ class PackTest {
     @Test
     fun structLoweredToAllBackends() {
         val result = Compiler().compile("""
-            use std.io
+            import std.io
             pack Point {
                 var x: Int
                 var y: Int

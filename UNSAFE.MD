@@ -2,7 +2,7 @@
 // will make code (function call, pack instantiation) callable in safe code even if it contains unsafe code
 // add in std.core
 @Experimental(since: "0.0.4")
-bridge deco Trusted for [.Pack, .Func] // add more
+bridge annot Trusted for [.Pack, .Func] // add more
 ```
 
 ```
@@ -19,7 +19,7 @@ bridge unsafe pack Array<T, N: Int> {
     fin data: T*
 }
 
-impl zone for Array {
+impl realm for Array {
     /**
      * Pre-allocates an array of `count` slots.
      *
@@ -59,4 +59,4 @@ VISIBILITY SAFETY func NAME<...GENERICS>(...PARAMS): RETURN_TYPE ?! [...FAILS]
 where [...CLAUSE]
 in { ...RECEIVERS -> }
 out { it, ...RECEIVERS -> }
-zone { ...RECEIVERS -> }
+scope { ...RECEIVERS -> }

@@ -49,8 +49,8 @@ class TupleVariadicTest {
 
     @Test fun tupleOfInferredMonomorphizes() {
         val out = compile("""
-            use std.io
-            use std.container.*
+            import std.io
+            import std.container.*
             func main() {
                 fin x = std::tupleOf(1, 2.0)
                 std::println(x.0)
@@ -62,10 +62,10 @@ class TupleVariadicTest {
 
     @Test fun tupleOfExplicitAnnotation() {
         val src = """
-            use std.io
-            use std.container.*
+            import std.io
+            import std.container.*
             func main() {
-                fin x: std::Tuple<Int, Real> = std::tupleOf(1, 2.0)
+                fin x: std::Tuple<Int, Double> = std::tupleOf(1, 2.0)
                 std::println(x.0)
                 std::println(x.1)
             }
@@ -76,19 +76,19 @@ class TupleVariadicTest {
 
     @Test fun tupleOfExplicitTypeArgsBothForms() {
         val a = compile("""
-            use std.io
-            use std.container.*
+            import std.io
+            import std.container.*
             func main() {
-                fin x: std::Tuple<Int, Real> = std::tupleOf<Int, Real>(1, 2.0)
+                fin x: std::Tuple<Int, Double> = std::tupleOf<Int, Double>(1, 2.0)
                 std::println(x.0)
                 std::println(x.1)
             }
         """.trimIndent())
         val b = compile("""
-            use std.io
-            use std.container.*
+            import std.io
+            import std.container.*
             func main() {
-                fin x = std::tupleOf<Int, Real>(1, 2.0)
+                fin x = std::tupleOf<Int, Double>(1, 2.0)
                 std::println(x.0)
                 std::println(x.1)
             }
@@ -99,8 +99,8 @@ class TupleVariadicTest {
 
     @Test fun tupleOfThreeElementsAndMutation() {
         val src = """
-            use std.io
-            use std.container.*
+            import std.io
+            import std.container.*
             func main() {
                 fin t = std::tupleOf(true, "hi", 42)
                 std::println(t.0)
@@ -117,12 +117,12 @@ class TupleVariadicTest {
         // `is` is supported by the interpreter; tuple positional access + equality are
         // checked across backends in the other tests.
         val src = """
-            use std.io
-            use std.container.*
+            import std.io
+            import std.container.*
             func main() {
                 fin tup = std::tupleOf(1, 2.0, "3")
                 if tup.0 is Int && tup.0 == 1 { std::println("ok0") }
-                if tup.1 is Real && tup.1 == 2.0 { std::println("ok1") }
+                if tup.1 is Double && tup.1 == 2.0 { std::println("ok1") }
                 if tup.2 is String && tup.2 == "3" { std::println("ok2") }
             }
         """.trimIndent()
@@ -132,21 +132,21 @@ class TupleVariadicTest {
 
     @Test fun tupleModuleImportExposesTuple() {
         val r = Compiler().compile("""
-            use std.io
-            use std.container.tuple
+            import std.io
+            import std.container.tuple
             func main() {
                 fin x = std::tupleOf(1, 2)
                 std::println(x.0)
             }
         """.trimIndent(), release = false)
-        assertIs<CompilationResult.Success>(r, "use std failed: ${(r as? CompilationResult.Failure)?.errors}")
+        assertIs<CompilationResult.Success>(r, "import std failed: ${(r as? CompilationResult.Failure)?.errors}")
     }
 
     @Test fun qualifiedTupleModuleImportExposesTupleOf() {
         val out = compile("""
-            mod playground
-            use std.io
-            use std.container.tuple
+            module playground
+            import std.io
+            import std.container.tuple
 
             pack App {
                 var name: String
@@ -172,9 +172,9 @@ class TupleVariadicTest {
 
     @Test fun tuplePrettyUsesReflectedFields() {
         val result = compile("""
-            mod playground
-            use std.io
-            use std.container.tuple
+            module playground
+            import std.io
+            import std.container.tuple
 
             func main() {
                 fin value = std::tupleOf("left", "right")
@@ -191,7 +191,7 @@ class TupleVariadicTest {
 
     @Test fun stringAppendAssignmentConvertsItsOperand() {
         val result = compile("""
-            use std.io
+            import std.io
 
             func main() {
                 var value = "count="
@@ -206,7 +206,7 @@ class TupleVariadicTest {
     @Test fun generalMixinConvertsStringToCode() {
         // `inline "<string>"` is a general statement: the string is parsed as code and spliced.
         val out = compile("""
-            use std.io
+            import std.io
             func main() {
                 inline "std::println(40 + 2)"
             }
@@ -216,10 +216,10 @@ class TupleVariadicTest {
 
     @Test fun tuplePassedToAndReturnedFromFunction() {
         val src = """
-            use std.io
-            use std.container.tuple
-            func swap(t: std::Tuple<Int, Real>): std::Tuple<Real, Int> {
-                return std::tupleOf<Real, Int>(t.1, t.0)
+            import std.io
+            import std.container.tuple
+            func swap(t: std::Tuple<Int, Double>): std::Tuple<Double, Int> {
+                return std::tupleOf<Double, Int>(t.1, t.0)
             }
             func main() {
                 fin r = swap(std::tupleOf(7, 9.0))
@@ -233,8 +233,8 @@ class TupleVariadicTest {
 
     @Test fun tupleElementTypesInferFromArithmeticExpressions() {
         val out = compile("""
-            use std.io
-            use std.container.tuple
+            import std.io
+            import std.container.tuple
 
             func divmod(a: Int, b: Int): std::Tuple<Int, Int> {
                 return std::tupleOf(a / b, a % b)
@@ -250,10 +250,10 @@ class TupleVariadicTest {
         assertEquals("3\n2", IrInterpreter().interpret(out.ir).trim())
     }
 
-    @Test fun tupleOutputIncludesItsFullZoneQualifiedSignature() {
+    @Test fun tupleOutputIncludesItsFullRealmQualifiedSignature() {
         val out = compile("""
-            use std.io
-            use std.container.tuple
+            import std.io
+            import std.container.tuple
 
             func main() {
                 std::println(std::tupleOf(17 / 5, 17 % 5))
@@ -268,8 +268,8 @@ class TupleVariadicTest {
 
     @Test fun qualifiedSymbolsUseCanonicalIrNames() {
         val out = compile("""
-            use std.io
-            use std.container.tuple
+            import std.io
+            import std.container.tuple
 
             func main() {
                 std::println(std::tupleOf(17 / 5, 17 % 5))
@@ -288,8 +288,8 @@ class TupleVariadicTest {
 
     @Test fun importedTupleTypeMacroDefinesParenthesizedTypeSyntax() {
         val out = compile("""
-            use std.io
-            use std.container.tuple
+            import std.io
+            import std.container.tuple
 
             func divmod(a: Int, b: Int): (Int, Int) {
                 return std::tupleOf(a / b, a % b)
@@ -323,9 +323,9 @@ class TupleVariadicTest {
         )
     }
 
-    @Test fun tupleTypeRequiresItsDeclaredZone() {
+    @Test fun tupleTypeRequiresItsDeclaredRealm() {
         val result = Compiler().compile("""
-            use std.container.tuple
+            import std.container.tuple
 
             func divmod(a: Int, b: Int): Tuple<Int, Int> {
                 return std::tupleOf(a / b, a % b)
@@ -334,12 +334,12 @@ class TupleVariadicTest {
 
         val failure = assertIs<CompilationResult.Failure>(result)
         assertEquals(
-            listOf("line 3: undefined type 'Tuple'; 'Tuple' is part of zone 'std', use 'std::Tuple' instead"),
+            listOf("line 3: undefined type 'Tuple'; 'Tuple' is part of realm 'std', use 'std::Tuple' instead"),
             failure.errors,
         )
     }
 
-    @Test fun tupleZoneQualifierSurvivesParsingWithoutChangingTypeIdentity() {
+    @Test fun tupleRealmQualifierSurvivesParsingWithoutChangingTypeIdentity() {
         val program = Parser(Lexer("""
             func divmod(a: Int, b: Int): std::Tuple<Int, Int> {
                 return std::tupleOf(a / b, a % b)
@@ -361,8 +361,8 @@ class TupleVariadicTest {
 
     @Test fun nestedTuple() {
         val src = """
-            use std.io
-            use std.container.*
+            import std.io
+            import std.container.*
             func main() {
                 fin outer = std::tupleOf(std::tupleOf(1, 2), 3)
                 std::println(outer.0.0)
@@ -377,8 +377,8 @@ class TupleVariadicTest {
     @Test fun tupleLengthConstraintRejectsSingleElement() {
         // `where (...T).length >= 2` — a 1-element tuple must fail with a clear message.
         val r = Compiler().compile("""
-            use std.io
-            use std.container.*
+            import std.io
+            import std.container.*
             func main() {
                 fin x = std::tupleOf(1)
             }

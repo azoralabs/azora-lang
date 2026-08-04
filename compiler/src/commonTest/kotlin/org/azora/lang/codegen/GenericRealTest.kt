@@ -28,7 +28,7 @@ import kotlin.test.assertTrue
  * Generic packs instantiated with a floating-point type.
  *
  * A generic pack erases every type parameter to a pointer slot. An `Int` rides
- * in that slot directly, but a `Real` does not fit the same way — it has to
+ * in that slot directly, but a `Double` does not fit the same way — it has to
  * travel as its own bit pattern, and the read has to know to convert it back.
  * The type arguments on the referring type are what carry that knowledge.
  */
@@ -60,10 +60,10 @@ class GenericRealTest {
 
     @Test fun aRealSurvivesAGenericField() {
         assertEquals("2.5", run("""
-            use std.io
+            import std.io
             $box
             func main() {
-                fin b = Box<Real>(2.5)
+                fin b = Box<Double>(2.5)
                 std::println(b.value)
             }
         """.trimIndent()))
@@ -71,10 +71,10 @@ class GenericRealTest {
 
     @Test fun aRealFieldCanBeReassigned() {
         assertEquals("7.25", run("""
-            use std.io
+            import std.io
             $box
             func main() {
-                var b = Box<Real>(0.0)
+                var b = Box<Double>(0.0)
                 b.value = 7.25
                 std::println(b.value)
             }
@@ -83,7 +83,7 @@ class GenericRealTest {
 
     @Test fun theOtherInstantiationsStillWork() {
         assertEquals("42\nok", run("""
-            use std.io
+            import std.io
             $box
             func main() {
                 std::println(Box<Int>(42).value)
@@ -96,15 +96,15 @@ class GenericRealTest {
         // Both orders, so a mixed pack cannot pass by substituting positionally
         // from the wrong end.
         assertEquals("1.5 3\n3 1.5", run("""
-            use std.io
+            import std.io
             pack Pair<A, B> {
                 var first: A
                 var second: B
             }
             func main() {
-                fin p = Pair<Real, Int>(1.5, 3)
+                fin p = Pair<Double, Int>(1.5, 3)
                 std::println("${'$'}{p.first} ${'$'}{p.second}")
-                fin q = Pair<Int, Real>(3, 1.5)
+                fin q = Pair<Int, Double>(3, 1.5)
                 std::println("${'$'}{q.first} ${'$'}{q.second}")
             }
         """.trimIndent()))
@@ -112,30 +112,30 @@ class GenericRealTest {
 
     @Test fun aRealCrossesAGenericFunctionBoundary() {
         assertEquals("1.5", run("""
-            use std.io
+            import std.io
             func identity<T>(value: T): T {
                 return value
             }
             func main() {
-                std::println(identity<Real>(1.5))
+                std::println(identity<Double>(1.5))
             }
         """.trimIndent()))
     }
 
     @Test fun aGenericPackNests() {
         assertEquals("10.0 20.0", run("""
-            use std.io
-            use std.container.array
+            import std.io
+            import std.container.array
             pack Keyframe<T> {
-                var time: Real
+                var time: Double
                 var value: T
             }
             func main() {
-                var keys: std::Array<Keyframe<Real>> = Array::fill<Keyframe<Real>>(2)
-                keys[0] = Keyframe<Real>(0.0, 10.0)
-                keys[1] = Keyframe<Real>(1.0, 20.0)
-                fin a: Keyframe<Real> = keys[0]
-                fin b: Keyframe<Real> = keys[1]
+                var keys: std::Array<Keyframe<Double>> = Array::fill<Keyframe<Double>>(2)
+                keys[0] = Keyframe<Double>(0.0, 10.0)
+                keys[1] = Keyframe<Double>(1.0, 20.0)
+                fin a: Keyframe<Double> = keys[0]
+                fin b: Keyframe<Double> = keys[1]
                 std::println("${'$'}{a.value} ${'$'}{b.value}")
             }
         """.trimIndent()))
@@ -144,9 +144,9 @@ class GenericRealTest {
     @Test fun theSlotIsErasedAndTheValueConverted() {
         val ir = llvm("""
             $box
-            use std.io
+            import std.io
             func main() {
-                fin b = Box<Real>(2.5)
+                fin b = Box<Double>(2.5)
                 std::println(b.value)
             }
         """.trimIndent())
@@ -160,9 +160,9 @@ class GenericRealTest {
         // The un-erasing must not fire for a plain pack, whose slot already has
         // the right type.
         assertEquals("3.5", run("""
-            use std.io
+            import std.io
             pack Plain {
-                var value: Real
+                var value: Double
             }
             func main() {
                 std::println(Plain(3.5).value)

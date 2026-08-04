@@ -14,13 +14,13 @@
  * limitations under the License.
  */
 
-mod std.time
+module std.time
 
-use std.char
-use std.container.list
-use std.convert
-use std.serializer
-use std.string
+import std.char
+import std.container.list
+import std.convert
+import std.serializer
+import std.string
 
 /**
  * @file std/time
@@ -39,10 +39,10 @@ use std.string
  * sub-second arithmetic exact.
  */
 
-zone std {
+realm std {
     /** Errors raised by validation, parsing, and unsafe temporal arithmetic. */
     @Experimental(since: "0.0.4")
-    fail TimeError {
+    error TimeError {
         InvalidDuration,
         InvalidDate,
         InvalidTime,

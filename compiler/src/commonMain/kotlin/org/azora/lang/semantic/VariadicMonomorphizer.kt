@@ -59,8 +59,8 @@ import org.azora.lang.frontend.VariadicFieldTemplate
  * ordinary fixed packs and functions.
  *
  * Element types for a `tupleOf`/`Tuple` call are taken from explicit call type
- * arguments (`tupleOf<Int, Real>(…)`) when present, otherwise inferred from
- * literal arguments (`1` → Int, `2.0` → Real, …).
+ * arguments (`tupleOf<Int, Double>(…)`) when present, otherwise inferred from
+ * literal arguments (`1` → Int, `2.0` → Double, …).
  */
 internal object VariadicMonomorphizer {
 
@@ -137,7 +137,7 @@ internal object VariadicMonomorphizer {
             methodReturns,
             implTemplates,
             typeMacroRules,
-            program.zoneTypeNamespaces,
+            program.realmTypeNamespaces,
             program.items.filterIsInstance<TopLevel.Pack>().associate { it.name to it.fields },
             program.items.filterIsInstance<TopLevel.Enum>().associate { it.name to it.variants },
         )
@@ -159,7 +159,7 @@ internal object VariadicMonomorphizer {
             ctx.expandStaticMembers(staticTemplates)
         return program.copy(
             items = finalItems,
-            zoneTypeNamespaces = program.zoneTypeNamespaces + ctx.generatedPackNamespaces,
+            realmTypeNamespaces = program.realmTypeNamespaces + ctx.generatedPackNamespaces,
         )
     }
 
@@ -907,7 +907,7 @@ private class MonoContext(
                 // a `fin value = …` inside the loop is one binding per field, not one
                 // name declared as many times as the pack has fields.
                 if (iteration.any { it is Stmt.FinDecl || it is Stmt.VarDecl || it is Stmt.LetDecl }) {
-                    listOf(Stmt.Zone(iteration, stmt.line, stmt.column))
+                    listOf(Stmt.Scope(iteration, stmt.line, stmt.column))
                 } else {
                     iteration
                 }
@@ -965,7 +965,7 @@ private class MonoContext(
             }, elseBranch = stmt.elseBranch?.let(::nested))
             is Stmt.Try -> stmt.copy(body = nested(stmt.body), catchBody = stmt.catchBody?.let(::nested))
             is Stmt.Defer -> stmt.copy(body = nested(stmt.body))
-            is Stmt.Zone -> stmt.copy(body = nested(stmt.body))
+            is Stmt.Scope -> stmt.copy(body = nested(stmt.body))
             is Stmt.InlineBlock -> stmt.copy(body = nested(stmt.body))
             is Stmt.DeepInlineBlock -> stmt.copy(body = nested(stmt.body))
             is Stmt.Effect -> stmt.copy(
@@ -1410,7 +1410,7 @@ private class MonoContext(
      */
     private fun inferExprType(e: Expr): TypeRef? = when (e) {
         is Expr.IntLiteral -> TypeRef.Named("Int")
-        is Expr.RealLiteral -> TypeRef.Named("Real")
+        is Expr.DoubleLiteral -> TypeRef.Named("Double")
         is Expr.StringLiteral -> TypeRef.Named("String")
         is Expr.BoolLiteral -> TypeRef.Named("Bool")
         is Expr.CharLiteral -> TypeRef.Named("Char")
@@ -1475,7 +1475,7 @@ private class MonoContext(
             "Cent" to 4,
             "UCent" to 4,
             "Float" to 5,
-            "Real" to 6,
+            "Double" to 6,
             "Decimal" to 7,
         )
         val leftRank = rank[left.name] ?: return null
@@ -1556,7 +1556,7 @@ private class MonoContext(
         is Stmt.When -> s.copy(scrutinee = rewriteExpr(s.scrutinee), branches = s.branches.map { b -> b.copy(patterns = b.patterns.map(::rewriteExpr), body = b.body.map(::rewriteStmt)) }, elseBranch = s.elseBranch?.map(::rewriteStmt))
         is Stmt.Try -> s.copy(body = s.body.map(::rewriteStmt), catchBody = s.catchBody?.map(::rewriteStmt))
         is Stmt.Defer -> s.copy(body = s.body.map(::rewriteStmt))
-        is Stmt.Zone -> s.copy(body = s.body.map(::rewriteStmt))
+        is Stmt.Scope -> s.copy(body = s.body.map(::rewriteStmt))
         is Stmt.InlineBlock -> s.copy(body = s.body.map(::rewriteStmt))
         is Stmt.DeepInlineBlock -> s.copy(body = s.body.map(::rewriteStmt))
         is Stmt.Effect -> s.copy(

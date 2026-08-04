@@ -21,16 +21,16 @@ class ContractsTest {
         IrInterpreter().interpret(compile(source).ir).trim()
 
     @Test
-    fun inOutZoneContractsRunOnSuccess() {
+    fun inOutRealmContractsRunOnSuccess() {
         assertEquals("0\n5\n10", run("""
-            use std.io
+            import std.io
             func clamp(x: Int, lo: Int, hi: Int): Int
             in {
                 assert lo <= hi { "lo must be <= hi" }
             } out { r ->
                 assert r >= lo { "result must be >= lo" }
                 assert r <= hi { "result must be <= hi" }
-            } zone {
+            } scope {
                 if x < lo { return lo }
                 if x > hi { return hi }
                 return x
@@ -48,11 +48,11 @@ class ContractsTest {
     fun preconditionFailureStopsBeforeBody() {
         val failure = assertFailsWith<IllegalStateException> {
             run("""
-                use std.io
+                import std.io
                 func value(x: Int): Int
                 in {
                     assert x > 0 { "x must be positive" }
-                } zone {
+                } scope {
                     return x
                 }
                 func main() { std::println(value(0)) }
@@ -65,11 +65,11 @@ class ContractsTest {
     fun postconditionFailureSeesResultValue() {
         val failure = assertFailsWith<IllegalStateException> {
             run("""
-                use std.io
+                import std.io
                 func value(): Int
                 out { r ->
                     assert r > 10 { "result too small" }
-                } zone {
+                } scope {
                     return 3
                 }
                 func main() { std::println(value()) }
@@ -81,11 +81,11 @@ class ContractsTest {
     @Test
     fun postconditionRunsForNestedBranchReturns() {
         assertEquals("12\n20", run("""
-            use std.io
+            import std.io
             func choose(flag: Bool): Int
             out { r ->
                 assert r >= 10 { "branch result too small" }
-            } zone {
+            } scope {
                 if flag {
                     return 12
                 } else {
@@ -102,7 +102,7 @@ class ContractsTest {
     @Test
     fun computedPropertiesSupportContracts() {
         assertEquals("7", run("""
-            use std.io
+            import std.io
             pack Counter { var value: Int }
             impl Counter {
                 prop current[self: Self&]: Int
@@ -110,7 +110,7 @@ class ContractsTest {
                     assert self.value >= 0 { "counter must not be negative" }
                 } out { result ->
                     assert result == self.value { "property returned stale data" }
-                } zone {
+                } scope {
                     return self.value
                 }
             }
@@ -129,7 +129,7 @@ class ContractsTest {
                 assert value >= 0 { "task input must be non-negative" }
             } out { result ->
                 assert result >= 0 { "task result must be non-negative" }
-            } zone {
+            } scope {
                 return value
             }
 

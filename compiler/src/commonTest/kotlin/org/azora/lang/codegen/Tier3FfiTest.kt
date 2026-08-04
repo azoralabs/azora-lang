@@ -21,10 +21,10 @@ class Tier3FfiTest {
 
     @Test fun bridgeSinAndSqrt() {
         assertEquals("4.0\n0.0", run("""
-            use std.io
+            import std.io
             bridge .C {
-                func sqrt(x: Real): Real
-                func sin(x: Real): Real
+                func sqrt(x: Double): Double
+                func sin(x: Double): Double
             }
             func main() {
                 std::println(sqrt(16.0))
@@ -35,9 +35,9 @@ class Tier3FfiTest {
 
     @Test fun bridgePowTwoArgs() {
         assertEquals("1024.0", run("""
-            use std.io
+            import std.io
             bridge .C {
-                func pow(val: Real, exp: Real): Real
+                func pow(base: Double, exp: Double): Double
             }
             func main() {
                 std::println(pow(2.0, 10.0))
@@ -47,9 +47,9 @@ class Tier3FfiTest {
 
     @Test fun bridgeEmitsExternDeclarationsInBackends() {
         val result = Compiler().compile("""
-            use std.io
+            import std.io
             bridge .C {
-                func sqrt(x: Real): Real
+                func sqrt(x: Double): Double
             }
             func main() {
                 std::println(sqrt(16.0))
@@ -57,7 +57,7 @@ class Tier3FfiTest {
         """.trimIndent())
         assertIs<CompilationResult.Success>(result)
         assertTrue(
-            "bridge func sqrt(x: Real): Real" in result.ir.prettyPrint(),
+            "bridge func sqrt(x: Double): Double" in result.ir.prettyPrint(),
             "Azora IR should preserve bridge syntax, got:\n${result.ir.prettyPrint()}",
         )
         assertFalse(

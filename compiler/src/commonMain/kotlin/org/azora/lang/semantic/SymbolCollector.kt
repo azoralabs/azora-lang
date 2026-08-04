@@ -16,11 +16,11 @@
 
 package org.azora.lang.semantic
 
-import org.azora.lang.frontend.ParamModifier
 import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.FuncDecl
 import org.azora.lang.frontend.MemberCallStyle
 import org.azora.lang.frontend.NumericSuffix
+import org.azora.lang.frontend.ParamModifier
 import org.azora.lang.frontend.Program
 import org.azora.lang.frontend.Stmt
 import org.azora.lang.frontend.TokenType
@@ -153,7 +153,10 @@ class SymbolCollector {
                             val initType = inferExprType(item.initializer, emptyMap())
                             val type = if (item.type != null) resolveType(item.type)
                                        else initType ?: IrType.Int
-                            table.defineVariable(VariableSymbol(item.name, type, mutable = true, visibility = item.visibility))
+                            table.defineVariable(
+                                VariableSymbol(item.name, type, mutable = true, visibility = item.visibility,
+                                    valueMutable = item.valueMutable),
+                            )
                         } catch (e: Exception) {
                             errors.add("line ${item.line}: ${e.message}")
                         }
@@ -195,6 +198,8 @@ class SymbolCollector {
                     isTask = func.isTask,
                     isUnsafe = func.isUnsafe,
                     visibility = func.visibility,
+                    exclusiveParams = func.params.indices
+                        .filterTo(mutableSetOf()) { func.params[it].modifier == ParamModifier.EXCLUSIVE },
                 )
                 table.defineFunction(symbol)
                 val shortName = func.name.substringAfterLast("__")
@@ -282,7 +287,9 @@ class SymbolCollector {
                             typeParamIndexOf(field.type, item.typeParams),
                         )
                     }
-                    table.defineStruct(StructType(item.name, fields, item.typeParams, item.visibility, item.isBridge))
+                    table.defineStruct(
+                        StructType(item.name, fields, item.typeParams, item.visibility, item.isBridge, item.isUnion),
+                    )
                 } catch (e: Exception) {
                     errors.add("line ${item.line}: ${e.message}")
                 }
@@ -359,7 +366,7 @@ class SymbolCollector {
                             errors.add("line ${method.line}: pack '${item.typeName}' has no exposed fields, so extension '${method.name}' cannot use mut ref self")
                             continue
                         }
-                        // Resolve so primitive impl targets (Int/Real/Char/Bool/…)
+                        // Resolve so primitive impl targets (Int/Double/Char/Bool/…)
                         // lower to their native IR type (e.g. i32), not an erased
                         // Named/pointer type. Struct targets stay Named(<Type>).
                         val selfType = resolveType(TypeRef.Named(item.typeName))
@@ -535,7 +542,7 @@ class SymbolCollector {
 
         // `import` declarations act only as visibility gates for bundled-library
         // injection (read by StdlibInjector). They no longer create bare aliases:
-        // zone members are reached via their qualified `Zone::name` path, which
+        // realm members are reached via their qualified `Realm::name` path, which
         // the parser flattens to the mangled name (`std.math::abs` →
         // `std__math__abs`) registered for the injected item.
 
@@ -587,7 +594,7 @@ class SymbolCollector {
                     result.addAll(collectReturnExprs(stmt.thenBranch))
                     stmt.elseBranch?.let { result.addAll(collectReturnExprs(it)) }
                 }
-                is Stmt.Zone -> result.addAll(collectReturnExprs(stmt.body))
+                is Stmt.Scope -> result.addAll(collectReturnExprs(stmt.body))
                 else -> {}
             }
         }
@@ -615,10 +622,10 @@ class SymbolCollector {
             NumericSuffix.FLOAT -> IrType.Float
             NumericSuffix.DECIMAL -> IrType.Decimal
         }
-        is Expr.RealLiteral -> when (expr.suffix) {
+        is Expr.DoubleLiteral -> when (expr.suffix) {
             NumericSuffix.DECIMAL -> IrType.Decimal
             NumericSuffix.FLOAT -> IrType.Float
-            else -> IrType.Real // unsuffixed real literals default to Real
+            else -> IrType.Double // unsuffixed real literals default to Double
         }
         is Expr.StringLiteral -> IrType.String
         is Expr.BoolLiteral -> IrType.Bool

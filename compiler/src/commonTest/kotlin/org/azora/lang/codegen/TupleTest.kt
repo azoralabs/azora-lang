@@ -11,9 +11,9 @@ import kotlin.test.assertTrue
 class TupleTest {
     @Test fun tupleOfAndTupleTypeRemainSupported() {
         val result = Compiler().compile("""
-            use std.io
-            use std.container.tuple
-            use std.*
+            import std.io
+            import std.container.tuple
+            import std.*
 
             func swap(value: std::Tuple<Int, String>): std::Tuple<String, Int> {
                 return std::tupleOf(value.1, value.0)
@@ -34,8 +34,8 @@ class TupleTest {
         // `(a, b, …)` value tuple literals were removed: build tuples with
         // `std::tupleOf(…)` or the `tup@` macro. Parentheses only group.
         val result = Compiler().compile("""
-            use std.io
-            use std.container.*
+            import std.io
+            import std.container.*
 
             func main() {
                 fin pair = (1, "hello")
@@ -60,7 +60,7 @@ class TupleTest {
 
     @Test fun groupingAndFunctionTypesAreNotTupleSyntax() {
         val result = Compiler().compile("""
-            use std.io
+            import std.io
 
             func apply(value: Int, transform: (Int) -> Int): Int {
                 return transform((value))

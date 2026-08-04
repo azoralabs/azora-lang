@@ -22,8 +22,8 @@ class ArrayStdlibTest {
     fun arrayOfAndLiteralProduceEquivalentValues() {
         val result = compile(
             """
-            use std.container.array
-            use std.io
+            import std.container.array
+            import std.io
 
             func main() {
                 fin factory: Array<Int> = std::arrayOf(1, 2, 3)
@@ -44,8 +44,8 @@ class ArrayStdlibTest {
     fun arrayTypeSugarIsCanonicalAcrossFunctionBoundaries() {
         val result = compile(
             """
-            use std.container.array
-            use std.io
+            import std.container.array
+            import std.io
 
             func first(values: Array<String>): String {
                 return values[0]
@@ -73,8 +73,8 @@ class ArrayStdlibTest {
     fun arrayOfSupportsNestedHomogeneousArrays() {
         val result = compile(
             """
-            use std.container.array
-            use std.io
+            import std.container.array
+            import std.io
 
             func main() {
                 fin rows: Array<Array<Int>> = std::arrayOf(arr@[1, 2], arr@[3, 4])
@@ -90,8 +90,8 @@ class ArrayStdlibTest {
     fun arrayOfSupportsAnExplicitlyTypedEmptyArray() {
         val result = compile(
             """
-            use std.container.array
-            use std.io
+            import std.container.array
+            import std.io
 
             func main() {
                 fin values: Array<Int> = std::arrayOf<Int>()
@@ -107,7 +107,7 @@ class ArrayStdlibTest {
     fun arrayOfRejectsMixedElementTypes() {
         val mixed = Compiler().compile(
             """
-            use std.container.array
+            import std.container.array
 
             func main() {
                 fin values = std::arrayOf(1, "two")
@@ -121,7 +121,7 @@ class ArrayStdlibTest {
 
         val wrongExplicitType = Compiler().compile(
             """
-            use std.container.array
+            import std.container.array
 
             func main() {
                 fin values = std::arrayOf<String>(1, 2)

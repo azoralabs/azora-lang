@@ -16,7 +16,7 @@ class NamedArgsTest {
 
     @Test fun namedArgsReordered() {
         assertEquals("3\n4", run("""
-            use std.io
+            import std.io
             pack Point {
                 var x: Int
                 var y: Int
@@ -31,7 +31,7 @@ class NamedArgsTest {
 
     @Test fun namedArgsInOrder() {
         assertEquals("1\n2", run("""
-            use std.io
+            import std.io
             pack Point {
                 var x: Int
                 var y: Int

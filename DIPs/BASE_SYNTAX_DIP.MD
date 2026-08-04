@@ -6,32 +6,75 @@ and expression foundation shared by every other construct.
 ## Grammar
 
 ```
-BINDING   ::= (var | fin | let | mem | rem | ret) NAME [: Type] = EXPRESSION
-CONST     ::= (inline | deepinline) (var | fin | let) NAME [: Type] = EXPRESSION   (compile-time)
+BINDING   ::= (var | let | val | fin | mem | rem | ret) NAME [: Type] = EXPRESSION
+CONST     ::= (inline | deepinline) (var | let | val | fin) NAME [: Type] = EXPRESSION   (compile-time)
 ASSIGN    ::= LVALUE (= | += | -= | *= | /= | %= | ~=) EXPRESSION
 LVALUE    ::= NAME | expr.field | expr[index] | *pointer
 ```
 
-- `var` — mutable binding.
-- `fin` — final (immutable) binding, value fixed after initialization.
-- `let` — single-assignment binding (immutable reference).
+Four keywords vary two independent axes — whether the **name** can be rebound,
+and whether the **value** can be mutated through it:
+
+| keyword | rebind the name | mutate the value | `&` (shared borrow) | `!` (mutable borrow) |
+|---------|-----------------|------------------|---------------------|----------------------|
+| `var`   | yes             | yes              | yes                 | yes                  |
+| `let`   | no              | yes              | yes                 | yes                  |
+| `val`   | yes             | no               | yes                 | no                   |
+| `fin`   | no              | no               | yes                 | no                   |
+
 - `mem` / `rem` / `ret` — reactive bindings (see the Reactive DIP).
-- `inline var` / `inline fin` / `inline let` — compile-time bindings, folded at
-  compile time; `deepinline …` recurses through nested inline constructs (see the
-  CTCE DIP). `inline var` is a mutable compile-time binding used during folding.
+- All four work in a runtime scope and in a compile-time one: `inline var`,
+  `inline let`, `inline val`, `inline fin` are folded at compile time, and
+  `deepinline …` recurses through nested inline constructs (see the CTCE DIP).
+- Only `fin` may appear at top level. A global is shared, and what makes sharing
+  unsafe is the name being rebindable — so `var`, `let` and `val` are all
+  rejected there; use `fin`, `threadlocal`, or the `inline …` forms.
 
 ---
 
 ## 1. Bindings
 
 ```azora
-var count = 0            // mutable, type inferred as Int
-fin name = "Azora"       // immutable
-let greeting = "Hello"   // single-assignment
+var count = 0            // rebindable, mutable value
+let buffer = alloc Int[8]  // fixed name, writable buffer
+val config = loadConfig()  // rebindable name, frozen value
+fin name = "Azora"       // fixed name, frozen value
 var total: Int = 0       // explicit type
 ```
 
-Reassignment and compound assignment (only for `var`):
+The two axes are independent, so each keyword rejects exactly one thing:
+
+```azora
+var p = Point(1, 2)
+p = Point(3, 4)          // ok — var rebinds
+p.x = 10                 // ok — var mutates
+
+let q = Point(1, 2)
+q = Point(3, 4)          // error: cannot reassign immutable binding 'q'
+q.x = 10                 // ok
+
+val r = Point(1, 2)
+r = Point(3, 4)          // ok
+r.x = 10                 // error: cannot assign to member 'x' through 'r'
+
+fin s = Point(1, 2)
+s = Point(3, 4)          // error
+s.x = 10                 // error
+```
+
+Immutability of the value reaches through a whole access chain, and covers
+index writes and mutable borrows as well as field writes:
+
+```azora
+fin o = Outer(Inner(1))
+o.inner.v = 2            // error — the write lands on `o`
+
+func bump(n: Int!) { n = n + 1 }
+val c = 1
+bump(c!)                 // error: cannot borrow mutably … through 'c'
+```
+
+Reassignment and compound assignment (only for `var` and `val`):
 
 ```azora
 count = count + 1
@@ -52,7 +95,7 @@ text ~= suffix           // ~= appends a stringified value
 | `Short` / `UShort` | 16-bit |
 | `Long` / `ULong` | 64-bit |
 | `Cent` / `UCent` | 128-bit |
-| `Float` / `Real` / `Decimal` | 32-bit / 64-bit / 128-bit floating point |
+| `Float` / `Double` / `Decimal` | 32-bit / 64-bit / 128-bit floating point |
 | `Bool` | `true` / `false` |
 | `Char` | a character |
 | `String` | UTF-8 text |
@@ -64,7 +107,7 @@ text ~= suffix           // ~= appends a stringified value
 ```azora
 255            // Int
 0xFF           // hex Int
-3.14           // Real
+3.14           // Double
 1500.0f        // Float (suffix)
 100L           // Long (suffix)
 true / false   // Bool
@@ -126,12 +169,12 @@ for i in 0..<10 { … }     // half-open 0..9
 ## 8. Blocks and scopes
 
 ```azora
-zone {
+scope {
     var x = 2            // shadows outer x
     std::println(x)
     std::println(::x)    // ::name reaches the enclosing scope
 }
 ```
 
-A bare `zone { … }` introduces a nested lexical scope. `::name` accesses the
-same name in the parent scope. (See the Modules & Zones DIP for named zones.)
+A bare `scope { … }` introduces a nested lexical scope. `::name` accesses the
+same name in the parent scope. (See the Modules & Realms DIP for named realms.)

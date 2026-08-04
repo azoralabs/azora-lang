@@ -96,7 +96,7 @@ class AzoraLanguageServerTest {
     @Test
     fun importedFunctionsAreHighlightedButUnknownCallsAreNot() {
         val source = """
-            use std.io
+            import std.io
             func main() {
                 std::println("known")
                 notDeclared("unknown")
@@ -197,7 +197,7 @@ fin array = collect_all@(tuple)"""
 
     @Test
     fun completesLocalsAndParams() {
-        val source = "func update(delta: Real) {\n    var speed = 5\n    \n}"
+        val source = "func update(delta: Double) {\n    var speed = 5\n    \n}"
         val offset = source.indexOf("    \n") + 4
         val list = completions(source, offset)
         assertTrue(list.any { it.label == "delta" && it.kind == "param" }, "$list")
@@ -224,7 +224,7 @@ fin array = collect_all@(tuple)"""
 
     @Test
     fun completesStdlibFunctions() {
-        val source = "use std.math\nfunc main() {\n    ab\n}"
+        val source = "import std.math\nfunc main() {\n    ab\n}"
         val offset = source.indexOf("    ab") + 6
         val list = completions(source, offset)
         assertTrue(list.any { it.label == "abs" && it.kind == "function" }, "stdlib abs should complete: $list")
@@ -234,7 +234,7 @@ fin array = collect_all@(tuple)"""
 
     @Test
     fun completesGroupedStdlibImports() {
-        val source = "use std.{math, container}\nfunc main() {\n    ab\n}"
+        val source = "import std.{math, container}\nfunc main() {\n    ab\n}"
         val offset = source.indexOf("    ab") + 6
         val list = completions(source, offset)
         assertTrue(list.any { it.label == "abs" && it.kind == "function" && "std.math" in it.detail },
@@ -243,7 +243,7 @@ fin array = collect_all@(tuple)"""
 
     @Test
     fun completesSelectiveStdlibImportFromContainingModule() {
-        val source = "use std.math.abs\nfunc main() {\n    ab\n}"
+        val source = "import std.math.abs\nfunc main() {\n    ab\n}"
         val offset = source.indexOf("    ab") + 6
         val list = completions(source, offset)
         assertTrue(list.any { it.label == "abs" && it.kind == "function" && "std.math" in it.detail },
@@ -252,7 +252,7 @@ fin array = collect_all@(tuple)"""
 
     @Test
     fun stdlibConstantsComplete() {
-        val source = "use std\nfunc main() {\n    P\n}"
+        val source = "import std\nfunc main() {\n    P\n}"
         val offset = source.indexOf("    P") + 5
         val list = completions(source, offset)
         assertTrue(list.any { it.label == "PI" && it.kind == "variable" }, "PI should complete: $list")
@@ -276,7 +276,7 @@ fin array = collect_all@(tuple)"""
         assertTrue(without.none { it.label == "appInit" },
             "engine symbol must not complete without 'use engine': $without")
 
-        val imported = "use engine\nfunc main() {\n    ap\n}"
+        val imported = "import engine\nfunc main() {\n    ap\n}"
         val importedOffset = imported.indexOf("    ap") + 6
         val with = completions(imported, importedOffset, prelude)
         assertTrue(with.any { it.label == "appInit" && "engine" in it.detail },

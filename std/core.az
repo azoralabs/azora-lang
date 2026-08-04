@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-expose mod std.core
+expose module std.core
 
 /**
  * @file std/core.az
@@ -25,8 +25,8 @@ expose mod std.core
  * provided and never dispatch at runtime.
  */
 
-use zone std {
-    @SinceAzora("0.0.4")
+use realm std {
+    @Since("0.0.4")
     bridge pack Unit
 
     /**
@@ -35,10 +35,10 @@ use zone std {
      * `Any` is compiler-provided: it has no constructible runtime pack and each
      * backend uses its native erased value representation.
      */
-    @SinceAzora("0.0.4")
+    @Since("0.0.4")
     bridge pack Any
 
-    @SinceAzora("0.0.4")
+    @Since("0.0.4")
     bridge pack Self
 
     /**
@@ -46,7 +46,7 @@ use zone std {
      * type lists (`[Type]`) and as the parameter type of `type` functions
      * (`type promote(T: ...Type)`).
      */
-    @SinceAzora("0.0.4")
+    @Since("0.0.4")
     bridge pack Type
 
     /** Declaration categories accepted by decorator `for` constraints. */
@@ -105,32 +105,32 @@ use zone std {
 
     /** Marks an API as stable from the optional semantic version onward. */
     @Experimental(since: "0.0.4")
-    bridge deco Stable {
+    bridge annot Stable {
         fin since: String = ""
     }
 
     /** Marks an API as experimental from the optional semantic version onward. */
     @Experimental(since: "0.0.4")
-    bridge deco Experimental {
+    bridge annot Experimental {
         fin since: String = ""
     }
 
     /** Records the first released version containing a declaration. */
     @Experimental(since: "0.0.4")
-    bridge deco SinceAzora {
+    bridge annot Since {
         fin version: String
     }
 
     /** Marks an API as deprecated and optionally names its replacement. */
     @Experimental(since: "0.0.4")
-    bridge deco Deprecated {
+    bridge annot Deprecated {
         fin since: String = ""
         fin replacement: String = ""
     }
 
     /** Allows compile-time generated packs to declare numeric field names. */
     @Experimental(since: "0.0.4")
-    bridge deco EnforceNumFields for .Pack
+    bridge annot EnforceNumFields for .Pack
 
     /**
      * Connects a library decorator to a compiler derive generator.
@@ -140,7 +140,7 @@ use zone std {
      * not depend on library module paths or decorator names.
      */
     @Experimental(since: "0.0.4")
-    bridge deco Derive for .Deco {
+    bridge annot Derive for .Deco {
         fin generator: String
         fin role: String
         fin provider: String = ""
@@ -151,7 +151,7 @@ use zone std {
     }
 
     @Experimental(since: "0.0.4")
-    bridge slot Macro {
+    bridge variant Macro {
         Prefix(String)
         Infix(String)
         Type

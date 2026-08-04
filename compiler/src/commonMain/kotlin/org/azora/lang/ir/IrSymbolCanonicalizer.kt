@@ -20,7 +20,7 @@ package org.azora.lang.ir
  * Converts frontend-qualified symbol identities to the canonical Azora IR ABI:
  * one `__` prefix followed by namespace and symbol segments separated by `_`.
  *
- * The frontend deliberately uses `__` between source zone segments. Keeping
+ * The frontend deliberately uses `__` between source realm segments. Keeping
  * that representation out of IR prevents generated symbols from accumulating
  * separators during specialization (`__std__tupleOf`), and gives every backend
  * one stable spelling to consume.
@@ -120,7 +120,7 @@ internal object IrSymbolCanonicalizer {
                 thenBranch = stmt.thenBranch.map(::stmt),
                 elseBranch = stmt.elseBranch?.map(::stmt),
             )
-            is IrStmt.Zone -> stmt.copy(body = stmt.body.map(::stmt))
+            is IrStmt.Scope -> stmt.copy(body = stmt.body.map(::stmt))
             is IrStmt.Assert -> stmt.copy(condition = expr(stmt.condition), message = expr(stmt.message))
             is IrStmt.Trace -> stmt.copy(
                 level = expr(stmt.level),
@@ -158,7 +158,7 @@ internal object IrSymbolCanonicalizer {
 
         private fun expr(expr: IrExpr): IrExpr = when (expr) {
             is IrExpr.IntLiteral -> expr.copy(type = type(expr.type))
-            is IrExpr.RealLiteral -> expr.copy(type = type(expr.type))
+            is IrExpr.DoubleLiteral -> expr.copy(type = type(expr.type))
             is IrExpr.StringLiteral -> expr
             is IrExpr.EnumLiteral -> expr.copy(enumName = symbol(expr.enumName))
             is IrExpr.BoolLiteral -> expr

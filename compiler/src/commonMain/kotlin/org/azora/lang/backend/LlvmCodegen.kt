@@ -42,7 +42,7 @@ import org.azora.lang.ir.IrUnaryOp
  *   Short/UShort    → i16
  *   Long/ULong      → i64
  *   Cent/UCent      → i128
- *   Real            → double
+ *   Double            → double
  *   Float           → float
  *   Decimal         → fp128
  *   Bool            → i1
@@ -132,7 +132,7 @@ class LlvmCodegen {
 
     private data class ActiveArena(val pointer: String, val previous: String)
 
-    /** Active zone alloc arenas; returns clean them from inner to outer. */
+    /** Active realm alloc arenas; returns clean them from inner to outer. */
     private val arenaStack = ArrayDeque<ActiveArena>()
 
     private var taskContextCounter = 0
@@ -191,7 +191,7 @@ class LlvmCodegen {
     private var usesMapGrow = false
     private var usesIntToStr = false
     private var usesUintToStr = false
-    private var usesRealToStr = false
+    private var usesDoubleToStr = false
     private var usesTrunc = false
     private var usesCharToStr = false
     private var usesFree = false
@@ -200,10 +200,10 @@ class LlvmCodegen {
     private var usesTaskRuntime = false
 
     /**
-     * True when any function in the program uses a `zone alloc` arena. Because the
+     * True when any function in the program uses a `realm alloc` arena. Because the
      * active arena is a thread-local consulted by nested calls, an allocation made
      * anywhere can be captured by an arena — so escape detaches must be emitted in
-     * every function once any arena exists, not only lexically inside a zone.
+     * every function once any arena exists, not only lexically inside a realm.
      */
     private var programUsesArena = false
 
@@ -248,7 +248,7 @@ class LlvmCodegen {
         usesMapGrow = false
         usesIntToStr = false
         usesUintToStr = false
-        usesRealToStr = false
+        usesDoubleToStr = false
         usesTrunc = false
         usesCharToStr = false
         usesFree = false
@@ -274,10 +274,10 @@ class LlvmCodegen {
             structDefs[item.name] = item
         }
 
-        // Whole-program scan: does any function open a `zone alloc` arena? If so,
+        // Whole-program scan: does any function open a `realm alloc` arena? If so,
         // escaping-pointer stores everywhere must detach from the current arena.
         programUsesArena = program.items.any {
-            it is IrTopLevel.Func && stmtsUseAllocZone(it.function.body)
+            it is IrTopLevel.Func && stmtsUseAllocRealm(it.function.body)
         }
         // Escaping-pointer detaches reference the arena runtime, so ensure it (and
         // the arena type/thread-local) is emitted whenever any arena exists.
@@ -326,7 +326,13 @@ class LlvmCodegen {
         if (structs.isNotEmpty()) {
             body.appendLine("; Struct types")
             for (s in structs) {
-                val fieldTypes = s.fields.joinToString(", ") { mapType(it.type) }
+                // A union is one slot as wide as its widest member; every member
+                // addresses that same slot through a bitcast (see emitFieldPtr).
+                val fieldTypes = if (s.isUnion) {
+                    mapType(widestMember(s))
+                } else {
+                    s.fields.joinToString(", ") { mapType(it.type) }
+                }
                 body.appendLine("%struct.${sanitizeName(s.name)} = type { $fieldTypes }")
             }
             body.appendLine()
@@ -389,7 +395,7 @@ class LlvmCodegen {
         }
         for (item in externs) {
             if (item.name in stringIntrinsics) continue
-            // `zone std { bridge func sqrt(…) }` mangles to `__std_math_sqrt`,
+            // `realm std { bridge func sqrt(…) }` mangles to `__std_math_sqrt`,
             // a symbol nothing provides. The compiler supplies these itself rather
             // than linking a hand-written C shim: declare the libm function and
             // define the mangled name as a call to it.
@@ -511,7 +517,7 @@ class LlvmCodegen {
         val llvmType = mapType(type)
         val value = when (initializer) {
             is IrExpr.IntLiteral -> "${initializer.value}"
-            is IrExpr.RealLiteral -> floatConst(initializer.value, type)
+            is IrExpr.DoubleLiteral -> floatConst(initializer.value, type)
             is IrExpr.CharLiteral -> "${initializer.value.code}"
             is IrExpr.BoolLiteral -> if (initializer.value) "1" else "0"
             is IrExpr.StringLiteral -> {
@@ -609,7 +615,7 @@ class LlvmCodegen {
                     collectLocalSlots(stmt.thenBranch, slots)
                     stmt.elseBranch?.let { collectLocalSlots(it, slots) }
                 }
-                is IrStmt.Zone -> collectLocalSlots(stmt.body, slots)
+                is IrStmt.Scope -> collectLocalSlots(stmt.body, slots)
                 is IrStmt.While -> collectLocalSlots(stmt.body, slots)
                 is IrStmt.For -> {
                     slots.add(stmt.counter to mapType(stmt.start.type))
@@ -797,7 +803,7 @@ class LlvmCodegen {
             emit("  $sizeGep = getelementptr $ctxType, $ctxType* null, i32 1")
             emit("  $size = ptrtoint $ctxType* $sizeGep to i64")
             // The task entry releases its context explicitly. Keep runtime-owned
-            // bookkeeping outside a caller's active zone to avoid double frees.
+            // bookkeeping outside a caller's active realm to avoid double frees.
             emit("  $raw = call i8* @__azora_alloc_raw(i64 $size)")
             emit("  $ctx = bitcast i8* $raw to $ctxType*")
             for ((i, param) in func.params.withIndex()) {
@@ -871,7 +877,7 @@ class LlvmCodegen {
                     val (alloca, type) = entry
                     val value = emitExpr(stmt.value)
                     emit("  store $type $value, $type* $alloca")
-                    // The variable may be declared outside the current `zone alloc`;
+                    // The variable may be declared outside the current `realm alloc`;
                     // conservatively keep a reassigned pointer alive past its free_all.
                     emitArenaDetach(value, stmt.value.type)
                 } else {
@@ -904,7 +910,7 @@ class LlvmCodegen {
                 }
             }
             is IrStmt.ExprStmt -> emitExpr(stmt.expr)
-            is IrStmt.Zone -> emitZone(stmt)
+            is IrStmt.Scope -> emitRealm(stmt)
             is IrStmt.If -> emitIf(stmt)
             is IrStmt.Assert -> emitAssert(stmt)
             is IrStmt.Trace -> emitTrace(stmt)
@@ -1065,7 +1071,7 @@ class LlvmCodegen {
         return result
     }
 
-    private fun emitZone(stmt: IrStmt.Zone) {
+    private fun emitRealm(stmt: IrStmt.Scope) {
         if (!stmt.alloc) {
             emitStmts(stmt.body)
             return
@@ -1099,66 +1105,66 @@ class LlvmCodegen {
         arenaStack.removeLast()
     }
 
-    /** Whether any statement (transitively, including lambda bodies) opens a `zone alloc`. */
-    private fun stmtsUseAllocZone(stmts: List<IrStmt>): Boolean = stmts.any { stmtUsesAllocZone(it) }
+    /** Whether any statement (transitively, including lambda bodies) opens a `realm alloc`. */
+    private fun stmtsUseAllocRealm(stmts: List<IrStmt>): Boolean = stmts.any { stmtUsesAllocRealm(it) }
 
-    private fun stmtUsesAllocZone(stmt: IrStmt): Boolean = when (stmt) {
-        is IrStmt.Zone -> stmt.alloc || stmtsUseAllocZone(stmt.body)
-        is IrStmt.If -> exprUsesAllocZone(stmt.condition) || stmtsUseAllocZone(stmt.thenBranch) ||
-            (stmt.elseBranch?.let { stmtsUseAllocZone(it) } ?: false)
-        is IrStmt.While -> exprUsesAllocZone(stmt.condition) || stmtsUseAllocZone(stmt.body)
-        is IrStmt.For -> exprUsesAllocZone(stmt.start) || exprUsesAllocZone(stmt.end) ||
-            (stmt.step?.let { exprUsesAllocZone(it) } ?: false) || stmtsUseAllocZone(stmt.body)
-        is IrStmt.ForEach -> exprUsesAllocZone(stmt.iterable) || stmtsUseAllocZone(stmt.body)
-        is IrStmt.Loop -> stmtsUseAllocZone(stmt.body)
-        is IrStmt.When -> exprUsesAllocZone(stmt.scrutinee) ||
-            stmt.branches.any { stmtsUseAllocZone(it.body) } ||
-            (stmt.elseBranch?.let { stmtsUseAllocZone(it) } ?: false)
-        is IrStmt.Try -> stmtsUseAllocZone(stmt.body) || (stmt.catchBody?.let { stmtsUseAllocZone(it) } ?: false)
-        is IrStmt.Defer -> stmtsUseAllocZone(stmt.body)
-        is IrStmt.VarDecl -> exprUsesAllocZone(stmt.initializer)
-        is IrStmt.FinDecl -> exprUsesAllocZone(stmt.initializer)
-        is IrStmt.LetDecl -> exprUsesAllocZone(stmt.initializer)
-        is IrStmt.Assignment -> exprUsesAllocZone(stmt.value)
-        is IrStmt.IndexAssign -> exprUsesAllocZone(stmt.target) || exprUsesAllocZone(stmt.index) ||
-            exprUsesAllocZone(stmt.value)
-        is IrStmt.MemberAssign -> exprUsesAllocZone(stmt.target) || exprUsesAllocZone(stmt.value)
-        is IrStmt.Return -> stmt.value?.let { exprUsesAllocZone(it) } ?: false
-        is IrStmt.ExprStmt -> exprUsesAllocZone(stmt.expr)
-        is IrStmt.Throw -> exprUsesAllocZone(stmt.value)
-        is IrStmt.Yield -> exprUsesAllocZone(stmt.value)
-        is IrStmt.Assert -> exprUsesAllocZone(stmt.condition) || exprUsesAllocZone(stmt.message)
+    private fun stmtUsesAllocRealm(stmt: IrStmt): Boolean = when (stmt) {
+        is IrStmt.Scope -> stmt.alloc || stmtsUseAllocRealm(stmt.body)
+        is IrStmt.If -> exprUsesAllocRealm(stmt.condition) || stmtsUseAllocRealm(stmt.thenBranch) ||
+            (stmt.elseBranch?.let { stmtsUseAllocRealm(it) } ?: false)
+        is IrStmt.While -> exprUsesAllocRealm(stmt.condition) || stmtsUseAllocRealm(stmt.body)
+        is IrStmt.For -> exprUsesAllocRealm(stmt.start) || exprUsesAllocRealm(stmt.end) ||
+            (stmt.step?.let { exprUsesAllocRealm(it) } ?: false) || stmtsUseAllocRealm(stmt.body)
+        is IrStmt.ForEach -> exprUsesAllocRealm(stmt.iterable) || stmtsUseAllocRealm(stmt.body)
+        is IrStmt.Loop -> stmtsUseAllocRealm(stmt.body)
+        is IrStmt.When -> exprUsesAllocRealm(stmt.scrutinee) ||
+            stmt.branches.any { stmtsUseAllocRealm(it.body) } ||
+            (stmt.elseBranch?.let { stmtsUseAllocRealm(it) } ?: false)
+        is IrStmt.Try -> stmtsUseAllocRealm(stmt.body) || (stmt.catchBody?.let { stmtsUseAllocRealm(it) } ?: false)
+        is IrStmt.Defer -> stmtsUseAllocRealm(stmt.body)
+        is IrStmt.VarDecl -> exprUsesAllocRealm(stmt.initializer)
+        is IrStmt.FinDecl -> exprUsesAllocRealm(stmt.initializer)
+        is IrStmt.LetDecl -> exprUsesAllocRealm(stmt.initializer)
+        is IrStmt.Assignment -> exprUsesAllocRealm(stmt.value)
+        is IrStmt.IndexAssign -> exprUsesAllocRealm(stmt.target) || exprUsesAllocRealm(stmt.index) ||
+            exprUsesAllocRealm(stmt.value)
+        is IrStmt.MemberAssign -> exprUsesAllocRealm(stmt.target) || exprUsesAllocRealm(stmt.value)
+        is IrStmt.Return -> stmt.value?.let { exprUsesAllocRealm(it) } ?: false
+        is IrStmt.ExprStmt -> exprUsesAllocRealm(stmt.expr)
+        is IrStmt.Throw -> exprUsesAllocRealm(stmt.value)
+        is IrStmt.Yield -> exprUsesAllocRealm(stmt.value)
+        is IrStmt.Assert -> exprUsesAllocRealm(stmt.condition) || exprUsesAllocRealm(stmt.message)
         else -> false
     }
 
-    private fun exprUsesAllocZone(expr: IrExpr): Boolean = when (expr) {
-        is IrExpr.Lambda -> stmtsUseAllocZone(expr.body)
-        is IrExpr.Binary -> exprUsesAllocZone(expr.left) || exprUsesAllocZone(expr.right)
-        is IrExpr.Unary -> exprUsesAllocZone(expr.operand)
-        is IrExpr.Call -> (expr.receiver?.let { exprUsesAllocZone(it) } ?: false) ||
-            expr.args.any { exprUsesAllocZone(it) }
-        is IrExpr.MethodCall -> exprUsesAllocZone(expr.target) || expr.args.any { exprUsesAllocZone(it) }
-        is IrExpr.ArrayLiteral -> expr.elements.any { exprUsesAllocZone(it) }
-        is IrExpr.SetLit -> expr.elements.any { exprUsesAllocZone(it) }
-        is IrExpr.TupleLit -> expr.elements.any { exprUsesAllocZone(it) }
-        is IrExpr.VariantLit -> expr.elements.any { exprUsesAllocZone(it) }
-        is IrExpr.MapLit -> expr.entries.any { exprUsesAllocZone(it.first) || exprUsesAllocZone(it.second) }
-        is IrExpr.Index -> exprUsesAllocZone(expr.target) || exprUsesAllocZone(expr.index)
-        is IrExpr.Member -> exprUsesAllocZone(expr.target)
-        is IrExpr.StructCtor -> expr.args.any { exprUsesAllocZone(it) }
-        is IrExpr.TupleAccess -> exprUsesAllocZone(expr.target)
-        is IrExpr.CatchExpr -> exprUsesAllocZone(expr.expr) || exprUsesAllocZone(expr.fallback)
-        is IrExpr.IfExpr -> exprUsesAllocZone(expr.condition) || exprUsesAllocZone(expr.thenExpr) ||
-            exprUsesAllocZone(expr.elseExpr)
-        is IrExpr.NumCast -> exprUsesAllocZone(expr.value)
-        is IrExpr.EnumToString -> exprUsesAllocZone(expr.value)
-        is IrExpr.Await -> exprUsesAllocZone(expr.value)
-        is IrExpr.Spread -> exprUsesAllocZone(expr.array)
-        is IrExpr.StringTemplate -> expr.parts.any { it is IrExpr.IrTemplatePart.Expr && exprUsesAllocZone(it.expr) }
+    private fun exprUsesAllocRealm(expr: IrExpr): Boolean = when (expr) {
+        is IrExpr.Lambda -> stmtsUseAllocRealm(expr.body)
+        is IrExpr.Binary -> exprUsesAllocRealm(expr.left) || exprUsesAllocRealm(expr.right)
+        is IrExpr.Unary -> exprUsesAllocRealm(expr.operand)
+        is IrExpr.Call -> (expr.receiver?.let { exprUsesAllocRealm(it) } ?: false) ||
+            expr.args.any { exprUsesAllocRealm(it) }
+        is IrExpr.MethodCall -> exprUsesAllocRealm(expr.target) || expr.args.any { exprUsesAllocRealm(it) }
+        is IrExpr.ArrayLiteral -> expr.elements.any { exprUsesAllocRealm(it) }
+        is IrExpr.SetLit -> expr.elements.any { exprUsesAllocRealm(it) }
+        is IrExpr.TupleLit -> expr.elements.any { exprUsesAllocRealm(it) }
+        is IrExpr.VariantLit -> expr.elements.any { exprUsesAllocRealm(it) }
+        is IrExpr.MapLit -> expr.entries.any { exprUsesAllocRealm(it.first) || exprUsesAllocRealm(it.second) }
+        is IrExpr.Index -> exprUsesAllocRealm(expr.target) || exprUsesAllocRealm(expr.index)
+        is IrExpr.Member -> exprUsesAllocRealm(expr.target)
+        is IrExpr.StructCtor -> expr.args.any { exprUsesAllocRealm(it) }
+        is IrExpr.TupleAccess -> exprUsesAllocRealm(expr.target)
+        is IrExpr.CatchExpr -> exprUsesAllocRealm(expr.expr) || exprUsesAllocRealm(expr.fallback)
+        is IrExpr.IfExpr -> exprUsesAllocRealm(expr.condition) || exprUsesAllocRealm(expr.thenExpr) ||
+            exprUsesAllocRealm(expr.elseExpr)
+        is IrExpr.NumCast -> exprUsesAllocRealm(expr.value)
+        is IrExpr.EnumToString -> exprUsesAllocRealm(expr.value)
+        is IrExpr.Await -> exprUsesAllocRealm(expr.value)
+        is IrExpr.Spread -> exprUsesAllocRealm(expr.array)
+        is IrExpr.StringTemplate -> expr.parts.any { it is IrExpr.IrTemplatePart.Expr && exprUsesAllocRealm(it.expr) }
         else -> false
     }
 
-    /** Types whose values are heap objects that a `zone alloc` arena tracks and frees. */
+    /** Types whose values are heap objects that a `realm alloc` arena tracks and frees. */
     private fun isArenaTrackedType(type: IrType): Boolean = when (type) {
         is IrType.Named -> type.name in structDefs
         is IrType.Array, is IrType.Map, is IrType.Set, is IrType.Tuple,
@@ -1169,7 +1175,7 @@ class LlvmCodegen {
     /**
      * Detaches an escaping pointer [value] of [type] from the innermost active arena
      * so it survives that arena's `free_all`. Emitted after storing an arena-managed
-     * pointer into memory that can outlive the enclosing `zone alloc` (an aggregate
+     * pointer into memory that can outlive the enclosing `realm alloc` (an aggregate
      * field, an array/map slot, a global, or a return value). A no-op at runtime when
      * no arena is active or the pointer was not arena-allocated.
      */
@@ -1689,7 +1695,7 @@ class LlvmCodegen {
     private fun emitExpr(expr: IrExpr): String = when (expr) {
         is IrExpr.IntLiteral -> "${expr.value}"
         is IrExpr.CharLiteral -> "${expr.value.code}"
-        is IrExpr.RealLiteral -> floatConst(expr.value, expr.type)
+        is IrExpr.DoubleLiteral -> floatConst(expr.value, expr.type)
         is IrExpr.BoolLiteral -> if (expr.value) "1" else "0"
         is IrExpr.StringLiteral -> {
             val ref = addStringConstant(expr.value)
@@ -1903,7 +1909,7 @@ class LlvmCodegen {
         usesAllocatorRuntime = true
         val raw = nextTmp()
         // Joined task results are owned and released by the task runtime. They
-        // must not also be registered in an enclosing allocation zone.
+        // must not also be registered in an enclosing allocation realm.
         emit("  $raw = call i8* @__azora_alloc_raw(i64 ${sizeOfScalar(type)})")
         val ptrType = "${mapType(type)}*"
         val typed = nextTmp()
@@ -2093,7 +2099,7 @@ class LlvmCodegen {
                     collectDeclaredNames(stmt.thenBranch, names)
                     stmt.elseBranch?.let { collectDeclaredNames(it, names) }
                 }
-                is IrStmt.Zone -> collectDeclaredNames(stmt.body, names)
+                is IrStmt.Scope -> collectDeclaredNames(stmt.body, names)
                 is IrStmt.While -> collectDeclaredNames(stmt.body, names)
                 is IrStmt.Loop -> collectDeclaredNames(stmt.body, names)
                 is IrStmt.When -> {
@@ -2134,7 +2140,7 @@ class LlvmCodegen {
                     collectReferencedVars(stmt.thenBranch, refs)
                     stmt.elseBranch?.let { collectReferencedVars(it, refs) }
                 }
-                is IrStmt.Zone -> collectReferencedVars(stmt.body, refs)
+                is IrStmt.Scope -> collectReferencedVars(stmt.body, refs)
                 is IrStmt.Assert -> {
                     collectReferencedVars(stmt.condition, refs)
                     collectReferencedVars(stmt.message, refs)
@@ -2223,7 +2229,7 @@ class LlvmCodegen {
             is IrExpr.Lambda -> {}
             is IrExpr.Await -> collectReferencedVars(expr.value, refs)
             is IrExpr.Spread -> collectReferencedVars(expr.array, refs)
-            is IrExpr.IntLiteral, is IrExpr.RealLiteral, is IrExpr.StringLiteral, is IrExpr.EnumLiteral,
+            is IrExpr.IntLiteral, is IrExpr.DoubleLiteral, is IrExpr.StringLiteral, is IrExpr.EnumLiteral,
             is IrExpr.BoolLiteral, is IrExpr.CharLiteral, is IrExpr.SlotPattern -> {}
         }
     }
@@ -2248,7 +2254,7 @@ class LlvmCodegen {
     /**
      * Coerces a numeric [value] of IR type [from] to IR type [to] (for stores
      * into struct fields / array elements whose declared type is wider or
-     * floating-point, e.g. `Vec3(1, 2, 3)` with `Real` fields).
+     * floating-point, e.g. `Vec3(1, 2, 3)` with `Double` fields).
      */
     private fun isNumericLike(t: IrType): Boolean =
         t in IrType.integerTypes || t in IrType.floatTypes || t == IrType.Char
@@ -2260,7 +2266,7 @@ class LlvmCodegen {
         val bFloat = b in IrType.floatTypes
         if (aFloat || bFloat) {
             if (a == IrType.Decimal || b == IrType.Decimal) return IrType.Decimal
-            if (a == IrType.Real || b == IrType.Real) return IrType.Real
+            if (a == IrType.Double || b == IrType.Double) return IrType.Double
             return IrType.Float
         }
         return if (sizeOfScalar(a) >= sizeOfScalar(b)) a else b
@@ -2303,7 +2309,7 @@ class LlvmCodegen {
         if (fromPtr && toPtr) {
             val t = nextTmp(); emit("  $t = bitcast $ft $value to $tt"); return t
         }
-        // Float ↔ pointer. An erased generic slot is a pointer, so a `Real` has
+        // Float ↔ pointer. An erased generic slot is a pointer, so a `Double` has
         // to travel as its own bit pattern: reinterpreting a double *as* an
         // address is not well-formed IR. Integers already take the `inttoptr`
         // path above; floats need the bitcast first.
@@ -2385,6 +2391,25 @@ class LlvmCodegen {
         val ptr = nextTmp()
         emit("  $ptr = bitcast i8* $raw to $st*")
 
+        if (def.isUnion) {
+            // Exactly one member is initialized; the rest of the slot is whatever
+            // that write leaves behind, as in C.
+            val fieldName = expr.fieldNames.firstOrNull()
+            val fi = def.fields.indexOfFirst { it.name == fieldName }
+            if (fi >= 0 && argVals.isNotEmpty()) {
+                val field = def.fields[fi]
+                val ft = mapType(field.type)
+                val (rawVal, argType) = argVals[0]
+                val slot = nextTmp()
+                emit("  $slot = getelementptr $st, $st* $ptr, i32 0, i32 0")
+                val cast = nextTmp()
+                emit("  $cast = bitcast ${mapType(widestMember(def))}* $slot to $ft*")
+                val stored = coerceNumeric(rawVal, argType, field.type)
+                emit("  store $ft $stored, $ft* $cast")
+            }
+            return ptr
+        }
+
         for ((i, fieldName) in expr.fieldNames.withIndex()) {
             if (i >= argVals.size) break
             val fi = def.fields.indexOfFirst { it.name == fieldName }
@@ -2400,7 +2425,7 @@ class LlvmCodegen {
             emit("  $fp = getelementptr $st, $st* $ptr, i32 0, i32 $fi")
             emit("  store $ft $value, $ft* $fp")
             // Storing a pointer into an aggregate roots it out of the arena so the
-            // aggregate can safely outlive the zone it was built in.
+            // aggregate can safely outlive the realm it was built in.
             emitArenaDetach(value, field.type)
         }
         return ptr
@@ -2435,7 +2460,7 @@ class LlvmCodegen {
         return when {
             type in IrType.integerTypes || type == IrType.Char -> coerceNumeric(value, type, IrType.Long)
             type == IrType.Bool -> { emit("  $t = zext i1 $value to i64"); t }
-            type == IrType.Real || type == IrType.Decimal -> { emit("  $t = bitcast double $value to i64"); t }
+            type == IrType.Double || type == IrType.Decimal -> { emit("  $t = bitcast double $value to i64"); t }
             type == IrType.Float -> {
                 val b = nextTmp(); emit("  $b = bitcast float $value to i32")
                 emit("  $t = zext i32 $b to i64"); t
@@ -2450,7 +2475,7 @@ class LlvmCodegen {
         return when {
             type in IrType.integerTypes || type == IrType.Char -> coerceNumeric(value, IrType.Long, type)
             type == IrType.Bool -> { emit("  $t = trunc i64 $value to i1"); t }
-            type == IrType.Real || type == IrType.Decimal -> { emit("  $t = bitcast i64 $value to double"); t }
+            type == IrType.Double || type == IrType.Decimal -> { emit("  $t = bitcast i64 $value to double"); t }
             type == IrType.Float -> {
                 val tr = nextTmp(); emit("  $tr = trunc i64 $value to i32")
                 emit("  $t = bitcast i32 $tr to float"); t
@@ -2471,6 +2496,26 @@ class LlvmCodegen {
     }
 
     /** Emits a pointer to field [name] of struct value [expr] (or null if unknown). */
+    /**
+     * The member a union's storage is shaped after: its widest one.
+     *
+     * Width is measured in the machine sizes LLVM gives these types; a pointer
+     * (string, array, struct, spec box) is the widest thing a member can be, so
+     * a union containing one is pointer-shaped.
+     */
+    private fun widestMember(def: IrTopLevel.Struct): IrType =
+        def.fields.maxByOrNull { byteWidth(it.type) }?.type ?: IrType.Int
+
+    private fun byteWidth(type: IrType): Int = when (type) {
+        IrType.Bool, IrType.Byte, IrType.UByte -> 1
+        IrType.Short, IrType.UShort -> 2
+        IrType.Int, IrType.UInt, IrType.Float, IrType.Char -> 4
+        IrType.Long, IrType.ULong, IrType.ISize, IrType.USize, IrType.Double, IrType.Decimal -> 8
+        IrType.Cent, IrType.UCent -> 16
+        // Everything else is passed as a pointer.
+        else -> 8
+    }
+
     private fun emitFieldPtr(target: IrExpr, name: String): Triple<String, IrType, String>? {
         val tt = target.type as? IrType.Named ?: return null
         val def = structDefs[tt.name] ?: return null
@@ -2478,6 +2523,17 @@ class LlvmCodegen {
         if (fi < 0) return null
         val st = "%struct.${sanitizeName(tt.name)}"
         val ptr = emitExpr(target)
+        if (def.isUnion) {
+            // Every member starts at offset 0, so the address is the same for all
+            // of them and only its type differs — which is exactly what makes
+            // writing one member and reading another reinterpret the bytes.
+            val slot = nextTmp()
+            emit("  $slot = getelementptr $st, $st* $ptr, i32 0, i32 0")
+            val ft = mapType(def.fields[fi].type)
+            val cast = nextTmp()
+            emit("  $cast = bitcast ${mapType(widestMember(def))}* $slot to $ft*")
+            return Triple(cast, def.fields[fi].type, ft)
+        }
         val fp = nextTmp()
         emit("  $fp = getelementptr $st, $st* $ptr, i32 0, i32 $fi")
         // The declared field type is what the *slot* holds; for a generic pack
@@ -2490,7 +2546,7 @@ class LlvmCodegen {
      * The type field [index] of [def] actually holds, given the arguments on the
      * referring type.
      *
-     * A field declared as a type parameter is stored erased, so `Box<Real>.value`
+     * A field declared as a type parameter is stored erased, so `Box<Double>.value`
      * is a pointer slot that really contains a double. Substituting the argument
      * here is what lets the read and the write convert in opposite directions
      * instead of handing out an address.
@@ -2525,8 +2581,8 @@ class LlvmCodegen {
      * ordinary extern.
      *
      * Matching is on the declaration's final name segment so both the bare
-     * spelling and the `zone std` mangling resolve, and only when the
-     * signature is all-`Real` — an unrelated user extern that happens to be
+     * spelling and the `realm std` mangling resolve, and only when the
+     * signature is all-`Double` — an unrelated user extern that happens to be
      * called `log` keeps its own linkage.
      */
     private fun mathIntrinsicOf(item: IrTopLevel.Extern): String? {
@@ -2534,8 +2590,8 @@ class LlvmCodegen {
         val name = item.name.substringAfterLast('_').let { if (it == "powr") "pow" else it }
         val arity = LIBM_INTRINSICS[name] ?: return null
         if (item.params.size != arity) return null
-        if (item.returnType != IrType.Real) return null
-        if (item.params.any { it.second != IrType.Real }) return null
+        if (item.returnType != IrType.Double) return null
+        if (item.params.any { it.second != IrType.Double }) return null
         return name
     }
 
@@ -2606,7 +2662,7 @@ class LlvmCodegen {
             val raw = emitExpr(stmt.value)
             val value = coerceToField(raw, stmt.value.type, fieldType, ft)
             emit("  store $ft $value, $ft* $fp")
-            // The receiver may outlive the current `zone alloc`; keep the stored
+            // The receiver may outlive the current `realm alloc`; keep the stored
             // pointer alive past the arena's free_all.
             emitArenaDetach(value, fieldType)
             return
@@ -3473,7 +3529,7 @@ class LlvmCodegen {
             val raw = emitExpr(stmt.value)
             val value = coerceNumeric(raw, stmt.value.type, tt.element)
             emit("  store $et $value, $et* $ep, align 1")
-            // The array can outlive the current `zone alloc`; root the element.
+            // The array can outlive the current `realm alloc`; root the element.
             emitArenaDetach(value, tt.element)
             return
         }
@@ -3539,7 +3595,7 @@ class LlvmCodegen {
             return emitShortCircuit(expr)
         }
 
-        // Mixed numeric operands (`Int + Real`, `Byte < Long`, …) are widened to a
+        // Mixed numeric operands (`Int + Double`, `Byte < Long`, …) are widened to a
         // common type first, so the machine op sees two operands of one LLVM type.
         val bothNumeric = isNumericLike(leftType) && isNumericLike(rightType)
         val opType = if (bothNumeric) commonNumeric(leftType, rightType) else leftType
@@ -3831,7 +3887,7 @@ class LlvmCodegen {
         }
 
         // Coerce arguments to the callee's declared parameter types (numeric
-        // widening such as an Int literal passed to a Real/Long parameter).
+        // widening such as an Int literal passed to a Double/Long parameter).
         val declared = funcParamTypes[expr.name]
         if (expr.name == "__std_convert_toString" && expr.args.size == 1) {
             emitExpr(expr.args.single())
@@ -3962,21 +4018,21 @@ class LlvmCodegen {
                 emit("  $t = trunc i128 $v to i64")
                 printfFmt(if (arg.type == IrType.UCent) "%llu$nl" else "%lld$nl", listOf("i64 $t"))
             }
-            IrType.Real -> {
+            IrType.Double -> {
                 val v = emitExpr(arg)
-                printReal(v, nl)
+                printDouble(v, nl)
             }
             IrType.Float -> {
                 val v = emitExpr(arg)
                 val ext = nextTmp()
                 emit("  $ext = fpext float $v to double")
-                printReal(ext, nl)
+                printDouble(ext, nl)
             }
             IrType.Decimal -> {
                 val v = emitExpr(arg)
                 val d = nextTmp()
                 emit("  $d = fptrunc fp128 $v to double")
-                printReal(d, nl)
+                printDouble(d, nl)
             }
             IrType.Bool -> {
                 val v = emitExpr(arg)
@@ -4008,13 +4064,13 @@ class LlvmCodegen {
 
 
     /**
-     * Prints a floating-point value as a `Real`.
+     * Prints a floating-point value as a `Double`.
      *
      * `%g` alone renders an integral value as `4`, which reads as an `Int`. An
      * integral, finite value goes through `%.1f` so it keeps its `.0`; everything
      * else keeps `%g`'s shortest form.
      */
-    private fun printReal(value: String, nl: String) {
+    private fun printDouble(value: String, nl: String) {
         usesPrintf = true
         usesTrunc = true
         val whole = nextTmp()
@@ -4077,16 +4133,16 @@ class LlvmCodegen {
                 emit("  $tmp = call i8* @__azora_char_to_str(i32 $v)")
                 tmp
             }
-            IrType.Real, IrType.Float, IrType.Decimal -> {
-                usesRealToStr = true; usesSnprintf = true; usesMalloc = true; usesTrunc = true
+            IrType.Double, IrType.Float, IrType.Decimal -> {
+                usesDoubleToStr = true; usesSnprintf = true; usesMalloc = true; usesTrunc = true
                 val raw = emitExpr(expr)
                 val d = when (expr.type) {
-                    IrType.Real -> raw
+                    IrType.Double -> raw
                     IrType.Float -> { val t = nextTmp(); emit("  $t = fpext float $raw to double"); t }
                     else -> { val t = nextTmp(); emit("  $t = fptrunc fp128 $raw to double"); t }
                 }
                 val tmp = nextTmp()
-                emit("  $tmp = call i8* @__azora_real_to_str(double $d)")
+                emit("  $tmp = call i8* @__azora_double_to_str(double $d)")
                 tmp
             }
             else -> {
@@ -4135,10 +4191,10 @@ class LlvmCodegen {
 
         buildStringIntrinsics(sb)
 
-        // Values created by language helpers follow the active allocation zone.
+        // Values created by language helpers follow the active allocation realm.
         // Runtime bookkeeping is handled separately with __azora_alloc_raw.
         if (usesStrConcat || usesStrRepeat || usesArrayGrow || usesMapGrow ||
-            usesIntToStr || usesUintToStr || usesRealToStr || usesCharToStr
+            usesIntToStr || usesUintToStr || usesDoubleToStr || usesCharToStr
         ) {
             usesAllocatorRuntime = true
         }
@@ -4315,10 +4371,10 @@ class LlvmCodegen {
             sb.appendLine()
             // Escape hatch: unregister a pointer from the innermost active arena so
             // it survives that arena's free_all. Emitted after every store of an
-            // arena-managed pointer into memory that can outlive the zone (aggregate
+            // arena-managed pointer into memory that can outlive the realm (aggregate
             // fields, returns). No-op when no arena is active or the pointer was not
             // arena-allocated. Uses the thread-local current arena so it correctly
-            // detaches allocations made in nested calls under a `zone alloc`.
+            // detaches allocations made in nested calls under a `realm alloc`.
             sb.appendLine("; runtime: detach a pointer from the current scoped arena (escape)")
             sb.appendLine("define void @__azora_arena_detach_current(i8* %ptr) {")
             sb.appendLine("entry:")
@@ -4662,19 +4718,19 @@ class LlvmCodegen {
             sb.appendLine()
         }
 
-        if (usesRealToStr) {
+        if (usesDoubleToStr) {
             usesSnprintf = true
             // %g alone keeps only six significant digits, silently truncating an
-            // interpolated Real; %.17g round-trips an f64 exactly.
+            // interpolated Double; %.17g round-trips an f64 exactly.
             val fmt = addStringConstant("%.17g")
             sb.appendLine("; runtime: real to string")
-            sb.appendLine("define i8* @__azora_real_to_str(double %v) {")
+            sb.appendLine("define i8* @__azora_double_to_str(double %v) {")
             sb.appendLine("entry:")
             sb.appendLine("  %buf = call i8* @__azora_alloc(i64 32)")
             val intFmt = addStringConstant("%.1f")
             sb.appendLine("  %gfmt = getelementptr [${fmt.byteLen} x i8], [${fmt.byteLen} x i8]* ${fmt.name}, i64 0, i64 0")
             sb.appendLine("  %ifmt = getelementptr [${intFmt.byteLen} x i8], [${intFmt.byteLen} x i8]* ${intFmt.name}, i64 0, i64 0")
-            // A `Real` prints as a `Real`: an integral value keeps its `.0` so the
+            // A `Double` prints as a `Double`: an integral value keeps its `.0` so the
             // output says which type it came from. Anything else uses %g's shortest form.
             sb.appendLine("  %whole = call double @trunc(double %v)")
             sb.appendLine("  %isint = fcmp oeq double %v, %whole")
@@ -4714,7 +4770,7 @@ class LlvmCodegen {
     private fun mapType(type: IrType): String = when (type) {
         IrType.Int -> "i32"
         IrType.UInt -> "i32"
-        IrType.Real -> "double"
+        IrType.Double -> "double"
         IrType.Bool -> "i1"
         IrType.String -> "i8*"
         IrType.Unit -> "void"

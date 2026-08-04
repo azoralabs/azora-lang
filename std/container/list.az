@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
-mod std.container.list
+module std.container.list
 
-use std.serializer
-use std.convert
+import std.serializer
+import std.convert
 
 /**
  * @file std/container/list
@@ -40,14 +40,14 @@ use std.convert
  * @since 0.0.4
  */
 
-zone std {
+realm std {
     /**
      * Read-only behavior shared by every list implementation.
      *
      * `List` guarantees element ordering: iteration and indexed access follow
      * insertion order. A concrete pack may add stronger guarantees.
      *
-     * @param T The element type.
+     * @generic T The element type.
      */
     @Experimental(since: "0.0.4")
     spec List<T> {
@@ -113,7 +113,7 @@ zone std {
      * weaken a `ref List<T>` view: callers holding only a shared reference can
      * still use only read operations.
      *
-     * @param T The element type.
+     * @generic T The element type.
      */
     @Experimental(since: "0.0.4")
     spec MutableList<T> : List<T> {
@@ -145,7 +145,7 @@ zone std {
      * Storage is a contiguous `T*` buffer that doubles on demand. Fields are
      * `shield` so external zones cannot reach into the buffer directly.
      *
-     * @param T The element type.
+     * @generic T The element type.
      */
     @Experimental(since: "0.0.4")
     @Serializable
@@ -164,7 +164,7 @@ zone std {
         @Experimental(since: "0.0.4")
         func grow() { self! ->
             fin newCap = self.capacity * 2
-            fin newData = alloc T[newCap]
+            let newData = alloc T[newCap]
             for i in 0..<self.size {
                 newData[i] = self.data[i]
             }
@@ -281,10 +281,11 @@ zone std {
             return c
         }
 
-        func subList(from: Int, to: Int): List<T> { self& ->
+        func subList(from: Int, to: Int): List<T> in {
             assert from >= 0 { "subList from must be non-negative" }
             assert to <= self.size { "subList to out of bounds" }
             assert from <= to { "subList from must be <= to" }
+        } scope { self& ->
             var result = ArrayList<T>()
             for i in from..<to {
                 result.add(self.data[i])

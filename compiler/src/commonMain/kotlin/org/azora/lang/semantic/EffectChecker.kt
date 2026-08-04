@@ -163,7 +163,7 @@ class EffectChecker {
             is Stmt.LetDecl -> {
                 collectCallsFromExpr(stmt.initializer, calls)
             }
-            is Stmt.Zone -> stmt.body.forEach { collectCallsFromStmt(it, calls) }
+            is Stmt.Scope -> stmt.body.forEach { collectCallsFromStmt(it, calls) }
             is Stmt.Assert -> {
                 collectCallsFromExpr(stmt.condition, calls)
                 collectCallsFromExpr(stmt.message, calls)
@@ -274,7 +274,7 @@ class EffectChecker {
             is Expr.Inject -> { /* no sub-expressions to collect */ }
             is Expr.Spread -> collectCallsFromExpr(expr.array, calls)
             is Expr.SafeMember -> collectCallsFromExpr(expr.target, calls)
-            is Expr.IntLiteral, is Expr.RealLiteral,
+            is Expr.IntLiteral, is Expr.DoubleLiteral,
             is Expr.StringLiteral, is Expr.BoolLiteral,
             is Expr.CharLiteral,
             is Expr.Identifier, is Expr.UpperScopeAccess -> {}

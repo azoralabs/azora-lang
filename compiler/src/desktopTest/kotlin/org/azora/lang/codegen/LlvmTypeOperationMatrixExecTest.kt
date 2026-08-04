@@ -58,12 +58,12 @@ class LlvmTypeOperationMatrixExecTest(
         )
 
         private val floatTypes = listOf(
-            NumericType("Real", ""),
+            NumericType("Double", ""),
             NumericType("Float", "f"),
             NumericType("Decimal", "D"),
         )
 
-        private fun program(body: String): String = "use std.io\nfunc main() {\n$body\n}"
+        private fun program(body: String): String = "import std.io\nfunc main() {\n$body\n}"
 
         private fun expressionCase(name: String, expected: String, expression: String): Case =
             Case(name, expected, program("std::println($expression)"))
@@ -126,7 +126,7 @@ class LlvmTypeOperationMatrixExecTest(
                 }
             }
 
-            // A `Real` prints as a `Real`: an integral result keeps its `.0`.
+            // A `Double` prints as a `Double`: an integral result keeps its `.0`.
             val floatArithmetic = listOf(
                 Triple("add", "+", "10.0"),
                 Triple("subtract", "-", "5.0"),
@@ -169,18 +169,18 @@ class LlvmTypeOperationMatrixExecTest(
                 Triple("UInt_to_UCent", "123u as UCent", "123"),
                 Triple("Cent_to_Int", "123c as Int", "123"),
                 Triple("UCent_to_UInt", "123uc as UInt", "123"),
-                Triple("Int_to_Real", "42 as Real", "42.0"),
-                Triple("UInt_to_Real", "42u as Real", "42.0"),
+                Triple("Int_to_Real", "42 as Double", "42.0"),
+                Triple("UInt_to_Real", "42u as Double", "42.0"),
                 Triple("Int_to_Float", "42 as Float", "42.0"),
                 Triple("Int_to_Decimal", "42 as Decimal", "42.0"),
                 Triple("Real_to_Int", "3.75 as Int", "3"),
                 Triple("Real_to_UInt", "3.75 as UInt", "3"),
                 Triple("Float_to_Int", "3.75f as Int", "3"),
                 Triple("Decimal_to_Int", "3.75D as Int", "3"),
-                Triple("Float_to_Real", "3.5f as Real", "3.5"),
+                Triple("Float_to_Real", "3.5f as Double", "3.5"),
                 Triple("Real_to_Float", "3.5 as Float", "3.5"),
                 Triple("Real_to_Decimal", "3.5 as Decimal", "3.5"),
-                Triple("Decimal_to_Real", "3.5D as Real", "3.5"),
+                Triple("Decimal_to_Real", "3.5D as Double", "3.5"),
                 Triple("Int_to_Char", "65 as Char", "A"),
                 Triple("Char_to_Int", "'A' as Int", "65"),
             )

@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-mod std.concurrency.generators
+module std.concurrency.generators
 
-use std.container.list
+import std.container.list
 
 /**
  * @file std/concurrency/generators
@@ -49,9 +49,9 @@ use std.container.list
  * @since 0.0.5
  */
 
-zone std {
+realm std {
     /**
-     * The scope a `sequence` producer emits into.
+     * The collector a `sequence` producer emits into.
      *
      * Passed to the producer as a contextual receiver, which is what lets the
      * body call [yield] without naming it.
@@ -86,15 +86,15 @@ zone std {
     /**
      * Adds `value` to the sequence being built.
      *
-     * Takes its scope contextually, so a producer body calls it unqualified by
-     * the scope: `std::yield(1)`.
+     * Takes its builder contextually, so a producer body calls it unqualified
+     * by the builder: `std::yield(1)`.
      *
-     * @param scope The sequence under construction.
+     * @param builder The sequence under construction.
      * @param value The value to append.
      */
     @Experimental(since: "0.0.5")
-    func yield[scope: SequenceScope<T>!](value: T) {
-        scope.items.add(value)
+    func yield[builder: SequenceScope<T>!](value: T) {
+        builder.items.add(value)
     }
 
     /**
@@ -114,21 +114,21 @@ zone std {
      * The producer runs to completion here, so the returned sequence is already
      * complete when the call returns.
      *
-     * @param T The element type.
-     * @param builder The producer, which emits with [yield].
+     * @generic T The element type.
+     * @param produce The producer, which emits with [yield].
      * @return The sequence of every yielded value, in order.
      */
     @Experimental(since: "0.0.5")
-    func sequence<T>(builder: [SequenceScope<T>!] -> Unit): Sequence<T> {
-        var scope = SequenceScope<T>(arrayListOf<T>())
-        with scope { builder() }
-        return Sequence<T>(scope.items)
+    func sequence<T>(produce: [SequenceScope<T>!] -> Unit): Sequence<T> {
+        var builder = SequenceScope<T>(arrayListOf<T>())
+        with builder { produce() }
+        return Sequence<T>(builder.items)
     }
 
     /**
      * Builds a [Flow] from a producer that emits its values.
      *
-     * @param T The element type.
+     * @generic T The element type.
      * @param builder The producer, which emits with [emit].
      * @return The flow of every emitted value, in order.
      */

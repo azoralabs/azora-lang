@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-mod std.pareallelism.sync
+module std.pareallelism.sync
 
 /**
  * @file std/parallelism/sync
@@ -28,16 +28,16 @@ mod std.pareallelism.sync
  * @since 0.0.1
  */
 
-zone std {
+realm std {
     /**
      * A mutex-protected value that provides safe concurrent access.
      *
      * Guard wraps a value with a mutex, ensuring that reads and writes
      * are always performed under lock protection.
      *
-     * @param T The type of the protected value.
+     * @generic T The type of the protected value.
      */
-    @SinceAzora("0.0.1")
+    @Since("0.0.1")
     pack Guard<T> {
         var _mutex: Mutex = Mutex(0)
         var _value: T
@@ -86,9 +86,9 @@ zone std {
      * A coordination primitive that allows threads to wait until
      * a set of operations completes.
      *
-     * @param T The type of the count value.
+     * @generic T The type of the count value.
      */
-    @SinceAzora("0.0.1")
+    @Since("0.0.1")
     pack CountDownLatch<T> {
         var count: T
         var _atomic: Atomic = Atomic(0)
@@ -116,9 +116,9 @@ zone std {
      * SpinLock uses an atomic flag for minimal-overhead mutual exclusion.
      * Best suited for very short critical sections.
      *
-     * @param T Unused type parameter for template registration.
+     * @generic T Unused type parameter for template registration.
      */
-    @SinceAzora("0.0.1")
+    @Since("0.0.1")
     pack SpinLock<T> {
         var _flag: Atomic = Atomic(0)
     }

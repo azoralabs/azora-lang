@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-mod std.concurrency.coroutines
+module std.concurrency.coroutines
 
 /**
  * @file std/concurrency/coroutines
@@ -27,7 +27,7 @@ mod std.concurrency.coroutines
  * @since 0.0.1
  */
 
-zone std {
+realm std {
     /**
      * Executes an action after a specified delay.
      *

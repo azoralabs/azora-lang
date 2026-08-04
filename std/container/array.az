@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-mod std.container.array
+module std.container.array
 
 /**
  * @file std/container/array
@@ -30,7 +30,7 @@ mod std.container.array
  * @since 0.0.4
  */
 
-zone std {
+realm std {
     /**
      * A contiguous, ordered collection whose elements all have type `T`.
      *
@@ -43,7 +43,7 @@ zone std {
      * this as a bridge pack keeps the API and its fields in the standard
      * library without wrapping the native array allocation in another object.
      *
-     * @param T The type shared by every element in the array.
+     * @generic T The type shared by every element in the array.
      */
     @Experimental(since: "0.0.4")
     bridge pack Array<T, N: Int> {
@@ -62,7 +62,7 @@ zone std {
      * Every element must have the same type. The `arr@[first, second, third]`
      * macro (see `std.macro`) expands to this call.
      *
-     * @param T The element type inferred from the arguments.
+     * @generic T The element type inferred from the arguments.
      * @param elements The values copied into the resulting array.
      * @return An `Array<T>` containing all supplied elements.
      */
@@ -79,7 +79,7 @@ zone std {
          * directly, so there is no Azora body. Used as a low-level building block by
          * the functional combinators that grow result arrays.
          *
-         * @param T The element type.
+         * @generic T The element type.
          * @param count The number of slots to allocate; must be non-negative.
          * @return An `Array<T>` with `count` slots.
          */

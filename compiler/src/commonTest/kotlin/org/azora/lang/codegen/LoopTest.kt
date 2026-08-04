@@ -21,7 +21,7 @@ class LoopTest {
     @Test
     fun forInclusiveRange() {
         assertEquals("15", run("""
-            use std.io
+            import std.io
             func main() {
                 var sum = 0
                 for i in 1..5 {
@@ -36,7 +36,7 @@ class LoopTest {
     fun forExclusiveRange() {
         // 0 + 1 + 2 + 3 + 4 = 10
         assertEquals("10", run("""
-            use std.io
+            import std.io
             func main() {
                 var sum = 0
                 for i in 0..<5 {
@@ -50,7 +50,7 @@ class LoopTest {
     @Test
     fun whileLoop() {
         assertEquals("15", run("""
-            use std.io
+            import std.io
             func main() {
                 var sum = 0
                 var i = 1
@@ -66,7 +66,7 @@ class LoopTest {
     @Test
     fun loopWithBreak() {
         assertEquals("3", run("""
-            use std.io
+            import std.io
             func main() {
                 var i = 0
                 loop {
@@ -84,7 +84,7 @@ class LoopTest {
     fun forWithBreak() {
         // stops at i == 5, sums 0..4 = 10
         assertEquals("10", run("""
-            use std.io
+            import std.io
             func main() {
                 var sum = 0
                 for i in 0..<10 {
@@ -102,7 +102,7 @@ class LoopTest {
     fun forWithContinue() {
         // skips i == 2: 0 + 1 + 3 + 4 = 8
         assertEquals("8", run("""
-            use std.io
+            import std.io
             func main() {
                 var sum = 0
                 for i in 0..<5 {
@@ -120,7 +120,7 @@ class LoopTest {
     fun nestedLoops() {
         // outer 0..2, inner 0..2 → 9 iterations
         assertEquals("9", run("""
-            use std.io
+            import std.io
             func main() {
                 var count = 0
                 for i in 0..<3 {
@@ -138,7 +138,7 @@ class LoopTest {
         // Returns 4 when the loop variable reaches 4, proving `return`
         // propagates out of the loop and function.
         assertEquals("4", run("""
-            use std.io
+            import std.io
             func firstAt(limit: Int): Int {
                 for i in 0..<limit {
                     if i == 4 {
@@ -157,7 +157,7 @@ class LoopTest {
     fun loopsSurviveOptimization() {
         // Same as forInclusiveRange but with the optimizer enabled.
         assertEquals("15", run("""
-            use std.io
+            import std.io
             func main() {
                 var sum = 0
                 for i in 1..5 {
@@ -171,7 +171,7 @@ class LoopTest {
     @Test
     fun loopsLowerToAllBackends() {
         val result = Compiler().compile("""
-            use std.io
+            import std.io
             func main() {
                 for i in 0..<3 {
                     std::println(i)
@@ -186,7 +186,7 @@ class LoopTest {
     @Test
     fun reverseForRange() {
         assertEquals("4\n3\n2\n1\n0", run("""
-            use std.io
+            import std.io
             func main() {
                 reverse for i in 0..<5 {
                     std::println(i)
@@ -198,7 +198,7 @@ class LoopTest {
     @Test
     fun reverseForInclusiveRange() {
         assertEquals("5\n4\n3\n2\n1", run("""
-            use std.io
+            import std.io
             func main() {
                 reverse for i in 1..5 {
                     std::println(i)
@@ -211,8 +211,8 @@ class LoopTest {
     fun reverseFunctionCall() {
         // `reverse` is a soft keyword usable as a stdlib function name in call position.
         assertEquals("5\n4\n3\n2\n1", run("""
-            use std.io
-            use std.algorithm.sort
+            import std.io
+            import std.algorithm.sort
             func main() {
                 fin r = reverse<Int>(arr@[1, 2, 3, 4, 5])
                 for x in r { std::println(x) }

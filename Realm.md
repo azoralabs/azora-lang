@@ -1,15 +1,15 @@
-Add "use zone" and local "import" and custom path import and custom "use zone"
+Add "use realm" and local "import" and custom path import and custom "use realm"
 
 Example 1:
 
 ```
 module m1
 
-zone x {
+realm x {
     fin a = 5
 }
 
-zone y {
+realm y {
     fin b = "Hi"
 }
 
@@ -20,7 +20,7 @@ Use 1:
 ```
 module main
 
-import m1 // Everything top level decl from m1 is imported (in this case x and y zones), equivalent to "import m1.{x, y}"
+import m1 // Everything top level decl from m1 is imported (in this case x and y realms), equivalent to "import m1.{x, y}"
 
 func main() {
     fin f1 = x::a
@@ -34,7 +34,7 @@ Use 2:
 ```
 module main
 
-import m1.x // Only zone x is imported, zone y wont be visible and accessible
+import m1.x // Only realm x is imported, realm y wont be visible and accessible
 
 func main() {
     fin f1 = x::a
@@ -48,7 +48,7 @@ Use 2:
 ```
 module main
 
-import m1.x // Only zone x is imported, zone y wont be visible and accessible
+import m1.x // Only realm x is imported, realm y wont be visible and accessible
 
 func main() {
     fin f1 = x::a
@@ -76,14 +76,14 @@ Example 2:
 ```
 module m2
 
-zone x {
+realm x {
     fin a = 5
 }
 
-zone y {
+realm y {
     fin b = "Hi"
     
-    zone z {
+    realm z {
         fin c = true
         fin d = false
     }
@@ -98,8 +98,8 @@ module main
 
 import m2
 
-use x
-use y::z // similar to "use y::z::{c, d}" if you want to use just some symbols, not all
+import x
+import y::z // similar to "use y::z::{c, d}" if you want to use just some symbols, not all
 
 func main() {
     fin f1 = a     // we can directly access "a" because we "use x"
@@ -116,11 +116,11 @@ module main
 
 import m2
 
-use y::z::c
+import y::z::c
 
 func main() {
-    fin f1 = c  // only "c" is visible from "zone z", "d" is not
-    fin f2 = y::z::d // we must write the full zone path to access it
+    fin f1 = c  // only "c" is visible from "realm z", "d" is not
+    fin f2 = y::z::d // we must write the full realm path to access it
 }
 
 ```
@@ -133,7 +133,7 @@ module main
 import m2
 
 func main() {
-    use y::z::d  // local use
+    import y::z::d  // local use
     fin f1 = d
 }
 
@@ -167,4 +167,4 @@ with y::z {
 }
 ```
 
-make sure it works with "friend zone"s to and "use friend zone" which will automatically use it
+make sure it works with "use realm"s to and "use use realm" which will automatically use it

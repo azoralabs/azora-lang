@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
-mod std.io.convert
+module std.io.convert
 
-use std.convert
-use std.container.array
+import std.convert
+import std.container.array
 
 /**
  * @file std/io/convert
@@ -30,7 +30,7 @@ use std.container.array
  * @since 0.0.1
  */
 
-zone std {
+realm std {
     /**
      * Converts an integer to its string representation.
      *

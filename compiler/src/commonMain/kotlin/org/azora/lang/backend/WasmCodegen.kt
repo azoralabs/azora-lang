@@ -32,7 +32,7 @@ import org.azora.lang.ir.IrUnaryOp
  *
  * Value representation (single WASM value per Azora value):
  *  - `Int`/`Bool`/`Char`/sized ints ≤ 32-bit → `i32`
- *  - `Long`/`ULong`/`Cent`/`UCent` → `i64`     `Real`/`Decimal` → `f64`   `Float` → `f32`
+ *  - `Long`/`ULong`/`Cent`/`UCent` → `i64`     `Double`/`Decimal` → `f64`   `Float` → `f32`
  *  - `String`/`arr[T]`/pack → `i32` pointer into linear memory. Strings and arrays
  *    are laid out as `[len: i32][payload…]`; packs as packed `i32` fields.
  *
@@ -68,6 +68,8 @@ class WasmCodegen {
 
     // Module state.
     private val structs = HashMap<String, List<IrField>>()
+    /** Names of the `union` types: every member of one sits at offset 0. */
+    private val unions = HashSet<String>()
     private val globalTypes = LinkedHashMap<String, IrType>()
     private val stringConsts = LinkedHashMap<String, Int>() // literal -> offset
     private var constCursor = STRING_BASE
@@ -78,7 +80,7 @@ class WasmCodegen {
     private var usesRepeat = false
     private var usesIntToStr = false
     private var usesLongToStr = false
-    private var usesRealToStr = false
+    private var usesDoubleToStr = false
     private var usesTrig = false
     private var usesExpLog = false
     private var usesInvTrig = false
@@ -108,11 +110,14 @@ class WasmCodegen {
     fun generate(program: IrProgram): String {
         out.clear(); indent = 0
         structs.clear(); globalTypes.clear(); stringConsts.clear(); constCursor = STRING_BASE
-        usesAlloc = false; usesConcat = false; usesStrEq = false; usesRepeat = false; usesIntToStr = false; usesLongToStr = false; usesRealToStr = false; usesTrig = false; usesExpLog = false; usesInvTrig = false; usesVhaTrig = false; usesIsCheck = false
+        usesAlloc = false; usesConcat = false; usesStrEq = false; usesRepeat = false; usesIntToStr = false; usesLongToStr = false; usesDoubleToStr = false; usesTrig = false; usesExpLog = false; usesInvTrig = false; usesVhaTrig = false; usesIsCheck = false
         neededIntrinsics.clear(); externs.clear(); neededExterns.clear()
         closureTypes.clear(); closureFunctions.clear()
 
-        for (item in program.items) if (item is IrTopLevel.Struct) structs[item.name] = item.fields
+        for (item in program.items) if (item is IrTopLevel.Struct) {
+            structs[item.name] = item.fields
+            if (item.isUnion) unions.add(item.name)
+        }
         for (item in program.items) if (item is IrTopLevel.Extern) externs[item.name] = item
         for (stmt in program.globals) {
             when (stmt) {
@@ -204,7 +209,7 @@ class WasmCodegen {
         if (usesRepeat) sb.append(RT_REPEAT)
         if (usesIntToStr) sb.append(RT_INT_TO_STR)
         if (usesLongToStr) sb.append(RT_LONG_TO_STR)
-        if (usesRealToStr) sb.append(RT_REAL_TO_STR)
+        if (usesDoubleToStr) sb.append(RT_REAL_TO_STR)
         if (usesTrig) sb.append(RT_TRIG)
         if (usesExpLog) sb.append(RT_EXPLOG)
         if (usesInvTrig) sb.append(RT_INVTRIG)
@@ -291,7 +296,7 @@ class WasmCodegen {
             is IrStmt.ForEach -> {} // not supported by the WASM MVP target
             is IrStmt.Break -> line("(br \$${breakTarget(stmt.label)})")
             is IrStmt.Continue -> line("(br \$${continueTarget(stmt.label)})")
-            is IrStmt.Zone -> for (s in stmt.body) emitStmt(s)
+            is IrStmt.Scope -> for (s in stmt.body) emitStmt(s)
             is IrStmt.Assert -> line("(if (i32.eqz ${emitExpr(stmt.condition)}) (then unreachable))")
             is IrStmt.Trace -> emitTrace(stmt)
             is IrStmt.Throw -> line("unreachable")
@@ -412,7 +417,7 @@ class WasmCodegen {
 
     private fun emitExpr(expr: IrExpr): String = when (expr) {
         is IrExpr.IntLiteral -> "(${wasmType(expr.type)}.const ${expr.value})"
-        is IrExpr.RealLiteral -> "(${wasmType(expr.type)}.const ${expr.value})"
+        is IrExpr.DoubleLiteral -> "(${wasmType(expr.type)}.const ${expr.value})"
         is IrExpr.BoolLiteral -> "(i32.const ${if (expr.value) 1 else 0})"
         is IrExpr.CharLiteral -> "(i32.const ${expr.value.code})"
         is IrExpr.StringLiteral -> "(i32.const ${internString(expr.value)})"
@@ -512,7 +517,7 @@ class WasmCodegen {
     private fun commonNumericWasm(a: IrType, b: IrType): IrType {
         if (a == b) return a
         if (a in IrType.floatTypes || b in IrType.floatTypes) {
-            if (a == IrType.Real || b == IrType.Real || a == IrType.Decimal || b == IrType.Decimal) return IrType.Real
+            if (a == IrType.Double || b == IrType.Double || a == IrType.Decimal || b == IrType.Decimal) return IrType.Double
             return IrType.Float
         }
         // Widen ints: i64 types win over i32 types.
@@ -565,12 +570,12 @@ class WasmCodegen {
             val operation = if (expr.name == "__std_print") "write" else "print"
             // A float is rendered by the compiler, not the host: printing one
             // directly and interpolating it must produce the same digits, and only
-            // `__real_to_str` implements the language's convention.
+            // `__double_to_str` implements the language's convention.
             if (wasmType(arg.type) == "f64" || wasmType(arg.type) == "f32") {
                 usesAlloc = true
-                usesRealToStr = true
+                usesDoubleToStr = true
                 val v = if (wasmType(arg.type) == "f32") "(f64.promote_f32 ${emitExpr(arg)})" else emitExpr(arg)
-                return "(call \$${operation}_str (call \$__real_to_str $v))"
+                return "(call \$${operation}_str (call \$__double_to_str $v))"
             }
             val fn = when {
                 arg.type == IrType.String -> "${operation}_str"
@@ -602,8 +607,12 @@ class WasmCodegen {
         val t = newTemp("i32")
         val sb = StringBuilder("(block (result i32)\n")
         val pad = "  ".repeat(indent + 1)
-        sb.append("$pad(local.set $t (call \$__alloc (i32.const ${expr.args.size * 4})))\n")
+        // A union is one slot wide and its single named member initializes it.
+        val isUnion = expr.name in unions
+        val slots = if (isUnion) 1 else expr.args.size
+        sb.append("$pad(local.set $t (call \$__alloc (i32.const ${slots * 4})))\n")
         for ((i, a) in expr.args.withIndex()) {
+            if (isUnion && i > 0) break
             sb.append("$pad(i32.store (i32.add (local.get $t) (i32.const ${i * 4})) ${emitExpr(a)})\n")
         }
         sb.append("$pad(local.get $t))")
@@ -723,10 +732,10 @@ class WasmCodegen {
         expr.type == IrType.Bool -> "(if (result i32) ${emitExpr(expr)} (then (i32.const ${internString("true")})) (else (i32.const ${internString("false")})))"
         wasmType(expr.type) == "i32" -> { usesAlloc = true; usesIntToStr = true; "(call \$__int_to_str ${emitExpr(expr)})" }
         wasmType(expr.type) == "i64" -> { usesAlloc = true; usesLongToStr = true; "(call \$__long_to_str ${emitExpr(expr)})" }
-        wasmType(expr.type) == "f64" -> { usesAlloc = true; usesRealToStr = true; "(call \$__real_to_str ${emitExpr(expr)})" }
-        wasmType(expr.type) == "f32" -> { usesAlloc = true; usesRealToStr = true; "(call \$__real_to_str (f64.promote_f32 ${emitExpr(expr)}))" }
+        wasmType(expr.type) == "f64" -> { usesAlloc = true; usesDoubleToStr = true; "(call \$__double_to_str ${emitExpr(expr)})" }
+        wasmType(expr.type) == "f32" -> { usesAlloc = true; usesDoubleToStr = true; "(call \$__double_to_str (f64.promote_f32 ${emitExpr(expr)}))" }
         // Anything else has no WAT rendering yet. Interpolating it used to yield an
-        // empty string, so a program printing a `Real` silently lost it while the
+        // empty string, so a program printing a `Double` silently lost it while the
         // interpreter and LLVM printed the value; failing here keeps a missing
         // conversion visible instead of turning it into wrong output.
         else -> error(
@@ -768,10 +777,14 @@ class WasmCodegen {
         return "(i32.add $base (i32.mul ${emitExpr(index)} (i32.const 4)))"
     }
 
-    /** Address of `target.field` — `ptr + fieldIndex*4`. */
+    /** Address of `target.field` — `ptr + fieldIndex*4`, or `ptr` for a union. */
     private fun fieldAddr(target: IrExpr, field: String): String {
         val structName = (target.type as? IrType.Named)?.name
-        val idx = structName?.let { structs[it]?.indexOfFirst { f -> f.name == field } } ?: 0
+        // A union's members share one slot, so every one of them is at offset 0.
+        val idx = when {
+            structName in unions -> 0
+            else -> structName?.let { structs[it]?.indexOfFirst { f -> f.name == field } } ?: 0
+        }
         return "(i32.add ${emitExpr(target)} (i32.const ${idx * 4}))"
     }
 
@@ -818,7 +831,7 @@ class WasmCodegen {
                     collectDeclaredNames(stmt.thenBranch, names)
                     stmt.elseBranch?.let { collectDeclaredNames(it, names) }
                 }
-                is IrStmt.Zone -> collectDeclaredNames(stmt.body, names)
+                is IrStmt.Scope -> collectDeclaredNames(stmt.body, names)
                 is IrStmt.While -> collectDeclaredNames(stmt.body, names)
                 is IrStmt.Loop -> collectDeclaredNames(stmt.body, names)
                 is IrStmt.When -> {
@@ -859,7 +872,7 @@ class WasmCodegen {
                     collectReferencedVars(stmt.thenBranch, refs)
                     stmt.elseBranch?.let { collectReferencedVars(it, refs) }
                 }
-                is IrStmt.Zone -> collectReferencedVars(stmt.body, refs)
+                is IrStmt.Scope -> collectReferencedVars(stmt.body, refs)
                 is IrStmt.Assert -> {
                     collectReferencedVars(stmt.condition, refs)
                     collectReferencedVars(stmt.message, refs)
@@ -952,7 +965,7 @@ class WasmCodegen {
             is IrExpr.Await -> collectReferencedVars(expr.value, refs)
             is IrExpr.Spread -> collectReferencedVars(expr.array, refs)
             is IrExpr.IntLiteral,
-            is IrExpr.RealLiteral,
+            is IrExpr.DoubleLiteral,
             is IrExpr.StringLiteral,
             is IrExpr.EnumLiteral,
             is IrExpr.BoolLiteral,
@@ -1007,8 +1020,8 @@ class WasmCodegen {
      * still comes from the host until its approximation is written.
      */
     private fun wasmSoftwareMathFor(extern: IrTopLevel.Extern): String? {
-        // `zone std::vha` mangles to `__std_vha_sin`; the extra accuracy is what the
-        // zone exists for, so it maps to the longer series where one is implemented.
+        // `realm std::vha` mangles to `__std_vha_sin`; the extra accuracy is what the
+        // realm exists for, so it maps to the longer series where one is implemented.
         val vha = "_vha_" in extern.name
         val name = when (extern.name.substringAfterLast('_')) {
             "sin" -> if (vha) "__vha_sin" else "__soft_sin"
@@ -1033,8 +1046,8 @@ class WasmCodegen {
         }
         val expectedArity = if (name in setOf("__soft_atan2", "__soft_hypot", "__soft_pow")) 2 else 1
         if (extern.params.size != expectedArity) return null
-        if (extern.returnType != IrType.Real) return null
-        if (extern.params.any { it.second != IrType.Real }) return null
+        if (extern.returnType != IrType.Double) return null
+        if (extern.params.any { it.second != IrType.Double }) return null
         return name
     }
 
@@ -1052,14 +1065,14 @@ class WasmCodegen {
         }
         val arity = if (op == "f64.min" || op == "f64.max") 2 else 1
         if (extern.params.size != arity) return null
-        if (extern.returnType != IrType.Real) return null
-        if (extern.params.any { it.second != IrType.Real }) return null
+        if (extern.returnType != IrType.Double) return null
+        if (extern.params.any { it.second != IrType.Double }) return null
         return op
     }
 
     private fun wasmType(type: IrType): String = when (type) {
         IrType.Long, IrType.ULong, IrType.Cent, IrType.UCent, IrType.ISize, IrType.USize -> "i64"
-        IrType.Real, IrType.Decimal -> "f64"
+        IrType.Double, IrType.Decimal -> "f64"
         IrType.Float -> "f32"
         is IrType.Task -> wasmType(type.result)
         else -> "i32"
@@ -1249,7 +1262,7 @@ class WasmCodegen {
 
 
     /**
-     * `__real_to_str` — decimal rendering of an f64, matching the interpreter and
+     * `__double_to_str` — decimal rendering of an f64, matching the interpreter and
      * LLVM: an integral value keeps its `.0`, anything else prints its fractional
      * digits.
      *
@@ -1259,7 +1272,7 @@ class WasmCodegen {
      * round-trip algorithm in WAT.
      */
     private val RT_REAL_TO_STR = """
-  (func ${'$'}__real_to_str (param ${'$'}v f64) (result i32)
+  (func ${'$'}__double_to_str (param ${'$'}v f64) (result i32)
     (local ${'$'}neg i32) (local ${'$'}ip i64) (local ${'$'}frac f64) (local ${'$'}fd i64)
     (local ${'$'}p i32) (local ${'$'}q i32) (local ${'$'}len i32) (local ${'$'}i i32) (local ${'$'}x i64)
     (local.set ${'$'}neg (f64.lt (local.get ${'$'}v) (f64.const 0)))

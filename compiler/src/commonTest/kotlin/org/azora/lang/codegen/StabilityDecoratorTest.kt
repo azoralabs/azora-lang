@@ -21,7 +21,7 @@ class StabilityDecoratorTest {
 
     @Test fun experimentalAndStableAreMutuallyExclusive() {
         val e = errors("""
-            use std.io
+            import std.io
             @Experimental(since: "0.0.1")
             @Stable(since: "1.0.0")
             func f(): Int { return 1 }
@@ -31,7 +31,7 @@ class StabilityDecoratorTest {
 
     @Test fun experimentalWithStringSinceIsAccepted() {
         compiles("""
-            use std.io
+            import std.io
             @Experimental(since: "0.0.1")
             func f(): Int { return 1 }
         """.trimIndent())
@@ -39,7 +39,7 @@ class StabilityDecoratorTest {
 
     @Test fun stableWithStringSinceIsAccepted() {
         compiles("""
-            use std.io
+            import std.io
             @Stable(since: "1.0.0")
             func f(): Int { return 1 }
         """.trimIndent())
@@ -47,7 +47,7 @@ class StabilityDecoratorTest {
 
     @Test fun nonStringSinceIsRejected() {
         val e = errors("""
-            use std.io
+            import std.io
             @Experimental(since: 5)
             func f(): Int { return 1 }
         """.trimIndent())
@@ -56,15 +56,15 @@ class StabilityDecoratorTest {
 
     @Test fun sinceStandaloneIsAccepted() {
         compiles("""
-            use std.io
-            @SinceAzora("0.0.1")
+            import std.io
+            @Since("0.0.1")
             func f(): Int { return 1 }
         """.trimIndent())
     }
 
     @Test fun deprecatedIsAccepted() {
         compiles("""
-            use std.io
+            import std.io
             @Deprecated(since: "0.4.0", replacement: "g")
             func f(): Int { return 1 }
         """.trimIndent())
@@ -72,9 +72,9 @@ class StabilityDecoratorTest {
 
     @Test fun experimentalAndSinceStandaloneConflict() {
         val e = errors("""
-            use std.io
+            import std.io
             @Experimental(since: "0.0.1")
-            @SinceAzora("0.0.1")
+            @Since("0.0.1")
             func f(): Int { return 1 }
         """.trimIndent())
         assertTrue(e.any { it.contains("@since is redundant") }, e.toString())
@@ -82,11 +82,11 @@ class StabilityDecoratorTest {
 
     @Test fun failSetWithVariantAnnotationsAccepted() {
         compiles("""
-            use std.io
-            @SinceAzora("0.0.1")
-            fail SearchError {
+            import std.io
+            @Since("0.0.1")
+            error SearchError {
                 NotFound @Deprecated(since: "0.4.0", replacement: "EmptyResult")
-                EmptyArray @SinceAzora("0.0.0")
+                EmptyArray @Since("0.0.0")
                 EmptyResult
             }
             func main() {}
@@ -95,7 +95,7 @@ class StabilityDecoratorTest {
 
     @Test fun unknownDecoratorIsRejected() {
         val e = errors("""
-            use std.io
+            import std.io
             @experiemntal(since: "0.0.1")
             func f(): Int { return 1 }
         """.trimIndent())

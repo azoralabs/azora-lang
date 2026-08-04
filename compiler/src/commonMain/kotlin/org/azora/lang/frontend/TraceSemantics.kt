@@ -15,7 +15,7 @@ private fun Expr.bindTraceReceiver(receiver: Expr, interpolation: Boolean): Expr
         if (interpolation) Expr.Cast(receiver, TypeRef.Named("String"), line = line, column = column)
         else receiver
     } else this
-    is Expr.IntLiteral, is Expr.RealLiteral, is Expr.CharLiteral,
+    is Expr.IntLiteral, is Expr.DoubleLiteral, is Expr.CharLiteral,
     is Expr.StringLiteral, is Expr.BoolLiteral, is Expr.NullLiteral,
     is Expr.UpperScopeAccess, is Expr.Inject -> this
     is Expr.Binary -> copy(left = left.bindTraceReceiver(receiver, interpolation), right = right.bindTraceReceiver(receiver, interpolation))

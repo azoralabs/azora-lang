@@ -12,7 +12,7 @@ class PanicTest {
 
     @Test fun panicNotReachedRunsNormally() {
         val r = Compiler().compile("""
-            use std.io
+            import std.io
             func main() {
                 if false { panic "should not happen" }
                 std::println("ok")
@@ -24,7 +24,7 @@ class PanicTest {
 
     @Test fun runtimePanicAborts() {
         val r = Compiler().compile("""
-            use std.io
+            import std.io
             func main() {
                 std::println("before")
                 panic "boom"
@@ -43,7 +43,7 @@ class PanicTest {
         // `inline panic` reached during CTCE aborts the compiler with its message.
         val thrown = org.junit.Assert.assertThrows(RuntimeException::class.java) {
             Compiler().compile("""
-                use std.io
+                import std.io
                 func main() {
                     inline {
                         inline panic "compile-time boom"

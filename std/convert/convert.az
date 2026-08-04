@@ -14,11 +14,11 @@
  * limitations under the License.
  */
 
-mod std.convert
+module std.convert
 
-expose use std.convert.core
+expose import std.convert.core
 
-zone std {
+realm std {
     /**
      * Declares conversion into `T`.
      *
@@ -26,7 +26,7 @@ zone std {
      * named from the `use as` template. For `T = String`, this spec exposes
      * `.toString` without parentheses.
      *
-     * @param T target type produced by the conversion.
+     * @generic T target type produced by the conversion.
      */
     @Experimental(since: "0.0.3")
     spec Into<T>: T (self&) use as "to${T.typeName}"
@@ -38,7 +38,7 @@ zone std {
      * named from the `use as` template. For `T = String`, this spec exposes
      * `.fromString` without parentheses.
      *
-     * @param T source type represented by the conversion.
+     * @generic T source type represented by the conversion.
      */
     @Experimental(since: "0.0.3")
     spec From<T>: T (self&) use as "from${T.typeName}"

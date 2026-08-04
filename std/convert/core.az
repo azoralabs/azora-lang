@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-expose mod std.convert.core
+expose module std.convert.core
 
-use zone std {
+use realm std {
     @Experimental(since: "0.0.4")
-    bridge deco UncheckedCast for [.Func, .Prop, .Task, .Flow, .Var, .Fin, .ImplOper]
+    bridge annot UncheckedCast for [.Func, .Prop, .Task, .Flow, .Var, .Fin, .ImplOper]
 }

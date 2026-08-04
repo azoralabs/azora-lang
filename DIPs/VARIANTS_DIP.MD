@@ -1,12 +1,12 @@
 # Azora Slots (Tagged Unions) — DIP Implementation Profile
 
-`slot` declares a tagged union / sum type: a value that is exactly one of several
+`variant` declares a tagged union / sum type: a value that is exactly one of several
 variants, each of which may carry payload data.
 
 ## Grammar
 
 ```
-@[DECORATORS] VISIBILITY slot NAME <...GENERICS>? {
+@[DECORATORS] VISIBILITY variant NAME <...GENERICS>? {
     VARIANT
     …
 }
@@ -16,14 +16,14 @@ VARIANT ::= Name                        // no payload
           | Name(field: Type, …)        // named payload
 ```
 
-Match on a slot with `when` and destructure the payload.
+Match on a variant with `when` and destructure the payload.
 
 ---
 
 ## 1. Declaration
 
 ```azora
-slot Shape {
+variant Shape {
     Circle(Int)
     Rect(Int, Int)
     Empty
@@ -33,7 +33,7 @@ slot Shape {
 Named payloads (used by e.g. the serializer's `SerialValue`):
 
 ```azora
-slot SerialValue {
+variant SerialValue {
     Null
     Bool(value: Bool)
     Number(value: String)
@@ -64,13 +64,13 @@ func area(s: Shape): Int {
 ```
 
 - Each arm binds the payload fields positionally.
-- `when` over a slot is exhaustive; the compiler expects every variant (or an
+- `when` over a variant is exhaustive; the compiler expects every case (or an
   `else`).
 
 ## 4. Generic slots
 
 ```azora
-slot Option<T> {
+variant Option<T> {
     Some(value: T)
     None
 }
@@ -79,5 +79,5 @@ slot Option<T> {
 ## 5. Slots vs enums
 
 - `enum` — closed set of names, **no payload** (see the Enums DIP).
-- `slot` — variants **with payloads**; the runtime representation is a tag plus
+- `variant` — variants **with payloads**; the runtime representation is a tag plus
   the boxed payload.

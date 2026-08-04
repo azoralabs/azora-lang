@@ -29,7 +29,7 @@ class ConstGenericArrayTest {
     fun sizedArrayTypeHoldsCompileTimeSize() {
         val out = run(
             """
-            use std.io
+            import std.io
 
             func main() {
                 fin a: Array<Int, 3> = arr@[1, 2, 3]
@@ -47,7 +47,7 @@ class ConstGenericArrayTest {
         // `arr@[4, 5]` infers `Array<Int, 2>`; `.size` folds to 2.
         val out = run(
             """
-            use std.io
+            import std.io
 
             func main() {
                 fin a = arr@[4, 5]
@@ -78,7 +78,7 @@ class ConstGenericArrayTest {
         // An unsized `Array<Int>` slot accepts a sized literal (back-compat with existing code).
         val out = run(
             """
-            use std.io
+            import std.io
 
             func main() {
                 fin a: Array<Int> = arr@[1, 2, 3]

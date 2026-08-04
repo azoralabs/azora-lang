@@ -84,7 +84,7 @@ when value {
 }
 ```
 
-- Matches enum variants, slot variants (with destructuring), and value patterns.
+- Matches enum variants, variant cases (with destructuring), and value patterns.
 - Multiple patterns per arm are comma-separated.
 - Exhaustive over a slot/enum, or ends with `else`.
 

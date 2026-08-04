@@ -23,7 +23,7 @@ class Tier4ConcurrencyTest {
         // `async` names a task only when a `func` follows it; on its own it is
         // still the builtin that spawns a lambda, and still a usable name.
         assertEquals("5\n21\n20", run("""
-            use std.io
+            import std.io
 
             async func compute(n: Int): Int {
                 return n * 2
@@ -41,7 +41,7 @@ class Tier4ConcurrencyTest {
 
     @Test fun taskAwaitReturnsResult() {
         assertEquals("42", run("""
-            use std.io
+            import std.io
             func main() {
                 var t = async func {
                     42
@@ -53,7 +53,7 @@ class Tier4ConcurrencyTest {
 
     @Test fun taskAwaitComputedResult() {
         assertEquals("30", run("""
-            use std.io
+            import std.io
             func compute(a: Int, b: Int): Int {
                 return a * b
             }
@@ -68,7 +68,7 @@ class Tier4ConcurrencyTest {
 
     @Test fun multipleTasksAwaited() {
         assertEquals("10\n20", run("""
-            use std.io
+            import std.io
             func main() {
                 var t1 = async func { 10 }
                 var t2 = async func { 20 }
@@ -80,7 +80,7 @@ class Tier4ConcurrencyTest {
 
     @Test fun channelSendAndReceive() {
         assertEquals("1\n2", run("""
-            use std.io
+            import std.io
             func main() {
                 var ch = channel()
                 ch.send(1)
@@ -94,7 +94,7 @@ class Tier4ConcurrencyTest {
     @Test fun channelWithProducerTask() {
         // A producer task sends values; the consumer receives them via await ordering.
         assertEquals("10\n20", run("""
-            use std.io
+            import std.io
             func produce(ch: Channel): Int {
                 ch.send(10)
                 ch.send(20)
@@ -117,7 +117,7 @@ class Tier4ConcurrencyTest {
         // Two independent tasks run in parallel (Dispatchers.Default); both are awaited
         // and their results combined.
         assertEquals("300", run("""
-            use std.io
+            import std.io
             func main() {
                 var t1 = async func { 100 }
                 var t2 = async func { 200 }

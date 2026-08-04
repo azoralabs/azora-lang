@@ -16,7 +16,7 @@ class InfixFunctionsTest {
 
     @Test fun basicInfixCall() {
         assertEquals("5", run("""
-            use std.io
+            import std.io
             pack Calc {
                 var v: Int
             }
@@ -36,7 +36,7 @@ class InfixFunctionsTest {
 
     @Test fun topLevelInfxDeclarationIsCallable() {
         assertEquals("42", run("""
-            use std.io
+            import std.io
 
             infx Int.scaledBy(factor: Int): Int {
                 return self * factor
@@ -50,7 +50,7 @@ class InfixFunctionsTest {
 
     @Test fun infixWithArithmetic() {
         assertEquals("11", run("""
-            use std.io
+            import std.io
             pack Calc {
                 var v: Int
             }
@@ -75,7 +75,7 @@ class InfixFunctionsTest {
 
     @Test fun infixChained() {
         assertEquals("10", run("""
-            use std.io
+            import std.io
             pack Calc {
                 var v: Int
             }
@@ -98,7 +98,7 @@ class InfixFunctionsTest {
 
     @Test fun infixWithComparison() {
         assertEquals("true", run("""
-            use std.io
+            import std.io
             pack Box {
                 var v: Int
             }

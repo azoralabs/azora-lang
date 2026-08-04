@@ -1,7 +1,7 @@
 # Azora Enums — DIP Implementation Profile
 
 `enum` declares a closed set of named variants. For variants that carry payloads
-(tagged unions), see the Slots DIP.
+(tagged unions), see the Variants DIP.
 
 ## Grammar
 
@@ -85,14 +85,14 @@ An enum value stringifies to its variant name via `${…}` interpolation or
 ## 6. Payload-carrying variants
 
 Enums hold no payload. For variants with associated data (tagged unions /
-sum types), use `slot`:
+sum types), use `variant`:
 
 ```azora
-slot Shape {
+variant Shape {
     Circle(Int)
     Rect(Int, Int)
     Empty
 }
 ```
 
-See the Slots DIP.
+See the Variants DIP.

@@ -21,7 +21,7 @@ class Feature003SyntaxTest {
 
     @Test fun packWithoutExposedFieldsAllowsReadOnlyExtension() {
         assertEquals("7", run("""
-            use std.io
+            import std.io
             pack Counter {
                 var value: Int
             }
@@ -37,7 +37,7 @@ class Feature003SyntaxTest {
 
     @Test fun packWithoutExposedFieldsRejectsMutableExtensionReceiver() {
         val result = compile("""
-            use std.io
+            import std.io
             pack Counter {
                 var _value: Int
             }
@@ -55,7 +55,7 @@ class Feature003SyntaxTest {
 
     @Test fun implPackCanMutatePackInDeclaringFile() {
         assertEquals("2", run("""
-            use std.io
+            import std.io
             pack Counter {
                 var value: Int
             }
@@ -77,8 +77,8 @@ class Feature003SyntaxTest {
 
     @Test fun implPackCannotTargetImportedStdlibPack() {
         val result = compile("""
-            use std.io
-            use std.string
+            import std.io
+            import std.string
             impl pack StringBuilder {
                 func steal() {
                 }
@@ -94,7 +94,7 @@ class Feature003SyntaxTest {
 
     @Test fun refExtensionCannotMutateSelf() {
         val result = compile("""
-            use std.io
+            import std.io
             pack Counter {
                 var value: Int
             }
@@ -112,7 +112,7 @@ class Feature003SyntaxTest {
 
     @Test fun loopIteratorContinueSkipsReset() {
         assertEquals("2\n0", run("""
-            use std.io
+            import std.io
             pack Iter {
                 var i: Int
                 var resets: Int
@@ -142,7 +142,7 @@ class Feature003SyntaxTest {
 
     @Test fun memRemRetAreReactiveBindings() {
         assertEquals("15", run("""
-            use std.io
+            import std.io
             func main() {
                 mem a: Int = 1
                 rem b: Int = 2
@@ -157,7 +157,7 @@ class Feature003SyntaxTest {
 
     @Test fun compactConversionSpecsGeneratePropertyStyleMethods() {
         assertEquals("Label(ok)\nLabel(ok)", run("""
-            use std.io
+            import std.io
             pack Label {
                 var value: String
             }
@@ -179,7 +179,7 @@ class Feature003SyntaxTest {
 
     @Test fun compactConversionSpecUseAsWorksBeforeSpecDeclaration() {
         assertEquals("Label(ok)", run("""
-            use std.io
+            import std.io
             pack Label {
                 var value: String
             }
@@ -196,7 +196,7 @@ class Feature003SyntaxTest {
 
     @Test fun compactConversionSpecUseAsAcceptsLiteralMemberName() {
         assertEquals("Label(ok)", run("""
-            use std.io
+            import std.io
             pack Label {
                 var value: String
             }
@@ -213,7 +213,7 @@ class Feature003SyntaxTest {
 
     @Test fun compactConversionSpecsRejectParenthesesWhenSpecHasNoParens() {
         val result = Compiler().compile("""
-            use std.io
+            import std.io
             pack Label {
                 var value: String
             }
@@ -232,7 +232,7 @@ class Feature003SyntaxTest {
 
     @Test fun compactConversionSpecsWithParensRequireCallSyntax() {
         assertEquals("7", run("""
-            use std.io
+            import std.io
             pack Box {
                 var value: Int
             }
@@ -247,7 +247,7 @@ class Feature003SyntaxTest {
         """.trimIndent()))
 
         val result = Compiler().compile("""
-            use std.io
+            import std.io
             pack Box {
                 var value: Int
             }
@@ -266,7 +266,7 @@ class Feature003SyntaxTest {
 
     @Test fun implAsStringIsCastOnly() {
         assertEquals("cast:x", run("""
-            use std.io
+            import std.io
             pack Label {
                 var value: String
             }
@@ -282,7 +282,7 @@ class Feature003SyntaxTest {
 
     @Test fun implAsStringDoesNotCreateToString() {
         val result = compile("""
-            use std.io
+            import std.io
             pack Label {
                 var value: String
             }
@@ -298,10 +298,10 @@ class Feature003SyntaxTest {
         assertTrue(result.errors.any { "toString" in it }, "errors: ${result.errors}")
     }
 
-    @Test fun friendZoneAcceptsDoubleColonPath() {
+    @Test fun friendRealmAcceptsDoubleColonPath() {
         assertEquals("3", run("""
-            use std.io
-            zone std {
+            import std.io
+            realm std {
                 func abs(x: Int): Int {
                     if x < 0 { return -x }
                     return x
@@ -315,7 +315,7 @@ class Feature003SyntaxTest {
 
     @Test fun emptyPackCanOmitBody() {
         assertEquals("ok", run("""
-            use std.io
+            import std.io
             pack Marker
             func main() {
                 var marker = Marker()
@@ -326,7 +326,7 @@ class Feature003SyntaxTest {
 
     @Test fun getAndSetKeywordsRemainSoftForMembers() {
         assertEquals("7", run("""
-            use std.io
+            import std.io
             pack Accessors {
                 var get: Int
                 var set: Int
@@ -341,7 +341,7 @@ class Feature003SyntaxTest {
     @Test fun operInsideRegularImplIsRejected() {
         val error = assertFailsWith<IllegalStateException> {
             compile("""
-            use std.io
+            import std.io
             pack Box {
                 var value: Int
             }
@@ -361,7 +361,7 @@ class Feature003SyntaxTest {
 
     @Test fun activeCodegenTargetsAreProducedForNewSyntax() {
         val result = compile("""
-            use std.io
+            import std.io
             pack Counter {
                 var value: Int
             }

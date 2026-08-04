@@ -10,7 +10,7 @@ import kotlin.test.*
  *
  * Pointers are mutable cells (a `Pointer` wrapper) in the interpreter; `alloc`/`*ptr`/
  * `*ptr=v` lower to `__alloc`/`__deref`/`__derefAssign` runtime calls, so no new IR
- * expr/stmt nodes are needed. `unsafe { }` desugars to a `zone`, `drop` to evaluating
+ * expr/stmt nodes are needed. `unsafe { }` desugars to a `scope`, `drop` to evaluating
  * the expression (advisory free under GC).
  */
 class Tier3MemoryTest {
@@ -23,7 +23,7 @@ class Tier3MemoryTest {
 
     @Test fun aMutablePointerCanBeWrittenThrough() {
         assertEquals("4\n10", run("""
-            use std.io
+            import std.io
             unsafe func main() {
                 var y: Int^ = alloc^ 4
                 std::println(y.^)
@@ -39,7 +39,7 @@ class Tier3MemoryTest {
         // allocation, and the dereference — so the write site alone says whether
         // it is allowed.
         val result = Compiler().compile("""
-            use std.io
+            import std.io
             unsafe func main() {
                 fin x: Int* = alloc* 4
                 x.* = 10
@@ -54,7 +54,7 @@ class Tier3MemoryTest {
 
     @Test fun aReadOnlyPointerStillReads() {
         assertEquals("4", run("""
-            use std.io
+            import std.io
             unsafe func main() {
                 fin x: Int* = alloc* 4
                 std::println(x.*)
@@ -64,7 +64,7 @@ class Tier3MemoryTest {
 
     @Test fun allocDerefAndStoreInt() {
         assertEquals("5\n99", run("""
-            use std.io
+            import std.io
             func main() {
                 var p = alloc^ 5
                 std::println(*p)
@@ -76,7 +76,7 @@ class Tier3MemoryTest {
 
     @Test fun allocStructMutateThroughPointer() {
         assertEquals("10\n20", run("""
-            use std.io
+            import std.io
             pack P {
                 var v: Int
             }
@@ -89,9 +89,9 @@ class Tier3MemoryTest {
         """.trimIndent()))
     }
 
-    @Test fun unsafeBlockDesugarsToZone() {
+    @Test fun unsafeBlockDesugarsToRealm() {
         assertEquals("11", run("""
-            use std.io
+            import std.io
             func main() {
                 var x = 1
                 unsafe {
@@ -104,7 +104,7 @@ class Tier3MemoryTest {
 
     @Test fun dropIsAdvisoryNoOp() {
         assertEquals("5", run("""
-            use std.io
+            import std.io
             func main() {
                 var p = alloc^ 5
                 purge p
@@ -115,7 +115,7 @@ class Tier3MemoryTest {
 
     @Test fun pointerTypeAnnotation() {
         assertEquals("42", run("""
-            use std.io
+            import std.io
             func main() {
                 var p: Int^ = alloc^ 42
                 std::println(*p)
@@ -125,7 +125,7 @@ class Tier3MemoryTest {
 
     @Test fun derefKeywordReadsAndWritesRawPointer() {
         assertEquals("5\n12", run("""
-            use std.io
+            import std.io
             func main() {
                 var p = alloc^ 5
                 std::println(p.*)
@@ -137,8 +137,8 @@ class Tier3MemoryTest {
 
     @Test fun sharedCountsOwnersWithoutSynchronisation() {
         assertEquals("41\n42\n2\n1", run("""
-            use std.io
-            use std.memory.*
+            import std.io
+            import std.memory.*
             func main() {
                 var p = std::sharedOf(41)
                 std::println(p.*)
@@ -152,8 +152,8 @@ class Tier3MemoryTest {
 
     @Test fun syncSharedCountsOwnersAcrossThreads() {
         assertEquals("41\n2\n1", run("""
-            use std.io
-            use std.memory.*
+            import std.io
+            import std.memory.*
             func main() {
                 var p = std::syncSharedOf(41)
                 std::println(p.get)
@@ -165,8 +165,8 @@ class Tier3MemoryTest {
 
     @Test fun sliceIndexesPointerBuffer() {
         assertEquals("9\n4", run("""
-            use std.io
-            use std.memory.*
+            import std.io
+            import std.memory.*
             func main() {
                 var p = alloc^ Int[3]
                 p[0] = 7
@@ -183,7 +183,7 @@ class Tier3MemoryTest {
     @Test fun isolatedProducesIndependentDeepCopy() {
         // Mutating the isolated copy must not affect the original.
         assertEquals("[1, 2, 3]\n[1, 2, 3, 99]", run("""
-            use std.io
+            import std.io
             func main() {
                 var a = arr@[1, 2, 3]
                 var b = isolated(a)
@@ -196,7 +196,7 @@ class Tier3MemoryTest {
 
     @Test fun isolatedDeepCopiesNestedStruct() {
         assertEquals("7\n1", run("""
-            use std.io
+            import std.io
             pack Box {
                 var v: Int
             }
@@ -212,7 +212,7 @@ class Tier3MemoryTest {
 
     @Test fun pointerOpsEmitRuntimePreambleInBackends() {
         val result = Compiler().compile("""
-            use std.io
+            import std.io
             func main() {
                 var p = alloc^ 5
                 *p = 99
@@ -222,13 +222,13 @@ class Tier3MemoryTest {
         assertIs<CompilationResult.Success>(result)
     }
 
-    @Test fun zoneAllocFreesAtExit() {
-        // `zone alloc { }` tracks allocations and frees them at exit.
+    @Test fun scopeAllocFreesAtExit() {
+        // `scope alloc { }` tracks allocations and frees them at exit.
         assertEquals("5\nnull", run("""
-            use std.io
+            import std.io
             func main() {
                 var p: Int^ = alloc^ 0
-                zone alloc {
+                scope alloc {
                     p = alloc^ 5
                     std::println(*p)
                 }
@@ -237,13 +237,13 @@ class Tier3MemoryTest {
         """.trimIndent()))
     }
 
-    @Test fun friendZoneAllocFreesAtExit() {
-        // `zone alloc { }` — arena scoping on top of shared friend scope.
+    @Test fun friendRealmAllocFreesAtExit() {
+        // `scope alloc { }` — arena scoping on top of shared friend scope.
         assertEquals("7\nnull", run("""
-            use std.io
+            import std.io
             func main() {
                 var q: Int^ = alloc^ 0
-                zone alloc {
+                scope alloc {
                     q = alloc^ 7
                     std::println(*q)
                 }
@@ -254,7 +254,7 @@ class Tier3MemoryTest {
 
     @Test fun pointerArithmeticOffsetAndDeref() {
         assertEquals("10\n20\n30", run("""
-            use std.io
+            import std.io
             func main() {
                 var p: Int^ = alloc^ arr@[10, 20, 30]
                 std::println(*p)
@@ -267,7 +267,7 @@ class Tier3MemoryTest {
 
     @Test fun pointerArithmeticSubtract() {
         assertEquals("30\n20", run("""
-            use std.io
+            import std.io
             func main() {
                 var p: Int^ = alloc^ arr@[10, 20, 30]
                 var end = p + 2
@@ -280,7 +280,7 @@ class Tier3MemoryTest {
 
     @Test fun pointerArithmeticWriteThroughOffset() {
         assertEquals("99", run("""
-            use std.io
+            import std.io
             func main() {
                 var p: Int^ = alloc^ arr@[10, 20, 30]
                 *(p + 1) = 99
@@ -291,7 +291,7 @@ class Tier3MemoryTest {
 
     @Test fun pointerArithmeticDistance() {
         assertEquals("3", run("""
-            use std.io
+            import std.io
             func main() {
                 var p: Int^ = alloc^ arr@[10, 20, 30, 40]
                 var q = p + 3

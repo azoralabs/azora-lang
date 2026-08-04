@@ -33,7 +33,7 @@ class TestAssertTraceTest {
     @Test
     fun test_basicDeclaration() {
         val result = compile("""
-            use std.io
+            import std.io
             test "addition" {
                 assert 1 + 1 == 2 { "math is broken" }
             }
@@ -47,7 +47,7 @@ class TestAssertTraceTest {
     @Test
     fun test_interpreterRunsTests() {
         val output = run("""
-            use std.io
+            import std.io
             test "greet test" {
                 trace { "inside test" }
             }
@@ -62,7 +62,7 @@ class TestAssertTraceTest {
     @Test
     fun test_llvmEmit() {
         val result = compile("""
-            use std.io
+            import std.io
             test "my test" {
                 assert 1 == 1 { "fail" }
             }
@@ -78,7 +78,7 @@ class TestAssertTraceTest {
     @Test
     fun assert_passingCondition() {
         val output = run("""
-            use std.io
+            import std.io
             func main() {
                 assert 1 + 1 == 2 { "math broken" }
                 std::println("ok")
@@ -90,7 +90,7 @@ class TestAssertTraceTest {
     @Test
     fun assert_failingConditionThrows() {
         val result = compile("""
-            use std.io
+            import std.io
             func main() {
                 assert 1 == 2 { "bad math" }
             }
@@ -106,7 +106,7 @@ class TestAssertTraceTest {
     @Test
     fun assert_conditionMustBeBool() {
         val errors = expectFailure("""
-            use std.io
+            import std.io
             func main() {
                 assert 42 { "not bool" }
             }
@@ -117,7 +117,7 @@ class TestAssertTraceTest {
     @Test
     fun assert_messageMustBeString() {
         val errors = expectFailure("""
-            use std.io
+            import std.io
             func main() {
                 assert true { 42 }
             }
@@ -128,7 +128,7 @@ class TestAssertTraceTest {
     @Test
     fun assert_llvmEmit() {
         val result = compile("""
-            use std.io
+            import std.io
             func main() {
                 assert 1 == 1 { "ok" }
             }
@@ -144,7 +144,7 @@ class TestAssertTraceTest {
     @Test
     fun trace_printsMessage() {
         val output = run("""
-            use std.io
+            import std.io
             func main() {
                 trace { "hello from trace" }
                 std::println("done")
@@ -173,7 +173,7 @@ class TestAssertTraceTest {
     @Test
     fun trace_liftsBodiesIntoTypedIrFunctions() {
         val result = compile("""
-            mod playground
+            module playground
             func main() {
                 trace .Info { "Any bridge works" }
                 var level = LogLevel.Warn
@@ -188,7 +188,7 @@ class TestAssertTraceTest {
             .first { it.name == "level" }
 
         assertEquals(IrType.Named("LogLevel"), level.type)
-        assertTrue(ir.startsWith("mod playground\n\nfunc __main_lmbda0"), ir)
+        assertTrue(ir.startsWith("module playground\n\nfunc __main_lmbda0"), ir)
         assertTrue("""
             func __main_lmbda0(level: LogLevel): String {
                 return "Any bridge works"
@@ -269,7 +269,7 @@ class TestAssertTraceTest {
     @Test
     fun enumValues_stringifyWithTheirQualifiedPath() {
         val output = run("""
-            use std.io
+            import std.io
             enum Tone { Warm Cool }
             func main() {
                 fin tone = Tone.Warm
@@ -296,7 +296,7 @@ class TestAssertTraceTest {
     @Test
     fun trace_llvmEmit() {
         val result = compile("""
-            use std.io
+            import std.io
             func main() {
                 trace { "debug" }
             }
@@ -311,7 +311,7 @@ class TestAssertTraceTest {
     @Test
     fun inlineAssert_passingCondition() {
         val result = compile("""
-            use std.io
+            import std.io
             inline fin X = 5
             inline assert X > 0 { "X must be positive" }
             func main() {
@@ -324,7 +324,7 @@ class TestAssertTraceTest {
     @Test
     fun inlineAssert_failingCondition() {
         val errors = expectFailure("""
-            use std.io
+            import std.io
             inline fin X = -1
             inline assert X > 0 { "X must be positive" }
             func main() {}
@@ -335,7 +335,7 @@ class TestAssertTraceTest {
     @Test
     fun inlineAssert_insideFunctionBody() {
         val result = compile("""
-            use std.io
+            import std.io
             func main() {
                 inline fin x = 5
                 inline assert x > 0 { "x must be positive" }
@@ -348,7 +348,7 @@ class TestAssertTraceTest {
     @Test
     fun inlineAssert_removedFromIr() {
         val result = compile("""
-            use std.io
+            import std.io
             inline fin X = 5
             inline assert X > 0 { "ok" }
             func main() {
@@ -381,7 +381,7 @@ class TestAssertTraceTest {
     @Test
     fun inlineTrace_producesWarning() {
         val result = compile("""
-            use std.io
+            import std.io
             inline trace { "compiling module" }
             func main() {
                 std::println("ok")
@@ -394,7 +394,7 @@ class TestAssertTraceTest {
     @Test
     fun inlineTrace_insideFunctionBody() {
         val result = compile("""
-            use std.io
+            import std.io
             func main() {
                 inline trace { "in main" }
                 std::println("ok")
@@ -438,7 +438,7 @@ class TestAssertTraceTest {
     @Test
     fun inlineTrace_removedFromIr() {
         val result = compile("""
-            use std.io
+            import std.io
             inline trace { "debug" }
             func main() {
                 std::println("hello")
@@ -458,7 +458,7 @@ class TestAssertTraceTest {
         // at the top level only, putting it inside a function would be a parse error.
         // We verify test works at top level (already tested above).
         val result = compile("""
-            use std.io
+            import std.io
             test "works at top level" {
                 std::println("ok")
             }

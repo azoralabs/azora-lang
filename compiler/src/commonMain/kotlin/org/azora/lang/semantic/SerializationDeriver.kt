@@ -67,7 +67,7 @@ object SerializationDeriver {
     private val integerTypes = setOf(
         "Byte", "UByte", "Short", "UShort", "Int", "UInt", "Long", "ULong", "Cent", "UCent"
     )
-    private val realTypes = setOf("Float", "Real", "Decimal")
+    private val floatingTypes = setOf("Float", "Double", "Decimal")
     fun derive(program: Program): Result {
         val roles = discoverRoles(program)
         if (roles.roots.isEmpty()) return Result(program, emptyList())
@@ -484,7 +484,7 @@ object SerializationDeriver {
             "String" -> "SerialValue.Text($value)"
             "Bool" -> "SerialValue.Bool($value)"
             "Char" -> "SerialValue.Text(${qualified(helpers.conversionProvider, "toString")}($value))"
-            in integerTypes, in realTypes -> "SerialValue.Number(${qualified(helpers.conversionProvider, "toString")}($value))"
+            in integerTypes, in floatingTypes -> "SerialValue.Number(${qualified(helpers.conversionProvider, "toString")}($value))"
             else -> "try $value.toSerialValue($value)"
         }
     }
@@ -499,7 +499,7 @@ object SerializationDeriver {
             "Bool" -> "try ${qualified(helpers.provider, "serialAsBool")}($raw)"
             "Char" -> "try ${qualified(helpers.provider, "serialAsChar")}($raw)"
             in integerTypes -> "try ${qualified(helpers.provider, "serialAs${named.name}")}($raw)"
-            in realTypes -> "try ${qualified(helpers.provider, "serialAsReal")}($raw) as ${named.name}"
+            in floatingTypes -> "try ${qualified(helpers.provider, "serialAsDouble")}($raw) as ${named.name}"
             else -> "try $receiverValue.fromSerialValue($raw)"
         }
     }
@@ -533,7 +533,7 @@ object SerializationDeriver {
 
     private fun renderExpr(expr: Expr): String? = when (expr) {
         is Expr.IntLiteral -> expr.value.toString() + integerSuffix(expr.suffix)
-        is Expr.RealLiteral -> expr.value.toString() + realSuffix(expr.suffix)
+        is Expr.DoubleLiteral -> expr.value.toString() + doubleSuffix(expr.suffix)
         is Expr.StringLiteral -> quote(expr.value)
         is Expr.CharLiteral -> "'${escapeChar(expr.value)}'"
         is Expr.BoolLiteral -> expr.value.toString()
@@ -600,7 +600,7 @@ object SerializationDeriver {
         NumericSuffix.FLOAT, NumericSuffix.DECIMAL -> ""
     }
 
-    private fun realSuffix(suffix: NumericSuffix): String = when (suffix) {
+    private fun doubleSuffix(suffix: NumericSuffix): String = when (suffix) {
         NumericSuffix.FLOAT -> "f"
         NumericSuffix.DECIMAL -> "D"
         else -> ""
@@ -632,5 +632,5 @@ object SerializationDeriver {
         else -> value.toString()
     }
 
-    private val primitiveTypes = integerTypes + realTypes + setOf("String", "Bool", "Char")
+    private val primitiveTypes = integerTypes + floatingTypes + setOf("String", "Bool", "Char")
 }

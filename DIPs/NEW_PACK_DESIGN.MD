@@ -1,11 +1,11 @@
 ```azora
-mod main
+module main
 
-use std.io
+import std.io
 
 prot Area {
-    func area[self: Self&](): Real
-    prop areaP[self: Self&]: Real
+    func area[self: Self&](): Double
+    prop areaP[self: Self&]: Double
 }
 
 pack Model {
@@ -17,7 +17,7 @@ impl Model {
     //typealias Self = Model - not necessary, injected automatically by compiler (keep pack Self in stdlib)
     
     // only available in impl block
-    ctor [self: Self!](w: Real, h: Real) { // in this case can mutate
+    ctor [self: Self!](w: Double, h: Double) { // in this case can mutate
         self._width = w
         self._height = h
         std::println("Constructed")
@@ -33,7 +33,7 @@ impl Model {
         return "${self._width}; ${self._height}"
     }
 
-    prop width[self: Self&]: Real {
+    prop width[self: Self&]: Double {
         return self._width
     }
 

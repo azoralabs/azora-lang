@@ -54,7 +54,7 @@ sealed class Expr {
      * @property column 1-based source column
      * @property length source text length
      */
-    data class RealLiteral(val value: Double, override val line: Int, override val column: Int = 0, override val length: Int = 0, val suffix: NumericSuffix = NumericSuffix.NONE) : Expr()
+    data class DoubleLiteral(val value: Double, override val line: Int, override val column: Int = 0, override val length: Int = 0, val suffix: NumericSuffix = NumericSuffix.NONE) : Expr()
 
     /**
      * Character literal expression (e.g. `'a'`, `'\n'`).
@@ -393,11 +393,25 @@ sealed class Stmt {
     abstract val length: Int
 
     /**
-     * Mutable binding (`var`).
+     * Rebindable binding: `var` (mutable value) or `val` (immutable value).
+     *
+     * The four binding keywords vary two independent axes — whether the *name*
+     * can be rebound, and whether the *value* can be mutated through it. The
+     * name axis picks the node ([VarDecl] rebinds, [LetDecl]/[FinDecl] do not);
+     * [valueMutable] carries the value axis:
+     *
+     * | keyword | rebind | mutate value | node                        |
+     * |---------|--------|--------------|-----------------------------|
+     * | `var`   | yes    | yes          | `VarDecl(valueMutable=true)`  |
+     * | `val`   | yes    | no           | `VarDecl(valueMutable=false)` |
+     * | `let`   | no     | yes          | `LetDecl`                     |
+     * | `fin`   | no     | no           | `FinDecl`                     |
      *
      * @property name the variable name
      * @property type the declared or inferred type annotation
      * @property initializer the expression that provides the initial value
+     * @property valueMutable false for `val` — the value cannot be mutated or
+     *   borrowed mutably through this name, though the name can be rebound
      * @property line 1-based source line
      * @property column 1-based source column
      * @property length source text length
@@ -408,11 +422,12 @@ sealed class Stmt {
         val initializer: Expr,
         override val line: Int,
         override val column: Int = 0,
-        override val length: Int = 0
+        override val length: Int = 0,
+        val valueMutable: Boolean = true
     ) : Stmt()
 
     /**
-     * Deeply immutable binding (`fin`).
+     * Immutable binding, immutable value (`fin`). See [VarDecl] for the model.
      *
      * @property name the variable name
      * @property type the declared or inferred type annotation
@@ -431,7 +446,7 @@ sealed class Stmt {
     ) : Stmt()
 
     /**
-     * Immutable binding (`let`).
+     * Immutable binding, mutable value (`let`). See [VarDecl] for the model.
      *
      * @property name the variable name
      * @property type the declared or inferred type annotation
@@ -548,11 +563,15 @@ sealed class Stmt {
     ) : Stmt()
 
     /**
-     * Compile-time mutable binding (`inline var`).
+     * Compile-time rebindable binding (`inline var` / `inline val`).
+     *
+     * All four binding keywords work in a compile-time scope exactly as they do
+     * at runtime; see [VarDecl] for the two-axis model.
      *
      * @property name the binding name
      * @property type the declared or inferred type annotation
      * @property initializer the compile-time constant expression
+     * @property valueMutable false for `inline val`
      * @property line 1-based source line
      * @property column 1-based source column
      * @property length source text length
@@ -563,7 +582,8 @@ sealed class Stmt {
         val initializer: Expr,
         override val line: Int,
         override val column: Int = 0,
-        override val length: Int = 0
+        override val length: Int = 0,
+        val valueMutable: Boolean = true
     ) : Stmt()
 
     /**
@@ -631,27 +651,27 @@ sealed class Stmt {
     ) : Stmt()
 
     /**
-     * Scoped block (`zone { ... }`). Introduces a new variable scope.
+     * Scoped block (`scope { ... }`). Introduces a new variable scope.
      *
-     * @property body the list of statements inside the zone
+     * @property body the list of statements inside the scope
      * @property line 1-based source line
      * @property column 1-based source column
      * @property length source text length
      */
-    data class Zone(
+    data class Scope(
         val body: List<Stmt>,
         override val line: Int,
         override val column: Int = 0,
         override val length: Int = 0,
-        /** `zone alloc { }` — allocations inside are tracked and freed at exit. */
+        /** `scope alloc { }` — allocations inside are tracked and freed at exit. */
         val alloc: Boolean = false,
         /** Explicit opt-in boundary for operations whose contracts cannot be proven safe. */
         val unsafe: Boolean = false,
         /**
-         * True for a zone the source actually wrote.
+         * True for a scope the source actually wrote.
          *
-         * Sibling written zones share one scope, so a binding made in the first
-         * is visible in the second. The compiler also builds zones of its own —
+         * Sibling written scopes share one scope, so a binding made in the first
+         * is visible in the second. The compiler also builds scopes of its own —
          * to scope an inlined body, an `unsafe { }` block, a desugared for-else
          * — and those must stay independent, or two inlined calls would collide
          * on their locals.
@@ -1057,7 +1077,7 @@ sealed class TypeRef {
     /**
      * A named type, optionally generic.
      *
-     * [qualifier] preserves the source-level zone path (`std` in
+     * [qualifier] preserves the source-level realm path (`std` in
      * `std::Tuple<Int, String>`). Semantic passes still use [name] as the
      * canonical declaration name, while visibility checks can distinguish a
      * qualified type reference from a bare one.
@@ -1069,7 +1089,7 @@ sealed class TypeRef {
         val qualifier: String? = null,
     ) : TypeRef() {
         override fun toString() = when {
-            TypeFunctionCall.isCall(this) -> "${TypeFunctionCall.name(this)}!(${args.joinToString(", ")})"
+            TypeFunctionCall.isCall(this) -> "${TypeFunctionCall.name(this)}<${args.joinToString(", ")}>"
             args.isEmpty() -> qualifiedName()
             else -> "${qualifiedName()}<${args.joinToString(", ")}>"
         }
@@ -1216,14 +1236,15 @@ sealed class TypeRef {
 // Compile-time type functions
 // ---------------------------------------------------------------------------
 
-/** A parameter of a compile-time `type` function. */
+/** A type parameter of a `deepinline prop`. */
 data class TypeFunctionParam(val name: String, val variadic: Boolean = false)
 
 /**
- * A compile-time type function declaration.
+ * A compile-time type property (`deepinline prop Name<...T>: Type { … }`).
  *
- * Type functions receive type values and return a [TypeRef]. They are erased
- * before IR generation and can therefore never be called at runtime.
+ * A type property receives types and returns a [TypeRef]. It is erased before
+ * IR generation and can therefore never be called at runtime; a use site spells
+ * it exactly like a generic type (`Promote<T, U>`).
  */
 data class TypeFunctionDecl(
     val name: String,
@@ -1234,11 +1255,12 @@ data class TypeFunctionDecl(
     val whereClause: Expr? = null,
     val line: Int,
     val column: Int = 0,
+    val annotations: List<Annotation> = emptyList(),
 ) {
     val variadicParam: String? get() = params.singleOrNull { it.variadic }?.name
 }
 
-/** Statements accepted in a compile-time type-function body. */
+/** Statements accepted in a `deepinline prop` body. */
 sealed class TypeFunctionStmt {
     data class Binding(val name: String, val value: TypeFunctionExpr, val mutable: Boolean) : TypeFunctionStmt()
     data class Assignment(val name: String, val value: TypeFunctionExpr) : TypeFunctionStmt()
@@ -1247,6 +1269,12 @@ sealed class TypeFunctionStmt {
         val packName: String,
         val startIndex: Int,
         val body: List<TypeFunctionStmt>,
+    ) : TypeFunctionStmt()
+    /** `if COND { … } [else { … }]` — a branch over a type comparison. */
+    data class If(
+        val condition: TypeFunctionCondition,
+        val thenBody: List<TypeFunctionStmt>,
+        val elseBody: List<TypeFunctionStmt>,
     ) : TypeFunctionStmt()
     data class Return(val value: TypeFunctionExpr) : TypeFunctionStmt()
 }
@@ -1271,7 +1299,7 @@ data class TypeFunctionCondition(
     val compareRank: Boolean,
 )
 
-/** Internal encoding for a type-level `name!(...)` call inside a [TypeRef]. */
+/** Internal encoding for a deferred `Name<...>` type-property call inside a [TypeRef]. */
 object TypeFunctionCall {
     private const val PREFIX = "__azora_type_function__"
 
@@ -1304,7 +1332,7 @@ object NamedTypeMacroCall {
         ref.name.removePrefix(PREFIX).substringAfter(SEPARATOR).substringAfter(SEPARATOR)
 }
 
-/** Encodes a source path containing both an owning module and a zone-qualified symbol. */
+/** Encodes a source path containing both an owning module and a realm-qualified symbol. */
 object ModuleQualifiedSymbol {
     private const val PREFIX = "__azora_module_qualified__"
     private const val SEPARATOR = "::"
@@ -1376,17 +1404,17 @@ enum class Visibility { PUBLIC, CONFINE }
 enum class ModuleVisibility { PUBLIC, CONFINE }
 
 /**
- * Compile-time metadata for a declaration's enclosing zone, surfaced by
- * `(reflect X).zone`. The global (top-level) scope is a zone with [label]
+ * Compile-time metadata for a declaration's enclosing realm, surfaced by
+ * `(reflect X).realm`. The global (top-level) scope is a realm with [label]
  * `"global"`, [isInline] `false`, and no [parent].
  *
- * @property label the zone's string label (`zone "my zone" { … }`), or null for
- *   an unlabeled `zone { … }`; `"global"` for the top-level scope.
- * @property isInline whether the zone is `inline`/`deepinline`, or is nested in
- *   one (inline-ness is inherited by nested zones).
- * @property parent the enclosing zone, or null at the global scope.
+ * @property label the realm's string label (`realm "my realm" { … }`), or null for
+ *   an unlabeled `realm { … }`; `"global"` for the top-level scope.
+ * @property isInline whether the realm is `inline`/`deepinline`, or is nested in
+ *   one (inline-ness is inherited by nested realms).
+ * @property parent the enclosing realm, or null at the global scope.
  */
-data class ZoneMeta(val label: String?, val isInline: Boolean, val parent: ZoneMeta? = null)
+data class RealmMeta(val label: String?, val isInline: Boolean, val parent: RealmMeta? = null)
 
 /**
  * Kind of a type cast ([Expr.Cast]).
@@ -1753,7 +1781,7 @@ sealed class TopLevel {
     data class Func(val decl: FuncDecl) : TopLevel()
 
     /** Runtime top-level mutable binding (`var`). Survives CTCE. */
-    data class VarDecl(val name: String, val type: TypeRef?, val initializer: Expr, val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList(), val threadlocal: Boolean = false, val visibility: Visibility = Visibility.PUBLIC) : TopLevel() {
+    data class VarDecl(val name: String, val type: TypeRef?, val initializer: Expr, val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList(), val threadlocal: Boolean = false, val visibility: Visibility = Visibility.PUBLIC, val valueMutable: Boolean = true) : TopLevel() {
         /** Convenience: the type name as written in source, or null. */
         val typeName: String? get() = type?.displayName()
     }
@@ -1776,7 +1804,7 @@ sealed class TopLevel {
      * @property line 1-based source line
      * @property column 1-based source column
      */
-    data class InlineVar(val name: String, val initializer: Expr, val line: Int, val column: Int = 0) : TopLevel()
+    data class InlineVar(val name: String, val initializer: Expr, val line: Int, val column: Int = 0, val valueMutable: Boolean = true) : TopLevel()
 
     /**
      * A top-level compile-time deeply immutable binding (`inline fin`).
@@ -1922,6 +1950,16 @@ sealed class TopLevel {
          */
         val isBridge: Boolean = false,
         /**
+         * `union X { … }` — a C-style untagged union.
+         *
+         * Every field starts at offset 0 and the whole thing is as wide as its
+         * widest member, so writing one member and reading another reinterprets
+         * the same storage. Nothing records which member is live: that is the
+         * difference between this and `variant`, and the reason a union is only
+         * as safe as the invariant the author keeps around it.
+         */
+        val isUnion: Boolean = false,
+        /**
          * The module that declares this, or null before the parser tags it.
          *
          * A private member is reachable only from its own declaring module, so
@@ -1944,7 +1982,7 @@ sealed class TopLevel {
         val isBridge: Boolean = false,
     ) : TopLevel()
 
-    /** An extern function signature inside a `bridge` block: `func sin(x: Real): Real` (no body). */
+    /** An extern function signature inside a `bridge` block: `func sin(x: Double): Double` (no body). */
     data class BridgeSig(val name: String, val params: List<Param>, val returnType: TypeRef, val line: Int, val column: Int = 0, val typeParams: List<String> = emptyList())
 
     /** `bridge <target> { func sigs }` — declares extern functions for active FFI targets (C/LLVM, JS/WASM). */
@@ -1960,8 +1998,8 @@ sealed class TopLevel {
     data class Wrap(val name: String, val registrations: List<WrapReg>, val line: Int, val column: Int = 0) : TopLevel()
 
     /**
-     * `import ZoneName` or `import ZoneName.Item` — imports items from a named zone so they're
-     * accessible without the `ZoneName::` prefix. [imports] is a list of (zoneName, itemName)
+     * `import RealmName` or `import RealmName.Item` — imports items from a named realm so they're
+     * accessible without the `RealmName::` prefix. [imports] is a list of (realmName, itemName)
      * pairs where itemName is null for "import all".
      *
      * When [exported] is true (written `expose use …`), the import is re-exported:
@@ -2044,8 +2082,8 @@ sealed class TopLevel {
         val typeParams: List<String> = emptyList(),
         /** Variadic implementation parameter from `impl<...T>`. */
         val variadicParam: String? = null,
-        /** Lexical zone containing this implementation, used for same-zone lookup. */
-        val zonePrefix: String? = null,
+        /** Lexical realm containing this implementation, used for same-realm lookup. */
+        val realmPrefix: String? = null,
         /**
          * The module that declares this, or null before the parser tags it.
          *
@@ -2146,11 +2184,11 @@ data class Program(
      */
     val exportCondition: Expr? = null,
     /**
-     * Declaration name → the zone it was declared in, for `(reflect X).zone`.
-     * Only declarations nested inside a `zone "label" { … }` (or an inline/
-     * deepinline zone) appear; a name absent here is global (see [ZoneMeta]).
+     * Declaration name → the realm it was declared in, for `(reflect X).realm`.
+     * Only declarations nested inside a `realm "label" { … }` (or an inline/
+     * deepinline realm) appear; a name absent here is global (see [RealmMeta]).
      */
-    val zones: Map<String, ZoneMeta> = emptyMap(),
+    val realms: Map<String, RealmMeta> = emptyMap(),
     /** Compile-time `type name(...)` declarations owned by this unit. */
     val typeFunctions: List<TypeFunctionDecl> = emptyList(),
     /**
@@ -2174,11 +2212,11 @@ data class Program(
      */
     val usesMacros: Boolean = false,
     /**
-     * Named type declaration → source-level zone path for declarations inside
-     * `zone X`. Declarations in `use zone` remain bare and
+     * Named type declaration → source-level realm path for declarations inside
+     * `realm X`. Declarations in `use realm` remain bare and
      * therefore do not appear here.
      */
-    val zoneTypeNamespaces: Map<String, String> = emptyMap(),
+    val realmTypeNamespaces: Map<String, String> = emptyMap(),
 ) {
     /** Convenience — returns only the resolved function declarations. */
     val functions: List<FuncDecl> get() = items.filterIsInstance<TopLevel.Func>().map { it.decl }

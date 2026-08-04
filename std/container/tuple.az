@@ -14,12 +14,12 @@
  * limitations under the License.
  */
 
-mod std.container.tuple
+module std.container.tuple
 
-use std.serializer
-use std.convert
-use std.traits
-use std.reflection
+import std.serializer
+import std.convert
+import std.traits
+import std.reflection
 
 /**
  * @file std/container/tuple
@@ -32,14 +32,14 @@ use std.reflection
  * @since 0.0.3
  */
 
-zone std {
+realm std {
     /**
      * A fixed-size, ordered collection of heterogeneous values.
      *
      * Each element is accessible by its zero-based positional index.
      * Tuples require at least two elements.
      *
-     * @param T Variadic type parameter pack for the element types.
+     * @generic T Variadic type parameter pack for the element types.
      */
     @Experimental(since: "0.0.3")
     @EnforceNumFields
@@ -79,7 +79,7 @@ zone std {
      * The returned tuple preserves the order and static type of every argument.
      * Each value can be read with positional access (`tuple.0`, `tuple.1`, ...).
      *
-     * @param T Variadic type parameter pack inferred from the provided elements.
+     * @generic T Variadic type parameter pack inferred from the provided elements.
      * @param elements Values to store in the tuple.
      * @return A Tuple whose element types match the provided values.
      */
@@ -90,17 +90,17 @@ zone std {
     }
 }
 
-use zone std {
+use realm std {
     /**
      * Builds a structural [Tuple].
      *
      * @0 `tup@(1, "two", 3.0)` expands to `std::tupleOf(1, "two", 3.0)`.
      */
-    meta .Prefix("tup") {
+    macro .Prefix("tup") {
         [...$items] => std::tupleOf(...$items)
     }
 
-    meta .Type {
+    macro .Type {
         (...T) => std::Tuple<...T>
     }
 }

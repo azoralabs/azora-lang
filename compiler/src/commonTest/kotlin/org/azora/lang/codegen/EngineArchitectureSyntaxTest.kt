@@ -33,33 +33,33 @@ class EngineArchitectureSyntaxTest {
     private val facade = LibrarySource(
         "engine.az",
         """
-        mod engine
+        module engine
 
-        expose use engine.ecs
+        expose import engine.ecs
         """.trimIndent(),
     )
 
     private val ecs = LibrarySource(
         "engine/ecs.az",
         """
-        mod engine.ecs
+        module engine.ecs
 
-        meta .Type {
+        macro .Type {
             res ${'$'}T => Resource<${'$'}T>
             res! ${'$'}T => MutResource<${'$'}T>
             query [...${'$'}T] => Query<...${'$'}T>
         }
-        meta .Infix("with") {
+        macro .Infix("with") {
             ${'$'}Base ${'$'}Filter => ${'$'}Base
         }
-        meta .Infix("without") {
+        macro .Infix("without") {
             ${'$'}Base ${'$'}Filter => ${'$'}Base
         }
 
         pack Resource<T> { fin value: T }
         pack MutResource<T> { var value: T }
         bridge pack Query<...T>
-        pack Vec3 { var x: Real }
+        pack Vec3 { var x: Double }
         typealias Vector3 = Vec3
         pack Transform { var translation: Vector3 }
 
@@ -76,8 +76,8 @@ class EngineArchitectureSyntaxTest {
         }
 
         enum SystemPhase { Update }
-        deco Component for [.Pack, .Enum]
-        deco System for .Func {
+        annot Component for [.Pack, .Enum]
+        annot System for .Func {
             fin phase: SystemPhase
         }
         """.trimIndent(),
@@ -87,7 +87,7 @@ class EngineArchitectureSyntaxTest {
     fun libraryDefinedResourceAndQueryTypesExpandAfterImportResolution() {
         val result = Compiler(listOf(facade, ecs)).compile(
             """
-            use engine
+            import engine
 
             @Component
             pack Player {
@@ -123,7 +123,7 @@ class EngineArchitectureSyntaxTest {
         assertTrue(assertIs<TypeRef.Named>(move.params[2].type).name.startsWith("__Query_"))
         val player = result.ast.items.filterIsInstance<TopLevel.Pack>().single { it.name == "Player" }
         val health = result.ast.items.filterIsInstance<TopLevel.Pack>().single { it.name == "Health" }
-        assertEquals("Real", assertIs<TypeRef.Named>(player.fields.single().type).name)
+        assertEquals("Double", assertIs<TypeRef.Named>(player.fields.single().type).name)
         assertEquals("Int", assertIs<TypeRef.Named>(health.fields.single().type).name)
         assertFalse(result.llvm.contains("__azora_named_type_macro__"))
         assertFalse(result.wasm.contains("__azora_named_type_macro__"))

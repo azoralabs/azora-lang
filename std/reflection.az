@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-mod std.reflection
+module std.reflection
 
 /**
  * @file std/reflection
@@ -27,7 +27,7 @@ mod std.reflection
  * ```
  * std::reflect<P>.hasDeco<Serializable>       // Bool
  * std::reflect<P>.decoMeta<SerialName>.value  // decorator field
- * std::reflect<P>.enclosingZone?.label        // enclosing zone metadata
+ * std::reflect<P>.enclosingRealm?.label        // enclosing realm metadata
  * ```
  *
  * The compiler lowers every `std::reflect<X>` at parse time, so the declaration
@@ -36,10 +36,10 @@ mod std.reflection
  * @since 0.0.4
  */
 
-zone std {
+realm std {
     /**
      * Compile-time reflection handle for the declaration `T`, produced by
-     * `std::reflect<T>`. Its members (`.hasDeco<D>`, `.decoMeta<D>`, `.enclosingZone`) are
+     * `std::reflect<T>`. Its members (`.hasDeco<D>`, `.decoMeta<D>`, `.enclosingRealm`) are
      * resolved by the compiler; `bridge pack` means no struct is emitted.
      */
     @Experimental(since: "0.0.4")
@@ -54,9 +54,9 @@ zone std {
         @Experimental(since: "0.0.4")
         bridge prop<D> decoMeta[self: Self&]: D
 
-        /** The enclosing lexical zone of `T`, or null at global scope. */
+        /** The enclosing lexical realm of `T`, or null at global scope. */
         @Experimental(since: "0.0.4")
-        bridge prop enclosingZone[self: Self&]: Zone?
+        bridge prop enclosingRealm[self: Self&]: Realm?
 
         /**
          * Every program type carrying decorator `D`. Read from the whole-program
@@ -111,21 +111,21 @@ zone std {
     @Experimental(since: "0.0.4")
     bridge func reflect<T>(includeInherited: Bool = false): Reflected<T>
 
-     /** Compile-time handle for a lexical zone, from `std::reflect<T>.enclosingZone`. */
+    /** Compile-time handle for a lexical realm, from `std::reflect<T>.enclosingRealm`. */
     @Experimental(since: "0.0.4")
-    bridge pack Zone
+    bridge pack Realm
 
-    impl Zone {
-        /** The zone's label, or null for the global scope / an unlabeled zone. */
+    impl Realm {
+        /** The realm's label, or null for the global scope / an unlabeled realm. */
         @Experimental(since: "0.0.4")
         bridge prop label[self: Self&]: String?
 
-        /** Whether this is an inline (compile-time) zone. */
+        /** Whether this is an inline (compile-time) realm. */
         @Experimental(since: "0.0.4")
         bridge prop isInline[self: Self&]: Bool
 
-        /** The enclosing parent zone, or null at the global scope. */
+        /** The enclosing parent realm, or null at the global scope. */
         @Experimental(since: "0.0.4")
-        bridge prop parent[self: Self&]: Zone?
+        bridge prop parent[self: Self&]: Realm?
     }
 }

@@ -32,7 +32,7 @@ import org.azora.lang.frontend.CallableKind
  *
  * - [Int] -- 32-bit signed integer
  * - [UInt] -- 32-bit unsigned integer
- * - [Real] -- 64-bit double-precision floating point
+ * - [Double] -- 64-bit double-precision floating point
  * - [String] -- UTF-8 string
  * - [Bool] -- boolean (`true` / `false`)
  * - [Unit] -- no meaningful value (void)
@@ -55,7 +55,7 @@ sealed class IrType {
     /** 32-bit unsigned integer type. */
     object UInt : IrType() { override fun toString() = "UInt" }
     /** 64-bit double-precision floating-point type. */
-    object Real : IrType() { override fun toString() = "Real" }
+    object Double : IrType() { override fun toString() = "Double" }
     /** UTF-8 string type. */
     object String : IrType() { override fun toString() = "String" }
     /** Boolean type. */
@@ -163,8 +163,8 @@ sealed class IrType {
      *
      * The arguments are retained because a generic pack is *erased* at the
      * storage level — every type parameter becomes a pointer slot — so the only
-     * way a field read can know it is holding a `Real` rather than an address is
-     * for the referring type to still say `Box<Real>`.
+     * way a field read can know it is holding a `Double` rather than an address is
+     * for the referring type to still say `Box<Double>`.
      */
     data class Named(
         val name: kotlin.String,
@@ -187,7 +187,7 @@ sealed class IrType {
                 name
             }
 
-        // Identity is nominal in its TYPE arguments: `Box` and `Box<Real>` are the
+        // Identity is nominal in its TYPE arguments: `Box` and `Box<Double>` are the
         // same type to every check in the compiler, and the arguments ride along
         // only so code generation can un-erase a field. Const arguments are the
         // exception — they choose between layouts, so two applications differing in
@@ -217,13 +217,13 @@ sealed class IrType {
         /** Type aliases registered by the compiler (cleared per compilation). */
         val aliases = mutableMapOf<kotlin.String, TypeRef>()
         /** The set of all numeric types (integer + floating-point). */
-        val numericTypes: kotlin.collections.Set<IrType> = setOf(Int, UInt, Real, Byte, UByte, Short, UShort, Long, ULong, Cent, UCent, ISize, USize, Float, Decimal)
+        val numericTypes: kotlin.collections.Set<IrType> = setOf(Int, UInt, Double, Byte, UByte, Short, UShort, Long, ULong, Cent, UCent, ISize, USize, Float, Decimal)
 
         /** The set of all integer numeric types. */
         val integerTypes: kotlin.collections.Set<IrType> = setOf(Int, UInt, Byte, UByte, Short, UShort, Long, ULong, Cent, UCent, ISize, USize)
 
         /** The set of all floating-point numeric types. */
-        val floatTypes: kotlin.collections.Set<IrType> = setOf(Real, Float, Decimal)
+        val floatTypes: kotlin.collections.Set<IrType> = setOf(Double, Float, Decimal)
 
         /**
          * Resolves a type name string to its corresponding [IrType].
@@ -235,7 +235,7 @@ sealed class IrType {
         fun fromName(name: kotlin.String): IrType = when (name) {
             "Int" -> Int
             "UInt" -> UInt
-            "Real" -> Real
+            "Double" -> Double
             "String" -> String
             "Bool" -> Bool
             "Unit" -> Unit
@@ -300,7 +300,7 @@ sealed class IrType {
                 else if (ref.name == "Var" && ref.args.size >= 2) Variant(ref.args.map { resolve(it, typeParams) })
                 else if (ref.args.isEmpty() && isPrimitiveName(ref.name)) fromName(ref.name)
                 // Keep the type arguments: a generic pack erases its fields to
-                // pointer slots, so `Box<Real>` is the only remaining record
+                // pointer slots, so `Box<Double>` is the only remaining record
                 // that the slot holds a double rather than an address.
                 // Keep const arguments beside the erased type arguments: a type
                 // argument may erase to a pointer slot, but a const one chooses the
@@ -422,12 +422,12 @@ sealed class IrExpr {
     data class IntLiteral(val value: Long, override val type: IrType = IrType.Int) : IrExpr()
 
     /**
-     * Floating-point literal (covers Real, Float, Decimal).
+     * Floating-point literal (covers Double, Float, Decimal).
      *
      * @property value the double-precision value
-     * @property type the resolved float type (defaults to [IrType.Real])
+     * @property type the resolved float type (defaults to [IrType.Double])
      */
-    data class RealLiteral(val value: Double, override val type: IrType = IrType.Real) : IrExpr()
+    data class DoubleLiteral(val value: Double, override val type: IrType = IrType.Double) : IrExpr()
 
     /**
      * String literal.
@@ -599,7 +599,7 @@ sealed class IrExpr {
     /** If-expression `if cond { a } else { b }` — one branch becomes the value. */
     data class IfExpr(val condition: IrExpr, val thenExpr: IrExpr, val elseExpr: IrExpr, override val type: IrType) : IrExpr()
 
-    /** A numeric conversion `value as Type` (e.g. Int → Real). [type] is the target type. */
+    /** A numeric conversion `value as Type` (e.g. Int → Double). [type] is the target type. */
     data class NumCast(val value: IrExpr, override val type: IrType) : IrExpr()
 
     /**
@@ -669,7 +669,7 @@ sealed class IrExpr {
     /** Pretty-prints this expression as Azora IR text. */
     fun prettyPrint(): String = when (this) {
         is IntLiteral -> "$value"
-        is RealLiteral -> "$value"
+        is DoubleLiteral -> "$value"
         is StringLiteral -> "\"$value\""
         is EnumLiteral -> "$enumName.$variant"
         is BoolLiteral -> "$value"
@@ -806,11 +806,11 @@ sealed class IrStmt {
     ) : IrStmt()
 
     /**
-     * Scoped block (`zone { ... }`). Introduces a new variable scope.
+     * Scoped block (`realm { ... }`). Introduces a new variable scope.
      *
-     * @property body the list of statements inside the zone
+     * @property body the list of statements inside the realm
      */
-    data class Zone(val body: List<IrStmt>, val alloc: Boolean = false) : IrStmt()
+    data class Scope(val body: List<IrStmt>, val alloc: Boolean = false) : IrStmt()
 
     /**
      * Runtime assertion (`assert condition { "message" }`).
@@ -926,8 +926,8 @@ sealed class IrStmt {
                 }
                 sb.appendLine("${pad}}")
             }
-            is Zone -> {
-                sb.appendLine("${pad}zone {")
+            is Scope -> {
+                sb.appendLine("${pad}realm {")
                 for (s in body) s.prettyPrint(sb, indent + 1)
                 sb.appendLine("${pad}}")
             }
@@ -1111,9 +1111,11 @@ sealed class IrTopLevel {
          *
          * A parameter resolves to `Any` in the IR, so the parameter it came from
          * cannot be recovered from the field's type alone — it is recorded here
-         * instead, which is what lets a `Box<Real>` field read convert back.
+         * instead, which is what lets a `Box<Double>` field read convert back.
          */
         val typeParamSlots: List<Int> = emptyList(),
+        /** True for a `union`: every field sits at offset 0 (see `TopLevel.Pack.isUnion`). */
+        val isUnion: Boolean = false,
     ) : IrTopLevel()
 
     /**
@@ -1151,7 +1153,7 @@ data class IrProgram(
     fun prettyPrint(): String {
         val sb = StringBuilder()
         if (moduleName != null) {
-            sb.appendLine("mod $moduleName")
+            sb.appendLine("module $moduleName")
             sb.appendLine()
         }
         for ((i, item) in items.withIndex()) {
@@ -1281,8 +1283,8 @@ private fun dumpIrStmtTree(sb: StringBuilder, stmt: IrStmt, indent: String) {
             sb.appendLine("${indent}IrExprStmt")
             dumpIrExprTree(sb, stmt.expr, "$indent    ")
         }
-        is IrStmt.Zone -> {
-            sb.appendLine("${indent}IrZone")
+        is IrStmt.Scope -> {
+            sb.appendLine("${indent}IrScope")
             for (s in stmt.body) dumpIrStmtTree(sb, s, "$indent    ")
         }
         is IrStmt.If -> {
@@ -1385,7 +1387,7 @@ private fun dumpIrStmtTree(sb: StringBuilder, stmt: IrStmt, indent: String) {
 private fun dumpIrExprTree(sb: StringBuilder, expr: IrExpr, indent: String) {
     when (expr) {
         is IrExpr.IntLiteral -> sb.appendLine("${indent}IrIntLiteral(${expr.value}) : ${expr.type}")
-        is IrExpr.RealLiteral -> sb.appendLine("${indent}IrRealLiteral(${expr.value}) : ${expr.type}")
+        is IrExpr.DoubleLiteral -> sb.appendLine("${indent}IrDoubleLiteral(${expr.value}) : ${expr.type}")
         is IrExpr.StringLiteral -> sb.appendLine("${indent}IrStringLiteral(\"${expr.value}\") : String")
         is IrExpr.EnumLiteral -> sb.appendLine("${indent}IrEnumLiteral(${expr.enumName}.${expr.variant}) : ${expr.enumName}")
         is IrExpr.BoolLiteral -> sb.appendLine("${indent}IrBoolLiteral(${expr.value}) : Bool")

@@ -42,7 +42,7 @@ class CodegenGoldenTest {
 
     /** Program 1 — functions, if/else-if, for, while, interpolation, int division. */
     private val scalarProgram = """
-        use std.io
+        import std.io
         func add(a: Int, b: Int): Int {
             return a + b
         }
@@ -76,7 +76,7 @@ class CodegenGoldenTest {
 
     /** Program 2 — pack (struct), array literal/index, when with multi-pattern branch. */
     private val aggregateProgram = """
-        use std.io
+        import std.io
         pack Point {
             var x: Int
             var y: Int
@@ -132,12 +132,12 @@ class CodegenGoldenTest {
         val wat = compile(
             """
             bridge .WebAssembly {
-                func webClear(r: Real, g: Real, b: Real): Unit
-                func webWave(time: Real, speed: Real): Real
+                func webClear(r: Double, g: Double, b: Double): Unit
+                func webWave(time: Double, speed: Double): Double
                 func unused(value: Int): Unit
             }
 
-            func frame(time: Real): Real {
+            func frame(time: Double): Double {
                 webClear(0.1, 0.2, 0.3)
                 return webWave(time, 2.0)
             }

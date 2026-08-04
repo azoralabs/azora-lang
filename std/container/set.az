@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
-mod std.container.set
+module std.container.set
 
-use std.serializer
-use std.convert
+import std.serializer
+import std.convert
 
 /**
  * @file std/container/set
@@ -42,7 +42,7 @@ use std.convert
  * @since 0.0.4
  */
 
-zone std {
+realm std {
     /**
      * Read-only behavior shared by every set implementation.
      *
@@ -50,7 +50,7 @@ zone std {
      * order; `LinkedHashSet` uses insertion order, which makes indexed access
      * well-defined.
      *
-     * @param T The element type.
+     * @generic T The element type.
      */
     @Experimental(since: "0.0.4")
     spec Set<T> {
@@ -98,7 +98,7 @@ zone std {
      * weaken a `ref Set<T>` view: callers holding only a shared reference can
      * still use only read operations.
      *
-     * @param T The element type.
+     * @generic T The element type.
      */
     @Experimental(since: "0.0.4")
     spec MutableSet<T> : Set<T> {
@@ -119,7 +119,7 @@ zone std {
      * that doubles on demand. Uniqueness and equality use `oper==` for `T`.
      * Fields are `shield` so external zones cannot reach into the buffer.
      *
-     * @param T The element type.
+     * @generic T The element type.
      */
     @Experimental(since: "0.0.4")
     @Serializable
@@ -138,7 +138,7 @@ zone std {
         @Experimental(since: "0.0.4")
         func growSet() { self! ->
             fin newCap = self.capacity * 2
-            fin newData = alloc T[newCap]
+            let newData = alloc T[newCap]
             for i in 0..<self.size {
                 newData[i] = self.data[i]
             }
@@ -340,7 +340,7 @@ zone std {
         @Experimental(since: "0.0.4")
         func growSet() { self! ->
             fin newCap = self.capacity * 2
-            fin newData = alloc T[newCap]
+            let newData = alloc T[newCap]
             for i in 0..<self.size {
                 newData[i] = self.data[i]
             }
@@ -540,7 +540,7 @@ zone std {
         @Experimental(since: "0.0.4")
         func growSet() { self! ->
             fin newCap = self.capacity * 2
-            fin newData = alloc T[newCap]
+            let newData = alloc T[newCap]
             for i in 0..<self.size {
                 newData[i] = self.data[i]
             }

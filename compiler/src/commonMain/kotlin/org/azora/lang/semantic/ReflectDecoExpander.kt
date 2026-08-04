@@ -104,7 +104,7 @@ object ReflectDecoExpander {
         is Stmt.While -> stmt.copy(body = expandStmts(stmt.body, decorated, program))
         is Stmt.For -> stmt.copy(body = expandStmts(stmt.body, decorated, program))
         is Stmt.Loop -> stmt.copy(body = expandStmts(stmt.body, decorated, program))
-        is Stmt.Zone -> stmt.copy(body = expandStmts(stmt.body, decorated, program))
+        is Stmt.Scope -> stmt.copy(body = expandStmts(stmt.body, decorated, program))
         is Stmt.When -> stmt.copy(
             branches = stmt.branches.map { it.copy(body = expandStmts(it.body, decorated, program)) },
             elseBranch = stmt.elseBranch?.let { expandStmts(it, decorated, program) },
@@ -140,7 +140,7 @@ object ReflectDecoExpander {
             is Stmt.While -> stmt.copy(condition = expr(stmt.condition), body = stmt.body.map { stmt(it) })
             is Stmt.For -> stmt.copy(iterable = expr(stmt.iterable), body = stmt.body.map { stmt(it) })
             is Stmt.Loop -> stmt.copy(body = stmt.body.map { stmt(it) })
-            is Stmt.Zone -> stmt.copy(body = stmt.body.map { stmt(it) })
+            is Stmt.Scope -> stmt.copy(body = stmt.body.map { stmt(it) })
             is Stmt.When -> stmt.copy(
                 scrutinee = expr(stmt.scrutinee),
                 branches = stmt.branches.map { b -> b.copy(patterns = b.patterns.map { expr(it) }, body = b.body.map { stmt(it) }) },

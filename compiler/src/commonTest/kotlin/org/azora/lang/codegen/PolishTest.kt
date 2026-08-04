@@ -18,7 +18,7 @@ class PolishTest {
     // Default param values
     @Test fun defaultParamValue() {
         assertEquals("Hello, World!\nHi, World!", run("""
-            use std.io
+            import std.io
             func greet(name: String, greeting: String = "Hello") {
                 std::println(greeting + ", " + name + "!")
             }
@@ -31,10 +31,10 @@ class PolishTest {
 
     @Test fun defaultParamInt() {
         assertEquals("1\n42", run("""
-            use std.io
-            func power(val: Int, exp: Int = 0): Int {
+            import std.io
+            func power(base: Int, exp: Int = 0): Int {
                 if exp == 0 { return 1 }
-                return val
+                return base
             }
             func main() {
                 std::println(power(0))
@@ -46,7 +46,7 @@ class PolishTest {
     // Named function arguments
     @Test fun namedFunctionArgs() {
         assertEquals("A:30", run("""
-            use std.io
+            import std.io
             func create(label: String, value: Int): String {
                 return label + ":" + value
             }
@@ -59,7 +59,7 @@ class PolishTest {
     // Exhaustiveness checking
     @Test fun exhaustiveWhenEnum() {
         assertEquals("red", run("""
-            use std.io
+            import std.io
             enum Color {
                 Red
                 Green
@@ -78,8 +78,8 @@ class PolishTest {
 
     @Test fun nonExhaustiveWhenErrors() {
         val result = Compiler().compile("""
-            use std.io
-            slot Opt {
+            import std.io
+            variant Opt {
                 Some(Int)
                 None
             }

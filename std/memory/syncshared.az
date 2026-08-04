@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-mod std.memory.syncshared
+module std.memory.syncshared
 
 /**
  * @file std/memory/syncshared
@@ -31,13 +31,13 @@ mod std.memory.syncshared
  * @since 0.0.3
  */
 
-zone std {
+realm std {
     /**
      * A reference-counted pointer to a `T`, countable across threads.
      *
-     * @param T the pointee type.
+     * @generic T the pointee type.
      */
-    @SinceAzora("0.0.3")
+    @Since("0.0.3")
     pack SyncShared<T> {
         var raw: T*
         var count: Int
@@ -50,7 +50,7 @@ zone std {
 
     impl SyncShared<T> {
         /** The pointed-to value. */
-        @SinceAzora("0.0.3")
+        @Since("0.0.3")
         prop get[self: Self&]: T = self.raw.*
 
         /** Replaces the pointed-to value without changing ownership. */
@@ -75,11 +75,11 @@ zone std {
         }
 
         /** The current number of live references. */
-        @SinceAzora("0.0.3")
+        @Since("0.0.3")
         prop refCount[self: Self&]: Int = self.count
 
         /** The underlying `T*` (escapes the counting). */
-        @SinceAzora("0.0.3")
+        @Since("0.0.3")
         prop ptr[self: Self&]: T* = self.raw
     }
 

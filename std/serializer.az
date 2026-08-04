@@ -14,12 +14,12 @@
  * limitations under the License.
  */
 
-mod std.serializer
+module std.serializer
 
-use std.container.list
-use std.char
-use std.convert
-use std.string
+import std.container.list
+import std.char
+import std.convert
+import std.string
 
 /**
  * @file std/serializer
@@ -33,7 +33,7 @@ use std.string
  * straightforward for values owned by another library.
  *
  * Numbers are retained as validated source text instead of being converted to
- * `Real`; this prevents precision loss for large integers and decimal values.
+ * `Double`; this prevents precision loss for large integers and decimal values.
  * Object fields preserve insertion order. Duplicate fields are rejected while
  * decoding unless explicitly enabled in `SerializerOptions`.
  *
@@ -41,7 +41,7 @@ use std.string
  * so data written today can remain readable as the implementation evolves.
  */
 
-zone std {
+realm std {
     /** Text encodings supported by the standard serializer. */
     @Experimental(since: "0.0.4")
     enum SerializationFormat {
@@ -54,7 +54,7 @@ zone std {
 
     /** Failures reported by text decoders and typed serializers. */
     @Experimental(since: "0.0.4")
-    fail SerializationError {
+    error SerializationError {
         InvalidSyntax,
         InvalidEscape,
         InvalidNumber,
@@ -88,7 +88,7 @@ zone std {
         conversionModule: "std.convert",
         deferGeneric: true
     )
-    deco Serializable for .Pack bind [Serializer, JsonSerializer, AzonSerializer] {
+    annot Serializable for .Pack bind [Serializer, JsonSerializer, AzonSerializer] {
         /** Accepts object members which do not map to an exposed pack field. */
         fin ignoreUnknownFields: Bool = false
 
@@ -107,7 +107,7 @@ zone std {
         conversionModule: "std.convert",
         deferGeneric: true
     )
-    deco JsonSerializable for .Pack bind JsonSerializer {
+    annot JsonSerializable for .Pack bind JsonSerializer {
         /** Accepts JSON object members which do not map to an exposed pack field. */
         fin ignoreUnknownFields: Bool = false
 
@@ -126,7 +126,7 @@ zone std {
         conversionModule: "std.convert",
         deferGeneric: true
     )
-    deco AzonSerializable for .Pack bind AzonSerializer {
+    annot AzonSerializable for .Pack bind AzonSerializer {
         /** Accepts AZON object members which do not map to an exposed pack field. */
         fin ignoreUnknownFields: Bool = false
 
@@ -137,7 +137,7 @@ zone std {
     /** Overrides the serialized name of a field or type. */
     @Experimental(since: "0.0.4")
     @Derive(generator: "serializer", role: "name")
-    deco SerialName for [.Pack, .Enum, .Field] {
+    annot SerialName for [.Pack, .Enum, .Field] {
         /**
          * Name written to and read from the serialized representation.
          *
@@ -151,12 +151,12 @@ zone std {
     /** Excludes a field from generated serialization and deserialization. */
     @Experimental(since: "0.0.4")
     @Derive(generator: "serializer", role: "ignore")
-    deco SerialIgnore for .Field
+    annot SerialIgnore for .Field
 
     /** Requires a field to be present even when its Azora field has a default. */
     @Experimental(since: "0.0.4")
     @Derive(generator: "serializer", role: "required")
-    deco SerialRequired for .Field
+    annot SerialRequired for .Field
 
     /**
      * Resource and formatting limits for untrusted serialized input.
@@ -189,7 +189,7 @@ zone std {
      * a typed decoder consumes the value.
      */
     @Experimental(since: "0.0.4")
-    slot SerialValue {
+    variant SerialValue {
         Null
         Bool(value: Bool)
         Number(value: String)
@@ -205,7 +205,7 @@ zone std {
      * serializers created by `@Serializable` implement the same contract.
      * Implementations must not retain references to `value` after returning.
      *
-     * @param T The value type handled by this serializer.
+     * @generic T The value type handled by this serializer.
      */
     @Experimental(since: "0.0.4")
     spec Serializer<T> {
@@ -224,7 +224,7 @@ zone std {
      * implementations created by `@Serializable` and `@JsonSerializable` obey
      * the same strict limits as `decodeSerialValue`.
      *
-     * @param T The value type handled by this JSON codec.
+     * @generic T The value type handled by this JSON codec.
      */
     @Experimental(since: "0.0.4")
     spec JsonSerializer<T> {
@@ -242,7 +242,7 @@ zone std {
      * names and values. Generated implementations created by `@Serializable`
      * and `@AzonSerializable` use this contract.
      *
-     * @param T The value type handled by this AZON codec.
+     * @generic T The value type handled by this AZON codec.
      */
     @Experimental(since: "0.0.4")
     spec AzonSerializer<T> {
@@ -421,7 +421,7 @@ zone std {
 
     /** Extracts a finite real number, including fraction and exponent forms. */
     @Experimental(since: "0.0.4")
-    func serialAsReal(value: SerialValue&): Real ?! SerializationError {
+    func serialAsReal(value: SerialValue&): Double ?! SerializationError {
         when value {
             SerialValue.Number(text) -> {
                 if !isValidSerialNumber(text) { return .InvalidNumber }
@@ -433,14 +433,14 @@ zone std {
                 }
                 var result = 0.0
                 while index < stringLength(text) && charIsDigit(charAt(text, index)) {
-                    result = result * 10.0 + (charToCode(charAt(text, index)) - 48) as Real
+                    result = result * 10.0 + (charToCode(charAt(text, index)) - 48) as Double
                     index += 1
                 }
                 if index < stringLength(text) && charAt(text, index) == '.' {
                     index += 1
                     var divisor = 10.0
                     while index < stringLength(text) && charIsDigit(charAt(text, index)) {
-                        fin digit: Real = (charToCode(charAt(text, index)) - 48) as Real
+                        fin digit: Double = (charToCode(charAt(text, index)) - 48) as Double
                         result = result + digit / divisor
                         divisor = divisor * 10.0
                         index += 1
@@ -977,7 +977,7 @@ test "manual Serializer impl reports unexpected value types" {
 
 test "manual Serializer impl round trips through JSON" {
     fin serializer = _ManualTextSerializer()
-    fin options = std::serializerOptions()
+    let options = std::serializerOptions()
     fin tree = serializer.toSerialValue(_ManualTextValue("round-trip")) catch SerialValue.Null
     fin json = std::encodeSerialValue(tree, SerializationFormat.Json, options) catch "error"
     fin decodedTree = std::decodeSerialValue(json, SerializationFormat.Json, options) catch SerialValue.Null
@@ -1162,14 +1162,14 @@ test "serial number rejects incomplete exponent" {
 }
 
 test "serial number preserves exact source text" {
-    fin options = std::serializerOptions()
+    let options = std::serializerOptions()
     fin number = std::serialNumber("9007199254740993123456789") catch SerialValue.Null
     fin encoded = std::encodeSerialValue(number, SerializationFormat.Json, options) catch "error"
     assert encoded == "9007199254740993123456789" { "large integers must not lose precision" }
 }
 
 test "invalid number nodes cannot be encoded" {
-    fin options = std::serializerOptions()
+    let options = std::serializerOptions()
     fin encoded = std::encodeSerialValue(
         SerialValue.Number("01"),
         SerializationFormat.Json,
@@ -1179,7 +1179,7 @@ test "invalid number nodes cannot be encoded" {
 }
 
 test "json encodes scalar values" {
-    fin options = std::serializerOptions()
+    let options = std::serializerOptions()
     fin nullText = std::encodeSerialValue(SerialValue.Null, SerializationFormat.Json, options) catch "error"
     fin trueText = std::encodeSerialValue(SerialValue.Bool(true), SerializationFormat.Json, options) catch "error"
     fin stringText = std::encodeSerialValue(SerialValue.Text("Azora"), SerializationFormat.Json, options) catch "error"
@@ -1189,62 +1189,62 @@ test "json encodes scalar values" {
 }
 
 test "json round trips arrays" {
-    fin options = std::serializerOptions()
+    let options = std::serializerOptions()
     fin value = std::decodeSerialValue("[1,true,null,\"x\"]", SerializationFormat.Json, options) catch SerialValue.Null
     fin encoded = std::encodeSerialValue(value, SerializationFormat.Json, options) catch "error"
     assert encoded == "[1,true,null,\"x\"]" { "JSON arrays must round trip canonically" }
 }
 
 test "json round trips ordered objects" {
-    fin options = std::serializerOptions()
+    let options = std::serializerOptions()
     fin value = std::decodeSerialValue("{\"id\":7,\"name\":\"Ada\"}", SerializationFormat.Json, options) catch SerialValue.Null
     fin encoded = std::encodeSerialValue(value, SerializationFormat.Json, options) catch "error"
     assert encoded == "{\"id\":7,\"name\":\"Ada\"}" { "JSON object order must be deterministic" }
 }
 
 test "azon round trips ordered objects" {
-    fin options = std::serializerOptions()
+    let options = std::serializerOptions()
     fin value = std::decodeSerialValue("{\"id\":7,\"name\":\"Ada\"}", SerializationFormat.Azon, options) catch SerialValue.Null
     fin encoded = std::encodeSerialValue(value, SerializationFormat.Azon, options) catch "error"
     assert encoded == "{\"id\":7,\"name\":\"Ada\"}" { "AZON must use colon separators" }
 }
 
 test "decoder ignores insignificant whitespace" {
-    fin options = std::serializerOptions()
+    let options = std::serializerOptions()
     fin value = std::decodeSerialValue(" { \"a\" : [ 1, 2 ] } ", SerializationFormat.Json, options) catch SerialValue.Null
     fin encoded = std::encodeSerialValue(value, SerializationFormat.Json, options) catch "error"
     assert encoded == "{\"a\":[1,2]}" { "whitespace must not alter the value tree" }
 }
 
 test "json escapes control characters" {
-    fin options = std::serializerOptions()
+    let options = std::serializerOptions()
     fin encoded = std::encodeSerialValue(SerialValue.Text("a\nb\tc"), SerializationFormat.Json, options) catch "error"
     assert encoded == "\"a\\nb\\tc\"" { "control characters must be escaped" }
 }
 
 test "decoder resolves unicode escapes" {
-    fin options = std::serializerOptions()
+    let options = std::serializerOptions()
     fin value = std::decodeSerialValue("\"\\u0041\"", SerializationFormat.Json, options) catch SerialValue.Null
     fin encoded = std::encodeSerialValue(value, SerializationFormat.Json, options) catch "error"
     assert encoded == "\"A\"" { "unicode escapes must decode to their character" }
 }
 
 test "decoder rejects invalid escapes" {
-    fin options = std::serializerOptions()
+    let options = std::serializerOptions()
     fin value = std::decodeSerialValue("\"\\x\"", SerializationFormat.Json, options) catch SerialValue.Text("failed")
     fin encoded = std::encodeSerialValue(value, SerializationFormat.Json, options) catch "error"
     assert encoded == "\"failed\"" { "invalid escapes must fail decoding" }
 }
 
 test "decoder rejects trailing content" {
-    fin options = std::serializerOptions()
+    let options = std::serializerOptions()
     fin value = std::decodeSerialValue("true false", SerializationFormat.Json, options) catch SerialValue.Text("failed")
     fin encoded = std::encodeSerialValue(value, SerializationFormat.Json, options) catch "error"
     assert encoded == "\"failed\"" { "trailing content must be rejected" }
 }
 
 test "decoder rejects duplicate object fields by default" {
-    fin options = std::serializerOptions()
+    let options = std::serializerOptions()
     fin value = std::decodeSerialValue("{\"a\":1,\"a\":2}", SerializationFormat.Json, options) catch SerialValue.Text("failed")
     fin encoded = std::encodeSerialValue(value, SerializationFormat.Json, options) catch "error"
     assert encoded == "\"failed\"" { "duplicate fields must be rejected by default" }
@@ -1259,14 +1259,14 @@ test "decoder can retain duplicate object fields explicitly" {
 }
 
 test "json rejects azon separators" {
-    fin options = std::serializerOptions()
+    let options = std::serializerOptions()
     fin value = std::decodeSerialValue("{\"a\"=1}", SerializationFormat.Json, options) catch SerialValue.Text("failed")
     fin encoded = std::encodeSerialValue(value, SerializationFormat.Json, options) catch "error"
     assert encoded == "\"failed\"" { "JSON must require colon separators" }
 }
 
 test "azon rejects json separators" {
-    fin options = std::serializerOptions()
+    let options = std::serializerOptions()
     fin value = std::decodeSerialValue("{\"a\":1}", SerializationFormat.Azon, options) catch SerialValue.Text("failed")
     fin encoded = std::encodeSerialValue(value, SerializationFormat.Json, options) catch "error"
     assert encoded == "\"failed\"" { "AZON scalar value" }

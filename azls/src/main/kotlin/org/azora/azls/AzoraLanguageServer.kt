@@ -478,7 +478,7 @@ class AzoraLanguageServer {
             val trimmed = line.trim()
             if (!trimmed.startsWith("use ")) continue
             var rest = trimmed.removePrefix("use ").trim()
-            if (rest.startsWith("zone ")) rest = rest.removePrefix("zone ").trim()
+            if (rest.startsWith("realm ")) rest = rest.removePrefix("realm ").trim()
             for (part in splitUseParts(rest)) addImportPath(part.trim(), out)
         }
         return out
@@ -768,7 +768,7 @@ internal class SymbolIndex {
                 is Stmt.Loop -> walkStmts(stmt.body, visit)
                 is Stmt.When -> { stmt.branches.forEach { walkStmts(it.body, visit) }; stmt.elseBranch?.let { walkStmts(it, visit) } }
                 is Stmt.Try -> { walkStmts(stmt.body, visit); stmt.catchBody?.let { walkStmts(it, visit) } }
-                is Stmt.Zone -> walkStmts(stmt.body, visit)
+                is Stmt.Scope -> walkStmts(stmt.body, visit)
                 is Stmt.Defer -> walkStmts(stmt.body, visit)
                 is Stmt.InlineBlock -> walkStmts(stmt.body, visit)
                 is Stmt.DeepInlineBlock -> walkStmts(stmt.body, visit)

@@ -32,22 +32,28 @@ object AzHighlighter {
 
     /** Every azora keyword, mirroring the compiler lexer's keyword table. */
     val KEYWORDS: Set<String> = setOf(
-        "var", "fin", "let", "func", "return", "package", "if", "else",
-        "inline", "deepinline", "noinline", "zone", "test", "assert", "trace",
+        "var", "fin", "let", "val", "func", "return", "package", "if", "else",
+        "inline", "deepinline", "noinline", "realm", "scope", "test", "assert", "trace",
         "for", "while", "loop", "in", "break", "continue", "by", "reverse",
-        "infx", "oper", "deco", "fail", "alloc", "drop", "unsafe", "isolated",
+        "infx", "oper", "annot", "error", "alloc", "drop", "unsafe", "isolated",
         "flow", "yield", "async", "await", "launch", "bridge", "solo", "inject", "wrap",
         "rescue", "node", "leaf", "repl", "virt", "base", "rem", "effect", "view",
         "hook", "prop", "ctor", "dtor", "ref", "out", "mut",
-        "expose", "confine", "mod", "threadlocal",
+        "expose", "confine", "threadlocal",
         "pack", "enum", "when", "throw", "try", "catch", "impl", "spec",
-        "defer", "typealias", "slot", "as", "guard", "is", "null", "use",
-        "true", "false"
+        "defer", "typealias", "variant", "as", "guard", "is", "null",
+        "true", "false",
+        // Contextual: keywords only in the position that opens a declaration,
+        // ordinary identifiers everywhere else.
+        "module", "union",
+        // `use` is not a module import; it opens a realm (`use realm X`) and
+        // names a foreign symbol (`use as "…"`).
+        "use", "import",
     )
 
     /** Built-in type names colored as types even without declarations in scope. */
     private val BUILTIN_TYPES = setOf(
-        "Int", "UInt", "Real", "String", "Bool", "Unit", "Char", "Any",
+        "Int", "UInt", "Double", "String", "Bool", "Unit", "Char", "Any",
         "Byte", "UByte", "Short", "UShort", "Long", "ULong", "Cent", "UCent",
         "Float", "Decimal"
     )

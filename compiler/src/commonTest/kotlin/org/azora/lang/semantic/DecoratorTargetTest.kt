@@ -39,24 +39,24 @@ class DecoratorTargetTest {
     }
 
     @Test fun allRequestedBindingFormsParse() {
-        assertEquals(setOf(DecoTarget.Pack), parseDeco("deco A for .Pack bind X").targets)
-        assertEquals(setOf(DecoTarget.Pack, DecoTarget.Func), parseDeco("deco A for [.Pack, .Func] bind X").targets)
-        assertTrue(parseDeco("deco A for [.Pack, .Func]").bindings.isEmpty())
+        assertEquals(setOf(DecoTarget.Pack), parseDeco("annot A for .Pack bind X").targets)
+        assertEquals(setOf(DecoTarget.Pack, DecoTarget.Func), parseDeco("annot A for [.Pack, .Func] bind X").targets)
+        assertTrue(parseDeco("annot A for [.Pack, .Func]").bindings.isEmpty())
 
-        val filtered = parseDeco("deco A for [.Pack, .Func] bind X for .Pack")
+        val filtered = parseDeco("annot A for [.Pack, .Func] bind X for .Pack")
         assertEquals(setOf(DecoTarget.Pack), filtered.bindings.single().targets)
 
-        val list = parseDeco("deco A for [.Pack, .Func] bind [X for .Pack, Y for .Func]")
+        val list = parseDeco("annot A for [.Pack, .Func] bind [X for .Pack, Y for .Func]")
         assertEquals(listOf("X", "Y"), list.bindings.map { it.name })
         assertEquals(setOf(DecoTarget.Func), list.bindings[1].targets)
 
-        assertEquals(setOf(DecoTarget.Pack), parseDeco("deco A bind X for .Pack").bindings.single().targets)
-        assertEquals(2, parseDeco("deco A bind [X for .Pack, Y for .Func]").bindings.size)
-        assertEquals("X", parseDeco("deco A bind X").bindings.single().name)
+        assertEquals(setOf(DecoTarget.Pack), parseDeco("annot A bind X for .Pack").bindings.single().targets)
+        assertEquals(2, parseDeco("annot A bind [X for .Pack, Y for .Func]").bindings.size)
+        assertEquals("X", parseDeco("annot A bind X").bindings.single().name)
     }
 
     @Test fun bodylessDecoratorParses() {
-        val decorator = parseDeco("deco SerialIgnore")
+        val decorator = parseDeco("annot SerialIgnore")
         assertTrue(decorator.fields.isEmpty())
         assertTrue(decorator.bindings.isEmpty())
     }
@@ -65,11 +65,11 @@ class DecoratorTargetTest {
         val result = analyze("""
             spec X<T>
             spec Y<T>
-            deco A bind X
-            deco B bind Y
-            deco C bind A
-            deco D bind [A, B]
-            deco E bind [X, B]
+            annot A bind X
+            annot B bind Y
+            annot C bind A
+            annot D bind [A, B]
+            annot E bind [X, B]
             @C pack P
             @D pack Q
             @E pack R
@@ -86,8 +86,8 @@ class DecoratorTargetTest {
 
     @Test fun recursiveDecoratorBindingsAreRejectedWithoutApplication() {
         val result = analyze("""
-            deco A bind B
-            deco B bind A
+            annot A bind B
+            annot B bind A
             func main() {}
         """.trimIndent())
         assertTrue(result.errors.any { "recursive decorator binding" in it && "A -> B -> A" in it }, result.errors.toString())
@@ -96,9 +96,9 @@ class DecoratorTargetTest {
     @Test fun duplicateTransitiveBindingsAreRejected() {
         val result = analyze("""
             spec X<T>
-            deco A bind X
-            deco B bind X
-            deco D bind [A, B]
+            annot A bind X
+            annot B bind X
+            annot D bind [A, B]
             func main() {}
         """.trimIndent())
         assertTrue(result.errors.any { "duplicate decorator binding" in it }, result.errors.toString())
@@ -106,10 +106,10 @@ class DecoratorTargetTest {
 
     @Test fun duplicateDecoratorReachedThroughDiamondIsRejected() {
         val result = analyze("""
-            deco Shared
-            deco A bind Shared
-            deco B bind Shared
-            deco Root bind [A, B]
+            annot Shared
+            annot A bind Shared
+            annot B bind Shared
+            annot Root bind [A, B]
             func main() {}
         """.trimIndent())
         assertTrue(result.errors.any { "duplicate decorator binding 'Shared'" in it }, result.errors.toString())
@@ -117,8 +117,8 @@ class DecoratorTargetTest {
 
     @Test fun targetDisjointBackEdgesDoNotFormCycle() {
         val result = analyze("""
-            deco A bind B for .Pack
-            deco B bind A for .Func
+            annot A bind B for .Pack
+            annot B bind A for .Func
             func main() {}
         """.trimIndent())
         assertTrue(result.errors.isEmpty(), result.errors.toString())
@@ -126,7 +126,7 @@ class DecoratorTargetTest {
 
     @Test fun decoratorApplicationHonorsTargetConstraint() {
         val result = analyze("""
-            deco PackOnly for .Pack
+            annot PackOnly for .Pack
             @PackOnly
             func wrong() {}
             func main() {}
@@ -136,8 +136,8 @@ class DecoratorTargetTest {
 
     @Test fun fieldAndParameterTargetsAreRecognized() {
         val result = analyze("""
-            deco OnField for .Field
-            deco OnParam for .Param
+            annot OnField for .Field
+            annot OnParam for .Param
             pack P {
                 @OnField
                 fin value: Int
@@ -153,7 +153,7 @@ class DecoratorTargetTest {
     @Test fun duplicateContractDeclarationIsRejected() {
         val result = analyze("""
             spec A<T>
-            deco A
+            annot A
             func main() {}
         """.trimIndent())
         assertTrue(result.errors.any { "duplicate spec or decorator 'A'" in it }, result.errors.toString())
@@ -162,7 +162,7 @@ class DecoratorTargetTest {
     @Test fun unreachableBindingFilterIsRejected() {
         val result = analyze("""
             spec X<T>
-            deco A for .Pack bind X for .Func
+            annot A for .Pack bind X for .Func
             func main() {}
         """.trimIndent())
         assertTrue(result.errors.any { "can never match" in it }, result.errors.toString())

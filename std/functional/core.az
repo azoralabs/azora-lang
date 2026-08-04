@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-expose mod std.functional.core
+expose module std.functional.core
 
 /**
  * @file std.functional.core
@@ -23,7 +23,7 @@ expose mod std.functional.core
  * their representation and invocation ABI; `bridge` makes that contract
  * explicit to source code and tooling.
  */
-use zone std {
+use realm std {
     /**
      * A storable synchronous callable.
      *
@@ -36,7 +36,7 @@ use zone std {
      * - `[Context](A, B) -> R`
      * - `[Context] -> R`
      */
-    @SinceAzora("0.0.4")
+    @Since("0.0.4")
     bridge pack Func<PARAMS, RETURN_TYPE, RECEIVERS>
 
     /**
@@ -47,6 +47,6 @@ use zone std {
      * - `async (A, B) -> R`
      * - `async [Context](A) -> R`
      */
-    @SinceAzora("0.0.4")
+    @Since("0.0.4")
     bridge pack Task<PARAMS, RETURN_TYPE, RECEIVERS>
 }

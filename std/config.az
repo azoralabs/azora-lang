@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
-expose mod std.config
+expose module std.config
 
-deepinline zone {
-    @SinceAzora("0.0.4")
+deepinline realm {
+    @Since("0.0.4")
     enum CompilerTarget {
         Interpret,
         Native,
@@ -27,24 +27,24 @@ deepinline zone {
     /**
      * Overriden by compiler flag -Target=Native
      */
-    @SinceAzora("0.0.4")
+    @Since("0.0.4")
     fin TARGET: CompilerTarget = CompilerTarget.Interpret
 
     /**
      * Overriden by compiler flag --debug and --release
      */
-    @SinceAzora("0.0.4")
+    @Since("0.0.4")
     fin DEBUG: Bool = true
 
     /**
      * Overriden by compiler flag --debug and --release
      */
-    @SinceAzora("0.0.4")
+    @Since("0.0.4")
     fin RELEASE: Bool = !DEBUG
 
     /**
      * Overriden by compiler flag --test
      */
-    @SinceAzora("0.0.4")
+    @Since("0.0.4")
     fin TEST_MODE: Bool = false
 }

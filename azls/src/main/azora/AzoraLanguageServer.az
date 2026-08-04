@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  */
 
-mod azora.language.server
+module azora.language.server
 
 /**
  * Browser AZLS implementation compiled from Azora to WebAssembly.
@@ -75,9 +75,9 @@ func isKeywordRange(source: String, start: Int, end: Int): Bool {
         rangeIs(source, start, end, "return") || rangeIs(source, start, end, "if") ||
         rangeIs(source, start, end, "else") || rangeIs(source, start, end, "inline") ||
         rangeIs(source, start, end, "deepinline") || rangeIs(source, start, end, "noinline") ||
-        rangeIs(source, start, end, "zone") || rangeIs(source, start, end, "test") ||
+        rangeIs(source, start, end, "realm") || rangeIs(source, start, end, "test") ||
         rangeIs(source, start, end, "assert") || rangeIs(source, start, end, "trace") ||
-        rangeIs(source, start, end, "panic") || rangeIs(source, start, end, "meta") ||
+        rangeIs(source, start, end, "panic") || rangeIs(source, start, end, "macro") ||
         rangeIs(source, start, end, "for") || rangeIs(source, start, end, "while") ||
         rangeIs(source, start, end, "loop") || rangeIs(source, start, end, "in") ||
         rangeIs(source, start, end, "by") || rangeIs(source, start, end, "reverse") ||
@@ -87,11 +87,11 @@ func isKeywordRange(source: String, start: Int, end: Int): Bool {
         rangeIs(source, start, end, "try") || rangeIs(source, start, end, "catch") ||
         rangeIs(source, start, end, "rescue") || rangeIs(source, start, end, "impl") ||
         rangeIs(source, start, end, "spec") || rangeIs(source, start, end, "defer") ||
-        rangeIs(source, start, end, "type") || rangeIs(source, start, end, "typealias") ||
-        rangeIs(source, start, end, "slot") || rangeIs(source, start, end, "use") ||
+        rangeIs(source, start, end, "typealias") || rangeIs(source, start, end, "scope") ||
+        rangeIs(source, start, end, "variant") || rangeIs(source, start, end, "use") ||
         rangeIs(source, start, end, "as") || rangeIs(source, start, end, "guard") ||
         rangeIs(source, start, end, "is") || rangeIs(source, start, end, "infx") ||
-        rangeIs(source, start, end, "oper") || rangeIs(source, start, end, "fail") ||
+        rangeIs(source, start, end, "oper") || rangeIs(source, start, end, "error") ||
         rangeIs(source, start, end, "alloc") || rangeIs(source, start, end, "unsafe") ||
         rangeIs(source, start, end, "isolated") || rangeIs(source, start, end, "async") ||
         rangeIs(source, start, end, "await") || rangeIs(source, start, end, "bridge") ||
@@ -102,8 +102,8 @@ func isKeywordRange(source: String, start: Int, end: Int): Bool {
         rangeIs(source, start, end, "prop") || rangeIs(source, start, end, "ctor") ||
         rangeIs(source, start, end, "dtor") || rangeIs(source, start, end, "out") ||
         rangeIs(source, start, end, "expose") || rangeIs(source, start, end, "confine") ||
-        rangeIs(source, start, end, "mod") || rangeIs(source, start, end, "threadlocal") ||
-        rangeIs(source, start, end, "deco") || rangeIs(source, start, end, "bind") ||
+        rangeIs(source, start, end, "module") || rangeIs(source, start, end, "threadlocal") ||
+        rangeIs(source, start, end, "annot") || rangeIs(source, start, end, "bind") ||
         rangeIs(source, start, end, "true") || rangeIs(source, start, end, "false") ||
         rangeIs(source, start, end, "null") || rangeIs(source, start, end, "purge")
 }
@@ -111,10 +111,11 @@ func isKeywordRange(source: String, start: Int, end: Int): Bool {
 func isDeclarationRange(source: String, start: Int, end: Int): Bool {
     return rangeIs(source, start, end, "func") || rangeIs(source, start, end, "async") ||
         rangeIs(source, start, end, "pack") || rangeIs(source, start, end, "enum") ||
-        rangeIs(source, start, end, "spec") || rangeIs(source, start, end, "deco") ||
+        rangeIs(source, start, end, "spec") || rangeIs(source, start, end, "annot") ||
         rangeIs(source, start, end, "solo") || rangeIs(source, start, end, "prop") ||
         rangeIs(source, start, end, "var") || rangeIs(source, start, end, "fin") ||
-        rangeIs(source, start, end, "let") || rangeIs(source, start, end, "fail") ||
+        rangeIs(source, start, end, "let") || rangeIs(source, start, end, "val") ||
+        rangeIs(source, start, end, "union") || rangeIs(source, start, end, "error") ||
         rangeIs(source, start, end, "typealias")
 }
 
@@ -128,7 +129,7 @@ func declarationKind(source: String, start: Int, end: Int): String {
         rangeIs(source, start, end, "typealias") { return "type" }
     if rangeIs(source, start, end, "enum") { return "enum" }
     if rangeIs(source, start, end, "spec") { return "interface" }
-    if rangeIs(source, start, end, "deco") { return "annotation" }
+    if rangeIs(source, start, end, "annot") { return "annotation" }
     if rangeIs(source, start, end, "prop") { return "property" }
     return "variable"
 }
@@ -151,7 +152,7 @@ func contextualWhereIsKeyword(source: String, start: Int, end: Int): Bool {
                 rangeIs(source, index, wordEnd, "node") ||
                 rangeIs(source, index, wordEnd, "solo") ||
                 rangeIs(source, index, wordEnd, "spec") ||
-                rangeIs(source, index, wordEnd, "deco") ||
+                rangeIs(source, index, wordEnd, "annot") ||
                 rangeIs(source, index, wordEnd, "impl") ||
                 rangeIs(source, index, wordEnd, "prop") ||
                 rangeIs(source, index, wordEnd, "typealias") {
@@ -731,7 +732,7 @@ func declarationIsSpecAt(
 }
 
 func moduleStart(source: String, documentStart: Int, documentEnd: Int): Int {
-    fin marker = "mod"
+    fin marker = "module"
     var index = documentStart
     while index < documentEnd {
         fin found = findFrom(source, index, documentEnd, marker)

@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
-expose mod std.string
+expose module std.string
 
-expose use std.string.core
-use std.container.array
+expose import std.string.core
+import std.container.array
 
 /**
  * @file std/string
@@ -32,12 +32,12 @@ use std.container.array
  * @since 0.0.1
  */
 
-zone std {
+realm std {
     /**
      *
      */
-    @SinceAzora("0.0.1")
-    fail StringError {
+    @Since("0.0.1")
+    error StringError {
         IndexOutOfBounds
         EmptyString
         InvalidFormat
@@ -65,7 +65,7 @@ zone std {
     func strCharAt(s: String, index: Int): Char ?! StringError
     in {
         assert index >= 0 { "Index must be non-negative" }
-    } zone {
+    } scope {
         if index >= stringLength(s) { return .IndexOutOfBounds }
         return charAt(s, index)
     }
@@ -83,7 +83,7 @@ zone std {
     in {
         assert start >= 0 { "Start must be non-negative" }
         assert end >= start { "End must be >= start" }
-    } zone {
+    } scope {
         return substring(s, start, end)
     }
 
@@ -265,7 +265,7 @@ zone std {
     func strRepeat(s: String, n: Int): String
     in {
         assert n >= 0 { "Repetition count must be non-negative" }
-    } zone {
+    } scope {
         return s * n
     }
 
@@ -304,8 +304,8 @@ zone std {
     /**
      *
      */
-    @SinceAzora("0.0.1")
-    fail ParseError {
+    @Since("0.0.1")
+    error ParseError {
         InvalidFormat,
         Overflow,
         EmptyInput
@@ -347,12 +347,12 @@ zone std {
      * Parses a string as a real number. Returns the parsed value or fails.
      */
     @Experimental(since: "0.0.1")
-    func strParseReal(s: String): Real ?! ParseError {
+    func strParseReal(s: String): Double ?! ParseError {
         if strIsEmpty(s) {
             return .EmptyInput
         }
         var chars: Array<Char> = strToChars(s)
-        var sign: Real = 1.0
+        var sign: Double = 1.0
         var start: Int = 0
         if chars[0] == '-' {
             sign = -1.0
@@ -360,7 +360,7 @@ zone std {
         } else if chars[0] == '+' {
             start = 1
         }
-        var intPart: Real = 0.0
+        var intPart: Double = 0.0
         var i: Int = start
         while i < chars.length && chars[i] != '.' {
             if !charIsDigit(chars[i]) {
@@ -369,10 +369,10 @@ zone std {
             intPart = intPart * 10.0 + digitToInt(chars[i])
             i += 1
         }
-        var fracPart: Real = 0.0
+        var fracPart: Double = 0.0
         if i < chars.length && chars[i] == '.' {
             i += 1
-            var divisor: Real = 10.0
+            var divisor: Double = 10.0
             while i < chars.length {
                 if !charIsDigit(chars[i]) {
                     return .InvalidFormat
@@ -388,7 +388,7 @@ zone std {
     /**
      * An efficient string builder for concatenating many strings.
      */
-    @SinceAzora("0.0.1")
+    @Since("0.0.1")
     pack StringBuilder {
         var parts: Array<String> = Array::fill<String>(16)
         var count: Int = 0
@@ -430,13 +430,13 @@ zone std {
         /**
          * Returns the number of parts.
          */
-        @SinceAzora("0.0.1")
+        @Since("0.0.1")
         prop length[self: Self&]: Int = self.count
 
         /**
          * Clears the builder.
          */
-        @SinceAzora("0.0.1")
+        @Since("0.0.1")
         func clear(): Unit {
             self.parts = Array::fill<String>(16)
             self.count = 0

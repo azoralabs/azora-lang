@@ -24,7 +24,7 @@ import kotlin.test.assertTrue
 class SerializationDeriverTest {
     private fun derive(body: String): SerializationDeriver.Result {
         val prelude = """
-            deco Derive for .Deco {
+            annot Derive for .Deco {
                 fin generator: String
                 fin role: String
                 fin provider: String = ""
@@ -33,26 +33,26 @@ class SerializationDeriverTest {
                 fin conversionModule: String = ""
             }
             @Derive(generator: "serializer", role: "all", provider: "std", conversionProvider: "std::convert")
-            deco Serializable for .Pack {
+            annot Serializable for .Pack {
                 fin ignoreUnknownFields: Bool = false
                 fin encodeDefaults: Bool = true
             }
             @Derive(generator: "serializer", role: "json", provider: "std", conversionProvider: "std::convert")
-            deco JsonSerializable for .Pack {
+            annot JsonSerializable for .Pack {
                 fin ignoreUnknownFields: Bool = false
                 fin encodeDefaults: Bool = true
             }
             @Derive(generator: "serializer", role: "azon", provider: "std", conversionProvider: "std::convert")
-            deco AzonSerializable for .Pack {
+            annot AzonSerializable for .Pack {
                 fin ignoreUnknownFields: Bool = false
                 fin encodeDefaults: Bool = true
             }
             @Derive(generator: "serializer", role: "name")
-            deco SerialName for .Field { fin value: String = "" }
+            annot SerialName for .Field { fin value: String = "" }
             @Derive(generator: "serializer", role: "ignore")
-            deco SerialIgnore for .Field
+            annot SerialIgnore for .Field
             @Derive(generator: "serializer", role: "required")
-            deco SerialRequired for .Field
+            annot SerialRequired for .Field
         """.trimIndent()
         val program = Parser(Lexer("$prelude\n$body").tokenize()).parse()
         return SerializationDeriver.derive(program)
@@ -160,7 +160,7 @@ class SerializationDeriverTest {
 
     @Test fun deriveRolesDoNotDependOnDecoratorNames() {
         val source = """
-            deco Derive for .Deco {
+            annot Derive for .Deco {
                 fin generator: String
                 fin role: String
                 fin provider: String = ""
@@ -169,16 +169,16 @@ class SerializationDeriverTest {
                 fin conversionModule: String = ""
             }
             @Derive(generator: "serializer", role: "all", provider: "std", conversionProvider: "std::convert")
-            deco WireModel for .Pack {
+            annot WireModel for .Pack {
                 fin ignoreUnknownFields: Bool = false
                 fin encodeDefaults: Bool = true
             }
             @Derive(generator: "serializer", role: "name")
-            deco WireKey for .Field { fin value: String = "" }
+            annot WireKey for .Field { fin value: String = "" }
             @Derive(generator: "serializer", role: "ignore")
-            deco SkipWire for .Field
+            annot SkipWire for .Field
             @Derive(generator: "serializer", role: "required")
-            deco NeedWire for .Field
+            annot NeedWire for .Field
 
             @WireModel pack User {
                 @WireKey("display_name") fin name: String = ""
@@ -196,7 +196,7 @@ class SerializationDeriverTest {
 
     @Test fun generatedPrimitiveCodecBodiesPassSemanticAnalysis() {
         val source = """
-            deco Derive for .Deco {
+            annot Derive for .Deco {
                 fin generator: String
                 fin role: String
                 fin provider: String = ""
@@ -205,28 +205,28 @@ class SerializationDeriverTest {
                 fin conversionModule: String = ""
             }
             @Derive(generator: "serializer", role: "all", provider: "std", conversionProvider: "std::convert")
-            deco Serializable for .Pack {
+            annot Serializable for .Pack {
                 fin ignoreUnknownFields: Bool = false
                 fin encodeDefaults: Bool = true
             }
             @Derive(generator: "serializer", role: "json", provider: "std", conversionProvider: "std::convert")
-            deco JsonSerializable for .Pack {
+            annot JsonSerializable for .Pack {
                 fin ignoreUnknownFields: Bool = false
                 fin encodeDefaults: Bool = true
             }
             @Derive(generator: "serializer", role: "azon", provider: "std", conversionProvider: "std::convert")
-            deco AzonSerializable for .Pack {
+            annot AzonSerializable for .Pack {
                 fin ignoreUnknownFields: Bool = false
                 fin encodeDefaults: Bool = true
             }
             @Derive(generator: "serializer", role: "name")
-            deco SerialName for .Field { fin value: String = "" }
+            annot SerialName for .Field { fin value: String = "" }
             @Derive(generator: "serializer", role: "ignore")
-            deco SerialIgnore for .Field
+            annot SerialIgnore for .Field
             @Derive(generator: "serializer", role: "required")
-            deco SerialRequired for .Field
+            annot SerialRequired for .Field
 
-            fail SerializationError {
+            error SerializationError {
                 InvalidNumber,
                 UnexpectedType,
                 DuplicateField,
@@ -294,7 +294,7 @@ class SerializationDeriverTest {
                 fin name: String
                 fin value: SerialValue
             }
-            slot SerialValue {
+            variant SerialValue {
                 Null
                 Bool(Bool)
                 Number(String)
@@ -323,7 +323,7 @@ class SerializationDeriverTest {
             func std__serialAsChar(value: SerialValue&): Char ?! SerializationError { return 'x' }
             func std__serialAsLong(value: SerialValue&): Long ?! SerializationError { return 7L }
             func std__serialAsInt(value: SerialValue&): Int ?! SerializationError { return 7 }
-            func std__serialAsReal(value: SerialValue&): Real ?! SerializationError { return 0.0 }
+            func std__serialAsDouble(value: SerialValue&): Double ?! SerializationError { return 0.0 }
             func std__convert__toString(value: Any): String { return "" }
             func std__encodeSerialValue(value: SerialValue&, format: SerializationFormat, options: SerializerOptions&): String ?! SerializationError { return "" }
             func std__decodeSerialValue(input: String, format: SerializationFormat, options: SerializerOptions&): SerialValue ?! SerializationError { return SerialValue.Null }

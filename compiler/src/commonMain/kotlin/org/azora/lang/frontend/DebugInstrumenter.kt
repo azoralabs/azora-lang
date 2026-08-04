@@ -61,7 +61,7 @@ object DebugInstrumenter {
             body = instrumentBody(stmt.body),
             catchBody = stmt.catchBody?.let { instrumentBody(it) }
         )
-        is Stmt.Zone -> stmt.copy(body = instrumentBody(stmt.body))
+        is Stmt.Scope -> stmt.copy(body = instrumentBody(stmt.body))
         is Stmt.Defer -> stmt.copy(body = instrumentBody(stmt.body))
         else -> stmt
     }

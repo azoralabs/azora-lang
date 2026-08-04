@@ -1,22 +1,22 @@
-Create zone inside enum like this:
+Create realm inside enum like this:
 
 ```
 enum X {
     A
-    zone z1 {
+    realm z1 {
         B
         C
     }
     D
-    zone z2 {
+    realm z2 {
         E
-        zone z3 {
+        realm z3 {
             F
         }
     }
-    use zone z4 {
+    use realm z4 {
         G
-        zone z5 {
+        realm z5 {
             H
         }
     }
@@ -38,21 +38,21 @@ x.z4::G.z5::H
 x.G.z5::H
 ```
 
-Also add support for 'friend zone' and 'use friend zone like:
+Also add support for 'use realm' and 'use use realm like:
 
 ```
 enum Y {
-    friend zone z1 {
+    use realm z1 {
         A
     }
     B
-    friend zone z1 {
+    use realm z1 {
         C
     }
-    use friend zone z2 {
+    import use realm z2 {
         D
     }
-    friend zone z2 {
+    use realm z2 {
         E
     }
 }
@@ -70,7 +70,7 @@ Y.z2::E
 ```
 
 implement tests and make sure to show how to use in 'when' too
-of course we can say "zone z1::z2" and so on
+of course we can say "realm z1::z2" and so on
 make sure it works with "use" and "with", both global and local
 
 the same thing implement for "slot" and "fail" too

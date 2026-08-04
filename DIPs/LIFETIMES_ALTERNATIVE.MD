@@ -17,7 +17,7 @@ Take away the escape and the proof becomes trivial. That is the whole proposal.
 Concretely, `&` and `!` may appear in exactly three places:
 
 1. a parameter type — `func serialField(value: SerialValue&, name: String)`
-2. a receiver — `prop width[self: Model&]: Real`, `func toJson[self&](value: T&)`
+2. a receiver — `prop width[self: Model&]: Double`, `func toJson[self&](value: T&)`
 3. a local binding whose initialiser is one of the above
 
 4. a return type, **when exactly one input borrow could have produced it** — see *Returning
@@ -38,7 +38,7 @@ Returning a borrow is genuinely useful and the language already relies on it. `a
 has three of them:
 
 ```azora
-func setClearColor(r: Real, g: Real, b: Real): Engine! { self! ->
+func setClearColor(r: Double, g: Double, b: Double): Engine! { self! ->
     self.clearR = r
     return self
 }
@@ -138,7 +138,7 @@ Deterministic destruction means the ordinary cases cannot leak:
 
 - a value owned by a scope is destroyed at scope exit,
 - `Unique<T>` destroys its pointee in its `dtor`,
-- `zone alloc { … }` frees its whole region at exit, regardless of what was allocated in it.
+- `scope alloc { … }` frees its whole region at exit, regardless of what was allocated in it.
 
 **One hole, stated plainly: cycles among `Shared`/`SyncShared` leak.** Reference counting
 cannot reclaim a cycle without a collector, and no annotation scheme fixes that — Rust has

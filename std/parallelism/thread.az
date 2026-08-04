@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-mod std.parallelism.thread
+module std.parallelism.thread
 
 /**
  * @file std/parallelism/thread
@@ -27,7 +27,7 @@ mod std.parallelism.thread
  * @since 0.0.1
  */
 
-zone std {
+realm std {
     /**
      * Suspends the current task for the given number of milliseconds.
      *

@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
-mod std.container.deque
+module std.container.deque
 
-use std.serializer
-use std.convert
+import std.serializer
+import std.convert
 
 /**
  * @file std/container/deque
@@ -28,15 +28,15 @@ use std.convert
  * @since 0.0.1
  */
 
-zone std {
+realm std {
     /**
      * A double-ended queue: elements can be added and removed from both ends in O(1) amortized.
      *
      * Backed by a circular buffer that grows automatically.
      *
-     * @param T The type of elements stored in this deque.
+     * @generic T The type of elements stored in this deque.
      */
-    @SinceAzora("0.0.1")
+    @Since("0.0.1")
     @Serializable
     pack Deque<T> {
         var data: T* = alloc T[8]
@@ -47,14 +47,14 @@ zone std {
     }
 
     /** Deque operations: push/pop at both ends, peek, clear, and string conversion. */
-    @SinceAzora("0.0.1")
+    @Since("0.0.1")
     impl Deque<T> {
         /** `true` when the deque holds no elements. */
-        @SinceAzora("0.0.1")
+        @Since("0.0.1")
         prop isEmpty[self: Self&]: Bool = self.size == 0
 
         /** `true` when the deque holds at least one element. */
-        @SinceAzora("0.0.1")
+        @Since("0.0.1")
         prop isNotEmpty[self: Self&]: Bool = self.size > 0
 
         /** Inserts [value] at the front; O(1) amortized. */
@@ -111,7 +111,7 @@ zone std {
         }
 
         /** Removes all elements (capacity is retained). */
-        @SinceAzora("0.0.1")
+        @Since("0.0.1")
         func clear(): Unit {
             self.head = 0
             self.tail = 0

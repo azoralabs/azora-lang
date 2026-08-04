@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-expose mod std.traits.core
+expose module std.traits.core
 
-use zone std {
+use realm std {
     inline for Ty in Numbers {
         /** Ascending range over [Ty], stepping by one. */
         oper.. [self: Ty&](rhs: Ty&) by 1

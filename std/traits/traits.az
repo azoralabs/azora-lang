@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
-mod std.traits
+module std.traits
 
-expose use std.traits.core
-use std.convert
+expose import std.traits.core
+import std.convert
 
 /**
  * @file std/traits/traits
@@ -30,123 +30,107 @@ use std.convert
  * @since 0.0.1
  */
 
-zone std {
+realm std {
     /**
      * A specification that marks types supporting arithmetic operations.
      *
      * Types implementing Numeric can be used with standard math operators
-     * and the promote type function.
+     * and the Promote type property.
      */
-    @SinceAzora("0.0.1")
+    @Since("0.0.1")
     spec Numeric
 
     /** Int satisfies the Numeric spec. */
-    @SinceAzora("0.0.1")
+    @Since("0.0.1")
     impl Numeric for Int
 
-    /** Real satisfies the Numeric spec. */
-    @SinceAzora("0.0.1")
-    impl Numeric for Real
+    /** Double satisfies the Numeric spec. */
+    @Since("0.0.1")
+    impl Numeric for Double
 
     /**
      * Chooses the type with the highest primitive promotion rank.
      *
      * Promotion is evaluated entirely at compile time. Exact user-defined
-     * `type promote(...)` overloads may specialize pairs, while this variadic
-     * overload provides the standard result for two or more primitive types.
+     * `deepinline prop Promote<...>` overloads may specialize pairs, while this
+     * variadic overload provides the standard result for two or more primitive
+     * types.
      *
-     * @param T Two or more primitive types to compare.
+     * @generic T Two or more primitive types to compare.
      * @return The widest type in T according to Type.rank.
      */
-    type promote(T: ...Type) where T.length >= 2 && T is Number {
-        let Result: Type = T.0
-        for Candidate in T[1...] {
-            Result = if Candidate::rank > Result::rank { Candidate } else { Result }
+    @Since("0.0.5")
+    deepinline prop Promote<...T>: Type where T.length >= 2 && T is Number {
+        var result: Type = T.0
+        for candidate: Type in T[1...] {
+            if candidate::rank > result::rank {
+                result = candidate
+            }
         }
-        return Result
+        return result
     }
 
-    /** Types that can be hashed. */
-    @SinceAzora("0.0.1")
-    spec Hashable
-
-    /** Int is hashable. */
-    @SinceAzora("0.0.1")
-    impl Hashable for Int
-
-    /** String is hashable. */
-    @SinceAzora("0.0.1")
-    impl Hashable for String
-
-    /** Char is hashable. */
-    @SinceAzora("0.0.1")
-    impl Hashable for Char
-
-    /** Bool is hashable. */
-    @SinceAzora("0.0.1")
-    impl Hashable for Bool
-
     /** Types that can be copied. */
-    @SinceAzora("0.0.1")
+    @Since("0.0.1")
     spec Copyable
 
     /** Int is copyable. */
-    @SinceAzora("0.0.1")
+    @Since("0.0.1")
     impl Copyable for Int
 
-    /** Real is copyable. */
-    @SinceAzora("0.0.1")
-    impl Copyable for Real
+    /** Double is copyable. */
+    @Since("0.0.1")
+    impl Copyable for Double
 
     /** String is copyable. */
-    @SinceAzora("0.0.1")
+    @Since("0.0.1")
     impl Copyable for String
 
     /** Char is copyable. */
-    @SinceAzora("0.0.1")
+    @Since("0.0.1")
     impl Copyable for Char
 
     /** Bool is copyable. */
-    @SinceAzora("0.0.1")
+    @Since("0.0.1")
     impl Copyable for Bool
 
     /** Types that support deep copying. */
-    @SinceAzora("0.0.1")
+    @Since("0.0.1")
     spec Cloneable
 
     /** Int is cloneable. */
-    @SinceAzora("0.0.1")
+    @Since("0.0.1")
     impl Cloneable for Int
 
-    /** Real is cloneable. */
-    @SinceAzora("0.0.1")
-    impl Cloneable for Real
+    /** Double is cloneable. */
+    @Since("0.0.1")
+    impl Cloneable for Double
 
     /** String is cloneable. */
-    @SinceAzora("0.0.1")
+    @Since("0.0.1")
     impl Cloneable for String
 
     /** Char is cloneable. */
-    @SinceAzora("0.0.1")
+    @Since("0.0.1")
     impl Cloneable for Char
 
     /** Bool is cloneable. */
-    @SinceAzora("0.0.1")
+    @Since("0.0.1")
     impl Cloneable for Bool
 
     /**
      * Types that can be iterated over.
      */
-    @SinceAzora("0.0.1")
+    @Since("0.0.1")
     spec Iterable
 
     /**
      * An iterator that produces values one at a time.
      */
-    @SinceAzora("0.0.1")
+    @Since("0.0.1")
     spec Iterator
 
-    @SinceAzora("0.0.4")
+    @Since("0.0.4")
     spec PrettyPrint {
         prop pretty[self: Self&]: String
     }

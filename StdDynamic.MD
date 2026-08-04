@@ -3,7 +3,7 @@ import std.dynamic
 import std.io
 import std.time
 
-use std::{println, runScript, ScriptError}
+import std::{println, runScript, ScriptError}
 
 func main(): Unit!ScriptError = loop by 1.seconds {
     fin result: Any = try runScript("script.az", entry: "h1")

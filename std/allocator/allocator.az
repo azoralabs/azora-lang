@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-mod std.allocator
+module std.allocator
 
-use std.convert
+import std.convert
 
 /**
  * @file std/allocator/allocator
@@ -36,7 +36,7 @@ use std.convert
  * @since 0.0.2
  */
 
-zone std {
+realm std {
 
     // -----------------------------------------------------------------------
     // Error Set
@@ -45,8 +45,8 @@ zone std {
     /**
      * Errors that can occur during memory allocation or deallocation.
      */
-    @SinceAzora("0.0.2")
-    fail AllocError {
+    @Since("0.0.2")
+    error AllocError {
         OutOfMemory,
         InvalidSize,
         DoubleFree,
@@ -68,7 +68,7 @@ zone std {
      *     var arena = Arena(1024)
      *     var p = alloc Point(1.0, 2.0) in arena
      */
-    @SinceAzora("0.0.2")
+    @Since("0.0.2")
     spec Allocator
 
     // -----------------------------------------------------------------------
@@ -93,19 +93,19 @@ zone std {
      * Usage:
      *
      *     var arena = Arena(64 * 1024)
-     *     var particles = alloc Real[1000] in arena
-     *     var transforms = alloc Real[1000] in arena
+     *     var particles = alloc Double[1000] in arena
+     *     var transforms = alloc Double[1000] in arena
      *     // ... compute ...
      *     arena.reset()   // all allocations freed at once
      *
      * Or with region blocks:
      *
      *     region(32 * 1024) { alloc ->
-     *         var verts = alloc Real[600] in alloc
+     *         var verts = alloc Double[600] in alloc
      *     }
      *     // everything freed here
      */
-    @SinceAzora("0.0.2")
+    @Since("0.0.2")
     pack Arena {
         var capacity: Int = 0,
         var offset: Int = 0,
@@ -125,7 +125,7 @@ zone std {
     impl ctor(capacity: Int) for Arena
     in {
         assert capacity > 0 { "Arena capacity must be positive" }
-    } zone { self! ->
+    } scope { self! ->
         self.capacity = capacity
         self.offset = 0
         self.allocCount = 0
@@ -137,19 +137,19 @@ zone std {
         /**
          * The number of bytes remaining in the arena.
          */
-        @SinceAzora("0.0.2")
+        @Since("0.0.2")
         prop remaining[self: Self&]: Int = capacity - offset
 
         /**
          * The number of bytes currently in use.
          */
-        @SinceAzora("0.0.2")
+        @Since("0.0.2")
         prop used[self: Self&]: Int = offset
 
         /**
          * Whether the arena has no allocations.
          */
-        @SinceAzora("0.0.2")
+        @Since("0.0.2")
         prop isEmpty[self: Self&]: Bool = offset == 0
 
         /**
@@ -165,7 +165,7 @@ zone std {
         func alloc(size: Int): Int ?! AllocError
         in {
             assert size > 0 { "Allocation size must be positive" }
-        } zone {
+        } scope {
             if offset + size > capacity {
                 return .OutOfMemory
             }
@@ -194,7 +194,7 @@ zone std {
         in {
             assert size > 0 { "Allocation size must be positive" }
             assert alignment > 0 { "Alignment must be positive" }
-        } zone {
+        } scope {
             fin remainder = offset % alignment
             fin padding = if remainder == 0 { 0 } else { alignment - remainder }
             fin aligned = offset + padding
@@ -216,7 +216,7 @@ zone std {
          * @param size The number of bytes to check.
          * @return true if sufficient space remains.
          */
-        @SinceAzora("0.0.2")
+        @Since("0.0.2")
         func canAlloc(size: Int): Bool = offset + size <= capacity
 
         /**
@@ -225,7 +225,7 @@ zone std {
          * After reset, the arena's full capacity is available again.
          * All pointers obtained from previous allocations become invalid.
          */
-        @SinceAzora("0.0.2")
+        @Since("0.0.2")
         func reset() {
             self.offset = 0
             self.allocCount = 0
@@ -234,7 +234,7 @@ zone std {
         /**
          * Resets the arena and zeroes the peak usage counter.
          */
-        @SinceAzora("0.0.2")
+        @Since("0.0.2")
         func resetAll() {
             self.offset = 0
             self.allocCount = 0
@@ -247,7 +247,7 @@ zone std {
          *
          * @return A human-readable string with capacity, usage, and allocation count.
          */
-        @SinceAzora("0.0.2")
+        @Since("0.0.2")
         func diagnostic(): String {
             return "Arena(capacity: " + std::convert::toString(capacity) +
                    ", used: " + std::convert::toString(offset) +
@@ -281,7 +281,7 @@ zone std {
      *     pool.release(slot1)     // slot1 returned to pool
      *     fin slot3 = try pool.acquire()  // reuses slot1's memory
      */
-    @SinceAzora("0.0.2")
+    @Since("0.0.2")
     pack Pool {
         var slotSize: Int = 0
         var slotCount: Int = 0
@@ -291,7 +291,7 @@ zone std {
         var peakAcquired: Int = 0
     }
 
-    @SinceAzora("0.0.2")
+    @Since("0.0.2")
     impl Allocator for Pool
 
     /**
@@ -305,7 +305,7 @@ zone std {
     in {
         assert slotSize > 0 { "Slot size must be positive" }
         assert slotCount > 0 { "Slot count must be positive" }
-    } zone { self! ->
+    } scope { self! ->
         self.slotSize = slotSize
         self.slotCount = slotCount
         self.freeStack = alloc Int[slotCount]
@@ -326,19 +326,19 @@ zone std {
         /**
          * Whether the pool is completely exhausted.
          */
-        @SinceAzora("0.0.2")
+        @Since("0.0.2")
         prop isFull[self: Self&]: Bool = freeCount == 0
 
         /**
          * Whether the pool has no acquired slots.
          */
-        @SinceAzora("0.0.2")
+        @Since("0.0.2")
         prop isEmpty[self: Self&]: Bool = acquiredCount == 0
 
         /**
          * Whether a slot can be acquired without failing.
          */
-        @SinceAzora("0.0.2")
+        @Since("0.0.2")
         prop canAcquire[self: Self&]: Bool = freeCount > 0
 
         /**
@@ -373,7 +373,7 @@ zone std {
         func release(slotIndex: Int)
         in {
             assert slotIndex >= 0 && slotIndex < slotCount { "Invalid slot index" }
-        } zone {
+        } scope {
             (*freeStack)[freeCount] = slotIndex
             self.freeCount = freeCount + 1
             self.acquiredCount = acquiredCount - 1
@@ -398,7 +398,7 @@ zone std {
          *
          * @return A human-readable string with slot info and usage stats.
          */
-        @SinceAzora("0.0.2")
+        @Since("0.0.2")
         func diagnostic(): String {
             return "Pool(slots: " + std::convert::toString(slotCount) +
                    ", slotSize: " + std::convert::toString(slotSize) +
@@ -431,7 +431,7 @@ zone std {
      *     stack.free(128)  // frees b
      *     stack.free(64)   // frees a
      */
-    @SinceAzora("0.0.2")
+    @Since("0.0.2")
     pack StackAllocator {
         var capacity: Int = 0
         var offset: Int = 0
@@ -439,7 +439,7 @@ zone std {
         var peakUsage: Int = 0
     }
 
-    @SinceAzora("0.0.2")
+    @Since("0.0.2")
     impl Allocator for StackAllocator
 
     /**
@@ -451,7 +451,7 @@ zone std {
     impl ctor(capacity: Int) for StackAllocator
     in {
         assert capacity > 0 { "StackAllocator capacity must be positive" }
-    } zone { self! ->
+    } scope { self! ->
         self.capacity = capacity
         self.offset = 0
         self.allocCount = 0
@@ -462,13 +462,13 @@ zone std {
         /**
          * The number of bytes remaining.
          */
-        @SinceAzora("0.0.2")
+        @Since("0.0.2")
         prop remaining[self: Self&]: Int = capacity - offset
 
         /**
          * Whether the stack has no allocations.
          */
-        @SinceAzora("0.0.2")
+        @Since("0.0.2")
         prop isEmpty[self: Self&]: Bool = offset == 0
 
         /**
@@ -481,7 +481,7 @@ zone std {
         func alloc(size: Int): Int ?! AllocError
         in {
             assert size > 0 { "Allocation size must be positive" }
-        } zone {
+        } scope {
             if offset + size > capacity {
                 return .OutOfMemory
             }
@@ -507,7 +507,7 @@ zone std {
         in {
             assert size > 0 { "Free size must be positive" }
             assert size <= offset { "Cannot free more than allocated" }
-        } zone {
+        } scope {
             self.offset = offset - size
             self.allocCount = allocCount - 1
         }
@@ -518,13 +518,13 @@ zone std {
          * @param size The number of bytes to check.
          * @return true if sufficient space remains.
          */
-        @SinceAzora("0.0.2")
+        @Since("0.0.2")
         func canAlloc(size: Int): Bool = offset + size <= capacity
 
         /**
          * Resets the stack, freeing all allocations.
          */
-        @SinceAzora("0.0.2")
+        @Since("0.0.2")
         func reset() {
             self.offset = 0
             self.allocCount = 0
@@ -533,7 +533,7 @@ zone std {
         /**
          * Resets the stack and clears peak tracking.
          */
-        @SinceAzora("0.0.2")
+        @Since("0.0.2")
         func resetAll() {
             self.offset = 0
             self.allocCount = 0
@@ -545,7 +545,7 @@ zone std {
          *
          * @return A human-readable string with capacity, usage, and stats.
          */
-        @SinceAzora("0.0.2")
+        @Since("0.0.2")
         func diagnostic(): String {
             return "StackAllocator(capacity: " + std::convert::toString(capacity) +
                    ", used: " + std::convert::toString(offset) +
@@ -567,7 +567,7 @@ zone std {
      *     var pool = Alloc.pool(slotSize: 32, count: 100)
      *     var stack = Alloc.stack(4096)
      */
-    zone Alloc {
+    realm Alloc {
         /**
          * Creates an arena allocator with the given byte capacity.
          *
@@ -578,7 +578,7 @@ zone std {
         func arena(size: Int): Arena
         in {
             assert size > 0 { "Arena size must be positive" }
-        } zone {
+        } scope {
             return Arena(size)
         }
 
@@ -594,7 +594,7 @@ zone std {
         in {
             assert slotSize > 0 { "Slot size must be positive" }
             assert count > 0 { "Slot count must be positive" }
-        } zone {
+        } scope {
             return Pool(slotSize, count)
         }
 
@@ -608,7 +608,7 @@ zone std {
         func stack(size: Int): StackAllocator
         in {
             assert size > 0 { "Stack size must be positive" }
-        } zone {
+        } scope {
             return StackAllocator(size)
         }
     }

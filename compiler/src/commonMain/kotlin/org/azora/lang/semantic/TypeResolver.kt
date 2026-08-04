@@ -62,6 +62,7 @@ class TypeResolver(private val table: SymbolTable) {
 
     fun resolve(program: Program): List<String> {
         this.program = program
+        typePropertyNames = program.typeFunctions.mapTo(mutableSetOf()) { it.name }
         packModules = program.items.filterIsInstance<TopLevel.Pack>()
             .associate { it.name to it.declaringModule }
         for (func in program.functions) {
@@ -155,6 +156,13 @@ class TypeResolver(private val table: SymbolTable) {
     private fun selfToReceiver(name: String): String =
         if (name == "Self") currentReceiverType ?: name else name
 
+    /** True when [type] names a compile-time type property (`deepinline prop`). */
+    private fun isTypeProperty(type: TypeRef.Named): Boolean =
+        TypeFunctionEvaluator.declarationNameFor(type, typePropertyNames) != null
+
+    /** Names of every declared type property; filled in when [resolve] starts. */
+    private var typePropertyNames: Set<String> = emptySet()
+
     private fun validateSignatureType(ref: TypeRef, line: Int, typeParams: Set<String>): Boolean {
         var valid = true
 
@@ -164,6 +172,9 @@ class TypeResolver(private val table: SymbolTable) {
                     val known = org.azora.lang.frontend.TypeFunctionCall.isCall(type) ||
                         type.name == "*" ||
                         type.name in typeParams ||
+                        // `Promote<T, U>` reads as a generic type but names a
+                        // `deepinline prop`; only the declaration set can tell.
+                        isTypeProperty(type) ||
                         IrType.isPrimitiveName(type.name) ||
                         table.lookupStruct(type.name) != null ||
                         table.lookupEnum(type.name) != null ||
@@ -280,9 +291,9 @@ class TypeResolver(private val table: SymbolTable) {
     /**
      * The type a field really has, given the arguments on the referring type.
      *
-     * A field declared as a type parameter resolves to `Any`, so `Box<Real>.value`
+     * A field declared as a type parameter resolves to `Any`, so `Box<Double>.value`
      * would otherwise type as `Any` and be consumed as an opaque word. The
-     * referring type still carries `Real`, which is the answer.
+     * referring type still carries `Double`, which is the answer.
      */
     private fun substituteFieldType(
         struct: StructType,
@@ -410,35 +421,35 @@ class TypeResolver(private val table: SymbolTable) {
     }
 
     /**
-     * Resolves a list of statements, sharing one scope across every zone block
+     * Resolves a list of statements, sharing one scope across every realm block
      * in the body.
      *
-     * Sibling zones see each other's bindings; the ordinary code between them
-     * does not. That is what makes a zone a place to group related work rather
+     * Sibling realms see each other's bindings; the ordinary code between them
+     * does not. That is what makes a realm a place to group related work rather
      * than just an extra pair of braces.
      */
     private fun resolveBody(stmts: List<Stmt>, returnType: IrType) {
-        val hasZones = stmts.any { it is Stmt.Zone && it.shared }
+        val hasRealms = stmts.any { it is Stmt.Scope && it.shared }
 
-        if (!hasZones) {
+        if (!hasRealms) {
             for (stmt in stmts) resolveStmt(stmt, returnType)
             return
         }
 
-        // Bindings that persist from one zone block to the next.
-        val zoneScope = mutableMapOf<String, VariableSymbol>()
+        // Bindings that persist from one realm block to the next.
+        val realmScope = mutableMapOf<String, VariableSymbol>()
 
         for (stmt in stmts) {
-            if (stmt is Stmt.Zone && stmt.shared) {
+            if (stmt is Stmt.Scope && stmt.shared) {
                 table.pushScope()
-                for ((_, sym) in zoneScope) table.defineVariable(sym)
-                // `zone unsafe { }` is still the boundary it was; sharing the
+                for ((_, sym) in realmScope) table.defineVariable(sym)
+                // `realm unsafe { }` is still the boundary it was; sharing the
                 // scope must not quietly drop the opt-in.
                 val savedUnsafe = unsafeContext
                 if (stmt.unsafe) unsafeContext = true
                 for (s in stmt.body) resolveStmt(s, returnType)
                 unsafeContext = savedUnsafe
-                table.exportCurrentScope(zoneScope)
+                table.exportCurrentScope(realmScope)
                 table.popScope()
             } else {
                 resolveStmt(stmt, returnType)
@@ -448,7 +459,9 @@ class TypeResolver(private val table: SymbolTable) {
 
     private fun resolveStmt(stmt: Stmt, returnType: IrType) {
         when (stmt) {
-            is Stmt.VarDecl -> resolveBinding(stmt.name, stmt.type, stmt.initializer, stmt.line, mutable = true)
+            // `var` and `val` both rebind; only `var` may be mutated through.
+            is Stmt.VarDecl ->
+                resolveBinding(stmt.name, stmt.type, stmt.initializer, stmt.line, mutable = true, valueMutable = stmt.valueMutable)
             is Stmt.RemDecl -> {
                 if (!reactiveContext) {
                     errors.add("line ${stmt.line}: '${stmt.kind.name.lowercase()}' requires an @Reactive function, task, or infix")
@@ -472,7 +485,8 @@ class TypeResolver(private val table: SymbolTable) {
                 table.popScope()
                 contextualValues.removeLast()
             }
-            is Stmt.FinDecl -> resolveBinding(stmt.name, stmt.type, stmt.initializer, stmt.line, mutable = false)
+            is Stmt.FinDecl ->
+                resolveBinding(stmt.name, stmt.type, stmt.initializer, stmt.line, mutable = false, valueMutable = false)
             is Stmt.Assignment -> {
                 val varSym = table.lookupVariable(stmt.name)
                 if (varSym == null) {
@@ -488,7 +502,8 @@ class TypeResolver(private val table: SymbolTable) {
                     errors.add("line ${stmt.line}: cannot assign $valueType to '${stmt.name}' of type ${varSym.type}")
                 }
             }
-            is Stmt.LetDecl -> resolveBinding(stmt.name, stmt.type, stmt.initializer, stmt.line, mutable = false)
+            is Stmt.LetDecl ->
+                resolveBinding(stmt.name, stmt.type, stmt.initializer, stmt.line, mutable = false, valueMutable = true)
             is Stmt.DeepInlineBlock -> errors.add("line ${stmt.line}: deepinline block could not be evaluated at compile time")
             is Stmt.NoInline -> resolveStmt(stmt.stmt, returnType)
             is Stmt.InlineBlock -> errors.add("line ${stmt.line}: inline block could not be evaluated at compile time")
@@ -530,7 +545,7 @@ class TypeResolver(private val table: SymbolTable) {
             is Stmt.InlineIf -> errors.add("line ${stmt.line}: inline if condition could not be evaluated at compile time")
             is Stmt.InlineFor -> errors.add("line ${stmt.line}: inline for range could not be evaluated at compile time")
             is Stmt.DeepInlineIf -> errors.add("line ${stmt.line}: deepinline if condition could not be evaluated at compile time")
-            is Stmt.Zone -> {
+            is Stmt.Scope -> {
                 table.pushScope()
                 val savedUnsafe = unsafeContext
                 if (stmt.unsafe) unsafeContext = true
@@ -611,6 +626,7 @@ class TypeResolver(private val table: SymbolTable) {
             is Stmt.Break -> { /* no type constraint */ }
             is Stmt.Continue -> { /* no type constraint */ }
             is Stmt.IndexAssign -> {
+                if (!checkValueMutable(stmt.target, stmt.line, "assign by index")) return
                 val targetType = resolveExpr(stmt.target) ?: return
                 // User-defined index-assign operator (`oper[]=`) on a struct.
                 if (targetType is IrType.Named) {
@@ -666,6 +682,7 @@ class TypeResolver(private val table: SymbolTable) {
                 }
             }
             is Stmt.MemberAssign -> {
+                if (!checkValueMutable(stmt.target, stmt.line, "assign to member '${stmt.name}'")) return
                 val resolvedTarget = resolveExpr(stmt.target) ?: return
                 // Auto-deref: assigning through a pointer writes through it (`p.v = x` == `(*p).v = x`).
                 var targetType = if (resolvedTarget is IrType.Pointer) resolvedTarget.inner else resolvedTarget
@@ -819,16 +836,16 @@ class TypeResolver(private val table: SymbolTable) {
         return Expr.Member(Expr.Identifier("LogLevel", line), first, line)
     }
 
-    private fun suffixToRealType(suffix: NumericSuffix): IrType = when (suffix) {
+    private fun suffixToFloatType(suffix: NumericSuffix): IrType = when (suffix) {
         NumericSuffix.FLOAT -> IrType.Float
         NumericSuffix.DECIMAL -> IrType.Decimal
-        else -> IrType.Real
+        else -> IrType.Double
     }
 
     private fun resolveExpr(expr: Expr): IrType? {
         return when (expr) {
             is Expr.IntLiteral -> suffixToIntType(expr.suffix)
-            is Expr.RealLiteral -> suffixToRealType(expr.suffix)
+            is Expr.DoubleLiteral -> suffixToFloatType(expr.suffix)
             is Expr.StringLiteral -> IrType.String
             is Expr.BoolLiteral -> IrType.Bool
             is Expr.NullLiteral -> IrType.Any  // null is compatible with any nullable type
@@ -921,6 +938,7 @@ class TypeResolver(private val table: SymbolTable) {
                         errors.add("line ${expr.line}: compiler bridge pack '${expr.callee}' cannot be constructed directly")
                         return null
                     }
+                    if (struct.isUnion) return resolveUnionCtor(expr, struct)
                     if (expr.args.size > struct.fields.size) {
                         errors.add("line ${expr.line}: '${expr.callee}' has ${struct.fields.size} fields, got ${expr.args.size} arguments")
                         return null
@@ -1012,8 +1030,8 @@ class TypeResolver(private val table: SymbolTable) {
                     }
                     // Inside `with value { … }`, a bare call may be an extension method
                     // on one of the contextual values: `with c { bump() }` == `c.bump()`.
-                    // A zone-qualified call reaches its contextual receiver too:
-                    // `std::yield(1)` names the member `yield`, and the zone only
+                    // A realm-qualified call reaches its contextual receiver too:
+                    // `std::yield(1)` names the member `yield`, and the realm only
                     // says where it was declared, not what it is called on.
                     val contextualName = expr.callee.substringAfterLast("__")
                     for ((ctxExpr, ctxType) in contextualValues.asReversed().flatten()) {
@@ -1111,6 +1129,16 @@ class TypeResolver(private val table: SymbolTable) {
                     expectedLambdaParamTypes = prevIt
                     expectedLambdaReceiverTypes = prevReceivers
                     argTypes.add(argType)
+                    // `f(x)` where the parameter is `p!` borrows x exclusively, so
+                    // the callee may write through it — which a `val`/`fin` binding
+                    // does not permit.
+                    if (i in func.exclusiveParams) {
+                        checkValueMutable(
+                            arg,
+                            expr.line,
+                            "borrow mutably for parameter '${func.paramNames.getOrNull(i) ?: (i + 1).toString()}'",
+                        )
+                    }
                     if (!isGeneric) {
                         val declaredType = func.params.getOrNull(i)?.second
                             ?: func.params.lastOrNull()?.second
@@ -2038,9 +2066,9 @@ class TypeResolver(private val table: SymbolTable) {
     private fun promote(a: IrType, b: IrType): IrType? {
         if (a == b) return a
         if (a in IrType.floatTypes || b in IrType.floatTypes) {
-            // Float promotion: Float < Real < Decimal
+            // Float promotion: Float < Double < Decimal
             if (a == IrType.Decimal || b == IrType.Decimal) return IrType.Decimal
-            if (a == IrType.Real || b == IrType.Real) return IrType.Real
+            if (a == IrType.Double || b == IrType.Double) return IrType.Double
             return IrType.Float
         }
         // Integer promotion: Byte < Short < Int < Long < Cent
@@ -2057,7 +2085,7 @@ class TypeResolver(private val table: SymbolTable) {
     private fun typeRefOf(type: IrType): TypeRef = when (type) {
         IrType.Int -> TypeRef.Named("Int")
         IrType.UInt -> TypeRef.Named("UInt")
-        IrType.Real -> TypeRef.Named("Real")
+        IrType.Double -> TypeRef.Named("Double")
         IrType.String -> TypeRef.Named("String")
         IrType.Bool -> TypeRef.Named("Bool")
         IrType.Unit -> TypeRef.Named("Unit")
@@ -2224,16 +2252,16 @@ class TypeResolver(private val table: SymbolTable) {
     /**
      * The type an expression takes on when it is an untyped numeric literal.
      *
-     * `0` is written the same whether it means an `Int`, a `UInt` or a `Real`, so a
-     * literal in a position that wants a numeric type is that type — `var x: Real = 0`
+     * `0` is written the same whether it means an `Int`, a `UInt` or a `Double`, so a
+     * literal in a position that wants a numeric type is that type — `var x: Double = 0`
      * and `x == 0` both read naturally. Only literals are adopted this way: a typed
      * `Int` value still needs an explicit `as`, so the conversion stays where it can
      * be seen in the source.
      */
     private fun adoptLiteralType(expr: Expr, own: IrType, wanted: IrType): IrType {
-        // `1.0` is written the same whether it means a `Real` or a `Float`, so an
+        // `1.0` is written the same whether it means a `Double` or a `Float`, so an
         // unsuffixed real literal takes the floating-point type asked for.
-        if (own in IrType.floatTypes && wanted in IrType.floatTypes && isUntypedRealLiteral(expr)) return wanted
+        if (own in IrType.floatTypes && wanted in IrType.floatTypes && isUntypedDoubleLiteral(expr)) return wanted
         if (own !in IrType.integerTypes || wanted !in IrType.numericTypes) return own
         untypedIntLiteral(expr) ?: return own
         // Only a floating-point target adopts an integer literal. A sized integer
@@ -2242,11 +2270,11 @@ class TypeResolver(private val table: SymbolTable) {
     }
 
     /** True for a real literal written without a width suffix. */
-    private fun isUntypedRealLiteral(expr: Expr): Boolean = when (expr) {
-        is Expr.RealLiteral -> expr.suffix == NumericSuffix.NONE
-        is Expr.Grouping -> isUntypedRealLiteral(expr.expr)
+    private fun isUntypedDoubleLiteral(expr: Expr): Boolean = when (expr) {
+        is Expr.DoubleLiteral -> expr.suffix == NumericSuffix.NONE
+        is Expr.Grouping -> isUntypedDoubleLiteral(expr.expr)
         is Expr.Unary ->
-            expr.op in setOf(TokenType.MINUS, TokenType.PLUS) && isUntypedRealLiteral(expr.operand)
+            expr.op in setOf(TokenType.MINUS, TokenType.PLUS) && isUntypedDoubleLiteral(expr.operand)
         else -> false
     }
 
@@ -2267,7 +2295,84 @@ class TypeResolver(private val table: SymbolTable) {
         else -> null
     }
 
-    private fun resolveBinding(name: String, typeAnn: TypeAnnotation, initializer: Expr, line: Int, mutable: Boolean) {
+    /**
+     * The variable a write ultimately lands on, if the target is rooted in one.
+     *
+     * `p.pos.x = 1` and `xs[0] = 1` both write through `p` / `xs`, so a write is
+     * checked against the binding at the root of the access chain. An expression
+     * with no such root (a call result, a literal) yields null and is left alone.
+     */
+    private fun writeRoot(target: Expr): VariableSymbol? = when (target) {
+        is Expr.Identifier -> table.lookupVariable(target.name)
+        is Expr.Member -> writeRoot(target.target)
+        is Expr.SafeMember -> writeRoot(target.target)
+        is Expr.Index -> writeRoot(target.target)
+        is Expr.Grouping -> writeRoot(target.expr)
+        else -> null
+    }
+
+    /**
+     * Rejects a write through a binding whose *value* is immutable (`val`/`fin`).
+     *
+     * Reassigning the name is a separate question — `val` allows it, `fin` does
+     * not — and is checked where the assignment itself is resolved.
+     */
+    private fun checkValueMutable(target: Expr, line: Int, what: String): Boolean {
+        val root = writeRoot(target) ?: return true
+        if (root.valueMutable) return true
+        errors.add(
+            "line $line: cannot $what through '${root.name}' — its value is immutable; " +
+                "declare it 'var' (or 'let' to fix only the name)",
+        )
+        return false
+    }
+
+    /**
+     * `Value(i: 42)` — a union is built by naming exactly one of its members.
+     *
+     * Only one member can be live at a time, so initializing more than one would
+     * be a contradiction and initializing none would leave the storage
+     * undefined. Naming the member also says which one the author means to be
+     * live, which is the only record of that anywhere.
+     */
+    private fun resolveUnionCtor(expr: Expr.Call, union: StructType): IrType? {
+        val result = IrType.Named(expr.callee)
+        if (expr.args.size != 1) {
+            errors.add(
+                "line ${expr.line}: union '${expr.callee}' is built from exactly one member, " +
+                    "e.g. '${expr.callee}(${union.fields.first().name}: …)' — got ${expr.args.size} arguments",
+            )
+            return result
+        }
+        val argument = expr.args[0]
+        val member = when (argument) {
+            is Expr.NamedArg -> union.fields.firstOrNull { it.name == argument.name } ?: run {
+                errors.add("line ${expr.line}: union '${expr.callee}' has no member '${argument.name}'")
+                return result
+            }
+            // A single positional argument initializes the first member, matching
+            // how C initializes a union from a bare initializer.
+            else -> union.fields.first()
+        }
+        val value = (argument as? Expr.NamedArg)?.value ?: argument
+        val valueType = resolveExpr(value) ?: return result
+        if (!isCompatible(member.type, adoptLiteralType(value, valueType, member.type))) {
+            errors.add(
+                "line ${expr.line}: member '${member.name}' of union '${expr.callee}': " +
+                    "expected ${member.type}, got $valueType",
+            )
+        }
+        return result
+    }
+
+    private fun resolveBinding(
+        name: String,
+        typeAnn: TypeAnnotation,
+        initializer: Expr,
+        line: Int,
+        mutable: Boolean,
+        valueMutable: Boolean = true,
+    ) {
         if (table.lookupVariableInCurrentScope(name) != null) {
             errors.add("line $line: '$name' is already declared in this scope")
             return
@@ -2291,10 +2396,10 @@ class TypeResolver(private val table: SymbolTable) {
                 if (!isCompatible(declaredType!!, adoptLiteralType(initializer, initType, declaredType))) {
                     errors.add("line $line: type mismatch in '$name': declared $declaredType but initializer is $initType")
                 }
-                table.defineVariable(VariableSymbol(name, declaredType, mutable))
+                table.defineVariable(VariableSymbol(name, declaredType, mutable, valueMutable = valueMutable))
             }
             is TypeAnnotation.Inferred -> {
-                table.defineVariable(VariableSymbol(name, initType, mutable))
+                table.defineVariable(VariableSymbol(name, initType, mutable, valueMutable = valueMutable))
             }
         }
     }

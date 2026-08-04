@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
-mod std.container.stack
+module std.container.stack
 
-use std.serializer
-use std.convert
+import std.serializer
+import std.convert
 
 /**
  * @file std/container/stack
@@ -31,16 +31,16 @@ use std.convert
  * @since 0.0.1
  */
 
-zone std {
+realm std {
     /**
      * A generic last-in-first-out (LIFO) stack.
      *
      * Stack provides pointer-backed storage where elements are
      * added and removed from the top.
      *
-     * @param T The type of elements stored in this stack.
+     * @generic T The type of elements stored in this stack.
      */
-    @SinceAzora("0.0.1")
+    @Since("0.0.1")
     @Serializable
     pack Stack<T> {
         var data: T* = alloc T[8]
@@ -61,11 +61,11 @@ zone std {
         // --- Properties ---
 
         /** Whether the stack contains no elements. */
-        @SinceAzora("0.0.1")
+        @Since("0.0.1")
         prop isEmpty[self: Self&]: Bool = size == 0
 
         /** Whether the stack contains at least one element. */
-        @SinceAzora("0.0.1")
+        @Since("0.0.1")
         prop isNotEmpty[self: Self&]: Bool = size > 0
 
         // --- Internal ---
@@ -74,7 +74,7 @@ zone std {
         @Experimental(since: "0.0.1")
         func growStack() {
             fin newCap = capacity * 2
-            fin newData = alloc T[newCap]
+            let newData = alloc T[newCap]
             for i in 0..<size {
                 newData[i] = data[i]
             }

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-mod std.memory.shared
+module std.memory.shared
 
 /**
  * @file std/memory/shared
@@ -33,11 +33,11 @@ mod std.memory.shared
  * @since 0.0.5
  */
 
-zone std {
+realm std {
     /**
      * A reference-counted pointer to a `T`, counted without synchronisation.
      *
-     * @param T the pointee type.
+     * @generic T the pointee type.
      */
     @Experimental(since: "0.0.5")
     pack Shared<T> {

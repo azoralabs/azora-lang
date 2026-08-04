@@ -18,7 +18,7 @@ import org.azora.lang.frontend.TypeFunctionExpr
 import org.azora.lang.frontend.TypeFunctionStmt
 import org.azora.lang.frontend.TypeRef
 
-/** Evaluates compile-time `type` functions. */
+/** Evaluates compile-time `deepinline prop` type properties. */
 internal object TypeFunctionEvaluator {
     private val ranks = mapOf(
         "Bool" to 0,
@@ -35,15 +35,15 @@ internal object TypeFunctionEvaluator {
         "Cent" to 9,
         "UCent" to 10,
         "Float" to 11,
-        "Real" to 12,
+        "Double" to 12,
         "Decimal" to 13,
         "String" to 14,
     )
 
     /**
-     * Resolves every type-function call reachable from [type]. A substitution
+     * Resolves every type-property call reachable from [type]. A substitution
      * value is a list so a variadic generic parameter can expand into multiple
-     * type-function arguments.
+     * type-property arguments.
      */
     fun resolve(
         type: TypeRef,
@@ -51,6 +51,25 @@ internal object TypeFunctionEvaluator {
         substitutions: Map<String, List<TypeRef>> = emptyMap(),
         unresolvedParams: Set<String> = emptySet(),
     ): TypeRef = Resolver(declarations, substitutions, unresolvedParams).resolve(type)
+
+    /**
+     * The declaration name [type] refers to, if it names a `deepinline prop`.
+     *
+     * A use site spells a type property exactly like a generic type
+     * (`Promote<T, U>`), so the two are told apart here rather than in the
+     * parser: only the declaration set knows which names are type properties,
+     * and a declaration can arrive from an injected stdlib module long after the
+     * use site was parsed. A realm-qualified use (`std::Promote<…>`) and a bare
+     * one inside the declaring realm both find the mangled declaration.
+     */
+    fun declarationNameFor(type: TypeRef.Named, declaredNames: Collection<String>): String? {
+        val qualified = type.qualifier?.replace("::", "__")?.let { "${it}__${type.name}" }
+        listOfNotNull(qualified, type.name).firstOrNull { it in declaredNames }?.let { return it }
+        // A bare use inside the declaring realm: exactly one mangled declaration
+        // ending in this name. Ambiguity is left alone rather than guessed at, so
+        // it surfaces as an ordinary unknown-type error.
+        return declaredNames.filter { it.endsWith("__${type.name}") }.distinct().singleOrNull()
+    }
 
     private class Resolver(
         declarations: List<TypeFunctionDecl>,
@@ -64,7 +83,8 @@ internal object TypeFunctionEvaluator {
             is TypeRef.Named -> when {
                 TypeFunctionCall.isCall(type) -> resolveCall(type)
                 type.name in substitutions && type.args.isEmpty() -> substitutions.getValue(type.name).singleOrNull() ?: type
-                else -> type.copy(args = type.args.map(::resolve))
+                else -> typePropName(type)?.let { resolveCall(TypeFunctionCall.create(it, type.args)) }
+                    ?: type.copy(args = type.args.map(::resolve))
             }
             is TypeRef.Array -> type.copy(element = resolve(type.element))
             is TypeRef.Map -> type.copy(key = resolve(type.key), value = resolve(type.value))
@@ -80,6 +100,12 @@ internal object TypeFunctionEvaluator {
             is TypeRef.Pointer -> type.copy(inner = resolve(type.inner))
             is TypeRef.Reference -> type.copy(inner = resolve(type.inner))
             is TypeRef.Const -> type
+        }
+
+        /** [declarationNameFor], with the enclosing generic's parameters excluded. */
+        private fun typePropName(type: TypeRef.Named): String? {
+            if (type.name in substitutions || type.name in unresolvedParams) return null
+            return declarationNameFor(type, declarations.keys)
         }
 
         private fun resolveCall(call: TypeRef.Named): TypeRef {
@@ -113,7 +139,7 @@ internal object TypeFunctionEvaluator {
         }
 
         /**
-         * The bindings a type function's `where` clause can be evaluated against.
+         * The bindings a type property's `where` clause can be evaluated against.
          *
          * Only the variadic pack's length is concrete at this stage; element types
          * are not, so a clause about them reports `Unknown` and is accepted.
@@ -163,7 +189,7 @@ internal object TypeFunctionEvaluator {
                 table = null,
             )
             if (outcome is ConstraintEvaluator.Outcome.Violated) {
-                error("Type function '$name' does not satisfy its 'where' clause: ${outcome.reason}")
+                error("Type property '$name' does not satisfy its 'where' clause: ${outcome.reason}")
             }
         }
 
@@ -179,18 +205,18 @@ internal object TypeFunctionEvaluator {
             }
             val declaration = fixed ?: matchingVariadic ?: variadics.firstOrNull()
             if (declaration == null) {
-                if (overloads.isEmpty()) error("Unknown type function '$name'")
+                if (overloads.isEmpty()) error("Unknown type property '$name'")
                 val expected = overloads.filter { it.variadicParam == null }.map { it.params.size }.distinct().sorted()
-                error("Type function '$name' has no overload for ${args.size} argument(s); expected ${expected.joinToString(" or ")}")
+                error("Type property '$name' has no overload for ${args.size} argument(s); expected ${expected.joinToString(" or ")}")
             }
             if (declaration.name in stack) {
-                error("Recursive type-function call detected: ${(stack + declaration.name).joinToString(" -> ")}")
+                error("Recursive type-property call detected: ${(stack + declaration.name).joinToString(" -> ")}")
             }
 
             val variadicIndex = declaration.params.indexOfFirst { it.variadic }
             val fixedCount = if (variadicIndex < 0) declaration.params.size else variadicIndex
             if (args.size < fixedCount) {
-                error("Type function '$name' expects at least $fixedCount argument(s), got ${args.size}")
+                error("Type property '$name' expects at least $fixedCount argument(s), got ${args.size}")
             }
             val variadicArgs = if (variadicIndex < 0) emptyList() else args.drop(variadicIndex)
             validateSpecialization(name, declaration, args)
@@ -204,7 +230,7 @@ internal object TypeFunctionEvaluator {
             stack.add(declaration.name)
             return try {
                 execute(declaration.body, values, packs)
-                    ?: error("Type function '$name' completed without returning a type")
+                    ?: error("Type property '$name' completed without returning a type")
             } finally {
                 stack.removeAt(stack.lastIndex)
             }
@@ -233,6 +259,14 @@ internal object TypeFunctionEvaluator {
                             execute(statement.body, values, packs)?.let { return it }
                         }
                         values.remove(statement.name)
+                    }
+                    is TypeFunctionStmt.If -> {
+                        val branch = if (evaluateCondition(statement.condition, values, packs)) {
+                            statement.thenBody
+                        } else {
+                            statement.elseBody
+                        }
+                        execute(branch, values, packs)?.let { return it }
                     }
                     is TypeFunctionStmt.Return -> return evaluate(statement.value, values, packs)
                 }

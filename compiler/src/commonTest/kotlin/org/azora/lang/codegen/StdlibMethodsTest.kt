@@ -16,7 +16,7 @@ class StdlibMethodsTest {
 
     @Test fun forInArray() {
         assertEquals("apple\nbanana\ncherry", run("""
-            use std.io
+            import std.io
             func main() {
                 var fruits = ["apple", "banana", "cherry"]
                 for fruit in fruits {
@@ -28,7 +28,7 @@ class StdlibMethodsTest {
 
     @Test fun forInArraySum() {
         assertEquals("6", run("""
-            use std.io
+            import std.io
             func main() {
                 var nums = arr@[1, 2, 3]
                 var sum = 0
@@ -42,7 +42,7 @@ class StdlibMethodsTest {
 
     @Test fun stringToUpperCase() {
         assertEquals("HELLO", run("""
-            use std.io
+            import std.io
             func main() {
                 std::println("hello".toUpperCase())
             }
@@ -51,7 +51,7 @@ class StdlibMethodsTest {
 
     @Test fun stringContains() {
         assertEquals("true\nfalse", run("""
-            use std.io
+            import std.io
             func main() {
                 std::println("hello world".contains("world"))
                 std::println("hello world".contains("xyz"))
@@ -61,7 +61,7 @@ class StdlibMethodsTest {
 
     @Test fun stringStartsEndsWith() {
         assertEquals("true\ntrue", run("""
-            use std.io
+            import std.io
             func main() {
                 std::println("hello".startsWith("he"))
                 std::println("hello".endsWith("lo"))
@@ -71,7 +71,7 @@ class StdlibMethodsTest {
 
     @Test fun stringTrim() {
         assertEquals("hi", run("""
-            use std.io
+            import std.io
             func main() {
                 std::println("  hi  ".trim())
             }
@@ -80,7 +80,7 @@ class StdlibMethodsTest {
 
     @Test fun stringReplace() {
         assertEquals("hxllo", run("""
-            use std.io
+            import std.io
             func main() {
                 std::println("hello".replace("e", "x"))
             }
@@ -89,7 +89,7 @@ class StdlibMethodsTest {
 
     @Test fun arrayInsertRemove() {
         assertEquals("[b, x, c]", run("""
-            use std.io
+            import std.io
             func main() {
                 var items = ["a", "b", "c"]
                 items.insert(2, "x")
@@ -106,7 +106,7 @@ class StdlibMethodsTest {
 
     @Test fun arrayContains() {
         assertEquals("true\nfalse", run("""
-            use std.io
+            import std.io
             func main() {
                 var nums = arr@[1, 2, 3]
                 std::println(nums.contains(2))
@@ -117,8 +117,8 @@ class StdlibMethodsTest {
 
     @Test fun setOfDeduplicates() {
         assertEquals("3\ntrue", run("""
-            use std.io
-            use std.*
+            import std.io
+            import std.*
 
             func main() {
                 fin nums = std::setOf(1, 2, 2, 3)

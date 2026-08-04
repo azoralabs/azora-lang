@@ -12,7 +12,7 @@ Arena allocation: allocate many objects quickly, then free all of them at once.
 Pool allocation: efficiently allocate many objects of the same size.
 Stack/bump allocation: extremely fast temporary allocations.
 Game engines: separate frame, scene, audio, physics, and asset memory.
-Real-time systems: avoid unpredictable pauses or heap fragmentation.
+Double-time systems: avoid unpredictable pauses or heap fragmentation.
 Debugging: track leaks, allocation sites, sizes, and double frees.
 Embedded systems: allocate from fixed memory regions without an OS heap.
 Shared or mapped memory: allocate inside memory visible to another process or device.

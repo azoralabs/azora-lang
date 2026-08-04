@@ -37,7 +37,7 @@ class WasmCodegenExecTest {
         assertEquals(expected, WasmExec.run(source))
     }
 
-    private fun main(body: String): String = "use std.io\nfunc main() {\n$body\n}"
+    private fun main(body: String): String = "import std.io\nfunc main() {\n$body\n}"
 
     @Test fun printsHello() = check("hello", main("""std::println("hello")"""))
     @Test fun traceUsesRuntimeLevelAndImplicitReceiver() = check(
@@ -50,14 +50,14 @@ class WasmCodegenExecTest {
         check("Hello, 7!", main("std::print(\"Hello, \" )\nstd::print(7)\nstd::println(\"!\")"))
     @Test fun arithmetic() = check("14", main("""std::println(2 + 3 * 4)"""))
 
-    // A `Real` prints as a `Real` on every backend: an integral value keeps its `.0`.
+    // A `Double` prints as a `Double` on every backend: an integral value keeps its `.0`.
     // WebAssembly has no sin/cos opcode, so the compiler supplies them in software
     // rather than importing them from the host. Cody-Waite reduction plus the odd/even
     // Taylor polynomials agrees with the interpreter to ~13 significant digits, which is
     // the accuracy this tier promises; `std::vha::sin` is where exactness belongs.
     @Test fun softwareSinAndCos() = check(
         "0.0\n0.841470984807901\n1.0\n-0.989992496600445",
-        "use std.math\n" + main(
+        "import std.math\n" + main(
             "var a = 0.0\nvar b = 1.0\nvar c = 3.0\n" +
                 "std::println(std::sin(a))\nstd::println(std::sin(b))\n" +
                 "std::println(std::cos(a))\nstd::println(std::cos(c))"
@@ -67,7 +67,7 @@ class WasmCodegenExecTest {
     // exp/log and everything derived from them, also supplied in software.
     @Test fun softwareExpAndLog() = check(
         "2.718281828459045\n0.999999999999926\n2.0\n3.0\n8.0\n3.0",
-        "use std.math\n" + main(
+        "import std.math\n" + main(
             "var one = 1.0\nvar e = 2.718281828459045\nvar four = 4.0\n" +
                 "var thousand = 1000.0\nvar three = 3.0\nvar twentyseven = 27.0\n" +
                 "std::println(std::exp(one))\nstd::println(std::log(e))\n" +
@@ -82,7 +82,7 @@ class WasmCodegenExecTest {
     // is not part of the software math.)
     @Test fun softwareInverseTrigAndHypot() = check(
         "0.785398131668175\n1.570796326794896\n0.0\n2.356194521921618\n5.0",
-        "use std.math\n" + main(
+        "import std.math\n" + main(
             "var one = 1.0\nvar zero = 0.0\nvar neg = 0.0 - 1.0\n" +
                 "var three = 3.0\nvar four = 4.0\nvar two = 2.0\n" +
                 "std::println(std::atan(one))\nstd::println(std::asin(one))\n" +
@@ -97,7 +97,7 @@ class WasmCodegenExecTest {
     // the extra terms mattering only where the argument reduces less kindly.
     @Test fun vhaTrigIsMoreAccurateThanTheDefault() = check(
         "0.841470984807901\n0.841470984807896\n-0.989992496600445\n-0.989992496600445",
-        "use std.math\n" + main(
+        "import std.math\n" + main(
             "var one = 1.0\nvar three = 3.0\n" +
                 "std::println(std::sin(one))\nstd::println(std::vha::sin(one))\n" +
                 "std::println(std::cos(three))\nstd::println(std::vha::cos(three))"
@@ -122,7 +122,7 @@ class WasmCodegenExecTest {
         "-3", main("var n = 0\nwhile n > -7 {\nn = n - 1\n}\nstd::println(n / 2)")
     )
 
-    @Test fun realDivision() = check("3.5", main("var x = 7.0\nstd::println(x / 2.0)"))
+    @Test fun doubleDivision() = check("3.5", main("var x = 7.0\nstd::println(x / 2.0)"))
     @Test fun modulo() = check("2", main("var n = 17\nstd::println(n % 5)"))
 
     @Test fun bitwiseOps() = check(
@@ -143,7 +143,7 @@ class WasmCodegenExecTest {
     @Test fun ifElseChain() = check(
         "positive",
         """
-        use std.io
+        import std.io
         func classify(n: Int): String {
             if n < 0 { return "negative" } else if n == 0 { return "zero" }
             return "positive"
@@ -178,7 +178,7 @@ class WasmCodegenExecTest {
     @Test fun recursion() = check(
         "120",
         """
-        use std.io
+        import std.io
         func fact(n: Int): Int {
             if n <= 1 { return 1 }
             return n * fact(n - 1)
@@ -190,7 +190,7 @@ class WasmCodegenExecTest {
     @Test fun structFieldMutation() = check(
         "4\n7",
         """
-        use std.io
+        import std.io
         pack Point { var x: Int
             var y: Int }
         func main() { let p = Point(3, 4)
@@ -207,7 +207,7 @@ class WasmCodegenExecTest {
     @Test fun functionCalls() = check(
         "25",
         """
-        use std.io
+        import std.io
         func square(n: Int): Int { return n * n }
         func main() { var n = 5
             std::println(square(n)) }

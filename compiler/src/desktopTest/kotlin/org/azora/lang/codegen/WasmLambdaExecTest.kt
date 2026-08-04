@@ -30,7 +30,7 @@ class WasmLambdaExecTest {
     fun storedLambdaCallsThroughTheFunctionTable() = check(
         "10",
         """
-        use std.io
+        import std.io
         func main() {
             fin double = func(value: Int) { return value * 2 }
             std::println(double(5))
@@ -42,7 +42,7 @@ class WasmLambdaExecTest {
     fun closureLoadsCapturedValuesFromItsEnvironment() = check(
         "7",
         """
-        use std.io
+        import std.io
         func main() {
             fin offset = 3
             fin add = func(value: Int) { return value + offset }
@@ -55,7 +55,7 @@ class WasmLambdaExecTest {
     fun closureCanCrossAHigherOrderFunctionBoundary() = check(
         "16",
         """
-        use std.io
+        import std.io
         func apply(operation: (Int) -> Int, value: Int): Int {
             return operation(value)
         }
@@ -70,11 +70,11 @@ class WasmLambdaExecTest {
     fun closureEnvironmentPreservesMixedMachineWidths() = check(
         "7.5",
         """
-        use std.io
+        import std.io
         func main() {
             fin whole = 3
             fin fraction = 0.5
-            fin add = func(value: Real) {
+            fin add = func(value: Double) {
                 return value + whole + fraction
             }
             std::println(add(4.0))
@@ -86,7 +86,7 @@ class WasmLambdaExecTest {
     fun contextualReceiversUseTheSameClosureAbi() = check(
         "10",
         """
-        use std.io
+        import std.io
         fin scale: [Int](Int) -> Int =
             func(value: Int) { factor: Int -> value * factor }
 

@@ -63,7 +63,8 @@ private fun dumpTopLevel(sb: StringBuilder, item: TopLevel, indent: String) {
             }
         }
         is TopLevel.VarDecl -> {
-            sb.appendLine("${indent}VarDecl(name=${item.name}, type=${item.typeName ?: "inferred"})")
+            val keyword = if (item.valueMutable) "Var" else "Val"
+            sb.appendLine("$indent${keyword}Decl(name=${item.name}, type=${item.typeName ?: "inferred"})")
             sb.appendLine("$indent    init:")
             dumpExpr(sb, item.initializer, "$indent        ")
         }
@@ -188,7 +189,7 @@ private fun dumpTopLevel(sb: StringBuilder, item: TopLevel, indent: String) {
             sb.appendLine("${indent}Wrap(name=${item.name}, registrations=[${item.registrations.joinToString(", ") { "${it.typeName}(${it.args.size} args)" }}])")
         }
         is TopLevel.UseImport -> {
-            sb.appendLine("${indent}UseImport(${item.imports.joinToString(", ") { (zone, item) -> if (item != null) "$zone::$item" else "$zone::*" }})")
+            sb.appendLine("${indent}UseImport(${item.imports.joinToString(", ") { (realm, item) -> if (item != null) "$realm::$item" else "$realm::*" }})")
         }
         is TopLevel.Spec -> {
             val typeParams = if (item.typeParams.isEmpty()) "" else "<${item.typeParams.joinToString(", ")}>"
@@ -214,7 +215,8 @@ private fun dumpTopLevel(sb: StringBuilder, item: TopLevel, indent: String) {
 private fun dumpStmt(sb: StringBuilder, stmt: Stmt, indent: String) {
     when (stmt) {
         is Stmt.VarDecl -> {
-            sb.appendLine("${indent}VarDecl(name=${stmt.name}, type=${stmt.type})")
+            val keyword = if (stmt.valueMutable) "Var" else "Val"
+            sb.appendLine("$indent${keyword}Decl(name=${stmt.name}, type=${stmt.type})")
             sb.appendLine("$indent    init:")
             dumpExpr(sb, stmt.initializer, "$indent        ")
         }
@@ -263,8 +265,8 @@ private fun dumpStmt(sb: StringBuilder, stmt: Stmt, indent: String) {
             sb.appendLine("${indent}ExprStmt")
             dumpExpr(sb, stmt.expr, "$indent    ")
         }
-        is Stmt.Zone -> {
-            sb.appendLine("${indent}Zone")
+        is Stmt.Scope -> {
+            sb.appendLine("${indent}Realm")
             for (s in stmt.body) dumpStmt(sb, s, "$indent    ")
         }
         is Stmt.If -> {
@@ -441,7 +443,7 @@ private fun dumpStmt(sb: StringBuilder, stmt: Stmt, indent: String) {
 private fun dumpExpr(sb: StringBuilder, expr: Expr, indent: String) {
     when (expr) {
         is Expr.IntLiteral -> sb.appendLine("${indent}IntLiteral(${expr.value}, suffix=${expr.suffix})")
-        is Expr.RealLiteral -> sb.appendLine("${indent}RealLiteral(${expr.value}, suffix=${expr.suffix})")
+        is Expr.DoubleLiteral -> sb.appendLine("${indent}DoubleLiteral(${expr.value}, suffix=${expr.suffix})")
         is Expr.StringLiteral -> sb.appendLine("${indent}StringLiteral(\"${expr.value}\")")
         is Expr.BoolLiteral -> sb.appendLine("${indent}BoolLiteral(${expr.value})")
         is Expr.CharLiteral -> sb.appendLine("${indent}CharLiteral('${expr.value}')")

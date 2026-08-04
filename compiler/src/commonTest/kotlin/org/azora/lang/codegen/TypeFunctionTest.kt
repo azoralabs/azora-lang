@@ -5,7 +5,6 @@ import org.azora.lang.Compiler
 import org.azora.lang.frontend.Lexer
 import org.azora.lang.frontend.Parser
 import org.azora.lang.frontend.TokenType
-import org.azora.lang.frontend.TypeFunctionCall
 import org.azora.lang.frontend.TypeFunctionStmt
 import org.azora.lang.frontend.TypeRef
 import kotlin.test.Test
@@ -14,40 +13,87 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlin.test.assertFailsWith
 
+/**
+ * Compile-time type properties: `deepinline prop Name<...T>: Type { … }`.
+ *
+ * A use site spells one exactly like a generic type (`Promote<T, U>`), so most
+ * of what is checked here is that the two are told apart correctly.
+ */
 class TypeFunctionTest {
     private fun compile(source: String): CompilationResult = Compiler().compile(source.trimIndent())
 
     @Test
-    fun typeIsAKeyword() {
-        val tokens = Lexer("type wider(a: Type, b: Type) { return a }").tokenize()
-        assertEquals(TokenType.TYPE, tokens.first().type)
+    fun typeIsNoLongerAKeyword() {
+        val tokens = Lexer("type").tokenize()
+        assertEquals(TokenType.IDENTIFIER, tokens.first().type)
     }
 
     @Test
-    fun parserRetainsStructuredTypeFunctionDeclaration() {
+    fun parserRetainsStructuredTypePropertyDeclaration() {
         val program = Parser(Lexer("""
-            type wider(a: Type, b: Type) {
-                return if a.rank >= b.rank { a } else { b }
+            deepinline prop Wider<A, B>: Type {
+                return if A.rank >= B.rank { A } else { B }
             }
-            func result(): wider@(Int, Real) { return 1.0 }
+            func result(): Wider<Int, Double> { return 1.0 }
         """.trimIndent()).tokenize()).parse()
 
         val declaration = program.typeFunctions.single()
-        assertEquals("wider", declaration.name)
-        assertEquals(listOf("a", "b"), declaration.params.map { it.name })
+        assertEquals("Wider", declaration.name)
+        assertEquals(listOf("A", "B"), declaration.params.map { it.name })
         assertIs<TypeFunctionStmt.Return>(declaration.body.single())
+        // The call stays an ordinary named type through parsing: only the
+        // declaration set knows the name belongs to a type property, and that set
+        // is not complete until the stdlib has been injected.
         val returnType = assertIs<TypeRef.Named>(program.functions.single().returnType.let {
             (it as org.azora.lang.frontend.TypeAnnotation.Explicit).ref
         })
-        assertTrue(TypeFunctionCall.isCall(returnType))
-        assertEquals("wider", TypeFunctionCall.name(returnType))
+        assertEquals("Wider", returnType.name)
+        assertEquals(listOf("Int", "Double"), returnType.args.map { (it as TypeRef.Named).name })
+    }
+
+    @Test
+    fun aLowercaseTypePropertyNameIsRejected() {
+        val failure = assertFailsWith<IllegalStateException> {
+            Parser(Lexer("deepinline prop wider<A, B>: Type { return A }").tokenize()).parse()
+        }
+        assertTrue("must start with a capital letter" in failure.message.orEmpty(), failure.message.orEmpty())
+    }
+
+    @Test
+    fun aTypePropertyMustDeclareTypeAsItsResult() {
+        val failure = assertFailsWith<IllegalStateException> {
+            Parser(Lexer("deepinline prop Wider<A, B>: Int { return A }").tokenize()).parse()
+        }
+        assertTrue("must declare ': Type'" in failure.message.orEmpty(), failure.message.orEmpty())
+    }
+
+    @Test
+    fun aTypePropertyBindingNeedsAnExplicitTypeAnnotation() {
+        // Azora never infers a declaration's type — least of all one that binds a type.
+        val failure = assertFailsWith<IllegalStateException> {
+            Parser(Lexer("""
+                deepinline prop Widest<...T>: Type {
+                    var result = T.0
+                    return result
+                }
+            """.trimIndent()).tokenize()).parse()
+        }
+        assertTrue("explicit ': Type' annotation" in failure.message.orEmpty(), failure.message.orEmpty())
+    }
+
+    @Test
+    fun theRemovedCallSyntaxIsRejectedWithAHint() {
+        val failure = assertFailsWith<IllegalStateException> {
+            Parser(Lexer("func result(): Wider@(Int, Double) { return 1.0 }").tokenize()).parse()
+        }
+        assertTrue("was removed" in failure.message.orEmpty(), failure.message.orEmpty())
     }
 
     @Test
     fun stdlibPromoteSelectsHighestRankedType() {
         assertIs<CompilationResult.Success>(compile("""
-            use std.traits
-            func result(): std::promote@(Byte, Int, Long, Real) {
+            import std.traits
+            func result(): std::Promote<Byte, Int, Long, Double> {
                 return 1.0
             }
         """))
@@ -56,43 +102,26 @@ class TypeFunctionTest {
     @Test
     fun stdlibPromoteRequiresTwoTypes() {
         val failure = assertIs<CompilationResult.Failure>(compile("""
-            use std.traits
-            func invalid(): std::promote@(Int) { return 1 }
+            import std.traits
+            func invalid(): std::Promote<Int> { return 1 }
         """))
         assertTrue(failure.errors.any { "'T.length >= 2'" in it }, failure.errors.toString())
     }
 
     @Test
-    fun stdlibPromoteRequiresImport() {
-        val failure = assertIs<CompilationResult.Failure>(compile("""
-            func invalid(): std::promote@(Int, Real) { return 1.0 }
-        """))
-        assertTrue(failure.errors.any { "Unknown type function 'std__promote'" in it }, failure.errors.toString())
-    }
-
-    @Test
     fun fullyQualifiedStdlibPromoteDoesNotRequireImport() {
         assertIs<CompilationResult.Success>(compile("""
-            func result(): std.traits.std::promote@(Int, Real) { return 1.0 }
+            func result(): std.traits.std::Promote<Int, Double> { return 1.0 }
         """))
     }
 
     @Test
-    fun importingModuleDoesNotExposeBareZoneMember() {
-        val failure = assertIs<CompilationResult.Failure>(compile("""
-            use std.traits
-            func invalid(): promote@(Int, Real) { return 1.0 }
-        """))
-        assertTrue(failure.errors.any { "Unknown type function 'promote'" in it }, failure.errors.toString())
-    }
-
-    @Test
-    fun fixedTypeFunctionResolvesReturnType() {
+    fun fixedTypePropertyResolvesReturnType() {
         assertIs<CompilationResult.Success>(compile("""
-            type wider(a: Type, b: Type) {
-                return if a.rank >= b.rank { a } else { b }
+            deepinline prop Wider<A, B>: Type {
+                return if A.rank >= B.rank { A } else { B }
             }
-            func result(): wider@(Int, Real) {
+            func result(): Wider<Int, Double> {
                 return 2.5
             }
         """))
@@ -101,52 +130,70 @@ class TypeFunctionTest {
     @Test
     fun exactOverloadWinsBeforeVariadicOverload() {
         assertIs<CompilationResult.Success>(compile("""
-            type choose(a: Type, b: Type) { return a }
-            type choose(types: ...Type) where types.length >= 2 {
-                return types.1
+            deepinline prop Choose<A, B>: Type { return A }
+            deepinline prop Choose<...Types>: Type where Types.length >= 2 {
+                return Types.1
             }
-            func result(): choose@(String, Int) {
+            func result(): Choose<String, Int> {
                 return "fixed"
             }
         """))
     }
 
     @Test
-    fun typeFunctionsCanCallOtherTypeFunctions() {
+    fun typePropertiesCanCallOtherTypeProperties() {
         assertIs<CompilationResult.Success>(compile("""
-            type numericResult(a: Type, b: Type) {
-                return if a.rank >= b.rank { a } else { b }
+            deepinline prop NumericResult<A, B>: Type {
+                return if A.rank >= B.rank { A } else { B }
             }
-            type forwarded(a: Type, b: Type) { return numericResult@(a, b) }
-            func result(): forwarded@(Int, Real) { return 4.5 }
+            deepinline prop Forwarded<A, B>: Type { return NumericResult<A, B> }
+            func result(): Forwarded<Int, Double> { return 4.5 }
         """))
     }
 
     @Test
-    fun variadicTypeFunctionSupportsBindingsLoopsAndRank() {
+    fun aVariadicTypePropertySupportsBindingsLoopsAndRank() {
         assertIs<CompilationResult.Success>(compile("""
-            type widest(types: ...Type) where types.length >= 2 {
-                let Result: Type = types.0
-                for Candidate in types[1...] {
-                    Result = if Candidate.rank > Result.rank { Candidate } else { Result }
+            deepinline prop Widest<...Types>: Type where Types.length >= 2 {
+                var result: Type = Types.0
+                for candidate: Type in Types[1...] {
+                    if candidate.rank > result.rank {
+                        result = candidate
+                    }
                 }
-                return Result
+                return result
             }
-            func result(): widest@(Byte, Long, Real, Int) {
+            func result(): Widest<Byte, Long, Double, Int> {
                 return 3.5
             }
         """))
     }
 
     @Test
-    fun genericFunctionCallUsesTypeFunctionForItsResult() {
+    fun aStatementIfWithoutAnElseFallsThrough() {
+        // The branch is a statement, not an expression, so an unmatched condition
+        // simply leaves the binding as it was.
         assertIs<CompilationResult.Success>(compile("""
-            use std.traits
-            func greater<T, U>(a: T, b: U): std::promote@(T, U) {
+            deepinline prop FirstUnlessWider<A, B>: Type {
+                var result: Type = A
+                if B.rank > A.rank {
+                    result = B
+                }
+                return result
+            }
+            func result(): FirstUnlessWider<Int, Double> { return 1.5 }
+        """))
+    }
+
+    @Test
+    fun genericFunctionCallUsesTypePropertyForItsResult() {
+        assertIs<CompilationResult.Success>(compile("""
+            import std.traits
+            func greater<T, U>(a: T, b: U): std::Promote<T, U> {
                 return a + b
             }
             func main() {
-                fin result: Real = greater(1, 2.5)
+                fin result: Double = greater(1, 2.5)
             }
         """))
     }
@@ -154,38 +201,30 @@ class TypeFunctionTest {
     @Test
     fun variadicConstraintProducesDiagnostic() {
         val failure = assertIs<CompilationResult.Failure>(compile("""
-            type widest(types: ...Type) where types.length >= 2 {
-                return types.0
+            deepinline prop Widest<...Types>: Type where Types.length >= 2 {
+                return Types.0
             }
-            func invalid(): widest@(Int) { return 1 }
+            func invalid(): Widest<Int> { return 1 }
         """))
-        assertTrue(failure.errors.any { "'types.length >= 2'" in it }, failure.errors.toString())
+        assertTrue(failure.errors.any { "'Types.length >= 2'" in it }, failure.errors.toString())
     }
 
     @Test
-    fun unknownTypeFunctionProducesDiagnostic() {
+    fun recursiveTypePropertyProducesDiagnostic() {
         val failure = assertIs<CompilationResult.Failure>(compile("""
-            func invalid(): missing@(Int) { return 1 }
+            deepinline prop First<Value>: Type { return Second<Value> }
+            deepinline prop Second<Value>: Type { return First<Value> }
+            func invalid(): First<Int> { return 1 }
         """))
-        assertTrue(failure.errors.any { "Unknown type function 'missing'" in it }, failure.errors.toString())
-    }
-
-    @Test
-    fun recursiveTypeFunctionProducesDiagnostic() {
-        val failure = assertIs<CompilationResult.Failure>(compile("""
-            type first(value: Type) { return second@(value) }
-            type second(value: Type) { return first@(value) }
-            func invalid(): first@(Int) { return 1 }
-        """))
-        assertTrue(failure.errors.any { "Recursive type-function call" in it }, failure.errors.toString())
+        assertTrue(failure.errors.any { "Recursive type-property call" in it }, failure.errors.toString())
     }
 
     @Test
     fun duplicateOverloadIsRejectedByParser() {
         assertFailsWith<IllegalStateException> {
             Parser(Lexer("""
-                type same(value: Type) { return value }
-                type same(other: Type) { return other }
+                deepinline prop Same<Value>: Type { return Value }
+                deepinline prop Same<Other>: Type { return Other }
             """.trimIndent()).tokenize()).parse()
         }
     }
@@ -202,14 +241,14 @@ class TypeFunctionTest {
         // One argument cannot satisfy `.length >= 2`, so selection must fall through
         // to the single-argument overload rather than report a constraint error.
         assertIs<CompilationResult.Success>(compile("""
-            type pick(types: ...Type) where types.length >= 2 {
-                return types.1
+            deepinline prop Pick<...Types>: Type where Types.length >= 2 {
+                return Types.1
             }
-            type pick(only: Type) {
-                return only
+            deepinline prop Pick<Only>: Type {
+                return Only
             }
-            func one(): pick@(Int) { return 1 }
-            func two(): pick@(Int, Real) { return 1.0 }
+            func one(): Pick<Int> { return 1 }
+            func two(): Pick<Int, Double> { return 1.0 }
         """))
     }
 
@@ -217,13 +256,13 @@ class TypeFunctionTest {
     fun aConcreteInvalidSpecializationIsAnError() {
         // With no applicable alternative, the same violation is the user's error.
         val failure = assertIs<CompilationResult.Failure>(compile("""
-            type onlyPairs(types: ...Type) where types.length >= 2 {
-                return types.0
+            deepinline prop OnlyPairs<...Types>: Type where Types.length >= 2 {
+                return Types.0
             }
-            func invalid(): onlyPairs@(Int) { return 1 }
+            func invalid(): OnlyPairs<Int> { return 1 }
         """))
         assertTrue(
-            failure.errors.any { "'types.length >= 2'" in it },
+            failure.errors.any { "'Types.length >= 2'" in it },
             failure.errors.toString(),
         )
     }
@@ -233,13 +272,13 @@ class TypeFunctionTest {
         // Selection order is unchanged by the split: the candidate with the most
         // fixed parameters before its pack still wins.
         assertIs<CompilationResult.Success>(compile("""
-            type tagged(first: Type, rest: ...Type) {
-                return first
+            deepinline prop Tagged<First, ...Rest>: Type {
+                return First
             }
-            type tagged(rest: ...Type) {
-                return rest.0
+            deepinline prop Tagged<...Rest>: Type {
+                return Rest.0
             }
-            func chosen(): tagged@(Int, Real) { return 1 }
+            func chosen(): Tagged<Int, Double> { return 1 }
         """))
     }
 

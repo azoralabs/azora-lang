@@ -1,7 +1,8 @@
-# Azora Modules & Zones — DIP Implementation Profile
+# Azora Modules & Realms — DIP Implementation Profile
 
-Modules organize files; zones organize namespaces within them; `import` and
-`friend zone` control visibility.
+Modules organize files; realms organize namespaces within them; `import` and
+`use realm` control visibility. A `scope` is the third, unrelated thing: a
+lexical block inside a function body.
 
 ## Grammar
 
@@ -14,10 +15,17 @@ IMPORT ::= import DOTTED.PATH               // one module
          | import DOTTED.PATH.name          // selective symbol
          | export import DOTTED.PATH        // re-export
 
-ZONE       ::= zone { BODY }                 // anonymous lexical scope
-NAMED_ZONE ::= friend zone PATH::SUB { DECLARATIONS }
-LABELED    ::= [inline | deepinline] zone ["label"] { … }
+REALM       ::= realm PATH::SUB { DECLARATIONS }        // a namespace
+            |   use realm PATH::SUB { DECLARATIONS }    // members stay bare
+LABELED     ::= [inline | deepinline] realm ["label"] { … }
+
+SCOPE       ::= scope { BODY }              // a nested lexical scope (statement)
+            |   scope alloc { BODY }        // …with a scoped allocation arena
 ```
+
+`import` loads a module. `use` is kept for the two places that are not module
+imports: `use realm X { … }`, which opens a realm with its members left bare,
+and `use as "…"`, which names a foreign symbol in a `bridge` or `spec`.
 
 - A file declares at most one `module`.
 - `module a.b.c` must live at `a/b/c.az` (or the folder-index `a/b/b.az` for
@@ -50,15 +58,15 @@ export import engine.render     // re-export (facade pattern)
 Importing a module is the **only** way to make its symbols referenceable. A type
 name used in an annotation needs its defining module imported directly.
 
-## 3. Zones (namespaces)
+## 3. Realms (namespaces)
 
-A `friend zone PATH::SUB { … }` groups declarations under a `::`-separated zone
+A `use realm PATH::SUB { … }` groups declarations under a `::`-separated realm
 path. Members are reached with the full path:
 
 ```azora
-friend zone std {
+use realm std {
     fin PI = 3.14159
-    func abs(x: Real): Real { … }
+    func abs(x: Double): Double { … }
 }
 
 // elsewhere, after `import std.math`:
@@ -66,20 +74,20 @@ fin p = std::PI
 fin a = std::abs(-2.0)
 ```
 
-- The zone path (`std`) is independent of the module file path
+- The realm path (`std`) is independent of the module file path
   (`std.math`).
-- Flat convention: many stdlib utilities live in `friend zone std` and are reached
+- Flat convention: many stdlib utilities live in `use realm std` and are reached
   as `std::name` (e.g. `std::println`, `std::listOf`).
 
-## 4. Anonymous & labeled zones
+## 4. Anonymous & labeled realms
 
 ```azora
-zone {                           // nested lexical scope; shadows outer names
+scope {                           // nested lexical scope; shadows outer names
     var x = 2
     std::println(::x)            // ::x reaches the enclosing scope
 }
 
-deepinline zone "config" {       // labeled zone: reflection metadata + inline
+deepinline realm "config" {       // labeled realm: reflection metadata + inline
     fin DEBUG = true
 }
 ```

@@ -20,8 +20,8 @@ class CollectionCtorTest {
     }
 
     @Test fun set_ctor() = assertEquals("true\nfalse", run("""
-        use std.io
-        use std.*
+        import std.io
+        import std.*
 
         func main() {
             fin s = std::setOf(1, 2, 3)
@@ -31,8 +31,8 @@ class CollectionCtorTest {
     """.trimIndent()))
 
     @Test fun set_add_preserves_uniqueness() = assertEquals("3\ntrue\nfalse", run("""
-        use std.io
-        use std.*
+        import std.io
+        import std.*
         func main() {
             var s = LinkedHashSet<Int>()
             s.add(1)
@@ -46,8 +46,8 @@ class CollectionCtorTest {
     """.trimIndent()))
 
     @Test fun tup_ctor() = assertEquals("1\na", run("""
-        use std.io
-        use std.container.*
+        import std.io
+        import std.container.*
         func main() {
             fin t = std::tupleOf(1, "a", 2.5)
             std::println(t.0)
@@ -56,38 +56,38 @@ class CollectionCtorTest {
     """.trimIndent()))
 
     @Test fun var_direct_assign_and_when() = assertEquals("int 42", run("""
-        use std.io
+        import std.io
         func main() {
-            var v: Var<Int, Real, String> = 42
+            var v: Var<Int, Double, String> = 42
             when v {
                 is Int -> { std::println("int " + v) }
-                is Real -> { std::println("real " + v) }
+                is Double -> { std::println("real " + v) }
                 is String -> { std::println("str " + v) }
             }
         }
     """.trimIndent()))
 
     @Test fun var_when_matches_held_type() = assertEquals("real\nstr", run("""
-        use std.io
-        func describe(v: Var<Int, Real, String>): String {
+        import std.io
+        func describe(v: Var<Int, Double, String>): String {
             when v {
                 is Int -> { return "int" }
-                is Real -> { return "real" }
+                is Double -> { return "real" }
                 is String -> { return "str" }
             }
             return "?"
         }
         func main() {
-            var a: Var<Int, Real, String> = 2.5
-            var b: Var<Int, Real, String> = "hi"
+            var a: Var<Int, Double, String> = 2.5
+            var b: Var<Int, Double, String> = "hi"
             std::println(describe(a))
             std::println(describe(b))
         }
     """.trimIndent()))
 
     @Test fun explicit_set_type() = assertEquals("true", run("""
-        use std.io
-        use std.*
+        import std.io
+        import std.*
 
         func main() {
             fin s: Set<Int> = std::setOf(10, 20, 30)
@@ -96,8 +96,8 @@ class CollectionCtorTest {
     """.trimIndent()))
 
     @Test fun mutable_list_pack_exists() = assertEquals("8", run("""
-        use std.io
-        use std.container.*
+        import std.io
+        import std.container.*
         func main() {
             var xs = ArrayList<Int>()
             xs.add(7)
@@ -107,8 +107,8 @@ class CollectionCtorTest {
     """.trimIndent()))
 
     @Test fun mutable_set_pack_exists() = assertEquals("true\nfalse", run("""
-        use std.io
-        use std.container.*
+        import std.io
+        import std.container.*
         func main() {
             var seen = LinkedHashSet<Int>()
             seen.add(1)
@@ -119,8 +119,8 @@ class CollectionCtorTest {
     """.trimIndent()))
 
     @Test fun mutable_map_pack_exists() = assertEquals("3", run("""
-        use std.io
-        use std.container.*
+        import std.io
+        import std.container.*
         func main() {
             var scores = HashMap<String, Int>()
             scores.put("azora", 3)
@@ -129,7 +129,7 @@ class CollectionCtorTest {
     """.trimIndent()))
 
     @Test fun loop_iterable() = assertEquals("3", run("""
-        use std.io
+        import std.io
         pack Range {
             var i: Int
             var max: Int
@@ -152,7 +152,7 @@ class CollectionCtorTest {
     """.trimIndent()))
 
     @Test fun query_tup_type_and_loop() = assertEquals("6", run("""
-        use std.io
+        import std.io
         pack Query {
             var i: Int
             var max: Int
@@ -178,7 +178,7 @@ class CollectionCtorTest {
     """.trimIndent()))
 
     @Test fun alloc_buffer_and_pointer_index() = assertEquals("10\n30\n99", run("""
-        use std.io
+        import std.io
         func main() {
             var p: Int* = alloc Int[3]
             p[0] = 10

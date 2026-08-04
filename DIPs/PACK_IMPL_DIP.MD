@@ -132,13 +132,13 @@ A `spec`-typed value carries its concrete type and dispatches at runtime — eve
 in the native LLVM backend (fat-pointer representation):
 
 ```azora
-spec Shape { func area(): Real }
-pack Circle { var r: Real }
-pack Square { var s: Real }
-impl Shape for Circle { func area(): Real { self& -> return 3.14159 * self.r * self.r } }
-impl Shape for Square { func area(): Real { self& -> return self.s * self.s } }
+spec Shape { func area(): Double }
+pack Circle { var r: Double }
+pack Square { var s: Double }
+impl Shape for Circle { func area(): Double { self& -> return 3.14159 * self.r * self.r } }
+impl Shape for Square { func area(): Double { self& -> return self.s * self.s } }
 
-func totalArea(shapes: Array<Shape>): Real {
+func totalArea(shapes: Array<Shape>): Double {
     var t = 0.0
     for s in shapes { t = t + s.area() }   // dynamic dispatch
     return t

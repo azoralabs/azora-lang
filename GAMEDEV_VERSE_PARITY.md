@@ -16,12 +16,12 @@ Azora already has several foundations needed for Verse-like gameplay:
 | Need | Azora foundation |
 |---|---|
 | Async work | `task`, `await`, `launch`, channels |
-| Data-first gameplay | `pack`, `slot`, `enum`, generics |
+| Data-first gameplay | `pack`, `variant`, `enum`, generics |
 | Error-aware control | `fail ErrSet`, `T!ErrSet`, `try/catch`, `guard` |
-| Metadata | `deco`, declaration decorators, parameter query decorators |
+| Metadata | `annot`, declaration decorators, parameter query decorators |
 | Services | `solo`, `wrap`, `inject` |
 | Reactivity | `@Reactive`, `mem`, `rem`, `ret`, `effect` |
-| Memory | `alloc`, `drop`, `isolated`, `zone alloc`, pointers |
+| Memory | `alloc`, `drop`, `isolated`, `scope alloc`, pointers |
 | Tooling | one AST/IR feeding interpreter, LLVM, WASM, and source backends |
 
 Azora Engine `0.0.3` adds the current gameplay layer:
@@ -45,7 +45,7 @@ The correct Azora query syntax is parameter-local:
 func spinSystem(
     world: ref World,
     q: @Query (mut ref LocalTransform, ref Spin, Without<Paused>),
-    dt: Real
+    dt: Double
 ) {
     q.reset()
     while q.hasNext() {
@@ -181,8 +181,8 @@ resolved like any other tuple type so the compiler can reason about it.
 ```azora
 @Component
 pack CapturePoint {
-    var progress: Real
-    var radius: Real
+    var progress: Double
+    var radius: Double
 }
 
 @Component

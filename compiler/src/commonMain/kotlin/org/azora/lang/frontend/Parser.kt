@@ -56,7 +56,7 @@ class Parser(
 
     /** Compile-time type functions are declarations, but never runtime top-level items. */
     private val typeFunctions = mutableListOf<TypeFunctionDecl>()
-    /** Namespace used to qualify unqualified type-function calls inside a zone. */
+    /** Namespace used to qualify unqualified type-function calls inside a realm. */
     private var typeFunctionNamespacePrefix = ""
 
     /**
@@ -97,27 +97,27 @@ class Parser(
     )
 
 
-    /** Enclosing labeled/anonymous zones while parsing (outermost first). */
-    private data class ZoneFrame(val label: String?, val isInline: Boolean)
-    private val zoneStack = mutableListOf<ZoneFrame>()
-    /** Declaration name → its innermost zone, for `(reflect X).zone` reflection. */
-    private val zoneMetaByName = mutableMapOf<String, ZoneMeta>()
+    /** Enclosing labeled/anonymous realms while parsing (outermost first). */
+    private data class RealmFrame(val label: String?, val isInline: Boolean)
+    private val realmStack = mutableListOf<RealmFrame>()
+    /** Declaration name → its innermost realm, for `(reflect X).realm` reflection. */
+    private val realmMetaByName = mutableMapOf<String, RealmMeta>()
     /** Type declaration name → named namespace path (`std`, `std::container`, ...). */
-    private val zoneTypeNamespaces = linkedMapOf<String, String>()
+    private val realmTypeNamespaces = linkedMapOf<String, String>()
 
-    /** Builds the [ZoneMeta] chain for the current [zoneStack] (innermost outward). */
-    private fun currentZoneMeta(): ZoneMeta? {
-        var meta: ZoneMeta? = null
-        for (frame in zoneStack) meta = ZoneMeta(frame.label, frame.isInline, meta)
+    /** Builds the [RealmMeta] chain for the current [realmStack] (innermost outward). */
+    private fun currentRealmMeta(): RealmMeta? {
+        var meta: RealmMeta? = null
+        for (frame in realmStack) meta = RealmMeta(frame.label, frame.isInline, meta)
         return meta
     }
 
-    /** Records the current zone for each named declaration in [items] (innermost wins). */
-    private fun recordZoneMembers(items: List<TopLevel>) {
-        val meta = currentZoneMeta() ?: return
+    /** Records the current realm for each named declaration in [items] (innermost wins). */
+    private fun recordRealmMembers(items: List<TopLevel>) {
+        val meta = currentRealmMeta() ?: return
         for (item in items) {
             val name = declaredTopLevelName(item) ?: continue
-            if (name !in zoneMetaByName) zoneMetaByName[name] = meta
+            if (name !in realmMetaByName) realmMetaByName[name] = meta
         }
     }
 
@@ -138,28 +138,28 @@ class Parser(
     }
 
     /**
-     * True when a labeled/anonymous zone block begins here: an optional
-     * `inline`/`deepinline`, then `zone`, then a string label or `{`. Excludes the
-     * identifier-named namespace form `zone Foo { … }` (handled separately) and
+     * True when a labeled/anonymous realm block begins here: an optional
+     * `inline`/`deepinline`, then `realm`, then a string label or `{`. Excludes the
+     * identifier-named namespace form `realm Foo { … }` (handled separately) and
      * plain `inline { … }`/`deepinline if …`.
      */
-    private fun isZoneBlockAhead(): Boolean {
+    private fun isRealmBlockAhead(): Boolean {
         var i = current
         val t = tokens.getOrNull(i)?.type
         if (t == TokenType.INLINE || t == TokenType.DEEPINLINE) i++
-        if (tokens.getOrNull(i)?.type != TokenType.ZONE) return false
+        if (tokens.getOrNull(i)?.type != TokenType.REALM) return false
         val after = tokens.getOrNull(i + 1)?.type
         return after == TokenType.STRING_LITERAL || after == TokenType.L_BRACE
     }
 
     /**
-     * `[inline|deepinline] zone ["label"] { … }` — a labeled or anonymous zone.
-     * Unlike a namespace `zone Foo { … }`, members keep their top-level names;
-     * the zone only attaches reflection metadata ([zoneMetaByName]) and, for the
+     * `[inline|deepinline] realm ["label"] { … }` — a labeled or anonymous realm.
+     * Unlike a namespace `realm Foo { … }`, members keep their top-level names;
+     * the realm only attaches reflection metadata ([realmMetaByName]) and, for the
      * inline/deepinline forms, the usual compile-time block semantics. Inline-ness
-     * is inherited by nested zones.
+     * is inherited by nested realms.
      */
-    private fun parseZoneBlock(): List<TopLevel> {
+    private fun parseRealmBlock(): List<TopLevel> {
         val start = peek()
         val ownInline = when {
             match(TokenType.DEEPINLINE) -> true
@@ -167,30 +167,30 @@ class Parser(
             else -> false
         }
         val isDeep = start.type == TokenType.DEEPINLINE
-        consume(TokenType.ZONE, "Expected 'zone'")
+        consume(TokenType.REALM, "Expected 'realm'")
         val label = if (check(TokenType.STRING_LITERAL)) advance().literal as String else null
-        // Inline-ness is inherited: a plain zone nested in an inline/deepinline
-        // zone is itself inline.
-        val isInline = ownInline || (zoneStack.lastOrNull()?.isInline == true)
-        consume(TokenType.L_BRACE, "Expected '{' to open zone")
+        // Inline-ness is inherited: a plain realm nested in an inline/deepinline
+        // realm is itself inline.
+        val isInline = ownInline || (realmStack.lastOrNull()?.isInline == true)
+        consume(TokenType.L_BRACE, "Expected '{' to open realm")
         skipNewlines()
-        zoneStack.add(ZoneFrame(label, isInline))
+        realmStack.add(RealmFrame(label, isInline))
         val body = mutableListOf<TopLevel>()
         while (!check(TokenType.R_BRACE) && !isAtEnd()) {
             skipNewlines()
             if (check(TokenType.R_BRACE)) break
             when {
-                isZoneBlockAhead() -> body.addAll(parseZoneBlock())
-                isZoneNamespaceAhead() -> body.addAll(parseZoneNamespace())
-                check(TokenType.TYPE) -> parseTypeFunction()
+                isRealmBlockAhead() -> body.addAll(parseRealmBlock())
+                isRealmNamespaceAhead() -> body.addAll(parseRealmNamespace())
+                isTypePropAhead() -> parseTypeProp()
                 isInline -> body.add(parseTopLevelBlockItem(deepInline = true))
                 else -> body.add(parseTopLevel())
             }
             skipNewlines()
         }
-        recordZoneMembers(body)
-        zoneStack.removeAt(zoneStack.size - 1)
-        consume(TokenType.R_BRACE, "Expected '}' to close zone")
+        recordRealmMembers(body)
+        realmStack.removeAt(realmStack.size - 1)
+        consume(TokenType.R_BRACE, "Expected '}' to close realm")
         consumeNewline()
         return when {
             !ownInline -> body
@@ -199,7 +199,7 @@ class Parser(
         }
     }
 
-    /** `func sin as az_sin(x: Real): Real` → wrapper `func sin(x) { return az_sin(x) }`. */
+    /** `func sin as az_sin(x: Double): Double` → wrapper `func sin(x) { return az_sin(x) }`. */
     private fun makeBridgeWrapper(name: String, externName: String, params: List<Param>, returnType: TypeRef, line: Int) {
         val args = params.map { Expr.Identifier(it.name, line) }
         val call = Expr.Call(externName, args, line)
@@ -247,12 +247,12 @@ class Parser(
         var moduleVisibility = ModuleVisibility.PUBLIC
         var exportCondition: Expr? = null
         val moduleName = if (isModuleHeaderAhead()) {
-            // `expose mod x` — auto-imported everywhere, rather than only where
+            // `expose module x` — auto-imported everywhere, rather than only where
             // it is asked for. It says nothing about visibility: a module is
             // reachable by default, and `confine` is what narrows it.
             if (match(TokenType.EXPOSE)) isExported = true
             if (check(TokenType.IF)) {
-                // `expose if COND \n mod …` — comptime-conditional auto-import.
+                // `expose if COND \n module …` — comptime-conditional auto-import.
                 advance() // 'if'
                 exportCondition = parseExpr()
                 consume(TokenType.NEWLINE, "Expected a newline after 'expose if <condition>'")
@@ -262,7 +262,7 @@ class Parser(
                     else -> ModuleVisibility.PUBLIC
                 }
                 if (isExported && moduleVisibility == ModuleVisibility.CONFINE) {
-                    error("'expose confine mod' is contradictory: a confined module is package-private and cannot be auto-imported everywhere")
+                    error("'expose confine module' is contradictory: a confined module is package-private and cannot be auto-imported everywhere")
                 }
             }
             parseModule()
@@ -271,17 +271,17 @@ class Parser(
         while (!isAtEnd()) {
             skipNewlines()
             if (isAtEnd()) break
-            if (isZoneNamespaceAhead()) {
-                // `[use] zone Name { … }` — a named zone is a namespace. Plain
-                // declarations use qualified names; `use zone` keeps members bare.
-                items.addAll(parseZoneNamespace())
-            } else if (isZoneBlockAhead()) {
-                // `[inline|deepinline] zone ["label"] { … }` — a labeled/anonymous
-                // zone; members stay top-level, the zone only adds reflection
+            if (isRealmNamespaceAhead()) {
+                // `[use] realm Name { … }` — a named realm is a namespace. Plain
+                // declarations use qualified names; `use realm` keeps members bare.
+                items.addAll(parseRealmNamespace())
+            } else if (isRealmBlockAhead()) {
+                // `[inline|deepinline] realm ["label"] { … }` — a labeled/anonymous
+                // realm; members stay top-level, the realm only adds reflection
                 // metadata (and inline semantics for the inline forms).
-                items.addAll(parseZoneBlock())
-            } else if (check(TokenType.TYPE)) {
-                parseTypeFunction()
+                items.addAll(parseRealmBlock())
+            } else if (isTypePropAhead()) {
+                parseTypeProp()
             } else {
                 items.add(parseTopLevel())
             }
@@ -309,21 +309,21 @@ class Parser(
                 isExported,
                 moduleVisibility,
                 exportCondition,
-                zoneMetaByName.toMap(),
+                realmMetaByName.toMap(),
                 typeFunctions = typeFunctions.toList(),
                 typeMacroRules = pendingTypeMacroRules.toList(),
                 infixMacros = pendingInfixMacros.toList(),
                 usesMacros = usedMetaInvoke,
-                zoneTypeNamespaces = zoneTypeNamespaces.toMap(),
+                realmTypeNamespaces = realmTypeNamespaces.toMap(),
             )
         )
-        return IntraZoneRewriter.rewrite(normalized)
+        return IntraRealmRewriter.rewrite(normalized)
     }
 
-    private fun isZoneNamespaceAhead(): Boolean {
-        // Optional `use` prefix (`use zone …`) — members stay bare-accessible.
+    private fun isRealmNamespaceAhead(): Boolean {
+        // Optional `use` prefix (`use realm …`) — members stay bare-accessible.
         val f0 = if (check(TokenType.USE)) current + 1 else current
-        if (tokens.getOrNull(f0)?.type != TokenType.ZONE) return false
+        if (tokens.getOrNull(f0)?.type != TokenType.REALM) return false
         var i = f0 + 1
         if (tokens.getOrNull(i)?.type != TokenType.IDENTIFIER) return false
         i++
@@ -336,39 +336,39 @@ class Parser(
     }
 
     /**
-     * `zone Name (:: Name)* { items }` — a namespace contribution.
+     * `realm Name (:: Name)* { items }` — a namespace contribution.
      *
-     * Each member is mangled with the zone path (`zone std { zone math { fin PI } }`
-     * → `std__math__PI`, reached as `std::PI`). The same zone path may be
+     * Each member is mangled with the realm path (`realm std { realm math { fin PI } }`
+     * → `std__math__PI`, reached as `std::PI`). The same realm path may be
      * opened as many times as it likes, in as many modules as it likes, and the
-     * contributions merge — a zone is a name a package agrees on, not a block
+     * contributions merge — a realm is a name a package agrees on, not a block
      * one file owns.
      *
-     * The `use` prefix (`use zone std { … }`) keeps members at their bare short
+     * The `use` prefix (`use realm std { … }`) keeps members at their bare short
      * names (no mangling), so importing the module makes them callable without
-     * the `Zone::` qualifier — e.g. `vec![…]` rather than `std::vec![…]`. An
-     * inner zone inherits that choice: a bare-name zone that started mangling
+     * the `Realm::` qualifier — e.g. `vec![…]` rather than `std::vec![…]`. An
+     * inner realm inherits that choice: a bare-name realm that started mangling
      * halfway down would be surprising.
      */
-    private fun parseZoneNamespace(outerPrefix: String = "", inheritMangle: Boolean = true): List<TopLevel> {
+    private fun parseRealmNamespace(outerPrefix: String = "", inheritMangle: Boolean = true): List<TopLevel> {
         val useBare = match(TokenType.USE) // optional 'use' → members stay bare (unmangled)
-        consume(TokenType.ZONE, "Expected 'zone'")
-        val first = consume(TokenType.IDENTIFIER, "Expected zone name after 'zone'").lexeme
-        val zonePath = StringBuilder(first).apply {
+        consume(TokenType.REALM, "Expected 'realm'")
+        val first = consume(TokenType.IDENTIFIER, "Expected realm name after 'realm'").lexeme
+        val realmPath = StringBuilder(first).apply {
             while (match(TokenType.DOUBLE_COLON)) {
-                append("__").append(consume(TokenType.IDENTIFIER, "Expected zone name after '::' in zone path").lexeme)
+                append("__").append(consume(TokenType.IDENTIFIER, "Expected realm name after '::' in realm path").lexeme)
             }
         }.toString()
-        val prefix = if (outerPrefix.isEmpty()) zonePath else "${outerPrefix}__$zonePath"
-        consume(TokenType.L_BRACE, "Expected '{' after zone name")
+        val prefix = if (outerPrefix.isEmpty()) realmPath else "${outerPrefix}__$realmPath"
+        consume(TokenType.L_BRACE, "Expected '{' after realm name")
         skipNewlines()
-        val items = parseZoneBody(prefix, mangle = inheritMangle && !useBare)
-        consume(TokenType.R_BRACE, "Expected '}' after zone")
+        val items = parseRealmBody(prefix, mangle = inheritMangle && !useBare)
+        consume(TokenType.R_BRACE, "Expected '}' after realm")
         consumeNewline()
         return items
     }
 
-    private fun parseZoneBody(prefix: String, mangle: Boolean = true): List<TopLevel> {
+    private fun parseRealmBody(prefix: String, mangle: Boolean = true): List<TopLevel> {
         val result = mutableListOf<TopLevel>()
         val previousTypeNamespace = typeFunctionNamespacePrefix
         typeFunctionNamespacePrefix = prefix
@@ -377,12 +377,12 @@ class Parser(
                 skipNewlines()
                 if (check(TokenType.R_BRACE)) break
                 when {
-                    isZoneNamespaceAhead() -> result.addAll(parseZoneNamespace(prefix, mangle))
-                    check(TokenType.TYPE) -> parseTypeFunction(prefix)
+                    isRealmNamespaceAhead() -> result.addAll(parseRealmNamespace(prefix, mangle))
+                    isTypePropAhead() -> parseTypeProp(prefix)
                     else -> {
                         val parsed = parseTopLevel()
                         if (mangle) {
-                            declaredTypeName(parsed)?.let { zoneTypeNamespaces[it] = prefix.replace("__", "::") }
+                            declaredTypeName(parsed)?.let { realmTypeNamespaces[it] = prefix.replace("__", "::") }
                         }
                         result.add(if (mangle) mangleTopLevel(parsed, prefix) else parsed)
                         if (pendingTopLevels.isNotEmpty()) {
@@ -439,7 +439,7 @@ class Parser(
         is TopLevel.InlineFin -> item.copy(name = "${prefix}__${item.name}")
         is TopLevel.InlineLet -> item.copy(name = "${prefix}__${item.name}")
         is TopLevel.InlineVar -> item.copy(name = "${prefix}__${item.name}")
-        is TopLevel.Impl -> item.copy(zonePrefix = prefix)
+        is TopLevel.Impl -> item.copy(realmPrefix = prefix)
         // `bridge func` members of `impl Type:: { … }` are static intrinsics
         // reached as `Type::member`; mangle each to `Type__member` to match.
         is TopLevel.Bridge -> item.copy(funcs = item.funcs.map { it.copy(name = "${prefix}__${it.name}") })
@@ -621,7 +621,7 @@ class Parser(
         return false
     }
 
-    private fun isZoneImplAhead(): Boolean {
+    private fun isStaticImplAhead(): Boolean {
         var i = current
         if (tokens.getOrNull(i)?.type == TokenType.L_BRACKET) {
             var depth = 0
@@ -786,10 +786,10 @@ class Parser(
             check(TokenType.INLINE) -> parseTopLevelInline()
             check(TokenType.DEEPINLINE) -> parseTopLevelDeepInline()
             check(TokenType.TEST) -> parseTestDecl(annotations)
-            check(TokenType.DECO) -> parseDeco(annotations)
+            check(TokenType.ANNOT) -> parseDeco(annotations)
             check(TokenType.PACK) -> parsePack(annotations, visibility)
             check(TokenType.ENUM) -> parseEnumDecl(annotations)
-            check(TokenType.FAIL) -> parseFailDecl(annotations)
+            check(TokenType.ERROR) -> parseFailDecl(annotations)
             check(TokenType.IMPL) -> parseImpl(annotations = annotations)
             check(TokenType.BRIDGE) && peekNext()?.type == TokenType.IMPL -> {
                 advance(); parseImpl(isBridge = true, annotations = annotations)
@@ -806,7 +806,7 @@ class Parser(
             check(TokenType.BRIDGE) && peekNext()?.type == TokenType.ENUM -> {
                 advance(); parseEnumDecl(annotations)
             }
-            check(TokenType.BRIDGE) && peekNext()?.type == TokenType.DECO -> {
+            check(TokenType.BRIDGE) && peekNext()?.type == TokenType.ANNOT -> {
                 advance(); parseDeco(annotations, isBridge = true)
             }
             check(TokenType.BRIDGE) && peekNext()?.type == TokenType.SPEC -> {
@@ -815,7 +815,7 @@ class Parser(
             check(TokenType.BRIDGE) && peekNext()?.type == TokenType.TYPEALIAS -> {
                 advance(); parseTypeAlias(annotations)
             }
-            check(TokenType.BRIDGE) && peekNext()?.type == TokenType.SLOT -> {
+            check(TokenType.BRIDGE) && peekNext()?.type == TokenType.VARIANT -> {
                 advance(); parseSlot(annotations)
             }
             check(TokenType.BRIDGE) && isBridgeFuncAhead() -> parseBridgeFunc(annotations)
@@ -824,10 +824,11 @@ class Parser(
             check(TokenType.WRAP) -> parseWrap()
             check(TokenType.THREADLOCAL) -> parseThreadLocal(visibility)
             check(TokenType.SPEC) -> parseSpec()
-            check(TokenType.SLOT) -> parseSlot(annotations)
+            isUnionDeclAhead() -> parsePack(annotations, visibility, isUnion = true)
+            check(TokenType.VARIANT) -> parseSlot(annotations)
             check(TokenType.TYPEALIAS) -> parseTypeAlias(annotations)
-            check(TokenType.META) -> parseMeta()
-            // `prop name: T = expr` at top level — accepted inside `impl … as zone
+            check(TokenType.MACRO) -> parseMeta()
+            // `prop name: T = expr` at top level — accepted inside `impl … as realm
             // for Type` / `impl Type:: { … }` bodies (which reparse members as
             // top-level items); desugars to a `fin` so it mangles to `Type__name`.
             check(TokenType.PROP) -> parsePropAsFin(annotations, visibility)
@@ -835,11 +836,11 @@ class Parser(
             // beside the type rather than inside its impl. The receiver names the
             // type, so no `for` clause is needed.
             check(TokenType.OPER) -> parseFreeOperator(annotations, visibility)
-            check(TokenType.USE) -> parseUse()
+            check(TokenType.IMPORT) -> parseUse()
             // `expose use …` — the import travels on to whoever imports this
             // module, so a package can offer one entry point instead of making
             // every caller name its internals (e.g. std.macro and std.container).
-            check(TokenType.EXPOSE) && peekNext()?.type == TokenType.USE -> {
+            check(TokenType.EXPOSE) && peekNext()?.type == TokenType.IMPORT -> {
                 advance() // 'expose'
                 parseUse(exported = true)
             }
@@ -853,7 +854,7 @@ class Parser(
                 parseUse(exported = true, condition = cond)
             }
             check(TokenType.FIN) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); noteBridgeTargetConstant(name, init); TopLevel.FinDecl(name, type, init, start.line, start.column, annotations, visibility = visibility) }
-            check(TokenType.VAR) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); TopLevel.VarDecl(name, type, init, start.line, start.column, annotations, visibility = visibility) }
+            check(TokenType.VAR) || check(TokenType.VAL) -> { val valueMutable = advance().type == TokenType.VAR; val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); TopLevel.VarDecl(name, type, init, start.line, start.column, annotations, visibility = visibility, valueMutable = valueMutable) }
             check(TokenType.LET) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); TopLevel.LetDecl(name, type, init, start.line, start.column, annotations, visibility) }
             else -> error("Expected 'func', 'fin', 'var', 'let', 'test', 'inline', or 'deepinline' at top level, got '${peek().lexeme}' at line ${peek().line}")
         }
@@ -955,7 +956,7 @@ class Parser(
     /** Parses every `deco` target/binding combination into a normalized declaration. */
     private fun parseDeco(annotations: List<Annotation>, isBridge: Boolean = false): TopLevel.Deco {
         val start = peek()
-        consume(TokenType.DECO, "Expected 'deco'")
+        consume(TokenType.ANNOT, "Expected 'deco'")
         val name = consume(TokenType.IDENTIFIER, "Expected decorator name").lexeme
         if (name.firstOrNull()?.isUpperCase() != true) {
             error("Decorator names must start with an uppercase letter: use '${name.replaceFirstChar { it.uppercase() }}' at line ${start.line}")
@@ -997,15 +998,15 @@ class Parser(
             TokenType.FUNC -> { advance(); TopLevel.Func(parseFuncDecl(isInline = true)) }
             TokenType.FOR -> parseTopLevelInlineFor()
             TokenType.L_BRACE -> parseTopLevelInlineBlock()
-            TokenType.ZONE -> parseTopLevelInlineZoneBlock()
+            TokenType.REALM -> parseTopLevelInlineRealmBlock()
             TokenType.IF -> parseTopLevelInlineIf()
             TokenType.ASSERT -> parseTopLevelInlineAssert()
             TokenType.TRACE -> parseTopLevelInlineTrace()
             TokenType.FIN -> { val start = peek(); advance(); advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); noteBridgeTargetConstant(name, init); TopLevel.InlineFin(name, init, start.line, start.column) }
             TokenType.LET -> { val start = peek(); advance(); advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); TopLevel.InlineLet(name, init, start.line, start.column) }
-            TokenType.VAR -> { val start = peek(); advance(); advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); TopLevel.InlineVar(name, init, start.line, start.column) }
+            TokenType.VAR, TokenType.VAL -> { val start = peek(); advance(); val valueMutable = advance().type == TokenType.VAR; val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); TopLevel.InlineVar(name, init, start.line, start.column, valueMutable = valueMutable) }
             TokenType.IDENTIFIER -> { val start = peek(); advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; consume(TokenType.EQUAL, "Expected '='"); val value = parseExpr(); consumeNewline(); TopLevel.InlineAssignment(name, value, start.line, start.column) }
-            else -> error("Expected 'func', '{', 'zone', 'if', 'assert', 'trace', 'fin', 'var', 'let', or identifier after 'inline' at line ${peek().line}")
+            else -> error("Expected 'func', '{', 'realm', 'if', 'assert', 'trace', 'fin', 'var', 'let', or identifier after 'inline' at line ${peek().line}")
         }
     }
 
@@ -1188,7 +1189,7 @@ class Parser(
         var i = current
         val hasInline = tokens.getOrNull(i)?.type == TokenType.INLINE
         if (hasInline) i += 1
-        if (tokens.getOrNull(i)?.type !in setOf(TokenType.LET, TokenType.FIN, TokenType.VAR)) return false
+        if (tokens.getOrNull(i)?.type !in setOf(TokenType.LET, TokenType.FIN, TokenType.VAR, TokenType.VAL)) return false
         i += 1
         if (tokens.getOrNull(i)?.type != TokenType.IDENTIFIER) return false
         i += 1
@@ -1299,7 +1300,7 @@ class Parser(
         val bareOk = valueTokens.size == 1 && valueTokens[0].type in setOf(
             TokenType.IDENTIFIER,
             TokenType.INT_LITERAL,
-            TokenType.REAL_LITERAL,
+            TokenType.DOUBLE_LITERAL,
         )
         val result = mutableListOf<Token>()
         for (t in tokens) {
@@ -1329,11 +1330,11 @@ class Parser(
         return TopLevel.InlineBlock(body, start.line, start.column)
     }
 
-    /** `inline zone { ... }` at top level -- alias for `inline { ... }`. */
-    private fun parseTopLevelInlineZoneBlock(): TopLevel.InlineBlock {
+    /** `inline realm { ... }` at top level -- alias for `inline { ... }`. */
+    private fun parseTopLevelInlineRealmBlock(): TopLevel.InlineBlock {
         val start = peek()
         consume(TokenType.INLINE, "Expected 'inline'")
-        consume(TokenType.ZONE, "Expected 'zone'")
+        consume(TokenType.REALM, "Expected 'realm'")
         consume(TokenType.L_BRACE, "Expected '{'")
         skipNewlines()
         val body = parseTopLevelBlock(deepInline = true)
@@ -1345,17 +1346,17 @@ class Parser(
     private fun parseTopLevelDeepInline(): TopLevel {
         return when (peekNext()?.type) {
             TokenType.L_BRACE -> parseTopLevelDeepInlineBlock()
-            TokenType.ZONE -> parseTopLevelDeepInlineZoneBlock()
+            TokenType.REALM -> parseTopLevelDeepInlineRealmBlock()
             TokenType.IF -> parseTopLevelDeepInlineIf()
-            else -> error("Expected '{', 'zone', or 'if' after 'deepinline' at line ${peek().line}")
+            else -> error("Expected '{', 'realm', or 'if' after 'deepinline' at line ${peek().line}")
         }
     }
 
-    /** `deepinline zone { ... }` at top level -- alias for `deepinline { ... }`. */
-    private fun parseTopLevelDeepInlineZoneBlock(): TopLevel.DeepInlineBlock {
+    /** `deepinline realm { ... }` at top level -- alias for `deepinline { ... }`. */
+    private fun parseTopLevelDeepInlineRealmBlock(): TopLevel.DeepInlineBlock {
         val start = peek()
         consume(TokenType.DEEPINLINE, "Expected 'deepinline'")
-        consume(TokenType.ZONE, "Expected 'zone'")
+        consume(TokenType.REALM, "Expected 'realm'")
         consume(TokenType.L_BRACE, "Expected '{'")
         skipNewlines()
         val body = parseTopLevelBlock(deepInline = true)
@@ -1433,7 +1434,7 @@ class Parser(
 
     private fun parseTopLevelBlockItem(deepInline: Boolean = false): TopLevel {
         // Leading `@Deco(...)` annotations are permitted on declarations nested in
-        // a compile-time block (e.g. `std.config`'s `deepinline zone`). They apply
+        // a compile-time block (e.g. `std.config`'s `deepinline realm`). They apply
         // to type declarations; value bindings fold to compile-time constants and
         // carry no annotations, so any leading annotations there are metadata-only.
         val annotations = parseAnnotations()
@@ -1443,10 +1444,10 @@ class Parser(
             check(TokenType.TEST) -> parseTestDecl(annotations)
             check(TokenType.ENUM) -> parseEnumDecl(annotations)
             check(TokenType.PACK) -> parsePack(annotations)
-            check(TokenType.DECO) -> parseDeco(annotations)
-            check(TokenType.FAIL) -> parseFailDecl(annotations)
+            check(TokenType.ANNOT) -> parseDeco(annotations)
+            check(TokenType.ERROR) -> parseFailDecl(annotations)
             check(TokenType.TYPEALIAS) -> parseTypeAlias(annotations)
-            check(TokenType.SLOT) -> parseSlot(annotations)
+            check(TokenType.VARIANT) -> parseSlot(annotations)
             check(TokenType.SPEC) -> parseSpec()
             check(TokenType.INLINE) -> parseTopLevelInline()
             check(TokenType.DEEPINLINE) -> parseTopLevelDeepInline()
@@ -1465,13 +1466,13 @@ class Parser(
                 when {
                     check(TokenType.FUNC) -> TopLevel.Func(parseFuncDecl(isInline = false))
                     check(TokenType.FIN) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); noteBridgeTargetConstant(name, init); TopLevel.FinDecl(name, type, init, start.line, start.column) }
-                    check(TokenType.VAR) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); TopLevel.VarDecl(name, type, init, start.line, start.column) }
+                    check(TokenType.VAR) || check(TokenType.VAL) -> { val valueMutable = advance().type == TokenType.VAR; val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); TopLevel.VarDecl(name, type, init, start.line, start.column, valueMutable = valueMutable) }
                     check(TokenType.LET) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); TopLevel.LetDecl(name, type, init, start.line, start.column) }
                     else -> error("Expected 'func', 'fin', 'var', or 'let' after 'noinline' at line ${peek().line}")
                 }
             }
             // Bare declarations: inline if deepInline, runtime otherwise
-            check(TokenType.VAR) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); if (deepInline) TopLevel.InlineVar(name, init, start.line, start.column) else TopLevel.VarDecl(name, type, init, start.line, start.column) }
+            check(TokenType.VAR) || check(TokenType.VAL) -> { val valueMutable = advance().type == TokenType.VAR; val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); if (deepInline) TopLevel.InlineVar(name, init, start.line, start.column, valueMutable = valueMutable) else TopLevel.VarDecl(name, type, init, start.line, start.column, valueMutable = valueMutable) }
             check(TokenType.FIN) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); noteBridgeTargetConstant(name, init); if (deepInline) TopLevel.InlineFin(name, init, start.line, start.column) else TopLevel.FinDecl(name, type, init, start.line, start.column) }
             check(TokenType.LET) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); if (deepInline) TopLevel.InlineLet(name, init, start.line, start.column) else TopLevel.LetDecl(name, type, init, start.line, start.column) }
             check(TokenType.IF) -> {
@@ -1532,18 +1533,39 @@ class Parser(
      * `pack Name { fields }` — a struct declaration. Fields are `[var|fin|let] name: Type [= default]`,
      * one per line.
      */
+    /**
+     * True when a `union` declaration begins here.
+     *
+     * `union` is contextual, not reserved: `Set.union(other)` and `fin union = …`
+     * mean what they say. A declaration is the one place the word is followed by
+     * a type name and then a body or type parameters.
+     */
+    private fun isUnionDeclAhead(): Boolean {
+        val word = peek()
+        if (word.type != TokenType.IDENTIFIER || word.lexeme != "union") return false
+        if (peekNext()?.type != TokenType.IDENTIFIER) return false
+        val after = tokens.getOrNull(current + 2)?.type
+        return after == TokenType.L_BRACE || after == TokenType.LESS
+    }
+
     private fun parsePack(
         annotations: List<Annotation> = emptyList(),
         visibility: Visibility = Visibility.PUBLIC,
         isBridge: Boolean = false,
+        isUnion: Boolean = false,
     ): TopLevel.Pack {
         val start = peek()
-        consume(TokenType.PACK, "Expected 'pack'")
+        val keyword = if (isUnion) "union" else "pack"
+        if (isUnion) {
+            advance() // contextual `union`
+        } else {
+            consume(TokenType.PACK, "Expected 'pack'")
+        }
         if (check(TokenType.LESS)) {
-            error("Type parameters go after the pack name: write 'pack Name<…>', not 'pack<…> Name', at line ${peek().line}")
+            error("Type parameters go after the $keyword name: write '$keyword Name<…>', not '$keyword<…> Name', at line ${peek().line}")
         }
         // Type parameters follow the name: `pack Box<T>`, `pack Map<K, V>`.
-        val name = consume(TokenType.IDENTIFIER, "Expected pack name").lexeme
+        val name = consume(TokenType.IDENTIFIER, "Expected $keyword name").lexeme
         val tp = parseTypeParams()
         constParamEnums = tp.constEnums
         val whereClause = parseWhereClause()
@@ -1565,9 +1587,10 @@ class Parser(
                 constParams = tp.constParams,
                 fieldTemplate = null,
                 isBridge = isBridge,
+                isUnion = isUnion,
             )
         }
-        consume(TokenType.L_BRACE, "Expected '{' after pack name")
+        consume(TokenType.L_BRACE, "Expected '{' after $keyword name")
         skipNewlines()
         // A variadic pack may mix fixed fields with one generated field template:
         // `fin metadata: M; inline for Ty in ...T { mixin "$index: $Ty" }`.
@@ -1594,8 +1617,14 @@ class Parser(
             }
             skipNewlines()
         }
-        consume(TokenType.R_BRACE, "Expected '}' after pack fields")
+        consume(TokenType.R_BRACE, "Expected '}' after $keyword fields")
         consumeNewline()
+        if (isUnion) {
+            if (fields.isEmpty()) error("union '$name' must declare at least one member at line ${start.line}")
+            if (fieldTemplate != null) {
+                error("union '$name' cannot generate its members from a variadic template at line ${start.line}")
+            }
+        }
         return TopLevel.Pack(
             name = name,
             fields = fields,
@@ -1611,6 +1640,7 @@ class Parser(
             constDefaults = tp.constDefaults,
             constEnums = tp.constEnums,
             fieldTemplate = fieldTemplate,
+            isUnion = isUnion,
         )
     }
 
@@ -2091,8 +2121,11 @@ class Parser(
         if (requireFin && !check(TokenType.FIN)) {
             error("Decorator fields must be declared with 'fin' at line ${peek().line}")
         }
+        // A field's mutability is the value axis: `var` fields can be written
+        // through the pack, `val`/`fin`/`let` fields cannot.
         val mutable = when {
             check(TokenType.VAR) -> { advance(); true }
+            check(TokenType.VAL) -> { advance(); false }
             check(TokenType.FIN) -> { advance(); false }
             check(TokenType.LET) -> { advance(); false }
             else -> false
@@ -2150,11 +2183,11 @@ class Parser(
                 NumericSuffix.DECIMAL -> "Decimal"
             },
         )
-        is Expr.RealLiteral -> TypeRef.Named(
+        is Expr.DoubleLiteral -> TypeRef.Named(
             when (expr.suffix) {
                 NumericSuffix.FLOAT -> "Float"
                 NumericSuffix.DECIMAL -> "Decimal"
-                else -> "Real"
+                else -> "Double"
             },
         )
         is Expr.StringLiteral, is Expr.StringTemplate -> TypeRef.Named("String")
@@ -2204,7 +2237,7 @@ class Parser(
     /** `fail ErrSet { V1, V2 }` — an error-set declaration (variants one per line, each optionally annotated). */
     private fun parseFailDecl(annotations: List<Annotation> = emptyList()): TopLevel.Fail {
         val start = peek()
-        consume(TokenType.FAIL, "Expected 'fail'")
+        consume(TokenType.ERROR, "Expected 'fail'")
         val name = consume(TokenType.IDENTIFIER, "Expected error-set name").lexeme
         consume(TokenType.L_BRACE, "Expected '{' after error-set name")
         skipNewlines()
@@ -2318,7 +2351,7 @@ class Parser(
             val t = advance()
             TypeRef.Const((t.literal as NumericLiteral).value as Long)
         }
-        // `Mat<Real, 4, 4, .ColumnMajor>` — an enum variant as a const argument.
+        // `Mat<Double, 4, 4, .ColumnMajor>` — an enum variant as a const argument.
         check(TokenType.DOT) || (check(TokenType.IDENTIFIER) && peekNext()?.type == TokenType.DOT &&
             peek().lexeme in declaredEnums) -> parseConstArgument(null, "type argument")
         check(TokenType.STAR) -> {
@@ -2480,7 +2513,7 @@ class Parser(
         // members, reached as `Type::member`. The trailing `::` is the same one the
         // use site writes, so the declaration looks like what it produces. Members
         // desugar to mangled top-level items (`Type__member`) per target type.
-        if (isZoneImplAhead()) {
+        if (isStaticImplAhead()) {
             val targets = expandTypeListTargets(parseImplTargets())
             consume(TokenType.DOUBLE_COLON, "Expected '::' after 'impl <type>'")
             // `impl Vec<T, N>:: where T is SignedNumber { … }` — a static block may
@@ -2523,11 +2556,11 @@ class Parser(
             run {
                 val i = nextMeaningfulIndex()
                 val tok = tokens.getOrNull(i)
-                if (tok?.type == TokenType.ZONE &&
+                if (tok?.type == TokenType.SCOPE &&
                     tokens.getOrNull(i + 1)?.type == TokenType.L_BRACE
                 ) {
                     while (current < i) advance() // skip newlines
-                    advance() // 'zone' — the '{' that follows is the ctor body
+                    advance() // 'scope' — the '{' that follows is the ctor body
                 }
             }
             if (!check(TokenType.L_BRACE)) {
@@ -2847,7 +2880,7 @@ class Parser(
                         run {
                             val i = nextMeaningfulIndex()
                             if (
-                                tokens.getOrNull(i)?.type == TokenType.ZONE &&
+                                tokens.getOrNull(i)?.type == TokenType.SCOPE &&
                                 tokens.getOrNull(i + 1)?.type == TokenType.L_BRACE
                             ) {
                                 while (current < i) advance()
@@ -3448,7 +3481,7 @@ class Parser(
     /** `slot Name { Variant(Type); Variant2(Type1, Type2); Variant3 }` — a tagged union. */
     private fun parseSlot(annotations: List<Annotation> = emptyList()): TopLevel.Slot {
         val start = peek()
-        consume(TokenType.SLOT, "Expected 'slot'")
+        consume(TokenType.VARIANT, "Expected 'slot'")
         val name = consume(TokenType.IDENTIFIER, "Expected slot name").lexeme
         consume(TokenType.L_BRACE, "Expected '{' after slot name")
         skipNewlines()
@@ -3491,7 +3524,7 @@ class Parser(
      */
     private fun parseMeta(): TopLevel.Meta {
         val start = peek()
-        consume(TokenType.META, "Expected 'meta'")
+        consume(TokenType.MACRO, "Expected 'meta'")
         // The macro kind is a `Macro` slot variant: `meta .Prefix("name") { … }` (a
         // value/prefix macro invoked `name@[…]`), `meta .Infix("op") { … }` (an infix
         // macro, `a op b`), or `meta .Type { … }` (type-sugar macros).
@@ -4028,34 +4061,34 @@ class Parser(
     }
 
     /**
-     * True when [index] holds a `mod` that opens a module declaration.
+     * True when [index] holds a `module` that opens a module declaration.
      *
-     * `mod` is contextual, not reserved: it lexes as an ordinary identifier, so
-     * `func mod()` and `var mod = 7` mean what they say. A module header is the
-     * one place the word is followed by another name, which is what
-     * distinguishes it — and it is only ever looked for at the top of a file,
-     * where a bare identifier could not begin a declaration anyway.
+     * `module` is contextual, not reserved: it lexes as an ordinary identifier,
+     * so `func module()` and `var module = 7` mean what they say. A module
+     * header is the one place the word is followed by another name, which is
+     * what distinguishes it — and it is only ever looked for at the top of a
+     * file, where a bare identifier could not begin a declaration anyway.
      */
     private fun isModuleWordAt(index: Int): Boolean {
         val word = tokens.getOrNull(index) ?: return false
-        if (word.type != TokenType.IDENTIFIER || word.lexeme != "mod") return false
+        if (word.type != TokenType.IDENTIFIER || word.lexeme != "module") return false
         val next = tokens.getOrNull(index + 1) ?: return false
         return next.type == TokenType.IDENTIFIER
     }
 
     /**
      * True when a module header begins here: an optional `expose`, an optional
-     * `confine`, then `mod`. Lets those words keep their ordinary meaning as
+     * `confine`, then `module`. Lets those words keep their ordinary meaning as
      * declaration modifiers everywhere else.
      */
     private fun isModuleHeaderAhead(): Boolean {
         var i = current
         if (tokens.getOrNull(i)?.type == TokenType.EXPOSE) i++
-        // `expose if COND \n mod …` — the newline before `mod` is mandatory.
+        // `expose if COND \n module …` — the newline before `module` is mandatory.
         if (tokens.getOrNull(i)?.type == TokenType.IF) {
             var j = i + 1
             while (j < tokens.size && tokens[j].type != TokenType.NEWLINE) j++
-            // exactly one newline, then `mod`
+            // exactly one newline, then `module`
             return tokens.getOrNull(j)?.type == TokenType.NEWLINE && isModuleWordAt(j + 1)
         }
         if (tokens.getOrNull(i)?.type == TokenType.CONFINE) i++
@@ -4063,8 +4096,8 @@ class Parser(
     }
 
     private fun parseModule(): String {
-        consume(TokenType.IDENTIFIER, "Expected 'mod'")
-        // Qualified names are allowed: `mod std.math`. Segments use
+        consume(TokenType.IDENTIFIER, "Expected 'module'")
+        // Qualified names are allowed: `module std.math`. Segments use
         // [consumeIdentifierLike] so soft keywords (e.g. `weak`) are accepted.
         val name = StringBuilder(consumeIdentifierLike("Expected module name"))
         while (match(TokenType.DOT)) {
@@ -4137,16 +4170,16 @@ class Parser(
 
         // Optional contract clauses before the body: `in { ... }` preconditions and
         // `out { r -> ... }` postconditions. A contract-style declaration then
-        // supplies its body as `zone { ... }`.
+        // supplies its body as `scope { ... }`.
         val contracts = parseContractClauses()
         run {
             val i = nextMeaningfulIndex()
             val tok = tokens.getOrNull(i)
-            if (tok?.type == TokenType.ZONE &&
+            if (tok?.type == TokenType.SCOPE &&
                 tokens.getOrNull(i + 1)?.type == TokenType.L_BRACE
             ) {
                 while (current < i) advance() // skip newlines
-                advance() // 'zone' — the '{' that follows is the function body
+                advance() // 'scope' — the '{' that follows is the function body
             }
         }
 
@@ -4350,7 +4383,7 @@ class Parser(
                 body = stmt.body.map { rewriteContractResults(it, contracts, rewriteYields) },
                 catchBody = stmt.catchBody?.map { rewriteContractResults(it, contracts, rewriteYields) },
             )
-            is Stmt.Zone -> stmt.copy(body = stmt.body.map { rewriteContractResults(it, contracts, rewriteYields) })
+            is Stmt.Scope -> stmt.copy(body = stmt.body.map { rewriteContractResults(it, contracts, rewriteYields) })
             else -> stmt
         }
     }
@@ -4359,7 +4392,7 @@ class Parser(
         val value = stmt.value ?: return stmt
         val resultName = contracts.resultName ?: "__az_contract_result_${contractResultCounter++}"
         val resultRef = Expr.Identifier(resultName, stmt.line, stmt.column, resultName.length)
-        return Stmt.Zone(
+        return Stmt.Scope(
             listOf(
                 Stmt.FinDecl(resultName, TypeAnnotation.Inferred, value, stmt.line, stmt.column),
             ) + contracts.postconditions + Stmt.Return(resultRef, stmt.line, stmt.column),
@@ -4371,7 +4404,7 @@ class Parser(
     private fun rewriteContractYield(stmt: Stmt.Yield, contracts: ContractClauses): Stmt {
         val resultName = contracts.resultName ?: "__az_contract_result_${contractResultCounter++}"
         val resultRef = Expr.Identifier(resultName, stmt.line, stmt.column, resultName.length)
-        return Stmt.Zone(
+        return Stmt.Scope(
             listOf(
                 Stmt.FinDecl(resultName, TypeAnnotation.Inferred, stmt.value, stmt.line, stmt.column),
             ) + contracts.postconditions + Stmt.Yield(resultRef, stmt.line, stmt.column),
@@ -4386,10 +4419,10 @@ class Parser(
      */
     /**
      * Member name after `.`/`?.`. Like [consumeIdentifierLike] but also accepts
-     * the `zone` keyword, so the reflection member `(reflect X).zone` parses.
+     * the `realm` keyword, so the reflection member `(reflect X).realm` parses.
      */
     private fun consumeMemberName(message: String): String =
-        if (check(TokenType.ZONE)) advance().lexeme else consumeIdentifierLike(message)
+        if (check(TokenType.REALM)) advance().lexeme else consumeIdentifierLike(message)
 
     /**
      * True when [index] starts `async func` — an asynchronous declaration.
@@ -4410,7 +4443,11 @@ class Parser(
             t.type == TokenType.PROP ||
             t.type == TokenType.PURGE || t.type == TokenType.MEM || t.type == TokenType.REM || t.type == TokenType.RET ||
             t.type == TokenType.ALLOC || t.type == TokenType.TEST ||
-            t.type == TokenType.META
+            t.type == TokenType.MACRO ||
+            // `module std.error` — a module path segment is a plain name, and
+            // `error` reads best as the name of the module that declares the
+            // error sets.
+            t.type == TokenType.ERROR
         if (t.type == TokenType.IDENTIFIER || soft) {
             advance()
             return t.lexeme
@@ -4569,7 +4606,7 @@ class Parser(
                     constEnums[name] = constraintName
                 }
             }
-            // `= <value>` — a default for a const parameter, so `Mat<Real, 4, 4>`
+            // `= <value>` — a default for a const parameter, so `Mat<Double, 4, 4>`
             // means the same as spelling the order out.
             if (match(TokenType.EQUAL)) {
                 constDefaults[name] = parseConstArgument(constEnum, name)
@@ -4822,7 +4859,7 @@ class Parser(
                 }
                 val name = advance().lexeme
                 // A fully qualified path combines a dotted owning module with a
-                // zone path: `std.traits.std::promote!`. Zone-only access remains
+                // realm path: `std.traits.std::promote!`. Realm-only access remains
                 // `std::promote!` and requires the module to have been imported.
                 val dottedPath = mutableListOf(name)
                 while (match(TokenType.DOT)) {
@@ -4837,30 +4874,17 @@ class Parser(
                     typeName = consume(TokenType.IDENTIFIER, "Expected type name after '::' in type path").lexeme
                     qualifiedName += "__$typeName"
                 }
-                val zoneQualifier = qualifiedName
+                val realmQualifier = qualifiedName
                     .takeIf { it != typeName }
                     ?.substringBeforeLast("__")
                     ?.replace("__", "::")
-                // `Type@(args)` — a compile-time type-function (macro) call.
                 if (check(TokenType.AT) && peekNext()?.type == TokenType.L_PAREN) {
-                    advance() // '@'
-                    consume(TokenType.L_PAREN, "Expected '(' after '$typeName@'")
-                    val args = mutableListOf<TypeRef>()
-                    if (!check(TokenType.R_PAREN)) {
-                        do { args.add(parseTypeName()) } while (match(TokenType.COMMA))
-                    }
-                    consume(TokenType.R_PAREN, "Expected ')' after type-function arguments")
-                    val callName = when {
-                        modulePath != null -> ModuleQualifiedSymbol.create(modulePath, qualifiedName)
-                        qualifiedName == name && typeFunctionNamespacePrefix.isNotEmpty() ->
-                            "${typeFunctionNamespacePrefix}__$qualifiedName"
-                        else -> qualifiedName
-                    }
-                    TypeFunctionCall.create(callName, args)
-                } else if (match(TokenType.LESS)) {
-                    if (modulePath != null) {
-                        error("Module-qualified generic type paths are not supported at line ${peek().line}")
-                    }
+                    error(
+                        "'$typeName@(…)' type-function call syntax was removed; a 'deepinline prop' " +
+                            "is called like the type it is — '$typeName<…>' — at line ${peek().line}",
+                    )
+                }
+                if (match(TokenType.LESS)) {
                     val a = mutableListOf<TypeRef>()
                     var variadic = false
                     do {
@@ -4880,12 +4904,21 @@ class Parser(
                         check(TokenType.SHIFT_RIGHT) -> { advance(); pendingGreater = true }
                         else -> consume(TokenType.GREATER, "Expected '>' to close generic type arguments")
                     }
-                    TypeRef.Named(typeName, a, variadic, zoneQualifier)
+                    // A module-qualified path can only name a type property — a
+                    // generic pack is reached through its realm, not its file — so
+                    // it resolves as a call straight away. Everything else stays a
+                    // named type; the evaluator turns it into a call if the name
+                    // turns out to belong to a `deepinline prop`.
+                    if (modulePath != null) {
+                        TypeFunctionCall.create(ModuleQualifiedSymbol.create(modulePath, qualifiedName), a)
+                    } else {
+                        TypeRef.Named(typeName, a, variadic, realmQualifier)
+                    }
                 } else {
                     if (modulePath != null) {
-                        error("A module-qualified path must name a callable type function at line ${peek().line}")
+                        error("A module-qualified path must name a type property at line ${peek().line}")
                     }
-                    TypeRef.Named(typeName, qualifier = zoneQualifier)
+                    TypeRef.Named(typeName, qualifier = realmQualifier)
                 }
             }
             else -> error("Expected type name at line ${peek().line}, got '${peek().lexeme}'")
@@ -4936,7 +4969,7 @@ class Parser(
      * those prefixed `async`. Types in brackets are contextual receivers, which a
      * call site may pass explicitly or take from an enclosing `with` scope.
      *
-     * A parameter may be variadic (`(...Real) -> Unit`); the whole `(…)` may be
+     * A parameter may be variadic (`(...Double) -> Unit`); the whole `(…)` may be
      * omitted when contextual receivers are the only inputs.
      */
     private fun parseCallableType(kind: CallableKind = CallableKind.FUNC): TypeRef {
@@ -4975,7 +5008,7 @@ class Parser(
         return when {
             // `var(...)` is the variant constructor (an expression statement); `var name = …` is a declaration.
             check(TokenType.VAR) && peekNext()?.type == TokenType.L_PAREN -> parseExprStmt()
-            check(TokenType.VAR) -> parseVarDecl()
+            check(TokenType.VAR) || check(TokenType.VAL) -> parseVarDecl()
             check(TokenType.FIN) -> parseFinDecl()
             check(TokenType.LET) -> parseLetDecl()
             check(TokenType.RETURN) -> parseReturn()
@@ -4984,7 +5017,7 @@ class Parser(
             check(TokenType.INLINE) -> parseInline()
             check(TokenType.DEEPINLINE) -> parseDeepInlineStmt()
             check(TokenType.NOINLINE) -> parseNoInline()
-            check(TokenType.ZONE) -> parseZone()
+            check(TokenType.SCOPE) -> parseScope()
             check(TokenType.IF) -> parseIf()
             check(TokenType.AT) -> parseLabeledStmt()
             check(TokenType.WHILE) -> parseWhile()
@@ -4996,8 +5029,8 @@ class Parser(
             check(TokenType.WHEN) -> parseWhen()
             check(TokenType.THROW) -> parseThrow()
             check(TokenType.PANIC) -> parsePanicStmt()
-            check(TokenType.FAIL) && peekNext()?.type == TokenType.DEFER -> parseFailDefer()
-            check(TokenType.FAIL) -> parseFailThrow()
+            check(TokenType.ERROR) && peekNext()?.type == TokenType.DEFER -> parseFailDefer()
+            check(TokenType.ERROR) -> parseFailThrow()
             check(TokenType.UNSAFE) -> parseUnsafe()
             check(TokenType.PURGE) -> parsePurge()
             check(TokenType.TRY) && peekNext()?.type == TokenType.L_BRACE -> parseTry()
@@ -5067,7 +5100,7 @@ class Parser(
 
     /**
      * Lowers `loop { body } else { elseBody }` to:
-     * `zone { var __loop_else_n = true; loop { body (break sets flag false) }; if (__loop_else_n) { elseBody } }`.
+     * `scope { var __loop_else_n = true; loop { body (break sets flag false) }; if (__loop_else_n) { elseBody } }`.
      * Uses only existing IR nodes, so all backends support it without changes.
      */
     private fun withLoopElse(loop: Stmt, elseBody: List<Stmt>, line: Int, column: Int): Stmt {
@@ -5080,12 +5113,12 @@ class Parser(
             else -> loop
         }
         val elseCheck = Stmt.If(Expr.Identifier(flag, line, column), elseBody, null, line, column)
-        return Stmt.Zone(listOf(flagDecl, rewritten, elseCheck), line, column)
+        return Stmt.Scope(listOf(flagDecl, rewritten, elseCheck), line, column)
     }
 
     /**
      * Rewrites `break` statements that belong to [flag]'s loop into
-     * `zone { flag = false; break }`, so the loop-else flag reflects a real break.
+     * `scope { flag = false; break }`, so the loop-else flag reflects a real break.
      * Does NOT descend into nested loops (their breaks belong to them).
      */
     private fun rewriteBreaksForElse(stmts: List<Stmt>, flag: String): List<Stmt> =
@@ -5094,7 +5127,7 @@ class Parser(
     private fun rewriteBreakForElse(stmt: Stmt, flag: String): Stmt = when (stmt) {
         // Only an unlabeled `break` exits THIS loop and so should trip the else flag.
         // A labeled `break @outer` targets an enclosing loop and is left untouched.
-        is Stmt.Break -> if (stmt.label != null) stmt else Stmt.Zone(listOf(
+        is Stmt.Break -> if (stmt.label != null) stmt else Stmt.Scope(listOf(
             Stmt.Assignment(flag, Expr.BoolLiteral(false, stmt.line, stmt.column, stmt.length), stmt.line, stmt.column),
             Stmt.Break()
         ), stmt.line, stmt.column)
@@ -5106,7 +5139,7 @@ class Parser(
             stmt.elseBranch?.let { rewriteBreaksForElse(it, flag) },
             stmt.line, stmt.column, stmt.length
         )
-        is Stmt.Zone -> Stmt.Zone(rewriteBreaksForElse(stmt.body, flag), stmt.line, stmt.column, stmt.length)
+        is Stmt.Scope -> Stmt.Scope(rewriteBreaksForElse(stmt.body, flag), stmt.line, stmt.column, stmt.length)
         is Stmt.Try -> Stmt.Try(
             rewriteBreaksForElse(stmt.body, flag), stmt.catchName,
             stmt.catchBody?.let { rewriteBreaksForElse(it, flag) }, stmt.line, stmt.column, stmt.length
@@ -5168,7 +5201,7 @@ class Parser(
         skipNewlines()
         val elseBranch = parseLoopElse()
         consumeNewline()
-        // `loop iterable { body }` desugars to `zone { iterable.reset(); while (iterable.hasNext()) { body } }`.
+        // `loop iterable { body }` desugars to `scope { iterable.reset(); while (iterable.hasNext()) { body } }`.
         // `loop iterable continue { body }` skips the generated reset and resumes the iterator in place.
         // Desugared at parse time so reset()/hasNext() go through the normal (user-type) method resolution.
         if (iterable != null) {
@@ -5182,7 +5215,7 @@ class Parser(
             } else {
                 listOf(reset, Stmt.While(cond, body, start.line, start.column, label = label))
             }
-            return Stmt.Zone(lowered, start.line, start.column)
+            return Stmt.Scope(lowered, start.line, start.column)
         }
         val loop = Stmt.Loop(body, start.line, start.column, label = label)
         return if (elseBranch != null) withLoopElse(loop, elseBranch, start.line, start.column) else loop
@@ -5223,7 +5256,7 @@ class Parser(
     /** `fail <expr>` — sugar for `throw <expr>` (raise an error from a `T!E` function). */
     private fun parseFailThrow(): Stmt.Throw {
         val start = peek()
-        consume(TokenType.FAIL, "Expected 'fail'")
+        consume(TokenType.ERROR, "Expected 'fail'")
         val value = parseExpr()
         consumeNewline()
         return Stmt.Throw(value, start.line, start.column)
@@ -5264,7 +5297,7 @@ class Parser(
     }
 
     /** `unsafe { body }` — an explicit boundary for unchecked operations. */
-    private fun parseUnsafe(): Stmt.Zone {
+    private fun parseUnsafe(): Stmt.Scope {
         val start = peek()
         consume(TokenType.UNSAFE, "Expected 'unsafe'")
         consume(TokenType.L_BRACE, "Expected '{' after 'unsafe'")
@@ -5272,7 +5305,7 @@ class Parser(
         val body = parseBlock()
         consume(TokenType.R_BRACE, "Expected '}' after unsafe body")
         consumeNewline()
-        return Stmt.Zone(body, start.line, start.column, unsafe = true)
+        return Stmt.Scope(body, start.line, start.column, unsafe = true)
     }
 
     /** `purge <expr>` — release a heap value; calls `__drop(value)` which triggers dtor if present. */
@@ -5299,7 +5332,7 @@ class Parser(
     /** `fail defer { body }` — a defer that runs only when the function exits via an error. */
     private fun parseFailDefer(): Stmt.Defer {
         val start = peek()
-        consume(TokenType.FAIL, "Expected 'fail'")
+        consume(TokenType.ERROR, "Expected 'fail'")
         consume(TokenType.DEFER, "Expected 'defer' after 'fail'")
         consume(TokenType.L_BRACE, "Expected '{' after 'defer'")
         skipNewlines()
@@ -5400,14 +5433,14 @@ class Parser(
     private fun parseThreadLocal(visibility: Visibility = Visibility.PUBLIC): TopLevel {
         val start = consume(TokenType.THREADLOCAL, "Expected 'threadlocal'")
         return when {
-            check(TokenType.VAR) -> {
-                advance()
+            check(TokenType.VAR) || check(TokenType.VAL) -> {
+                val valueMutable = advance().type == TokenType.VAR
                 val name = consume(TokenType.IDENTIFIER, "Expected variable name").lexeme
                 val type = if (match(TokenType.COLON)) parseTypeName() else null
                 consume(TokenType.EQUAL, "Expected '='")
                 val init = parseExpr()
                 consumeNewline()
-                TopLevel.VarDecl(name, type, init, start.line, start.column, threadlocal = true, visibility = visibility)
+                TopLevel.VarDecl(name, type, init, start.line, start.column, threadlocal = true, visibility = visibility, valueMutable = valueMutable)
             }
             check(TokenType.FIN) -> {
                 advance()
@@ -5439,23 +5472,23 @@ class Parser(
     }
 
     /**
-     * `import path` — import a module/zone path.
-     * `import zone path` — same import form with an explicit namespace marker.
+     * `import path` — import a module/realm path.
+     * `import realm path` — same import form with an explicit namespace marker.
      * `import path.*` — import all items below a path.
      * `import path.{child, other}` — import grouped child paths.
      * `use path.item` — import a dotted path; semantic passes decide whether the
-     * path names a module or a selected item. `::` is only for zone access
+     * path names a module or a selected item. `::` is only for realm access
      * expressions, never import syntax.
      */
     private fun parseUse(exported: Boolean = false, condition: Expr? = null): TopLevel {
-        val start = consume(TokenType.USE, "Expected 'use'")
-        // `use zone std` — the optional marker reads naturally and is skipped.
-        if (check(TokenType.ZONE) && peekNext()?.type == TokenType.IDENTIFIER) {
+        val start = consume(TokenType.IMPORT, "Expected 'import'")
+        // `use realm std` — the optional marker reads naturally and is skipped.
+        if (check(TokenType.REALM) && peekNext()?.type == TokenType.IDENTIFIER) {
             advance()
         }
-        val imports = mutableListOf<Pair<String, String?>>() // (zoneName, itemName or null for all)
+        val imports = mutableListOf<Pair<String, String?>>() // (realmName, itemName or null for all)
         do {
-            val base = StringBuilder(consumeIdentifierLike("Expected zone name after 'use'"))
+            val base = StringBuilder(consumeIdentifierLike("Expected realm name after 'use'"))
             var completed = false
             usePath@ while (match(TokenType.DOT)) {
                 when {
@@ -5478,11 +5511,11 @@ class Parser(
             }
             if (completed) continue
 
-            val zoneName = base.toString()
+            val realmName = base.toString()
             if (match(TokenType.DOUBLE_COLON)) {
-                error("Use dotted paths such as 'use module.item' or 'use module.{a, b}'; '::' is for zone access expressions")
+                error("Use dotted paths such as 'use module.item' or 'use module.{a, b}'; '::' is for realm access expressions")
             } else {
-                addDottedUsePath(zoneName, imports)
+                addDottedUsePath(realmName, imports)
             }
         } while (match(TokenType.COMMA) && check(TokenType.IDENTIFIER))
         consumeNewline()
@@ -5606,7 +5639,7 @@ class Parser(
 
         // `prop name[self: Type&]: T = …` — an extension property on Type, read as
         // `value.name`. Without a receiver type there is no type to extend, so the
-        // declaration is a zone-mangled constant instead (the `impl … as zone`
+        // declaration is a realm-mangled constant instead (the `impl … as realm`
         // bodies that reparse their members as top-level items rely on this).
         val receiverType = receiver.type
             ?: return TopLevel.FinDecl(name, type, init, start.line, start.column, annotations, visibility = visibility)
@@ -5642,58 +5675,143 @@ class Parser(
         return TopLevel.TypeAlias(name, type, start.line, start.column, annotations, typeParams = tp.names)
     }
 
-    /** Parses `type name(param: Type, pack: ...Type) where pack.length >= N { ... }`. */
-    private fun parseTypeFunction(namespacePrefix: String = "") {
-        val start = consume(TokenType.TYPE, "Expected 'type'")
-        val localName = consume(TokenType.IDENTIFIER, "Expected type-function name").lexeme
-        val name = if (namespacePrefix.isEmpty()) localName else "${namespacePrefix}__$localName"
-        consume(TokenType.L_PAREN, "Expected '(' after type-function name")
-        val params = mutableListOf<TypeFunctionParam>()
-        if (!check(TokenType.R_PAREN)) {
-            do {
-                val param = consume(TokenType.IDENTIFIER, "Expected type-function parameter name").lexeme
-                consume(TokenType.COLON, "Expected ':' after type-function parameter")
-                val prefixVariadic = match(TokenType.ELLIPSIS)
-                val typeToken = consume(TokenType.IDENTIFIER, "Expected 'Type' for type-function parameter")
-                if (typeToken.lexeme != "Type") {
-                    error("Type-function parameter '$param' must have type Type at line ${typeToken.line}")
-                }
-                val suffixVariadic = match(TokenType.ELLIPSIS)
-                if (prefixVariadic && suffixVariadic) {
-                    error("Type-function parameter '$param' cannot repeat '...' at line ${typeToken.line}")
-                }
-                params.add(TypeFunctionParam(param, prefixVariadic || suffixVariadic))
-            } while (match(TokenType.COMMA))
+    /**
+     * True when a compile-time type property begins here:
+     * `[@Deco…] [visibility] deepinline prop Name<…>: Type … { … }`.
+     *
+     * The scan looks past decorators and a visibility modifier because those are
+     * parsed by [parseAnnotations]/[parseVisibility] once the form is known, and
+     * the caller has to decide before consuming either.
+     */
+    private fun isTypePropAhead(): Boolean {
+        var i = indexAfterAnnotations(current)
+        while (tokens.getOrNull(i)?.type in setOf(TokenType.EXPOSE, TokenType.CONFINE)) i++
+        if (tokens.getOrNull(i)?.type != TokenType.DEEPINLINE) return false
+        return tokens.getOrNull(i + 1)?.type == TokenType.PROP
+    }
+
+    /** Index of the first token after the decorator list starting at [from]. */
+    private fun indexAfterAnnotations(from: Int): Int {
+        var i = from
+        while (tokens.getOrNull(i)?.type == TokenType.AT) {
+            i++ // '@'
+            if (tokens.getOrNull(i)?.type == TokenType.L_BRACKET) {
+                i = indexAfterBalanced(i, TokenType.L_BRACKET, TokenType.R_BRACKET)
+                continue
+            }
+            if (tokens.getOrNull(i)?.type != TokenType.IDENTIFIER) return i
+            i++ // decorator name
+            if (tokens.getOrNull(i)?.type == TokenType.L_PAREN) {
+                i = indexAfterBalanced(i, TokenType.L_PAREN, TokenType.R_PAREN)
+            }
+            while (tokens.getOrNull(i)?.type == TokenType.NEWLINE) i++
         }
-        consume(TokenType.R_PAREN, "Expected ')' after type-function parameters")
-        val duplicateParam = params.groupingBy { it.name }.eachCount().entries.firstOrNull { it.value > 1 }
-        if (duplicateParam != null) {
-            error("Duplicate type-function parameter '${duplicateParam.key}' at line ${start.line}")
+        return i
+    }
+
+    /** Index just past the bracket pair that opens at [from]. */
+    private fun indexAfterBalanced(from: Int, open: TokenType, close: TokenType): Int {
+        var depth = 0
+        var i = from
+        while (i < tokens.size) {
+            val t = tokens[i].type
+            if (t == open) depth++
+            if (t == close) { depth--; if (depth == 0) return i + 1 }
+            i++
         }
-        if (params.count { it.variadic } > 1 || params.dropLast(1).any { it.variadic }) {
-            error("A type function may have one variadic parameter, and it must be last, at line ${start.line}")
+        return i
+    }
+
+    /**
+     * Parses a compile-time type property:
+     *
+     * ```azora
+     * deepinline prop Promote<...T>: Type where T.length >= 2 && T is Number {
+     *     var result: Type = T.0
+     *     for candidate: Type in T[1...] {
+     *         if candidate::rank > result::rank { result = candidate }
+     *     }
+     *     return result
+     * }
+     * ```
+     *
+     * It is a `deepinline` declaration whose result is a *type*, so it is
+     * evaluated entirely at compile time and used in type position as
+     * `Promote<T, U>` — the same spelling as a generic type, because to a caller
+     * that is exactly what it is.
+     */
+    private fun parseTypeProp(realmPrefix: String = "") {
+        val annotations = parseAnnotations()
+        parseVisibility()
+        val start = consume(TokenType.DEEPINLINE, "Expected 'deepinline'")
+        consume(TokenType.PROP, "Expected 'prop' after 'deepinline'")
+        val nameToken = consume(TokenType.IDENTIFIER, "Expected type-property name")
+        val localName = nameToken.lexeme
+        // A deepinline declaration names a type, and types are capitalized — so a
+        // use site reads as a type even before you know where it comes from.
+        if (localName.firstOrNull()?.isLowerCase() != false) {
+            error("A 'deepinline prop' names a type, so '$localName' must start with a capital letter, at line ${nameToken.line}")
+        }
+        val name = if (realmPrefix.isEmpty()) localName else "${realmPrefix}__$localName"
+
+        val params = parseTypePropParams(localName)
+        consume(TokenType.COLON, "Expected ': Type' after 'deepinline prop $localName'")
+        val resultToken = consume(TokenType.IDENTIFIER, "Expected 'Type' as the result of 'deepinline prop $localName'")
+        if (resultToken.lexeme != "Type") {
+            error("'deepinline prop $localName' must declare ': Type' — it returns a type, not a value, at line ${resultToken.line}")
         }
 
         // One `where` grammar for every declaration: parsed as an expression and
-        // handed to ConstraintEvaluator, so type functions enforce constraints
+        // handed to ConstraintEvaluator, so type properties enforce constraints
         // through the same implementation as packs and variadic functions.
         val tfWhereClause = parseWhereClause()
         val minimum = variadicMinLengthOf(tfWhereClause)
 
-        consume(TokenType.L_BRACE, "Expected '{' before type-function body")
+        consume(TokenType.L_BRACE, "Expected '{' before the body of 'deepinline prop $localName'")
         skipNewlines()
         val body = parseTypeFunctionBlock()
-        consume(TokenType.R_BRACE, "Expected '}' after type-function body")
+        consume(TokenType.R_BRACE, "Expected '}' after the body of 'deepinline prop $localName'")
         consumeNewline()
         if (body.none { it is TypeFunctionStmt.Return }) {
-            error("Type function '$localName' must return a type at line ${start.line}")
+            error("'deepinline prop $localName' must return a type at line ${start.line}")
         }
         val duplicate = typeFunctions.any {
             it.name == name && it.params.map(TypeFunctionParam::variadic) == params.map(TypeFunctionParam::variadic) &&
                 (it.variadicParam != null || it.params.size == params.size)
         }
-        if (duplicate) error("Type function '$localName' already has this overload at line ${start.line}")
-        typeFunctions.add(TypeFunctionDecl(name, params, body, minimum, tfWhereClause, start.line, start.column))
+        if (duplicate) error("'deepinline prop $localName' already has this overload at line ${start.line}")
+        typeFunctions.add(
+            TypeFunctionDecl(name, params, body, minimum, tfWhereClause, start.line, start.column, annotations),
+        )
+    }
+
+    /** `<T, U>` / `<...T>` — the type parameters of a `deepinline prop`. */
+    private fun parseTypePropParams(owner: String): List<TypeFunctionParam> {
+        val params = mutableListOf<TypeFunctionParam>()
+        if (!match(TokenType.LESS)) {
+            error("'deepinline prop $owner' must declare type parameters, e.g. '<...T>', at line ${peek().line}")
+        }
+        do {
+            val variadic = match(TokenType.ELLIPSIS)
+            val param = consume(TokenType.IDENTIFIER, "Expected a type-parameter name").lexeme
+            if (check(TokenType.ELLIPSIS)) {
+                error("Variadic type parameters use the prefix form '<...$param>', not '<$param...>', at line ${peek().line}")
+            }
+            params.add(TypeFunctionParam(param, variadic))
+        } while (match(TokenType.COMMA))
+        when {
+            pendingGreater -> { pendingGreater = false }
+            check(TokenType.SHIFT_RIGHT) -> { advance(); pendingGreater = true }
+            else -> consume(TokenType.GREATER, "Expected '>' to close the type parameters of '$owner'")
+        }
+        val duplicateParam = params.groupingBy { it.name }.eachCount().entries.firstOrNull { it.value > 1 }
+        if (duplicateParam != null) {
+            error("Duplicate type parameter '${duplicateParam.key}' on 'deepinline prop $owner'")
+        }
+        if (params.count { it.variadic } > 1 || params.dropLast(1).any { it.variadic }) {
+            error("'deepinline prop $owner' may have one variadic type parameter, and it must be last")
+        }
+        return params
     }
 
     private fun parseTypeFunctionBlock(): List<TypeFunctionStmt> {
@@ -5713,14 +5831,13 @@ class Parser(
             consumeNewline()
             TypeFunctionStmt.Return(value)
         }
-        check(TokenType.LET) || check(TokenType.VAR) || check(TokenType.FIN) -> {
-            val mutable = check(TokenType.VAR)
+        check(TokenType.LET) || check(TokenType.VAR) || check(TokenType.VAL) || check(TokenType.FIN) -> {
+            // Only `var` and `val` rebind; `let`/`fin` fix the binding (see the
+            // four-keyword binding model in the Base Syntax DIP).
+            val mutable = check(TokenType.VAR) || check(TokenType.VAL)
             advance()
             val name = consume(TokenType.IDENTIFIER, "Expected type binding name").lexeme
-            if (match(TokenType.COLON)) {
-                val type = consume(TokenType.IDENTIFIER, "Expected 'Type' after ':'")
-                if (type.lexeme != "Type") error("Type-function bindings must have type Type at line ${type.line}")
-            }
+            consumeTypeAnnotationInTypeProp("binding '$name'")
             consume(TokenType.EQUAL, "Expected '=' in type binding")
             val value = parseTypeFunctionExpr()
             consumeNewline()
@@ -5728,6 +5845,7 @@ class Parser(
         }
         match(TokenType.FOR) -> {
             val name = consume(TokenType.IDENTIFIER, "Expected type loop variable").lexeme
+            consumeTypeAnnotationInTypeProp("loop variable '$name'")
             consume(TokenType.IN, "Expected 'in' in type loop")
             val pack = consume(TokenType.IDENTIFIER, "Expected variadic type parameter").lexeme
             consume(TokenType.L_BRACKET, "Expected '[' after variadic type parameter")
@@ -5742,6 +5860,25 @@ class Parser(
             consumeNewline()
             TypeFunctionStmt.ForEach(name, pack, startIndex, loopBody)
         }
+        match(TokenType.IF) -> {
+            val condition = parseTypeFunctionCondition()
+            consume(TokenType.L_BRACE, "Expected '{' after the condition of a type 'if'")
+            skipNewlines()
+            val thenBody = parseTypeFunctionBlock()
+            consume(TokenType.R_BRACE, "Expected '}' after a type 'if' body")
+            skipNewlines()
+            val elseBody = if (match(TokenType.ELSE)) {
+                consume(TokenType.L_BRACE, "Expected '{' after 'else'")
+                skipNewlines()
+                val branch = parseTypeFunctionBlock()
+                consume(TokenType.R_BRACE, "Expected '}' after an 'else' body")
+                branch
+            } else {
+                emptyList()
+            }
+            consumeNewline()
+            TypeFunctionStmt.If(condition, thenBody, elseBody)
+        }
         check(TokenType.IDENTIFIER) && peekNext()?.type == TokenType.EQUAL -> {
             val name = advance().lexeme
             advance()
@@ -5749,7 +5886,24 @@ class Parser(
             consumeNewline()
             TypeFunctionStmt.Assignment(name, value)
         }
-        else -> error("Expected type-function statement at line ${peek().line}, got '${peek().lexeme}'")
+        else -> error("Expected a 'deepinline prop' statement at line ${peek().line}, got '${peek().lexeme}'")
+    }
+
+    /**
+     * Consumes the mandatory `: Type` annotation on a `deepinline prop` binding.
+     *
+     * Every binding inside a type property is written out — the language never
+     * infers a declaration's type, and `Type` is the only type a type property
+     * can name.
+     */
+    private fun consumeTypeAnnotationInTypeProp(what: String) {
+        if (!match(TokenType.COLON)) {
+            error("The $what needs an explicit ': Type' annotation at line ${peek().line}")
+        }
+        val type = consume(TokenType.IDENTIFIER, "Expected 'Type' after ':'")
+        if (type.lexeme != "Type") {
+            error("The $what must be declared ': Type' — a type property binds types, not values, at line ${type.line}")
+        }
     }
 
     private fun parseTypeFunctionExpr(): TypeFunctionExpr {
@@ -5770,16 +5924,7 @@ class Parser(
             return TypeFunctionExpr.Conditional(condition, thenValue, elseValue)
         }
         val name = consume(TokenType.IDENTIFIER, "Expected a type value").lexeme
-        if (match(TokenType.AT)) {
-            consume(TokenType.L_PAREN, "Expected '(' after '$name@'")
-            val args = mutableListOf<TypeFunctionExpr>()
-            if (!check(TokenType.R_PAREN)) {
-                do { args.add(parseTypeFunctionExpr()) } while (match(TokenType.COMMA))
-            }
-            consume(TokenType.R_PAREN, "Expected ')' after type-function arguments")
-            val callName = if (typeFunctionNamespacePrefix.isEmpty()) name else "${typeFunctionNamespacePrefix}__$name"
-            return TypeFunctionExpr.Call(callName, args)
-        }
+        parseTypePropCall(name)?.let { return it }
         if (match(TokenType.DOT)) {
             val index = consume(TokenType.INT_LITERAL, "Expected type-pack index after '.'")
             return TypeFunctionExpr.PackElement(name, ((index.literal as NumericLiteral).value as Long).toInt())
@@ -5787,21 +5932,30 @@ class Parser(
         return TypeFunctionExpr.Reference(name)
     }
 
+    /**
+     * `Name<A, B>` — one type property calling another, spelled the same way a
+     * use site outside the body spells it. Returns null when [name] is not
+     * followed by type arguments.
+     */
+    private fun parseTypePropCall(name: String): TypeFunctionExpr.Call? {
+        if (!match(TokenType.LESS)) return null
+        val args = mutableListOf<TypeFunctionExpr>()
+        if (!check(TokenType.GREATER)) {
+            do { args.add(parseTypeFunctionExpr()) } while (match(TokenType.COMMA))
+        }
+        when {
+            pendingGreater -> { pendingGreater = false }
+            check(TokenType.SHIFT_RIGHT) -> { advance(); pendingGreater = true }
+            else -> consume(TokenType.GREATER, "Expected '>' to close the arguments of '$name'")
+        }
+        val callName = if (typeFunctionNamespacePrefix.isEmpty()) name else "${typeFunctionNamespacePrefix}__$name"
+        return TypeFunctionExpr.Call(callName, args)
+    }
+
     private fun parseTypeFunctionCondition(): TypeFunctionCondition {
         fun operand(): Pair<TypeFunctionExpr, Boolean> {
             val name = consume(TokenType.IDENTIFIER, "Expected a type value in type comparison").lexeme
-            val expression = if (match(TokenType.AT)) {
-                consume(TokenType.L_PAREN, "Expected '(' after '$name@'")
-                val args = mutableListOf<TypeFunctionExpr>()
-                if (!check(TokenType.R_PAREN)) {
-                    do { args.add(parseTypeFunctionExpr()) } while (match(TokenType.COMMA))
-                }
-                consume(TokenType.R_PAREN, "Expected ')' after type-function arguments")
-                val callName = if (typeFunctionNamespacePrefix.isEmpty()) name else "${typeFunctionNamespacePrefix}__$name"
-                TypeFunctionExpr.Call(callName, args)
-            } else {
-                TypeFunctionExpr.Reference(name)
-            }
+            val expression = parseTypePropCall(name) ?: TypeFunctionExpr.Reference(name)
             val rank = if (match(TokenType.DOT) || match(TokenType.DOUBLE_COLON)) {
                 val member = consume(TokenType.IDENTIFIER, "Expected 'rank' in type comparison")
                 if (member.lexeme != "rank") error("Only '.rank'/'::rank' is supported in ranked type comparisons at line ${member.line}")
@@ -5851,18 +6005,18 @@ class Parser(
     private fun parseInline(): Stmt {
         return when (peekNext()?.type) {
             TokenType.L_BRACE -> parseInlineBlock()
-            TokenType.ZONE -> parseInlineZoneBlock()
+            TokenType.SCOPE -> parseInlineScopeBlock()
             TokenType.IF -> parseInlineIf()
             TokenType.FOR -> parseInlineFor()
             TokenType.ASSERT -> parseInlineAssertStmt()
             TokenType.TRACE -> parseInlineTraceStmt()
             TokenType.PANIC -> parsePanicStmt(inlinePanic = true)
             TokenType.FIN -> parseInlineFin()
-            TokenType.VAR -> parseInlineVar()
+            TokenType.VAR, TokenType.VAL -> parseInlineVar()
             TokenType.LET -> parseInlineLet()
             TokenType.IDENTIFIER -> parseInlineAssignment()
             TokenType.STRING_LITERAL, TokenType.INTERPOLATED_STRING -> parseInlineSplice()
-            else -> error("Expected '{', 'zone', 'if', 'for', 'assert', 'trace', 'fin', 'var', 'let', a string splice, or identifier after 'inline' at line ${peek().line}")
+            else -> error("Expected '{', 'scope', 'if', 'for', 'assert', 'trace', 'fin', 'var', 'let', a string splice, or identifier after 'inline' at line ${peek().line}")
         }
     }
 
@@ -5899,7 +6053,7 @@ class Parser(
                 rendered = foldListIndexing(rendered)
                 stmts.addAll(parseInlineForBodyStatements(rendered, start))
             }
-            return Stmt.Zone(stmts, start.line, start.column)
+            return Stmt.Scope(stmts, start.line, start.column)
         }
         val parsedIterable = parseExpr()
         // The general expression parser also supports free-form infix calls, so
@@ -5940,12 +6094,12 @@ class Parser(
         return fn.decl.body
     }
 
-    /** `inline zone { ... }` — alias for `inline { ... }`. */
-    private fun parseInlineZoneBlock(): Stmt.InlineBlock {
+    /** `inline scope { ... }` — alias for `inline { ... }`. */
+    private fun parseInlineScopeBlock(): Stmt.InlineBlock {
         val start = peek()
         consume(TokenType.INLINE, "Expected 'inline'")
-        consume(TokenType.ZONE, "Expected 'zone'")
-        consume(TokenType.L_BRACE, "Expected '{' after 'zone'")
+        consume(TokenType.SCOPE, "Expected 'scope'")
+        consume(TokenType.L_BRACE, "Expected '{' after 'scope'")
         skipNewlines()
         val body = parseBlock()
         consume(TokenType.R_BRACE, "Expected '}'")
@@ -5967,18 +6121,18 @@ class Parser(
     private fun parseDeepInlineStmt(): Stmt {
         return when (peekNext()?.type) {
             TokenType.L_BRACE -> parseDeepInlineBlock()
-            TokenType.ZONE -> parseDeepInlineZoneBlock()
+            TokenType.SCOPE -> parseDeepInlineScopeBlock()
             TokenType.IF -> parseDeepInlineIf()
-            else -> error("Expected '{', 'zone', or 'if' after 'deepinline' at line ${peek().line}")
+            else -> error("Expected '{', 'scope', or 'if' after 'deepinline' at line ${peek().line}")
         }
     }
 
-    /** `deepinline zone { ... }` — alias for `deepinline { ... }`. */
-    private fun parseDeepInlineZoneBlock(): Stmt.DeepInlineBlock {
+    /** `deepinline scope { ... }` — alias for `deepinline { ... }`. */
+    private fun parseDeepInlineScopeBlock(): Stmt.DeepInlineBlock {
         val start = peek()
         consume(TokenType.DEEPINLINE, "Expected 'deepinline'")
-        consume(TokenType.ZONE, "Expected 'zone'")
-        consume(TokenType.L_BRACE, "Expected '{' after 'zone'")
+        consume(TokenType.SCOPE, "Expected 'scope'")
+        consume(TokenType.L_BRACE, "Expected '{' after 'scope'")
         skipNewlines()
         val body = parseBlock()
         consume(TokenType.R_BRACE, "Expected '}'")
@@ -6017,16 +6171,16 @@ class Parser(
         return Stmt.DeepInlineIf(condition, thenBranch, elseBranch, start.line, start.column)
     }
 
-    private fun parseZone(): Stmt.Zone {
+    private fun parseScope(): Stmt.Scope {
         val start = peek()
-        consume(TokenType.ZONE, "Expected 'zone'")
-        val isAlloc = match(TokenType.ALLOC) // `zone alloc { }` — scoped allocation arena
-        consume(TokenType.L_BRACE, "Expected '{' after 'zone'")
+        consume(TokenType.SCOPE, "Expected 'scope'")
+        val isAlloc = match(TokenType.ALLOC) // `scope alloc { }` — scoped allocation arena
+        consume(TokenType.L_BRACE, "Expected '{' after 'scope'")
         skipNewlines()
         val body = parseBlock()
         consume(TokenType.R_BRACE, "Expected '}'")
         consumeNewline()
-        return Stmt.Zone(body, start.line, start.column, alloc = isAlloc, shared = true)
+        return Stmt.Scope(body, start.line, start.column, alloc = isAlloc, shared = true)
     }
 
     private fun parseNoInline(): Stmt.NoInline {
@@ -6048,16 +6202,18 @@ class Parser(
         return Stmt.InlineFin(name, type, init, start.line, start.column)
     }
 
+    /** `inline var name = …` / `inline val name = …` — the compile-time forms. */
     private fun parseInlineVar(): Stmt.InlineVar {
         val start = peek()
         consume(TokenType.INLINE, "Expected 'inline'")
-        consume(TokenType.VAR, "Expected 'var' after 'inline'")
+        val keyword = advance() // 'var' or 'val'
+        val valueMutable = keyword.type == TokenType.VAR
         val name = consumeIdentifierLike("Expected variable name")
         val type: TypeAnnotation = if (match(TokenType.COLON)) TypeAnnotation.Explicit(parseTypeName()) else TypeAnnotation.Inferred
-        consume(TokenType.EQUAL, "Expected '=' in inline var declaration")
+        consume(TokenType.EQUAL, "Expected '=' in inline ${keyword.lexeme} declaration")
         val init = parseInitializer(type)
         consumeNewline()
-        return Stmt.InlineVar(name, type, init, start.line, start.column)
+        return Stmt.InlineVar(name, type, init, start.line, start.column, valueMutable = valueMutable)
     }
 
     private fun parseInlineLet(): Stmt.InlineLet {
@@ -6296,15 +6452,16 @@ class Parser(
     private fun parseInitializer(type: TypeAnnotation): Expr =
         parseInitializer((type as? TypeAnnotation.Explicit)?.ref)
 
+    /** `var name = …` (mutable value) or `val name = …` (immutable value). */
     private fun parseVarDecl(): Stmt.VarDecl {
         val start = peek()
-        advance() // consume 'var'
+        val valueMutable = advance().type == TokenType.VAR // 'var' or 'val'
         val name = consumeIdentifierLike("Expected variable name")
         val type: TypeAnnotation = if (match(TokenType.COLON)) TypeAnnotation.Explicit(parseTypeName()) else TypeAnnotation.Inferred
         consume(TokenType.EQUAL, "Expected '=' in declaration")
         val init = parseInitializer(type)
         consumeNewline()
-        return Stmt.VarDecl(name, type, init, start.line, start.column)
+        return Stmt.VarDecl(name, type, init, start.line, start.column, valueMutable = valueMutable)
     }
 
     private fun parseFinDecl(): Stmt.FinDecl {
@@ -6838,7 +6995,7 @@ class Parser(
     private fun isInfixCandidate(): Boolean {
         val next = peekNext()?.type ?: return false
         return next in setOf(
-            TokenType.IDENTIFIER, TokenType.INT_LITERAL, TokenType.REAL_LITERAL,
+            TokenType.IDENTIFIER, TokenType.INT_LITERAL, TokenType.DOUBLE_LITERAL,
             TokenType.STRING_LITERAL, TokenType.CHAR_LITERAL, TokenType.TRUE, TokenType.FALSE,
             TokenType.NULL, TokenType.L_PAREN, TokenType.L_BRACKET, TokenType.L_BRACE,
             TokenType.MINUS, TokenType.BANG, TokenType.TILDE
@@ -7169,7 +7326,7 @@ class Parser(
                 check(TokenType.LESS) && expr is Expr.Identifier &&
                     isReflectName((expr as Expr.Identifier).name) && isReflectTargetAhead() -> {
                     // `std::reflect<X>` — compile-time reflection prop. Desugars to the
-                    // internal `__reflect(X)` receiver used by `.hasDeco`/`.decoMeta`/`.zone`.
+                    // internal `__reflect(X)` receiver used by `.hasDeco`/`.decoMeta`/`.realm`.
                     val start = expr
                     advance() // '<'
                     val target = parseReflectTarget()
@@ -7189,7 +7346,7 @@ class Parser(
                 }
                 check(TokenType.LESS) && isGenericCallAhead() -> {
                     // `f<T, U>(args)` — capture explicit type arguments for the call
-                    // (e.g. `tupleOf<Int, Real>(…)`) for monomorphization; the '(' is
+                    // (e.g. `tupleOf<Int, Double>(…)`) for monomorphization; the '(' is
                     // then handled by the call case below.
                     advance() // '<'
                     val tArgs = mutableListOf<TypeRef>()
@@ -7419,10 +7576,10 @@ class Parser(
                 val numLit = tok.literal as NumericLiteral
                 Expr.IntLiteral(numLit.value as Long, tok.line, tok.column, tok.lexeme.length, numLit.suffix)
             }
-            TokenType.REAL_LITERAL -> {
+            TokenType.DOUBLE_LITERAL -> {
                 advance()
                 val numLit = tok.literal as NumericLiteral
-                Expr.RealLiteral(numLit.value as Double, tok.line, tok.column, tok.lexeme.length, numLit.suffix)
+                Expr.DoubleLiteral(numLit.value as Double, tok.line, tok.column, tok.lexeme.length, numLit.suffix)
             }
             TokenType.STRING_LITERAL -> { advance(); Expr.StringLiteral(tok.literal as String, tok.line, tok.column, tok.lexeme.length) }
             TokenType.INTERPOLATED_STRING -> {

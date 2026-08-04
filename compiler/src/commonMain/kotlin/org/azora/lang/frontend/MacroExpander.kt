@@ -308,7 +308,7 @@ internal object MacroExpander {
             iterable = stmt.iterable?.let { rewriteExpr(it, macros, depth) },
             body = rewriteStmts(stmt.body, macros, depth),
         )
-        is Stmt.Zone -> stmt.copy(body = rewriteStmts(stmt.body, macros, depth))
+        is Stmt.Scope -> stmt.copy(body = rewriteStmts(stmt.body, macros, depth))
         is Stmt.InlineBlock -> stmt.copy(body = rewriteStmts(stmt.body, macros, depth))
         is Stmt.DeepInlineBlock -> stmt.copy(body = rewriteStmts(stmt.body, macros, depth))
         is Stmt.Effect -> stmt.copy(
@@ -357,7 +357,7 @@ internal object MacroExpander {
         // All other variants: structural copy recursing into every Expr child.
         return when (expr) {
             is Expr.Identifier -> expr
-            is Expr.IntLiteral, is Expr.RealLiteral, is Expr.CharLiteral,
+            is Expr.IntLiteral, is Expr.DoubleLiteral, is Expr.CharLiteral,
             is Expr.StringLiteral, is Expr.BoolLiteral, is Expr.NullLiteral,
             is Expr.UpperScopeAccess, is Expr.Inject -> expr
             is Expr.Unary -> expr.copy(operand = rewriteExpr(expr.operand, macros, depth))
@@ -507,7 +507,7 @@ internal object MacroExpander {
             template
         }
         // Leaves — no Expr children. NullLiteral is an immutable singleton, safe to share.
-        is Expr.IntLiteral, is Expr.RealLiteral, is Expr.CharLiteral,
+        is Expr.IntLiteral, is Expr.DoubleLiteral, is Expr.CharLiteral,
         is Expr.StringLiteral, is Expr.BoolLiteral, is Expr.NullLiteral,
         is Expr.UpperScopeAccess, is Expr.Inject -> template
         is Expr.Unary -> template.copy(operand = substitute(template.operand, bindings, invokeLine))
@@ -660,7 +660,7 @@ internal object MacroExpander {
             iterable = stmt.iterable?.let { substitute(it, bindings, invokeLine) },
             body = stmt.body.map { substituteStmt(it, bindings, invokeLine) },
         )
-        is Stmt.Zone -> stmt.copy(body = stmt.body.map { substituteStmt(it, bindings, invokeLine) })
+        is Stmt.Scope -> stmt.copy(body = stmt.body.map { substituteStmt(it, bindings, invokeLine) })
         is Stmt.InlineBlock -> stmt.copy(body = stmt.body.map { substituteStmt(it, bindings, invokeLine) })
         is Stmt.DeepInlineBlock -> stmt.copy(body = stmt.body.map { substituteStmt(it, bindings, invokeLine) })
         is Stmt.Effect -> stmt.copy(

@@ -141,7 +141,7 @@ class BridgeTargetTest {
         val failure = assertFailsWith<IllegalStateException> {
             parse("""
                 bridge .WebGL {
-                    func webClear(r: Real): Unit
+                    func webClear(r: Double): Unit
                 }
             """.trimIndent())
         }

@@ -37,7 +37,7 @@ class LlvmOptimizedExecTest {
         assertEquals(expected, LlvmExec.run(source, optimized = true))
     }
 
-    private fun main(body: String): String = "use std.io\nfunc main() {\n$body\n}"
+    private fun main(body: String): String = "import std.io\nfunc main() {\n$body\n}"
 
     @Test fun loopMutatedSumIsNotFolded() =
         check("15", main("var sum = 0\nfor i in 1..5 { sum = sum + i }\nstd::println(sum)"))
@@ -68,7 +68,7 @@ class LlvmOptimizedExecTest {
             "Fizz", "Buzz", "11", "Fizz", "13", "14", "FizzBuzz"
         ).joinToString("\n"),
         """
-        use std.io
+        import std.io
         func main() {
             for i in 1..15 {
                 if i % 15 == 0 {
@@ -88,7 +88,7 @@ class LlvmOptimizedExecTest {
     @Test fun recursionThroughOptimizer() = check(
         "120",
         """
-        use std.io
+        import std.io
         func fact(n: Int): Int {
             if n <= 1 { return 1 }
             return n * fact(n - 1)

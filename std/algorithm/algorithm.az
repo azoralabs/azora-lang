@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-mod std.algorithm
+module std.algorithm
 
-use std.container.array
+import std.container.array
 
 /**
  * @file std/algorithm/algorithm
@@ -26,7 +26,7 @@ use std.container.array
  * @since 0.0.1
  */
 
-zone std {
+realm std {
     /**
      * Merge sort - O(n log n) stable sorting algorithm.
      */

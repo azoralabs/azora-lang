@@ -121,15 +121,15 @@ class Compiler(
      * @return a [CompilationResult.Success] with all generated outputs, or a
      *   [CompilationResult.Failure] with error messages
      */
-    /** Points unknown symbols at their imported zone path or providing module. */
+    /** Points unknown symbols at their imported realm path or providing module. */
     private fun withLibraryHint(message: String, program: Program, libraries: StdlibInjector): String {
         val match = Regex("(?:undefined function|undefined variable) '([A-Za-z_][A-Za-z0-9_]*)'").find(message)
             ?: return message
         val name = match.groupValues[1]
         val qualified = libraries.qualifiedAccessOf(name, program)
         if (qualified != null) {
-            val zone = qualified.substringBeforeLast("::")
-            return "$message; '$name' is part of zone '$zone', use '$qualified' instead"
+            val realm = qualified.substringBeforeLast("::")
+            return "$message; '$name' is part of realm '$realm', use '$qualified' instead"
         }
         val module = libraries.moduleOf(name) ?: return message
         return "$message — '$name' is provided by '$module': add 'use $module'"

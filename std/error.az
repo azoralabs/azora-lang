@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
-mod std.error
+module std.error
 
-zone std {
-    fail IndexError {
+realm std {
+    error IndexError {
         OutOfBounds(index: Int, size: Int)
     }
 }

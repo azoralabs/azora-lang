@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-mod std.char
+module std.char
 
 /**
  * @file std/char
@@ -28,9 +28,9 @@ mod std.char
  * @since 0.0.1
  */
 
-expose use std.char.core
+expose import std.char.core
 
-zone std {
+realm std {
     /**
      * Returns the Unicode code point of a character.
      *
@@ -52,7 +52,7 @@ zone std {
     func codeToChar(code: Int): Char
     in {
         assert code >= 0 { "Code point must be non-negative" }
-    } zone {
+    } scope {
         return chr(code)
     }
 
@@ -192,7 +192,7 @@ zone std {
     func hexDigitToInt(c: Char): Int
     in {
         assert (charIsHexDigit(c)) { "Character must be a hex digit" }
-    } zone {
+    } scope {
         fin code = ord(c)
         if code >= 48 && code <= 57 { return code - 48 }
         if code >= 65 && code <= 70 { return code - 55 }
@@ -209,7 +209,7 @@ zone std {
     func digitToInt(c: Char): Int
     in {
         assert (isDigit(c)) { "Character must be a digit" }
-    } zone {
+    } scope {
         return ord(c) - 48
     }
 
@@ -223,7 +223,7 @@ zone std {
     func intToDigit(n: Int): Char
     in {
         assert n >= 0 && n <= 9 { "Integer must be 0-9" }
-    } zone {
+    } scope {
         return chr(n + 48)
     }
 }

@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-mod std.random
+module std.random
 
-use std.container.array
+import std.container.array
 
 /**
  * @file std/random
@@ -29,11 +29,11 @@ use std.container.array
  * @since 0.0.1
  */
 
-zone std {
+realm std {
     /**
      * A pseudo-random number generator.
      */
-    @SinceAzora("0.0.1")
+    @Since("0.0.1")
     pack Random {
         var seed: Int = 12345
     }

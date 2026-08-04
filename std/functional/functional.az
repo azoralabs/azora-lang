@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-mod std.functional
+module std.functional
 
-use std.container.array
+import std.container.array
 
 /**
  * @file std/functional
@@ -29,7 +29,7 @@ use std.container.array
  * @since 0.0.1
  */
 
-zone std {
+realm std {
     /**
      * Returns the identity value (passes through unchanged).
      *
@@ -165,7 +165,7 @@ zone std {
     func take<T>(arr: Array<T>, n: Int): Array<T>
     in {
         assert n >= 0 { "take count must be non-negative" }
-    } zone {
+    } scope {
         fin len = if n < arr.length { n } else { arr.length }
         var result: Array<T> = Array::fill<T>(len)
         for i in 0..<len {
@@ -185,7 +185,7 @@ zone std {
     func drop<T>(arr: Array<T>, n: Int): Array<T>
     in {
         assert n >= 0 { "purge count must be non-negative" }
-    } zone {
+    } scope {
         fin start = if n < arr.length { n } else { arr.length }
         var result: Array<T> = Array::fill<T>(arr.length - start)
         var i = start
@@ -226,7 +226,7 @@ zone std {
     func fill<T>(value: T, count: Int): Array<T>
     in {
         assert count >= 0 { "fill count must be non-negative" }
-    } zone {
+    } scope {
         var result: Array<T> = Array::fill<T>(count)
         for i in 0..<count {
             result[i] = value

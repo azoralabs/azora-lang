@@ -46,8 +46,12 @@ class AstValidator {
         for (item in program.items) {
             when (item) {
                 is TopLevel.VarDecl -> {
+                    // Both rebindable keywords are excluded: what makes a global
+                    // unsafe to share is that its *name* can be rebound, which is
+                    // exactly what `var` and `val` have in common.
                     if (!item.threadlocal) {
-                        errors.add("line ${item.line}: top-level 'var' is not allowed (not thread-safe). Use 'fin' for immutable globals or 'inline var' for compile-time variables")
+                        val keyword = if (item.valueMutable) "var" else "val"
+                        errors.add("line ${item.line}: top-level '$keyword' is not allowed (not thread-safe). Use 'fin' for immutable globals or 'inline $keyword' for compile-time variables")
                     }
                 }
                 is TopLevel.LetDecl -> errors.add("line ${item.line}: top-level 'let' is not allowed (not thread-safe). Use 'fin' for immutable globals or 'inline let' for compile-time variables")
@@ -150,7 +154,7 @@ class AstValidator {
                 errors.add("line ${ann.line}: @${ann.name}(since: ...) requires a string version literal")
             }
         }
-        // `@SinceAzora("0.0.1")` — single positional string argument.
+        // `@Since("0.0.1")` — single positional string argument.
         since?.let {
             if (it.args.size != 1 || it.args[0] !is Expr.StringLiteral) {
                 errors.add("line ${it.line}: @since requires a single string version argument")
@@ -235,7 +239,7 @@ class AstValidator {
             is Stmt.InlineVar -> {}
             is Stmt.InlineAssignment -> {}
             is Stmt.LetDecl -> {}
-            is Stmt.Zone -> stmt.body.forEach { validateStmt(it, funcName, errors) }
+            is Stmt.Scope -> stmt.body.forEach { validateStmt(it, funcName, errors) }
             is Stmt.Assert -> {}
             is Stmt.Trace -> {}
             is Stmt.InlineAssert -> {}
@@ -284,7 +288,7 @@ class AstValidator {
                     (stmt.elseBranch != null && hasReturnInBody(stmt.elseBranch))
             is Stmt.DeepInlineIf -> hasReturnInBody(stmt.thenBranch) ||
                     (stmt.elseBranch != null && hasReturnInBody(stmt.elseBranch))
-            is Stmt.Zone -> hasReturnInBody(stmt.body)
+            is Stmt.Scope -> hasReturnInBody(stmt.body)
             is Stmt.While -> hasReturnInBody(stmt.body)
             is Stmt.For -> hasReturnInBody(stmt.body)
             is Stmt.Loop -> hasReturnInBody(stmt.body)

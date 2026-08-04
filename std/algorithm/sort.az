@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-mod std.algorithm.sort
+module std.algorithm.sort
 
-use std.container.array
+import std.container.array
 
 /**
  * @file std/algorithm/sort
@@ -29,7 +29,7 @@ use std.container.array
  * @since 0.0.1
  */
 
-zone std {
+realm std {
     /**
      * Sorts an array in ascending order using insertion sort.
      *
@@ -42,7 +42,7 @@ zone std {
     func sort<T>(arr: Array<T>): Array<T>
     out {
         assert it.length == arr.length { "sort must preserve length" }
-    } zone {
+    } scope {
         var result: Array<T> = Array::fill<T>(arr.length)
         for i in 0..<arr.length {
             result[i] = arr[i]
@@ -71,7 +71,7 @@ zone std {
     func sortDescending<T>(arr: Array<T>): Array<T>
     out {
         assert it.length == arr.length { "sortDescending must preserve length" }
-    } zone {
+    } scope {
         var result: Array<T> = Array::fill<T>(arr.length)
         for i in 0..<arr.length {
             result[i] = arr[i]
@@ -128,7 +128,7 @@ zone std {
     func reverse<T>(arr: Array<T>): Array<T>
     out {
         assert it.length == arr.length { "reverse must preserve length" }
-    } zone {
+    } scope {
         var result: Array<T> = Array::fill<T>(arr.length)
         for i in 0..<arr.length {
             result[i] = arr[arr.length - 1 - i]
@@ -177,7 +177,7 @@ zone std {
     in {
         assert i >= 0 && i < arr.length { "swap index i out of bounds" }
         assert j >= 0 && j < arr.length { "swap index j out of bounds" }
-    } zone {
+    } scope {
         var result: Array<T> = Array::fill<T>(arr.length)
         for k in 0..<arr.length {
             result[k] = arr[k]

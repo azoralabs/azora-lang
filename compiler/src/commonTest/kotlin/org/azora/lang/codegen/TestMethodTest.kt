@@ -85,7 +85,7 @@ class TestMethodTest {
         """.trimIndent())
 
         assertEquals(listOf("everything"), ir.tests.map { it.name })
-        assertEquals(2, ir.tests.single().body.filterIsInstance<IrStmt.Zone>().size)
+        assertEquals(2, ir.tests.single().body.filterIsInstance<IrStmt.Scope>().size)
 
         val llvm = LlvmCodegen().generate(ir)
         assertTrue("@test_everything" in llvm, llvm)

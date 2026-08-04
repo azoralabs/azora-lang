@@ -16,17 +16,17 @@ class CastIsLambdaTest {
 
     // as casts
     @Test fun asCastInt() {
-        assertEquals("42", run("use std.io\nfunc main() { var x: Any = 42\n std::println(x as Int) }"))
+        assertEquals("42", run("import std.io\nfunc main() { var x: Any = 42\n std::println(x as Int) }"))
     }
 
     @Test fun asCastString() {
-        assertEquals("hello", run("use std.io\nfunc main() { var x: Any = \"hello\"\n std::println(x as String) }"))
+        assertEquals("hello", run("import std.io\nfunc main() { var x: Any = \"hello\"\n std::println(x as String) }"))
     }
 
     // is checks
     @Test fun isCheckInt() {
         assertEquals("true\nfalse", run("""
-            use std.io
+            import std.io
             func main() {
                 var x: Any = 42
                 std::println(x is Int)
@@ -37,7 +37,7 @@ class CastIsLambdaTest {
 
     @Test fun isCheckString() {
         assertEquals("true", run("""
-            use std.io
+            import std.io
             func main() {
                 var x: Any = "hello"
                 std::println(x is String)
@@ -47,7 +47,7 @@ class CastIsLambdaTest {
 
     @Test fun isCheckWithIf() {
         assertEquals("number", run("""
-            use std.io
+            import std.io
             func describe(x: Any): String {
                 if x is Int { return "number" }
                 return "other"
@@ -59,7 +59,7 @@ class CastIsLambdaTest {
     // typed lambdas still work
     @Test fun typedLambda() {
         assertEquals("6", run("""
-            use std.io
+            import std.io
             func apply(f: (Int) -> Int, x: Int): Int {
                 return f(x)
             }
@@ -72,7 +72,7 @@ class CastIsLambdaTest {
     // implicit it (simple — no type-dependent ops)
     @Test fun implicitIt() {
         assertEquals("3", run("""
-            use std.io
+            import std.io
             func apply(f: (Any) -> Any, x: Any): Any {
                 return f(x)
             }

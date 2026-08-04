@@ -14,23 +14,23 @@
  * limitations under the License.
  */
 
-expose mod std.container.core
+expose module std.container.core
 
-expose use std.container.{array, list, map, set}
+expose import std.container.{array, list, map, set}
 
-use zone std {
+use realm std {
     /**
      * Builds a fixed [Array].
      *
      * @0 `arr@[]` expands to `std::emptyArray()`.
      * @1 `arr@[1, 2, 3]` expands to `std::arrayOf(1, 2, 3)`.
      */
-    meta .Prefix("arr") {
+    macro .Prefix("arr") {
         [] => std::emptyArray()
         [...$items] => std::arrayOf(...$items)
     }
 
-    meta .Type {
+    macro .Type {
         [T;] => std::Array<T>
         [T; *] => std::Array<T, *>
         [T; N] => std::Array<T, N>
@@ -42,7 +42,7 @@ use zone std {
      * @0 `vec@[]` expands to `std::emptyList()`.
      * @1 `vec@[1, 2, 3]` expands to `std::listOf(1, 2, 3)`.
      */
-    meta .Prefix("vec") {
+    macro .Prefix("vec") {
         [] => std::emptyList()
         [...$items] => std::listOf(...$items)
     }
@@ -53,12 +53,12 @@ use zone std {
      * @0 `vec!@[]` expands to `std::emptyMutableList()`.
      * @1 `vec!@[1, 2, 3]` expands to `std::mutableListOf(1, 2, 3)`.
      */
-    meta .Prefix("vec!") {
+    macro .Prefix("vec!") {
         [] => std::emptyMutableList()
         [...$items] => std::mutableListOf(...$items)
     }
 
-    meta .Type {
+    macro .Type {
         [T] => std::List<T>
         [T]! => std::MutableList<T>
     }
@@ -69,7 +69,7 @@ use zone std {
      * @0 `set@[]` expands to `std::emptySet()`.
      * @1 `set@[1, 2, 3]` expands to `std::setOf(1, 2, 3)`.
      */
-    meta .Prefix("set") {
+    macro .Prefix("set") {
         [] => std::emptySet()
         [...$items] => std::setOf(...$items)
     }
@@ -80,7 +80,7 @@ use zone std {
      * @0 `set@[]` expands to `std::emptyMutableSet()`.
      * @1 `set@[1, 2, 3]` expands to `std::mutableSetOf(1, 2, 3)`.
      */
-    meta .Prefix("set") {
+    macro .Prefix("set") {
         [] => std::emptyMutableSet()
         [...$items] => std::mutableSetOf(...$items)
     }
@@ -91,7 +91,7 @@ use zone std {
      * @0 `# set@[]` expands to `std::emptyHashSet()`.
      * @1 `# set@[1, 2, 3]` expands to `std::hashSetOf(1, 2, 3)`.
      */
-    meta .Prefix("# set") {
+    macro .Prefix("# set") {
         [] => std::emptyHashSet()
         [...$items] => std::hashSetOf(...$items)
     }
@@ -102,7 +102,7 @@ use zone std {
      * @0 `!# set@[]` expands to `std::emptyLinkedHashSet()`.
      * @1 `!# set@[1, 2, 3]` expands to `std::linkedHashSetOf(1, 2, 3)`.
      */
-    meta .Prefix("!# set") {
+    macro .Prefix("!# set") {
         [] => std::emptyLinkedHashSet()
         [...$items] => std::linkedHashSetOf(...$items)
     }
@@ -113,12 +113,12 @@ use zone std {
      * @0 `^ set@[]` expands to `std::emptyTreeSet()`.
      * @1 `^ set@[1, 2, 3]` expands to `std::treeSetOf(1, 2, 3)`.
      */
-    meta .Prefix("^ set") {
+    macro .Prefix("^ set") {
         [] => std::emptyTreeSet()
         [...$items] => std::treeSetOf(...$items)
     }
 
-    meta .Type {
+    macro .Type {
         {T} => std::Set<T>
         {T}! => std::MutableSet<T>
         # {T} => std::HashSet<T>
@@ -132,7 +132,7 @@ use zone std {
      * @0 `map@[]` expands to `std::emptyMap()`.
      * @1 `map@["One": 1, "Two": 2]` expands to `std::mapOf("One" to 1, "Two" to 2)`. // todo. to infx like in Kotlin
      */
-    meta .Prefix("map") {
+    macro .Prefix("map") {
         [] => std::emptyMap()
         [...${key: value}] => std::mapOf(...std::mapEntry($key, $value))
     }
@@ -143,7 +143,7 @@ use zone std {
      * @0 `map@[]` expands to `std::emptyMutableMap()`.
      * @1 `map@["One": 1, "Two": 2]` expands to `std::mutableMapOf("One" to 1, "Two" to 2)`.
      */
-    meta .Prefix("map") {
+    macro .Prefix("map") {
         [] => std::emptyMutableMap()
         [...${key: value}] => std::mutableMapOf(...std::mapEntry($key, $value))
     }
@@ -154,7 +154,7 @@ use zone std {
      * @0 `# map@[]` expands to `std::emptyHashMap()`.
      * @1 `# map@["One": 1, "Two": 2]` expands to `std::hashMapOf("One" to 1, "Two" to 2)`.
      */
-    meta .Prefix("# map") {
+    macro .Prefix("# map") {
         [] => std::emptyHashMap()
         [...${key: value}] => std::hashMapOf(...std::mapEntry($key, $value))
     }
@@ -165,7 +165,7 @@ use zone std {
      * @0 `!# map@[]` expands to `std::emptyLinkedHashMap()`.
      * @1 `!# map@["One": 1, "Two": 2]` expands to `std::linkedHashMapOf("One" to 1, "Two" to 2)`.
      */
-    meta .Prefix("!# map") {
+    macro .Prefix("!# map") {
         [] => std::emptyLinkedHashMap()
         [...${key: value}] => std::linkedHashMapOf(...std::mapEntry($key, $value))
     }
@@ -176,12 +176,12 @@ use zone std {
      * @0 `^ map@[]` expands to `std::emptyTreeMap()`.
      * @1 `^ map@["One": 1, "Two": 2]` expands to `std::treeMapOf("One" to 1, "Two" to 2)`.
      */
-    meta .Prefix("^ map") {
+    macro .Prefix("^ map") {
         [] => std::emptyTreeMap()
         [...$items] => std::treeMapOf(...$items)
     }
 
-    meta .Type {
+    macro .Type {
         [K: V] => std::Map<K, V>
         [K: V]! => std::MutableMap<K, V>
         # [K: V] => std::HashMap<K, V>

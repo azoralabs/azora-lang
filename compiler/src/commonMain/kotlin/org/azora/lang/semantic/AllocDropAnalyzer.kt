@@ -171,7 +171,7 @@ class AllocDropAnalyzer {
                 collectUsedVars(stmt.initializer, used)
                 defined.add(stmt.name)
             }
-            is Stmt.Zone -> stmt.body.forEach { analyzeStmt(it, defined, used, errors) }
+            is Stmt.Scope -> stmt.body.forEach { analyzeStmt(it, defined, used, errors) }
             is Stmt.Assert -> {
                 collectUsedVars(stmt.condition, used)
                 collectUsedVars(stmt.message, used)
@@ -316,7 +316,7 @@ class AllocDropAnalyzer {
             is Expr.Inject -> { /* no sub-expressions to collect */ }
             is Expr.Spread -> collectUsedVars(expr.array, used)
             is Expr.SafeMember -> collectUsedVars(expr.target, used)
-            is Expr.IntLiteral, is Expr.RealLiteral,
+            is Expr.IntLiteral, is Expr.DoubleLiteral,
             is Expr.StringLiteral, is Expr.BoolLiteral,
             is Expr.CharLiteral -> {}
             // Macros are expanded before alloc/drop analysis; unreachable.

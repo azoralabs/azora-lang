@@ -1,6 +1,6 @@
 # Azora Meta / Macros — DIP Implementation Profile
 
-`meta` declares macros — value macros (`vec@[…]`), type-sugar macros
+`macro` declares macros — value macros (`vec@[…]`), type-sugar macros
 (`meta type`), and named type macros — expanded at compile time before semantic
 analysis.
 
@@ -28,11 +28,11 @@ The trailing `!` (on a name, or after an anonymous pattern) always denotes the
 ## 1. Value macros
 
 ```azora
-meta .Prefix("vec") {
+macro .Prefix("vec") {
     [] => std::emptyList()
     [...$items] => std::listOf(...$items)
 }
-meta .Prefix("vec!") {
+macro .Prefix("vec!") {
     [] => std::emptyMutableList()
     [...$items] => std::mutableListOf(...$items)
 }
@@ -53,7 +53,7 @@ fin m = map@["a": 1]        // Map
 ## 2. Type-sugar macros (`meta type`)
 
 ```azora
-meta .Type {
+macro .Type {
     [T] => std::List<T>
     [T]! => std::MutableList<T>       // trailing ! = mutable
     {T} => std::Set<T>
@@ -66,7 +66,7 @@ meta .Type {
 ## 3. Named type macros
 
 ```azora
-meta .Type {
+macro .Type {
     res $T => Resource<$T>
     res! $T => MutResource<$T>              // ! on the name = mutable
     query [...$T] => Query<...$T>
@@ -84,10 +84,10 @@ The operator name lives in `.Infix("op")`, so arms do **not** repeat it — they
 are just the two operand holes:
 
 ```azora
-meta .Infix("with") {
+macro .Infix("with") {
     $Base $Filter => With<$Base, $Filter>       // Base with Filter → With<Base, Filter>
 }
-meta .Infix("without") {
+macro .Infix("without") {
     $Base $Filter => Without<$Base, $Filter>
 }
 ```
@@ -96,7 +96,7 @@ A value-level infix operator uses the **same arm form** — the template is an
 expression instead of a type:
 
 ```azora
-meta .Infix("to") {
+macro .Infix("to") {
     $a $b => std::mapEntry($a, $b)      // a to b → std::mapEntry(a, b)
 }
 
@@ -107,7 +107,7 @@ fin entry = "key" to 42                 // expands to std::mapEntry("key", 42)
 - A `Type<…>` template makes the arm a type-infix rule; any other expression
   makes it a value-infix macro; a bare hole (`$Base`) works in both positions.
 - This replaces the removed `infx` keyword. The macro kind is a `Macro` slot:
-  `bridge slot Macro { Prefix(String); Infix(String); Type }`.
+  `bridge variant Macro { Prefix(String); Infix(String); Type }`.
 
 ## 4. Compile-time inline blocks
 

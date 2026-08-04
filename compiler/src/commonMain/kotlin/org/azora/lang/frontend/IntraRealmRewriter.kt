@@ -17,24 +17,24 @@
 package org.azora.lang.frontend
 
 /**
- * Rewrites bare references that appear INSIDE a zone member's body to their
- * zone-mangled form, so that sibling declarations resolve without qualification.
+ * Rewrites bare references that appear INSIDE a realm member's body to their
+ * realm-mangled form, so that sibling declarations resolve without qualification.
  *
- * Zones desugar at parse time to flat mangled top-level items (`zone
+ * Realms desugar at parse time to flat mangled top-level items (`realm
  * std { func floor(){...} }` → `std__math__floor`). A sibling call like
  * `floor()` inside `std__math__round` would otherwise fail to resolve, because
  * the reference stays bare while the declaration is mangled.
  *
- * For each zone member (a top-level item whose name contains `__`), this pass
+ * For each realm member (a top-level item whose name contains `__`), this pass
  * walks its body/initializer and rewrites a bare identifier/callee `X` to
- * `<zonePrefix>__X` when such a mangled sibling exists in the program — UNLESS
+ * `<realmPrefix>__X` when such a mangled sibling exists in the program — UNLESS
  * `X` is shadowed by a parameter or local declaration in that member (e.g.
  * `func pow(value, exp)` has a parameter `exp` that must not be rewritten to a
  * hypothetical `std__math__exp` sibling). Bare names with no mangled sibling
- * are left untouched. This gives zone members bare sibling access while keeping
- * cross-zone access qualified.
+ * are left untouched. This gives realm members bare sibling access while keeping
+ * cross-realm access qualified.
  */
-internal object IntraZoneRewriter {
+internal object IntraRealmRewriter {
 
     fun rewrite(program: Program): Program {
         val mangled = HashSet<String>()
@@ -49,14 +49,14 @@ internal object IntraZoneRewriter {
         if (mangled.isEmpty()) return program
 
         val rewrittenItems = program.items.map { item ->
-            if (item is TopLevel.Impl && item.zonePrefix != null) {
+            if (item is TopLevel.Impl && item.realmPrefix != null) {
                 return@map item.copy(methods = item.methods.map { method ->
                     val shadowed = collectShadowed(method)
-                    method.copy(body = method.body.map { stmt(it, item.zonePrefix, mangled, shadowed) })
+                    method.copy(body = method.body.map { stmt(it, item.realmPrefix, mangled, shadowed) })
                 })
             }
             val name = nameOf(item)
-            val prefix = name?.zonePrefix() ?: return@map item
+            val prefix = name?.realmPrefix() ?: return@map item
             val shadowed = collectShadowed(item)
             when (item) {
                 is TopLevel.Func -> item.copy(decl = item.decl.copy(body = item.decl.body.map { stmt(it, prefix, mangled, shadowed) }))
@@ -82,12 +82,12 @@ internal object IntraZoneRewriter {
      * `std__math__floor` → `std__math`; a bare name with no `__` → null.
      *
      * A private member carries its own leading underscore into the mangled name
-     * (`zone std { func _quote }` → `std___quote`), so the separator is the last
+     * (`realm std { func _quote }` → `std___quote`), so the separator is the last
      * `__` that is not itself preceded by one. Splitting on the plain last `__`
      * would yield `std_`, match no sibling, and silently leave every bare call in
      * that member's body unrewritten.
      */
-    private fun String.zonePrefix(): String? {
+    private fun String.realmPrefix(): String? {
         for (i in length - 2 downTo 1) {
             if (this[i] == '_' && this[i + 1] == '_' && this[i - 1] != '_') return substring(0, i)
         }
@@ -96,7 +96,7 @@ internal object IntraZoneRewriter {
 
     /**
      * Names declared inside [item] (parameters + local bindings) that shadow a
-     * same-named zone sibling and must therefore NOT be rewritten.
+     * same-named realm sibling and must therefore NOT be rewritten.
      */
     private fun collectShadowed(item: TopLevel): Set<String> {
         val names = mutableSetOf<String>()
@@ -142,7 +142,7 @@ internal object IntraZoneRewriter {
             }
             is Stmt.Try -> { s.body.forEach { collectStmtNames(it, names) }; s.catchBody?.forEach { collectStmtNames(it, names) } }
             is Stmt.Defer -> s.body.forEach { collectStmtNames(it, names) }
-            is Stmt.Zone -> s.body.forEach { collectStmtNames(it, names) }
+            is Stmt.Scope -> s.body.forEach { collectStmtNames(it, names) }
             else -> {}
         }
     }
@@ -225,7 +225,7 @@ internal object IntraZoneRewriter {
         )
         is Stmt.Try -> s.copy(body = s.body.map { stmt(it, prefix, mangled, shadowed) }, catchBody = s.catchBody?.map { stmt(it, prefix, mangled, shadowed) })
         is Stmt.Defer -> s.copy(body = s.body.map { stmt(it, prefix, mangled, shadowed) })
-        is Stmt.Zone -> s.copy(body = s.body.map { stmt(it, prefix, mangled, shadowed) })
+        is Stmt.Scope -> s.copy(body = s.body.map { stmt(it, prefix, mangled, shadowed) })
         else -> s
     }
 

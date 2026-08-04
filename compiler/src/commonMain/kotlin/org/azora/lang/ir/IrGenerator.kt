@@ -192,7 +192,7 @@ class IrGenerator(private val table: SymbolTable) {
                 stmt.thenBranch.forEach { collectReferencedNames(it, names) }
                 stmt.elseBranch?.forEach { collectReferencedNames(it, names) }
             }
-            is IrStmt.Zone -> stmt.body.forEach { collectReferencedNames(it, names) }
+            is IrStmt.Scope -> stmt.body.forEach { collectReferencedNames(it, names) }
             is IrStmt.Assert -> {
                 collectReferencedNames(stmt.condition, names)
                 collectReferencedNames(stmt.message, names)
@@ -284,7 +284,7 @@ class IrGenerator(private val table: SymbolTable) {
             is IrExpr.Await -> collectReferencedNames(expr.value, names)
             is IrExpr.Spread -> collectReferencedNames(expr.array, names)
             is IrExpr.IntLiteral,
-            is IrExpr.RealLiteral,
+            is IrExpr.DoubleLiteral,
             is IrExpr.StringLiteral,
             is IrExpr.EnumLiteral,
             is IrExpr.BoolLiteral,
@@ -304,7 +304,7 @@ class IrGenerator(private val table: SymbolTable) {
     }
 
     private fun lowerEffectBody(body: List<Stmt>): IrStmt =
-        IrStmt.Zone(lowerEffectStatements(body), alloc = false)
+        IrStmt.Scope(lowerEffectStatements(body), alloc = false)
 
     /**
      * Generates a typed [IrProgram] from the given AST.
@@ -350,7 +350,7 @@ class IrGenerator(private val table: SymbolTable) {
             literalConstant(item)?.let { (name, value) -> constantLiterals[name] = value }
         }
 
-        // Register import aliases in the global name scope so `import Zone.Item` resolves.
+        // Register import aliases in the global name scope so `import Realm.Item` resolves.
         for ((alias, real) in table.aliasMap) {
             nameScopes.last()[alias] = real
         }
@@ -407,7 +407,7 @@ class IrGenerator(private val table: SymbolTable) {
                             val ownBody = lowerTestBody(item.name, item.body)
                             val children = sourceTests
                                 .filter { it.method == TestMethod.This }
-                                .map { IrStmt.Zone(lowerTestBody(it.name, it.body)) }
+                                .map { IrStmt.Scope(lowerTestBody(it.name, it.body)) }
                             listOf(IrTopLevel.Test(item.name, ownBody + children))
                         }
                         else -> listOf(IrTopLevel.Test(item.name, lowerTestBody(item.name, item.body)))
@@ -428,9 +428,10 @@ class IrGenerator(private val table: SymbolTable) {
                             IrTopLevel.Struct(
                                 item.name,
                                 fields,
-                                program.zoneTypeNamespaces[item.name],
+                                program.realmTypeNamespaces[item.name],
                                 item.typeParams,
                                 slots,
+                                isUnion = item.isUnion,
                             )
                         )
                     }
@@ -438,7 +439,7 @@ class IrGenerator(private val table: SymbolTable) {
                 is TopLevel.Solo -> {
                     val fields = item.fields.map { IrField(it.name, resolveType(it.type), it.mutable) }
                     val result = mutableListOf<IrTopLevel>(
-                        IrTopLevel.Struct(item.name, fields, program.zoneTypeNamespaces[item.name]),
+                        IrTopLevel.Struct(item.name, fields, program.realmTypeNamespaces[item.name]),
                     )
                     // Lower methods as free functions Name_method (like impl).
                     for (method in item.methods) {
@@ -538,7 +539,7 @@ class IrGenerator(private val table: SymbolTable) {
             generatedTraceFunctions.map { IrTopLevel.Func(it) } + orderedItems,
             buildSpecTables(),
         )
-        return IrSymbolCanonicalizer.canonicalize(lowered, program.zoneTypeNamespaces)
+        return IrSymbolCanonicalizer.canonicalize(lowered, program.realmTypeNamespaces)
     }
 
     /**
@@ -707,40 +708,40 @@ class IrGenerator(private val table: SymbolTable) {
         )
     }
 
-    /** A shared friend name scope, or null if no friend zones encountered yet. */
+    /** A shared friend name scope, or null if no friend realms encountered yet. */
     private var friendNameScope: MutableMap<String, String>? = null
 
     /**
-     * Lowers a list of statements, handling friend zone blocks by sharing
-     * a name scope across all friend zones in the same body.
+     * Lowers a list of statements, handling friend realm blocks by sharing
+     * a name scope across all friend realms in the same body.
      */
     private fun lowerBody(stmts: List<Stmt>): List<IrStmt> {
-        val hasZones = stmts.any { it is Stmt.Zone && it.shared }
+        val hasRealms = stmts.any { it is Stmt.Scope && it.shared }
         val savedFriendScope = friendNameScope
 
-        if (hasZones) {
+        if (hasRealms) {
             friendNameScope = mutableMapOf()
         }
 
-        // Bindings that persist from one zone block to the next.
+        // Bindings that persist from one realm block to the next.
         val friendSymbols = mutableMapOf<String, VariableSymbol>()
 
         val result = mutableListOf<IrStmt>()
         for (stmt in stmts) {
-            if (stmt is Stmt.Zone && stmt.shared) {
-                // Push the shared zone name scope + symbol table scope
+            if (stmt is Stmt.Scope && stmt.shared) {
+                // Push the shared realm name scope + symbol table scope
                 table.pushScope()
                 nameScopes.addLast(friendNameScope!!)
-                // Restore bindings left by an earlier zone in this body
+                // Restore bindings left by an earlier realm in this body
                 for ((_, sym) in friendSymbols) table.defineVariable(sym)
                 val lowered = stmt.body.map { lowerStmt(it) }
-                // Hand them on to the next zone in this body
+                // Hand them on to the next realm in this body
                 table.exportCurrentScope(friendSymbols)
                 nameScopes.removeLast()
                 table.popScope()
                 if (stmt.alloc) {
-                    // `zone alloc { }` — arena scoping on top of the shared scope.
-                    result.add(IrStmt.Zone(lowered, alloc = true))
+                    // `realm alloc { }` — arena scoping on top of the shared scope.
+                    result.add(IrStmt.Scope(lowered, alloc = true))
                 } else {
                     result.addAll(lowered)
                 }
@@ -801,7 +802,7 @@ class IrGenerator(private val table: SymbolTable) {
                     emptyList()
                 }
                 if (triggered.isEmpty()) assignment
-                else IrStmt.Zone(listOf(assignment) + triggered.map { lowerEffectBody(it.body) })
+                else IrStmt.Scope(listOf(assignment) + triggered.map { lowerEffectBody(it.body) })
             }
             is Stmt.IndexAssign -> {
                 val target = lowerExpr(stmt.target)
@@ -845,13 +846,13 @@ class IrGenerator(private val table: SymbolTable) {
                     (currentTraceOwner?.let { " in '$it'" } ?: ""),
             )
             is Stmt.DeepInlineIf -> error("DeepInlineIf should have been resolved by CTCE before IR generation")
-            is Stmt.Zone -> {
+            is Stmt.Scope -> {
                 table.pushScope()
                 pushNameScope()
                 val stmts = lowerBody(stmt.body)
                 popNameScope()
                 table.popScope()
-                IrStmt.Zone(stmts, stmt.alloc)
+                IrStmt.Scope(stmts, stmt.alloc)
             }
             is Stmt.Assert -> {
                 val cond = lowerExpr(stmt.condition)
@@ -935,7 +936,7 @@ class IrGenerator(private val table: SymbolTable) {
                     val iter = lowerExpr(stmt.iterable)
                     val reset = IrStmt.ExprStmt(IrExpr.MethodCall(iter, "reset", emptyList(), IrType.Unit))
                     val cond = IrExpr.MethodCall(iter, "hasNext", emptyList(), IrType.Bool)
-                    IrStmt.Zone(listOf(reset, IrStmt.While(cond, body, stmt.label)), alloc = false)
+                    IrStmt.Scope(listOf(reset, IrStmt.While(cond, body, stmt.label)), alloc = false)
                 } else {
                     IrStmt.Loop(body, stmt.label)
                 }
@@ -961,7 +962,7 @@ class IrGenerator(private val table: SymbolTable) {
                         ?.toSet()
                         ?: referencedNames(loweredBody).intersect(reactiveNames)
                     activeEffects.add(ActiveEffect(dependencies, stmt.body))
-                    IrStmt.Zone(loweredBody, alloc = false)
+                    IrStmt.Scope(loweredBody, alloc = false)
                 }
             }
             is Stmt.WithContext -> {
@@ -972,7 +973,7 @@ class IrGenerator(private val table: SymbolTable) {
                 } finally {
                     contextualValues.removeLast()
                 }
-                IrStmt.Zone(body, alloc = false)
+                IrStmt.Scope(body, alloc = false)
             }
             is Stmt.Yield -> IrStmt.Yield(lowerExpr(stmt.value))
             is Stmt.When -> {
@@ -1058,10 +1059,10 @@ class IrGenerator(private val table: SymbolTable) {
         NumericSuffix.DECIMAL -> IrType.Decimal
     }
 
-    private fun suffixToRealType(suffix: NumericSuffix): IrType = when (suffix) {
+    private fun suffixToFloatType(suffix: NumericSuffix): IrType = when (suffix) {
         NumericSuffix.FLOAT -> IrType.Float
         NumericSuffix.DECIMAL -> IrType.Decimal
-        else -> IrType.Real
+        else -> IrType.Double
     }
 
     private fun defaultTraceLevel(line: Int): Expr {
@@ -1119,7 +1120,7 @@ class IrGenerator(private val table: SymbolTable) {
             is IrExpr.Await -> expr.copy(value = replaceExpr(expr.value, from, to))
             is IrExpr.Spread -> expr.copy(array = replaceExpr(expr.array, from, to))
             is IrExpr.Lambda,
-            is IrExpr.IntLiteral, is IrExpr.RealLiteral, is IrExpr.StringLiteral,
+            is IrExpr.IntLiteral, is IrExpr.DoubleLiteral, is IrExpr.StringLiteral,
             is IrExpr.EnumLiteral, is IrExpr.BoolLiteral, is IrExpr.CharLiteral,
             is IrExpr.Var, is IrExpr.SlotPattern -> expr
         }
@@ -1173,7 +1174,7 @@ class IrGenerator(private val table: SymbolTable) {
             is IrExpr.Await -> collectTraceCaptures(expr.value, captures)
             is IrExpr.Spread -> collectTraceCaptures(expr.array, captures)
             is IrExpr.Lambda,
-            is IrExpr.IntLiteral, is IrExpr.RealLiteral, is IrExpr.StringLiteral,
+            is IrExpr.IntLiteral, is IrExpr.DoubleLiteral, is IrExpr.StringLiteral,
             is IrExpr.EnumLiteral, is IrExpr.BoolLiteral, is IrExpr.CharLiteral,
             is IrExpr.SlotPattern -> Unit
         }
@@ -1224,7 +1225,7 @@ class IrGenerator(private val table: SymbolTable) {
     private fun lowerExpr(expr: Expr): IrExpr {
         return when (expr) {
             is Expr.IntLiteral -> IrExpr.IntLiteral(expr.value, suffixToIntType(expr.suffix))
-            is Expr.RealLiteral -> IrExpr.RealLiteral(expr.value, suffixToRealType(expr.suffix))
+            is Expr.DoubleLiteral -> IrExpr.DoubleLiteral(expr.value, suffixToFloatType(expr.suffix))
             is Expr.StringLiteral -> IrExpr.StringLiteral(expr.value)
             is Expr.BoolLiteral -> IrExpr.BoolLiteral(expr.value)
             is Expr.NullLiteral -> IrExpr.Var("__null", IrType.Any)
@@ -1434,7 +1435,7 @@ class IrGenerator(private val table: SymbolTable) {
                     IrBinaryOp.LT, IrBinaryOp.LTE,
                     IrBinaryOp.GT, IrBinaryOp.GTE,
                     IrBinaryOp.AND, IrBinaryOp.OR -> IrType.Bool
-                    // Arithmetic widens to the common numeric type (`Int / Real` → Real,
+                    // Arithmetic widens to the common numeric type (`Int / Double` → Double,
                     // `Byte + Long` → Long) so backends emit one machine type; `*` also
                     // doubles as string repetition.
                     IrBinaryOp.ADD, IrBinaryOp.SUB, IrBinaryOp.MUL, IrBinaryOp.DIV, IrBinaryOp.MOD -> {
@@ -1467,11 +1468,26 @@ class IrGenerator(private val table: SymbolTable) {
                         ?: error("LogLevel must declare at least one variant")
                     return IrExpr.EnumLiteral("LogLevel", first)
                 }
-                // Resolve import aliases (`import Zone.Item` maps Item to Zone__Item).
+                // Resolve import aliases (`import Realm.Item` maps Item to Realm__Item).
                 // `Self(…)` inside an impl builds the type the impl is on.
                 val calleeName = if (expr.callee == "Self") currentReceiverType ?: expr.callee else expr.callee
-                val realCallee = table.aliasMap[calleeName] ?: calleeName
-                val struct = table.lookupStruct(realCallee) ?: table.lookupStruct(calleeName)
+                val actualCallee = table.aliasMap[calleeName] ?: calleeName
+                val struct = table.lookupStruct(actualCallee) ?: table.lookupStruct(calleeName)
+                if (struct != null && struct.isUnion) {
+                    // `Value(f: 1.5)` — exactly one member is named, and it is the
+                    // one that initializes the shared slot. The checker has already
+                    // rejected anything else.
+                    val named = expr.args.filterIsInstance<Expr.NamedArg>().firstOrNull()
+                    val member = named?.let { arg -> struct.fields.first { it.name == arg.name } }
+                        ?: struct.fields.first()
+                    val value = named?.value ?: expr.args.firstOrNull()
+                    return IrExpr.StructCtor(
+                        actualCallee,
+                        listOf(member.name),
+                        listOf(coerceToFloat(lowerExpr(value ?: Expr.NullLiteral), member.type)),
+                        IrType.Named(actualCallee),
+                    )
+                }
                 if (struct != null) {
                     // Handle named arguments — reorder to field order; omitted fields use their defaults.
                     val args = if (expr.args.any { it is Expr.NamedArg }) {
@@ -1496,7 +1512,7 @@ class IrGenerator(private val table: SymbolTable) {
                     // A declared `ctor` of the same arity takes precedence over
                     // filling fields positionally — it is the constructor the
                     // author wrote, and skipping it would leave its work undone.
-                    val declaredCtor = table.lookupFunction(ctorFactoryName(realCallee, expr.args.size))
+                    val declaredCtor = table.lookupFunction(ctorFactoryName(actualCallee, expr.args.size))
                     if (declaredCtor != null && expr.args.none { it is Expr.NamedArg }) {
                         return IrExpr.Call(
                             declaredCtor.name,
@@ -1504,19 +1520,19 @@ class IrGenerator(private val table: SymbolTable) {
                                 declaredCtor.params.getOrNull(i)
                                     ?.let { coerceToFloat(lowerExpr(a), it.second) } ?: lowerExpr(a)
                             },
-                            IrType.Named(realCallee),
+                            IrType.Named(actualCallee),
                         )
                     }
-                    // Keep the explicit type arguments (`Box<Real>(…)`) on the
+                    // Keep the explicit type arguments (`Box<Double>(…)`) on the
                     // result type: a generic pack erases its fields to pointer
                     // slots, and this is what later tells a read that the slot
-                    // holds a Real.
+                    // holds a Double.
                     val ctorArgs = expr.typeArgs.map { resolveType(it, currentGenericTypeParams) }
                     return IrExpr.StructCtor(
-                        realCallee,
+                        actualCallee,
                         struct.fields.map { it.name },
                         args,
-                        IrType.Named(realCallee, ctorArgs),
+                        IrType.Named(actualCallee, ctorArgs),
                     )
                 }
                 val func = table.lookupFunction(expr.callee)
@@ -1649,7 +1665,7 @@ class IrGenerator(private val table: SymbolTable) {
                 }
                 // Extension method reached through a `with value { … }` scope:
                 // `with c { bump() }` lowers to `Counter_bump(c)`.
-                // A zone-qualified call reaches its contextual receiver too, matching
+                // A realm-qualified call reaches its contextual receiver too, matching
                 // how the resolver typed it: `std::yield(1)` names the member `yield`.
                 val contextualName = expr.callee.substringAfterLast("__")
                 for (ctx in contextualValues.asReversed().flatten()) {
@@ -2153,7 +2169,7 @@ class IrGenerator(private val table: SymbolTable) {
 
     /** True for an integer constant the resolver would have let adopt another type. */
     private fun isUntypedIntConstant(expr: IrExpr): Boolean = when (expr) {
-        is IrExpr.RealLiteral -> expr.type == IrType.Real
+        is IrExpr.DoubleLiteral -> expr.type == IrType.Double
         is IrExpr.IntLiteral -> expr.type == IrType.Int
         is IrExpr.Unary -> expr.op == IrUnaryOp.NEG && isUntypedIntConstant(expr.operand)
         else -> false
@@ -2164,7 +2180,7 @@ class IrGenerator(private val table: SymbolTable) {
         if (a !in IrType.numericTypes || b !in IrType.numericTypes) return a
         if (a in IrType.floatTypes || b in IrType.floatTypes) {
             if (a == IrType.Decimal || b == IrType.Decimal) return IrType.Decimal
-            if (a == IrType.Real || b == IrType.Real) return IrType.Real
+            if (a == IrType.Double || b == IrType.Double) return IrType.Double
             return IrType.Float
         }
         val rank = mapOf(
@@ -2234,7 +2250,7 @@ class IrGenerator(private val table: SymbolTable) {
         }
         val value = when (initializer) {
             is Expr.IntLiteral -> IrExpr.IntLiteral(initializer.value)
-            is Expr.RealLiteral -> IrExpr.RealLiteral(initializer.value)
+            is Expr.DoubleLiteral -> IrExpr.DoubleLiteral(initializer.value)
             is Expr.BoolLiteral -> IrExpr.BoolLiteral(initializer.value)
             is Expr.CharLiteral -> IrExpr.CharLiteral(initializer.value)
             is Expr.StringLiteral -> IrExpr.StringLiteral(initializer.value)
@@ -2251,7 +2267,7 @@ class IrGenerator(private val table: SymbolTable) {
         if (expr.op != TokenType.MINUS) return null
         return when (val operand = expr.operand) {
             is Expr.IntLiteral -> IrExpr.IntLiteral(-operand.value)
-            is Expr.RealLiteral -> IrExpr.RealLiteral(-operand.value)
+            is Expr.DoubleLiteral -> IrExpr.DoubleLiteral(-operand.value)
             else -> null
         }
     }
@@ -2263,8 +2279,8 @@ class IrGenerator(private val table: SymbolTable) {
         is IrType.Short -> IrExpr.IntLiteral(0, type)
         is IrType.UInt -> IrExpr.IntLiteral(0, type)
         is IrType.ULong, is IrType.ISize, is IrType.USize -> IrExpr.IntLiteral(0, type)
-        is IrType.Real -> IrExpr.RealLiteral(0.0, type)
-        is IrType.Float -> IrExpr.RealLiteral(0.0, type)
+        is IrType.Double -> IrExpr.DoubleLiteral(0.0, type)
+        is IrType.Float -> IrExpr.DoubleLiteral(0.0, type)
         is IrType.String -> IrExpr.StringLiteral("")
         is IrType.Bool -> IrExpr.BoolLiteral(false)
         is IrType.Char -> IrExpr.CharLiteral('\u0000')

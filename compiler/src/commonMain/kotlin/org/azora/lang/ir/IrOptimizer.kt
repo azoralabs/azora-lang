@@ -75,7 +75,7 @@ class IrOptimizer {
             thenBranch = stmt.thenBranch.map { foldStmt(it) },
             elseBranch = stmt.elseBranch?.map { foldStmt(it) }
         )
-        is IrStmt.Zone -> stmt.copy(body = stmt.body.map { foldStmt(it) })
+        is IrStmt.Scope -> stmt.copy(body = stmt.body.map { foldStmt(it) })
         is IrStmt.Assert -> stmt.copy(condition = foldExpr(stmt.condition), message = foldExpr(stmt.message))
         is IrStmt.Trace -> stmt.copy(level = foldExpr(stmt.level), message = foldExpr(stmt.message))
         is IrStmt.While -> stmt.copy(condition = foldExpr(stmt.condition), body = stmt.body.map { foldStmt(it) })
@@ -147,12 +147,12 @@ class IrOptimizer {
                 else -> null
             }
         }
-        if (left is IrExpr.RealLiteral && right is IrExpr.RealLiteral) {
+        if (left is IrExpr.DoubleLiteral && right is IrExpr.DoubleLiteral) {
             return when (op) {
-                IrBinaryOp.ADD -> IrExpr.RealLiteral(left.value + right.value, resultType)
-                IrBinaryOp.SUB -> IrExpr.RealLiteral(left.value - right.value, resultType)
-                IrBinaryOp.MUL -> IrExpr.RealLiteral(left.value * right.value, resultType)
-                IrBinaryOp.DIV -> IrExpr.RealLiteral(left.value / right.value, resultType)
+                IrBinaryOp.ADD -> IrExpr.DoubleLiteral(left.value + right.value, resultType)
+                IrBinaryOp.SUB -> IrExpr.DoubleLiteral(left.value - right.value, resultType)
+                IrBinaryOp.MUL -> IrExpr.DoubleLiteral(left.value * right.value, resultType)
+                IrBinaryOp.DIV -> IrExpr.DoubleLiteral(left.value / right.value, resultType)
                 IrBinaryOp.EQ -> IrExpr.BoolLiteral(left.value == right.value)
                 IrBinaryOp.NEQ -> IrExpr.BoolLiteral(left.value != right.value)
                 IrBinaryOp.LT -> IrExpr.BoolLiteral(left.value < right.value)
@@ -181,7 +181,7 @@ class IrOptimizer {
 
     private fun tryFoldUnary(op: IrUnaryOp, operand: IrExpr, resultType: IrType): IrExpr? {
         if (op == IrUnaryOp.NEG && operand is IrExpr.IntLiteral) return IrExpr.IntLiteral(-operand.value, resultType)
-        if (op == IrUnaryOp.NEG && operand is IrExpr.RealLiteral) return IrExpr.RealLiteral(-operand.value, resultType)
+        if (op == IrUnaryOp.NEG && operand is IrExpr.DoubleLiteral) return IrExpr.DoubleLiteral(-operand.value, resultType)
         if (op == IrUnaryOp.NOT && operand is IrExpr.BoolLiteral) return IrExpr.BoolLiteral(!operand.value)
         return null
     }
@@ -276,9 +276,9 @@ class IrOptimizer {
                     stmt.elseBranch?.let { invalidate(constants, collectAssigned(it)) }
                     result
                 }
-                is IrStmt.Zone -> {
+                is IrStmt.Scope -> {
                     val result = stmt.copy(body = propagateStmts(stmt.body, constants.toMutableMap()))
-                    // Reassignments to outer variables inside the zone persist.
+                    // Reassignments to outer variables inside the realm persist.
                     invalidate(constants, collectAssigned(stmt.body))
                     result
                 }
@@ -395,7 +395,7 @@ class IrOptimizer {
             when (stmt) {
                 is IrStmt.Assignment -> assigned.add(stmt.name)
                 is IrStmt.If -> { stmt.thenBranch.forEach(::visit); stmt.elseBranch?.forEach(::visit) }
-                is IrStmt.Zone -> stmt.body.forEach(::visit)
+                is IrStmt.Scope -> stmt.body.forEach(::visit)
                 is IrStmt.While -> stmt.body.forEach(::visit)
                 is IrStmt.For -> { assigned.add(stmt.counter); stmt.body.forEach(::visit) }
                 is IrStmt.ForEach -> { assigned.add(stmt.elem); stmt.body.forEach(::visit) }
@@ -431,7 +431,7 @@ class IrOptimizer {
     }
 
     private fun isConstant(expr: IrExpr): Boolean = when (expr) {
-        is IrExpr.IntLiteral, is IrExpr.RealLiteral,
+        is IrExpr.IntLiteral, is IrExpr.DoubleLiteral,
         is IrExpr.StringLiteral, is IrExpr.EnumLiteral, is IrExpr.BoolLiteral,
         is IrExpr.CharLiteral -> true
         else -> false
@@ -470,7 +470,7 @@ class IrOptimizer {
                         )
                     }
                 }
-                is IrStmt.Zone -> stmt.copy(body = eliminateDeadCode(stmt.body))
+                is IrStmt.Scope -> stmt.copy(body = eliminateDeadCode(stmt.body))
                 else -> stmt
             }
             result.add(cleaned)
@@ -658,7 +658,7 @@ class IrOptimizer {
                     thenBranch = removeUnusedDeclsFromBody(stmt.thenBranch, usedVars),
                     elseBranch = stmt.elseBranch?.let { removeUnusedDeclsFromBody(it, usedVars) }
                 )
-                is IrStmt.Zone -> {
+                is IrStmt.Scope -> {
                     val cleaned = removeUnusedDeclsFromBody(stmt.body, usedVars)
                     if (cleaned.isEmpty()) null else stmt.copy(body = cleaned)
                 }
@@ -692,7 +692,7 @@ class IrOptimizer {
                 stmt.thenBranch.forEach { collectReferencedNamesFromStmt(it, names) }
                 stmt.elseBranch?.forEach { collectReferencedNamesFromStmt(it, names) }
             }
-            is IrStmt.Zone -> stmt.body.forEach { collectReferencedNamesFromStmt(it, names) }
+            is IrStmt.Scope -> stmt.body.forEach { collectReferencedNamesFromStmt(it, names) }
             is IrStmt.Assert -> {
                 collectReferencedNamesFromExpr(stmt.condition, names)
                 collectReferencedNamesFromExpr(stmt.message, names)
@@ -824,7 +824,7 @@ class IrOptimizer {
                 stmt.thenBranch.forEach { collectReferencedVarNamesFromStmt(it, names) }
                 stmt.elseBranch?.forEach { collectReferencedVarNamesFromStmt(it, names) }
             }
-            is IrStmt.Zone -> stmt.body.forEach { collectReferencedVarNamesFromStmt(it, names) }
+            is IrStmt.Scope -> stmt.body.forEach { collectReferencedVarNamesFromStmt(it, names) }
             is IrStmt.Assert -> {
                 collectReferencedNamesFromExpr(stmt.condition, names)
                 collectReferencedNamesFromExpr(stmt.message, names)

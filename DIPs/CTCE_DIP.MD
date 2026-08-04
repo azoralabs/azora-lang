@@ -58,26 +58,36 @@ inline for Field in ...T {
 }
 ```
 
-## 5. Type functions
+## 5. Type properties (`deepinline prop`)
 
-Functions that compute **types from types**, evaluated by CTCE:
+A declaration that computes **a type from types**, evaluated entirely by CTCE:
 
 ```azora
-type promote(T: ...Type) where T.length >= 2 && T is Number {
-    let Result: Type = T.0
-    for Candidate in T[1...] {
-        Result = if Candidate::rank > Result::rank { Candidate } else { Result }
+@Since("0.0.5")
+deepinline prop Promote<...T>: Type where T.length >= 2 && T is Number {
+    var result: Type = T.0
+    for candidate: Type in T[1...] {
+        if candidate::rank > result::rank {
+            result = candidate
+        }
     }
-    return Result
+    return result
 }
 
-func add<A, B>(a: A, b: B): promote@(A, B) { … }   // used as a type
+func add<A, B>(a: A, b: B): Promote<A, B> { … }   // used as a type
 ```
 
-- Parameters are `Type` values; `...Type` is a variadic type pack.
-- `T.0`, `T[1...]`, `Type::rank` inspect the pack and type metadata.
+- The name is capitalized, because a use site reads it as the type it produces.
+- The result type is always `Type`; returning anything else is an error.
+- `...T` is a variadic type pack; `T.length`, `T.0`, `T[1...]` and `Type::rank`
+  inspect the pack and its type metadata.
 - `where … is Spec` bounds every pack member to a spec.
-- Invoked in type position as `name@(TypeArgs)`.
+- Every binding is written out (`var result: Type = …`): nothing is inferred.
+- All four binding keywords apply — `var`/`val` rebind, `let`/`fin` do not.
+- The body may branch with a statement `if`, loop with `for`, and call another
+  type property by name (`NumericResult<A, B>`).
+- A use site spells it exactly like a generic type: `Promote<Int, Double>`.
+  There is no separate call syntax — the older `promote@(…)` form was removed.
 
 ## 6. Source splicing (`inline "…"`)
 

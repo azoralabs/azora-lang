@@ -53,7 +53,7 @@ class ReflectDecoExpanderTest {
     }
 
     private val marked = """
-        deco Marked for [.Pack, .Func] {
+        annot Marked for [.Pack, .Func] {
             fin order: Int = 0
             fin tag: String = "none"
         }
@@ -61,7 +61,7 @@ class ReflectDecoExpanderTest {
 
     @Test fun decoratedFunctionsAreEnumeratedAndCalled() {
         assertEquals("alpha\nbeta", run("""
-            use std.io
+            import std.io
             $marked
 
             @Marked
@@ -80,7 +80,7 @@ class ReflectDecoExpanderTest {
 
     @Test fun decoratedPacksAreStillEnumerated() {
         assertEquals("7\n7", run("""
-            use std.io
+            import std.io
             $marked
 
             @Marked
@@ -99,7 +99,7 @@ class ReflectDecoExpanderTest {
 
     @Test fun theBoundDeclarationKnowsItsOwnName() {
         assertEquals("alpha\nbeta", run("""
-            use std.io
+            import std.io
             $marked
 
             @Marked
@@ -121,7 +121,7 @@ class ReflectDecoExpanderTest {
         // the decorator declaration is as much a source of the value as the
         // application is.
         assertEquals("alpha 3 first\nbeta 0 none", run("""
-            use std.io
+            import std.io
             $marked
 
             @Marked(order: 3, tag: "first")
@@ -140,12 +140,12 @@ class ReflectDecoExpanderTest {
 
     @Test fun anEnumValuedDecoratorFieldSurvives() {
         assertEquals("draw true\ntick false", run("""
-            use std.io
+            import std.io
             enum Phase {
                 Update
                 Render
             }
-            deco Staged for .Func {
+            annot Staged for .Func {
                 fin phase: Phase = Phase.Update
             }
 
@@ -165,9 +165,9 @@ class ReflectDecoExpanderTest {
 
     @Test fun hasDecoAnswersForTheBoundDeclaration() {
         assertEquals("true false", run("""
-            use std.io
+            import std.io
             $marked
-            deco Other for .Func
+            annot Other for .Func
 
             @Marked
             @Other
@@ -185,7 +185,7 @@ class ReflectDecoExpanderTest {
         // The whole indexed-dispatch scheme rests on this: a slot number picked
         // while walking one loop has to name the same declaration in the other.
         assertEquals("0 alpha\n1 beta\n2 gamma\npicked beta", run("""
-            use std.io
+            import std.io
             $marked
 
             @Marked
@@ -219,7 +219,7 @@ class ReflectDecoExpanderTest {
     @Test fun theLoopUnrollsInsideAnOrdinaryFunction() {
         // Not just in `main`: a library's own function is where this is useful.
         assertEquals("alpha 5\nbeta 5", run("""
-            use std.io
+            import std.io
             $marked
 
             @Marked
@@ -242,8 +242,8 @@ class ReflectDecoExpanderTest {
 
     @Test fun aDecoratorNothingCarriesUnrollsToNothing() {
         assertEquals("done", run("""
-            use std.io
-            deco Unused for .Func
+            import std.io
+            annot Unused for .Func
 
             func main() {
                 inline for S in std::reflect<*>.withDeco<Unused> {
@@ -258,7 +258,7 @@ class ReflectDecoExpanderTest {
         // The loop is what supplies the compile-time context. Without one, an
         // ordinary runtime position must still be rejected rather than folded.
         val reported = errors("""
-            use std.io
+            import std.io
             $marked
 
             @Marked(order: 3)

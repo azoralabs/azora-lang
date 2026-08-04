@@ -44,10 +44,10 @@ class LlvmAggregateExecTest {
     @Test fun structConstructionAndMemberRead() = check(
         "1.5\n2.5",
         """
-        use std.io
+        import std.io
         pack Vec2 {
-            var x: Real
-            var y: Real
+            var x: Double
+            var y: Double
         }
         func main() {
             fin v = Vec2(1.5, 2.5)
@@ -60,7 +60,7 @@ class LlvmAggregateExecTest {
     @Test fun structMemberAssignment() = check(
         "7",
         """
-        use std.io
+        import std.io
         pack Point {
             var x: Int
             var y: Int
@@ -76,15 +76,15 @@ class LlvmAggregateExecTest {
     @Test fun nestedStructMemberAssignment() = check(
         "1.5\n90.0",
         """
-        use std.io
+        import std.io
         pack Vec3 {
-            var x: Real
-            var y: Real
-            var z: Real
+            var x: Double
+            var y: Double
+            var z: Double
         }
         pack Camera {
             var pos: Vec3
-            var yaw: Real
+            var yaw: Double
         }
         func main() {
             var cam = Camera(Vec3(0.0, 1.0, 5.0), 0.0)
@@ -99,7 +99,7 @@ class LlvmAggregateExecTest {
     @Test fun structReturnedFromFunction() = check(
         "5",
         """
-        use std.io
+        import std.io
         pack Point {
             var x: Int
             var y: Int
@@ -117,14 +117,14 @@ class LlvmAggregateExecTest {
     @Test fun implMethodWithImplicitSelf() = check(
         "38.0",
         """
-        use std.io
+        import std.io
         pack Vec3 {
-            var x: Real
-            var y: Real
-            var z: Real
+            var x: Double
+            var y: Double
+            var z: Double
         }
         impl Vec3 {
-            func lengthSq(): Real {
+            func lengthSq(): Double {
                 return self.x * self.x + self.y * self.y + self.z * self.z
             }
         }
@@ -138,10 +138,10 @@ class LlvmAggregateExecTest {
     @Test fun operatorOverloadingOnStructs() = check(
         "22.0",
         """
-        use std.io
+        import std.io
         pack Vec2 {
-            var x: Real
-            var y: Real
+            var x: Double
+            var y: Double
         }
         impl Vec2 {
             func plus(o: Vec2): Vec2 {
@@ -162,7 +162,7 @@ class LlvmAggregateExecTest {
     @Test fun arrayLiteralIndexAndLength() = check(
         "3\n4",
         """
-        use std.io
+        import std.io
         func main() {
             fin arr = arr@[1, 2, 3, 4]
             std::println(arr[2])
@@ -174,7 +174,7 @@ class LlvmAggregateExecTest {
     @Test fun arrayIndexAssignment() = check(
         "9",
         """
-        use std.io
+        import std.io
         func main() {
             var arr = arr@[1, 2, 3]
             arr[1] = 9
@@ -186,8 +186,8 @@ class LlvmAggregateExecTest {
     @Test fun subscriptOnASpecTypedValueDispatches() = check(
         "20",
         """
-        use std.io
-        use std.container.list
+        import std.io
+        import std.container.list
         func pick(xs: std::List<Int>&, i: Int): Int {
             return xs[i]
         }
@@ -203,7 +203,7 @@ class LlvmAggregateExecTest {
     @Test fun arrayForEachSum() = check(
         "10",
         """
-        use std.io
+        import std.io
         func main() {
             var nums = arr@[1, 2, 3, 4]
             var sum = 0
@@ -218,7 +218,7 @@ class LlvmAggregateExecTest {
     @Test fun arrayForEachStrings() = check(
         "red\ngreen\nblue",
         """
-        use std.io
+        import std.io
         func main() {
             var names = ["red", "green", "blue"]
             for name in names {
@@ -231,7 +231,7 @@ class LlvmAggregateExecTest {
     @Test fun arrayAddUpdatesLengthAndStoresElement() = check(
         "4\n40",
         """
-        use std.io
+        import std.io
         func main() {
             var arr = arr@[10, 20, 30]
             arr.add(40)
@@ -244,7 +244,7 @@ class LlvmAggregateExecTest {
     @Test fun arrayAddEvaluatesArgumentBeforeGrowth() = check(
         "3",
         """
-        use std.io
+        import std.io
         func main() {
             var arr = arr@[10, 20, 30]
             arr.add(arr.length)
@@ -256,7 +256,7 @@ class LlvmAggregateExecTest {
     @Test fun arrayAddWritesGrownBufferBackToPackField() = check(
         "3\n30",
         """
-        use std.io
+        import std.io
         pack Bucket {
             var values: Array<Int>
         }
@@ -272,7 +272,7 @@ class LlvmAggregateExecTest {
     @Test fun arrayEmptyPropertiesAndMethods() = check(
         "false\ntrue\nfalse\ntrue",
         """
-        use std.io
+        import std.io
         func main() {
             var arr = arr@[1]
             std::println(arr.isEmpty)
@@ -286,7 +286,7 @@ class LlvmAggregateExecTest {
     @Test fun arrayContainsScalarsAndStrings() = check(
         "true\nfalse\ntrue\nfalse",
         """
-        use std.io
+        import std.io
         func main() {
             var nums = arr@[1, 2, 3]
             var words = ["one", "two"]
@@ -301,7 +301,7 @@ class LlvmAggregateExecTest {
     @Test fun mapLiteralReadsStringKeys() = check(
         "1\n3",
         """
-        use std.io
+        import std.io
         func main() {
             var values = ["a": 1, "b": 2, "c": 3]
             std::println(values["a"])
@@ -313,7 +313,7 @@ class LlvmAggregateExecTest {
     @Test fun mapStringKeysCompareContents() = check(
         "2",
         """
-        use std.io
+        import std.io
         func main() {
             var values = ["ab": 2, "cd": 4]
             let key = "a" + "b"
@@ -325,7 +325,7 @@ class LlvmAggregateExecTest {
     @Test fun mapLiteralReadsIntegerKeys() = check(
         "one\ntwo",
         """
-        use std.io
+        import std.io
         func main() {
             var values = arr@[1: "one", 2: "two"]
             std::println(values[1])
@@ -337,7 +337,7 @@ class LlvmAggregateExecTest {
     @Test fun mapUpdatesExistingEntry() = check(
         "99",
         """
-        use std.io
+        import std.io
         func main() {
             var values = ["a": 1, "b": 2]
             values["b"] = 99
@@ -349,7 +349,7 @@ class LlvmAggregateExecTest {
     @Test fun mapInsertsMissingEntry() = check(
         "3\n30",
         """
-        use std.io
+        import std.io
         func main() {
             var values = arr@[1: 10, 2: 20]
             values[3] = 30
@@ -362,7 +362,7 @@ class LlvmAggregateExecTest {
     @Test fun mapSupportsRealValues() = check(
         "2.5",
         """
-        use std.io
+        import std.io
         func main() {
             var values = ["pi": 3.14, "half": 0.5]
             values["half"] = 2.5
@@ -374,7 +374,7 @@ class LlvmAggregateExecTest {
     @Test fun mapLengthAndEmptyProperties() = check(
         "2\nfalse\ntrue\n0",
         """
-        use std.io
+        import std.io
         func main() {
             var values = ["a": 1, "b": 2]
             std::println(values.length)
@@ -389,7 +389,7 @@ class LlvmAggregateExecTest {
     @Test fun mapGetPutAndContainsKey() = check(
         "true\nfalse\n20\ntrue\n30\n3",
         """
-        use std.io
+        import std.io
         func main() {
             var values = ["a": 10, "b": 20]
             std::println(values.containsKey("a"))
@@ -406,7 +406,7 @@ class LlvmAggregateExecTest {
     @Test fun globalArrayInitializerRunsBeforeMain() = check(
         "6",
         """
-        use std.io
+        import std.io
         fin values = arr@[1, 2, 3]
         func main() {
             std::println(values[0] + values[1] + values[2])
@@ -417,7 +417,7 @@ class LlvmAggregateExecTest {
     @Test fun globalMapInitializerRunsBeforeMain() = check(
         "42",
         """
-        use std.io
+        import std.io
         fin values = ["answer": 42]
         func main() {
             std::println(values["answer"])
@@ -428,7 +428,7 @@ class LlvmAggregateExecTest {
     @Test fun setLiteralDeduplicatesElements() = check(
         "3\ntrue\nfalse",
         """
-        use std.io
+        import std.io
         func main() {
             var values = ![1, 2, 2, 3, 1]
             std::println(values.length)
@@ -441,7 +441,7 @@ class LlvmAggregateExecTest {
     @Test fun typedSetLiteral() = check(
         "2",
         """
-        use std.io
+        import std.io
         func main() {
             var values: Set<Int> = ![10, 20]
             std::println(values.size)
@@ -452,7 +452,7 @@ class LlvmAggregateExecTest {
     @Test fun typedStdlibCollectionLiteralsExposeSize() = check(
         "3\n2\n2",
         """
-        use std.io
+        import std.io
         func main() {
             var numbers: List<Int> = arr@[10, 20, 30]
             var unique: Set<Int> = ![1, 2, 2]
@@ -467,7 +467,7 @@ class LlvmAggregateExecTest {
     @Test fun setAddReturnsWhetherInserted() = check(
         "true\nfalse\n3",
         """
-        use std.io
+        import std.io
         func main() {
             var values = ![1, 2]
             std::println(values.add(3))
@@ -480,7 +480,7 @@ class LlvmAggregateExecTest {
     @Test fun setRemoveReturnsWhetherRemoved() = check(
         "true\nfalse\n2\n1\n3",
         """
-        use std.io
+        import std.io
         func main() {
             var values = ![1, 2, 3]
             std::println(values.remove(2))
@@ -496,7 +496,7 @@ class LlvmAggregateExecTest {
     @Test fun setClearAndEmptyProperties() = check(
         "false\ntrue\n0",
         """
-        use std.io
+        import std.io
         func main() {
             var values = ![1, 2]
             std::println(values.isEmpty)
@@ -510,7 +510,7 @@ class LlvmAggregateExecTest {
     @Test fun setStringEqualityUsesContents() = check(
         "2\nfalse\ntrue",
         """
-        use std.io
+        import std.io
         func main() {
             var values = !["ab", "cd"]
             let dynamic = "a" + "b"
@@ -524,7 +524,7 @@ class LlvmAggregateExecTest {
     @Test fun setForEachSum() = check(
         "6",
         """
-        use std.io
+        import std.io
         func main() {
             var values = ![1, 2, 3, 2]
             var total = 0
@@ -539,7 +539,7 @@ class LlvmAggregateExecTest {
     @Test fun packedCollectionsSupportWideValues() = check(
         "3\n4\n2\ntrue",
         """
-        use std.io
+        import std.io
         func main() {
             var array = arr@[1c, 2c]
             array.add(3c)
@@ -556,7 +556,7 @@ class LlvmAggregateExecTest {
     @Test fun globalSetInitializerRunsBeforeMain() = check(
         "3\ntrue",
         """
-        use std.io
+        import std.io
         fin values = ![1, 2, 2, 3]
         func main() {
             std::println(values.length)
@@ -568,7 +568,7 @@ class LlvmAggregateExecTest {
     @Test fun realArraySumViaLoop() = check(
         "4.5",
         """
-        use std.io
+        import std.io
         func main() {
             fin arr = arr@[0.5, 1.5, 2.5]
             var sum = 0.0
@@ -585,7 +585,7 @@ class LlvmAggregateExecTest {
     @Test fun stringLength() = check(
         "5",
         """
-        use std.io
+        import std.io
         func main() {
             fin s = "hello"
             std::println(s.length)
@@ -600,7 +600,7 @@ class LlvmAggregateExecTest {
     @Test fun unusedLocalWithCallInitializerKeepsTheCall() = check(
         "called\ndone",
         """
-        use std.io
+        import std.io
         func sideEffect(): Int {
             std::println("called")
             return 1
@@ -621,7 +621,7 @@ class LlvmAggregateExecTest {
     @Test fun loopLocalsDoNotGrowTheStack() = check(
         "3999998",
         """
-        use std.io
+        import std.io
         func main() {
             var last = 0
             var i = 0
@@ -640,7 +640,7 @@ class LlvmAggregateExecTest {
     @Test fun allAllocasLiveInTheEntryBlock() {
         val ir = LlvmExec.compile(
             """
-            use std.io
+            import std.io
             func main() {
                 var i = 0
                 while i < 3 {

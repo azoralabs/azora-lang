@@ -27,10 +27,10 @@ class TimeStdlibTest {
 
     @Test fun timeModuleCompilesWithGeneratedSerializableImplementations() {
         val output = compile("""
-            use std.time
-            use std.serializer
-            use std.io
-            use std.*
+            import std.time
+            import std.serializer
+            import std.io
+            import std.*
 
             func main() {
                 fin value = std::parseIsoInstant("1970-01-01T00:00:00Z") catch Instant(-1L)
@@ -44,9 +44,9 @@ class TimeStdlibTest {
 
     @Test fun interpreterExecutesCalendarOffsetAndIsoRoundTrip() {
         val output = compile("""
-            use std.time
-            use std.io
-            use std.*
+            import std.time
+            import std.io
+            import std.*
 
             func main() {
                 fin source = DateTime(LocalDate(2026, 7, 16), LocalTime(9, 5, 7, 123000000), UtcOffset(10800))
@@ -56,8 +56,8 @@ class TimeStdlibTest {
                     fin decoded = std::parseIsoDateTime(encoded)
                     std::println(decoded.date.year)
                     std::println(decoded.offset.totalSeconds)
-                } catch { error ->
-                    std::println("error:" + error)
+                } catch { e ->
+                    std::println("error:" + e)
                 }
             }
         """.trimIndent())
@@ -70,9 +70,9 @@ class TimeStdlibTest {
 
     @Test fun invalidOffsetMinuteUsesTypedFailurePath() {
         val output = compile("""
-            use std.time
-            use std.io
-            use std.*
+            import std.time
+            import std.io
+            import std.*
 
             func main() {
                 fin fallback = DateTime(LocalDate(-1, 1, 1), LocalTime(0, 0, 0), UtcOffset(0))

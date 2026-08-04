@@ -24,8 +24,8 @@ class ContainerStdlibTest {
         files.forEach { Parser(Lexer(it.readText()).tokenize()).parse() }
 
         val result = compile("""
-            use std.container.*
-            use std.*
+            import std.container.*
+            import std.*
 
             func verify(): Int {
                 inline assert (std::reflect<List>).hasDeco<Serializable> { "List metadata missing" }
@@ -47,9 +47,9 @@ class ContainerStdlibTest {
 
     @Test fun coreContainersExecuteTogether() {
         val result = compile("""
-            use std.container.*
-            use std.io
-            use std.*
+            import std.container.*
+            import std.io
+            import std.*
 
             func main() {
                 var list = std::listOf(1, 2)

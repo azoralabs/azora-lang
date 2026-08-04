@@ -6,12 +6,12 @@ import org.azora.lang.backend.IrInterpreter
 import kotlin.test.*
 
 /**
- * Tests for zones and visibility under the zone/import model:
+ * Tests for realms and visibility under the realm/import model:
  *
- * - A named `zone X { ... }` namespaces its members (`X::member`). Members are
+ * - A named `realm X { ... }` namespaces its members (`X::member`). Members are
  *   reached via the qualified `X::name` path; bare access is rejected.
- * - `zone X { ... }` may be declared in multiple blocks (and across
- *   modules); the contributions merge into one logical zone.
+ * - `realm X { ... }` may be declared in multiple blocks (and across
+ *   modules); the contributions merge into one logical realm.
  * - Visibility modifiers (`expose`/`confine`/`protect`) still constrain access.
  */
 class ModulesTest {
@@ -26,7 +26,7 @@ class ModulesTest {
 
     @Test fun everythingIsPublicWithoutSayingSo() {
         assertEquals("7", run("""
-            use std.io
+            import std.io
             pack Body {
                 var mass: Int
             }
@@ -38,7 +38,7 @@ class ModulesTest {
 
     @Test fun aLeadingUnderscoreKeepsAMemberInsideItsType() {
         val result = Compiler().compile("""
-            use std.io
+            import std.io
             pack Body {
                 var _cache: Int
             }
@@ -57,7 +57,7 @@ class ModulesTest {
         // The restriction is on other types, not on the declaring one — otherwise
         // a private field would be write-only.
         assertEquals("8", run("""
-            use std.io
+            import std.io
             pack Body {
                 var _cache: Int
             }
@@ -79,8 +79,8 @@ class ModulesTest {
         // at the top of a file. Everywhere else it is just an identifier, so a
         // reasonable name for a modulus is not taken away by the module syntax.
         assertEquals("7\n2\n3", run("""
-            mod arithmetic
-            use std.io
+            module arithmetic
+            import std.io
 
             pack Wheel {
                 var mod: Int
@@ -101,8 +101,8 @@ class ModulesTest {
 
     @Test fun theModuleNameMayItselfBeMod() {
         assertEquals("ok", run("""
-            mod mod
-            use std.io
+            module mod
+            import std.io
 
             func main() {
                 std::println("ok")
@@ -110,12 +110,12 @@ class ModulesTest {
         """.trimIndent()))
     }
 
-    // -- qualified zone access (no bare aliases) ----
+    // -- qualified realm access (no bare aliases) ----
 
-    @Test fun qualifiedZoneFunctionAndConstant() {
+    @Test fun qualifiedRealmFunctionAndConstant() {
         assertEquals("3\n14159", run("""
-            use std.io
-            zone Math {
+            import std.io
+            realm Math {
                 fin PI = 14159
                 func triple(x: Int): Int {
                     return x * 3
@@ -128,10 +128,10 @@ class ModulesTest {
         """.trimIndent()))
     }
 
-    @Test fun qualifiedZoneAccessForFuncsAndFins() {
+    @Test fun qualifiedRealmAccessForFuncsAndFins() {
         assertEquals("hello\n42", run("""
-            use std.io
-            zone Utils {
+            import std.io
+            realm Utils {
                 func greet(): String {
                     return "hello"
                 }
@@ -144,10 +144,10 @@ class ModulesTest {
         """.trimIndent()))
     }
 
-    @Test fun bareZoneAccessIsRejected() {
+    @Test fun bareRealmAccessIsRejected() {
         val result = Compiler().compile("""
-            use std.io
-            zone Const {
+            import std.io
+            realm Const {
                 fin five = 5
             }
             func main() {
@@ -155,17 +155,17 @@ class ModulesTest {
             }
         """.trimIndent())
         assertIs<CompilationResult.Failure>(result)
-        assertTrue(result.errors.any { "five" in it }, "bare zone access should be rejected: ${'$'}{result.errors}")
+        assertTrue(result.errors.any { "five" in it }, "bare realm access should be rejected: ${'$'}{result.errors}")
     }
 
     @Test fun useDoesNotCreateBareAlias() {
-        // `use Const` is a no-op for user zones; bare `five` must still be rejected.
+        // `use Const` is a no-op for user realms; bare `five` must still be rejected.
         val result = Compiler().compile("""
-            use std.io
-            zone Const {
+            import std.io
+            realm Const {
                 fin five = 5
             }
-            use Const
+            import Const
             func main() {
                 std::println(five)
             }
@@ -174,15 +174,15 @@ class ModulesTest {
         assertTrue(result.errors.any { "five" in it }, "${'$'}{result.errors}")
     }
 
-    @Test fun friendZoneMergesAcrossBlocks() {
+    @Test fun friendRealmMergesAcrossBlocks() {
         assertEquals("3\n42", run("""
-            use std.io
-            zone std {
+            import std.io
+            realm std {
                 func triple(x: Int): Int {
                     return x * 3
                 }
             }
-            zone std {
+            realm std {
                 fin answer = 42
             }
             func main() {
@@ -192,15 +192,15 @@ class ModulesTest {
         """.trimIndent()))
     }
 
-    @Test fun reopeningAZoneMergesItsContributions() {
-        // A zone is a name a package agrees on, not a block one file owns, so
+    @Test fun reopeningARealmMergesItsContributions() {
+        // A realm is a name a package agrees on, not a block one file owns, so
         // opening it twice adds to it rather than colliding.
         assertEquals("1\n2", run("""
-            use std.io
-            zone x {
+            import std.io
+            realm x {
                 func a(): Int { return 1 }
             }
-            zone x {
+            realm x {
                 func b(): Int { return 2 }
             }
             func main() {
@@ -212,7 +212,7 @@ class ModulesTest {
 
     @Test fun scopeIsJustAnIdentifierNotANamespaceKeyword() {
         assertEquals("7", run("""
-            use std.io
+            import std.io
             func main() {
                 var scope = 7
                 std::println(scope)
@@ -221,7 +221,7 @@ class ModulesTest {
 
         assertFailsWith<IllegalStateException> {
             Compiler().compile("""
-                use std.io
+                import std.io
                 scope Old {
                     func nope(): Int {
                         return 1
@@ -235,7 +235,7 @@ class ModulesTest {
 
     @Test fun exposeFuncWorks() {
         assertEquals("ok", run("""
-            use std.io
+            import std.io
             func helper(): String {
                 return "ok"
             }
@@ -247,7 +247,7 @@ class ModulesTest {
 
     @Test fun confineFuncWorksInSameFile() {
         assertEquals("private", run("""
-            use std.io
+            import std.io
             confine func secret(): String {
                 return "private"
             }
@@ -259,7 +259,7 @@ class ModulesTest {
 
     @Test fun confinePackFieldCannotBeReadExternally() {
         val result = Compiler().compile("""
-            use std.io
+            import std.io
             pack Secret {
                 confine var value: Int
             }
@@ -274,8 +274,8 @@ class ModulesTest {
 
     @Test fun moduleKeywordAsPackageAlias() {
         assertEquals("ok", run("""
-            mod myapp
-            use std.io
+            module myapp
+            import std.io
             func main() {
                 std::println("ok")
             }
@@ -284,7 +284,7 @@ class ModulesTest {
 
     @Test fun visibilityOnPack() {
         assertEquals("42", run("""
-            use std.io
+            import std.io
             pack Container {
                 var v: Int
             }

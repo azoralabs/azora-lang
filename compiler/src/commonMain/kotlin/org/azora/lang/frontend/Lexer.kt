@@ -47,6 +47,7 @@ class Lexer(private val source: String) {
             "var" to TokenType.VAR,
             "fin" to TokenType.FIN,
             "let" to TokenType.LET,
+            "val" to TokenType.VAL,
             "func" to TokenType.FUNC,
             "return" to TokenType.RETURN,
             "if" to TokenType.IF,
@@ -54,12 +55,13 @@ class Lexer(private val source: String) {
             "inline" to TokenType.INLINE,
             "deepinline" to TokenType.DEEPINLINE,
             "noinline" to TokenType.NOINLINE,
-            "zone" to TokenType.ZONE,
+            "realm" to TokenType.REALM,
+            "scope" to TokenType.SCOPE,
             "test" to TokenType.TEST,
             "assert" to TokenType.ASSERT,
             "trace" to TokenType.TRACE,
             "panic" to TokenType.PANIC,
-            "meta" to TokenType.META,
+            "macro" to TokenType.MACRO,
             "for" to TokenType.FOR,
             "while" to TokenType.WHILE,
             "loop" to TokenType.LOOP,
@@ -71,9 +73,9 @@ class Lexer(private val source: String) {
             "with" to TokenType.WITH,
             "infx" to TokenType.INFX,
             "oper" to TokenType.OPER,
-            "deco" to TokenType.DECO,
+            "annot" to TokenType.ANNOT,
             "bind" to TokenType.BIND,
-            "fail" to TokenType.FAIL,
+            "error" to TokenType.ERROR,
             "alloc" to TokenType.ALLOC,
             "purge" to TokenType.PURGE,
             "unsafe" to TokenType.UNSAFE,
@@ -104,13 +106,13 @@ class Lexer(private val source: String) {
             "impl" to TokenType.IMPL,
             "spec" to TokenType.SPEC,
             "defer" to TokenType.DEFER,
-            "type" to TokenType.TYPE,
             "typealias" to TokenType.TYPEALIAS,
-            "slot" to TokenType.SLOT,
+            "variant" to TokenType.VARIANT,
             "as" to TokenType.AS,
             "guard" to TokenType.GUARD,
             "is" to TokenType.IS,
             "null" to TokenType.NULL,
+            "import" to TokenType.IMPORT,
             "use" to TokenType.USE,
             "true" to TokenType.TRUE,
             "false" to TokenType.FALSE
@@ -461,7 +463,7 @@ class Lexer(private val source: String) {
 
         // Decimal point (only for base-10). In member-access position (`obj.0.0`)
         // the previous token is DOT — scan an integer so the `.0` splits into two
-        // tuple accesses instead of being swallowed as a REAL_LITERAL `0.0`.
+        // tuple accesses instead of being swallowed as a DOUBLE_LITERAL `0.0`.
         var isFloat = false
         val afterMemberAccess = tokens.lastOrNull()?.type == TokenType.DOT
         if (base == 10 && !afterMemberAccess && !isAtEnd() && peek() == '.' && !isAtEnd(1) && source[current + 1].isDigit()) {
@@ -496,7 +498,7 @@ class Lexer(private val source: String) {
             // Parse as floating-point
             val numericText = numText.replace("_", "")
             val value = numericText.toDouble()
-            tokens.add(Token(TokenType.REAL_LITERAL, text, line, startColumn, NumericLiteral(value, suffix)))
+            tokens.add(Token(TokenType.DOUBLE_LITERAL, text, line, startColumn, NumericLiteral(value, suffix)))
         } else {
             // Parse as integer. Values in [Long.MAX+1, ULong.MAX] (e.g. a ULong
             // MAX_VALUE literal) don't fit a signed Long, so fall back to parsing

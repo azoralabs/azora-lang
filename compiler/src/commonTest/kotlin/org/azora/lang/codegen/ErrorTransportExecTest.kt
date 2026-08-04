@@ -44,7 +44,7 @@ class ErrorTransportExecTest {
     }
 
     private val failing = """
-        fail MapError { OutOfBounds, BadSize }
+        error MapError { OutOfBounds, BadSize }
 
         func at(x: Int): Int ?! MapError {
             if x < 0 {

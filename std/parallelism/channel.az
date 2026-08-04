@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-mod std.parallelism.channel
+module std.parallelism.channel
 
 /**
  * @file std/parallelism/channel
@@ -27,16 +27,16 @@ mod std.parallelism.channel
  * @since 0.0.1
  */
 
-zone std {
+realm std {
     /**
      * A thread-safe FIFO message channel for inter-thread communication.
      *
      * Channel provides a synchronized queue that allows threads to
      * send and receive messages safely.
      *
-     * @param T The type of messages in this channel.
+     * @generic T The type of messages in this channel.
      */
-    @SinceAzora("0.0.1")
+    @Since("0.0.1")
     pack Channel<T> {
         var _queue: Queue<T> = Queue<T>()
         var _mutex: Mutex = Mutex(0)
@@ -47,15 +47,15 @@ zone std {
         // --- Capacity ---
 
         /** The number of messages currently in the channel. */
-        @SinceAzora("0.0.1")
+        @Since("0.0.1")
         prop length[self: Self&]: Int = queue.length
 
         /** Whether the channel has no messages. */
-        @SinceAzora("0.0.1")
+        @Since("0.0.1")
         prop isEmpty[self: Self&]: Bool = queue.isEmpty
 
         /** Whether the channel has been closed. */
-        @SinceAzora("0.0.1")
+        @Since("0.0.1")
         prop isClosed[self: Self&]: Bool = closed
 
         // --- Operations ---
@@ -110,7 +110,7 @@ zone std {
         /**
          * Closes the channel, preventing further sends.
          */
-        @SinceAzora("0.0.1")
+        @Since("0.0.1")
         func close() {
             self._closed = true
         }

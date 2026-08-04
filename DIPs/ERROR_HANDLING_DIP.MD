@@ -1,6 +1,6 @@
 # Azora Error Handling — DIP Implementation Profile
 
-Typed, recoverable errors via error sets (`fail`), failable return types
+Typed, recoverable errors via error sets (`error`), failable return types
 (`T ?! E`), and the `return .Variant` / `try` / `catch` / `rescue` machinery.
 
 The IR type of `T ?! E` is just `T` — errors travel on the existing exception
@@ -26,7 +26,7 @@ HANDLE   ::= try { … } catch { … }              // block form
 ## 1. Declaring an error set
 
 ```azora
-fail SerializationError {
+error SerializationError {
     InvalidSyntax,
     InvalidNumber,
     UnexpectedEnd,
@@ -53,7 +53,7 @@ func decode(b: Bytes): Value ?! [ParseError, IoError] { … }
 ## 3. Raising
 
 ```azora
-fail ParseError.Invalid       // explicit raise
+error ParseError.Invalid       // explicit raise
 throw someError               // throw an error value
 ```
 
@@ -104,4 +104,4 @@ func step() {
 
 - `panic "message"` / `panic(cond)` — unrecoverable programmer error (see the
   Contracts & Assertions DIP).
-- `fail` / `?!` — recoverable, typed errors handled by callers.
+- `error` / `?!` — recoverable, typed errors handled by callers.

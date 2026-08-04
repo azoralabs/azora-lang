@@ -1,12 +1,12 @@
 # Azora Decorators — DIP Implementation Profile
 
-`deco` declares a decorator (attribute); `@Name` applies it. Decorators attach
+`annot` declares a decorator (attribute); `@Name` applies it. Decorators attach
 compile-time metadata, drive derive generators, and are queried via reflection.
 
 ## Grammar
 
 ```
-DECL  ::= @[DECORATORS] VISIBILITY [bridge] deco NAME [for TARGETS] [bind BINDINGS] [{ FIELDS }]
+DECL  ::= @[DECORATORS] VISIBILITY [bridge] annot NAME [for TARGETS] [bind BINDINGS] [{ FIELDS }]
 
 TARGETS  ::= .Target | [.Target, .Target, …]
 BINDINGS ::= Spec | [Spec, …] | [Spec for .Target, …]
@@ -26,9 +26,9 @@ Targets (`DecoTarget`): `.Pack`, `.Func`, `.Infx`, `.Prop`, `.Task`, `.Flow`,
 ## 1. Declaring a decorator
 
 ```azora
-deco Component                                    // marker, any target
-deco SerialIgnore for .Field                       // restricted to fields
-deco SerialName for [.Pack, .Enum, .Field] {       // with fields (arguments)
+annot Component                                    // marker, any target
+annot SerialIgnore for .Field                       // restricted to fields
+annot SerialName for [.Pack, .Enum, .Field] {       // with fields (arguments)
     fin value: String = ""
 }
 ```
@@ -66,7 +66,7 @@ func moveSystem(world: World&) { … }
 route bindings by target:
 
 ```azora
-deco A for [.Pack, .Func] bind [X for .Pack, Y for .Func]
+annot A for [.Pack, .Func] bind [X for .Pack, Y for .Func]
 ```
 
 ## 4. Binding to specs (derives)
@@ -74,7 +74,7 @@ deco A for [.Pack, .Func] bind [X for .Pack, Y for .Func]
 `bind` connects a decorator to spec conformances it implies:
 
 ```azora
-deco Serializable for .Pack bind [Serializer, JsonSerializer, AzonSerializer] {
+annot Serializable for .Pack bind [Serializer, JsonSerializer, AzonSerializer] {
     fin ignoreUnknownFields: Bool = false
     fin encodeDefaults: Bool = true
 }

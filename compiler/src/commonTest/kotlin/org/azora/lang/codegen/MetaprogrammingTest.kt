@@ -17,9 +17,9 @@ class MetaprogrammingTest {
     @Test
     fun inlineFunc_bodySubstitutedAtCallSite() {
         val result = compile("""
-            mod playground
+            module playground
 
-            use std.io
+            import std.io
             inline func a() {
                 std::println("Hello from A")
             }
@@ -35,14 +35,14 @@ class MetaprogrammingTest {
         """.trimIndent())
 
         val expectedIr = """
-            mod playground
+            module playground
 
             func b(): Unit {
                 std__println("Hello from B")
             }
 
             func main(): Unit {
-                zone {
+                scope {
                     std__println("Hello from A")
                 }
                 b()
@@ -50,14 +50,14 @@ class MetaprogrammingTest {
         """.trimIndent()
 
         val expectedOptimizedIr = """
-            mod playground
+            module playground
 
             func b(): Unit {
                 std__println("Hello from B")
             }
 
             func main(): Unit {
-                zone {
+                scope {
                     std__println("Hello from A")
                 }
                 b()
@@ -97,9 +97,9 @@ class MetaprogrammingTest {
     @Test
     fun inlineBlocks_funcInliningRules() {
         val result = compile("""
-            mod playground
+            module playground
 
-            use std.io
+            import std.io
             inline fin x = 2
 
             inline {
@@ -153,15 +153,15 @@ class MetaprogrammingTest {
         assertTrue("c" in irFuncNames, "inline if { func c() } should be in IR")
         assertFalse("d" in irFuncNames, "deepinline if { func d() } should not be in IR")
         assertTrue("e" in irFuncNames, "noinline func e() should be in IR")
-        assertTrue("main" in irFuncNames, "use std.io\nfunc main() should be in IR")
+        assertTrue("main" in irFuncNames, "import std.io\nfunc main() should be in IR")
 
-        // main() should have a, b, d inlined as zone blocks, and call c, e directly
+        // main() should have a, b, d inlined as realm blocks, and call c, e directly
         val mainBody = result.ir.functions.first { it.name == "main" }.body
-        val zones = mainBody.filterIsInstance<IrStmt.Zone>()
+        val realms = mainBody.filterIsInstance<IrStmt.Scope>()
         val calls = mainBody.filterIsInstance<IrStmt.ExprStmt>()
             .map { it.expr }.filterIsInstance<IrExpr.Call>().map { it.name }
 
-        assertEquals(3, zones.size, "main should have 3 zone blocks (inlined a, b, d)")
+        assertEquals(3, realms.size, "main should have 3 realm blocks (inlined a, b, d)")
         assertTrue("c" in calls, "main should call c() directly")
         assertTrue("e" in calls, "main should call e() directly")
     }
@@ -169,9 +169,9 @@ class MetaprogrammingTest {
     @Test
     fun runtimeGlobals_finSurvivesInIr() {
         val result = compile("""
-            mod playground
+            module playground
 
-            use std.io
+            import std.io
             inline fin x = 2
 
             inline if x == 2 {
@@ -215,9 +215,9 @@ class MetaprogrammingTest {
     @Test
     fun fullMetaprogramming_allInlineRulesWithGlobals() {
         val result = compile("""
-            mod playground
+            module playground
 
-            use std.io
+            import std.io
             inline fin x = 2
 
             fin aa = 2
@@ -272,7 +272,7 @@ class MetaprogrammingTest {
         """.trimIndent())
 
         val expectedIr = """
-            mod playground
+            module playground
 
             fin aa: Int = 2
             fin c1: Int = 0
@@ -288,14 +288,14 @@ class MetaprogrammingTest {
             }
 
             func main(): Unit {
-                zone {
+                scope {
                     std__println("Hello from A")
                 }
-                zone {
+                scope {
                     std__println("Hello from B")
                 }
                 c()
-                zone {
+                scope {
                     std__println("Hello from D")
                 }
                 e()
@@ -343,7 +343,7 @@ class MetaprogrammingTest {
         """.trimIndent()
 
         val expectedOptimizedIr = """
-            mod playground
+            module playground
 
             func c(): Unit {
                 std__println("Hello from C")
@@ -354,14 +354,14 @@ class MetaprogrammingTest {
             }
 
             func main(): Unit {
-                zone {
+                scope {
                     std__println("Hello from A")
                 }
-                zone {
+                scope {
                     std__println("Hello from B")
                 }
                 c()
-                zone {
+                scope {
                     std__println("Hello from D")
                 }
                 e()

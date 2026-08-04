@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  */
 
-mod std.memory.slice
+module std.memory.slice
 
 /**
  * @file std/memory/slice
@@ -15,8 +15,8 @@ mod std.memory.slice
  * @since 0.0.3
  */
 
-zone std {
-    @SinceAzora("0.0.3")
+realm std {
+    @Since("0.0.3")
     pack Slice<T> {
         var _raw: T*
         var count: Int
@@ -36,15 +36,15 @@ zone std {
 
     impl Slice<T> {
         /** `true` when the slice has no elements. */
-        @SinceAzora("0.0.3")
+        @Since("0.0.3")
         prop isEmpty[self: Self&]: Bool = count == 0
 
         /** `true` when the slice has at least one element. */
-        @SinceAzora("0.0.3")
+        @Since("0.0.3")
         prop isNotEmpty[self: Self&]: Bool = count > 0
 
         /** Returns the raw underlying `T*`. */
-        @SinceAzora("0.0.3")
+        @Since("0.0.3")
         prop ptr[self: Self&]: T* = self._raw
 
         /** Returns a sub-slice `[start, start+count)`; asserts bounds. */

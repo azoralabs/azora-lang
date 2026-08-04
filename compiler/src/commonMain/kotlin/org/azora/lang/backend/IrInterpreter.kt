@@ -41,7 +41,7 @@ import kotlinx.coroutines.async
 /**
  * Backend — interprets [IrProgram] directly instead of generating code.
  *
- * Uses a scope stack so that `zone { }` blocks introduce new scopes and
+ * Uses a scope stack so that `realm { }` blocks introduce new scopes and
  * `::` / `::::` can resolve variables at the correct depth.
  */
 /**
@@ -56,6 +56,9 @@ import kotlinx.coroutines.async
 interface AzoraDebugHost {
     suspend fun onLine(line: Int, locals: Map<String, Any?>)
 }
+
+/** The single storage slot every member of a `union` instance shares. */
+private const val UNION_SLOT = "__union"
 
 class IrInterpreter {
 
@@ -117,7 +120,7 @@ class IrInterpreter {
     /**
      * The intrinsic behind a `bridge func`, found by name.
      *
-     * `zone std` mangles its members (`sqrt` → `__std_math_sqrt`), and the
+     * `realm std` mangles its members (`sqrt` → `__std_math_sqrt`), and the
      * table is keyed by the mathematical name, so a mangled call falls back to
      * its final segment. Nothing outside `externImpls` matches, so an ordinary
      * user function with an underscore in its name is unaffected.
@@ -436,7 +439,7 @@ class IrInterpreter {
                     if (result is ControlSignal) return result
                 }
             }
-            is IrStmt.Zone -> {
+            is IrStmt.Scope -> {
                 pushScope()
                 if (stmt.alloc) state().regionAllocations.addLast(mutableListOf())
                 var signal: ControlSignal? = null
@@ -594,7 +597,7 @@ class IrInterpreter {
                 if (target is Pointer) target = target.value
                 @Suppress("UNCHECKED_CAST")
                 val map = target as MutableMap<String, Any?>
-                map[stmt.name] = evalExpr(stmt.value)
+                map[unionSlotKey(map) ?: stmt.name] = evalExpr(stmt.value)
             }
             is IrStmt.When -> {
                 val scrut = evalExpr(stmt.scrutinee)
@@ -671,10 +674,23 @@ class IrInterpreter {
         return null
     }
 
+    /**
+     * The key a union member reads and writes.
+     *
+     * A union's members share one storage slot, so they share one key. The
+     * interpreter holds values, not bytes, so reading a member other than the
+     * one last written yields that value rather than a reinterpretation of its
+     * bits — the LLVM and Wasm backends model the byte-level view.
+     */
+    private fun unionSlotKey(receiver: Map<*, *>): String? {
+        val typeName = receiver["__type"] as? String ?: return null
+        return if (structs[typeName]?.isUnion == true) UNION_SLOT else null
+    }
+
     private suspend fun evalExpr(expr: IrExpr): Any? {
         return when (expr) {
             is IrExpr.IntLiteral -> expr.value
-            is IrExpr.RealLiteral -> expr.value
+            is IrExpr.DoubleLiteral -> expr.value
             is IrExpr.StringLiteral -> expr.value
             is IrExpr.EnumLiteral -> expr.variant
             is IrExpr.BoolLiteral -> expr.value
@@ -753,6 +769,10 @@ class IrInterpreter {
                     }
                     is Map<*, *> -> {
                         val typeName = receiver["__type"] as? String
+                        unionSlotKey(receiver)?.let { slot ->
+                            @Suppress("UNCHECKED_CAST")
+                            return@evalExpr (receiver as Map<String, Any?>)[slot]
+                        }
                         if (typeName != null && receiver.containsKey(expr.name)) {
                             @Suppress("UNCHECKED_CAST")
                             return@evalExpr (receiver as Map<String, Any?>)[expr.name]
@@ -799,8 +819,12 @@ class IrInterpreter {
             is IrExpr.StructCtor -> {
                 val map = linkedMapOf<String, Any?>()
                 map["__type"] = expr.name
-                for (i in expr.fieldNames.indices) {
-                    map[expr.fieldNames[i]] = evalExpr(expr.args[i])
+                if (structs[expr.name]?.isUnion == true) {
+                    map[UNION_SLOT] = expr.args.firstOrNull()?.let { evalExpr(it) }
+                } else {
+                    for (i in expr.fieldNames.indices) {
+                        map[expr.fieldNames[i]] = evalExpr(expr.args[i])
+                    }
                 }
                 // Run the pack's `impl ctor()` (if any) so field-initializing
                 // constructors execute. Only a receiver-only ctor (`mut ref self`)
@@ -842,7 +866,7 @@ class IrInterpreter {
                     IrType.Short, IrType.UShort -> n.toShort().toLong()
                     IrType.Long, IrType.ULong, IrType.Cent, IrType.UCent, IrType.ISize, IrType.USize -> n.toLong()
                     IrType.Float -> n.toFloat()
-                    IrType.Real, IrType.Decimal -> n.toDouble()
+                    IrType.Double, IrType.Decimal -> n.toDouble()
                     IrType.Char -> n.toInt().toChar()
                     else -> v
                 }
@@ -1099,7 +1123,7 @@ class IrInterpreter {
             val typeName = args[1] as String
             val result = when (typeName) {
                 "Int", "UInt", "Byte", "UByte", "Short", "UShort", "Long", "ULong", "Cent", "UCent", "ISize", "USize" -> value is Long
-                "Real", "Float", "Decimal" -> value is Double
+                "Double", "Float", "Decimal" -> value is Double
                 "String" -> value is String
                 "Bool" -> value is Boolean
                 "Char" -> value is Char
@@ -1116,7 +1140,7 @@ class IrInterpreter {
             val typeName = args[1] as String
             val matches = when (typeName) {
                 "Int", "UInt", "Byte", "UByte", "Short", "UShort", "Long", "ULong", "Cent", "UCent", "ISize", "USize" -> value is Long
-                "Real", "Float", "Decimal" -> value is Double
+                "Double", "Float", "Decimal" -> value is Double
                 "String" -> value is String
                 "Bool" -> value is Boolean
                 "Char" -> value is Char
@@ -1129,7 +1153,7 @@ class IrInterpreter {
         }
         if (expr.name == "__alloc") {
             val ptr = asPointer(args[0])
-            // Register with the current `zone alloc { }` arena (if any) for cleanup at exit.
+            // Register with the current `realm alloc { }` arena (if any) for cleanup at exit.
             state().regionAllocations.lastOrNull()?.add(ptr)
             return ptr
         }

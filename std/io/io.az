@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-mod std.io
+module std.io
 
 /**
  * @file std/io/io
@@ -27,18 +27,18 @@ mod std.io
  * @since 0.0.1
  */
 
-zone std {
-    zone fmt {
+realm std {
+    realm fmt {
         /** A newline character. */
-        @SinceAzora("0.0.1")
+        @Since("0.0.1")
         fin newline = "\n"
 
         /** A tab character. */
-        @SinceAzora("0.0.1")
+        @Since("0.0.1")
         fin tab = "\t"
 
         /** A single space character. */
-        @SinceAzora("0.0.1")
+        @Since("0.0.1")
         fin space = " "
     }
 
@@ -50,7 +50,7 @@ zone std {
      *
      * @param value The value to write.
      */
-    @SinceAzora("0.0.4")
+    @Since("0.0.4")
     bridge func print(value: Any): Unit
 
     /**
@@ -62,7 +62,7 @@ zone std {
      * argument's concrete type.
      */
     /** Prints `value` followed by a newline. */
-    @SinceAzora("0.0.1")
+    @Since("0.0.1")
     bridge func println(value: Any): Unit
 
     /**

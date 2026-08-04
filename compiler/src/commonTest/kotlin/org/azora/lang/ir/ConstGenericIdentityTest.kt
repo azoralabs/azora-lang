@@ -72,7 +72,7 @@ class ConstGenericIdentityTest {
         // Identity stays nominal in type arguments: a pack with no const argument
         // compares equal however it was spelled.
         val bare = IrType.resolve(TypeRef.Named("Box"))
-        val applied = IrType.resolve(TypeRef.Named("Box", listOf(TypeRef.Named("Real"))))
+        val applied = IrType.resolve(TypeRef.Named("Box", listOf(TypeRef.Named("Double"))))
         assertEquals(bare, applied)
     }
 

@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-mod std.algorithm.search
+module std.algorithm.search
 
-use std.container.array
+import std.container.array
 
 /**
  * @file std/algorithm/search
@@ -29,12 +29,12 @@ use std.container.array
  * @since 0.0.1
  */
 
-zone std {
+realm std {
     /**
      *
      */
-    @SinceAzora("0.0.1")
-    fail SearchError {
+    @Since("0.0.1")
+    error SearchError {
         NotFound
         EmptyArray
     }
@@ -89,7 +89,7 @@ zone std {
     func minOf<T>(arr: Array<T>): T
     in {
         assert arr.length > 0 { "Input must not be empty" }
-    } zone {
+    } scope {
         var result = arr[0]
         for i in 1..<arr.length {
             if arr[i] < result { result = arr[i] }
@@ -107,7 +107,7 @@ zone std {
     func maxOf<T>(arr: Array<T>): T
     in {
         assert arr.length > 0 { "Input must not be empty" }
-    } zone {
+    } scope {
         var result = arr[0]
         for i in 1..<arr.length {
             if arr[i] > result { result = arr[i] }
@@ -126,7 +126,7 @@ zone std {
     func count<T>(arr: Array<T>, target: T): Int
     out {
         assert it >= 0 { "count must return non-negative" }
-    } zone {
+    } scope {
         var c = 0
         for i in 0..<arr.length {
             if arr[i] == target { c += 1 }

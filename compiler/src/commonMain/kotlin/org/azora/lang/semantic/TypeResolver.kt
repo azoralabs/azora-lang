@@ -1168,6 +1168,17 @@ class TypeResolver(private val table: SymbolTable) {
             }
             is Expr.Unary -> {
                 val operandType = resolveExpr(expr.operand) ?: return null
+                // A user type answers `-x`, `!x` and `~x` through the operator it
+                // declared. Checked before the built-in rules, which reject any
+                // non-numeric operand outright — that rejection is what made a
+                // declared unary operator dead code.
+                if (operandType is IrType.Named) {
+                    unaryOverloadName(expr.op)?.let { operName ->
+                        table.lookupOperator(operandType.name, operName, null)?.let { mangled ->
+                            return table.lookupFunction(mangled)?.returnType ?: operandType
+                        }
+                    }
+                }
                 when (expr.op) {
                     TokenType.MINUS -> {
                         // Any (an erased generic T) negates at runtime.

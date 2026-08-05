@@ -88,6 +88,21 @@ internal fun comparisonPlan(
     return ComparisonPlan.Spaceship(spaceship, predicate)
 }
 
+/**
+ * The member a *unary* operator is declared under.
+ *
+ * `-x` and `x - y` share a symbol and are told apart by operand count, which
+ * the overload suffix already encodes: `oper- [self: Self&]` registers as
+ * `oper-` and `oper- [self: Self&](rhs: Vec2&)` as `oper-@Vec2`. So the name is
+ * the same and the lookup passes no operand key.
+ */
+internal fun unaryOverloadName(op: TokenType): String? = when (op) {
+    TokenType.MINUS -> "oper-"
+    TokenType.BANG -> "oper!"
+    TokenType.TILDE -> "oper~"
+    else -> null
+}
+
 /** The member name [op] is declared under, for the operators that have one. */
 internal fun operOverloadMemberName(op: TokenType): String? = when (op) {
     TokenType.PLUS -> "oper+"

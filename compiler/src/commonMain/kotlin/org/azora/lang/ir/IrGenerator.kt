@@ -38,6 +38,7 @@ import org.azora.lang.semantic.ComparisonPlan
 import org.azora.lang.semantic.SymbolTable
 import org.azora.lang.semantic.TypeFunctionEvaluator
 import org.azora.lang.semantic.comparisonPlan
+import org.azora.lang.semantic.unaryOverloadName
 import org.azora.lang.semantic.VariableSymbol
 import kotlin.collections.iterator
 
@@ -1428,6 +1429,16 @@ class IrGenerator(private val table: SymbolTable) {
             }
             is Expr.Unary -> {
                 val operand = lowerExpr(expr.operand)
+                // The declared operator, if the operand's type has one. Same
+                // decision the resolver made, from the same table.
+                (operand.type as? IrType.Named)?.let { named ->
+                    unaryOverloadName(expr.op)?.let { operName ->
+                        table.lookupOperator(named.name, operName, null)?.let { mangled ->
+                            val func = table.lookupFunction(mangled)!!
+                            return IrExpr.Call(mangled, listOf(operand), func.returnType)
+                        }
+                    }
+                }
                 val op = when (expr.op) {
                     TokenType.MINUS -> IrUnaryOp.NEG
                     TokenType.BANG -> IrUnaryOp.NOT

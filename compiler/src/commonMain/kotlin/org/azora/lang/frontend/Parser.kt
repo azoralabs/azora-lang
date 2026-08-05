@@ -494,6 +494,10 @@ class Parser(
         match(TokenType.PIPE) -> "|"
         match(TokenType.CARET) -> "^"
         match(TokenType.TILDE) -> "~"
+        // `oper!` — logical negation. A unary operator is told apart from a
+        // binary one of the same symbol by operand count, which the overload
+        // suffix already handles, so `!` needs nothing but a name.
+        match(TokenType.BANG) -> "!"
         // `oper$` — what `"$value"` calls. Named after the sigil you actually write.
         check(TokenType.IDENTIFIER) && peek().lexeme == "$" -> { advance(); "$" }
         // `oper.*` / `oper.^` — what `p.*` and `p.^` call. The surface keeps the
@@ -528,6 +532,17 @@ class Parser(
      */
     private fun operatorMemberName(opName: String): String =
         if (opName in setOf("index", "indexSet", "slice")) opName else "oper$opName"
+
+    /**
+     * Operators the compiler looks up by their bare member name.
+     *
+     * Indexing, slicing and the range operators are reached through a check that
+     * asks for the name directly rather than through `lookupOperator`'s
+     * operand-keyed fallback, so an overload suffix would hide them — a
+     * suffixed `oper..` makes `for i in 0..<n` report that `Int` has no range
+     * operator.
+     */
+    private val bareLookupOperators = setOf("index", "indexSet", "slice", "..", "reverse..")
 
     /**
      * `[bridge] impl oper<OP> for Type(params): Ret (mod self) [{ body }]`.
@@ -579,7 +594,16 @@ class Parser(
         // The step is declarative metadata: parsed so the source states it, then
         // discarded, exactly as the old bracket form's `by` was.
         if (match(TokenType.BY)) parseExpr()
-        val memberName = operatorMemberName(opName)
+        // The same overload suffix an operator inside an `impl` gets: the operand
+        // it accepts, and — for operators that do not already imply mutation —
+        // the receiver's exclusivity. Without it a unary `oper-` and a binary
+        // `oper-` are one member, and the second collides with the first.
+        val memberName = operatorMemberName(opName) +
+            if (opName in bareLookupOperators) {
+                ""
+            } else {
+                operatorOverloadSuffix(opName, recv.modifier, operands)
+            }
         // A declaration with no body is provided by the backend, and says so:
         // `bridge oper.. [self: Ty&](rhs: Ty&) by 1`. Requiring the keyword keeps
         // "the compiler implements this" from being spelled as an omission.

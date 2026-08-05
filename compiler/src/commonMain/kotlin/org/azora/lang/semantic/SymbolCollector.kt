@@ -59,6 +59,15 @@ class SymbolCollector {
     private fun resolveType(ref: TypeRef, typeParams: Set<String> = emptySet()): IrType =
         IrType.resolve(TypeFunctionEvaluator.resolve(ref, typeFunctions, unresolvedParams = typeParams), typeParams)
 
+    /**
+     * Whether [member] is an operator rather than a named member.
+     *
+     * Operators are registered as `oper<symbol>`, except the three reached by
+     * their bare names — indexing, index-assignment and slicing.
+     */
+    private fun isOperatorMember(member: String): Boolean =
+        member.startsWith("oper") || member in setOf("index", "indexSet", "slice")
+
     private fun callbackTraitMethodName(traitName: String, traitArgs: List<TypeRef>, callback: org.azora.lang.frontend.SpecCallback? = null): String {
         callback?.useAsTemplate?.let { template ->
             return UseAsTemplate.expand(template, callback.typeParams, traitArgs)
@@ -581,7 +590,17 @@ class SymbolCollector {
                         // A `bridge spec` is compiler-provided: its members have a
                         // default lowering, so an implementor states the capability
                         // and only writes a member when the default is wrong.
-                        if (req !in provided && !contract.isBridge) {
+                        //
+                        // An *operator* member is optional for a different reason
+                        // (the operator DIP, §12.2): a spec that groups a family —
+                        // `Arithmetic` over `+ - * / %` — exists so a type opens
+                        // one impl instead of five, and forcing all of them back
+                        // would be worse than the five specs it replaced. The
+                        // operators a type did not write simply do not resolve,
+                        // and that is reported precisely where one is used, naming
+                        // the member. A `func` or `prop` member stays required:
+                        // its absence would surface as a worse error at a call.
+                        if (req !in provided && !contract.isBridge && !isOperatorMember(req)) {
                             complete = false
                             errors.add("line ${item.line}: '${item.typeName}' does not implement '${item.traitName}.${req}'")
                         }

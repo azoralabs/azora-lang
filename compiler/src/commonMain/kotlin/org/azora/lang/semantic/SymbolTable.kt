@@ -303,6 +303,17 @@ class SymbolTable {
      * that leaves exactly one candidate is it chosen, so a genuine ambiguity resolves
      * to nothing rather than to an arbitrary overload.
      */
+    /**
+     * A *unary* operator's member — the bare name only.
+     *
+     * [lookupOperator] falls back to an operand-keyed candidate when the bare
+     * name misses, which is right for a binary operator written once. For a
+     * unary one it is wrong: `-x` would find the binary `oper-@Vec2` and answer
+     * subtraction with one operand missing.
+     */
+    fun lookupUnaryOperator(typeName: String, operName: String): String? =
+        methods[typeName]?.get(operName)
+
     fun lookupOperator(typeName: String, operName: String, operandKey: String?): String? {
         val table = methods[typeName] ?: return null
         if (operandKey != null) table["$operName@$operandKey"]?.let { return it }

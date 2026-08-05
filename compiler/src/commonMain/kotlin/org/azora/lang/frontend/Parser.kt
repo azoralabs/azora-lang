@@ -3012,7 +3012,13 @@ class Parser(
                     // `v + scalar` are different declarations — so the operand type
                     // joins the member name. Lookup falls back to the bare name, which
                     // keeps a single unambiguous overload spelled as it always was.
+                    // `Self` in an operand is the implementing type, and the
+                    // overload key has to say so: a member registered as
+                    // `oper-@Self` is invisible to a lookup for `oper-@Vec2`,
+                    // which then falls back to the bare name — the unary
+                    // operator — and answers subtraction with negation.
                     operSuffix = operatorOverloadSuffix(opName, recv.modifier, operands)
+                        .replace("@Self", "@$typeName")
                     var ret: TypeAnnotation = if (match(TokenType.COLON)) {
                         skipNewlines()
                         TypeAnnotation.Explicit(parseTypeName())

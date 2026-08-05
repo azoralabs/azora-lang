@@ -26,6 +26,7 @@ import org.azora.lang.ir.IrProgram
 import org.azora.lang.ir.IrStmt
 import org.azora.lang.ir.IrTopLevel
 import org.azora.lang.ir.IrType
+import org.azora.lang.ir.mangleMethodSymbol
 import org.azora.lang.ir.IrUnaryOp
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.coroutineContext
@@ -1044,6 +1045,46 @@ class IrInterpreter {
         return value
     }
 
+    /**
+     * The operator a value's *runtime* type declares, or null to fall through.
+     *
+     * A generic body is compiled once with its type parameter erased, so
+     * `a + b` inside `func total<T>(…) where T: Arithmetic` reaches the
+     * interpreter as a built-in add over two pack values. The bound guaranteed
+     * the operator exists; this is where it is found, from the `__type` the
+     * value carries.
+     *
+     * The mangled symbol is the one `SymbolCollector` registered, so a hit here
+     * calls exactly the member a concrete call site would have called.
+     */
+    private suspend fun dispatchOperatorOnRuntimeType(op: IrBinaryOp, left: Any?, right: Any?): Any? {
+        val receiver = left as? MutableMap<*, *> ?: return null
+        val typeName = receiver["__type"] as? String ?: return null
+        val symbol = binaryOperatorSymbol(op) ?: return null
+        val operandType = (right as? MutableMap<*, *>)?.get("__type") as? String
+        val candidates = listOfNotNull(
+            operandType?.let { "${typeName}_${mangleMethodSymbol("$symbol@$it")}" },
+            "${typeName}_${mangleMethodSymbol(symbol)}",
+        )
+        val target = candidates.firstNotNullOfOrNull { functions[it] } ?: return null
+        return executeFunction(target, listOf(left, right))
+    }
+
+    /** The member name a binary operator is declared under. */
+    private fun binaryOperatorSymbol(op: IrBinaryOp): String? = when (op) {
+        IrBinaryOp.ADD -> "oper+"
+        IrBinaryOp.SUB -> "oper-"
+        IrBinaryOp.MUL -> "oper*"
+        IrBinaryOp.DIV -> "oper/"
+        IrBinaryOp.MOD -> "oper%"
+        IrBinaryOp.BIT_AND -> "oper&"
+        IrBinaryOp.BIT_OR -> "oper|"
+        IrBinaryOp.BIT_XOR -> "oper^"
+        IrBinaryOp.SHL -> "oper<<"
+        IrBinaryOp.SHR -> "oper>>"
+        else -> null
+    }
+
     private suspend fun evalBinary(expr: IrExpr.Binary): Any {
         // Short-circuit logical operators: the right operand must not be evaluated
         // when the left already determines the result (matches the codegen backends).
@@ -1056,6 +1097,13 @@ class IrInterpreter {
 
         val left = evalExpr(expr.left)
         val right = evalExpr(expr.right)
+
+        // A generic body sees its type parameter erased, so `a + b` inside
+        // `func total<T>(…) where T: Arithmetic` lowered to the built-in add
+        // with no chance to find the operator. The values know their own type at
+        // runtime, so the operator is looked up here — which is the same reason
+        // the interpreter already compares erased values at runtime.
+        dispatchOperatorOnRuntimeType(expr.op, left, right)?.let { return it }
 
         return when (expr.op) {
             IrBinaryOp.ADD -> when {

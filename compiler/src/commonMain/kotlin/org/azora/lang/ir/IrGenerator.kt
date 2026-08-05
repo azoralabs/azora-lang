@@ -1478,7 +1478,7 @@ class IrGenerator(private val table: SymbolTable) {
                 // decision the resolver made, from the same table.
                 (operand.type as? IrType.Named)?.let { named ->
                     unaryOverloadName(expr.op)?.let { operName ->
-                        table.lookupOperator(named.name, operName, null)?.let { mangled ->
+                        table.lookupUnaryOperator(named.name, operName)?.let { mangled ->
                             val func = table.lookupFunction(mangled)!!
                             return IrExpr.Call(mangled, listOf(operand), func.returnType)
                         }

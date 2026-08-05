@@ -1179,7 +1179,7 @@ class TypeResolver(private val table: SymbolTable) {
                 // declared unary operator dead code.
                 if (operandType is IrType.Named) {
                     unaryOverloadName(expr.op)?.let { operName ->
-                        table.lookupOperator(operandType.name, operName, null)?.let { mangled ->
+                        table.lookupUnaryOperator(operandType.name, operName)?.let { mangled ->
                             return table.lookupFunction(mangled)?.returnType ?: operandType
                         }
                     }
@@ -2534,7 +2534,12 @@ class TypeResolver(private val table: SymbolTable) {
     private fun comparesEqual(typeName: String): Boolean {
         if (table.lookupEnum(typeName) != null) return true
         if (table.lookupSlot(typeName) != null) return true
-        if (table.conformsTo(typeName, "PartialEqual") || table.conformsTo(typeName, "Equal")) return true
+        // The member itself, not the conformance. An operator member of a spec
+        // is optional (`SymbolCollector.isOperatorMember`), so `impl PartialEqual
+        // for Vec2` with an empty body records the capability while supplying no
+        // `==` — and accepting that here would put back the silent fallback this
+        // rule exists to remove. Derivation generates a real member, so
+        // `impl [Equal] for Vec2` still passes.
         if (table.lookupOperator(typeName, "oper==", null) != null) return true
         // A pack the resolver has never seen declared is not this rule's business.
         return table.lookupStruct(typeName) == null

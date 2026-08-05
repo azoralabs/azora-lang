@@ -152,4 +152,101 @@ realm std {
     bridge spec Hash requires Equal {
         prop hash[self: Self&]: ULong
     }
+
+    /**
+     * Arithmetic over `Rhs`, producing an `Out`.
+     *
+     * One spec, not ten. `+` and `%` make the same promise about a type —
+     * closed, total, producing an `Out` — so they are one family; a type opens
+     * one `impl` instead of five. Comparison is split into four specs for the
+     * opposite reason: those differ in what they *claim*, not in which symbol
+     * they spell.
+     *
+     * **A type implements the part it wants.** An operator member of a spec is
+     * optional, so a `Matrix` that only adds in place writes only `oper+=`, and
+     * `m % n` is an error naming the member rather than a `%` nobody meant.
+     *
+     * `+=` and its siblings are derived from the binary operator when absent,
+     * and the binary operator is *not* derived from them — a type that
+     * accumulates need not also build.
+     */
+    @Since("0.0.5")
+    spec Arithmetic<Rhs = Self, Out = Self> {
+        oper+ [self: Self&](rhs: Rhs&): Out
+        oper- [self: Self&](rhs: Rhs&): Out
+        oper* [self: Self&](rhs: Rhs&): Out
+        oper/ [self: Self&](rhs: Rhs&): Out
+        oper% [self: Self&](rhs: Rhs&): Out
+        oper+= [self: Self!](rhs: Rhs&)
+        oper-= [self: Self!](rhs: Rhs&)
+        oper*= [self: Self!](rhs: Rhs&)
+        oper/= [self: Self!](rhs: Rhs&)
+        oper%= [self: Self!](rhs: Rhs&)
+    }
+
+    /**
+     * Negation — the unary `-`.
+     *
+     * Separate from [Arithmetic] because it is a different operation that
+     * happens to share a symbol: `0 - x` is not negation for every type, and a
+     * type may negate without subtracting. The two are told apart by operand
+     * count.
+     */
+    @Since("0.0.5")
+    spec Neg<Out = Self> {
+        oper- [self: Self&]: Out
+    }
+
+    /**
+     * Bitwise operations.
+     *
+     * `Shift` is its own parameter because a shift count is not a value of the
+     * shifted type — `primitive.az` declares the shifts over `UInt` while `&`
+     * takes a `Self`, and one `Rhs` could not express both.
+     */
+    @Since("0.0.5")
+    spec Bitwise<Rhs = Self, Shift = UInt, Out = Self> {
+        oper& [self: Self&](rhs: Rhs&): Out
+        oper| [self: Self&](rhs: Rhs&): Out
+        oper^ [self: Self&](rhs: Rhs&): Out
+        oper<< [self: Self&](rhs: Shift&): Out
+        oper>> [self: Self&](rhs: Shift&): Out
+        oper&= [self: Self!](rhs: Rhs&)
+        oper|= [self: Self!](rhs: Rhs&)
+        oper^= [self: Self!](rhs: Rhs&)
+        oper<<= [self: Self!](rhs: Shift&)
+        oper>>= [self: Self!](rhs: Shift&)
+        oper~ [self: Self&]: Out
+    }
+
+    /** Logical negation — the unary `!`. */
+    @Since("0.0.5")
+    spec Logical<Out = Self> {
+        oper! [self: Self&]: Out
+    }
+
+    /**
+     * Reading, writing and slicing by index.
+     *
+     * `[]` and `[]=` are separate members and neither derives the other: a type
+     * may be readable without being writable, which is most of them.
+     */
+    @Since("0.0.5")
+    spec Indexable<Idx = Int, Out = Self> {
+        oper[] [self: Self&](index: Idx&): Out
+        oper[]= [self: Self!](index: Idx&, value: Out)
+        oper[:] [self: Self&](from: Idx&, to: Idx&): Self
+    }
+
+    /**
+     * Reaching through a value to the one it holds.
+     *
+     * A type that can be written through can be read through, so `.^` implies
+     * `.*` and the two must agree on `To`.
+     */
+    @Since("0.0.5")
+    spec Deref<To> {
+        oper.* [self: Self&]: To
+        oper.^ [self: Self!]: To
+    }
 }

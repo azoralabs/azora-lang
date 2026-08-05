@@ -79,17 +79,6 @@ class AllocDropAnalyzer {
         for (param in func.params) {
             defined.add(param.name)
         }
-        if (func.isTask && !func.isUnsafe) {
-            for (param in func.params) {
-                if (param.modifier != ParamModifier.NONE) {
-                    errors.add(
-                        "line ${func.line}: async func '${func.name}' cannot suspend while holding the borrow " +
-                            "'${param.name}${param.modifier.sigil}'; pass ownership instead, or mark it unsafe"
-                    )
-                }
-            }
-        }
-
         for (stmt in func.body) {
             analyzeStmt(stmt, defined, used, errors)
         }
@@ -258,8 +247,11 @@ class AllocDropAnalyzer {
         errors: MutableList<String>
     ) {
         val reference = (annotation as? TypeAnnotation.Explicit)?.ref as? TypeRef.Reference ?: return
-        val isPlace = initializer is Expr.Identifier || initializer is Expr.Member ||
-            initializer is Expr.Index || initializer is Expr.Deref
+        // `let m: User! = user.!` — the borrow sigil wraps the place it borrows,
+        // so look through it to find what is actually being borrowed.
+        val borrowed = (initializer as? Expr.Isolated)?.takeIf { it.op.isBorrow }?.value ?: initializer
+        val isPlace = borrowed is Expr.Identifier || borrowed is Expr.Member ||
+            borrowed is Expr.Index || borrowed is Expr.Deref
         if (!isPlace) {
             errors.add("line $line: ${reference.kind.spelling} must borrow a stable variable, field, index, or dereference")
         }

@@ -131,8 +131,9 @@ enum class TokenType {
     ERROR,
     // Memory model: `alloc <expr>`, `purge <expr>`, `deref <expr>`, `unsafe { }`, `isolated(expr)`.
     ALLOC, PURGE, UNSAFE, ISOLATED,
-    // Ownership: `take <expr>` transfers ownership, `clone <expr>` duplicates.
-    TAKE, CLONE,
+    // Ownership: `take <expr>` transfers ownership. Duplication is the
+    // `Clone` spec's `clone()` method, not a keyword.
+    TAKE,
     // Concurrency: `flow name(...) { … yield v }` generators, `task { }` / `await`, `launch { }`.
     AWAIT,
     // `delay <ms>` — suspend the current task for a number of milliseconds.

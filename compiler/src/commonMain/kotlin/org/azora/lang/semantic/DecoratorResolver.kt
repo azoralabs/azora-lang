@@ -316,12 +316,12 @@ class DecoratorResolver {
         fun addFunction(owner: String?, function: FuncDecl) {
             val identity = if (owner == null) function.name else "$owner.${function.name}"
             val target = when {
-                function.isUniversalInfix -> DecoTarget.Infx
+                function.isUniversalInfix -> DecoTarget.Func
                 function.memberCallStyle == MemberCallStyle.PROPERTY -> DecoTarget.Prop
                 function.name == "ctor" -> DecoTarget.Ctor
                 function.name == "dtor" -> DecoTarget.Dtor
-                function.isTask -> DecoTarget.Task
-                function.isFlow -> DecoTarget.Flow
+                function.isTask -> DecoTarget.AsyncFunc
+                function.isFlow -> DecoTarget.AsyncFunc
                 else -> DecoTarget.Func
             }
             val returnType = (function.returnType as? TypeAnnotation.Explicit)?.ref ?: TypeRef.Named("Any")
@@ -348,12 +348,12 @@ class DecoratorResolver {
                     }
                 }
                 is TopLevel.Fail -> {
-                    sites.add(Site(item.name, DecoTarget.Fail, TypeRef.Named(item.name), item.annotations))
+                    sites.add(Site(item.name, DecoTarget.Error, TypeRef.Named(item.name), item.annotations))
                     item.variants.forEachIndexed { index, variant ->
-                        sites.add(Site("${item.name}.$variant", DecoTarget.FailValue, TypeRef.Named(item.name), item.variantAnnotations[index]))
+                        sites.add(Site("${item.name}.$variant", DecoTarget.ErrorValue, TypeRef.Named(item.name), item.variantAnnotations[index]))
                     }
                 }
-                is TopLevel.Deco -> sites.add(Site(item.name, DecoTarget.Deco, TypeRef.Named(item.name), item.annotations))
+                is TopLevel.Deco -> sites.add(Site(item.name, DecoTarget.Annot, TypeRef.Named(item.name), item.annotations))
                 is TopLevel.Func -> addFunction(null, item.decl)
                 is TopLevel.Impl -> {
                     // An oper-impl block is itself an `.ImplOper` site (carries the block's
@@ -367,18 +367,18 @@ class DecoratorResolver {
                         // shared type name — with the pack's own decorators or with
                         // sibling oper blocks on the same type.
                         val identity = "${item.typeName}#imploper@${item.line}:${item.column}"
-                        sites.add(Site(identity, DecoTarget.ImplOper, namedType(item.typeName), item.annotations))
+                        sites.add(Site(identity, DecoTarget.Oper, namedType(item.typeName), item.annotations))
                     }
                     item.methods.forEach { addFunction(item.typeName, it) }
                 }
                 is TopLevel.Solo -> {
-                    sites.add(Site(item.name, DecoTarget.Solo, namedType(item.name), item.annotations))
+                    sites.add(Site(item.name, DecoTarget.Pack, namedType(item.name), item.annotations))
                     item.fields.forEach { field ->
                         sites.add(Site("${item.name}.${field.name}", DecoTarget.Field, field.type, field.annotations))
                     }
                     item.methods.forEach { addFunction(item.name, it) }
                 }
-                is TopLevel.Slot -> sites.add(Site(item.name, DecoTarget.Slot, TypeRef.Named(item.name), item.annotations))
+                is TopLevel.Slot -> sites.add(Site(item.name, DecoTarget.VariantEnum, TypeRef.Named(item.name), item.annotations))
                 is TopLevel.TypeAlias -> sites.add(Site(item.name, DecoTarget.TypeAlias, item.type, item.annotations))
                 is TopLevel.Test -> sites.add(Site(item.name, DecoTarget.Test, TypeRef.Named("Unit"), item.annotations))
                 is TopLevel.Bridge -> sites.add(Site(item.target, DecoTarget.Bridge, TypeRef.Named("Any"), item.annotations))

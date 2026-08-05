@@ -107,6 +107,13 @@ realm std {
     }
 
     /**
+     * A List is cloned by duplicating its elements; it is never `Copy`,
+     * because duplicating a collection implicitly would hide an allocation.
+     */
+    @Since("0.0.5")
+    impl Clone for List
+
+    /**
      * Mutation behavior implemented by mutable list packs.
      *
      * Mutation always receives `self!`. Implementing this spec does not
@@ -153,6 +160,23 @@ realm std {
         var data: T* = alloc T[8]
         var size: Int = 0
         var capacity: Int = 8
+    }
+
+    /**
+     * An ArrayList owns its backing buffer, so it moves and clones but never
+     * copies implicitly — duplicating one allocates, and that cost stays in
+     * sight at the call site as `.clone()`.
+     */
+
+    @Since("0.0.5")
+    impl Clone for ArrayList {
+        func clone[self: Self&]() {
+            var copy = ArrayList<T>()
+            for i in 0..<self.size {
+                copy.add(self.data[i])
+            }
+            return copy
+        }
     }
 
     // ---------------------------------------------------------------------
@@ -398,7 +422,7 @@ realm std {
     // ---------------------------------------------------------------------
 
     @Experimental(since: "0.0.4")
-    impl oper[] for ArrayList<T> { self&, index ->
+    oper[] [self: ArrayList<T>&](index: Int): T {
         assert index >= 0 && index < self.size {
             "List index out of bounds"
         }
@@ -406,7 +430,7 @@ realm std {
     }
 
     @Experimental(since: "0.0.4")
-    impl oper[]= for ArrayList<T> { self!, index, element ->
+    oper[]= [self: ArrayList<T>!](index: Int, element: T) {
         assert index >= 0 && index < self.size {
             "List index out of bounds"
         }
@@ -424,7 +448,7 @@ realm std {
     }
 
     @Experimental(since: "0.0.4")
-    impl oper== by List<T> for ArrayList<T> { self&, rhs ->
+    oper== [self: ArrayList<T>&](rhs: List<T>): Bool {
         if self.size != rhs.size { return false }
         for i in 0..<self.size {
             if !(self.get(i) == rhs.get(i)) { return false }
@@ -433,12 +457,12 @@ realm std {
     }
 
     @Experimental(since: "0.0.4")
-    impl oper!= by List<T> for ArrayList<T> { self&, rhs ->
+    oper!= [self: ArrayList<T>&](rhs: List<T>): Bool {
         return !(self == rhs)
     }
 
     @Experimental(since: "0.0.4")
-    impl oper# for ArrayList<T> { self& ->
+    oper# [self: ArrayList<T>&]: ULong {
         var result = 0 as ULong
         for i in 0..<self.size {
             result = result + #self.data[i]

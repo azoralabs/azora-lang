@@ -24,7 +24,7 @@ import kotlin.test.assertTrue
 class SerializationDeriverTest {
     private fun derive(body: String): SerializationDeriver.Result {
         val prelude = """
-            annot Derive for .Deco {
+            annot Derive for .Annot {
                 fin generator: String
                 fin role: String
                 fin provider: String = ""
@@ -160,7 +160,7 @@ class SerializationDeriverTest {
 
     @Test fun deriveRolesDoNotDependOnDecoratorNames() {
         val source = """
-            annot Derive for .Deco {
+            annot Derive for .Annot {
                 fin generator: String
                 fin role: String
                 fin provider: String = ""
@@ -196,7 +196,7 @@ class SerializationDeriverTest {
 
     @Test fun generatedPrimitiveCodecBodiesPassSemanticAnalysis() {
         val source = """
-            annot Derive for .Deco {
+            annot Derive for .Annot {
                 fin generator: String
                 fin role: String
                 fin provider: String = ""

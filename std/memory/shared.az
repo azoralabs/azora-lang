@@ -50,6 +50,22 @@ realm std {
         return self.raw.*
     }
 
+    /**
+     * Cloning a `Shared` produces another owner of the *same* value — it does
+     * not duplicate the pointee. It is never `Copy`: a new owner is a change to
+     * the reference count, and the model keeps that visible at the call site.
+     *
+     * The count is adjusted by `retain`/`release`, which take an exclusive
+     * receiver; `clone` borrows shared, so a caller that keeps the clone past
+     * the original's lifetime pairs it with a `retain`.
+     */
+    @Since("0.0.5")
+    impl Clone for Shared<T> {
+        func clone[self: Self&]() {
+            return Shared<T>(self.raw, self.count)
+        }
+    }
+
     impl Shared<T> {
         /** The pointed-to value. */
         @Experimental(since: "0.0.5")

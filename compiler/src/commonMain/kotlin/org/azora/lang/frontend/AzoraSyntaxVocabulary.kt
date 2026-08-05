@@ -56,7 +56,6 @@ object AzoraSyntaxVocabulary {
         "unsafe" to TokenType.UNSAFE,
         "isolated" to TokenType.ISOLATED,
         "take" to TokenType.TAKE,
-        "clone" to TokenType.CLONE,
         "await" to TokenType.AWAIT,
         "delay" to TokenType.DELAY,
         "bridge" to TokenType.BRIDGE,

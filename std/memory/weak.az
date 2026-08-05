@@ -28,6 +28,17 @@ realm std {
         return self._raw.*
     }
 
+    /**
+     * Cloning a `Weak` duplicates the non-owning handle, never the object. It is
+     * not `Copy`: a weak handle is still a thing you decide to make another of.
+     */
+    @Since("0.0.5")
+    impl Clone for Weak<T> {
+        func clone[self: Self&]() {
+            return Weak<T>(self._raw)
+        }
+    }
+
     impl Weak<T> {
         /** Returns the referenced value (panics if the pointer is null). */
         @Experimental(since: "0.0.3")

@@ -32,23 +32,6 @@ import std.convert
 
 realm std {
     /**
-     * A specification that marks types supporting arithmetic operations.
-     *
-     * Types implementing Numeric can be used with standard math operators
-     * and the Promote type property.
-     */
-    @Since("0.0.1")
-    spec Numeric
-
-    /** Int satisfies the Numeric spec. */
-    @Since("0.0.1")
-    impl Numeric for Int
-
-    /** Double satisfies the Numeric spec. */
-    @Since("0.0.1")
-    impl Numeric for Double
-
-    /**
      * Chooses the type with the highest primitive promotion rank.
      *
      * Promotion is evaluated entirely at compile time. Exact user-defined
@@ -70,65 +53,34 @@ realm std {
         return result
     }
 
-    /** Types that can be copied. */
-    @Since("0.0.1")
-    spec Copyable
-
-    /** Int is copyable. */
-    @Since("0.0.1")
-    impl Copyable for Int
-
-    /** Double is copyable. */
-    @Since("0.0.1")
-    impl Copyable for Double
-
-    /** String is copyable. */
-    @Since("0.0.1")
-    impl Copyable for String
-
-    /** Char is copyable. */
-    @Since("0.0.1")
-    impl Copyable for Char
-
-    /** Bool is copyable. */
-    @Since("0.0.1")
-    impl Copyable for Bool
-
-    /** Types that support deep copying. */
-    @Since("0.0.1")
-    spec Cloneable
-
-    /** Int is cloneable. */
-    @Since("0.0.1")
-    impl Cloneable for Int
-
-    /** Double is cloneable. */
-    @Since("0.0.1")
-    impl Cloneable for Double
-
-    /** String is cloneable. */
-    @Since("0.0.1")
-    impl Cloneable for String
-
-    /** Char is cloneable. */
-    @Since("0.0.1")
-    impl Cloneable for Char
-
-    /** Bool is cloneable. */
-    @Since("0.0.1")
-    impl Cloneable for Bool
+    /**
+     * A value that may be duplicated explicitly with `.clone()`.
+     *
+     * `bridge` because the compiler supplies a field-wise `clone` for any
+     * conforming type, so a plain data type states the capability and nothing
+     * else. A type whose duplication needs saying writes its own `clone`, and
+     * that one wins.
+     *
+     * The result is `Self`: a clone of a `T` is a `T`, and an `impl` need not
+     * repeat that.
+     */
+    @Since("0.0.5")
+    bridge spec Clone {
+        func clone[self: Self&](): Self
+    }
 
     /**
-     * Types that can be iterated over.
+     * A value duplicated *implicitly* when it is used by value.
+     *
+     * Implicit duplication has to be cheap and has to be safe, so `Copy`
+     * requires `Clone`. It does not grant it: a type states every capability it
+     * has, and none is inferred from a sibling.
+     *
+     * There is no `Movable` capability: every value can be given away with
+     * `take`, so one would say nothing.
      */
-    @Since("0.0.1")
-    spec Iterable
-
-    /**
-     * An iterator that produces values one at a time.
-     */
-    @Since("0.0.1")
-    spec Iterator
+    @Since("0.0.5")
+    bridge spec Copy requires Clone
 
     @Since("0.0.4")
     spec PrettyPrint {

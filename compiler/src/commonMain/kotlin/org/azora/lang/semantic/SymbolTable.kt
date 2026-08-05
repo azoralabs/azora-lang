@@ -51,6 +51,8 @@ data class FunctionSymbol(
      * write through. Only a binding whose value is mutable can be passed to one.
      */
     val exclusiveParams: Set<Int> = emptySet(),
+    /** Indices of parameters declared `x&` — a shared borrow, which owns nothing. */
+    val sharedParams: Set<Int> = emptySet(),
 )
 
 /**
@@ -136,7 +138,9 @@ data class SpecSymbol(
     /** Method name → signature, for method calls on a spec-typed value. */
     val methodSigs: Map<String, SpecMethodSig> = emptyMap(),
     /** Parent spec inherited from (`spec Mutable: Read`), resolved at query time. */
-    val parentName: String? = null,
+    val parentNames: List<String> = emptyList(),
+    /** Specs an implementor must also implement; see `TopLevel.Spec.requires`. */
+    val requiredSpecs: List<String> = emptyList(),
     val isBridge: Boolean = false,
 )
 
@@ -327,9 +331,11 @@ class SymbolTable {
         typeParams: List<String> = emptyList(),
         propTypes: Map<String, org.azora.lang.ir.IrType> = emptyMap(),
         methodSigs: Map<String, SpecMethodSig> = emptyMap(),
-        parentName: String? = null,
+        parentNames: List<String> = emptyList(),
+        requiredSpecs: List<String> = emptyList(),
+        isBridge: Boolean = false,
     ) {
-        specs[name] = SpecSymbol(methodNames, callback, isDecorator = false, typeParams = typeParams, propTypes = propTypes, methodSigs = methodSigs, parentName = parentName)
+        specs[name] = SpecSymbol(methodNames, callback, isDecorator = false, typeParams = typeParams, propTypes = propTypes, methodSigs = methodSigs, parentNames = parentNames, requiredSpecs = requiredSpecs, isBridge = isBridge)
     }
 
     /**
@@ -338,24 +344,30 @@ class SymbolTable {
      * order specs were registered in.
      */
     fun lookupSpecMethod(specName: String, methodName: String): SpecMethodSig? {
-        var current: String? = specName
-        val seen = mutableSetOf<String>()
-        while (current != null && seen.add(current)) {
-            val spec = specs[current] ?: return null
-            spec.methodSigs[methodName]?.let { return it }
-            current = spec.parentName
+        for (name in specAndAncestors(specName)) {
+            specs[name]?.methodSigs?.get(methodName)?.let { return it }
         }
         return null
     }
 
+    /** [specName] and every spec it inherits from, breadth-first, each once. */
+    fun specAndAncestors(specName: String): List<String> {
+        val order = mutableListOf<String>()
+        val seen = mutableSetOf<String>()
+        val queue = ArrayDeque(listOf(specName))
+        while (queue.isNotEmpty()) {
+            val name = queue.removeFirst()
+            if (!seen.add(name)) continue
+            order.add(name)
+            specs[name]?.parentNames?.forEach { queue.addLast(it) }
+        }
+        return order
+    }
+
     /** Resolves a spec property's type, walking the parent chain. */
     fun lookupSpecProp(specName: String, propName: String): org.azora.lang.ir.IrType? {
-        var current: String? = specName
-        val seen = mutableSetOf<String>()
-        while (current != null && seen.add(current)) {
-            val spec = specs[current] ?: return null
-            spec.propTypes[propName]?.let { return it }
-            current = spec.parentName
+        for (name in specAndAncestors(specName)) {
+            specs[name]?.propTypes?.get(propName)?.let { return it }
         }
         return null
     }

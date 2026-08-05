@@ -115,15 +115,31 @@ class OwnershipTaskTest {
         val result = Compiler().compile("""
             import std.io
             pack Buffer { var value: Int }
-            async func inspect(input: Buffer&): Int { return input.value }
+            async func inspect(input: Buffer&) {
+                delay 100
+                std::println(input.value)
+            }
             async func main() { std::println(0) }
         """.trimIndent())
 
         assertIs<CompilationResult.Failure>(result)
         assertTrue(
-            result.errors.any { "cannot suspend while holding the borrow 'input&'" in it },
+            result.errors.any { "'input' is borrowed across a suspension point" in it },
             "${'$'}{result.errors}",
         )
+    }
+
+    // A borrow the task never holds across a suspension is an ordinary borrow.
+    @Test
+    fun safeTaskAcceptsABorrowThatDoesNotCrossSuspension() {
+        val result = Compiler().compile("""
+            import std.io
+            pack Buffer { var value: Int }
+            async func inspect(input: Buffer&): Int { return input.value }
+            async func main() { std::println(0) }
+        """.trimIndent())
+
+        assertIs<CompilationResult.Success>(result)
     }
 
     @Test

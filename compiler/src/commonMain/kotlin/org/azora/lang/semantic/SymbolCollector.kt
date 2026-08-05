@@ -206,6 +206,8 @@ class SymbolCollector {
                     visibility = func.visibility,
                     exclusiveParams = func.params.indices
                         .filterTo(mutableSetOf()) { func.params[it].modifier == ParamModifier.EXCLUSIVE },
+                    sharedParams = func.params.indices
+                        .filterTo(mutableSetOf()) { func.params[it].modifier == ParamModifier.SHARED },
                 )
                 table.defineFunction(symbol)
                 val shortName = func.name.substringAfterLast("__")
@@ -396,7 +398,9 @@ class SymbolCollector {
                             // returns a local accumulator that return-type inference
                             // (params-only) cannot see.
                             is TypeAnnotation.Inferred ->
-                                if (method.name == "oper#") IrType.ULong else undeclaredReturnType(method, params)
+                                if (method.name == "oper#") IrType.ULong
+                                else specMemberReturnType(item, method, program)
+                                    ?: undeclaredReturnType(method, params)
                         }
                         // Bridge impls register the member name (so semantic gates like the
                         // range-operator check can find it) but define NO callable function —
@@ -461,9 +465,10 @@ class SymbolCollector {
                 // own-only — the `impl … for Type` completeness check requires only
                 // this spec's own methods; inherited ones are satisfied by the
                 // separate `impl Parent for Type` block.
-                val parentName = (item.parent as? TypeRef.Named)?.name
+                val parentNames = item.parents.mapNotNull { (it as? TypeRef.Named)?.name }
+                val requiredSpecs = item.requires.mapNotNull { (it as? TypeRef.Named)?.name }
                 val methodNames = item.methods.map { it.name }
-                table.defineSpec(item.name, methodNames, item.callback, item.typeParams, ownPropTypes, ownMethodSigs, parentName)
+                table.defineSpec(item.name, methodNames, item.callback, item.typeParams, ownPropTypes, ownMethodSigs, parentNames, requiredSpecs, item.isBridge)
             }
         }
         for (item in program.items.filterIsInstance<TopLevel.Deco>()) {
@@ -534,7 +539,10 @@ class SymbolCollector {
                     }
                     var complete = true
                     for (req in required) {
-                        if (req !in provided) {
+                        // A `bridge spec` is compiler-provided: its members have a
+                        // default lowering, so an implementor states the capability
+                        // and only writes a member when the default is wrong.
+                        if (req !in provided && !contract.isBridge) {
                             complete = false
                             errors.add("line ${item.line}: '${item.typeName}' does not implement '${item.traitName}.${req}'")
                         }
@@ -548,6 +556,9 @@ class SymbolCollector {
                 }
             }
         }
+
+        deriveOwnershipCapabilities(program, table)
+        errors.addAll(checkSpecRequirements(program, table))
 
         errors.addAll(DecoratorResolver().resolve(program, table))
 
@@ -576,6 +587,159 @@ class SymbolCollector {
      * for the member's type — so an operator still reads its result from its
      * body. A lambda infers for the same reason: there is no declaration to read.
      */
+    /**
+     * Derives `Clone` and `Copy` for packs that did not say.
+     *
+     * The rules are the ones in the ownership model: a capability is derived
+     * when every field already has it. An explicit `impl` always wins — deriving
+     * never overrides what the author wrote, and `defineConformance` refuses a
+     * duplicate anyway.
+     *
+     * `Clone` is the common case, so a pack of ordinary
+     * fields gets them without ceremony; `Copy` is the restrictive one,
+     * because it is what makes duplication *implicit*. A pack holding anything
+     * not itself `Copy` — a list, a handle, another non-copyable pack — is
+     * left out, so passing it by value asks for `take` or `clone`.
+     *
+     * Runs to a fixed point: `pack Outer { var inner: Inner }` can only be
+     * judged once `Inner` has been.
+     */
+    /**
+     * Enforces every spec's `requires` list against the types that implement it.
+     *
+     * `spec Copy requires [Clone]` does not make a `Copy`
+     * type movable — it refuses to call it `Copy` until it separately is.
+     * The capability is therefore always stated at the type, never inferred from
+     * a sibling, which is the whole point of spelling it `requires` rather than
+     * inheriting.
+     *
+     * Runs after derivation, so a derived `Clone` satisfies the requirement
+     * exactly as a written one does.
+     */
+    /**
+     * The return type a spec already declared for the member [method] satisfies.
+     *
+     * `impl Clone for Vec2 { func clone[self: Self&]() { … } }` does not
+     * repeat `: Vec2`, because the contract said it once: `func clone[…](): Self`.
+     * The type is still *declared* — on the spec — so this is not the return-type
+     * inference the language rules out; it is reading the signature the
+     * implementor is committing to. `Self` resolves to the implementing type.
+     */
+    private fun specMemberReturnType(
+        item: TopLevel.Impl,
+        method: FuncDecl,
+        program: Program,
+    ): IrType? {
+        val spec = item.traitName ?: return null
+        // Read the spec's own declaration rather than the symbol table: impl
+        // members are registered before specs are, so the table does not have it
+        // yet at this point.
+        val declared = program.items.filterIsInstance<TopLevel.Spec>()
+            .firstOrNull { it.name == spec }
+            ?.methods?.firstOrNull { it.name == method.name }
+            ?.returnType as? TypeAnnotation.Explicit ?: return null
+        val ref = declared.ref
+        // `Self` on the contract is the implementing type here.
+        return if (ref is TypeRef.Named && ref.name == "Self") {
+            resolveType(TypeRef.Named(item.typeName))
+        } else {
+            resolveType(ref)
+        }
+    }
+
+    private fun checkSpecRequirements(program: Program, table: SymbolTable): List<String> {
+        val errors = mutableListOf<String>()
+        for (item in program.items) {
+            if (item !is TopLevel.Impl || item.traitName == null) continue
+            val required = table.lookupSpec(item.traitName)?.requiredSpecs.orEmpty()
+            for (requirement in required) {
+                if (table.conformsTo(item.typeName, requirement)) continue
+                errors.add(
+                    "line ${item.line}: '${item.typeName}' cannot implement '${item.traitName}' " +
+                        "until it also implements '$requirement'",
+                )
+            }
+        }
+        return errors
+    }
+
+    private fun deriveOwnershipCapabilities(program: Program, table: SymbolTable) {
+        // A plain `enum` case is a name and nothing else, so it has every
+        // capability unconditionally.
+        for (item in program.items.filterIsInstance<TopLevel.Enum>()) {
+            for (capability in listOf("Clone", "Copy")) {
+                table.defineConformance(TraitConformance(item.name, capability))
+            }
+        }
+        // A union reinterprets its storage, so copying one field-wise would not
+        // preserve what it holds; leave those to an explicit `impl`.
+        val packs = program.items.filterIsInstance<TopLevel.Pack>()
+            .filterNot { it.isBridge || it.isUnion }
+        val slots = program.items.filterIsInstance<TopLevel.Slot>()
+        if (packs.isEmpty() && slots.isEmpty()) return
+        var changed = true
+        while (changed) {
+            changed = false
+            for (capability in listOf("Clone", "Copy")) {
+                for (pack in packs) {
+                    if (table.conformsTo(pack.name, capability)) continue
+                    if (!pack.fields.all { fieldHasCapability(it.type, capability, table, pack.typeParams.toSet()) }) continue
+                    if (table.defineConformance(TraitConformance(pack.name, capability))) changed = true
+                }
+                // A tagged union carries whichever payload its live case holds,
+                // so it has a capability exactly when every payload does.
+                for (slot in slots) {
+                    if (table.conformsTo(slot.name, capability)) continue
+                    val payloads = slot.variants.flatMap { it.payloadTypes }
+                    if (!payloads.all { fieldHasCapability(it, capability, table, emptySet()) }) continue
+                    if (table.defineConformance(TraitConformance(slot.name, capability))) changed = true
+                }
+            }
+        }
+    }
+
+    /**
+     * Whether a field of type [ref] already carries [capability].
+     *
+     * The two capabilities are not equally demanding, and the difference is the
+     * point of the model. A deep copy duplicates the whole value, so a field
+     * that is a list or a buffer does not block `Clone`. `Copy` is the strict
+     * one, because it makes duplication *implicit*: a pack holding a collection
+     * is deliberately left out, so handing it over asks for `take` or
+     * `.clone()` in writing.
+     *
+     * A named field always has to carry the capability itself, so a type that
+     * opts out propagates that to everything holding it.
+     */
+    private fun fieldHasCapability(
+        ref: TypeRef,
+        capability: String,
+        table: SymbolTable,
+        typeParams: Set<String>,
+    ): Boolean = when (ref) {
+        // A borrow does not own what it points at, so it never blocks a derive.
+        is TypeRef.Reference -> true
+        is TypeRef.Nullable -> fieldHasCapability(ref.inner, capability, table, typeParams)
+        // A field typed by the pack's own parameter says nothing until the pack
+        // is instantiated, so it cannot be what withholds the capability.
+        is TypeRef.Named if ref.name in typeParams -> true
+        is TypeRef.Named -> when {
+            table.conformsTo(ref.name, capability) -> true
+            // A type this compilation declares and that does not carry the
+            // capability blocks it — an opt-out has to propagate.
+            isDeclaredType(ref.name, table) -> false
+            // Anything else is a library type (`List<T>`, a handle, a spec).
+            // Moving or deep-copying one is fine; making it duplicate
+            // *implicitly* is the thing that would be surprising.
+            else -> capability != "Copy"
+        }
+        else -> capability != "Copy"
+    }
+
+    /** Whether [name] is a pack, enum or tagged union declared in this compilation. */
+    private fun isDeclaredType(name: String, table: SymbolTable): Boolean =
+        table.lookupStruct(name) != null || table.lookupEnum(name) != null || table.lookupSlot(name) != null
+
     private fun undeclaredReturnType(func: FuncDecl, params: List<Pair<String, IrType>>): IrType =
         if (func.name.startsWith("oper")) inferReturnType(func, params) else IrType.Unit
 

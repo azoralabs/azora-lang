@@ -115,12 +115,12 @@ object DecoratorMetadata {
         fun addFunction(owner: String?, function: FuncDecl) {
             val identity = if (owner == null) function.name else "$owner.${function.name}"
             val target = when {
-                function.isUniversalInfix -> DecoTarget.Infx
+                function.isUniversalInfix -> DecoTarget.Func
                 function.memberCallStyle == MemberCallStyle.PROPERTY -> DecoTarget.Prop
                 function.name == "ctor" -> DecoTarget.Ctor
                 function.name == "dtor" -> DecoTarget.Dtor
-                function.isTask -> DecoTarget.Task
-                function.isFlow -> DecoTarget.Flow
+                function.isTask -> DecoTarget.AsyncFunc
+                function.isFlow -> DecoTarget.AsyncFunc
                 else -> DecoTarget.Func
             }
             sites.add(Site(identity, target, function.annotations))
@@ -138,24 +138,24 @@ object DecoratorMetadata {
                     item.variants.forEachIndexed { i, name -> sites.add(Site("${item.name}.$name", DecoTarget.EnumValue, item.variantAnnotations[i])) }
                 }
                 is TopLevel.Fail -> {
-                    sites.add(Site(item.name, DecoTarget.Fail, item.annotations))
-                    item.variants.forEachIndexed { i, name -> sites.add(Site("${item.name}.$name", DecoTarget.FailValue, item.variantAnnotations[i])) }
+                    sites.add(Site(item.name, DecoTarget.Error, item.annotations))
+                    item.variants.forEachIndexed { i, name -> sites.add(Site("${item.name}.$name", DecoTarget.ErrorValue, item.variantAnnotations[i])) }
                 }
-                is TopLevel.Deco -> sites.add(Site(item.name, DecoTarget.Deco, item.annotations))
+                is TopLevel.Deco -> sites.add(Site(item.name, DecoTarget.Annot, item.annotations))
                 is TopLevel.Func -> addFunction(null, item.decl)
                 is TopLevel.Impl -> {
                     val isOperBlock = item.methods.any {
                         it.name.startsWith("oper") || it.name in setOf("slice", "index", "indexSet")
                     }
-                    if (isOperBlock) sites.add(Site(item.typeName, DecoTarget.ImplOper, item.annotations))
+                    if (isOperBlock) sites.add(Site(item.typeName, DecoTarget.Oper, item.annotations))
                     item.methods.forEach { addFunction(item.typeName, it) }
                 }
                 is TopLevel.Solo -> {
-                    sites.add(Site(item.name, DecoTarget.Solo, item.annotations))
+                    sites.add(Site(item.name, DecoTarget.Pack, item.annotations))
                     item.fields.forEach { sites.add(Site("${item.name}.${it.name}", DecoTarget.Field, it.annotations)) }
                     item.methods.forEach { addFunction(item.name, it) }
                 }
-                is TopLevel.Slot -> sites.add(Site(item.name, DecoTarget.Slot, item.annotations))
+                is TopLevel.Slot -> sites.add(Site(item.name, DecoTarget.VariantEnum, item.annotations))
                 is TopLevel.TypeAlias -> sites.add(Site(item.name, DecoTarget.TypeAlias, item.annotations))
                 is TopLevel.Test -> sites.add(Site(item.name, DecoTarget.Test, item.annotations))
                 is TopLevel.Bridge -> sites.add(Site(item.target, DecoTarget.Bridge, item.annotations))

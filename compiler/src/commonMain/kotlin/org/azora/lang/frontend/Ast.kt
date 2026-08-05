@@ -26,6 +26,49 @@ package org.azora.lang.frontend
  * Every expression carries source-location metadata ([line], [column], [length])
  * so that later compiler phases can produce precise diagnostics.
  */
+/**
+ * The method names that read a value out of an optional and drop the `?` from
+ * its type: the primitive `take opt.require()` and the shorthand `opt.take()`.
+ *
+ * They are typed and lowered by the compiler rather than declared, so that they
+ * are available on every optional whatever it wraps.
+ */
+val OPTIONAL_UNWRAP = setOf("require", "take")
+
+/**
+ * Which ownership operation an [Expr.Isolated] performs.
+ *
+ * @property spelling how it is written in source, for diagnostics.
+ * @property capability the spec the operand's type must carry, or null when the
+ *   operation asks nothing of it.
+ */
+enum class OwnershipOp(val spelling: String, val capability: String?) {
+    /** `isolated(v)` — a deep copy, with no capability contract. */
+    ISOLATE("isolated", null),
+
+    /** `clone v` — an independently owned duplicate. */
+    CLONE("clone", "Clone"),
+
+    /**
+     * `take v` — ownership transfer. Duplicates nothing, and leaves the operand
+     * unusable, which is what separates it from the other two.
+     *
+     * It asks nothing of the operand: every value can be given away, so a
+     * capability for it would say nothing.
+     */
+    TAKE("take", null),
+
+    /** `v.&` / `v&` — a shared, read-only borrow. Owns nothing. */
+    SHARE("&", null),
+
+    /** `v.!` / `v!` — an exclusive, mutable borrow. Owns nothing. */
+    BORROW("!", null),
+    ;
+
+    /** True for the two forms that borrow rather than duplicate or transfer. */
+    val isBorrow: Boolean get() = this == SHARE || this == BORROW
+}
+
 sealed class Expr {
     /** 1-based line number where this expression starts. */
     abstract val line: Int
@@ -349,8 +392,20 @@ sealed class Expr {
     /** `*ptr` — dereference a pointer. */
     data class Deref(val target: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 
-    /** `isolated(expr)` — produce an independent deep copy of [value]. */
-    data class Isolated(val value: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+    /**
+     * An ownership operation on [value]: `isolated(v)`, `clone v`, or `take v`.
+     *
+     * All three are one node because they differ only in what they require of
+     * the operand and whether they duplicate it — the shape is identical, and
+     * every pass that merely walks the tree should treat them alike.
+     */
+    data class Isolated(
+        val value: Expr,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0,
+        val op: OwnershipOp = OwnershipOp.ISOLATE,
+    ) : Expr()
 
     /** `await task` — suspend until the task completes and yield its result. */
     data class Await(val value: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
@@ -1220,9 +1275,22 @@ sealed class TypeRef {
         }
     }
 
-    /** A checked reference. Ownership is carried by the qualifier, not punctuation. */
-    data class Reference(val kind: RefKind, val inner: TypeRef) : TypeRef() {
-        override fun toString() = "${kind.spelling} $inner"
+    /**
+     * A checked reference. Ownership is carried by the qualifier, not punctuation.
+     *
+     * [origins] names the parameters a returned borrow comes from — the `[a, b]`
+     * in `func choose(a: String&, b: String&): String&[a, b]`. Azora infers most
+     * borrow relationships, so this is written only where a public signature has
+     * to state one; empty means "inferred".
+     */
+    data class Reference(
+        val kind: RefKind,
+        val inner: TypeRef,
+        val origins: List<String> = emptyList(),
+    ) : TypeRef() {
+        override fun toString() =
+            if (origins.isEmpty()) "${kind.spelling} $inner"
+            else "${kind.spelling} $inner[${origins.joinToString(", ")}]"
     }
 
     /** Human-readable name for diagnostics (the simple name for [Named]). */
@@ -1750,10 +1818,15 @@ data class Annotation(
  * generic argument. [trailingTypeArgs] supply any remaining generic arguments.
  */
 /** Declaration categories accepted by decorator and binding `for` clauses. */
+/**
+ * Where a decorator may be applied. Mirrors `bridge enum DecoTarget` in
+ * `std/core.az`; the two are matched by name, so they have to agree.
+ */
 enum class DecoTarget {
-    Pack, Func, Infx, Prop, Task, Flow, Solo, Slot, Enum, EnumValue, Deco,
-    Fail, FailValue, Field, Param, Var, Fin, Let, Test, View,
-    Ctor, Dtor, TypeAlias, Bridge, ImplOper,
+    Pack, Func, AsyncFunc, Prop, AsyncProp, Enum, VariantEnum, EnumValue,
+    Error, VariantError, ErrorValue, UnsafeUnion, UnionValue, Annot,
+    Field, Param, Var, Let, Val, Fin, Test,
+    Ctor, Dtor, TypeAlias, Bridge, Oper,
 }
 
 data class DecoratorBinding(
@@ -2121,8 +2194,24 @@ sealed class TopLevel {
         val column: Int = 0,
         val callback: SpecCallback? = null,
         val typeParams: List<String> = emptyList(),
-        /** Parent spec this one inherits every member from (`spec Mutable: Read {…}`). */
-        val parent: TypeRef? = null,
+        /** Specs this one inherits every member from (`spec Mutable: Read {…}`). */
+        val parents: List<TypeRef> = emptyList(),
+        /**
+         * `bridge spec` — the compiler provides the members.
+         *
+         * An implementor states the capability with a bodyless `impl` and only
+         * writes a member when the default lowering is wrong for its type.
+         */
+        val isBridge: Boolean = false,
+        /**
+         * Specs an implementor must *also* implement (`spec Copy requires [Clone]`).
+         *
+         * Unlike inheritance, this adds nothing to the spec and implies nothing
+         * about a conforming type: it is a precondition checked at the `impl`.
+         * `impl Copy for T` is rejected unless `T` separately implements
+         * `Clone` — the capability is stated, never inferred.
+         */
+        val requires: List<TypeRef> = emptyList(),
     ) : TopLevel()
 
     /** `typealias Name = Type` — a type alias. */

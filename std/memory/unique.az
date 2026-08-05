@@ -28,6 +28,21 @@ realm std {
         return self._raw.*
     }
 
+    /**
+     * A `Unique` is move-only: it owns its pointee, so it is never `Copy`.
+     *
+     * Cloning duplicates the *value*, giving the clone its own allocation —
+     * anything else would leave two owners of one buffer, which is exactly what
+     * `Unique` exists to prevent.
+     */
+    @Since("0.0.5")
+    impl Clone for Unique<T> {
+        func clone[self: Self&]() {
+            assert self.active { "Unique pointer was released" }
+            return Unique<T>(alloc self._raw.*, true)
+        }
+    }
+
     impl Unique<T> {
         /** Returns the owned value (panics if already released). */
         @Experimental(since: "0.0.3")

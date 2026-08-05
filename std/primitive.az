@@ -400,23 +400,23 @@ use realm std {
 
     /** The unsigned integer types, in ascending width. A compile-time `[Type]` list. */
     @Since("0.0.4")
-    let UnsignedIntegers: [Type] = [UByte, UShort, UInt, ULong, UCent]
+    typealias UnsignedIntegers = [UByte, UShort, UInt, ULong, UCent]
 
     /** The signed integer types, in ascending width. A compile-time `[Type]` list. */
     @Since("0.0.4")
-    let SignedIntegers: [Type] = [Byte, Short, Int, Long, Cent]
+    typealias SignedIntegers = [Byte, Short, Int, Long, Cent]
 
     /** All integer types. `+` appends two compile-time type lists. */
     @Since("0.0.4")
-    let Integers: [Type] = UnsignedIntegers + SignedIntegers
+    typealias Integers = UnsignedIntegers + SignedIntegers
 
     /** The floating-point types, in ascending width. */
     @Since("0.0.4")
-    let FloatingPoints: [Type] = [Float, Double, Decimal]
+    typealias FloatingPoints = [Float, Double, Decimal]
 
     /** Every numeric type: integers followed by floating-point types. */
     @Since("0.0.4")
-    let Numbers: [Type] = Integers + FloatingPoints
+    typealias Numbers = Integers + FloatingPoints
 
     /** Every unsigned integer type conforms to `UnsignedInteger`. */
     @Since("0.0.4")
@@ -475,7 +475,7 @@ use realm std {
          * @return Bool
          */
         @Experimental(since: "0.0.4")
-        bridge impl oper $op for Bool: Bool(self&, rhs: Bool)
+        bridge oper$op [self: Bool&](rhs: Bool): Bool
     }
 
     inline for op in arr@["+", "-"] {
@@ -487,7 +487,7 @@ use realm std {
              * @return the operand type
              */
             @Experimental(since: "0.0.4")
-            bridge impl oper $op for Ty: Ty(self&)
+            bridge oper$op [self: Ty&]: Ty
         }
     }
 
@@ -499,7 +499,7 @@ use realm std {
          * @return the operand type
          */
         @Experimental(since: "0.0.4")
-        bridge impl oper~ for Ty: Ty(self&)
+        bridge oper~ [self: Ty&]: Ty
     }
 
     inline for op in arr@["+", "-", "*", "/", "%"] {
@@ -513,7 +513,7 @@ use realm std {
                  * @return Promote<LhsTy, RhsTy> — the wider of the two operand types
                  */
                 @Experimental(since: "0.0.4")
-                bridge impl oper $op for LhsTy: std::Promote<LhsTy, RhsTy>(self&, rhs: RhsTy)
+                bridge oper$op [self: LhsTy&](rhs: RhsTy): std::Promote<LhsTy, RhsTy>
             }
         }
     }
@@ -529,7 +529,7 @@ use realm std {
                  * @return Promote<LhsTy, RhsTy> — the wider of the two operand types
                  */
                 @Experimental(since: "0.0.4")
-                bridge impl oper $op for LhsTy: std::Promote<LhsTy, RhsTy> (self&, rhs: RhsTy)
+                bridge oper$op [self: LhsTy&](rhs: RhsTy): std::Promote<LhsTy, RhsTy>
             }
         }
     }
@@ -544,7 +544,7 @@ use realm std {
              * @return the operand type
              */
             @Experimental(since: "0.0.4")
-            bridge impl oper $op for Ty: Ty (self&, rhs: UInt)
+            bridge oper$op [self: Ty&](rhs: UInt): Ty
         }
     }
 
@@ -559,7 +559,7 @@ use realm std {
                  * @return Bool
                  */
                 @Experimental(since: "0.0.4")
-                bridge impl oper $op for LhsTy: Bool(self&, rhs: RhsTy)
+                bridge oper$op [self: LhsTy&](rhs: RhsTy): Bool
             }
         }
     }

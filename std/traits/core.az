@@ -19,8 +19,28 @@ expose module std.traits.core
 use realm std {
     inline for Ty in Numbers {
         /** Ascending range over [Ty], stepping by one. */
-        oper.. [self: Ty&](rhs: Ty&) by 1
+        bridge oper.. [self: Ty&](rhs: Ty&) by 1
         /** Descending range over [Ty], stepping by one. */
-        oper reverse.. [self: Ty&](rhs: Ty&) by 1
+        bridge oper reverse.. [self: Ty&](rhs: Ty&) by 1
+
+        /**
+         * Every numeric type clones and copies: they are small immutable
+         * values, so duplicating one is a register move and cannot alias.
+         */
+        @Since("0.0.5")
+        impl [Clone, Copy] for Ty
+    }
+
+    inline for Ty in [Bool, Char, String] {
+        /**
+         * The remaining primitives. A `String` is an immutable value rather than
+         * an owned buffer, so it copies like the rest.
+         *
+         * `Unit` is left out: it carries nothing, so there is no value to clone
+         * or copy — and a `clone` taking one would have a `void` parameter,
+         * which is not a thing.
+         */
+        @Since("0.0.5")
+        impl [Clone, Copy] for Ty
     }
 }

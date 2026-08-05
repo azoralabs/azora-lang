@@ -44,7 +44,13 @@ class DecoratorConformanceTest {
 
         assertTrue(result.errors.isEmpty(), result.errors.toString())
         assertTrue(result.symbolTable.implements("UserId", "Serializable"))
-        assertTrue(result.symbolTable.allConformances().single().isDecorator)
+        // A pack also derives its ownership capabilities, so this is not the only
+        // conformance on `UserId` — what matters is that this one is a decorator's.
+        assertTrue(
+            result.symbolTable.allConformances()
+                .single { it.typeName == "UserId" && it.contractName == "Serializable" }
+                .isDecorator,
+        )
     }
 
     @Test fun decoratorImplBodyIsRejectedAndNotRecorded() {

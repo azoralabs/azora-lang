@@ -7,6 +7,7 @@ import org.azora.lang.frontend.Parser
 import org.azora.lang.frontend.TopLevel
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 /**
@@ -16,17 +17,27 @@ import kotlin.test.assertTrue
 class MultiOperImplTest {
 
     @Test
+    fun aBodylessOperatorMustSayBridge() {
+        // "The compiler implements this" is stated, not inferred from an omission.
+        val failure = assertFailsWith<IllegalStateException> {
+            Parser(Lexer("oper.. [self: Int&](rhs: Int&) by 1\n").tokenize()).parse()
+        }
+        assertTrue("declare it 'bridge oper..'" in failure.message.orEmpty(), failure.message.orEmpty())
+    }
+
+    @Test
     fun eachRangeOperatorIsDeclaredOnItsOwn() {
-        // Each direction is its own declaration, naming its receiver and trailing its
-        // default step; a bodyless one is a bridge marker the backend supplies.
-        val src = "oper.. [self: Int&](rhs: Int&) by 1\n" +
-            "oper reverse.. [self: Int&](rhs: Int&) by 1\n"
+        // Each direction is its own declaration, naming its receiver and trailing
+        // its default step. A compiler-provided one says `bridge` rather than
+        // leaving it to be inferred from the missing body.
+        val src = "bridge oper.. [self: Int&](rhs: Int&) by 1\n" +
+            "bridge oper reverse.. [self: Int&](rhs: Int&) by 1\n"
         val program = Parser(Lexer(src).tokenize()).parse()
         val operImpls = program.items.filterIsInstance<TopLevel.Impl>()
         assertEquals(2, operImpls.size, "expected one impl per oper declaration")
         val methodNames = operImpls.flatMap { it.methods.map { m -> m.name } }.toSet()
         assertEquals(setOf("oper..", "operreverse.."), methodNames)
-        assertTrue(operImpls.all { it.isBridge }, "a bodyless oper declaration must be a bridge marker")
+        assertTrue(operImpls.all { it.isBridge }, "a 'bridge oper' declaration is a bridge marker")
         assertTrue(operImpls.all { it.typeName == "Int" })
     }
 

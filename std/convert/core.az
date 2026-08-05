@@ -18,5 +18,5 @@ expose module std.convert.core
 
 use realm std {
     @Experimental(since: "0.0.4")
-    bridge annot UncheckedCast for [.Func, .Prop, .Task, .Flow, .Var, .Fin, .ImplOper]
+    bridge annot UncheckedCast for [.Func, .AsyncFunc, .Prop, .AsyncProp, .Var, .Fin, .Oper]
 }

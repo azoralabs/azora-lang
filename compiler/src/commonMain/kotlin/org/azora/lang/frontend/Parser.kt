@@ -448,6 +448,21 @@ class Parser(
 
     /** Reads an operator symbol after `oper` (for `impl oper<OP> …`). */
     private fun parseOperatorName(): String = when {
+        // The index operators: `oper[]` (read), `oper[]=` (write), `oper[:]`
+        // (slice). A `[` opens the operator's name only when `]` or `:` follows —
+        // otherwise it is the bracketed receiver that comes next.
+        check(TokenType.L_BRACKET) && peekNext()?.type == TokenType.R_BRACKET -> {
+            advance() // '['
+            advance() // ']'
+            if (match(TokenType.EQUAL)) "indexSet" else "index"
+        }
+        check(TokenType.L_BRACKET) && peekNext()?.type == TokenType.COLON &&
+            tokens.getOrNull(current + 2)?.type == TokenType.R_BRACKET -> {
+            advance() // '['
+            advance() // ':'
+            advance() // ']'
+            "slice"
+        }
         // `reverse..` (two tokens) and the range operators `..`/`..<` share one name.
         check(TokenType.REVERSE) && peekNext()?.type == TokenType.DOT_DOT -> { advance(); advance(); "reverse.." }
         match(TokenType.DOT_DOT) -> ".."
@@ -518,7 +533,11 @@ class Parser(
      * rather than inside it is what lets a file add an operator to a type it
      * merely uses.
      */
-    private fun parseFreeOperator(annotations: List<Annotation>, visibility: Visibility): TopLevel {
+    private fun parseFreeOperator(
+        annotations: List<Annotation>,
+        visibility: Visibility,
+        isBridge: Boolean = false,
+    ): TopLevel {
         val start = peek()
         consume(TokenType.OPER, "Expected 'oper'")
         val opName = parseOperatorName()
@@ -548,15 +567,27 @@ class Parser(
         // The step is declarative metadata: parsed so the source states it, then
         // discarded, exactly as the old bracket form's `by` was.
         if (match(TokenType.BY)) parseExpr()
-        // A declaration with no body is compiler-provided, the same as `bridge func`:
-        // `oper.. by 1 [self: Ty&](rhs: Ty&)` states that the backend supplies it.
+        // The index operators are looked up by their bare member names, which is
+        // what indexing, index-assignment and slicing resolve against; every
+        // other operator is reached through its `oper<symbol>` symbol.
+        val memberName =
+            if (opName in setOf("index", "indexSet", "slice")) opName else "oper$opName"
+        // A declaration with no body is provided by the backend, and says so:
+        // `bridge oper.. [self: Ty&](rhs: Ty&) by 1`. Requiring the keyword keeps
+        // "the compiler implements this" from being spelled as an omission.
         if (!check(TokenType.L_BRACE)) {
+            if (!isBridge) {
+                error(
+                    "operator '$opName' has no body, so it is compiler-provided — " +
+                        "declare it 'bridge oper$opName' at line ${start.line}",
+                )
+            }
             consumeNewline()
             return TopLevel.Impl(
                 typeName,
                 listOf(
                     FuncDecl(
-                        "oper$opName", operands, operRet, emptyList(), false,
+                        memberName, operands, operRet, emptyList(), false,
                         operatorTypeParams.names,
                         start.line, start.column, receiverModifier = recv.modifier,
                         receiverName = recv.name, visibility = visibility,
@@ -572,7 +603,7 @@ class Parser(
         consume(TokenType.R_BRACE, "Expected '}' after operator body")
         consumeNewline()
         val method = FuncDecl(
-            "oper$opName", operands, operRet, body, false, operatorTypeParams.names,
+            memberName, operands, operRet, body, false, operatorTypeParams.names,
             start.line, start.column,
             annotations = annotations, visibility = visibility,
             receiverModifier = recv.modifier, receiverName = recv.name,
@@ -650,45 +681,6 @@ class Parser(
         val after = tokens.getOrNull(i + 1) ?: return false
         return after.type == TokenType.L_BRACE ||
             (after.type == TokenType.IDENTIFIER && after.lexeme == "where")
-    }
-
-    private fun parseOperatorImpl(start: Token, isBridge: Boolean, annotations: List<Annotation> = emptyList()): TopLevel.Impl {
-        consume(TokenType.OPER, "Expected 'oper'")
-        val opName = parseOperatorName()
-        // `impl oper<OP> by <Spec> for Type` — an optional spec/operand-type clause.
-        val bySpec = if (match(TokenType.BY)) consume(TokenType.IDENTIFIER, "Expected spec name after 'by'").lexeme else null
-        skipGenericTypeArgs()
-        consume(TokenType.FOR, "Expected 'for' after 'impl oper$opName'")
-        val typeName = consume(TokenType.IDENTIFIER, "Expected type name after 'for'").lexeme
-        skipGenericTypeArgs()
-        val returnType = if (match(TokenType.COLON)) {
-            skipNewlines() // the return type may sit on a continuation line (e.g. `promote!(…)`)
-            TypeAnnotation.Explicit(parseTypeName())
-        } else TypeAnnotation.Inferred
-        val (receiverModifier, params, body) = parseReceiverAndBody()
-        consumeNewline()
-        val methodName = "oper$opName"
-        // A bridge/bodyless oper impl carries a bodyless marker method named
-        // `oper$opName` so the operator is REGISTERED in the symbol table (e.g.
-        // enabling the range-operator gate), even though no IR body is emitted.
-        if (isBridge || body.isEmpty()) {
-            val marker = FuncDecl(
-                methodName, params, returnType, emptyList(), false, emptyList(),
-                start.line, start.column, receiverModifier = receiverModifier,
-            )
-            return TopLevel.Impl(
-                typeName, listOf(marker), bySpec, start.line, start.column,
-                annotations = annotations, isBridge = true,
-            )
-        }
-        val method = FuncDecl(
-            methodName, params, returnType, body, false, emptyList(),
-            start.line, start.column, receiverModifier = receiverModifier,
-        )
-        return TopLevel.Impl(
-            typeName, listOf(method), bySpec, start.line, start.column,
-            annotations = annotations, isBridge = isBridge,
-        )
     }
 
     /**
@@ -771,6 +763,7 @@ class Parser(
         return when {
             // Compile-time list bindings (`let X: [Type]`, `inline fin ranks: [Int]`)
             // must be recognised before the general `inline`/`fin`/`let` handlers.
+            isTypeListAliasAhead() -> parseTypeListAlias()
             isTypeListBindingAhead() -> parseTypeListBinding()
             check(TokenType.UNSAFE) && (peekNext()?.type == TokenType.FUNC || isAsyncFuncAt(current + 1)) -> {
                 advance()
@@ -810,13 +803,16 @@ class Parser(
                 advance(); parseDeco(annotations, isBridge = true)
             }
             check(TokenType.BRIDGE) && peekNext()?.type == TokenType.SPEC -> {
-                advance(); parseSpec()
+                advance(); parseSpec(isBridge = true)
             }
             check(TokenType.BRIDGE) && peekNext()?.type == TokenType.TYPEALIAS -> {
                 advance(); parseTypeAlias(annotations)
             }
             check(TokenType.BRIDGE) && peekNext()?.type == TokenType.VARIANT -> {
                 advance(); parseSlot(annotations)
+            }
+            check(TokenType.BRIDGE) && peekNext()?.type == TokenType.OPER -> {
+                advance(); parseFreeOperator(annotations, visibility, isBridge = true)
             }
             check(TokenType.BRIDGE) && isBridgeFuncAhead() -> parseBridgeFunc(annotations)
             check(TokenType.BRIDGE) -> parseBridge(annotations)
@@ -1185,6 +1181,38 @@ class Parser(
      * list: any `[Type]` list, or an `inline` list of any element type (e.g.
      * `inline fin ranks: [Int] = […]`). A plain runtime `[Int]` binding is not one.
      */
+    /**
+     * True for `typealias Name = [A, B, …]` — a compile-time list of types.
+     *
+     * A list of types is a name for several types, which is what `typealias`
+     * already means; the old `let Name: [Type] = […]` spelling put a *value*
+     * keyword on something that never exists at runtime.
+     */
+    private fun isTypeListAliasAhead(): Boolean {
+        if (!check(TokenType.TYPEALIAS)) return false
+        if (peekNext()?.type != TokenType.IDENTIFIER) return false
+        var i = current + 2
+        if (tokens.getOrNull(i)?.type != TokenType.EQUAL) return false
+        i += 1
+        // A list literal, or a name that already denotes one (`Integers + …`).
+        return when (tokens.getOrNull(i)?.type) {
+            TokenType.L_BRACKET -> true
+            TokenType.IDENTIFIER -> tokens.getOrNull(i)?.lexeme in typeListEnv
+            else -> false
+        }
+    }
+
+    /** `typealias Name = [A, B]` — records the list; emits no runtime item. */
+    private fun parseTypeListAlias(): TopLevel {
+        val start = peek()
+        consume(TokenType.TYPEALIAS, "Expected 'typealias'")
+        val name = consume(TokenType.IDENTIFIER, "Expected type-list name").lexeme
+        consume(TokenType.EQUAL, "Expected '=' in type-list alias")
+        typeListEnv[name] = parseComptimeListValue()
+        consumeNewline()
+        return TopLevel.InlineBlock(emptyList(), start.line, start.column)
+    }
+
     private fun isTypeListBindingAhead(): Boolean {
         var i = current
         val hasInline = tokens.getOrNull(i)?.type == TokenType.INLINE
@@ -2565,12 +2593,8 @@ class Parser(
             }
             return TopLevel.Impl(targets.first(), emptyList(), null, start.line, start.column)
         }
-        // `[bridge] impl oper<OP> for Type(params): Ret { … }` — an operator overload
-        // for any operator (comparison/arithmetic/bitwise). `oper[]`/`oper[]=` keep
-        // their dedicated block form below; every other operator uses this form.
-        if (check(TokenType.OPER) && peekNext()?.type != TokenType.L_BRACKET) {
-            return parseOperatorImpl(start, isBridge, annotations)
-        }
+        // `impl oper<OP> for Type(…)` was removed; see the note on the bracketed
+        // form below. Both are caught there, so nothing is needed here.
         if (check(TokenType.CTOR)) {
             val ctorStart = advance()
             val ctorParams = if (match(TokenType.L_PAREN)) {
@@ -2689,86 +2713,12 @@ class Parser(
             )
             return TopLevel.Impl(typeName, listOf(method), null, asStart.line, asStart.column)
         }
-        // `impl oper[] for Type { params -> body }` / `impl oper[]= for Type { params -> body }`
-        // — a standalone operator overload (params are untyped: self, index[, element]).
+        // `impl oper… for Type { … }` was removed: an operator is declared beside
+        // its type, as `oper[] [self: Type&](index: Int): T { … }` (see parseFreeOperator).
         if (check(TokenType.OPER)) {
-            val operStart = peek()
-            advance() // 'oper'
-            consume(TokenType.L_BRACKET, "Expected '[' after 'oper'")
-            // Multi-oper form: `impl oper[.. by 1, reverse.. by 1] for Ty` expands to one
-            // impl per prot. Routed here (before oper[]/oper[:]/oper[]=) only when the
-            // bracket content is an operator prot, so the index/slice forms stay intact.
-            // The bracket enumeration `impl oper[.., reverse..] for Ty` is gone: each
-            // operator is declared on its own, as `oper.. [self: Ty&](rhs: Ty&) by 1`.
-            if (peek().type in setOf(TokenType.DOT_DOT, TokenType.DOT_DOT_LESS, TokenType.REVERSE)) {
-                error(
-                    "'impl oper[...] for Type' enumeration was removed at line ${peek().line}; " +
-                        "declare each operator separately, as 'oper.. [self: Type&](rhs: Type&) by 1'",
-                )
-            }
-            // `oper[:]` — the Python-style slice overload (`a[1:3]`, `a[:]`, …).
-            val isSlice = match(TokenType.COLON)
-            consume(TokenType.R_BRACKET, "Expected ']' after 'oper['")
-            // `oper[:] by <Spec>` — an optional prot providing the slicing logic.
-            val bySpec = if (match(TokenType.BY)) consume(TokenType.IDENTIFIER, "Expected prot name after 'by'").lexeme else null
-            val isSet = match(TokenType.EQUAL)
-            val methodName = when {
-                isSlice -> "slice"
-                isSet -> "indexSet"
-                else -> "index"
-            }
-            consume(TokenType.FOR, "Expected 'for' after 'impl oper[]' / 'impl oper[]=']")
-            val typeName = consume(TokenType.IDENTIFIER, "Expected type name after 'for'").lexeme
-            val typeArgs = parseGenericTypeArgsIfPresent()
-            consume(TokenType.L_BRACE, "Expected '{' after impl oper[] for Type")
-            skipNewlines()
-            // Untyped params: `mut ref self, index[, element]` (or `slice` for oper[:]).
-            val indexType = if (typeName == "Map" && typeArgs.isNotEmpty()) typeArgs[0] else TypeRef.Named("Int")
-            val valueType = when {
-                typeName == "Map" && typeArgs.size >= 2 -> typeArgs[1]
-                typeArgs.isNotEmpty() -> typeArgs[0]
-                else -> TypeRef.Named("Any")
-            }
-            val paramTypes = when {
-                // `oper[:] by MapSlice` names the operand type; default to `Slice`.
-                isSlice -> listOf(TypeRef.Named(typeName), TypeRef.Named(bySpec ?: "Slice"))
-                isSet -> listOf(TypeRef.Named(typeName), indexType, valueType)
-                else -> listOf(TypeRef.Named(typeName), indexType)
-            }
-            val params = mutableListOf<Param>()
-            var pidx = 0
-            do {
-                val name = consumeIdentifierLike("Expected parameter name in oper impl")
-                // New postfix borrow on the operand: `self&` / `index!`.
-                val modifier = when {
-                    match(TokenType.AMP) -> ParamModifier.SHARED
-                    match(TokenType.BANG) -> ParamModifier.EXCLUSIVE
-                    else -> ParamModifier.NONE
-                }
-                val explicitType = if (match(TokenType.COLON)) parseTypeName() else null
-                params.add(Param(name, explicitType ?: paramTypes.getOrElse(pidx) { TypeRef.Named("Any") }, modifier = modifier))
-                pidx++
-            } while (match(TokenType.COMMA))
-            consume(TokenType.ARROW, "Expected '->' after oper parameters")
-            // The first param is `self` (injected by SymbolCollector); drop it from the FuncDecl.
-            if (params.isNotEmpty()) params.removeAt(0)
-            skipNewlines()
-            val body = mutableListOf<Stmt>()
-            while (!check(TokenType.R_BRACE) && !isAtEnd()) {
-                body.add(parseStmt())
-                skipNewlines()
-            }
-            consume(TokenType.R_BRACE, "Expected '}' after oper body")
-            consumeNewline()
-            val returnType = TypeAnnotation.Explicit(if (isSet) TypeRef.Named("Unit") else valueType)
-            return TopLevel.Impl(
-                typeName,
-                listOf(FuncDecl(methodName, params, returnType, body, false, emptyList(), operStart.line, operStart.column)),
-                bySpec,
-                operStart.line,
-                operStart.column,
-                annotations = annotations,
-                isBridge = isBridge,
+            error(
+                "'impl oper… for Type' was removed at line ${peek().line}; declare the operator " +
+                    "beside its type, as 'oper[] [self: Type&](index: Int): T { … }'",
             )
         }
         val isPackImpl = match(TokenType.PACK)
@@ -3871,7 +3821,7 @@ class Parser(
     }
 
     /** `spec Name { func method(params): Ret ... }` or compact callback `spec Into<T>: T { ref self } use as "..."`. */
-    private fun parseSpec(): TopLevel.Spec {
+    private fun parseSpec(isBridge: Boolean = false): TopLevel.Spec {
         val start = peek()
         consume(TokenType.SPEC, "Expected 'spec'")
         val name = consume(TokenType.IDENTIFIER, "Expected spec name").lexeme
@@ -3884,14 +3834,14 @@ class Parser(
         } else {
             emptyList()
         }
-        var parentSpec: TypeRef? = null
+        var parentSpecs: List<TypeRef> = emptyList()
         if (match(TokenType.COLON)) {
             val returnType = parseTypeName()
             // `spec MutableList<T>: List<T> { … }` — spec inheritance: the child
             // includes every member of the parent. A `(` instead means this is a
             // callback spec (`spec Into<T>: T (ref self)`), handled below.
             if (!check(TokenType.L_PAREN)) {
-                parentSpec = returnType
+                parentSpecs = listOf(returnType)
             } else {
             // Callback receiver in parens: `spec Into<T>: T (ref self) use as "…"`.
             consume(TokenType.L_PAREN, "Expected '(' after spec callback signature")
@@ -3930,9 +3880,37 @@ class Parser(
         if (hasCallParens) {
             error("Expected ':' after spec callback parameters at line ${peek().line}")
         }
+        // `spec Copy requires [Clone]` — capabilities an
+        // implementor must also carry. A precondition on the `impl`, not
+        // inheritance: it adds no members and implies nothing on its own.
+        val requiredSpecs = mutableListOf<TypeRef>()
+        // `requires` is contextual: it opens the capability clause only here, in a
+        // spec header. Everywhere else it is an ordinary name. One capability is
+        // written bare (`requires Clone`); several take a list.
+        if (check(TokenType.IDENTIFIER) && peek().lexeme == "requires" &&
+            peekNext()?.type in setOf(TokenType.L_BRACKET, TokenType.IDENTIFIER)
+        ) {
+            advance()
+            if (match(TokenType.L_BRACKET)) {
+                skipNewlines()
+                if (!check(TokenType.R_BRACKET)) {
+                    do {
+                        skipNewlines()
+                        requiredSpecs.add(parseTypeName())
+                        skipNewlines()
+                    } while (match(TokenType.COMMA))
+                }
+                consume(TokenType.R_BRACKET, "Expected ']' to close the 'requires' list")
+                if (requiredSpecs.size == 1) {
+                    error("A single requirement is written 'requires ${requiredSpecs.first().displayName()}', without brackets, at line ${peek().line}")
+                }
+            } else {
+                requiredSpecs.add(parseTypeName())
+            }
+        }
         if (!check(TokenType.L_BRACE)) {
             consumeNewline()
-            return TopLevel.Spec(name, emptyList(), start.line, start.column, typeParams = typeParams.names, parent = parentSpec)
+            return TopLevel.Spec(name, emptyList(), start.line, start.column, typeParams = typeParams.names, parents = parentSpecs, requires = requiredSpecs, isBridge = isBridge)
         }
         consume(TokenType.L_BRACE, "Expected '{' after spec name")
         skipNewlines()
@@ -3941,6 +3919,21 @@ class Parser(
             skipNewlines()
             if (check(TokenType.R_BRACE)) break
             parseAnnotations() // trailing metadata on a requirement is accepted and dropped
+            // `spec Clone { self& }` — a capability with a receiver but no
+            // members. It states how the value is reached (`self&` / `self: Self&`)
+            // without requiring anything of it, which is what a marker capability
+            // like `Clone` needs: the operation is a language primitive, not a
+            // method the implementor writes.
+            if (check(TokenType.IDENTIFIER) && peek().lexeme == "self") {
+                advance()
+                // Both spellings are accepted: `self&` and the explicit
+                // `self: Self&`. The receiver says how the value is reached; it
+                // is not retained, because the capability requires no member —
+                // the operation it enables is a language primitive.
+                if (match(TokenType.COLON)) parseTypeName() else parsePostfixReceiverModifier()
+                consumeNewline()
+                continue
+            }
             // `prop name: Type` — a property requirement (a zero-arg getter).
             if (check(TokenType.PROP)) {
                 advance()
@@ -3984,7 +3977,7 @@ class Parser(
         }
         consume(TokenType.R_BRACE, "Expected '}' after spec methods")
         consumeNewline()
-        return TopLevel.Spec(name, methods, start.line, start.column, typeParams = typeParams.names, parent = parentSpec)
+        return TopLevel.Spec(name, methods, start.line, start.column, typeParams = typeParams.names, parents = parentSpecs, requires = requiredSpecs, isBridge = isBridge)
     }
 
     /** `when scrutinee { patterns -> { body } ... else -> { body } }`. */
@@ -4745,6 +4738,37 @@ class Parser(
         return parseTypeInfixes(parseTypeSuffixes(parseTypeAtom()))
     }
 
+    /**
+     * `[a]` / `[a, b]` after a borrow — the sources a returned borrow comes from.
+     *
+     * Only consumed where it unambiguously follows the borrow sigil, so an
+     * `Array<T>&` followed by an unrelated `[` in a wider expression is not
+     * mistaken for an origin list. Empty when nothing is written, which is the
+     * common case: Azora infers borrow relationships and asks for them only
+     * where a signature must state one.
+     */
+    /** The borrow an `&`/`!` sigil creates. */
+    private fun borrowOp(sigil: TokenType): OwnershipOp =
+        if (sigil == TokenType.AMP) OwnershipOp.SHARE else OwnershipOp.BORROW
+
+    private fun parseBorrowOrigins(): List<String> {
+        if (!check(TokenType.L_BRACKET)) return emptyList()
+        // An origin list holds names; anything else is a different `[`.
+        if (peekNext()?.type != TokenType.IDENTIFIER) return emptyList()
+        val closer = tokens.getOrNull(current + 2)?.type
+        if (closer != TokenType.R_BRACKET && closer != TokenType.COMMA) return emptyList()
+        advance() // '['
+        val origins = mutableListOf<String>()
+        do {
+            origins.add(consume(TokenType.IDENTIFIER, "Expected a borrow origin name").lexeme)
+        } while (match(TokenType.COMMA))
+        consume(TokenType.R_BRACKET, "Expected ']' after the borrow origin list")
+        if (origins.distinct().size != origins.size) {
+            error("Duplicate borrow origin at line ${peek().line}")
+        }
+        return origins
+    }
+
     private fun parseTypeSuffixes(start: TypeRef): TypeRef {
         var base = start
         // Suffix type modifiers: `T?`, `T!Error`, and `T![A, B]`, in any order.
@@ -4773,8 +4797,8 @@ class Parser(
                 // Postfix borrows: `T&` (immutable), `T!` (mutable). Replace the old
                 // `ref T` / `mut ref T` prefix forms. Errors are `T ?! E` now, so a
                 // `!` in type position is always a mutable borrow.
-                match(TokenType.AMP) -> TypeRef.Reference(TypeRef.RefKind.BORROWED, base)
-                match(TokenType.BANG) -> TypeRef.Reference(TypeRef.RefKind.MUTABLE, base)
+                match(TokenType.AMP) -> TypeRef.Reference(TypeRef.RefKind.BORROWED, base, parseBorrowOrigins())
+                match(TokenType.BANG) -> TypeRef.Reference(TypeRef.RefKind.MUTABLE, base, parseBorrowOrigins())
                 else -> return base
             }
         }
@@ -7332,14 +7356,8 @@ class Parser(
         // transfer can be *written* where it happens, the way the call-site
         // borrow markers `&`/`!` already are.
         if (check(TokenType.TAKE)) {
-            advance()
-            return parseUnary()
-        }
-        // `clone <expr>` — an independently owned duplicate. Explicit because it
-        // may be expensive; the same deep copy `isolated(…)` performs.
-        if (check(TokenType.CLONE)) {
             val at = advance()
-            return Expr.Isolated(parseUnary(), at.line, at.column, at.lexeme.length)
+            return Expr.Isolated(parseUnary(), at.line, at.column, at.lexeme.length, OwnershipOp.TAKE)
         }
         // `isolated(expr)` — explicit deep copy.
         if (check(TokenType.ISOLATED)) {
@@ -7404,13 +7422,22 @@ class Parser(
         var pendingCallTypeArgs: List<TypeRef> = emptyList()
         while (true) {
             when {
-                // Call-site borrow markers: `x&` (immutable) / `x!` (mutable), when
-                // directly followed by a delimiter that ends the expression (so `a & b`
-                // stays bitwise-and). Borrows are erased — the language does no call-site
-                // borrow checking yet — so unwrap to the inner expression.
+                // Call-site borrow markers, in either spelling: `x.&` / `x.!` (the
+                // ownership model's) and the bare `x&` / `x!`. The bare form is only
+                // a borrow when a delimiter ends the expression, so `a & b` stays
+                // bitwise-and; the dotted form is unambiguous and needs no such test.
+                // Borrows are erased — the language does no call-site borrow
+                // checking yet — so both unwrap to the inner expression.
+                check(TokenType.DOT) &&
+                    (peekNext()?.type == TokenType.AMP || peekNext()?.type == TokenType.BANG) -> {
+                    advance() // '.'
+                    val sigil = advance() // '&' or '!'
+                    expr = Expr.Isolated(expr, sigil.line, sigil.column, 2, borrowOp(sigil.type))
+                }
                 (check(TokenType.AMP) || check(TokenType.BANG)) &&
                     peekNext()?.type in BORROW_TERMINATORS -> {
-                    advance() // '&' or '!'
+                    val sigil = advance() // '&' or '!'
+                    expr = Expr.Isolated(expr, sigil.line, sigil.column, 1, borrowOp(sigil.type))
                 }
                 // Macro invocation `name@(…)`, `name@[…]`, `name@{…}` (immutable) or
                 // `name!@…` (mutable variant, matching a `meta name!` declaration). An

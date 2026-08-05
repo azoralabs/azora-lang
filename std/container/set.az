@@ -92,6 +92,13 @@ realm std {
     }
 
     /**
+     * A Set is cloned by duplicating its elements; it is never `Copy`,
+     * because duplicating a collection implicitly would hide an allocation.
+     */
+    @Since("0.0.5")
+    impl Clone for Set
+
+    /**
      * Mutation behavior implemented by mutable set packs.
      *
      * Mutation always receives `self!`. Implementing this spec does not
@@ -336,6 +343,22 @@ realm std {
         return HashSet<T>()
     }
 
+    /**
+     * A HashSet owns its backing buffer: it moves and clones, never copies
+     * implicitly.
+     */
+
+    @Since("0.0.5")
+    impl Clone for HashSet {
+        func clone[self: Self&]() {
+            var copy = HashSet<T>()
+            for i in 0..<self.size {
+                copy.add(self.data[i])
+            }
+            return copy
+        }
+    }
+
     impl HashSet<T> {
         @Experimental(since: "0.0.4")
         func growSet[self: Self!]() {
@@ -472,7 +495,7 @@ realm std {
     }
 
     @Experimental(since: "0.0.4")
-    impl oper[] for HashSet<T> { self&, index ->
+    oper[] [self: HashSet<T>&](index: Int): T {
         assert index >= 0 && index < self.size {
             "Set index out of bounds"
         }
@@ -490,7 +513,7 @@ realm std {
     }
 
     @Experimental(since: "0.0.4")
-    impl oper== by Set<T> for HashSet<T> { self&, rhs ->
+    oper== [self: HashSet<T>&](rhs: Set<T>): Bool {
         if self.size != rhs.size { return false }
         for i in 0..<self.size {
             if !rhs.contains(self.data[i]) { return false }
@@ -499,12 +522,12 @@ realm std {
     }
 
     @Experimental(since: "0.0.4")
-    impl oper!= by Set<T> for HashSet<T> { self&, rhs ->
+    oper!= [self: HashSet<T>&](rhs: Set<T>): Bool {
         return !(self == rhs)
     }
 
     @Experimental(since: "0.0.4")
-    impl oper# for HashSet<T> { self& ->
+    oper# [self: HashSet<T>&]: ULong {
         var result = 0 as ULong
         for i in 0..<self.size {
             result = result + #self.data[i]
@@ -672,7 +695,7 @@ realm std {
     }
 
     @Experimental(since: "0.0.4")
-    impl oper[] for TreeSet<T> { self&, index ->
+    oper[] [self: TreeSet<T>&](index: Int): T {
         assert index >= 0 && index < self.size {
             "Set index out of bounds"
         }
@@ -690,7 +713,7 @@ realm std {
     }
 
     @Experimental(since: "0.0.4")
-    impl oper== by Set<T> for TreeSet<T> { self&, rhs ->
+    oper== [self: TreeSet<T>&](rhs: Set<T>): Bool {
         if self.size != rhs.size { return false }
         for i in 0..<self.size {
             if !rhs.contains(self.data[i]) { return false }
@@ -699,12 +722,12 @@ realm std {
     }
 
     @Experimental(since: "0.0.4")
-    impl oper!= by Set<T> for TreeSet<T> { self&, rhs ->
+    oper!= [self: TreeSet<T>&](rhs: Set<T>): Bool {
         return !(self == rhs)
     }
 
     @Experimental(since: "0.0.4")
-    impl oper# for TreeSet<T> { self& ->
+    oper# [self: TreeSet<T>&]: ULong {
         var result = 0 as ULong
         for i in 0..<self.size {
             result = result + #self.data[i]
@@ -717,7 +740,7 @@ realm std {
     // ---------------------------------------------------------------------
 
     @Experimental(since: "0.0.4")
-    impl oper[] for LinkedHashSet<T> { self&, index ->
+    oper[] [self: LinkedHashSet<T>&](index: Int): T {
         assert index >= 0 && index < self.size {
             "Set index out of bounds"
         }
@@ -735,7 +758,7 @@ realm std {
     }
 
     @Experimental(since: "0.0.4")
-    impl oper== by Set<T> for LinkedHashSet<T> { self&, rhs ->
+    oper== [self: LinkedHashSet<T>&](rhs: Set<T>): Bool {
         if self.size != rhs.size { return false }
         for i in 0..<self.size {
             if !rhs.contains(self.data[i]) { return false }
@@ -744,12 +767,12 @@ realm std {
     }
 
     @Experimental(since: "0.0.4")
-    impl oper!= by Set<T> for LinkedHashSet<T> { self&, rhs ->
+    oper!= [self: LinkedHashSet<T>&](rhs: Set<T>): Bool {
         return !(self == rhs)
     }
 
     @Experimental(since: "0.0.4")
-    impl oper# for LinkedHashSet<T> { self& ->
+    oper# [self: LinkedHashSet<T>&]: ULong {
         var result = 0 as ULong
         for i in 0..<self.size {
             result = result + #self.data[i]

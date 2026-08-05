@@ -17,6 +17,8 @@
 package org.azora.lang.semantic
 
 import org.azora.lang.frontend.lambdaReceiverName
+import org.azora.lang.frontend.OPTIONAL_UNWRAP
+import org.azora.lang.frontend.OwnershipOp
 import org.azora.lang.frontend.ParamModifier
 import org.azora.lang.frontend.CastKind
 import org.azora.lang.frontend.Expr
@@ -124,8 +126,14 @@ class TypeResolver(private val table: SymbolTable) {
                         listOf(Expr.Identifier("self", method.line, method.column) to IrType.Named(item.typeName)),
                     )
                     val savedUndeclaredReturn = undeclaredReturnOf
+                    val savedOrigins = declaredOrigins
                     undeclaredReturnOf = undeclaredReturnName(method)
+                    checkBorrowOrigins(method, receiver = method.receiverName)
+                    declaredOrigins = returnedBorrowOrigins((method.returnType as? TypeAnnotation.Explicit)?.ref)
+                    val savedSuspendable = enterSuspendable(method)
                     resolveBody(method.body, func.returnType)
+                    leaveSuspendable(savedSuspendable)
+                    declaredOrigins = savedOrigins
                     undeclaredReturnOf = savedUndeclaredReturn
                     contextualValues.removeLast()
                     currentReceiverType = savedReceiver
@@ -276,9 +284,19 @@ class TypeResolver(private val table: SymbolTable) {
         currentFuncTypeParams = func.typeParams.toSet()
         reactiveContext = hasReactiveContract(func.annotations)
         val savedUndeclaredReturn = undeclaredReturnOf
+        val savedOrigins = declaredOrigins
+        val savedMoves = movedBindings.toMap()
+        movedBindings.clear()
         undeclaredReturnOf = undeclaredReturnName(func)
+        checkBorrowOrigins(func, receiver = null)
+        declaredOrigins = returnedBorrowOrigins((func.returnType as? TypeAnnotation.Explicit)?.ref)
+        val savedSuspendable = enterSuspendable(func)
         resolveBody(func.body, symbol.returnType)
+        leaveSuspendable(savedSuspendable)
+        declaredOrigins = savedOrigins
         undeclaredReturnOf = savedUndeclaredReturn
+        movedBindings.clear()
+        movedBindings.putAll(savedMoves)
         currentReceiverType = savedReceiver
         currentFuncTypeParams = savedFuncTypeParams
         unsafeContext = savedUnsafe
@@ -290,6 +308,173 @@ class TypeResolver(private val table: SymbolTable) {
 
     /** Error sets declared by the function currently being resolved. */
     private var declaredFailSets: List<String>? = null
+
+    /**
+     * The borrow origins the current function's return type names, or null when
+     * it returns no borrow or names no origin.
+     *
+     * `func first(a: String&, b: String&): String&[a]` promises the caller that
+     * what comes back is borrowed from `a` and nothing else, so a `return b`
+     * breaks the signature even though both have the same type.
+     */
+    private var declaredOrigins: List<String>? = null
+
+    /** The `[a, b]` on a returned borrow, looking through `?!` and `?`. */
+    private fun returnedBorrowOrigins(ref: TypeRef?): List<String>? = when (ref) {
+        is TypeRef.Reference -> ref.origins.takeIf { it.isNotEmpty() }
+        is TypeRef.Failable -> returnedBorrowOrigins(ref.ok)
+        is TypeRef.Nullable -> returnedBorrowOrigins(ref.inner)
+        else -> null
+    }
+
+    /** Every origin named anywhere in [ref], including inside a tuple or generic. */
+    private fun allBorrowOrigins(ref: TypeRef?): List<String> = when (ref) {
+        null -> emptyList()
+        is TypeRef.Reference -> ref.origins + allBorrowOrigins(ref.inner)
+        is TypeRef.Failable -> allBorrowOrigins(ref.ok)
+        is TypeRef.Nullable -> allBorrowOrigins(ref.inner)
+        is TypeRef.Array -> allBorrowOrigins(ref.element)
+        is TypeRef.Set -> allBorrowOrigins(ref.element)
+        is TypeRef.Map -> allBorrowOrigins(ref.key) + allBorrowOrigins(ref.value)
+        is TypeRef.Tuple -> ref.elements.flatMap { allBorrowOrigins(it) }
+        is TypeRef.Named -> ref.args.flatMap { allBorrowOrigins(it) }
+        is TypeRef.Pointer -> allBorrowOrigins(ref.inner)
+        is TypeRef.Function -> ref.params.flatMap { allBorrowOrigins(it) } + allBorrowOrigins(ref.ret)
+        else -> emptyList()
+    }
+
+    /**
+     * Checks that every origin a signature names is something it can borrow from.
+     *
+     * An origin is a promise about *which input* the result points into, so it
+     * has to name one — a parameter passed by borrow, or the receiver. A name
+     * that is not there, or one passed by value, cannot outlive the call and so
+     * cannot be an origin.
+     */
+    private fun checkBorrowOrigins(decl: FuncDecl, receiver: String?) {
+        val declared = allBorrowOrigins((decl.returnType as? TypeAnnotation.Explicit)?.ref)
+        if (declared.isEmpty()) return
+        val borrowed = decl.params
+            .filter { it.type is TypeRef.Reference || it.modifier != ParamModifier.NONE }
+            .map { it.name }.toSet() + listOfNotNull(receiver)
+        for (origin in declared.distinct()) {
+            if (origin in borrowed) continue
+            val byValue = decl.params.any { it.name == origin }
+            errors.add(
+                if (byValue) {
+                    "line ${decl.line}: '${decl.name}' cannot borrow from '$origin' — it is passed by value, " +
+                        "so it does not outlive the call; declare it as a borrow to return one"
+                } else {
+                    "line ${decl.line}: '${decl.name}' names borrow origin '$origin', which is not one of " +
+                        "its borrowed parameters" + (if (borrowed.isEmpty()) "" else " (${borrowed.joinToString(", ")})")
+                },
+            )
+        }
+    }
+
+    /**
+     * The binding a returned borrow reads from, or null when it is not rooted in
+     * one — a temporary, a call result, or anything else with no named source.
+     */
+    private fun borrowRoot(expr: Expr): String? = when (expr) {
+        is Expr.Identifier -> expr.name
+        is Expr.Isolated -> if (expr.op.isBorrow) borrowRoot(expr.value) else null
+        is Expr.Member -> borrowRoot(expr.target)
+        is Expr.Index -> borrowRoot(expr.target)
+        else -> null
+    }
+
+    /**
+     * Checks a `return` against the origins its signature named.
+     *
+     * Only a return rooted in a named binding is judged: anything else has no
+     * origin to compare, and rejecting it here would be guessing.
+     */
+    private fun checkReturnedOrigin(value: Expr, line: Int) {
+        val declared = declaredOrigins ?: return
+        for (branch in returnedBranches(value)) {
+            val root = borrowRoot(branch) ?: continue
+            if (root in declared) continue
+            if (table.lookupVariable(root) == null) continue
+            errors.add(
+                "line $line: returns a borrow of '$root', but the signature says the result is " +
+                    "borrowed from ${declared.joinToString(" or ") { "'$it'" }}",
+            )
+        }
+    }
+
+    /**
+     * Borrowed parameters of the suspendable function being resolved.
+     *
+     * Empty for an ordinary function: nothing there suspends, so a borrow lives
+     * for the whole call and needs no tracking.
+     */
+    private var suspendableBorrows: Set<String> = emptySet()
+
+    /** Whether the walk has passed a suspension point in the current body. */
+    private var pastSuspension = false
+
+    /** Borrows already reported past a suspension, so each is named once. */
+    private val reportedSuspended = mutableSetOf<String>()
+
+    /**
+     * Records that the walk has reached an `await` or a `delay` (§15).
+     *
+     * Everything after one runs at a later time, on the far side of a
+     * suspension, which is what makes a borrow taken before it unprovable.
+     */
+    private fun noteSuspension() {
+        if (suspendableBorrows.isNotEmpty()) pastSuspension = true
+    }
+
+    /**
+     * Rejects reading a borrowed parameter after a suspension (§15).
+     *
+     * The caller's value has to stay alive and unmoved for as long as the task
+     * stays suspended, and nothing in the signature says it does. Rather than
+     * assume it, the three ways to make the lifetime explicit are offered.
+     */
+    private fun checkBorrowAcrossSuspension(name: String, line: Int) {
+        if (!pastSuspension || name !in suspendableBorrows) return
+        if (!reportedSuspended.add(name)) return
+        errors.add(
+            "line $line: '$name' is borrowed across a suspension point — the caller's value " +
+                "may not outlive it; transfer ownership with 'take $name', create an independent " +
+                "value with '$name.clone()', or end the borrow before the suspension",
+        )
+    }
+
+    /** Saved suspension state, so a nested body restores what enclosed it. */
+    private data class SuspensionState(val borrows: Set<String>, val past: Boolean, val reported: Set<String>)
+
+    private fun enterSuspendable(decl: FuncDecl): SuspensionState {
+        val saved = SuspensionState(suspendableBorrows, pastSuspension, reportedSuspended.toSet())
+        suspendableBorrows = suspendableBorrowsOf(decl)
+        pastSuspension = false
+        reportedSuspended.clear()
+        return saved
+    }
+
+    private fun leaveSuspendable(saved: SuspensionState) {
+        suspendableBorrows = saved.borrows
+        pastSuspension = saved.past
+        reportedSuspended.clear()
+        reportedSuspended.addAll(saved.reported)
+    }
+
+    /** The borrowed parameters [decl] suspends with, or none when it cannot suspend. */
+    private fun suspendableBorrowsOf(decl: FuncDecl): Set<String> =
+        if (!decl.isTask) emptySet()
+        else decl.params
+            .filter { it.type is TypeRef.Reference || it.modifier != ParamModifier.NONE }
+            .map { it.name }
+            .toSet()
+
+    /** The values a `return` may actually yield, looking through `if`/`else`. */
+    private fun returnedBranches(value: Expr): List<Expr> = when (value) {
+        is Expr.IfExpr -> returnedBranches(value.thenExpr) + returnedBranches(value.elseExpr)
+        else -> listOf(value)
+    }
 
     /** Type parameters of the function currently being resolved (erased to `Any` in types). */
     private var currentFuncTypeParams: Set<String> = emptySet()
@@ -497,6 +682,14 @@ class TypeResolver(private val table: SymbolTable) {
     }
 
     private fun resolveStmt(stmt: Stmt, returnType: IrType) {
+        // A borrow passed straight to a call ends when the statement does.
+        // Bindings claim theirs first, in resolveBinding.
+        pendingBorrows.clear()
+        resolveStmtInner(stmt, returnType)
+        pendingBorrows.clear()
+    }
+
+    private fun resolveStmtInner(stmt: Stmt, returnType: IrType) {
         when (stmt) {
             // `var` and `val` both rebind; only `var` may be mutated through.
             is Stmt.VarDecl ->
@@ -533,9 +726,15 @@ class TypeResolver(private val table: SymbolTable) {
                     return
                 }
                 if (!varSym.mutable) {
+                    // A `let`/`fin` that gave its value away can never receive
+                    // another, so it stays unusable for the rest of its scope.
                     errors.add("line ${stmt.line}: cannot reassign immutable binding '${stmt.name}'")
                     return
                 }
+                // `var`/`val` may be rebound after a move, which makes the name
+                // usable again — the ownership model's whole distinction between
+                // the rebindable and fixed keywords after a `take`.
+                movedBindings.remove(stmt.name)
                 val valueType = resolveExpr(stmt.value) ?: return
                 if (!isCompatible(varSym.type, adoptLiteralType(stmt.value, valueType, varSym.type))) {
                     errors.add("line ${stmt.line}: cannot assign $valueType to '${stmt.name}' of type ${varSym.type}")
@@ -556,6 +755,7 @@ class TypeResolver(private val table: SymbolTable) {
                         errors.add("line ${stmt.line}: missing return value, expected $returnType")
                     }
                 } else {
+                    checkReturnedOrigin(stmt.value!!, stmt.line)
                     val valueType = resolveExpr(stmt.value) ?: return
                     val capturing = lambdaReturnTypes
                     if (capturing != null) {
@@ -582,11 +782,11 @@ class TypeResolver(private val table: SymbolTable) {
                     errors.add("line ${stmt.line}: if condition must be Bool, got $condType")
                 }
                 table.pushScope()
-                for (s in stmt.thenBranch) resolveStmt(s, returnType)
+                inBranch { for (s in stmt.thenBranch) resolveStmt(s, returnType) }
                 table.popScope()
                 if (stmt.elseBranch != null) {
                     table.pushScope()
-                    for (s in stmt.elseBranch) resolveStmt(s, returnType)
+                    inBranch { for (s in stmt.elseBranch) resolveStmt(s, returnType) }
                     table.popScope()
                 }
             }
@@ -628,7 +828,7 @@ class TypeResolver(private val table: SymbolTable) {
                     errors.add("line ${stmt.line}: while condition must be Bool, got $condType")
                 }
                 table.pushScope()
-                resolveBody(stmt.body, returnType)
+                inBranch { resolveBody(stmt.body, returnType) }
                 table.popScope()
             }
             is Stmt.For -> {
@@ -644,7 +844,7 @@ class TypeResolver(private val table: SymbolTable) {
                         }
                         table.pushScope()
                         table.defineVariable(VariableSymbol(stmt.name, IrType.Int, mutable = true))
-                        resolveBody(stmt.body, returnType)
+                        inBranch { resolveBody(stmt.body, returnType) }
                         table.popScope()
                     }
                     else -> {
@@ -661,14 +861,14 @@ class TypeResolver(private val table: SymbolTable) {
                         else -> error("unreachable")
                     }
                     table.defineVariable(VariableSymbol(stmt.name, elementType, mutable = false))
-                        resolveBody(stmt.body, returnType)
+                        inBranch { resolveBody(stmt.body, returnType) }
                         table.popScope()
                     }
                 }
             }
             is Stmt.Loop -> {
                 table.pushScope()
-                resolveBody(stmt.body, returnType)
+                inBranch { resolveBody(stmt.body, returnType) }
                 table.popScope()
             }
             is Stmt.Break -> { /* no type constraint */ }
@@ -786,7 +986,7 @@ class TypeResolver(private val table: SymbolTable) {
                                             table.defineVariable(VariableSymbol(bindName, variant.second[i], mutable = true))
                                         }
                                     }
-                                    resolveBody(branch.body, returnType)
+                                    inBranch { resolveBody(branch.body, returnType) }
                                     table.popScope()
                                     handledBySlot = true
                                     break
@@ -799,12 +999,12 @@ class TypeResolver(private val table: SymbolTable) {
                         resolveExpr(pattern) ?: return
                     }
                     table.pushScope()
-                    resolveBody(branch.body, returnType)
+                    inBranch { resolveBody(branch.body, returnType) }
                     table.popScope()
                 }
                 if (stmt.elseBranch != null) {
                     table.pushScope()
-                    resolveBody(stmt.elseBranch, returnType)
+                    inBranch { resolveBody(stmt.elseBranch, returnType) }
                     table.popScope()
                 } else {
                     // Exhaustiveness check for enum/slot
@@ -900,6 +1100,9 @@ class TypeResolver(private val table: SymbolTable) {
             is Expr.NullLiteral -> IrType.Any  // null is compatible with any nullable type
             is Expr.CharLiteral -> IrType.Char
             is Expr.Identifier -> {
+                checkNotMoved(expr.name, expr.line)
+                checkNotMutablyBorrowed(expr.name, expr.line)
+                checkBorrowAcrossSuspension(expr.name, expr.line)
                 val sym = table.lookupVariable(expr.name)
                     ?: throughTypeAlias(expr.name)?.let { table.lookupVariable(it) }
                 if (sym == null) {
@@ -956,6 +1159,8 @@ class TypeResolver(private val table: SymbolTable) {
                 )
             }
             is Expr.Call -> {
+                // `delay <ms>` parses as a call; it suspends like an `await`.
+                if (expr.callee == "__delay") noteSuspension()
                 // Value call `receiver(args)` — the receiver must be a function value.
                 expr.receiver?.let { recv ->
                     val recvType = resolveExpr(recv)
@@ -1190,6 +1395,8 @@ class TypeResolver(private val table: SymbolTable) {
                             expr.line,
                             "borrow mutably for parameter '${func.paramNames.getOrNull(i) ?: (i + 1).toString()}'",
                         )
+                    } else if (i !in func.sharedParams) {
+                        checkByValueTransfer(arg, argType, expr.line)
                     }
                     if (!isGeneric) {
                         val declaredType = func.params.getOrNull(i)?.second
@@ -1488,6 +1695,34 @@ class TypeResolver(private val table: SymbolTable) {
                     resolveExpr(expr.target)
                     return IrType.ULong
                 }
+                // `x.clone()` — the `Clone` member. Compiler-provided for any
+                // conforming type that does not write one, so it resolves here
+                // rather than needing a body per type. A clone of a T is a T.
+                if (expr.name == "clone" && expr.args.isEmpty()) {
+                    resolveDefaultClone(expr)?.let { return it }
+                }
+                // `opt.require()` / `opt.take()` — the optional's value, without
+                // the optional. Both are the read half of moving out of an
+                // optional (§17); the IR generator adds the guard and the write
+                // that empties it. Typed here rather than looked up so that
+                // every optional has them, whatever it wraps.
+                if (expr.name in OPTIONAL_UNWRAP && expr.args.isEmpty()) {
+                    val targetType = inferredTargetType(expr.target)
+                    if (targetType is IrType.Nullable) {
+                        resolveExpr(expr.target)
+                        return targetType.inner
+                    }
+                    // `take` is an ordinary method name a type may declare, so
+                    // anything that is not an optional goes to the usual lookup.
+                    // Nothing else declares `require`, so say what went wrong.
+                    if (expr.name == "require" && targetType != null) {
+                        errors.add(
+                            "line ${expr.line}: 'require()' needs an optional, but " +
+                                "${(expr.target as? Expr.Identifier)?.name ?: "the value"} is $targetType",
+                        )
+                        return targetType
+                    }
+                }
                 // Slot construction: SlotName.Variant(args) — check BEFORE resolving target
                 if (expr.target is Expr.Identifier) {
                     val slotVariants = table.lookupSlot(expr.target.name)
@@ -1728,9 +1963,9 @@ class TypeResolver(private val table: SymbolTable) {
                     else -> IrType.Any
                 }
             }
-            is Expr.Isolated -> resolveExpr(expr.value) ?: IrType.Any
+            is Expr.Isolated -> resolveOwnershipOp(expr)
             is Expr.Await -> {
-                val t = resolveExpr(expr.value) ?: return null
+                val t = resolveExpr(expr.value).also { noteSuspension() } ?: return null
                 when (t) {
                     is IrType.Task -> t.result
                     is IrType.Function -> t.ret // legacy `await task { ... }`
@@ -2358,6 +2593,8 @@ class TypeResolver(private val table: SymbolTable) {
      */
     private fun writeRoot(target: Expr): VariableSymbol? = when (target) {
         is Expr.Identifier -> table.lookupVariable(target.name)
+        // A borrow points at its operand, so a write through one lands there.
+        is Expr.Isolated if target.op.isBorrow -> writeRoot(target.value)
         is Expr.Member -> writeRoot(target.target)
         is Expr.SafeMember -> writeRoot(target.target)
         is Expr.Index -> writeRoot(target.target)
@@ -2435,6 +2672,256 @@ class TypeResolver(private val table: SymbolTable) {
         return result
     }
 
+    /**
+     * A borrow that is still live: which binding it points at, and how.
+     *
+     * @property owner the binding borrowed from
+     * @property exclusive true for `x.!`, false for `x.&`
+     * @property line where the borrow was created, for diagnostics
+     */
+    private data class ActiveBorrow(val owner: String, val exclusive: Boolean, val line: Int)
+
+    /**
+     * Borrows held by a *binding*, keyed by the binding's name.
+     *
+     * Only a borrow bound to a name (`let m: User! = user.!`) outlives the
+     * expression it appears in; one passed straight to a call
+     * (`rename(user.!)`) ends when the call returns, so it is checked against
+     * what is already live and then dropped. That is the whole of the borrow's
+     * "active lifetime" the model asks about, without a region analysis the rest
+     * of the pass has no use for.
+     */
+    private val activeBorrows = mutableMapOf<String, ActiveBorrow>()
+
+    /** Borrows created while resolving the current expression, dropped after it. */
+    private var pendingBorrows = mutableListOf<ActiveBorrow>()
+
+    /**
+     * Every borrow live right now — bound ones plus those in this expression.
+     *
+     * A bound borrow ends when its holder does, so one whose holder is no longer
+     * in scope is dropped here rather than at every `popScope`.
+     */
+    private fun liveBorrowsOf(owner: String): List<ActiveBorrow> {
+        activeBorrows.keys.filter { table.lookupVariable(it) == null }.forEach(activeBorrows::remove)
+        return activeBorrows.values.filter { it.owner == owner } +
+            pendingBorrows.filter { it.owner == owner }
+    }
+
+    /**
+     * Checks a new borrow of [owner] against the ones already live.
+     *
+     * A mutable borrow must be exclusive for its lifetime, so it conflicts with
+     * every other borrow; shared borrows coexist freely and only conflict with a
+     * mutable one.
+     */
+    private fun checkBorrowConflict(owner: String, exclusive: Boolean, line: Int) {
+        val conflict = liveBorrowsOf(owner).firstOrNull { exclusive || it.exclusive } ?: return
+        val existing = if (conflict.exclusive) "a mutable borrow" else "a shared borrow"
+        val attempted = if (exclusive) "mutably" else "immutably"
+        errors.add(
+            "line $line: cannot borrow '$owner' $attempted — $existing of it is still active " +
+                "from line ${conflict.line}; a mutable borrow must be exclusive for its lifetime",
+        )
+    }
+
+    /**
+     * Rejects using the owner itself while a mutable borrow of it is live.
+     *
+     * The borrow is exclusive, so for as long as it lasts it is the only way to
+     * reach the value — reading through the owner would be a second path to it.
+     */
+    private fun checkNotMutablyBorrowed(name: String, line: Int) {
+        val exclusive = liveBorrowsOf(name).firstOrNull { it.exclusive } ?: return
+        errors.add(
+            "line $line: cannot use '$name' while a mutable borrow of it is active " +
+                "from line ${exclusive.line}; the borrow is exclusive for its lifetime",
+        )
+    }
+
+    /**
+     * Bindings whose value has been given away by `take`, and where.
+     *
+     * Tracking is per-function and flows in statement order. A branch is checked
+     * with its own copy, and the moves it makes are *not* merged back: a value
+     * taken on only one path is still taken on that path, but reporting it
+     * afterwards would blame code that may never run. That keeps the check
+     * sound for the straight-line case, which is where `take` is actually
+     * written, without inventing a phi-merge the rest of the pass has no use for.
+     */
+    private val movedBindings = mutableMapOf<String, Int>()
+
+    /**
+     * Checks a conditionally executed body without letting its moves escape.
+     *
+     * A `take` on one path really does move the value on that path, so the body
+     * is checked with the moves it makes; but blaming the code *after* the
+     * branch would fault a program for something that may never run. Moves made
+     * before the branch still apply inside it.
+     */
+    private fun inBranch(body: () -> Unit) {
+        val before = movedBindings.toMap()
+        body()
+        movedBindings.clear()
+        movedBindings.putAll(before)
+    }
+
+    /** Records that [target]'s value was taken at [line], if it names a binding. */
+    private fun recordMove(target: Expr, line: Int) {
+        val name = movableRootName(target) ?: return
+        movedBindings[name] = line
+    }
+
+    /** The binding a `take` moves out of, or null when the operand owns nothing named. */
+    private fun movableRootName(target: Expr): String? = when (target) {
+        is Expr.Identifier -> target.name.takeIf { table.lookupVariable(it) != null }
+        // `take self.database` moves the field, not the owner; the owner stays
+        // usable, so nothing is recorded against it (see the ownership model's
+        // "moving out of fields" — the field's own state is left to a later pass).
+        is Expr.Grouping -> movableRootName(target.expr)
+        else -> null
+    }
+
+    /**
+     * Reports a read of a binding whose value was taken.
+     *
+     * Reassigning re-establishes a value, which is why `var`/`val` may be used
+     * again after a move and `let`/`fin` may not — the difference falls out of
+     * the binding keyword rather than being a separate rule.
+     */
+    private fun checkNotMoved(name: String, line: Int) {
+        val movedAt = movedBindings[name] ?: return
+        errors.add(
+            "line $line: use of taken value '$name' — its ownership transferred at line $movedAt; " +
+                "use '$name.clone()' instead when both owners need a value",
+        )
+    }
+
+    /**
+     * Rejects handing a named non-`Copy` value to a by-value parameter.
+     *
+     * A `Copy` type duplicates implicitly, so passing one is a copy and the
+     * caller keeps its value. Anything else would be giving the value away, and
+     * the ownership model asks for that to be written: `take` to transfer, or
+     * `.clone()` for a second independent value.
+     *
+     * Only a *named* binding is checked. A temporary — a call result, a literal,
+     * a freshly constructed value — has no other owner, so passing it transfers
+     * nothing that anyone could observe.
+     */
+    private fun checkByValueTransfer(arg: Expr, argType: IrType, line: Int) {
+        // Only meaningful once the capability lattice is actually in scope. A
+        // program that declares its own bare `Copy` — or never imports
+        // `std.traits` — has no conformances to judge against, and rejecting
+        // every by-value argument on that basis would be nonsense.
+        if (!table.conformsTo("Int", "Copy")) return
+        val name = (arg as? Expr.Identifier)?.name ?: return
+        if (table.lookupVariable(name) == null) return
+        val typeName = conformanceName(argType) ?: return
+        if (currentFuncTypeParams.contains(typeName)) return
+        if (table.conformsTo(typeName, "Copy")) return
+        // Every value can be given away, so `take` is always an answer; an
+        // independent copy is only one when the type can produce it.
+        val fixes = buildList {
+            add("transfer ownership with 'take $name'")
+            if (table.conformsTo(typeName, "Clone")) {
+                add("create an independent value with '$name.clone()'")
+            }
+        }
+        errors.add(
+            "line $line: cannot pass '$name' by ownership — '$typeName' is not Copy" +
+                if (fixes.isEmpty()) "" else "; ${fixes.joinToString(", or ")}",
+        )
+    }
+
+    /**
+     * `x.clone()` where the compiler supplies the member.
+     *
+     * Returns null when this is not that call — the receiver is not `Clone`,
+     * or the type writes its own `clone`, in which case the ordinary method
+     * lookup takes it from here. Reporting a missing `Clone` is left to that
+     * path too, so the diagnostic stays the usual "no method" one.
+     */
+    private fun resolveDefaultClone(expr: Expr.MethodCall): IrType? {
+        val receiver = resolveExpr(expr.target) ?: return null
+        val name = conformanceName(receiver) ?: return null
+        if (table.lookupMethod(name, "clone") != null) return null
+        if (!table.conformsTo(name, "Clone")) return null
+        return receiver
+    }
+
+    /**
+     * The name a conformance is registered under for [type].
+     *
+     * A pack is a `Named`; a primitive lowers to its own IrType, whose spelling
+     * is the name `impl Clone for Int` used.
+     */
+    private fun conformanceName(type: IrType): String? = when (type) {
+        is IrType.Named -> type.name
+        IrType.Int, IrType.UInt, IrType.Long, IrType.ULong, IrType.Byte, IrType.UByte,
+        IrType.Short, IrType.UShort, IrType.Float, IrType.Double, IrType.Decimal,
+        IrType.String, IrType.Char, IrType.Bool, IrType.Unit -> type.toString()
+        else -> null
+    }
+
+    /**
+     * `take v` / `isolated(v)` — checks the capability and records the move.
+     *
+     * A capability is nominal: where the operation names one, the operand's
+     * type must carry it. `take` names none — every value can be given away. A
+     * type parameter carries no known conformance at the declaration, so a
+     * generic body is left alone; its `where` clause is where that is stated.
+     */
+    private fun resolveOwnershipOp(expr: Expr.Isolated): IrType? {
+        val type = resolveExpr(expr.value) ?: return null
+        val capability = expr.op.capability
+        if (capability != null) {
+            val named = (type as? IrType.Named)?.name
+            if (named != null && !currentFuncTypeParams.contains(named) && knowsCapability(capability)) {
+                if (!table.conformsTo(named, capability)) {
+                    errors.add(
+                        "line ${expr.line}: cannot ${expr.op.spelling} a value of type '$named' — " +
+                            "it does not implement '$capability'",
+                    )
+                }
+            }
+        }
+        if (expr.op == OwnershipOp.TAKE) {
+            // The owner may not be moved while borrowed: a borrow points at
+            // storage the move would take away.
+            movableRootName(expr.value)?.let { owner ->
+                liveBorrowsOf(owner).firstOrNull()?.let { borrow ->
+                    errors.add(
+                        "line ${expr.line}: cannot take '$owner' while it is borrowed " +
+                            "from line ${borrow.line}; the borrow would outlive the value",
+                    )
+                }
+            }
+            recordMove(expr.value, expr.line)
+        }
+        if (expr.op.isBorrow) {
+            val exclusive = expr.op == OwnershipOp.BORROW
+            // `val`/`fin` fix the value, so it cannot be lent out for writing.
+            if (exclusive) checkValueMutable(expr.value, expr.line, "borrow mutably")
+            movableRootName(expr.value)?.let { owner ->
+                checkBorrowConflict(owner, exclusive, expr.line)
+                pendingBorrows.add(ActiveBorrow(owner, exclusive, expr.line))
+            }
+        }
+        return type
+    }
+
+    /**
+     * Whether [capability] is declared in this compilation at all.
+     *
+     * The capability specs live in `std.traits`, which a program only sees once
+     * it imports them. Checking against a spec that was never declared would
+     * reject every program that does not — so where the contract is unknown,
+     * nothing is claimed.
+     */
+    private fun knowsCapability(capability: String): Boolean =
+        table.lookupSpec(capability) != null
+
     private fun resolveBinding(
         name: String,
         typeAnn: TypeAnnotation,
@@ -2443,6 +2930,9 @@ class TypeResolver(private val table: SymbolTable) {
         mutable: Boolean,
         valueMutable: Boolean = true,
     ) {
+        // A fresh binding owns a value, whatever happened to an earlier one of
+        // the same name. Cleared after the initializer, so `var x = take x`
+        // still reports the read.
         if (table.lookupVariableInCurrentScope(name) != null) {
             errors.add("line $line: '$name' is already declared in this scope")
             return
@@ -2472,6 +2962,22 @@ class TypeResolver(private val table: SymbolTable) {
                 table.defineVariable(VariableSymbol(name, initType, mutable, valueMutable = valueMutable))
             }
         }
+        movedBindings.remove(name)
+        // `let m: User! = user.!` — the borrow now lives as long as `m` does,
+        // rather than ending with the expression that made it.
+        bindPendingBorrow(name)
+    }
+
+    /**
+     * Attaches a borrow made by an initializer to the binding that holds it.
+     *
+     * Only one borrow can be the value of a binding, so the last one made while
+     * resolving the initializer is the one that outlives it; any others were
+     * intermediate and end there.
+     */
+    private fun bindPendingBorrow(name: String) {
+        pendingBorrows.lastOrNull()?.let { activeBorrows[name] = it }
+        pendingBorrows.clear()
     }
 
     private fun tryResolveType(ref: TypeRef, line: Int): IrType? {

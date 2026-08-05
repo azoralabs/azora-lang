@@ -23,13 +23,13 @@ realm std {
     }
 
     @Experimental(since: "0.0.3")
-    impl oper[] for Slice<T> { self&, index ->
+    oper[] [self: Slice<T>&](index: Int): T {
         assert index >= 0 && index < self.count { "Slice index out of bounds" }
         return self._raw[index]
     }
 
     @Experimental(since: "0.0.3")
-    impl oper[]= for Slice<T> { self!, index, value ->
+    oper[]= [self: Slice<T>!](index: Int, value: T) {
         assert index >= 0 && index < self.count { "Slice index out of bounds" }
         self._raw[index] = value
     }

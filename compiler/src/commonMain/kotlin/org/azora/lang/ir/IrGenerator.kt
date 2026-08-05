@@ -17,6 +17,8 @@
 package org.azora.lang.ir
 
 import org.azora.lang.frontend.Param
+import org.azora.lang.frontend.OPTIONAL_UNWRAP
+import org.azora.lang.frontend.OwnershipOp
 import org.azora.lang.frontend.ParamModifier
 import org.azora.lang.frontend.lambdaReceiverName
 import org.azora.lang.frontend.CastKind
@@ -711,6 +713,33 @@ class IrGenerator(private val table: SymbolTable) {
     /** A shared friend name scope, or null if no friend realms encountered yet. */
     private var friendNameScope: MutableMap<String, String>? = null
 
+    /** Guards a pending optional take needs in front of the statement holding it. */
+    private val pendingBefore = mutableListOf<IrStmt>()
+
+    /** Writes a pending optional take needs after that statement. */
+    private val pendingAfter = mutableListOf<IrStmt>()
+
+    /**
+     * Records what moving out of an optional owes the optional (§17).
+     *
+     * `take opt.require()` and `opt.take()` hand the value to a new owner, so
+     * the optional must not keep naming it. Emptying it rather than leaving it
+     * pointing at a moved-from value is what keeps every optional either null
+     * or valid. The guard goes in front because the read that follows is only
+     * meaningful once the optional is known to hold something.
+     */
+    private fun emptyAfterTake(target: Expr, value: IrExpr) {
+        if (value.type !is IrType.Nullable) return
+        val owner = (target as? Expr.Identifier)?.name ?: return
+        pendingBefore.add(
+            IrStmt.Assert(
+                IrExpr.Binary(value, IrBinaryOp.NEQ, IrExpr.Var("__null", IrType.Any), IrType.Bool),
+                IrExpr.StringLiteral("took a value out of a null optional"),
+            ),
+        )
+        pendingAfter.add(IrStmt.Assignment(resolveName(owner), IrExpr.Var("__null", IrType.Any)))
+    }
+
     /**
      * Lowers a list of statements, handling friend realm blocks by sharing
      * a name scope across all friend realms in the same body.
@@ -746,7 +775,20 @@ class IrGenerator(private val table: SymbolTable) {
                     result.addAll(lowered)
                 }
             } else {
-                result.add(lowerStmt(stmt))
+                // A statement's own pending work must not fall into a block
+                // nested inside it, so each body starts from an empty pair.
+                val outerBefore = pendingBefore.toList()
+                val outerAfter = pendingAfter.toList()
+                pendingBefore.clear()
+                pendingAfter.clear()
+                val lowered = lowerStmt(stmt)
+                result.addAll(pendingBefore)
+                result.add(lowered)
+                result.addAll(pendingAfter)
+                pendingBefore.clear()
+                pendingBefore.addAll(outerBefore)
+                pendingAfter.clear()
+                pendingAfter.addAll(outerAfter)
             }
         }
 
@@ -754,10 +796,30 @@ class IrGenerator(private val table: SymbolTable) {
         return result
     }
 
+    /**
+     * Applies the implicit copy a `Copy` value gets when it is used by value.
+     *
+     * `var b = a` on a `Copy` pack has to leave `a` and `b` independent — that
+     * is what `Copy` means. A primitive already copies because it is passed by
+     * value; an aggregate is a pointer, so it needs one made.
+     *
+     * Only a *named* value is copied. A temporary has no other owner, so there
+     * is nothing to duplicate away from.
+     */
+    private fun withImplicitCopy(source: Expr, lowered: IrExpr): IrExpr {
+        if (source !is Expr.Identifier) return lowered
+        val name = (lowered.type as? IrType.Named)?.name ?: return lowered
+        if (!table.conformsTo(name, "Copy")) return lowered
+        return IrExpr.Call("__isolated", listOf(lowered), lowered.type)
+    }
+
     private fun lowerStmt(stmt: Stmt): IrStmt {
         return when (stmt) {
             is Stmt.VarDecl -> {
-                val init = coerceToFloat(lowerExpr(stmt.initializer), typeAnnotationOrNull(stmt.type))
+                val init = withImplicitCopy(
+                    stmt.initializer,
+                    coerceToFloat(lowerExpr(stmt.initializer), typeAnnotationOrNull(stmt.type)),
+                )
                 val type = resolveTypeAnnotation(stmt.type, init)
                 val mangled = registerName(stmt.name)
                 table.defineVariable(VariableSymbol(stmt.name, type, mutable = true))
@@ -765,7 +827,10 @@ class IrGenerator(private val table: SymbolTable) {
                 IrStmt.VarDecl(mangled, type, init)
             }
             is Stmt.FinDecl -> {
-                val init = coerceToFloat(lowerExpr(stmt.initializer), typeAnnotationOrNull(stmt.type))
+                val init = withImplicitCopy(
+                    stmt.initializer,
+                    coerceToFloat(lowerExpr(stmt.initializer), typeAnnotationOrNull(stmt.type)),
+                )
                 val type = resolveTypeAnnotation(stmt.type, init)
                 val mangled = registerName(stmt.name)
                 table.defineVariable(VariableSymbol(stmt.name, type, mutable = false))
@@ -773,7 +838,10 @@ class IrGenerator(private val table: SymbolTable) {
                 IrStmt.FinDecl(mangled, type, init)
             }
             is Stmt.LetDecl -> {
-                val init = coerceToFloat(lowerExpr(stmt.initializer), typeAnnotationOrNull(stmt.type))
+                val init = withImplicitCopy(
+                    stmt.initializer,
+                    coerceToFloat(lowerExpr(stmt.initializer), typeAnnotationOrNull(stmt.type)),
+                )
                 val type = resolveTypeAnnotation(stmt.type, init)
                 val mangled = registerName(stmt.name)
                 table.defineVariable(VariableSymbol(stmt.name, type, mutable = false))
@@ -1727,8 +1795,19 @@ class IrGenerator(private val table: SymbolTable) {
                 IrExpr.Call("__deref", listOf(target), inner)
             }
             is Expr.Isolated -> {
+                // `take opt.require()` — the primitive that moves a value out of
+                // an optional. The optional is emptied; see [emptyAfterTake].
+                val unwrapped = expr.value
+                if (expr.op == OwnershipOp.TAKE && unwrapped is Expr.MethodCall &&
+                    unwrapped.name == "require" && unwrapped.args.isEmpty()
+                ) {
+                    emptyAfterTake(unwrapped.target, lowerExpr(unwrapped.target))
+                }
                 val value = lowerExpr(expr.value)
-                IrExpr.Call("__isolated", listOf(value), value.type)
+                // `take` moves the value; there is nothing to copy. `clone` and
+                // `isolated` both produce an independent one.
+                if (expr.op == OwnershipOp.TAKE || expr.op.isBorrow) value
+                else IrExpr.Call("__isolated", listOf(value), value.type)
             }
             is Expr.Await -> {
                 val task = lowerExpr(expr.value)
@@ -1835,6 +1914,31 @@ class IrGenerator(private val table: SymbolTable) {
                 IrExpr.Member(target, expr.name, memberType)
             }
             is Expr.MethodCall -> {
+                // `x.clone()` with no written member — the compiler-provided
+                // `Clone` default is an independent deep copy.
+                if (expr.name == "clone" && expr.args.isEmpty()) {
+                    val target = lowerExpr(expr.target)
+                    // A pack registers its conformance under its name; a primitive
+                    // under the spelling of its own type.
+                    val name = (target.type as? IrType.Named)?.name ?: target.type.toString()
+                    if (table.lookupMethod(name, "clone") == null && table.conformsTo(name, "Clone")) {
+                        return IrExpr.Call("__isolated", listOf(target), target.type)
+                    }
+                }
+                // `opt.require()` / `opt.take()` — dropping the optional off a
+                // value is a change of type, not of representation, so it lowers
+                // to the value itself. What makes the read safe is the guard the
+                // parser puts in front of it.
+                if (expr.name in OPTIONAL_UNWRAP && expr.args.isEmpty()) {
+                    val target = lowerExpr(expr.target)
+                    val inner = (target.type as? IrType.Nullable)?.inner
+                    if (inner != null) {
+                        // The shorthand moves as well as reads, so it owes the
+                        // optional the same emptying the keyword form does.
+                        if (expr.name == "take") emptyAfterTake(expr.target, target)
+                        return IrExpr.NumCast(target, inner)
+                    }
+                }
                 // Slot construction: SlotName.Variant(args)
                 if (expr.target is Expr.Identifier && table.lookupSlot(expr.target.name) != null) {
                     val args = expr.args.map { lowerExpr(it) }

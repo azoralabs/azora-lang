@@ -44,7 +44,7 @@ expose module std.reactive
  * and documentation all observe the same symbol.
  */
 @Experimental(since: "0.0.4")
-bridge annot Reactive for [.Infx, .Task, .Func]
+bridge annot Reactive for [.Func, .AsyncFunc, .Prop, .AsyncProp]
 
 realm std {
     /**

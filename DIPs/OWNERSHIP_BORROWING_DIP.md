@@ -1,19 +1,71 @@
-# Azora Ownership, Borrowing, Copying, Cloning, and Moving
+# Azora Ownership, Borrowing, Copying, Cloning, and Moving — DIP Implementation Profile
 
-> Status: design proposal for Azora `0.0.5`.
+> Status: partly implemented in Azora `0.0.5`.
+
+## Implementation status
+
+| Section | State |
+|---------|-------|
+| §1 capability specs (`Clone`, `Copy requires Clone`) | **done** — specs in `std/traits/traits.az`, impls generated in `std/traits/core.az`. There is no third capability for moving: every value can be given away, so `take` asks nothing of its operand |
+| §2–§6, §24 the four binding modes | **done** |
+| §7 binding mutability vs ownership capability | **done** |
+| §8 implicit copying | **done** — a named non-`Copy` value passed by value is rejected |
+| §9 `.clone()` | **done** — a `bridge spec Clone` member; the compiler supplies a field-wise clone, and a written `impl` overrides it |
+| §10 `take` | **done** — move recorded, use-after-take reported |
+| §12 borrows, including the exclusivity rules | **done** — a mutable borrow is exclusive for its lifetime, the owner cannot be read or moved while one is live, and shared borrows coexist |
+| §13 borrow origins `T&[a]` | **done** — an origin must name a borrowed parameter or the receiver, and a `return` rooted in a binding must be one of them. Lifetimes themselves stay inferred |
+| §20 capabilities as generic constraints | **done** |
+| §21 derivation rules | **done** for packs, enums and tagged unions |
+| §22 diagnostics | **done** for the take / implicit-copy / rebind / mutate cases |
+| §17 optional `take` | **done** — `take opt.require()` and the `opt.take()` shorthand yield the value and leave the optional `null`; taking out of an empty optional is caught |
+| §18 smart pointers | **done** — `Unique`, `Shared`, `SyncShared` and `Weak` carry the capabilities that match how each one owns |
+| §15 async ownership | **done** — a borrowed parameter still read after an `await` or `delay` is rejected, with the three fixes named; a borrow that ends before the suspension is an ordinary borrow |
+| §16 closure captures | **done** for what a body shows — borrow and clone captures are accepted, and a `take` inside a closure moves the outer binding, in an `async` closure as much as a plain one. Which closures *escape* is not analysed, so an escaping capture is not yet required to be explicit |
+| §14 destruction | **not implemented** |
+| §19 non-movable types | **removed** — every value is movable |
+
+Enforced today: which values may be duplicated, which may be given away, which
+may not be used after being given away, **borrow exclusivity** — a mutable
+borrow is the only live path to its owner for as long as it lasts — and that a
+borrow does not outlive the call it was made for, whether it is named as the
+origin of a returned borrow or held across a suspension.
+
+A borrow's lifetime is its holder's scope: `let m: User! = user.!` lasts until
+`m` goes out of scope, while `rename(user.!)` ends with the statement. That is
+enough for §12's rules without a region analysis. What is *not* checked is
+whether a borrow outlives its owner across a function boundary (§13's origins are
+parsed but not validated) or a suspension point (§15).
+
+Three places where the implementation deliberately differs from the text below:
+
+- **`String` is `Copy`.** §8's list of primitives leaves it out, but Azora
+  strings are immutable values rather than owned buffers, so treating them as
+  copyable is sound and is what every existing program assumes.
+- **`Unit` has no capabilities.** It carries nothing, so there is no value to
+  move, clone or copy — and a `clone` taking one would need a `void` parameter.
+- **`clone` is compiler-supplied.** `Clone` is a `bridge spec`, so a conforming
+  type gets a field-wise clone for free and only writes an `impl` when its
+  duplication needs saying — that one then wins.
+- **The capabilities are named `Clone` and `Copy`.** There is no third one for
+  moving: every value can be given away with `take`.
+
+An `impl` of a spec member may omit its return type and take the one the spec
+declared. That is what makes `func clone[self: Self&]()` in §21 legal without
+contradicting "return types are never inferred" (`DO_NOT_INFER_RETURN_TYPE.MD`):
+the type *is* declared, once, on the contract.
 
 Azora uses ownership and borrowing to provide deterministic destruction and memory safety without exposing Rust-style lifetime parameters in ordinary code.
 
 The model is built around:
 
 - four binding/value mutability modes: `var`, `let`, `val`, and `fin`;
-- implicit copying for `Copyable` types;
-- explicit duplication with `clone`;
+- implicit copying for `Copy` types;
+- explicit duplication with `.clone()`;
 - explicit ownership transfer with `take`;
 - shared borrows with `T&`;
 - mutable borrows with `T!`;
 - compiler-inferred lifetimes;
-- optional borrow-origin annotations such as `T&[source]`;
+- optional borrow-origin annotations such as `T&[source]` or `T&[...sources]`;
 - ownership-safe asynchronous functions.
 
 ---
@@ -21,29 +73,19 @@ The model is built around:
 ## 1. Core capability specifications
 
 ```azora
-bridge spec Movable
+bridge spec Clone {
+    func clone[self: Self&](): Self
+}
 
-bridge spec Cloneable { self& } // bridge spec Cloneable { self: Self& } - ok too
-
-bridge spec Copyable: Movable, Cloneable
+bridge spec Copy requires Clone
 ```
 
-The recommended spelling is `Cloneable`, not `Clonable`, because `Cloneable` is the established English and programming spelling.
+There are two capabilities, not three. **Every value can be given away**, so
+`take` asks nothing of its operand and there is no capability to ask for.
 
-### `Movable`
+### `Copy`
 
-A `Movable` value may transfer its ownership to another binding, function, field, task, or return value.
-
-```azora
-var file: File = File.open("data.txt")
-var owned: File = take file
-```
-
-After `take file`, the original binding no longer contains a usable value.
-
-### `Copyable`
-
-A `Copyable` value is duplicated implicitly when used by value.
+A `Copy` value is duplicated implicitly when used by value.
 
 ```azora
 var x: Int = 10
@@ -52,18 +94,44 @@ var y: Int = x
 
 Both `x` and `y` remain valid.
 
-A `Copyable` type must also be safely movable and cloneable, so `Copyable` extends both `Movable` and `Cloneable`.
-
-### `Cloneable`
-
-A `Cloneable` value may be duplicated explicitly with `clone`.
+Implicit duplication has to be cheap and has to be safe, so `Copy` **requires**
+`Clone`. It does not grant it: `requires` is a precondition checked at the
+`impl`, so a type states every capability it has and none is inferred from a
+sibling.
 
 ```azora
-var original: String = String("Azora")
-var duplicate: String = clone original
+impl [Clone, Copy] for Vec2      // both, in one declaration
+```
+
+### `Clone`
+
+A `Clone` value may be duplicated explicitly with `.clone()`.
+
+```azora
+var original: String = "Azora"
+var duplicate: String = original.clone()
 ```
 
 Both values remain valid and own independent state.
+
+`Clone` is a `bridge spec`: the compiler supplies a field-wise `clone` for any
+conforming type, so a plain data type states the capability and writes nothing.
+A type whose duplication needs saying writes its own `clone`, and that one wins:
+
+```azora
+impl Clone for UserProfile {
+    func clone[self: Self&]() {          // the result type comes from the spec
+        return UserProfile(
+            name: self.name.clone(),
+            tags: self.tags.clone()
+        )
+    }
+}
+```
+
+An `impl` of a spec member may omit its return type and take the one the spec
+declared — the type is still *declared*, once, on the contract, so this does not
+contradict `DO_NOT_INFER_RETURN_TYPE.MD`.
 
 ---
 
@@ -109,7 +177,7 @@ func rename(user: User!) {
 }
 
 var user: User = User("Ana")
-rename(user!)
+rename(user.!)
 ```
 
 ---
@@ -139,7 +207,7 @@ connection = Connection.open() // Error
 A mutable borrow may be created:
 
 ```azora
-modify(user!)
+modify(user.!)
 ```
 
 The binding itself remains immutable.
@@ -167,13 +235,13 @@ state.items.add(item)         // Error
 A shared borrow is allowed:
 
 ```azora
-inspect(config&)
+inspect(config.&)
 ```
 
 A mutable borrow is not allowed:
 
 ```azora
-modify(config!) // Error
+modify(config.!) // Error
 ```
 
 ---
@@ -192,15 +260,15 @@ settings = Settings.other()  // Error
 It is useful for values that should remain fixed for the rest of their ownership lifetime:
 
 ```azora
-fin appName: String = String("Azora")
+fin appName: String = "Azora"
 fin origin: Vec3 = Vec3(0.0, 0.0, 0.0)
 ```
 
 Only shared borrows may be created:
 
 ```azora
-inspect(settings&) // Allowed
-modify(settings!)  // Error
+inspect(settings.&) // Allowed
+modify(settings.!)  // Error
 ```
 
 ---
@@ -213,10 +281,10 @@ The type capabilities decide that.
 
 | Declaration | Copy | Clone | Take |
 |---|---:|---:|---:|
-| `var` | If `Copyable` | If `Cloneable` | If `Movable` |
-| `let` | If `Copyable` | If `Cloneable` | If `Movable` |
-| `val` | If `Copyable` | If `Cloneable` | If `Movable` |
-| `fin` | If `Copyable` | If `Cloneable` | If `Movable` |
+| `var` | If `Copy` | If `Clone` | Always |
+| `let` | If `Copy` | If `Clone` | Always |
+| `val` | If `Copy` | If `Clone` | Always |
+| `fin` | If `Copy` | If `Clone` | Always |
 
 For example, an immutable binding may still transfer ownership:
 
@@ -260,7 +328,7 @@ config = Config.development() // Allowed
 
 Azora has no `copy` keyword.
 
-Copying happens automatically when a value implements `Copyable`.
+Copying happens automatically when a value implements `Copy`.
 
 ```azora
 var a: Int = 42
@@ -272,7 +340,7 @@ trace a // 43
 trace b // 42
 ```
 
-Passing a `Copyable` value by value also copies it:
+Passing a `Copy` value by value also copies it:
 
 ```azora
 func printNumber(value: Int) {
@@ -285,7 +353,7 @@ printNumber(number)
 trace number // Still valid
 ```
 
-Returning a `Copyable` local copies it:
+Returning a `Copy` local copies it:
 
 ```azora
 func answer(): Int {
@@ -294,7 +362,7 @@ func answer(): Int {
 }
 ```
 
-### Typical `Copyable` types
+### Typical `Copy` types
 
 Likely examples include:
 
@@ -312,10 +380,10 @@ ULong
 Float
 Real
 Decimal
-small value packs containing only Copyable fields
+small value packs containing only Copy fields
 ```
 
-A user-defined type may implement or derive `Copyable`:
+A user-defined type may implement or derive `Copy`:
 
 ```azora
 pack Vec2 {
@@ -323,12 +391,12 @@ pack Vec2 {
     var y: Float
 }
 
-impl Copyable for Vec2
+impl Copy for Vec2
 ```
 
-The compiler should derive `Copyable` only when:
+The compiler should derive `Copy` only when:
 
-- every field is `Copyable`;
+- every field is `Copy`;
 - bytewise or fieldwise copying cannot duplicate exclusive resource ownership;
 - the type does not require a stable address;
 - the type has no incompatible destruction behavior.
@@ -340,8 +408,8 @@ The compiler should derive `Copyable` only when:
 `clone` creates another independently owned value.
 
 ```azora
-var text: String = String("Hello")
-var other: String = clone text
+var text: String = "Hello"
+var other: String = text.clone()
 
 text.append("!")
 
@@ -349,17 +417,11 @@ trace text  // Hello!
 trace other // Hello
 ```
 
-`clone value` conceptually invokes the `Cloneable` contract:
-
-```azora
-value.clone()
-```
-
 ### Collections
 
 ```azora
 var original: List<Int> = std::listOf(1, 2, 3)
-var duplicate: List<Int> = clone original
+var duplicate: List<Int> = original.clone()
 
 original.add(4)
 
@@ -377,7 +439,7 @@ func cache(config: Config) {
 }
 
 var config: Config = Config.production()
-cache(clone config)
+cache(config.clone())
 
 config.enableDebug() // Original remains available
 ```
@@ -407,7 +469,7 @@ var owned: File = take file
 file.read() // Error: value was taken
 ```
 
-`take` requires `Movable`.
+`take` requires nothing of its operand: every value can be given away.
 
 No copy or duplicate resource is created.
 
@@ -434,18 +496,18 @@ process(take file)
 file.read() // Error
 ```
 
-Without `take`, passing a non-`Copyable` value by ownership is rejected:
+Without `take`, passing a non-`Copy` value by ownership is rejected:
 
 ```azora
 process(file)
-// Error: File is not Copyable.
+// Error: File is not Copy.
 // Use `take file` to transfer ownership.
 ```
 
 When cloning is supported, the diagnostic may also suggest:
 
 ```text
-Use `clone file` to create an independent value.
+Use `file.clone()` to create an independent value.
 ```
 
 ### Moving into fields
@@ -533,7 +595,7 @@ func openLog(): File {
 
 ### Returning an owned local
 
-For a non-`Copyable` named local, use `take` to make the transfer explicit:
+For a non-`Copy` named local, use `take` to make the transfer explicit:
 
 ```azora
 func openConfiguredLog(): File {
@@ -550,7 +612,7 @@ After the return, the caller owns the file.
 
 ```azora
 func duplicateConfig(config: Config&): Config {
-    return clone config
+    return config.clone()
 }
 ```
 
@@ -666,7 +728,7 @@ func first(a: String&, b: String&): String&[a] {
 
 ```azora
 func value[self: Self&](): Int&[self] {
-    return self.value&
+    return self.value.&
 }
 ```
 
@@ -806,7 +868,7 @@ async func process(config: Config) {
 }
 
 var config: Config = Config.production()
-process(clone config)
+process(config.clone())
 
 config.enableDebug() // Original remains available
 ```
@@ -875,7 +937,7 @@ Owned return values are safer and should be preferred:
 
 ```azora
 async func readName(user: User&): String {
-    return clone user.name
+    return user.name.clone()
 }
 ```
 
@@ -915,15 +977,15 @@ let callback = {
 }
 ```
 
-A `Copyable` value may be copied into an escaping closure.
+A `Copy` value may be copied into an escaping closure.
 
 ### Clone capture
 
 ```azora
-var message: String = String("Hello")
+var message: String = "Hello"
 
 let callback = {
-    let owned: String = clone message
+    let owned: String = message.clone()
     trace owned
 }
 ```
@@ -988,22 +1050,22 @@ renderer.upload(take image)
 trace image // Error
 ```
 
-It should not be `Copyable`.
+It should not be `Copy`.
 
-It may or may not be `Cloneable`, depending on whether cloning duplicates the pointed-to value:
+It may or may not be `Clone`, depending on whether cloning duplicates the pointed-to value:
 
 ```azora
-var duplicate: std::Unique<Image> = clone image
+var duplicate: std::Unique<Image> = image.clone()
 ```
 
 ### `Shared<T>`
 
-`Shared<T>` may be `Cloneable` by incrementing a reference count.
+`Shared<T>` may be `Clone` by incrementing a reference count.
 
-It may also be `Copyable` only if Azora intentionally considers reference-count increments cheap and implicit. A safer design is:
+It may also be `Copy` only if Azora intentionally considers reference-count increments cheap and implicit. A safer design is:
 
 ```azora
-var second: std::Shared<Image> = clone first
+var second: std::Shared<Image> = first.clone()
 ```
 
 This keeps reference-count changes explicit.
@@ -1020,32 +1082,12 @@ Cloning a weak reference duplicates the non-owning handle, not the object.
 
 ## 19. Non-movable types
 
-Some values require a stable address after initialization.
+**Removed.** Every value in Azora can be given away, so there is no capability to
+withhold and nothing for a type to opt out of.
 
-Such a type does not implement `Movable`.
-
-Possible examples include:
-
-- self-referential state;
-- pinned async state;
-- objects registered with native APIs by stable address;
-- synchronization primitives with address-sensitive internals.
-
-```azora
-pack StableRegistration {
-    // ...
-}
-```
-
-Without `Movable`, this is rejected:
-
-```azora
-var registration: StableRegistration = StableRegistration()
-var other: StableRegistration = take registration
-// Error: StableRegistration is not Movable
-```
-
-A dedicated stable-owner type may be used instead.
+A type that genuinely requires a stable address — pinned async state,
+self-referential data, an object registered with a native API by pointer — should
+be held behind a handle that owns it, rather than being made unmovable itself.
 
 ---
 
@@ -1054,22 +1096,21 @@ A dedicated stable-owner type may be used instead.
 Capabilities may be used as generic constraints.
 
 ```azora
-func transfer<T>(value: T): T
-where T is Movable {
-    return take value
+func transfer<T>(value: T): T {
+    return take value          // no constraint: every value can be given away
 }
 ```
 
 ```azora
 func duplicate<T>(value: T&): T
-where T is Cloneable {
-    return clone value
+where T is Clone {
+    return value.clone()
 }
 ```
 
 ```azora
 func repeat<T>(value: T, count: Int): List<T>
-where T is Copyable {
+where T is Copy {
     var result: std::List<T> = std::listOf()
 
     for _ in 0..<count {
@@ -1083,43 +1124,50 @@ where T is Copyable {
 For type varargs:
 
 ```azora
-deepinline prop AllCopyable<...T>: Bool
-where T is Copyable {
+deepinline prop AllCopy<...T>: Bool
+where T is Copy {
     return true
 }
 ```
 
-Here `T is Copyable` means every type in the type varargs satisfies `Copyable`.
+Here `T is Copy` means every type in the type varargs satisfies `Copy`.
 
 ---
 
-## 21. Recommended derivation rules
+## 21. Derivation rules
 
-### `Movable`
+A pack, enum or tagged union that says nothing about its capabilities gets the
+ones its contents allow, computed to a fixed point so a nested type is judged
+before whatever holds it. An explicit `impl` always wins.
 
-Automatically derive when:
+A field typed by the pack's *own* type parameter never withholds a capability:
+`pack Store<T> { var value: T }` says nothing until it is instantiated. A
+`union` derives nothing — it reinterprets its storage, so nothing about it can be
+copied field-wise.
 
-- every field is `Movable`;
-- moving the value preserves all internal invariants;
-- the type does not require a stable address.
-
-### `Copyable`
+### `Copy`
 
 Automatically derive only when:
 
-- every field is `Copyable`;
+- every field is `Copy`;
 - implicit duplication is cheap enough for the language's policy;
 - copying cannot duplicate exclusive ownership;
 - the type has no incompatible destructor;
 - the type does not depend on object identity.
 
-### `Cloneable`
+### `Clone`
 
 Automatically derive when:
 
-- every field is `Cloneable`;
+- every field is `Clone`;
 - fieldwise cloning produces an independent valid value;
 - custom invariants do not require a manual implementation.
+
+`Clone` is the permissive one and `Copy` the strict one, and the difference is
+the point of the model. A field that is a list or a buffer does not block
+`Clone` — a deep copy duplicates the whole value. It does block `Copy`, because
+`Copy` makes duplication *implicit*, so a pack holding a collection is left out
+and handing it over asks for `take` or `.clone()` in writing.
 
 Example:
 
@@ -1129,11 +1177,13 @@ pack UserProfile {
     var tags: std::List<String>
 }
 
-impl Cloneable for UserProfile { self& -> // or self: Self& -> // here we support this syntax only, because clonable does not have fields and is declared with { self& }
-    return UserProfile(
-        name: clone self.name,
-        tags: clone self.tags
-    )
+impl Clone for UserProfile {
+    func clone[self: Self&]() {
+        return UserProfile(
+            name: self.name.clone(),
+            tags: self.tags.clone()
+        )
+    }
 }
 ```
 
@@ -1141,54 +1191,56 @@ impl Cloneable for UserProfile { self& -> // or self: Self& -> // here we suppor
 
 ## 22. Diagnostics
 
-Clear diagnostics are essential.
+Clear diagnostics are essential. These are what the compiler emits today.
 
 ### Missing `take`
 
 ```text
-error: cannot pass `file` by ownership
-`File` is Movable but not Copyable
-
-help: transfer ownership with:
-    process(take file)
-
-help: create an independent value with:
-    process(clone file)
+line 11: cannot pass 'file' by ownership — 'File' is not Copy;
+         transfer ownership with 'take file',
+         or create an independent value with 'file.clone()'
 ```
+
+The `.clone()` half is offered only when the type is `Clone`; the `take` half
+always is, because every value can be given away.
 
 ### Use after take
 
 ```text
-error: use of taken value `file`
+line 6: use of taken value 'file' — its ownership transferred at line 5;
+        use 'file.clone()' instead when both owners need a value
+```
 
-`file` transferred ownership here:
-    process(take file)
+### Missing capability for `.clone()`
 
-help: use `clone file` instead when both owners need a value
+```text
+line 7: no method 'clone' on Raw
 ```
 
 ### Invalid mutable borrow
 
 ```text
-error: cannot mutably borrow `config`
-`config` was declared with `val`, so its current value is immutable
+line 9: cannot borrow mutably for parameter 'n' through 'config' —
+        its value is immutable; declare it 'var' (or 'let' to fix only the name)
 ```
 
 ### Rebinding `let`
 
 ```text
-error: cannot rebind `user`
-`user` was declared with `let`
+line 8: cannot reassign immutable binding 'user'
 ```
 
 ### Mutating `fin`
 
 ```text
-error: cannot mutate `settings`
-`settings` was declared with `fin`
+line 7: cannot assign to member 'theme' through 'settings' — its value is
+        immutable; declare it 'var' (or 'let' to fix only the name)
 ```
 
 ### Borrow across `await`
+
+Not implemented — borrows are erased at call sites and lifetimes are not yet
+checked. The intended shape:
 
 ```text
 error: borrow of `data` may outlive its owner across `await`
@@ -1202,13 +1254,13 @@ help: end the borrow before the suspension point
 
 ## 23. Complete operation table
 
-| Operation | Syntax | Required capability | Source remains valid | Usually allocates |
-|---|---|---|---:|---:|
-| Implicit copy | `b = a` | `Copyable` | Yes | No |
-| Explicit clone | `b = clone a` | `Cloneable` | Yes | Possibly |
-| Ownership transfer | `b = take a` | `Movable` | No | No |
-| Shared borrow | `a&` | Borrowable value | Yes | No |
-| Mutable borrow | `a!` | Mutable value and exclusive access | Yes | No |
+| Operation | Syntax          | Required capability | Source remains valid | Usually allocates |
+|---|-----------------|---|---:|---:|
+| Implicit copy | `b = a`         | `Copy` | Yes | No |
+| Explicit clone | `b = a.clone()` | `Clone` | Yes | Possibly |
+| Ownership transfer | `b = take a`    | none | No | No |
+| Shared borrow | `a.&`           | Borrowable value | Yes | No |
+| Mutable borrow | `a.!`           | Mutable value and exclusive access | Yes | No |
 
 ---
 
@@ -1221,7 +1273,8 @@ help: end the borrow before the suspension point
 | `val` | Yes | No | Yes | No |
 | `fin` | No | No | Yes | No |
 
-Copying, cloning, and taking still depend on `Copyable`, `Cloneable`, and `Movable`.
+Copying and cloning still depend on `Copy` and `Clone`. Taking depends on
+nothing: every value can be given away.
 
 ---
 
@@ -1239,8 +1292,8 @@ Both remain valid.
 ### Clone
 
 ```azora
-var a: String = String("Azora")
-var b: String = clone a
+var a: String = "Azora"
+var b: String = a.clone()
 ```
 
 Both remain valid and own independent values.
@@ -1248,7 +1301,7 @@ Both remain valid and own independent values.
 ### Take
 
 ```azora
-var a: String = String("Azora")
+var a: String = "Azora"
 var b: String = take a
 ```
 
@@ -1275,7 +1328,7 @@ The returned reference may not outlive `list`.
 
 ```azora
 async func upload(image: Image) {
-    await server.send(image&)
+    await server.send(image.&)
 }
 
 var image: Image = loadImage()
@@ -1291,9 +1344,9 @@ The async operation owns `image`.
 Azora's ownership vocabulary is intentionally small:
 
 ```azora
-other = value        // implicit copy; requires Copyable
-other = clone value  // explicit duplication; requires Cloneable
-other = take value   // explicit ownership transfer; requires Movable
+other = value        // implicit copy; requires Copy
+other = value.clone()  // explicit duplication; requires Clone
+other = take value   // explicit ownership transfer; always available
 
 value.&               // shared borrow
 value.!               // mutable borrow
@@ -1314,9 +1367,17 @@ The design goals are:
 - safe ownership by default;
 - no implicit expensive cloning;
 - no implicit transfer of move-only values;
-- implicit copies only for explicitly `Copyable` types;
+- implicit copies only for explicitly `Copy` types;
 - explicit `take` when ownership changes;
-- explicit `clone` when a second owner needs independent state;
+- explicit `.clone()` when a second owner needs independent state;
 - compiler-inferred lifetimes;
 - borrow-origin contracts instead of lifetime variables;
 - safe behavior across functions, closures, collections, fields, and `await`.
+
+```azora
+impl Clone for Int {
+    func clone[self: Self&]() {
+        return Int(self)
+    }
+}
+```

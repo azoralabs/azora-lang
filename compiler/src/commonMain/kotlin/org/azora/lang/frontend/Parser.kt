@@ -4280,6 +4280,7 @@ class Parser(
         }
         val contractedBody = applyContracts(body, contracts, rewriteYields = isFlow)
         currentFailSets = savedFailSets
+        checkReturnedParams(name, params, start.line)
         return FuncDecl(
             name = name,
             params = params,
@@ -4306,6 +4307,24 @@ class Parser(
             constParams = constParams,
             returnTypeDeclared = returnTypeDeclared,
         )
+    }
+
+    /**
+     * Checks `name: return T` — the parameter whose ownership goes back (§13).
+     *
+     * The marker says the caller gets the value back when the call ends, so it
+     * only makes sense where ownership actually moved: a borrow already leaves
+     * the caller owning it, and there would be nothing to return.
+     */
+    private fun checkReturnedParams(name: String, params: List<Param>, line: Int) {
+        for (param in params.filter { it.returnsOwnership }) {
+            if (param.modifier != ParamModifier.NONE) {
+                error(
+                    "line $line: '${param.name}' is a borrow, so '$name' never takes ownership of it and has " +
+                        "none to give back; drop the 'return', or drop the borrow to take ownership",
+                )
+            }
+        }
     }
 
     private fun isSelfReceiverHeaderAhead(): Boolean {
@@ -4522,6 +4541,8 @@ class Parser(
             val nameSpread = match(TokenType.ELLIPSIS)
             val name = consumeIdentifierLike("Expected parameter name")
             consume(TokenType.COLON, "Expected ':' after parameter name")
+            // `name: return T&` — the borrow this function hands back (§13).
+            val returnsOwnership = match(TokenType.RETURN)
             val annotations = parseAnnotations()
             // Type-side `...T` expands a declared variadic generic type pack. A
             // homogeneous vararg uses `...values: T`, never `values: ...T`.
@@ -4547,7 +4568,12 @@ class Parser(
             }
             val normalizedModifier = reference?.kind?.paramModifier ?: modifier
             val default = if (match(TokenType.EQUAL)) parseExpr() else null
-            params.add(Param(name, type, default, normalizedModifier, variadic = isVariadic, annotations = annotations))
+            params.add(
+                Param(
+                    name, type, default, normalizedModifier,
+                    variadic = isVariadic, annotations = annotations, returnsOwnership = returnsOwnership,
+                ),
+            )
             val previousLine = tokens.getOrNull(current - 1)?.line ?: peek().line
             val separatedByPhysicalLine = peek().line > previousLine
             when {
@@ -7377,6 +7403,12 @@ class Parser(
             val at = advance()
             val operand = parseUnary()
             return Expr.MethodCall(operand, "oper#", emptyList(), at.line, at.column)
+        }
+        // `lend x` — ownership the callee gives back (§13). Contextual: the word
+        // only means this when a name follows it, so `lend` stays usable as one.
+        if (check(TokenType.IDENTIFIER) && peek().lexeme == "lend" && peekNext()?.type == TokenType.IDENTIFIER) {
+            val at = advance()
+            return Expr.Isolated(parseUnary(), at.line, at.column, at.lexeme.length, op = OwnershipOp.LEND)
         }
         // `delay <ms>` — suspend the current task for that many milliseconds.
         if (check(TokenType.DELAY)) {

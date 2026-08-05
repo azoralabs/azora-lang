@@ -208,6 +208,8 @@ class SymbolCollector {
                         .filterTo(mutableSetOf()) { func.params[it].modifier == ParamModifier.EXCLUSIVE },
                     sharedParams = func.params.indices
                         .filterTo(mutableSetOf()) { func.params[it].modifier == ParamModifier.SHARED },
+                    returnedParams = func.params.indices
+                        .filterTo(mutableSetOf()) { func.params[it].returnsOwnership },
                 )
                 table.defineFunction(symbol)
                 val shortName = func.name.substringAfterLast("__")

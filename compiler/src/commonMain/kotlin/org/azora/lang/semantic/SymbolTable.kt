@@ -53,6 +53,11 @@ data class FunctionSymbol(
     val exclusiveParams: Set<Int> = emptySet(),
     /** Indices of parameters declared `x&` — a shared borrow, which owns nothing. */
     val sharedParams: Set<Int> = emptySet(),
+    /**
+     * Indices of parameters declared `x: return T` — ownership the caller gets
+     * back when the call ends. Their arguments are written `lend x`.
+     */
+    val returnedParams: Set<Int> = emptySet(),
 )
 
 /**
@@ -481,6 +486,15 @@ class SymbolTable {
      * @param name the variable name
      * @return the [VariableSymbol] if found in the current scope, or `null`
      */
+    /**
+     * Every variable name visible from *outside* the innermost scope.
+     *
+     * A loop's own bindings live in the innermost scope and are fresh on each
+     * iteration, so they are exactly what a move-in-a-loop check must ignore.
+     */
+    fun enclosingVariableNames(): Set<String> =
+        scopes.toList().dropLast(1).flatMapTo(mutableSetOf()) { it.keys }
+
     fun lookupVariableInCurrentScope(name: String): VariableSymbol? {
         return scopes.lastOrNull()?.get(name)
     }

@@ -11,9 +11,11 @@
 | §7 binding mutability vs ownership capability | **done** |
 | §8 implicit copying | **done** — a named non-`Copy` value passed by value is rejected |
 | §9 `.clone()` | **done** — a `bridge spec Clone` member; the compiler supplies a field-wise clone, and a written `impl` overrides it |
-| §10 `take` | **done** — move recorded, use-after-take reported |
-| §12 borrows, including the exclusivity rules | **done** — a mutable borrow is exclusive for its lifetime, the owner cannot be read or moved while one is live, and shared borrows coexist |
+| §10 `take` | **done** — move recorded, use-after-take reported, including across control flow: a move inside a loop is rejected (the next iteration would use it), and a move every branch makes outlives the branch |
+| §11 moving a field out | **done** — a field is spent on its own (`take a.db` leaves the rest of `a` usable and only `a.db` unreadable), and moving one out asks the same access a write does, so a shared borrow of the owner is rejected |
+| §12 borrows, including the exclusivity rules | **done** — a mutable borrow is exclusive for its lifetime, the owner cannot be read or moved while one is live, shared borrows coexist, and a borrow cannot give the value away: `take`/`lend` on a borrowed parameter, receiver or binding is rejected |
 | §13 borrow origins `T&[a]` | **done** — an origin must name a borrowed parameter or the receiver, and a `return` rooted in a binding must be one of them. Lifetimes themselves stay inferred |
+| §13 lending (`a: return T` / `lend a`) | **done** — ownership goes to the callee and comes back, so a non-`Copy` value can be passed in more than once; `lend` and `return` are required to agree |
 | §20 capabilities as generic constraints | **done** |
 | §21 derivation rules | **done** for packs, enums and tagged unions |
 | §22 diagnostics | **done** for the take / implicit-copy / rebind / mutate cases |
@@ -32,9 +34,10 @@ origin of a returned borrow or held across a suspension.
 
 A borrow's lifetime is its holder's scope: `let m: User! = user.!` lasts until
 `m` goes out of scope, while `rename(user.!)` ends with the statement. That is
-enough for §12's rules without a region analysis. What is *not* checked is
-whether a borrow outlives its owner across a function boundary (§13's origins are
-parsed but not validated) or a suspension point (§15).
+enough for §12's rules without a region analysis. Across a function boundary
+(§13) and across a suspension (§15) the check is on the signature rather than on
+a region: an origin must name something the call borrows, and a borrow still
+read after an `await` is rejected outright.
 
 Three places where the implementation deliberately differs from the text below:
 
@@ -717,12 +720,120 @@ Most borrow relationships are inferred automatically.
 When a public API must state the origin of a returned borrow, the return type may name its source:
 
 ```azora
-func first(a: String&, b: String&): String&[a] {
-    return a
-}
+
+
 ```
 
 `String&[a]` means that the returned borrow originates from `a`.
+
+### Lending: ownership that comes back
+
+`take` spends a value. Sometimes a function needs to *own* its argument while it
+runs — to write through it freely, to hand it on, to hold it in a structure it
+builds — without the caller losing it for good. Writing that with `take` costs
+the caller the value; writing it with a borrow costs the callee the ownership.
+
+A parameter marked `return` says the ownership comes home:
+
+```azora
+func add(x: return Int, y: return Int): Int {
+    return x + y
+}
+
+func main() {
+    var x = 4
+    var y = 8
+    var sum = add(lend x, lend y)
+    trace x   // 4 — ownership came back, so `x` is usable again
+}
+```
+
+`lend` at the call and `return` at the declaration are one contract seen from
+its two ends, and the compiler requires both. A `lend` to a parameter that does
+not give ownership back is a move written as a loan; a `return` parameter fed by
+anything else never received ownership to return. Each is reported against the
+other:
+
+```
+line 4: cannot lend to parameter 'a' of 'f' — it does not give ownership back;
+        declare it 'a: return …' to lend to it, or write 'take' to give the
+        value away
+
+line 4: parameter 'a' of 'f' gives ownership back, so its argument is lent;
+        write 'lend' before it
+```
+
+What this buys is the case `take` cannot express — a value that is not `Copy`
+going into a function more than once:
+
+```azora
+var handle = Handle(std::listOf<String>())
+
+fin a = inspect(lend handle)
+fin b = inspect(lend handle)   // fine: the first call gave it back
+```
+
+Any number of parameters may be marked, and each is independent — a function may
+take three values on loan and return all three.
+
+A borrow may not be marked `return`. A borrow already leaves the caller owning
+the value for the whole call, so there is no ownership to give back, and the
+marker would describe something that never happened:
+
+```
+line 1: 'a' is a borrow, so 'f' never takes ownership of it and has none to
+        give back; drop the 'return', or drop the borrow to take ownership
+```
+
+`lend` is a contextual keyword: it means the ownership operation only when a
+name follows it, so `var lend = 5` keeps working.
+
+### Only an owner may give a value away
+
+`take` and `lend` both hand a value to someone else, so both ask the same thing
+of their operand: that it is the operand's to give. A borrow is not.
+
+```azora
+func relay(h: Handle&): Int {
+    return sink(take h)
+    // line 2: cannot take 'h' — 'h' is borrowed, so this function does not own
+    //         it; take the owner instead, or declare 'h' by ownership so there
+    //         is something to give away
+}
+```
+
+The same applies to an exclusive borrow, to a borrowed receiver (`take self` in
+a `[self: Self&]` method), and to a binding that holds a borrow — that last one
+names the owner it is standing in for:
+
+```
+line 6: cannot take 'b' — 'b' is a borrow of 'h', which owns nothing
+```
+
+Without this, a borrow could be spent: the callee gives the caller's value away
+for good, and the owner is never told. It is the check that makes `&` mean what
+§12 says it means, and the reason a borrow may not be marked `return` — both
+come down to a borrow having no ownership to pass on.
+
+A `return` parameter *is* owned while the call runs, so it may be given away
+like any other owned value; the loan is what the callee hands back at the end,
+not a restriction on what it may do meanwhile.
+
+The rule has a mirror: a parameter that *borrows* never takes ownership, so
+handing it some costs the caller the value and buys the callee nothing.
+
+```azora
+func look(v: Handle&): Int { return 1 }
+
+fin a = look(take h)
+// line 3: cannot take 'h' to parameter 'v' of 'look' — the parameter borrows,
+//         so it never takes ownership and the value would be given away for
+//         nothing; write 'h.&' to borrow it for the call
+```
+
+Between the two, every ownership operation now has to reach something that can
+receive it: `take` and `lend` need an owner to come from, and a parameter that
+can take ownership to go to.
 
 ### Method receiver origin
 
@@ -752,8 +863,8 @@ The returned borrow is valid only while every possible source required by the AP
 func pair(
     a: String&,
     b: String&
-): std::tupleOf(String&[a], String&[b]) {
-    return (a, b)
+): std::Tuple(String&[a], String&[b]) {
+    return std::tupleOf(a, b)
 }
 ```
 
@@ -1377,7 +1488,7 @@ The design goals are:
 ```azora
 impl Clone for Int {
     func clone[self: Self&]() {
-        return Int(self)
+        return self
     }
 }
 ```

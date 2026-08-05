@@ -1806,7 +1806,9 @@ class IrGenerator(private val table: SymbolTable) {
                 val value = lowerExpr(expr.value)
                 // `take` moves the value; there is nothing to copy. `clone` and
                 // `isolated` both produce an independent one.
-                if (expr.op == OwnershipOp.TAKE || expr.op.isBorrow) value
+                // `lend` moves the value in exactly as `take` does; what differs
+                // is only that the caller keeps the right to it afterwards.
+                if (expr.op == OwnershipOp.TAKE || expr.op == OwnershipOp.LEND || expr.op.isBorrow) value
                 else IrExpr.Call("__isolated", listOf(value), value.type)
             }
             is Expr.Await -> {

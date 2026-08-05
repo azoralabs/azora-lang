@@ -462,6 +462,313 @@ class OwnershipTest {
         func main() {}
     """)
 
+    // -- ownership reaches a borrow parameter (§12) --------------------------
+
+    // A parameter that borrows never takes ownership, so handing it some costs
+    // the caller the value and buys the callee nothing.
+
+    @Test fun ownershipCannotBeGivenToASharedBorrow() = rejects("""
+        $nonCopyable
+        func look(v: Handle&): Int { return 1 }
+        func main() {
+            var h = Handle(std::listOf<String>())
+            fin a = look(take h)
+        }
+    """, "cannot take 'h' to parameter 'v' of 'look' — the parameter borrows")
+
+    @Test fun theBorrowDiagnosticNamesTheSigilToWrite() = rejects("""
+        $nonCopyable
+        func poke(v: Handle!): Int { return 1 }
+        func main() {
+            var h = Handle(std::listOf<String>())
+            fin a = poke(take h)
+        }
+    """, "write 'h.!' to borrow it for the call")
+
+    @Test fun lendingToABorrowIsRejectedToo() = rejects("""
+        $nonCopyable
+        func look(v: Handle&): Int { return 1 }
+        func main() {
+            var h = Handle(std::listOf<String>())
+            fin a = look(lend h)
+        }
+    """, "cannot lend 'h' to parameter 'v' of 'look'")
+
+    // -- moves and control flow (§10) ----------------------------------------
+
+    // One iteration looks exactly like one conditional path, so the branch rule
+    // alone would let a loop move the same value on every pass.
+
+    @Test fun aMoveInsideALoopIsRejected() = rejects("""
+        $nonCopyable
+        func consume(h: Handle): Int { return 1 }
+        func main() {
+            var h = Handle(std::listOf<String>())
+            for i in 0..3 {
+                fin n = consume(take h)
+            }
+        }
+    """, "'h' is moved inside a loop, so the next iteration would use a value that is gone")
+
+    @Test fun aWhileLoopIsCheckedTheSameWay() = rejects("""
+        $nonCopyable
+        func consume(h: Handle): Int { return 1 }
+        func main() {
+            var h = Handle(std::listOf<String>())
+            var go = true
+            while go {
+                fin n = consume(take h)
+                go = false
+            }
+        }
+    """, "is moved inside a loop")
+
+    // A binding the loop itself declares is fresh on each pass.
+    @Test fun movingALoopLocalIsFine() = accepts("""
+        $nonCopyable
+        func consume(h: Handle): Int { return 1 }
+        func main() {
+            for i in 0..3 {
+                var t = Handle(std::listOf<String>())
+                fin n = consume(take t)
+            }
+        }
+    """)
+
+    // A value every path gives away is gone whichever path ran.
+    @Test fun aMoveOnEveryBranchOutlivesTheBranch() = rejects("""
+        $nonCopyable
+        func consume(h: Handle): Int { return 1 }
+        func main() {
+            var h = Handle(std::listOf<String>())
+            if true { fin a = consume(take h) } else { fin b = consume(take h) }
+            fin c = consume(take h)
+        }
+    """, "use of taken value 'h'")
+
+    // -- moving a field out (§11) --------------------------------------------
+
+    private val app = """
+        import std.traits
+        import std.container.list
+        pack Handle { var tags: std::List<String> }
+        pack App { var db: Handle
+            var n: Int }
+        func consume(h: Handle): Int { return 1 }
+    """.trimIndent()
+
+    @Test fun aFieldIsSpentOnItsOwn() = rejects("""
+        $app
+        func main() {
+            var a = App(Handle(std::listOf<String>()), 1)
+            fin x = consume(take a.db)
+            fin y = consume(take a.db)
+        }
+    """, "use of taken value 'a.db'")
+
+    @Test fun aMovedFieldCannotBeRead() = rejects("""
+        $app
+        func look(v: Handle&): Int { return 1 }
+        func main() {
+            var a = App(Handle(std::listOf<String>()), 1)
+            fin x = consume(take a.db)
+            fin y = look(a.db)
+        }
+    """, "use of taken value 'a.db'")
+
+    // Only that field is gone; the rest of the value is untouched.
+    @Test fun theOtherFieldsSurvive() = accepts("""
+        $app
+        import std.io
+        func main() {
+            var a = App(Handle(std::listOf<String>()), 1)
+            fin x = consume(take a.db)
+            std::println(a.n)
+        }
+    """)
+
+    // Taking a field away changes the value it belonged to, so it asks the same
+    // access a write does.
+    @Test fun aFieldCannotBeMovedThroughASharedReceiver() = rejects("""
+        $app
+        impl App {
+            func detach[self: Self&](): Int { return consume(take self.db) }
+        }
+        func main() {}
+    """, "cannot take 'self.db' — 'self' is a shared borrow, which may not be changed")
+
+    @Test fun anExclusiveReceiverMayMoveAFieldOut() = accepts("""
+        $app
+        impl App {
+            func detach[self: Self!](): Int { return consume(take self.db) }
+        }
+        func main() {}
+    """)
+
+    @Test fun aSharedParameterCannotHaveAFieldMovedOut() = rejects("""
+        $app
+        func detach(a: App&): Int { return consume(take a.db) }
+        func main() {}
+    """, "cannot take 'a.db' — 'a' is a shared borrow")
+
+    @Test fun anExclusiveParameterMay() = accepts("""
+        $app
+        func detach(a: App!): Int { return consume(take a.db) }
+        func main() {}
+    """)
+
+    // -- a borrow has nothing to give away (§12) -----------------------------
+
+    // A borrow owns nothing, so it cannot hand the value to anyone. Without
+    // this, a function taking `h: H&` could give the caller's value away
+    // permanently and the owner would never be told.
+
+    @Test fun aSharedBorrowCannotBeGivenAway() = rejects("""
+        $nonCopyable
+        func sink(h: Handle): Int { return 1 }
+        func relay(h: Handle&): Int { return sink(take h) }
+        func main() {}
+    """, "cannot take 'h' — 'h' is borrowed, so this function does not own it")
+
+    @Test fun anExclusiveBorrowCannotBeGivenAwayEither() = rejects("""
+        $nonCopyable
+        func sink(h: Handle): Int { return 1 }
+        func relay(h: Handle!): Int { return sink(take h) }
+        func main() {}
+    """, "cannot take 'h' — 'h' is borrowed, so this function does not own it")
+
+    @Test fun aBoundBorrowNamesTheOwnerItCannotGiveAway() = rejects("""
+        $nonCopyable
+        func sink(h: Handle): Int { return 1 }
+        func main() {
+            var h = Handle(std::listOf<String>())
+            fin b: Handle& = h.&
+            fin n = sink(take b)
+        }
+    """, "cannot take 'b' — 'b' is a borrow of 'h', which owns nothing")
+
+    @Test fun aBorrowedReceiverCannotBeGivenAway() = rejects("""
+        $nonCopyable
+        func sink(h: Handle): Int { return 1 }
+        impl Handle {
+            func give[self: Self&](): Int { return sink(take self) }
+        }
+        func main() {}
+    """, "cannot take 'self' — 'self' is borrowed, so this function does not own it")
+
+    // Nor lent, for the same reason: lending is ownership too.
+    @Test fun aBorrowCannotBeLentOnward() = rejects("""
+        $nonCopyable
+        func sink(h: return Handle): Int { return 1 }
+        func relay(h: Handle&): Int { return sink(lend h) }
+        func main() {}
+    """, "cannot lend 'h' — 'h' is borrowed, so this function does not own it")
+
+    @Test fun anOwnedParameterMayStillBeGivenAway() = accepts("""
+        $nonCopyable
+        func sink(h: Handle): Int { return 1 }
+        func relay(h: Handle): Int { return sink(take h) }
+        func main() {}
+    """)
+
+    // A lent parameter really is owned while the call runs, so it may be passed
+    // on — the loan is what the callee gives back, not what it holds.
+    @Test fun aLentParameterMayBeGivenAway() = accepts("""
+        $nonCopyable
+        func sink(h: Handle): Int { return 1 }
+        func relay(h: return Handle): Int { return sink(take h) }
+        func main() {}
+    """)
+
+    // -- lending (§13) -------------------------------------------------------
+
+    // `x: return T` says the callee owns the value while it runs and the caller
+    // owns it again afterwards. The argument is written `lend x`, so the two
+    // ends of that contract are both visible.
+
+    @Test fun aLentValueComesBack() = assertEquals("12\n4", run("""
+        import std.io
+        func add(x: return Int, y: return Int): Int { return x + y }
+        func main() {
+            var x = 4
+            var y = 8
+            var sum = add(lend x, lend y)
+            std::println(sum)
+            std::println(x)
+        }
+    """))
+
+    // The point of lending: a non-`Copy` value may go in and come back, twice,
+    // where `take` would have spent it the first time.
+    @Test fun aNonCopyValueMayBeLentRepeatedly() = assertEquals("2", run("""
+        $nonCopyable
+        import std.io
+        func inspect(h: return Handle): Int { return 1 }
+        func main() {
+            var h = Handle(std::listOf<String>())
+            fin a = inspect(lend h)
+            fin b = inspect(lend h)
+            std::println(a + b)
+        }
+    """))
+
+    @Test fun takeStillSpendsTheValue() = rejects("""
+        $nonCopyable
+        func consume(h: Handle): Int { return 1 }
+        func main() {
+            var h = Handle(std::listOf<String>())
+            fin a = consume(take h)
+            fin b = consume(take h)
+        }
+    """, "use of taken value 'h'")
+
+    @Test fun lendingNeedsAParameterThatGivesBack() = rejects("""
+        func f(a: Int): Int { return a }
+        func main() {
+            var x = 1
+            fin n = f(lend x)
+        }
+    """, "cannot lend to parameter 'a' of 'f' — it does not give ownership back")
+
+    @Test fun aReturningParameterIsLentTo() = rejects("""
+        func f(a: return Int): Int { return a }
+        func main() {
+            var x = 1
+            fin n = f(x)
+        }
+    """, "gives ownership back, so its argument is lent; write 'lend' before it")
+
+    // A borrow leaves the caller owning the value throughout, so there is
+    // nothing for the callee to give back.
+    @Test fun aBorrowHasNoOwnershipToReturn() = rejects("""
+        func f(a: return Int&): Int { return a }
+        func main() {}
+    """, "is a borrow, so 'f' never takes ownership of it and has none to give back")
+
+    @Test fun everyParameterMayGiveOwnershipBack() = assertEquals("6\n1\n2\n3", run("""
+        import std.io
+        func total(a: return Int, b: return Int, c: return Int): Int { return a + b + c }
+        func main() {
+            var x = 1
+            var y = 2
+            var z = 3
+            std::println(total(lend x, lend y, lend z))
+            std::println(x)
+            std::println(y)
+            std::println(z)
+        }
+    """))
+
+    // `lend` only means the operator when a name follows it, so it stays an
+    // ordinary identifier everywhere else.
+    @Test fun lendIsStillAUsableName() = assertEquals("5", run("""
+        import std.io
+        func main() {
+            var lend = 5
+            std::println(lend)
+        }
+    """))
+
     // -- optionals (§17) -----------------------------------------------------
 
     // Moving out of an optional leaves it empty rather than pointing at a

@@ -131,7 +131,16 @@ class TypeResolver(private val table: SymbolTable) {
                     checkBorrowOrigins(method, receiver = method.receiverName)
                     declaredOrigins = returnedBorrowOrigins((method.returnType as? TypeAnnotation.Explicit)?.ref)
                     val savedSuspendable = enterSuspendable(method)
+                    val savedBorrowed = borrowedNames
+                    borrowedNames = borrowedNamesOf(
+                        method,
+                        receiver = method.receiverName.takeIf { method.receiverModifier != ParamModifier.NONE },
+                    )
+                    val savedShared = sharedBorrowedNames
+                    sharedBorrowedNames = sharedBorrowedNamesOf(method, receiver = method.receiverName)
                     resolveBody(method.body, func.returnType)
+                    borrowedNames = savedBorrowed
+                    sharedBorrowedNames = savedShared
                     leaveSuspendable(savedSuspendable)
                     declaredOrigins = savedOrigins
                     undeclaredReturnOf = savedUndeclaredReturn
@@ -291,7 +300,13 @@ class TypeResolver(private val table: SymbolTable) {
         checkBorrowOrigins(func, receiver = null)
         declaredOrigins = returnedBorrowOrigins((func.returnType as? TypeAnnotation.Explicit)?.ref)
         val savedSuspendable = enterSuspendable(func)
+        val savedBorrowed = borrowedNames
+        borrowedNames = borrowedNamesOf(func, receiver = null)
+        val savedShared = sharedBorrowedNames
+        sharedBorrowedNames = sharedBorrowedNamesOf(func, receiver = null)
         resolveBody(func.body, symbol.returnType)
+        borrowedNames = savedBorrowed
+        sharedBorrowedNames = savedShared
         leaveSuspendable(savedSuspendable)
         declaredOrigins = savedOrigins
         undeclaredReturnOf = savedUndeclaredReturn
@@ -404,6 +419,19 @@ class TypeResolver(private val table: SymbolTable) {
     }
 
     /**
+     * Names bound to a borrow by the current signature — borrowed parameters and
+     * a borrowed receiver.
+     *
+     * A borrow owns nothing, so these are the names that cannot give a value
+     * away. A borrow held by a local binding is tracked separately, in
+     * [activeBorrows], because that one has a lifetime to reason about.
+     */
+    private var borrowedNames: Set<String> = emptySet()
+
+    /** The subset of [borrowedNames] bound by a *shared* borrow, which cannot be written. */
+    private var sharedBorrowedNames: Set<String> = emptySet()
+
+    /**
      * Borrowed parameters of the suspendable function being resolved.
      *
      * Empty for an ordinary function: nothing there suspends, so a borrow lives
@@ -461,6 +489,18 @@ class TypeResolver(private val table: SymbolTable) {
         reportedSuspended.clear()
         reportedSuspended.addAll(saved.reported)
     }
+
+    /** Every name [decl] binds to a borrow: its borrowed parameters and receiver. */
+    private fun sharedBorrowedNamesOf(decl: FuncDecl, receiver: String?): Set<String> =
+        decl.params.filter { it.modifier == ParamModifier.SHARED || it.type is TypeRef.Reference }
+            .filter { it.modifier != ParamModifier.EXCLUSIVE }
+            .mapTo(mutableSetOf()) { it.name }
+            .also { names -> if (decl.receiverModifier == ParamModifier.SHARED) receiver?.let(names::add) }
+
+    private fun borrowedNamesOf(decl: FuncDecl, receiver: String?): Set<String> =
+        decl.params.filter { it.type is TypeRef.Reference || it.modifier != ParamModifier.NONE }
+            .mapTo(mutableSetOf()) { it.name }
+            .also { names -> receiver?.let(names::add) }
 
     /** The borrowed parameters [decl] suspends with, or none when it cannot suspend. */
     private fun suspendableBorrowsOf(decl: FuncDecl): Set<String> =
@@ -782,12 +822,15 @@ class TypeResolver(private val table: SymbolTable) {
                     errors.add("line ${stmt.line}: if condition must be Bool, got $condType")
                 }
                 table.pushScope()
-                inBranch { for (s in stmt.thenBranch) resolveStmt(s, returnType) }
+                val thenMoves = inBranch { for (s in stmt.thenBranch) resolveStmt(s, returnType) }
                 table.popScope()
                 if (stmt.elseBranch != null) {
                     table.pushScope()
-                    inBranch { for (s in stmt.elseBranch) resolveStmt(s, returnType) }
+                    val elseMoves = inBranch { for (s in stmt.elseBranch) resolveStmt(s, returnType) }
                     table.popScope()
+                    // A value every path gives away is gone whichever path ran,
+                    // so unlike a one-sided move this one outlives the branch.
+                    for ((name, line) in thenMoves) elseMoves[name]?.let { movedBindings[name] = minOf(line, it) }
                 }
             }
             is Stmt.InlineIf -> errors.add("line ${stmt.line}: inline if condition could not be evaluated at compile time")
@@ -828,7 +871,7 @@ class TypeResolver(private val table: SymbolTable) {
                     errors.add("line ${stmt.line}: while condition must be Bool, got $condType")
                 }
                 table.pushScope()
-                inBranch { resolveBody(stmt.body, returnType) }
+                inLoop { resolveBody(stmt.body, returnType) }
                 table.popScope()
             }
             is Stmt.For -> {
@@ -844,7 +887,7 @@ class TypeResolver(private val table: SymbolTable) {
                         }
                         table.pushScope()
                         table.defineVariable(VariableSymbol(stmt.name, IrType.Int, mutable = true))
-                        inBranch { resolveBody(stmt.body, returnType) }
+                        inLoop { resolveBody(stmt.body, returnType) }
                         table.popScope()
                     }
                     else -> {
@@ -861,14 +904,14 @@ class TypeResolver(private val table: SymbolTable) {
                         else -> error("unreachable")
                     }
                     table.defineVariable(VariableSymbol(stmt.name, elementType, mutable = false))
-                        inBranch { resolveBody(stmt.body, returnType) }
+                        inLoop { resolveBody(stmt.body, returnType) }
                         table.popScope()
                     }
                 }
             }
             is Stmt.Loop -> {
                 table.pushScope()
-                inBranch { resolveBody(stmt.body, returnType) }
+                inLoop { resolveBody(stmt.body, returnType) }
                 table.popScope()
             }
             is Stmt.Break -> { /* no type constraint */ }
@@ -1389,6 +1432,9 @@ class TypeResolver(private val table: SymbolTable) {
                     // `f(x)` where the parameter is `p!` borrows x exclusively, so
                     // the callee may write through it — which a `val`/`fin` binding
                     // does not permit.
+                    if (i in func.exclusiveParams || i in func.sharedParams) {
+                        checkNotGivenToBorrow(arg, i, func, expr.callee, expr.line)
+                    }
                     if (i in func.exclusiveParams) {
                         checkValueMutable(
                             arg,
@@ -1396,7 +1442,8 @@ class TypeResolver(private val table: SymbolTable) {
                             "borrow mutably for parameter '${func.paramNames.getOrNull(i) ?: (i + 1).toString()}'",
                         )
                     } else if (i !in func.sharedParams) {
-                        checkByValueTransfer(arg, argType, expr.line)
+                        checkLend(arg, i, func, expr.callee, expr.line)
+                        if (!isLend(arg)) checkByValueTransfer(arg, argType, expr.line)
                     }
                     if (!isGeneric) {
                         val declaredType = func.params.getOrNull(i)?.second
@@ -1565,6 +1612,7 @@ class TypeResolver(private val table: SymbolTable) {
                 if (targetType is IrType.Array) targetType.element else (targetType as IrType.Set).element
             }
             is Expr.Member -> {
+                movablePath(expr)?.let { checkNotMoved(it, expr.line) }
                 // A union member read reinterprets storage; see requireUnsafeForUnion.
                 unionNameOf(inferredTargetType(expr.target))?.let { requireUnsafeForUnion(it, expr.line) }
                 // Enum variant: `Color.Red` → Named type carrying the enum identity
@@ -2759,20 +2807,135 @@ class TypeResolver(private val table: SymbolTable) {
      * branch would fault a program for something that may never run. Moves made
      * before the branch still apply inside it.
      */
-    private fun inBranch(body: () -> Unit) {
+    private fun inBranch(body: () -> Unit): Map<String, Int> {
         val before = movedBindings.toMap()
         body()
+        val made = movedBindings.filterKeys { it !in before }
         movedBindings.clear()
         movedBindings.putAll(before)
+        return made
+    }
+
+    /**
+     * Checks a loop body, where every move happens again on the next iteration.
+     *
+     * A binding the loop did not declare is moved once and read again on the
+     * second pass, which is a use-after-move the branch rule would let through:
+     * one iteration looks exactly like one conditional path.
+     */
+    private fun inLoop(body: () -> Unit) {
+        val enclosing = table.enclosingVariableNames()
+        for ((name, line) in inBranch(body)) {
+            if (name !in enclosing) continue
+            errors.add(
+                "line $line: '$name' is moved inside a loop, so the next iteration would use a value that is " +
+                    "gone; move it after the loop, or create an independent value with '$name.clone()'",
+            )
+        }
     }
 
     /** Records that [target]'s value was taken at [line], if it names a binding. */
+    /**
+     * Reports handing ownership to a parameter that only borrows.
+     *
+     * `look(take h)` where `look` takes `H&` costs the caller the value and buys
+     * the callee nothing — it wanted to look. Left unchecked the move is still
+     * recorded, so the failure surfaces at the next innocent use of `h` rather
+     * than here.
+     */
+    private fun checkNotGivenToBorrow(arg: Expr, index: Int, func: FunctionSymbol, callee: String, line: Int) {
+        val op = (arg as? Expr.Isolated)?.op?.takeIf { it == OwnershipOp.TAKE || it == OwnershipOp.LEND } ?: return
+        val name = func.paramNames.getOrNull(index) ?: (index + 1).toString()
+        val sigil = if (index in func.exclusiveParams) "!" else "&"
+        val operand = (arg.value as? Expr.Identifier)?.name
+        val fix = operand?.let { "'$it.$sigil'" } ?: "it with '.$sigil'"
+        errors.add(
+            "line $line: cannot ${op.spelling} ${operand?.let { "'$it'" } ?: "a value"} to parameter '$name' " +
+                "of '$callee' — the parameter borrows, so it never takes ownership and the value would be " +
+                "given away for nothing; write $fix to borrow it for the call",
+        )
+    }
+
+    /** Whether an argument was written `lend x`. */
+    private fun isLend(arg: Expr): Boolean =
+        arg is Expr.Isolated && arg.op == OwnershipOp.LEND
+
+    /**
+     * Pairs `lend` at the call with `return` at the declaration.
+     *
+     * The two are one contract seen from its two ends, so neither reads
+     * correctly alone: a `lend` the callee never gives back is a move written
+     * as a loan, and a `return` parameter fed by anything else never got
+     * ownership to return.
+     */
+    private fun checkLend(arg: Expr, index: Int, func: FunctionSymbol, callee: String, line: Int) {
+        val name = func.paramNames.getOrNull(index) ?: (index + 1).toString()
+        val returns = index in func.returnedParams
+        if (isLend(arg) && !returns) {
+            errors.add(
+                "line $line: cannot lend to parameter '$name' of '$callee' — it does not give ownership back; " +
+                    "declare it '$name: return …' to lend to it, or write 'take' to give the value away",
+            )
+        } else if (returns && !isLend(arg)) {
+            errors.add(
+                "line $line: parameter '$name' of '$callee' gives ownership back, so its argument is lent; " +
+                    "write 'lend' before it",
+            )
+        }
+    }
+
     private fun recordMove(target: Expr, line: Int) {
         val name = movableRootName(target) ?: return
         movedBindings[name] = line
     }
 
     /** The binding a `take` moves out of, or null when the operand owns nothing named. */
+    /**
+     * The dotted path a `take` moves out of — `a.db`, `self.buffer` — or null
+     * when the operand is not a field of a named binding.
+     *
+     * A field is moved independently of the value holding it, so it needs a name
+     * of its own: `take a.db` spends `a.db` and leaves the rest of `a` alone.
+     */
+    private fun movablePath(target: Expr): String? = when (target) {
+        is Expr.Identifier -> target.name.takeIf { table.lookupVariable(it) != null }
+        is Expr.Member -> movablePath(target.target)?.let { "$it.${target.name}" }
+        is Expr.Grouping -> movablePath(target.expr)
+        else -> null
+    }
+
+    /** The binding at the root of a field path, for reporting who owns it. */
+    private fun pathRoot(target: Expr): Expr.Identifier? = when (target) {
+        is Expr.Identifier -> target
+        is Expr.Member -> pathRoot(target.target)
+        is Expr.Grouping -> pathRoot(target.expr)
+        else -> null
+    }
+
+    /**
+     * Reports moving a field out through something that only borrows its owner.
+     *
+     * Taking a field away changes the value it belonged to, so it asks the same
+     * access a write does. A shared borrow does not grant that, and an owner
+     * that is itself only borrowed never had the field to give.
+     */
+    private fun checkFieldMoveAccess(target: Expr, op: OwnershipOp, line: Int) {
+        if (target !is Expr.Member) return
+        val root = pathRoot(target) ?: return
+        val owner = root.name
+        val reason = when {
+            owner in sharedBorrowedNames -> "'$owner' is a shared borrow, which may not be changed"
+            owner in borrowedNames -> null
+            activeBorrows[owner]?.exclusive == false -> "'$owner' is a shared borrow of " +
+                "'${activeBorrows.getValue(owner).owner}', which may not be changed"
+            else -> null
+        } ?: return
+        errors.add(
+            "line $line: cannot ${op.spelling} '${movablePath(target)}' — $reason; " +
+                "take an exclusive borrow of '$owner' to move a field out of it",
+        )
+    }
+
     private fun movableRootName(target: Expr): String? = when (target) {
         is Expr.Identifier -> target.name.takeIf { table.lookupVariable(it) != null }
         // `take self.database` moves the field, not the owner; the owner stays
@@ -2886,7 +3049,28 @@ class TypeResolver(private val table: SymbolTable) {
                 }
             }
         }
-        if (expr.op == OwnershipOp.TAKE) {
+        if (expr.op == OwnershipOp.TAKE || expr.op == OwnershipOp.LEND) {
+            checkFieldMoveAccess(expr.value, expr.op, expr.line)
+            // A borrow owns nothing, so it has nothing to give away. Without
+            // this, `take h` inside `func f(h: H&)` hands the caller's value to
+            // someone else permanently and never tells the owner.
+            movableRootName(expr.value)?.let { name ->
+                val borrowed = when {
+                    name in borrowedNames ->
+                        "'$name' is borrowed, so this function does not own it"
+                    activeBorrows.containsKey(name) ->
+                        "'$name' is a borrow of '${activeBorrows.getValue(name).owner}', which owns nothing"
+                    else -> null
+                }
+                if (borrowed != null) {
+                    errors.add(
+                        "line ${expr.line}: cannot ${expr.op.spelling} '$name' — $borrowed; " +
+                            "${expr.op.spelling} the owner instead, or declare '$name' by ownership so " +
+                            "there is something to give away",
+                    )
+                    return type
+                }
+            }
             // The owner may not be moved while borrowed: a borrow points at
             // storage the move would take away.
             movableRootName(expr.value)?.let { owner ->
@@ -2897,7 +3081,19 @@ class TypeResolver(private val table: SymbolTable) {
                     )
                 }
             }
-            recordMove(expr.value, expr.line)
+            // `lend` hands ownership over for the length of the call and gets it
+            // back, so the binding is never left without a value to name.
+            if (expr.op == OwnershipOp.TAKE) {
+                recordMove(expr.value, expr.line)
+                // A field is spent on its own: `take a.db` leaves the rest of
+                // `a` usable, and only `a.db` unreadable.
+                if (expr.value is Expr.Member) {
+                    movablePath(expr.value)?.let { path ->
+                        checkNotMoved(path, expr.line)
+                        movedBindings[path] = expr.line
+                    }
+                }
+            }
         }
         if (expr.op.isBorrow) {
             val exclusive = expr.op == OwnershipOp.BORROW

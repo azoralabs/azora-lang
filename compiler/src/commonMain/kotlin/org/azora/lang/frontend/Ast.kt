@@ -58,6 +58,16 @@ enum class OwnershipOp(val spelling: String, val capability: String?) {
      */
     TAKE("take", null),
 
+    /**
+     * `lend v` — ownership transfer the callee gives back.
+     *
+     * The parameter it feeds is marked `return`, so the value comes home when
+     * the call ends and the operand stays usable. It differs from a borrow in
+     * that the callee genuinely owns the value while it runs, and from `take`
+     * in that the caller gets it back.
+     */
+    LEND("lend", null),
+
     /** `v.&` / `v&` — a shared, read-only borrow. Owns nothing. */
     SHARE("&", null),
 
@@ -1549,6 +1559,14 @@ data class Param(
     val variadic: Boolean = false,
     /** Parameter-level decorators, parsed from `name: @Decorator Type`. */
     val annotations: List<Annotation> = emptyList(),
+    /**
+     * `name: return T` — ownership of this parameter goes back to the caller.
+     *
+     * The callee owns the value while it runs and the caller owns it again
+     * afterwards, so the argument is written `lend x` rather than `take x` and
+     * `x` stays usable. See §13 of `OWNERSHIP_BORROWING_DIP.md`.
+     */
+    val returnsOwnership: Boolean = false,
 ) {
     /** Convenience: the type name as written in source (for diagnostics/dumping). */
     val typeName: String get() = type.displayName()

@@ -682,7 +682,16 @@ sealed class Stmt {
         val value: Expr,
         override val line: Int,
         override val column: Int = 0,
-        override val length: Int = 0
+        override val length: Int = 0,
+        /**
+         * The operator of the `op=` this came from, when it came from one.
+         *
+         * `a += b` desugars to `a = a + b` in the parser, which has no types to
+         * decide with. Keeping the operator lets the lowerer notice that the
+         * type declared an in-place `oper+=` and call it instead — otherwise a
+         * declared compound-assignment operator is dead code.
+         */
+        val compoundOp: TokenType? = null,
     ) : Stmt()
 
     /**
@@ -1005,7 +1014,16 @@ sealed class Stmt {
         val value: Expr,
         override val line: Int,
         override val column: Int = 0,
-        override val length: Int = 0
+        override val length: Int = 0,
+        /**
+         * The operator of the `op=` this came from, when it came from one.
+         *
+         * `a += b` desugars to `a = a + b` in the parser, which has no types to
+         * decide with. Keeping the operator lets the lowerer notice that the
+         * type declared an in-place `oper+=` and call it instead — otherwise a
+         * declared compound-assignment operator is dead code.
+         */
+        val compoundOp: TokenType? = null,
     ) : Stmt()
 
     /**
@@ -1022,6 +1040,8 @@ sealed class Stmt {
         override val line: Int,
         override val column: Int = 0,
         override val length: Int = 0,
+        /** The operator of the `op=` this came from; see [Assignment.compoundOp]. */
+        val compoundOp: TokenType? = null,
         /** A `${ … }` written in name position; folded into [name] during expansion. */
         val nameExpr: Expr? = null,
     ) : Stmt()

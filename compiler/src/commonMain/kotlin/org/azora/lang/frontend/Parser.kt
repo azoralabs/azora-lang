@@ -7244,7 +7244,7 @@ class Parser(
                 consumeNewline()
                 // Desugar `target op= value` into `target = target op value`
                 val rhs = Expr.Binary(expr, op, value, start.line, start.column, start.lexeme.length)
-                buildAssignment(expr, rhs, start.line, start.column)
+                buildAssignment(expr, rhs, start.line, start.column, compoundOp = op)
             }
             // Null-conditional coalescing assignment: `target ?= value` → `target = target ?: value`
             TokenType.QMARK_EQUAL -> {
@@ -7330,12 +7330,22 @@ class Parser(
      * Supports simple variables (`x = v`), index targets (`a[i] = v`),
      * and member targets (`o.f = v`).
      */
-    private fun buildAssignment(target: Expr, value: Expr, line: Int, column: Int): Stmt {
+    private fun buildAssignment(
+        target: Expr,
+        value: Expr,
+        line: Int,
+        column: Int,
+        compoundOp: TokenType? = null,
+    ): Stmt {
         return when (target) {
-            is Expr.Identifier -> Stmt.Assignment(target.name, value, line, column)
-            is Expr.Index -> Stmt.IndexAssign(target.target, target.index, value, line, column)
+            is Expr.Identifier -> Stmt.Assignment(target.name, value, line, column, compoundOp = compoundOp)
+            is Expr.Index ->
+                Stmt.IndexAssign(target.target, target.index, value, line, column, compoundOp = compoundOp)
             is Expr.Member ->
-                Stmt.MemberAssign(target.target, target.name, value, line, column, nameExpr = target.nameExpr)
+                Stmt.MemberAssign(
+                    target.target, target.name, value, line, column,
+                    nameExpr = target.nameExpr, compoundOp = compoundOp,
+                )
             is Expr.Deref -> Stmt.DerefAssign(target.target, value, line, column)
             else -> error("Invalid assignment target at line $line")
         }

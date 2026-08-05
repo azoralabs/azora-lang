@@ -816,6 +816,45 @@ class IrGenerator(private val table: SymbolTable) {
         return IrExpr.Call("__isolated", listOf(lowered), lowered.type)
     }
 
+    /**
+     * The in-place call a `op=` should become, or null to keep the desugaring.
+     *
+     * `a += b` reaches the lowerer as `a = a + b` (the parser has no types to
+     * decide with), with the original operator kept on the statement. When the
+     * receiver's type declares `oper+=` this rebuilds the call it asked for, so
+     * an in-place operator is not silently replaced by build-and-assign.
+     */
+    private fun inPlaceCompound(
+        compoundOp: TokenType?,
+        desugared: Expr,
+        targetType: IrType?,
+    ): IrStmt? {
+        val op = compoundOp ?: return null
+        val named = targetType as? IrType.Named ?: return null
+        val binary = desugared as? Expr.Binary ?: return null
+        val member = compoundAssignName(op) ?: return null
+        val receiver = lowerExpr(binary.left)
+        val operand = lowerExpr(binary.right)
+        val mangled = table.lookupOperator(named.name, member, operandKeyOf(operand.type)) ?: return null
+        val func = table.lookupFunction(mangled) ?: return null
+        return IrStmt.ExprStmt(IrExpr.Call(mangled, listOf(receiver, operand), func.returnType))
+    }
+
+    /** `PLUS` → `oper+=`, and the rest of the compound-assignment family. */
+    private fun compoundAssignName(op: TokenType): String? = when (op) {
+        TokenType.PLUS -> "oper+="
+        TokenType.MINUS -> "oper-="
+        TokenType.STAR -> "oper*="
+        TokenType.SLASH -> "oper/="
+        TokenType.PERCENT -> "oper%="
+        TokenType.AMP -> "oper&="
+        TokenType.PIPE -> "oper|="
+        TokenType.CARET -> "oper^="
+        TokenType.SHIFT_LEFT -> "oper<<="
+        TokenType.SHIFT_RIGHT -> "oper>>="
+        else -> null
+    }
+
     private fun lowerStmt(stmt: Stmt): IrStmt {
         return when (stmt) {
             is Stmt.VarDecl -> {
@@ -861,6 +900,12 @@ class IrGenerator(private val table: SymbolTable) {
             is Stmt.InlineAssignment -> error("InlineAssignment should have been resolved by CTCE before IR generation")
             is Stmt.Assignment -> {
                 val name = resolveName(stmt.name)
+                // `v += x` where `v`'s type declares an in-place `oper+=`: call it
+                // instead of the `v = v + x` the parser desugared to. A `Matrix`
+                // that adds into itself allocates nothing; without this its
+                // declared operator would never run.
+                inPlaceCompound(stmt.compoundOp, stmt.value, table.lookupVariable(stmt.name)?.type)
+                    ?.let { return it }
                 val value = coerceToFloat(
                     lowerExpr(stmt.value),
                     table.lookupVariable(stmt.name)?.type ?: IrType.Any,

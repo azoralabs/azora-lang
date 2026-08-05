@@ -775,6 +775,11 @@ class TypeResolver(private val table: SymbolTable) {
                 // usable again — the ownership model's whole distinction between
                 // the rebindable and fixed keywords after a `take`.
                 movedBindings.remove(stmt.name)
+                // `a += b` on a type that declares an in-place `oper+=` never
+                // becomes `a = a + b`, so checking the desugaring would demand
+                // an `oper+` the type is entitled not to have. The lowerer makes
+                // the same decision from the same table.
+                if (resolvesInPlace(stmt.compoundOp, stmt.value, varSym.type)) return
                 val valueType = resolveExpr(stmt.value) ?: return
                 if (!isCompatible(varSym.type, adoptLiteralType(stmt.value, valueType, varSym.type))) {
                     errors.add("line ${stmt.line}: cannot assign $valueType to '${stmt.name}' of type ${varSym.type}")
@@ -2486,6 +2491,36 @@ class TypeResolver(private val table: SymbolTable) {
         is IrType.Pointer -> operandKeyOf(type.inner)
         is IrType.Nullable -> operandKeyOf(type.inner)
         else -> type.toString()
+    }
+
+    /**
+     * True when a `op=` will be answered by the type's in-place operator.
+     *
+     * The operand is still resolved, because it is a real expression whatever
+     * happens to the assignment; only the desugared binary operation is skipped.
+     */
+    private fun resolvesInPlace(compoundOp: TokenType?, desugared: Expr, targetType: IrType): Boolean {
+        val op = compoundOp ?: return false
+        val named = targetType as? IrType.Named ?: return false
+        val binary = desugared as? Expr.Binary ?: return false
+        val member = compoundAssignMemberName(op) ?: return false
+        val operandType = resolveExpr(binary.right) ?: return false
+        return table.lookupOperator(named.name, member, operandKeyOf(operandType)) != null
+    }
+
+    /** `PLUS` → `oper+=`, and the rest of the compound-assignment family. */
+    private fun compoundAssignMemberName(op: TokenType): String? = when (op) {
+        TokenType.PLUS -> "oper+="
+        TokenType.MINUS -> "oper-="
+        TokenType.STAR -> "oper*="
+        TokenType.SLASH -> "oper/="
+        TokenType.PERCENT -> "oper%="
+        TokenType.AMP -> "oper&="
+        TokenType.PIPE -> "oper|="
+        TokenType.CARET -> "oper^="
+        TokenType.SHIFT_LEFT -> "oper<<="
+        TokenType.SHIFT_RIGHT -> "oper>>="
+        else -> null
     }
 
     private fun resolveBinaryType(op: TokenType, left: IrType, right: IrType, line: Int): IrType? {

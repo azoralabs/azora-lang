@@ -13,6 +13,8 @@
 > | derivation from a bodyless `impl` (§7) | **shipped** |
 > | `where T: Spec<Args>` bounds (§11) | **shipped** |
 > | unary dispatch, `oper!` (§2.6, §12.5) | **shipped** |
+> | in-place compound assignment (§12.4) | **shipped** |
+> | `==` without a conformance is an error (§8) | **shipped** |
 > | the remaining operator families (§12.1) | proposed |
 > | `Display`, `Iterator`, the cast specs (§12.7–12.9) | proposed |
 > | closing the free-operator form language-wide (§14, phase 11) | proposed |

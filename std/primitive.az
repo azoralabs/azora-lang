@@ -446,6 +446,35 @@ use realm std {
     @Since("0.0.5")
     impl SignedNumber for FloatingPoints
 
+    /**
+     * Every integer is totally ordered, and so are the remaining scalars.
+     *
+     * Bodyless, so the compiler supplies the members — for a primitive that is
+     * the backend's native comparison rather than a generated field walk. The
+     * conformance is the whole declaration, exactly as `impl [Clone, Copy]` is.
+     *
+     * `Bool` orders `false < true`; `Char` orders by code point; `String`
+     * orders lexicographically by code point, which is an order and not a
+     * collation — a locale-aware comparison is a function with a locale
+     * parameter and never what `<` does.
+     */
+    @Since("0.0.5")
+    impl [PartialEqual, Equal, Order, Hash] for Integers
+
+    @Since("0.0.5")
+    impl [PartialEqual, Equal, Order, Hash] for [Bool, Char, String]
+
+    /**
+     * Floating point is **partially** ordered, and never `Equal`.
+     *
+     * `NaN != NaN`, so equality is not reflexive and nothing that keys off it —
+     * a hash key, a set's uniqueness — is sound. `f <=> g` answers a
+     * `PartialCompare`, which is what makes all four relational operators false
+     * for a NaN pair instead of the negation of one another.
+     */
+    @Since("0.0.5")
+    impl [PartialEqual, PartialOrder] for FloatingPoints
+
     inline fin _ranks: Array<Int> = arr@[0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 6, 7]
 
     // Promotion ranks for every numeric type.

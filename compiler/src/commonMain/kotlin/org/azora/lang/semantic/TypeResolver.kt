@@ -1716,6 +1716,13 @@ class TypeResolver(private val table: SymbolTable) {
                             }
                         }
                     }
+                    // An erased generic is `Any`, and which concrete type it will
+                    // be is not known here — `element.hash` inside a container
+                    // over `T` is the case that matters. A method call on `Any`
+                    // already defers to runtime and so does a comparison
+                    // (`resolveBinaryType`); a property has to, for the same
+                    // reason and on the same grounds.
+                    targetType == IrType.Any -> IrType.Any
                     else -> {
                         // A primitive receiver keys the method table by its source
                         // type name (`impl Int { prop seconds[self&] }`), the same
@@ -2482,14 +2489,13 @@ class TypeResolver(private val table: SymbolTable) {
         }
         // Operator overloading on user types.
         if (left is IrType.Named) {
-            // `impl oper<OP> [by <Spec>] for Type` overloads — method named `oper<OP>`
-            // (e.g. `oper+`), resolved regardless of the operand type (the `by`
-            // clause may declare a different operand, e.g. Map + MapEntry).
-            operOverloadName(op)?.let { operName ->
-                // An operator may be overloaded on its operand, so the operand-keyed
-                // member is tried first; the bare name is the single-overload case.
-                val mangled = table.lookupOperator(left.name, operName, operandKeyOf(right))
-                if (mangled != null) return table.lookupFunction(mangled)?.returnType
+            // A declared operator wins; otherwise `<` `<=` `>` `>=` come from
+            // `<=>` and `!=` from `==` (the comparison DIP, §5.4/§5.5). All the
+            // rewrites answer Bool.
+            when (val plan = comparisonPlan(op, left.name, operandKeyOf(right), table)) {
+                is ComparisonPlan.Direct -> return table.lookupFunction(plan.mangled)?.returnType
+                is ComparisonPlan.Spaceship, is ComparisonPlan.NegatedEquals -> return IrType.Bool
+                null -> Unit
             }
             // Legacy same-type named-method overloads (e.g. `func plus(ref self, …)`).
             if (left == right) {

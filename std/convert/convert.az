@@ -18,28 +18,74 @@ module std.convert
 
 expose import std.convert.core
 
+/**
+ * @file std/convert
+ *
+ * Semantic conversion, as against the cast operators.
+ *
+ * The two are different questions and this file is the answer to the second:
+ *
+ * | spelling        | means                                                  |
+ * |-----------------|--------------------------------------------------------|
+ * | `value as T`    | representational — a widening, a layout-compatible view |
+ * | `value as? T`   | the same, checked at runtime, `null` when it does not hold |
+ * | `value as* T`   | reinterpret the bits; sizes must match                 |
+ * | `value.into<T>` | **semantic** — may consume, may allocate               |
+ * | `T::from(v)`    | **semantic** — builds a `T`, the canonical direction   |
+ *
+ * A cast never takes ownership and never allocates. A conversion may do both,
+ * which is why it is a spec a type opts into rather than an operator the
+ * compiler can always attempt.
+ */
+
 realm std {
     /**
-     * Declares conversion into `T`.
+     * Converts `Self` into a `T`.
      *
-     * Implementing `Into<String>` for a type creates a property-style member
-     * named from the `use as` template. For `T = String`, this spec exposes
-     * `.toString` without parentheses.
+     * The receiver is declared in brackets like every other member. The member
+     * is named `into` — the canonical name of the direction — and `use as`
+     * names the call-site alias it generates: for `T = String` that is
+     * `.toString`, for `T = Int` it is `.toInt`.
+     *
+     * ```azora
+     * impl Into<String> for Label {
+     *     func into[self: Self&](): String { return "Label(" + self.value + ")" }
+     * }
+     * label.toString      // the `use as` alias
+     * ```
      *
      * @generic T target type produced by the conversion.
      */
     @Experimental(since: "0.0.3")
-    spec Into<T>: T (self&) use as "to${T.typeName}"
+    spec Into<T> {
+        prop into<T>[self: Self&]: T
+        use into<T> as "to${T.typeName}"
+    }
 
     /**
-     * Declares conversion from `T`.
+     * Builds a `Self` from a `T` — the canonical direction.
      *
-     * Implementing `From<String>` for a type creates a property-style member
-     * named from the `use as` template. For `T = String`, this spec exposes
-     * `.fromString` without parentheses.
+     * `From` is what `Into` cannot express: it *constructs* rather than
+     * consumes, so there is no `self` to convert and its member is a **static**.
+     * A receiver-less `func` in a spec asks for exactly that, and
+     * `impl From<T> for Type::` supplies it.
      *
-     * @generic T source type represented by the conversion.
+     * It carries no `use as`: the member is reached as `Type::from`, which is
+     * already the name callers write, so there is no alias to generate.
+     *
+     * ```azora
+     * impl From<String> for Username:: {
+     *     func from(value: return String): Self {
+     *         return Username(value: take value)
+     *     }
+     * }
+     * fin username: Username = Username::from(lend text)
+     * ```
+     *
+     * @generic T source type the value is built from.
      */
     @Experimental(since: "0.0.3")
-    spec From<T>: T (self&) use as "from${T.typeName}"
+    spec From<T> {
+        func from(value: T): Self
+    }
 }

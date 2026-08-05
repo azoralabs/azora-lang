@@ -58,6 +58,7 @@ package org.azora.lang.frontend
  * - [LESS_EQUAL] -- `<=` less-than-or-equal comparison
  * - [GREATER] -- `>` greater-than comparison
  * - [GREATER_EQUAL] -- `>=` greater-than-or-equal comparison
+ * - [SPACESHIP] -- `<=>` three-way comparison; yields `Compare`/`PartialCompare`
  * - [AND_AND] -- `&&` logical AND
  * - [OR_OR] -- `||` logical OR
  * - [BANG] -- `!` logical NOT
@@ -99,7 +100,7 @@ enum class TokenType {
     // Operators
     PLUS, MINUS, STAR, SLASH, PERCENT,
     EQUAL, EQUAL_EQUAL, BANG_EQUAL,
-    LESS, LESS_EQUAL, GREATER, GREATER_EQUAL,
+    LESS, LESS_EQUAL, GREATER, GREATER_EQUAL, SPACESHIP,
     AND_AND, OR_OR, BANG,
     DOT, DOT_DOT, DOT_DOT_LESS,
     PLUS_EQUAL, MINUS_EQUAL, STAR_EQUAL, SLASH_EQUAL, PERCENT_EQUAL,

@@ -467,6 +467,9 @@ class Parser(
         check(TokenType.REVERSE) && peekNext()?.type == TokenType.DOT_DOT -> { advance(); advance(); "reverse.." }
         match(TokenType.DOT_DOT) -> ".."
         match(TokenType.DOT_DOT_LESS) -> ".."
+        // `<=>` before `<=`, matching the lexer's munch order. The spec that owns
+        // it (`Order`/`PartialOrder`) is what fixes its result type.
+        match(TokenType.SPACESHIP) -> "<=>"
         match(TokenType.LESS_EQUAL) -> "<="
         match(TokenType.GREATER_EQUAL) -> ">="
         match(TokenType.EQUAL_EQUAL) -> "=="
@@ -491,7 +494,6 @@ class Parser(
         match(TokenType.PIPE) -> "|"
         match(TokenType.CARET) -> "^"
         match(TokenType.TILDE) -> "~"
-        match(TokenType.HASH) -> "#"
         // `oper$` — what `"$value"` calls. Named after the sigil you actually write.
         check(TokenType.IDENTIFIER) && peek().lexeme == "$" -> { advance(); "$" }
         // `oper.*` / `oper.^` — what `p.*` and `p.^` call. The surface keeps the
@@ -516,6 +518,16 @@ class Parser(
         match(TokenType.PERCENT_EQUAL) -> "%="
         else -> error("Expected an operator after 'oper' at line ${peek().line}")
     }
+
+    /**
+     * The member name an operator is registered under.
+     *
+     * The index operators are looked up by their bare names, which is what
+     * indexing, index-assignment and slicing resolve against; every other
+     * operator is reached through its `oper<symbol>` symbol.
+     */
+    private fun operatorMemberName(opName: String): String =
+        if (opName in setOf("index", "indexSet", "slice")) opName else "oper$opName"
 
     /**
      * `[bridge] impl oper<OP> for Type(params): Ret (mod self) [{ body }]`.
@@ -567,11 +579,7 @@ class Parser(
         // The step is declarative metadata: parsed so the source states it, then
         // discarded, exactly as the old bracket form's `by` was.
         if (match(TokenType.BY)) parseExpr()
-        // The index operators are looked up by their bare member names, which is
-        // what indexing, index-assignment and slicing resolve against; every
-        // other operator is reached through its `oper<symbol>` symbol.
-        val memberName =
-            if (opName in setOf("index", "indexSet", "slice")) opName else "oper$opName"
+        val memberName = operatorMemberName(opName)
         // A declaration with no body is provided by the backend, and says so:
         // `bridge oper.. [self: Ty&](rhs: Ty&) by 1`. Requiring the keyword keeps
         // "the compiler implements this" from being spelled as an omission.
@@ -635,8 +643,26 @@ class Parser(
 
     private fun isSpecStaticImplAhead(): Boolean {
         if (tokens.getOrNull(current)?.type != TokenType.IDENTIFIER) return false
-        if (tokens.getOrNull(current + 1)?.type != TokenType.FOR) return false
-        var i = current + 2
+        // The spec may carry type arguments — `impl From<String> for Username::`
+        // — so skip a balanced `<…>` between its name and `for`.
+        var afterName = current + 1
+        if (tokens.getOrNull(afterName)?.type == TokenType.LESS) {
+            var generics = 0
+            while (afterName < tokens.size) {
+                when (tokens[afterName].type) {
+                    TokenType.LESS -> generics++
+                    TokenType.GREATER -> {
+                        generics--
+                        if (generics == 0) { afterName++; break }
+                    }
+                    TokenType.L_BRACE, TokenType.NEWLINE, TokenType.EOF -> return false
+                    else -> {}
+                }
+                afterName++
+            }
+        }
+        if (tokens.getOrNull(afterName)?.type != TokenType.FOR) return false
+        var i = afterName + 1
         var depth = 0
         while (i < tokens.size) {
             when (tokens[i].type) {
@@ -2534,6 +2560,10 @@ class Parser(
         // `::` stays on the type because that is where the members are reached.
         if (isSpecStaticImplAhead()) {
             val specName = advance().lexeme
+            // `impl From<String> for Username::` — the spec's type arguments say
+            // *what* is being converted from, so they are read here rather than
+            // being an error one token later.
+            val specArgs = parseGenericTypeArgsIfPresent()
             consume(TokenType.FOR, "Expected 'for' after 'impl <spec>'")
             val targets = expandTypeListTargets(parseImplTargets())
             consume(TokenType.DOUBLE_COLON, "Expected '::' after 'impl <spec> for <type>'")
@@ -2542,8 +2572,20 @@ class Parser(
             val bodyTokens = captureBraceBody()
             consumeNewline()
             for (target in targets) {
+                // `Self` in a static impl is the type being implemented for, and
+                // the body is re-parsed rather than resolved in place — so the
+                // substitution happens on the tokens. Without it
+                // `func from(value: String): Self` returns a type called
+                // literally `Self`, which matches nothing.
+                val targetBody = bodyTokens.map { token ->
+                    if (token.type == TokenType.IDENTIFIER && token.lexeme == "Self") {
+                        token.copy(lexeme = target)
+                    } else {
+                        token
+                    }
+                }
                 val members = Parser(
-                    bodyTokens + Token(TokenType.EOF, "", start.line, start.column),
+                    targetBody + Token(TokenType.EOF, "", start.line, start.column),
                     typeListEnv,
                 ).parse().items
                 members.forEach { pendingTopLevels.add(mangleTopLevel(it, target)) }
@@ -2785,40 +2827,15 @@ class Parser(
         }
         consume(TokenType.L_BRACE, "Expected '{' after impl type")
         skipNewlines()
+        // `impl Into<String> for ArrayList<T> { self& -> … }` — the in-brace
+        // receiver the bracket redesign replaced. A receiver is declared where
+        // every other member declares one, so this form is now an error naming
+        // its replacement rather than a second spelling that still works.
         if (traitName != null && isSelfReceiverHeaderAhead()) {
-            val receiverModifier = parseReceiverBinding("callback receiver").modifier
-            if (receiverModifier != ParamModifier.SHARED) {
-                error("prot callback impl receivers are always 'self&' at line ${start.line}")
-            }
-            consume(TokenType.ARROW, "Expected '->' after callback receiver")
-            skipNewlines()
-            val body = mutableListOf<Stmt>()
-            while (!check(TokenType.R_BRACE) && !isAtEnd()) {
-                body.add(parseStmt())
-                skipNewlines()
-            }
-            consume(TokenType.R_BRACE, "Expected '}' after prot callback impl body")
-            consumeNewline()
-            // The callback's declared `ref self` would type `self` as the prot's
-            // (erased) self type. Drop it so SymbolCollector injects `self` with the
-            // impl's concrete type (e.g. Int), matching the oper/cast impl convention.
-            val callbackParams = callbackTraitParams(traitName, traitArgs).toMutableList()
-            if (callbackParams.firstOrNull()?.name == "self") callbackParams.removeAt(0)
-            val method = FuncDecl(
-                name = callbackTraitMethodName(traitName, traitArgs),
-                params = callbackParams,
-                returnType = callbackTraitReturnType(traitName, traitArgs),
-                body = body,
-                line = start.line,
-                column = start.column,
-                receiverModifier = ParamModifier.SHARED,
-                memberCallStyle = callbackTraitCallStyle(traitName),
-            )
-            return TopLevel.Impl(
-                typeName, listOf(method), traitName, start.line, start.column,
-                traitArgs = traitArgs,
-                decoratorArgs = decoratorArgs,
-                decoratorNamedArgs = decoratorNamedArgs,
+            error(
+                "an in-brace receiver is not a declaration at line ${start.line}; " +
+                    "declare the member with its receiver in brackets, as " +
+                    "'func into[self: Self&](): T { … }'",
             )
         }
         val methods = mutableListOf<FuncDecl>()
@@ -3834,6 +3851,43 @@ class Parser(
         } else {
             emptyList()
         }
+        // `spec Into<T>[self: Self&]: T use as "to${T.typeName}"` — the compact
+        // callback form written with the bracketed receiver every other member
+        // uses, rather than the trailing `(self&)`. The receiver comes first
+        // because that is the order a `func`, a `prop` and an `oper` all use.
+        if (check(TokenType.L_BRACKET)) {
+            val recv = parsePropReceiver()
+            consume(TokenType.COLON, "Expected ':' and the conversion's result type after a spec receiver")
+            val returnType = parseTypeName()
+            val useAsTemplate = if (check(TokenType.USE) && peekNext()?.type == TokenType.AS) {
+                advance()
+                advance()
+                parseUseAsTemplate()
+            } else {
+                null
+            }
+            consumeNewline()
+            val callback = SpecCallback(
+                returnType = returnType,
+                requiresParens = hasCallParens,
+                params = callbackParams,
+                receiverModifier = recv.modifier,
+                receiverName = recv.name,
+                useAsTemplate = useAsTemplate,
+                typeParams = typeParams.names,
+            )
+            callbackSpecs[name] = callback
+            return TopLevel.Spec(
+                name,
+                emptyList(),
+                start.line,
+                start.column,
+                callback = callback,
+                typeParams = typeParams.names,
+                isBridge = isBridge,
+                typeDefaults = typeParams.typeDefaults,
+            )
+        }
         var parentSpecs: List<TypeRef> = emptyList()
         if (match(TokenType.COLON)) {
             val returnType = parseTypeName()
@@ -3910,7 +3964,7 @@ class Parser(
         }
         if (!check(TokenType.L_BRACE)) {
             consumeNewline()
-            return TopLevel.Spec(name, emptyList(), start.line, start.column, typeParams = typeParams.names, parents = parentSpecs, requires = requiredSpecs, isBridge = isBridge)
+            return TopLevel.Spec(name, emptyList(), start.line, start.column, typeParams = typeParams.names, parents = parentSpecs, requires = requiredSpecs, isBridge = isBridge, typeDefaults = typeParams.typeDefaults)
         }
         consume(TokenType.L_BRACE, "Expected '{' after spec name")
         skipNewlines()
@@ -3934,10 +3988,80 @@ class Parser(
                 consumeNewline()
                 continue
             }
+            // `use into<T> as "to${T.typeName}"` — a member's call-site alias,
+            // written as its own line so the declaration above stays a plain
+            // declaration. Only valid inside a spec, and only for a member with
+            // type parameters: the template exists to fold them into a name, so
+            // without them there is nothing to fold and the member's own name
+            // already is the call-site name.
+            if (check(TokenType.USE) && peekNext()?.type == TokenType.IDENTIFIER) {
+                val useStart = advance()
+                val aliased = consumeIdentifierLike("Expected the member name after 'use'")
+                val aliasedParams = parseTypeParams()
+                if (aliasedParams.names.isEmpty()) {
+                    error(
+                        "'use $aliased as …' needs the member's type parameters, as in " +
+                            "'use $aliased<T> as \"…\"', at line ${useStart.line}",
+                    )
+                }
+                consume(TokenType.AS, "Expected 'as' after the aliased member")
+                val template = parseUseAsTemplate()
+                consumeNewline()
+                val index = methods.indexOfFirst { it.name == aliased }
+                if (index < 0) {
+                    error(
+                        "'use $aliased as …' names no member of spec '$name' at line ${useStart.line}",
+                    )
+                }
+                methods[index] = methods[index].copy(useAsTemplate = template)
+                continue
+            }
+            // `oper<SYM> [self: Self&](operands): Ret` — an operator requirement.
+            // A spec is where an operator's contract lives (its receiver, its
+            // operand, and above all its result type: `Order` fixing `Compare`
+            // and `PartialOrder` fixing `PartialCompare` is what lets an `impl`
+            // omit the return type entirely).
+            if (check(TokenType.OPER)) {
+                val operStart = advance()
+                val opName = parseOperatorName()
+                val operTypeParams = parseTypeParams()
+                // The receiver is optional here: `oper# [self: Self&]: ULong` and
+                // the terser `oper#: ULong` both state the same requirement, since
+                // a spec member is always reached through `Self`.
+                val orecv = if (check(TokenType.L_BRACKET)) {
+                    parsePropReceiver()
+                } else {
+                    PropReceiver("self", null, ParamModifier.SHARED)
+                }
+                val ooperands = if (match(TokenType.L_PAREN)) {
+                    val parsed = if (check(TokenType.R_PAREN)) emptyList() else parseParams()
+                    consume(TokenType.R_PAREN, "Expected ')' after operator operands in spec")
+                    parsed
+                } else emptyList()
+                val oret: TypeAnnotation = if (match(TokenType.COLON)) {
+                    skipNewlines()
+                    TypeAnnotation.Explicit(parseTypeName())
+                } else TypeAnnotation.Inferred
+                // A range operator's declarative step, as at every other site.
+                if (match(TokenType.BY)) parseExpr()
+                consumeNewline()
+                methods.add(
+                    FuncDecl(
+                        operatorMemberName(opName), ooperands, oret, emptyList(), false,
+                        operTypeParams.names, operStart.line, operStart.column,
+                        receiverModifier = orecv.modifier, receiverName = orecv.name,
+                    ),
+                )
+                continue
+            }
             // `prop name: Type` — a property requirement (a zero-arg getter).
             if (check(TokenType.PROP)) {
                 advance()
                 val pname = consumeIdentifierLike("Expected property name in spec")
+                // `prop into<T>[self: Self&]: T` — the member carries its own
+                // type parameters, which is what lets a call site name the
+                // target: `value.into<String>`.
+                val ptypeParams = parseTypeParams()
                 // A receiver-less requirement is STATIC: `prop rank: Int` asks for
                 // `Type::rank`, satisfied by an `impl Spec for Type:: { … }` member,
                 // where `prop rank[self: Self&]: Int` asks for an instance property.
@@ -3948,19 +4072,37 @@ class Parser(
                 }
                 consume(TokenType.COLON, "Expected ':' after spec property name")
                 val ptype = parseTypeName()
+                // `prop into[self: Self&]: T use as "to${T.typeName}"` — the
+                // member's call-site alias, on a property exactly as on a func.
+                val propUseAs = if (check(TokenType.USE) && peekNext()?.type == TokenType.AS) {
+                    advance()
+                    advance()
+                    parseUseAsTemplate()
+                } else {
+                    null
+                }
                 consumeNewline()
                 methods.add(FuncDecl(
-                    pname, emptyList(), TypeAnnotation.Explicit(ptype), emptyList(), false, emptyList(),
+                    pname, emptyList(), TypeAnnotation.Explicit(ptype), emptyList(), false,
+                    ptypeParams.names,
                     start.line, start.column, receiverModifier = preceiver.modifier,
                     receiverName = preceiver.name,
                     memberCallStyle =
                         if (preceiver.type == null) MemberCallStyle.STATIC_PROPERTY else MemberCallStyle.PROPERTY,
+                    useAsTemplate = propUseAs,
                 ))
                 continue
             }
             consume(TokenType.FUNC, "Expected 'func' or 'prop' in spec")
             val mname = consume(TokenType.IDENTIFIER, "Expected method name").lexeme
-            val mreceiver = parsePropReceiver()
+            // `func from<T>(value: T): Self` — the member's own type parameters,
+            // read before the receiver exactly as on a `prop`.
+            val mtypeParams = parseTypeParams()
+            // A receiver-less `func` is STATIC, matching the rule `prop` already
+            // follows: `func from(value: T): Self` asks for `Type::from`, built
+            // by an `impl <Spec> for Type:: { … }`. It is the only shape a
+            // constructing conversion can have — there is no `self` to convert.
+            val mreceiver = if (check(TokenType.L_BRACKET)) parsePropReceiver() else null
             consume(TokenType.L_PAREN, "Expected '('")
             val params = parseParams()
             consume(TokenType.R_PAREN, "Expected ')'")
@@ -3969,15 +4111,30 @@ class Parser(
             } else {
                 TypeAnnotation.Inferred
             }
+            // `func into[self: Self&](): T use as "to${T.typeName}"` — the
+            // member's call-site alias. The member keeps its own name; the
+            // template only adds a second one.
+            val memberUseAs = if (check(TokenType.USE) && peekNext()?.type == TokenType.AS) {
+                advance()
+                advance()
+                parseUseAsTemplate()
+            } else {
+                null
+            }
             consumeNewline()
             methods.add(FuncDecl(
-                mname, params, returnType, emptyList(), false, emptyList(), start.line, start.column,
-                receiverModifier = mreceiver.modifier, receiverName = mreceiver.name,
+                mname, params, returnType, emptyList(), false, mtypeParams.names,
+                start.line, start.column,
+                receiverModifier = mreceiver?.modifier ?: ParamModifier.SHARED,
+                receiverName = mreceiver?.name ?: "self",
+                memberCallStyle =
+                    if (mreceiver == null) MemberCallStyle.STATIC_METHOD else MemberCallStyle.METHOD,
+                useAsTemplate = memberUseAs,
             ))
         }
         consume(TokenType.R_BRACE, "Expected '}' after spec methods")
         consumeNewline()
-        return TopLevel.Spec(name, methods, start.line, start.column, typeParams = typeParams.names, parents = parentSpecs, requires = requiredSpecs, isBridge = isBridge)
+        return TopLevel.Spec(name, methods, start.line, start.column, typeParams = typeParams.names, parents = parentSpecs, requires = requiredSpecs, isBridge = isBridge, typeDefaults = typeParams.typeDefaults)
     }
 
     /** `when scrutinee { patterns -> { body } ... else -> { body } }`. */
@@ -4654,6 +4811,10 @@ class Parser(
         val constDefaults: Map<String, TypeRef> = emptyMap(),
         /** Const parameter → the enum whose variants it ranges over, when it has one. */
         val constEnums: Map<String, String> = emptyMap(),
+        /** Type parameter → the type it stands for when the argument is omitted. */
+        val typeDefaults: Map<String, TypeRef> = emptyMap(),
+        /** Parameters written `T::` — the member they drive is a static. */
+        val staticParams: Set<String> = emptySet(),
     )
 
     /** `<T, U>` type-parameter list. A parameter may be variadic via the `...T` prefix form, or a const value param via `N: Int`. */
@@ -4663,11 +4824,20 @@ class Parser(
         val names = mutableListOf<String>()
         val constParams = mutableSetOf<String>()
         val constDefaults = mutableMapOf<String, TypeRef>()
+        val typeDefaults = mutableMapOf<String, TypeRef>()
+        val staticParams = mutableSetOf<String>()
         val constEnums = mutableMapOf<String, String>()
         var variadic: String? = null
         do {
             val prefixVariadic = match(TokenType.ELLIPSIS) // `...T` prefix form
             val name = consume(TokenType.IDENTIFIER, "Expected type parameter name").lexeme
+            // `spec From<T::>` — the member this parameter drives is a *static*,
+            // reached as `Type::fromString` rather than through a value. The
+            // marker sits on the parameter because that is what decides it.
+            if (check(TokenType.DOUBLE_COLON)) {
+                advance()
+                staticParams.add(name)
+            }
             if (check(TokenType.ELLIPSIS)) {
                 error("Variadic type parameters use the prefix form '...$name', not '$name...', at line ${peek().line}")
             }
@@ -4687,17 +4857,32 @@ class Parser(
                     constEnums[name] = constraintName
                 }
             }
-            // `= <value>` — a default for a const parameter, so `Mat<Double, 4, 4>`
-            // means the same as spelling the order out.
+            // `= <default>` — the same slot holds either kind of default:
+            //  - `N: Int = 4`, `O: MatrixOrder = .RowMajor` → a const *value*, so
+            //    `Mat<Double, 4, 4>` means the same as spelling the order out;
+            //  - `Rhs = Self` → a *type*, so `PartialEqual` means the same as
+            //    `PartialEqual<Self>` and the homogeneous case stays unwritten.
+            //
+            // Which one it is follows from what was written rather than from a
+            // separate syntax: a const default is an integer or an enum variant
+            // (or the parameter was already declared const by its `:` kind), and
+            // anything else names a type.
             if (match(TokenType.EQUAL)) {
-                constDefaults[name] = parseConstArgument(constEnum, name)
-                constParams.add(name)
+                val isConstDefault = name in constParams ||
+                    check(TokenType.INT_LITERAL) ||
+                    check(TokenType.DOT)
+                if (isConstDefault) {
+                    constDefaults[name] = parseConstArgument(constEnum, name)
+                    constParams.add(name)
+                } else {
+                    typeDefaults[name] = parseTypeName()
+                }
             }
             if (prefixVariadic) variadic = name
             names.add(name)
         } while (match(TokenType.COMMA))
         consume(TokenType.GREATER, "Expected '>' after type parameters")
-        return TypeParams(names, variadic, constParams, constDefaults, constEnums)
+        return TypeParams(names, variadic, constParams, constDefaults, constEnums, typeDefaults, staticParams)
     }
 
     /**
@@ -4722,8 +4907,61 @@ class Parser(
         if (token.type != TokenType.IDENTIFIER || token.lexeme != "where") return null
         while (current < at) advance()
         advance() // 'where'
-        return parseExpr()
+        return parseSpecBounds() ?: parseExpr()
     }
+
+    /**
+     * `where T: Order`, `where T: PartialEqual<U>`, `where K: [Order, Clone]`,
+     * `where T: Order, U: Clone` — conformance bounds.
+     *
+     * A bound is a *declaration*, not an expression, which is why it needs its
+     * own reading: `T: Spec` is not something `parseExpr` can produce. Each one
+     * lowers to the `is` predicate the constraint evaluator already understands,
+     * so nothing downstream has to learn a second shape, and several bounds
+     * become a conjunction.
+     *
+     * The spec's type arguments are read and discarded here — conformance is
+     * nominal (`SymbolTable.conformsTo`), so `PartialEqual<U>` and
+     * `PartialEqual` check the same thing today. Reading them keeps the source
+     * able to say what it means before the checker can act on it.
+     *
+     * Returns null when what follows is not a bound, so an ordinary constraint
+     * expression (`T.length >= 2 && T is Number`) still parses as one.
+     */
+    private fun parseSpecBounds(): Expr? {
+        if (!isSpecBoundAhead()) return null
+        var clause: Expr? = null
+        do {
+            val subject = peek()
+            val name = consume(TokenType.IDENTIFIER, "Expected a type parameter before ':'").lexeme
+            consume(TokenType.COLON, "Expected ':' in a conformance bound")
+            val specs = mutableListOf<String>()
+            if (match(TokenType.L_BRACKET)) {
+                do {
+                    specs.add(consume(TokenType.IDENTIFIER, "Expected a spec name in the bound list").lexeme)
+                    parseGenericTypeArgsIfPresent()
+                } while (match(TokenType.COMMA))
+                consume(TokenType.R_BRACKET, "Expected ']' after the bound list")
+            } else {
+                specs.add(consume(TokenType.IDENTIFIER, "Expected a spec name after ':'").lexeme)
+                parseGenericTypeArgsIfPresent()
+            }
+            for (spec in specs) {
+                val check = Expr.IsCheck(
+                    Expr.Identifier(name, subject.line, subject.column, name.length),
+                    spec,
+                    subject.line,
+                    subject.column,
+                )
+                clause = clause?.let { Expr.Binary(it, TokenType.AND_AND, check, subject.line) } ?: check
+            }
+        } while (match(TokenType.COMMA) && isSpecBoundAhead())
+        return clause
+    }
+
+    /** True when an `IDENTIFIER :` bound opens here rather than an expression. */
+    private fun isSpecBoundAhead(): Boolean =
+        check(TokenType.IDENTIFIER) && peekNext()?.type == TokenType.COLON
 
     /**
      * The minimum length a `where` clause requires of a variadic pack, or null when
@@ -7195,15 +7433,38 @@ class Parser(
     }
 
     private fun parseComparison(): Expr {
-        var left = parseInfix()
+        var left = parseSpaceship()
         while (check(TokenType.LESS) || check(TokenType.LESS_EQUAL) ||
                check(TokenType.GREATER) || check(TokenType.GREATER_EQUAL)
         ) {
             val op = advance().type
-            val right = parseInfix()
+            val right = parseSpaceship()
             left = Expr.Binary(left, op, right, left.line)
         }
         return left
+    }
+
+    /**
+     * `a <=> b` — three-way comparison, binding tighter than the relational
+     * operators and looser than the infix/shift levels. So `a <=> b == .Less`
+     * groups as `(a <=> b) == .Less`, which is the reading the `<`/`<=`/`>`/`>=`
+     * rewrites rely on.
+     *
+     * Non-associative: `a <=> b <=> c` is an error rather than a left fold,
+     * because the result is a `Compare` and chaining one is `then`/`thenBy`.
+     */
+    private fun parseSpaceship(): Expr {
+        val left = parseInfix()
+        if (!check(TokenType.SPACESHIP)) return left
+        val op = advance()
+        val right = parseInfix()
+        if (check(TokenType.SPACESHIP)) {
+            error(
+                "'<=>' does not chain at line ${peek().line}; " +
+                    "use '(a <=> b).thenBy { b <=> c }'",
+            )
+        }
+        return Expr.Binary(left, op.type, right, left.line)
     }
 
     /**
@@ -7329,24 +7590,6 @@ class Parser(
     /** The type arguments of the reflect target most recently parsed. */
     private var reflectTargetArgs: List<TypeRef> = emptyList()
 
-    /**
-     * Rewrites a call to a cast intrinsic (`std::cast`/`dyncast`/`bitcast`, mangled
-     * `std__cast` etc.) into the corresponding [Expr.Cast]; returns null otherwise.
-     * The single type argument is the target type and the single value argument the
-     * operand.
-     */
-    private fun rewriteCastIntrinsic(call: Expr.Call): Expr.Cast? {
-        val kind = when (call.callee.substringAfterLast("__")) {
-            "cast" -> CastKind.STATIC
-            "dyncast" -> CastKind.DYNAMIC
-            "bitcast" -> CastKind.REINTERPRET
-            else -> return null
-        }
-        val target = call.typeArgs.singleOrNull() ?: return null
-        val value = call.args.singleOrNull() ?: return null
-        return Expr.Cast(value, target, kind, call.line, call.column, call.length)
-    }
-
     private fun parseUnary(): Expr {
         // `...T` in expression position names the variadic pack itself, so
         // `(...T).length` reads as a question about the pack rather than a spread.
@@ -7398,12 +7641,9 @@ class Parser(
             val at = advance()
             return Expr.Deref(parseUnary(), at.line, at.column, at.lexeme.length)
         }
-        // `#expr` — hash: invokes the operand type's `oper#` overload (a `toHash`).
-        if (check(TokenType.HASH)) {
-            val at = advance()
-            val operand = parseUnary()
-            return Expr.MethodCall(operand, "oper#", emptyList(), at.line, at.column)
-        }
+        // There is no `#expr` hash operator: hashing is `Hash`'s `prop hash`,
+        // reached as `value.hash`. `#` survives only as the container-macro
+        // sigil (`# set@[…]`), which `parseMetaPrefix` reads.
         // `lend x` — ownership the callee gives back (§13). Contextual: the word
         // only means this when a name follows it, so `lend` stays usable as one.
         if (check(TokenType.IDENTIFIER) && peek().lexeme == "lend" && peekNext()?.type == TokenType.IDENTIFIER) {
@@ -7681,7 +7921,7 @@ class Parser(
                         is Expr.Identifier -> {
                             val call = Expr.Call(expr.name, args, expr.line, expr.column, expr.length, pendingCallTypeArgs)
                             pendingCallTypeArgs = emptyList()
-                            rewriteCastIntrinsic(call) ?: call
+                            call
                         }
                         is Expr.Member -> Expr.MethodCall(expr.target, expr.name, args, expr.line, expr.column)
                         // Calling an arbitrary expression value, e.g. `fs[0](x)` or

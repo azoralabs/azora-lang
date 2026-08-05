@@ -2600,6 +2600,19 @@ class LlvmCodegen {
 
     private fun emitMemberRead(expr: IrExpr.Member): String {
         val targetType = expr.target.type
+        // `Hash`'s member on a value that carries no user-written one: an
+        // integer, a char and a bool hash to themselves, which is the same rule
+        // the interpreter applies. A pack with its own `hash` never arrives
+        // here — it resolves to that member instead.
+        if (expr.name == "hash" && targetType !is IrType.Named) {
+            // Widened into an i64 the same way a slot payload is: an integer
+            // sign-extends, a float takes its bit pattern, and anything behind a
+            // pointer — including an erased element — takes its address.
+            //
+            // A `Named` type is excluded because it supplies its own `hash`,
+            // derived or written, and that member is what resolves.
+            return boxToI64(emitExpr(expr.target), targetType)
+        }
         // Array/string length.
         if (expr.name in setOf("length", "size") && (targetType is IrType.Array || targetType is IrType.Map || targetType is IrType.Set)) {
             val raw = emitExpr(expr.target)

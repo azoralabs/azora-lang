@@ -1721,6 +1721,15 @@ data class FuncDecl(
     /** How this declaration may be invoked when registered as an impl member. */
     val memberCallStyle: MemberCallStyle = MemberCallStyle.NORMAL,
     /**
+     * A spec member's call-site alias template — `use as "to${T.typeName}"`.
+     *
+     * The member keeps its own canonical name (`into`), and an implementation is
+     * additionally reachable under the expanded template (`.toString`). Written
+     * on the member rather than the spec because it is the member that gets the
+     * second name.
+     */
+    val useAsTemplate: String? = null,
+    /**
      * A generic `infx` whose receiver is a type parameter (`infx<K,V> K.to(v)`):
      * callable as an infix method on any receiver type (`a to b` → `to(a, b)`).
      * The first param is the receiver (`self`).
@@ -1740,6 +1749,16 @@ enum class MemberCallStyle {
      * of these, and `impl Spec for Type:: { … }` supplies it.
      */
     STATIC_PROPERTY,
+
+    /**
+     * A method reached through the type rather than a value — `Type::name(args)`.
+     *
+     * A spec requirement written without a receiver (`func from(value: T): Self`)
+     * asks for one of these, and `impl Spec for Type:: { … }` supplies it. It is
+     * the only shape a *constructing* conversion can have: `From` builds a value,
+     * so there is no `self` to build it from.
+     */
+    STATIC_METHOD,
 }
 
 /**
@@ -2230,6 +2249,14 @@ sealed class TopLevel {
          * `Clone` — the capability is stated, never inferred.
          */
         val requires: List<TypeRef> = emptyList(),
+        /**
+         * Type parameter → the type it stands for when the argument is omitted.
+         *
+         * `spec PartialEqual<Rhs = Self>` is what lets `impl PartialEqual for Point`
+         * mean `impl PartialEqual<Point> for Point`, so the homogeneous case —
+         * nearly all of them — writes no argument at all.
+         */
+        val typeDefaults: Map<String, TypeRef> = emptyMap(),
     ) : TopLevel()
 
     /** `typealias Name = Type` — a type alias. */

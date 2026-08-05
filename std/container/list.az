@@ -438,13 +438,15 @@ realm std {
     }
 
     @Experimental(since: "0.0.4")
-    impl Into<String> for ArrayList<T> { self& ->
-        var s = "["
-        for i in 0..<self.size {
-            if i > 0 { s = s + ", " }
-            s = s + std::convert::toString(self.data[i])
+    impl Into<String> for ArrayList<T> {
+        prop into[self: Self&]: String {
+            var s = "["
+            for i in 0..<self.size {
+                if i > 0 { s = s + ", " }
+                s = s + std::convert::toString(self.data[i])
+            }
+            return s + "]"
         }
-        return s + "]"
     }
 
     @Experimental(since: "0.0.4")
@@ -462,12 +464,14 @@ realm std {
     }
 
     @Experimental(since: "0.0.4")
-    oper# [self: ArrayList<T>&]: ULong {
-        var result = 0 as ULong
-        for i in 0..<self.size {
-            result = result + #self.data[i]
+    impl ArrayList<T> {
+        prop hash[self: Self&]: ULong {
+            var result = 0 as ULong
+            for i in 0..<self.size {
+                result = result + self.data[i].hash
+            }
+            return result
         }
-        return result
     }
 }
 

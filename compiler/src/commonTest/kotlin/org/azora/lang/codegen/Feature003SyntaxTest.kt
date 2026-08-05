@@ -161,13 +161,17 @@ class Feature003SyntaxTest {
             pack Label {
                 var value: String
             }
-            spec Into<T>: T ( self& ) use as "to${'$'}{T.typeName}"
-            spec From<T>: T ( self& ) use as "from${'$'}{T.typeName}"
-            impl Into<String> for Label { self& ->
-                return "Label(" + self.value + ")"
+            spec Into<T>[self: Self&]: T use as "to${'$'}{T.typeName}"
+            spec From<T>[self: Self&]: T use as "from${'$'}{T.typeName}"
+            impl Into<String> for Label {
+                prop into[self: Self&]: String {
+                    return "Label(" + self.value + ")"
+                }
             }
-            impl From<String> for Label { self& ->
-                return "Label(" + self.value + ")"
+            impl From<String> for Label {
+                prop from[self: Self&]: String {
+                    return "Label(" + self.value + ")"
+                }
             }
             func main() {
                 var label = Label("ok")
@@ -183,10 +187,15 @@ class Feature003SyntaxTest {
             pack Label {
                 var value: String
             }
-            impl Show<String> for Label { self& ->
-                return "Label(" + self.value + ")"
+            impl Show<String> for Label {
+                prop show[self: Self&]: String {
+                    return "Label(" + self.value + ")"
+                }
             }
-            spec Show<T>: T ( self& ) use as "show${'$'}{T.typeName}"
+            spec Show<T> {
+                prop show<T>[self: Self&]: T
+                use show<T> as "show${'$'}{T.typeName}"
+            }
             func main() {
                 var label = Label("ok")
                 std::println(label.showString)
@@ -200,9 +209,14 @@ class Feature003SyntaxTest {
             pack Label {
                 var value: String
             }
-            spec Render<T>: T ( self& ) use as "render"
-            impl Render<String> for Label { self& ->
-                return "Label(" + self.value + ")"
+            spec Render<T> {
+                prop render<T>[self: Self&]: T
+                use render<T> as "render"
+            }
+            impl Render<String> for Label {
+                prop render[self: Self&]: String {
+                    return "Label(" + self.value + ")"
+                }
             }
             func main() {
                 var label = Label("ok")
@@ -217,9 +231,11 @@ class Feature003SyntaxTest {
             pack Label {
                 var value: String
             }
-            spec Into<T>: T ( self& ) use as "to${'$'}{T.typeName}"
-            impl Into<String> for Label { self& ->
-                return self.value
+            spec Into<T>[self: Self&]: T use as "to${'$'}{T.typeName}"
+            impl Into<String> for Label {
+                prop into[self: Self&]: String {
+                    return self.value
+                }
             }
             func main() {
                 var label = Label("ok")
@@ -236,9 +252,14 @@ class Feature003SyntaxTest {
             pack Box {
                 var value: Int
             }
-            spec Extract<T>(): T ( self& ) use as "extract${'$'}{T.typeName}"
-            impl Extract<Int> for Box { self& ->
-                return self.value
+            spec Extract<T> {
+                func extract<T>[self: Self&](): T
+                use extract<T> as "extract${'$'}{T.typeName}"
+            }
+            impl Extract<Int> for Box {
+                func extract[self: Self&](): Int {
+                    return self.value
+                }
             }
             func main() {
                 var box = Box(7)
@@ -251,9 +272,14 @@ class Feature003SyntaxTest {
             pack Box {
                 var value: Int
             }
-            spec Extract<T>(): T ( self& ) use as "extract${'$'}{T.typeName}"
-            impl Extract<Int> for Box { self& ->
-                return self.value
+            spec Extract<T> {
+                func extract<T>[self: Self&](): T
+                use extract<T> as "extract${'$'}{T.typeName}"
+            }
+            impl Extract<Int> for Box {
+                func extract[self: Self&](): Int {
+                    return self.value
+                }
             }
             func main() {
                 var box = Box(7)

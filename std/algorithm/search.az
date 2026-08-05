@@ -64,7 +64,7 @@ realm std {
      * @return The index of the target, or -1 if not found.
      */
     @Experimental(since: "0.0.1")
-    func binarySearch<T>(arr: Array<T>, target: T): Int {
+    func binarySearch<T>(arr: Array<T>, target: T): Int where T: Order {
         var lo = 0
         var hi = arr.length - 1
         while lo <= hi {
@@ -86,7 +86,7 @@ realm std {
      * @return The smallest element.
      */
     @Experimental(since: "0.0.1")
-    func minOf<T>(arr: Array<T>): T
+    func minOf<T>(arr: Array<T>): T where T: Order
     in {
         assert arr.length > 0 { "Input must not be empty" }
     } scope {
@@ -104,7 +104,7 @@ realm std {
      * @return The largest element.
      */
     @Experimental(since: "0.0.1")
-    func maxOf<T>(arr: Array<T>): T
+    func maxOf<T>(arr: Array<T>): T where T: Order
     in {
         assert arr.length > 0 { "Input must not be empty" }
     } scope {

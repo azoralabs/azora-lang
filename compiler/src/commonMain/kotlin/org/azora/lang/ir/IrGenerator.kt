@@ -34,8 +34,10 @@ import org.azora.lang.frontend.TestMethod
 import org.azora.lang.frontend.TokenType
 import org.azora.lang.frontend.TopLevel
 import org.azora.lang.frontend.TypeAnnotation
+import org.azora.lang.semantic.ComparisonPlan
 import org.azora.lang.semantic.SymbolTable
 import org.azora.lang.semantic.TypeFunctionEvaluator
+import org.azora.lang.semantic.comparisonPlan
 import org.azora.lang.semantic.VariableSymbol
 import kotlin.collections.iterator
 
@@ -1465,17 +1467,44 @@ class IrGenerator(private val table: SymbolTable) {
                 // Operator overloading on user types
                 if (left.type is IrType.Named) {
                     val lt = left.type as IrType.Named
-                    // `impl oper<OP>` overloads (method named `oper<OP>`); resolved
-                    // regardless of operand type (a `by <Spec>` overload may differ).
-                    val operName = operOverloadName(expr.op)
-                    if (operName != null) {
-                        // An operator may be overloaded on its operand, so the
-                        // operand-keyed member wins; the bare name is the single case.
-                        val mangled = table.lookupOperator(lt.name, operName, operandKeyOf(right.type))
-                        if (mangled != null) {
-                            val func = table.lookupFunction(mangled)!!
-                            return IrExpr.Call(mangled, listOf(left, right), func.returnType)
+                    // A declared operator wins; otherwise the comparison family
+                    // rewrites (the DIP, §5.4/§5.5). The same decision the
+                    // resolver made, from the same routine.
+                    when (val plan = comparisonPlan(expr.op, lt.name, operandKeyOf(right.type), table)) {
+                        is ComparisonPlan.Direct -> {
+                            val func = table.lookupFunction(plan.mangled)!!
+                            return IrExpr.Call(plan.mangled, listOf(left, right), func.returnType)
                         }
+                        // `a < b` → `(a <=> b).isLess`. The `<=>` call is the
+                        // receiver, so it happens once, and which of `Compare` or
+                        // `PartialCompare` answers decides what the predicate
+                        // means — `NaN` makes all four false without the compiler
+                        // knowing anything about NaN.
+                        //
+                        // The predicate is reached as a direct call rather than a
+                        // method call: a fieldless enum has no runtime object to
+                        // dispatch on, so its members are ordinary functions over
+                        // the value, and the result type of `<=>` is what names
+                        // the enum they belong to.
+                        is ComparisonPlan.Spaceship -> {
+                            val cmp = table.lookupFunction(plan.mangled)!!
+                            val threeWay = IrExpr.Call(plan.mangled, listOf(left, right), cmp.returnType)
+                            val resultName = (cmp.returnType as? IrType.Named)?.name
+                            val predicate = resultName?.let { table.lookupMethod(it, plan.predicate) }
+                            if (predicate != null) {
+                                return IrExpr.Call(predicate, listOf(threeWay), IrType.Bool)
+                            }
+                            return IrExpr.MethodCall(threeWay, plan.predicate, emptyList(), IrType.Bool)
+                        }
+                        is ComparisonPlan.NegatedEquals -> {
+                            val func = table.lookupFunction(plan.mangled)!!
+                            return IrExpr.Unary(
+                                IrUnaryOp.NOT,
+                                IrExpr.Call(plan.mangled, listOf(left, right), func.returnType),
+                                IrType.Bool,
+                            )
+                        }
+                        null -> Unit
                     }
                     // Legacy same-type named-method overloads.
                     if (left.type == right.type) {
@@ -2169,8 +2198,8 @@ class IrGenerator(private val table: SymbolTable) {
 
     /** Resolves the return type of a builtin method on a receiver of [receiverType]. */
     private fun builtinMethodReturnType(receiverType: IrType, name: String): IrType {
-        // `#expr` (oper#) hashes its operand → ULong, regardless of receiver type.
-        if (name == "oper#") return IrType.ULong
+        // `Hash`'s member answers a ULong whatever the receiver is.
+        if (name == "hash") return IrType.ULong
         return when (receiverType) {
         is IrType.Array -> when (name) {
             "add", "insert", "remove" -> IrType.Unit

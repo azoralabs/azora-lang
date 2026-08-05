@@ -703,6 +703,24 @@ class IrInterpreter {
         return if (structs[typeName]?.isUnion == true) UNION_SLOT else null
     }
 
+    /**
+     * `Hash`'s value for a built-in type.
+     *
+     * An integer hashes to itself, a float to its bit pattern — so `0.0` and
+     * `-0.0` hash apart exactly as they compare apart. A pack never reaches
+     * here: it supplies its own `hash`, derived or written.
+     */
+    private fun primitiveHash(value: Any?): Long = when (value) {
+        null -> 0L
+        is Long -> value
+        is Boolean -> if (value) 1L else 0L
+        is String -> value.hashCode().toLong()
+        is Double -> value.toRawBits()
+        is Float -> value.toRawBits().toLong()
+        is Char -> value.code.toLong()
+        else -> value.hashCode().toLong()
+    }
+
     private suspend fun evalExpr(expr: IrExpr): Any? {
         return when (expr) {
             is IrExpr.IntLiteral -> expr.value
@@ -766,6 +784,12 @@ class IrInterpreter {
                 var receiver = evalExpr(expr.target)
                 // Auto-deref: member access on a pointer reads through it (`p.v` == `(*p).v`).
                 if (receiver is Pointer) receiver = receiver.value
+                // `Hash`'s member on a primitive. A pack supplies its own, so
+                // only the built-in value types are answered here — this is the
+                // runtime half of `bridge spec Hash`.
+                if (expr.name == "hash" && receiver !is Map<*, *>) {
+                    return@evalExpr primitiveHash(receiver)
+                }
                 when (receiver) {
                     is MutableList<*> -> when (expr.name) {
                         "length", "size" -> receiver.size.toLong()
@@ -931,15 +955,9 @@ class IrInterpreter {
                     }
                 }
                 when {
-                    // `#expr` (oper#) — hash of a primitive/value-type operand.
-                    expr.name == "oper#" -> when (receiver) {
-                        is Long -> receiver
-                        is Boolean -> if (receiver) 1L else 0L
-                        is String -> receiver.hashCode().toLong()
-                        is Double -> receiver.toRawBits().toLong()
-                        is Float -> receiver.toRawBits().toLong()
-                        else -> receiver.hashCode().toLong()
-                    }
+                    // `Hash`'s member reached as a call, for a receiver whose
+                    // own type does not supply one.
+                    expr.name == "hash" && args.isEmpty() -> primitiveHash(receiver)
                     receiver is String -> when (expr.name) {
                         "toUpperCase" -> receiver.uppercase()
                         "toLowerCase" -> receiver.lowercase()

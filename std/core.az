@@ -68,6 +68,117 @@ use realm std {
         All
     }
 
+    /**
+     * The result of `<=>` on a totally ordered type.
+     *
+     * Total means every pair of values relates: for any `a` and `b` exactly one
+     * of `Less`, `Equal`, `Greater` holds, and the relation is transitive. A
+     * type whose `<=>` answers `Compare` is making that promise — see [Order].
+     */
+    @Since("0.0.5")
+    enum Compare {
+        Less
+        Equal
+        Greater
+    }
+
+    /**
+     * The result of `<=>` on a partially ordered type.
+     *
+     * `Unordered` is the fourth answer a total order does not have: the two
+     * values are neither less, nor greater, nor equal. `Double.NAN` against
+     * anything is the case that forces this type to exist, and it is why the
+     * relational operators derived from a `PartialCompare` are *all* false for
+     * such a pair rather than the negation of one another.
+     */
+    @Since("0.0.5")
+    enum PartialCompare {
+        Less
+        Equal
+        Greater
+        Unordered
+    }
+
+    /**
+     * The relational operators of a total order.
+     *
+     * `a < b` is rewritten to `(a <=> b).isLess` and its three siblings likewise,
+     * so this is where the meaning of `<`, `<=`, `>` and `>=` actually lives for
+     * every type that declares `<=>`. Writing them here rather than in the
+     * compiler is what keeps [Compare] and [PartialCompare] free to disagree —
+     * and they do, on every one of the four.
+     *
+     * A total order has three answers, so the "or equal" forms are the negation
+     * of their opposite.
+     */
+    @Since("0.0.5")
+    impl Compare {
+        prop isLess[self: Self&]: Bool { return self == Compare.Less }
+        prop isLessOrEqual[self: Self&]: Bool { return self != Compare.Greater }
+        prop isGreater[self: Self&]: Bool { return self == Compare.Greater }
+        prop isGreaterOrEqual[self: Self&]: Bool { return self != Compare.Less }
+
+        /** The comparison with its operands swapped. `Less` becomes `Greater`. */
+        prop reversed[self: Self&]: Compare {
+            when self {
+                Compare.Less -> { return Compare.Greater }
+                Compare.Greater -> { return Compare.Less }
+                else -> { return Compare.Equal }
+            }
+        }
+
+        /** `self` when it is decisive, otherwise `next`. Lexicographic chaining. */
+        func then[self: Self&](next: Compare): Compare {
+            if self == Compare.Equal { return next }
+            return self
+        }
+    }
+
+    /**
+     * The relational operators of a partial order.
+     *
+     * Every one of the four differs from [Compare]'s. With four answers the
+     * negated forms are wrong: `!= Greater` would make `NaN <= 1.0` true, so
+     * each operator is written positively and `Unordered` makes all four false.
+     * That is what IEEE 754 requires, and getting it right once here means no
+     * user writes it again.
+     */
+    @Since("0.0.5")
+    impl PartialCompare {
+        prop isLess[self: Self&]: Bool { return self == PartialCompare.Less }
+        prop isLessOrEqual[self: Self&]: Bool {
+            return self == PartialCompare.Less || self == PartialCompare.Equal
+        }
+        prop isGreater[self: Self&]: Bool { return self == PartialCompare.Greater }
+        prop isGreaterOrEqual[self: Self&]: Bool {
+            return self == PartialCompare.Greater || self == PartialCompare.Equal
+        }
+
+        /** True when the two values do not relate at all. */
+        prop isUnordered[self: Self&]: Bool { return self == PartialCompare.Unordered }
+
+        /** The comparison with its operands swapped. `Unordered` stays unordered. */
+        prop reversed[self: Self&]: PartialCompare {
+            when self {
+                PartialCompare.Less -> { return PartialCompare.Greater }
+                PartialCompare.Greater -> { return PartialCompare.Less }
+                PartialCompare.Unordered -> { return PartialCompare.Unordered }
+                else -> { return PartialCompare.Equal }
+            }
+        }
+
+        /**
+         * `self` when it is decisive, otherwise `next`.
+         *
+         * `Unordered` is decisive: a lexicographic order over a partial one is
+         * unordered as soon as any field is.
+         */
+        func then[self: Self&](next: PartialCompare): PartialCompare {
+            if self == PartialCompare.Equal { return next }
+            return self
+        }
+    }
+
     @Experimental(since: "0.0.4")
     bridge enum LogLevel {
         /** Detailed diagnostic information. The default level for `trace`. */

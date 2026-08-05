@@ -407,6 +407,18 @@ class SymbolCollector {
                         // Bridge impls register the member name (so semantic gates like the
                         // range-operator check can find it) but define NO callable function —
                         // the backend lowers bridge operators natively.
+                        // How a spec member is *called* is part of its contract,
+                        // not of the implementation: a spec's `prop` is reached
+                        // without parentheses and its `func` with them, whatever
+                        // the impl wrote. Reading it from the declaration is what
+                        // keeps `box.extractInt` and `box.extractInt()` from both
+                        // resolving.
+                        val declaredStyle = item.traitName?.let { traitName ->
+                            program.items.filterIsInstance<TopLevel.Spec>()
+                                .firstOrNull { it.name == traitName }
+                                ?.methods?.firstOrNull { it.name == method.name }
+                                ?.memberCallStyle
+                        }
                         if (!item.isBridge) {
                             table.defineFunction(FunctionSymbol(
                                 mangled,
@@ -414,11 +426,36 @@ class SymbolCollector {
                                 returnType,
                                 method.isInline,
                                 visibility = method.visibility,
-                                memberCallStyle = method.memberCallStyle,
+                                memberCallStyle = declaredStyle ?: method.memberCallStyle,
                                 returnTypeRef = (method.returnType as? TypeAnnotation.Explicit)?.ref,
                             ))
                         }
                         table.defineMethod(item.typeName, method.name, mangled)
+                        // `func into[…]: T use as "to${T.typeName}"` — the spec
+                        // gives its member a second, call-site name expanded
+                        // against this impl's type arguments. `Into<String>`
+                        // makes `into` also reachable as `toString`, so the
+                        // member keeps its canonical name and callers keep the
+                        // one they already write.
+                        item.traitName?.let { traitName ->
+                            val spec = program.items.filterIsInstance<TopLevel.Spec>()
+                                .firstOrNull { it.name == traitName }
+                            val declared = spec?.methods?.firstOrNull { it.name == method.name }
+                            declared?.useAsTemplate?.let { template ->
+                                // The spec's own parameter names bind the
+                                // template's holes; the impl's arguments fill
+                                // them. Read from the declaration rather than
+                                // the table, which has not seen this spec yet.
+                                val alias = UseAsTemplate.expand(
+                                    template,
+                                    spec.typeParams,
+                                    item.traitArgs,
+                                )
+                                if (alias.isNotEmpty() && alias != method.name) {
+                                    table.defineMethod(item.typeName, alias, mangled)
+                                }
+                            }
+                        }
                         // A declared `ctor` also gets a factory, so `Model(w, h)`
                         // can resolve to it instead of filling fields positionally.
                         // The IR generator emits the body; this is what lets the

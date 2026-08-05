@@ -39,7 +39,7 @@ realm std {
      * @return A new array with elements in ascending order.
      */
     @Experimental(since: "0.0.1")
-    func sort<T>(arr: Array<T>): Array<T>
+    func sort<T>(arr: Array<T>): Array<T> where T: Order
     out {
         assert it.length == arr.length { "sort must preserve length" }
     } scope {
@@ -68,7 +68,7 @@ realm std {
      * @return A new array with elements in descending order.
      */
     @Experimental(since: "0.0.1")
-    func sortDescending<T>(arr: Array<T>): Array<T>
+    func sortDescending<T>(arr: Array<T>): Array<T> where T: Order
     out {
         assert it.length == arr.length { "sortDescending must preserve length" }
     } scope {
@@ -95,7 +95,7 @@ realm std {
      * @return true if the array is sorted, false otherwise.
      */
     @Experimental(since: "0.0.1")
-    func isSorted<T>(arr: Array<T>): Bool {
+    func isSorted<T>(arr: Array<T>): Bool where T: Order {
         if arr.length <= 1 { return true }
         for i in 1..<arr.length {
             if arr[i] < arr[i - 1] { return false }
@@ -110,7 +110,7 @@ realm std {
      * @return true if the array is sorted descending, false otherwise.
      */
     @Experimental(since: "0.0.1")
-    func isSortedDescending<T>(arr: Array<T>): Bool {
+    func isSortedDescending<T>(arr: Array<T>): Bool where T: Order {
         if arr.length <= 1 { return true }
         for i in 1..<arr.length {
             if arr[i] > arr[i - 1] { return false }

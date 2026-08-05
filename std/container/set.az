@@ -319,7 +319,7 @@ realm std {
         return LinkedHashSet<T>()
     }
 
-    // --- HashSet (hash-table, unspecified iteration order; T requires oper# + oper==) ---
+    // --- HashSet (hash-table, unspecified iteration order; T requires Hash) ---
 
     @Experimental(since: "0.0.4")
     @Serializable
@@ -503,13 +503,15 @@ realm std {
     }
 
     @Experimental(since: "0.0.4")
-    impl Into<String> for HashSet<T> { self& ->
-        var s = "{"
-        for i in 0..<self.size {
-            if i > 0 { s = s + ", " }
-            s = s + std::convert::toString(self.data[i])
+    impl Into<String> for HashSet<T> {
+        prop into[self: Self&]: String {
+            var s = "{"
+            for i in 0..<self.size {
+                if i > 0 { s = s + ", " }
+                s = s + std::convert::toString(self.data[i])
+            }
+            return s + "}"
         }
-        return s + "}"
     }
 
     @Experimental(since: "0.0.4")
@@ -527,12 +529,14 @@ realm std {
     }
 
     @Experimental(since: "0.0.4")
-    oper# [self: HashSet<T>&]: ULong {
-        var result = 0 as ULong
-        for i in 0..<self.size {
-            result = result + #self.data[i]
+    impl HashSet<T> {
+        prop hash[self: Self&]: ULong {
+            var result = 0 as ULong
+            for i in 0..<self.size {
+                result = result + self.data[i].hash
+            }
+            return result
         }
-        return result
     }
 
     // --- TreeSet (sorted via oper<; T requires oper<) ---
@@ -703,13 +707,15 @@ realm std {
     }
 
     @Experimental(since: "0.0.4")
-    impl Into<String> for TreeSet<T> { self& ->
-        var s = "{"
-        for i in 0..<self.size {
-            if i > 0 { s = s + ", " }
-            s = s + std::convert::toString(self.data[i])
+    impl Into<String> for TreeSet<T> {
+        prop into[self: Self&]: String {
+            var s = "{"
+            for i in 0..<self.size {
+                if i > 0 { s = s + ", " }
+                s = s + std::convert::toString(self.data[i])
+            }
+            return s + "}"
         }
-        return s + "}"
     }
 
     @Experimental(since: "0.0.4")
@@ -727,12 +733,14 @@ realm std {
     }
 
     @Experimental(since: "0.0.4")
-    oper# [self: TreeSet<T>&]: ULong {
-        var result = 0 as ULong
-        for i in 0..<self.size {
-            result = result + #self.data[i]
+    impl TreeSet<T> {
+        prop hash[self: Self&]: ULong {
+            var result = 0 as ULong
+            for i in 0..<self.size {
+                result = result + self.data[i].hash
+            }
+            return result
         }
-        return result
     }
 
     // ---------------------------------------------------------------------
@@ -748,13 +756,15 @@ realm std {
     }
 
     @Experimental(since: "0.0.4")
-    impl Into<String> for LinkedHashSet<T> { self& ->
-        var s = "{"
-        for i in 0..<self.size {
-            if i > 0 { s = s + ", " }
-            s = s + std::convert::toString(self.data[i])
+    impl Into<String> for LinkedHashSet<T> {
+        prop into[self: Self&]: String {
+            var s = "{"
+            for i in 0..<self.size {
+                if i > 0 { s = s + ", " }
+                s = s + std::convert::toString(self.data[i])
+            }
+            return s + "}"
         }
-        return s + "}"
     }
 
     @Experimental(since: "0.0.4")
@@ -772,12 +782,14 @@ realm std {
     }
 
     @Experimental(since: "0.0.4")
-    oper# [self: LinkedHashSet<T>&]: ULong {
-        var result = 0 as ULong
-        for i in 0..<self.size {
-            result = result + #self.data[i]
+    impl LinkedHashSet<T> {
+        prop hash[self: Self&]: ULong {
+            var result = 0 as ULong
+            for i in 0..<self.size {
+                result = result + self.data[i].hash
+            }
+            return result
         }
-        return result
     }
 }
 

@@ -86,4 +86,70 @@ realm std {
     spec PrettyPrint {
         prop pretty[self: Self&]: String
     }
+
+    /**
+     * A type whose values can be compared to `Rhs` for equality.
+     *
+     * `==` must be symmetric and transitive. It need not be reflexive:
+     * `Double.NAN == Double.NAN` is false, and that is what keeps this
+     * capability separate from [Equal].
+     *
+     * `Rhs` defaults to `Self`, so the homogeneous case is written
+     * `PartialEqual` with no argument.
+     */
+    @Since("0.0.5")
+    bridge spec PartialEqual<Rhs = Self> {
+        oper== [self: Self&](rhs: Rhs&): Bool
+    }
+
+    /**
+     * A type whose equality is a full equivalence relation on its own values.
+     *
+     * Adds one promise to `PartialEqual<Self>`, and it is the promise the
+     * compiler cannot check: `a == a` for every value. Everything that keys off
+     * equality — hashing, a set's uniqueness, a map's lookup — is broken by a
+     * value that is not equal to itself, so those require [Equal] and not
+     * [PartialEqual].
+     */
+    @Since("0.0.5")
+    bridge spec Equal requires PartialEqual
+
+    /**
+     * A type whose values order against `Rhs`, with some pairs possibly not
+     * relating at all.
+     *
+     * Satisfied by an `oper<=>` answering either result type: a [Compare]
+     * widens to a [PartialCompare], so a totally ordered type meets this bound
+     * without declaring a second operator.
+     */
+    @Since("0.0.5")
+    bridge spec PartialOrder<Rhs = Self> requires PartialEqual {
+        oper<=> [self: Self&](rhs: Rhs&): PartialCompare
+    }
+
+    /**
+     * A type with a total order on its own values: every pair relates, and the
+     * relation is transitive and antisymmetric.
+     *
+     * `requires Equal` because a total order and its equality have to agree —
+     * `a <=> b` answering `Equal` while `a == b` answers false is the
+     * disagreement that makes a sorted container lose elements.
+     */
+    @Since("0.0.5")
+    bridge spec Order requires Equal {
+        oper<=> [self: Self&](rhs: Self&): Compare
+    }
+
+    /**
+     * A type that reduces to a hash value.
+     *
+     * `requires Equal` because the two are one contract: equal values must hash
+     * equally, and a type whose equality is not even reflexive cannot promise
+     * it. Deriving [Equal] derives this too, over the same fields in the same
+     * order, so the pair cannot come apart.
+     */
+    @Since("0.0.5")
+    bridge spec Hash requires Equal {
+        prop hash[self: Self&]: ULong
+    }
 }

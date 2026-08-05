@@ -28,10 +28,10 @@ import std.container.list
  * Maps use operators supplied by their key and value types. There are no
  * runtime hasher, equality, or comparator objects:
  *
- * - `HashMap<K, V>` and `LinkedHashMap<K, V>` require `oper#` and `oper==`
+ * - `HashMap<K, V>` and `LinkedHashMap<K, V>` require `Hash` and `oper==`
  *   for `K`.
  * - `TreeMap<K, V>` requires `oper<` for `K`.
- * - `containsValue`, structural `oper==`, and structural `oper#` instantiate
+ * - `containsValue`, structural `oper==`, and structural `Hash` instantiate
  *   only when the corresponding value operators exist.
  *
  * `oper[start:stop:step]` returns a snapshot of the map's entries using its
@@ -205,7 +205,7 @@ realm std {
         func pollLastEntry[self: Self&](): MapEntry<K, V>?
     }
 
-    /** Hash table with unspecified iteration order. `K` requires `oper#` and `oper==`. */
+    /** Hash table with unspecified iteration order. `K` requires `Hash` and `oper==`. */
     @Experimental(since: "0.0.4")
     pack HashMap<K, V> {
         var keys: K* = alloc K[16]
@@ -295,7 +295,7 @@ realm std {
         }
 
         func _findIndex[self: Self&](key: K&): Int {
-            fin hash = #key
+            fin hash = key.hash
             var index = self._bucketFor(hash)
             for visited in 0..<self.capacity {
                 if !self.occupied[index] { return -1 }
@@ -363,7 +363,7 @@ realm std {
 
         func _putValue[self: Self!](key: K, value: V): V? {
             self._ensureInsertCapacity()
-            fin hash = #key
+            fin hash = key.hash
             return self._insertKnownHash(key, value, hash)
         }
 
@@ -508,7 +508,7 @@ realm std {
 
     impl LinkedHashMap<K, V> {
         func _findIndex[self: Self&](key: K&): Int {
-            fin hash = #key
+            fin hash = key.hash
             var bucket = (hash % (self.bucketCapacity as ULong)) as Int
             for visited in 0..<self.bucketCapacity {
                 fin index = self.buckets[bucket]
@@ -579,7 +579,7 @@ realm std {
             if (self.__size + 1) * 10 >= self.bucketCapacity * 7 {
                 self._rebuildBuckets(self.bucketCapacity * 2)
             }
-            fin hash = #key
+            fin hash = key.hash
             self.keys[self.__size] = key
             self.values[self.__size] = value
             self.hashes[self.__size] = hash
@@ -1420,13 +1420,15 @@ realm std {
     }
 
     @Experimental(since: "0.0.4")
-    oper# [self: HashMap<K, V>&]: ULong {
-        fin all = self.entries()
-        var result = 0 as ULong
-        for i in 0..<all.size {
-            result = result + (#all[i].key ^ #all[i].value)
+    impl HashMap<K, V> {
+        prop hash[self: Self&]: ULong {
+            fin all = self.entries()
+            var result = 0 as ULong
+            for i in 0..<all.size {
+                result = result + ((all[i].key.hash as ULong) ^ (all[i].value.hash as ULong))
+            }
+            return result
         }
-        return result
     }
 
     @Experimental(since: "0.0.4")
@@ -1446,12 +1448,14 @@ realm std {
     }
 
     @Experimental(since: "0.0.4")
-    oper# [self: LinkedHashMap<K, V>&]: ULong {
-        var result = 0 as ULong
-        for i in 0..<self.__size {
-            result = result + (#self.keys[i] ^ #self.values[i])
+    impl LinkedHashMap<K, V> {
+        prop hash[self: Self&]: ULong {
+            var result = 0 as ULong
+            for i in 0..<self.__size {
+                result = result + ((self.keys[i].hash as ULong) ^ (self.values[i].hash as ULong))
+            }
+            return result
         }
-        return result
     }
 
     @Experimental(since: "0.0.4")
@@ -1470,13 +1474,15 @@ realm std {
     }
 
     @Experimental(since: "0.0.4")
-    oper# [self: TreeMap<K, V>&]: ULong {
-        fin all = self.entries()
-        var result = 0 as ULong
-        for i in 0..<all.size {
-            result = result + (#all[i].key ^ #all[i].value)
+    impl TreeMap<K, V> {
+        prop hash[self: Self&]: ULong {
+            fin all = self.entries()
+            var result = 0 as ULong
+            for i in 0..<all.size {
+                result = result + ((all[i].key.hash as ULong) ^ (all[i].value.hash as ULong))
+            }
+            return result
         }
-        return result
     }
 }
 

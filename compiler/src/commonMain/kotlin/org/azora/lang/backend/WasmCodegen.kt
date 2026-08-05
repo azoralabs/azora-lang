@@ -258,6 +258,16 @@ class WasmCodegen {
 
         out.clear(); indent = 2
         for (stmt in func.body) emitStmt(stmt)
+        // A function that returns from inside a `when`/`if` — every arm of a
+        // `when self { … }` ending in `return` — leaves nothing on the stack
+        // where Wasm expects the result of an implicit return. `unreachable`
+        // types as bottom, so it satisfies any result type, and it is the
+        // truth: control never arrives here. Without it such a body is rejected
+        // by the validator ("type mismatch in implicit return").
+        if (func.returnType != IrType.Unit && !endsWithTerminator(func.body)) {
+            indent = 2
+            line("unreachable")
+        }
         val body = out.toString()
 
         val sig = StringBuilder("  (func \$${func.name}")
@@ -269,6 +279,23 @@ class WasmCodegen {
         sig.append("  )\n")
         return sig.toString()
     }
+
+    /**
+     * True when [body] ends in an instruction the Wasm validator accepts as the
+     * producer of a value-returning function's result.
+     *
+     * Only a literal `return` (or a trap) qualifies. A `when` or `if` whose arms
+     * all return is *semantically* terminal but lowers to `(if …)` blocks that
+     * type as `[]`, so as far as the validator is concerned control still falls
+     * off the end — which is exactly the "type mismatch in implicit return"
+     * a `when self { … }` used to produce. Those cases want the terminator.
+     */
+    private fun endsWithTerminator(body: List<IrStmt>): Boolean =
+        when (body.lastOrNull()) {
+            is IrStmt.Return -> true
+            is IrStmt.Throw -> true
+            else -> false
+        }
 
     // ── Statements ────────────────────────────────────────────────────────
 

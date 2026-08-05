@@ -114,7 +114,10 @@ class Lexer(private val source: String) {
                 else -> addToken(TokenType.EQUAL)
             }
             '<' -> when {
-                match('=') -> addToken(TokenType.LESS_EQUAL)
+                // `<=>` is read before `<=`: maximal munch. Nothing else in the
+                // grammar produces `<`, `=`, `>` in sequence, so this takes no
+                // existing spelling away.
+                match('=') -> addToken(if (match('>')) TokenType.SPACESHIP else TokenType.LESS_EQUAL)
                 match('<') -> addToken(if (match('=')) TokenType.SHIFT_LEFT_EQUAL else TokenType.SHIFT_LEFT)
                 else -> addToken(TokenType.LESS)
             }

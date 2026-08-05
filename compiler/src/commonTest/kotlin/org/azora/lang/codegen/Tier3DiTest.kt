@@ -99,7 +99,13 @@ class Tier3DiTest {
             func main() {
                 var a = inject Logger
                 var b = inject Logger
-                if a == b {
+                // Sharing is observed through the value, not asserted with `==`:
+                // two injections of a `solo` are one object, so a write through
+                // one is visible through the other. Comparing them with `==`
+                // would have asked whether `Logger` is equal to itself, which is
+                // a different question and one the pack never answered.
+                a.prefix = "written through a"
+                if b.prefix == "written through a" {
                     std::println("same")
                 }
             }

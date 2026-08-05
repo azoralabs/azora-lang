@@ -22,6 +22,7 @@ import org.azora.lang.backend.IrInterpreter
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 /**
  * `DIPs/OPERATOR_OVERLOADING_DIP.MD` end to end: a type states `<=>` once and
@@ -370,6 +371,66 @@ class ComparisonOperatorTest {
             }
             func main() {
                 std::println(Loose(1, 2) == Loose(1, 999))
+            }
+        """.trimIndent()))
+    }
+
+    // -- §8: `==` without a conformance is an error ------------------------
+
+    /**
+     * The defect the DIP was written for: this used to compile and answer
+     * differently on each backend — structurally in the interpreter, by address
+     * in LLVM.
+     */
+    @Test fun comparingAPackWithNoEqualityIsAnError() {
+        val result = Compiler().compile("""
+            import std.io
+            pack Vec2 {
+                var x: Int
+                var y: Int
+            }
+            func main() {
+                std::println(Vec2(1, 2) == Vec2(1, 2))
+            }
+        """.trimIndent(), release = false)
+        assertIs<CompilationResult.Failure>(result, "a pack with no equality must not compare")
+        assertTrue(
+            result.errors.any { "does not implement PartialEqual" in it && "impl [Equal]" in it },
+            "the error should name the fix, got: ${result.errors}",
+        )
+    }
+
+    @Test fun statingEqualMakesItCompare() {
+        assertEquals("true", run("""
+            import std.io
+            import std.traits
+            pack Vec2 {
+                var x: Int
+                var y: Int
+            }
+            impl [Equal] for Vec2
+            func main() {
+                std::println(Vec2(1, 2) == Vec2(1, 2))
+            }
+        """.trimIndent()))
+    }
+
+    /** Enums, primitives and null comparisons are untouched by the rule. */
+    @Test fun theEqualityRuleLeavesEverythingElseAlone() {
+        assertEquals("true\ntrue\ntrue", run("""
+            import std.io
+            enum Colour {
+                Red
+                Green
+            }
+            pack Boxed {
+                var v: Int
+            }
+            func main() {
+                std::println(Colour.Red == Colour.Red)
+                std::println(1 == 1)
+                fin maybe: Boxed? = null
+                std::println(maybe == null)
             }
         """.trimIndent()))
     }

@@ -2523,6 +2523,23 @@ class TypeResolver(private val table: SymbolTable) {
         else -> null
     }
 
+    /**
+     * Whether [typeName] has said what equality means for it.
+     *
+     * Satisfied by a declared `oper==` (against itself or anything else), by a
+     * stated `PartialEqual`/`Equal` conformance, or by being an enum — a
+     * payload-free case is a name and compares as one. Everything not a pack
+     * keeps the built-in comparison.
+     */
+    private fun comparesEqual(typeName: String): Boolean {
+        if (table.lookupEnum(typeName) != null) return true
+        if (table.lookupSlot(typeName) != null) return true
+        if (table.conformsTo(typeName, "PartialEqual") || table.conformsTo(typeName, "Equal")) return true
+        if (table.lookupOperator(typeName, "oper==", null) != null) return true
+        // A pack the resolver has never seen declared is not this rule's business.
+        return table.lookupStruct(typeName) == null
+    }
+
     private fun resolveBinaryType(op: TokenType, left: IrType, right: IrType, line: Int): IrType? {
         // An operator may also be declared with a primitive on the left — `2 * vec`
         // is `impl oper* for Int` taking a Vec. Such an overload must name its
@@ -2612,6 +2629,22 @@ class TypeResolver(private val table: SymbolTable) {
                 val nullCompare = leftBare == IrType.Any || rightBare == IrType.Any
                 val nullableMatch = (left is IrType.Nullable && left.inner == right) ||
                     (right is IrType.Nullable && right.inner == left)
+                // A pack that never said what equal means used to compare anyway,
+                // and the backends did not agree on what that meant: the
+                // interpreter compared structurally and LLVM compared addresses,
+                // so the same program answered differently under `az run` and
+                // `az build`. It is an error now, and the message says how to fix
+                // it. Everything else the branch accepts is unaffected.
+                val bareNamed = leftBare as? IrType.Named
+                if (left == right && bareNamed != null && !nullCompare && !comparesEqual(bareNamed.name)) {
+                    errors.add(
+                        "line $line: cannot compare two '${bareNamed.name}' values — " +
+                            "${bareNamed.name} does not implement PartialEqual; add " +
+                            "'impl [Equal] for ${bareNamed.name}' to compare it field by field, " +
+                            "or declare 'oper== [self: ${bareNamed.name}&](rhs: ${bareNamed.name}&): Bool'",
+                    )
+                    return null
+                }
                 if (left == right || nullCompare || nullableMatch) {
                     IrType.Bool
                 } else {

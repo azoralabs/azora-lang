@@ -1105,6 +1105,11 @@ class IrInterpreter {
             left is Long && right is Long -> left.compareTo(right)
             left is Double && right is Double -> left.compareTo(right)
             left is Char && right is Char -> left.compareTo(right)
+            // Lexicographic by code point, which is what `impl Order for String`
+            // promises — an order, not a collation.
+            left is String && right is String -> left.compareTo(right)
+            // `false < true`, the order `impl Order for Bool` states.
+            left is Boolean && right is Boolean -> left.compareTo(right)
             left is Number && right is Number -> toNum(left).compareTo(toNum(right))
             else -> error("Cannot compare $left and $right")
         }

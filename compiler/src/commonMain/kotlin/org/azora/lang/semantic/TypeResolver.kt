@@ -1723,6 +1723,11 @@ class TypeResolver(private val table: SymbolTable) {
                     // (`resolveBinaryType`); a property has to, for the same
                     // reason and on the same grounds.
                     targetType == IrType.Any -> IrType.Any
+                    // `Hash`'s member on a built-in. `impl [… Hash] for Integers`
+                    // states the conformance in std; the value comes from the
+                    // backend rather than from a written member, so there is
+                    // nothing in the method table to find.
+                    expr.name == "hash" && targetType !is IrType.Named -> IrType.ULong
                     else -> {
                         // A primitive receiver keys the method table by its source
                         // type name (`impl Int { prop seconds[self&] }`), the same
@@ -2575,6 +2580,25 @@ class TypeResolver(private val table: SymbolTable) {
                     errors.add("line $line: cannot compare $left and $right with '$op'")
                     null
                 } else IrType.Bool
+            }
+            // `a <=> b` on a built-in: the integers, `Char`, `Bool` and `String`
+            // are totally ordered and answer `Compare`; the floating-point types
+            // are not — a NaN relates to nothing — and answer `PartialCompare`.
+            // Which one comes back is the whole totality claim, so it is decided
+            // here rather than left to the operand types to agree on.
+            TokenType.SPACESHIP -> {
+                val comparable = left == right &&
+                    (left in IrType.numericTypes || left == IrType.Char ||
+                        left == IrType.Bool || left == IrType.String)
+                when {
+                    left == IrType.Any || right == IrType.Any -> IrType.Named("PartialCompare")
+                    !comparable -> {
+                        errors.add("line $line: cannot compare $left and $right with '<=>'")
+                        null
+                    }
+                    left in IrType.floatTypes -> IrType.Named("PartialCompare")
+                    else -> IrType.Named("Compare")
+                }
             }
             TokenType.AND_AND, TokenType.OR_OR -> {
                 if (left != IrType.Bool || right != IrType.Bool) {

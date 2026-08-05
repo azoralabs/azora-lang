@@ -1526,6 +1526,36 @@ class IrGenerator(private val table: SymbolTable) {
                         }
                     }
                 }
+                // `a <=> b` on a built-in. There is no three-way machine
+                // instruction and no let-binding in the IR, so it lowers to the
+                // two tests a hand-written comparison makes. The floating-point
+                // form needs the third: a NaN is not less, not greater and not
+                // equal, and `Unordered` is the only honest answer.
+                if (expr.op == TokenType.SPACESHIP) {
+                    val partial = left.type in IrType.floatTypes || right.type in IrType.floatTypes ||
+                        left.type == IrType.Any || right.type == IrType.Any
+                    val enumName = if (partial) "PartialCompare" else "Compare"
+                    val resultType = IrType.Named(enumName)
+                    val less = IrExpr.Binary(left, IrBinaryOp.LT, right, IrType.Bool)
+                    val greater = IrExpr.Binary(left, IrBinaryOp.GT, right, IrType.Bool)
+                    val equal = IrExpr.Binary(left, IrBinaryOp.EQ, right, IrType.Bool)
+                    val tail = if (partial) {
+                        IrExpr.IfExpr(
+                            equal,
+                            IrExpr.EnumLiteral(enumName, "Equal"),
+                            IrExpr.EnumLiteral(enumName, "Unordered"),
+                            resultType,
+                        )
+                    } else {
+                        IrExpr.EnumLiteral(enumName, "Equal")
+                    }
+                    return IrExpr.IfExpr(
+                        less,
+                        IrExpr.EnumLiteral(enumName, "Less"),
+                        IrExpr.IfExpr(greater, IrExpr.EnumLiteral(enumName, "Greater"), tail, resultType),
+                        resultType,
+                    )
+                }
                 val op = lowerBinaryOp(expr.op)
                 val type = when (op) {
                     IrBinaryOp.EQ, IrBinaryOp.NEQ,

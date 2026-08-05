@@ -34,6 +34,7 @@ import org.azora.lang.ir.IrType
 import org.azora.lang.semantic.EffectChecker
 import org.azora.lang.semantic.SemanticPipeline
 import org.azora.lang.semantic.ReflectDecoExpander
+import org.azora.lang.semantic.ComparisonDeriver
 import org.azora.lang.semantic.SerializationDeriver
 import org.azora.lang.semantic.VariadicMonomorphizer
 
@@ -201,7 +202,14 @@ class Compiler(
         if (serialization.errors.isNotEmpty()) {
             return CompilationResult.Failure(serialization.errors)
         }
-        val injected = CallbackImplNormalizer.normalize(libraries.inject(serialization.program))
+        // `impl [Equal, Order] for Point` with no body asks the compiler to
+        // write the members. Generated as ordinary AST, so everything below
+        // this point sees code the author could have written.
+        val comparison = ComparisonDeriver.derive(serialization.program)
+        if (comparison.errors.isNotEmpty()) {
+            return CompilationResult.Failure(comparison.errors)
+        }
+        val injected = CallbackImplNormalizer.normalize(libraries.inject(comparison.program))
 
         // 2b-bis. Unroll `inline for X in reflect<*>.withDeco<D>` loops now that the
         // whole program (all modules' decorated types) is visible. Generic: the

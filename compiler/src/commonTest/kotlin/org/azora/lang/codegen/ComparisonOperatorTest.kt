@@ -240,4 +240,137 @@ class ComparisonOperatorTest {
             }
         """.trimIndent()))
     }
+
+    // -- `<=>` on the built-in types ---------------------------------------
+
+    @Test fun spaceshipOnIntegersAnswersCompare() {
+        assertEquals("Compare.Less\nCompare.Equal\nCompare.Greater", run("""
+            import std.io
+            import std.traits
+            func main() {
+                std::println("${'$'}{1 <=> 2}")
+                std::println("${'$'}{2 <=> 2}")
+                std::println("${'$'}{3 <=> 2}")
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun spaceshipOnStringsAnswersCompare() {
+        assertEquals("Compare.Less\nCompare.Equal", run("""
+            import std.io
+            import std.traits
+            func main() {
+                std::println("${'$'}{"a" <=> "b"}")
+                std::println("${'$'}{"a" <=> "a"}")
+            }
+        """.trimIndent()))
+    }
+
+    /** Floating point is partially ordered, so its `<=>` answers the partial type. */
+    @Test fun spaceshipOnDoublesAnswersPartialCompare() {
+        assertEquals("PartialCompare.Less\nPartialCompare.Equal\nPartialCompare.Greater", run("""
+            import std.io
+            import std.traits
+            func main() {
+                std::println("${'$'}{1.0 <=> 2.0}")
+                std::println("${'$'}{2.0 <=> 2.0}")
+                std::println("${'$'}{3.0 <=> 2.0}")
+            }
+        """.trimIndent()))
+    }
+
+    // -- Phase 6: derivation -----------------------------------------------
+
+    /** A bodyless `impl [Equal]` asks the compiler to write `==` field-wise. */
+    @Test fun equalIsDerivedFieldWise() {
+        assertEquals("true\nfalse\nfalse\ntrue", run("""
+            import std.io
+            import std.traits
+            pack Point {
+                var x: Int
+                var y: Int
+            }
+            impl [Equal] for Point
+            func main() {
+                std::println(Point(1, 2) == Point(1, 2))
+                std::println(Point(1, 2) == Point(9, 2))
+                std::println(Point(1, 2) != Point(1, 2))
+                std::println(Point(1, 2) != Point(1, 9))
+            }
+        """.trimIndent()))
+    }
+
+    /** `impl [Order]` gives `<=>`, and the four relational operators follow. */
+    @Test fun orderIsDerivedLexicographically() {
+        assertEquals("Compare.Less\ntrue\nfalse\ntrue", run("""
+            import std.io
+            import std.traits
+            pack Version {
+                var major: Int
+                var minor: Int
+            }
+            impl [Order] for Version
+            func main() {
+                std::println("${'$'}{Version(1, 2) <=> Version(1, 9)}")
+                std::println(Version(1, 2) < Version(1, 9))
+                std::println(Version(2, 0) < Version(1, 9))
+                std::println(Version(2, 0) >= Version(2, 0))
+            }
+        """.trimIndent()))
+    }
+
+    /** Later fields only decide when the earlier ones tie. */
+    @Test fun derivedOrderComparesFieldsInDeclarationOrder() {
+        assertEquals("Compare.Greater\nCompare.Less", run("""
+            import std.io
+            import std.traits
+            pack Version {
+                var major: Int
+                var minor: Int
+            }
+            impl [Order] for Version
+            func main() {
+                std::println("${'$'}{Version(2, 0) <=> Version(1, 99)}")
+                std::println("${'$'}{Version(1, 1) <=> Version(1, 2)}")
+            }
+        """.trimIndent()))
+    }
+
+    /** Deriving `Equal` derives `Hash` too, so the two can never disagree. */
+    @Test fun equalAlsoDerivesHash() {
+        assertEquals("true\nfalse", run("""
+            import std.io
+            import std.traits
+            pack Key {
+                var a: Int
+                var b: Int
+            }
+            impl [Equal] for Key
+            func main() {
+                std::println(Key(1, 2).hash == Key(1, 2).hash)
+                std::println(Key(1, 2).hash == Key(2, 1).hash)
+            }
+        """.trimIndent()))
+    }
+
+    /** An author's own member always wins over the derived one. */
+    @Test fun aWrittenOperatorBeatsTheDerivedOne() {
+        assertEquals("true", run("""
+            import std.io
+            import std.traits
+            pack Loose {
+                var a: Int
+                var b: Int
+            }
+            impl [Equal] for Loose
+            impl Equal for Loose {
+                oper== [self: Self&](rhs: Self&): Bool {
+                    return self.a == rhs.a
+                }
+            }
+            func main() {
+                std::println(Loose(1, 2) == Loose(1, 999))
+            }
+        """.trimIndent()))
+    }
 }

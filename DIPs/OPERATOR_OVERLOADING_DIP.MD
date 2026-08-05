@@ -1,14 +1,32 @@
-# Azora Operator Overloading — DIP Proposal
+# Azora Operator Overloading — DIP
 
-> Status: **proposed**. Nothing in this document is implemented in `0.0.5`.
-> Target: `0.0.5`.
+> Status: **the comparison family is implemented** in `0.0.5`; the rest of §12
+> is proposed.
+>
+> | part | state |
+> |------|-------|
+> | `<=>`, its precedence, non-associativity (§5.1–5.3) | **shipped** |
+> | `oper` members on a `spec` (§5.3, §6) | **shipped** |
+> | `<` `<=` `>` `>=` from `<=>`, `!=` from `==` (§5.4–5.5) | **shipped** |
+> | `Compare` / `PartialCompare` and their members (§4) | **shipped** |
+> | `PartialEqual` / `Equal` / `PartialOrder` / `Order` / `Hash` (§6, §12.6) | **shipped** |
+> | derivation from a bodyless `impl` (§7) | **shipped** |
+> | `where T: Spec<Args>` bounds (§11) | **shipped** |
+> | unary dispatch, `oper!` (§2.6, §12.5) | **shipped** |
+> | the remaining operator families (§12.1) | proposed |
+> | `Display`, `Iterator`, the cast specs (§12.7–12.9) | proposed |
+> | closing the free-operator form language-wide (§14, phase 11) | proposed |
+>
+> Naming note: the specs shipped as `Order` / `PartialOrder`, not `Ordering` /
+> `PartialOrdering`. `Hash`'s member is `prop hash`, not `oper#` — the `#`
+> operator is gone, though the token survives as the container-macro sigil.
+> Casts and conversions moved to `CAST_DIP.MD`.
 
 Every operator in Azora becomes a member of a `spec`, and every overload is
 written inside `impl <Spec> for <Type>`. §12 is the full inventory — arithmetic,
 unary, bitwise, compound assignment, indexing, dereference, range, hash,
 display, cast. §§2–11 work the comparison family out in detail, because it is
-the one with real design questions and the one whose absence is currently a
-bug.
+the one with real design questions and the one whose absence was a bug.
 
 Azora already lets a type define what `+` means. What it does not have is any
 notion of what it means for two values to be *the same*, or for one to come
@@ -689,7 +707,7 @@ one place to be written. The rule buys three things:
   they are rewrites (§5.4, §5.5), not members — so the rule is what makes
   "do not hand-write these" enforceable rather than advisory.
 
-Operators with no spec behind them yet — `oper+`, `oper[]`, `oper#`, `oper as`
+Operators with no spec behind them yet — `oper+`, `oper[]`, `oper as`
 — keep the free form they have today. This DIP does not touch them; §15 says
 why extending the rule to every operator is a separate proposal.
 
@@ -719,7 +737,7 @@ generates, for `Point`:
 - `oper==` — field-wise `&&`, in declaration order, short-circuiting;
 - `oper<=>: Compare` — lexicographic, in declaration order, returning at the
   first field that is not `Equal`;
-- `oper#` — the field-wise hash (§7.3).
+- `hash` — the field-wise hash (§7.3).
 
 `<`, `<=`, `>`, `>=` and `!=` come from §5.4 and §5.5 and are not generated as
 members at all. One `<=>` and one `==` per type is the whole footprint.
@@ -751,15 +769,15 @@ not.
 A type whose `==` and `#` disagree corrupts every hash container it is a key of:
 `HashMap` looks in the bucket the hash names and finds nothing, and the entry is
 lost rather than found. `map.az:31` already states the requirement — "`HashMap`
-… require `oper#` and `oper==` for `K`" — with nothing enforcing it.
+… require `Hash` and `oper==`" — with nothing enforcing it.
 
-`Hash` is the spec that owns `oper#` (§12.6), and it `requires Equal` for
+`Hash` is the spec that owns hashing (§12.6), and it `requires Equal` for
 exactly this reason: the two are one contract, and a type whose equality is not
 reflexive cannot promise that equal values hash equally. So:
 
 - deriving `Equal` **also derives `Hash`**, over the same fields in the same
-  order, unless the type wrote its own `oper#`;
-- writing `oper==` and `oper#` by hand is allowed and unchecked — the compiler
+  order, unless the type wrote its own `hash`;
+- writing `oper==` and `hash` by hand is allowed and unchecked — the compiler
   cannot verify that two hand-written bodies agree;
 - a type that is `Equal` but whose hand-written `Hash` is missing cannot be used
   as a hash key, and the error names both members;
@@ -861,7 +879,7 @@ impl [Equal, Order] for Vec2I
 ```
 
 No braces, so the compiler writes the members (§6.4) — `oper==`, `oper<=>`
-returning `Compare`, and `oper#` (§7.3). One line replaces all of the above, and
+returning `Compare`, and `hash` (§7.3). One line replaces all of the above, and
 `Vec2I` is a legal hash key and a legal `TreeMap` key. This is the shape most
 packs should have.
 
@@ -1432,12 +1450,12 @@ needed for the naming; only the lookup.
  */
 @Since("0.0.5")
 bridge spec Hash requires Equal {
-    oper# [self: Self&]: ULong
+    prop hash[self: Self&]: ULong
 }
 ```
 
 `bridge`, so a bodyless `impl [Hash] for Point` generates the field-wise hash;
-an `impl Hash for Point { oper# … }` with a body supplies it instead (§6.4).
+an `impl Hash for Point { prop hash … }` with a body supplies it instead (§6.4).
 
 **`impl [Equal] for T` also derives `Hash`**, over the same fields in the same
 order, unless the type wrote its own. §7.3 gives the reasoning: a type whose
@@ -1448,7 +1466,7 @@ hash is already there.
 
 **Types that need a hash say `requires Hash`.** That is the point of naming the
 capability: the requirement moves out of `map.az`'s header comment
-(`map.az:31`, "`HashMap` … require `oper#` and `oper==` for `K`") and into the
+(`map.az:31`, "`HashMap` … require `Hash` and `oper==`") and into the
 signature.
 
 ```azora
@@ -1465,23 +1483,26 @@ prose.
 
 ```azora
 /**
- * A type with a canonical string form — what `"$value"` interpolates.
+ * A type with a canonical text form.
+ *
+ * The member is handed a `Formatter` to write into rather than asked to
+ * return a `String`: writing into a buffer is what lets a composite render
+ * its parts without each one allocating — a list of a thousand points
+ * appends to one buffer instead of building a thousand intermediate strings.
  */
 @Since("0.0.5")
-spec Display {
-    oper$ [self: Self&]: String
+bridge spec Display {
+    func display[self: Self&](formatter: Formatter!)
 }
 ```
 
-Not `bridge`: there is no correct field-wise string form, and a type that has
-not said how it prints should not print. This is the one operator spec with no
-derivation.
+`Formatter` and the one-shot `format(value)` live in `std/format.az`.
+`"${value}"` calls `Display` and nothing else, so a type that has not said how
+it prints does not print — the interpolation is a compile error naming the
+missing implementation rather than a fallback that leaks a pack's internals
+into output.
 
-`oper$` is what `"$value"` calls (`Parser.kt:495`), so `Display` is the spec
-behind string interpolation.
-
-**This unifies four mechanisms that currently overlap**, which is most of its
-value:
+**This unifies mechanisms that currently overlap**, which is most of its value:
 
 | today                              | who uses it                                 |
 |------------------------------------|---------------------------------------------|
@@ -1490,23 +1511,20 @@ value:
 | `spec PrettyPrint { prop pretty }` | `traits.az:86`, `tuple.az:53`               |
 | `value as String`                  | enums (`ENUMS_DIP.MD` §5)                   |
 
-Four spellings, four results, no rule for which one `"${v}"` picks. All four
-collapse into two:
+Four spellings, four results, no rule for which one `"${v}"` picks. Proposed:
 
-- **`Display` is what interpolation and `${…}` use.** One hook, named.
-- **`Into<String>` is retired** along with the rest of `Into` / `From`
-  (§12.9.1). Its five implementors become `impl Cast<String>`, and the generated
-  `.toString` member becomes `as String`.
+- **`Display` is what interpolation and `${…}` use.** One hook, named, and
+  `oper$` retires into it — a sigil operator with no spec was the reason the
+  hook was undocumented.
+- **`Into<String>` stays**, because it answers a different question:
+  `.toString` is a *conversion the caller asked for* (`CAST_DIP.MD` §1.4),
+  while `display` is how the value renders inside a message. A type may have
+  both and they may differ.
 - **`PrettyPrint` is retired** into `Display`. It has one implementor
   (`tuple.az:53`) and its `prop pretty` is `Display`'s member under another
   name.
-- **`value as String` on an enum** is `Cast<String>` (§12.9), derived for
-  payload-free enums as the variant name — which is what it does now.
-
-What is left is `Display` for `"$v"` and `Cast<String>` for `v as String`, and
-even those two do not have to be written twice: **implementing `Display` derives
-`Cast<String>`**. A type that wants rendering and conversion to differ declares
-both explicitly, which is rare and now has to be deliberate.
+- **`value as String` on an enum** stays a cast (`CAST_DIP.MD` §1.1), derived
+  for payload-free enums as the variant name — which is what it does now.
 
 ### 12.8 `Iterator`
 
@@ -1595,50 +1613,41 @@ which is not checkable, and `oper as<U>` can never be a bound. `Cast<To>` is
 both: `where T: Cast<String>` is expressible, and each target gets a body the
 compiler can check.
 
-### 12.9.1 `Into<T>` and `From<T>` are retired
+### 12.9.1 `Into` and `From` are kept, and are not casts
 
-`Cast<To>` *is* `Into<To>`. Both mean "this type becomes a `To`", both take the
-target as a spec argument, and keeping both means a type can convert one way
-with `as` and a different way with `.toString` — a discrepancy with no
-legitimate use.
+An earlier draft retired `Into` / `From` into `Cast`. That was wrong, and the
+distinction it missed is the one `CAST_DIP.MD` is built on:
+
+> A **cast** is about representation. A **conversion** is about meaning.
+
+`as` / `as?` / `as*` never take ownership and never allocate. `Into` and `From`
+may do both, which is why they stay separate specs a type opts into rather than
+operators the compiler can always attempt.
+
+Both were rewritten in `0.0.5` rather than removed:
 
 ```azora
-spec Into<T>: T (self&) use as "to${T.typeName}"    // convert.az:29 — deleted
-spec From<T>: T (self&) use as "from${T.typeName}"  // convert.az:43 — deleted
-```
+spec Into<T> {
+    prop into<T>[self: Self&]: T
+    use into<T> as "to${T.typeName}"
+}
 
-The migration is mechanical. Five implementors, all in `std/container`:
-
-```azora
-impl Into<String> for HashSet<T> { self& -> … }          // set.az:506
-
-impl Cast<String> for HashSet<T> {                        // becomes
-    oper as [self: Self&] { … }
+spec From<T> {
+    func from(value: T): Self
 }
 ```
 
-— and the same for `TreeSet` (`set.az:706`), `LinkedHashSet` (`:751`) and
-`ArrayList` (`list.az:441`).
+- **`Into`** is a `prop`, so no parentheses. Its member keeps the canonical name
+  `into`, and `use into<T> as "…"` — a line of its own, so the declaration above
+  it stays a plain declaration — gives it the call-site name callers already
+  write: `.toString` for `Into<String>`, `.toInt` for `Into<Int>`.
+- **`From`** is a receiver-less `func`, which in a spec means **static**. It
+  *constructs* rather than consumes, so there is no `self` to convert, and
+  `impl From<String> for Username::` supplies it. It carries no `use as`:
+  `Username::from(text)` is already the name callers write.
 
-Two things are genuinely lost, and both are worth losing:
-
-- **The generated `.toString` member.** `Into<T>`'s `use as "to${T.typeName}"`
-  template creates `.toString`, `.toInt` and friends. Those become `as String`,
-  `as Int`. One spelling for conversion instead of two, and the operator form is
-  the one that already works on primitives.
-- **`From<T>`, the reverse direction.** `Cast` converts *from* `Self`, so
-  `From<T>` has no operator equivalent — `T as Self` is `impl Cast<Self> for T`,
-  declared on the source type. That is a real restriction: it means a conversion
-  must be declared beside the *source*, so you cannot teach your type to be
-  built from `Int` without touching `Int`. `impl Cast<MyType> for Int` is
-  legal — Azora operators are declared beside the type, not inside it — so the
-  restriction is about which type the impl mentions first, not about who may
-  write it. §17 revisits this if a constructor-style conversion is wanted.
-
-After this, the four-way stringification tangle of §12.7 is down to two members
-with distinct jobs: `Display` for `"$v"`, `Cast<String>` for `v as String`. A
-type that implements `Display` gets `Cast<String>` derived from it, since they
-would otherwise be the same body written twice.
+The five spellings and the rules relating them are `CAST_DIP.MD`; this section
+exists only to record that the operator DIP does not own them.
 
 ### 12.10 `std/cast.az` is deleted
 
@@ -1709,9 +1718,9 @@ line 164: 'impl Order for Vec2' declares '<=>' returning PartialCompare
   the spec fixes the result: Order gives Compare, PartialOrder gives
   PartialCompare — either drop the return type or implement PartialOrder
 
-line 177: 'Key' implements PartialEqual but has no 'oper#', and is a HashMap key
+line 177: 'Key' implements PartialEqual but has no 'hash', and is a HashMap key
   a key whose equality and hash disagree is inserted and never found
-  add 'oper# [self: Key&]: ULong', or derive both with 'impl [Equal] for Key'
+  add 'prop hash[self: Key&]: ULong', or derive both with 'impl [Equal] for Key'
 
 line 203: 'Matrix' has no '%' — its 'impl Arithmetic' does not declare 'oper%'
   an operator family implements the part it wants; add 'oper%' to that impl
@@ -1853,7 +1862,7 @@ Worth doing whether or not the rest lands:
   (`TypeResolver.kt:2514`) and ordering them is an allocator's question; it can
   come with the allocator DIP if it is wanted.
 - **Deriving `Equal` silently, as `Clone` is derived.** §7.2.
-- **Changing `oper#`.** Hashing deserves its own DIP — seeded hashers, DoS
+- **A richer hashing story.** Seeded hashers, DoS
   resistance, `#` on a `variant enum` — and this proposal only ties its
   derivation to `Equal`'s.
 - **Contracts on the operators.** `oper<=>` transitivity could be an `out`
@@ -1915,12 +1924,11 @@ Worth doing whether or not the rest lands:
    an expensive second comparison and a convenience for a cheap one. Rust ships
    both (`then`, `then_with`) and the lazy one is what people should reach for.
    Possibly ship only `thenBy`.
-7. **Does anything still need `From<T>`?** §12.9.1 retires `Into` and `From`
-   into `Cast`, but only `Into` has a true operator equivalent — `Cast` converts
-   *from* `Self`. The reverse is written `impl Cast<MyType> for Int`, declared
-   beside `Int` rather than beside `MyType`, which is legal but reads backwards
-   for a constructor-style conversion. If that turns out to matter, the answer is
-   a `FromCast<From>` spec whose member is a static, not the return of `From<T>`.
+7. **Should a fallible conversion exist?** `Into` and `From` are total, so a
+   conversion that can fail has nowhere to go — a parse, a narrowing, a lookup.
+   `TryInto` is the obvious answer and it needs the error model settled first:
+   `?!` and `Result` are two different answers today. `CAST_DIP.MD` §8 records
+   the same question.
 8. **Should `Range<T>` become a real type?** §12.8's `Iterator` spec names
    `Range<Self>` as its output, but a range is a compiler node (`Expr.Range`)
    and not a `std` type today. Until it is one, `Iterator` can only be satisfied

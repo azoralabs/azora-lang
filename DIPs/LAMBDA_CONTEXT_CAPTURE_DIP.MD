@@ -1,4 +1,4 @@
-# Azora Lambdas, Contextual Receivers, and Capture — DIP
+# Azora Lambdas, Contextual Receivers, and Capture - DIP
 
 > Status: lambdas and contextual receivers are **implemented** in `0.0.5`.
 > Capture is **unspecified**, and the backends disagree about it (§3).
@@ -31,7 +31,7 @@ spelling: `[logger: Logger&, message.&] { … }`.
 
 **The arrow goes with the parameters.** A lambda that takes none does not write
 one: `{ consume(xs) }`, never `{ -> consume(xs) }`. There is no separate
-"explicitly empty" spelling because there is nothing to be explicit about — an
+"explicitly empty" spelling because there is nothing to be explicit about - an
 absent parameter list is already unambiguous, and a second way to write it would
 be the same thing said twice. §5.1 is what stands between that rule and the
 implementation.
@@ -40,7 +40,7 @@ The callable form also takes the `async func { … }` and `flow func { … }`
 qualifiers, which is how a lambda becomes a task or a generator.
 
 A trailing lambda after a call is a call argument, and a `{` reopens statement
-context — so newlines inside a lambda written inline still separate statements
+context - so newlines inside a lambda written inline still separate statements
 instead of being swallowed by the enclosing parentheses.
 
 The last expression statement of a lambda body becomes its `return`. That is a
@@ -59,7 +59,7 @@ fin add: [Int, Int] -> Int = func { x: Int, y: Int -> x + y }
 
 func main() {
     with [2, 3] {
-        std::println(add())     // 5 — both receivers come from `with`
+        std::println(add())     // 5 - both receivers come from `with`
     }
 }
 ```
@@ -72,9 +72,9 @@ be passed explicitly instead:
 fin scale: [Int](Int) -> Int = func(value: Int) { factor: Int -> value * factor }
 
 with 5 {
-    std::println(scale(2))      // 10 — factor comes from `with`
+    std::println(scale(2))      // 10 - factor comes from `with`
 }
-std::println(scale(2, 7))       // 14 — factor passed directly
+std::println(scale(2, 7))       // 14 - factor passed directly
 ```
 
 The receiver form binds the context by name, which is what makes an extension
@@ -96,7 +96,7 @@ std::println(apply(Vec2(2, 3), add))   // 5
 
 ### Inherited receivers
 
-A lambda passed to something that declares receivers need not name them —
+A lambda passed to something that declares receivers need not name them  - 
 `std::sequence { std::yield(1) }` names none, yet the closure still has to carry
 one. The frontend synthesizes a binding, and `lambdaReceiverName(line, column,
 index)` derives its name from the lambda's own source position so that the
@@ -112,18 +112,18 @@ the design that is invisible in source and therefore easy to break.
 Nothing in the language reference says what a captured variable is. The
 implementations answered independently, and they answered differently.
 
-**The interpreter** builds `Closure(params, body, st.scopes.toList())` — it
+**The interpreter** builds `Closure(params, body, st.scopes.toList())` - it
 keeps the scope chain, so a capture is a *reference* to the original binding.
 
 **LLVM and Wasm** collect the free variables, heap-allocate an environment
-struct at closure creation, and copy each captured value into it — so a capture
+struct at closure creation, and copy each captured value into it - so a capture
 is a *snapshot*.
 
 Two programs make the difference visible. Both compile cleanly. Both are
 measured, not predicted:
 
 ```azora
-// A — the closure writes to a captured variable
+// A - the closure writes to a captured variable
 func main() {
     var n = 1
     fin bump = { x: Int -> n = n + x
@@ -134,7 +134,7 @@ func main() {
 ```
 
 ```azora
-// B — the outer scope writes after the closure is made
+// B - the outer scope writes after the closure is made
 func main() {
     var n = 1
     fin show = { x: Int -> n }
@@ -149,7 +149,7 @@ func main() {
 | B       | `99`        | `1`         |
 
 Program A is the one that hurts. The closure's own write is visible to the
-closure and invisible to everyone else — the value is updated in a copy that
+closure and invisible to everyone else - the value is updated in a copy that
 nothing will ever read again. No diagnostic, no warning, and the interpreter
 that most tests run against gives the other answer.
 
@@ -161,17 +161,17 @@ picked a reasonable one.
 `OWNERSHIP_BORROWING_DIP.md` §16 says a closure captures by borrow, copy, clone
 or ownership transfer, and two of those are enforced today: a `take` inside a
 closure moves the outer binding, and an ownership transfer inside the body is
-checked exactly as it would be outside one. So this compiles as expected —
+checked exactly as it would be outside one. So this compiles as expected  - 
 
 ```azora
 var xs = std::listOf<String>()
 fin f: () -> Int = { consume(xs) }
-// line 2: cannot pass 'xs' by ownership — 'List' is not Copy;
+// line 2: cannot pass 'xs' by ownership - 'List' is not Copy;
 //         transfer ownership with 'take xs', or create an independent value
 //         with 'xs.clone()'
 ```
 
-— because the *use inside the body* is checked. What is unchecked is the
+- because the *use inside the body* is checked. What is unchecked is the
 **capture itself**. Reading `xs` inside a closure asks nothing of `xs` and
 declares nothing about the mode, and it is exactly that unstated mode that the
 backends disagree about.
@@ -185,7 +185,7 @@ to the act of capturing.
 
 The mode a capture uses should be stated, not deduced from how the body happens
 to read. A closure's relationship to the scope around it is part of its
-interface — the thing a reader needs before reading the body, and the thing the
+interface - the thing a reader needs before reading the body, and the thing the
 compiler needs before deciding whether the closure may escape.
 
 Azora already has a bracket list on a lambda for contextual receivers. The
@@ -197,7 +197,7 @@ captures go in the same brackets:
 
 No introducer separates them, because each entry already says which it is: an
 entry of the form `name: Type` declares a contextual parameter, and anything
-else captures. Nothing has to be ordered and nothing has to be announced — a
+else captures. Nothing has to be ordered and nothing has to be announced - a
 `:` is the whole distinction.
 
 ### 4.1 The two halves of the bracket
@@ -237,14 +237,14 @@ sigil form that already matches its role:
 | `message.&`       | a borrow of a value     | the call-site borrow operator, as in `inspect(h.&)` |
 
 Because each entry classifies itself, the two kinds may be interleaved. Writing
-the context parameters first is a convention worth keeping — they are the
-closure's interface, the captures its implementation — but it is not a rule the
+the context parameters first is a convention worth keeping - they are the
+closure's interface, the captures its implementation - but it is not a rule the
 compiler needs.
 
 What the compiler does need is the lookahead: `[` … `]` immediately followed by
 `{` opens a lambda. Without it, `[message.&]` in expression position starts an
-array literal. Nothing valid parses that way today — a block is not a postfix
-operator on an array — so the rule takes no existing syntax with it, but it must
+array literal. Nothing valid parses that way today - a block is not a postfix
+operator on an array - so the rule takes no existing syntax with it, but it must
 be written down rather than assumed. §7 says where.
 
 ### 4.2 The capture forms
@@ -261,7 +261,7 @@ Each is the spelling that operation already has: `take` is a prefix keyword and
 `clone` is a method, exactly as they are anywhere else.
 
 ```azora
-// shared borrow — the closure does not own `message` and cannot outlive it
+// shared borrow - the closure does not own `message` and cannot outlive it
 var message: String = String("Hello")
 let callback = [message.&] { trace message }
 
@@ -269,13 +269,13 @@ let callback = [message.&] { trace message }
 var count: Int = 0
 let increment = [count.!] { count += 1 }
 
-// copy — requires Copy, and the original is independent afterwards
+// copy - requires Copy, and the original is independent afterwards
 var retries: Int = 3
 let callback = [retries] { trace retries }
 retries = 5
 callback()          // 3
 
-// clone — taken when the closure is created
+// clone - taken when the closure is created
 var message: String = String("Hello")
 let callback = [message.clone()] { trace message }
 message.append(" World")
@@ -286,7 +286,7 @@ trace message       // Hello World
 var socket: Socket = Socket.open(8080)
 let worker = [take socket] { socket.listen() }
 socket.close()
-// line 3: use of taken value 'socket' — its ownership transferred at line 2
+// line 3: use of taken value 'socket' - its ownership transferred at line 2
 ```
 
 The move case needs no new diagnostic: `take socket` is a `take`, so the
@@ -304,7 +304,7 @@ let callback = [&] {
     trace user.name
 }
 
-// copy everything the body references — Copy only, never a silent clone
+// copy everything the body references - Copy only, never a silent clone
 let callback = [=] {
     trace retries
     trace timeout
@@ -314,7 +314,7 @@ let callback = [=] {
 `[=]` must never quietly deepen into a clone:
 
 ```
-line 3: 'message' cannot be captured by copy — 'String' is not Copy; write one
+line 3: 'message' cannot be captured by copy - 'String' is not Copy; write one
         of '[message.&]', '[message.clone()]', or '[take message]'
 ```
 
@@ -335,7 +335,7 @@ Shared borrow by default; `retries` copied, `config` cloned, `counter` borrowed
 exclusively.
 
 `&` and `=` are written bare here rather than as `.&` and `.=` because there is
-no value to their left — the `.` in `message.&` belongs to `message`.
+no value to their left - the `.` in `message.&` belongs to `message`.
 
 ### 4.4 Aliases
 
@@ -356,16 +356,16 @@ also gives the one way to capture two things that would otherwise collide.
 Every closure in the language today is written without a bracket list, so the
 rule for that form decides whether this proposal is a migration or an addition:
 
-> A lambda with no capture list behaves as `[&]` — shared borrow of
-> everything it references — and may not escape.
+> A lambda with no capture list behaves as `[&]` - shared borrow of
+> everything it references - and may not escape.
 
 Which keeps every existing `map`/`filter`/`forEach` closure compiling unchanged,
 makes the terse form the safe form, and means the only closures that must be
-rewritten are the ones that escape — which are the ones whose captures were
+rewritten are the ones that escape - which are the ones whose captures were
 never specified in the first place (§3).
 
 It also settles §3's measured divergence: a shared borrow is a reference to the
-original, so **program A prints `5`, `5`** — the interpreter's answer. The native
+original, so **program A prints `5`, `5`** - the interpreter's answer. The native
 backends must capture the address rather than the value, which is the one real
 implementation cost in this DIP.
 
@@ -396,12 +396,12 @@ func makeBad(): () -> Int {
 ```
 
 With the list written, the diagnostic can point at the entry that is wrong
-rather than at a name buried in the body — which is most of why the list is
+rather than at a name buried in the body - which is most of why the list is
 worth having.
 
 ### 4.7 `escaping`
 
-Most higher-order functions call their callable and are done with it — `map`,
+Most higher-order functions call their callable and are done with it - `map`,
 `filter`, `forEach`, `withLock`. Requiring every one of them to own its captures
 would make the common case the expensive one, so:
 
@@ -417,7 +417,7 @@ func onEvent(handler: escaping (Event) -> Unit) { … }
 
 `escaping` is a **contextual keyword**, joining `module`, `union`, `async`,
 `where` and `without`. It is an ordinary word that existing code may already use
-as a name, and it only means anything directly before a callable type — so
+as a name, and it only means anything directly before a callable type - so
 nothing has to be renamed to adopt it.
 
 It belongs to the *type*, not to the parameter, which is what lets it appear
@@ -436,7 +436,7 @@ escapes. A parameter-level marker could not describe the field that receives it,
 and the check would have to guess at the boundary it is supposed to be drawing.
 
 A non-escaping callable may be called and passed on to other non-escaping
-positions, and nothing else. That is the whole check, and it is local — no
+positions, and nothing else. That is the whole check, and it is local - no
 whole-program analysis, no annotation burden on the common case, and the
 compiler can say which of the two rules was tripped.
 
@@ -460,7 +460,7 @@ let worker = async [
 ```
 
 `scheduler` is a context dependency, `socket` is owned by the closure, `config`
-is independently cloned — all visible before the body.
+is independently cloned - all visible before the body.
 
 A borrowed capture stays legal when the borrow provably ends before the
 suspension, which is §15 of the ownership DIP applied to a closure rather than a
@@ -471,7 +471,7 @@ let worker = async [data.&] {
     trace data
     delay 100
     trace data
-    // line 4: 'data' is borrowed across a suspension point — the caller's value
+    // line 4: 'data' is borrowed across a suspension point - the caller's value
     //         may not outlive it; write '[data.clone()]' or
     //         '[take data]', or end the borrow before the suspension
 }
@@ -480,7 +480,7 @@ let worker = async [data.&] {
 This form needs one decision the current grammar does not make. An async lambda
 is written `async func { … }` today, and `async [ … ] { … }` drops the `func`.
 Since `async` is a contextual keyword, `async [` could also be an index into a
-binding named `async` — decidable by the same lookahead `isReceiverLambdaAhead`
+binding named `async` - decidable by the same lookahead `isReceiverLambdaAhead`
 already uses (scan to the matching `]`, require a `{`), but it must be decided
 rather than assumed.
 
@@ -491,9 +491,9 @@ point:
 
 | a borrow may not survive…       | rule                                    |
 |---------------------------------|-----------------------------------------|
-| a suspension                    | §15 of the ownership DIP — implemented  |
-| a thread boundary               | §6 of `THREAD_SAFETY_DIP.MD` — proposed |
-| the scope that made the closure | §4.6 here — proposed                    |
+| a suspension                    | §15 of the ownership DIP - implemented  |
+| a thread boundary               | §6 of `THREAD_SAFETY_DIP.MD` - proposed |
+| the scope that made the closure | §4.6 here - proposed                    |
 
 Same failure, same three fixes offered in the diagnostic (`take`, `.clone()`, or
 shorten the lifetime), so a programmer learns it once. The capture list is what
@@ -514,8 +514,8 @@ Found while measuring §3, and worth fixing whether or not §4 lands.
 ### 5.1 A bare lambda is assumed to take `it`
 
 The parser gives every `{ body }` an implicit `it` parameter, whether or not the
-body mentions one. So the zero-parameter spelling from §1 — the one the rule
-says to write — does not typecheck:
+body mentions one. So the zero-parameter spelling from §1 - the one the rule
+says to write - does not typecheck:
 
 ```azora
 var n = 0
@@ -533,7 +533,7 @@ the arity rather than the cause.
 gives its parameter when it has exactly one and did not name it. So a bare
 lambda takes:
 
-- the parameters of the expected callable type, if there is one — `{ it * 2 }`
+- the parameters of the expected callable type, if there is one - `{ it * 2 }`
   against `(Int) -> Int` has one, named `it`;
 - otherwise, the one named `it` if the body mentions `it`;
 - otherwise, none.
@@ -549,7 +549,7 @@ including when there is no type to consult.
 quietly accepted as a synonym:
 
 ```
-line 2: write '{ n = n + 1 }' — a lambda with no parameters writes no '->'
+line 2: write '{ n = n + 1 }' - a lambda with no parameters writes no '->'
 ```
 
 ### 5.2 A callable type cannot be a generic argument
@@ -565,10 +565,10 @@ type form where it parses a generic argument.
 
 ### 5.3 The closure environment's lifetime is the allocator's problem
 
-`emitClosure` allocates the environment through `emitHeapAlloc`, which routes to
-the active `realm alloc { }` arena when there is one and to `__azora_alloc`
-otherwise. In the arena case the lifetime is right. In the other case nothing
-frees it, so every closure creation is a small permanent allocation.
+`emitClosure` allocates the environment through `emitHeapAlloc`, which calls
+`__azora_alloc`. Nothing frees it, so every closure creation is a small
+permanent allocation. There is no longer a scoped arena to fall back on: that
+subsystem was unreachable and has been deleted, so this is the only case.
 
 §4.2's escape analysis is what makes the fix possible: a non-escaping closure's
 environment can live on the stack, and only an escaping one needs the heap.
@@ -586,7 +586,7 @@ Nearly nothing, which is the intent.
 - Closures that **write** their captures: the write starts being visible on
   native backends. Today it is silently discarded, so any program affected by
   this is already broken there.
-- Closures passed to `map`/`filter`/`forEach`: unaffected — those parameters are
+- Closures passed to `map`/`filter`/`forEach`: unaffected - those parameters are
   non-escaping by §4.7's default, and a bracket-less lambda is `[&]` by
   §4.5.
 - Closures **returned or stored**: these need a capture list, and a non-`Copy`
@@ -601,7 +601,7 @@ Nearly nothing, which is the intent.
 |-------|-----------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------|
 | 1     | fix §5.1 (a bare lambda takes no `it` unless one is called for; reject `{ -> … }`) and §5.2 (callable type as generic argument)                           | `Parser`, `TypeResolver`                                   |
 | 2     | parse the bracket list: `name: Type` as a context parameter and everything else as a capture, the five capture forms, aliases, and the `&` / `=` defaults | `Parser`, `Ast`                                            |
-| 2b    | resolve each capture — check `Copy` for a copy, `Clone` for a clone, record a `take` as a move — and carry the modes into the IR                          | `TypeResolver`, `IrGenerator`                              |
+| 2b    | resolve each capture - check `Copy` for a copy, `Clone` for a clone, record a `take` as a move - and carry the modes into the IR                          | `TypeResolver`, `IrGenerator`                              |
 | 3     | capture borrows by address in the native backends; program A agrees across all three                                                                      | `LlvmCodegen`, `WasmCodegen`                               |
 | 4     | the `escaping` contextual keyword in type position, and the rule that a non-escaping callable may only be called or passed on                             | `Lexer`, `Parser`, `AzoraSyntaxVocabulary`, `TypeResolver` |
 | 5     | reject a borrow capture in an escaping closure, with the three-fix diagnostic                                                                             | `TypeResolver`                                             |
@@ -611,7 +611,7 @@ Phase 2 needs the lookahead §4.1 describes. `isReceiverLambdaAhead` currently
 requires an identifier and a `:` immediately after the `[`, so it recognises
 neither `[]` nor a capture-only list like `[message.&]`. Both become additional
 entry conditions on the same scan-to-the-matching-`]`-then-`{` test it already
-performs — which is also what keeps a capture list from being read as an array
+performs - which is also what keeps a capture list from being read as an array
 literal.
 
 Phase 3 is the one with real cost and the one that removes the divergence, so it
@@ -627,11 +627,11 @@ information than there is today.
 - **Escape analysis beyond §4.6's four cases.** A whole-program analysis would
   accept more programs and explain fewer of its refusals.
 - **Inferring the capture mode from the body.** An earlier draft of §4 proposed
-  reading the mode off how the body used each name — read means borrow, assign
-  means exclusive borrow, and so on — on the grounds that a capture list could
+  reading the mode off how the body used each name - read means borrow, assign
+  means exclusive borrow, and so on - on the grounds that a capture list could
   not be added without colliding with `[self: Vec2&]{ … }`. There is no
   collision: a context parameter is `name: Type` and a capture is not, so the
-  two never contend for the same shape. Inference was the weaker design anyway —
+  two never contend for the same shape. Inference was the weaker design anyway  - 
   it put a closure's most important property in the last place a reader looks,
   and left a diagnostic with nothing to point at but a name buried in a body.
 - **An introducer keyword before the captures.** `[use message.&]` was
@@ -660,13 +660,13 @@ information than there is today.
    `fin inc = [n.!] { n = n + 1 }; std::println(n); inc()`, which people
    will expect to work.
 4. **Should the `Copy` capture be a copy at creation or at call?** §4.2 says at
-   creation — `retries = 5` after the fact does not reach the closure — which
+   creation - `retries = 5` after the fact does not reach the closure - which
    matches what both native backends do today. At call would match what a borrow
    reads. They differ exactly when the outer binding is written in between:
    program B again, with `Copy` instead of a borrow.
 5. **Does `async [ … ] { … }` replace `async func { … }` or join it?** §4.8
    shows the bracket form is decidable, but two spellings for one thing is the
-   sort of thing this language usually rejects — cf. §5.1 on `{ -> … }`.
+   sort of thing this language usually rejects - cf. §5.1 on `{ -> … }`.
 6. **May a capture list appear on the bare and explicit forms?** `[n.!] { n
    += 1 }` reads fine, and `[n.!] { x: Int -> n += x }` is the same idea with
    parameters. Nothing in the grammar objects; it just has to be decided, since

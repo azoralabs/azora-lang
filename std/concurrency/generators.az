@@ -43,10 +43,10 @@ import std.container.list
  *
  * The builder runs its producer to completion when it is called, collecting
  * every value into the stream. Consumers therefore never observe a partially
- * produced stream, and a producer that never finishes never returns — an
+ * produced stream, and a producer that never finishes never returns - an
  * unbounded `while true { yield … }` does not terminate.
  *
- * @since 0.0.5
+ * @since 0.1
  */
 
 realm std {
@@ -56,7 +56,7 @@ realm std {
      * Passed to the producer as a contextual receiver, which is what lets the
      * body call [yield] without naming it.
      */
-    @Experimental(since: "0.0.5")
+    @Experimental(since: "0.1")
     pack SequenceScope<T> {
         var items: ArrayList<T>
     }
@@ -66,19 +66,19 @@ realm std {
      *
      * The asynchronous counterpart of [SequenceScope]; the body calls [emit].
      */
-    @Experimental(since: "0.0.5")
+    @Experimental(since: "0.1")
     pack FlowCollector<T> {
         var items: ArrayList<T>
     }
 
     /** A synchronous series of values. */
-    @Experimental(since: "0.0.5")
+    @Experimental(since: "0.1")
     pack Sequence<T> {
         fin items: ArrayList<T>
     }
 
     /** An asynchronous series of values. */
-    @Experimental(since: "0.0.5")
+    @Experimental(since: "0.1")
     pack Flow<T> {
         fin items: ArrayList<T>
     }
@@ -92,7 +92,7 @@ realm std {
      * @param builder The sequence under construction.
      * @param value The value to append.
      */
-    @Experimental(since: "0.0.5")
+    @Experimental(since: "0.1")
     func yield[builder: SequenceScope<T>!](value: T) {
         builder.items.add(value)
     }
@@ -103,7 +103,7 @@ realm std {
      * @param collector The flow under construction.
      * @param value The value to append.
      */
-    @Experimental(since: "0.0.5")
+    @Experimental(since: "0.1")
     func emit[collector: FlowCollector<T>!](value: T) {
         collector.items.add(value)
     }
@@ -118,7 +118,7 @@ realm std {
      * @param produce The producer, which emits with [yield].
      * @return The sequence of every yielded value, in order.
      */
-    @Experimental(since: "0.0.5")
+    @Experimental(since: "0.1")
     func sequence<T>(produce: [SequenceScope<T>!] -> Unit): Sequence<T> {
         var builder = SequenceScope<T>(arrayListOf<T>())
         with builder { produce() }
@@ -132,7 +132,7 @@ realm std {
      * @param builder The producer, which emits with [emit].
      * @return The flow of every emitted value, in order.
      */
-    @Experimental(since: "0.0.5")
+    @Experimental(since: "0.1")
     func flow<T>(builder: [FlowCollector<T>!] -> Unit): Flow<T> {
         var collector = FlowCollector<T>(arrayListOf<T>())
         with collector { builder() }
@@ -141,7 +141,7 @@ realm std {
 
     impl Sequence {
         /** Number of values in this sequence. */
-        @Experimental(since: "0.0.5")
+        @Experimental(since: "0.1")
         prop size[self: Self&]: Int = self.items.size
 
         /**
@@ -149,7 +149,7 @@ realm std {
          *
          * @param action Receives each value in turn.
          */
-        @Experimental(since: "0.0.5")
+        @Experimental(since: "0.1")
         func collect[self: Self&](action: (T) -> Unit) {
             self.items.forEach(action)
         }
@@ -157,7 +157,7 @@ realm std {
 
     impl Flow {
         /** Number of values in this flow. */
-        @Experimental(since: "0.0.5")
+        @Experimental(since: "0.1")
         prop size[self: Self&]: Int = self.items.size
 
         /**
@@ -165,7 +165,7 @@ realm std {
          *
          * @param action Receives each value in turn.
          */
-        @Experimental(since: "0.0.5")
+        @Experimental(since: "0.1")
         func collect[self: Self&](action: (T) -> Unit) {
             self.items.forEach(action)
         }

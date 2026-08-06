@@ -20,7 +20,7 @@ package org.azora.lang.frontend
  * Debug-build instrumentation: inserts a `__dbg(<line>)` call before every
  * runtime statement in function/test bodies (recursively into nested blocks).
  *
- * `__dbg` is a compiler builtin — the interpreter forwards it to the attached
+ * `__dbg` is a compiler builtin - the interpreter forwards it to the attached
  * [org.azora.lang.backend.AzoraDebugHost] (which is where breakpoints pause),
  * and it costs nothing when no debugger is attached. Compile-time (`inline`)
  * constructs are left untouched: they never execute at runtime.

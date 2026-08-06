@@ -1,11 +1,12 @@
+This file is compiled to LLVM
 ```
 import std.dynamic
 import std.io
 import std.time
 
-import std::{println, runScript, ScriptError}
+use std::{println, runScript, ScriptError}
 
-func main(): Unit!ScriptError = loop by 1.seconds {
+func main(): Unit ?! ScriptError = loop by 1.seconds {
     fin result: Any = try runScript("script.az", entry: "h1")
 
     when result {
@@ -15,6 +16,8 @@ func main(): Unit!ScriptError = loop by 1.seconds {
 }
 ```
 
+This is an .az file, we are using it as a script for the interpreted injected in the LLVM
+We should have an option if we inject the interpreter on not, that will give us access to std.dynamic
 ```
 import std.io
 

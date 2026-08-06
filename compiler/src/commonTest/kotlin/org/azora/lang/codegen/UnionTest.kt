@@ -26,12 +26,12 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /**
- * `unsafe union` — a C-style untagged union.
+ * `unsafe union` - a C-style untagged union.
  *
  * Every member starts at offset 0 and the whole thing is as wide as its widest
  * member, so writing one member and reading another reinterprets the same
  * storage. Nothing records which member is live, so no check can establish that
- * a read is meaningful — which is why both the declaration and every use ask for
+ * a read is meaningful - which is why both the declaration and every use ask for
  * `unsafe`. For a union that *does* record its live case, see `variant enum`.
  */
 class UnionTest {

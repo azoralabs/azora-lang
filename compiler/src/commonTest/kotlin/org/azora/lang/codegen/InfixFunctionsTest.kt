@@ -34,16 +34,18 @@ class InfixFunctionsTest {
         """.trimIndent()))
     }
 
-    @Test fun topLevelInfxDeclarationIsCallable() {
+    @Test fun infixMacroOverAFreeFunctionIsCallable() {
         assertEquals("42", run("""
             import std.io
 
-            infx Int.scaledBy(factor: Int): Int {
+            macro ${'$'}a @scaledBy ${'$'}b
+
+            func scaledBy(self: Int, factor: Int): Int {
                 return self * factor
             }
 
             func main() {
-                std::println(6 scaledBy 7)
+                std::println(6 @scaledBy 7)
             }
         """.trimIndent()))
     }

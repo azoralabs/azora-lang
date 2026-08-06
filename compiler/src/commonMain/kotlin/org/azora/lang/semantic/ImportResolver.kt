@@ -17,7 +17,7 @@
 package org.azora.lang.semantic
 
 /**
- * Semantic — Import / Dependency Resolution.
+ * Semantic - Import / Dependency Resolution.
  *
  * Resolves cross-module references and builds a dependency graph.
  * In the current minimal language (single-file, no `use` keyword),
@@ -59,7 +59,7 @@ class ImportResolver {
      * @return a list of error messages (empty if successful)
      */
     fun resolve(moduleName: String?, table: SymbolTable): List<String> {
-        // No imports in the minimal language — nothing to resolve.
+        // No imports in the minimal language - nothing to resolve.
         // When `use` is added:
         //   1. Walk AST for UseDecl nodes
         //   2. Look up each module in `modules` map

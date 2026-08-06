@@ -1,4 +1,4 @@
-# Azora Decorators — DIP Implementation Profile
+# Azora Decorators - DIP Implementation Profile
 
 `annot` declares a decorator (attribute); `@Name` applies it. Decorators attach
 compile-time metadata, drive derive generators, and are queried via reflection.
@@ -17,9 +17,11 @@ APPLY ::= @Name
         | @[Name, Name(args), …]                          // grouped, one row
 ```
 
-Targets (`DecoTarget`): `.Pack`, `.Func`, `.Infx`, `.Prop`, `.Task`, `.Flow`,
-`.Solo`, `.Slot`, `.Enum`, `.Deco`, `.Fail`, `.Field`, `.Param`, `.Var`, `.Fin`,
-`.Let`, `.Test`, `.Ctor`, `.Dtor`, `.TypeAlias`, `.Bridge`, `.ImplOper`.
+Targets (`DecoTarget`, declared in `std/core.az`): `.Pack`, `.Func`,
+`.AsyncFunc`, `.Prop`, `.AsyncProp`, `.Enum`, `.VariantEnum`, `.EnumValue`,
+`.Error`, `.VariantError`, `.ErrorValue`, `.UnsafeUnion`, `.UnionValue`,
+`.Annot`, `.Field`, `.Param`, `.Var`, `.Let`, `.Val`, `.Fin`, `.Test`, `.Ctor`,
+`.Dtor`, `.TypeAlias`, `.Bridge`, `.Oper`.
 
 ---
 
@@ -53,7 +55,7 @@ func step() { … }
 @Second
 pack A { … }
 
-@[First, Second]                 // grouped — equivalent to stacking
+@[First, Second]                 // grouped - equivalent to stacking
 pack B { … }
 
 @[Component, System(.Update)]    // grouped with arguments
@@ -74,14 +76,14 @@ annot A for [.Pack, .Func] bind [X for .Pack, Y for .Func]
 `bind` connects a decorator to spec conformances it implies:
 
 ```azora
-annot Serializable for .Pack bind [Serializer, JsonSerializer, AzonSerializer] {
+annot Serializable for .Pack bind [Serializer, AzonSerializer] {
     fin ignoreUnknownFields: Bool = false
     fin encodeDefaults: Bool = true
 }
 ```
 
 Applying `@Serializable` makes the pack conform to the bound specs (via the
-compiler's derive generator — see the `@Derive` decorator in the Compiler
+compiler's derive generator - see the `@Derive` decorator in the Compiler
 Intrinsic DIP).
 
 ## 5. Impl-style application
@@ -109,4 +111,4 @@ See the Reflection DIP.
 
 Compiler-provided decorators (`@Stable`, `@Experimental`, `@Deprecated`,
 `@Derive`, `@Reactive`, `@EnforceNumFields`, `@UncheckedCast`, …) are declared
-with `bridge deco` — see the Compiler Intrinsic DIP.
+with `bridge deco` - see the Compiler Intrinsic DIP.

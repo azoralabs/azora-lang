@@ -36,7 +36,7 @@ use realm std {
      * - `[Context](A, B) -> R`
      * - `[Context] -> R`
      */
-    @Since("0.0.4")
+    @Since("0.1")
     bridge pack Func<PARAMS, RETURN_TYPE, RECEIVERS>
 
     /**
@@ -47,6 +47,6 @@ use realm std {
      * - `async (A, B) -> R`
      * - `async [Context](A) -> R`
      */
-    @Since("0.0.4")
+    @Since("0.1")
     bridge pack Task<PARAMS, RETURN_TYPE, RECEIVERS>
 }

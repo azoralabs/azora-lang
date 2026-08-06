@@ -28,7 +28,7 @@ import kotlin.test.assertTrue
  * Operator families, `DIPs/OPERATOR_OVERLOADING_DIP.MD` §12.1–12.2.
  *
  * `Arithmetic` groups `+ - * / %` and their in-place twins into one spec, and a
- * type implements the part it wants — the rule that makes grouping better than
+ * type implements the part it wants - the rule that makes grouping better than
  * the ten specs it replaces rather than worse.
  */
 class OperatorFamilyTest {
@@ -64,7 +64,7 @@ class OperatorFamilyTest {
         """.trimIndent()))
     }
 
-    /** A named member of a spec is still required — only operators are optional. */
+    /** A named member of a spec is still required - only operators are optional. */
     @Test fun aNamedMemberIsStillRequired() {
         val result = compile("""
             spec Sized {

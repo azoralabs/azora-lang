@@ -96,7 +96,7 @@ class RealmTest {
             }
         """.trimIndent())
 
-        // Parent x should still be 42 — realm's x is separate
+        // Parent x should still be 42 - realm's x is separate
         assertEquals("42", output)
     }
 
@@ -117,7 +117,7 @@ class RealmTest {
         """.trimIndent())
 
         // Sibling realms share one scope, so the second sees the binding the
-        // first made. That sharing is the whole point of a realm — otherwise it
+        // first made. That sharing is the whole point of a realm - otherwise it
         // would just be an extra pair of braces.
         assertEquals("2\n2", output)
     }

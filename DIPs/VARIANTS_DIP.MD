@@ -1,7 +1,7 @@
-# Azora Variants (Tagged Unions) — DIP Implementation Profile
+# Azora Variants (Tagged Unions) - DIP Implementation Profile
 
 `variant` is a **modifier**, not a declaration of its own. It says that the cases
-of the `enum` or `error` it precedes may carry payload data — turning the
+of the `enum` or `error` it precedes may carry payload data - turning the
 payload-free Kotlin-style form into a Rust-style tagged union.
 
 That gives four declarations along two axes: does a case carry data, and can it
@@ -13,7 +13,7 @@ be thrown?
 | **throwable** | `error FileError { NotFound }` | `variant error NetworkError { Timeout(Duration) }` |
 
 A payload on a plain `enum`/`error` is rejected, and the diagnostic names the
-form to use — the payload is the only thing that distinguishes them, so it is
+form to use - the payload is the only thing that distinguishes them, so it is
 also where the choice can be pointed out.
 
 For a union that does **not** record which case is live, see the Unions DIP.
@@ -116,11 +116,11 @@ func fetch(ms: Int): Int ?! NetworkError {
 
 | Declaration | Cases carry data | Throwable | Records which case is live |
 |-------------|------------------|-----------|----------------------------|
-| `enum Color { Red }` | no | no | yes — it *is* the value |
-| `variant enum Result { Ok(Int) }` | yes | no | yes — a tag |
-| `error FileError { NotFound }` | no | yes | yes — it *is* the value |
-| `variant error NetworkError { Timeout(Int) }` | yes | yes | yes — a tag |
-| `unsafe union Value { i: Int }` | — | no | **no** — see the Unions DIP |
+| `enum Color { Red }` | no | no | yes - it *is* the value |
+| `variant enum Result { Ok(Int) }` | yes | no | yes - a tag |
+| `error FileError { NotFound }` | no | yes | yes - it *is* the value |
+| `variant error NetworkError { Timeout(Int) }` | yes | yes | yes - a tag |
+| `unsafe union Value { i: Int }` | - | no | **no** - see the Unions DIP |
 
 - A `variant`'s runtime representation is a tag plus the boxed payload.
 - A payload on a plain `enum`/`error` is a compile error naming the `variant`

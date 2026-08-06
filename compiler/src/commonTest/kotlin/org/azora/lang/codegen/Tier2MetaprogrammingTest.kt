@@ -6,7 +6,7 @@ import org.azora.lang.backend.IrInterpreter
 import kotlin.test.*
 
 /**
- * Tier 2 — types & metaprogramming features ported from azora-lang-old.
+ * Tier 2 - types & metaprogramming features ported from azora-lang-old.
  *
  * Currently covers `inline for` compile-time loop unrolling.
  */

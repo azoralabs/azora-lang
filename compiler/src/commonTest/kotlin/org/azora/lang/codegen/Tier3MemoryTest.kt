@@ -6,7 +6,7 @@ import org.azora.lang.backend.IrInterpreter
 import kotlin.test.*
 
 /**
- * Tier 3 — memory model foundation: `unsafe { }`, `alloc`, `*ptr` deref, `*ptr = v`, `drop`, `T*`.
+ * Tier 3 - memory model foundation: `unsafe { }`, `alloc`, `*ptr` deref, `*ptr = v`, `drop`, `T*`.
  *
  * Pointers are mutable cells (a `Pointer` wrapper) in the interpreter; `alloc`/`*ptr`/
  * `*ptr=v` lower to `__alloc`/`__deref`/`__derefAssign` runtime calls, so no new IR
@@ -35,8 +35,8 @@ class Tier3MemoryTest {
     }
 
     @Test fun aReadOnlyPointerCannotBeWrittenThrough() {
-        // The sigil carries the difference at every site — the type, the
-        // allocation, and the dereference — so the write site alone says whether
+        // The sigil carries the difference at every site - the type, the
+        // allocation, and the dereference - so the write site alone says whether
         // it is allowed.
         val result = Compiler().compile("""
             import std.io
@@ -180,13 +180,13 @@ class Tier3MemoryTest {
         """.trimIndent()))
     }
 
-    @Test fun isolatedProducesIndependentDeepCopy() {
-        // Mutating the isolated copy must not affect the original.
+    @Test fun cloneProducesIndependentDeepCopy() {
+        // Mutating the clone must not affect the original.
         assertEquals("[1, 2, 3]\n[1, 2, 3, 99]", run("""
             import std.io
             func main() {
-                var a = arr@[1, 2, 3]
-                var b = isolated(a)
+                var a = @arr[1, 2, 3]
+                var b = a.clone()
                 b.add(99)
                 std::println(a)
                 std::println(b)
@@ -194,7 +194,22 @@ class Tier3MemoryTest {
         """.trimIndent()))
     }
 
-    @Test fun isolatedDeepCopiesNestedStruct() {
+    @Test fun cloneOnAnArrayIsIndependentOfTheOriginal() {
+        // `impl Clone for Array` lives in `std.container.array`: the standard
+        // library grants the capability, the compiler supplies the body.
+        assertEquals("1\n99", run("""
+            import std.io
+            func main() {
+                var original = @arr[1, 2, 3]
+                var copy = original.clone()
+                copy[0] = 99
+                std::println(original[0])
+                std::println(copy[0])
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun cloneDeepCopiesNestedStruct() {
         assertEquals("7\n1", run("""
             import std.io
             pack Box {
@@ -202,7 +217,7 @@ class Tier3MemoryTest {
             }
             func main() {
                 var original = Box(1)
-                var copy = isolated(original)
+                var copy = original.clone()
                 copy.v = 7
                 std::println(copy.v)
                 std::println(original.v)
@@ -222,41 +237,11 @@ class Tier3MemoryTest {
         assertIs<CompilationResult.Success>(result)
     }
 
-    @Test fun scopeAllocFreesAtExit() {
-        // `scope alloc { }` tracks allocations and frees them at exit.
-        assertEquals("5\nnull", run("""
-            import std.io
-            func main() {
-                var p: Int^ = alloc^ 0
-                scope alloc {
-                    p = alloc^ 5
-                    std::println(*p)
-                }
-                std::println(*p)
-            }
-        """.trimIndent()))
-    }
-
-    @Test fun friendRealmAllocFreesAtExit() {
-        // `scope alloc { }` — arena scoping on top of shared friend scope.
-        assertEquals("7\nnull", run("""
-            import std.io
-            func main() {
-                var q: Int^ = alloc^ 0
-                scope alloc {
-                    q = alloc^ 7
-                    std::println(*q)
-                }
-                std::println(*q)
-            }
-        """.trimIndent()))
-    }
-
     @Test fun pointerArithmeticOffsetAndDeref() {
         assertEquals("10\n20\n30", run("""
             import std.io
             func main() {
-                var p: Int^ = alloc^ arr@[10, 20, 30]
+                var p: Int^ = alloc^ @arr[10, 20, 30]
                 std::println(*p)
                 var p1 = p + 1
                 std::println(*p1)
@@ -269,7 +254,7 @@ class Tier3MemoryTest {
         assertEquals("30\n20", run("""
             import std.io
             func main() {
-                var p: Int^ = alloc^ arr@[10, 20, 30]
+                var p: Int^ = alloc^ @arr[10, 20, 30]
                 var end = p + 2
                 std::println(*end)
                 var back = end - 1
@@ -282,7 +267,7 @@ class Tier3MemoryTest {
         assertEquals("99", run("""
             import std.io
             func main() {
-                var p: Int^ = alloc^ arr@[10, 20, 30]
+                var p: Int^ = alloc^ @arr[10, 20, 30]
                 *(p + 1) = 99
                 std::println(*(p + 1))
             }
@@ -293,7 +278,7 @@ class Tier3MemoryTest {
         assertEquals("3", run("""
             import std.io
             func main() {
-                var p: Int^ = alloc^ arr@[10, 20, 30, 40]
+                var p: Int^ = alloc^ @arr[10, 20, 30, 40]
                 var q = p + 3
                 std::println(q - p)
             }

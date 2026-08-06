@@ -4,9 +4,9 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /**
- * Executes injected stdlib functions natively via `lli` — also the end-to-end
+ * Executes injected stdlib functions natively via `lli` - also the end-to-end
  * proof of the LLVM if-expression lowering (floor/ceil/round are built on it).
- * Generic stdlib functions (erased to Any) are interpreter/JS-only for now.
+ * Generic stdlib functions (erased to Any) are interpreter-only for now.
  */
 class LlvmStdlibExecTest {
 

@@ -1,6 +1,14 @@
 # Azora Language
 
-A statically-typed, multi-target programming language with a clean IR-based compiler pipeline.
+A statically-typed, multi-target programming language with an IR-based compiler
+pipeline, an ownership model with no garbage collector, and compile-time
+execution.
+
+> **Status: pre-release (`0.0.5`).** The language is usable and heavily tested,
+> but nothing here is stable yet: syntax still changes between versions, the
+> standard library's APIs are not settled, and two of the three backends have
+> gaps. See `ROADMAPs/VERSION_0_1_ROADMAP.MD` for exactly what stands between
+> today and a production release.
 
 ## Quick Start
 
@@ -14,8 +22,8 @@ app/build/install/azora/bin/azora run hello.az
 # Type-check
 app/build/install/azora/bin/azora check hello.az
 
-# Generate code
-app/build/install/azora/bin/azora compile js hello.az
+# Emit code for a target
+app/build/install/azora/bin/azora compile llvm hello.az
 
 # REPL
 app/build/install/azora/bin/azora repl
@@ -23,295 +31,561 @@ app/build/install/azora/bin/azora repl
 
 ## Hello World
 
-```
+```azora
+import std.io
+
 func main() {
-    println("Hello, Azora!")
+    std::println("Hello, Azora!")
 }
 ```
+
+The standard library is import-gated: a file sees a module's names only after
+importing it, and only the items actually referenced are injected. A program
+that never touches the stdlib compiles as if it did not exist.
 
 ## Architecture
 
 ```
-Source → Lexer → Parser → AST Validator
-                   ↓
-              Stdlib Injection (only the modules you `import`)
-                   ↓
-              Symbol Collection → Type Resolution ⇄ CTCE → Alloc/Drop → Effect Check
-                   ↓
-              IR Generator → IR Optimizer
-                   ↓
-  ┌──────┬──────┬──────┬────────────┐
-  ↓      ↓      ↓      ↓            ↓
-  JS    Wasm   LLVM   Interpreter  (IR dump)
+Source -> Lexer -> Parser -> AST Validator
+                     |
+                Stdlib Injection (only the modules you import, transitively)
+                     |
+                Symbol Collection -> Type Resolution <-> CTCE -> Alloc/Drop -> Effects
+                     |
+                Derivers (comparison, display, cast, serialization)
+                     |
+                IR Generator -> IR Optimizer
+                     |
+        +------------+------------+
+        |            |            |
+      Wasm         LLVM      Interpreter      (+ IR / AST dump)
 ```
 
-The IR is target-agnostic. **Every** compile lowers the optimized IR to the active
-codegen targets in one pass — `Compiler.compile()` returns JavaScript, WebAssembly,
-and LLVM IR together.
-Adding a new target means one new file under `backend/`.
+The IR is target-agnostic. One `Compiler.compile()` lowers the optimized IR to
+every active backend in a single pass. Adding a target means one new file under
+`backend/`.
 
-## Implemented Features
+---
 
-### Types
-- **Primitives**: `Int`, `UInt`, `Long`, `ULong`, `Byte`, `UByte`, `Short`, `UShort`, `Cent`, `UCent`, `Float`, `Double`, `Decimal`, `Bool`, `Char`, `String`, `Unit`
-- **Compound**: fixed arrays `[T]`, immutable collections `List<T>`/`Set<T>`/`Map<K, V>`, mutable collections `mut List<T>`/`mut Set<T>`/`mut Map<K, V>`, tuples `(A, B)`, function types `(A) -> B`, map values `mapOf("k": v)`
-- **User-defined**: `pack` (structs), `enum`, `variant enum` / `variant error` (tagged unions), `typealias`, `error` (error sets)
-- **Type parameters**: generics (`func<T>`, `pack<T>`) with call-site inference
-- **Variadic generics**: `func<T...> name(first: Int, rest: T...)` — the last type param can be variadic; `rest: T...` collects remaining call args into an array
-- **Spread operator**: `f(arr...)` — splat an array's elements as individual call arguments
-- **Nullable**: `T?` with `null`, `??` (coalesce), `?.` (safe access)
-- **Failable**: `T!ErrSet` — a value of `T` or an error from a declared set
-- **Pointer**: `T*` — a heap reference (`alloc`, `deref ptr` / `*ptr`)
-- **Integer/float promotion**: `2 + 1.5` → `3.5` (auto-widens)
+# Language
 
-### Bindings
-- `var` (rebindable, mutable value), `let` (fixed name, mutable value), `val` (rebindable, frozen value), `fin` (fixed name, frozen value)
-- Type inference: `var x = 5` or `var x: Int = 5`
-- Named arguments: `Point(y: 4, x: 3)`
+Ground truth for this section is the compiler: 71 reserved keywords, listed in
+`AzoraSyntaxVocabulary.kt`.
 
-### Functions
-- Default parameters: `func f(x: Int = 0)`
-- Parameter modifiers: `mut name: T` (mutable parameter), `ref name: T` (by-reference — mutations propagate to caller), `out name: T` (output — callee assigns, caller receives)
-- Generics with inference: `func<T> identity(x: T): T`
-- Named function args: `create(value: 30, label: "A")`
-- Inline functions: `inline func square(x) { ... }` — substituted at call sites
-- Trailing-lambda syntax: `mapOf(items) { x -> x * 2 }`
-- Implicit `it` in single-param lambdas: `{ it + 1 }` (type inferred from context)
+## Types
 
-### Control Flow
-- `if` / `else if` / `else`
-- `while`, `for x in a..b`, `for x in array`, `loop`
-- `for x by N in a..b` (step), `reverse for x in a..b` (descending)
-- `loop { } while cond` (do-while), `for/while/loop … else { }` (else runs unless `break`)
-- Labeled loops: `@lbl for …`, `break @lbl` / `continue @lbl`
-- `break`, `continue`
-- `when expr { patterns -> { body } else -> { body } }` — pattern matching on enums, slots (with destructuring), and literals
-- Exhaustiveness checking on variant and enum types
-
-### Inheritance
-- `node Name(params) { fields; methods }` — an inheritable type (ctor params are stored as fields)
-- `leaf Name(params) : Parent(args) { repl func overrides }` — a final subclass with single inheritance
-- `repl func` — marks a method that overrides the parent's method
-- `virt func` — marks a method as virtual (dynamic dispatch; default in `node`)
-- `base.method(args)` — calls the parent node's implementation (like `super` in other languages)
-- Dynamic dispatch: a parent-typed variable calls the runtime type's method (virtual dispatch)
-- Inherited methods that call `self.method()` dispatch dynamically to the child's override
-- `isCompatible` walks the parent chain for implicit upcasts
-- `base` is a reserved keyword (cannot be used as a variable name)
-
-### Object Model
-- `hook name { body }` — lifecycle callbacks (run after main, in declaration order)
-- `prop name: T { body }` — computed properties (inside `impl`, `node`, `solo` bodies; accessed as `obj.name`)
-- `ctor(params) { body }` — secondary constructors (inside `node`/`solo` bodies)
-- `dtor { body }` — destructors (inside `node` bodies; called by `drop`)
-- `flip { body } flop { body }` — alternating execution: runs the flip body on the first encounter, flop on the next, flip again, etc. (typically used inside loops)
-
-### Object-Oriented
-- **Structs** (`pack`): fields, construction, field access/mutation; empty packs can omit the body (`pack Marker`)
-- **Methods** (`impl pack Type`): methods with implicit `self`, mutation by reference in the pack's declaring file
-- **Extensions** (`func Type.method(...) { ref self -> ... }`): external methods; `shield pack` forces extension receivers to be read-only
-- **Traits** (`spec`): trait declarations with validated implementations (`impl Trait for Type`)
-- **Conversion specs**: compact callback specs such as `spec Into<T>: T { ref self } use as "to${T.typeName}"`; `use as` is a literal member-name template, and `impl Into<String> for Type { ref self -> ... }` adds `.toString`, while `impl as String` is cast-only (`value as String`)
-- **Variadic tuples**: `pack Tuple<T...> where (...T).length >= 2 { inline for Ty in ...T with index { mixin "$index: $Ty" } }`; `tupleOf(elements: ...T): Tuple<...T>` preserves each element's static type
-- **Operator overloading**: `plus`, `minus`, `times`, `div`, `module`, `equals` → `+`, `-`, `*`, `/`, `%`, `==`, `!=`
-- **Index overloading**: standalone `impl oper[] for Type { ref self, index -> ... }` and `impl oper[]= for Type { mut ref self, index, value -> ... }` make user types indexable (`m[i]`, `m[i] = v`)
-- **Infix functions**: `a plus b` syntax (any method callable infix); `infx Type.method(...) { }` declares an extension method usable infix
-- **Named realms**: `realm Name { … }` is a namespace; members accessed as `Name::member`; shared namespace contributions can use `use realm std { … }`
-
-### Error Handling
-- `throw value` — raises any value
-- `try { } catch { name -> body }` — catches with optional binding
-- `expr catch fallback` — catch expression
-- `guard condition else { body }` — early exit
-- **Error sets**: `fail ErrSet { V1, V2 }` declares a set of error variants
-- **Failable types**: `T!ErrSet` — a function returning `T` or an error from `ErrSet`; `fail ErrSet.V` raises one (enforced: a `T!E` function's failures must belong to `E`)
-- `error defer { body }` — defer that runs only when the function exits via an error
-- `rescue { body }` — catch-and-suppress: runs on error and swallows it (the function continues normally)
-
-### Memory Model
-- `alloc <expr>` — heap-allocate a value, returning a `T*` pointer
-- `alloc [10, 20, 30]` — allocate a buffer and return a pointer to the first element (enables pointer arithmetic)
-- `*ptr` dereference, `*ptr = v` store-through
-- `drop <expr>` — release (advisory under GC)
-- `unsafe { … }` — opt-in block
-- `isolated(expr)` — produce an independent deep copy
-- `scope alloc { … }` / `friend scope alloc { … }` — scoped allocation arenas; pointers allocated inside are tracked and freed at realm exit
-- Pointer arithmetic: `ptr + n`, `ptr - n` (offset), `ptr1 - ptr2` (distance), `ptr1 == ptr2` (equality)
-
-### Concurrency
-- **Generators**: `flow name(params): Elem { … yield v }` — a flow is a LAZY producer; its body runs incrementally, suspending at each `yield` until consumed (`for x in flow()`). Infinite flows work; breaking early only runs the body as far as consumed
-- **Tasks**: `task { … }` / `await t` — async with **real parallelism** (runs on `Dispatchers.Default`, a multi-threaded pool); each task gets isolated execution state, so concurrent tasks never race
-- **Channels**: `channel()` with `.send(v)` / `.receive()` / `.close()` for task-to-task communication
-- **Launch**: `launch { … }` — fire-and-forget task (joined before the program exits)
-
-### Decorators
-- `annot Name { fields }` declares an annotation type
-- `@Name`, `@Name(args)`, `@target:Name` applied to declarations (parsed and stored)
-- Accessor names such as `get` and `set` are normal identifiers; property-style callbacks are declared with compact `spec` syntax and `use as`.
-
-### Functional
-- Lambdas with closures: `{ x: Int -> body }`
-- Higher-order functions: `func apply(f: (Int) -> Int, x: Int): Int`
-- Closures capture enclosing scope
-
-### Data
-- **Enums**: `enum Color { Red; Green; Blue }` — variants as named values
-- **Variants (tagged unions)**: `variant enum Option { Some(Int); None }` — cases with payloads + destructuring in `when`; `variant error` for throwable ones
-- **Unions (untagged)**: `unsafe union Value { i: Int; d: Double }` — C-style overlapping storage; usable only in `unsafe { … }`
-- **Tuples**: `(1, "hello")` with positional access `.0`, `.1`
-
-### Operators
-- Arithmetic: `+ - * / %`
-- Comparison: `== != < <= > >=`
-- Logical: `&& || !`
-- Bitwise: `& | ^ ~ << >>`
-- Assignment: `= += -= *= /= %=`, `++`, `--`
-- Null-conditional: `??`, `?.`, and null-conditional compound assignment `?= ?+= ?-= ?*= ?/= ?%=` / `?++ ?--`
-- Casts: `expr as Type`, `expr is Type`, negated `expr is! Type`
-- Compound assignment on fields/indices
-- Raw strings: `"""…"""` (literal, multi-line)
-
-### Strings & Arrays
-- String interpolation: `"hello $name"`, `"result: ${expr}"`
-- Raw strings: `"""…"""` (literal, multi-line, no escapes)
-- String methods: `toUpperCase()`, `toLowerCase()`, `contains()`, `startsWith()`, `endsWith()`, `trim()`, `replace()`, `split()`, `indexOf()`
-- Array methods: `add()`, `insert()`, `remove()`, `contains()`, `indexOf()`, `.length`, `.isEmpty`, `.isNotEmpty`
-- Map literals `["k": v]`, access `m[key]`, mutation `m[key] = v`
-- For-in array iteration: `for item in items { }`
-
-### Metaprogramming (CTCE)
-- `inline var`, `inline let`, `inline val`, `inline fin` — compile-time bindings
-- `inline if condition { }` — conditional compilation
-- `inline for x in a..b { … }` — compile-time loop unrolling
-- `inline { }` / `deepinline { }` — compile-time blocks
-- `noinline` — escape hatch back to runtime
-- `inline func` — body substitution at call sites
-- `inline assert` / `inline trace` — compile-time assertions and traces
-- Constant folding, constant propagation, dead-code elimination
-
-### Resource Management
-- `defer { body }` — runs at function exit (LIFO, even through return/throw)
-
-### Dependency Injection
-- `solo Name { fields; methods }` — declares a singleton struct with one shared instance (lazily created)
-- `wrap Name { solo Type(args); … }` — a DI container that wires singletons with construction args
-- `inject Type` — resolves the singleton instance (same object every time; thread-safe under parallelism)
-- Methods and fields accessible via chaining: `inject Config.get()`
-
-### FFI (Foreign Function Interface)
-- `bridge <target> { func sigs }` — declares extern functions for active backend interop
-- Interpreter resolves common C-math (`sin`, `cos`, `sqrt`, `pow`, …) to `kotlin.math`
-- Codegens emit backend extern surfaces: JavaScript host comments/import expectations and LLVM `declare`
-
-### Reactivity
-- `@Reactive` — enables reactive state/effects on a function, task, or infix; reactive callables require reactive callers
-- `mem x: T = init` — remembered reactive declaration
-- `rem x: T = init` — saveable/serializable remembered reactive declaration
-- `ret x: T = init` — retained reactive declaration
-- `effect { body }` — automatically tracks reactive dependencies
-- `effect x { body }` / `effect [x, y] { body }` — explicit dependencies
-- `effect defer { body }` — owner-exit cleanup
-
-### Backends (targets)
-Every compile produces the active codegen outputs from the same optimized IR:
-
-| Target | Output | Status |
-|--------|--------|--------|
-| **JavaScript** | JavaScript source | Full |
-| **WebAssembly** | WAT (folded S-exprs, linear memory + host imports) | Full |
-| **LLVM IR** | `.ll` text (`lli`/`clang`/`llc` ready) | Partial — placeholders for closures, defer, compound types, pointers |
-| **Interpreter** | In-memory execution | Full — used by tests, REPL, and the playground |
-
-Use `azora compile <target> <file.az>` to emit any of them. Target IDs:
-`js` `wasm` `llvm` `ir` `ast`.
-
-### Standard Library
-A growing standard library lives in `Internal/Std/` (35 modules: `math`, `string`,
-`container`, `algorithm`, `concurrency`, `parallelism`, `result`, `traits`, `io`,
-`os`, `random`, `gfx`, `functional`, `allocator`, `ui`, …). It is **import-gated**:
-a file sees a module's names only after importing it, and only the items actually
-referenced are injected (transitively) — so a program that never touches the stdlib
-compiles exactly as before. User declarations always shadow stdlib items.
-
-```
-import std.math              // unqualified: abs(x), plus math::abs(x)
-import std.{math, string}    // grouped
-import std.*                 // wildcard
-import std.math.abs          // selective
-std::abs(x)         // fully qualified — no import needed
-```
-
-Decorator implementations may target pack fields individually, as a list, or
-with a pack-field wildcard. Decorator and target lists form a cross-product:
+- **Primitives**: `Int` `UInt` `Long` `ULong` `Byte` `UByte` `Short` `UShort`
+  `Cent` `UCent` `Float` `Double` `Decimal` `Bool` `Char` `String` `Unit`
+- **Numeric literals** carry an optional suffix: `3L` `7u` `1.5f` `9D` `2c`
+- **Compound**: `Array<T, N>`, `List<T>` / `Set<T>` / `Map<K, V>` and their
+  mutable forms, `Tuple<A, B>`, function types `(A) -> B`. Types are always
+  written with generics: there is no invented type syntax to learn, and a
+  type's spelling does not depend on what a file imports
+- **User-defined**: `pack` (a struct), `enum`, `variant enum`, `error` sets,
+  `variant error`, `unsafe union`, `typealias`
+- **Nullable** `T?` with `null`, `??` (coalesce), `?.` (safe access)
+- **Failable** `T ?! E`, a `T` or an error from the set `E`
+- **Pointer** `T*`, with `alloc` and `*ptr`
+- Integer and float promotion: `2 + 1.5` is `3.5`
 
 ```azora
-impl SerialName(value: "login") for User::name
-impl [SerialName, SerialRequired] for [User::name, User::password]
-impl SerialIgnore for User::*
+pack Point {
+    var x: Int
+    var y: Int
+}
+
+enum Direction {
+    Up
+    Down
+}
+
+variant enum Shape {
+    Circle(Int)
+    Rect(Int, Int)
+}
 ```
 
-Serialization decorators generate typed value-tree, JSON, and AZON methods.
-Field names, ignored/required fields, unknown-field handling, and default
-encoding are resolved at compile time and lowered through the shared IR for all
-backends.
+## Bindings
 
-### Tooling
-- **`azls`** — language server (`azls.jar`): error-tolerant syntax highlighting,
-  full diagnostics, completion (keywords/builtins/user symbols/in-scope locals),
-  hover signatures, and document symbols. Loaded reflectively (JSON in/out) by
-  Azora Studio, with an optional `prelude` for cross-file intelligence.
-- **Debugger** — `DebugInstrumenter` tags statements with `__dbg(line)` markers
-  (debug builds only); `AzoraDebugSession` drives step/breakpoint execution.
-- **Azora Studio** — the IDE (separate `azora-studio` repo) hosting `azls`.
+Two axes: whether the **name** can be rebound, and whether the **value** can be
+written.
 
-### CLI
-- `azora run <file.az>` — compile and run
-- `azora check <file.az>` — type-check
-- `azora compile <js|wasm|llvm|ir|ast> <file.az>` — output generated code
-- `azora repl` — interactive REPL
-- Multi-file projects: `.az` files in sibling directories auto-discovered and merged
+| | value mutable | value frozen |
+|---|---|---|
+| **name rebindable** | `var` | `val` |
+| **name fixed** | `let` | `fin` |
 
-## Testing
+```azora
+var count = 0          // rebindable, mutable
+fin limit: Int = 10    // fixed, frozen
+```
+
+`threadlocal var` and `threadlocal fin` give per-thread storage.
+
+## Functions
+
+```azora
+func add(a: Int, b: Int = 0): Int {
+    return a + b
+}
+
+func identity<T>(value: T): T { return value }
+```
+
+- Default parameters, named arguments (`add(b: 2, a: 1)`)
+- Generics with call-site inference
+- Variadic generics `...T`, variadic parameters, and the spread `f(arr...)`
+- `inline func` for call-site substitution
+- Trailing lambdas and implicit `it` in single-parameter lambdas
+- Infix calls are declared as macros, not as a function form: `macro $a @to $b`
+- Contracts: `in { }` preconditions, `out { }` postconditions with `it`,
+  `scope { }` bodies
+
+### Receivers and borrows
+
+A method declares its receiver in brackets, and a borrow is written with a
+sigil rather than a keyword:
+
+- `&` shared, read-only
+- `!` exclusive, the callee may write through it
+
+```azora
+impl Point {
+    prop magnitude[self: Self&]: Int { return self.x * self.x + self.y * self.y }
+    func moveBy[self: Self!](dx: Int) { self.x = self.x + dx }
+}
+```
+
+## Control flow
+
+- `if` / `else if` / `else`
+- `while`, `loop { }`, `loop { } while cond` (do-while)
+- `loop <iterable> { }`, which drives the iterable's `reset` and `hasNext`
+- `for x in a..b`, `for x in a..<b`, `for x in array`
+- `for x in a..b by N` (step), `reverse for`
+- `for` / `while` / `loop` with an `else` that runs unless `break` fired
+- Labeled loops: `@lbl for …`, `break @lbl`, `continue @lbl`
+- `when expr { pattern -> { } else -> { } }`, exhaustive over enums and variants,
+  with payload destructuring
+
+## Types with behaviour
+
+- `impl Type { }` adds members; `impl Spec for Type { }` implements a spec
+- `impl Type:: { }` and `impl Spec for Type:: { }` declare statics, reached as
+  `Type::member`
+- `spec` declares a capability: `func`, `prop` and `oper` requirements. A spec
+  may `require` another - `spec Copy requires Clone` - which states what an
+  implementer must already have, not what the spec grants
+- A receiver-less `func` in a spec is a **static** requirement
+- `prop` computed properties, `ctor` secondary constructors, `dtor` destructors
+- Dynamic dispatch on a spec-typed value: the value is a fat pointer carrying
+  a type id and the data, and the call goes through the spec's dispatch table.
+  There is no keyword for it - using a spec as a type is what selects it
+- `realm Name { }` namespaces, members reached as `Name::member`
+
+```azora
+spec Greet {
+    func greet[self: Self&](): String
+}
+
+impl Greet for Point {
+    func greet[self: Self&](): String { return "a point" }
+}
+```
+
+## Operators
+
+Every comparison operator is a member of the spec that governs it, and a type
+states its comparison **once**.
+
+- Arithmetic `+ - * / %`, bitwise `& | ^ ~ << >>`, logical `&& || !`
+- Assignment `= += -= *= /= %=`, `++`, `--`
+- Comparison `== != < <= > >=` and the three-way `<=>`
+- Null-conditional `??` `?.` and compound forms `?+= ?-= ?*= ?/= ?%= ?++ ?--`
+- Casts `as` `as?` `as*`; type tests `is`, `is!`
+- Ranges `a..b` (inclusive), `a..<b` (exclusive), `reverse..`
+
+### Overloading
+
+An operator is declared with `oper`, and the specs that own them are in
+`std.traits`:
+
+```azora
+import std.traits
+
+pack Version {
+    var major: Int
+    var minor: Int
+}
+
+impl [Equal] for Version          // Order requires Equal
+
+impl Order for Version {
+    oper<=> [self: Self&](rhs: Self&): Compare {
+        if self.major < rhs.major { return Compare.Less }
+        if self.major > rhs.major { return Compare.Greater }
+        if self.minor < rhs.minor { return Compare.Less }
+        if self.minor > rhs.minor { return Compare.Greater }
+        return Compare.Equal
+    }
+}
+```
+
+A spec may require another, and `Order requires Equal`: a type that orders must
+also say what equal means. Write the return type - omitting it is currently
+accepted and then fails at runtime (roadmap §1.1).
+
+That one member gives `<`, `<=`, `>` and `>=`: they are rewritten to a single
+`<=>` call, never six separate members that could disagree. `!=` is likewise
+rewritten from `==`.
+
+The spec you implement decides the result type, so it cannot be got wrong:
+`Order` fixes `Compare`, `PartialOrder` fixes `PartialCompare` - which has a
+fourth case, `Unordered`, so `NaN` makes all four relational operators false.
+
+Derivation is a bodyless impl:
+
+```azora
+impl [Equal, Order] for Point     // == , <=> , < <= > >= , != , hash
+```
+
+`==` on a pack that never said what equal means is a **compile error**, not a
+silent structural or address comparison.
+
+**Operator families** group the operators that differ only in which symbol they
+spell, and a type implements the part it wants:
+
+| spec | operators |
+|---|---|
+| `Arithmetic` | `+ - * / %` and their `=` forms |
+| `Bitwise` | `& \| ^ << >>` and their `=` forms, `~` |
+| `Neg` / `Logical` | unary `-` / unary `!` |
+| `Indexable` | `[]` `[]=` `[:]` |
+| `Deref` | `.*` `.^` |
+| `PartialEqual` / `Equal` | `==` |
+| `PartialOrder` / `Order` | `<=>` |
+| `Hash` | `hash` |
+| `Display` | string interpolation |
+| `Cast` / `CheckedCast` / `BitCast` | `as` / `as?` / `as*` |
+
+```azora
+impl Arithmetic for Matrix {
+    oper+= [self: Self!](rhs: Self&) {
+        for i in 0..<self.data.length { self.data[i] += rhs.data[i] }
+    }
+}
+```
+
+`m + n` is then built from `+=` and a clone; `m % n` is an error naming the
+member, not a `%` nobody meant.
+
+## Conversion
+
+Five spellings, and the distinction between them is the point: a **cast** is
+about representation and never allocates; a **conversion** is about meaning and
+may.
+
+| spelling | kind |
+|---|---|
+| `value as T` | cast, total |
+| `value as? T` | cast, checked at runtime, `T?` |
+| `value as* T` | cast, bit reinterpretation |
+| `value.into<T>` | conversion, may allocate or consume |
+| `T::from(v)` | conversion, constructs a `T` |
+
+## Display
+
+A type says how it prints by implementing `Display`, which writes into a
+`Formatter` rather than returning a `String` - so a composite renders its parts
+into one buffer.
+
+```azora
+import std.format
+
+impl Display for Point {
+    func display[self: Self&](formatter: std::Formatter!) {
+        formatter.write("(")
+        formatter.write("${self.x}")
+        formatter.write(")")
+    }
+}
+```
+
+`"${value}"` calls `Display` and nothing else. A pack that has not said how it
+prints is a compile error, not a leak of its field layout into output.
+
+## Memory and ownership
+
+No garbage collector. Ownership is tracked and checked.
+
+- `alloc <expr>` heap-allocates, yielding `T*`; `*ptr` reads, `*ptr = v` writes
+- `purge <expr>` releases
+- Pointer arithmetic: `ptr + n`, `ptr - n`, `ptr1 - ptr2`, `ptr1 == ptr2`
+- `take <expr>` transfers ownership; `lend` hands a borrow the callee returns
+- `expr.clone()` produces an independent deep copy; a `pack` gets it
+  field-wise, and the built-in aggregates always have it
+- `defer { }` runs at exit, LIFO, through returns and throws
+- `unsafe { }` is an opt-in block
+
+## Error handling
+
+- `throw value`, `try { } catch { e -> }`, `expr catch fallback`
+- `rescue { }` catches and suppresses
+- `error ErrSet { A, B }` declares an error set; `T ?! ErrSet` is a failable
+  return, and membership is enforced
+- `error defer { }` runs only on an error exit
+- `return .Variant` where the set is known from context
+
+## Metaprogramming
+
+Compile-time execution runs to a fixed point with type resolution, before code
+generation.
+
+**Bindings**: `inline fin`, `inline let`, `inline var`, `inline val`, and
+`inline name = expr` to re-assign one.
+
+**Blocks**: `inline { }`, `inline scope { }`, and `inline realm { }` at top
+level. `deepinline { }`, `deepinline realm { }` and `deepinline prop` evaluate
+through nested declarations. `noinline` escapes back to runtime.
+
+**Branching and iteration**: `inline if` / `else if` / `else`, and `inline for`,
+which unrolls. There is no `inline while`, `inline loop` or `inline when`.
+
+`inline for` works at statement level, at top level, where each iteration
+generates a declaration:
+
+```azora
+inline for Ty in [A, B] {
+    impl [Equal] for Ty
+}
+```
+
+and **inside an `impl` body**, where each iteration generates a member and
+`$name` splices the loop variable into it:
+
+```azora
+impl Vec3 {
+    inline for axis in @arr["x", "y", "z"] {
+        prop double$axis[self: Self&]: Double = self.$axis * 2.0
+    }
+}
+```
+
+It iterates a compile-time type list (`[A, B]`), a value list (`@arr[…]`), or
+several lists in parallel, and `with index` binds the position.
+
+**Diagnostics**: `inline assert`, `inline trace`, `inline panic`.
+
+**Splicing**: `inline "…"` splices a string as source, including into a
+signature fragment. Names splice too: `oper$op` builds an operator name from a
+loop variable.
+
+**Macros** come in two kinds, and the `@` always leads on both the declaration
+and the call. A prefix macro takes arms:
+
+```azora
+macro @arr {
+    []            => std::emptyArray()
+    [...$items]   => std::arrayOf(...$items)
+}
+
+@arr[1, 2, 3]        // std::arrayOf(1, 2, 3)
+@vec[]               // an empty List
+@vec![1, 2]          // a MutableList
+```
+
+> `@map` and `@map!` are declared in `std`, but the `key: value` argument form
+> they need is **not implemented** at the call site, so a map literal does not
+> compile yet. Build one with `std::mapOf(…)`. Two of the failing tests track
+> this.
+
+An infix macro puts its holes around the name, so the declaration reads like
+the call it enables:
+
+```azora
+macro $a @to $b => std::mapEntry($a, $b)
+
+"key" @to 42         // std::mapEntry("key", 42)
+```
+
+Dropping the `=>` registers the name without a rewrite, so `a @op b` calls the
+free function `op(a, b)`.
+
+A name may end in one of `! ? & * ^`, and the sigil is part of it: `@vec` and
+`@vec!` are two macros. Any word works as a name, including keywords - `@with`,
+`@to`, `@in` - because the leading `@` has already said a name follows. A
+specific container implementation is reached by naming it, `std::hashSetOf(…)`
+or `std::treeMapOf(…)`, and a type is always written with generics rather than
+invented syntax: `List<T>`, `MutableList<T>`, `Array<T, N>`.
+
+**Compile-time type lists** ship with the standard library: `Numbers`,
+`Integers`, `FloatingPoints`, `SignedIntegers`, `UnsignedIntegers`.
+
+**Reflection**: handles, and `inline for … in reflect<*>.withDeco<D>` to
+iterate every type carrying a decorator.
+
+Constant folding, constant propagation and dead-code elimination run on the IR.
+
+## Concurrency
+
+- `async func` and `await`
+- `launch { }` fire-and-forget, joined before exit
+- `delay <ms>` suspends a task
+- `channel()` with `send` / `receive` / `close`
+- Streams are **library types**, not language constructs: `Sequence<T>` is the
+  synchronous series and `Flow<T>` the asynchronous one, so a producer is an
+  ordinary `func` whose return type says which it is
+
+> Threads, `Mutex` and `Atomic` **do not exist yet**. `std/parallelism` names
+> them but does not define them. See the roadmap.
+
+## Reactivity
+
+- `@Reactive` on a function, task or infix
+- `mem` remembered, `rem` saveable, `ret` retained bindings
+- `effect { }` with automatic dependency tracking, `effect x { }` explicit,
+  `effect defer { }` cleanup
+
+## Dependency injection
+
+- `solo Name { }` a lazily created singleton
+- `wrap Name { solo Type(args) }` a container that wires them
+- `inject Type` resolves the instance
+
+## Decorators
+
+- `annot Name { fields }` declares an annotation, optionally `bind` to a spec
+- `@Name`, `@Name(args)`, `@target:Name`
+- Decorator impls may target fields individually, as a list, or with a wildcard;
+  target lists form a cross-product
+- Serialization decorators generate value-tree and AZON methods at
+  compile time
+
+## Modules and visibility
+
+```azora
+module std.math
+import std.container.array
+expose import std.traits.core    // re-exported to importers
+```
+
+- Public by default. A leading underscore makes a member private.
+- `confine` narrows a declaration or module to its package.
+- `expose` marks a module or import as auto-imported.
+- `realm` groups members under a `::` namespace.
+- `realm Name { }` groups members under a `::` namespace; the same realm may
+  be reopened and the contributions merge.
+
+## FFI
+
+`bridge <target> { func sigs }` declares extern functions for the active
+backend. The interpreter resolves common C math intrinsics directly.
+
+---
+
+# Standard library
+
+48 modules under `std/`, one per file, grouped as: `math` `string` `char`
+`container` `algorithm` `functional` `memory` `convert` `io` `time` `random`
+`reactive` `reflection` `serializer` `concurrency` `parallelism` `allocator`
+`traits` `format` `primitive` `result` `error` `config` `core`.
+
+Highlights:
+
+- Containers are a spec plus its implementations, not one concrete type:
+  `List` `Map` `Set` are the specs, `ArrayList` `HashMap` `HashSet` the
+  defaults, with `LinkedHashMap` / `LinkedHashSet` and `TreeMap` / `TreeSet`
+  alongside them. `Deque` `Queue` `Stack` `Array` are packs
+- Smart pointers: `Unique` `Shared` `Weak` `SyncShared`
+- Capabilities: `Clone` `Copy` `Equal` `Order` `Hash` `Display` `Into` `From`
+  `Cast`
+- Algorithms: sort, search, min/max, folds
+- Serialization: a `SerialValue` tree plus **AZON**, the one built-in text
+  format. Any other is written outside `std` by implementing `Serializer<T>`
+
+> The standard library is **not stable**. APIs will change before `0.1` and
+> coverage is uneven. `std.io` is minimal, and `std.filesystem`, `std.os`,
+> `std.testing` and number formatting do not exist yet.
+
+---
+
+# Backends
+
+| Target | Output | Status |
+|---|---|---|
+| **Interpreter** | in-memory execution | Complete. Drives tests, the REPL and the playground |
+| **LLVM** | `.ll` text, runnable under `lli` | Partial. Placeholders remain for closures, `defer`, compound types and pointers |
+| **WebAssembly** | WAT, linear memory and host imports | Partial. `ForEach`, variant literals and `delay` degrade rather than compile |
+
+`azora compile <wasm\|wat\|llvm\|ll\|ir\|ast> <file.az>`
+
+Backend parity is a release gate for `0.1`: a construct a backend cannot
+express should be a compile error for that target, not silently different
+output.
+
+---
+
+# Tooling
+
+- **CLI**: `azora run` / `check` / `compile` / `test` / `repl` / `version` /
+  `help`, with `--debug`, `--release`, `--test`, `--strict` and `--link`.
+  `azora test` runs a file's or directory's `test` blocks. A bare `azora
+  file.az` is the same as `azora run file.az`. Multi-file projects are
+  discovered automatically.
+- **`azls`**: language server with error-tolerant highlighting, diagnostics,
+  completion, hover and document symbols. Go-to-definition, rename and find
+  references are not implemented yet.
+- **Debugger**: `DebugInstrumenter` marks statements in debug builds and
+  `AzoraDebugSession` drives stepping and breakpoints.
+- **Azora Studio** and an IntelliJ plugin host `azls`.
+
+> There is **no package manager** and **no formatter**. Both are `0.1` blockers.
+
+---
+
+# Testing
 
 ```bash
 ./gradlew :compiler:desktopTest
 ```
 
-534 tests covering all features. Tests verify runtime correctness through the IR interpreter.
+**1519 tests** covering the language, the standard library and all three
+backends, including execution tests through the interpreter, `lli` and
+`wat2wasm`.
 
-## Missing Features (Roadmap)
+**75 currently fail.** They are tracked in `ROADMAPs/VERSION_0_1_ROADMAP.MD`
+§10.1 and are a release gate.
 
-### Language
-- **Multi-statement lambda codegen** — best-effort in JavaScript/WASM/LLVM
+---
 
-### Systems (large effort)
-- **Reactive host persistence** — hosts may still add durable storage adapters for `rem` snapshots
+# Roadmap
 
-### Known Limitations
-- Generics use type erasure (field types are `Any` at runtime)
-- LLVM backend uses placeholders for closures, defer, and compound types
-- Concurrency features (`flow`/`task`/`await`/`channel`/`launch`) execute with real parallelism in the interpreter (`Dispatchers.Default`) and lower through the active codegen targets where supported
+`ROADMAPs/VERSION_0_1_ROADMAP.MD` is the complete accounting of what `0.1`
+needs, what is done, and what is only partly done. The largest open items:
 
-## Project Structure
+- Known miscompiles and unsound acceptances
+- Generic erasure: monomorphisation or a documented erasure model
+- Real threads, `Mutex`, `Atomic`
+- A package manager
+- Backend parity, and the LLVM and Wasm gaps
+- 11 unwritten DIPs
+
+---
+
+# Project structure
 
 ```
 azora-lang/
-├── compiler/          IR-based compiler (commonMain + wasmJs) + stdlib injector
-├── app/               CLI entry point (azora run/check/compile/repl)
-├── azls/              Language server + debug session (azls.jar)
-├── build-config/      Version constants
-├── build-logic/       Gradle convention plugins
-├── Internal/Std/      Standard library source (.az files → compiled into AzStdlib)
-├── Internal/Testing/  Integration tests (.az files)
-└── examples/          Example projects (demo-website, demo-multiplatform)
+├── compiler/     IR-based compiler (commonMain + wasmJs), stdlib injector
+├── std/          the standard library, 48 .az modules
+├── app/          CLI entry point
+├── azls/         language server
+├── build-tool/   project configuration (not yet a package manager)
+├── DIPs/         design documents, one per language area
+├── ROADMAPs/     release planning
+└── examples/     sample projects
 ```
 
-## Websites
+# License
 
-- **Book** (`azora-lang-book-website`): 25+ chapter language tutorial
-- **Playground** (`azora-lang-code-website`): in-browser code execution via WASM
-- **Docs** (`azora-lang-docs-website`): stdlib API reference
-
-## License
-
-Apache 2.0
+Apache 2.0. See `LICENSE`.

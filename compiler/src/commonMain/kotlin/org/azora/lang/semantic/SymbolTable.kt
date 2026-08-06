@@ -47,14 +47,14 @@ data class FunctionSymbol(
     val returnTypeRef: TypeRef? = null,
     val isReactive: Boolean = false,
     /**
-     * Indices of parameters declared `x!` — an exclusive borrow the callee may
+     * Indices of parameters declared `x!` - an exclusive borrow the callee may
      * write through. Only a binding whose value is mutable can be passed to one.
      */
     val exclusiveParams: Set<Int> = emptySet(),
-    /** Indices of parameters declared `x&` — a shared borrow, which owns nothing. */
+    /** Indices of parameters declared `x&` - a shared borrow, which owns nothing. */
     val sharedParams: Set<Int> = emptySet(),
     /**
-     * Indices of parameters declared `x: return T` — ownership the caller gets
+     * Indices of parameters declared `x: return T` - ownership the caller gets
      * back when the call ends. Their arguments are written `lend x`.
      */
     val returnedParams: Set<Int> = emptySet(),
@@ -264,8 +264,10 @@ class SymbolTable {
         enums[name] = variants
     }
 
-    /** Returns the variants of an enum, or `null` if no such enum exists. */
-    fun lookupEnum(name: String): List<String>? = enums[name]
+    /** Returns the variants of an enum, or `null` if no such enum exists.
+     *  Accepts a realm-qualified name, like [lookupStruct]. */
+    fun lookupEnum(name: String): List<String>? =
+        enums[name] ?: if ("__" in name) enums[name.substringAfterLast("__")] else null
 
     // -- Fail (error-set) declarations -------------------------------------
 
@@ -278,7 +280,28 @@ class SymbolTable {
     }
 
     /** Returns the variants of an error-set, or `null` if no such error-set exists. */
-    fun lookupFail(name: String): List<String>? = fails[name]
+    fun lookupFail(name: String): List<String>? =
+        fails[name] ?: if ("__" in name) fails[name.substringAfterLast("__")] else null
+
+    /**
+     * The declared name a possibly realm-qualified type reference denotes.
+     *
+     * `Realm::Type` reaches the semantic layer as `Realm__Type`, because `::`
+     * is the same namespace operator that mangles `std::println` into
+     * `std__println`. Types are not realm-mangled, so the qualified spelling
+     * has to be mapped back before the name is used as a type identity.
+     * A name that is already declared is returned untouched, which leaves
+     * genuinely mangled function names alone.
+     */
+    fun canonicalTypeName(name: String): String {
+        if (isDeclaredType(name)) return name
+        val bare = name.substringAfterLast("__")
+        return if (bare != name && isDeclaredType(bare)) bare else name
+    }
+
+    private fun isDeclaredType(name: String): Boolean =
+        structs.containsKey(name) || enums.containsKey(name) ||
+            slots.containsKey(name) || fails.containsKey(name)
 
     // -- Impl methods ------------------------------------------------------
 
@@ -298,13 +321,13 @@ class SymbolTable {
      * bare `oper+` name and is found unchanged.
      *
      * Resolution prefers the overload naming the operand's own type. Failing that it
-     * takes an overload keyed by a type *parameter* — generics are erased, so
+     * takes an overload keyed by a type *parameter* - generics are erased, so
      * `(rhs: T&)` is registered under `T` and matches whatever `T` became. Only when
      * that leaves exactly one candidate is it chosen, so a genuine ambiguity resolves
      * to nothing rather than to an arbitrary overload.
      */
     /**
-     * A *unary* operator's member — the bare name only.
+     * A *unary* operator's member - the bare name only.
      *
      * [lookupOperator] falls back to an operand-keyed candidate when the bare
      * name misses, which is right for a binary operator written once. For a
@@ -330,7 +353,7 @@ class SymbolTable {
     private fun isKnownType(name: String): Boolean =
         name in structs || name in enums || name in specs || name == "Self"
 
-    // -- Universal infix extensions (`infx<K,V> K.to(v)`) -----------------
+    // -- Universal infix calls (`macro $a @to $b`) ------------------------
     /** Infix method name → the generic free function it desugars to (`self` first). */
     private val universalInfix = mutableMapOf<String, String>()
 
@@ -427,7 +450,7 @@ class SymbolTable {
 
     /**
      * Returns whether [typeName] implements [contractName], ignoring type
-     * arguments — used for subtype checks (a pack usable as a spec it implements)
+     * arguments - used for subtype checks (a pack usable as a spec it implements)
      * where the spec's generic arguments are erased.
      */
     fun conformsTo(typeName: String, contractName: String): Boolean =
@@ -454,7 +477,8 @@ class SymbolTable {
 
     // -- Slots (tagged unions) --------------------------------------------
     fun defineSlot(name: String, variants: List<Pair<String, List<IrType>>>) { slots[name] = variants }
-    fun lookupSlot(name: String): List<Pair<String, List<IrType>>>? = slots[name]
+    fun lookupSlot(name: String): List<Pair<String, List<IrType>>>? =
+        slots[name] ?: if ("__" in name) slots[name.substringAfterLast("__")] else null
 
     // -- Local variable scopes ----------------------------------------------
 

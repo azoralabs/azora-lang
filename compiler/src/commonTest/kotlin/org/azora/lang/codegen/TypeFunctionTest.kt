@@ -69,7 +69,7 @@ class TypeFunctionTest {
 
     @Test
     fun aTypePropertyBindingNeedsAnExplicitTypeAnnotation() {
-        // Azora never infers a declaration's type — least of all one that binds a type.
+        // Azora never infers a declaration's type - least of all one that binds a type.
         val failure = assertFailsWith<IllegalStateException> {
             Parser(Lexer("""
                 deepinline prop Widest<...T>: Type {
@@ -286,7 +286,7 @@ class TypeFunctionTest {
     // Ordinary (non-variadic) generic instantiation
     //
     // Validated once per unique resolved combination, where a declared type is
-    // resolved — never during parsing or overload filtering.
+    // resolved - never during parsing or overload filtering.
     // ------------------------------------------------------------------
 
     private val vecDecl = """

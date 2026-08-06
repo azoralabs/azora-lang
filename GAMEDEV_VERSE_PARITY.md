@@ -17,11 +17,11 @@ Azora already has several foundations needed for Verse-like gameplay:
 |---|---|
 | Async work | `task`, `await`, `launch`, channels |
 | Data-first gameplay | `pack`, `variant`, `enum`, generics |
-| Error-aware control | `fail ErrSet`, `T!ErrSet`, `try/catch`, `guard` |
+| Error-aware control | `fail ErrSet`, `T!ErrSet`, `try/catch` |
 | Metadata | `annot`, declaration decorators, parameter query decorators |
 | Services | `solo`, `wrap`, `inject` |
 | Reactivity | `@Reactive`, `mem`, `rem`, `ret`, `effect` |
-| Memory | `alloc`, `drop`, `isolated`, `scope alloc`, pointers |
+| Memory | `alloc`, `purge`, `take`, `clone`, pointers |
 | Tooling | one AST/IR feeding interpreter, LLVM, WASM, and source backends |
 
 Azora Engine `0.0.3` adds the current gameplay layer:
@@ -94,7 +94,7 @@ Verse-style effects are needed, but the spelling should be Azora-native:
 
 ```azora
 func targetInRange(w: World, from: Vec3): Entity effects reads decides {
-    guard w.hasPlayer(from)
+    w.hasPlayer(from)?
     return w.nearestEnemy(from)?
 }
 
@@ -127,7 +127,7 @@ Keep existing Azora error sets separate from Verse-style silent failure:
 - `fail ErrSet.Value` remains typed error unwinding.
 - `decides` marks silent failure inside a failure context.
 - `attempt { ... } else { ... }` opens a transaction.
-- `guard cond`, `x?`, and `arr[i]?` can fail the current attempt.
+- `cond?`, `x?`, and `arr[i]?` can fail the current attempt.
 
 Target example:
 
@@ -209,22 +209,22 @@ func captureSystem(
         race {
             block {
                 loop {
-                    guard anyAttackerOn(point)
+                    anyAttackerOn(point)?
                     addProgress(point, dt.seconds / 5.0)
-                    guard !isCaptured(point)
+                    !isCaptured(point)?
                     sleep(1.frames)
                 }
             }
             block {
                 fin ev = await world.pointCaptured
-                guard ev.point == point
+                (ev.point == point)?
             }
         } else {
             resetProgress(point)
         }
 
         attempt {
-            guard isCaptured(point)
+            isCaptured(point)?
             world.pointCaptured.emit(PointCaptured(point, attackingTeam(point)))
         }
     }

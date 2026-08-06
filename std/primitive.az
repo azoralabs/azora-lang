@@ -23,64 +23,64 @@ import std.traits
  *
  * The built-in scalar types and their operators.
  *
- * Each type is a `bridge pack` — a compiler-provided type with no emitted struct;
+ * Each type is a `bridge pack` - a compiler-provided type with no emitted struct;
  * every backend supplies its representation and machine operations directly. The
  * declarations here give the primitives a reflectable site (so `std::reflect<Int>`
  * and decorator metadata work), a set of `Type::CONSTANT` limits via `impl realm`,
- * the numeric `spec`s (`Number`, `Integer`, …), and — generated with `inline for`
- * metaprogramming — the full operator surface. The operators are `bridge impl`s:
+ * the numeric `spec`s (`Number`, `Integer`, …), and - generated with `inline for`
+ * metaprogramming - the full operator surface. The operators are `bridge impl`s:
  * declarations the compiler recognises and lowers to native machine instructions,
  * so their bodies are never executed.
  *
  * Because this is an `expose mod`, everything here is available in every unit
  * without a `use`.
  *
- * @since 0.0.4
+ * @since 0.1
  */
 
 use realm std {
     /** Boolean truth value: `true` or `false`. */
-    @Since("0.0.4")
+    @Since("0.1")
     bridge pack Bool
 
     /** Signed 8-bit integer (`-128 … 127`). */
-    @Since("0.0.4")
+    @Since("0.1")
     bridge pack Byte
 
     /** Unsigned 8-bit integer (`0 … 255`). */
-    @Since("0.0.4")
+    @Since("0.1")
     bridge pack UByte
 
     /** Signed 16-bit integer (`-32_768 … 32_767`). */
-    @Since("0.0.4")
+    @Since("0.1")
     bridge pack Short
 
     /** Unsigned 16-bit integer (`0 … 65_535`). */
-    @Since("0.0.4")
+    @Since("0.1")
     bridge pack UShort
 
     /** Signed 32-bit integer. The default integer type. */
-    @Since("0.0.4")
+    @Since("0.1")
     bridge pack Int
 
     /** Unsigned 32-bit integer. */
-    @Since("0.0.4")
+    @Since("0.1")
     bridge pack UInt
 
     /** Signed 64-bit integer. */
-    @Since("0.0.4")
+    @Since("0.1")
     bridge pack Long
 
     /** Unsigned 64-bit integer. */
-    @Since("0.0.4")
+    @Since("0.1")
     bridge pack ULong
 
     /** Signed 128-bit integer. */
-    @Since("0.0.4")
+    @Since("0.1")
     bridge pack Cent
 
     /** Unsigned 128-bit integer. */
-    @Since("0.0.4")
+    @Since("0.1")
     bridge pack UCent
 
     /**
@@ -90,47 +90,47 @@ use realm std {
      * them `Long` happens to be right on a 64-bit target and wrong elsewhere,
      * so they get a type that is right by construction.
      */
-    @Experimental(since: "0.0.5")
+    @Experimental(since: "0.1")
     bridge pack ISize
 
     /** Unsigned integer as wide as a pointer on the target. */
-    @Experimental(since: "0.0.5")
+    @Experimental(since: "0.1")
     bridge pack USize
 
     /** 32-bit IEEE-754 binary floating-point number. */
-    @Since("0.0.4")
+    @Since("0.1")
     bridge pack Float
 
     /** 64-bit IEEE-754 binary floating-point number. The default real type. */
-    @Since("0.0.4")
+    @Since("0.1")
     bridge pack Double
 
     /** 128-bit IEEE-754 decimal floating-point number (currency-grade). */
-    @Since("0.0.4")
+    @Since("0.1")
     bridge pack Decimal
 
     /** Marker spec for the integer types (signed and unsigned). */
-    @Since("0.0.4")
+    @Since("0.1")
     spec Integer
 
     /** Marker spec for the unsigned integer types. */
-    @Since("0.0.4")
+    @Since("0.1")
     spec UnsignedInteger
 
     /** Marker spec for the signed integer types. */
-    @Since("0.0.4")
+    @Since("0.1")
     spec SignedInteger
 
     /** Marker spec for the floating-point types. */
-    @Since("0.0.4")
+    @Since("0.1")
     spec FloatingPoint
 
     /** Marker spec for the unsigned integer types and floating-point types. */
-    @Since("0.0.5")
+    @Since("0.1")
     spec UnsignedNumber
 
     /** Marker spec for the signed integer types and floating-point types. */
-    @Since("0.0.5")
+    @Since("0.1")
     spec SignedNumber
 
     /**
@@ -139,7 +139,7 @@ use realm std {
      * @member rank The promotion rank: in a mixed-type expression the operand type with
      *   the higher `rank` is chosen as the result type (see `Promote<…>`).
      */
-    @Since("0.0.4")
+    @Since("0.1")
     spec Number {
         prop rank: Int
     }
@@ -150,7 +150,7 @@ use realm std {
      * @member MIN_VALUE The smallest representable value, `-128`.
      * @member MAX_VALUE The largest representable value, `127`.
      */
-    @Since("0.0.4")
+    @Since("0.1")
     impl Byte:: {
         inline fin MIN_VALUE: Int = -128
         inline fin MAX_VALUE: Int = 127
@@ -162,7 +162,7 @@ use realm std {
      * @member MIN_VALUE The smallest representable value, `0`.
      * @member MAX_VALUE The largest representable value, `255`.
      */
-    @Since("0.0.4")
+    @Since("0.1")
     impl UByte:: {
         inline fin MIN_VALUE: Int = 0
         inline fin MAX_VALUE: Int = 255
@@ -174,7 +174,7 @@ use realm std {
      * @member SIZE_BYTES Size in bytes, `1`.
      * @member SIZE_BITS Size in bits, `8`.
      */
-    @Since("0.0.4")
+    @Since("0.1")
     impl [Byte, UByte]:: {
         inline fin SIZE_BYTES: Int = 1
         inline fin SIZE_BITS: Int = 8
@@ -186,7 +186,7 @@ use realm std {
      * @member MIN_VALUE The smallest representable value, `-32_768`.
      * @member MAX_VALUE The largest representable value, `32_767`.
      */
-    @Since("0.0.4")
+    @Since("0.1")
     impl Short:: {
         inline fin MIN_VALUE: Int = -32_768
         inline fin MAX_VALUE: Int = 32_767
@@ -198,7 +198,7 @@ use realm std {
      * @member MIN_VALUE The smallest representable value, `0`.
      * @member MAX_VALUE The largest representable value, `65_535`.
      */
-    @Since("0.0.4")
+    @Since("0.1")
     impl UShort:: {
         inline fin MIN_VALUE: Int = 0
         inline fin MAX_VALUE: Int = 65_535
@@ -210,7 +210,7 @@ use realm std {
      * @member SIZE_BYTES Size in bytes, `2`.
      * @member SIZE_BITS Size in bits, `16`.
      */
-    @Since("0.0.4")
+    @Since("0.1")
     impl [Short, UShort]:: {
         inline fin SIZE_BYTES: Int = 2
         inline fin SIZE_BITS: Int = 16
@@ -222,7 +222,7 @@ use realm std {
      * @member MIN_VALUE The smallest representable value, `-2_147_483_648`.
      * @member MAX_VALUE The largest representable value, `2_147_483_647`.
      */
-    @Since("0.0.4")
+    @Since("0.1")
     impl Int:: {
         inline fin MIN_VALUE: Int = -2_147_483_648
         inline fin MAX_VALUE: Int = 2_147_483_647
@@ -234,7 +234,7 @@ use realm std {
      * @member MIN_VALUE The smallest representable value, `0`.
      * @member MAX_VALUE The largest representable value, `4_294_967_295`.
      */
-    @Since("0.0.4")
+    @Since("0.1")
     impl UInt:: {
         inline fin MIN_VALUE: Int = 0
         inline fin MAX_VALUE: Int = 4_294_967_295
@@ -246,7 +246,7 @@ use realm std {
      * @member SIZE_BYTES Size in bytes, `4`.
      * @member SIZE_BITS Size in bits, `32`.
      */
-    @Since("0.0.4")
+    @Since("0.1")
     impl [Int, UInt]:: {
         inline fin SIZE_BYTES: Int = 4
         inline fin SIZE_BITS: Int = 32
@@ -258,7 +258,7 @@ use realm std {
      * @member MIN_VALUE The smallest representable value, `-2^63`.
      * @member MAX_VALUE The largest representable value, `2^63 - 1`.
      */
-    @Since("0.0.4")
+    @Since("0.1")
     impl Long:: {
         inline fin MIN_VALUE: Long = -9_223_372_036_854_775_807L -1L
         inline fin MAX_VALUE: Long = 9_223_372_036_854_775_807L
@@ -270,7 +270,7 @@ use realm std {
      * @member MIN_VALUE The smallest representable value, `0`.
      * @member MAX_VALUE The largest representable value, `2^64 - 1`.
      */
-    @Since("0.0.4")
+    @Since("0.1")
     impl ULong:: {
         inline fin MIN_VALUE: Long = 0
         inline fin MAX_VALUE: Long = 18_446_744_073_709_551_615L
@@ -282,7 +282,7 @@ use realm std {
      * @member SIZE_BYTES Size in bytes, `8`.
      * @member SIZE_BITS Size in bits, `64`.
      */
-    @Since("0.0.4")
+    @Since("0.1")
     impl [Long, ULong]:: {
         inline fin SIZE_BYTES: Int = 8
         inline fin SIZE_BITS: Int = 64
@@ -294,7 +294,7 @@ use realm std {
      * @member MIN_VALUE The smallest representable value, `-2^127`.
      * @member MAX_VALUE The largest representable value, `2^127 - 1`.
      */
-    @Since("0.0.4")
+    @Since("0.1")
     impl Cent:: {
         // Pending 128-bit literal support (the literal pipeline is currently Long-wide):
         // inline fin MIN_VALUE: Cent = -170_141_183_460_469_231_731_687_303_715_884_105_728c
@@ -307,7 +307,7 @@ use realm std {
      * @member MIN_VALUE The smallest representable value, `0`.
      * @member MAX_VALUE The largest representable value, `2^128 - 1`.
      */
-    @Since("0.0.4")
+    @Since("0.1")
     impl UCent:: {
         inline fin MIN_VALUE: UCent = 0uc
         // Pending 128-bit literal support (the literal pipeline is currently Long-wide):
@@ -320,7 +320,7 @@ use realm std {
      * @member SIZE_BYTES Size in bytes, `16`.
      * @member SIZE_BITS Size in bits, `128`.
      */
-    @Since("0.0.4")
+    @Since("0.1")
     impl [Cent, UCent]:: {
         inline fin SIZE_BYTES: Int = 16
         inline fin SIZE_BITS: Int = 128
@@ -337,7 +337,7 @@ use realm std {
      * @member SIZE_BYTES Size in bytes, `4`.
      * @member SIZE_BITS Size in bits, `32`.
      */
-    @Since("0.0.4")
+    @Since("0.1")
     impl Float:: {
         inline fin MIN_VALUE: Float = 1.4E-45f
         inline fin MAX_VALUE: Float = 3.4028235E38f
@@ -359,7 +359,7 @@ use realm std {
      * @member SIZE_BYTES Size in bytes, `8`.
      * @member SIZE_BITS Size in bits, `64`.
      */
-    @Since("0.0.4")
+    @Since("0.1")
     impl Double:: {
         inline fin MIN_VALUE: Double = 4.9E-324
         inline fin MAX_VALUE: Double = 1.7976931348623157E308
@@ -384,7 +384,7 @@ use realm std {
      * @member MIN_EXPONENT The smallest decimal exponent, `-6143`.
      * @member MAX_EXPONENT The largest decimal exponent, `6144`.
      */
-    @Since("0.0.4")
+    @Since("0.1")
     impl Decimal:: {
         inline fin MIN_VALUE: Decimal = -9.999999999999999999999999999999999E6144D
         inline fin MAX_VALUE: Decimal =  9.999999999999999999999999999999999E6144D
@@ -399,83 +399,83 @@ use realm std {
     }
 
     /** The unsigned integer types, in ascending width. A compile-time `[Type]` list. */
-    @Since("0.0.4")
+    @Since("0.1")
     typealias UnsignedIntegers = [UByte, UShort, UInt, ULong, UCent]
 
     /** The signed integer types, in ascending width. A compile-time `[Type]` list. */
-    @Since("0.0.4")
+    @Since("0.1")
     typealias SignedIntegers = [Byte, Short, Int, Long, Cent]
 
     /** All integer types. `+` appends two compile-time type lists. */
-    @Since("0.0.4")
+    @Since("0.1")
     typealias Integers = UnsignedIntegers + SignedIntegers
 
     /** The floating-point types, in ascending width. */
-    @Since("0.0.4")
+    @Since("0.1")
     typealias FloatingPoints = [Float, Double, Decimal]
 
     /** Every numeric type: integers followed by floating-point types. */
-    @Since("0.0.4")
+    @Since("0.1")
     typealias Numbers = Integers + FloatingPoints
 
     /** Every unsigned integer type conforms to `UnsignedInteger`. */
-    @Since("0.0.4")
+    @Since("0.1")
     impl UnsignedInteger for UnsignedIntegers
 
     /** Every signed integer type conforms to `SignedInteger`. */
-    @Since("0.0.4")
+    @Since("0.1")
     impl SignedInteger for SignedIntegers
 
     /** Every integer type conforms to `Integer`. */
-    @Since("0.0.4")
+    @Since("0.1")
     impl Integer for Integers
 
     /** Every floating-point type conforms to `FloatingPoint`. */
-    @Since("0.0.4")
+    @Since("0.1")
     impl FloatingPoint for FloatingPoints
 
-    @Since("0.0.5")
+    @Since("0.1")
     impl UnsignedNumber for UnsignedIntegers
 
-    @Since("0.0.5")
+    @Since("0.1")
     impl UnsignedNumber for FloatingPoints
 
-    @Since("0.0.5")
+    @Since("0.1")
     impl SignedNumber for SignedIntegers
 
-    @Since("0.0.5")
+    @Since("0.1")
     impl SignedNumber for FloatingPoints
 
     /**
      * Every integer is totally ordered, and so are the remaining scalars.
      *
-     * Bodyless, so the compiler supplies the members — for a primitive that is
+     * Bodyless, so the compiler supplies the members - for a primitive that is
      * the backend's native comparison rather than a generated field walk. The
      * conformance is the whole declaration, exactly as `impl [Clone, Copy]` is.
      *
      * `Bool` orders `false < true`; `Char` orders by code point; `String`
      * orders lexicographically by code point, which is an order and not a
-     * collation — a locale-aware comparison is a function with a locale
+     * collation - a locale-aware comparison is a function with a locale
      * parameter and never what `<` does.
      */
-    @Since("0.0.5")
+    @Since("0.1")
     impl [PartialEqual, Equal, Order, Hash] for Integers
 
-    @Since("0.0.5")
+    @Since("0.1")
     impl [PartialEqual, Equal, Order, Hash] for [Bool, Char, String]
 
     /**
      * Floating point is **partially** ordered, and never `Equal`.
      *
-     * `NaN != NaN`, so equality is not reflexive and nothing that keys off it —
-     * a hash key, a set's uniqueness — is sound. `f <=> g` answers a
+     * `NaN != NaN`, so equality is not reflexive and nothing that keys off it -
+     * a hash key, a set's uniqueness - is sound. `f <=> g` answers a
      * `PartialCompare`, which is what makes all four relational operators false
      * for a NaN pair instead of the negation of one another.
      */
-    @Since("0.0.5")
+    @Since("0.1")
     impl [PartialEqual, PartialOrder] for FloatingPoints
 
-    inline fin _ranks: Array<Int> = arr@[0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 6, 7]
+    inline fin _ranks: Array<Int> = @arr[0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 6, 7]
 
     // Promotion ranks for every numeric type.
     inline for Ty in Numbers with index {
@@ -489,13 +489,13 @@ use realm std {
          *
          * @member rank The promotion rank of `$Ty`.
          */
-        @Since("0.0.4")
+        @Since("0.1")
         impl Number for Ty:: {
             prop rank: Int = ${_ranks[index]}
         }
     }
 
-    inline for op in arr@["==", "!=", "&", "|", "^"] {
+    inline for op in @arr["==", "!=", "&", "|", "^"] {
         /**
          * Boolean operator $op over Bool operands.
          *
@@ -503,11 +503,11 @@ use realm std {
          * @receiver rhs The right Bool operand.
          * @return Bool
          */
-        @Experimental(since: "0.0.4")
+        @Experimental(since: "0.1")
         bridge oper$op [self: Bool&](rhs: Bool): Bool
     }
 
-    inline for op in arr@["+", "-"] {
+    inline for op in @arr["+", "-"] {
         inline for Ty in SignedIntegers {
             /**
              * Unary arithmetic operator $op on a signed integer type.
@@ -515,7 +515,7 @@ use realm std {
              * @receiver self& The operand; the result has the same type.
              * @return the operand type
              */
-            @Experimental(since: "0.0.4")
+            @Experimental(since: "0.1")
             bridge oper$op [self: Ty&]: Ty
         }
     }
@@ -527,11 +527,11 @@ use realm std {
          * @receiver self& The operand; the result has the same type.
          * @return the operand type
          */
-        @Experimental(since: "0.0.4")
+        @Experimental(since: "0.1")
         bridge oper~ [self: Ty&]: Ty
     }
 
-    inline for op in arr@["+", "-", "*", "/", "%"] {
+    inline for op in @arr["+", "-", "*", "/", "%"] {
         inline for LhsTy in Numbers {
             inline for RhsTy in Numbers {
                 /**
@@ -539,15 +539,15 @@ use realm std {
                  *
                  * @receiver self& The left operand.
                  * @receiver rhs The right operand (any numeric type).
-                 * @return Promote<LhsTy, RhsTy> — the wider of the two operand types
+                 * @return Promote<LhsTy, RhsTy> - the wider of the two operand types
                  */
-                @Experimental(since: "0.0.4")
+                @Experimental(since: "0.1")
                 bridge oper$op [self: LhsTy&](rhs: RhsTy): std::Promote<LhsTy, RhsTy>
             }
         }
     }
 
-    inline for op in arr@["&", "|", "^"] {
+    inline for op in @arr["&", "|", "^"] {
         inline for LhsTy in Integers {
             inline for RhsTy in Integers {
                 /**
@@ -555,15 +555,15 @@ use realm std {
                  *
                  * @receiver self& The left operand.
                  * @receiver rhs The right operand (any integer type).
-                 * @return Promote<LhsTy, RhsTy> — the wider of the two operand types
+                 * @return Promote<LhsTy, RhsTy> - the wider of the two operand types
                  */
-                @Experimental(since: "0.0.4")
+                @Experimental(since: "0.1")
                 bridge oper$op [self: LhsTy&](rhs: RhsTy): std::Promote<LhsTy, RhsTy>
             }
         }
     }
 
-    inline for op in arr@["<<", ">>"] {
+    inline for op in @arr["<<", ">>"] {
         inline for Ty in Integers {
             /**
              * Shift operator $op on an integer type; the shift count is a UInt.
@@ -572,12 +572,12 @@ use realm std {
              * @receiver rhs The shift count.
              * @return the operand type
              */
-            @Experimental(since: "0.0.4")
+            @Experimental(since: "0.1")
             bridge oper$op [self: Ty&](rhs: UInt): Ty
         }
     }
 
-    inline for op in arr@["<", ">", "<=", ">=", "==", "!="] {
+    inline for op in @arr["<", ">", "<=", ">=", "==", "!="] {
         inline for LhsTy in Numbers {
             inline for RhsTy in Numbers {
                 /**
@@ -587,7 +587,7 @@ use realm std {
                  * @receiver rhs The right operand (any numeric type).
                  * @return Bool
                  */
-                @Experimental(since: "0.0.4")
+                @Experimental(since: "0.1")
                 bridge oper$op [self: LhsTy&](rhs: RhsTy): Bool
             }
         }

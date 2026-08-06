@@ -54,11 +54,11 @@ class SmallBatchTest {
         assertEquals("10", run("import std.io\nfunc main() { std::println(5L + 5) }"))
     }
 
-    @Test fun guardCondition() {
+    @Test fun earlyReturnCondition() {
         assertEquals("ok", run("""
             import std.io
             func check(x: Int): String {
-                guard x > 0 else {
+                if !(x > 0) {
                     return "bad"
                 }
                 return "ok"
@@ -67,11 +67,11 @@ class SmallBatchTest {
         """.trimIndent()))
     }
 
-    @Test fun guardConditionFails() {
+    @Test fun earlyReturnConditionTaken() {
         assertEquals("bad", run("""
             import std.io
             func check(x: Int): String {
-                guard x > 0 else {
+                if !(x > 0) {
                     return "bad"
                 }
                 return "ok"

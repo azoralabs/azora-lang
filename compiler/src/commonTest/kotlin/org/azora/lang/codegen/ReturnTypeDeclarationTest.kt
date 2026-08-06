@@ -27,7 +27,7 @@ import kotlin.test.assertTrue
 /**
  * A declaration's return type is never inferred (`DIPs/DO_NOT_INFER_RETURN_TYPE.MD`).
  *
- * An omitted return type is not a request to work it out — it *is* the
+ * An omitted return type is not a request to work it out - it *is* the
  * annotation, and it says `Unit`. Two things are deliberately left out of the
  * rule: a **lambda**, which has no declaration to read, and an **operator
  * overload**, whose result is fixed by the operator's contract.
@@ -125,7 +125,7 @@ class ReturnTypeDeclarationTest {
     // -- branching in return position ---------------------------------------
     //
     // `return if` and `return when` desugar to the statement forms with each
-    // branch returning, so a branch accepts everything a `return` accepts —
+    // branch returning, so a branch accepts everything a `return` accepts -
     // including the `.Variant` error shorthand, which is not a value and so
     // cannot appear in an if-*expression*.
 

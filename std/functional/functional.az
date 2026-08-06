@@ -26,7 +26,7 @@ import std.container.array
  * Provides common functional programming patterns including
  * array transformations, reductions, and predicate operations.
  *
- * @since 0.0.1
+ * @since 0.1
  */
 
 realm std {
@@ -36,7 +36,7 @@ realm std {
      * @param x The value.
      * @return The same value.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func identity<T>(x: T): T = x
 
     /**
@@ -46,7 +46,7 @@ realm std {
      * @param f The transformation function.
      * @return A new array with transformed elements.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func map<T>(arr: Array<T>, f: (T) -> T): Array<T> {
         var result: Array<T> = Array::fill<T>(arr.length)
         for i in 0..<arr.length {
@@ -62,7 +62,7 @@ realm std {
      * @param pred The predicate function.
      * @return A filtered array.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func filter<T>(arr: Array<T>, pred: (T) -> Bool): Array<T> {
         var tmp: Array<T> = Array::fill<T>(arr.length)
         var count = 0
@@ -87,7 +87,7 @@ realm std {
      * @param f The accumulator function taking (accumulator, element).
      * @return The final accumulated value.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func reduce<T>(arr: Array<T>, initial: T, f: (T, T) -> T): T {
         var acc = initial
         for i in 0..<arr.length {
@@ -102,7 +102,7 @@ realm std {
      * @param arr The source array.
      * @param action The function to apply.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func forEach<T>(arr: Array<T>, action: (T) -> Unit) {
         for i in 0..<arr.length {
             action(arr[i])
@@ -116,7 +116,7 @@ realm std {
      * @param pred The predicate function.
      * @return true if at least one element matches.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func any<T>(arr: Array<T>, pred: (T) -> Bool): Bool {
         for i in 0..<arr.length {
             if pred(arr[i]) { return true }
@@ -131,7 +131,7 @@ realm std {
      * @param pred The predicate function.
      * @return true if every element matches.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func all<T>(arr: Array<T>, pred: (T) -> Bool): Bool {
         for i in 0..<arr.length {
             if !pred(arr[i]) { return false }
@@ -146,7 +146,7 @@ realm std {
      * @param pred The predicate function.
      * @return true if no element matches.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func none<T>(arr: Array<T>, pred: (T) -> Bool): Bool {
         for i in 0..<arr.length {
             if pred(arr[i]) { return false }
@@ -161,7 +161,7 @@ realm std {
      * @param n The number of elements to take.
      * @return A new array with at most n elements.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func take<T>(arr: Array<T>, n: Int): Array<T>
     in {
         assert n >= 0 { "take count must be non-negative" }
@@ -181,7 +181,7 @@ realm std {
      * @param n The number of elements to skip.
      * @return A new array without the first n elements.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func drop<T>(arr: Array<T>, n: Int): Array<T>
     in {
         assert n >= 0 { "purge count must be non-negative" }
@@ -205,7 +205,7 @@ realm std {
      * @param b The second array.
      * @return An array of [a[i], b[i]] pairs, up to the shorter length.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func zip<T>(a: Array<T>, b: Array<T>): Array<T> {
         fin len = if a.length < b.length { a.length } else { b.length }
         var result: Array<T> = Array::fill<Array<T>>(len)
@@ -222,7 +222,7 @@ realm std {
      * @param count The number of elements.
      * @return A new array of count elements, all set to value.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func fill<T>(value: T, count: Int): Array<T>
     in {
         assert count >= 0 { "fill count must be non-negative" }
@@ -241,7 +241,7 @@ realm std {
      * @param f The generator function taking the index.
      * @return A new array of generated elements.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func generate<T>(count: T, f: (T) -> T): Array<T> {
         var result: Array<T> = Array::fill<T>(count)
         for i in 0..<count {
@@ -257,7 +257,7 @@ realm std {
      * @param pred The predicate function.
      * @return The count of matching elements.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func countWhere<T>(arr: Array<T>, pred: (T) -> Bool): Int {
         var c = 0
         for i in 0..<arr.length {
@@ -274,7 +274,7 @@ realm std {
      * @param default The default value if no match.
      * @return The first matching element or default.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func findOr<T>(arr: Array<T>, pred: (T) -> Bool, default: T): T {
         for i in 0..<arr.length {
             if pred(arr[i]) { return arr[i] }
@@ -285,7 +285,7 @@ realm std {
     /**
      * Maps each element to an array and flattens the results.
      */
-    @Experimental(since: "0.0.2")
+    @Experimental(since: "0.1")
     func flatMap<T>(arr: Array<T>, f: (T) -> Array<T>): Array<T> {
         // Two-pass: first count total, then fill
         var total = 0
@@ -313,7 +313,7 @@ realm std {
      * Left fold with a separate accumulator type.
      * Since Azora generics are single-type, accumulator uses same type T.
      */
-    @Experimental(since: "0.0.2")
+    @Experimental(since: "0.1")
     func fold<T>(arr: Array<T>, initial: T, f: (T, T) -> T): T {
         var acc: T = initial
         for i in 0..<arr.length {
@@ -325,7 +325,7 @@ realm std {
     /**
      * Like reduce but returns all intermediate accumulator values.
      */
-    @Experimental(since: "0.0.2")
+    @Experimental(since: "0.1")
     func scan<T>(arr: Array<T>, initial: T, f: (T, T) -> T): Array<T> {
         var result: Array<T> = Array::fill<T>(arr.length + 1)
         var acc: T = initial
@@ -341,7 +341,7 @@ realm std {
      * Maps with index: f(index, element).
      * Returns transformed array. Index passed as first element of a 2-element array.
      */
-    @Experimental(since: "0.0.2")
+    @Experimental(since: "0.1")
     func mapIndexed<T>(arr: Array<T>, f: (T, T) -> T): Array<T> {
         var result: Array<T> = Array::fill<T>(arr.length)
         for i in 0..<arr.length {
@@ -353,7 +353,7 @@ realm std {
     /**
      * Calls function N times, collecting results.
      */
-    @Experimental(since: "0.0.2")
+    @Experimental(since: "0.1")
     func repeatCall<T>(count: T, f: () -> T): Array<T> {
         var result: Array<T> = Array::fill<T>(count)
         for idx in 0..<count {
@@ -365,7 +365,7 @@ realm std {
     /**
      * Returns the first element matching the predicate, or default.
      */
-    @Experimental(since: "0.0.2")
+    @Experimental(since: "0.1")
     func firstWhere<T>(arr: Array<T>, pred: (T) -> Bool, default: T): T {
         for i in 0..<arr.length {
             if pred(arr[i]) {
@@ -378,7 +378,7 @@ realm std {
     /**
      * Returns the last element matching the predicate, or default.
      */
-    @Experimental(since: "0.0.2")
+    @Experimental(since: "0.1")
     func lastWhere<T>(arr: Array<T>, pred: (T) -> Bool, default: T): T {
         var result: T = default
         for i in 0..<arr.length {
@@ -393,7 +393,7 @@ realm std {
      * Splits an array into two: elements matching pred and elements not matching.
      * Returns a 2-element array: [matching, nonMatching].
      */
-    @Experimental(since: "0.0.2")
+    @Experimental(since: "0.1")
     func partition<T>(arr: Array<T>, pred: (T) -> Bool): Array<T> {
         var yes: Array<T> = Array::fill<T>(arr.length)
         var no: Array<T> = Array::fill<T>(arr.length)
@@ -421,13 +421,13 @@ realm std {
             nTrim[j] = no[j]
             j += 1
         }
-        return arr@[yTrim, nTrim]
+        return @arr[yTrim, nTrim]
     }
 
     /**
      * Splits array into chunks of given size.
      */
-    @Experimental(since: "0.0.2")
+    @Experimental(since: "0.1")
     func chunk<T>(arr: Array<T>, size: Int): Array<T> {
         fin numChunks = (arr.length + size - 1) / size
         var result: Array<T> = Array::fill<Array<T>>(numChunks)
@@ -450,7 +450,7 @@ realm std {
     /**
      * Flattens a nested array by one level.
      */
-    @Experimental(since: "0.0.2")
+    @Experimental(since: "0.1")
     func flatten<T>(arr: Array<T>): Array<T> {
         // Two-pass: count total, then fill
         var total = 0
@@ -476,7 +476,7 @@ realm std {
     /**
      * Removes all duplicate elements (not just consecutive), preserving first occurrence.
      */
-    @Experimental(since: "0.0.2")
+    @Experimental(since: "0.1")
     func distinct<T>(arr: Array<T>): Array<T> {
         var tmp: Array<T> = Array::fill<T>(arr.length)
         var ri = 0
@@ -502,7 +502,7 @@ realm std {
     /**
      * Returns a new array with elements in the given index range.
      */
-    @Experimental(since: "0.0.2")
+    @Experimental(since: "0.1")
     func slice<T>(arr: Array<T>, start: Int, end: Int): Array<T> {
         fin actualEnd = if end < arr.length { end } else { arr.length }
         fin len = if actualEnd > start { actualEnd - start } else { 0 }

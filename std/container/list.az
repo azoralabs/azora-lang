@@ -37,7 +37,7 @@ import std.convert
  * factories construct it; `listOf` and `emptyList` expose the read-only
  * `List<T>` view, `mutableListOf` exposes `MutableList<T>`.
  *
- * @since 0.0.4
+ * @since 0.1
  */
 
 realm std {
@@ -49,7 +49,7 @@ realm std {
      *
      * @generic T The element type.
      */
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     spec List<T> {
         /** Number of elements. */
         prop size[self: Self&]: Int
@@ -110,7 +110,7 @@ realm std {
      * A List is cloned by duplicating its elements; it is never `Copy`,
      * because duplicating a collection implicitly would hide an allocation.
      */
-    @Since("0.0.5")
+    @Since("0.1")
     impl Clone for List
 
     /**
@@ -122,7 +122,7 @@ realm std {
      *
      * @generic T The element type.
      */
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     spec MutableList<T> : List<T> {
         /** Appends `element` to the end. */
         func add[self: Self&](element: T)
@@ -154,7 +154,7 @@ realm std {
      *
      * @generic T The element type.
      */
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     @Serializable
     pack ArrayList<T> {
         var data: T* = alloc T[8]
@@ -164,11 +164,11 @@ realm std {
 
     /**
      * An ArrayList owns its backing buffer, so it moves and clones but never
-     * copies implicitly — duplicating one allocates, and that cost stays in
+     * copies implicitly - duplicating one allocates, and that cost stays in
      * sight at the call site as `.clone()`.
      */
 
-    @Since("0.0.5")
+    @Since("0.1")
     impl Clone for ArrayList {
         func clone[self: Self&]() {
             var copy = ArrayList<T>()
@@ -185,7 +185,7 @@ realm std {
 
     impl ArrayList<T> {
         /** Doubles the backing buffer, copying existing elements. */
-        @Experimental(since: "0.0.4")
+        @Experimental(since: "0.1")
         func grow[self: Self!]() {
             fin newCap = self.capacity * 2
             let newData = alloc T[newCap]
@@ -380,17 +380,17 @@ realm std {
     // Factories
     // ---------------------------------------------------------------------
 
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     func emptyList<T>(): List<T> {
         return ArrayList<T>()
     }
 
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     func emptyMutableList<T>(): MutableList<T> {
         return ArrayList<T>()
     }
 
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     func listOf<T>(...elements: T): List<T> {
         var result = ArrayList<T>()
         for i in 0..<elements.size {
@@ -399,7 +399,7 @@ realm std {
         return result
     }
 
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     func mutableListOf<T>(...elements: T): MutableList<T> {
         var result = ArrayList<T>()
         for i in 0..<elements.size {
@@ -408,7 +408,7 @@ realm std {
         return result
     }
 
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     func arrayListOf<T>(...elements: T): ArrayList<T> {
         var result = ArrayList<T>()
         for i in 0..<elements.size {
@@ -421,7 +421,7 @@ realm std {
     // Operators
     // ---------------------------------------------------------------------
 
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     oper[] [self: ArrayList<T>&](index: Int): T {
         assert index >= 0 && index < self.size {
             "List index out of bounds"
@@ -429,7 +429,7 @@ realm std {
         return self.data[index]
     }
 
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     oper[]= [self: ArrayList<T>!](index: Int, element: T) {
         assert index >= 0 && index < self.size {
             "List index out of bounds"
@@ -437,7 +437,7 @@ realm std {
         self.data[index] = element
     }
 
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     impl Into<String> for ArrayList<T> {
         prop into[self: Self&]: String {
             var s = "["
@@ -449,7 +449,7 @@ realm std {
         }
     }
 
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     oper== [self: ArrayList<T>&](rhs: List<T>): Bool {
         if self.size != rhs.size { return false }
         for i in 0..<self.size {
@@ -458,12 +458,12 @@ realm std {
         return true
     }
 
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     oper!= [self: ArrayList<T>&](rhs: List<T>): Bool {
         return !(self == rhs)
     }
 
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     impl ArrayList<T> {
         prop hash[self: Self&]: ULong {
             var result = 0 as ULong

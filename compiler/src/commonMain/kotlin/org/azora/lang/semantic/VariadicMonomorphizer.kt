@@ -37,7 +37,7 @@ import org.azora.lang.frontend.TypeTypeArm
 import org.azora.lang.frontend.VariadicFieldTemplate
 
 /**
- * Monomorphizes variadic generic declarations — packs declared with a type
+ * Monomorphizes variadic generic declarations - packs declared with a type
  * vararg (`pack Tuple<...T> where (...T).length >= 2 { inline for Ty in ...T with index { mixin "$index: $Ty" } }`)
  * and functions declared with one (`func<...T> tupleOf(elements: ...T): Tuple<...T>`).
  *
@@ -141,7 +141,7 @@ internal object VariadicMonomorphizer {
             program.items.filterIsInstance<TopLevel.Pack>().associate { it.name to it.fields },
             program.items.filterIsInstance<TopLevel.Enum>().associate { it.name to it.variants },
         )
-        // An impl on an ordinary pack still needs its reflected loops expanded — the
+        // An impl on an ordinary pack still needs its reflected loops expanded - the
         // pack's own fields are known even when it is not monomorphised.
         // A `typealias Vec2i = Vec<Int, 2>` names one specialization, and
         // `Vec2i::zero` has to reach that specialization's static member. Resolving
@@ -218,7 +218,7 @@ private class MonoContext(
     /**
      * Gives each enum-variant argument the position it stands for.
      *
-     * `.ColumnMajor` may be written in a module that has not seen `MatrixOrder` — a
+     * `.ColumnMajor` may be written in a module that has not seen `MatrixOrder` - a
      * library declares the enum, a consumer names one of its variants. The whole
      * program is in view here, so this is where the name becomes a number the
      * compile-time machinery can compare.
@@ -247,7 +247,7 @@ private class MonoContext(
      * The only binding a variadic template has is its pack's length, so this is a
      * thin adapter onto [ConstraintEvaluator] rather than a second implementation:
      * `(...T).length >= 2` evaluates there as an ordinary comparison. A clause the
-     * evaluator cannot decide is accepted — under-enforcing beats rejecting valid
+     * evaluator cannot decide is accepted - under-enforcing beats rejecting valid
      * code.
      */
     private fun checkConstraints(
@@ -260,7 +260,7 @@ private class MonoContext(
         if (clause == null) return
         // A variadic pack binds only its length; an ordinary generic binds each of
         // its type and const parameters, so `where T is Number && N in 2..4` is
-        // decided here — before the specialization is published.
+        // decided here - before the specialization is published.
         val bindings = buildMap {
             if (variadicParam != null) {
                 put(variadicParam, ConstraintEvaluator.Binding.Pack(args.size.toLong()))
@@ -352,7 +352,7 @@ private class MonoContext(
     /**
      * Gives a template's `= 0` the width the specialization chose.
      *
-     * `var x: T = 0` is not a declaration of an `Int` zero — it is a zero of whatever
+     * `var x: T = 0` is not a declaration of an `Int` zero - it is a zero of whatever
      * `T` turns out to be. The literal is retyped here so the field's default matches
      * the field, without loosening what a literal means in code someone wrote for one
      * concrete type.
@@ -422,7 +422,7 @@ private class MonoContext(
                 val type = rewriteType(substituteLoopVar(f.type, tpl.loopVar, argType))
                 out.add(PackField(name, type, mutable = true, default = null))
             }
-            // `mixin "$index: $Ty"` — interpolate the comptime bindings, parse as a field.
+            // `mixin "$index: $Ty"` - interpolate the comptime bindings, parse as a field.
             for (mixin in tpl.mixins) {
                 val field = parseMixinField(renderMixin(mixin, tpl, i, argType))
                 out.add(PackField(field.name, rewriteType(field.type), mutable = true, default = null))
@@ -531,7 +531,7 @@ private class MonoContext(
      * not monomorphised.
      *
      * A monomorphised pack goes through [expandImpls], which knows the specialization.
-     * An ordinary pack's fields are already concrete, so the same expansion applies —
+     * An ordinary pack's fields are already concrete, so the same expansion applies -
      * this is the only difference between the two cases.
      */
     fun expandPlainImplReflection(item: TopLevel, program: Program): TopLevel {
@@ -549,7 +549,7 @@ private class MonoContext(
      * Emits one copy of each member that is generic over its own const parameters.
      *
      * `oper * <N: Int> [self: Int&](rhs: Vec<Ty, N>&)` is not a member of a
-     * monomorphised pack — it lives on `Int` — yet its body depends on `N`, which
+     * monomorphised pack - it lives on `Int` - yet its body depends on `N`, which
      * only a `Vec` specialization fixes. So the specializations are what drive it:
      * one copy per `Vec<Ty, N>` that exists, with `N` bound.
      *
@@ -576,7 +576,7 @@ private class MonoContext(
                         ?: return@mapNotNull null
                     specializeConstGenericMember(method, bindings + (application.name to TypeRef.Named(mangled)), mangled)
                 }
-            // With no specialization to bind it, the member cannot be emitted at all —
+            // With no specialization to bind it, the member cannot be emitted at all -
             // its body asks for a layout nothing has chosen.
             copies.ifEmpty { emptyList() }
         }
@@ -608,7 +608,7 @@ private class MonoContext(
     /**
      * Binds an application's parameters from one concrete specialization.
      *
-     * `Vec<Ty, N>` against `Vec<Int, 2>` binds `N` to 2 — and only when `Ty` really is
+     * `Vec<Ty, N>` against `Vec<Int, 2>` binds `N` to 2 - and only when `Ty` really is
      * `Int`, so a member written for one element type is not emitted for another.
      */
     private fun matchApplication(
@@ -748,7 +748,7 @@ private class MonoContext(
             ?: return@flatMap emptyList()
         val struct = packs[mangled] ?: return@flatMap emptyList()
         // The specialization binds the pack's parameters, and its impl's members are
-        // written against those same names — `ctor (all: T)` on `Vec<Int, 3>` takes an
+        // written against those same names - `ctor (all: T)` on `Vec<Int, 3>` takes an
         // Int. Without this the member would keep the template's `T`, which names
         // nothing once the pack is concrete.
         val packTemplate = packTemplates[templateName]
@@ -772,7 +772,7 @@ private class MonoContext(
                     ConstraintEvaluator.Outcome.Violated
             }.map { method ->
                 val selfType = TypeRef.Named(mangled)
-                // A member's own type parameters shadow the pack's — but only the ones
+                // A member's own type parameters shadow the pack's - but only the ones
                 // it really declares: the impl's parameters are carried on its members
                 // too, and those are exactly what the specialization binds.
                 val ownTypeParams = method.typeParams.toSet() - template.typeParams.toSet() -
@@ -856,7 +856,7 @@ private class MonoContext(
     /**
      * The `__reflect(X).fields` call [expr] is, or null when it is something else.
      *
-     * `X` is `Self` inside an impl, or a named pack — possibly applied, as in
+     * `X` is `Self` inside an impl, or a named pack - possibly applied, as in
      * `reflect<Vec<U, N>>`, where the arguments choose the layout being asked about.
      */
     private fun reflectedFieldsOf(expr: Expr): Expr.Call? {
@@ -1011,7 +1011,7 @@ private class MonoContext(
             if (expr is Expr.Identifier && expr.name == binding.indexName) {
                 return Expr.IntLiteral(binding.index.toLong(), expr.line, expr.column, expr.length)
             }
-            // `self.${f.name}` — a spliced member name folds to the field it names, so
+            // `self.${f.name}` - a spliced member name folds to the field it names, so
             // everything after this sees an ordinary member access.
             if (expr is Expr.Member && expr.nameExpr != null) {
                 val folded = foldFieldNameExpr(expr.nameExpr, binding)
@@ -1039,7 +1039,7 @@ private class MonoContext(
         }
         return when (expr) {
             is Expr.Binary -> expr.copy(left = substituteReflectedExpr(expr.left, binding), right = substituteReflectedExpr(expr.right, binding))
-            // `Self(inline for f in reflect<Self>.fields { … })` — the loop becomes one
+            // `Self(inline for f in reflect<Self>.fields { … })` - the loop becomes one
             // argument per field, so a constructor is written once whatever the layout.
             is Expr.Call -> expr.copy(args = expr.args.flatMap { arg -> expandArgument(arg, binding) })
             is Expr.Unary -> expr.copy(operand = substituteReflectedExpr(expr.operand, binding))
@@ -1082,13 +1082,13 @@ private class MonoContext(
 
     fun rewriteTopLevel(item: TopLevel): TopLevel? = withSourceLine(item.sourceLine()) {
         when (item) {
-        // Drop variadic templates — they are replaced by their monomorphized instances.
+        // Drop variadic templates - they are replaced by their monomorphized instances.
         is TopLevel.Pack -> if (item.variadicParam != null) null
             else item.copy(fields = item.fields.map { it.copy(type = rewriteType(it.type)) })
         is TopLevel.Func -> if (item.decl.name in funcTemplates) null
             else item.copy(decl = rewriteFuncDecl(item.decl))
         // An impl on a monomorphised pack is a template: `expandImpls` emits one copy
-        // per specialization, so the template itself must not survive — its members
+        // per specialization, so the template itself must not survive - its members
         // still mention the pack's parameters and there is no type to check them on.
         is TopLevel.Impl -> if (item.typeName in packTemplates) null else item.copy(
             traitArgs = item.traitArgs.map(::rewriteType),
@@ -1166,7 +1166,12 @@ private class MonoContext(
             ret = rewriteType(ref.ret),
             receivers = ref.receivers.map(::rewriteType),
         )
-        is TypeRef.Tuple -> expandShapeTypeMacro(TypeFormKind.TUPLE, ref.elements)
+        // `(A, B)` in type position was grammar supplied by a `.Type` macro, and
+        // `.Type` is gone. The type itself is not: write `Tuple<A, B>`.
+        is TypeRef.Tuple -> error(
+            "parenthesized tuple types were removed with 'macro .Type'; " +
+                "write 'Tuple<${ref.elements.joinToString(", ") { it.displayName() }}>'",
+        )
         is TypeRef.Nullable -> ref.copy(inner = rewriteType(ref.inner))
         is TypeRef.Failable -> ref.copy(ok = rewriteType(ref.ok))
         is TypeRef.Pointer -> ref.copy(inner = rewriteType(ref.inner))
@@ -1299,7 +1304,7 @@ private class MonoContext(
      * Records which specialization each type alias names.
      *
      * `Alias::member` is spelled `Alias__member` by the time it reaches here, so the
-     * alias has to be resolved before any body is rewritten — hence a pass of its
+     * alias has to be resolved before any body is rewritten - hence a pass of its
      * own, ahead of the rest.
      */
     fun resolveStaticAliases(items: List<TopLevel>) {
@@ -1397,7 +1402,7 @@ private class MonoContext(
     /** Concrete element types for a variadic call, from explicit type args or inferred args; null if unknown. */
     private fun resolveElementTypes(call: Expr.Call): List<TypeRef>? {
         // Inside a specialized static member, `Vec<T, N>(0)` names that member's own
-        // specialization — the parameters have values here.
+        // specialization - the parameters have values here.
         if (call.typeArgs.isNotEmpty()) return call.typeArgs.map { substituteParams(it, typeBindings) }
         val inferred = call.args.map { inferExprType(it) }
         return if (inferred.all { it != null }) inferred.filterNotNull() else null

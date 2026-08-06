@@ -28,7 +28,7 @@ import std.convert
  * with push, pop, and peek operations.
  * Uses pointer-based storage with explicit capacity management.
  *
- * @since 0.0.1
+ * @since 0.1
  */
 
 realm std {
@@ -40,7 +40,7 @@ realm std {
      *
      * @generic T The type of elements stored in this stack.
      */
-    @Since("0.0.1")
+    @Since("0.1")
     @Serializable
     pack Stack<T> {
         var data: T* = alloc T[8]
@@ -49,7 +49,7 @@ realm std {
     }
 
     /** Constructs an empty `Stack<T>` with default capacity. */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     impl ctor() for Stack<T> { self! ->
         self.data = alloc T[8]
         self.size = 0
@@ -61,17 +61,17 @@ realm std {
         // --- Properties ---
 
         /** Whether the stack contains no elements. */
-        @Since("0.0.1")
+        @Since("0.1")
         prop isEmpty[self: Self&]: Bool = size == 0
 
         /** Whether the stack contains at least one element. */
-        @Since("0.0.1")
+        @Since("0.1")
         prop isNotEmpty[self: Self&]: Bool = size > 0
 
         // --- Internal ---
 
         /** Doubles the backing buffer's capacity, copying existing elements. */
-        @Experimental(since: "0.0.1")
+        @Experimental(since: "0.1")
         func growStack() {
             fin newCap = capacity * 2
             let newData = alloc T[newCap]
@@ -91,7 +91,7 @@ realm std {
          *
          * @param element The element to push.
          */
-        @Experimental(since: "0.0.1")
+        @Experimental(since: "0.1")
         func push(element: T) {
             if size >= capacity { self.growStack() }
             data[size] = element
@@ -104,7 +104,7 @@ realm std {
          * @return The removed top element.
          * @throws AssertionError if the stack is empty.
          */
-        @Experimental(since: "0.0.1")
+        @Experimental(since: "0.1")
         func pop(): T {
             assert size > 0 { "Stack is empty" }
             fin top = data[size - 1]
@@ -118,14 +118,14 @@ realm std {
          * @return The top element.
          * @throws AssertionError if the stack is empty.
          */
-        @Experimental(since: "0.0.1")
+        @Experimental(since: "0.1")
         func peek(): T {
             assert size > 0 { "Stack is empty" }
             return data[size - 1]
         }
 
         /** Removes all elements from the stack. */
-        @Experimental(since: "0.0.1")
+        @Experimental(since: "0.1")
         func clear() {
             fin oldData = data
             self.data = alloc T[8]
@@ -141,7 +141,7 @@ realm std {
          *
          * @return A string in the format "[bottom, ..., top]".
          */
-        @Experimental(since: "0.0.1")
+        @Experimental(since: "0.1")
         func toString(): String {
             var s = "["
             for i in 0..<size {

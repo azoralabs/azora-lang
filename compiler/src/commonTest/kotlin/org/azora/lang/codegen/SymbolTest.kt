@@ -215,7 +215,7 @@ class SymbolTest {
 
     @Test
     fun func_omittedReturnTypeIsUnitNotInferred() {
-        // An omitted return type is not "work it out for me" — it is the
+        // An omitted return type is not "work it out for me" - it is the
         // annotation, and it says Unit. Returning a value is then an error that
         // names the fix.
         val result = Compiler().compile("""

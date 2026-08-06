@@ -45,7 +45,7 @@ class DecoratorConformanceTest {
         assertTrue(result.errors.isEmpty(), result.errors.toString())
         assertTrue(result.symbolTable.implements("UserId", "Serializable"))
         // A pack also derives its ownership capabilities, so this is not the only
-        // conformance on `UserId` — what matters is that this one is a decorator's.
+        // conformance on `UserId` - what matters is that this one is a decorator's.
         assertTrue(
             result.symbolTable.allConformances()
                 .single { it.typeName == "UserId" && it.contractName == "Serializable" }
@@ -87,7 +87,7 @@ class DecoratorConformanceTest {
 
     @Test fun appliedBoundDecoratorDerivesGenericSpecConformance() {
         val result = analyze("""
-            @Experimental(since: "0.0.4")
+            @Experimental(since: "0.1")
             annot Serializable bind Serializer {
                 fin ignoreUnknownFields: Bool = false
                 fin encodeDefaults: Bool = true
@@ -191,9 +191,8 @@ class DecoratorConformanceTest {
     @Test fun decoratorImplDerivesEverySerializerContract() {
         val result = analyze("""
             spec Serializer<T>
-            spec JsonSerializer<T>
             spec AzonSerializer<T>
-            annot Serializable for .Pack bind [Serializer, JsonSerializer, AzonSerializer] {
+            annot Serializable for .Pack bind [Serializer, AzonSerializer] {
                 fin ignoreUnknownFields: Bool = false
                 fin encodeDefaults: Bool = true
             }
@@ -206,7 +205,6 @@ class DecoratorConformanceTest {
         val user = listOf(TypeRef.Named("User"))
         assertTrue(result.symbolTable.implements("User", "Serializable"))
         assertTrue(result.symbolTable.implements("User", "Serializer", user))
-        assertTrue(result.symbolTable.implements("User", "JsonSerializer", user))
         assertTrue(result.symbolTable.implements("User", "AzonSerializer", user))
     }
 

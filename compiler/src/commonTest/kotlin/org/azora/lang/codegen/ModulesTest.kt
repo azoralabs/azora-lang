@@ -54,7 +54,7 @@ class ModulesTest {
     }
 
     @Test fun aTypeReachesItsOwnPrivateMembers() {
-        // The restriction is on other types, not on the declaring one — otherwise
+        // The restriction is on other types, not on the declaring one - otherwise
         // a private field would be write-only.
         assertEquals("8", run("""
             import std.io

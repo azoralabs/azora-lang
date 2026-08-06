@@ -23,14 +23,14 @@ import std.container.array
  *
  * Additional algorithm utilities: merge sort, sortBy, groupBy, etc.
  *
- * @since 0.0.1
+ * @since 0.1
  */
 
 realm std {
     /**
      * Merge sort - O(n log n) stable sorting algorithm.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func mergeSort<T>(arr: Array<T>): Array<T> {
         if arr.length <= 1 {
             return arr
@@ -57,7 +57,7 @@ realm std {
     /**
      * Merges two sorted arrays into one sorted array.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func merge<T>(a: Array<T>, b: Array<T>): Array<T> {
         var result: Array<T> = Array::fill<T>(a.length + b.length)
         var ri = 0
@@ -90,7 +90,7 @@ realm std {
      * Sort by a key function - applies key to each element and sorts by key value.
      * Uses insertion sort on key-value pairs.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func sortBy<T>(arr: Array<T>, key: (T) -> T): Array<T> {
         var result: Array<T> = Array::fill<T>(arr.length)
         var i = 0
@@ -117,7 +117,7 @@ realm std {
      * Groups elements by a key function.
      * Returns array of arrays where each sub-array has elements with the same key.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func groupBy<T>(arr: Array<T>, key: (T) -> T): Array<T> {
         var keys: Array<T> = Array::fill<T>(arr.length)
         var groups: Array<T> = Array::fill<T>(arr.length)
@@ -132,7 +132,7 @@ realm std {
             }
             if found == -1 {
                 keys[keyCount] = k
-                groups[keyCount] = arr@[arr[i]]
+                groups[keyCount] = @arr[arr[i]]
                 keyCount += 1
             } else {
                 var g: Array<T> = groups[found]
@@ -151,7 +151,7 @@ realm std {
     /**
      * Interleaves two arrays: [a1, b1, a2, b2, ...].
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func interleave<T>(a: Array<T>, b: Array<T>): Array<T> {
         var result: Array<T> = Array::fill<T>(a.length + b.length)
         var ri = 0
@@ -173,7 +173,7 @@ realm std {
     /**
      * Returns a sliding window of given size over the array.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func windows<T>(arr: Array<T>, size: Int): Array<T> {
         fin count = if arr.length >= size { arr.length - size + 1 } else { 0 }
         var result: Array<T> = Array::fill<Array<T>>(count)
@@ -194,7 +194,7 @@ realm std {
     /**
      * Returns array with elements at even indices.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func evens<T>(arr: Array<T>): Array<T> {
         fin count = (arr.length + 1) / 2
         var result: Array<T> = Array::fill<T>(count)
@@ -211,7 +211,7 @@ realm std {
     /**
      * Returns array with elements at odd indices.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func odds<T>(arr: Array<T>): Array<T> {
         fin count = arr.length / 2
         var result: Array<T> = Array::fill<T>(count)

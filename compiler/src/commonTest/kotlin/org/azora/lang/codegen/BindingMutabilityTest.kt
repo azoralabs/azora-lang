@@ -110,7 +110,7 @@ class BindingMutabilityTest {
 
     @Test fun indexAssignmentFollowsTheValueAxis() = rejects("""
         func main() {
-            val xs = arr@[1, 2, 3]
+            val xs = @arr[1, 2, 3]
             xs[0] = 9
         }
     """, "cannot assign by index through 'xs'")
@@ -181,7 +181,7 @@ class BindingMutabilityTest {
     """)
 
     // A global is shared, and what makes sharing unsafe is that the name can be
-    // rebound — so `val` is excluded from top level for the same reason as `var`.
+    // rebound - so `val` is excluded from top level for the same reason as `var`.
     @Test fun aTopLevelValIsRejectedLikeATopLevelVar() = rejects("""
         val counter: Int = 0
         func main() {

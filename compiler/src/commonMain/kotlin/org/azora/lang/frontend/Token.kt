@@ -89,8 +89,8 @@ enum class TokenType {
     VAR, FIN, LET, VAL, FUNC, RETURN, IF, ELSE, INLINE, DEEPINLINE, NOINLINE, REALM, SCOPE,
     TEST, ASSERT, TRACE, PANIC, MACRO,
     FOR, WHILE, LOOP, IN, BREAK, CONTINUE,
-    // `pack` structs and `enum` variants. (`union` is contextual — see
-    // Parser.isUnionDeclAhead — so that `Set.union(other)` keeps working.)
+    // `pack` structs and `enum` variants. (`union` is contextual - see
+    // Parser.isUnionDeclAhead - so that `Set.union(other)` keeps working.)
     PACK, ENUM, WHEN,
     THROW, TRY, CATCH,
     IMPL, SPEC,
@@ -107,13 +107,13 @@ enum class TokenType {
     AMP_EQUAL, PIPE_EQUAL, CARET_EQUAL, SHIFT_LEFT_EQUAL, SHIFT_RIGHT_EQUAL,
     PLUS_PLUS, MINUS_MINUS,
     AMP, PIPE, CARET, TILDE, SHIFT_LEFT, SHIFT_RIGHT,
-    AS, GUARD, IS,
+    AS, IS,
     QMARK, QMARK_QMARK, QMARK_DOT, QMARK_EQUAL, QMARK_BANG,
     // Null-conditional compound assignment / inc-dec: ?+= ?-= ?*= ?/= ?%= ?++ ?--
     QMARK_PLUS_EQUAL, QMARK_MINUS_EQUAL, QMARK_STAR_EQUAL, QMARK_SLASH_EQUAL, QMARK_PERCENT_EQUAL,
     QMARK_PLUS_PLUS, QMARK_MINUS_MINUS,
     NULL,
-    // `import path` — module imports. `use` is the separate marker that opens a
+    // `import path` - module imports. `use` is the separate marker that opens a
     // realm with its members left bare (`use realm std { … }`) and names a foreign
     // symbol in a bridge or spec (`use as "…"`).
     IMPORT, USE,
@@ -122,28 +122,26 @@ enum class TokenType {
     REVERSE,
     // `@label` for labeled loops and `break @label` / `continue @label`.
     AT,
-    // `infx Type.method(params)` — extension method usable as an infix call (`a method b`).
-    INFX,
     // Contextual callable receivers: `with value { ... }` / `with [a, b] { ... }`.
     WITH,
-    // `oper[]` / `oper[]=` — index-operator overloading inside impl blocks.
+    // `oper[]` / `oper[]=` - index-operator overloading inside impl blocks.
     OPER,
-    // `error ErrSet { … }` — error-set declaration; also `error <expr>` throw sugar.
+    // `error ErrSet { … }` - error-set declaration; also `error <expr>` throw sugar.
     ERROR,
-    // Memory model: `alloc <expr>`, `purge <expr>`, `deref <expr>`, `unsafe { }`, `isolated(expr)`.
-    ALLOC, PURGE, UNSAFE, ISOLATED,
+    // Memory model: `alloc <expr>`, `purge <expr>`, `deref <expr>`, `unsafe { }`.
+    ALLOC, PURGE, UNSAFE,
     // Ownership: `take <expr>` transfers ownership. Duplication is the
     // `Clone` spec's `clone()` method, not a keyword.
     TAKE,
     // Concurrency: `flow name(...) { … yield v }` generators, `task { }` / `await`, `launch { }`.
     AWAIT,
-    // `delay <ms>` — suspend the current task for a number of milliseconds.
+    // `delay <ms>` - suspend the current task for a number of milliseconds.
     DELAY,
-    // FFI: `bridge <target> { func sigs }` — extern function declarations.
+    // FFI: `bridge <target> { func sigs }` - extern function declarations.
     BRIDGE,
     // DI: `solo Name { … }` singleton, `inject Type` resolve, `wrap Name { … }` container.
     SOLO, INJECT, WRAP,
-    // Error handling: `rescue { … }` — catch-and-suppress.
+    // Error handling: `rescue { … }` - catch-and-suppress.
     RESCUE,
     // Variadic generics: `...T` type params, `args: ...T` variadic params, `...arr` spread.
     ELLIPSIS,
@@ -154,16 +152,15 @@ enum class TokenType {
     // `out { … }` postcondition contracts.
     OUT,
     // Visibility: `expose` (public), `confine` (private), `protect` (protected).
-    // `shield` — a pack/field modifier: externally read-only, internally mutable.
+    // `shield` - a pack/field modifier: externally read-only, internally mutable.
     // Visibility: public by default, `confine` narrows to the package. A
     // leading underscore on the name is what makes a member private.
     // `expose` marks a `module` or an `import` as auto-imported everywhere.
     EXPOSE, CONFINE,
     // Thread-local storage: `threadlocal var x = 0` / `threadlocal fin y = 42`.
     THREADLOCAL,
-    // `annot Name [bind Spec] { fields }` — decorator/annotation declaration.
+    // `annot Name [bind Spec] { fields }` - decorator/annotation declaration.
     ANNOT, BIND,
-    HASH,
 
     // Delimiters
     L_PAREN, R_PAREN, L_BRACE, R_BRACE,

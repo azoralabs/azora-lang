@@ -28,11 +28,11 @@ module std.format
  * building a thousand intermediate strings.
  *
  * `"${value}"` calls [Display] and nothing else, so a type that has not said
- * how it prints does not print — the interpolation is a compile error naming
+ * how it prints does not print - the interpolation is a compile error naming
  * the missing implementation rather than a fallback that leaks a pack's
  * internals into output.
  *
- * @since 0.0.5
+ * @since 0.1
  */
 
 realm std {
@@ -42,12 +42,12 @@ realm std {
      * Every `write` appends; nothing here can rewind or inspect what has been
      * written, so a nested `display` cannot corrupt its caller's output.
      */
-    @Since("0.0.5")
+    @Since("0.1")
     pack Formatter {
         var buffer: String = ""
     }
 
-    @Since("0.0.5")
+    @Since("0.1")
     impl Formatter {
         /** Appends [text] as it stands. */
         func write[self: Self!](text: String) {
@@ -68,11 +68,11 @@ realm std {
     /**
      * A type with a canonical text form.
      *
-     * `bridge` so that the primitives can conform without writing a body — the
-     * backends already render an `Int` — while any other type states how it
+     * `bridge` so that the primitives can conform without writing a body - the
+     * backends already render an `Int` - while any other type states how it
      * prints and gets `"${value}"` for it.
      */
-    @Since("0.0.5")
+    @Since("0.1")
     bridge spec Display {
         func display[self: Self&](formatter: Formatter!)
     }
@@ -84,7 +84,7 @@ realm std {
      * composite should take the caller's [Formatter] instead of calling this
      * per part.
      */
-    @Since("0.0.5")
+    @Since("0.1")
     func format<T>(value: T&): String {
         var formatter = Formatter()
         value.display(formatter)

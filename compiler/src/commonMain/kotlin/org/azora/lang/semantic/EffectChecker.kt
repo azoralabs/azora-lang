@@ -21,7 +21,7 @@ import org.azora.lang.frontend.Program
 import org.azora.lang.frontend.Stmt
 
 /**
- * Semantic — Effect Checking.
+ * Semantic - Effect Checking.
  *
  * Runs AFTER types are fully resolved (post-CTCE stabilization) because
  * CTCE-generated functions carry effects too.
@@ -91,7 +91,7 @@ class EffectChecker {
             effectMap[func.name] = if (hasExternalCall) Effect.IMPURE else Effect.PURE
         }
 
-        // Second pass: propagate impurity — if a pure function calls an impure one,
+        // Second pass: propagate impurity - if a pure function calls an impure one,
         // it becomes impure too. Iterate until stable.
         var changed = true
         while (changed) {

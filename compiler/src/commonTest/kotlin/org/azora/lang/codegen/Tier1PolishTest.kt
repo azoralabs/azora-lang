@@ -378,7 +378,7 @@ class Tier1PolishTest {
         """.trimIndent()))
     }
 
-    // -- infx extension functions ------------------------------------------
+    // -- infix macros over free functions -----------------------------------
 
     @Test fun infxMethodCalledInfix() {
         assertEquals("15", run("""
@@ -386,7 +386,7 @@ class Tier1PolishTest {
             pack Box {
                 var v: Int
             }
-            macro .Infix("combine")
+            macro ${'$'}a @combine ${'$'}b
             func combine(self: Box, other: Box): Int {
                 return self.v * other.v
             }
@@ -405,7 +405,7 @@ class Tier1PolishTest {
                 var x: Int
                 var y: Int
             }
-            macro .Infix("add")
+            macro ${'$'}a @add ${'$'}b
             func add(self: Vec, other: Vec): Vec {
                 return Vec(self.x + other.x, self.y + other.y)
             }
@@ -426,7 +426,7 @@ class Tier1PolishTest {
                 var a: Int
                 var b: Int
             }
-            macro .Infix("merged")
+            macro ${'$'}a @merged ${'$'}b
             func merged(self: Pair, other: Pair): Int {
                 return self.a + other.b
             }
@@ -453,7 +453,7 @@ class Tier1PolishTest {
                 self.data[i] = v
             }
             func main() {
-                var b = IntBag(arr@[10, 20, 30])
+                var b = IntBag(@arr[10, 20, 30])
                 std::println(b[1])
                 b[1] = 99
                 std::println(b[1])
@@ -506,7 +506,7 @@ class Tier1PolishTest {
         assertEquals("one\ntwo", run("""
             import std.io
             func main() {
-                var m = arr@[1: "one", 2: "two"]
+                var m = @arr[1: "one", 2: "two"]
                 std::println(m[1])
                 std::println(m[2])
             }
@@ -517,7 +517,7 @@ class Tier1PolishTest {
         assertEquals("red", run("""
             import std.io
             func main() {
-                var colors: Map<Int, String> = arr@[1: "red", 2: "green"]
+                var colors: Map<Int, String> = @arr[1: "red", 2: "green"]
                 std::println(colors[1])
             }
         """.trimIndent()))

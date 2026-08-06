@@ -1,7 +1,7 @@
-# Azora Enums — DIP Implementation Profile
+# Azora Enums - DIP Implementation Profile
 
 `enum` declares a closed set of named cases, **none of which carries data**.
-Prefixing it with the `variant` modifier — `variant enum` — is what allows
+Prefixing it with the `variant` modifier - `variant enum` - is what allows
 payloads; see the Variants DIP. A payload on a plain `enum` is a compile error
 naming that form.
 
@@ -40,7 +40,7 @@ Comma separation is also accepted:
 
 ```azora
 enum Target {
-    Compiler, C, ObjectiveC, JavaScript, WebAssembly
+    Compiler, C, ObjectiveC, WebAssembly, Llvm
 }
 ```
 
@@ -52,7 +52,7 @@ var day = Weekday.Monday
 func label(t: Target): String {
     when t {
         Target.Compiler -> { return "native" }
-        Target.JavaScript -> { return "js" }
+        Target.WebAssembly -> { return "wasm" }
         else -> { return "other" }
     }
 }

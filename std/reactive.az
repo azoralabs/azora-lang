@@ -43,14 +43,14 @@ expose module std.reactive
  * annotation, so imports, completion, decorator target checks, reflection,
  * and documentation all observe the same symbol.
  */
-@Experimental(since: "0.0.4")
+@Experimental(since: "0.1")
 bridge annot Reactive for [.Func, .AsyncFunc, .Prop, .AsyncProp]
 
 realm std {
     /**
      * Describes the distinct lifetime selected by a reactive declaration.
      */
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     enum ReactiveLifetime {
         /** Lives in the current reactive owner and may be recomputed with it. */
         Memory
@@ -68,7 +68,7 @@ realm std {
      * Hosts can use this metadata when persisting `rem` state without knowing
      * anything about a renderer.
      */
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     pack ReactiveSnapshot<T> {
         fin key: String
         fin value: T

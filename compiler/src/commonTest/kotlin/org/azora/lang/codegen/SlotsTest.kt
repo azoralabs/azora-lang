@@ -15,7 +15,7 @@ class SlotsTest {
     }
 
     @Test fun slotConstructionOnly() {
-        // Test just construction — no when matching
+        // Test just construction - no when matching
         run("""
             import std.io
             variant enum Option {

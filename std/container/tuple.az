@@ -29,7 +29,7 @@ import std.reflection
  * A Tuple holds two or more values of potentially different types,
  * accessible by their positional index.
  *
- * @since 0.0.3
+ * @since 0.1
  */
 
 realm std {
@@ -41,7 +41,7 @@ realm std {
      *
      * @generic T Variadic type parameter pack for the element types.
      */
-    @Experimental(since: "0.0.3")
+    @Experimental(since: "0.1")
     @EnforceNumFields
     @Serializable
     pack Tuple<...T> where (...T).length >= 2 {
@@ -59,7 +59,7 @@ realm std {
          *
          * @return This tuple formatted as `(fields...)`.
          */
-        @Experimental(since: "0.0.4")
+        @Experimental(since: "0.1")
         prop pretty[self: Self&]: String {
             var res = "("
             inline for field in reflect<Self>.fields with index {
@@ -83,7 +83,7 @@ realm std {
      * @param elements Values to store in the tuple.
      * @return A Tuple whose element types match the provided values.
      */
-    @Experimental(since: "0.0.3")
+    @Experimental(since: "0.1")
     func tupleOf<...T>(...elements: ...T): Tuple<...T>
     where (...T).length >= 2 {
         return Tuple(elements)
@@ -94,14 +94,10 @@ use realm std {
     /**
      * Builds a structural [Tuple].
      *
-     * @0 `tup@(1, "two", 3.0)` expands to `std::tupleOf(1, "two", 3.0)`.
+     * @0 `@tup(1, "two", 3.0)` expands to `std::tupleOf(1, "two", 3.0)`.
      */
-    macro .Prefix("tup") {
+    macro @tup {
         [...$items] => std::tupleOf(...$items)
-    }
-
-    macro .Type {
-        (...T) => std::Tuple<...T>
     }
 }
 

@@ -1,8 +1,8 @@
-# Azora Unions — DIP Implementation Profile
+# Azora Unions - DIP Implementation Profile
 
 `unsafe union` declares a **C-style untagged union**: a fixed block of storage
 that several members share. Nothing records which member is live, so no check can
-establish that a read is meaningful — which is why both the declaration and every
+establish that a read is meaningful - which is why both the declaration and every
 use ask for `unsafe`. For a union that *does* record its live case, see the
 Variants DIP.
 
@@ -53,7 +53,7 @@ unsafe {
 ```
 
 Naming more than one would be a contradiction (only one member can be live), and
-naming none would leave the storage undefined — both are compile errors:
+naming none would leave the storage undefined - both are compile errors:
 
 ```azora
 Value(i: 1, d: 2.0)   // error: union 'Value' is built from exactly one member
@@ -89,7 +89,7 @@ unsafe union Flag {
 
 unsafe {
     var f = Flag(on: true)
-    std::println(f.raw)    // 1 — the same byte, read as an Int
+    std::println(f.raw)    // 1 - the same byte, read as an Int
 }
 ```
 
@@ -109,7 +109,7 @@ unsafe {
 }
 ```
 
-A member itself is always writable — every member addresses the same slot, so
+A member itself is always writable - every member addresses the same slot, so
 per-member mutability could not mean anything. Whether the *binding* permits the
 write is the separate question the value axis answers.
 
@@ -119,12 +119,12 @@ write is the separate question the value axis answers.
 |---------|----------------|
 | LLVM | `%struct.U = type { <widest member> }`; every member addresses slot 0 through a `bitcast`, so the byte-level view is exact |
 | Wasm | one 4-byte slot; every member is at offset 0 |
-| Interpreter | one shared value slot (no memory model *yet* — see below) |
+| Interpreter | one shared value slot (no memory model *yet* - see below) |
 
 The interpreter does not model bytes **yet**: it holds values, so reading a
 member other than the one last written currently yields that value rather than a
 reinterpretation of its bits. That is a gap in the current interpreter, not a
-property of the language — the self-hosted compiler will give the interpreter a
+property of the language - the self-hosted compiler will give the interpreter a
 real memory model, and §3 will then hold on every backend. Until then, LLVM is
 the reference for byte-level behaviour.
 
@@ -145,5 +145,5 @@ unsafe union Bits {          // untagged: nothing says which member is live
 Reach for `variant enum` by default. `unsafe union` exists for the cases where
 the layout is the point: reinterpreting bytes, matching a foreign (C) struct, or
 packing a value whose discriminant is already carried somewhere else. The
-`unsafe` is the honest part — it marks exactly the obligation the compiler cannot
+`unsafe` is the honest part - it marks exactly the obligation the compiler cannot
 take on for you.

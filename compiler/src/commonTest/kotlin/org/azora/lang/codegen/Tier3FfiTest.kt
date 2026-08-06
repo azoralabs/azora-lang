@@ -6,7 +6,7 @@ import org.azora.lang.backend.IrInterpreter
 import kotlin.test.*
 
 /**
- * Tests for FFI `bridge` — extern function declarations.
+ * Tests for FFI `bridge` - extern function declarations.
  *
  * The interpreter resolves common C-math functions to `kotlin.math`.
  * Codegens emit real extern declarations (`external fun` / `declare function` / LLVM `declare`).

@@ -13,16 +13,16 @@ module std.memory.weak
  * Non-owning pointer view. It never drops memory; callers must prove the
  * pointee outlives the weak view.
  *
- * @since 0.0.3
+ * @since 0.1
  */
 
 realm std {
-    @Since("0.0.3")
+    @Since("0.1")
     pack Weak<T> {
         var _raw: T*
     }
 
-    @Experimental(since: "0.0.3")
+    @Experimental(since: "0.1")
     oper.* [self: Weak<T>&]: T {
         assert self._raw != null { "Weak pointer is null" }
         return self._raw.*
@@ -32,7 +32,7 @@ realm std {
      * Cloning a `Weak` duplicates the non-owning handle, never the object. It is
      * not `Copy`: a weak handle is still a thing you decide to make another of.
      */
-    @Since("0.0.5")
+    @Since("0.1")
     impl Clone for Weak<T> {
         func clone[self: Self&]() {
             return Weak<T>(self._raw)
@@ -41,23 +41,23 @@ realm std {
 
     impl Weak<T> {
         /** Returns the referenced value (panics if the pointer is null). */
-        @Experimental(since: "0.0.3")
+        @Experimental(since: "0.1")
         prop get[self: Self&]: T {
             assert self._raw != null { "Weak pointer is null" }
             return self._raw.*
         }
 
         /** Returns the raw `T*` (may be null). */
-        @Since("0.0.3")
+        @Since("0.1")
         prop ptr[self: Self&]: T* = self._raw
 
         /** `true` when the pointer is null (does not own a reference). */
-        @Since("0.0.3")
+        @Since("0.1")
         prop isNull[self: Self&]: Bool = self._raw == null
     }
 
     /** Wraps a raw `T*` as a non-owning `Weak<T>`. */
-    @Experimental(since: "0.0.3")
+    @Experimental(since: "0.1")
     func weakOf<T>(ptr: T*): Weak<T> {
         return Weak(ptr)
     }

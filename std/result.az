@@ -25,14 +25,14 @@ expose module std.result
  * a successful value or an error, along with combinators
  * for chaining operations.
  *
- * @since 0.0.1
+ * @since 0.1
  */
 
 realm std {
     /**
      * Represents either a success or failure outcome.
      */
-    @Since("0.0.1")
+    @Since("0.1")
     variant enum Result {
         Ok(value: Int)
         Err(code: Int, message: String)
@@ -44,7 +44,7 @@ realm std {
      * @param value The success value.
      * @return A Result.Ok variant.
      */
-    @Since("0.0.1")
+    @Since("0.1")
     func ok(value: Int): Result {
         return Result.Ok(value: value)
     }
@@ -56,7 +56,7 @@ realm std {
      * @param message The error description.
      * @return A Result.Err variant.
      */
-    @Since("0.0.1")
+    @Since("0.1")
     func err(code: Int, message: String): Result {
         return Result.Err(code: code, message: message)
     }
@@ -67,7 +67,7 @@ realm std {
      * @param r The result to check.
      * @return true if the result is Ok.
      */
-    @Since("0.0.1")
+    @Since("0.1")
     func isOk(r: Result): Bool {
         return r is Ok
     }
@@ -78,7 +78,7 @@ realm std {
      * @param r The result to check.
      * @return true if the result is Err.
      */
-    @Since("0.0.1")
+    @Since("0.1")
     func isErr(r: Result): Bool {
         return r is Err
     }
@@ -90,7 +90,7 @@ realm std {
      * @param default The fallback value.
      * @return The Ok value or the default.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func unwrapOr(r: Result, default: Int): Int {
         when r {
             Result.Ok(v) -> { return v }

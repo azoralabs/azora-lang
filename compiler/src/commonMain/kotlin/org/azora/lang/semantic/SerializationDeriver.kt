@@ -34,7 +34,6 @@ import org.azora.lang.frontend.TypeRef
 object SerializationDeriver {
     data class Result(val program: Program, val errors: List<String>)
 
-    private data class FormatSet(val json: Boolean, val azon: Boolean)
     private data class Helpers(
         val provider: String,
         val conversionProvider: String,
@@ -43,7 +42,6 @@ object SerializationDeriver {
     )
     private data class Roles(
         val all: Set<String>,
-        val json: Set<String>,
         val azon: Set<String>,
         val name: Set<String>,
         val ignore: Set<String>,
@@ -54,7 +52,7 @@ object SerializationDeriver {
         val conversionModule: String,
         val deferGeneric: Boolean,
     ) {
-        val roots: Set<String> get() = all + json + azon
+        val roots: Set<String> get() = all + azon
     }
     private data class FieldPlan(
         val field: PackField,
@@ -88,9 +86,8 @@ object SerializationDeriver {
         for (pack in packs) {
             val errorCountBeforePack = errors.size
             val serializable = appliedAny(program, pack.name, roles.all)
-            val jsonOnly = appliedAny(program, pack.name, roles.json)
             val azonOnly = appliedAny(program, pack.name, roles.azon)
-            val root = serializable ?: jsonOnly ?: azonOnly ?: continue
+            val root = serializable ?: azonOnly ?: continue
             if (pack.typeParams.isNotEmpty()) {
                 if (!roles.deferGeneric) {
                     errors += "line ${pack.line}: generated serialization for generic pack '${pack.name}' requires concrete type arguments"
@@ -98,7 +95,6 @@ object SerializationDeriver {
                 continue
             }
 
-            val formats = FormatSet(json = serializable != null || jsonOnly != null, azon = serializable != null || azonOnly != null)
             val ignoreUnknown = boolMetadata(root, "ignoreUnknownFields", errors, pack.line) ?: false
             val encodeDefaults = boolMetadata(root, "encodeDefaults", errors, pack.line) ?: true
             val fields = pack.fields.map { field -> fieldPlan(program, pack, field, roles, errors) }
@@ -123,8 +119,8 @@ object SerializationDeriver {
             val generatedNames = buildSet {
                 add("toSerialValue")
                 add("fromSerialValue")
-                if (formats.json) { add("toJson"); add("fromJson") }
-                if (formats.azon) { add("toAzon"); add("fromAzon") }
+                add("toAzon")
+                add("fromAzon")
             }
             val existing = program.items.filterIsInstance<TopLevel.Impl>()
                 .filter { it.typeName == pack.name }
@@ -136,7 +132,7 @@ object SerializationDeriver {
                 continue
             }
 
-            val source = generateImpl(pack, fields, ignoreUnknown, encodeDefaults, formats, helpers)
+            val source = generateImpl(pack, fields, ignoreUnknown, encodeDefaults, helpers)
             try {
                 generated += Parser(Lexer(source).tokenize()).parse().items
             } catch (e: IllegalStateException) {
@@ -146,7 +142,7 @@ object SerializationDeriver {
 
         if (errors.isNotEmpty()) return Result(program, errors.distinct())
         // The generated bodies build their field and element collections with
-        // `std::List`, so the module that declares it has to travel with them —
+        // `std::List`, so the module that declares it has to travel with them -
         // a derived pack's own file has no reason to have imported it.
         val dependencyImports = if (generated.isEmpty()) emptyList() else
             listOf(helpers.providerModule, helpers.conversionModule, "std.container.list")
@@ -200,7 +196,7 @@ object SerializationDeriver {
                 if (stringArgument("generator", 0) != "serializer") return@forEach
                 val role = stringArgument("role", 1) ?: return@forEach
                 byRole.getOrPut(role) { linkedSetOf() }.add(declaration.name)
-                if (role in setOf("all", "json", "azon")) {
+                if (role == "all" || role == "azon") {
                     stringArgument("provider", 2)?.takeIf { it.isNotEmpty() }?.let { provider = it }
                     stringArgument("conversionProvider", 3)?.takeIf { it.isNotEmpty() }?.let { conversionProvider = it }
                     stringArgument("providerModule", 4)?.takeIf { it.isNotEmpty() }?.let { providerModule = it }
@@ -213,7 +209,6 @@ object SerializationDeriver {
         }
         return Roles(
             all = byRole["all"].orEmpty(),
-            json = byRole["json"].orEmpty(),
             azon = byRole["azon"].orEmpty(),
             name = byRole["name"].orEmpty(),
             ignore = byRole["ignore"].orEmpty(),
@@ -300,7 +295,6 @@ object SerializationDeriver {
         fields: List<FieldPlan>,
         ignoreUnknown: Boolean,
         encodeDefaults: Boolean,
-        formats: FormatSet,
         helpers: Helpers,
     ): String = buildString {
         appendLine("impl ${pack.name} {")
@@ -369,8 +363,7 @@ object SerializationDeriver {
         appendLine("            else -> { return .UnexpectedType }")
         appendLine("        }")
         appendLine("    }")
-        if (formats.json) appendFormatMethods(pack.name, "Json", "Json", "toJson", "fromJson", helpers)
-        if (formats.azon) appendFormatMethods(pack.name, "Azon", "Azon", "toAzon", "fromAzon", helpers)
+        appendTextMethods(pack.name, helpers)
         appendLine("}")
     }
 
@@ -453,22 +446,19 @@ object SerializationDeriver {
         appendLine("                }")
     }
 
-    private fun StringBuilder.appendFormatMethods(
-        typeName: String,
-        formatName: String,
-        methodSuffix: String,
-        encodeMethod: String,
-        decodeMethod: String,
-        helpers: Helpers,
-    ) {
+    /**
+     * AZON is the only text format the standard library ships, so there is one
+     * pair of methods rather than a format cross-product.
+     */
+    private fun StringBuilder.appendTextMethods(typeName: String, helpers: Helpers) {
         appendLine()
-        appendLine("    func $encodeMethod[self: Self&](value: $typeName&, options: SerializerOptions&): String ?! SerializationError {")
+        appendLine("    func toAzon[self: Self&](value: $typeName&, options: SerializerOptions&): String ?! SerializationError {")
         appendLine("        fin __serialValue = try self.toSerialValue(value)")
-        appendLine("        return try ${qualified(helpers.provider, "encodeSerialValue")}(__serialValue, SerializationFormat.$formatName, options)")
+        appendLine("        return try ${qualified(helpers.provider, "encodeSerialValue")}(__serialValue, options)")
         appendLine("    }")
         appendLine()
-        appendLine("    func $decodeMethod[self: Self&](input: String, options: SerializerOptions&): $typeName ?! SerializationError {")
-        appendLine("        fin __serialValue = try ${qualified(helpers.provider, "decodeSerialValue")}(input, SerializationFormat.$methodSuffix, options)")
+        appendLine("    func fromAzon[self: Self&](input: String, options: SerializerOptions&): $typeName ?! SerializationError {")
+        appendLine("        fin __serialValue = try ${qualified(helpers.provider, "decodeSerialValue")}(input, options)")
         appendLine("        return try self.fromSerialValue(__serialValue)")
         appendLine("    }")
     }

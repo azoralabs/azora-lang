@@ -27,8 +27,8 @@ import kotlin.test.assertIs
  * The cast specs, `DIPs/CAST_DIP.MD` §4.
  *
  * `Cast` / `CheckedCast` / `BitCast` put the target on the *impl* rather than
- * on the operator, which is what makes each body checkable — the older
- * `oper as<U>` had to be correct for every `U` while naming exactly one — and
+ * on the operator, which is what makes each body checkable - the older
+ * `oper as<U>` had to be correct for every `U` while naming exactly one - and
  * what lets a type convert to more than one thing.
  */
 class CastSpecTest {

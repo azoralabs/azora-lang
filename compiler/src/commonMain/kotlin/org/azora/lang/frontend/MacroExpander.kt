@@ -468,7 +468,7 @@ internal object MacroExpander {
                     }
                 }
                 is MacroPattern.MapEntryCapture -> {
-                    // `[...${key: value}]` — key/value destructuring. Invocation-side
+                    // `[...${key: value}]` - key/value destructuring. Invocation-side
                     // support (parsing `map!["a": 1]` into paired args) is a later
                     // stage; the arm parses and stores its capture names for now.
                 }
@@ -506,7 +506,7 @@ internal object MacroExpander {
             }
             template
         }
-        // Leaves — no Expr children. NullLiteral is an immutable singleton, safe to share.
+        // Leaves - no Expr children. NullLiteral is an immutable singleton, safe to share.
         is Expr.IntLiteral, is Expr.DoubleLiteral, is Expr.CharLiteral,
         is Expr.StringLiteral, is Expr.BoolLiteral, is Expr.NullLiteral,
         is Expr.UpperScopeAccess, is Expr.Inject -> template
@@ -558,7 +558,7 @@ internal object MacroExpander {
         is Expr.TryPropagate -> template.copy(expr = substitute(template.expr, bindings, invokeLine))
         is Expr.Spread -> template.copy(array = substitute(template.array, bindings, invokeLine))
         is Expr.NamedArg -> template.copy(value = substitute(template.value, bindings, invokeLine))
-        // Sequence containers — splice-aware.
+        // Sequence containers - splice-aware.
         is Expr.Call -> template.copy(args = substituteSeq(template.args, bindings, invokeLine))
         is Expr.MethodCall -> template.copy(
             target = substitute(template.target, bindings, invokeLine),

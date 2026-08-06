@@ -39,13 +39,13 @@ data class SemanticResult(
  *
  * Orchestrates the following passes in order:
  *
- *   Pass 1 — [SymbolCollector]: Walk all declarations, register function
- *            signatures in the symbol table. No type resolution yet — just names.
+ *   Pass 1 - [SymbolCollector]: Walk all declarations, register function
+ *            signatures in the symbol table. No type resolution yet - just names.
  *
- *   Pass 2 — [ImportResolver]: Resolve cross-module references. Build dependency
+ *   Pass 2 - [ImportResolver]: Resolve cross-module references. Build dependency
  *            graph. Merge imported symbols into the symbol table.
  *
- *   Pass 3 — Fixed-point stabilization loop:
+ *   Pass 3 - Fixed-point stabilization loop:
  *            ```
  *            repeat:
  *              run TypeResolver (type resolution + inference)
@@ -54,18 +54,18 @@ data class SemanticResult(
  *            until AST is stable (no changes) or max iterations reached
  *            ```
  *
- *   Pass 4 — [AllocDropAnalyzer]: With types fully resolved, analyze alloc/drop
+ *   Pass 4 - [AllocDropAnalyzer]: With types fully resolved, analyze alloc/drop
  *            pairs, ownership, and liveness. Post-CTCE because generated code
  *            may introduce new allocations.
  *
- *   Pass 5 — [EffectChecker]: Validate effect annotations, purity, side-effect
+ *   Pass 5 - [EffectChecker]: Validate effect annotations, purity, side-effect
  *            propagation. Post-CTCE because generated functions carry effects too.
  *
  * Key design decisions:
  *  - Separate "declaration semantic" (Pass 1) from "body semantic" (Pass 3).
  *    A function's signature is resolved before its body, so other code can
  *    depend on it without waiting for the body to be analyzed.
- *  - CTCE shares the compiler's type system — no separate evaluator types.
+ *  - CTCE shares the compiler's type system - no separate evaluator types.
  *  - Fixed-point loop with max iterations prevents infinite metaprogramming.
  */
 /**
@@ -119,7 +119,7 @@ class SemanticPipeline(
         currentProgram = topResult.program
         // Top-level compile-time constants are folded out of the AST here (before
         // symbol collection). Preserve them so the fixed-point CTCE pass can make
-        // them visible inside function bodies — this is what lets exported
+        // them visible inside function bodies - this is what lets exported
         // `std.config` flags be read anywhere without an import.
         val topLevelConstants = topLevelCtfe.topLevelConstants + defineExprs
 
@@ -166,7 +166,7 @@ class SemanticPipeline(
         while (iteration < maxCtfeIterations) {
             iteration++
 
-            // CTCE — evaluate compile-time expressions and fold into AST
+            // CTCE - evaluate compile-time expressions and fold into AST
             val ctfeResult = CtfeEvaluator(table)
                 .apply { seedConstants = topLevelConstants }
                 .evaluate(currentProgram)
@@ -178,7 +178,7 @@ class SemanticPipeline(
 
             currentProgram = ctfeResult.program
 
-            // If AST didn't change, we've reached a fixed point — done
+            // If AST didn't change, we've reached a fixed point - done
             if (!ctfeResult.changed) break
         }
 

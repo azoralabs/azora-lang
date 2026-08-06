@@ -1,4 +1,4 @@
-# Azora Control Flow — DIP Implementation Profile
+# Azora Control Flow - DIP Implementation Profile
 
 Conditionals, loops, pattern matching, and the alternating `flip`/`flop`
 construct.

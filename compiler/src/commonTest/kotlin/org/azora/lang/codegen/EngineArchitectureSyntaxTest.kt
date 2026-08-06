@@ -44,17 +44,6 @@ class EngineArchitectureSyntaxTest {
         """
         module engine.ecs
 
-        macro .Type {
-            res ${'$'}T => Resource<${'$'}T>
-            res! ${'$'}T => MutResource<${'$'}T>
-            query [...${'$'}T] => Query<...${'$'}T>
-        }
-        macro .Infix("with") {
-            ${'$'}Base ${'$'}Filter => ${'$'}Base
-        }
-        macro .Infix("without") {
-            ${'$'}Base ${'$'}Filter => ${'$'}Base
-        }
 
         pack Resource<T> { fin value: T }
         pack MutResource<T> { var value: T }
@@ -102,9 +91,9 @@ class EngineArchitectureSyntaxTest {
             pack Time
             @System(.Update)
             func move(
-                time: res Time
-                player: Single<Transform!>! with Player
-                query: query [Transform!, Player&]!
+                time: Resource<Time>
+                player: Single<Transform!>!
+                query: Query<Transform!, Player&>!
             ) {
                 player.translation.x = 2.0
             }

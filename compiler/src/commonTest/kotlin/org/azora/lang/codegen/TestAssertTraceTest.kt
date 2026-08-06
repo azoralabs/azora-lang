@@ -454,7 +454,7 @@ class TestAssertTraceTest {
 
     @Test
     fun test_insideFunctionRejected() {
-        // test is only allowed at global scope — but since the parser handles it
+        // test is only allowed at global scope - but since the parser handles it
         // at the top level only, putting it inside a function would be a parse error.
         // We verify test works at top level (already tested above).
         val result = compile("""

@@ -1,6 +1,6 @@
-# Azora Base Syntax — DIP Implementation Profile
+# Azora Base Syntax - DIP Implementation Profile
 
-Bindings, literals, operators, string interpolation, and comments — the lexical
+Bindings, literals, operators, string interpolation, and comments - the lexical
 and expression foundation shared by every other construct.
 
 ## Grammar
@@ -12,7 +12,7 @@ ASSIGN    ::= LVALUE (= | += | -= | *= | /= | %= | ~=) EXPRESSION
 LVALUE    ::= NAME | expr.field | expr[index] | *pointer
 ```
 
-Four keywords vary two independent axes — whether the **name** can be rebound,
+Four keywords vary two independent axes - whether the **name** can be rebound,
 and whether the **value** can be mutated through it:
 
 | keyword | rebind the name | mutate the value | `&` (shared borrow) | `!` (mutable borrow) |
@@ -22,12 +22,12 @@ and whether the **value** can be mutated through it:
 | `val`   | yes             | no               | yes                 | no                   |
 | `fin`   | no              | no               | yes                 | no                   |
 
-- `mem` / `rem` / `ret` — reactive bindings (see the Reactive DIP).
+- `mem` / `rem` / `ret` - reactive bindings (see the Reactive DIP).
 - All four work in a runtime scope and in a compile-time one: `inline var`,
   `inline let`, `inline val`, `inline fin` are folded at compile time, and
   `deepinline …` recurses through nested inline constructs (see the CTCE DIP).
 - Only `fin` may appear at top level. A global is shared, and what makes sharing
-  unsafe is the name being rebindable — so `var`, `let` and `val` are all
+  unsafe is the name being rebindable - so `var`, `let` and `val` are all
   rejected there; use `fin`, `threadlocal`, or the `inline …` forms.
 
 ---
@@ -46,8 +46,8 @@ The two axes are independent, so each keyword rejects exactly one thing:
 
 ```azora
 var p = Point(1, 2)
-p = Point(3, 4)          // ok — var rebinds
-p.x = 10                 // ok — var mutates
+p = Point(3, 4)          // ok - var rebinds
+p.x = 10                 // ok - var mutates
 
 let q = Point(1, 2)
 q = Point(3, 4)          // error: cannot reassign immutable binding 'q'
@@ -67,7 +67,7 @@ index writes and mutable borrows as well as field writes:
 
 ```azora
 fin o = Outer(Inner(1))
-o.inner.v = 2            // error — the write lands on `o`
+o.inner.v = 2            // error - the write lands on `o`
 
 func bump(n: Int!) { n = n + 1 }
 val c = 1
@@ -119,11 +119,11 @@ null           // null literal (for nullable types)
 Collection literals use macros (see the Meta DIP):
 
 ```azora
-arr@[1, 2, 3]              // Array
-vec@[1, 2, 3]              // immutable List
-vec!@[1, 2, 3]             // mutable List
-set@[1, 2, 3]              // Set
-map@["a": 1, "b": 2]       // Map
+@arr[1, 2, 3]              // Array
+@vec[1, 2, 3]              // immutable List
+@vec![1, 2, 3]             // mutable List
+@set[1, 2, 3]              // Set
+@map["a": 1, "b": 2]       // Map
 ["a": 1]                   // map literal (bracket sugar)
 ```
 
@@ -137,7 +137,7 @@ a && b  a || b  !a                            // logical
 a & b   a | b   a ^ b   ~a   a << b   a >> b  // bitwise
 a ?? b                                        // null-coalescing (a if non-null else b)
 a?.field                                      // safe member access
-a to b                                        // universal infix pair
+a @to b                                       // universal infix pair
 "ab" * 3                                      // string repetition
 ```
 

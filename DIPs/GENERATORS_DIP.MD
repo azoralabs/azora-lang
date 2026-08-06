@@ -39,9 +39,9 @@ func events(): std::Flow<Event> = std::flow {
 ```
 
 Notice that both declarations remain ordinary funcs. The returned type describes the abstraction:
-* Sequence<T> — lazy synchronous values
-* Flow<T> — cold asynchronous stream
-* async func ...: T — asynchronous computation producing one value
+* Sequence<T> - lazy synchronous values
+* Flow<T> - cold asynchronous stream
+* async func ...: T - asynchronous computation producing one value
   So the recommended Azora model is:
 
 ```azora

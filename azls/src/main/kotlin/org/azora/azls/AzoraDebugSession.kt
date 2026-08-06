@@ -28,7 +28,7 @@ import kotlin.concurrent.thread
  *
  * The program is compiled in debug mode (every statement carries a
  * `__dbg(line)` marker) and executed on a dedicated thread. The debug host
- * pauses inside [AzoraDebugHost.onLine] — suspending on a command channel —
+ * pauses inside [AzoraDebugHost.onLine] - suspending on a command channel -
  * whenever a breakpoint (or step mode) hits a line belonging to the edited
  * document; prelude lines (other files, engine libraries) never pause.
  *
@@ -81,7 +81,7 @@ internal class AzoraDebugSession(
             interpreter.debugHost = object : AzoraDebugHost {
                 override suspend fun onLine(line: Int, localVars: Map<String, Any?>) {
                     val docLine = line - preludeLines
-                    if (docLine < 1) return // library/prelude code — never pause there
+                    if (docLine < 1) return // library/prelude code - never pause there
                     if (!stepMode && docLine !in breakpoints) return
                     pausedLine = docLine
                     locals = localVars.map { (name, value) -> name to formatValue(value) }

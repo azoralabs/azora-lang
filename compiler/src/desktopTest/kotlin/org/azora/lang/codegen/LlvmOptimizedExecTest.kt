@@ -22,7 +22,7 @@ import kotlin.test.assertEquals
 /**
  * Release-mode (optimizer-on) execution tests for the LLVM backend.
  *
- * These guard against optimizer passes — particularly constant propagation —
+ * These guard against optimizer passes - particularly constant propagation -
  * silently changing a program's result. Each program is lowered from the
  * **optimized** IR and executed with `lli`; the output must match the
  * program's true semantics.

@@ -1,4 +1,4 @@
-# Azora Compile-Time Code Evaluation (CTCE) — DIP Implementation Profile
+# Azora Compile-Time Code Evaluation (CTCE) - DIP Implementation Profile
 
 CTCE (a.k.a. CTFE) folds constants, evaluates `inline` constructs, runs `type`
 functions, and specializes generics/variadics before backend lowering.
@@ -15,8 +15,8 @@ TYPE_FN   ::= type NAME(PARAM: Type, PACK: ...Type) [where CLAUSE] { TYPE_STMTS;
 SPLICE    ::= inline "source string"          // splice a string as source
 ```
 
-- `inline` — evaluated at compile time; results are kept in the program.
-- `deepinline` — like `inline` but recurses into nested inline constructs and
+- `inline` - evaluated at compile time; results are kept in the program.
+- `deepinline` - like `inline` but recurses into nested inline constructs and
   folds them away entirely (nothing remains if the branch is not taken).
 
 ---
@@ -63,7 +63,7 @@ inline for Field in ...T {
 A declaration that computes **a type from types**, evaluated entirely by CTCE:
 
 ```azora
-@Since("0.0.5")
+@Since("0.1")
 deepinline prop Promote<...T>: Type where T.length >= 2 && T is Number {
     var result: Type = T.0
     for candidate: Type in T[1...] {
@@ -83,11 +83,11 @@ func add<A, B>(a: A, b: B): Promote<A, B> { … }   // used as a type
   inspect the pack and its type metadata.
 - `where … is Spec` bounds every pack member to a spec.
 - Every binding is written out (`var result: Type = …`): nothing is inferred.
-- All four binding keywords apply — `var`/`val` rebind, `let`/`fin` do not.
+- All four binding keywords apply - `var`/`val` rebind, `let`/`fin` do not.
 - The body may branch with a statement `if`, loop with `for`, and call another
   type property by name (`NumericResult<A, B>`).
 - A use site spells it exactly like a generic type: `Promote<Int, Double>`.
-  There is no separate call syntax — the older `promote@(…)` form was removed.
+  There is no separate call syntax - the older `@promote(…)` form was removed.
 
 ## 6. Source splicing (`inline "…"`)
 
@@ -96,10 +96,10 @@ inline "func generated() { return 1 }"    // parse a string as source and splice
 ```
 
 Constant strings are expanded at compile time; `$var` interpolation requires an
-`inline for … with index` context. (The `mixin` keyword was removed — use
+`inline for … with index` context. (The `mixin` keyword was removed - use
 `inline "…"`.)
 
 ## 7. Runtime intrinsics
 
 Certain functions (`println`, `toString`, `channel`, `async`, `cancel`) are
-runtime intrinsics that CTCE never folds — see the Compiler Intrinsic DIP.
+runtime intrinsics that CTCE never folds - see the Compiler Intrinsic DIP.

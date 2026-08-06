@@ -11,7 +11,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 /**
- * Covers `impl oper arr@[spec, spec, ...] for Type` expansion and the oper.. range gate
+ * Covers `impl oper @arr[spec, spec, ...] for Type` expansion and the oper.. range gate
  * introduced so range iteration works only where `impl oper .. for T` is declared.
  */
 class MultiOperImplTest {

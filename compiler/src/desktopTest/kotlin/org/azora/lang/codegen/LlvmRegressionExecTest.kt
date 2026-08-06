@@ -21,11 +21,11 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * Regression tests for specific arr@[org.azora.lang.backend.LlvmCodegen] fixes,
+ * Regression tests for specific [org.azora.lang.backend.LlvmCodegen] fixes,
  * executed with `lli` (skipped when no LLVM toolchain is available).
  *
  * - `when` over a String must compare **contents** (strcmp), not pointer
- *   identity — a runtime-built string must still match a literal pattern.
+ *   identity - a runtime-built string must still match a literal pattern.
  * - Unsigned integers must print with unsigned printf conversions
  *   (`%u` / `%llu`), not sign-interpreted ones.
  */
@@ -104,46 +104,13 @@ class LlvmRegressionExecTest {
         "42",
         """
         import std.io
-        threadlocal var numbers = arr@[41]
+        threadlocal var numbers = @arr[41]
         async func read(): Int { return numbers[0] + 1 }
         async func main() {
             std::println(await read())
         }
         """.trimIndent()
     )
-
-    @Test fun scopeAllocWaitsForChildTasksBeforeFreeingArena() = check(
-        "42",
-        """
-        import std.io
-        async func main() {
-            scope alloc {
-                var p: Int* = alloc 41
-                fin value = async { *p + 1 }
-                std::println(await value)
-            }
-        }
-        """.trimIndent()
-    )
-
-    @Test fun scopeAllocPropagatesIntoCalledFunctions() {
-        val source = """
-            import std.io
-            pack Box { var value: Int }
-            func makeBox(value: Int): Box { return Box(value) }
-            func main() {
-                scope alloc {
-                    fin box = makeBox(42)
-                    std::println(box.value)
-                }
-            }
-        """.trimIndent()
-        check("42", source)
-        val ir = LlvmExec.compile(source)
-        assertTrue("@__azora_current_arena = internal thread_local global %azora.arena* null" in ir)
-        assertTrue("load %azora.arena*, %azora.arena** @__azora_current_arena" in ir)
-        assertTrue("call i8* @__azora_arena_alloc(%azora.arena* %arena, i64 %size)" in ir)
-    }
 
     @Test fun cancelCallsNativeTaskCancellationRuntime() = check(
         "42",
@@ -177,7 +144,7 @@ class LlvmRegressionExecTest {
         assertTrue("call void @__azora_task_cancel" in ir)
     }
 
-    /** A concatenated string has a fresh pointer — only strcmp can match it. */
+    /** A concatenated string has a fresh pointer - only strcmp can match it. */
     @Test fun whenOnRuntimeString() = check(
         "H",
         main(
@@ -241,7 +208,7 @@ class LlvmRegressionExecTest {
     @Test fun threadLocalAggregatesUseTlsAndRuntimeInitialization() {
         val source = """
             import std.io
-            threadlocal var numbers = arr@[1, 2, 3]
+            threadlocal var numbers = @arr[1, 2, 3]
             threadlocal var names = ["first": 10, "second": 20]
             threadlocal var unique = ![1, 2, 2, 3]
             func main() {
@@ -268,7 +235,7 @@ class LlvmRegressionExecTest {
         "3\n2\n3",
         """
         import std.io
-        threadlocal var numbers: List<Int> = arr@[1, 2, 3]
+        threadlocal var numbers: List<Int> = @arr[1, 2, 3]
         threadlocal var names: Map<String, Int> = ["first": 10, "second": 20]
         threadlocal var unique: Set<Int> = ![1, 2, 2, 3]
         func main() {
@@ -284,7 +251,7 @@ class LlvmRegressionExecTest {
             """
             import std.io
             func main() {
-                var array = arr@[1.5D, 2.5D]
+                var array = @arr[1.5D, 2.5D]
                 var map = ["value": 3.5D]
                 var set = ![1.5D, 2.5D]
                 array[0] = map["value"]

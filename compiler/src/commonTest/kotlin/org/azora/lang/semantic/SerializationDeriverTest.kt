@@ -37,11 +37,6 @@ class SerializationDeriverTest {
                 fin ignoreUnknownFields: Bool = false
                 fin encodeDefaults: Bool = true
             }
-            @Derive(generator: "serializer", role: "json", provider: "std", conversionProvider: "std::convert")
-            annot JsonSerializable for .Pack {
-                fin ignoreUnknownFields: Bool = false
-                fin encodeDefaults: Bool = true
-            }
             @Derive(generator: "serializer", role: "azon", provider: "std", conversionProvider: "std::convert")
             annot AzonSerializable for .Pack {
                 fin ignoreUnknownFields: Bool = false
@@ -72,22 +67,15 @@ class SerializationDeriverTest {
         val generated = result.program.items.filterIsInstance<TopLevel.Impl>()
             .single { it.typeName == "User" && it.methods.isNotEmpty() }
         assertEquals(
-            setOf("toSerialValue", "fromSerialValue", "toJson", "fromJson", "toAzon", "fromAzon"),
+            setOf("toSerialValue", "fromSerialValue", "toAzon", "fromAzon"),
             generated.methods.mapTo(mutableSetOf()) { it.name },
         )
     }
 
-    @Test fun formatSpecificDecoratorsGenerateOnlyTheirTextFormat() {
-        val json = derive("@JsonSerializable pack JsonUser { fin name: String = \"\" }")
+    @Test fun textOnlyDecoratorGeneratesTheSameMethodSet() {
         val azon = derive("@AzonSerializable pack AzonUser { fin name: String = \"\" }")
 
-        assertTrue(json.errors.isEmpty(), json.errors.toString())
         assertTrue(azon.errors.isEmpty(), azon.errors.toString())
-        assertEquals(
-            setOf("toSerialValue", "fromSerialValue", "toJson", "fromJson"),
-            json.program.items.filterIsInstance<TopLevel.Impl>().single { it.typeName == "JsonUser" }
-                .methods.mapTo(mutableSetOf()) { it.name },
-        )
         assertEquals(
             setOf("toSerialValue", "fromSerialValue", "toAzon", "fromAzon"),
             azon.program.items.filterIsInstance<TopLevel.Impl>().single { it.typeName == "AzonUser" }
@@ -209,11 +197,6 @@ class SerializationDeriverTest {
                 fin ignoreUnknownFields: Bool = false
                 fin encodeDefaults: Bool = true
             }
-            @Derive(generator: "serializer", role: "json", provider: "std", conversionProvider: "std::convert")
-            annot JsonSerializable for .Pack {
-                fin ignoreUnknownFields: Bool = false
-                fin encodeDefaults: Bool = true
-            }
             @Derive(generator: "serializer", role: "azon", provider: "std", conversionProvider: "std::convert")
             annot AzonSerializable for .Pack {
                 fin ignoreUnknownFields: Bool = false
@@ -232,10 +215,6 @@ class SerializationDeriverTest {
                 DuplicateField,
                 MissingField,
                 UnknownField
-            }
-            enum SerializationFormat {
-                Json
-                Azon
             }
             pack SerializerOptions
             pack List<T> {
@@ -325,8 +304,8 @@ class SerializationDeriverTest {
             func std__serialAsInt(value: SerialValue&): Int ?! SerializationError { return 7 }
             func std__serialAsDouble(value: SerialValue&): Double ?! SerializationError { return 0.0 }
             func std__convert__toString(value: Any): String { return "" }
-            func std__encodeSerialValue(value: SerialValue&, format: SerializationFormat, options: SerializerOptions&): String ?! SerializationError { return "" }
-            func std__decodeSerialValue(input: String, format: SerializationFormat, options: SerializerOptions&): SerialValue ?! SerializationError { return SerialValue.Null }
+            func std__encodeSerialValue(value: SerialValue&, options: SerializerOptions&): String ?! SerializationError { return "" }
+            func std__decodeSerialValue(input: String, options: SerializerOptions&): SerialValue ?! SerializationError { return SerialValue.Null }
             func std__println(value: Any): Unit {}
 
             @Serializable

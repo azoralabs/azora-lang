@@ -20,7 +20,7 @@ package org.azora.lang.ir
  * Maps a method symbol to an identifier that is legal in every backend.
  *
  * Operator methods carry punctuation in their member name (`oper==`, `oper[]=`,
- * `oper..`), so the naive mangling `Type_oper==` is not a valid LLVM/JS/Wasm
+ * `oper..`), so the naive mangling `Type_oper==` is not a valid LLVM/Wasm
  * symbol. Each punctuation character is replaced by a distinct token so that
  * distinct operators never collide (`oper==` → `oper_eq_eq`, `oper!=` →
  * `oper_bang_eq`). Letters, digits and `_` pass through unchanged, so ordinary

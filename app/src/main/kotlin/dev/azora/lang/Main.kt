@@ -256,7 +256,7 @@ private fun handleCompile(args: List<String>) {
  * The LLVM backend already emits each block as `@test_<name>`; all that is
  * missing is an entry point, so a driver `main` is appended that runs the block
  * whose index it is given and nothing else. A failed assertion aborts the
- * process — which is exactly why each test gets its own: an abort ends one test
+ * process - which is exactly why each test gets its own: an abort ends one test
  * rather than the run, and the message the assertion printed is that process's
  * output.
  *
@@ -358,7 +358,7 @@ private fun createTempDir(prefix: String): File =
  * directory) in isolation. A failing assertion in one test does not abort the
  * others. Exits non-zero if any test fails or any file fails to compile.
  *
- * `--llvm` runs the blocks as native code instead of through the interpreter —
+ * `--llvm` runs the blocks as native code instead of through the interpreter -
  * the only way to cover code that calls a native bridge. `--link <arg>` passes
  * an argument through to the linker, for tests whose bridges live in a runtime
  * library.
@@ -400,7 +400,7 @@ private fun handleTest(args: List<String>) {
             )
         } catch (e: Exception) {
             filesFailed++
-            println("✗ ${file.path} — parse/compile error")
+            println("✗ ${file.path} - parse/compile error")
             println("    ${e.message}")
             null
         }
@@ -408,7 +408,7 @@ private fun handleTest(args: List<String>) {
             null -> {}
             is CompilationResult.Failure -> {
                 filesFailed++
-                println("✗ ${file.path} — compile error")
+                println("✗ ${file.path} - compile error")
                 result.errors.forEach { println("    $it") }
             }
             is CompilationResult.Success -> {
@@ -416,7 +416,7 @@ private fun handleTest(args: List<String>) {
                     val names = result.ir.tests.map { it.name }
                     runTestsViaLlvm(file, result.llvm, names, linkArgs) ?: run {
                         filesFailed++
-                        println("✗ ${file.path} — cannot run natively (no clang, or the IR has no test symbols)")
+                        println("✗ ${file.path} - cannot run natively (no clang, or the IR has no test symbols)")
                         continue
                     }
                 } else {
@@ -441,7 +441,7 @@ private fun handleTest(args: List<String>) {
         if (filesFailed > 0) ", $filesFailed file(s) failed to compile" else ""
     println("\n$summary")
     // A test failure (assertion) always fails the run. A compile error only fails
-    // the run under `--strict` — many test files exercise not-yet-implemented features.
+    // the run under `--strict` - many test files exercise not-yet-implemented features.
     if (totalFailed > 0 || (strict && filesFailed > 0)) exitProcess(1)
 }
 

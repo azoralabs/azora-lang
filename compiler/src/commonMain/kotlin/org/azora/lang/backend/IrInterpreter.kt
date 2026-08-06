@@ -41,7 +41,7 @@ import kotlinx.coroutines.channels.produce
 import kotlinx.coroutines.async
 
 /**
- * Backend — interprets [IrProgram] directly instead of generating code.
+ * Backend - interprets [IrProgram] directly instead of generating code.
  *
  * Uses a scope stack so that `realm { }` blocks introduce new scopes and
  * `::` / `::::` can resolve variables at the correct depth.
@@ -101,7 +101,7 @@ class IrInterpreter {
         "abs" to { a -> if (a[0] is Long) kotlin.math.abs(a[0] as Long) else kotlin.math.abs(a[0] as Double) },
         "pow" to { a -> (a[0] as Double).pow(a[1] as Double) },
         // The libm spellings, so a `bridge .C` that names the C function rather
-        // than its Azora alias still runs under the interpreter — otherwise a
+        // than its Azora alias still runs under the interpreter - otherwise a
         // test covering such code can only be run by a native build.
         "fabs" to { a -> kotlin.math.abs(a[0] as Double) },
         "fmod" to { a -> (a[0] as Double).mod(a[1] as Double) },
@@ -130,7 +130,7 @@ class IrInterpreter {
     private fun externImplFor(name: String): ((List<Any?>) -> Any?)? =
         externImpls[name] ?: externImpls[name.substringAfterLast('_').let { if (it == "powr") "pow" else it }]
 
-    /** The runBlocking coroutine scope — used by `task`/`await` for cooperative concurrency. */
+    /** The runBlocking coroutine scope - used by `task`/`await` for cooperative concurrency. */
     private var coroutineScope: CoroutineScope? = null
 
     /** Singleton instances for DI (`solo` / `inject`), keyed by type name. Synchronized for parallelism. */
@@ -152,7 +152,6 @@ class IrInterpreter {
         var deferStack: MutableList<DeferredBlock> = mutableListOf(),
         val yieldAccumulators: ArrayDeque<MutableList<Any?>> = ArrayDeque(),
         val flowProduceChannels: ArrayDeque<SendChannel<Any?>> = ArrayDeque(),
-        val regionAllocations: ArrayDeque<MutableList<Pointer>> = ArrayDeque(),
         val threadLocals: MutableMap<String, Any?> = mutableMapOf()
     ) : CoroutineContext.Element {
         companion object Key : CoroutineContext.Key<ExecState>
@@ -168,8 +167,8 @@ class IrInterpreter {
     /**
      * Runs the program and returns its captured output (synchronous entry point).
      *
-     * Implemented via [azRunBlocking] — a real `runBlocking` on JVM/native (which can block the
-     * calling thread), and a stub on Wasm/JS (where blocking is impossible). On Wasm/JS, use
+     * Implemented via [azRunBlocking] - a real `runBlocking` on JVM/native (which can block the
+     * calling thread), and a stub on Wasm (where blocking is impossible). On Wasm, use
      * [interpretSuspend] instead. The evaluator is `suspend` (to support `await`); it runs on
      * `Dispatchers.Default` so `task`/`launch` achieve real parallelism, and each task gets its
      * own [ExecState] (isolated scopes/defers) so concurrent tasks never share mutable state.
@@ -185,9 +184,9 @@ class IrInterpreter {
     }
 
     /**
-     * Runs the program as a `suspend` function — the entry point on Wasm/JS, where `runBlocking` is
+     * Runs the program as a `suspend` function - the entry point on Wasm, where `runBlocking` is
      * unavailable. Establishes the same `Dispatchers.Default + mainState` context via `withContext`,
-     * so `task`/`await`/`flow`/`channel` work cooperatively (single-threaded on Wasm/JS).
+     * so `task`/`await`/`flow`/`channel` work cooperatively (single-threaded on Wasm).
      */
     suspend fun interpretSuspend(program: IrProgram): String {
         val mainState = resetFor()
@@ -200,7 +199,7 @@ class IrInterpreter {
     }
 
     /**
-     * Runs every `test` block in [program] in isolation — no `main` function
+     * Runs every `test` block in [program] in isolation - no `main` function
      * required, and a failing assertion in one test does not abort the others.
      * Returns one [TestResult] per `test`, in source order. Used by the
      * `azora test` CLI runner.
@@ -213,7 +212,7 @@ class IrInterpreter {
         }
     }
 
-    /** Suspend test entry point for Wasm/JS, where blocking a thread is unavailable. */
+    /** Suspend test entry point for Wasm, where blocking a thread is unavailable. */
     suspend fun runTestsSuspend(program: IrProgram): List<TestResult> {
         val mainState = resetFor()
         registerStructs(program)
@@ -408,7 +407,7 @@ class IrInterpreter {
             val result = executeBody(func.body)
             retValue = (result as? ReturnSignal)?.value
         } catch (e: AzoraThrownException) {
-            // The function exited via `throw`/`fail` — fail-defers should run.
+            // The function exited via `throw`/`fail` - fail-defers should run.
             failed = true
             toRethrow = e
         } finally {
@@ -456,17 +455,9 @@ class IrInterpreter {
             }
             is IrStmt.Scope -> {
                 pushScope()
-                if (stmt.alloc) state().regionAllocations.addLast(mutableListOf())
                 var signal: ControlSignal? = null
-                try {
-                    val result = executeBody(stmt.body)
-                    if (result is ControlSignal) signal = result
-                } finally {
-                    if (stmt.alloc) {
-                        // Free all allocations made in this arena (null their pointee cells).
-                        for (ptr in state().regionAllocations.removeLast()) ptr.setValue(null)
-                    }
-                }
+                val result = executeBody(stmt.body)
+                if (result is ControlSignal) signal = result
                 popScope()
                 if (signal != null) return signal
             }
@@ -707,7 +698,7 @@ class IrInterpreter {
     /**
      * `Hash`'s value for a built-in type.
      *
-     * An integer hashes to itself, a float to its bit pattern — so `0.0` and
+     * An integer hashes to itself, a float to its bit pattern - so `0.0` and
      * `-0.0` hash apart exactly as they compare apart. A pack never reaches
      * here: it supplies its own `hash`, derived or written.
      */
@@ -786,7 +777,7 @@ class IrInterpreter {
                 // Auto-deref: member access on a pointer reads through it (`p.v` == `(*p).v`).
                 if (receiver is Pointer) receiver = receiver.value
                 // `Hash`'s member on a primitive. A pack supplies its own, so
-                // only the built-in value types are answered here — this is the
+                // only the built-in value types are answered here - this is the
                 // runtime half of `bridge spec Hash`.
                 if (expr.name == "hash" && receiver !is Map<*, *>) {
                     return@evalExpr primitiveHash(receiver)
@@ -899,7 +890,7 @@ class IrInterpreter {
                     is Number -> v
                     is Char -> v.code
                     is Boolean -> if (v) 1 else 0
-                    else -> null // pointer-ish FFI cast — no interpreter meaning, pass through
+                    else -> null // pointer-ish FFI cast - no interpreter meaning, pass through
                 }
                 if (n == null) v else when (expr.type) {
                     IrType.Int, IrType.UInt -> n.toInt().toLong()
@@ -1016,7 +1007,7 @@ class IrInterpreter {
                             "isEmpty" -> list.isEmpty()
                             "isNotEmpty" -> list.isNotEmpty()
                             "fill" -> {
-                                // `arr().fill(count)` — pre-allocate `count` null slots.
+                                // `arr().fill(count)` - pre-allocate `count` null slots.
                                 val count = (args[0] as Long).toInt()
                                 repeat(count) { list.add(null) }
                                 list
@@ -1101,7 +1092,7 @@ class IrInterpreter {
         // A generic body sees its type parameter erased, so `a + b` inside
         // `func total<T>(…) where T: Arithmetic` lowered to the built-in add
         // with no chance to find the operator. The values know their own type at
-        // runtime, so the operator is looked up here — which is the same reason
+        // runtime, so the operator is looked up here - which is the same reason
         // the interpreter already compares erased values at runtime.
         dispatchOperatorOnRuntimeType(expr.op, left, right)?.let { return it }
 
@@ -1154,7 +1145,7 @@ class IrInterpreter {
             left is Double && right is Double -> left.compareTo(right)
             left is Char && right is Char -> left.compareTo(right)
             // Lexicographic by code point, which is what `impl Order for String`
-            // promises — an order, not a collation.
+            // promises - an order, not a collation.
             left is String && right is String -> left.compareTo(right)
             // `false < true`, the order `impl Order for Bool` states.
             left is Boolean && right is Boolean -> left.compareTo(right)
@@ -1222,7 +1213,7 @@ class IrInterpreter {
             return result
         }
         if (expr.name == "__dynCast") {
-            // `x as? T` — the value if it is a `T` at runtime, else null.
+            // `x as? T` - the value if it is a `T` at runtime, else null.
             val value = args[0]
             val typeName = args[1] as String
             val matches = when (typeName) {
@@ -1239,17 +1230,12 @@ class IrInterpreter {
             return if (args[0] != null) args[0] else args[1]
         }
         if (expr.name == "__alloc") {
-            val ptr = asPointer(args[0])
-            // Register with the current `realm alloc { }` arena (if any) for cleanup at exit.
-            state().regionAllocations.lastOrNull()?.add(ptr)
-            return ptr
+            return asPointer(args[0])
         }
         if (expr.name == "__allocBuffer") {
-            // alloc T(count) — a buffer of `count` zero/null-initialized T's → T* (index 0).
+            // alloc T(count) - a buffer of `count` zero/null-initialized T's → T* (index 0).
             val count = (args[0] as Long).toInt()
-            val ptr = Pointer(MutableList(count) { null }, 0)
-            state().regionAllocations.lastOrNull()?.add(ptr)
-            return ptr
+            return Pointer(MutableList(count) { null }, 0)
         }
         if (expr.name == "__deref") {
             return (args[0] as Pointer).value
@@ -1259,7 +1245,7 @@ class IrInterpreter {
             return null
         }
         if (expr.name == "__purge") {
-            // `purge <expr>` — if the value is a Map (struct/node instance), call its dtor if one exists.
+            // `purge <expr>` - if the value is a Map (struct/node instance), call its dtor if one exists.
             val value = args[0]
             if (value is Map<*, *>) {
                 val typeName = value["__type"] as? String
@@ -1296,7 +1282,7 @@ class IrInterpreter {
             // Slow path: create the singleton via its factory (outside the lock).
             val factoryName = "__singleton_${typeName.removePrefix("__")}"
             val factory = functions[factoryName]
-                ?: error("No singleton factory for '$typeName' — is it declared as `solo`?")
+                ?: error("No singleton factory for '$typeName' - is it declared as `solo`?")
             val instance = executeFunction(factory, emptyList())
             // putIfAbsent handles the race where another coroutine created it meanwhile.
             return azSync(singletons) { singletons.putIfAbsentCompat(typeName, instance) ?: instance }
@@ -1330,7 +1316,7 @@ class IrInterpreter {
             }
         }
         if (expr.name == "__dbg") {
-            // Debug-build line marker — pauses here while a debugger is attached.
+            // Debug-build line marker - pauses here while a debugger is attached.
             debugHost?.onLine(((args.firstOrNull() as? Long) ?: 0L).toInt(), snapshotLocals())
             return null
         }
@@ -1374,7 +1360,7 @@ class IrInterpreter {
             return (args[0] as List<Char>).joinToString("")
         }
         if (expr.name == "isAlpha") return (args[0] as Char).isLetter()
-        // `Array::fill<T>(count)` — allocate `count` default (null) slots.
+        // `Array::fill<T>(count)` - allocate `count` default (null) slots.
         if (expr.name == "__std_Array_fill") {
             val count = (args[0] as Number).toInt()
             return MutableList<Any?>(count) { null }
@@ -1405,7 +1391,7 @@ class IrInterpreter {
             return null
         }
         if (expr.name == "__launch") {
-            // `launch { … }` — start a fire-and-forget task; joined before interpret() returns.
+            // `launch { … }` - start a fire-and-forget task; joined before interpret() returns.
             val thunk = args[0] as? Closure ?: error("launch expects a task body")
             val scope = coroutineScope ?: error("launch used outside of the interpreter's runBlocking scope")
             val deferred = scope.async(context = childState()) { invokeClosure(thunk) }
@@ -1570,7 +1556,7 @@ class IrInterpreter {
         else -> type.toString()
     }
 
-    /** Returns an independent deep copy of [value] (for `isolated(…)`). */
+    /** Returns an independent deep copy of [value] (for `.clone()`). */
     private fun deepCopy(value: Any?): Any? = when (value) {
         null -> null
         // Immutable scalars are safe to share.
@@ -1608,7 +1594,7 @@ class IrInterpreter {
     /** A value thrown by `throw`, caught by `try`/`catch`. */
     private class AzoraThrownException(val value: Any?) : RuntimeException(value?.toString())
 
-    /** Unrecoverable runtime `panic` — propagates out of [interpret]. */
+    /** Unrecoverable runtime `panic` - propagates out of [interpret]. */
     private class AzoraPanicException(message: String) : RuntimeException("panic: $message")
 
     /** A lambda value capturing its definition environment. */
@@ -1621,7 +1607,7 @@ class IrInterpreter {
     /** A structured child task. Its Deferred is parented to the interpreter root scope. */
     private class TaskHandle(val deferred: kotlinx.coroutines.Deferred<Any?>)
 
-    /** A heap pointer — a mutable cell holding the pointee value. */
+    /** A heap pointer - a mutable cell holding the pointee value. */
     private class Pointer(val buffer: MutableList<Any?>, val index: Int) {
         val value: Any? get() = buffer[index]
         fun setValue(v: Any?) { buffer[index] = v }
@@ -1643,7 +1629,7 @@ class IrInterpreter {
     /** A communication channel between tasks, wrapping a kotlinx.coroutines channel. */
     private class AzoraChannel(val channel: Channel<Any?>)
 
-    /** A mutable reference cell for `ref`/`out` parameters — auto-unwrapped by lookupVar/assignVar. */
+    /** A mutable reference cell for `ref`/`out` parameters - auto-unwrapped by lookupVar/assignVar. */
     private class RefCell(var value: Any?)
 }
 

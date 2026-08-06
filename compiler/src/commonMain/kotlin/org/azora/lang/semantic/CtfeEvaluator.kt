@@ -27,14 +27,14 @@ import org.azora.lang.frontend.RealmMeta
 import org.azora.lang.ir.IrType
 
 /**
- * Semantic Pass 3 — Compile-Time Function Execution (CTCE).
+ * Semantic Pass 3 - Compile-Time Function Execution (CTCE).
  *
  * Evaluates functions and expressions that are marked (or inferred) as
  * compile-time. The results are folded back into the AST, replacing
  * CTCE call sites with their computed values.
  *
  * Design:
- *  - Shares the compiler's own type system ([IrType]) — no separate evaluator types.
+ *  - Shares the compiler's own type system ([IrType]) - no separate evaluator types.
  *  - After CTCE, the AST may contain new/mutated nodes that require re-running
  *    type resolution. The [SemanticPipeline] handles this via a fixed-point loop.
  *  - Maximum iteration count prevents infinite metaprogramming loops.
@@ -66,8 +66,8 @@ class CtfeEvaluator(private val table: SymbolTable) {
 
     /**
      * Compile-time constants folded by the top-level pass ([evaluateTopLevel]).
-     * These come from top-level `deepinline`/`inline` bindings — including those
-     * auto-imported from an `expose mod` such as `std.config` — and are exposed
+     * These come from top-level `deepinline`/`inline` bindings - including those
+     * auto-imported from an `expose mod` such as `std.config` - and are exposed
      * so the fixed-point pass can seed them into every function body via
      * [seedConstants]. Without this, top-level compile-time constants are removed
      * before symbol collection and would be invisible inside functions.
@@ -134,7 +134,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
         if (topChanged) changed = true
         // Phase A consumed the top-level `inline` items, so their values live
         // only here now. Carry them into Phase B or every use inside a function
-        // — body or parameter default — resolves to a constant that is gone.
+        // - body or parameter default - resolves to a constant that is gone.
         val topLevelEnv = inlineEnv.toMap()
 
         // Phase B: Resolve inline constructs inside function bodies
@@ -176,7 +176,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 // A parameter default is code the caller runs, so it has to be
                 // folded like a body. Leaving it alone lets a default that names
                 // an `inline fin` survive as a reference to a constant that no
-                // longer exists — the item was consumed in Phase A.
+                // longer exists - the item was consumed in Phase A.
                 val newParams = item.decl.params.map { param ->
                     val default = param.defaultValue
                     if (default == null) {
@@ -694,7 +694,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
      */
     private fun foldDeepInlineStmt(stmt: Stmt, program: Program, errors: MutableList<String>): Pair<List<Stmt>, Boolean> {
         return when (stmt) {
-            // noinline cancels the inline — pass through with substitutions only
+            // noinline cancels the inline - pass through with substitutions only
             is Stmt.NoInline -> {
                 val (stmts, changed) = foldStmt(stmt.stmt, program, errors)
                 Pair(stmts, changed)
@@ -762,7 +762,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
     // -- noinline --------------------------------------------------------------
 
     /**
-     * `noinline` outside a deepinline block — just unwrap and process normally.
+     * `noinline` outside a deepinline block - just unwrap and process normally.
      */
     private fun foldNoInline(stmt: Stmt.NoInline, program: Program): Pair<List<Stmt>, Boolean> {
         return Pair(listOf(stmt.stmt), false)
@@ -778,7 +778,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
             result.addAll(stmts)
         }
 
-        return Pair(result, true) // always changed — the block itself is removed
+        return Pair(result, true) // always changed - the block itself is removed
     }
 
     /**
@@ -864,7 +864,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
      * The const type arguments a call supplies, as the literals they stand for.
      *
      * `func axis<I: Int>()` called as `axis<0>()` binds `I` to `0`. A type argument
-     * that is a type rather than a value binds nothing here — it is not something the
+     * that is a type rather than a value binds nothing here - it is not something the
      * body can read.
      */
     private fun constTypeArguments(
@@ -943,7 +943,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
             is Expr.TryPropagate -> expr.copy(expr = sub(expr.expr))
             is Expr.Grouping -> expr.copy(expr = sub(expr.expr))
             // A substituted name may sit anywhere an expression may, so every form
-            // that holds sub-expressions is walked — `if i == I { … } else { … }` is
+            // that holds sub-expressions is walked - `if i == I { … } else { … }` is
             // as much a place `i` appears as `a + i` is.
             is Expr.IfExpr -> expr.copy(
                 condition = sub(expr.condition),
@@ -987,11 +987,11 @@ class CtfeEvaluator(private val table: SymbolTable) {
      * Evaluates `inline if` at compile time.
      *
      * The condition must be a compile-time constant.
-     * Only the taken branch survives — the other is completely removed from
+     * Only the taken branch survives - the other is completely removed from
      * the AST (not even type-checked).
      */
     /**
-     * `deepinline if` — evaluates the condition at compile time, then
+     * `deepinline if` - evaluates the condition at compile time, then
      * deep-inlines the taken branch (all nested statements become compile-time).
      */
     private fun foldDeepInlineIf(stmt: Stmt.DeepInlineIf, program: Program, errors: MutableList<String>): Pair<List<Stmt>, Boolean> {
@@ -1017,7 +1017,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
 
         if (foldedCond !is Expr.BoolLiteral) {
             // Condition is not (yet) a compile-time constant.
-            // Return it unchanged — the fixed-point loop may resolve it
+            // Return it unchanged - the fixed-point loop may resolve it
             // on a later iteration. If it never resolves, TypeResolver
             // will report the error.
             return Pair(listOf(stmt.copy(condition = foldedCond)), false)
@@ -1025,10 +1025,10 @@ class CtfeEvaluator(private val table: SymbolTable) {
 
         // Condition resolved! Take the appropriate branch.
         return if (foldedCond.value) {
-            // Condition is true — splice in the then-branch
+            // Condition is true - splice in the then-branch
             Pair(stmt.thenBranch, true)
         } else {
-            // Condition is false — splice in the else-branch (or nothing)
+            // Condition is false - splice in the else-branch (or nothing)
             Pair(stmt.elseBranch ?: emptyList(), true)
         }
     }
@@ -1052,7 +1052,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
         val start = (startExpr as? Expr.IntLiteral)?.value
         val end = (endExpr as? Expr.IntLiteral)?.value
         if (start == null || end == null) {
-            // Bounds not yet constant — leave for the fixed-point loop / TypeResolver.
+            // Bounds not yet constant - leave for the fixed-point loop / TypeResolver.
             return Pair(listOf(stmt), false)
         }
         val savedEnv = inlineEnv.toMap()
@@ -1090,7 +1090,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
      * Whether [typeName] conforms to [specName], or null when [typeName] is not a
      * declared type at all (a value, or a parameter still unbound).
      *
-     * Conformance is nominal — an `impl Spec for Type` must exist — and a type that
+     * Conformance is nominal - an `impl Spec for Type` must exist - and a type that
      * is declared but implements nothing conforms to nothing, which is a decision,
      * not an absence of one.
      */
@@ -1159,7 +1159,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
      *
      * Statement position has [tryInlineFuncCall]; this is its expression counterpart,
      * and it is what binds a const type parameter. `axis<0>()` has to become the
-     * body of `axis` with `I` replaced by `0` — leaving the call intact would compile,
+     * body of `axis` with `I` replaced by `0` - leaving the call intact would compile,
      * because `I` is an `Int` in the declaration's own scope, and then read an unbound
      * name at runtime.
      *
@@ -1185,7 +1185,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
      *
      * Compile-time bindings are what a splice reads: the loop variable of an
      * enclosing `inline for`, an `inline fin`, anything in [inlineEnv]. A name that
-     * splices something not bound yet is left alone — a later pass may bind it.
+     * splices something not bound yet is left alone - a later pass may bind it.
      */
     private fun spliceName(name: String): String? {
         if ('$' !in name) return null
@@ -1258,7 +1258,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
 
                 // An `inline func` used as a value is inlined here. This is the only
                 // way its const type parameters ever get values: `axis<0>()` binds
-                // `I` to 0, and nothing downstream could do it — by runtime `I` is a
+                // `I` to 0, and nothing downstream could do it - by runtime `I` is a
                 // name with no binding at all.
                 inlineCallAsExpression(expr, newArgs, program)?.let { return Pair(it, true) }
 
@@ -1301,7 +1301,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
             }
             is Expr.CatchExpr, is Expr.Lambda -> Pair(expr, false)
             is Expr.SafeMember -> {
-                // `(reflect X).realm?.label` / `?.isInline` — fold the safe terminal.
+                // `(reflect X).realm?.label` / `?.isInline` - fold the safe terminal.
                 foldRealmTerminal(expr.target, expr.name, program, expr.line)?.let { return Pair(it, true) }
                 Pair(expr, false)
             }
@@ -1358,7 +1358,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 Pair(if (changed) expr.copy(target = t, index = i) else expr, changed)
             }
             is Expr.Member -> {
-                // `m.m$r$c` — a member name may splice compile-time values, the same
+                // `m.m$r$c` - a member name may splice compile-time values, the same
                 // way any other name may. Resolving it here means an `inline for` can
                 // walk a family of members by name without a special access form.
                 spliceName(expr.name)?.let { spliced ->
@@ -1644,7 +1644,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
         // them would erase scheduling, cancellation, and Task<T> from the type graph.
         if (funcDecl.isTask || funcDecl.isFlow || funcDecl.isUnsafe) return null
         // A `T ?! E` function can fail, and failure is not a value this evaluator
-        // models — it would interpret straight past a `return .Variant` and fold
+        // models - it would interpret straight past a `return .Variant` and fold
         // the call to whatever the success path happens to produce. Leave the
         // call for runtime, where the error transport observes it.
         if ((funcDecl.returnType as? TypeAnnotation.Explicit)?.ref is TypeRef.Failable) return null
@@ -1658,7 +1658,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
         // trailing arguments. Folding here would bind the single argument directly
         // (e.g. `arrayOf(0)` → `0` instead of `[0]`), so leave variadic calls alone.
         if (funcDecl.params.any { it.variadic }) return null
-        if (args.size != funcDecl.params.size) return null // arg count mismatch — let TypeResolver report it
+        if (args.size != funcDecl.params.size) return null // arg count mismatch - let TypeResolver report it
 
         // Build a compile-time environment: param name → constant value.
         // A const type parameter is part of that environment: interpreting the body
@@ -1773,8 +1773,8 @@ class CtfeEvaluator(private val table: SymbolTable) {
                     val result = interpretBody(stmt.body, env, program, line)
                     if (result != null) return result
                 }
-                is Stmt.Assert -> return null // side-effecting — can't CTCE
-                is Stmt.Trace -> return null // side-effecting — can't CTCE
+                is Stmt.Assert -> return null // side-effecting - can't CTCE
+                is Stmt.Trace -> return null // side-effecting - can't CTCE
                 is Stmt.InlineAssert -> {
                     val cond = evalExpr(stmt.condition, env, program) ?: return null
                     if (cond is Expr.BoolLiteral && !cond.value) return null

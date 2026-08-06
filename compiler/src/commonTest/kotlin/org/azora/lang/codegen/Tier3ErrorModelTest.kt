@@ -15,7 +15,7 @@ import org.azora.lang.semantic.SemanticPipeline
 import kotlin.test.*
 
 /**
- * Tier 3 — fail-set error model (foundation).
+ * Tier 3 - fail-set error model (foundation).
  *
  * `fail ErrSet { … }` declares an error set; `T ?! ErrSet` annotates a failable return
  * type; `fail ErrSet.Variant` (or `throw`) raises an error; `try/catch` and

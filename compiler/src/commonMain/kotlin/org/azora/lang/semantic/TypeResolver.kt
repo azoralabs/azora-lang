@@ -160,7 +160,7 @@ class TypeResolver(private val table: SymbolTable) {
      *
      * `Vec3f::zero` reaches here as `Vec3f__zero`, and the member lives on the
      * specialization `Vec3f` is an alias for. The alias table is the only place that
-     * correspondence exists by this point — the aliases are generated too late for
+     * correspondence exists by this point - the aliases are generated too late for
      * monomorphization to have rewritten the name.
      */
     private fun throughTypeAlias(name: String): String? {
@@ -181,7 +181,7 @@ class TypeResolver(private val table: SymbolTable) {
      * The type of [expr] as far as a local lookup can tell.
      *
      * Only used to notice that something is a union before its member access is
-     * resolved, so an identifier is enough — and resolving the expression here
+     * resolved, so an identifier is enough - and resolving the expression here
      * would report its errors twice.
      */
     private fun inferredTargetType(expr: Expr): IrType? =
@@ -265,7 +265,7 @@ class TypeResolver(private val table: SymbolTable) {
 
         // A const type parameter (`func axis<I: Int>`) is an integer the body may
         // read. Its value is only known at a call site, but its type is not, so it is
-        // in scope here — otherwise the declaration cannot be checked at all.
+        // in scope here - otherwise the declaration cannot be checked at all.
         for (constParam in func.constParams) {
             table.defineVariable(VariableSymbol(constParam, IrType.Int, mutable = false))
         }
@@ -362,7 +362,7 @@ class TypeResolver(private val table: SymbolTable) {
      * Checks that every origin a signature names is something it can borrow from.
      *
      * An origin is a promise about *which input* the result points into, so it
-     * has to name one — a parameter passed by borrow, or the receiver. A name
+     * has to name one - a parameter passed by borrow, or the receiver. A name
      * that is not there, or one passed by value, cannot outlive the call and so
      * cannot be an origin.
      */
@@ -377,7 +377,7 @@ class TypeResolver(private val table: SymbolTable) {
             val byValue = decl.params.any { it.name == origin }
             errors.add(
                 if (byValue) {
-                    "line ${decl.line}: '${decl.name}' cannot borrow from '$origin' — it is passed by value, " +
+                    "line ${decl.line}: '${decl.name}' cannot borrow from '$origin' - it is passed by value, " +
                         "so it does not outlive the call; declare it as a borrow to return one"
                 } else {
                     "line ${decl.line}: '${decl.name}' names borrow origin '$origin', which is not one of " +
@@ -389,7 +389,7 @@ class TypeResolver(private val table: SymbolTable) {
 
     /**
      * The binding a returned borrow reads from, or null when it is not rooted in
-     * one — a temporary, a call result, or anything else with no named source.
+     * one - a temporary, a call result, or anything else with no named source.
      */
     private fun borrowRoot(expr: Expr): String? = when (expr) {
         is Expr.Identifier -> expr.name
@@ -419,7 +419,7 @@ class TypeResolver(private val table: SymbolTable) {
     }
 
     /**
-     * Names bound to a borrow by the current signature — borrowed parameters and
+     * Names bound to a borrow by the current signature - borrowed parameters and
      * a borrowed receiver.
      *
      * A borrow owns nothing, so these are the names that cannot give a value
@@ -466,7 +466,7 @@ class TypeResolver(private val table: SymbolTable) {
         if (!pastSuspension || name !in suspendableBorrows) return
         if (!reportedSuspended.add(name)) return
         errors.add(
-            "line $line: '$name' is borrowed across a suspension point — the caller's value " +
+            "line $line: '$name' is borrowed across a suspension point - the caller's value " +
                 "may not outlive it; transfer ownership with 'take $name', create an independent " +
                 "value with '$name.clone()', or end the borrow before the suspension",
         )
@@ -562,8 +562,8 @@ class TypeResolver(private val table: SymbolTable) {
      */
     private fun canAccessMember(ownerType: String, name: String, visibility: Visibility): Boolean = when {
         // A leading underscore keeps a member inside the module that declares
-        // the type. An `impl` written elsewhere — an extension, or another
-        // package's addition — sees only the public surface.
+        // the type. An `impl` written elsewhere - an extension, or another
+        // package's addition - sees only the public surface.
         name.startsWith("_") -> currentReceiverType == ownerType && inOwningModule(ownerType)
         visibility == Visibility.CONFINE -> currentReceiverType == ownerType
         else -> true
@@ -576,7 +576,7 @@ class TypeResolver(private val table: SymbolTable) {
 
     private fun reportInaccessible(line: Int, kind: String, ownerType: String, name: String, visibility: Visibility) {
         val reason =
-            if (name.startsWith("_")) "private $kind '$name' of $ownerType — the leading underscore keeps it inside the module that declares $ownerType"
+            if (name.startsWith("_")) "private $kind '$name' of $ownerType - the leading underscore keeps it inside the module that declares $ownerType"
             else "confined $kind '$name' of $ownerType"
         errors.add("line $line: cannot access $reason")
     }
@@ -584,8 +584,8 @@ class TypeResolver(private val table: SymbolTable) {
     /**
      * Expected parameter types for a lambda argument, inferred from context (the
      * function-parameter type the lambda is passed as). Each untyped lambda
-     * parameter — the implicit `it`, or an explicitly named `{ it -> … }` /
-     * `{ a, b -> … }` — is seeded from the entry at its position. Consumed by
+     * parameter - the implicit `it`, or an explicitly named `{ it -> … }` /
+     * `{ a, b -> … }` - is seeded from the entry at its position. Consumed by
      * `Expr.Lambda` resolution.
      */
     private var expectedLambdaParamTypes: List<IrType>? = null
@@ -603,13 +603,13 @@ class TypeResolver(private val table: SymbolTable) {
      * The `func`/`prop` being checked, when it omitted its return type.
      *
      * An omitted return type means `Unit`, so a `return <value>` inside is a type
-     * error either way — but the useful thing to say is "declare the return
+     * error either way - but the useful thing to say is "declare the return
      * type", not "expected Unit". Null when the declaration wrote one.
      */
     private var undeclaredReturnOf: String? = null
 
     /**
-     * [undeclaredReturnOf] for [decl] — its name when it wrote no return type.
+     * [undeclaredReturnOf] for [decl] - its name when it wrote no return type.
      *
      * An operator is left out: its result is fixed by the operator's contract
      * rather than written by the author, so it still reads its type from its
@@ -772,7 +772,7 @@ class TypeResolver(private val table: SymbolTable) {
                     return
                 }
                 // `var`/`val` may be rebound after a move, which makes the name
-                // usable again — the ownership model's whole distinction between
+                // usable again - the ownership model's whole distinction between
                 // the rebindable and fixed keywords after a `take`.
                 movedBindings.remove(stmt.name)
                 // `a += b` on a type that declares an in-place `oper+=` never
@@ -804,13 +804,13 @@ class TypeResolver(private val table: SymbolTable) {
                     val valueType = resolveExpr(stmt.value) ?: return
                     val capturing = lambdaReturnTypes
                     if (capturing != null) {
-                        // Inferring a lambda's return type — record it, skip declared-type checking.
+                        // Inferring a lambda's return type - record it, skip declared-type checking.
                         capturing.add(valueType)
                     } else if (!isCompatible(returnType, adoptLiteralType(stmt.value!!, valueType, returnType))) {
                         val undeclared = undeclaredReturnOf
                         if (undeclared != null && returnType == IrType.Unit) {
                             errors.add(
-                                "line ${stmt.line}: '$undeclared' returns $valueType but declares no return type — " +
+                                "line ${stmt.line}: '$undeclared' returns $valueType but declares no return type - " +
                                     "an omitted return type means Unit, it is not inferred; " +
                                     "declare it as ': $valueType'",
                             )
@@ -972,7 +972,7 @@ class TypeResolver(private val table: SymbolTable) {
                 // The sigil at the write site already says which one this is.
                 if (target is IrType.Pointer && !target.mutable) {
                     errors.add(
-                        "line ${stmt.line}: cannot write through '$target' — " +
+                        "line ${stmt.line}: cannot write through '$target' - " +
                             "a read-only pointer. Allocate it with 'alloc^' to get a '${target.inner}^'",
                     )
                 }
@@ -1175,7 +1175,7 @@ class TypeResolver(private val table: SymbolTable) {
                 val operandType = resolveExpr(expr.operand) ?: return null
                 // A user type answers `-x`, `!x` and `~x` through the operator it
                 // declared. Checked before the built-in rules, which reject any
-                // non-numeric operand outright — that rejection is what made a
+                // non-numeric operand outright - that rejection is what made a
                 // declared unary operator dead code.
                 if (operandType is IrType.Named) {
                     unaryOverloadName(expr.op)?.let { operName ->
@@ -1220,7 +1220,7 @@ class TypeResolver(private val table: SymbolTable) {
             is Expr.Call -> {
                 // `delay <ms>` parses as a call; it suspends like an `await`.
                 if (expr.callee == "__delay") noteSuspension()
-                // Value call `receiver(args)` — the receiver must be a function value.
+                // Value call `receiver(args)` - the receiver must be a function value.
                 expr.receiver?.let { recv ->
                     val recvType = resolveExpr(recv)
                     if (recvType is IrType.Function) {
@@ -1242,7 +1242,7 @@ class TypeResolver(private val table: SymbolTable) {
                     return null
                 }
                 // Struct construction: `Name(args)` where Name is a pack. Inside an
-                // impl, `Self(…)` builds the type the impl is on — the same meaning
+                // impl, `Self(…)` builds the type the impl is on - the same meaning
                 // `Self` already has in a signature, now in expression position.
                 val calleeName = selfToReceiver(expr.callee)
                 val struct = table.lookupStruct(calleeName)
@@ -1299,7 +1299,7 @@ class TypeResolver(private val table: SymbolTable) {
                                 }
                         }
                     } else {
-                        // Positional — pad omitted trailing fields with their defaults (`Pack<T>()`).
+                        // Positional - pad omitted trailing fields with their defaults (`Pack<T>()`).
                         val padded = expr.args.toMutableList()
                         for (i in expr.args.size until struct.fields.size) {
                             val d = struct.fields[i].default
@@ -1363,7 +1363,7 @@ class TypeResolver(private val table: SymbolTable) {
                     return null
                 }
                 if (!requireReactiveCaller(func, expr.line)) return null
-                // Handle named arguments — reorder to param order
+                // Handle named arguments - reorder to param order
                 // Named and positional arguments mix freely at a call, as they do at a
                 // constructor: a named one takes its parameter, a positional one fills
                 // the leftmost parameter no name has claimed.
@@ -1406,7 +1406,7 @@ class TypeResolver(private val table: SymbolTable) {
                         return null
                     }
                 } else if (hasSpread) {
-                    // A spread arg fills remaining params — skip the count check (runtime handles correctness).
+                    // A spread arg fills remaining params - skip the count check (runtime handles correctness).
                 } else if (effectiveArgs.size > func.params.size) {
                     errors.add("line ${expr.line}: '${expr.callee}' expects ${func.params.size} args, got ${effectiveArgs.size}")
                     return null
@@ -1446,7 +1446,7 @@ class TypeResolver(private val table: SymbolTable) {
                     expectedLambdaReceiverTypes = prevReceivers
                     argTypes.add(argType)
                     // `f(x)` where the parameter is `p!` borrows x exclusively, so
-                    // the callee may write through it — which a `val`/`fin` binding
+                    // the callee may write through it - which a `val`/`fin` binding
                     // does not permit.
                     if (i in func.exclusiveParams || i in func.sharedParams) {
                         checkNotGivenToBorrow(arg, i, func, expr.callee, expr.line)
@@ -1549,7 +1549,7 @@ class TypeResolver(private val table: SymbolTable) {
             }
             is Expr.ArrayLiteral -> {
                 if (expr.elements.isEmpty()) {
-                    // Empty array literal `arr()` — element type unknown; defaults to Any (erased).
+                    // Empty array literal `arr()` - element type unknown; defaults to Any (erased).
                     IrType.Array(IrType.Any)
                 } else {
                     val elemType = resolveExpr(expr.elements[0]) ?: return null
@@ -1590,7 +1590,7 @@ class TypeResolver(private val table: SymbolTable) {
                         return table.lookupFunction(mangled)?.returnType ?: IrType.Any
                     }
                 }
-                // Map indexing: `map[key]` — key may be any type.
+                // Map indexing: `map[key]` - key may be any type.
                 if (targetType is IrType.Map) {
                     resolveExpr(expr.index) ?: return null
                     return targetType.value
@@ -1636,7 +1636,7 @@ class TypeResolver(private val table: SymbolTable) {
                 if (expr.target is Expr.Identifier) {
                     val variants = table.lookupEnum(expr.target.name)
                     if (variants != null) {
-                        if (expr.name in variants) return IrType.Named(expr.target.name)
+                        if (expr.name in variants) return IrType.Named(table.canonicalTypeName(expr.target.name))
                         errors.add("line ${expr.line}: enum '${expr.target.name}' has no variant '${expr.name}'")
                         return null
                     }
@@ -1656,7 +1656,7 @@ class TypeResolver(private val table: SymbolTable) {
                     if (slotVariants != null) {
                         val variant = slotVariants.find { it.first == expr.name }
                         if (variant != null && variant.second.isEmpty()) {
-                            return IrType.Named(expr.target.name)
+                            return IrType.Named(table.canonicalTypeName(expr.target.name))
                         }
                     }
                 }
@@ -1669,7 +1669,7 @@ class TypeResolver(private val table: SymbolTable) {
                     (expr.name == "isEmpty" || expr.name == "isNotEmpty") && (targetType is IrType.Array || targetType is IrType.Map || targetType is IrType.Set) -> IrType.Bool
                     targetType is IrType.Named -> {
                         // Spec-typed value: a property/requirement declared by the spec
-                        // (e.g. `map.size` where `map: Map<K,V>` — a spec) resolves to
+                        // (e.g. `map.size` where `map: Map<K,V>` - a spec) resolves to
                         // the spec's declared prop type and dispatches to the impl.
                         val specProp = table.lookupSpecProp(targetType.name, expr.name)
                         if (specProp != null) return specProp
@@ -1733,7 +1733,7 @@ class TypeResolver(private val table: SymbolTable) {
                         }
                     }
                     // An erased generic is `Any`, and which concrete type it will
-                    // be is not known here — `element.hash` inside a container
+                    // be is not known here - `element.hash` inside a container
                     // over `T` is the case that matters. A method call on `Any`
                     // already defers to runtime and so does a comparison
                     // (`resolveBinaryType`); a property has to, for the same
@@ -1764,20 +1764,20 @@ class TypeResolver(private val table: SymbolTable) {
                 }
             }
             is Expr.MethodCall -> {
-                // `#expr` (oper#) — hash; returns ULong regardless of operand type
+                // `#expr` (oper#) - hash; returns ULong regardless of operand type
                 // (the operand may be a generic K erased to Any, whose concrete type
                 // supplies oper# at runtime).
                 if (expr.name == "oper#") {
                     resolveExpr(expr.target)
                     return IrType.ULong
                 }
-                // `x.clone()` — the `Clone` member. Compiler-provided for any
+                // `x.clone()` - the `Clone` member. Compiler-provided for any
                 // conforming type that does not write one, so it resolves here
                 // rather than needing a body per type. A clone of a T is a T.
                 if (expr.name == "clone" && expr.args.isEmpty()) {
                     resolveDefaultClone(expr)?.let { return it }
                 }
-                // `opt.require()` / `opt.take()` — the optional's value, without
+                // `opt.require()` / `opt.take()` - the optional's value, without
                 // the optional. Both are the read half of moving out of an
                 // optional (§17); the IR generator adds the guard and the write
                 // that empties it. Typed here rather than looked up so that
@@ -1799,7 +1799,7 @@ class TypeResolver(private val table: SymbolTable) {
                         return targetType
                     }
                 }
-                // Slot construction: SlotName.Variant(args) — check BEFORE resolving target
+                // Slot construction: SlotName.Variant(args) - check BEFORE resolving target
                 if (expr.target is Expr.Identifier) {
                     val slotVariants = table.lookupSlot(expr.target.name)
                     if (slotVariants != null) {
@@ -1815,7 +1815,7 @@ class TypeResolver(private val table: SymbolTable) {
                                     errors.add("line ${expr.line}: payload ${i+1} of '${expr.name}': expected ${variant.second[i]}, got $at")
                                 }
                             }
-                            return IrType.Named(expr.target.name)
+                            return IrType.Named(table.canonicalTypeName(expr.target.name))
                         }
                     }
                 }
@@ -1893,8 +1893,8 @@ class TypeResolver(private val table: SymbolTable) {
                         return specMethod.returnType
                     }
                 }
-                // Primitive impl/infx targets use their source type name as the
-                // method-table key (`infx Int.scaledBy(...)`). They are native
+                // Primitive impl targets use their source type name as the
+                // method-table key (`impl Int { … }`). They are native
                 // IR types rather than Named packs, but otherwise follow the
                 // same call contract: an implicit receiver followed by args.
                 if (targetType !is IrType.Named) {
@@ -1917,7 +1917,7 @@ class TypeResolver(private val table: SymbolTable) {
                         return func.returnType
                     }
                 }
-                // Universal infix (`a to b` → `to(a, b)`): a generic `infx` that
+                // Universal infix (`a @to b` → `to(a, b)`): a free function that
                 // applies to any receiver. Checked after real methods so those win.
                 val infixFn = table.lookupUniversalInfix(expr.name)?.let { table.lookupFunction(it) }
                 if (infixFn != null) {
@@ -1958,7 +1958,7 @@ class TypeResolver(private val table: SymbolTable) {
                         // Primitives, enums and collections format themselves at
                         // runtime. A pack does not: interpolating one that never
                         // said how it prints used to emit its internal
-                        // representation — `{__type=Vec2, x=1, y=2}` — which is a
+                        // representation - `{__type=Vec2, x=1, y=2}` - which is a
                         // pack's private layout appearing in program output.
                         val partType = resolveExpr(part.expr)
                         val named = partType as? IrType.Named
@@ -1966,7 +1966,7 @@ class TypeResolver(private val table: SymbolTable) {
                             !table.conformsTo(named.name, "Display")
                         ) {
                             errors.add(
-                                "line ${expr.line}: cannot interpolate a '${named.name}' — " +
+                                "line ${expr.line}: cannot interpolate a '${named.name}' - " +
                                     "${named.name} does not implement Display; add " +
                                     "'impl Display for ${named.name} { " +
                                     "func display[self: Self&](formatter: std::Formatter!) { … } }'",
@@ -2125,7 +2125,7 @@ class TypeResolver(private val table: SymbolTable) {
                     if (p.type == TypeRef.Named("Any") && expected != null) expected
                     else resolveDeclaredType(p.type)
                 }
-                // `std::sequence { std::yield(1) }` — a lambda passed where contextual
+                // `std::sequence { std::yield(1) }` - a lambda passed where contextual
                 // receivers are expected inherits them even though it names none. The
                 // body cannot refer to them by name, but a call inside it can take them
                 // as its own contextual receivers, which is what the builder APIs rely on.
@@ -2262,7 +2262,7 @@ class TypeResolver(private val table: SymbolTable) {
     private fun resolveArrayMethod(name: String, args: List<Expr>, arrType: IrType.Array, line: Int): IrType? {
         return when (name) {
             "fill" -> {
-                // `arr().fill<T>(count)` — pre-allocates `count` slots; returns the array.
+                // `arr().fill<T>(count)` - pre-allocates `count` slots; returns the array.
                 if (args.size != 1) { errors.add("line $line: 'fill' expects 1 argument"); return null }
                 resolveExpr(args[0]) ?: return null
                 arrType
@@ -2314,7 +2314,7 @@ class TypeResolver(private val table: SymbolTable) {
             }
         }
         // An erased generic is `Any`, and which concrete type it will be is not
-        // known here — `value.display(formatter)` inside `format<T>` is the case
+        // known here - `value.display(formatter)` inside `format<T>` is the case
         // that matters. Property access on `Any` already defers to runtime and
         // so does comparison; a method call has to, on the same grounds, and the
         // interpreter dispatches it from the `__type` the value carries.
@@ -2552,7 +2552,7 @@ class TypeResolver(private val table: SymbolTable) {
      * Whether [typeName] has said what equality means for it.
      *
      * Satisfied by a declared `oper==` (against itself or anything else), by a
-     * stated `PartialEqual`/`Equal` conformance, or by being an enum — a
+     * stated `PartialEqual`/`Equal` conformance, or by being an enum - a
      * payload-free case is a name and compares as one. Everything not a pack
      * keeps the built-in comparison.
      */
@@ -2562,7 +2562,7 @@ class TypeResolver(private val table: SymbolTable) {
         // The member itself, not the conformance. An operator member of a spec
         // is optional (`SymbolCollector.isOperatorMember`), so `impl PartialEqual
         // for Vec2` with an empty body records the capability while supplying no
-        // `==` — and accepting that here would put back the silent fallback this
+        // `==` - and accepting that here would put back the silent fallback this
         // rule exists to remove. Derivation generates a real member, so
         // `impl [Equal] for Vec2` still passes.
         if (table.lookupOperator(typeName, "oper==", null) != null) return true
@@ -2571,7 +2571,7 @@ class TypeResolver(private val table: SymbolTable) {
     }
 
     private fun resolveBinaryType(op: TokenType, left: IrType, right: IrType, line: Int): IrType? {
-        // An operator may also be declared with a primitive on the left — `2 * vec`
+        // An operator may also be declared with a primitive on the left - `2 * vec`
         // is `impl oper* for Int` taking a Vec. Such an overload must name its
         // operand, so only the operand-keyed member is consulted: nothing here can
         // shadow the built-in arithmetic of `2 * 3`.
@@ -2668,7 +2668,7 @@ class TypeResolver(private val table: SymbolTable) {
                 val bareNamed = leftBare as? IrType.Named
                 if (left == right && bareNamed != null && !nullCompare && !comparesEqual(bareNamed.name)) {
                     errors.add(
-                        "line $line: cannot compare two '${bareNamed.name}' values — " +
+                        "line $line: cannot compare two '${bareNamed.name}' values - " +
                             "${bareNamed.name} does not implement PartialEqual; add " +
                             "'impl [Equal] for ${bareNamed.name}' to compare it field by field, " +
                             "or declare 'oper== [self: ${bareNamed.name}&](rhs: ${bareNamed.name}&): Bool'",
@@ -2692,7 +2692,7 @@ class TypeResolver(private val table: SymbolTable) {
             }
             // `a <=> b` on a built-in: the integers, `Char`, `Bool` and `String`
             // are totally ordered and answer `Compare`; the floating-point types
-            // are not — a NaN relates to nothing — and answer `PartialCompare`.
+            // are not - a NaN relates to nothing - and answer `PartialCompare`.
             // Which one comes back is the whole totality claim, so it is decided
             // here rather than left to the operand types to agree on.
             TokenType.SPACESHIP -> {
@@ -2729,7 +2729,7 @@ class TypeResolver(private val table: SymbolTable) {
      * The type an expression takes on when it is an untyped numeric literal.
      *
      * `0` is written the same whether it means an `Int`, a `UInt` or a `Double`, so a
-     * literal in a position that wants a numeric type is that type — `var x: Double = 0`
+     * literal in a position that wants a numeric type is that type - `var x: Double = 0`
      * and `x == 0` both read naturally. Only literals are adopted this way: a typed
      * `Int` value still needs an explicit `as`, so the conversion stays where it can
      * be seen in the source.
@@ -2792,14 +2792,14 @@ class TypeResolver(private val table: SymbolTable) {
     /**
      * Rejects a write through a binding whose *value* is immutable (`val`/`fin`).
      *
-     * Reassigning the name is a separate question — `val` allows it, `fin` does
-     * not — and is checked where the assignment itself is resolved.
+     * Reassigning the name is a separate question - `val` allows it, `fin` does
+     * not - and is checked where the assignment itself is resolved.
      */
     private fun checkValueMutable(target: Expr, line: Int, what: String): Boolean {
         val root = writeRoot(target) ?: return true
         if (root.valueMutable) return true
         errors.add(
-            "line $line: cannot $what through '${root.name}' — its value is immutable; " +
+            "line $line: cannot $what through '${root.name}' - its value is immutable; " +
                 "declare it 'var' (or 'let' to fix only the name)",
         )
         return false
@@ -2809,20 +2809,20 @@ class TypeResolver(private val table: SymbolTable) {
      * Rejects touching a union outside an `unsafe` block.
      *
      * Reading a union member the program did not last write reinterprets bytes,
-     * and nothing in the type records which member is live — so no check can
+     * and nothing in the type records which member is live - so no check can
      * establish that a read is meaningful. `unsafe` is where the author takes
      * that on, which is why both the declaration and every use ask for it.
      */
     private fun requireUnsafeForUnion(name: String, line: Int) {
         if (unsafeContext) return
         errors.add(
-            "line $line: union '$name' can only be used inside an 'unsafe { … }' block — " +
+            "line $line: union '$name' can only be used inside an 'unsafe { … }' block - " +
                 "reading a member the program did not last write reinterprets its bytes",
         )
     }
 
     /**
-     * `Value(i: 42)` — a union is built by naming exactly one of its members.
+     * `Value(i: 42)` - a union is built by naming exactly one of its members.
      *
      * Only one member can be live at a time, so initializing more than one would
      * be a contradiction and initializing none would leave the storage
@@ -2834,7 +2834,7 @@ class TypeResolver(private val table: SymbolTable) {
         if (expr.args.size != 1) {
             errors.add(
                 "line ${expr.line}: union '${expr.callee}' is built from exactly one member, " +
-                    "e.g. '${expr.callee}(${union.fields.first().name}: …)' — got ${expr.args.size} arguments",
+                    "e.g. '${expr.callee}(${union.fields.first().name}: …)' - got ${expr.args.size} arguments",
             )
             return result
         }
@@ -2884,7 +2884,7 @@ class TypeResolver(private val table: SymbolTable) {
     private var pendingBorrows = mutableListOf<ActiveBorrow>()
 
     /**
-     * Every borrow live right now — bound ones plus those in this expression.
+     * Every borrow live right now - bound ones plus those in this expression.
      *
      * A bound borrow ends when its holder does, so one whose holder is no longer
      * in scope is dropped here rather than at every `popScope`.
@@ -2907,7 +2907,7 @@ class TypeResolver(private val table: SymbolTable) {
         val existing = if (conflict.exclusive) "a mutable borrow" else "a shared borrow"
         val attempted = if (exclusive) "mutably" else "immutably"
         errors.add(
-            "line $line: cannot borrow '$owner' $attempted — $existing of it is still active " +
+            "line $line: cannot borrow '$owner' $attempted - $existing of it is still active " +
                 "from line ${conflict.line}; a mutable borrow must be exclusive for its lifetime",
         )
     }
@@ -2916,7 +2916,7 @@ class TypeResolver(private val table: SymbolTable) {
      * Rejects using the owner itself while a mutable borrow of it is live.
      *
      * The borrow is exclusive, so for as long as it lasts it is the only way to
-     * reach the value — reading through the owner would be a second path to it.
+     * reach the value - reading through the owner would be a second path to it.
      */
     private fun checkNotMutablyBorrowed(name: String, line: Int) {
         val exclusive = liveBorrowsOf(name).firstOrNull { it.exclusive } ?: return
@@ -2978,7 +2978,7 @@ class TypeResolver(private val table: SymbolTable) {
      * Reports handing ownership to a parameter that only borrows.
      *
      * `look(take h)` where `look` takes `H&` costs the caller the value and buys
-     * the callee nothing — it wanted to look. Left unchecked the move is still
+     * the callee nothing - it wanted to look. Left unchecked the move is still
      * recorded, so the failure surfaces at the next innocent use of `h` rather
      * than here.
      */
@@ -2990,7 +2990,7 @@ class TypeResolver(private val table: SymbolTable) {
         val fix = operand?.let { "'$it.$sigil'" } ?: "it with '.$sigil'"
         errors.add(
             "line $line: cannot ${op.spelling} ${operand?.let { "'$it'" } ?: "a value"} to parameter '$name' " +
-                "of '$callee' — the parameter borrows, so it never takes ownership and the value would be " +
+                "of '$callee' - the parameter borrows, so it never takes ownership and the value would be " +
                 "given away for nothing; write $fix to borrow it for the call",
         )
     }
@@ -3012,7 +3012,7 @@ class TypeResolver(private val table: SymbolTable) {
         val returns = index in func.returnedParams
         if (isLend(arg) && !returns) {
             errors.add(
-                "line $line: cannot lend to parameter '$name' of '$callee' — it does not give ownership back; " +
+                "line $line: cannot lend to parameter '$name' of '$callee' - it does not give ownership back; " +
                     "declare it '$name: return …' to lend to it, or write 'take' to give the value away",
             )
         } else if (returns && !isLend(arg)) {
@@ -3030,7 +3030,7 @@ class TypeResolver(private val table: SymbolTable) {
 
     /** The binding a `take` moves out of, or null when the operand owns nothing named. */
     /**
-     * The dotted path a `take` moves out of — `a.db`, `self.buffer` — or null
+     * The dotted path a `take` moves out of - `a.db`, `self.buffer` - or null
      * when the operand is not a field of a named binding.
      *
      * A field is moved independently of the value holding it, so it needs a name
@@ -3070,7 +3070,7 @@ class TypeResolver(private val table: SymbolTable) {
             else -> null
         } ?: return
         errors.add(
-            "line $line: cannot ${op.spelling} '${movablePath(target)}' — $reason; " +
+            "line $line: cannot ${op.spelling} '${movablePath(target)}' - $reason; " +
                 "take an exclusive borrow of '$owner' to move a field out of it",
         )
     }
@@ -3079,7 +3079,7 @@ class TypeResolver(private val table: SymbolTable) {
         is Expr.Identifier -> target.name.takeIf { table.lookupVariable(it) != null }
         // `take self.database` moves the field, not the owner; the owner stays
         // usable, so nothing is recorded against it (see the ownership model's
-        // "moving out of fields" — the field's own state is left to a later pass).
+        // "moving out of fields" - the field's own state is left to a later pass).
         is Expr.Grouping -> movableRootName(target.expr)
         else -> null
     }
@@ -3088,13 +3088,13 @@ class TypeResolver(private val table: SymbolTable) {
      * Reports a read of a binding whose value was taken.
      *
      * Reassigning re-establishes a value, which is why `var`/`val` may be used
-     * again after a move and `let`/`fin` may not — the difference falls out of
+     * again after a move and `let`/`fin` may not - the difference falls out of
      * the binding keyword rather than being a separate rule.
      */
     private fun checkNotMoved(name: String, line: Int) {
         val movedAt = movedBindings[name] ?: return
         errors.add(
-            "line $line: use of taken value '$name' — its ownership transferred at line $movedAt; " +
+            "line $line: use of taken value '$name' - its ownership transferred at line $movedAt; " +
                 "use '$name.clone()' instead when both owners need a value",
         )
     }
@@ -3107,14 +3107,14 @@ class TypeResolver(private val table: SymbolTable) {
      * the ownership model asks for that to be written: `take` to transfer, or
      * `.clone()` for a second independent value.
      *
-     * Only a *named* binding is checked. A temporary — a call result, a literal,
-     * a freshly constructed value — has no other owner, so passing it transfers
+     * Only a *named* binding is checked. A temporary - a call result, a literal,
+     * a freshly constructed value - has no other owner, so passing it transfers
      * nothing that anyone could observe.
      */
     private fun checkByValueTransfer(arg: Expr, argType: IrType, line: Int) {
         // Only meaningful once the capability lattice is actually in scope. A
-        // program that declares its own bare `Copy` — or never imports
-        // `std.traits` — has no conformances to judge against, and rejecting
+        // program that declares its own bare `Copy` - or never imports
+        // `std.traits` - has no conformances to judge against, and rejecting
         // every by-value argument on that basis would be nonsense.
         if (!table.conformsTo("Int", "Copy")) return
         val name = (arg as? Expr.Identifier)?.name ?: return
@@ -3131,7 +3131,7 @@ class TypeResolver(private val table: SymbolTable) {
             }
         }
         errors.add(
-            "line $line: cannot pass '$name' by ownership — '$typeName' is not Copy" +
+            "line $line: cannot pass '$name' by ownership - '$typeName' is not Copy" +
                 if (fixes.isEmpty()) "" else "; ${fixes.joinToString(", or ")}",
         )
     }
@@ -3139,18 +3139,19 @@ class TypeResolver(private val table: SymbolTable) {
     /**
      * `x.clone()` where the compiler supplies the member.
      *
-     * Returns null when this is not that call — the receiver is not `Clone`,
+     * Returns null when this is not that call - the receiver is not `Clone`,
      * or the type writes its own `clone`, in which case the ordinary method
      * lookup takes it from here. Reporting a missing `Clone` is left to that
      * path too, so the diagnostic stays the usual "no method" one.
      */
     private fun resolveDefaultClone(expr: Expr.MethodCall): IrType? {
         val receiver = resolveExpr(expr.target) ?: return null
-        val name = conformanceName(receiver) ?: return null
+        val name = cloneConformanceName(receiver) ?: return null
         if (table.lookupMethod(name, "clone") != null) return null
         if (!table.conformsTo(name, "Clone")) return null
         return receiver
     }
+
 
     /**
      * The name a conformance is registered under for [type].
@@ -3167,27 +3168,34 @@ class TypeResolver(private val table: SymbolTable) {
     }
 
     /**
-     * `take v` / `isolated(v)` — checks the capability and records the move.
+     * The name a `Clone` conformance is registered under for [type].
      *
-     * A capability is nominal: where the operation names one, the operand's
-     * type must carry it. `take` names none — every value can be given away. A
-     * type parameter carries no known conformance at the declaration, so a
-     * generic body is left alone; its `where` clause is where that is stated.
+     * Wider than [conformanceName]: the aggregate builtins have no nominal
+     * declaration, but a conformance can still be written against their type
+     * constructor - `impl Clone for Array` lives in `std.container.array`.
+     * Element types are erased on purpose; the conformance is on the container.
+     *
+     * This is deliberately separate from [conformanceName], which also feeds
+     * the `Copy` and ownership checks. Naming the aggregates there would make
+     * passing an array by value an error everywhere.
+     */
+    private fun cloneConformanceName(type: IrType): String? = when (type) {
+        is IrType.Array -> "Array"
+        is IrType.Map -> "Map"
+        is IrType.Set -> "Set"
+        is IrType.Tuple -> "Tuple"
+        else -> conformanceName(type)
+    }
+
+    /**
+     * `take v` / `lend v` / a borrow - records the move.
+     *
+     * None of these duplicates the operand, so none asks a capability of its
+     * type: every value can be given away or lent. What is checked here is the
+     * caller's claim on it afterwards.
      */
     private fun resolveOwnershipOp(expr: Expr.Isolated): IrType? {
         val type = resolveExpr(expr.value) ?: return null
-        val capability = expr.op.capability
-        if (capability != null) {
-            val named = (type as? IrType.Named)?.name
-            if (named != null && !currentFuncTypeParams.contains(named) && knowsCapability(capability)) {
-                if (!table.conformsTo(named, capability)) {
-                    errors.add(
-                        "line ${expr.line}: cannot ${expr.op.spelling} a value of type '$named' — " +
-                            "it does not implement '$capability'",
-                    )
-                }
-            }
-        }
         if (expr.op == OwnershipOp.TAKE || expr.op == OwnershipOp.LEND) {
             checkFieldMoveAccess(expr.value, expr.op, expr.line)
             // A borrow owns nothing, so it has nothing to give away. Without
@@ -3203,7 +3211,7 @@ class TypeResolver(private val table: SymbolTable) {
                 }
                 if (borrowed != null) {
                     errors.add(
-                        "line ${expr.line}: cannot ${expr.op.spelling} '$name' — $borrowed; " +
+                        "line ${expr.line}: cannot ${expr.op.spelling} '$name' - $borrowed; " +
                             "${expr.op.spelling} the owner instead, or declare '$name' by ownership so " +
                             "there is something to give away",
                     )
@@ -3246,17 +3254,6 @@ class TypeResolver(private val table: SymbolTable) {
         return type
     }
 
-    /**
-     * Whether [capability] is declared in this compilation at all.
-     *
-     * The capability specs live in `std.traits`, which a program only sees once
-     * it imports them. Checking against a spec that was never declared would
-     * reject every program that does not — so where the contract is unknown,
-     * nothing is claimed.
-     */
-    private fun knowsCapability(capability: String): Boolean =
-        table.lookupSpec(capability) != null
-
     private fun resolveBinding(
         name: String,
         typeAnn: TypeAnnotation,
@@ -3298,7 +3295,7 @@ class TypeResolver(private val table: SymbolTable) {
             }
         }
         movedBindings.remove(name)
-        // `let m: User! = user.!` — the borrow now lives as long as `m` does,
+        // `let m: User! = user.!` - the borrow now lives as long as `m` does,
         // rather than ending with the expression that made it.
         bindPendingBorrow(name)
     }
@@ -3317,7 +3314,7 @@ class TypeResolver(private val table: SymbolTable) {
 
     private fun tryResolveType(ref: TypeRef, line: Int): IrType? {
         return try {
-            // Type params (e.g. `T`) erase to `Any` — those of the enclosing function
+            // Type params (e.g. `T`) erase to `Any` - those of the enclosing function
             // and, inside an impl method, those of the receiver struct.
             val tpSet = currentFuncTypeParams +
                 (currentReceiverType?.let { table.lookupStruct(it)?.typeParams?.toSet() } ?: emptySet())
@@ -3348,8 +3345,8 @@ class TypeResolver(private val table: SymbolTable) {
     /**
      * Whether [name] belongs to this application's specialized layout.
      *
-     * Returns true for anything not governed by a condition — an ordinary struct, a
-     * not-yet-concrete application, or an unconditional field — so this only ever
+     * Returns true for anything not governed by a condition - an ordinary struct, a
+     * not-yet-concrete application, or an unconditional field - so this only ever
      * removes members a concrete layout genuinely excludes.
      */
     private fun specializedLayoutHasField(targetType: IrType.Named, name: String): Boolean {
@@ -3373,7 +3370,7 @@ class TypeResolver(private val table: SymbolTable) {
      *
      * This is the ordinary-generic counterpart of variadic specialization
      * validation, and shares its evaluator. It runs where a declared type is
-     * resolved — after parsing, and never during overload filtering — and only once
+     * resolved - after parsing, and never during overload filtering - and only once
      * per unique combination of arguments.
      *
      * A type application stays unvalidated while any argument is still a parameter
@@ -3392,7 +3389,7 @@ class TypeResolver(private val table: SymbolTable) {
         val bindings = mutableMapOf<String, ConstraintEvaluator.Binding>()
         for ((index, param) in declaration.typeParams.withIndex()) {
             val arg = named.args[index]
-            // Still abstract — the combination is not known yet.
+            // Still abstract - the combination is not known yet.
             if (arg is TypeRef.Named && (arg.name in typeParams || arg.name in declaration.typeParams)) return
             bindings[param] = ConstraintEvaluator.bindingOf(arg) ?: return
         }

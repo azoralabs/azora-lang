@@ -28,8 +28,8 @@ import kotlin.test.assertTrue
  * `when` in expression position.
  *
  * All three forms share one branch parser, so these cover the value form
- * (initializers, arguments, operands), the `return when` form — which lowers to
- * a statement `when` and therefore keeps slot destructuring — and the rule that
+ * (initializers, arguments, operands), the `return when` form - which lowers to
+ * a statement `when` and therefore keeps slot destructuring - and the rule that
  * `else` is optional once every case is listed.
  */
 class WhenExpressionTest {

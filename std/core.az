@@ -26,7 +26,7 @@ expose module std.core
  */
 
 use realm std {
-    @Since("0.0.4")
+    @Since("0.1")
     bridge pack Unit
 
     /**
@@ -35,10 +35,10 @@ use realm std {
      * `Any` is compiler-provided: it has no constructible runtime pack and each
      * backend uses its native erased value representation.
      */
-    @Since("0.0.4")
+    @Since("0.1")
     bridge pack Any
 
-    @Since("0.0.4")
+    @Since("0.1")
     bridge pack Self
 
     /**
@@ -46,11 +46,11 @@ use realm std {
      * type lists (`[Type]`) and as the parameter type of `type` functions
      * (`type promote(T: ...Type)`).
      */
-    @Since("0.0.4")
+    @Since("0.1")
     bridge pack Type
 
     /** Declaration categories accepted by decorator `for` constraints. */
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     bridge enum DecoTarget {
         Pack, Func, AsyncFunc, Prop, AsyncProp, Enum, VariantEnum, EnumValue,
         Error, VariantError, ErrorValue, UnsafeUnion, UnionValue, Annot,
@@ -59,7 +59,7 @@ use realm std {
     }
 
     /** Controls whether a test runs its own body or aggregates its source file. */
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     bridge enum TestMethod {
         /** Runs only this test body. This is the default. */
         This
@@ -73,9 +73,9 @@ use realm std {
      *
      * Total means every pair of values relates: for any `a` and `b` exactly one
      * of `Less`, `Equal`, `Greater` holds, and the relation is transitive. A
-     * type whose `<=>` answers `Compare` is making that promise — see [Order].
+     * type whose `<=>` answers `Compare` is making that promise - see [Order].
      */
-    @Since("0.0.5")
+    @Since("0.1")
     enum Compare {
         Less
         Equal
@@ -91,7 +91,7 @@ use realm std {
      * relational operators derived from a `PartialCompare` are *all* false for
      * such a pair rather than the negation of one another.
      */
-    @Since("0.0.5")
+    @Since("0.1")
     enum PartialCompare {
         Less
         Equal
@@ -105,13 +105,13 @@ use realm std {
      * `a < b` is rewritten to `(a <=> b).isLess` and its three siblings likewise,
      * so this is where the meaning of `<`, `<=`, `>` and `>=` actually lives for
      * every type that declares `<=>`. Writing them here rather than in the
-     * compiler is what keeps [Compare] and [PartialCompare] free to disagree —
+     * compiler is what keeps [Compare] and [PartialCompare] free to disagree -
      * and they do, on every one of the four.
      *
      * A total order has three answers, so the "or equal" forms are the negation
      * of their opposite.
      */
-    @Since("0.0.5")
+    @Since("0.1")
     impl Compare {
         prop isLess[self: Self&]: Bool { return self == Compare.Less }
         prop isLessOrEqual[self: Self&]: Bool { return self != Compare.Greater }
@@ -143,7 +143,7 @@ use realm std {
      * That is what IEEE 754 requires, and getting it right once here means no
      * user writes it again.
      */
-    @Since("0.0.5")
+    @Since("0.1")
     impl PartialCompare {
         prop isLess[self: Self&]: Bool { return self == PartialCompare.Less }
         prop isLessOrEqual[self: Self&]: Bool {
@@ -179,7 +179,7 @@ use realm std {
         }
     }
 
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     bridge enum LogLevel {
         /** Detailed diagnostic information. The default level for `trace`. */
         Debug
@@ -207,7 +207,7 @@ use realm std {
      * (e.g. `bridge func`) uses this default, exactly as `test` defaults to the first
      * `TestMethod`.
      */
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     bridge enum Target {
         Compiler,
         C,
@@ -216,32 +216,32 @@ use realm std {
     }
 
     /** Marks an API as stable from the optional semantic version onward. */
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     bridge annot Stable {
         fin since: String = ""
     }
 
     /** Marks an API as experimental from the optional semantic version onward. */
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     bridge annot Experimental {
         fin since: String = ""
     }
 
     /** Records the first released version containing a declaration. */
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     bridge annot Since {
         fin version: String
     }
 
     /** Marks an API as deprecated and optionally names its replacement. */
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     bridge annot Deprecated {
         fin since: String = ""
         fin replacement: String = ""
     }
 
     /** Allows compile-time generated packs to declare numeric field names. */
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     bridge annot EnforceNumFields for .Pack
 
     /**
@@ -251,7 +251,7 @@ use realm std {
      * decorator participates in it. Libraries opt in explicitly; generators do
      * not depend on library module paths or decorator names.
      */
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     bridge annot Derive for .Annot {
         fin generator: String
         fin role: String
@@ -262,82 +262,75 @@ use realm std {
         fin deferGeneric: Bool = false
     }
 
-    @Experimental(since: "0.0.4")
-    bridge variant enum Macro {
-        Prefix(String)
-        Infix(String)
-        Type
-    }
-
     /** Number of characters in `value`. */
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     bridge func stringLength(value: String): Int
 
     /** Character at zero-based `index`. */
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     bridge func charAt(value: String, index: Int): Char
 
     /** Text from `start` inclusive to `end` exclusive. */
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     bridge func substring(value: String, start: Int, end: Int): String
 
     /** Unicode scalar value represented by `value`. */
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     bridge func ord(value: Char): Int
 
     /** Character represented by a valid Unicode scalar value. */
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     bridge func chr(value: Int): Char
 
     /** Whether `value` is an ASCII decimal digit. */
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     bridge func isDigit(value: Char): Bool
 
     /** Whether `value` starts with `prefix`. */
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     bridge func startsWith(value: String, prefix: String): Bool
 
     /** Whether `value` ends with `suffix`. */
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     bridge func endsWith(value: String, suffix: String): Bool
 
     /** Whether `value` contains `sub`. */
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     bridge func contains(value: String, sub: String): Bool
 
     /** First index of `sub` in `value`, or `-1` when absent. */
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     bridge func indexOf(value: String, sub: String): Int
 
     /** `value` with leading and trailing whitespace removed. */
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     bridge func trim(value: String): String
 
     /** `value` with every character upper-cased. */
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     bridge func toUpper(value: String): String
 
     /** `value` with every character lower-cased. */
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     bridge func toLower(value: String): String
 
     /** `value` with each occurrence of `old` replaced by `new`. */
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     bridge func replace(value: String, old: String, new: String): String
 
     /** `value` split on each occurrence of `delim`. */
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     bridge func split(value: String, delim: String): Array<String>
 
     /** The characters of `value` as an array. */
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     bridge func toChars(value: String): Array<Char>
 
     /** A string built by concatenating `chars` in order. */
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     bridge func fromChars(chars: Array<Char>): String
 
     /** Whether `value` is an ASCII alphabetic character. */
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     bridge func isAlpha(value: Char): Bool
 }

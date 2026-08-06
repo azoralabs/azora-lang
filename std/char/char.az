@@ -25,7 +25,7 @@ module std.char
  * and Unicode code point manipulation. Characters in Azora are
  * Unicode code points represented by the Char type.
  *
- * @since 0.0.1
+ * @since 0.1
  */
 
 expose import std.char.core
@@ -37,7 +37,7 @@ realm std {
      * @param c The character to convert.
      * @return The integer code point.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func charToCode(c: Char): Int {
         return ord(c)
     }
@@ -48,7 +48,7 @@ realm std {
      * @param code The code point (must be a valid Unicode value).
      * @return The character at the given code point.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func codeToChar(code: Int): Char
     in {
         assert code >= 0 { "Code point must be non-negative" }
@@ -62,7 +62,7 @@ realm std {
      * @param c The character to check.
      * @return true if c is a digit.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func charIsDigit(c: Char): Bool {
         return isDigit(c)
     }
@@ -73,7 +73,7 @@ realm std {
      * @param c The character to check.
      * @return true if c is a letter.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func charIsAlpha(c: Char): Bool {
         return isAlpha(c)
     }
@@ -84,7 +84,7 @@ realm std {
      * @param c The character to check.
      * @return true if c is a letter or digit.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func charIsAlphanumeric(c: Char): Bool {
         return isAlphanumeric(c)
     }
@@ -95,7 +95,7 @@ realm std {
      * @param c The character to check.
      * @return true if c is an uppercase letter.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func charIsUpper(c: Char): Bool {
         return isUpper(c)
     }
@@ -106,7 +106,7 @@ realm std {
      * @param c The character to check.
      * @return true if c is a lowercase letter.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func charIsLower(c: Char): Bool {
         return isLower(c)
     }
@@ -117,7 +117,7 @@ realm std {
      * @param c The character to check.
      * @return true if c is a whitespace character.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func charIsWhitespace(c: Char): Bool {
         return isWhitespace(c)
     }
@@ -128,7 +128,7 @@ realm std {
      * @param c The character to convert.
      * @return The uppercase version of c.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func charToUpper(c: Char): Char {
         return toUpper(c)
     }
@@ -139,7 +139,7 @@ realm std {
      * @param c The character to convert.
      * @return The lowercase version of c.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func charToLower(c: Char): Char {
         return toLower(c)
     }
@@ -150,7 +150,7 @@ realm std {
      * @param c The character to check.
      * @return true if c is in the ASCII range.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func charIsAscii(c: Char): Bool {
         fin code = ord(c)
         return code >= 0 && code <= 127
@@ -162,7 +162,7 @@ realm std {
      * @param c The character to check.
      * @return true if c is printable.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func charIsPrintable(c: Char): Bool {
         fin code = ord(c)
         return code >= 32 && code <= 126
@@ -174,7 +174,7 @@ realm std {
      * @param c The character to check.
      * @return true if c is a hex digit.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func charIsHexDigit(c: Char): Bool {
         fin code = ord(c)
         return (code >= 48 && code <= 57) ||
@@ -188,7 +188,7 @@ realm std {
      * @param c The hex digit character.
      * @return The integer value (0-15).
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func hexDigitToInt(c: Char): Int
     in {
         assert (charIsHexDigit(c)) { "Character must be a hex digit" }
@@ -205,7 +205,7 @@ realm std {
      * @param c The digit character.
      * @return The integer value (0-9).
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func digitToInt(c: Char): Int
     in {
         assert (isDigit(c)) { "Character must be a digit" }
@@ -219,7 +219,7 @@ realm std {
      * @param n The integer to convert.
      * @return The digit character.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func intToDigit(n: Int): Char
     in {
         assert n >= 0 && n <= 9 { "Integer must be 0-9" }

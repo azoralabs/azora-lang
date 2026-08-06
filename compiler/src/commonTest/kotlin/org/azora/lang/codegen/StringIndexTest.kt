@@ -81,7 +81,7 @@ class StringIndexTest {
         )
         assertIs<CompilationResult.Success>(result, "Compilation failed: ${(result as? CompilationResult.Failure)?.errors}")
         assertFalse(
-            result.llvm.contains("index on String — not lowered"),
+            result.llvm.contains("index on String - not lowered"),
             "String indexing must be lowered by the LLVM backend",
         )
     }

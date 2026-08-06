@@ -28,7 +28,7 @@ import org.azora.lang.frontend.TokenType
  *
  * This lives in one place because the resolver and the lowerer both have to
  * make the same decision, and two copies of it would be the bug that has not
- * happened yet — the existing `operOverloadName` tables in `TypeResolver` and
+ * happened yet - the existing `operOverloadName` tables in `TypeResolver` and
  * `IrGenerator` are already such a pair.
  */
 internal sealed class ComparisonPlan {
@@ -37,8 +37,8 @@ internal sealed class ComparisonPlan {
 
     /**
      * Call `<=>` and ask its result. [predicate] is a property of `Compare` or
-     * `PartialCompare` — `isLess`, `isLessOrEqual`, `isGreater`,
-     * `isGreaterOrEqual` — whose meaning differs between the two enums, which is
+     * `PartialCompare` - `isLess`, `isLessOrEqual`, `isGreater`,
+     * `isGreaterOrEqual` - whose meaning differs between the two enums, which is
      * exactly why the choice is made by naming a member rather than by emitting
      * a comparison here.
      *

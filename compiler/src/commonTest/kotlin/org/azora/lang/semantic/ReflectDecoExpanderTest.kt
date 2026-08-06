@@ -29,7 +29,7 @@ import kotlin.test.assertTrue
  *
  * The point of the loop is that a library can find what a program declared
  * without the program registering anything. That only works if the loop can
- * enumerate the declarations that matter — functions as well as types — and if
+ * enumerate the declarations that matter - functions as well as types - and if
  * the body can read back what each one wrote on its decorator. These cover both
  * halves, and the one property the whole scheme rests on: that two separate
  * loops enumerate in the same order, so an index picked in one identifies the
@@ -117,7 +117,7 @@ class ReflectDecoExpanderTest {
     }
 
     @Test fun theBodyReadsBackWhatEachDeclarationWroteOnTheDecorator() {
-        // `beta` passes neither field, so both must come from the defaults —
+        // `beta` passes neither field, so both must come from the defaults -
         // the decorator declaration is as much a source of the value as the
         // application is.
         assertEquals("alpha 3 first\nbeta 0 none", run("""

@@ -27,50 +27,50 @@ import std.container.array
  * operations such as absolute value, clamping, linear interpolation,
  * floor, ceil, and rounding.
  *
- * @since 0.0.1
+ * @since 0.1
  */
 
 realm std {
     /**
      * The ratio of a circle's circumference to its diameter.
      */
-    @Since("0.0.1")
+    @Since("0.1")
     fin PI: Double = 3.14159265358979
 
     /**
      * Euler's number, the base of natural logarithms.
      */
-    @Since("0.0.1")
+    @Since("0.1")
     fin E: Double = 2.71828182845905
 
     /**
      * The ratio of a circle's circumference to its radius (2 * PI).
      */
-    @Since("0.0.1")
+    @Since("0.1")
     fin TAU: Double = 6.28318530717959
 
     /**
      * The square root of 2.
      */
-    @Since("0.0.1")
+    @Since("0.1")
     fin SQRT2: Double = 1.41421356237310
 
     /**
      * The golden ratio (phi).
      */
-    @Since("0.0.1")
+    @Since("0.1")
     fin PHI: Double = 1.61803398874989
 
     /**
      * Positive infinity representation.
      */
-    @Since("0.0.1")
+    @Since("0.1")
     fin INF: Double = 1.0 / 0.0
 
     /**
      * The smallest positive real value.
      */
-    @Since("0.0.1")
+    @Since("0.1")
     fin EPSILON: Double = 0.00000000000001
 
     /**
@@ -79,7 +79,7 @@ realm std {
      * @param x The value to take the absolute value of.
      * @return The non-negative magnitude of x.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func abs<T>(x: T): T
     out {
         assert it >= 0 { "abs must return non-negative" }
@@ -94,7 +94,7 @@ realm std {
      * @param b The second value to compare.
      * @return The lesser of a and b.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func min<T>(a: T, b: T): T {
         return if a < b { a } else { b }
     }
@@ -106,7 +106,7 @@ realm std {
      * @param b The second value to compare.
      * @return The greater of a and b.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func max<T>(a: T, b: T): T {
         return if a > b { a } else { b }
     }
@@ -119,7 +119,7 @@ realm std {
      * @param hi The upper bound of the range.
      * @return x if it falls within [lo, hi], otherwise the nearest bound.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func clamp<T>(x: T, lo: T, hi: T): T
     in {
         assert lo <= hi { "clamp lower bound must be <= upper bound" }
@@ -133,7 +133,7 @@ realm std {
      * @param x The value to determine the sign of.
      * @return 1 if x is positive, -1 if negative, 0 if zero.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func sign<T>(x: T): Int {
         return if x > 0 { 1 } else { if x < 0 { -1 } else { 0 } }
     }
@@ -146,7 +146,7 @@ realm std {
      * @param t The interpolation factor, typically in [0.0, 1.0].
      * @return The interpolated value a + (b - a) * t.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func lerp(a: Double, b: Double, t: Double): Double
     in {
         assert t >= 0.0 { "lerp factor must be >= 0.0" }
@@ -161,7 +161,7 @@ realm std {
      * @param x The value.
      * @return The floor value as an integer.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func floor(x: Double): Int {
         fin i = x as Int
         return if x < 0.0 && x != (i as Double) { i - 1 } else { i }
@@ -173,7 +173,7 @@ realm std {
      * @param x The value.
      * @return The ceiling value as an integer.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func ceil(x: Double): Int {
         fin i = x as Int
         return if x > 0.0 && x != (i as Double) { i + 1 } else { i }
@@ -185,7 +185,7 @@ realm std {
      * @param x The value.
      * @return The rounded value.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func round(x: Double): Int {
         return floor(x + 0.5)
     }
@@ -196,7 +196,7 @@ realm std {
      * @param x The value.
      * @return The fractional part (x - floor(x)).
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func frac(x: Double): Double {
         return x - (floor(x) as Double)
     }
@@ -211,7 +211,7 @@ realm std {
      * @param outMax The output range maximum.
      * @return The mapped value.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func mapRange(x: Double, inMin: Double, inMax: Double, outMin: Double, outMax: Double): Double
     in {
         assert inMax != inMin { "Input range must not be zero-width" }
@@ -227,7 +227,7 @@ realm std {
      * @param epsilon The tolerance (default: 0.00000001).
      * @return true if |a - b| < epsilon.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func approxEqual(a: Double, b: Double, epsilon: Double): Bool
     in {
         assert epsilon > 0.0 { "epsilon must be positive" }
@@ -244,7 +244,7 @@ realm std {
      * @param exp The exponent (must be non-negative).
      * @return value raised to the power of exp.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func pow<T>(value: T, exp: Int): T
     in {
         assert exp >= 0 { "Exponent must be non-negative" }
@@ -263,7 +263,7 @@ realm std {
      * @param n The non-negative integer.
      * @return n! (n factorial).
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func factorial<T>(n: T): T
     in {
         assert n >= 0 { "Factorial requires non-negative input" }
@@ -287,7 +287,7 @@ realm std {
      * @param b The second integer.
      * @return The GCD of a and b.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func gcd<T>(a: T, b: T): T
     out {
         assert it >= 0 { "GCD must be non-negative" }
@@ -311,7 +311,7 @@ realm std {
      * @param b The second integer.
      * @return The LCM of a and b.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func lcm<T>(a: T, b: T): T
     out {
         assert it >= 0 { "LCM must be non-negative" }
@@ -334,7 +334,7 @@ realm std {
      * @param n The integer to check.
      * @return true if n is even.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func isEven<T>(n: T): Bool {
         return n % 2 == 0
     }
@@ -345,7 +345,7 @@ realm std {
      * @param n The integer to check.
      * @return true if n is odd.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func isOdd<T>(n: T): Bool {
         return n % 2 != 0
     }
@@ -356,7 +356,7 @@ realm std {
      * @param arr The array to sum.
      * @return The sum of all elements.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func sum<T>(arr: Array<T>): T {
         var total = 0
         for i in 0..<arr.length {
@@ -371,7 +371,7 @@ realm std {
      * @param arr The array to sum.
      * @return The sum of all elements.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func sumReal<T>(arr: Array<T>): T {
         var total = 0.0
         for i in 0..<arr.length {
@@ -386,7 +386,7 @@ realm std {
      * @param arr The array to multiply.
      * @return The product of all elements.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func product<T>(arr: Array<T>): T {
         if arr.length == 0 { return 0 }
         var result = 1
@@ -402,7 +402,7 @@ realm std {
      * @param n The index (0-based) of the Fibonacci number.
      * @return The Nth Fibonacci number.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func fib<T>(n: T): T
     in {
         assert n >= 0 { "Fibonacci requires non-negative input" }
@@ -428,7 +428,7 @@ realm std {
      * @param n The number to check (must be non-negative).
      * @return true if n is prime.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func isPrime(n: Int): Bool
     in {
         assert n >= 0 { "isPrime requires non-negative input" }
@@ -452,7 +452,7 @@ realm std {
      * @param arr The values to average (must be non-empty).
      * @return The average as a real number.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func average(arr: Array<Int>): Double
     in {
         assert arr.length > 0 { "Input must not be empty" }
@@ -471,7 +471,7 @@ realm std {
      * @param k The selection count.
      * @return C(n, k).
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func choose(n: Int, k: Int): Int
     in {
         assert n >= 0 { "n must be non-negative" }
@@ -496,7 +496,7 @@ realm std {
      * @param n The non-negative integer.
      * @return The largest integer whose square is <= n.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func isqrt(n: Int): Int
     in {
         assert n >= 0 { "isqrt requires non-negative input" }
@@ -533,7 +533,7 @@ realm std {
     bridge func acos(x: Double): Double
     /** Arc tangent of [x] in radians. */
     bridge func atan(x: Double): Double
-    /** Angle (radians) of the point (x, y) — the 2-argument arc tangent. */
+    /** Angle (radians) of the point (x, y) - the 2-argument arc tangent. */
     bridge func atan2(y: Double, x: Double): Double
     /** Square root of [x]. */
     bridge func sqrt(x: Double): Double
@@ -559,7 +559,7 @@ realm std {
      * whole-number exponent. This one accepts any real exponent and is exact only
      * where the underlying `exp`/`log` are.
      */
-    @Experimental(since: "0.0.5")
+    @Experimental(since: "0.1")
     bridge func powr(x: Double, y: Double): Double
 }
 
@@ -570,14 +570,14 @@ realm std {
  * approximations carrying float precision, which is what shader-adjacent and
  * simulation code wants and costs the least. `std::vha::sin` names the same
  * mathematical function computed to the full accuracy the platform can offer, for
- * the places where error accumulates — long-running integrators, geodesy, anything
+ * the places where error accumulates - long-running integrators, geodesy, anything
  * iterating a transform thousands of times.
  *
  * Every backend supplies these directly. On native and interpreted targets both
  * tiers already resolve to the platform's double-precision routine, so `vha` costs
  * nothing there; only WebAssembly distinguishes them.
  *
- * @since 0.0.5
+ * @since 0.1
  */
 realm std::vha {
     /** Sine of [x] (radians), to full platform accuracy. */

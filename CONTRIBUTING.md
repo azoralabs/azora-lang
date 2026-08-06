@@ -20,7 +20,8 @@ Any change that alters public-facing behavior, modifies the language syntax or s
 
 - Every bug fix must include a test that reproduces the bug.
 - Every new feature must include tests covering its behavior.
-- Every code generator change must include tests for **all** targets (Kotlin, JavaScript, C#, Python, LLVM IR).
+- Every code generator change must include tests for **all** targets (the
+  interpreter, LLVM IR and WebAssembly).
 - All existing tests must pass. Run `./gradlew :compiler:desktopTest` locally before pushing.
 
 ### 5. Code Style
@@ -101,4 +102,4 @@ Feature requests must include:
 1. A clear description of the problem the feature solves
 2. Proposed syntax or API (if applicable)
 3. How it interacts with existing language features
-4. Impact on each compilation target (Kotlin, JavaScript, C#, Python, LLVM IR)
+4. Impact on each compilation target (the interpreter, LLVM IR, WebAssembly)

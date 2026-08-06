@@ -30,7 +30,7 @@ import org.azora.lang.ir.IrType
 import org.azora.lang.ir.IrUnaryOp
 
 /**
- * Backend — lowers [IrProgram] to LLVM IR text (`.ll` format).
+ * Backend - lowers [IrProgram] to LLVM IR text (`.ll` format).
  *
  * The emitted IR is self-contained and directly executable with `lli` or
  * compilable with `clang`/`llc`. No target triple is pinned, so the module
@@ -82,7 +82,7 @@ class LlvmCodegen {
      * `alloca` emitted inside a loop body allocates NEW stack space on every
      * iteration (stack unwinds only on return), so a render loop would leak
      * stack each frame and eventually fault on the guard page. One slot per
-     * (name, type) is reused across iterations/branches — IR names are
+     * (name, type) is reused across iterations/branches - IR names are
      * pre-mangled for shadowing, and disjoint scopes reusing a name always
      * store before reading.
      */
@@ -130,10 +130,6 @@ class LlvmCodegen {
     /** Function-local structured task scopes; spawned tasks attach to the innermost scope. */
     private val taskScopeStack = ArrayDeque<String>()
 
-    private data class ActiveArena(val pointer: String, val previous: String)
-
-    /** Active realm alloc arenas; returns clean them from inner to outer. */
-    private val arenaStack = ArrayDeque<ActiveArena>()
 
     private var taskContextCounter = 0
 
@@ -197,16 +193,8 @@ class LlvmCodegen {
     private var usesCharToStr = false
     private var usesFree = false
     private var usesAllocatorRuntime = false
-    private var usesArenaRuntime = false
     private var usesTaskRuntime = false
 
-    /**
-     * True when any function in the program uses a `realm alloc` arena. Because the
-     * active arena is a thread-local consulted by nested calls, an allocation made
-     * anywhere can be captured by an arena — so escape detaches must be emitted in
-     * every function once any arena exists, not only lexically inside a realm.
-     */
-    private var programUsesArena = false
 
     /** Tracks the continue/end labels of enclosing loops for `break`/`continue`. */
     private data class LoopTarget(val continueLabel: String, val endLabel: String, val label: String? = null)
@@ -255,12 +243,9 @@ class LlvmCodegen {
         usesCharToStr = false
         usesFree = false
         usesAllocatorRuntime = false
-        usesArenaRuntime = false
         usesTaskRuntime = false
-        programUsesArena = false
         loopStack.clear()
         taskScopeStack.clear()
-        arenaStack.clear()
         taskContextCounter = 0
 
         structDefs.clear()
@@ -275,15 +260,6 @@ class LlvmCodegen {
         for (item in program.items.filterIsInstance<IrTopLevel.Struct>()) {
             structDefs[item.name] = item
         }
-
-        // Whole-program scan: does any function open a `realm alloc` arena? If so,
-        // escaping-pointer stores everywhere must detach from the current arena.
-        programUsesArena = program.items.any {
-            it is IrTopLevel.Func && stmtsUseAllocRealm(it.function.body)
-        }
-        // Escaping-pointer detaches reference the arena runtime, so ensure it (and
-        // the arena type/thread-local) is emitted whenever any arena exists.
-        if (programUsesArena) usesArenaRuntime = true
 
         // Spec dynamic dispatch: index the tables and assign each concrete
         // implementer a stable non-zero type id (used as the fat-pointer tag).
@@ -367,7 +343,7 @@ class LlvmCodegen {
             body.appendLine()
         }
 
-        // Functions (skip runtime intrinsics — their stdlib bodies are dead
+        // Functions (skip runtime intrinsics - their stdlib bodies are dead
         // placeholders; each call is intercepted and lowered to native code).
         for (item in program.items.filterIsInstance<IrTopLevel.Func>()) {
             if (item.function.name in org.azora.lang.semantic.CtfeEvaluator.RUNTIME_INTRINSICS) continue
@@ -437,7 +413,7 @@ class LlvmCodegen {
         }
 
         // Runtime helpers (appended after the body so string-constant ids are stable).
-        if (usesTaskRuntime || usesArenaRuntime) usesAllocatorRuntime = true
+        if (usesTaskRuntime) usesAllocatorRuntime = true
         val helpers = buildRuntimeHelpers()
 
         // The error slot for `T ?! E`. One module-level pointer: null when no
@@ -489,12 +465,8 @@ class LlvmCodegen {
             line("%azora.task = type { i8*, i8*, i1, i1 }")
             line("%azora.scope = type { i64, i64, %azora.task** }")
         }
-        if (usesArenaRuntime) {
-            line("%azora.arena = type { i64, i64, i8** }")
-            line("@__azora_current_arena = internal thread_local global %azora.arena* null")
-        }
         for (typeDef in lateTypeDefinitions) line(typeDef)
-        if (usesTaskRuntime || usesArenaRuntime || lateTypeDefinitions.isNotEmpty()) line("")
+        if (usesTaskRuntime || lateTypeDefinitions.isNotEmpty()) line("")
         out.append(body)
         if (helpers.isNotEmpty()) out.append(helpers)
         out.append(errSlot)
@@ -550,7 +522,6 @@ class LlvmCodegen {
         allocaSlots.clear()
         loopStack.clear()
         taskScopeStack.clear()
-        arenaStack.clear()
         terminated = false
         currentBlock = "entry"
         currentReturnType = IrType.Unit
@@ -575,7 +546,6 @@ class LlvmCodegen {
         localVars.clear()
         loopStack.clear()
         taskScopeStack.clear()
-        arenaStack.clear()
         tmpCounter = 0
         labelCounter = 0
         terminated = false
@@ -661,7 +631,6 @@ class LlvmCodegen {
         localVars.clear()
         loopStack.clear()
         taskScopeStack.clear()
-        arenaStack.clear()
         tmpCounter = 0
         labelCounter = 0
         terminated = false
@@ -740,7 +709,6 @@ class LlvmCodegen {
         localVars.clear()
         loopStack.clear()
         taskScopeStack.clear()
-        arenaStack.clear()
         tmpCounter = 0
         labelCounter = 0
         terminated = false
@@ -784,7 +752,6 @@ class LlvmCodegen {
         localVars.clear()
         loopStack.clear()
         taskScopeStack.clear()
-        arenaStack.clear()
         tmpCounter = 0
         labelCounter = 0
         terminated = false
@@ -839,21 +806,12 @@ class LlvmCodegen {
     private fun emitFunctionExitCleanup() {
         if (terminated) return
         emitAllTaskScopeCleanups()
-        emitAllArenaCleanups()
     }
 
     private fun emitAllTaskScopeCleanups() {
         if (!usesTaskRuntime) return
         for (scope in taskScopeStack.asReversed()) {
             emit("  call void @__azora_scope_join_all(%azora.scope* $scope)")
-        }
-    }
-
-    private fun emitAllArenaCleanups() {
-        if (!usesArenaRuntime) return
-        for (arena in arenaStack.asReversed()) {
-            emit("  call void @__azora_arena_free_all(%azora.arena* ${arena.pointer})")
-            emit("  store %azora.arena* ${arena.previous}, %azora.arena** @__azora_current_arena")
         }
     }
 
@@ -880,24 +838,17 @@ class LlvmCodegen {
                     val (alloca, type) = entry
                     val value = emitExpr(stmt.value)
                     emit("  store $type $value, $type* $alloca")
-                    // The variable may be declared outside the current `realm alloc`;
-                    // conservatively keep a reassigned pointer alive past its free_all.
-                    emitArenaDetach(value, stmt.value.type)
                 } else {
                     val type = globalVars[stmt.name]
                         ?: error("Assignment target '${stmt.name}' has no local or global storage")
                     val value = emitExpr(stmt.value)
                     emit("  store $type $value, $type* @${stmt.name}")
-                    emitArenaDetach(value, stmt.value.type)
                 }
             }
             is IrStmt.Return -> {
                 if (stmt.value != null) {
                     val declared = currentReturnType
                     val raw = emitExpr(stmt.value)
-                    // A returned pointer escapes any arena the caller opened, so
-                    // detach it before the exit cleanup runs the arena free_all.
-                    emitArenaDetach(raw, stmt.value.type)
                     emitFunctionExitCleanup()
                     if (declared != null && declared != IrType.Unit) {
                         val value = coerceNumeric(raw, stmt.value.type, declared)
@@ -931,8 +882,8 @@ class LlvmCodegen {
             }
             is IrStmt.IndexAssign -> emitIndexAssign(stmt)
             is IrStmt.MemberAssign -> emitMemberAssign(stmt)
-            is IrStmt.Defer -> emit("  ; defer — not lowered")
-            is IrStmt.Yield -> emit("  ; yield — not lowered (interpreter-only)")
+            is IrStmt.Defer -> emit("  ; defer - not lowered")
+            is IrStmt.Yield -> emit("  ; yield - not lowered (interpreter-only)")
             is IrStmt.ForEach -> emitForEach(stmt)
             is IrStmt.Throw -> emitThrow(stmt)
             is IrStmt.Try -> emitTry(stmt)
@@ -944,7 +895,7 @@ class LlvmCodegen {
      *
      * `T ?! E` keeps the success type, so there is no room in the return value
      * for a failure. The error travels in a module-level slot instead and the
-     * function returns its zero value — a caller that can observe the error
+     * function returns its zero value - a caller that can observe the error
      * checks the slot immediately after the call and never looks at that value.
      */
     private fun emitThrow(stmt: IrStmt.Throw) {
@@ -1011,7 +962,7 @@ class LlvmCodegen {
      * Checks the error slot after a call that could have failed.
      *
      * With a handler in scope the error is caught; otherwise it propagates when
-     * the current function is itself failable, and aborts when it is not —
+     * the current function is itself failable, and aborts when it is not -
      * which is what an error nobody can observe means.
      */
     private fun emitErrorCheck() {
@@ -1041,7 +992,7 @@ class LlvmCodegen {
     }
 
     /**
-     * `expr catch fallback` — the expression's value, or the fallback if it failed.
+     * `expr catch fallback` - the expression's value, or the fallback if it failed.
      *
      * The primary is emitted under its own handler so a failure inside it lands
      * on the fallback rather than escaping. Both arms meet in a phi, so the
@@ -1075,125 +1026,7 @@ class LlvmCodegen {
     }
 
     private fun emitRealm(stmt: IrStmt.Scope) {
-        if (!stmt.alloc) {
-            emitStmts(stmt.body)
-            return
-        }
-        usesArenaRuntime = true
-        usesAllocatorRuntime = true
-        val arena = nextTmp()
-        emit("  $arena = alloca %azora.arena")
-        emit("  call void @__azora_arena_begin(%azora.arena* $arena)")
-        val previous = nextTmp()
-        emit("  $previous = load %azora.arena*, %azora.arena** @__azora_current_arena")
-        emit("  store %azora.arena* $arena, %azora.arena** @__azora_current_arena")
-        arenaStack.addLast(ActiveArena(arena, previous))
-
-        var nestedScope: String? = null
-        if (usesTaskRuntime) {
-            nestedScope = nextTmp()
-            emit("  $nestedScope = alloca %azora.scope")
-            emit("  call void @__azora_scope_init(%azora.scope* $nestedScope)")
-            taskScopeStack.addLast(nestedScope)
-        }
-
         emitStmts(stmt.body)
-
-        if (!terminated) {
-            if (nestedScope != null) emit("  call void @__azora_scope_join_all(%azora.scope* $nestedScope)")
-            emit("  call void @__azora_arena_free_all(%azora.arena* $arena)")
-            emit("  store %azora.arena* $previous, %azora.arena** @__azora_current_arena")
-        }
-        if (nestedScope != null) taskScopeStack.removeLast()
-        arenaStack.removeLast()
-    }
-
-    /** Whether any statement (transitively, including lambda bodies) opens a `realm alloc`. */
-    private fun stmtsUseAllocRealm(stmts: List<IrStmt>): Boolean = stmts.any { stmtUsesAllocRealm(it) }
-
-    private fun stmtUsesAllocRealm(stmt: IrStmt): Boolean = when (stmt) {
-        is IrStmt.Scope -> stmt.alloc || stmtsUseAllocRealm(stmt.body)
-        is IrStmt.If -> exprUsesAllocRealm(stmt.condition) || stmtsUseAllocRealm(stmt.thenBranch) ||
-            (stmt.elseBranch?.let { stmtsUseAllocRealm(it) } ?: false)
-        is IrStmt.While -> exprUsesAllocRealm(stmt.condition) || stmtsUseAllocRealm(stmt.body)
-        is IrStmt.For -> exprUsesAllocRealm(stmt.start) || exprUsesAllocRealm(stmt.end) ||
-            (stmt.step?.let { exprUsesAllocRealm(it) } ?: false) || stmtsUseAllocRealm(stmt.body)
-        is IrStmt.ForEach -> exprUsesAllocRealm(stmt.iterable) || stmtsUseAllocRealm(stmt.body)
-        is IrStmt.Loop -> stmtsUseAllocRealm(stmt.body)
-        is IrStmt.When -> exprUsesAllocRealm(stmt.scrutinee) ||
-            stmt.branches.any { stmtsUseAllocRealm(it.body) } ||
-            (stmt.elseBranch?.let { stmtsUseAllocRealm(it) } ?: false)
-        is IrStmt.Try -> stmtsUseAllocRealm(stmt.body) || (stmt.catchBody?.let { stmtsUseAllocRealm(it) } ?: false)
-        is IrStmt.Defer -> stmtsUseAllocRealm(stmt.body)
-        is IrStmt.VarDecl -> exprUsesAllocRealm(stmt.initializer)
-        is IrStmt.FinDecl -> exprUsesAllocRealm(stmt.initializer)
-        is IrStmt.LetDecl -> exprUsesAllocRealm(stmt.initializer)
-        is IrStmt.Assignment -> exprUsesAllocRealm(stmt.value)
-        is IrStmt.IndexAssign -> exprUsesAllocRealm(stmt.target) || exprUsesAllocRealm(stmt.index) ||
-            exprUsesAllocRealm(stmt.value)
-        is IrStmt.MemberAssign -> exprUsesAllocRealm(stmt.target) || exprUsesAllocRealm(stmt.value)
-        is IrStmt.Return -> stmt.value?.let { exprUsesAllocRealm(it) } ?: false
-        is IrStmt.ExprStmt -> exprUsesAllocRealm(stmt.expr)
-        is IrStmt.Throw -> exprUsesAllocRealm(stmt.value)
-        is IrStmt.Yield -> exprUsesAllocRealm(stmt.value)
-        is IrStmt.Assert -> exprUsesAllocRealm(stmt.condition) || exprUsesAllocRealm(stmt.message)
-        else -> false
-    }
-
-    private fun exprUsesAllocRealm(expr: IrExpr): Boolean = when (expr) {
-        is IrExpr.Lambda -> stmtsUseAllocRealm(expr.body)
-        is IrExpr.Binary -> exprUsesAllocRealm(expr.left) || exprUsesAllocRealm(expr.right)
-        is IrExpr.Unary -> exprUsesAllocRealm(expr.operand)
-        is IrExpr.Call -> (expr.receiver?.let { exprUsesAllocRealm(it) } ?: false) ||
-            expr.args.any { exprUsesAllocRealm(it) }
-        is IrExpr.MethodCall -> exprUsesAllocRealm(expr.target) || expr.args.any { exprUsesAllocRealm(it) }
-        is IrExpr.ArrayLiteral -> expr.elements.any { exprUsesAllocRealm(it) }
-        is IrExpr.SetLit -> expr.elements.any { exprUsesAllocRealm(it) }
-        is IrExpr.TupleLit -> expr.elements.any { exprUsesAllocRealm(it) }
-        is IrExpr.VariantLit -> expr.elements.any { exprUsesAllocRealm(it) }
-        is IrExpr.MapLit -> expr.entries.any { exprUsesAllocRealm(it.first) || exprUsesAllocRealm(it.second) }
-        is IrExpr.Index -> exprUsesAllocRealm(expr.target) || exprUsesAllocRealm(expr.index)
-        is IrExpr.Member -> exprUsesAllocRealm(expr.target)
-        is IrExpr.StructCtor -> expr.args.any { exprUsesAllocRealm(it) }
-        is IrExpr.TupleAccess -> exprUsesAllocRealm(expr.target)
-        is IrExpr.CatchExpr -> exprUsesAllocRealm(expr.expr) || exprUsesAllocRealm(expr.fallback)
-        is IrExpr.IfExpr -> exprUsesAllocRealm(expr.condition) || exprUsesAllocRealm(expr.thenExpr) ||
-            exprUsesAllocRealm(expr.elseExpr)
-        is IrExpr.NumCast -> exprUsesAllocRealm(expr.value)
-        is IrExpr.EnumToString -> exprUsesAllocRealm(expr.value)
-        is IrExpr.Await -> exprUsesAllocRealm(expr.value)
-        is IrExpr.Spread -> exprUsesAllocRealm(expr.array)
-        is IrExpr.StringTemplate -> expr.parts.any { it is IrExpr.IrTemplatePart.Expr && exprUsesAllocRealm(it.expr) }
-        else -> false
-    }
-
-    /** Types whose values are heap objects that a `realm alloc` arena tracks and frees. */
-    private fun isArenaTrackedType(type: IrType): Boolean = when (type) {
-        is IrType.Named -> type.name in structDefs
-        is IrType.Array, is IrType.Map, is IrType.Set, is IrType.Tuple,
-        is IrType.Variant, is IrType.Nullable, is IrType.Function -> true
-        else -> false
-    }
-
-    /**
-     * Detaches an escaping pointer [value] of [type] from the innermost active arena
-     * so it survives that arena's `free_all`. Emitted after storing an arena-managed
-     * pointer into memory that can outlive the enclosing `realm alloc` (an aggregate
-     * field, an array/map slot, a global, or a return value). A no-op at runtime when
-     * no arena is active or the pointer was not arena-allocated.
-     */
-    private fun emitArenaDetach(value: String, type: IrType) {
-        if (!programUsesArena || !isArenaTrackedType(type)) return
-        usesArenaRuntime = true
-        val vt = mapType(type)
-        val p = if (vt == "i8*") {
-            value
-        } else {
-            val t = nextTmp()
-            emit("  $t = bitcast $vt $value to i8*")
-            t
-        }
-        emit("  call void @__azora_arena_detach_current(i8* $p)")
     }
 
     private fun emitLocalDecl(name: String, type: IrType, initializer: IrExpr) {
@@ -1351,7 +1184,7 @@ class LlvmCodegen {
             else -> null
         } ?: run {
             emitExpr(stmt.iterable)
-            emit("  ; for-each over ${stmt.elem} — not lowered for ${stmt.iterable.type}")
+            emit("  ; for-each over ${stmt.elem} - not lowered for ${stmt.iterable.type}")
             return
         }
         val et = mapType(elemType)
@@ -1444,7 +1277,7 @@ class LlvmCodegen {
             scrutIrType in IrType.floatTypes -> emit("  $cmp = fcmp oeq $scrutType $scrut, $pv")
             else -> {
                 // Pointer scrutinees (slots, structs, erased/nullable values) compare
-                // against `null`, not the integer `0` — LLVM rejects an integer
+                // against `null`, not the integer `0` - LLVM rejects an integer
                 // constant as a pointer operand.
                 val p = if (scrutType.endsWith("*") && pv == "0") "null" else pv
                 emit("  $cmp = icmp eq $scrutType $scrut, $p")
@@ -1571,7 +1404,7 @@ class LlvmCodegen {
               ret i32 -1
             }""")
         // Best-effort placeholders: text transforms return their input; the
-        // collection-returning ops return null (valid IR — full support pending).
+        // collection-returning ops return null (valid IR - full support pending).
         def("toUpper", "define i8* @toUpper(i8* %s) {\n  ret i8* %s\n}")
         def("toLower", "define i8* @toLower(i8* %s) {\n  ret i8* %s\n}")
         def("trim", "define i8* @trim(i8* %s) {\n  ret i8* %s\n}")
@@ -1736,17 +1569,17 @@ class LlvmCodegen {
         is IrExpr.StructCtor -> emitStructCtor(expr)
         is IrExpr.TupleLit -> {
             for (e in expr.elements) emitExpr(e)
-            emit("  ; tuple literal — aggregate lowering not yet implemented")
+            emit("  ; tuple literal - aggregate lowering not yet implemented")
             "null"
         }
         is IrExpr.VariantLit -> {
             for (e in expr.elements) emitExpr(e)
-            emit("  ; variant literal — aggregate lowering not yet implemented")
+            emit("  ; variant literal - aggregate lowering not yet implemented")
             "null"
         }
         is IrExpr.TupleAccess -> {
             emitExpr(expr.target)
-            emit("  ; tuple access .${expr.index} — not lowered")
+            emit("  ; tuple access .${expr.index} - not lowered")
             defaultValue(expr.type)
         }
         is IrExpr.CatchExpr -> emitCatchExpr(expr)
@@ -1756,7 +1589,7 @@ class LlvmCodegen {
         is IrExpr.Await -> emitAwait(expr)
         is IrExpr.Spread -> {
             emitExpr(expr.array)
-            emit("  ; spread — interpreter-only")
+            emit("  ; spread - interpreter-only")
             "null"
         }
         is IrExpr.Lambda -> {
@@ -1838,7 +1671,6 @@ class LlvmCodegen {
         allocaSlots.clear()
         loopStack.clear()
         taskScopeStack.clear()
-        arenaStack.clear()
         tmpCounter = 0
         labelCounter = 0
         allocaCounter = 0
@@ -1929,14 +1761,8 @@ class LlvmCodegen {
 
     private fun emitHeapAlloc(size: String): String {
         usesAllocatorRuntime = true
-        val arena = arenaStack.lastOrNull()?.pointer
         val raw = nextTmp()
-        if (arena != null) {
-            usesArenaRuntime = true
-            emit("  $raw = call i8* @__azora_arena_alloc(%azora.arena* $arena, i64 $size)")
-        } else {
-            emit("  $raw = call i8* @__azora_alloc(i64 $size)")
-        }
+        emit("  $raw = call i8* @__azora_alloc(i64 $size)")
         return raw
     }
 
@@ -1999,7 +1825,6 @@ class LlvmCodegen {
         localVars.clear()
         loopStack.clear()
         taskScopeStack.clear()
-        arenaStack.clear()
         tmpCounter = 0
         labelCounter = 0
         terminated = false
@@ -2040,7 +1865,6 @@ class LlvmCodegen {
         val savedAllocaSlots = allocaSlots.toMap()
         val savedLoopStack = ArrayDeque(loopStack)
         val savedTaskScopes = ArrayDeque(taskScopeStack)
-        val savedArenas = ArrayDeque(arenaStack)
         val savedTmp = tmpCounter
         val savedLabel = labelCounter
         val savedAlloca = allocaCounter
@@ -2059,7 +1883,6 @@ class LlvmCodegen {
             allocaSlots.clear(); allocaSlots.putAll(savedAllocaSlots)
             loopStack.clear(); loopStack.addAll(savedLoopStack)
             taskScopeStack.clear(); taskScopeStack.addAll(savedTaskScopes)
-            arenaStack.clear(); arenaStack.addAll(savedArenas)
             tmpCounter = savedTmp
             labelCounter = savedLabel
             allocaCounter = savedAlloca
@@ -2351,7 +2174,7 @@ class LlvmCodegen {
                     else -> return value
                 }
             }
-            else -> return value // non-numeric — leave as-is
+            else -> return value // non-numeric - leave as-is
         }
         val tmp = nextTmp()
         emit("  $tmp = $inst $ft $value to $tt")
@@ -2377,7 +2200,7 @@ class LlvmCodegen {
         // The tag is the variant name; payloads are boxed to i64.
         if (expr.fieldNames.firstOrNull() == "__tag") return emitSlotCtor(expr)
         val def = structDefs[expr.name] ?: run {
-            emit("  ; struct ${expr.name} has no definition — emitting null")
+            emit("  ; struct ${expr.name} has no definition - emitting null")
             return "null"
         }
         val st = "%struct.${sanitizeName(expr.name)}"
@@ -2427,9 +2250,6 @@ class LlvmCodegen {
             val fp = nextTmp()
             emit("  $fp = getelementptr $st, $st* $ptr, i32 0, i32 $fi")
             emit("  store $ft $value, $ft* $fp")
-            // Storing a pointer into an aggregate roots it out of the arena so the
-            // aggregate can safely outlive the realm it was built in.
-            emitArenaDetach(value, field.type)
         }
         return ptr
     }
@@ -2528,7 +2348,7 @@ class LlvmCodegen {
         val ptr = emitExpr(target)
         if (def.isUnion) {
             // Every member starts at offset 0, so the address is the same for all
-            // of them and only its type differs — which is exactly what makes
+            // of them and only its type differs - which is exactly what makes
             // writing one member and reading another reinterpret the bytes.
             val slot = nextTmp()
             emit("  $slot = getelementptr $st, $st* $ptr, i32 0, i32 0")
@@ -2571,7 +2391,7 @@ class LlvmCodegen {
      * For an ordinary field the slot and the field agree and this is the usual
      * numeric coercion. For a substituted generic field the slot is an erased
      * pointer, so the value is converted to its declared type first and then
-     * into the pointer slot — the exact inverse of what the read does.
+     * into the pointer slot - the exact inverse of what the read does.
      */
     private fun coerceToField(raw: String, from: IrType, fieldType: IrType, slotLlvm: String): String {
         val typed = coerceNumeric(raw, from, fieldType)
@@ -2585,7 +2405,7 @@ class LlvmCodegen {
      *
      * Matching is on the declaration's final name segment so both the bare
      * spelling and the `realm std` mangling resolve, and only when the
-     * signature is all-`Double` — an unrelated user extern that happens to be
+     * signature is all-`Double` - an unrelated user extern that happens to be
      * called `log` keeps its own linkage.
      */
     private fun mathIntrinsicOf(item: IrTopLevel.Extern): String? {
@@ -2603,11 +2423,11 @@ class LlvmCodegen {
         // `Hash`'s member on a value that carries no user-written one: an
         // integer, a char and a bool hash to themselves, which is the same rule
         // the interpreter applies. A pack with its own `hash` never arrives
-        // here — it resolves to that member instead.
+        // here - it resolves to that member instead.
         if (expr.name == "hash" && targetType !is IrType.Named) {
             // Widened into an i64 the same way a slot payload is: an integer
             // sign-extends, a float takes its bit pattern, and anything behind a
-            // pointer — including an erased element — takes its address.
+            // pointer - including an erased element - takes its address.
             //
             // A `Named` type is excluded because it supplies its own `hash`,
             // derived or written, and that member is what resolves.
@@ -2667,7 +2487,7 @@ class LlvmCodegen {
             }
         }
         emitExpr(expr.target)
-        emit("  ; member .${expr.name} on ${expr.target.type} — not lowered")
+        emit("  ; member .${expr.name} on ${expr.target.type} - not lowered")
         return defaultValue(expr.type)
     }
 
@@ -2678,14 +2498,11 @@ class LlvmCodegen {
             val raw = emitExpr(stmt.value)
             val value = coerceToField(raw, stmt.value.type, fieldType, ft)
             emit("  store $ft $value, $ft* $fp")
-            // The receiver may outlive the current `realm alloc`; keep the stored
-            // pointer alive past the arena's free_all.
-            emitArenaDetach(value, fieldType)
             return
         }
         emitExpr(stmt.target)
         emitExpr(stmt.value)
-        emit("  ; member assign .${stmt.name} on ${stmt.target.type} — not lowered")
+        emit("  ; member assign .${stmt.name} on ${stmt.target.type} - not lowered")
     }
 
     /** The LLVM symbol name of a spec method's dynamic-dispatch stub. */
@@ -2741,7 +2558,7 @@ class LlvmCodegen {
      * Lowers a method call, checking the error slot when the method can fail.
      *
      * Methods are lowered to free functions named `Type_method`, so a failable
-     * one is recognised by that mangled name — a call through the receiver has
+     * one is recognised by that mangled name - a call through the receiver has
      * to check exactly as a plain call does.
      */
     private fun emitMethodCall(expr: IrExpr.MethodCall): String {
@@ -2837,7 +2654,7 @@ class LlvmCodegen {
 
         emitExpr(expr.target)
         for (a in expr.args) emitExpr(a)
-        emit("  ; method .${expr.name} — not lowered")
+        emit("  ; method .${expr.name} - not lowered")
         return defaultValue(expr.type)
     }
 
@@ -2891,7 +2708,7 @@ class LlvmCodegen {
         val (updated, added) = emitSetInsertRaw(raw, value, elementType)
         variableStorage(target)?.let { (address, type) ->
             emit("  store $type $updated, $type* $address")
-        } ?: emit("  ; set add receiver is not assignable — grown buffer not stored")
+        } ?: emit("  ; set add receiver is not assignable - grown buffer not stored")
         return added
     }
 
@@ -3222,7 +3039,7 @@ class LlvmCodegen {
         emit("  store $vt $value, $vt* $newValue, align 1")
         variableStorage(stmt.target)?.let { (address, type) ->
             emit("  store $type $grown, $type* $address")
-        } ?: emit("  ; map insertion receiver is not assignable — grown buffer not stored")
+        } ?: emit("  ; map insertion receiver is not assignable - grown buffer not stored")
         emitTerminator("  br label %$endLabel")
 
         startBlock(endLabel)
@@ -3340,7 +3157,6 @@ class LlvmCodegen {
         val stored = coerceNumeric(value, sourceType, field.type)
         val ft = mapType(field.type)
         emit("  store $ft $stored, $ft* $fp")
-        emitArenaDetach(stored, field.type)
     }
 
     private fun emitArrayLengthI64(raw: String): String {
@@ -3395,7 +3211,7 @@ class LlvmCodegen {
             val (addr, type) = storage
             emit("  store $type $grown, $type* $addr")
         } else {
-            emit("  ; array add receiver is not assignable — grown buffer not stored")
+            emit("  ; array add receiver is not assignable - grown buffer not stored")
         }
     }
 
@@ -3483,7 +3299,7 @@ class LlvmCodegen {
 
     private fun emitIndexRead(expr: IrExpr.Index): String {
         val tt = expr.target.type
-        // `values[i]` where `values: List<T>` — a spec-typed receiver has no
+        // `values[i]` where `values: List<T>` - a spec-typed receiver has no
         // storage to address, so the subscript is the spec's own single-argument
         // accessor, dispatched through the fat pointer like any other requirement.
         if (tt is IrType.Named && tt.name in specDispatch) {
@@ -3533,7 +3349,7 @@ class LlvmCodegen {
         }
         emitExpr(expr.target)
         emitExpr(expr.index)
-        emit("  ; index on ${expr.target.type} — not lowered")
+        emit("  ; index on ${expr.target.type} - not lowered")
         return defaultValue(expr.type)
     }
 
@@ -3546,7 +3362,6 @@ class LlvmCodegen {
             val value = coerceNumeric(raw, stmt.value.type, tt.element)
             emit("  store $et $value, $et* $ep, align 1")
             // The array can outlive the current `realm alloc`; root the element.
-            emitArenaDetach(value, tt.element)
             return
         }
         if (tt is IrType.Pointer) {
@@ -3561,7 +3376,6 @@ class LlvmCodegen {
             val rawValue = emitExpr(stmt.value)
             val value = coerceNumeric(rawValue, stmt.value.type, tt.inner)
             emit("  store $et $value, $et* $ep, align 1")
-            emitArenaDetach(value, tt.inner)
             return
         }
         if (tt is IrType.Map) {
@@ -3571,7 +3385,7 @@ class LlvmCodegen {
         emitExpr(stmt.target)
         emitExpr(stmt.index)
         emitExpr(stmt.value)
-        emit("  ; index assign on ${stmt.target.type} — not lowered")
+        emit("  ; index assign on ${stmt.target.type} - not lowered")
     }
 
     private fun emitUnary(expr: IrExpr.Unary): String {
@@ -3584,9 +3398,9 @@ class LlvmCodegen {
                     expr.type in IrType.integerTypes -> emit("  $tmp = sub $llvmType 0, $operand")
                     expr.type in IrType.floatTypes -> emit("  $tmp = fneg $llvmType $operand")
                     else -> {
-                        // Erased generic (Any) — no native negate; stub like other
+                        // Erased generic (Any) - no native negate; stub like other
                         // unlowered aggregate operations.
-                        emit("  ; negate on ${expr.type} — not lowered (erased generic)")
+                        emit("  ; negate on ${expr.type} - not lowered (erased generic)")
                         return defaultValue(expr.type)
                     }
                 }
@@ -3623,9 +3437,9 @@ class LlvmCodegen {
 
         when {
             // Pointer-typed operands (nullable, erased `Any`, raw pointers, and
-            // structs/slots — all lowered to `i8*`): only equality against null or
+            // structs/slots - all lowered to `i8*`): only equality against null or
             // another pointer is meaningful. A raw `0` in a pointer comparison is the
-            // null sentinel — LLVM requires `null`, not an integer, for pointer icmp.
+            // null sentinel - LLVM requires `null`, not an integer, for pointer icmp.
             (opType is IrType.Nullable || opType == IrType.Any ||
                 opType is IrType.Pointer || opType is IrType.Named) &&
                 (expr.op == IrBinaryOp.EQ || expr.op == IrBinaryOp.NEQ) -> {
@@ -3687,11 +3501,11 @@ class LlvmCodegen {
             else -> {
                 // Unsupported operand type (e.g. arithmetic on a nullable/boxed
                 // value). The LLVM backend has no unboxing model yet, so degrade
-                // to a stub — consistent with how other aggregate ops are handled.
+                // to a stub - consistent with how other aggregate ops are handled.
                 // The stub still has to *define* its temporary: callers may phi on
                 // it from a later block, and an undefined name is invalid IR that
                 // fails at load time rather than where the gap actually is.
-                emit("  ; binary ${expr.op} on ${expr.left.type} — not lowered (nullable aggregate)")
+                emit("  ; binary ${expr.op} on ${expr.left.type} - not lowered (nullable aggregate)")
                 emit("  $tmp = select i1 true, ${mapType(expr.type)} ${defaultValue(expr.type)}, ${mapType(expr.type)} ${defaultValue(expr.type)}")
             }
         }
@@ -3872,7 +3686,7 @@ class LlvmCodegen {
             return emitLambdaTaskSpawn(lambda, resultType, "async")
         }
         if (expr.name == "__delay") {
-            // `delay ms` — libc sleeps in microseconds, so scale the operand.
+            // `delay ms` - libc sleeps in microseconds, so scale the operand.
             usesUsleep = true
             val ms = coerceNumeric(emitExpr(expr.args.single()), expr.args.single().type, IrType.Int)
             val micros = nextTmp()
@@ -3904,7 +3718,7 @@ class LlvmCodegen {
         }
         if (expr.name == "__purge") {
             emitExpr(expr.args.single())
-            emit("  ; drop — advisory for raw pointers; arenas/task scopes own native cleanup")
+            emit("  ; drop - advisory for raw pointers; task scopes own native cleanup")
             return "void"
         }
         if (expr.name == "__std_concurrency_cancel") {
@@ -3919,12 +3733,12 @@ class LlvmCodegen {
         val declared = funcParamTypes[expr.name]
         if (expr.name == "__std_convert_toString" && expr.args.size == 1) {
             emitExpr(expr.args.single())
-            emit("  ; erased generic toString — no native generic stringification ABI yet")
+            emit("  ; erased generic toString - no native generic stringification ABI yet")
             return gepString(addStringConstant(""))
         }
         if (declared == null && expr.name in localVars) {
             expr.args.forEach { emitExpr(it) }
-            emit("  ; erased function-value call '${expr.name}' — no native closure ABI yet")
+            emit("  ; erased function-value call '${expr.name}' - no native closure ABI yet")
             return if (expr.type == IrType.Unit) "void" else defaultValue(expr.type)
         }
         val args = expr.args.mapIndexed { i, arg ->
@@ -4265,26 +4079,11 @@ class LlvmCodegen {
             sb.appendLine("  ret i8* %p")
             sb.appendLine("}")
             sb.appendLine()
-            if (usesArenaRuntime) {
-                sb.appendLine("define i8* @__azora_alloc(i64 %size) {")
-                sb.appendLine("entry:")
-                sb.appendLine("  %arena = load %azora.arena*, %azora.arena** @__azora_current_arena")
-                sb.appendLine("  %outside = icmp eq %azora.arena* %arena, null")
-                sb.appendLine("  br i1 %outside, label %raw, label %scoped")
-                sb.appendLine("raw:")
-                sb.appendLine("  %rawPtr = call i8* @__azora_alloc_raw(i64 %size)")
-                sb.appendLine("  ret i8* %rawPtr")
-                sb.appendLine("scoped:")
-                sb.appendLine("  %arenaPtr = call i8* @__azora_arena_alloc(%azora.arena* %arena, i64 %size)")
-                sb.appendLine("  ret i8* %arenaPtr")
-                sb.appendLine("}")
-            } else {
-                sb.appendLine("define i8* @__azora_alloc(i64 %size) {")
-                sb.appendLine("entry:")
-                sb.appendLine("  %p = call i8* @__azora_alloc_raw(i64 %size)")
-                sb.appendLine("  ret i8* %p")
-                sb.appendLine("}")
-            }
+            sb.appendLine("define i8* @__azora_alloc(i64 %size) {")
+            sb.appendLine("entry:")
+            sb.appendLine("  %p = call i8* @__azora_alloc_raw(i64 %size)")
+            sb.appendLine("  ret i8* %p")
+            sb.appendLine("}")
             sb.appendLine()
             sb.appendLine("define void @__azora_free(i8* %ptr) {")
             sb.appendLine("entry:")
@@ -4299,7 +4098,7 @@ class LlvmCodegen {
             sb.appendLine()
         }
 
-        if (globalVars.keys.any { it.startsWith("__tl_") } || usesArenaRuntime) {
+        if (globalVars.keys.any { it.startsWith("__tl_") }) {
             sb.appendLine("; runtime: lli fallback for Mach-O emulated TLS lookup")
             sb.appendLine("define i8* @__emutls_get_address(i8* %control) {")
             sb.appendLine("entry:")
@@ -4311,138 +4110,6 @@ class LlvmCodegen {
             sb.appendLine()
         }
 
-        if (usesArenaRuntime) {
-            usesAllocatorRuntime = true
-            sb.appendLine("; runtime: scoped arena allocation")
-            sb.appendLine("define void @__azora_arena_begin(%azora.arena* %arena) {")
-            sb.appendLine("entry:")
-            sb.appendLine("  %count = getelementptr %azora.arena, %azora.arena* %arena, i32 0, i32 0")
-            sb.appendLine("  %cap = getelementptr %azora.arena, %azora.arena* %arena, i32 0, i32 1")
-            sb.appendLine("  %items = getelementptr %azora.arena, %azora.arena* %arena, i32 0, i32 2")
-            sb.appendLine("  store i64 0, i64* %count")
-            sb.appendLine("  store i64 0, i64* %cap")
-            sb.appendLine("  store i8** null, i8*** %items")
-            sb.appendLine("  ret void")
-            sb.appendLine("}")
-            sb.appendLine()
-            sb.appendLine("define i8* @__azora_arena_alloc(%azora.arena* %arena, i64 %size) {")
-            sb.appendLine("entry:")
-            sb.appendLine("  %ptr = call i8* @__azora_alloc_raw(i64 %size)")
-            sb.appendLine("  %countPtr = getelementptr %azora.arena, %azora.arena* %arena, i32 0, i32 0")
-            sb.appendLine("  %capPtr = getelementptr %azora.arena, %azora.arena* %arena, i32 0, i32 1")
-            sb.appendLine("  %itemsPtr = getelementptr %azora.arena, %azora.arena* %arena, i32 0, i32 2")
-            sb.appendLine("  %count = load i64, i64* %countPtr")
-            sb.appendLine("  %cap = load i64, i64* %capPtr")
-            sb.appendLine("  %full = icmp uge i64 %count, %cap")
-            sb.appendLine("  br i1 %full, label %grow, label %store")
-            sb.appendLine("grow:")
-            sb.appendLine("  %iszero = icmp eq i64 %cap, 0")
-            sb.appendLine("  %double = mul i64 %cap, 2")
-            sb.appendLine("  %newCap = select i1 %iszero, i64 8, i64 %double")
-            sb.appendLine("  %bytes = mul i64 %newCap, 8")
-            sb.appendLine("  %newRaw = call i8* @__azora_alloc_raw(i64 %bytes)")
-            sb.appendLine("  %newItems = bitcast i8* %newRaw to i8**")
-            sb.appendLine("  %oldItems = load i8**, i8*** %itemsPtr")
-            sb.appendLine("  br label %copy.cond")
-            sb.appendLine("copy.cond:")
-            sb.appendLine("  %i = phi i64 [ 0, %grow ], [ %next, %copy.body ]")
-            sb.appendLine("  %done = icmp uge i64 %i, %count")
-            sb.appendLine("  br i1 %done, label %copy.end, label %copy.body")
-            sb.appendLine("copy.body:")
-            sb.appendLine("  %oldSlot = getelementptr i8*, i8** %oldItems, i64 %i")
-            sb.appendLine("  %oldVal = load i8*, i8** %oldSlot")
-            sb.appendLine("  %newSlot = getelementptr i8*, i8** %newItems, i64 %i")
-            sb.appendLine("  store i8* %oldVal, i8** %newSlot")
-            sb.appendLine("  %next = add i64 %i, 1")
-            sb.appendLine("  br label %copy.cond")
-            sb.appendLine("copy.end:")
-            sb.appendLine("  %oldRaw = bitcast i8** %oldItems to i8*")
-            sb.appendLine("  call void @__azora_free(i8* %oldRaw)")
-            sb.appendLine("  store i8** %newItems, i8*** %itemsPtr")
-            sb.appendLine("  store i64 %newCap, i64* %capPtr")
-            sb.appendLine("  br label %store")
-            sb.appendLine("store:")
-            sb.appendLine("  %items = load i8**, i8*** %itemsPtr")
-            sb.appendLine("  %slot = getelementptr i8*, i8** %items, i64 %count")
-            sb.appendLine("  store i8* %ptr, i8** %slot")
-            sb.appendLine("  %newCount = add i64 %count, 1")
-            sb.appendLine("  store i64 %newCount, i64* %countPtr")
-            sb.appendLine("  ret i8* %ptr")
-            sb.appendLine("}")
-            sb.appendLine()
-            sb.appendLine("define void @__azora_arena_free_all(%azora.arena* %arena) {")
-            sb.appendLine("entry:")
-            sb.appendLine("  %countPtr = getelementptr %azora.arena, %azora.arena* %arena, i32 0, i32 0")
-            sb.appendLine("  %capPtr = getelementptr %azora.arena, %azora.arena* %arena, i32 0, i32 1")
-            sb.appendLine("  %itemsPtr = getelementptr %azora.arena, %azora.arena* %arena, i32 0, i32 2")
-            sb.appendLine("  %count = load i64, i64* %countPtr")
-            sb.appendLine("  %items = load i8**, i8*** %itemsPtr")
-            sb.appendLine("  br label %loop")
-            sb.appendLine("loop:")
-            sb.appendLine("  %i = phi i64 [ 0, %entry ], [ %next, %body ]")
-            sb.appendLine("  %done = icmp uge i64 %i, %count")
-            sb.appendLine("  br i1 %done, label %end, label %body")
-            sb.appendLine("body:")
-            sb.appendLine("  %slot = getelementptr i8*, i8** %items, i64 %i")
-            sb.appendLine("  %ptr = load i8*, i8** %slot")
-            sb.appendLine("  call void @__azora_free(i8* %ptr)")
-            sb.appendLine("  %next = add i64 %i, 1")
-            sb.appendLine("  br label %loop")
-            sb.appendLine("end:")
-            sb.appendLine("  %raw = bitcast i8** %items to i8*")
-            sb.appendLine("  call void @__azora_free(i8* %raw)")
-            sb.appendLine("  store i64 0, i64* %countPtr")
-            sb.appendLine("  store i64 0, i64* %capPtr")
-            sb.appendLine("  store i8** null, i8*** %itemsPtr")
-            sb.appendLine("  ret void")
-            sb.appendLine("}")
-            sb.appendLine()
-            // Escape hatch: unregister a pointer from the innermost active arena so
-            // it survives that arena's free_all. Emitted after every store of an
-            // arena-managed pointer into memory that can outlive the realm (aggregate
-            // fields, returns). No-op when no arena is active or the pointer was not
-            // arena-allocated. Uses the thread-local current arena so it correctly
-            // detaches allocations made in nested calls under a `realm alloc`.
-            sb.appendLine("; runtime: detach a pointer from the current scoped arena (escape)")
-            sb.appendLine("define void @__azora_arena_detach_current(i8* %ptr) {")
-            sb.appendLine("entry:")
-            sb.appendLine("  %pnull = icmp eq i8* %ptr, null")
-            sb.appendLine("  br i1 %pnull, label %done, label %load")
-            sb.appendLine("load:")
-            sb.appendLine("  %arena = load %azora.arena*, %azora.arena** @__azora_current_arena")
-            sb.appendLine("  %anull = icmp eq %azora.arena* %arena, null")
-            sb.appendLine("  br i1 %anull, label %done, label %scan")
-            sb.appendLine("scan:")
-            sb.appendLine("  %countPtr = getelementptr %azora.arena, %azora.arena* %arena, i32 0, i32 0")
-            sb.appendLine("  %itemsPtr = getelementptr %azora.arena, %azora.arena* %arena, i32 0, i32 2")
-            sb.appendLine("  %count = load i64, i64* %countPtr")
-            sb.appendLine("  %items = load i8**, i8*** %itemsPtr")
-            sb.appendLine("  br label %loop")
-            sb.appendLine("loop:")
-            sb.appendLine("  %i = phi i64 [ 0, %scan ], [ %next, %cont ]")
-            sb.appendLine("  %atEnd = icmp uge i64 %i, %count")
-            sb.appendLine("  br i1 %atEnd, label %done, label %body")
-            sb.appendLine("body:")
-            sb.appendLine("  %slot = getelementptr i8*, i8** %items, i64 %i")
-            sb.appendLine("  %val = load i8*, i8** %slot")
-            sb.appendLine("  %hit = icmp eq i8* %val, %ptr")
-            sb.appendLine("  br i1 %hit, label %remove, label %cont")
-            sb.appendLine("remove:")
-            // swap-remove: items[i] = items[count-1]; count = count - 1
-            sb.appendLine("  %last = sub i64 %count, 1")
-            sb.appendLine("  %lastSlot = getelementptr i8*, i8** %items, i64 %last")
-            sb.appendLine("  %lastVal = load i8*, i8** %lastSlot")
-            sb.appendLine("  store i8* %lastVal, i8** %slot")
-            sb.appendLine("  store i64 %last, i64* %countPtr")
-            sb.appendLine("  br label %done")
-            sb.appendLine("cont:")
-            sb.appendLine("  %next = add i64 %i, 1")
-            sb.appendLine("  br label %loop")
-            sb.appendLine("done:")
-            sb.appendLine("  ret void")
-            sb.appendLine("}")
-            sb.appendLine()
-        }
 
         if (usesTaskRuntime) {
             usesAllocatorRuntime = true
@@ -4783,7 +4450,7 @@ class LlvmCodegen {
             sb.appendLine()
         }
 
-        // Post-process: fix pointer comparisons against integer `0` — LLVM requires `null`.
+        // Post-process: fix pointer comparisons against integer `0` - LLVM requires `null`.
         return sb.toString().lineSequence().map { line ->
             if (line.contains("icmp") && line.contains("*") && line.contains(", 0"))
                 line.replace(", 0", ", null")

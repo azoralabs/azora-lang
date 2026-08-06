@@ -27,11 +27,11 @@ expose import std.convert.core
  *
  * | spelling        | means                                                  |
  * |-----------------|--------------------------------------------------------|
- * | `value as T`    | representational — a widening, a layout-compatible view |
+ * | `value as T`    | representational - a widening, a layout-compatible view |
  * | `value as? T`   | the same, checked at runtime, `null` when it does not hold |
  * | `value as* T`   | reinterpret the bits; sizes must match                 |
- * | `value.into<T>` | **semantic** — may consume, may allocate               |
- * | `T::from(v)`    | **semantic** — builds a `T`, the canonical direction   |
+ * | `value.into<T>` | **semantic** - may consume, may allocate               |
+ * | `T::from(v)`    | **semantic** - builds a `T`, the canonical direction   |
  *
  * A cast never takes ownership and never allocates. A conversion may do both,
  * which is why it is a spec a type opts into rather than an operator the
@@ -43,7 +43,7 @@ realm std {
      * Converts `Self` into a `T`.
      *
      * The receiver is declared in brackets like every other member. The member
-     * is named `into` — the canonical name of the direction — and `use as`
+     * is named `into` - the canonical name of the direction - and `use as`
      * names the call-site alias it generates: for `T = String` that is
      * `.toString`, for `T = Int` it is `.toInt`.
      *
@@ -56,14 +56,14 @@ realm std {
      *
      * @generic T target type produced by the conversion.
      */
-    @Experimental(since: "0.0.3")
+    @Experimental(since: "0.1")
     spec Into<T> {
         prop into<T>[self: Self&]: T
         use into<T> as "to${T.typeName}"
     }
 
     /**
-     * Builds a `Self` from a `T` — the canonical direction.
+     * Builds a `Self` from a `T` - the canonical direction.
      *
      * `From` is what `Into` cannot express: it *constructs* rather than
      * consumes, so there is no `self` to convert and its member is a **static**.
@@ -84,16 +84,16 @@ realm std {
      *
      * @generic T source type the value is built from.
      */
-    @Experimental(since: "0.0.3")
+    @Experimental(since: "0.1")
     spec From<T> {
         func from(value: T): Self
     }
 
     /**
-     * Converts to `To` — what `value as To` calls.
+     * Converts to `To` - what `value as To` calls.
      *
      * Total: a `Cast` cannot fail. Representational rather than semantic, so it
-     * never takes ownership and never allocates — that is [Into]'s job, and the
+     * never takes ownership and never allocates - that is [Into]'s job, and the
      * line between them is what `DIPs/CAST_DIP.MD` is built on.
      *
      * The target is a parameter of the *impl*, not of the operator, so each one
@@ -104,29 +104,29 @@ realm std {
      * written `value as To` and never by naming the member. The compiler
      * renames it to the operator it answers before anything can call it.
      */
-    @Since("0.0.5")
+    @Since("0.1")
     bridge spec Cast<To> {
         prop _cast<To>[self: Self&]: To
     }
 
     /**
-     * Converts to `To` when the value permits it — what `value as? To` calls.
+     * Converts to `To` when the value permits it - what `value as? To` calls.
      *
      * Does **not** require [Cast]: a conversion that can fail is precisely the
      * one with no infallible form.
      */
-    @Since("0.0.5")
+    @Since("0.1")
     bridge spec CheckedCast<To> {
         prop _cast<To>[self: Self&]: To?
     }
 
     /**
-     * Reinterprets the bits as a `To` — what `value as* To` calls.
+     * Reinterprets the bits as a `To` - what `value as* To` calls.
      *
      * Requires equal sizes, checked at the lowering site. Requires neither of
      * the others: a reinterpretation is not a conversion.
      */
-    @Since("0.0.5")
+    @Since("0.1")
     bridge spec BitCast<To> {
         prop _cast<To>[self: Self&]: To
     }

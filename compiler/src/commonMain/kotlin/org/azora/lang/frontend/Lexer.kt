@@ -88,7 +88,7 @@ class Lexer(private val source: String) {
             ')' -> { if (bracketDepth > 0) bracketDepth--; addToken(TokenType.R_PAREN) }
             // A brace opens a statement block, where newlines separate statements
             // again even inside an enclosing `(`/`[`. Without resetting the depth a
-            // lambda written inline as an argument — `run({ a() \n b() })` — would
+            // lambda written inline as an argument - `run({ a() \n b() })` - would
             // have its newlines swallowed by the call's parentheses and its
             // statements joined into one expression.
             '{' -> { enclosingBracketDepths.addLast(bracketDepth); bracketDepth = 0; addToken(TokenType.L_BRACE) }
@@ -97,7 +97,6 @@ class Lexer(private val source: String) {
             ']' -> { if (bracketDepth > 0) bracketDepth--; addToken(TokenType.R_BRACKET) }
             ',' -> addToken(TokenType.COMMA)
             ';' -> addToken(TokenType.SEMICOLON)
-            '#' -> addToken(TokenType.HASH)
             '@' -> addToken(TokenType.AT)
             '.' -> when {
                 match('.') -> if (match('.')) addToken(TokenType.ELLIPSIS) else addToken(if (match('<')) TokenType.DOT_DOT_LESS else TokenType.DOT_DOT)
@@ -185,8 +184,8 @@ class Lexer(private val source: String) {
     }
 
     /**
-     * Scans a triple-quoted raw string `"""…"""`. The content is taken literally —
-     * backslash escapes are NOT processed and newlines are preserved — until the
+     * Scans a triple-quoted raw string `"""…"""`. The content is taken literally -
+     * backslash escapes are NOT processed and newlines are preserved - until the
      * closing `"""`. Emitted as a normal [TokenType.STRING_LITERAL] so the parser
      * and all backends (which already escape string values) handle it unchanged.
      *
@@ -267,7 +266,7 @@ class Lexer(private val source: String) {
                             ident.append(advance())
                         }
                         if (ident.isEmpty()) {
-                            sb.append('$') // lone '$' — treat as literal
+                            sb.append('$') // lone '$' - treat as literal
                         } else {
                             parts.add(StringPart.Expr(ident.toString()))
                         }
@@ -310,7 +309,7 @@ class Lexer(private val source: String) {
                 val opChar = peek()
                 val afterOp = if (!isAtEnd(1)) source[current + 1] else ' '
                 when {
-                    // ?+= ?-= ?*= ?/= ?%=  — compound null-conditional assignment
+                    // ?+= ?-= ?*= ?/= ?%=  - compound null-conditional assignment
                     afterOp == '=' -> {
                         advance() // op char
                         advance() // '='
@@ -323,7 +322,7 @@ class Lexer(private val source: String) {
                             else -> error("unreachable nullable compound op")
                         })
                     }
-                    // ?++ / ?-- — null-conditional inc/dec
+                    // ?++ / ?-- - null-conditional inc/dec
                     opChar == '+' && afterOp == '+' -> { advance(); advance(); addToken(TokenType.QMARK_PLUS_PLUS) }
                     opChar == '-' && afterOp == '-' -> { advance(); advance(); addToken(TokenType.QMARK_MINUS_MINUS) }
                     // Lone '?' followed by an operator char that isn't part of a
@@ -392,7 +391,7 @@ class Lexer(private val source: String) {
         }
 
         // Decimal point (only for base-10). In member-access position (`obj.0.0`)
-        // the previous token is DOT — scan an integer so the `.0` splits into two
+        // the previous token is DOT - scan an integer so the `.0` splits into two
         // tuple accesses instead of being swallowed as a DOUBLE_LITERAL `0.0`.
         var isFloat = false
         val afterMemberAccess = tokens.lastOrNull()?.type == TokenType.DOT
@@ -403,7 +402,7 @@ class Lexer(private val source: String) {
         } else if (base == 10 && !afterMemberAccess && !isAtEnd() && peek() == '.' &&
             (isAtEnd(1) || (source[current + 1] != '.' && !source[current + 1].isLetter() && source[current + 1] != '_'))
         ) {
-            // Trailing-dot real (`1.`, `0.`) — `.` not followed by a digit, a second
+            // Trailing-dot real (`1.`, `0.`) - `.` not followed by a digit, a second
             // `.` (range `1..5`), or an identifier char (member access `5.foo`).
             isFloat = true
             advance() // consume '.'
@@ -448,7 +447,7 @@ class Lexer(private val source: String) {
 
     private fun scanNumericSuffix(isHex: Boolean): NumericSuffix {
         if (isAtEnd()) return NumericSuffix.NONE
-        // Order matters — check multi-char suffixes first
+        // Order matters - check multi-char suffixes first
         // 'us' and 'uL' and 'uc' and 'ub'
         if (!isAtEnd() && peek() == 'u') {
             if (!isAtEnd(1)) {
@@ -460,7 +459,7 @@ class Lexer(private val source: String) {
                 // 'ub' only in non-hex mode (b is a hex digit)
                 if (!isHex && next == 'b') { advance(); advance(); column++; return NumericSuffix.UBYTE }
             }
-            // Standalone 'u' — must check after multi-char suffixes starting with 'u'
+            // Standalone 'u' - must check after multi-char suffixes starting with 'u'
             // Only match if next char is NOT a letter/digit (i.e. end of number token)
             if (isAtEnd(1) || !source[current + 1].isLetterOrDigit()) {
                 advance(); return NumericSuffix.UINT

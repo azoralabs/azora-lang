@@ -27,8 +27,8 @@ import kotlin.test.assertTrue
  * Golden (full-output) tests for the WASM and LLVM backends.
  *
  * Unlike the substring assertions elsewhere, these compare the **entire**
- * generated source text, so any unintended codegen change — formatting,
- * ordering, register numbering, added/removed declarations — fails loudly.
+ * generated source text, so any unintended codegen change - formatting,
+ * ordering, register numbering, added/removed declarations - fails loudly.
  * If a change to a backend is intentional, regenerate the expected text and
  * update it here.
  */
@@ -40,7 +40,7 @@ class CodegenGoldenTest {
         return result
     }
 
-    /** Program 1 — functions, if/else-if, for, while, interpolation, int division. */
+    /** Program 1 - functions, if/else-if, for, while, interpolation, int division. */
     private val scalarProgram = """
         import std.io
         func add(a: Int, b: Int): Int {
@@ -74,7 +74,7 @@ class CodegenGoldenTest {
         }
     """.trimIndent()
 
-    /** Program 2 — pack (struct), array literal/index, when with multi-pattern branch. */
+    /** Program 2 - pack (struct), array literal/index, when with multi-pattern branch. */
     private val aggregateProgram = """
         import std.io
         pack Point {
@@ -86,7 +86,7 @@ class CodegenGoldenTest {
             let p = Point(3, 4)
             p.x = p.x + 1
             std::println(p.x)
-            let nums = arr@[10, 20, 30]
+            let nums = @arr[10, 20, 30]
             nums[1] = 25
             std::println(nums[1])
             let grade = 2
@@ -99,7 +99,7 @@ class CodegenGoldenTest {
     """.trimIndent()
 
     // -----------------------------------------------------------------------
-    // WASM (WAT) — structural assertions (full behaviour is covered by the
+    // WASM (WAT) - structural assertions (full behaviour is covered by the
     // WasmCodegenExecTest end-to-end suite).
     // -----------------------------------------------------------------------
 
@@ -184,19 +184,19 @@ class CodegenGoldenTest {
               %2 = icmp slt i32 %1, 0
               br i1 %2, label %then.0, label %else.1
             then.0:
-              %3 = getelementptr arr@[9 x i8], arr@[9 x i8]* @.str.0, i64 0, i64 0
+              %3 = getelementptr @arr[9 x i8], @arr[9 x i8]* @.str.0, i64 0, i64 0
               ret i8* %3
             else.1:
               %4 = load i32, i32* %0
               %5 = icmp eq i32 %4, 0
               br i1 %5, label %then.3, label %merge.5
             then.3:
-              %6 = getelementptr arr@[5 x i8], arr@[5 x i8]* @.str.1, i64 0, i64 0
+              %6 = getelementptr @arr[5 x i8], @arr[5 x i8]* @.str.1, i64 0, i64 0
               ret i8* %6
             merge.5:
               br label %merge.2
             merge.2:
-              %7 = getelementptr arr@[9 x i8], arr@[9 x i8]* @.str.2, i64 0, i64 0
+              %7 = getelementptr @arr[9 x i8], @arr[9 x i8]* @.str.2, i64 0, i64 0
               ret i8* %7
             }
 
@@ -206,7 +206,7 @@ class CodegenGoldenTest {
               %loc1.total = alloca i32
               %loc2.i = alloca i32
               store i32 5, i32* %loc0.sum
-              %0 = getelementptr arr@[7 x i8], arr@[7 x i8]* @.str.3, i64 0, i64 0
+              %0 = getelementptr @arr[7 x i8], @arr[7 x i8]* @.str.3, i64 0, i64 0
               %1 = load i32, i32* %loc0.sum
               %2 = sext i32 %1 to i64
               %3 = call i8* @__azora_int_to_str(i64 %2)
@@ -232,7 +232,7 @@ class CodegenGoldenTest {
               br label %for_cond.0
             for_end.3:
               %13 = load i32, i32* %loc1.total
-              %14 = getelementptr arr@[4 x i8], arr@[4 x i8]* @.str.4, i64 0, i64 0
+              %14 = getelementptr @arr[4 x i8], @arr[4 x i8]* @.str.4, i64 0, i64 0
               %15 = call i32 (i8*, ...) @printf(i8* %14, i32 %13)
               br label %while_cond.4
             while_cond.4:
@@ -246,11 +246,11 @@ class CodegenGoldenTest {
               br label %while_cond.4
             while_end.6:
               %20 = load i32, i32* %loc1.total
-              %21 = getelementptr arr@[4 x i8], arr@[4 x i8]* @.str.4, i64 0, i64 0
+              %21 = getelementptr @arr[4 x i8], @arr[4 x i8]* @.str.4, i64 0, i64 0
               %22 = call i32 (i8*, ...) @printf(i8* %21, i32 %20)
               %23 = call i8* @classify(i32 5)
               %24 = call i32 @puts(i8* %23)
-              %25 = getelementptr arr@[4 x i8], arr@[4 x i8]* @.str.4, i64 0, i64 0
+              %25 = getelementptr @arr[4 x i8], @arr[4 x i8]* @.str.4, i64 0, i64 0
               %26 = call i32 (i8*, ...) @printf(i8* %25, i32 2)
               ret i32 0
             }
@@ -272,18 +272,18 @@ class CodegenGoldenTest {
             define i8* @__azora_int_to_str(i64 %v) {
             entry:
               %buf = call i8* @malloc(i64 24)
-              %fmt = getelementptr arr@[5 x i8], arr@[5 x i8]* @.str.5, i64 0, i64 0
+              %fmt = getelementptr @arr[5 x i8], @arr[5 x i8]* @.str.5, i64 0, i64 0
               %r = call i32 (i8*, i64, i8*, ...) @snprintf(i8* %buf, i64 24, i8* %fmt, i64 %v)
               ret i8* %buf
             }
 
             ; String constants
-            @.str.0 = private unnamed_addr constant arr@[9 x i8] c"negative\00"
-            @.str.1 = private unnamed_addr constant arr@[5 x i8] c"zero\00"
-            @.str.2 = private unnamed_addr constant arr@[9 x i8] c"positive\00"
-            @.str.3 = private unnamed_addr constant arr@[7 x i8] c"sum = \00"
-            @.str.4 = private unnamed_addr constant arr@[4 x i8] c"%d\0A\00"
-            @.str.5 = private unnamed_addr constant arr@[5 x i8] c"%lld\00"
+            @.str.0 = private unnamed_addr constant @arr[9 x i8] c"negative\00"
+            @.str.1 = private unnamed_addr constant @arr[5 x i8] c"zero\00"
+            @.str.2 = private unnamed_addr constant @arr[9 x i8] c"positive\00"
+            @.str.3 = private unnamed_addr constant @arr[7 x i8] c"sum = \00"
+            @.str.4 = private unnamed_addr constant @arr[4 x i8] c"%d\0A\00"
+            @.str.5 = private unnamed_addr constant @arr[5 x i8] c"%lld\00"
         """.trimIndent()
         assertEquals(expected, compile(scalarProgram).llvm)
     }

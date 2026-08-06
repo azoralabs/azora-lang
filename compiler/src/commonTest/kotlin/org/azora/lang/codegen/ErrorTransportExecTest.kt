@@ -66,7 +66,7 @@ class ErrorTransportExecTest {
         assertTrue("@__azora_err = global i8* null" in ir, "the error slot must be declared:\n$ir")
         assertTrue("store i8* %" in ir && "@__azora_err" in ir, "a throw must record the error:\n$ir")
         assertFalse(
-            "; throw — lowered to abort" in ir,
+            "; throw - lowered to abort" in ir,
             "a throw must no longer be lowered to a bare abort:\n$ir"
         )
     }

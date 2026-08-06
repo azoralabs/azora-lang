@@ -43,7 +43,7 @@ internal class PackSpecializer(private val table: SymbolTable) {
      * Identifies one member of a generic pack's layout family.
      *
      * Two applications share a layout exactly when they name the same declaration
-     * and the same arguments, so the rendered arguments are the identity — a
+     * and the same arguments, so the rendered arguments are the identity - a
      * `TypeRef` renders structurally, and `TypeRef.Const` renders its value.
      */
     data class Key(val packName: String, val arguments: List<String>) {
@@ -67,7 +67,7 @@ internal class PackSpecializer(private val table: SymbolTable) {
      * Reads the arguments straight off the resolved type: a const parameter takes
      * its value from [IrType.Named.constArgs], a type parameter its name from the
      * corresponding argument. A const parameter with no bound value, or a type
-     * argument still erased to `Any`, means no layout has been chosen — the caller
+     * argument still erased to `Any`, means no layout has been chosen - the caller
      * falls back to the template.
      */
     fun keyFor(declaration: TopLevel.Pack, applied: IrType.Named): Key? {
@@ -174,7 +174,7 @@ internal class PackSpecializer(private val table: SymbolTable) {
     /**
      * The layout one set of bindings selects: repetitions unrolled, conditions applied.
      *
-     * Order matters — a repeated field is a family, and the family has to exist before
+     * Order matters - a repeated field is a family, and the family has to exist before
      * anything can ask whether a member of it is present.
      */
     private fun concreteFields(

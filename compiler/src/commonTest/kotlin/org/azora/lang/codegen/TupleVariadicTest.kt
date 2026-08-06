@@ -286,43 +286,6 @@ class TupleVariadicTest {
         assertFalse("pack __Tuple_Int_Int" in ir, ir)
     }
 
-    @Test fun importedTupleTypeMacroDefinesParenthesizedTypeSyntax() {
-        val out = compile("""
-            import std.io
-            import std.container.tuple
-
-            func divmod(a: Int, b: Int): (Int, Int) {
-                return std::tupleOf(a / b, a % b)
-            }
-
-            func main() {
-                std::println(divmod(17, 5))
-            }
-        """.trimIndent())
-
-        assertEquals(
-            "std::Tuple<Int, Int>(3, 2)",
-            IrInterpreter().interpret(out.ir).trim(),
-        )
-    }
-
-    @Test fun parenthesizedTypeSyntaxRequiresAVisibleTypeMacro() {
-        val result = Compiler().compile("""
-            func divmod(a: Int, b: Int): (Int, Int) {
-                return 0
-            }
-        """.trimIndent(), release = false)
-
-        val failure = assertIs<CompilationResult.Failure>(result)
-        assertEquals(
-            listOf(
-                "line 1: no visible 'meta .Type' rule matches the parenthesized type form; " +
-                    "import the module that declares this grammar",
-            ),
-            failure.errors,
-        )
-    }
-
     @Test fun tupleTypeRequiresItsDeclaredRealm() {
         val result = Compiler().compile("""
             import std.container.tuple
@@ -375,7 +338,7 @@ class TupleVariadicTest {
     }
 
     @Test fun tupleLengthConstraintRejectsSingleElement() {
-        // `where (...T).length >= 2` — a 1-element tuple must fail with a clear message.
+        // `where (...T).length >= 2` - a 1-element tuple must fail with a clear message.
         val r = Compiler().compile("""
             import std.io
             import std.container.*

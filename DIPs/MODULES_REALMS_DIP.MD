@@ -1,4 +1,4 @@
-# Azora Modules & Realms — DIP Implementation Profile
+# Azora Modules & Realms - DIP Implementation Profile
 
 Modules organize files; realms organize namespaces within them; `import` and
 `use realm` control visibility. A `scope` is the third, unrelated thing: a
@@ -20,7 +20,6 @@ REALM       ::= realm PATH::SUB { DECLARATIONS }        // a namespace
 LABELED     ::= [inline | deepinline] realm ["label"] { … }
 
 SCOPE       ::= scope { BODY }              // a nested lexical scope (statement)
-            |   scope alloc { BODY }        // …with a scoped allocation arena
 ```
 
 `import` loads a module. `use` is kept for the two places that are not module

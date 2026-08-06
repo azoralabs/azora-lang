@@ -22,12 +22,12 @@ module std.container.array
  * Fixed-size contiguous array storage.
  *
  * Defines the canonical `Array<T>` type and the `arrayOf` factory. Array values
- * are built with `std::arrayOf(a, b, c)` or the `arr@[a, b, c]` macro (see
+ * are built with `std::arrayOf(a, b, c)` or the `@arr[a, b, c]` macro (see
  * `std.macro`); bracket value literals are not array syntax. Arrays expose their
  * element count through `size` and provide low-level access to contiguous
  * storage through `data`.
  *
- * @since 0.0.4
+ * @since 0.1
  */
 
 realm std {
@@ -45,7 +45,7 @@ realm std {
      *
      * @generic T The type shared by every element in the array.
      */
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     bridge pack Array<T, N: Int> {
         /**
          * Pointer to the first contiguous element.
@@ -57,16 +57,26 @@ realm std {
     }
 
     /**
+     * An array is cloned by duplicating its elements.
+     *
+     * Like `List`, it is never `Copy`: duplicating a collection implicitly
+     * would hide an allocation. The element copy is the compiler-supplied
+     * default, so an element type that writes its own `clone` gets it.
+     */
+    @Since("0.1")
+    impl Clone for Array
+
+    /**
      * Creates an array containing `elements` in argument order.
      *
-     * Every element must have the same type. The `arr@[first, second, third]`
+     * Every element must have the same type. The `@arr[first, second, third]`
      * macro (see `std.macro`) expands to this call.
      *
      * @generic T The element type inferred from the arguments.
      * @param elements The values copied into the resulting array.
      * @return An `Array<T>` containing all supplied elements.
      */
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     func arrayOf<T>(...elements: T): Array<T> {
         return elements
     }
@@ -83,7 +93,7 @@ realm std {
          * @param count The number of slots to allocate; must be non-negative.
          * @return An `Array<T>` with `count` slots.
          */
-        @Experimental(since: "0.0.4")
+        @Experimental(since: "0.1")
         bridge func fill<T>(count: Int): Array<T>
     }
 

@@ -27,7 +27,7 @@ import std.convert
  * Defines the Numeric spec for arithmetic types and the
  * compile-time type promotion function for mixed-type expressions.
  *
- * @since 0.0.1
+ * @since 0.1
  */
 
 realm std {
@@ -42,7 +42,7 @@ realm std {
      * @generic T Two or more primitive types to compare.
      * @return The widest type in T according to Type.rank.
      */
-    @Since("0.0.5")
+    @Since("0.1")
     deepinline prop Promote<...T>: Type where T.length >= 2 && T is Number {
         var result: Type = T.0
         for candidate: Type in T[1...] {
@@ -64,7 +64,7 @@ realm std {
      * The result is `Self`: a clone of a `T` is a `T`, and an `impl` need not
      * repeat that.
      */
-    @Since("0.0.5")
+    @Since("0.1")
     bridge spec Clone {
         func clone[self: Self&](): Self
     }
@@ -79,10 +79,10 @@ realm std {
      * There is no `Movable` capability: every value can be given away with
      * `take`, so one would say nothing.
      */
-    @Since("0.0.5")
+    @Since("0.1")
     bridge spec Copy requires Clone
 
-    @Since("0.0.4")
+    @Since("0.1")
     spec PrettyPrint {
         prop pretty[self: Self&]: String
     }
@@ -97,7 +97,7 @@ realm std {
      * `Rhs` defaults to `Self`, so the homogeneous case is written
      * `PartialEqual` with no argument.
      */
-    @Since("0.0.5")
+    @Since("0.1")
     bridge spec PartialEqual<Rhs = Self> {
         oper== [self: Self&](rhs: Rhs&): Bool
     }
@@ -107,11 +107,11 @@ realm std {
      *
      * Adds one promise to `PartialEqual<Self>`, and it is the promise the
      * compiler cannot check: `a == a` for every value. Everything that keys off
-     * equality — hashing, a set's uniqueness, a map's lookup — is broken by a
+     * equality - hashing, a set's uniqueness, a map's lookup - is broken by a
      * value that is not equal to itself, so those require [Equal] and not
      * [PartialEqual].
      */
-    @Since("0.0.5")
+    @Since("0.1")
     bridge spec Equal requires PartialEqual
 
     /**
@@ -122,7 +122,7 @@ realm std {
      * widens to a [PartialCompare], so a totally ordered type meets this bound
      * without declaring a second operator.
      */
-    @Since("0.0.5")
+    @Since("0.1")
     bridge spec PartialOrder<Rhs = Self> requires PartialEqual {
         oper<=> [self: Self&](rhs: Rhs&): PartialCompare
     }
@@ -131,11 +131,11 @@ realm std {
      * A type with a total order on its own values: every pair relates, and the
      * relation is transitive and antisymmetric.
      *
-     * `requires Equal` because a total order and its equality have to agree —
+     * `requires Equal` because a total order and its equality have to agree -
      * `a <=> b` answering `Equal` while `a == b` answers false is the
      * disagreement that makes a sorted container lose elements.
      */
-    @Since("0.0.5")
+    @Since("0.1")
     bridge spec Order requires Equal {
         oper<=> [self: Self&](rhs: Self&): Compare
     }
@@ -148,7 +148,7 @@ realm std {
      * it. Deriving [Equal] derives this too, over the same fields in the same
      * order, so the pair cannot come apart.
      */
-    @Since("0.0.5")
+    @Since("0.1")
     bridge spec Hash requires Equal {
         prop hash[self: Self&]: ULong
     }
@@ -156,8 +156,8 @@ realm std {
     /**
      * Arithmetic over `Rhs`, producing an `Out`.
      *
-     * One spec, not ten. `+` and `%` make the same promise about a type —
-     * closed, total, producing an `Out` — so they are one family; a type opens
+     * One spec, not ten. `+` and `%` make the same promise about a type -
+     * closed, total, producing an `Out` - so they are one family; a type opens
      * one `impl` instead of five. Comparison is split into four specs for the
      * opposite reason: those differ in what they *claim*, not in which symbol
      * they spell.
@@ -167,10 +167,10 @@ realm std {
      * `m % n` is an error naming the member rather than a `%` nobody meant.
      *
      * `+=` and its siblings are derived from the binary operator when absent,
-     * and the binary operator is *not* derived from them — a type that
+     * and the binary operator is *not* derived from them - a type that
      * accumulates need not also build.
      */
-    @Since("0.0.5")
+    @Since("0.1")
     spec Arithmetic<Rhs = Self, Out = Self> {
         oper+ [self: Self&](rhs: Rhs&): Out
         oper- [self: Self&](rhs: Rhs&): Out
@@ -185,14 +185,14 @@ realm std {
     }
 
     /**
-     * Negation — the unary `-`.
+     * Negation - the unary `-`.
      *
      * Separate from [Arithmetic] because it is a different operation that
      * happens to share a symbol: `0 - x` is not negation for every type, and a
      * type may negate without subtracting. The two are told apart by operand
      * count.
      */
-    @Since("0.0.5")
+    @Since("0.1")
     spec Neg<Out = Self> {
         oper- [self: Self&]: Out
     }
@@ -201,10 +201,10 @@ realm std {
      * Bitwise operations.
      *
      * `Shift` is its own parameter because a shift count is not a value of the
-     * shifted type — `primitive.az` declares the shifts over `UInt` while `&`
+     * shifted type - `primitive.az` declares the shifts over `UInt` while `&`
      * takes a `Self`, and one `Rhs` could not express both.
      */
-    @Since("0.0.5")
+    @Since("0.1")
     spec Bitwise<Rhs = Self, Shift = UInt, Out = Self> {
         oper& [self: Self&](rhs: Rhs&): Out
         oper| [self: Self&](rhs: Rhs&): Out
@@ -219,8 +219,8 @@ realm std {
         oper~ [self: Self&]: Out
     }
 
-    /** Logical negation — the unary `!`. */
-    @Since("0.0.5")
+    /** Logical negation - the unary `!`. */
+    @Since("0.1")
     spec Logical<Out = Self> {
         oper! [self: Self&]: Out
     }
@@ -231,7 +231,7 @@ realm std {
      * `[]` and `[]=` are separate members and neither derives the other: a type
      * may be readable without being writable, which is most of them.
      */
-    @Since("0.0.5")
+    @Since("0.1")
     spec Indexable<Idx = Int, Out = Self> {
         oper[] [self: Self&](index: Idx&): Out
         oper[]= [self: Self!](index: Idx&, value: Out)
@@ -244,7 +244,7 @@ realm std {
      * A type that can be written through can be read through, so `.^` implies
      * `.*` and the two must agree on `To`.
      */
-    @Since("0.0.5")
+    @Since("0.1")
     spec Deref<To> {
         oper.* [self: Self&]: To
         oper.^ [self: Self!]: To

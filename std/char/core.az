@@ -17,6 +17,6 @@
 expose module std.char.core
 
 use realm std {
-    @Since("0.0.4")
+    @Since("0.1")
     bridge pack Char
 }

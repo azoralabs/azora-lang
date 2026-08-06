@@ -24,7 +24,7 @@ import org.azora.lang.frontend.AzoraSyntaxVocabulary
  * Deliberately independent from the compiler's [org.azora.lang.frontend.Lexer]:
  * an editor colorizer must survive half-typed code (unterminated strings,
  * stray characters) and must classify comments, which the lexer discards.
- * The scanner never throws — any unrecognized character is simply skipped.
+ * The scanner never throws - any unrecognized character is simply skipped.
  *
  * Span types (see [HighlightSpan.type]): `keyword`, `string`,
  * `interpolation-punctuation`, `number`, `comment`, `function`, `variable`,
@@ -37,6 +37,9 @@ object AzHighlighter {
         AzoraSyntaxVocabulary.reservedKeywords.keys + AzoraSyntaxVocabulary.contextualKeywords
 
     private val RESERVED_KEYWORDS = AzoraSyntaxVocabulary.reservedKeywords.keys
+
+    /** The closed set of sigils a macro name may end in, as part of the name. */
+    private val MACRO_NAME_SIGILS = setOf('!', '?', '&', '*', '^')
 
     /** Built-in type names colored as types even without declarations in scope. */
     private val BUILTIN_TYPES = setOf(
@@ -187,27 +190,27 @@ object AzHighlighter {
                     }
                     spans.add(HighlightSpan(start, i, "number"))
                 }
-                // Annotation
+                // Macro invocation `@name` (lowercase) or decorator `@Name`.
                 c == '@' && peek(1).isIdentStart() -> {
                     val start = i
                     i++
+                    val head = source[i]
                     while (i < n && source[i].isIdentPart()) i++
-                    spans.add(HighlightSpan(start, i, "annotation"))
+                    val isMacro = head.isLowerCase() || head == '_'
+                    // A macro's name may end in one of `! ? & * ^`, and the
+                    // sigil is part of the name.
+                    if (isMacro && i < n && source[i] in MACRO_NAME_SIGILS) i++
+                    spans.add(HighlightSpan(start, i, if (isMacro) "macro" else "annotation"))
                 }
                 // Identifier / keyword / callable / type
                 c.isIdentStart() -> {
                     val start = i
                     while (i < n && source[i].isIdentPart()) i++
                     val word = source.substring(start, i)
-                    val isMacro = i < n &&
-                        source[i] == '@' &&
-                        (source[start].isLowerCase() || source[start] == '_')
-                    if (isMacro) i++
                     // Look ahead past spaces for a call parenthesis.
                     var j = i
                     while (j < n && source[j] == ' ') j++
                     val type = when {
-                        isMacro -> "macro"
                         word in RESERVED_KEYWORDS || isContextualKeyword(source, start, i) -> "keyword"
                         start in semantics.functionDeclarations -> "function"
                         word == "self" || word == "it" -> "parameter"

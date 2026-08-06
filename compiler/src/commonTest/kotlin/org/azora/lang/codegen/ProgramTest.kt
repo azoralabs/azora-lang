@@ -240,7 +240,7 @@ class ProgramTest {
         assertTrue("main" in releaseFuncs)
         assertFalse("unused" in releaseFuncs, "Unused function should be eliminated in release mode")
 
-        // In debug mode, optimization is skipped — IR and optimizedIr are the same
+        // In debug mode, optimization is skipped - IR and optimizedIr are the same
         val debug = compile(source, release = false)
         val debugFuncs = debug.optimizedIr.functions.map { it.name }
         assertTrue("main" in debugFuncs)

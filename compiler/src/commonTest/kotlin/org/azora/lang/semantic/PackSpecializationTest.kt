@@ -74,7 +74,7 @@ class PackSpecializationTest {
     }
 
     @Test fun anAbstractApplicationKeepsTheTemplateLayout() {
-        // `Vec<Int, N>` has chosen no layout, so lookup must not manufacture one —
+        // `Vec<Int, N>` has chosen no layout, so lookup must not manufacture one -
         // every template member stays visible inside the generic.
         assertIs<CompilationResult.Success>(Compiler().compile(
             """
@@ -104,7 +104,7 @@ class PackSpecializationTest {
     // ------------------------------------------------------------------
 
     @Test fun aNestedApplicationIsAlsoSpecialized() {
-        // `Box<Vec<Int, 3>>` — the inner application is rewritten to its
+        // `Box<Vec<Int, 3>>` - the inner application is rewritten to its
         // specialization by the same recursive type rewrite.
         assertIs<CompilationResult.Success>(Compiler().compile(
             """

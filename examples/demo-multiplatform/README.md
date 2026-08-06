@@ -1,4 +1,16 @@
 # Counter App - Multiplatform Demo
+> **Status: not implemented.** This document describes a planned UI story that
+> the compiler does not support yet. Nothing here compiles today:
+>
+> - `view`, `package` and `std.ui` do not exist. The module keyword is
+>   `module`, and there is no UI module in the standard library.
+> - `azora build` is not a command. The CLI has `run`, `check`, `compile`,
+>   `repl`, `version` and `help`.
+> - The only backends are the interpreter, LLVM and WebAssembly. There is no
+>   Kotlin, C#, Swift or native-UI target.
+>
+> It is kept as a design sketch. See `ROADMAPs/VERSION_0_1_ROADMAP.MD` for what
+> is actually being built.
 
 A single-file counter app that compiles to every UI target Azora supports. One `App.az` file, 7 platforms.
 
@@ -13,7 +25,6 @@ Each target outputs to its own `build/<target>/` directory.
 ```sh
 cd examples/demo-multiplatform
 
-azora build --js       # -> build/web-js/       React (browser)
 azora build --wasm     # -> build/web-wasm/     WebAssembly (browser)
 azora build --kmp      # -> build/kmp/          Kotlin Multiplatform (full Gradle project)
 azora build --kt       # -> build/kotlin-jvm/   Kotlin JVM (plain)
@@ -28,13 +39,13 @@ azora build --swift    # -> build/swift/        SwiftUI
 azora build
 ```
 
-Compiles every target listed in `azora.toml`.
+Compiles every target listed in `azora.azon`.
 
 ## Run
 
 ```sh
 # Web (starts dev server at http://localhost:8080)
-azora run --js
+azora run --wasm
 
 # KMP desktop (Compose for Desktop)
 azora run --kmp --desktop
@@ -88,7 +99,6 @@ build/kmp/
 
 | Target      | Flag      | Output Dir          | UI Framework    | Generated Project                         |
 |-------------|-----------|---------------------|-----------------|-------------------------------------------|
-| JavaScript  | `--js`    | `build/web-js/`     | React           | `app.js` + `index.html`                   |
 | WebAssembly | `--wasm`  | `build/web-wasm/`   | React (WASI)    | `app.wasm` + `index.html`                 |
 | KMP         | `--kmp`   | `build/kmp/`        | Jetpack Compose | Full Gradle project (desktop/Android/iOS) |
 | Kotlin JVM  | `--kt`    | `build/kotlin-jvm/` | Compose (plain) | `app.kt`                                  |

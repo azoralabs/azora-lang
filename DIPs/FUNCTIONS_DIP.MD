@@ -1,4 +1,4 @@
-# Azora Functions — DIP Implementation Profile
+# Azora Functions - DIP Implementation Profile
 
 A complete reference for **function declarations, calls, lambdas, generics,
 variadics, contracts, receivers, and extensions** in Azora, reflecting the
@@ -14,7 +14,7 @@ Quick orientation on the sigils this document uses:
 | `T ?! E` | `T` on success, or fails with error set `E` (`T ?! [E1, E2]` for several) |
 | `...T` | variadic type pack / spread |
 | `name<T, R>` | generic parameters, **after** the name |
-| `name@[…]` / `name!@[…]` | macro invocation (immutable / mutable variant) |
+| `@name[…]` / `@name![…]` | macro invocation (immutable / mutable variant) |
 
 ## Grammar
 
@@ -29,7 +29,7 @@ SAFETY       ::= inline | unsafe | (nothing)
 GENERICS     ::= <T, R, N: Int, ...T>                  (after the name; optional)
 PARAMS       ::= (name: Type [= default], out name: Type, …)
 RECEIVERS    ::= [self: Type&]                          (bracketed extension receiver; optional)
-RETURN_TYPE  ::= Type | (nothing → Unit; never inferred — see §1.4)
+RETURN_TYPE  ::= Type | (nothing → Unit; never inferred - see §1.4)
 FAILS        ::= E | [E1, E2]                           (error sets; optional)
 CLAUSE       ::= (...T).length >= N  |  T is Spec       (joined with &&; optional)
 BODY         ::= { statements }  |  = expression  |  in {…} out {r -> …} scope {…}
@@ -52,7 +52,7 @@ func add(a: Int, b: Int): Int {
 
 - `func` keyword, then the **name**, then optional generics, then `(params)`,
   then an optional `: ReturnType`, then the body `{ … }`.
-- With no `: ReturnType`, the return type is **`Unit`**. It is not inferred —
+- With no `: ReturnType`, the return type is **`Unit`**. It is not inferred  - 
   see §1.4.
 
 ### 1.2 Expression body
@@ -81,21 +81,21 @@ func greet(name: String, punctuation: String = "!"): String {
 The borrow lives on the **type**:
 
 ```azora
-func read(x: Int&) { … }        // immutable borrow — cannot mutate x
-func bump(x: Int!) { x = x + 1 } // mutable borrow — writes propagate back
+func read(x: Int&) { … }        // immutable borrow - cannot mutate x
+func bump(x: Int!) { x = x + 1 } // mutable borrow - writes propagate back
 func produce(out result: Int) { result = 42 } // write-only out param
 ```
 
-- `x: T&` — caller keeps ownership; the callee may read but not write.
-- `x: T!` — mutable borrow; assignments inside the callee are visible to the
+- `x: T&` - caller keeps ownership; the callee may read but not write.
+- `x: T!` - mutable borrow; assignments inside the callee are visible to the
   caller after the call.
-- `out x: T` — write-only output parameter.
+- `out x: T` - write-only output parameter.
 - The old `ref x`/`mut x`/`mut ref x` prefixes are **removed**.
 
 ### 1.4 Return types are declared, never inferred
 
 A declaration's return type is not something the compiler works out. An omitted
-return type is not a gap to be filled — it **is** the annotation, and it says
+return type is not a gap to be filled - it **is** the annotation, and it says
 `Unit`:
 
 ```azora
@@ -111,7 +111,7 @@ to write:
 func add(a: Int, b: Int) {
     return a + b
 }
-// line 2: 'add' returns Int but declares no return type — an omitted return
+// line 2: 'add' returns Int but declares no return type - an omitted return
 // type means Unit, it is not inferred; declare it as ': Int'
 ```
 
@@ -121,7 +121,7 @@ func add(a: Int, b: Int): Int {       // the fix
 }
 ```
 
-A bare `return` (no value) is fine in a `Unit` function — it is an early exit,
+A bare `return` (no value) is fine in a `Unit` function - it is an early exit,
 not a result.
 
 **A failable function may omit only its ok type.** `?! E` directly after the
@@ -142,7 +142,7 @@ func div(x: Int, y: Int): Int ?! MathError {     // yields a value → declare i
 returning (§1.5.1), which is why a branch accepts `.Variant`: failing is
 something the function *does*, not a value a branch produces.
 
-**The rule applies to `prop` as well** — a computed property is a declaration,
+**The rule applies to `prop` as well** - a computed property is a declaration,
 so it declares its type too (see the Packs, Impls & Specs DIP).
 
 Two things are deliberately outside the rule, because neither has a declaration
@@ -150,8 +150,8 @@ to read:
 
 | Form | Result type | Why |
 |------|-------------|-----|
-| **lambda** — `{ n: Int -> n * 2 }` | inferred from the body | there is no declaration; the body is all there is |
-| **operator overload** — `oper.* [self: Self&] { … }` | inferred from the body | the result is fixed by the operator's contract, not chosen by the author, and some are not nameable at the declaration (the deref of a variadic pack has no spelling for its member's type) |
+| **lambda** - `{ n: Int -> n * 2 }` | inferred from the body | there is no declaration; the body is all there is |
+| **operator overload** - `oper.* [self: Self&] { … }` | inferred from the body | the result is fixed by the operator's contract, not chosen by the author, and some are not nameable at the declaration (the deref of a variadic pack has no spelling for its member's type) |
 
 See `DIPs/DO_NOT_INFER_RETURN_TYPE.MD`.
 
@@ -167,7 +167,7 @@ func parse(text: String): Int ?! ParseError {
 func decode(b: Bytes): Value ?! [ParseError, IoError] { … }  // multiple error sets
 ```
 
-- `T ?! E` — succeeds with `T` or fails with a variant of error set `E`.
+- `T ?! E` - succeeds with `T` or fails with a variant of error set `E`.
 - `return .Variant` **fails** the function with that error variant.
 - `return value` yields the success value.
 - The old `fail return .Variant` form is **removed** (`error X` still throws).
@@ -307,7 +307,7 @@ deepinline prop Promote<...T>: Type where T.length >= 2 && T is Number {
 - Multiple constraints are joined with `&&`.
 
 (Ordinary runtime functions currently support the `.length` form; the `is Spec`
-bound is evaluated for type properties — see the CTCE DIP.)
+bound is evaluated for type properties - see the CTCE DIP.)
 
 ---
 
@@ -347,8 +347,8 @@ impl Counter {
 }
 ```
 
-- `{ self& -> … }` — immutable receiver (cannot mutate fields).
-- `{ self! -> … }` — mutable receiver.
+- `{ self& -> … }` - immutable receiver (cannot mutate fields).
+- `{ self! -> … }` - mutable receiver.
 - A bare `{ self -> … }` defaults to mutable.
 - Mutating through `self&` is a compile error (use `self!`).
 - The old `ref self` / `mut ref self` prefixes are **removed**.
@@ -425,7 +425,7 @@ std::println(double(5))                    // 10
 
 - Syntax: `{ param: Type[, …] -> body }`. The body's last expression (or a
   `return`) is the result.
-- A lambda's result type **is** inferred from its body — the one place in the
+- A lambda's result type **is** inferred from its body - the one place in the
   language where a result type is worked out rather than written, because a
   lambda has no declaration to read (§1.4).
 - Lambdas capture surrounding variables (closures):
@@ -459,8 +459,8 @@ flow squares(n: Int): Int {        // generator; `for x in squares(5)` iterates
 }
 ```
 
-- `task name(…)` — an asynchronous function, awaited with `await`.
-- `flow name(…)` — a generator; `yield` emits values, iterated by `for`.
+- `task name(…)` - an asynchronous function, awaited with `await`.
+- `flow name(…)` - a generator; `yield` emits values, iterated by `for`.
 - Both take generics after the name and the same parameter/receiver forms as
   `func`.
 
@@ -469,7 +469,7 @@ flow squares(n: Int): Int {        // generator; `for x in squares(5)` iterates
 ## 8. Decorators on functions
 
 ```azora
-@Experimental(since: "0.0.4")
+@Experimental(since: "0.1")
 func api() { … }
 
 @[Component, System(.Update)]        // grouped: applies both in one row
@@ -477,7 +477,7 @@ func moveSystem(world: World&) { … }
 ```
 
 - `@Name` / `@Name(args)` applies a single decorator.
-- `@[A, B(args), C]` applies several decorators at once — equivalent to stacking
+- `@[A, B(args), C]` applies several decorators at once - equivalent to stacking
   `@A` / `@B(args)` / `@C`.
 - Decorator names must start with an uppercase letter.
 
@@ -491,8 +491,8 @@ greet("Ann", punctuation: ".")  // named argument
 sumAll(1, ...more)              // spread a variadic
 value.method(x)                 // method / extension call
 Type::path(x)                   // realm-qualified free function
-vec@[1, 2, 3]                   // macro invocation (immutable)
-vec!@[1, 2, 3]                  // macro invocation (mutable variant)
+@vec[1, 2, 3]                   // macro invocation (immutable)
+@vec![1, 2, 3]                  // macro invocation (mutable variant)
 ```
 
 ### 9.1 Call-site borrows
@@ -521,7 +521,7 @@ delimiter).
 | `func Type.method()` | `func method()[self: Type&]` |
 | `T!E` / `T![A, B]` | `T ?! E` / `T ?! [A, B]` |
 | `fail return .X` | `return .X` |
-| `name![…]` (macro) | `name@[…]`, mutable `name!@[…]` |
-| `mut vec@[…]` | `vec!@[…]` |
+| `name![…]` (macro) | `@name[…]`, mutable `@name![…]` |
+| `mut @vec[…]` | `@vec![…]` |
 | `intern` / `shared` / `weak` keywords | removed (memory kinds via `std.memory`, planned) |
 | omitted return type → inferred | omitted return type → **`Unit`** (§1.4); lambdas and operators still infer |

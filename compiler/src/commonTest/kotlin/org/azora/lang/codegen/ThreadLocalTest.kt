@@ -6,7 +6,7 @@ import org.azora.lang.backend.IrInterpreter
 import kotlin.test.*
 
 /**
- * Tests for `threadlocal var` / `threadlocal fin` — per-coroutine independent storage.
+ * Tests for `threadlocal var` / `threadlocal fin` - per-coroutine independent storage.
  */
 class ThreadLocalTest {
 

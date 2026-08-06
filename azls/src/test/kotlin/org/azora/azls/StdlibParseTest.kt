@@ -6,7 +6,7 @@ import kotlin.test.Test
 import kotlin.test.assertTrue
 
 /**
- * The scripting core of the standard library must stay parseable — these are
+ * The scripting core of the standard library must stay parseable - these are
  * the files [org.azora.lang.stdlib.StdlibInjector] serves symbols from.
  * (Container/Concurrency/Parallelism/Traits sources use compile-time
  * machinery the parser doesn't support yet and are intentionally excluded.)

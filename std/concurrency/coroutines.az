@@ -24,7 +24,7 @@ module std.concurrency.coroutines
  * Provides task-based utilities for asynchronous execution,
  * including delayed actions.
  *
- * @since 0.0.1
+ * @since 0.1
  */
 
 realm std {
@@ -36,7 +36,7 @@ realm std {
      * @param ms The delay in milliseconds before executing the action.
      * @param action The function to execute after the delay.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     async func delayed(ms: Int, action: () -> Unit) {
         delay ms
         action()

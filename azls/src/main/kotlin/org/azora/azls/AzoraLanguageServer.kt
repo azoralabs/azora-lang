@@ -32,19 +32,19 @@ import org.azora.lang.frontend.TypeRef
 import org.azora.lang.stdlib.AzStdlib
 
 /**
- * The Azora Language Server — full language intelligence for `.az` sources.
+ * The Azora Language Server - full language intelligence for `.az` sources.
  *
  * Packaged as a self-contained jar (`azls.jar`) that Azora Studio loads via a
  * `URLClassLoader` and calls **reflectively**; every method therefore takes and
  * returns plain [String]s (JSON), so no types cross the classloader boundary.
  *
  * Capabilities:
- * - [highlight] — error-tolerant syntax colorizer spans.
- * - [diagnostics] — full compiler errors/warnings (lex, parse, semantic).
- * - [complete] — keywords, builtins, user symbols, in-scope locals/params,
+ * - [highlight] - error-tolerant syntax colorizer spans.
+ * - [diagnostics] - full compiler errors/warnings (lex, parse, semantic).
+ * - [complete] - keywords, builtins, user symbols, in-scope locals/params,
  *   pack fields and enum variants.
- * - [hover] — signatures for functions / packs / enums under the caret.
- * - [symbols] — document outline of top-level declarations.
+ * - [hover] - signatures for functions / packs / enums under the caret.
+ * - [symbols] - document outline of top-level declarations.
  *
  * The optional `prelude` parameter carries the rest of the compilation unit
  * (other project files, installed engine libraries) so cross-file symbols
@@ -59,7 +59,7 @@ class AzoraLanguageServer {
         SymbolIndex().apply { AzStdlib.loadPrograms().forEach(::addProgram) }
     }
 
-    /** Memoized prelude index — Studio passes the same prelude on every keystroke. */
+    /** Memoized prelude index - Studio passes the same prelude on every keystroke. */
     private var cachedPreludeKey: Int = 0
     private var cachedPreludeIndex: SymbolIndex? = null
 
@@ -184,7 +184,7 @@ class AzoraLanguageServer {
         val preludeIndex = preludeIndex(prelude)
         val cursorLine = source.take(safeOffset).count { it == '\n' } + 1
 
-        // The cursor's line is the one being typed and usually doesn't parse —
+        // The cursor's line is the one being typed and usually doesn't parse -
         // blank it before indexing (it can't declare anything its own
         // completion needs), falling back to the raw source when that fails.
         val blanked = source.lines().toMutableList()
@@ -213,7 +213,7 @@ class AzoraLanguageServer {
                 fun visible(name: String): Boolean =
                     index === userIndex || moduleVisible(index.origins[name], imports)
                 fun withOrigin(name: String, detail: String): String =
-                    index.origins[name]?.let { "$detail — $it" } ?: detail
+                    index.origins[name]?.let { "$detail - $it" } ?: detail
                 index.functions.values.forEach { if (visible(it.name)) out.add(functionCompletion(it).let { c -> c.copy(detail = withOrigin(c.label, c.detail)) }) }
                 index.packs.values.forEach { if (visible(it.name)) out.add(Completion(it.name, "pack", withOrigin(it.name, packDetail(it)), it.name)) }
                 index.enums.values.forEach { if (visible(it.name)) out.add(Completion(it.name, "enum", withOrigin(it.name, "enum ${it.name}"), it.name)) }
@@ -259,7 +259,7 @@ class AzoraLanguageServer {
                 }
             }
         }
-        // Unknown receiver — offer the built-in container/string methods.
+        // Unknown receiver - offer the built-in container/string methods.
         BUILTIN_METHODS.forEach { (name, detail) -> out.add(Completion(name, "method", detail, name)) }
     }
 

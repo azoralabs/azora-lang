@@ -28,7 +28,7 @@ import kotlin.test.assertTrue
  * Generic packs instantiated with a floating-point type.
  *
  * A generic pack erases every type parameter to a pointer slot. An `Int` rides
- * in that slot directly, but a `Double` does not fit the same way — it has to
+ * in that slot directly, but a `Double` does not fit the same way - it has to
  * travel as its own bit pattern, and the read has to know to convert it back.
  * The type arguments on the referring type are what carry that knowledge.
  */

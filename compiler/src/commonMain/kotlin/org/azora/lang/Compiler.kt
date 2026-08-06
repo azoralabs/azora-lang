@@ -37,18 +37,19 @@ import org.azora.lang.semantic.ReflectDecoExpander
 import org.azora.lang.semantic.CastDeriver
 import org.azora.lang.semantic.ComparisonDeriver
 import org.azora.lang.semantic.DisplayDeriver
+import org.azora.lang.semantic.RealmQualifiedImplTargets
 import org.azora.lang.semantic.SerializationDeriver
 import org.azora.lang.semantic.VariadicMonomorphizer
 
 /**
  * Full compiler pipeline:
  *
- *   Phase 1 — Frontend
+ *   Phase 1 - Frontend
  *     1. Lexer:          source → tokens
  *     2. Parser:         tokens → raw AST
  *     3. AST Validation: catch structural errors
  *
- *   Phase 2 — Semantic Analysis (multi-pass)
+ *   Phase 2 - Semantic Analysis (multi-pass)
  *     4. Symbol Collection (Pass 1):  register all function signatures
  *     5. Import Resolution:           resolve cross-module references
  *     6. Fixed-Point Loop:
@@ -60,11 +61,11 @@ import org.azora.lang.semantic.VariadicMonomorphizer
  *     7. Alloc/Drop Analysis:         ownership + liveness (post-CTCE)
  *     8. Effect Checking:             purity + side-effect propagation (post-CTCE)
  *
- *   Phase 3 — IR Generation
+ *   Phase 3 - IR Generation
  *     9.  AST → typed IR
  *     10. IR optimization (constant folding, constant propagation, DCE)
  *
- *   Phase 4 — Backend (one optimized IR → two codegen targets)
+ *   Phase 4 - Backend (one optimized IR → two codegen targets)
  *     11. IR → Wasm, LLVM
  */
 /**
@@ -108,7 +109,7 @@ data class LibrarySource(val path: String, val source: String)
  *
  * Drives all four phases: frontend (lexer, parser, AST validation),
  * semantic analysis (multi-pass with CTCE), IR generation with optimization,
- * and backend code generation to two targets — WebAssembly and LLVM IR — both
+ * and backend code generation to two targets - WebAssembly and LLVM IR - both
  * from one optimized IR.
  */
 class Compiler(
@@ -135,7 +136,7 @@ class Compiler(
             return "$message; '$name' is part of realm '$realm', use '$qualified' instead"
         }
         val module = libraries.moduleOf(name) ?: return message
-        return "$message — '$name' is provided by '$module': add 'use $module'"
+        return "$message - '$name' is provided by '$module': add 'use $module'"
     }
 
     fun compile(source: String, warningsAsErrors: Boolean = false, release: Boolean = true, debug: Boolean = false, defines: Map<String, String> = emptyMap()): CompilationResult {
@@ -153,7 +154,7 @@ class Compiler(
         }
 
         // ===============================================================
-        // Phase 1 — Frontend
+        // Phase 1 - Frontend
         // ===============================================================
 
         // 1-2. Lexer and parser: malformed source is a compilation failure, never
@@ -175,7 +176,7 @@ class Compiler(
         val parsed = if (debug) DebugInstrumenter.instrument(rawAst) else rawAst
 
         // 2a-bis. Reject imports of namespaces that have no module file (e.g.
-        // `import std` — there is no `std.az`, only modules beneath it).
+        // `import std` - there is no `std.az`, only modules beneath it).
         val importErrors = libraries.validateImports(parsed)
         if (importErrors.isNotEmpty()) {
             return CompilationResult.Failure(importErrors)
@@ -195,7 +196,9 @@ class Compiler(
 
         // 2b. Standard library: append the stdlib declarations the program
         // actually references (transitively); user definitions shadow stdlib.
-        val initiallyInjected = CallbackImplNormalizer.normalize(libraries.inject(parsed))
+        val initiallyInjected = RealmQualifiedImplTargets.resolve(
+            CallbackImplNormalizer.normalize(libraries.inject(parsed)),
+        )
 
         // Decorator derives produce ordinary checked AST methods. Run injection
         // once more afterwards so helper functions referenced by generated
@@ -230,7 +233,7 @@ class Compiler(
         // the `TopLevel.Meta` declarations. Runs after stdlib injection so both
         // user-defined and library macros are available, and before variadic
         // monomorphization so macro-generated variadic calls (e.g. std::listOf)
-        // monomorphize normally. The result is plain expressions — no IR/backend
+        // monomorphize normally. The result is plain expressions - no IR/backend
         // awareness of macros is needed.
         val macroExpanded = try {
             MacroExpander.expand(reflected)
@@ -281,7 +284,7 @@ class Compiler(
         }
 
         // ===============================================================
-        // Phase 2 — Semantic Analysis (multi-pass with CTCE loop)
+        // Phase 2 - Semantic Analysis (multi-pass with CTCE loop)
         // ===============================================================
 
         // Passes 4-8: symbol collection → imports → type resolution ⇄ CTCE → alloc/drop → effects
@@ -298,7 +301,7 @@ class Compiler(
         }
 
         // ===============================================================
-        // Phase 3 — IR Generation + Optimization
+        // Phase 3 - IR Generation + Optimization
         // ===============================================================
 
         // 9. AST → typed IR (uses the CTCE-stabilized program)
@@ -308,7 +311,7 @@ class Compiler(
         val optimizedIr = if (release) IrOptimizer().optimize(ir) else ir
 
         // ===============================================================
-        // Phase 4 — Backend (uses optimized IR in release, raw IR in debug)
+        // Phase 4 - Backend (uses optimized IR in release, raw IR in debug)
         // ===============================================================
 
         val backendIr = optimizedIr

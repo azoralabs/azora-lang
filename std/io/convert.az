@@ -27,7 +27,7 @@ import std.container.array
  * Provides functions for converting primitive types to strings
  * and string formatting operations like padding, repeating, and joining.
  *
- * @since 0.0.1
+ * @since 0.1
  */
 
 realm std {
@@ -37,7 +37,7 @@ realm std {
      * @param n The integer to convert.
      * @return The string representation.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func intToString<T>(n: T): String {
         return std::convert::toString(n)
     }
@@ -48,7 +48,7 @@ realm std {
      * @param n The real number to convert.
      * @return The string representation.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func realToString<T>(n: T): String {
         return std::convert::toString(n)
     }
@@ -59,7 +59,7 @@ realm std {
      * @param b The boolean to convert.
      * @return "true" or "false".
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func boolToString<T>(b: T): String {
         return std::convert::toString(b)
     }
@@ -72,7 +72,7 @@ realm std {
      * @param char The padding character.
      * @return The padded string.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func padLeft<T>(s: T, count: Int, char: T): T {
         var result = s
         for i in 0..<count {
@@ -89,7 +89,7 @@ realm std {
      * @param char The padding character.
      * @return The padded string.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func padRight<T>(s: T, count: Int, char: T): T {
         var result = s
         for i in 0..<count {
@@ -105,7 +105,7 @@ realm std {
      * @param count The number of repetitions.
      * @return The repeated string.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func repeatString<T>(s: T, count: Int): T {
         var result = ""
         for i in 0..<count {
@@ -121,7 +121,7 @@ realm std {
      * @param sep The separator to insert between elements.
      * @return The joined string.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func join<T>(arr: Array<T>, sep: T): T {
         if arr.length == 0 { return "" }
         var result = arr[0]

@@ -25,7 +25,7 @@ import std.convert
  * Double-ended queue supporting O(1) push/pop at both ends.
  * Implemented as a circular buffer with automatic resizing.
  *
- * @since 0.0.1
+ * @since 0.1
  */
 
 realm std {
@@ -36,7 +36,7 @@ realm std {
      *
      * @generic T The type of elements stored in this deque.
      */
-    @Since("0.0.1")
+    @Since("0.1")
     @Serializable
     pack Deque<T> {
         var data: T* = alloc T[8]
@@ -47,18 +47,18 @@ realm std {
     }
 
     /** Deque operations: push/pop at both ends, peek, clear, and string conversion. */
-    @Since("0.0.1")
+    @Since("0.1")
     impl Deque<T> {
         /** `true` when the deque holds no elements. */
-        @Since("0.0.1")
+        @Since("0.1")
         prop isEmpty[self: Self&]: Bool = self.size == 0
 
         /** `true` when the deque holds at least one element. */
-        @Since("0.0.1")
+        @Since("0.1")
         prop isNotEmpty[self: Self&]: Bool = self.size > 0
 
         /** Inserts [value] at the front; O(1) amortized. */
-        @Experimental(since: "0.0.1")
+        @Experimental(since: "0.1")
         func pushFront(value: T): Unit {
             if self.size >= self.capacity {
                 self._growDeque()
@@ -69,7 +69,7 @@ realm std {
         }
 
         /** Inserts [value] at the back; O(1) amortized. */
-        @Experimental(since: "0.0.1")
+        @Experimental(since: "0.1")
         func pushBack(value: T): Unit {
             if self.size >= self.capacity {
                 self._growDeque()
@@ -80,7 +80,7 @@ realm std {
         }
 
         /** Removes and returns the front element; O(1). */
-        @Experimental(since: "0.0.1")
+        @Experimental(since: "0.1")
         func popFront(): T {
             var value: T = self.data[self.head]
             self.head = (self.head + 1) % self.capacity
@@ -89,7 +89,7 @@ realm std {
         }
 
         /** Removes and returns the back element; O(1). */
-        @Experimental(since: "0.0.1")
+        @Experimental(since: "0.1")
         func popBack(): T {
             self.tail = (self.tail - 1 + self.capacity) % self.capacity
             var value: T = self.data[self.tail]
@@ -98,20 +98,20 @@ realm std {
         }
 
         /** Returns the front element without removing it. */
-        @Experimental(since: "0.0.1")
+        @Experimental(since: "0.1")
         func peekFront(): T {
             return self.data[self.head]
         }
 
         /** Returns the back element without removing it. */
-        @Experimental(since: "0.0.1")
+        @Experimental(since: "0.1")
         func peekBack(): T {
             var idx: Int = (self.tail - 1 + self.capacity) % self.capacity
             return self.data[idx]
         }
 
         /** Removes all elements (capacity is retained). */
-        @Since("0.0.1")
+        @Since("0.1")
         func clear(): Unit {
             self.head = 0
             self.tail = 0
@@ -119,7 +119,7 @@ realm std {
         }
 
         /** Doubles the circular buffer's capacity and re-linearizes it. */
-        @Experimental(since: "0.0.1")
+        @Experimental(since: "0.1")
         func _growDeque(): Unit {
             var newCap: Int = self.capacity * 2
             var newData: T* = alloc T[newCap]
@@ -135,7 +135,7 @@ realm std {
         }
 
         /** Renders the deque as `Deque[e0, e1, …]` in front-to-back order. */
-        @Experimental(since: "0.0.1")
+        @Experimental(since: "0.1")
         func toString(): String {
             var result: String = "Deque["
             for i in 0..<self.size {

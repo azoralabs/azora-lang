@@ -1,18 +1,31 @@
 # PawTrack - Pet Tracker Demo
 
-A multi-page pet tracker web app built with Azora and compiled to JavaScript (React). Demonstrates views, reactive state, SVG icons, form inputs, animations, and client-side routing.
+> **Status: not implemented.** This document describes a planned UI story that
+> the compiler does not support yet. Nothing here compiles today:
+>
+> - `view`, `package` and `std.ui` do not exist. The module keyword is
+>   `module`, and there is no UI module in the standard library.
+> - `azora build` is not a command. The CLI has `run`, `check`, `compile`,
+>   `repl`, `version` and `help`.
+> - The only backends are the interpreter, LLVM and WebAssembly. There is no
+>   Kotlin, C#, Swift or native-UI target.
+>
+> It is kept as a design sketch. See `ROADMAPs/VERSION_0_1_ROADMAP.MD` for what
+> is actually being built.
+
+A multi-page pet tracker web app built with Azora and compiled for the web. Demonstrates views, reactive state, SVG icons, form inputs, animations, and client-side routing.
 
 ## How it was generated
 
 ```sh
-azora create demo-website --js
+azora create demo-website --wasm
 ```
 
 ## Project structure
 
 ```
 demo-website/
-├── azora.toml                  Project config (web-js target, port 8080)
+├── azora.azon                  Project config (web target, port 8080)
 ├── .gitignore
 ├── src/
 │   ├── App.az                  Root view with NavHost routing (4 pages)
@@ -30,7 +43,7 @@ demo-website/
 
 ```sh
 cd examples/demo-website
-azora run --js
+azora run --wasm
 ```
 
 Opens at [http://localhost:8080](http://localhost:8080). Supports browser refresh on any route (SPA fallback).
@@ -38,10 +51,10 @@ Opens at [http://localhost:8080](http://localhost:8080). Supports browser refres
 ## How to build only
 
 ```sh
-azora build --js
+azora build --wasm
 ```
 
-Output: `build/app.js` and `build/index.html`.
+Output: `build/app.wasm` and `build/index.html`.
 
 ## Project config
 
@@ -49,11 +62,11 @@ Output: `build/app.js` and `build/index.html`.
 [project]
 name = "demo-website"
 version = "0.1.0"
-target = "web-js"
+target = "web-wasm"
 entry = "App.az"
 src = "src"
 
-[web-js]
+[web-wasm]
 title = "PawTrack - Pet Tracker"
 port = 8080
 

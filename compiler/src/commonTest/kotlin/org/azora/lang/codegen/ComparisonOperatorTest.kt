@@ -379,7 +379,7 @@ class ComparisonOperatorTest {
 
     /**
      * The defect the DIP was written for: this used to compile and answer
-     * differently on each backend — structurally in the interpreter, by address
+     * differently on each backend - structurally in the interpreter, by address
      * in LLVM.
      */
     @Test fun comparingAPackWithNoEqualityIsAnError() {

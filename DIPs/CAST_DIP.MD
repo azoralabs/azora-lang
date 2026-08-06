@@ -1,4 +1,4 @@
-# Azora Casts and Conversions — DIP
+# Azora Casts and Conversions - DIP
 
 > Status: **partly implemented** in `0.0.5`. §2 describes what the compiler does
 > today; §4 onward is proposed.
@@ -6,7 +6,7 @@
 > Supersedes `TYPE_DIP.MD` §9.
 
 Azora has five ways to turn a value of one type into a value of another. That is
-not four too many — they answer genuinely different questions — but until now
+not four too many - they answer genuinely different questions - but until now
 nothing wrote down which question each answers, and two of them were the same
 mechanism spelled twice.
 
@@ -30,7 +30,7 @@ The rule this document exists to state:
 The first three are operators, governed by the `Cast` / `CheckedCast` /
 `BitCast` specs (§4). The last two are `std.convert`'s `Into` and `From`.
 
-### 1.1 `as` — static conversion
+### 1.1 `as` - static conversion
 
 Representational and total. A numeric widening, an enum to its name, a pack to a
 layout-compatible one. A compile error when the compiler cannot see how the two
@@ -41,7 +41,7 @@ fin n: Long = small as Long
 fin s: String = Weekday.Monday as String
 ```
 
-### 1.2 `as?` — checked conversion
+### 1.2 `as?` - checked conversion
 
 The same question asked of a value whose dynamic type is not known statically.
 Yields `T?`: the value when it really is a `T`, `null` when it is not.
@@ -53,7 +53,7 @@ fin maybe: Circle? = shape as? Circle
 `as?` is **not** `as` with a null check bolted on. A type may be convertible one
 way and not the other, which is why §4 keeps them separate specs.
 
-### 1.3 `as*` — bit reinterpretation
+### 1.3 `as*` - bit reinterpretation
 
 The bits, read as another type. `T.sizeOf == U.sizeOf` is required and checked
 at the lowering site. This is the one that can be wrong in ways the type system
@@ -63,7 +63,7 @@ cannot catch, and it reads like it.
 fin bits: ULong = value as* ULong
 ```
 
-### 1.4 `.into<T>` — semantic conversion
+### 1.4 `.into<T>` - semantic conversion
 
 Ownership-aware and free to allocate. This is where a *domain* conversion goes:
 `Celsius` into `Fahrenheit`, `Path` into `String`, a builder into the thing it
@@ -85,11 +85,11 @@ label.toString      // the `use as` alias
 ```
 
 The member is a `prop`, so no parentheses. `use into<T> as "to${T.typeName}"`
-gives it the call-site name callers already write — `.toString` for
-`Into<String>`, `.toInt` for `Into<Int>` — while the member keeps its own
+gives it the call-site name callers already write - `.toString` for
+`Into<String>`, `.toInt` for `Into<Int>` - while the member keeps its own
 canonical name.
 
-### 1.5 `T::from(v)` — canonical construction
+### 1.5 `T::from(v)` - canonical construction
 
 The direction `Into` cannot express. `From` *builds* a value rather than
 consuming one, so there is no `self` and its member is a **static**:
@@ -127,8 +127,8 @@ Accurate as of `0.0.5`, because the rest of this document is a delta against it.
 - **`as?` widens the result** to `T?` in the resolver (`TypeResolver.kt:2039`),
   and again at lowering when the operator did not say.
 - **`std::cast` / `dyncast` / `bitcast` are gone.** Three `bridge func`s that
-  duplicated the operators — the file's own header called them sugar for
-  `as` / `as?` / `as*` — with no callers anywhere in the tree. `std/cast.az` and
+  duplicated the operators - the file's own header called them sugar for
+  `as` / `as?` / `as*` - with no callers anywhere in the tree. `std/cast.az` and
   `rewriteCastIntrinsic` were deleted in `0.0.5`. `TYPE_DIP.MD:120` still says
   the operators desugar to them; they do not.
 - **`Into` and `From` are as §1.4 and §1.5 describe.** Both were rewritten in
@@ -157,31 +157,31 @@ impl as Fahrenheit for Celsius { self& -> … }
 Both are alive. Neither is checkable: in the first the body must be correct for
 *every* `U` while naming exactly one of them, and `oper as<U>` can never be a
 bound; the second is a bespoke declaration with a bespoke receiver syntax that
-resembles nothing else in the language — it is the last surviving use of the
+resembles nothing else in the language - it is the last surviving use of the
 in-brace receiver the bracket redesign removed.
 
 ---
 
 ## 4. Proposal: the three cast specs
 
-Per `OPERATOR_OVERLOADING_DIP.MD` §12.1's rule — *group when only the symbol
+Per `OPERATOR_OVERLOADING_DIP.MD` §12.1's rule - *group when only the symbol
 differs, split when the promise differs*:
 
 ```azora
 /** Converts to `To`. Total: it cannot fail. */
-@Since("0.0.5")
+@Since("0.1")
 spec Cast<To> {
     prop cast<To>[self: Self&]: To
 }
 
 /** Converts to `To` when the value permits it, and answers null when not. */
-@Since("0.0.5")
+@Since("0.1")
 spec CheckedCast<To> {
     prop cast<To>[self: Self&]: To?
 }
 
 /** Reinterprets the bits as a `To`. Sizes must match; checked at lowering. */
-@Since("0.0.5")
+@Since("0.1")
 spec BitCast<To> {
     prop cast<To>[self: Self&]: To
 }
@@ -189,8 +189,8 @@ spec BitCast<To> {
 
 Three specs because there are three promises: `as` is total, `as?` can fail,
 `as*` is bit-level with a size requirement. `CheckedCast` does **not**
-`require Cast` — a conversion that can fail is precisely the one with no
-infallible form — and `BitCast` requires neither.
+`require Cast` - a conversion that can fail is precisely the one with no
+infallible form - and `BitCast` requires neither.
 
 ```azora
 impl Cast<Fahrenheit> for Celsius {
@@ -209,7 +209,7 @@ checkable and what makes `where T: Cast<String>` expressible.
 ### 4.1 `FullCast`
 
 ```azora
-@Since("0.0.5")
+@Since("0.1")
 typealias FullCast<To> = [Cast<To>, CheckedCast<To>, BitCast<To>]
 ```
 
@@ -234,7 +234,7 @@ unpredictable four.
   that merely has a compatible representation has not agreed to be convertible.
 - `T::from(v)` and `v.into<T>` are **not** derived from each other. Rust derives
   a blanket `Into` from `From`; Azora does not, because the two differ in
-  ownership — `from` constructs, `into` may consume — and a derived direction
+  ownership - `from` constructs, `into` may consume - and a derived direction
   would silently pick one.
 
 A type that wants both writes both. They are two lines.
@@ -244,11 +244,11 @@ A type that wants both writes both. They are two lines.
 ## 6. Diagnostics
 
 ```
-line 12: 'Celsius' has no 'Cast<Fahrenheit>' — cannot write 'c as Fahrenheit'
+line 12: 'Celsius' has no 'Cast<Fahrenheit>' - cannot write 'c as Fahrenheit'
   add 'impl Cast<Fahrenheit> for Celsius { prop cast[self: Self&]: Fahrenheit { … } }'
   or, if the conversion allocates or consumes, implement 'Into' and write 'c.into<Fahrenheit>'
 
-line 20: 'as*' requires equal sizes — Celsius is 8 bytes, Flag is 1
+line 20: 'as*' requires equal sizes - Celsius is 8 bytes, Flag is 1
   a bit reinterpretation cannot change a value's width
 
 line 27: 'impl as Fahrenheit for Celsius' was removed
@@ -277,7 +277,7 @@ line 33: 'Username' has 'From<String>' but no 'Into<String>'
 ## 8. Not proposed
 
 - **A fallible semantic conversion.** `Into` and `From` are total. `TryInto`
-  needs the error model to settle first — `?!` and `Result` are two different
+  needs the error model to settle first - `?!` and `Result` are two different
   answers today.
 - **Blanket `Into` from `From`.** §5.
 - **Implicit conversions of any kind.** All five spellings are written at the

@@ -33,10 +33,10 @@ import org.azora.lang.ir.IrType
 import org.azora.lang.ir.mangleMethodSymbol
 
 /**
- * Semantic Pass 1 — Symbol Collection.
+ * Semantic Pass 1 - Symbol Collection.
  *
  * Walks all top-level declarations and registers function signatures
- * in the [SymbolTable]. Does NOT look inside function bodies — that
+ * in the [SymbolTable]. Does NOT look inside function bodies - that
  * happens in [TypeResolver] (Pass 2).
  */
 /** A global binding being re-inferred once every pack is known. */
@@ -63,7 +63,7 @@ class SymbolCollector {
      * Whether [member] is an operator rather than a named member.
      *
      * Operators are registered as `oper<symbol>`, except the three reached by
-     * their bare names — indexing, index-assignment and slicing.
+     * their bare names - indexing, index-assignment and slicing.
      */
     private fun isOperatorMember(member: String): Boolean =
         member.startsWith("oper") || member in setOf("index", "indexSet", "slice")
@@ -76,14 +76,14 @@ class SymbolCollector {
     }
 
     private fun registerBuiltins(table: SymbolTable) {
-        // println accepts String — type checker will allow String args
+        // println accepts String - type checker will allow String args
         // `toString` lives in std as `std::convert::toString` (see
         // Internal/Std/Convert/Convert.az); it is no longer a free builtin.
         // `println` lives in std as `std::println` (see Internal/Std/IO/IO.az);
         // it is no longer a free builtin.
         if (table.lookupFunction("channel") == null) {
-            // `channel()` — creates a buffered channel for task-to-task communication.
-            // NOTE: still a builtin — relocation to std::concurrency::channel is blocked
+            // `channel()` - creates a buffered channel for task-to-task communication.
+            // NOTE: still a builtin - relocation to std::concurrency::channel is blocked
             // until Channel.az's Mutex/Queue dependencies are restored (Mutex is currently
             // undefined in the stdlib).
             table.defineFunction(FunctionSymbol("channel", emptyList(), IrType.Named("Channel")))
@@ -197,7 +197,7 @@ class SymbolCollector {
                 val defaults = func.params.mapIndexedNotNull { i, p -> p.defaultValue?.let { i to it } }.toMap()
                 // A `flow` generator's call returns a list of its (element-type) yields.
                 val callReturnType = if (func.isFlow) IrType.Array(returnType) else returnType
-                // Variadic only when declared with the `...T` syntax — a plain
+                // Variadic only when declared with the `...T` syntax - a plain
                 // trailing `[T]` parameter takes an array argument as-is.
                 val isVariadic = func.params.lastOrNull()?.variadic == true
                 val symbol = FunctionSymbol(
@@ -222,7 +222,7 @@ class SymbolCollector {
                 )
                 table.defineFunction(symbol)
                 val shortName = func.name.substringAfterLast("__")
-                // A generic `infx` (`infx<K,V> K.to(v)`) is callable as an infix
+                // A free function named by a bodyless infix macro is callable as an infix
                 // method on any receiver; record it under the (short) method name
                 // written at call sites (`a to b`), pointing at the real function.
                 if (func.isUniversalInfix || shortName in infixOps) table.defineUniversalInfix(shortName, func.name)
@@ -397,8 +397,8 @@ class SymbolCollector {
                         params.add(method.receiverName to selfType)
                         // An operator's `by <Spec>` clause names the operand type
                         // (`impl oper== by List<T> for ArrayList { ref self, rhs -> }`),
-                        // so the operand param(s) — written without a type in the body
-                        // header — take that spec type rather than erasing to Any.
+                        // so the operand param(s) - written without a type in the body
+                        // header - take that spec type rather than erasing to Any.
                         val operandType = if (method.name.startsWith("oper") && item.traitName != null) {
                             resolveType(TypeRef.Named(item.traitName!!), tpSet)
                         } else null
@@ -414,7 +414,7 @@ class SymbolCollector {
                                     ?: undeclaredReturnType(method, params)
                         }
                         // Bridge impls register the member name (so semantic gates like the
-                        // range-operator check can find it) but define NO callable function —
+                        // range-operator check can find it) but define NO callable function -
                         // the backend lowers bridge operators natively.
                         // How a spec member is *called* is part of its contract,
                         // not of the implementation: a spec's `prop` is reached
@@ -440,12 +440,12 @@ class SymbolCollector {
                             ))
                         }
                         table.defineMethod(item.typeName, method.name, mangled)
-                        // `impl Cast<Fahrenheit> for Celsius { prop cast … }` —
+                        // `impl Cast<Fahrenheit> for Celsius { prop cast … }` -
                         // the target is a parameter of the impl, so the member is
                         // registered under it. Without the key a type could only
                         // ever convert to one thing: two `Cast` impls would both
                         // be called `cast` and the second would collide.
-                        // `func into[…]: T use as "to${T.typeName}"` — the spec
+                        // `func into[…]: T use as "to${T.typeName}"` - the spec
                         // gives its member a second, call-site name expanded
                         // against this impl's type arguments. `Into<String>`
                         // makes `into` also reachable as `toString`, so the
@@ -515,7 +515,7 @@ class SymbolCollector {
                 // plus the parent name. Inherited members resolve by walking the
                 // parent chain at query time, so registration order (which the
                 // stdlib injector may reorder) does not matter. methodNames stays
-                // own-only — the `impl … for Type` completeness check requires only
+                // own-only - the `impl … for Type` completeness check requires only
                 // this spec's own methods; inherited ones are satisfied by the
                 // separate `impl Parent for Type` block.
                 val parentNames = item.parents.mapNotNull { (it as? TypeRef.Named)?.name }
@@ -550,7 +550,7 @@ class SymbolCollector {
         for (item in program.items) {
             if (item is TopLevel.Impl && item.traitName != null) {
                 // Oper overloads with a `by <Type>` clause (e.g. `impl oper== by Map for
-                // HashMap`) are NOT spec conformances — the `by` type names the operand,
+                // HashMap`) are NOT spec conformances - the `by` type names the operand,
                 // not the contract. Skip spec validation for oper-style methods entirely.
                 val isOperOverload = item.methods.any {
                     it.name.startsWith("oper") || it.name in setOf("slice", "index", "indexSet")
@@ -560,7 +560,7 @@ class SymbolCollector {
                 if (contract == null) {
                     // The traitName may be a `by <Type>` annotation on an operator
                     // overload (e.g. `impl oper+ by MapEntry for Type`), not a spec
-                    // conformance — skip validation for oper-style methods.
+                    // conformance - skip validation for oper-style methods.
                     val isOperOverload = item.methods.any {
                         it.name.startsWith("oper") || it.name in setOf("slice", "index", "indexSet")
                     }
@@ -597,8 +597,8 @@ class SymbolCollector {
                         // and only writes a member when the default is wrong.
                         //
                         // An *operator* member is optional for a different reason
-                        // (the operator DIP, §12.2): a spec that groups a family —
-                        // `Arithmetic` over `+ - * / %` — exists so a type opens
+                        // (the operator DIP, §12.2): a spec that groups a family -
+                        // `Arithmetic` over `+ - * / %` - exists so a type opens
                         // one impl instead of five, and forcing all of them back
                         // would be worse than the five specs it replaced. The
                         // operators a type did not write simply do not resolve,
@@ -639,29 +639,29 @@ class SymbolCollector {
      *
      * For a `func` or a `prop` this is `Unit`: Azora does not infer a
      * declaration's return type, so an omitted annotation is not "work it out
-     * for me" — it *is* the annotation (`DIPs/DO_NOT_INFER_RETURN_TYPE.MD`).
+     * for me" - it *is* the annotation (`DIPs/DO_NOT_INFER_RETURN_TYPE.MD`).
      * `ctor`/`dtor` and bodyless signatures never name a type either, and Unit
      * is already what they mean.
      *
      * An **operator overload** is the exception the rule deliberately leaves
      * out. Its result is fixed by the operator's contract rather than chosen by
-     * the author, and some are not nameable at the declaration at all — the
+     * the author, and some are not nameable at the declaration at all - the
      * deref of a variadic pack (`oper.* { return self.value }`) has no spelling
-     * for the member's type — so an operator still reads its result from its
+     * for the member's type - so an operator still reads its result from its
      * body. A lambda infers for the same reason: there is no declaration to read.
      */
     /**
      * Derives `Clone` and `Copy` for packs that did not say.
      *
      * The rules are the ones in the ownership model: a capability is derived
-     * when every field already has it. An explicit `impl` always wins — deriving
+     * when every field already has it. An explicit `impl` always wins - deriving
      * never overrides what the author wrote, and `defineConformance` refuses a
      * duplicate anyway.
      *
      * `Clone` is the common case, so a pack of ordinary
      * fields gets them without ceremony; `Copy` is the restrictive one,
      * because it is what makes duplication *implicit*. A pack holding anything
-     * not itself `Copy` — a list, a handle, another non-copyable pack — is
+     * not itself `Copy` - a list, a handle, another non-copyable pack - is
      * left out, so passing it by value asks for `take` or `clone`.
      *
      * Runs to a fixed point: `pack Outer { var inner: Inner }` can only be
@@ -671,7 +671,7 @@ class SymbolCollector {
      * Enforces every spec's `requires` list against the types that implement it.
      *
      * `spec Copy requires [Clone]` does not make a `Copy`
-     * type movable — it refuses to call it `Copy` until it separately is.
+     * type movable - it refuses to call it `Copy` until it separately is.
      * The capability is therefore always stated at the type, never inferred from
      * a sibling, which is the whole point of spelling it `requires` rather than
      * inheriting.
@@ -684,7 +684,7 @@ class SymbolCollector {
      *
      * `impl Clone for Vec2 { func clone[self: Self&]() { … } }` does not
      * repeat `: Vec2`, because the contract said it once: `func clone[…](): Self`.
-     * The type is still *declared* — on the spec — so this is not the return-type
+     * The type is still *declared* - on the spec - so this is not the return-type
      * inference the language rules out; it is reading the signature the
      * implementor is committing to. `Self` resolves to the implementing type.
      */
@@ -789,7 +789,7 @@ class SymbolCollector {
         is TypeRef.Named -> when {
             table.conformsTo(ref.name, capability) -> true
             // A type this compilation declares and that does not carry the
-            // capability blocks it — an opt-out has to propagate.
+            // capability blocks it - an opt-out has to propagate.
             isDeclaredType(ref.name, table) -> false
             // Anything else is a library type (`List<T>`, a handle, a spec).
             // Moving or deep-copying one is fine; making it duplicate

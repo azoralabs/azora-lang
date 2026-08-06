@@ -363,8 +363,8 @@ class DecoratorResolver {
                     }
                     if (isOperBlock) {
                         // Each oper-impl block gets its own identity so a decorator on
-                        // the block (e.g. `@Experimental`) does not collide — via the
-                        // shared type name — with the pack's own decorators or with
+                        // the block (e.g. `@Experimental`) does not collide - via the
+                        // shared type name - with the pack's own decorators or with
                         // sibling oper blocks on the same type.
                         val identity = "${item.typeName}#imploper@${item.line}:${item.column}"
                         sites.add(Site(identity, DecoTarget.Oper, namedType(item.typeName), item.annotations))

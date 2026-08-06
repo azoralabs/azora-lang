@@ -176,11 +176,11 @@ class AzoraLanguageServerTest {
 
     @Test
     fun highlightsCompilerMacrosAsOneToken() {
-        val source = """fin tuple = tup@(1, 2)
-fin array = collect_all@(tuple)"""
+        val source = """fin tuple = @tup(1, 2)
+fin array = @collect_all(tuple)"""
         val macros = spans(source).filter { it.type == "macro" }
 
-        assertEquals(listOf("tup@", "collect_all@"), macros.map { source.substring(it.start, it.end) })
+        assertEquals(listOf("@tup", "@collect_all"), macros.map { source.substring(it.start, it.end) })
     }
 
     @Test
@@ -346,7 +346,7 @@ fin array = collect_all@(tuple)"""
 
     @Test
     fun completesWhileTypingBrokenLine() {
-        // The current line doesn't parse — tolerant parsing must still offer symbols.
+        // The current line doesn't parse - tolerant parsing must still offer symbols.
         val source = "func fire(power: Int) {\n}\nfunc main() {\n    fi(\n}"
         val offset = source.indexOf("    fi(") + 6
         val list = completions(source, offset)

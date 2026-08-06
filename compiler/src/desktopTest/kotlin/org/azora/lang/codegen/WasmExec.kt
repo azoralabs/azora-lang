@@ -25,8 +25,8 @@ import kotlin.test.fail
 /**
  * Test harness that lowers Azora source to WebAssembly text (WAT), assembles it
  * to a `.wasm` binary with `wat2wasm` (from the `wabt` npm package, fetched via
- * `npx`), and runs it under Node.js — providing the `print_*` host imports and a
- * linear-memory string reader — returning the program's standard output.
+ * `npx`), and runs it under Node.js - providing the `print_*` host imports and a
+ * linear-memory string reader - returning the program's standard output.
  *
  * Skips itself when Node.js or the `wat2wasm` assembler are unavailable.
  */

@@ -158,7 +158,7 @@ internal object TypeFunctionEvaluator {
         /**
          * Whether [candidate] can serve this call, for overload filtering.
          *
-         * A constraint mismatch means "not this overload" — never a diagnostic, so
+         * A constraint mismatch means "not this overload" - never a diagnostic, so
          * another overload still gets its turn. `Unknown` is applicable: a clause the
          * evaluator cannot decide must not silently remove a candidate. Constraint
          * semantics live in [ConstraintEvaluator]; this only maps its outcome onto a
@@ -175,7 +175,7 @@ internal object TypeFunctionEvaluator {
          * Rejects the chosen specialization when its `where` clause does not hold.
          *
          * Runs after selection, so this is the point where a violation is the user's
-         * error rather than a reason to look at another overload — including when
+         * error rather than a reason to look at another overload - including when
          * selection fell back to a candidate that was never applicable.
          */
         private fun validateSpecialization(

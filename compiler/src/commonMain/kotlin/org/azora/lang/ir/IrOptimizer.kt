@@ -24,9 +24,9 @@ package org.azora.lang.ir
  * where possible.
  *
  * Current passes:
- *  1. [constantFold] — Evaluate constant binary/unary expressions.
- *  2. [deadCodeElimination] — Remove unreachable code after return statements.
- *  3. [constantPropagation] — Replace variable reads with known constant values.
+ *  1. [constantFold] - Evaluate constant binary/unary expressions.
+ *  2. [deadCodeElimination] - Remove unreachable code after return statements.
+ *  3. [constantPropagation] - Replace variable reads with known constant values.
  */
 class IrOptimizer {
 
@@ -459,7 +459,7 @@ class IrOptimizer {
                 is IrStmt.If -> {
                     val cond = stmt.condition
                     if (cond is IrExpr.BoolLiteral) {
-                        // Constant condition — inline the taken branch directly
+                        // Constant condition - inline the taken branch directly
                         val branch = if (cond.value) stmt.thenBranch else (stmt.elseBranch ?: emptyList())
                         result.addAll(eliminateDeadCode(branch))
                         continue
@@ -491,7 +491,7 @@ class IrOptimizer {
         // Collect all referenced names across the entire program
         val usedNames = mutableSetOf<String>()
 
-        // Start from main — it's always reachable
+        // Start from main - it's always reachable
         val funcMap = mutableMapOf<String, IrFunction>()
         for (item in program.items) {
             if (item is IrTopLevel.Func) funcMap[item.function.name] = item.function
@@ -641,7 +641,7 @@ class IrOptimizer {
             when (stmt) {
                 // An unused declaration is dropped, but its initializer may have
                 // side effects (function/FFI calls, method calls, struct ctors
-                // running effectful args) — keep those as expression statements.
+                // running effectful args) - keep those as expression statements.
                 is IrStmt.VarDecl ->
                     if (stmt.name in usedVars) stmt
                     else if (hasSideEffects(stmt.initializer)) IrStmt.ExprStmt(stmt.initializer)

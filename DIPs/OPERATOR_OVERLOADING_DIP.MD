@@ -1,4 +1,4 @@
-# Azora Operator Overloading — DIP
+# Azora Operator Overloading - DIP
 
 > Status: **the comparison family is implemented** in `0.0.5`; the rest of §12
 > is proposed.
@@ -22,12 +22,12 @@
 > | closing the free-operator form language-wide (§14, phase 11) | proposed |
 >
 > Naming note: the specs shipped as `Order` / `PartialOrder`, not `Ordering` /
-> `PartialOrdering`. `Hash`'s member is `prop hash`, not `oper#` — the `#`
+> `PartialOrdering`. `Hash`'s member is `prop hash`, not `oper#` - the `#`
 > operator is gone, though the token survives as the container-macro sigil.
 > Casts and conversions moved to `CAST_DIP.MD`.
 
 Every operator in Azora becomes a member of a `spec`, and every overload is
-written inside `impl <Spec> for <Type>`. §12 is the full inventory — arithmetic,
+written inside `impl <Spec> for <Type>`. §12 is the full inventory - arithmetic,
 unary, bitwise, compound assignment, indexing, dereference, range, hash,
 display, cast. §§2–11 work the comparison family out in detail, because it is
 the one with real design questions and the one whose absence was a bug.
@@ -35,7 +35,7 @@ the one with real design questions and the one whose absence was a bug.
 Azora already lets a type define what `+` means. What it does not have is any
 notion of what it means for two values to be *the same*, or for one to come
 *before* another. Six comparison operators exist as six unrelated members, no
-capability names the group, and — the defect that matters — `a == b` on a pack
+capability names the group, and - the defect that matters - `a == b` on a pack
 that never defined equality compiles anyway and gives a different answer on
 every backend.
 
@@ -53,7 +53,7 @@ document is the mechanism.
 This DIP covers **every** operator Azora has, in two layers.
 
 **The rule (§12).** Each operator symbol gets a `spec` that owns it, and an
-overload is written inside `impl <Spec> for <Type>` — never as a free
+overload is written inside `impl <Spec> for <Type>` - never as a free
 declaration. That is thirty-odd specs across arithmetic, unary, bitwise,
 compound assignment, comparison, indexing, dereference, range, `Hash`,
 `Display` and `Cast`, listed in full at §12.1. Along the way it fixes two
@@ -65,7 +65,7 @@ all (§2.6), and `oper!` cannot be written.
 `Compare` and `PartialCompare`, the capabilities `PartialEqual`, `Equal`,
 `PartialOrder` and `Order`, how the compiler derives them, and the
 standard-library types that should have had them since `0.0.4`. Comparison gets
-the detail because it is where the design questions are — total versus partial
+the detail because it is where the design questions are - total versus partial
 order, what derives from what, and a silent miscompile (§2.4) that has been in
 the language since packs were.
 
@@ -104,7 +104,7 @@ oper!= [self: HashSet<T>&](rhs: Set<T>): Bool {
 }
 ```
 
-— `set.az:525`, `:725`, `:770`; `map.az:1418`, `:1444`, `:1468`;
+- `set.az:525`, `:725`, `:770`; `map.az:1418`, `:1444`, `:1468`;
 `list.az:460`. Not one of them differs from the others.
 
 `TreeMap` pays the other half of the bill. Having only `oper<` for its keys, a
@@ -118,13 +118,13 @@ if key < self.keys[elem] {
 } else { … }
 ```
 
-— `map.az:863`, and again at `:883`. And `<=` has to be spelled out of `<`:
+- `map.az:863`, and again at `:883`. And `<=` has to be spelled out of `<`:
 
 ```azora
 fin beforeEnd = all[i].key < toKey || (inclusive && !(toKey < all[i].key))
 ```
 
-— `map.az:1127`, `:1137`, `:1148`. For an `Int` key that is two integer
+- `map.az:1127`, `:1137`, `:1148`. For an `Int` key that is two integer
 compares where one would do; for a `String` key it is two full lexicographic
 walks per node visited, at every level of the tree.
 
@@ -139,8 +139,8 @@ has `Clone`, `Copy` and `PrettyPrint`, and stops. Consequently:
   (`TypeResolver.kt:2567`). Sorting an array of a type with no ordering is a
   runtime question. Same for `sortDescending`, `isSorted`, `minOf`, `maxOf`
   (`search.az:89`, `:107`).
-- `map.az`'s header comment states the real contract — "`TreeMap<K, V>` requires
-  `oper<` for `K`" (`map.az:33`) — in a doc comment, because there is no way to
+- `map.az`'s header comment states the real contract - "`TreeMap<K, V>` requires
+  `oper<` for `K`" (`map.az:33`) - in a doc comment, because there is no way to
   write it in the signature.
 - `SYNTAX.MD:81` asks for `typealias Comparable = [oper<, oper>, oper<=, oper>=]`
   as the way to say it. §11 explains why that is the right mechanism for the
@@ -156,9 +156,9 @@ Two `Vec2`s with no `oper==` therefore **compile**. Lowering emits a raw
 `IrBinaryOp.EQ`, and the backends do not agree on what that is:
 
 - the interpreter evaluates Kotlin's `==` on its runtime representation
-  (`IrInterpreter.kt:1069`) — structural, for a map-backed object;
+  (`IrInterpreter.kt:1069`) - structural, for a map-backed object;
 - LLVM emits `icmp eq` on the value's representation
-  (`LlvmCodegen.kt:3632`, `:3763`) — identity, for a struct behind a pointer.
+  (`LlvmCodegen.kt:3632`, `:3763`) - identity, for a struct behind a pointer.
 
 The same program prints `true` under `az run` and `false` after `az build`.
 Nothing warns.
@@ -167,13 +167,13 @@ Order does not have this problem: the relational branch
 (`TypeResolver.kt:2565`) rejects any non-numeric, non-`Char` pair outright. So
 `a < b` fails loudly on a pack and `a == b` fails silently. §8 fixes that.
 
-### 2.5 A spec cannot require an operator — but an impl can supply one
+### 2.5 A spec cannot require an operator - but an impl can supply one
 
 Exactly one side of the pairing is missing, and it is worth being precise about
 which, because it sets the size of this proposal.
 
 **Missing.** `parseSpec` accepts `func`, `prop`, and a bare `self&` receiver
-line, and nothing else — `consume(TokenType.FUNC, "Expected 'func' or 'prop' in spec")`
+line, and nothing else - `consume(TokenType.FUNC, "Expected 'func' or 'prop' in spec")`
 (`Parser.kt:3961`). A capability that means "this type has `oper<=>`" cannot be
 written today.
 
@@ -186,7 +186,7 @@ already takes its return type from the spec it implements
 (`SymbolCollector.kt:630`).
 
 So the language can express "this type's `==` is its `PartialEqual`
-implementation" — it simply has no `PartialEqual` to point at. §14 makes the
+implementation" - it simply has no `PartialEqual` to point at. §14 makes the
 spec side Phase 1.
 
 What *was* deliberately removed is a third thing: `impl oper<SYM> for Type`,
@@ -197,7 +197,7 @@ instead, which is the piece it was missing.
 
 ### 2.6 Unary operator overloads never run
 
-Not a gap — a declaration the compiler accepts and then ignores.
+Not a gap - a declaration the compiler accepts and then ignores.
 
 `Expr.Unary` lowering maps the token straight to an `IrUnaryOp`
 (`IrGenerator.kt:1426`):
@@ -212,7 +212,7 @@ val op = when (expr.op) {
 ```
 
 There is no `lookupOperator` call anywhere on this path, and the resolver
-rejects the operand before it is reached — "cannot negate $operandType" for any
+rejects the operand before it is reached - "cannot negate $operandType" for any
 non-numeric (`TypeResolver.kt:1172`), "'!' requires Bool" for anything else
 (`:1180`). So:
 
@@ -220,7 +220,7 @@ non-numeric (`TypeResolver.kt:1172`), "'!' requires Bool" for anything else
 - `oper~` is in the dispatch table (`TypeResolver.kt:2340`,
   `IrGenerator.kt:2236`) but that table is read only by `resolveBinaryType`, so
   it is dead too;
-- `oper!` cannot even be declared — `parseOperatorName` has no `BANG` case
+- `oper!` cannot even be declared - `parseOperatorName` has no `BANG` case
   (`Parser.kt:450`–`:518`).
 
 `-v` on a `Vec2` is therefore a compile error today no matter what the type
@@ -234,17 +234,17 @@ C++20 and Rust each solved half of this. The halves are separable.
 
 | question                          | C++20                           | Rust                       | Azora                             |
 |-----------------------------------|---------------------------------|----------------------------|-----------------------------------|
-| how is comparison stated?         | `operator<=>`                   | `cmp` / `partial_cmp`      | **`oper<=>`** — C++'s             |
-| where is it written?              | free or member                  | in the trait `impl`        | **in the spec `impl`** — Rust's   |
-| is the result a type or an int?   | a type (`strong_ordering`, …)   | a type (`Order`)           | **a type** — both agree           |
-| how many result types?            | three (strong / weak / partial) | one, wrapped in `Option`   | **two** — neither's               |
-| are `<` `<=` `>` `>=` derived?    | yes, rewritten from `<=>`       | yes, provided on the trait | **yes, rewritten** — C++'s        |
+| how is comparison stated?         | `operator<=>`                   | `cmp` / `partial_cmp`      | **`oper<=>`** - C++'s             |
+| where is it written?              | free or member                  | in the trait `impl`        | **in the spec `impl`** - Rust's   |
+| is the result a type or an int?   | a type (`strong_ordering`, …)   | a type (`Order`)           | **a type** - both agree           |
+| how many result types?            | three (strong / weak / partial) | one, wrapped in `Option`   | **two** - neither's               |
+| are `<` `<=` `>` `>=` derived?    | yes, rewritten from `<=>`       | yes, provided on the trait | **yes, rewritten** - C++'s        |
 | is `!=` derived from `==`?        | yes                             | yes (default method)       | **yes**                           |
-| is `==` derived from `<=>`?       | **no**, deliberately            | no (separate trait)        | **no** — both agree               |
-| is comparison a named capability? | concepts, bolted on later       | traits, from the start     | **specs** — Rust's                |
-| total vs partial?                 | a property of the return type   | a property of the trait    | **the impl header** — neither's   |
-| reversed operands (`1 < obj`)?    | auto-generated                  | never                      | **never** — Rust's                |
-| memberwise default?               | `= default`                     | `#[derive]`                | **a bodyless `impl`** — neither's |
+| is `==` derived from `<=>`?       | **no**, deliberately            | no (separate trait)        | **no** - both agree               |
+| is comparison a named capability? | concepts, bolted on later       | traits, from the start     | **specs** - Rust's                |
+| total vs partial?                 | a property of the return type   | a property of the trait    | **the impl header** - neither's   |
+| reversed operands (`1 < obj`)?    | auto-generated                  | never                      | **never** - Rust's                |
+| memberwise default?               | `= default`                     | `#[derive]`                | **a bodyless `impl`** - neither's |
 | are floats ordered?               | partially                       | partially                  | **partially**                     |
 
 Two of those rows deserve their reasoning stated, since they are where this
@@ -279,9 +279,9 @@ Add to `std/traits/traits.az`:
  *
  * Total means every pair of values relates: for any `a` and `b`, exactly one
  * of `Less`, `Equal`, `Greater` holds, and the relation is transitive. A type
- * whose `<=>` returns `Compare` is making that promise — see `Order`.
+ * whose `<=>` returns `Compare` is making that promise - see `Order`.
  */
-@Since("0.0.5")
+@Since("0.1")
 enum Compare {
     Less
     Equal
@@ -295,7 +295,7 @@ enum Compare {
  * are neither less, nor greater, nor equal. `Double.NaN` against anything is
  * the case that forces this type to exist.
  */
-@Since("0.0.5")
+@Since("0.1")
 enum PartialCompare {
     Less
     Equal
@@ -336,7 +336,7 @@ impl Into<PartialCompare> for Compare
 ```
 
 is a bridge conversion the compiler inserts wherever a `PartialCompare` is
-wanted and a `Compare` is supplied. The reverse never happens implicitly —
+wanted and a `Compare` is supplied. The reverse never happens implicitly  - 
 narrowing away `Unordered` has to be a decision someone wrote down.
 
 This is what spares Azora the single worst piece of Rust boilerplate, where
@@ -362,7 +362,7 @@ inline for Ty in [Compare, PartialCompare] {
         /**
          * `self` if it is decisive, otherwise `next`. Lexicographic chaining.
          *
-         * Decisive means anything but `Equal` — so on `PartialCompare` an
+         * Decisive means anything but `Equal` - so on `PartialCompare` an
          * `Unordered` first field stops the chain and the whole comparison is
          * `Unordered`, which is what a lexicographic order over a partial one
          * has to do.
@@ -432,7 +432,7 @@ A comparison operator is **always** a member of the `impl` of the spec that
 governs it. Never a free declaration:
 
 ```azora
-@Since("0.0.5")
+@Since("0.1")
 impl Order for Version {
     oper<=> [self: Self&](rhs: Self&) {
         return (self.major <=> rhs.major)
@@ -442,12 +442,12 @@ impl Order for Version {
 }
 ```
 
-This is Rust's shape — the operator lives in the trait impl, not loose beside
-the type — written with Azora's `impl … for …` and Azora's bracketed receiver.
+This is Rust's shape - the operator lives in the trait impl, not loose beside
+the type - written with Azora's `impl … for …` and Azora's bracketed receiver.
 
 **No new syntax is needed.** `impl Spec for Type { oper<SYM> … }` already parses
 today: `Parser.kt:2948` handles `oper` as an impl-body member with the whole
-surface — receiver, operands, return type, `where` clause, overload suffix,
+surface - receiver, operands, return type, `where` clause, overload suffix,
 expression body, and the bodyless form. `impl PartialEqual<Vec2I> for Vec2`
 parses too; trait generic arguments are read at `Parser.kt:2739` and kept as
 `traitArgs`. The only lexical addition in this DIP is the `<=>` token itself,
@@ -456,7 +456,7 @@ which `parseOperatorName` picks up in one line
 operator names (`Mangling.kt:22`).
 
 > **This is not the form that was removed.** `Parser.kt:2718` rejects
-> `impl oper<SYM> for Type` — the operator as the *impl head* — and directs to
+> `impl oper<SYM> for Type` - the operator as the *impl head* - and directs to
 > the free `oper<SYM> [self: Type&]` spelling. That form put the operator where
 > the spec belongs and had nowhere to name a capability. Here the impl head is
 > the **spec**, and the operator is an ordinary member of it, which is what the
@@ -467,7 +467,7 @@ operator names (`Mangling.kt:22`).
 `oper<=>` above names no return type, and that is the point.
 
 `SymbolCollector.specMemberReturnType` (`:630`) already reads an impl member's
-return type off the spec it implements — the reason
+return type off the spec it implements - the reason
 `impl Clone for Vec2 { func clone[self: Self&]() { … } }` need not repeat
 `: Vec2`. `Order` declares `oper<=> … : Compare` and `PartialOrder`
 declares `oper<=> … : PartialCompare` (§6), so:
@@ -481,7 +481,7 @@ declares `oper<=> … : PartialCompare` (§6), so:
 return type to get wrong, no way to write `impl Order` and return
 `PartialCompare`, and no third place the totality claim could hide. The version
 of this proposal that used free operators had to make `<=>` the one operator
-required to name its result — that rule is now gone, and `FUNCTIONS_DIP.MD:154`'s
+required to name its result - that rule is now gone, and `FUNCTIONS_DIP.MD:154`'s
 blanket exemption for operators holds without an exception.
 
 Writing the return type explicitly is still allowed and must match the spec.
@@ -542,7 +542,7 @@ equal, and a version with build metadata orders without it but compares with it.
 A language that ties them together makes those types unwritable.
 
 So: a type that declares only `oper<=>` gets `<`, `<=`, `>`, `>=` and nothing
-else. `==` on it is the §8 error until it says. The exception is derivation —
+else. `==` on it is the §8 error until it says. The exception is derivation  - 
 `impl [Order] for T` (§7) generates *both*, because there the author asked
 for the memberwise default of everything.
 
@@ -555,7 +555,7 @@ Add to `std/traits/traits.az`, beside `Clone` and `Copy`.
 ### 6.1 The partial ones are generic in the right-hand operand
 
 `==` and `<=>` are not questions a type asks only of itself. `Meters` against
-`Feet`, a `String` against a `StringView`, a `Vec2` against a `Vec2I` — an
+`Feet`, a `String` against a `StringView`, a `Vec2` against a `Vec2I` - an
 operator already accepts a foreign operand today (the overload table is keyed by
 operand type, `Parser.kt:2151`), so the capability that names it has to be keyed
 the same way. Otherwise the bound can describe half the operators a type has.
@@ -569,10 +569,10 @@ the same way. Otherwise the bound can describe half the operators a type has.
  * reflexive: `Double.NAN == Double.NAN` is false, and that is what keeps this
  * capability separate from `Equal`.
  *
- * `Rhs` defaults to `Self`, so the homogeneous case — nearly all of them —
+ * `Rhs` defaults to `Self`, so the homogeneous case - nearly all of them  - 
  * is written `PartialEqual` with no argument.
  */
-@Since("0.0.5")
+@Since("0.1")
 bridge spec PartialEqual<Rhs = Self> {
     oper== [self: Self&](rhs: Rhs&): Bool
 }
@@ -585,7 +585,7 @@ bridge spec PartialEqual<Rhs = Self> {
  * to `PartialCompare` (§4.1), so a totally ordered type meets this bound
  * without declaring a second operator.
  */
-@Since("0.0.5")
+@Since("0.1")
 bridge spec PartialOrder<Rhs = Self> requires PartialEqual<Rhs> {
     oper<=> [self: Self&](rhs: Rhs&): PartialCompare
 }
@@ -603,31 +603,31 @@ slot to a type. Without it every bound in the language would have to say
  * A type whose equality is a full equivalence relation on its own values.
  *
  * Adds one promise to `PartialEqual<Self>`, and it is the promise the compiler
- * cannot check: `a == a` for every value. Everything that keys off equality —
- * hashing, a set's uniqueness, a map's lookup — is broken by a value that is
+ * cannot check: `a == a` for every value. Everything that keys off equality  - 
+ * hashing, a set's uniqueness, a map's lookup - is broken by a value that is
  * not equal to itself, so those require `Equal` and not `PartialEqual`.
  *
  * Two `Equal` values are also promised substitutable: interchangeable
  * everywhere the type is observed.
  */
-@Since("0.0.5")
+@Since("0.1")
 bridge spec Equal requires PartialEqual<Self>
 
 /**
  * A type with a total order on its own values: every pair relates, and the
  * relation is transitive and antisymmetric.
  *
- * `requires Equal` because a total order and its equality have to agree —
+ * `requires Equal` because a total order and its equality have to agree  - 
  * `a <=> b` answering `Equal` while `a == b` answers false is the disagreement
  * that makes a sorted container lose elements.
  */
-@Since("0.0.5")
+@Since("0.1")
 bridge spec Order requires Equal {
     oper<=> [self: Self&](rhs: Self&): Compare
 }
 ```
 
-`Equal` and `Order` take no `Rhs`, and the reason is not economy — it is that
+`Equal` and `Order` take no `Rhs`, and the reason is not economy - it is that
 their extra promises are **statements about one type's value set**. Reflexivity
 is `a == a`; there is no cross-type reading of it. Totality and antisymmetry are
 properties of a relation on a set, and `Meters` ∪ `Feet` is not the set either
@@ -643,14 +643,14 @@ totality is in the return type, where the compiler can see it. Only the *name*
 `Order` is reserved for the homogeneous case.
 
 Note what carries the claim in each pair. For **ordering** it is the return
-type — `Compare` has no `Unordered`, so the type system holds the promise. For
+type - `Compare` has no `Unordered`, so the type system holds the promise. For
 **equality** nothing in the signature can express reflexivity, so a marker spec
 holds it. The asymmetry is the compiler taking over the half of the contract it
 is able to.
 
 ### 6.3 `Order` satisfies a `PartialOrder` bound
 
-`Order` does not `require PartialOrder<Self>` — the two declare the same
+`Order` does not `require PartialOrder<Self>` - the two declare the same
 member at different return types, and requiring both would demand two `<=>`
 declarations per type.
 
@@ -660,8 +660,8 @@ directly, inserting the §4.1 widening at the call:
 ```azora
 func clamp<T>(v: T, lo: T, hi: T): T where T: PartialOrder { … }
 
-clamp(3, 0, 10)          // Int is Order — accepted, Compare widened
-clamp(3.0, 0.0, 10.0)    // Double is PartialOrder — accepted directly
+clamp(3, 0, 10)          // Int is Order - accepted, Compare widened
+clamp(3.0, 0.0, 10.0)    // Double is PartialOrder - accepted directly
 ```
 
 One `<=>` per type, both bounds satisfied. This is the concrete payoff of §3's
@@ -680,14 +680,14 @@ That leaves **one** axis, and it is the body:
 
 | what you write                            | what you get                           |
 |-------------------------------------------|----------------------------------------|
-| `impl [Equal, Order] for Vec2I` — no body | the compiler writes the members (§7)   |
+| `impl [Equal, Order] for Vec2I` - no body | the compiler writes the members (§7)   |
 | `impl Order for Version { oper<=> … }`    | your members, checked against the spec |
 
 Bodyless is derive. With a body is yours. One syntax, one rule, and it is
 already the syntax `std/traits/core.az:31` uses for `impl [Clone, Copy] for Ty`.
 
-Rust needs two constructs here — `#[derive(PartialOrd, Ord)]` above the type and
-`impl Ord for T { fn cmp }` below it — and they look nothing alike. C++ needs
+Rust needs two constructs here - `#[derive(PartialOrd, Ord)]` above the type and
+`impl Ord for T { fn cmp }` below it - and they look nothing alike. C++ needs
 `auto operator<=>(const T&) const = default;` and a written one, which at least
 share a declaration but differ by a keyword in the body position. Azora's
 existing bodyless-impl rule collapses both into the presence or absence of
@@ -707,12 +707,12 @@ one place to be written. The rule buys three things:
 - the conformance can never disagree with the members, because they are the same
   declaration;
 - the return type of `<=>` is decided by the header (§5.3.1);
-- `oper!=`, `oper<`, `oper<=`, `oper>`, `oper>=` have **no** spec to belong to —
-  they are rewrites (§5.4, §5.5), not members — so the rule is what makes
+- `oper!=`, `oper<`, `oper<=`, `oper>`, `oper>=` have **no** spec to belong to  - 
+  they are rewrites (§5.4, §5.5), not members - so the rule is what makes
   "do not hand-write these" enforceable rather than advisory.
 
-Operators with no spec behind them yet — `oper+`, `oper[]`, `oper as`
-— keep the free form they have today. This DIP does not touch them; §15 says
+Operators with no spec behind them yet - `oper+`, `oper[]`, `oper as`
+- keep the free form they have today. This DIP does not touch them; §15 says
 why extending the rule to every operator is a separate proposal.
 
 ---
@@ -732,38 +732,38 @@ pack Point {
     var y: Int
 }
 
-@Since("0.0.5")
+@Since("0.1")
 impl [Equal, Order] for Point
 ```
 
 generates, for `Point`:
 
-- `oper==` — field-wise `&&`, in declaration order, short-circuiting;
-- `oper<=>: Compare` — lexicographic, in declaration order, returning at the
+- `oper==` - field-wise `&&`, in declaration order, short-circuiting;
+- `oper<=>: Compare` - lexicographic, in declaration order, returning at the
   first field that is not `Equal`;
-- `hash` — the field-wise hash (§7.3).
+- `hash` - the field-wise hash (§7.3).
 
 `<`, `<=`, `>`, `>=` and `!=` come from §5.4 and §5.5 and are not generated as
 members at all. One `<=>` and one `==` per type is the whole footprint.
 
 ### 7.2 When derivation is refused
 
-- `impl Equal for T` where some field is not `Equal` — error naming the field
+- `impl Equal for T` where some field is not `Equal` - error naming the field
   and its type. A `Double` field is the common case, and the message says so.
 - `impl Order for T` where some field is not `Order`, same.
-- `impl Order for T` where the author also wrote `oper<=>` — the written
+- `impl Order for T` where the author also wrote `oper<=>` - the written
   one wins and the derivation is skipped, matching `Clone`'s rule
   (`SymbolCollector.kt:597`: "an explicit `impl` always wins").
 - A `variant enum` derives both when every payload field of every case does;
   cases order by declaration position first, payload lexicographically second.
-  A payload-free `enum` always derives both, ordering by declaration position —
+  A payload-free `enum` always derives both, ordering by declaration position  - 
   this is the rule that makes `Compare` and `PartialCompare` themselves
   comparable without special-casing.
 
 **Nothing is derived silently.** Unlike `Clone`, which is derived for any pack
 that did not say, comparison is derived only where `impl Equal` /
-`impl Order` is written. Equality has semantics — a cache field, an
-interned id, a floating-point tolerance all change what "the same" means — and a
+`impl Order` is written. Equality has semantics - a cache field, an
+interned id, a floating-point tolerance all change what "the same" means - and a
 compiler that guesses will be wrong for exactly the types where it matters most.
 `Clone` can be derived because duplication has one correct answer. Equality does
 not.
@@ -772,8 +772,8 @@ not.
 
 A type whose `==` and `#` disagree corrupts every hash container it is a key of:
 `HashMap` looks in the bucket the hash names and finds nothing, and the entry is
-lost rather than found. `map.az:31` already states the requirement — "`HashMap`
-… require `Hash` and `oper==`" — with nothing enforcing it.
+lost rather than found. `map.az:31` already states the requirement - "`HashMap`
+… require `Hash` and `oper==`" - with nothing enforcing it.
 
 `Hash` is the spec that owns hashing (§12.6), and it `requires Equal` for
 exactly this reason: the two are one contract, and a type whose equality is not
@@ -781,11 +781,11 @@ reflexive cannot promise that equal values hash equally. So:
 
 - deriving `Equal` **also derives `Hash`**, over the same fields in the same
   order, unless the type wrote its own `hash`;
-- writing `oper==` and `hash` by hand is allowed and unchecked — the compiler
+- writing `oper==` and `hash` by hand is allowed and unchecked - the compiler
   cannot verify that two hand-written bodies agree;
 - a type that is `Equal` but whose hand-written `Hash` is missing cannot be used
   as a hash key, and the error names both members;
-- a container that hashes says so in its signature — `where K: Hash` — rather
+- a container that hashes says so in its signature - `where K: Hash` - rather
   than in a doc comment (§12.6).
 
 Rust ties `Hash` and `Eq` by convention and a clippy lint. C++ ties them not at
@@ -795,7 +795,7 @@ spec so the pair cannot come apart, is strictly better than either.
 ### 7.4 Writing it by hand: `Vec2`
 
 Derivation is the common case; this is the whole surface when a type does it
-itself. `Vec2` is the useful example precisely because **it cannot derive** —
+itself. `Vec2` is the useful example precisely because **it cannot derive**  - 
 its fields are `Double`, and `Double` is not `Equal` (§9).
 
 ```azora
@@ -808,7 +808,7 @@ pack Vec2 {
 **Equality.** One impl, one member:
 
 ```azora
-@Since("0.0.5")
+@Since("0.1")
 impl PartialEqual for Vec2 {
     oper== [self: Self&](rhs: Self&) {
         return self.x == rhs.x && self.y == rhs.y
@@ -819,7 +819,7 @@ impl PartialEqual for Vec2 {
 `PartialEqual` with no argument is `PartialEqual<Vec2>` by the `Rhs = Self`
 default (§6.1). The `: Bool` is omitted because the spec declared it (§5.3.1).
 
-That is the entire equality surface. `!=` comes from §5.5 — there is nowhere to
+That is the entire equality surface. `!=` comes from §5.5 - there is nowhere to
 write an `oper!=` even if you wanted to, since no spec declares one (§6.5).
 That is the seventh copy of §2.2's boilerplate made unwritable rather than
 merely discouraged.
@@ -832,10 +832,10 @@ rather than losing the entry at runtime.
 **Order.** A vector has no natural total order, so there are two honest
 choices and the DIP does not pick for you.
 
-*Lexicographic* — deterministic, which is what sorting and tree containers want:
+*Lexicographic* - deterministic, which is what sorting and tree containers want:
 
 ```azora
-@Since("0.0.5")
+@Since("0.1")
 impl PartialOrder for Vec2 {
     oper<=> [self: Self&](rhs: Self&) {
         return (self.x <=> rhs.x).thenBy { self.y <=> rhs.y }
@@ -844,7 +844,7 @@ impl PartialOrder for Vec2 {
 ```
 
 `PartialOrder` is the header, so the result is `PartialCompare` and the body
-never says so. That is not a convenience — it is the correctness point. `Vec2`
+never says so. That is not a convenience - it is the correctness point. `Vec2`
 *must* be partial: a `NAN` component makes two vectors genuinely incomparable,
 and §5.4's second column then makes `<`, `<=`, `>` and `>=` all false for that
 pair. Writing `impl Order for Vec2` instead is caught at the header, before
@@ -853,10 +853,10 @@ any of the body is read.
 Nothing else is written. `v1 < v2`, `v1 <= v2`, `v1 > v2`, `v1 >= v2` all work
 from that one member, each calling it once.
 
-*By magnitude* — if the domain wants it:
+*By magnitude* - if the domain wants it:
 
 ```azora
-@Since("0.0.5")
+@Since("0.1")
 impl PartialOrder for Vec2 {
     oper<=> [self: Self&](rhs: Self&) {
         return self.lengthSquared <=> rhs.lengthSquared
@@ -878,27 +878,27 @@ pack Vec2I {
     var y: Int
 }
 
-@Since("0.0.5")
+@Since("0.1")
 impl [Equal, Order] for Vec2I
 ```
 
-No braces, so the compiler writes the members (§6.4) — `oper==`, `oper<=>`
+No braces, so the compiler writes the members (§6.4) - `oper==`, `oper<=>`
 returning `Compare`, and `hash` (§7.3). One line replaces all of the above, and
 `Vec2I` is a legal hash key and a legal `TreeMap` key. This is the shape most
 packs should have.
 
-**Comparing the two — the generic specs doing work.** Two more impls on `Vec2`,
+**Comparing the two - the generic specs doing work.** Two more impls on `Vec2`,
 naming a foreign `Rhs`:
 
 ```azora
-@Since("0.0.5")
+@Since("0.1")
 impl PartialEqual<Vec2I> for Vec2 {
     oper== [self: Self&](rhs: Vec2I&) {
         return self.x == (rhs.x as Double) && self.y == (rhs.y as Double)
     }
 }
 
-@Since("0.0.5")
+@Since("0.1")
 impl PartialOrder<Vec2I> for Vec2 {
     oper<=> [self: Self&](rhs: Vec2I&) {
         return (self.x <=> (rhs.x as Double))
@@ -908,7 +908,7 @@ impl PartialOrder<Vec2I> for Vec2 {
 ```
 
 `Vec2` now conforms to `PartialEqual<Vec2>`, `PartialEqual<Vec2I>`,
-`PartialOrder<Vec2>` and `PartialOrder<Vec2I>` — and `v < grid` compiles.
+`PartialOrder<Vec2>` and `PartialOrder<Vec2I>` - and `v < grid` compiles.
 Four impl headers, four conformances, nothing inferred. This is what §6.1's
 `Rhs` parameter exists for: without it these two impls would have the same
 header as the first two and collide, and the bound `where T: PartialEqual<U>`
@@ -933,15 +933,15 @@ candidates"), so `grid == v` needs its own impl. Explicit, and greppable.
 The §2.4 defect, fixed:
 
 ```
-line 42: cannot compare two 'Vec2' values — Vec2 does not implement PartialEqual
+line 42: cannot compare two 'Vec2' values - Vec2 does not implement PartialEqual
   add 'impl [Equal] for Vec2' to compare it field by field, or write it out:
     impl PartialEqual for Vec2 { oper== [self: Self&](rhs: Self&) { … } }
 ```
 
 `resolveBinaryType`'s `EQUAL_EQUAL` branch stops returning `Bool` for two
 identical `IrType.Named` types with no `PartialEqual` conformance. Everything it
-currently accepts for good reasons — comparison against `null`, a nullable
-against its inner type, an erased `Any` — is unaffected; the change is narrow,
+currently accepts for good reasons - comparison against `null`, a nullable
+against its inner type, an erased `Any` - is unaffected; the change is narrow,
 and it is the difference between a program with a bug and a program that does
 not build.
 
@@ -963,7 +963,7 @@ flag.
 `Double` and `Float` are `PartialEqual` and `PartialOrder`. They are never
 `Equal` and never `Order`, because `NaN != NaN` and `NaN` relates to nothing.
 `f <=> g` on two `Double`s returns `PartialCompare`, and §5.4's second column
-makes all four relational operators false when either is `NaN` — which is what
+makes all four relational operators false when either is `NaN` - which is what
 IEEE 754 requires and what a `Compare`-based rewrite would silently get wrong.
 
 The consequence is the one Rust is famously criticised for: `sort` requires
@@ -972,11 +972,11 @@ pretend otherwise; it makes the fix a one-liner instead of a lookup.
 
 `Float::` and `Double::` already exist as type-scoped blocks holding the limits
 and special values (`primitive.az:341`, `:363`). Each gains one static, in the
-form `Array::fill` uses (`array.az:87`) — a `bridge func`, because the ordering
+form `Array::fill` uses (`array.az:87`) - a `bridge func`, because the ordering
 is a bit-pattern operation the backend emits:
 
 ```azora
-@Since("0.0.5")
+@Since("0.1")
 impl Double:: {
     /**
      * The IEEE 754 totalOrder predicate: a genuine total order over every
@@ -1015,23 +1015,23 @@ a partial order rather than hiding it behind a comparison that lies at `NaN`.
 
 ## 10. What the standard library gets
 
-### 10.1 Primitives — `std/primitive.az`, `std/traits/core.az`
+### 10.1 Primitives - `std/primitive.az`, `std/traits/core.az`
 
 The type lists are already there (`primitive.az:403`–`:419`), and
 `impl Spec for TypeList` already works (`:423`), so this is three lines:
 
 ```azora
-@Since("0.0.5")
+@Since("0.1")
 impl [PartialEqual, Equal, Order] for Integers
 
-@Since("0.0.5")
+@Since("0.1")
 impl [PartialEqual, PartialOrder] for FloatingPoints
 
-@Since("0.0.5")
+@Since("0.1")
 impl [PartialEqual, Equal, Order] for [Bool, Char, String]
 ```
 
-Bodyless, so §6.4 applies — but for a primitive the "derivation" is the
+Bodyless, so §6.4 applies - but for a primitive the "derivation" is the
 backend's native comparison rather than a generated field walk. `Compare` for
 the integers because `Order` is in the list; `PartialCompare` for the floats
 because it is not (§5.3.1). The conformance is the entire declaration, exactly
@@ -1040,14 +1040,14 @@ as `impl [Clone, Copy] for Ty` is today (`traits/core.az:31`).
 Note there is no `inline for Ty in …` loop and no `bridge oper<=>` line. An
 earlier draft of this DIP wrote one, which was a leftover of the free-operator
 model: with the operator inside the spec's impl, a bodyless
-`impl Order for Integers` says *both* things at once — that the conformance
+`impl Order for Integers` says *both* things at once - that the conformance
 holds and that the compiler supplies the member.
 
 `Bool` orders `false < true`. `Char` orders by code point. `String` orders
-lexicographically by code point, which is `Order` and not a collation — a
+lexicographically by code point, which is `Order` and not a collation - a
 locale-aware collation is a separate function and should never be what `<` does.
 
-### 10.2 Algorithms — `std/algorithm/`
+### 10.2 Algorithms - `std/algorithm/`
 
 Signatures gain the bound the bodies always assumed:
 
@@ -1069,7 +1069,7 @@ than a duplicated insertion sort with flipped comparisons (`sort.az:71`).
 `sortBy`'s current key-function form (`algorithm.az:94`, typed `(T) -> T`, which
 cannot express a key of a different type) becomes `sortByKey`.
 
-### 10.3 Containers — `std/container/`
+### 10.3 Containers - `std/container/`
 
 - **Move every free comparison operator into its spec's impl** (§6.5). The
   fourteen `oper==` / `oper!=` declarations at `set.az:516`–`:775`,
@@ -1077,7 +1077,7 @@ cannot express a key of a different type) becomes `sortByKey`.
   `oper==` becomes the body of an `impl PartialEqual<…> for …`:
 
   ```azora
-  @Since("0.0.5")
+  @Since("0.1")
   impl PartialEqual<Set<T>> for HashSet<T> {
       oper== [self: Self&](rhs: Rhs&) {
           if self.size != rhs.size { return false }
@@ -1097,7 +1097,7 @@ cannot express a key of a different type) becomes `sortByKey`.
 - Delete all seven `oper!=` bodies (§2.2). They are §5.5 now, and after §6.5
   there is no longer anywhere to put them.
 - `HashMap`, `HashSet`, `LinkedHashMap`, `LinkedHashSet` declare
-  `where K: Equal` / `where T: Equal` — not `PartialEqual`, because a key
+  `where K: Equal` / `where T: Equal` - not `PartialEqual`, because a key
   that is not equal to itself can be inserted and never found again.
 - `TreeMap`, `TreeSet` declare `where K: Order`, replacing the doc comment
   at `map.az:33`.
@@ -1114,8 +1114,8 @@ cannot express a key of a different type) becomes `sortByKey`.
   replacing `map.az:863`, `:883`, `:1072`, `:1099`; and the four
   `a < b || (inclusive && !(b < a))` spellings at `:1127`–`:1149` become
   ordinary `<=` / `>=`.
-- `ArrayList<T>`, `HashSet<T>` and the maps gain `oper<=>` — lexicographic for
-  the sequences, by sorted key order for `TreeMap` — under
+- `ArrayList<T>`, `HashSet<T>` and the maps gain `oper<=>` - lexicographic for
+  the sequences, by sorted key order for `TreeMap` - under
   `where T: Order`, so a list of lists sorts.
 
 ### 10.4 `Compare` and the enums themselves
@@ -1182,7 +1182,7 @@ Less than it looks, because half of it parses today.
 ### 11.3 Why not `where T is Order`
 
 Because `is` cannot say it. `Expr.IsCheck` holds `typeName: String`
-(`Ast.kt:374`) and the parser fills it from a single identifier —
+(`Ast.kt:374`) and the parser fills it from a single identifier  - 
 `consume(TokenType.IDENTIFIER, "Expected type name after 'is'")`
 (`Parser.kt:7130`). There is nowhere for `<U>` to go. `where T is PartialEqual<U>`
 is not a design preference this DIP is declining; it is unparseable.
@@ -1193,7 +1193,7 @@ So the two mechanisms divide by what they are:
   composes with `requires` chains and with §6.3's widening. Every conformance
   constraint in this DIP is written this way.
 - **`is` is a predicate.** It appears *inside* a constraint expression, where it
-  composes with `&&`, `!` and const predicates — as `traits.az:46` does today
+  composes with `&&`, `!` and const predicates - as `traits.az:46` does today
   with `where T.length >= 2 && T is Number`. It stays exactly as it is.
 
 `where T: Order` and `where T: Order` are therefore not two spellings of
@@ -1213,7 +1213,7 @@ This DIP does not adopt it, for comparison or for anything else:
 
 - **It describes the wrong thing.** `[oper<, oper>, oper<=, oper>=]` is a type
   that declared four operators. After §5.4 a well-formed comparable type
-  declares **none** of them — it declares `<=>`. The alias would reject exactly
+  declares **none** of them - it declares `<=>`. The alias would reject exactly
   the types it is meant to accept.
 - **It cannot hold the promises.** `Equal`'s reflexivity and `Order`'s
   transitivity are why a sorted container works. No list of member names says
@@ -1223,7 +1223,7 @@ This DIP does not adopt it, for comparison or for anything else:
 - **It duplicates `spec`.** A named group of required members with a contract
   attached is what `spec` already is. Two mechanisms for it is one too many.
 
-The idea the alias was reaching for is right, though, and §12.3 keeps it —
+The idea the alias was reaching for is right, though, and §12.3 keeps it  - 
 scoped to a spec rather than floating free. `where T: Bitwise[<<, >>]` names
 exactly the members `Shiftable` wanted to name, with a spec to anchor them, a
 contract behind them, and arguments (`Bitwise<Rhs, Shift, Out>`) the alias could
@@ -1235,10 +1235,10 @@ What §11.4 rejects is aliasing bare operator symbols. Aliasing **specs** is
 sound, because every element carries a contract:
 
 ```azora
-@Since("0.0.5")
+@Since("0.1")
 typealias FullCast<To> = [Cast<To>, CheckedCast<To>, BitCast<To>]
 
-@Since("0.0.5")
+@Since("0.1")
 typealias Numeric = [Arithmetic, Order, Display]
 ```
 
@@ -1262,11 +1262,11 @@ A member-selector may appear inside one, so the two mechanisms compose:
 typealias Addable = [Arithmetic[+], Clone]
 ```
 
-Aliases do not nest into `requires` — a spec still requires specs, not aliases —
+Aliases do not nest into `requires` - a spec still requires specs, not aliases  - 
 because `requires` is part of a contract and an alias is a spelling.
 
 `Comparable` and `Equatable` are not defined as aliases of the four specs
-either — a second name for `Order` is a second thing to explain.
+either - a second name for `Order` is a second thing to explain.
 
 ---
 
@@ -1290,7 +1290,7 @@ would open ten `impl` blocks to say it. The families are:
 | `Bitwise<Rhs = Self, Shift = UInt, Out = Self>` | `&` `\|` `^` `<<` `>>`, `&=` `\|=` `^=` `<<=` `>>=`, unary `~` | 12.4 |
 | `Logical`                                       | unary `!`                                                      | 12.5 |
 | `PartialEqual<Rhs = Self>`                      | `==`                                                           | 6.1  |
-| `Equal`                                         | — marker, `requires PartialEqual<Self>`                        | 6.2  |
+| `Equal`                                         | - marker, `requires PartialEqual<Self>`                        | 6.2  |
 | `PartialOrder<Rhs = Self>`                      | `<=>` → `PartialCompare`                                       | 6.1  |
 | `Order`                                         | `<=>` → `Compare`, `requires Equal`                            | 6.2  |
 | `Indexable<Idx = Int, Out>`                     | `[]` `[]=` `[:]`                                               | 12.1 |
@@ -1310,7 +1310,7 @@ which looks inconsistent until the next paragraph gives the rule. `FullCast<To>`
 (§11.5) is the alias for all three; it is not a sixteenth spec.
 
 `Bitwise` carries a separate `Shift` parameter because a shift count is not a
-value of the shifted type — `primitive.az:547` already declares
+value of the shifted type - `primitive.az:547` already declares
 `bridge oper$op [self: Ty&](rhs: UInt): Ty` for exactly that reason, while `&`
 takes a `Self`. One `Rhs` could not express both.
 
@@ -1318,11 +1318,11 @@ takes a `Self`. One `Rhs` could not express both.
 
 > Group when only the *symbol* differs. Split when the *promise* differs.
 
-`+` and `%` make the same promise about a type — closed, total, returns an
-`Out` — so ten arithmetic specs collapse into one. `<=>` returning `Compare` and
+`+` and `%` make the same promise about a type - closed, total, returns an
+`Out` - so ten arithmetic specs collapse into one. `<=>` returning `Compare` and
 `<=>` returning `PartialCompare` make different promises (§6.2), so comparison
 stays four specs, one of which (`Equal`) declares no member at all. `as` is
-total, `as?` can fail, `as*` is a bit reinterpretation with a size requirement —
+total, `as?` can fail, `as*` is a bit reinterpretation with a size requirement  - 
 three promises, three specs (§12.9).
 
 The rule is what keeps this from being a taste question, and it is why
@@ -1332,7 +1332,7 @@ convenient bound, not a claim about a type.
 ### 12.2 A type implements the part it wants
 
 A spec normally requires all its members. For operator families that would be
-worse than the ten-spec version — `impl Arithmetic for Matrix` would demand a
+worse than the ten-spec version - `impl Arithmetic for Matrix` would demand a
 `%` on matrices.
 
 So **operator-family members are individually optional**. An `impl` supplies a
@@ -1347,10 +1347,10 @@ impl Arithmetic for Matrix {
 ```
 
 `Matrix` now has `+=`, and `+` by §12.4. It does not have `%`, and `m % n` is an
-error naming the missing member — not a link failure, not a silent fallback:
+error naming the missing member - not a link failure, not a silent fallback:
 
 ```
-line 88: 'Matrix' has no '%' — its 'impl Arithmetic' does not declare 'oper%'
+line 88: 'Matrix' has no '%' - its 'impl Arithmetic' does not declare 'oper%'
 ```
 
 This is the rule that makes one spec per family work. Without it, grouping
@@ -1362,7 +1362,7 @@ cannot be half-kept.
 
 ### 12.3 Bounds name members when they need to
 
-`where T: Arithmetic` means the whole family — every operator in the row. That
+`where T: Arithmetic` means the whole family - every operator in the row. That
 is what generic numeric code wants and it stays short.
 
 When a function needs less, the bracket says which:
@@ -1380,7 +1380,7 @@ spec per operator to be precise *with*.
 > **Two brackets, two meanings.** `where K: [Order, Clone]` is a list of
 > *specs*; `where T: Arithmetic[+, /]` is a list of *members*, distinguished by
 > following a spec name with no space. §11.4 rejected a free-floating
-> `[oper<, oper>]` because it named operators with no spec to anchor them —
+> `[oper<, oper>]` because it named operators with no spec to anchor them  - 
 > anchored to one, the same idea is exactly right.
 
 ### 12.4 What derives from what
@@ -1391,11 +1391,11 @@ explicit member always wins.
 
 | you write | you also get      | condition                      |
 |-----------|-------------------|--------------------------------|
-| `oper==`  | `!=`              | — (§5.5)                       |
-| `oper<=>` | `<` `<=` `>` `>=` | — (§5.4)                       |
+| `oper==`  | `!=`              | - (§5.5)                       |
+| `oper<=>` | `<` `<=` `>` `>=` | - (§5.4)                       |
 | `oper+`   | `+=`              | `Self` assignable              |
 | `oper+=`  | `+`               | `Self` is `Clone`              |
-| `oper[]`  | —                 | `[]=` is a different operation |
+| `oper[]`  | -                 | `[]=` is a different operation |
 | `oper.^`  | `.*`              | `DerefMut` implies `Deref`     |
 
 and the same for the other four arithmetic pairs and all five bitwise pairs.
@@ -1404,10 +1404,10 @@ and the same for the other four arithmetic pairs and all five bitwise pairs.
 makes §12.2 pay off. C++ convention writes `+=` and derives `+`; Rust makes you
 write both. Neither direction is right on its own:
 
-- `a += b` with only `oper+` becomes `a = a + b`. Good for a `Money` — nothing
+- `a += b` with only `oper+` becomes `a = a + b`. Good for a `Money` - nothing
   is allocated either way.
 - `a + b` with only `oper+=` becomes `var t = a.clone(); t += b; t`. Good for a
-  `Matrix` — the in-place loop stays in-place when it is used in place, and the
+  `Matrix` - the in-place loop stays in-place when it is used in place, and the
   clone happens only where a new value was actually asked for.
 
 The `Clone` condition is not a footnote: a type with `oper+=` and no `Clone` has
@@ -1449,10 +1449,10 @@ needed for the naming; only the lookup.
  *
  * `requires Equal` because the two are one contract: equal values must hash
  * equally, and a type whose equality is not even reflexive cannot promise it.
- * That is why `Hash` requires the *total* equality and not `PartialEqual` —
+ * That is why `Hash` requires the *total* equality and not `PartialEqual`  - 
  * `Double` hashes fine in isolation and is useless as a key.
  */
-@Since("0.0.5")
+@Since("0.1")
 bridge spec Hash requires Equal {
     prop hash[self: Self&]: ULong
 }
@@ -1465,7 +1465,7 @@ an `impl Hash for Point { prop hash … }` with a body supplies it instead (§6.
 order, unless the type wrote its own. §7.3 gives the reasoning: a type whose
 `==` and `#` disagree is inserted into a `HashMap` and never found again, and
 generating both from one declaration is the only way to make that impossible.
-Deriving `Equal` alone and *then* using the type as a key does not fail — the
+Deriving `Equal` alone and *then* using the type as a key does not fail - the
 hash is already there.
 
 **Types that need a hash say `requires Hash`.** That is the point of naming the
@@ -1491,10 +1491,10 @@ prose.
  *
  * The member is handed a `Formatter` to write into rather than asked to
  * return a `String`: writing into a buffer is what lets a composite render
- * its parts without each one allocating — a list of a thousand points
+ * its parts without each one allocating - a list of a thousand points
  * appends to one buffer instead of building a thousand intermediate strings.
  */
-@Since("0.0.5")
+@Since("0.1")
 bridge spec Display {
     func display[self: Self&](formatter: Formatter!)
 }
@@ -1502,7 +1502,7 @@ bridge spec Display {
 
 `Formatter` and the one-shot `format(value)` live in `std/format.az`.
 `"${value}"` calls `Display` and nothing else, so a type that has not said how
-it prints does not print — the interpolation is a compile error naming the
+it prints does not print - the interpolation is a compile error naming the
 missing implementation rather than a fallback that leaks a pack's internals
 into output.
 
@@ -1518,7 +1518,7 @@ into output.
 Four spellings, four results, no rule for which one `"${v}"` picks. Proposed:
 
 - **`Display` is what interpolation and `${…}` use.** One hook, named, and
-  `oper$` retires into it — a sigil operator with no spec was the reason the
+  `oper$` retires into it - a sigil operator with no spec was the reason the
   hook was undocumented.
 - **`Into<String>` stays**, because it answers a different question:
   `.toString` is a *conversion the caller asked for* (`CAST_DIP.MD` §1.4),
@@ -1528,7 +1528,7 @@ Four spellings, four results, no rule for which one `"${v}"` picks. Proposed:
   (`tuple.az:53`) and its `prop pretty` is `Display`'s member under another
   name.
 - **`value as String` on an enum** stays a cast (`CAST_DIP.MD` §1.1), derived
-  for payload-free enums as the variant name — which is what it does now.
+  for payload-free enums as the variant name - which is what it does now.
 
 ### 12.8 `Iterator`
 
@@ -1536,7 +1536,7 @@ Four spellings, four results, no rule for which one `"${v}"` picks. Proposed:
 /**
  * A type whose values bound a range: what `a..b` and `a reverse.. b` produce.
  */
-@Since("0.0.5")
+@Since("0.1")
 bridge spec Iterator<Rhs = Self, Out = Range<Self>> {
     oper..         [self: Self&](rhs: Rhs&): Out
     oper reverse.. [self: Self&](rhs: Rhs&): Out
@@ -1560,7 +1560,7 @@ Three notes, each from something the parser already does:
 already-working mechanism over an existing object. `Iterator` is what *builds*
 the thing to loop over from two endpoints.
 
-`Range<Self>` does not exist in `std/` today — a range is a compiler node
+`Range<Self>` does not exist in `std/` today - a range is a compiler node
 (`Expr.Range`), not a type. §17 asks whether it should become one; until it
 does, `Out` is supplied by the `bridge` and the spec is not usable with a
 written body.
@@ -1572,20 +1572,20 @@ which symbol they spell.
 
 ```azora
 /** Converts to `To`. Total: it cannot fail. */
-@Since("0.0.5")
+@Since("0.1")
 spec Cast<To>        { oper as  [self: Self&]: To  }
 
 /** Converts to `To` when the value permits it, and answers null when not. */
-@Since("0.0.5")
+@Since("0.1")
 spec CheckedCast<To> { oper as? [self: Self&]: To? }
 
 /** Reinterprets the bits as a `To`. Requires equal sizes; checked at lowering. */
-@Since("0.0.5")
+@Since("0.1")
 spec BitCast<To>     { oper as* [self: Self&]: To  }
 ```
 
 `CheckedCast` does **not** `require Cast`: a conversion that can fail is
-precisely the one with no infallible form. `BitCast` requires neither — a
+precisely the one with no infallible form. `BitCast` requires neither - a
 reinterpretation is not a conversion, and `TYPE_DIP.MD:135` already says a type
 states the three "independently".
 
@@ -1642,8 +1642,8 @@ spec From<T> {
 ```
 
 - **`Into`** is a `prop`, so no parentheses. Its member keeps the canonical name
-  `into`, and `use into<T> as "…"` — a line of its own, so the declaration above
-  it stays a plain declaration — gives it the call-site name callers already
+  `into`, and `use into<T> as "…"` - a line of its own, so the declaration above
+  it stays a plain declaration - gives it the call-site name callers already
   write: `.toString` for `Into<String>`, `.toInt` for `Into<Int>`.
 - **`From`** is a receiver-less `func`, which in a spec means **static**. It
   *constructs* rather than consumes, so there is no `self` to convert, and
@@ -1659,16 +1659,16 @@ exists only to record that the operator DIP does not own them.
 duplicate go:
 
 ```azora
-realm std {                                    // std/cast.az — deleted entirely
+realm std {                                    // std/cast.az - deleted entirely
     bridge func cast<T, U>(value: U): T
     bridge func dyncast<T, U>(value: U): T?
     bridge func bitcast<T, U>(value: U): T
 }
 ```
 
-The file's own header calls them sugar for the operators —
+The file's own header calls them sugar for the operators  - 
 "`std::cast<T>(x)` ≡ `x as T`", "`std::dyncast<T>(x)` ≡ `x as? T`",
-"`std::bitcast<T>(x)` ≡ `x as* T`" — so they were never a second mechanism, only
+"`std::bitcast<T>(x)` ≡ `x as* T`" - so they were never a second mechanism, only
 a second spelling of the first.
 
 Removal is clean:
@@ -1678,7 +1678,7 @@ Removal is clean:
 - **The compiler side is three lines.** `rewriteCastIntrinsic`
   (`Parser.kt:7338`) matches the callee name and rewrites to `Expr.Cast` with a
   `CastKind`; deleting the function and its call site removes the whole path.
-  `Expr.Cast`, `CastKind` and every backend below them are untouched — they are
+  `Expr.Cast`, `CastKind` and every backend below them are untouched - they are
   what `as` already lowers to.
 - **Nothing is lost.** A generic function that needs to convert writes
   `where T: Cast<U>` and `value as U`, which the intrinsic form could not
@@ -1692,41 +1692,41 @@ stringify, caught earlier and cheaper to fix.
 The messages are most of the value of this proposal, so they are specified.
 
 ```
-line 42: cannot compare two 'Vec2' values — Vec2 does not implement PartialEqual
+line 42: cannot compare two 'Vec2' values - Vec2 does not implement PartialEqual
   add 'impl [Equal] for Vec2' to compare it field by field, or write it out:
     impl PartialEqual for Vec2 { oper== [self: Self&](rhs: Self&) { … } }
 
 line 61: 'Vec2' implements PartialOrder but not PartialEqual
   '<' '<=' '>' '>=' come from '<=>'; '==' does not, because a type may
   compare equal faster than it compares in order
-  PartialOrder requires PartialEqual — add 'impl PartialEqual for Vec2'
+  PartialOrder requires PartialEqual - add 'impl PartialEqual for Vec2'
 
 line 88: cannot derive 'Order' for 'Sample': field 'value: Double' is not Order
-  Double is PartialOrder — NaN does not relate to anything
+  Double is PartialOrder - NaN does not relate to anything
   use 'impl [PartialOrder] for Sample', or store the value as a Long
 
 line 104: sort<T> requires 'T: Order', but T = Double is only PartialOrder
   NaN does not relate to anything, so there is no order to sort by
   try: sortBy(values) { a, b -> Double::totalCompare(a, b) }
 
-line 130: 'a <=> b <=> c' — '<=>' does not chain
+line 130: 'a <=> b <=> c' - '<=>' does not chain
   use '(a <=> b).thenBy { b <=> c }'
 
 line 152: 'oper==' must be declared inside the impl of the spec that governs it
   write:  impl PartialEqual for Vec2 { oper== [self: Self&](rhs: Self&) { … } }
 
-line 158: 'oper!=' cannot be declared — no spec has it
+line 158: 'oper!=' cannot be declared - no spec has it
   '!=' is '!(a == b)'; declare 'oper==' in 'impl PartialEqual for Vec2'
 
 line 164: 'impl Order for Vec2' declares '<=>' returning PartialCompare
   the spec fixes the result: Order gives Compare, PartialOrder gives
-  PartialCompare — either drop the return type or implement PartialOrder
+  PartialCompare - either drop the return type or implement PartialOrder
 
 line 177: 'Key' implements PartialEqual but has no 'hash', and is a HashMap key
   a key whose equality and hash disagree is inserted and never found
   add 'prop hash[self: Key&]: ULong', or derive both with 'impl [Equal] for Key'
 
-line 203: 'Matrix' has no '%' — its 'impl Arithmetic' does not declare 'oper%'
+line 203: 'Matrix' has no '%' - its 'impl Arithmetic' does not declare 'oper%'
   an operator family implements the part it wants; add 'oper%' to that impl
 
 line 211: 'Matrix' has 'oper+=' but no '+', and Matrix is not Clone
@@ -1738,9 +1738,9 @@ line 224: sum<T> requires 'T: Arithmetic[+]', which 'Token' does not have
 
 line 240: two impls of 'Arithmetic' for 'Vec2' differ only in Out
   'Arithmetic<Vec2, Vec2>' and 'Arithmetic<Vec2, Vec2Long>' both match 'a + b'
-  a family's result type is fixed per Rhs — merge them or change the Rhs
+  a family's result type is fixed per Rhs - merge them or change the Rhs
 
-line 258: 'std::cast' no longer exists — write 'value as T'
+line 258: 'std::cast' no longer exists - write 'value as T'
   'std::dyncast' is 'value as? T'; 'std::bitcast' is 'value as* T'
 
 line 190: 'Order' requires 'Equal', which 'Version' does not state
@@ -1751,7 +1751,7 @@ line 190: 'Order' requires 'Equal', which 'Version' does not state
 
 ## 14. Implementation plan
 
-**Phase 1 — specs can require operators.** `parseSpec` (`Parser.kt:3961`)
+**Phase 1 - specs can require operators.** `parseSpec` (`Parser.kt:3961`)
 accepts `oper<SYM> [self: Self&](operands): Ret` requirement lines beside `func`
 and `prop`, and `checkSpecRequirements` (`SymbolCollector.kt:652`) matches them
 against a type's registered `oper` members. Nothing else in this DIP can be
@@ -1762,73 +1762,73 @@ half already works: `impl Spec for Type { oper<SYM> … }` parses today
 (`Parser.kt:2948`), trait generic arguments are read and kept
 (`Parser.kt:2739`, `traitArgs`), bodyless grouped impls queue conformances
 (`:2764`), and an impl member already inherits its return type from the spec
-(`SymbolCollector.kt:630`) — which is what §5.3.1 rests on. So the whole surface
+(`SymbolCollector.kt:630`) - which is what §5.3.1 rests on. So the whole surface
 in §5.3 costs one `when` branch in `parseSpec` plus the matching check.
 
-**Phase 2 — the `<=>` token.** Lexer, `TokenType.SPACESHIP`,
+**Phase 2 - the `<=>` token.** Lexer, `TokenType.SPACESHIP`,
 `parseOperatorName`, `parseSpaceship` at the precedence in §5.2, and
 non-associativity. The return-type check is a spec-conformance check, not a
 parser check, and lands with Phase 5.
 
-**Phase 3 — the types.** `Compare`, `PartialCompare`, their members
+**Phase 3 - the types.** `Compare`, `PartialCompare`, their members
 (`reversed`, `then`, `thenBy`), and the `Compare` → `PartialCompare` widening.
 
-**Phase 4 — rewriting.** §5.4 and §5.5, in *one* place. The operator dispatch
+**Phase 4 - rewriting.** §5.4 and §5.5, in *one* place. The operator dispatch
 logic is currently duplicated between `TypeResolver.kt:2468` and
 `IrGenerator.kt:1437`, which is how the two would drift; the rewrite must be a
 shared routine both call, and unifying the existing duplication is part of this
 phase.
 
-**Phase 5 — the specs.** `PartialEqual`, `Equal`, `PartialOrder`, `Order`
+**Phase 5 - the specs.** `PartialEqual`, `Equal`, `PartialOrder`, `Order`
 in `traits.az`, generic in `Rhs` with a `= Self` default; the `where T: Spec<Args>`
 bound form (§11.2), enforcement of the already-parsed `<T: Spec>` list form, and
 §6.3's widening rule.
 
-**Phase 6 — derivation.** Extend `SymbolCollector`'s field-wise pass to
+**Phase 6 - derivation.** Extend `SymbolCollector`'s field-wise pass to
 `impl [Equal]`, `impl [Order]` and `impl [Hash]`, over packs, enums and variant
 enums, including the `Equal`→`Hash` pairing of §7.3.
 
-**Phase 7 — the errors.** §8 (`==` with no conformance), behind
+**Phase 7 - the errors.** §8 (`==` with no conformance), behind
 `--warn-implicit-equality` for one release; and §6.5 (a comparison operator
 declared outside its spec's impl), which must land *after* Phase 8 moves the
 standard library's own free operators, or the stdlib stops building.
 
-**Phase 8 — the standard library.** §10, in order: primitives, then containers
+**Phase 8 - the standard library.** §10, in order: primitives, then containers
 (which moves fourteen operators into spec impls and deletes seven), then
 algorithms (which gains the bounds).
 
 Phases 1–8 deliver comparison end to end. The remaining three generalise it to
 the rest of §12, and none of them blocks the others:
 
-**Phase 9 — unary dispatch.** The §2.6 defect: add `BANG` to
+**Phase 9 - unary dispatch.** The §2.6 defect: add `BANG` to
 `parseOperatorName`, give `Expr.Unary` the same `lookupOperator` path the binary
 case has in both the resolver (`TypeResolver.kt:1169`) and the lowerer
 (`IrGenerator.kt:1426`), and stop rejecting a non-numeric operand before the
-lookup runs. Independently valuable — `-v` on a `Vec2` is a compile error today
+lookup runs. Independently valuable - `-v` on a `Vec2` is a compile error today
 whatever the type says.
 
-**Phase 10 — the remaining families.** `Arithmetic`, `Bitwise`, `Logical`,
+**Phase 10 - the remaining families.** `Arithmetic`, `Bitwise`, `Logical`,
 `Indexable`, `Deref`, `Iterator`, `Hash`, `Display`, `Cast`, `CheckedCast`
 and `BitCast` in `traits.az`
 (§12.1), plus the three mechanisms they need: optional members on an operator
 family (§12.2), member-selecting bounds `T: Arithmetic[+, /]` (§12.3), and the
 bidirectional compound-assignment rewrite (§12.4). Optional members are the
-substantive change here — `checkSpecRequirements` (`SymbolCollector.kt:652`)
+substantive change here - `checkSpecRequirements` (`SymbolCollector.kt:652`)
 currently demands every member, and operator families need it to record the
 subset instead.
 
-**Phase 10a — delete `std/cast.az`.** §12.10. Independent of everything else:
+**Phase 10a - delete `std/cast.az`.** §12.10. Independent of everything else:
 remove the file and `rewriteCastIntrinsic` (`Parser.kt:7338`) with its call
 site. No callers exist, so this can land first if convenient.
 
-**Phase 11 — close the free form.** Once every operator has a spec and `std/`
+**Phase 11 - close the free form.** Once every operator has a spec and `std/`
 has moved, a free `oper<SYM>` declaration becomes an error everywhere rather
 than only for the comparison family. This is the phase that makes §12's opening
 sentence true, and it must be last.
 
 Phases 1–4 are the comparison language; 5–6 the model; 7–8 the payoff; 9–11 the
 generalisation. Each is independently landable and each leaves the tree
-building — with the two ordering constraints noted in Phases 7 and 11.
+building - with the two ordering constraints noted in Phases 7 and 11.
 
 ---
 
@@ -1837,7 +1837,7 @@ building — with the two ordering constraints noted in Phases 7 and 11.
 Worth doing whether or not the rest lands:
 
 - unify the operator dispatch duplicated between `TypeResolver.kt:2328/2468`
-  and `IrGenerator.kt:2224/1437` — two copies of the same lookup table and the
+  and `IrGenerator.kt:2224/1437` - two copies of the same lookup table and the
   same resolution order, in two files, is the bug that has not happened yet;
 - delete the legacy named-method operator path (`operatorMethodName` → `plus`,
   `minus`, `times`, `div`, `mod`, `equals`, `TypeResolver.kt:2317` and
@@ -1867,13 +1867,13 @@ Worth doing whether or not the rest lands:
   come with the allocator DIP if it is wanted.
 - **Deriving `Equal` silently, as `Clone` is derived.** §7.2.
 - **A richer hashing story.** Seeded hashers, DoS
-  resistance, `#` on a `variant enum` — and this proposal only ties its
+  resistance, `#` on a `variant enum` - and this proposal only ties its
   derivation to `Equal`'s.
 - **Contracts on the operators.** `oper<=>` transitivity could be an `out`
   contract checked in debug builds. Interesting, and separable.
 - **Associated types.** `Out` is a type parameter with a default, not an
   associated type. Two impls of one family differing only in `Out` are a
-  conflict, reported at the second — which recovers the associated-type
+  conflict, reported at the second - which recovers the associated-type
   guarantee with what `SymbolTable` already records. Real associated types would
   tidy `Arithmetic`, `Indexable` and `Deref`, but they are a type-system feature
   of their own and should not arrive as a side effect of operators.
@@ -1903,8 +1903,8 @@ Worth doing whether or not the rest lands:
    second reverted. Proposed: `Order`, documented as code-point order.
 2. **Should `impl [Order] for T` derive `==` when the author wrote
    `oper<=>` but not `oper==`?** §7.1 says both are generated; §5.6 says an
-   explicit `<=>` derives nothing. The half-and-half case — explicit `<=>`,
-   derived `==` — is currently an error, and it might reasonably generate a
+   explicit `<=>` derives nothing. The half-and-half case - explicit `<=>`,
+   derived `==` - is currently an error, and it might reasonably generate a
    field-wise `==` instead. Erring toward the error, because a type that wrote
    its own ordering usually has a reason equality differs.
 3. **Does `<=>` need an operand-keyed form in the first release?**
@@ -1913,14 +1913,14 @@ Worth doing whether or not the rest lands:
    ordering is where C++'s complexity came from. Shipping it is easy; shipping
    it and then constraining it is not.
 4. **Should `PartialCompare.Unordered` be reachable from `<=>` on a type the
-   author declared `Order` for?** It cannot be, by return type — but a
+   author declared `Order` for?** It cannot be, by return type - but a
    generic function bounded on `PartialOrder` and instantiated at an
    `Order` type will have a `when` whose `.Unordered` arm is dead code.
    Whether that arm should warn is a question about exhaustiveness checking
    through the widening, and it belongs with whoever implements §6.3.
 5. **Should a named function be passable as a comparator?** Every `sortBy` call
    in §9 and §10.2 wraps its comparator in a lambda, because there is no
-   function-reference expression — `Double::totalCompare` is callable but not
+   function-reference expression - `Double::totalCompare` is callable but not
    nameable as a value (no such node exists in `Ast.kt`). The wrapping lambda is
    free at runtime and noisy in source. Not this DIP's problem to solve, but
    this DIP is what makes it visible.
@@ -1929,7 +1929,7 @@ Worth doing whether or not the rest lands:
    both (`then`, `then_with`) and the lazy one is what people should reach for.
    Possibly ship only `thenBy`.
 7. **Should a fallible conversion exist?** `Into` and `From` are total, so a
-   conversion that can fail has nowhere to go — a parse, a narrowing, a lookup.
+   conversion that can fail has nowhere to go - a parse, a narrowing, a lookup.
    `TryInto` is the obvious answer and it needs the error model settled first:
    `?!` and `Result` are two different answers today. `CAST_DIP.MD` §8 records
    the same question.

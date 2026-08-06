@@ -26,7 +26,7 @@ import org.azora.lang.frontend.TypeAnnotation
 import org.azora.lang.frontend.TypeRef
 
 /**
- * Semantic — Alloc / Drop Analysis.
+ * Semantic - Alloc / Drop Analysis.
  *
  * Runs AFTER types are fully resolved (post-CTCE stabilization) because
  * CTCE-generated code may introduce new allocations.
@@ -83,7 +83,7 @@ class AllocDropAnalyzer {
             analyzeStmt(stmt, defined, used, errors)
         }
 
-        // Warn about unused variables (not params — those may be part of API contract)
+        // Warn about unused variables (not params - those may be part of API contract)
         val declaredLocals = mutableSetOf<String>()
         for (stmt in func.body) {
             if (stmt is Stmt.VarDecl) declaredLocals.add(stmt.name)
@@ -247,7 +247,7 @@ class AllocDropAnalyzer {
         errors: MutableList<String>
     ) {
         val reference = (annotation as? TypeAnnotation.Explicit)?.ref as? TypeRef.Reference ?: return
-        // `let m: User! = user.!` — the borrow sigil wraps the place it borrows,
+        // `let m: User! = user.!` - the borrow sigil wraps the place it borrows,
         // so look through it to find what is actually being borrowed.
         val borrowed = (initializer as? Expr.Isolated)?.takeIf { it.op.isBorrow }?.value ?: initializer
         val isPlace = borrowed is Expr.Identifier || borrowed is Expr.Member ||

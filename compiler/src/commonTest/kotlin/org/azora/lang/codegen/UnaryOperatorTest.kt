@@ -28,7 +28,7 @@ import kotlin.test.assertIs
  *
  * `DIPs/OPERATOR_OVERLOADING_DIP.MD` §2.6: these never ran. `Expr.Unary`
  * lowering mapped the token straight to an `IrUnaryOp` with no overload lookup,
- * and the resolver rejected any non-numeric operand before that point — so a
+ * and the resolver rejected any non-numeric operand before that point - so a
  * declared unary `oper-` was dead code, `oper~` was unreachable, and `oper!`
  * could not be written at all.
  */

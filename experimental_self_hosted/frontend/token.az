@@ -16,18 +16,18 @@
 
 module experimental_self_hosted.frontend.token
 
-friend zone azora::lang {
+realm azora::lang {
     /**
      * Enumerates every token type recognized by the Azora [Lexer].
      *
      * Variants are grouped into five categories:
      *
-     * **Literals** -- values that appear directly in source code
-     * **Identifier** -- a user-defined name
-     * **Keywords** -- reserved words in the language
-     * **Operators** -- arithmetic, comparison, logical, and assignment operators
-     * **Delimiters** -- structural punctuation
-     * **Special** -- synthetic tokens
+     * **Literals** - values that appear directly in source code
+     * **Identifier** - a user-defined name
+     * **Keywords** - reserved words in the language
+     * **Operators** - arithmetic, comparison, logical, and assignment operators
+     * **Delimiters** - structural punctuation
+     * **Special** - synthetic tokens
      */
     enum TokenType {
         use zone literal {
@@ -208,10 +208,10 @@ friend zone azora::lang {
      * Enumerates the type suffix attached to a numeric literal.
      *
      * No suffix means the default type: [None] maps to `Int` for integer
-     * literals and `Real` for floating-point literals.
+     * literals and `Double` for floating-point literals.
      */
     enum NumericSuffix {
-        None            /** maps to `Int` or `Real` */
+        None            /** maps to `Int` or `Double` */
 
         use zone signed {
             Byte        /** b */

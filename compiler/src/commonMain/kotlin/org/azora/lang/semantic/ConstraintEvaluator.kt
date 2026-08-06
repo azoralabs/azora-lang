@@ -24,8 +24,8 @@ import org.azora.lang.frontend.TypeRef
  * Decides whether a declaration's `where` clause holds for one set of type
  * arguments.
  *
- * A clause is an ordinary expression — `T is Number && N in 2..4` is an `&&` over
- * an [Expr.IsCheck] and an [Expr.InCheck] — so this walks the same tree the parser
+ * A clause is an ordinary expression - `T is Number && N in 2..4` is an `&&` over
+ * an [Expr.IsCheck] and an [Expr.InCheck] - so this walks the same tree the parser
  * produced rather than a constraint language of its own. Anything the evaluator
  * cannot decide is reported as [Outcome.Unknown] and treated as satisfied by
  * callers: a constraint that cannot be evaluated must not reject valid code.
@@ -119,7 +119,7 @@ internal object ConstraintEvaluator {
     private fun eval(expr: Expr, env: Map<String, Binding>, table: SymbolTable?): Outcome = when (expr) {
         is Expr.Grouping -> eval(expr.expr, env, table)
 
-        // `T is Number` — nominal conformance: an `impl Number for T` must exist.
+        // `T is Number` - nominal conformance: an `impl Number for T` must exist.
         is Expr.IsCheck -> {
             val subject = nameOf(expr.expr)
             val bound = subject?.let { env[it] }
@@ -139,7 +139,7 @@ internal object ConstraintEvaluator {
             }
         }
 
-        // `N in 2..4` — membership. Only an integer subject over a literal range is
+        // `N in 2..4` - membership. Only an integer subject over a literal range is
         // decidable here; a list or set collection is left to the caller.
         // TODO: evaluate membership in array/set literal collections.
         is Expr.InCheck -> {
@@ -226,7 +226,7 @@ internal object ConstraintEvaluator {
         is Expr.IntLiteral -> expr.value.toString().toLongOrNull()
         is Expr.Grouping -> constOf(expr.expr, env)
         is Expr.Identifier -> (env[expr.name] as? Binding.Const)?.value
-        // `(...T).length` — the pack's argument count, bound per combination.
+        // `(...T).length` - the pack's argument count, bound per combination.
         is Expr.Member ->
             if (expr.name == "length") {
                 (nameOf(expr.target)?.let { env[it] } as? Binding.Pack)?.length

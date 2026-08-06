@@ -27,7 +27,7 @@ import org.azora.lang.ir.IrType
 import org.azora.lang.ir.IrUnaryOp
 
 /**
- * Backend — lowers [IrProgram] to WebAssembly text format (WAT), using the
+ * Backend - lowers [IrProgram] to WebAssembly text format (WAT), using the
  * folded S-expression syntax.
  *
  * Value representation (single WASM value per Azora value):
@@ -41,7 +41,7 @@ import org.azora.lang.ir.IrUnaryOp
  * `__str_repeat`, `__int_to_str`). Structured control flow lowers to
  * `block`/`loop`/`br_if`.
  *
- * NOTE: this is an MVP-level target — packs/arrays assume 4-byte (`i32`) fields
+ * NOTE: this is an MVP-level target - packs/arrays assume 4-byte (`i32`) fields
  * and elements; exceptions lower to `unreachable`; tasks are synchronous.
  */
 class WasmCodegen {
@@ -258,8 +258,8 @@ class WasmCodegen {
 
         out.clear(); indent = 2
         for (stmt in func.body) emitStmt(stmt)
-        // A function that returns from inside a `when`/`if` — every arm of a
-        // `when self { … }` ending in `return` — leaves nothing on the stack
+        // A function that returns from inside a `when`/`if` - every arm of a
+        // `when self { … }` ending in `return` - leaves nothing on the stack
         // where Wasm expects the result of an implicit return. `unreachable`
         // types as bottom, so it satisfies any result type, and it is the
         // truth: control never arrives here. Without it such a body is rejected
@@ -287,7 +287,7 @@ class WasmCodegen {
      * Only a literal `return` (or a trap) qualifies. A `when` or `if` whose arms
      * all return is *semantically* terminal but lowers to `(if …)` blocks that
      * type as `[]`, so as far as the validator is concerned control still falls
-     * off the end — which is exactly the "type mismatch in implicit return"
+     * off the end - which is exactly the "type mismatch in implicit return"
      * a `when self { … }` used to produce. Those cases want the terminator.
      */
     private fun endsWithTerminator(body: List<IrStmt>): Boolean =
@@ -327,7 +327,7 @@ class WasmCodegen {
             is IrStmt.Assert -> line("(if (i32.eqz ${emitExpr(stmt.condition)}) (then unreachable))")
             is IrStmt.Trace -> emitTrace(stmt)
             is IrStmt.Throw -> line("unreachable")
-            is IrStmt.Try -> for (s in stmt.body) emitStmt(s) // no exception support — run the body
+            is IrStmt.Try -> for (s in stmt.body) emitStmt(s) // no exception support - run the body
             is IrStmt.Defer -> {}
             is IrStmt.Yield -> {}
         }
@@ -488,7 +488,7 @@ class WasmCodegen {
             "(if (result $t) ${emitExpr(expr.condition)} (then ${emitExpr(expr.thenExpr)}) (else ${emitExpr(expr.elseExpr)}))"
         }
         is IrExpr.StringTemplate -> emitTemplate(expr)
-        is IrExpr.CatchExpr -> emitExpr(expr.expr) // no exception support — evaluate the primary expression
+        is IrExpr.CatchExpr -> emitExpr(expr.expr) // no exception support - evaluate the primary expression
         is IrExpr.Lambda -> emitClosure(expr)
         is IrExpr.SetLit, is IrExpr.MapLit, is IrExpr.TupleLit, is IrExpr.TupleAccess,
         is IrExpr.VariantLit, is IrExpr.SlotPattern -> "(i32.const 0)" // unsupported by the MVP target
@@ -772,7 +772,7 @@ class WasmCodegen {
         // interpreter and LLVM printed the value; failing here keeps a missing
         // conversion visible instead of turning it into wrong output.
         else -> error(
-            "wasm: cannot interpolate a value of type ${expr.type} — " +
+            "wasm: cannot interpolate a value of type ${expr.type} - " +
                 "only Int, String and Bool have a WAT string conversion so far",
         )
     }
@@ -810,7 +810,7 @@ class WasmCodegen {
         return "(i32.add $base (i32.mul ${emitExpr(index)} (i32.const 4)))"
     }
 
-    /** Address of `target.field` — `ptr + fieldIndex*4`, or `ptr` for a union. */
+    /** Address of `target.field` - `ptr + fieldIndex*4`, or `ptr` for a union. */
     private fun fieldAddr(target: IrExpr, field: String): String {
         val structName = (target.type as? IrType.Named)?.name
         // A union's members share one slot, so every one of them is at offset 0.
@@ -1255,7 +1255,7 @@ class WasmCodegen {
 """
 
     /**
-     * `__long_to_str` — the same decimal conversion as [RT_INT_TO_STR] in 64-bit
+     * `__long_to_str` - the same decimal conversion as [RT_INT_TO_STR] in 64-bit
      * arithmetic, so a `Long` interpolates to its full value rather than being
      * truncated through i32.
      */
@@ -1295,7 +1295,7 @@ class WasmCodegen {
 
 
     /**
-     * `__double_to_str` — decimal rendering of an f64, matching the interpreter and
+     * `__double_to_str` - decimal rendering of an f64, matching the interpreter and
      * LLVM: an integral value keeps its `.0`, anything else prints its fractional
      * digits.
      *
@@ -1312,7 +1312,7 @@ class WasmCodegen {
     (local.set ${'$'}v (f64.abs (local.get ${'$'}v)))
     (local.set ${'$'}ip (i64.trunc_f64_u (local.get ${'$'}v)))
     (local.set ${'$'}frac (f64.sub (local.get ${'$'}v) (f64.convert_i64_u (local.get ${'$'}ip))))
-    ;; fifteen fractional digits, rounded, then trailing zeros trimmed below —
+    ;; fifteen fractional digits, rounded, then trailing zeros trimmed below -
     ;; enough to show the difference between the default and vha math tiers
     (local.set ${'$'}fd (i64.trunc_f64_u (f64.nearest (f64.mul (local.get ${'$'}frac) (f64.const 1000000000000000)))))
     (if (i64.ge_u (local.get ${'$'}fd) (i64.const 1000000000000000))
@@ -1426,7 +1426,7 @@ class WasmCodegen {
     (local ${'$'}n f64) (local ${'$'}r f64) (local ${'$'}q i32)
     (local.set ${'$'}n (f64.nearest (f64.mul (local.get ${'$'}x) (f64.const 0.6366197723675814))))
     ;; three-part pi/2 (fdlibm's split): the parts must SUM to pi/2 to within the
-    ;; final precision — a low part that is merely small leaves exactly that much
+    ;; final precision - a low part that is merely small leaves exactly that much
     ;; error in every result, which is far larger than any polynomial truncation.
     (local.set ${'$'}r (f64.sub (local.get ${'$'}x) (f64.mul (local.get ${'$'}n) (f64.const 1.5707963267341256))))
     (local.set ${'$'}r (f64.sub (local.get ${'$'}r) (f64.mul (local.get ${'$'}n) (f64.const 0.0000000000607710050650619224932))))
@@ -1547,8 +1547,8 @@ class WasmCodegen {
     /**
      * The remaining Wasm software math: inverse trigonometry, `pow` and `hypot`.
      *
-     * `atan` reduces its argument twice — reciprocal for `|x| > 1`, then the
-     * half-angle identity — so the series only ever runs on `[0, tan(pi/8)]`, where
+     * `atan` reduces its argument twice - reciprocal for `|x| > 1`, then the
+     * half-angle identity - so the series only ever runs on `[0, tan(pi/8)]`, where
      * it converges quickly. `asin`/`acos` come from `atan` by the standard
      * identities, `pow` is `exp(y*log x)` with the integer-exponent sign cases
      * handled directly, and `hypot` scales by the larger operand so `x*x` cannot

@@ -27,7 +27,7 @@ package org.azora.lang.frontend
  *
  * For each realm member (a top-level item whose name contains `__`), this pass
  * walks its body/initializer and rewrites a bare identifier/callee `X` to
- * `<realmPrefix>__X` when such a mangled sibling exists in the program — UNLESS
+ * `<realmPrefix>__X` when such a mangled sibling exists in the program - UNLESS
  * `X` is shadowed by a parameter or local declaration in that member (e.g.
  * `func pow(value, exp)` has a parameter `exp` that must not be rewritten to a
  * hypothetical `std__math__exp` sibling). Bare names with no mangled sibling

@@ -38,41 +38,38 @@ val OPTIONAL_UNWRAP = setOf("require", "take")
 /**
  * Which ownership operation an [Expr.Isolated] performs.
  *
+ * Every one of them moves or borrows; none duplicates, so none asks a
+ * capability of its operand - every value can be given away or lent. An
+ * independent copy is `v.clone()`, which goes through `Clone` like any other
+ * method.
+ *
  * @property spelling how it is written in source, for diagnostics.
- * @property capability the spec the operand's type must carry, or null when the
- *   operation asks nothing of it.
  */
-enum class OwnershipOp(val spelling: String, val capability: String?) {
-    /** `isolated(v)` — a deep copy, with no capability contract. */
-    ISOLATE("isolated", null),
-
-    /** `clone v` — an independently owned duplicate. */
-    CLONE("clone", "Clone"),
-
+enum class OwnershipOp(val spelling: String) {
     /**
-     * `take v` — ownership transfer. Duplicates nothing, and leaves the operand
+     * `take v` - ownership transfer. Duplicates nothing, and leaves the operand
      * unusable, which is what separates it from the other two.
      *
      * It asks nothing of the operand: every value can be given away, so a
      * capability for it would say nothing.
      */
-    TAKE("take", null),
+    TAKE("take"),
 
     /**
-     * `lend v` — ownership transfer the callee gives back.
+     * `lend v` - ownership transfer the callee gives back.
      *
      * The parameter it feeds is marked `return`, so the value comes home when
      * the call ends and the operand stays usable. It differs from a borrow in
      * that the callee genuinely owns the value while it runs, and from `take`
      * in that the caller gets it back.
      */
-    LEND("lend", null),
+    LEND("lend"),
 
-    /** `v.&` / `v&` — a shared, read-only borrow. Owns nothing. */
-    SHARE("&", null),
+    /** `v.&` / `v&` - a shared, read-only borrow. Owns nothing. */
+    SHARE("&"),
 
-    /** `v.!` / `v!` — an exclusive, mutable borrow. Owns nothing. */
-    BORROW("!", null),
+    /** `v.!` / `v!` - an exclusive, mutable borrow. Owns nothing. */
+    BORROW("!"),
     ;
 
     /** True for the two forms that borrow rather than duplicate or transfer. */
@@ -252,7 +249,7 @@ sealed class Expr {
     /**
      * `target.name`, where the name may be computed.
      *
-     * [nameExpr] carries a `${ … }` written in name position — `self.${f.name}`.
+     * [nameExpr] carries a `${ … }` written in name position - `self.${f.name}`.
      * Compile-time expansion folds it into [name]; every later stage sees an
      * ordinary member access, so nothing downstream needs to know it was spliced.
      */
@@ -294,21 +291,21 @@ sealed class Expr {
     /** Tuple literal `(a, b, c)` (two or more elements). */
     data class TupleLit(val elements: List<Expr>, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 
-    /** Variant literal `var(a, b, c)` — constructs a `Var<...>` holding exactly one of the given
+    /** Variant literal `var(a, b, c)` - constructs a `Var<...>` holding exactly one of the given
      *  candidate values (the first, by default). At least two candidates are required. */
     data class VariantLit(val elements: List<Expr>, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 
     /** Tuple positional access `target.index` (e.g. `pair.0`). */
     data class TupleAccess(val target: Expr, val index: Int, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 
-    /** `expr catch fallback` — evaluates [expr]; if it throws, evaluates [fallback]. */
+    /** `expr catch fallback` - evaluates [expr]; if it throws, evaluates [fallback]. */
     data class CatchExpr(val expr: Expr, val fallback: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 
-    /** `try expr` — evaluates [expr] and propagates any failure to the caller. */
+    /** `try expr` - evaluates [expr] and propagates any failure to the caller. */
     data class TryPropagate(val expr: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 
     /**
-     * If-expression `if cond { a } else { b }` — both branches are single
+     * If-expression `if cond { a } else { b }` - both branches are single
      * expressions and one of them becomes the value of the whole expression.
      */
     data class IfExpr(val condition: Expr, val thenExpr: Expr, val elseExpr: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
@@ -357,10 +354,10 @@ sealed class Expr {
         override val length get() = 0
     }
 
-    /** `a ?? b` — returns `a` if non-null, else `b`. */
+    /** `a ?? b` - returns `a` if non-null, else `b`. */
     data class NullCoalesce(val left: Expr, val right: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 
-    /** `a?.field` — safe member access; returns null if `a` is null. */
+    /** `a?.field` - safe member access; returns null if `a` is null. */
     data class SafeMember(val target: Expr, val name: String, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 
     /**
@@ -370,11 +367,11 @@ sealed class Expr {
      */
     data class Cast(val expr: Expr, val targetType: TypeRef, val kind: CastKind = CastKind.STATIC, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 
-    /** `expr is Type` — runtime type check, returns Bool. */
+    /** `expr is Type` - runtime type check, returns Bool. */
     data class IsCheck(val expr: Expr, val typeName: String, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 
     /**
-     * `value in collection` — membership.
+     * `value in collection` - membership.
      *
      * Written as an ordinary expression so a `where` clause needs no grammar of its
      * own: `N in 2..4` is this node over a range, and the same spelling works for a
@@ -392,38 +389,42 @@ sealed class Expr {
     /** Map literal `["k": v, "k2": v2]`. */
     data class MapLit(val entries: List<Pair<Expr, Expr>>, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 
-    /** `alloc <expr>` — heap-allocate a value and return a pointer to it. */
+    /** `alloc <expr>` - heap-allocate a value and return a pointer to it. */
     /** `alloc* value` → `T*` (read-only), `alloc^ value` → `T^` (mutable). */
     data class Alloc(val value: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0, val mutable: Boolean = false) : Expr()
 
-    /** `alloc T(count)` — allocate a buffer of `count` elements of type T (C++-style), returning `T*`. */
+    /** `alloc T(count)` - allocate a buffer of `count` elements of type T (C++-style), returning `T*`. */
     data class AllocBuffer(val typeName: String, val count: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 
-    /** `*ptr` — dereference a pointer. */
+    /** `*ptr` - dereference a pointer. */
     data class Deref(val target: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 
     /**
-     * An ownership operation on [value]: `isolated(v)`, `clone v`, or `take v`.
+     * An ownership operation on [value]: `take v`, `lend v`, or a borrow sigil.
      *
-     * All three are one node because they differ only in what they require of
-     * the operand and whether they duplicate it — the shape is identical, and
-     * every pass that merely walks the tree should treat them alike.
+     * They are one node because they differ only in what they require of the
+     * operand and what they do to the caller's claim on it - the shape is
+     * identical, and every pass that merely walks the tree should treat them
+     * alike.
+     *
+     * Duplication is not among them: an independent copy is `v.clone()`, an
+     * ordinary method call on `Clone`.
      */
     data class Isolated(
         val value: Expr,
         override val line: Int,
         override val column: Int = 0,
         override val length: Int = 0,
-        val op: OwnershipOp = OwnershipOp.ISOLATE,
+        val op: OwnershipOp,
     ) : Expr()
 
-    /** `await task` — suspend until the task completes and yield its result. */
+    /** `await task` - suspend until the task completes and yield its result. */
     data class Await(val value: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 
-    /** `inject Type` — resolve the singleton instance of [typeName] from the DI container. */
+    /** `inject Type` - resolve the singleton instance of [typeName] from the DI container. */
     data class Inject(val typeName: String, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 
-    /** `arr...` — spread an array's elements as individual call arguments. */
+    /** `arr...` - spread an array's elements as individual call arguments. */
     data class Spread(val array: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 
     /**
@@ -460,7 +461,7 @@ sealed class Stmt {
     /**
      * Rebindable binding: `var` (mutable value) or `val` (immutable value).
      *
-     * The four binding keywords vary two independent axes — whether the *name*
+     * The four binding keywords vary two independent axes - whether the *name*
      * can be rebound, and whether the *value* can be mutated through it. The
      * name axis picks the node ([VarDecl] rebinds, [LetDecl]/[FinDecl] do not);
      * [valueMutable] carries the value axis:
@@ -475,7 +476,7 @@ sealed class Stmt {
      * @property name the variable name
      * @property type the declared or inferred type annotation
      * @property initializer the expression that provides the initial value
-     * @property valueMutable false for `val` — the value cannot be mutated or
+     * @property valueMutable false for `val` - the value cannot be mutated or
      *   borrowed mutably through this name, though the name can be rebound
      * @property line 1-based source line
      * @property column 1-based source column
@@ -688,7 +689,7 @@ sealed class Stmt {
          *
          * `a += b` desugars to `a = a + b` in the parser, which has no types to
          * decide with. Keeping the operator lets the lowerer notice that the
-         * type declared an in-place `oper+=` and call it instead — otherwise a
+         * type declared an in-place `oper+=` and call it instead - otherwise a
          * declared compound-assignment operator is dead code.
          */
         val compoundOp: TokenType? = null,
@@ -737,17 +738,15 @@ sealed class Stmt {
         override val line: Int,
         override val column: Int = 0,
         override val length: Int = 0,
-        /** `scope alloc { }` — allocations inside are tracked and freed at exit. */
-        val alloc: Boolean = false,
         /** Explicit opt-in boundary for operations whose contracts cannot be proven safe. */
         val unsafe: Boolean = false,
         /**
          * True for a scope the source actually wrote.
          *
          * Sibling written scopes share one scope, so a binding made in the first
-         * is visible in the second. The compiler also builds scopes of its own —
+         * is visible in the second. The compiler also builds scopes of its own -
          * to scope an inlined body, an `unsafe { }` block, a desugared for-else
-         * — and those must stay independent, or two inlined calls would collide
+         * - and those must stay independent, or two inlined calls would collide
          * on their locals.
          */
         val shared: Boolean = false
@@ -958,7 +957,7 @@ sealed class Stmt {
         override val length: Int = 0,
         /** Optional `@label` for labeled `break`/`continue`. */
         val label: String? = null,
-        /** Optional iterable for `loop iterable { }` — when present, desugars to
+        /** Optional iterable for `loop iterable { }` - when present, desugars to
          *  `iterable.reset(); while iterable.hasNext() { body }`. */
         val iterable: Expr? = null
     ) : Stmt()
@@ -1020,7 +1019,7 @@ sealed class Stmt {
          *
          * `a += b` desugars to `a = a + b` in the parser, which has no types to
          * decide with. Keeping the operator lets the lowerer notice that the
-         * type declared an in-place `oper+=` and call it instead — otherwise a
+         * type declared an in-place `oper+=` and call it instead - otherwise a
          * declared compound-assignment operator is dead code.
          */
         val compoundOp: TokenType? = null,
@@ -1067,20 +1066,20 @@ sealed class Stmt {
         override val length: Int = 0
     ) : Stmt()
 
-    /** `throw value` — raises [value] as a throwable. */
+    /** `throw value` - raises [value] as a throwable. */
     data class Throw(val value: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Stmt()
 
     /**
-     * `panic "msg"` — unrecoverable runtime abort with [message].
-     * `inline panic "msg"` ([inlinePanic]) — if reached during compile-time evaluation,
+     * `panic "msg"` - unrecoverable runtime abort with [message].
+     * `inline panic "msg"` ([inlinePanic]) - if reached during compile-time evaluation,
      * aborts the compiler with [message].
      */
     data class Panic(val message: Expr, val inlinePanic: Boolean, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Stmt()
 
-    /** `*ptr = value` — store through a pointer. */
+    /** `*ptr = value` - store through a pointer. */
     data class DerefAssign(val target: Expr, val value: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Stmt()
 
-    /** `yield value` — emit a value from a `flow` generator. */
+    /** `yield value` - emit a value from a `flow` generator. */
     data class Yield(val value: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Stmt()
 
     /**
@@ -1092,10 +1091,10 @@ sealed class Stmt {
      */
     data class Try(val body: List<Stmt>, val catchName: String?, val catchBody: List<Stmt>?, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Stmt()
 
-    /** `defer { body }` — runs [body] when the enclosing function exits. */
+    /** `defer { body }` - runs [body] when the enclosing function exits. */
     data class Defer(val body: List<Stmt>, override val line: Int, override val column: Int = 0, override val length: Int = 0, val onFail: Boolean = false, val suppress: Boolean = false) : Stmt()
 
-    /** `mem`/`rem`/`ret x: T = init` — reactive state declaration. */
+    /** `mem`/`rem`/`ret x: T = init` - reactive state declaration. */
     data class RemDecl(
         val name: String,
         val type: TypeAnnotation,
@@ -1106,7 +1105,7 @@ sealed class Stmt {
         val kind: ReactiveKind = ReactiveKind.REM,
     ) : Stmt()
 
-    /** `effect { body }` — reactive side-effect; re-runs when tracked `rem` variables change. */
+    /** `effect { body }` - reactive side-effect; re-runs when tracked `rem` variables change. */
     data class Effect(
         val body: List<Stmt>,
         override val line: Int,
@@ -1259,12 +1258,12 @@ sealed class TypeRef {
         }
     }
 
-    /** Pointer type `T*` — a reference to a heap value of [inner]. */
+    /** Pointer type `T*` - a reference to a heap value of [inner]. */
     /**
      * Pointer type `T*` (read-only) or `T^` (mutable).
      *
-     * The sigil is the whole difference and it is carried at every site — the
-     * type, the allocation that produced it, and the dereference that reads it —
+     * The sigil is the whole difference and it is carried at every site - the
+     * type, the allocation that produced it, and the dereference that reads it -
      * so a mutation through a pointer is visible without consulting the
      * declaration.
      */
@@ -1273,7 +1272,7 @@ sealed class TypeRef {
     }
 
     /**
-     * A compile-time integer used as a **const-generic type argument** — the `3` in
+     * A compile-time integer used as a **const-generic type argument** - the `3` in
      * `Array<Int, 3>`. Not a runtime type; it supplies a value (e.g. an array's
      * element count) at type-argument position. Resolved into the dependent type
      * (e.g. `IrType.Array(_, size = 3)`).
@@ -1308,7 +1307,7 @@ sealed class TypeRef {
     /**
      * A checked reference. Ownership is carried by the qualifier, not punctuation.
      *
-     * [origins] names the parameters a returned borrow comes from — the `[a, b]`
+     * [origins] names the parameters a returned borrow comes from - the `[a, b]`
      * in `func choose(a: String&, b: String&): String&[a, b]`. Azora infers most
      * borrow relationships, so this is written only where a public signature has
      * to state one; empty means "inferred".
@@ -1368,7 +1367,7 @@ sealed class TypeFunctionStmt {
         val startIndex: Int,
         val body: List<TypeFunctionStmt>,
     ) : TypeFunctionStmt()
-    /** `if COND { … } [else { … }]` — a branch over a type comparison. */
+    /** `if COND { … } [else { … }]` - a branch over a type comparison. */
     data class If(
         val condition: TypeFunctionCondition,
         val thenBody: List<TypeFunctionStmt>,
@@ -1501,7 +1500,7 @@ enum class Visibility { PUBLIC, CONFINE }
  *
  * - [EXPOSE] (default): importable everywhere, including downstream libraries.
  * - [PROTECT]: importable only within the declaring folder.
- * - [CONFINE]: private — not importable anywhere (e.g. a test file or an app's
+ * - [CONFINE]: private - not importable anywhere (e.g. a test file or an app's
  *   `main` module).
  *
  * Orthogonal to `export` (see [Program.isExported]): `expose` auto-imports the
@@ -1526,7 +1525,7 @@ data class RealmMeta(val label: String?, val isInline: Boolean, val parent: Real
 /**
  * Kind of a type cast ([Expr.Cast]).
  *
- * - [STATIC]: converting cast (`static_cast`) — numeric conversions, stringify to
+ * - [STATIC]: converting cast (`static_cast`) - numeric conversions, stringify to
  *   `String`, unchecked up/down casts. Spelled `x as T` / `std::cast<T>(x)`.
  * - [DYNAMIC]: runtime-checked downcast (`dynamic_cast`) yielding `T?` (null on a
  *   type mismatch). Spelled `x as? T` / `std::dyncast<T>(x)`.
@@ -1549,15 +1548,15 @@ enum class TestMethod { This, All }
 /**
  * How a parameter or receiver borrows its argument.
  *
- * Written as a postfix sigil on the name — `x&` borrows for reading, `x!`
- * borrows exclusively — so none of these has a keyword behind it. [NONE] is a
+ * Written as a postfix sigil on the name - `x&` borrows for reading, `x!`
+ * borrows exclusively - so none of these has a keyword behind it. [NONE] is a
  * plain by-value parameter.
  */
 enum class ParamModifier {
     NONE,
-    /** `x&` — shared, read-only. */
+    /** `x&` - shared, read-only. */
     SHARED,
-    /** `x!` — exclusive; the callee may write through it. */
+    /** `x!` - exclusive; the callee may write through it. */
     EXCLUSIVE;
 
     val writable: Boolean get() = this == EXCLUSIVE
@@ -1580,7 +1579,7 @@ data class Param(
     /** Parameter-level decorators, parsed from `name: @Decorator Type`. */
     val annotations: List<Annotation> = emptyList(),
     /**
-     * `name: return T` — ownership of this parameter goes back to the caller.
+     * `name: return T` - ownership of this parameter goes back to the caller.
      *
      * The callee owns the value while it runs and the caller owns it again
      * afterwards, so the argument is written `lend x` rather than `take x` and
@@ -1690,11 +1689,11 @@ data class FuncDecl(
     val annotations: List<Annotation> = emptyList(),
     /** `flow` generator: calling it returns a (eagerly-built) list of `yield`ed values. */
     val isFlow: Boolean = false,
-    /** `repl func` — overrides a parent node's method. */
+    /** `repl func` - overrides a parent node's method. */
     val isOverride: Boolean = false,
-    /** `virt func` — virtual method (dynamic dispatch). */
+    /** `virt func` - virtual method (dynamic dispatch). */
     val isVirtual: Boolean = false,
-    /** `task name(...)` — a structured asynchronous function. */
+    /** `task name(...)` - a structured asynchronous function. */
     val isTask: Boolean = false,
     /** Declaration requires an explicit unsafe calling context. */
     val isUnsafe: Boolean = false,
@@ -1703,7 +1702,7 @@ data class FuncDecl(
     /**
      * False when the declaration wrote no return type at all.
      *
-     * An omitted return type means `Unit`, so [returnType] is already correct —
+     * An omitted return type means `Unit`, so [returnType] is already correct -
      * this only records *how* it got there, which is what lets a `return <value>`
      * be reported as a missing declaration rather than an ordinary mismatch. It
      * is separate from `returnType is TypeAnnotation.Inferred` because the
@@ -1741,7 +1740,7 @@ data class FuncDecl(
     /** How this declaration may be invoked when registered as an impl member. */
     val memberCallStyle: MemberCallStyle = MemberCallStyle.NORMAL,
     /**
-     * A spec member's call-site alias template — `use as "to${T.typeName}"`.
+     * A spec member's call-site alias template - `use as "to${T.typeName}"`.
      *
      * The member keeps its own canonical name (`into`), and an implementation is
      * additionally reachable under the expanded template (`.toString`). Written
@@ -1750,7 +1749,8 @@ data class FuncDecl(
      */
     val useAsTemplate: String? = null,
     /**
-     * A generic `infx` whose receiver is a type parameter (`infx<K,V> K.to(v)`):
+     * A free function reachable as an infix call, registered by a bodyless
+     * infix macro (`macro $a @to $b`):
      * callable as an infix method on any receiver type (`a to b` → `to(a, b)`).
      * The first param is the receiver (`self`).
      */
@@ -1763,7 +1763,7 @@ enum class MemberCallStyle {
     METHOD,
 
     /**
-     * A property reached through the type rather than a value — `Type::name`.
+     * A property reached through the type rather than a value - `Type::name`.
      *
      * A spec requirement written without a receiver (`prop rank: Int`) asks for one
      * of these, and `impl Spec for Type:: { … }` supplies it.
@@ -1771,7 +1771,7 @@ enum class MemberCallStyle {
     STATIC_PROPERTY,
 
     /**
-     * A method reached through the type rather than a value — `Type::name(args)`.
+     * A method reached through the type rather than a value - `Type::name(args)`.
      *
      * A spec requirement written without a receiver (`func from(value: T): Self`)
      * asks for one of these, and `impl Spec for Type:: { … }` supplies it. It is
@@ -1783,7 +1783,7 @@ enum class MemberCallStyle {
 
 /**
  * The delimiter a macro arm was *written* with: `()` ([PAREN]), `[]`
- * ([BRACKET]), or `{}` ([BRACE]). Stored for diagnostics only — macro arms
+ * ([BRACKET]), or `{}` ([BRACE]). Stored for diagnostics only - macro arms
  * match delimiter-agnostically, so `vec!()`, `vec![]`, and `vec!{}` all feed
  * their arguments to the same arms.
  */
@@ -1799,12 +1799,12 @@ enum class MacroDelimiter { PAREN, BRACKET, BRACE }
  *   in the arm template.
  */
 sealed class MacroPattern {
-    /** `[]` / `()` / `{}` — matches an invocation that passed no arguments. */
+    /** `[]` / `()` / `{}` - matches an invocation that passed no arguments. */
     object Empty : MacroPattern()
-    /** `(...$name)` / `[...$name]` / `{...$name}` — matches ≥1 arg, binding the full list to [name]. */
+    /** `(...$name)` / `[...$name]` / `{...$name}` - matches ≥1 arg, binding the full list to [name]. */
     data class SeqCapture(val name: String) : MacroPattern()
     /**
-     * `[...${key: value}]` — matches ≥1 `k: v` argument pair (each passed as an
+     * `[...${key: value}]` - matches ≥1 `k: v` argument pair (each passed as an
      * [Expr.MapEntryArg]), binding the key exprs to [keyName] and the value exprs
      * to [valueName] so a template can splice them (e.g. `...std::mapEntry($key, $value)`).
      */
@@ -2095,12 +2095,12 @@ sealed class TopLevel {
         /** Field generator for a variadic pack body (`inline for Ty in ...T with index { … }`), or null. */
         val fieldTemplate: VariadicFieldTemplate? = null,
         /**
-         * `bridge pack X` — a compiler-provided type (primitives, `Reflected<T>`).
+         * `bridge pack X` - a compiler-provided type (primitives, `Reflected<T>`).
          * No struct is emitted; it exists as a reflectable/declared type only.
          */
         val isBridge: Boolean = false,
         /**
-         * `union X { … }` — a C-style untagged union.
+         * `union X { … }` - a C-style untagged union.
          *
          * Every field starts at offset 0 and the whole thing is as wide as its
          * widest member, so writing one member and reading another reinterprets
@@ -2118,7 +2118,7 @@ sealed class TopLevel {
         val declaringModule: String? = null
     ) : TopLevel()
 
-    /** `deco Name [bind Spec] { fields }` — an annotation type and optional derived spec contract. */
+    /** `deco Name [bind Spec] { fields }` - an annotation type and optional derived spec contract. */
     data class Deco(
         val name: String,
         val fields: List<PackField>,
@@ -2135,20 +2135,20 @@ sealed class TopLevel {
     /** An extern function signature inside a `bridge` block: `func sin(x: Double): Double` (no body). */
     data class BridgeSig(val name: String, val params: List<Param>, val returnType: TypeRef, val line: Int, val column: Int = 0, val typeParams: List<String> = emptyList())
 
-    /** `bridge <target> { func sigs }` — declares extern functions for active FFI targets (C/LLVM, JS/WASM). */
+    /** `bridge <target> { func sigs }` - declares extern functions for active FFI targets (C/LLVM, Wasm). */
     data class Bridge(val target: String, val funcs: List<BridgeSig>, val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList()) : TopLevel()
 
-    /** `solo Name { fields; methods }` — declares a singleton struct with one lazily-created shared instance. */
+    /** `solo Name { fields; methods }` - declares a singleton struct with one lazily-created shared instance. */
     data class Solo(val name: String, val fields: List<PackField>, val methods: List<FuncDecl>, val line: Int, val column: Int = 0, val visibility: Visibility = Visibility.PUBLIC, val annotations: List<Annotation> = emptyList()) : TopLevel()
 
     /** A singleton registration inside a `wrap` block: `solo Type(args) [bind Spec]`. */
     data class WrapReg(val typeName: String, val args: List<Expr>, val bindSpec: String? = null, val line: Int = 0, val column: Int = 0)
 
-    /** `wrap Name { solo Type(args); Concrete bind Spec }` — a DI container that wires singletons. */
+    /** `wrap Name { solo Type(args); Concrete bind Spec }` - a DI container that wires singletons. */
     data class Wrap(val name: String, val registrations: List<WrapReg>, val line: Int, val column: Int = 0) : TopLevel()
 
     /**
-     * `import RealmName` or `import RealmName.Item` — imports items from a named realm so they're
+     * `import RealmName` or `import RealmName.Item` - imports items from a named realm so they're
      * accessible without the `RealmName::` prefix. [imports] is a list of (realmName, itemName)
      * pairs where itemName is null for "import all".
      *
@@ -2181,7 +2181,7 @@ sealed class TopLevel {
         val variantAnnotations: List<List<Annotation>> = emptyList(),
     ) : TopLevel()
 
-    /** `fail ErrSet { V1, V2 }` — an error set (a named set of error variants). */
+    /** `fail ErrSet { V1, V2 }` - an error set (a named set of error variants). */
     data class Fail(
         val name: String,
         val variants: List<String>,
@@ -2226,7 +2226,7 @@ sealed class TopLevel {
         val decoratorNamedArgs: List<Pair<String, Expr>> = emptyList(),
         /** `@Deco` annotations applied to the impl block (e.g. `@UncheckedCast`). */
         val annotations: List<Annotation> = emptyList(),
-        /** `bridge impl …` — compiler-provided; no IR emitted, but still registers members. */
+        /** `bridge impl …` - compiler-provided; no IR emitted, but still registers members. */
         val isBridge: Boolean = false,
         /** Generic parameters declared directly on the implementation. */
         val typeParams: List<String> = emptyList(),
@@ -2254,7 +2254,7 @@ sealed class TopLevel {
         /** Specs this one inherits every member from (`spec Mutable: Read {…}`). */
         val parents: List<TypeRef> = emptyList(),
         /**
-         * `bridge spec` — the compiler provides the members.
+         * `bridge spec` - the compiler provides the members.
          *
          * An implementor states the capability with a bodyless `impl` and only
          * writes a member when the default lowering is wrong for its type.
@@ -2266,30 +2266,30 @@ sealed class TopLevel {
          * Unlike inheritance, this adds nothing to the spec and implies nothing
          * about a conforming type: it is a precondition checked at the `impl`.
          * `impl Copy for T` is rejected unless `T` separately implements
-         * `Clone` — the capability is stated, never inferred.
+         * `Clone` - the capability is stated, never inferred.
          */
         val requires: List<TypeRef> = emptyList(),
         /**
          * Type parameter → the type it stands for when the argument is omitted.
          *
          * `spec PartialEqual<Rhs = Self>` is what lets `impl PartialEqual for Point`
-         * mean `impl PartialEqual<Point> for Point`, so the homogeneous case —
-         * nearly all of them — writes no argument at all.
+         * mean `impl PartialEqual<Point> for Point`, so the homogeneous case -
+         * nearly all of them - writes no argument at all.
          */
         val typeDefaults: Map<String, TypeRef> = emptyMap(),
     ) : TopLevel()
 
-    /** `typealias Name = Type` — a type alias. */
+    /** `typealias Name = Type` - a type alias. */
     data class TypeAlias(val name: String, val type: TypeRef, val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList(), val typeParams: List<String> = emptyList()) : TopLevel()
 
     /** One case of a tagged union: `Name(Type1, Type2)`, or `Name` with no payload. */
     data class SlotVariant(val name: String, val payloadTypes: List<TypeRef>)
 
     /**
-     * `variant enum Name { … }` / `variant error Name { … }` — a tagged union.
+     * `variant enum Name { … }` / `variant error Name { … }` - a tagged union.
      *
      * `variant` is a modifier on the payload-free `enum`/`error` forms: it says
-     * the cases may carry data. [isError] records which of the two it modified —
+     * the cases may carry data. [isError] records which of the two it modified -
      * an error one can be thrown and named in a `?!` set; otherwise they are the
      * same construct.
      */
@@ -2303,13 +2303,13 @@ sealed class TopLevel {
     ) : TopLevel()
 
     /**
-     * `meta Name { arm; arm; … }` — a pattern-driven macro declaration.
+     * `meta Name { arm; arm; … }` - a pattern-driven macro declaration.
      *
      * Macros are top-level, bare-name declarations: importing the module that
      * declares one (e.g. `import std.container.*` for `vec!`) makes it invocable
      * as `name!(…)`. [MacroExpander] collects every `Meta`
      * declaration, rewrites all matching [Expr.MetaInvoke] invocations into
-     * their arm templates, and removes the `Meta` node itself — so it never
+     * their arm templates, and removes the `Meta` node itself - so it never
      * reaches semantic analysis or IR generation.
      *
      * @property name the macro name
@@ -2355,14 +2355,14 @@ data class Program(
      */
     val localPackNames: Set<String> = emptySet(),
     /**
-     * `expose mod …` — the module's declarations are published to every
+     * `expose mod …` - the module's declarations are published to every
      * compilation unit that uses this library, with no explicit `import`.
      */
     val isExported: Boolean = false,
     /**
      * Module-level visibility from `[confine] mod …`
-     * (default [ModuleVisibility.PUBLIC]). Bounds how far the module — and its
-     * `expose` auto-import — reaches.
+     * (default [ModuleVisibility.PUBLIC]). Bounds how far the module - and its
+     * `expose` auto-import - reaches.
      */
     val moduleVisibility: ModuleVisibility = ModuleVisibility.PUBLIC,
     /**
@@ -2406,16 +2406,16 @@ data class Program(
      */
     val realmTypeNamespaces: Map<String, String> = emptyMap(),
 ) {
-    /** Convenience — returns only the resolved function declarations. */
+    /** Convenience - returns only the resolved function declarations. */
     val functions: List<FuncDecl> get() = items.filterIsInstance<TopLevel.Func>().map { it.decl }
 
-    /** Convenience — returns only the test declarations. */
+    /** Convenience - returns only the test declarations. */
     val tests: List<TopLevel.Test> get() = items.filterIsInstance<TopLevel.Test>()
 }
 
 /**
  * The name given to a contextual receiver that a lambda inherits rather than
- * declares — `std::sequence { std::yield(1) }` names no receiver, but the
+ * declares - `std::sequence { std::yield(1) }` names no receiver, but the
  * closure still has to carry one.
  *
  * The frontend and the IR generator both synthesize these bindings and must

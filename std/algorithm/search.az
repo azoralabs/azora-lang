@@ -26,14 +26,14 @@ import std.container.array
  * Provides linear search, binary search, min/max finding,
  * occurrence counting, and index-of-predicate for arrays.
  *
- * @since 0.0.1
+ * @since 0.1
  */
 
 realm std {
     /**
      *
      */
-    @Since("0.0.1")
+    @Since("0.1")
     error SearchError {
         NotFound
         EmptyArray
@@ -46,7 +46,7 @@ realm std {
      * @param target The element to find.
      * @return The index of the first occurrence, or -1 if not found.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func linearSearch<T>(arr: Array<T>, target: T): Int {
         for i in 0..<arr.length {
             if arr[i] == target { return i }
@@ -63,7 +63,7 @@ realm std {
      * @param target The element to find.
      * @return The index of the target, or -1 if not found.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func binarySearch<T>(arr: Array<T>, target: T): Int where T: Order {
         var lo = 0
         var hi = arr.length - 1
@@ -85,7 +85,7 @@ realm std {
      * @param arr The array to search (must be non-empty).
      * @return The smallest element.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func minOf<T>(arr: Array<T>): T where T: Order
     in {
         assert arr.length > 0 { "Input must not be empty" }
@@ -103,7 +103,7 @@ realm std {
      * @param arr The array to search (must be non-empty).
      * @return The largest element.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func maxOf<T>(arr: Array<T>): T where T: Order
     in {
         assert arr.length > 0 { "Input must not be empty" }
@@ -122,7 +122,7 @@ realm std {
      * @param target The element to count.
      * @return The number of times target appears in the array.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func count<T>(arr: Array<T>, target: T): Int
     out {
         assert it >= 0 { "count must return non-negative" }
@@ -141,7 +141,7 @@ realm std {
      * @param pred The predicate function.
      * @return The index of the first match, or -1 if none found.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func findIndex<T>(arr: Array<T>, pred: (T) -> Bool): Int {
         for i in 0..<arr.length {
             if pred(arr[i]) { return i }
@@ -156,7 +156,7 @@ realm std {
      * @param pred The predicate function.
      * @return The index of the last match, or -1 if none found.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func findLastIndex<T>(arr: Array<T>, pred: (T) -> Bool): Int {
         var result = -1
         for i in 0..<arr.length {
@@ -172,7 +172,7 @@ realm std {
      * @param target The element to look for.
      * @return true if the element is found.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func arrayContains<T>(arr: Array<T>, target: T): Bool {
         return linearSearch<T>(arr, target) >= 0
     }

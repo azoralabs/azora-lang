@@ -141,7 +141,7 @@ sealed class IrType {
     /** Tuple type `(A, B)`. */
     data class Tuple(val elements: List<IrType>) : IrType() { override fun toString() = "(${elements.joinToString(", ")})" }
 
-    /** Variant type `Var<A, B, ...>` — a tagged union holding exactly one value whose type is one of
+    /** Variant type `Var<A, B, ...>` - a tagged union holding exactly one value whose type is one of
      *  [elements] (like C++ `std::variant`). Runtime representation is the held value plus its type. */
     data class Variant(val elements: List<IrType>) : IrType() { override fun toString() = "Var<${elements.joinToString(", ")}>" }
 
@@ -149,7 +149,7 @@ sealed class IrType {
     data class Nullable(val inner: IrType) : IrType() { override fun toString() = "$inner?" }
 
     /**
-     * Pointer type `T*` (read-only) or `T^` (mutable) — a heap reference to
+     * Pointer type `T*` (read-only) or `T^` (mutable) - a heap reference to
      * [inner]. Runtime representation is a mutable cell either way; [mutable]
      * is what the write check consults.
      */
@@ -162,7 +162,7 @@ sealed class IrType {
      * A user-declared type, with any type arguments it was written with.
      *
      * The arguments are retained because a generic pack is *erased* at the
-     * storage level — every type parameter becomes a pointer slot — so the only
+     * storage level - every type parameter becomes a pointer slot - so the only
      * way a field read can know it is holding a `Double` rather than an address is
      * for the referring type to still say `Box<Double>`.
      */
@@ -175,7 +175,7 @@ sealed class IrType {
          * An entry holds the value of a concrete const argument (`2` in
          * `Vec<Int, 2>`) and is null wherever the argument is a type or an
          * as-yet-unbound const parameter (`N`). Type arguments erase; a const
-         * argument cannot, because it selects the layout — `Vec<Int, 2>` and
+         * argument cannot, because it selects the layout - `Vec<Int, 2>` and
          * `Vec<Int, 3>` are different types, not one type used twice.
          */
         val constArgs: List<kotlin.Long?> = emptyList(),
@@ -190,7 +190,7 @@ sealed class IrType {
         // Identity is nominal in its TYPE arguments: `Box` and `Box<Double>` are the
         // same type to every check in the compiler, and the arguments ride along
         // only so code generation can un-erase a field. Const arguments are the
-        // exception — they choose between layouts, so two applications differing in
+        // exception - they choose between layouts, so two applications differing in
         // one are genuinely different types.
         /**
          * The concrete const arguments, by position.
@@ -287,7 +287,7 @@ sealed class IrType {
                     if (ref.args.size == 2 && ref.args[1] is TypeRef.Const) {
                         Array(resolve(ref.args[0], typeParams), (ref.args[1] as TypeRef.Const).value)
                     } else if (ref.args.size == 2 && (ref.args[1] as? TypeRef.Named)?.name == "*") {
-                        // `Array<T, *>` — a wildcard (unsized) array, e.g. from the
+                        // `Array<T, *>` - a wildcard (unsized) array, e.g. from the
                         // `typealias Array<T> = Array<T, *>` sugar.
                         Array(resolve(ref.args[0], typeParams))
                     } else {
@@ -326,11 +326,11 @@ sealed class IrType {
             // Checked references are erased after ownership/lifetime analysis. Backends
             // receive the referenced value ABI while the AST retains the qualifier.
             is TypeRef.Reference -> resolve(ref.inner, typeParams)
-            // `T!ErrSet` — at runtime a value of T (errors propagate via exceptions),
+            // `T!ErrSet` - at runtime a value of T (errors propagate via exceptions),
             // so the IR type is just the inner ok type.
             is TypeRef.Failable -> resolve(ref.ok, typeParams)
             // A const-generic value (`3` in `Array<Int, 3>`); stands alone only if
-            // referenced directly — treat it as its Int value type.
+            // referenced directly - treat it as its Int value type.
             is TypeRef.Const -> Int
         }
     }
@@ -586,17 +586,17 @@ sealed class IrExpr {
     /** Tuple literal `(a, b, c)`. */
     data class TupleLit(val elements: List<IrExpr>, override val type: IrType) : IrExpr()
 
-    /** Variant literal `var(a, b, c)` — constructs a `Var<...>` holding the first element; [type] is
+    /** Variant literal `var(a, b, c)` - constructs a `Var<...>` holding the first element; [type] is
      *  an [IrType.Variant] over the candidate element types. */
     data class VariantLit(val elements: List<IrExpr>, override val type: IrType) : IrExpr()
 
     /** Tuple positional access `target.index`. */
     data class TupleAccess(val target: IrExpr, val index: Int, override val type: IrType) : IrExpr()
 
-    /** `expr catch fallback` — evaluates [expr]; on throw, evaluates [fallback]. */
+    /** `expr catch fallback` - evaluates [expr]; on throw, evaluates [fallback]. */
     data class CatchExpr(val expr: IrExpr, val fallback: IrExpr, override val type: IrType) : IrExpr()
 
-    /** If-expression `if cond { a } else { b }` — one branch becomes the value. */
+    /** If-expression `if cond { a } else { b }` - one branch becomes the value. */
     data class IfExpr(val condition: IrExpr, val thenExpr: IrExpr, val elseExpr: IrExpr, override val type: IrType) : IrExpr()
 
     /** A numeric conversion `value as Type` (e.g. Int → Double). [type] is the target type. */
@@ -620,21 +620,21 @@ sealed class IrExpr {
      */
     data class Lambda(val params: List<Pair<String, IrType>>, val body: List<IrStmt>, override val type: IrType) : IrExpr()
 
-    /** A slot pattern `SlotName.VariantName(bindings)` in a `when` branch. Never evaluated — consumed by the interpreter. */
+    /** A slot pattern `SlotName.VariantName(bindings)` in a `when` branch. Never evaluated - consumed by the interpreter. */
     data class SlotPattern(
         val slotName: String,
         val variantName: String,
         val bindings: List<String>,
-        /** Payload types for [bindings], parallel — used by backends to unbox each payload. */
+        /** Payload types for [bindings], parallel - used by backends to unbox each payload. */
         val bindingTypes: List<IrType> = emptyList(),
     ) : IrExpr() {
         override val type: IrType = IrType.Bool
     }
 
-    /** `await task` — suspend until the task (a no-arg closure) completes, yielding its result. */
+    /** `await task` - suspend until the task (a no-arg closure) completes, yielding its result. */
     data class Await(val value: IrExpr, override val type: IrType = IrType.Any) : IrExpr()
 
-    /** `arr...` — spread an array's elements as individual call arguments. */
+    /** `arr...` - spread an array's elements as individual call arguments. */
     data class Spread(val array: IrExpr) : IrExpr() {
         override val type: IrType = IrType.Any
     }
@@ -810,7 +810,7 @@ sealed class IrStmt {
      *
      * @property body the list of statements inside the realm
      */
-    data class Scope(val body: List<IrStmt>, val alloc: Boolean = false) : IrStmt()
+    data class Scope(val body: List<IrStmt>) : IrStmt()
 
     /**
      * Runtime assertion (`assert condition { "message" }`).
@@ -876,10 +876,10 @@ sealed class IrStmt {
      */
     data class Loop(val body: List<IrStmt>, val label: String? = null) : IrStmt()
 
-    /** `break` — exits the enclosing loop, or the loop tagged [label] if given. */
+    /** `break` - exits the enclosing loop, or the loop tagged [label] if given. */
     data class Break(val label: String? = null) : IrStmt()
 
-    /** `continue` — next iteration of the enclosing loop, or the loop tagged [label] if given. */
+    /** `continue` - next iteration of the enclosing loop, or the loop tagged [label] if given. */
     data class Continue(val label: String? = null) : IrStmt()
 
     /**
@@ -893,13 +893,13 @@ sealed class IrStmt {
     /** `try { body } catch { name -> handler }`. */
     data class Try(val body: List<IrStmt>, val catchName: String?, val catchBody: List<IrStmt>?) : IrStmt()
 
-    /** `defer { body }` — runs [body] when the enclosing function exits. */
+    /** `defer { body }` - runs [body] when the enclosing function exits. */
     data class Defer(val body: List<IrStmt>, val onFail: Boolean = false, val suppress: Boolean = false) : IrStmt()
 
-    /** `yield value` — emit a value from a `flow` generator. */
+    /** `yield value` - emit a value from a `flow` generator. */
     data class Yield(val value: IrExpr) : IrStmt()
 
-    /** `for x in <iterable>` (non-range) — bind [elem] to each value of [iterable], run [body]. */
+    /** `for x in <iterable>` (non-range) - bind [elem] to each value of [iterable], run [body]. */
     data class ForEach(val elem: String, val iterable: IrExpr, val body: List<IrStmt>) : IrStmt()
 
     /** Pretty-prints this statement as Azora IR text. */
@@ -1025,12 +1025,12 @@ data class IrFunction(
     val body: List<IrStmt>,
     /** `flow` generator: calling it returns a list of `yield`ed values. */
     val isFlow: Boolean = false,
-    /** Indices of `ref`/`out` parameters — the interpreter wraps these in mutable cells. */
+    /** Indices of `ref`/`out` parameters - the interpreter wraps these in mutable cells. */
     val refParams: Set<Int> = emptySet(),
     val isTask: Boolean = false,
     val isUnsafe: Boolean = false,
     /**
-     * Declared `T ?! E` — the function can fail.
+     * Declared `T ?! E` - the function can fail.
      *
      * The success type is unchanged, so this carries no representational cost;
      * it tells a call site that the error flag has to be checked after the call
@@ -1054,7 +1054,7 @@ data class IrFunction(
 data class IrField(val name: String, val type: IrType, val mutable: Boolean)
 
 /**
- * One method of a spec, with its erased signature — enough for a backend to
+ * One method of a spec, with its erased signature - enough for a backend to
  * generate a dynamic-dispatch stub. [paramTypes] excludes the implicit `self`.
  */
 data class IrSpecMethod(val name: String, val paramTypes: List<IrType>, val returnType: IrType)
@@ -1068,7 +1068,7 @@ data class IrSpecImpl(val typeName: String, val methodFuncs: Map<String, String>
 /**
  * The dynamic-dispatch table for one spec: its methods and every concrete `pack`
  * that conforms to it. Backends that lack native trait objects (LLVM) use this to
- * emit a type-id switch; the interpreter/JS ignore it (they dispatch on `__type`).
+ * emit a type-id switch; the interpreter ignores it (it dispatches on `__type`).
  */
 data class IrSpecTable(val specName: String, val methods: List<IrSpecMethod>, val impls: List<IrSpecImpl>)
 
@@ -1076,7 +1076,7 @@ data class IrSpecTable(val specName: String, val methods: List<IrSpecMethod>, va
 data class IrWhenBranch(val patterns: List<IrExpr>, val body: List<IrStmt>)
 
 /**
- * A top-level item in the IR program — either a global statement or a function.
+ * A top-level item in the IR program - either a global statement or a function.
  */
 sealed class IrTopLevel {
     data class Global(val stmt: IrStmt) : IrTopLevel()
@@ -1110,7 +1110,7 @@ sealed class IrTopLevel {
          * Per field, the index of the type parameter it was declared as, or `-1`.
          *
          * A parameter resolves to `Any` in the IR, so the parameter it came from
-         * cannot be recovered from the field's type alone — it is recorded here
+         * cannot be recovered from the field's type alone - it is recorded here
          * instead, which is what lets a `Box<Double>` field read convert back.
          */
         val typeParamSlots: List<Int> = emptyList(),
@@ -1119,7 +1119,7 @@ sealed class IrTopLevel {
     ) : IrTopLevel()
 
     /**
-     * An extern (`bridge`) function declaration — a signature with no body, emitted so
+     * An extern (`bridge`) function declaration - a signature with no body, emitted so
      * backends can declare it (`external fun` / `declare` / LLVM `declare`) for FFI linking.
      */
     data class Extern(val name: String, val params: List<Pair<String, IrType>>, val returnType: IrType) : IrTopLevel()
@@ -1140,13 +1140,13 @@ data class IrProgram(
     /** Dynamic-dispatch tables for specs with concrete `pack` implementers. */
     val specTables: List<IrSpecTable> = emptyList()
 ) {
-    /** Convenience — returns only the global statements. */
+    /** Convenience - returns only the global statements. */
     val globals: List<IrStmt> get() = items.filterIsInstance<IrTopLevel.Global>().map { it.stmt }
 
-    /** Convenience — returns only the functions. */
+    /** Convenience - returns only the functions. */
     val functions: List<IrFunction> get() = items.filterIsInstance<IrTopLevel.Func>().map { it.function }
 
-    /** Convenience — returns only the test declarations. */
+    /** Convenience - returns only the test declarations. */
     val tests: List<IrTopLevel.Test> get() = items.filterIsInstance<IrTopLevel.Test>()
 
     /** Pretty-prints this program as Azora IR text. */

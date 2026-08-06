@@ -29,14 +29,14 @@ import std.container.array
  * String is a stack-allocated immutable text value.
  * Array<Char>* is a heap-allocated mutable character buffer.
  *
- * @since 0.0.1
+ * @since 0.1
  */
 
 realm std {
     /**
      *
      */
-    @Since("0.0.1")
+    @Since("0.1")
     error StringError {
         IndexOutOfBounds
         EmptyString
@@ -49,7 +49,7 @@ realm std {
      * @param s The string to measure.
      * @return The number of characters.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func strLength(s: String): Int {
         return stringLength(s)
     }
@@ -61,7 +61,7 @@ realm std {
      * @param index The zero-based index.
      * @return The character at position index.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func strCharAt(s: String, index: Int): Char ?! StringError
     in {
         assert index >= 0 { "Index must be non-negative" }
@@ -78,7 +78,7 @@ realm std {
      * @param end The end index (exclusive).
      * @return The extracted substring.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func strSlice(s: String, start: Int, end: Int): String
     in {
         assert start >= 0 { "Start must be non-negative" }
@@ -94,7 +94,7 @@ realm std {
      * @param prefix The prefix to look for.
      * @return true if s starts with prefix.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func strStartsWith(s: String, prefix: String): Bool {
         return startsWith(s, prefix)
     }
@@ -106,7 +106,7 @@ realm std {
      * @param suffix The suffix to look for.
      * @return true if s ends with suffix.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func strEndsWith(s: String, suffix: String): Bool {
         return endsWith(s, suffix)
     }
@@ -118,7 +118,7 @@ realm std {
      * @param sub The substring to find.
      * @return true if s contains sub.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func strContains(s: String, sub: String): Bool {
         return contains(s, sub)
     }
@@ -130,7 +130,7 @@ realm std {
      * @param sub The substring to find.
      * @return The index of the first occurrence, or -1 if not found.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func strIndexOf(s: String, sub: String): Int {
         return indexOf(s, sub)
     }
@@ -141,7 +141,7 @@ realm std {
      * @param s The string to trim.
      * @return The trimmed string.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func strTrim(s: String): String {
         return trim(s)
     }
@@ -152,7 +152,7 @@ realm std {
      * @param s The string to convert.
      * @return The uppercase string.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func strToUpper(s: String): String {
         return toUpper(s)
     }
@@ -163,7 +163,7 @@ realm std {
      * @param s The string to convert.
      * @return The lowercase string.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func strToLower(s: String): String {
         return toLower(s)
     }
@@ -176,7 +176,7 @@ realm std {
      * @param new The replacement string.
      * @return The string with replacements applied.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func strReplace(s: String, old: String, new: String): String {
         return replace(s, old, new)
     }
@@ -188,7 +188,7 @@ realm std {
      * @param delim The delimiter string.
      * @return A sequence of substrings.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func strSplit(s: String, delim: String): Array<String> {
         return split(s, delim)
     }
@@ -199,7 +199,7 @@ realm std {
      * @param s The string to convert.
      * @return An array of Char values.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func strToChars(s: String): Array<Char> {
         return toChars(s)
     }
@@ -210,7 +210,7 @@ realm std {
      * @param chars The character array.
      * @return The concatenated string.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func charsToString(chars: Array<Char>): String {
         return fromChars(chars)
     }
@@ -221,7 +221,7 @@ realm std {
      * @param s The string to check.
      * @return true if the string has zero length.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func strIsEmpty(s: String): Bool {
         return stringLength(s) == 0
     }
@@ -232,7 +232,7 @@ realm std {
      * @param s The string to check.
      * @return true if the string has non-zero length.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func strIsNotEmpty(s: String): Bool {
         return stringLength(s) > 0
     }
@@ -243,7 +243,7 @@ realm std {
      * @param s The string to reverse.
      * @return The reversed string.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func strReverse(s: String): String {
         fin chars = toChars(s)
         fin len = chars.length
@@ -261,7 +261,7 @@ realm std {
      * @param n The number of repetitions.
      * @return The repeated string.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func strRepeat(s: String, n: Int): String
     in {
         assert n >= 0 { "Repetition count must be non-negative" }
@@ -275,7 +275,7 @@ realm std {
      * @param s The string to check.
      * @return true if every character is a digit.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func strIsNumeric(s: String): Bool {
         if stringLength(s) == 0 { return false }
         fin chars = toChars(s)
@@ -291,7 +291,7 @@ realm std {
      * @param s The string to check.
      * @return true if every character is a letter.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func strIsAlpha(s: String): Bool {
         if stringLength(s) == 0 { return false }
         fin chars = toChars(s)
@@ -304,7 +304,7 @@ realm std {
     /**
      *
      */
-    @Since("0.0.1")
+    @Since("0.1")
     error ParseError {
         InvalidFormat,
         Overflow,
@@ -314,7 +314,7 @@ realm std {
     /**
      * Parses a string as an integer. Returns the parsed value or fails.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func strParseInt(s: String): Int ?! ParseError {
         if strIsEmpty(s) {
             return .EmptyInput
@@ -346,7 +346,7 @@ realm std {
     /**
      * Parses a string as a real number. Returns the parsed value or fails.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func strParseReal(s: String): Double ?! ParseError {
         if strIsEmpty(s) {
             return .EmptyInput
@@ -388,7 +388,7 @@ realm std {
     /**
      * An efficient string builder for concatenating many strings.
      */
-    @Since("0.0.1")
+    @Since("0.1")
     pack StringBuilder {
         var parts: Array<String> = Array::fill<String>(16)
         var count: Int = 0
@@ -398,7 +398,7 @@ realm std {
         /**
          * Appends a string to the builder.
          */
-        @Experimental(since: "0.0.1")
+        @Experimental(since: "0.1")
         func append(s: String): Unit {
             self.parts[self.count] = s
             self.count += 1
@@ -407,7 +407,7 @@ realm std {
         /**
          * Appends a string followed by a newline.
          */
-        @Experimental(since: "0.0.1")
+        @Experimental(since: "0.1")
         func appendLine(s: String): Unit {
             self.parts[self.count] = s
             self.count += 1
@@ -418,7 +418,7 @@ realm std {
         /**
          * Builds the final concatenated string.
          */
-        @Experimental(since: "0.0.1")
+        @Experimental(since: "0.1")
         func build(): String {
             var result: String = ""
             for i in 0..<self.count {
@@ -430,13 +430,13 @@ realm std {
         /**
          * Returns the number of parts.
          */
-        @Since("0.0.1")
+        @Since("0.1")
         prop length[self: Self&]: Int = self.count
 
         /**
          * Clears the builder.
          */
-        @Since("0.0.1")
+        @Since("0.1")
         func clear(): Unit {
             self.parts = Array::fill<String>(16)
             self.count = 0
@@ -446,7 +446,7 @@ realm std {
     /**
      * Counts occurrences of a substring in a string.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func strCount(s: String, sub: String): Int {
         var count: Int = 0
         var idx: Int = strIndexOf(s, sub)
@@ -467,7 +467,7 @@ realm std {
     /**
      * Pads a string on the left to reach the target length.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func strPadLeft(s: String, targetLength: Int, padChar: String): String {
         var result: String = s
         while strLength(result) < targetLength {
@@ -479,7 +479,7 @@ realm std {
     /**
      * Pads a string on the right to reach the target length.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func strPadRight(s: String, targetLength: Int, padChar: String): String {
         var result: String = s
         while strLength(result) < targetLength {

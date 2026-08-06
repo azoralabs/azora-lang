@@ -20,11 +20,11 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /**
- * End-to-end tests for the arr@[org.azora.lang.backend.WasmCodegen] backend: each
+ * End-to-end tests for the [org.azora.lang.backend.WasmCodegen] backend: each
  * compiles a small Azora program to WAT, assembles it with `wat2wasm`, and runs
  * it under Node.js, asserting on stdout.
  *
- * The suite covers what the MVP WASM target supports — scalar arithmetic,
+ * The suite covers what the MVP WASM target supports - scalar arithmetic,
  * control flow, functions/recursion, strings (concat/interpolation/repeat/
  * equality), packs and arrays. Higher-level features (lambdas, tasks,
  * exceptions, sets/maps/tuples) are out of scope for this backend. Skips itself
@@ -201,7 +201,7 @@ class WasmCodegenExecTest {
     )
 
     @Test fun arrayIndexAndLength() = check(
-        "25\n3", main("let nums = arr@[10, 20, 30]\nnums[1] = 25\nstd::println(nums[1])\nstd::println(nums.length)")
+        "25\n3", main("let nums = @arr[10, 20, 30]\nnums[1] = 25\nstd::println(nums[1])\nstd::println(nums.length)")
     )
 
     @Test fun functionCalls() = check(

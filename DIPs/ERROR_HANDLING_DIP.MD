@@ -1,9 +1,9 @@
-# Azora Error Handling — DIP Implementation Profile
+# Azora Error Handling - DIP Implementation Profile
 
 Typed, recoverable errors via error sets (`error`), failable return types
 (`T ?! E`), and the `return .Variant` / `try` / `catch` / `rescue` machinery.
 
-The IR type of `T ?! E` is just `T` — errors travel on the existing exception
+The IR type of `T ?! E` is just `T` - errors travel on the existing exception
 transport, so failable functions have no representational overhead on success.
 
 ## Grammar
@@ -102,6 +102,6 @@ func step() {
 
 ## 6. Panics vs. failures
 
-- `panic "message"` / `panic(cond)` — unrecoverable programmer error (see the
+- `panic "message"` / `panic(cond)` - unrecoverable programmer error (see the
   Contracts & Assertions DIP).
-- `error` / `?!` — recoverable, typed errors handled by callers.
+- `error` / `?!` - recoverable, typed errors handled by callers.

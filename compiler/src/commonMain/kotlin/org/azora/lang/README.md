@@ -2,8 +2,8 @@
 
 A multi-phase, IR-based compiler for the Azora language: multi-pass semantic
 analysis with compile-time function execution (CTCE), a target-agnostic typed
-IR, and the active WebAssembly and LLVM source backends plus an
-in-memory interpreter — all driven from one optimized IR per compile.
+IR, and the WebAssembly and LLVM source backends plus an in-memory interpreter -
+all driven from one optimized IR per compile.
 
 Source lives under `compiler/src/commonMain/kotlin/org/azora/lang/`
 (package `org.azora.lang`). A `wasmJs` target also exists so the compiler can
@@ -16,15 +16,15 @@ run in the browser (the playground builds it to WASM).
 ```
 Source → Lexer → Parser → AST Validator
                   ↓
-           Stdlib Injection (only modules you `use`, transitively)
+           Stdlib Injection (only modules you `import`, transitively)
                   ↓
            Symbol Collection → Type Resolution ⇄ CTCE (fixed point) → Alloc/Drop → Effects
                   ↓
            IR Generator → IR Optimizer  (release mode only)
                   ↓
-  ┌──────┬──────┬──────┬──────────┐
-  ↓      ↓      ↓      ↓          ↓
-  JS    Wasm   LLVM   Interpreter (IR dump)
+  ┌──────┬──────┬─────────────┐
+  ↓      ↓      ↓             ↓
+ Wasm   LLVM   Interpreter   (IR dump)
 ```
 
 Every `Compiler.compile()` lowers the (optimized) IR to WebAssembly and LLVM
@@ -33,11 +33,11 @@ IR in one pass and returns them together. Adding a target
 
 ### Phase boundaries (see `Compiler.kt`)
 
-1. **Frontend** — Lexer → Parser → (debug instrumentation) → Stdlib injection → AST validation.
-2. **Semantic** — multi-pass: symbol collection → use resolution →
+1. **Frontend** - Lexer → Parser → (debug instrumentation) → Stdlib injection → AST validation.
+2. **Semantic** - multi-pass: symbol collection → use resolution →
    type-resolution ⇄ CTCE fixed-point loop → alloc/drop → effect checking.
-3. **IR** — AST → typed IR → optimization (constant fold/propagate, DCE, unused-symbol elimination).
-4. **Backend** — IR → WebAssembly, LLVM (+ interpreter, + IR/AST dump).
+3. **IR** - AST → typed IR → optimization (constant fold/propagate, DCE, unused-symbol elimination).
+4. **Backend** - IR → WebAssembly, LLVM (+ interpreter, + IR/AST dump).
 
 ---
 
@@ -51,29 +51,29 @@ root `README.md`; this section is a keyword/construct reference for compiler wor
 
 ### Bindings & mutability
 
-| Keyword | Mutability | JS emit |
-|---------|------------|-------------|
-| `var x: Int = 5` | mutable | `let` |
-| `var x = 5` | mutable, inferred | `let` |
-| `let x = 5` | immutable (read-only view) | `const` |
-| `fin x = 5` | deeply immutable | `const` |
-| `threadlocal var x = 0` | per-thread mutable | backend runtime slot |
-| `threadlocal fin y = 42` | per-thread constant | backend runtime slot |
+| Keyword | Name | Value |
+|---------|------|-------|
+| `var x: Int = 5` | rebindable | mutable |
+| `val x = 5` | rebindable | frozen |
+| `let x = 5` | fixed | mutable |
+| `fin x = 5` | fixed | frozen |
+| `threadlocal var x = 0` | rebindable, per-thread | mutable |
+| `threadlocal fin y = 42` | fixed, per-thread | frozen |
 
 Top-level `fin`/`var`/`let`: `fin` (immutable global) is allowed; `var`/`let`
 globals are rejected (not thread-safe).
 
 ### Visibility
 
-Everything is public by default — there is no keyword for it. A leading
+Everything is public by default - there is no keyword for it. A leading
 underscore on the name is what makes a declaration private, and it is private
-to the zone or type that declares it: `pack Body { var _cache: Real }` is
+to the realm or type that declares it: `pack Body { var _cache: Double }` is
 readable from `Body`'s own `impl` blocks and nowhere else. `confine` narrows a
 declaration to its package.
 
-`expose` is not a visibility modifier. It marks a `mod` or a top-level `use` as
-auto-imported everywhere, so `expose mod std.core` and `expose use std.container`
-reach every unit without being asked for.
+`expose` is not a visibility modifier. It marks a `module` or a top-level
+`import` as auto-imported everywhere, so `expose module std.core` and
+`expose import std.container` reach every unit without being asked for.
 
 ### Functions
 
@@ -82,41 +82,44 @@ func add(a: Int, b: Int): Int { return a + b }
 func<T> identity(x: T): T { return x }                 // generics, call-site inference
 func<...T> sprintf(fmt: String, rest: ...T) { ... }    // variadic generics (last type param)
 inline func square(x: Int): Int { return x * x }        // body substituted at call sites
-func f(x: Int = 0, mut m: List, ref r: Int, out o: Int) // defaults + param modifiers
+func f(x: Int = 0, values: List&, sink: Buffer!)        // defaults + borrows
 create(value: 30, label: "A")                            // named arguments
 f(...arr)                                                // spread array into call args
 ```
 
-Parameter modifiers: `mut` (mutable param), `ref` (by-reference — mutations
-propagate to caller), `out` (callee-assigned output). Ownership/reference
-kinds: `ref`, `shared ref`, `weak ref` (with optional `mut`).
+Borrows are sigils, not keywords: `x&` is shared and read-only, `x!` is
+exclusive and the callee may write through it. `take x` transfers ownership and
+`lend x` hands over a borrow the callee gives back. Shared and weak ownership
+are the library types `Shared<T>`, `Weak<T>`, `Unique<T>` and `SyncShared<T>`,
+not reference kinds in the grammar.
 
 ### Types
 
 - **Primitives**: `Int UInt Long ULong Byte UByte Short UShort Cent UCent
-  Float Real Decimal Bool Char String Unit`.
-- **Compound**: fixed arrays `[T]`, immutable collections
-  `List<T>`/`Set<T>`/`Map<K, V>`, mutable collections
-  `mut List<T>`/`mut Set<T>`/`mut Map<K, V>`, tuples `(A, B)`,
-  function types `(A) -> B`, map values `mapOf("k": v)`.
-- **User-defined**: `pack` (structs), `enum`, `slot` (tagged unions), `typealias`,
-  `fail` (error sets).
+  Float Double Decimal Bool Char String Unit`.
+- **Compound**: `Array<T, N>`, `List<T>`/`Set<T>`/`Map<K, V>` and their
+  `Mutable…` counterparts, `Tuple<A, B>`, function types `(A) -> B`. Types are
+  always written with generics - type macros are gone, so a type's spelling
+  does not depend on what a file imports. The value-level macro sugar is
+  `@arr[…]`, `@vec[…]`, `@vec![…]` and `@set[…]`; `@map` is declared but its
+  `key: value` call form is not implemented yet.
+- **User-defined**: `pack` (structs), `enum`, `variant enum` (tagged unions),
+  `unsafe union` (untagged), `typealias`, `error` (error sets).
 - **Type parameters**: generics `func<T>`, `pack<T>`; **variadic** `func<...T>`.
 - **Nullable**: `T?` with `null`, `??` (coalesce), `?.` (safe access),
   `?=`/`?+=`/… null-conditional assignment family.
-- **Failable**: `T!ErrSet` — a `T` or an error from a declared setOf (propagated
-  via the existing exception machinery).
-- **Pointer**: `T*` — a heap reference (`alloc`, `deref ptr` / `*ptr`).
+- **Failable**: `T ?! ErrSet` - a `T` or an error from a declared set.
+- **Pointer**: `T*` - a heap reference (`alloc`, `*ptr`).
 - Integer/float promotion: `2 + 1.5` → `3.5` (auto-widens).
 
 ### Control flow
 
-`if`/`else if`/`else`; `while`; `for x in a..b`, `for x in array`, `for x in flow`;
-`for x by N in a..b` (step); `reverse for`; `loop { }`; `loop { } while cond`
+`if`/`else if`/`else`; `while`; `for x in a..b`, `for x in a..<b`, `for x in array`;
+`for x in a..b by N` (step); `reverse for`; `loop { }`; `loop { } while cond`
 (do-while); `for/while/loop … else { }` (else runs unless `break`); labeled loops
 `@lbl for`, `break @lbl` / `continue @lbl`; `when expr { patterns -> { } else -> { } }`
 pattern matching (enums, slots with destructuring, literals) with exhaustiveness
-checking; `guard cond else { }`; `break`/`continue`.
+checking; `break`/`continue`.
 
 ### Declarations (top-level constructs)
 
@@ -125,39 +128,54 @@ checking; `guard cond else { }`; `break`/`continue`.
 | `pack Name { fields }` / `pack Empty` | struct; empty packs may omit `{ }` |
 | `pack Tuple<...T> where (...T).length >= 2 { inline for Ty in ...T with index { mixin "$index: $Ty" } }` | variadic tuple template |
 | `enum Color { Red; Green }` | enum |
-| `slot Option { Some(Int); None }` | tagged union |
-| `impl pack Name { methods }` / `impl Spec for Name` | pack methods in the declaring file + trait impls |
-| `func Name.method(args) { ref self -> body }` | extension method outside the declaring file |
-| `spec Name { signatures }` / `spec Into<T>: T { ref self } use as "to${T.typeName}"` | trait or compact callback spec |
-| `node Name(params) { … }` | inheritable type (base class) |
-| `leaf Name(params) : Parent(args) { repl func … }` | final subclass (single inheritance) |
-| `virt func` / `repl func` / `base.method()` | virtual / override / super-call |
+| `variant enum Option { Some(Int); None }` | tagged union |
+| `unsafe union Value { i: Int; d: Double }` | untagged, overlapping storage |
+| `impl Name { members }` / `impl Spec for Name { }` | members / spec implementation |
+| `impl Name:: { }` / `impl Spec for Name:: { }` | statics, reached as `Name::member` |
+| `func Name.method(args) { }` | extension declared outside the type's file |
+| `spec Name { func f[self: Self&](): T }` | capability: `func`, `prop` and `oper` requirements |
+| `spec Name requires Other { }` | a capability the implementor must already have |
 | `typealias T = U` | type alias |
-| `fail ErrSet { V1, V2 }` | error-set declaration |
-| `deco Name { fin field: Type }` | decorator/annotation type; metadata fields must be explicitly immutable |
-| `impl Decorator for Type` | implements a decorator as a bodyless marker contract |
-| `impl Decorator(field: value) for Type` | implements a decorator with immutable compile-time metadata |
-| `impl Decorator for Type::field` / `impl Decorator for Type::*` | decorates one field / every declared pack field |
-| `impl [A, B] for [Type::x, Type::y]` | applies the decorator/target cross-product |
-| `deco Name bind Spec { fields }` | binds a decorator to a spec; the decorated type becomes generic argument zero |
-| `deco Name for [.Pack, .Node] bind [X for .Pack, Y for .Node]` | constrains decorator applications and individual transitive bindings by target |
-| `solo Name { … }` / `wrap Name { … }` / `inject Type` | DI singleton / container / resolve |
-| `flow name(p): T { … yield v }` | lazy generator |
-| `@Reactive func name() { }` | rendering-independent reactive owner |
+| `error ErrSet { V1, V2 }` | error-set declaration |
+| `annot Name { fin field: Type }` | annotation type; metadata fields are immutable |
+| `impl Annot for Type` | bodyless marker conformance |
+| `impl Annot(field: value) for Type` | conformance with compile-time metadata |
+| `impl Annot for Type::field` / `Type::*` | decorates one field / every field |
+| `impl [A, B] for [Type::x, Type::y]` | the decorator/target cross-product |
+| `annot Name bind Spec { fields }` | binds an annotation to a spec |
+| `solo Name { }` / `wrap Name { }` / `inject Type` | DI singleton / container / resolve |
+| `@Reactive func name() { }` | reactive owner |
 | `bridge target { func sigs }` | FFI extern declarations |
-| `zone Name { … }` / `zone std { … }` | named namespace (`Name::member`); the same path may be opened many times and merges |
-| `test "name" { }` / `test .All "suite"` | one test / bodyless file-level aggregate suite |
+| `realm Name { }` | named namespace (`Name::member`); reopenable and merging |
+| `test "name" { }` | one test |
 
-### Object-model members (inside `impl`/`node`/`solo` bodies)
+Removed since earlier drafts of this document: `node` / `leaf` / `virt` /
+`repl` / `base` (inheritance, replaced by `dyn` spec dispatch), `hook`,
+`flow` / `yield` (generators are now the library types `Sequence<T>` and
+`Flow<T>`), `slot` (now `variant enum`), `fail` (now `error`), `deco` (now
+`annot`), and `zone` (now `realm`). None of them are keywords.
 
-`hook name { }` (lifecycle callback), `prop name: T { }` (computed property),
-`ctor(params) { }` (secondary constructor), and `dtor { }` (destructor).
-Inside ordinary `impl Type { }`
-blocks only `prop`, `func`, `async func`, and `flow` members are accepted. Index
-overloading is standalone: `impl oper[] for Type { ref self, index -> ... }`
-and `impl oper[]= for Type { mut ref self, index, value -> ... }`. Extension
-methods use `func Type.method(...) { ref self -> }`, and infix extension
-functions use `infx Type.method(...)`.
+### Members inside an `impl`
+
+`prop name: T { }` (computed property), `ctor(params) { }` (secondary
+constructor), `dtor { }` (destructor), `func`, `async func`, and `oper`.
+
+A receiver is declared in brackets with a borrow sigil: `[self: Self&]` for a
+shared borrow, `[self: Self!]` for an exclusive one. Extensions are
+`func Type.method(...)`. An infix call is declared as a macro,
+`macro $a @to $b`.
+
+Operators are declared with `oper`, either beside the type or - for the
+families that have a spec - inside that spec's impl:
+
+```azora
+oper[] [self: Grid&](index: Int): Int { ... }
+
+impl Order for Version {
+    oper<=> [self: Self&](rhs: Self&) { ... }
+}
+```
+
 
 ### Variadic tuples
 
@@ -198,25 +216,36 @@ it is used by `value as String` casts and does not create `.toString`.
 
 ### Memory model
 
+No garbage collector; ownership is tracked and checked.
+
 `alloc <expr>` (heap pointer; `alloc [a,b,c]` enables pointer arithmetic),
-`deref ptr` / `*ptr` deref, `*ptr = v` store, `drop <expr>` (advisory free under GC),
-`unsafe { }`, `isolated(expr)` (deep copy), `zone alloc { }` /
-`zone alloc { }` (scoped arenas). Pointer arithmetic: `ptr + n`,
-`ptr - n`, `ptr1 - ptr2`, `ptr1 == ptr2`.
+`*ptr` deref, `*ptr = v` store, `purge <expr>` (release), `take <expr>`
+(transfer ownership), `unsafe { }`, `expr.clone()` (deep copy),
+Pointer arithmetic: `ptr + n`, `ptr - n`, `ptr1 - ptr2`, `ptr1 == ptr2`.
+
+Borrows are sigils on the binding, not keywords: `x&` is shared and read-only,
+`x!` is exclusive and writable.
 
 ### Concurrency
 
-`flow` generators (lazy, suspend at `yield`), `async func { }` / `await t`
-(cooperative async with **real parallelism** on `Dispatchers.Default` — each
-each task gets isolated execution state), `channel()` + `.send`/`.receive`/`.close`,
-`launch { }` (fire-and-forget, joined before exit).
+`async func { }` / `await t` (real parallelism on `Dispatchers.Default`; each
+task gets isolated execution state), `delay <ms>`, `channel()` with
+`.send`/`.receive`/`.close`, and `launch { }` (fire-and-forget, joined before
+exit).
+
+Streams are library types rather than language constructs: `Sequence<T>` is the
+synchronous series, `Flow<T>` the asynchronous one, so a producer is an
+ordinary `func` whose return type says which it is.
+
+Threads, `Mutex` and `Atomic` do not exist yet.
 
 ### Error handling
 
 `throw value`; `try { } catch { name -> body }`; `expr catch fallback`;
 `try expr` (propagate a failable expression to the current failable function);
-`rescue { }` (catch-and-suppress); `fail ErrSet.V` (raise an error);
-`fail defer { }` (runs only on error exit); `defer { }` (LIFO cleanup).
+`rescue { }` (catch-and-suppress); `error ErrSet { A, B }` (declare a set) with
+`T ?! ErrSet` returns and `return .A` to raise; `error defer { }` (runs only on
+an error exit); `defer { }` (LIFO cleanup).
 
 ### Reactivity
 
@@ -241,7 +270,7 @@ field value. Both properties are compile-time-only and must occur in an
 `inline` expression:
 
 ```azora
-deco Persisted for .Pack {
+annot Persisted for .Pack {
     fin ignoreUnknownFields: Bool = false
 }
 
@@ -266,11 +295,12 @@ and limited to the modules named by that metadata.
 
 ### Serialization contracts
 
-`std.serializer` separates the lossless `SerialValue` tree from text formats.
-`Serializer<T>` converts typed values to and from that tree,
-`JsonSerializer<T>` owns JSON text conversion, and `AzonSerializer<T>` owns
-AZON text conversion. `@Serializable` binds all three contracts;
-`@JsonSerializable` and `@AzonSerializable` opt into one text format. Their
+`std.serializer` separates the lossless `SerialValue` tree from the text form.
+`Serializer<T>` converts typed values to and from that tree, and
+`AzonSerializer<T>` owns AZON text conversion. `@Serializable` binds both
+contracts; `@AzonSerializable` binds only the text one. AZON is the sole
+built-in format: any other is written outside the standard library by
+implementing `Serializer<T>` and encoding the resulting tree. Their
 `ignoreUnknownFields` and `encodeDefaults` values are immutable decorator
 metadata and are available to generated inline code through `decoMeta<D>`.
 Bodyless decorator implementations may configure those fields directly; omitted
@@ -303,7 +333,7 @@ non-pack wildcard owners, invalid decorator targets, and applications repeated
 through overlapping explicit/wildcard selectors are compile errors.
 
 The serializer derive emits checked `toSerialValue`/`fromSerialValue` methods
-and the selected JSON/AZON methods before IR generation. `SerialName` controls
+and the `toAzon`/`fromAzon` pair before IR generation. `SerialName` controls
 both encoded and decoded keys, `SerialIgnore` omits a field and restores its
 declared default, and `SerialRequired` forces encoding and rejects absence.
 `ignoreUnknownFields` controls unknown-key rejection; `encodeDefaults` controls
@@ -336,21 +366,35 @@ string interpolation `"$name"`, `"${expr}"`.
 
 Reserved words in the language (see `frontend/Token.kt`):
 
-- **Bindings**: `var` `fin` `let` `threadlocal`
-- **Functions/types**: `func` `return` `pack` `enum` `slot` `typealias` `impl` `spec` `node` `leaf` `virt` `repl` `base`
-- **Control**: `if` `else` `for` `while` `loop` `in` `by` `reverse` `break` `continue` `when` `guard`
-- **Errors/concurrency**: `throw` `try` `catch` `rescue` `fail` `defer` `flow` `yield` `async` `await` `launch`
-- **Memory/FFI/DI**: `alloc` `drop` `unsafe` `isolated` `bridge` `solo` `wrap` `inject`
-- **Reactivity/object model**: `mem` `rem` `ret` `effect` `hook` `prop` `ctor` `dtor`
-- **Metaprogramming**: `inline` `deepinline` `noinline`
-- **Scoping/modules**: `zone` `mod` `use` `expose`
-- **Modifiers/visibility**: `mut` `ref` `out` `shared` `weak` `confine` (a leading `_` on the name is private)
-- **Operators-as-keywords**: `oper` `infx` `as` `is` `null` `deco`
-- **Testing**: `test` `assert` `trace`
+The authoritative list is `AzoraSyntaxVocabulary.reservedKeywords` - 74 words.
+Grouped:
+
+- **Bindings**: `var` `val` `let` `fin` `threadlocal`
+- **Functions and types**: `func` `return` `pack` `enum` `variant` `union`
+  `typealias` `impl` `spec` `prop` `ctor` `dtor` `oper`
+- **Control**: `if` `else` `for` `while` `loop` `in` `by` `reverse` `break`
+  `continue` `when`
+- **Errors**: `throw` `try` `catch` `rescue` `error` `defer` `panic`
+- **Concurrency**: `await` `delay`
+- **Memory and ownership**: `alloc` `purge` `take` `unsafe` `scope`
+- **FFI and DI**: `bridge` `solo` `wrap` `inject`
+- **Reactivity**: `mem` `rem` `ret` `effect`
+- **Metaprogramming**: `inline` `deepinline` `noinline` `macro`
+- **Modules and scoping**: `realm` `import` `use` `expose` `confine`
+- **Annotations**: `annot` `bind`
+- **Contracts and testing**: `out` `test` `assert` `trace`
+- **Expressions**: `as` `is` `null` `true` `false` `with`
+
+`union` is contextual, so `Set.union(other)` still parses as a call.
+
+**Not keywords** (and not in the language): `node` `leaf` `virt` `repl` `base`
+`hook` `flow` `yield` `task` `slot` `fail` `deco` `zone` `mod` `drop` `deref`
+`mut` `ref` `shared` `weak` `shield` `protect` `launch` `async`. `async` is a
+contextual identifier before `func` and `{`; `launch` is a library function.
 
 ---
 
-## Phase 1 — Frontend (`frontend/`)
+## Phase 1 - Frontend (`frontend/`)
 
 Transforms source text into a structured, validated AST. No name resolution
 or type inference happens here.
@@ -371,7 +415,7 @@ or type inference happens here.
 
 **AST node types** (`Ast.kt`): a large sealed hierarchy. Categories:
 
-- **Expressions** (`Expr`): literals (`Int`/`Real`/`String`/`Bool`/`Char`),
+- **Expressions** (`Expr`): literals (`Int`/`Double`/`String`/`Bool`/`Char`),
   `Identifier`, `Binary`, `Unary`, `Call`, `MethodCall`, `Member`, `Index`,
   `Lambda`, `Cast`, `IsCheck`, `NullCoalesce`, `SafeMember`, `Await`, `Yield`,
   `Alloc`, `Deref`, `Isolated`, `MapLit`/`ArrayLiteral`/`TupleLit`/`SetLiteral`,
@@ -391,26 +435,26 @@ All nodes carry `line`, `column`, `length` for error reporting.
 
 ---
 
-## Phase 2 — Semantic Analysis (`semantic/``)
+## Phase 2 - Semantic Analysis (`semantic/``)
 
 Multiple passes. Metaprogramming (CTCE) creates ordering dependencies that
 can't be resolved in one pass, so the core runs as a **fixed-point loop**
 (type resolution ⇄ CTCE) until the AST stabilizes. Orchestrated by
 `SemanticPipeline.kt`.
 
-1. **Top-level CTCE** (`CtfeEvaluator.kt`) — flattens conditional declarations
+1. **Top-level CTCE** (`CtfeEvaluator.kt`) - flattens conditional declarations
    before symbol collection so `SymbolCollector` can see them.
-2. **Symbol Collection** (`SymbolCollector.kt`) — registers all signatures
+2. **Symbol Collection** (`SymbolCollector.kt`) - registers all signatures
    (functions, packs, enums, slots, nodes, …) so forward references work.
    Built-ins (`println`, `channel`, …) are registered here.
-3. **Import Resolution** (`ImportResolver.kt`) — resolves cross-module/stdlib
+3. **Import Resolution** (`ImportResolver.kt`) - resolves cross-module/stdlib
    references (largely handled by `StdlibInjector` + `QualifiedStdRewriter`).
 4. **Type Resolution ⇄ CTCE fixed point** (`TypeResolver.kt`,
-   `CtfeEvaluator.kt`) — resolve/infer types, fold compile-time constructs back
+   `CtfeEvaluator.kt`) - resolve/infer types, fold compile-time constructs back
    into the AST, repeat until stable. Any `inline` node that survives is an error.
-5. **Alloc/Drop Analysis** (`AllocDropAnalyzer.kt`) — liveness, use-before-init,
+5. **Alloc/Drop Analysis** (`AllocDropAnalyzer.kt`) - liveness, use-before-init,
    unused locals (post-CTCE, since generated code may allocate).
-6. **Effect Checking** (`EffectChecker.kt`) — `PURE`/`IMPURE` classification
+6. **Effect Checking** (`EffectChecker.kt`) - `PURE`/`IMPURE` classification
    with fixed-point propagation across the call graph (post-CTCE).
 
 `SymbolTable.kt` holds function/variable symbols with scoped lookup and the
@@ -418,7 +462,7 @@ enum/slot/fail registries.
 
 ---
 
-## Phase 3 — IR Generation (`ir/`)
+## Phase 3 - IR Generation (`ir/`)
 
 - **IrGenerator** (`IrGenerator.kt`): lowers the CTCE-stabilized, type-checked
   AST into typed, target-agnostic IR. Inline functions are skipped (not emitted).
@@ -437,15 +481,15 @@ file for the full hierarchy.
 
 ---
 
-## Phase 4 — Backend (`backend/`)
+## Phase 4 - Backend (`backend/`)
 
 All backends are thin lowering passes from the same optimized IR.
 
 | File | Target | Notes |
 |------|--------|-------|
 | `WasmCodegen.kt` | WebAssembly (WAT) | Full; folded S-exprs, linear memory + host imports. |
-| `LlvmCodegen.kt` | LLVM IR (`.ll`) | Partial — placeholders for closures, defer, compound types, pointers. `lli`/`clang`/`llc` ready. |
-| `IrInterpreter.kt` | (in-memory) | Full direct execution — drives tests, REPL, and the playground. Concurrency runs on `Dispatchers.Default` with real parallelism. |
+| `LlvmCodegen.kt` | LLVM IR (`.ll`) | Partial - placeholders for closures, defer, compound types, pointers. `lli`/`clang`/`llc` ready. |
+| `IrInterpreter.kt` | (in-memory) | Full direct execution - drives tests, REPL, and the playground. Concurrency runs on `Dispatchers.Default` with real parallelism. |
 
 ---
 
@@ -490,10 +534,10 @@ at the right `use`.
 1. **Don't resolve everything in one pass.** Multiple passes with a CTCE
    stabilization loop handle metaprogramming's ordering dependencies.
 2. **Separate declaration semantic from body semantic.** Signatures register
-   (Pass 1) before bodies analyze — forward references just work.
+   (Pass 1) before bodies analyze - forward references just work.
 3. **CTCE before type checking.** Compile-time constructs resolve first so the
    type checker sees clean code.
-4. **CTCE shares the type system.** The evaluator uses the same `IrType` — no
+4. **CTCE shares the type system.** The evaluator uses the same `IrType` - no
    separate interpreter types.
 5. **IR is the portability asset.** Target-agnostic typed IR; backends are thin
    lowering passes. A new target is one file.

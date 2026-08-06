@@ -1,4 +1,4 @@
-# Azora Ownership, Borrowing, Copying, Cloning, and Moving — DIP Implementation Profile
+# Azora Ownership, Borrowing, Copying, Cloning, and Moving - DIP Implementation Profile
 
 > Status: partly implemented in Azora `0.0.5`.
 
@@ -6,29 +6,29 @@
 
 | Section | State |
 |---------|-------|
-| §1 capability specs (`Clone`, `Copy requires Clone`) | **done** — specs in `std/traits/traits.az`, impls generated in `std/traits/core.az`. There is no third capability for moving: every value can be given away, so `take` asks nothing of its operand |
+| §1 capability specs (`Clone`, `Copy requires Clone`) | **done** - specs in `std/traits/traits.az`, impls generated in `std/traits/core.az`. There is no third capability for moving: every value can be given away, so `take` asks nothing of its operand |
 | §2–§6, §24 the four binding modes | **done** |
 | §7 binding mutability vs ownership capability | **done** |
-| §8 implicit copying | **done** — a named non-`Copy` value passed by value is rejected |
-| §9 `.clone()` | **done** — a `bridge spec Clone` member; the compiler supplies a field-wise clone, and a written `impl` overrides it |
-| §10 `take` | **done** — move recorded, use-after-take reported, including across control flow: a move inside a loop is rejected (the next iteration would use it), and a move every branch makes outlives the branch |
-| §11 moving a field out | **done** — a field is spent on its own (`take a.db` leaves the rest of `a` usable and only `a.db` unreadable), and moving one out asks the same access a write does, so a shared borrow of the owner is rejected |
-| §12 borrows, including the exclusivity rules | **done** — a mutable borrow is exclusive for its lifetime, the owner cannot be read or moved while one is live, shared borrows coexist, and a borrow cannot give the value away: `take`/`lend` on a borrowed parameter, receiver or binding is rejected |
-| §13 borrow origins `T&[a]` | **done** — an origin must name a borrowed parameter or the receiver, and a `return` rooted in a binding must be one of them. Lifetimes themselves stay inferred |
-| §13 lending (`a: return T` / `lend a`) | **done** — ownership goes to the callee and comes back, so a non-`Copy` value can be passed in more than once; `lend` and `return` are required to agree |
+| §8 implicit copying | **done** - a named non-`Copy` value passed by value is rejected |
+| §9 `.clone()` | **done** - a `bridge spec Clone` member; the compiler supplies a field-wise clone, and a written `impl` overrides it |
+| §10 `take` | **done** - move recorded, use-after-take reported, including across control flow: a move inside a loop is rejected (the next iteration would use it), and a move every branch makes outlives the branch |
+| §11 moving a field out | **done** - a field is spent on its own (`take a.db` leaves the rest of `a` usable and only `a.db` unreadable), and moving one out asks the same access a write does, so a shared borrow of the owner is rejected |
+| §12 borrows, including the exclusivity rules | **done** - a mutable borrow is exclusive for its lifetime, the owner cannot be read or moved while one is live, shared borrows coexist, and a borrow cannot give the value away: `take`/`lend` on a borrowed parameter, receiver or binding is rejected |
+| §13 borrow origins `T&[a]` | **done** - an origin must name a borrowed parameter or the receiver, and a `return` rooted in a binding must be one of them. Lifetimes themselves stay inferred |
+| §13 lending (`a: return T` / `lend a`) | **done** - ownership goes to the callee and comes back, so a non-`Copy` value can be passed in more than once; `lend` and `return` are required to agree |
 | §20 capabilities as generic constraints | **done** |
 | §21 derivation rules | **done** for packs, enums and tagged unions |
 | §22 diagnostics | **done** for the take / implicit-copy / rebind / mutate cases |
-| §17 optional `take` | **done** — `take opt.require()` and the `opt.take()` shorthand yield the value and leave the optional `null`; taking out of an empty optional is caught |
-| §18 smart pointers | **done** — `Unique`, `Shared`, `SyncShared` and `Weak` carry the capabilities that match how each one owns |
-| §15 async ownership | **done** — a borrowed parameter still read after an `await` or `delay` is rejected, with the three fixes named; a borrow that ends before the suspension is an ordinary borrow |
-| §16 closure captures | **done** for what a body shows — borrow and clone captures are accepted, and a `take` inside a closure moves the outer binding, in an `async` closure as much as a plain one. Which closures *escape* is not analysed, so an escaping capture is not yet required to be explicit |
+| §17 optional `take` | **done** - `take opt.require()` and the `opt.take()` shorthand yield the value and leave the optional `null`; taking out of an empty optional is caught |
+| §18 smart pointers | **done** - `Unique`, `Shared`, `SyncShared` and `Weak` carry the capabilities that match how each one owns |
+| §15 async ownership | **done** - a borrowed parameter still read after an `await` or `delay` is rejected, with the three fixes named; a borrow that ends before the suspension is an ordinary borrow |
+| §16 closure captures | **done** for what a body shows - borrow and clone captures are accepted, and a `take` inside a closure moves the outer binding, in an `async` closure as much as a plain one. Which closures *escape* is not analysed, so an escaping capture is not yet required to be explicit |
 | §14 destruction | **not implemented** |
-| §19 non-movable types | **removed** — every value is movable |
+| §19 non-movable types | **removed** - every value is movable |
 
 Enforced today: which values may be duplicated, which may be given away, which
-may not be used after being given away, **borrow exclusivity** — a mutable
-borrow is the only live path to its owner for as long as it lasts — and that a
+may not be used after being given away, **borrow exclusivity** - a mutable
+borrow is the only live path to its owner for as long as it lasts - and that a
 borrow does not outlive the call it was made for, whether it is named as the
 origin of a returned borrow or held across a suspension.
 
@@ -45,10 +45,10 @@ Three places where the implementation deliberately differs from the text below:
   strings are immutable values rather than owned buffers, so treating them as
   copyable is sound and is what every existing program assumes.
 - **`Unit` has no capabilities.** It carries nothing, so there is no value to
-  move, clone or copy — and a `clone` taking one would need a `void` parameter.
+  move, clone or copy - and a `clone` taking one would need a `void` parameter.
 - **`clone` is compiler-supplied.** `Clone` is a `bridge spec`, so a conforming
   type gets a field-wise clone for free and only writes an `impl` when its
-  duplication needs saying — that one then wins.
+  duplication needs saying - that one then wins.
 - **The capabilities are named `Clone` and `Copy`.** There is no third one for
   moving: every value can be given away with `take`.
 
@@ -133,7 +133,7 @@ impl Clone for UserProfile {
 ```
 
 An `impl` of a spec member may omit its return type and take the one the spec
-declared — the type is still *declared*, once, on the contract, so this does not
+declared - the type is still *declared*, once, on the contract, so this does not
 contradict `DO_NOT_INFER_RETURN_TYPE.MD`.
 
 ---
@@ -142,8 +142,8 @@ contradict `DO_NOT_INFER_RETURN_TYPE.MD`.
 
 Azora separates two independent properties:
 
-1. **Binding mutability** — may the name be rebound to another value?
-2. **Value mutability** — may the value be mutated through this owner?
+1. **Binding mutability** - may the name be rebound to another value?
+2. **Value mutability** - may the value be mutated through this owner?
 
 | Keyword | Binding | Value | Reassignment | Value mutation |
 |---|---|---|---:|---:|
@@ -381,7 +381,7 @@ UShort
 UInt
 ULong
 Float
-Real
+Double
 Decimal
 small value packs containing only Copy fields
 ```
@@ -729,8 +729,8 @@ When a public API must state the origin of a returned borrow, the return type ma
 ### Lending: ownership that comes back
 
 `take` spends a value. Sometimes a function needs to *own* its argument while it
-runs — to write through it freely, to hand it on, to hold it in a structure it
-builds — without the caller losing it for good. Writing that with `take` costs
+runs - to write through it freely, to hand it on, to hold it in a structure it
+builds - without the caller losing it for good. Writing that with `take` costs
 the caller the value; writing it with a borrow costs the callee the ownership.
 
 A parameter marked `return` says the ownership comes home:
@@ -744,7 +744,7 @@ func main() {
     var x = 4
     var y = 8
     var sum = add(lend x, lend y)
-    trace x   // 4 — ownership came back, so `x` is usable again
+    trace x   // 4 - ownership came back, so `x` is usable again
 }
 ```
 
@@ -755,7 +755,7 @@ anything else never received ownership to return. Each is reported against the
 other:
 
 ```
-line 4: cannot lend to parameter 'a' of 'f' — it does not give ownership back;
+line 4: cannot lend to parameter 'a' of 'f' - it does not give ownership back;
         declare it 'a: return …' to lend to it, or write 'take' to give the
         value away
 
@@ -763,7 +763,7 @@ line 4: parameter 'a' of 'f' gives ownership back, so its argument is lent;
         write 'lend' before it
 ```
 
-What this buys is the case `take` cannot express — a value that is not `Copy`
+What this buys is the case `take` cannot express - a value that is not `Copy`
 going into a function more than once:
 
 ```azora
@@ -773,7 +773,7 @@ fin a = inspect(lend handle)
 fin b = inspect(lend handle)   // fine: the first call gave it back
 ```
 
-Any number of parameters may be marked, and each is independent — a function may
+Any number of parameters may be marked, and each is independent - a function may
 take three values on loan and return all three.
 
 A borrow may not be marked `return`. A borrow already leaves the caller owning
@@ -796,23 +796,23 @@ of their operand: that it is the operand's to give. A borrow is not.
 ```azora
 func relay(h: Handle&): Int {
     return sink(take h)
-    // line 2: cannot take 'h' — 'h' is borrowed, so this function does not own
+    // line 2: cannot take 'h' - 'h' is borrowed, so this function does not own
     //         it; take the owner instead, or declare 'h' by ownership so there
     //         is something to give away
 }
 ```
 
 The same applies to an exclusive borrow, to a borrowed receiver (`take self` in
-a `[self: Self&]` method), and to a binding that holds a borrow — that last one
+a `[self: Self&]` method), and to a binding that holds a borrow - that last one
 names the owner it is standing in for:
 
 ```
-line 6: cannot take 'b' — 'b' is a borrow of 'h', which owns nothing
+line 6: cannot take 'b' - 'b' is a borrow of 'h', which owns nothing
 ```
 
 Without this, a borrow could be spent: the callee gives the caller's value away
 for good, and the owner is never told. It is the check that makes `&` mean what
-§12 says it means, and the reason a borrow may not be marked `return` — both
+§12 says it means, and the reason a borrow may not be marked `return` - both
 come down to a borrow having no ownership to pass on.
 
 A `return` parameter *is* owned while the call runs, so it may be given away
@@ -826,7 +826,7 @@ handing it some costs the caller the value and buys the callee nothing.
 func look(v: Handle&): Int { return 1 }
 
 fin a = look(take h)
-// line 3: cannot take 'h' to parameter 'v' of 'look' — the parameter borrows,
+// line 3: cannot take 'h' to parameter 'v' of 'look' - the parameter borrows,
 //         so it never takes ownership and the value would be given away for
 //         nothing; write 'h.&' to borrow it for the call
 ```
@@ -1196,8 +1196,8 @@ Cloning a weak reference duplicates the non-owning handle, not the object.
 **Removed.** Every value in Azora can be given away, so there is no capability to
 withhold and nothing for a type to opt out of.
 
-A type that genuinely requires a stable address — pinned async state,
-self-referential data, an object registered with a native API by pointer — should
+A type that genuinely requires a stable address - pinned async state,
+self-referential data, an object registered with a native API by pointer - should
 be held behind a handle that owns it, rather than being made unmovable itself.
 
 ---
@@ -1253,7 +1253,7 @@ before whatever holds it. An explicit `impl` always wins.
 
 A field typed by the pack's *own* type parameter never withholds a capability:
 `pack Store<T> { var value: T }` says nothing until it is instantiated. A
-`union` derives nothing — it reinterprets its storage, so nothing about it can be
+`union` derives nothing - it reinterprets its storage, so nothing about it can be
 copied field-wise.
 
 ### `Copy`
@@ -1276,7 +1276,7 @@ Automatically derive when:
 
 `Clone` is the permissive one and `Copy` the strict one, and the difference is
 the point of the model. A field that is a list or a buffer does not block
-`Clone` — a deep copy duplicates the whole value. It does block `Copy`, because
+`Clone` - a deep copy duplicates the whole value. It does block `Copy`, because
 `Copy` makes duplication *implicit*, so a pack holding a collection is left out
 and handing it over asks for `take` or `.clone()` in writing.
 
@@ -1307,7 +1307,7 @@ Clear diagnostics are essential. These are what the compiler emits today.
 ### Missing `take`
 
 ```text
-line 11: cannot pass 'file' by ownership — 'File' is not Copy;
+line 11: cannot pass 'file' by ownership - 'File' is not Copy;
          transfer ownership with 'take file',
          or create an independent value with 'file.clone()'
 ```
@@ -1318,7 +1318,7 @@ always is, because every value can be given away.
 ### Use after take
 
 ```text
-line 6: use of taken value 'file' — its ownership transferred at line 5;
+line 6: use of taken value 'file' - its ownership transferred at line 5;
         use 'file.clone()' instead when both owners need a value
 ```
 
@@ -1331,7 +1331,7 @@ line 7: no method 'clone' on Raw
 ### Invalid mutable borrow
 
 ```text
-line 9: cannot borrow mutably for parameter 'n' through 'config' —
+line 9: cannot borrow mutably for parameter 'n' through 'config'  - 
         its value is immutable; declare it 'var' (or 'let' to fix only the name)
 ```
 
@@ -1344,13 +1344,13 @@ line 8: cannot reassign immutable binding 'user'
 ### Mutating `fin`
 
 ```text
-line 7: cannot assign to member 'theme' through 'settings' — its value is
+line 7: cannot assign to member 'theme' through 'settings' - its value is
         immutable; declare it 'var' (or 'let' to fix only the name)
 ```
 
 ### Borrow across `await`
 
-Not implemented — borrows are erased at call sites and lifetimes are not yet
+Not implemented - borrows are erased at call sites and lifetimes are not yet
 checked. The intended shape:
 
 ```text

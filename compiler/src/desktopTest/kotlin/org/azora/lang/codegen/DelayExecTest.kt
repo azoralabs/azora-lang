@@ -23,7 +23,7 @@ import kotlin.test.assertEquals
  * `delay <ms>` suspends the current task.
  *
  * On LLVM it lowers to libc's `usleep`; the Wasm MVP target has no host clock to
- * sleep against, so it degrades to a no-op there — in both cases the program has
+ * sleep against, so it degrades to a no-op there - in both cases the program has
  * to still run and produce its output, which is what these check.
  */
 class DelayExecTest {

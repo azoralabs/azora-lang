@@ -20,7 +20,7 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /**
- * Tests for arr@[org.azora.lang.stdlib.StdlibInjector] under the realm/import model:
+ * Tests for [org.azora.lang.stdlib.StdlibInjector] under the realm/import model:
  *
  * - Library symbols live in realms (`realm std { ... }`) and are
  *   name-mangled (`std.math::abs` → `std__math__abs`).
@@ -83,7 +83,7 @@ class StdlibInjectionTest {
     // ---- transitive + shadowing ----
 
     @Test fun transitiveStdlibCallsResolve() {
-        // std::lcm uses std::gcd internally — both must inject.
+        // std::lcm uses std::gcd internally - both must inject.
         assertEquals("36", run("import std.io\nimport std.math\nfunc main() {\n    std::println(std::lcm(12, 18))\n}"))
     }
 
@@ -145,7 +145,7 @@ class StdlibInjectionTest {
         val validationErrors = AstValidator().validate(serializer)
 
         assertTrue(validationErrors.isEmpty(), validationErrors.toString())
-        assertEquals(59, serializer.items.count { it is TopLevel.Test })
+        assertEquals(56, serializer.items.count { it is TopLevel.Test })
         assertEquals(1, serializer.items.filterIsInstance<TopLevel.Test>().count { it.method.name == "All" })
         assertTrue(
             serializer.items.filterIsInstance<TopLevel.Deco>()
@@ -163,7 +163,7 @@ class StdlibInjectionTest {
         val generated = derived.program.items.filterIsInstance<TopLevel.Impl>()
             .single { it.typeName == "SerializerMetadataFixture" && it.methods.isNotEmpty() }
         assertEquals(
-            setOf("toSerialValue", "fromSerialValue", "toJson", "fromJson", "toAzon", "fromAzon"),
+            setOf("toSerialValue", "fromSerialValue", "toAzon", "fromAzon"),
             generated.methods.mapTo(mutableSetOf()) { it.name },
         )
         val deriveImports = derived.program.items.filterIsInstance<TopLevel.UseImport>()
@@ -244,7 +244,7 @@ class StdlibInjectionTest {
         assertEquals("3\n2\n2", run("""
             import std.io
             func main() {
-                var xs: List<Int> = arr@[1, 2, 3]
+                var xs: List<Int> = @arr[1, 2, 3]
                 var entries: Map<String, Int> = ["a": 1, "b": 2]
                 var seen: Set<Int> = ![1, 2, 2]
                 std::println(xs.size)
@@ -419,7 +419,7 @@ class StdlibInjectionTest {
     )
 
     @Test fun anExtensionInAnotherModuleSeesOnlyThePublicSurface() {
-        // The underscore is scoped to the declaring module, not to the type — an
+        // The underscore is scoped to the declaring module, not to the type - an
         // `impl` written elsewhere names the same type but is not inside it.
         val result = Compiler(listOf(modelLibrary)).compile("""
             import std.io

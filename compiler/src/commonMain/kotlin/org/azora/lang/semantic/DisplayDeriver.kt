@@ -30,8 +30,8 @@ import org.azora.lang.frontend.TypeRef
  * The `String` an interpolated value renders to, for a type that implements
  * `Display`.
  *
- * `Display`'s member writes into a `Formatter` rather than returning a string —
- * which is what lets a composite render its parts into one buffer — but
+ * `Display`'s member writes into a `Formatter` rather than returning a string -
+ * which is what lets a composite render its parts into one buffer - but
  * `"${value}"` needs a `String`. Something has to do the three steps between,
  * and doing them as *generated Azora* rather than as a backend intrinsic is
  * what keeps the three backends from each needing their own copy: the result is
@@ -50,7 +50,7 @@ import org.azora.lang.frontend.TypeRef
 object DisplayDeriver {
     /** The generated member's name; [org.azora.lang.ir.IrGenerator] calls it. */
     // Not `__display`: that mangles to the same symbol as the spec's own
-    // `display` member, and the generated body — which calls `display` — would
+    // `display` member, and the generated body - which calls `display` - would
     // call itself.
     const val MEMBER = "__displayString"
 

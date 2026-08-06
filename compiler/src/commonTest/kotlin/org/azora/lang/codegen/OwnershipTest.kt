@@ -265,7 +265,7 @@ class OwnershipTest {
     """))
 
     // A union reinterprets its storage, so nothing about it can be derived
-    // field-wise — which makes it the case where a capability really is absent.
+    // field-wise - which makes it the case where a capability really is absent.
 
     @Test fun cloningANonCloneableTypeIsRejected() = rejects("""
         import std.traits
@@ -278,7 +278,7 @@ class OwnershipTest {
         }
     """, "no method 'clone'")
 
-    // Every value can be given away, so `take` asks nothing of its operand —
+    // Every value can be given away, so `take` asks nothing of its operand -
     // even a union, which derives no capability at all.
     @Test fun takeAsksNothingOfItsOperand() = accepts("""
         import std.traits
@@ -369,7 +369,7 @@ class OwnershipTest {
             var h = Handle(std::listOf<String>())
             fin n = consume(h)
         }
-    """, "cannot pass 'h' by ownership — 'Handle' is not Copy")
+    """, "cannot pass 'h' by ownership - 'Handle' is not Copy")
 
     @Test fun theTransferDiagnosticNamesBothFixes() = rejects("""
         $nonCopyable
@@ -409,7 +409,7 @@ class OwnershipTest {
 
     // -- borrow origins (§13) ------------------------------------------------
 
-    // `String&[a]` says the result is borrowed from `a` — part of the signature,
+    // `String&[a]` says the result is borrowed from `a` - part of the signature,
     // so it binds the body as much as the type does.
 
     @Test fun aReturnedBorrowMayNameItsOrigin() = accepts("""
@@ -430,7 +430,7 @@ class OwnershipTest {
     @Test fun aByValueParameterCannotBeAnOrigin() = rejects("""
         func first(a: String, b: String&): String&[a] { return b }
         func main() {}
-    """, "cannot borrow from 'a' — it is passed by value, so it does not outlive the call")
+    """, "cannot borrow from 'a' - it is passed by value, so it does not outlive the call")
 
     @Test fun aBorrowMayComeFromEitherOfSeveralOrigins() = accepts("""
         func choose(a: String&, b: String&, pick: Bool): String&[a, b] {
@@ -474,7 +474,7 @@ class OwnershipTest {
             var h = Handle(std::listOf<String>())
             fin a = look(take h)
         }
-    """, "cannot take 'h' to parameter 'v' of 'look' — the parameter borrows")
+    """, "cannot take 'h' to parameter 'v' of 'look' - the parameter borrows")
 
     @Test fun theBorrowDiagnosticNamesTheSigilToWrite() = rejects("""
         $nonCopyable
@@ -595,7 +595,7 @@ class OwnershipTest {
             func detach[self: Self&](): Int { return consume(take self.db) }
         }
         func main() {}
-    """, "cannot take 'self.db' — 'self' is a shared borrow, which may not be changed")
+    """, "cannot take 'self.db' - 'self' is a shared borrow, which may not be changed")
 
     @Test fun anExclusiveReceiverMayMoveAFieldOut() = accepts("""
         $app
@@ -609,7 +609,7 @@ class OwnershipTest {
         $app
         func detach(a: App&): Int { return consume(take a.db) }
         func main() {}
-    """, "cannot take 'a.db' — 'a' is a shared borrow")
+    """, "cannot take 'a.db' - 'a' is a shared borrow")
 
     @Test fun anExclusiveParameterMay() = accepts("""
         $app
@@ -628,14 +628,14 @@ class OwnershipTest {
         func sink(h: Handle): Int { return 1 }
         func relay(h: Handle&): Int { return sink(take h) }
         func main() {}
-    """, "cannot take 'h' — 'h' is borrowed, so this function does not own it")
+    """, "cannot take 'h' - 'h' is borrowed, so this function does not own it")
 
     @Test fun anExclusiveBorrowCannotBeGivenAwayEither() = rejects("""
         $nonCopyable
         func sink(h: Handle): Int { return 1 }
         func relay(h: Handle!): Int { return sink(take h) }
         func main() {}
-    """, "cannot take 'h' — 'h' is borrowed, so this function does not own it")
+    """, "cannot take 'h' - 'h' is borrowed, so this function does not own it")
 
     @Test fun aBoundBorrowNamesTheOwnerItCannotGiveAway() = rejects("""
         $nonCopyable
@@ -645,7 +645,7 @@ class OwnershipTest {
             fin b: Handle& = h.&
             fin n = sink(take b)
         }
-    """, "cannot take 'b' — 'b' is a borrow of 'h', which owns nothing")
+    """, "cannot take 'b' - 'b' is a borrow of 'h', which owns nothing")
 
     @Test fun aBorrowedReceiverCannotBeGivenAway() = rejects("""
         $nonCopyable
@@ -654,7 +654,7 @@ class OwnershipTest {
             func give[self: Self&](): Int { return sink(take self) }
         }
         func main() {}
-    """, "cannot take 'self' — 'self' is borrowed, so this function does not own it")
+    """, "cannot take 'self' - 'self' is borrowed, so this function does not own it")
 
     // Nor lent, for the same reason: lending is ownership too.
     @Test fun aBorrowCannotBeLentOnward() = rejects("""
@@ -662,7 +662,7 @@ class OwnershipTest {
         func sink(h: return Handle): Int { return 1 }
         func relay(h: Handle&): Int { return sink(lend h) }
         func main() {}
-    """, "cannot lend 'h' — 'h' is borrowed, so this function does not own it")
+    """, "cannot lend 'h' - 'h' is borrowed, so this function does not own it")
 
     @Test fun anOwnedParameterMayStillBeGivenAway() = accepts("""
         $nonCopyable
@@ -672,7 +672,7 @@ class OwnershipTest {
     """)
 
     // A lent parameter really is owned while the call runs, so it may be passed
-    // on — the loan is what the callee gives back, not what it holds.
+    // on - the loan is what the callee gives back, not what it holds.
     @Test fun aLentParameterMayBeGivenAway() = accepts("""
         $nonCopyable
         func sink(h: Handle): Int { return 1 }
@@ -728,7 +728,7 @@ class OwnershipTest {
             var x = 1
             fin n = f(lend x)
         }
-    """, "cannot lend to parameter 'a' of 'f' — it does not give ownership back")
+    """, "cannot lend to parameter 'a' of 'f' - it does not give ownership back")
 
     @Test fun aReturningParameterIsLentTo() = rejects("""
         func f(a: return Int): Int { return a }

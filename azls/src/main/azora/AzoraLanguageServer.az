@@ -91,12 +91,10 @@ func isKeywordRange(source: String, start: Int, end: Int): Bool {
         rangeIs(source, start, end, "typealias") || rangeIs(source, start, end, "scope") ||
         rangeIs(source, start, end, "variant") || rangeIs(source, start, end, "import") ||
         rangeIs(source, start, end, "use") ||
-        rangeIs(source, start, end, "as") || rangeIs(source, start, end, "guard") ||
-        rangeIs(source, start, end, "is") || rangeIs(source, start, end, "infx") ||
-        rangeIs(source, start, end, "oper") || rangeIs(source, start, end, "annot") ||
+        rangeIs(source, start, end, "as") || rangeIs(source, start, end, "is") || rangeIs(source, start, end, "oper") || rangeIs(source, start, end, "annot") ||
         rangeIs(source, start, end, "bind") || rangeIs(source, start, end, "error") ||
         rangeIs(source, start, end, "alloc") || rangeIs(source, start, end, "purge") ||
-        rangeIs(source, start, end, "unsafe") || rangeIs(source, start, end, "isolated") ||
+        rangeIs(source, start, end, "unsafe") ||
         rangeIs(source, start, end, "await") || rangeIs(source, start, end, "bridge") ||
         rangeIs(source, start, end, "solo") || rangeIs(source, start, end, "inject") ||
         rangeIs(source, start, end, "wrap") || rangeIs(source, start, end, "mem") ||
@@ -149,8 +147,7 @@ func contextualWhereIsKeyword(source: String, start: Int, end: Int): Bool {
         if isIdentifierPart(c) {
             fin wordEnd = index + 1
             while index > 0 && isIdentifierPart(charAt(source, index - 1)) { index -= 1 }
-            if isFunctionDeclarationRange(source, index, wordEnd) ||
-                rangeIs(source, index, wordEnd, "infx") {
+            if isFunctionDeclarationRange(source, index, wordEnd) {
                 // A function constraint follows its complete parameter list;
                 // a parameter is allowed to be named `where`.
                 return findFrom(source, wordEnd, start, ")") >= 0

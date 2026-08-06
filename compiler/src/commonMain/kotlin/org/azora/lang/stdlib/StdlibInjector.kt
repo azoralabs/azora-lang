@@ -39,10 +39,10 @@ import org.azora.lang.putIfAbsentCompat
  * Bundled-library symbols are **import-gated**: a file sees a module's names
  * only after importing it. With the bundled stdlib that looks like:
  *
- * - `import std.math` — access to that module while preserving its realm path (`math::abs(x)`),
- * - `import std.*` / `import std.{math, concurrency}` — wildcard/grouped module imports,
- * - `import std.math.abs` — selective import of listed names,
- * - `import std.*` — every module below that namespace,
+ * - `import std.math` - access to that module while preserving its realm path (`math::abs(x)`),
+ * - `import std.*` / `import std.{math, concurrency}` - wildcard/grouped module imports,
+ * - `import std.math.abs` - selective import of listed names,
+ * - `import std.*` - every module below that namespace,
  * - importing a module never creates bare aliases for declarations inside a realm,
  * - compile-time type functions may instead use a complete module-plus-realm path,
  *   such as `std.traits.std::promote!(Int, Double)`.
@@ -86,7 +86,7 @@ class StdlibInjector private constructor(
             if (additionalSources.isEmpty() && configOverrides.isEmpty()) return standard
             // Seeded with the standard library's compile-time lists so a package
             // source can iterate `Numbers` exactly as a stdlib file does. The lists
-            // are bound while the stdlib is parsed, so it has to be read first —
+            // are bound while the stdlib is parsed, so it has to be read first -
             // reading the map before that yields nothing to iterate.
             AzStdlib.loadPrograms()
             val typeListEnv = AzStdlib.comptimeLists.toMutableMap()
@@ -117,7 +117,7 @@ class StdlibInjector private constructor(
          * it must match the *end* of the declared module, and the leading
          * segments the path does not spell are the package's own prefix. In a
          * multi-package workspace that is what lets
-         * `azora-render/src/render.az` declare `mod engine.render` — the
+         * `azora-render/src/render.az` declare `mod engine.render` - the
          * package supplies `engine`, the file supplies `render`.
          *
          * Without a `src` root the whole path must match, so a single-directory
@@ -143,7 +143,7 @@ class StdlibInjector private constructor(
                 return
             }
             // Folder-index `b/b.az` denotes `mod ….b`, so the path carries one
-            // segment more than the module — which is why this is checked before
+            // segment more than the module - which is why this is checked before
             // any length guard rejects it.
             if (segments.size >= 2 &&
                 segments.size <= moduleSegments.size + 1 &&
@@ -212,7 +212,7 @@ class StdlibInjector private constructor(
         /**
          * Top-level items that must be injected into every unit unconditionally,
          * gathered from `expose mod …` declarations (and the conventional
-         * `<root>.core` module). Kept as raw items — in particular a `deepinline
+         * `<root>.core` module). Kept as raw items - in particular a `deepinline
          * realm { … }` block is injected whole so CTCE flattens it downstream,
          * exactly as it would inside its own module.
          */
@@ -224,7 +224,7 @@ class StdlibInjector private constructor(
         /**
          * Per-module `expose use …` re-exports. When a program imports [module]
          * (or [module] is auto-injected via `expose mod`), each (path, selected)
-         * pair here is also imported transitively — e.g. `std.char` re-exporting
+         * pair here is also imported transitively - e.g. `std.char` re-exporting
          * `std.char.core` so a bare `import std.char` suffices.
          */
         val exportedImportsByModule = LinkedHashMap<String, MutableList<Pair<String, String?>>>()
@@ -237,7 +237,7 @@ class StdlibInjector private constructor(
     private fun normalizedTypeName(name: String): String =
         name.substringBefore('<').substringAfter("__")
 
-    /** The bundled-library module providing [name] ("std.math"), or null — used for error hints. */
+    /** The bundled-library module providing [name] ("std.math"), or null - used for error hints. */
     fun moduleOf(name: String): String? = index.moduleOfName[name]
 
     /**
@@ -266,7 +266,7 @@ class StdlibInjector private constructor(
 
     /**
      * Rejects imports that name a namespace/folder rather than an actual module
-     * file. `import std` fails because there is no `std` module — only modules
+     * file. `import std` fails because there is no `std` module - only modules
      * *under* `std` (`std.math`, `std.container`, …). Callers that want every
      * module below a namespace write `import std.*`; a specific one, `import
      * std.container`. Unknown roots (e.g. a user's own module) are left alone.
@@ -288,7 +288,7 @@ class StdlibInjector private constructor(
                 // typo'd or user-defined root is not falsely rejected here).
                 if (known.any { it.startsWith("$path.") }) {
                     errors.add(
-                        "cannot 'import $path': '$path' is a namespace, not a module — " +
+                        "cannot 'import $path': '$path' is a namespace, not a module - " +
                             "import a specific module such as 'import $path.<name>', or 'import $path.*' " +
                             "to pull in every module below it (line ${item.line})"
                     )
@@ -346,7 +346,7 @@ class StdlibInjector private constructor(
                                 when {
                                     export != null && export.declaration !in visibleDeclarations ->
                                         errors.add(
-                                            "line $line: undefined type '$qualified' — '${ref.name}' is provided by " +
+                                            "line $line: undefined type '$qualified' - '${ref.name}' is provided by " +
                                                 "'${export.module}': add 'use ${export.module}'",
                                         )
                                     export == null && visibleExports.isNotEmpty() -> {
@@ -834,7 +834,7 @@ class StdlibInjector private constructor(
     private fun importedItems(program: Program): Map<String, TopLevel> {
         val visible = LinkedHashMap<String, TopLevel>()
         // Seed with the program's own imports, plus the re-exports of any
-        // `expose mod` library that is auto-injected into every unit — its
+        // `expose mod` library that is auto-injected into every unit - its
         // `expose use …` declarations apply to importers transitively.
         val seeds = ArrayDeque<Pair<String, String?>>()
         for (item in program.items) {
@@ -861,7 +861,7 @@ class StdlibInjector private constructor(
     }
 
     /**
-     * Every library module this [program] can name — its own imports expanded
+     * Every library module this [program] can name - its own imports expanded
      * transitively through re-exports, plus the always-on modules.
      *
      * Used to decide whether an extension declared on a common type is actually
@@ -959,7 +959,7 @@ class StdlibInjector private constructor(
         index.moduleVisibility[module]?.let { it == ModuleVisibility.PUBLIC } ?: true
 
     private fun itemsVisibleFromImport(path: String, selected: String?): Map<String, TopLevel> {
-        // `import path.*` — wildcard: the exact module at `path` (if any) plus every
+        // `import path.*` - wildcard: the exact module at `path` (if any) plus every
         // descendant module. This is the only form that pulls in a whole namespace.
         if (selected == "*") {
             val result = LinkedHashMap<String, TopLevel>()
@@ -978,7 +978,7 @@ class StdlibInjector private constructor(
             val module = index.modules[path] ?: return emptyMap()
             return module[selected]?.let { mapOf(selected to it) } ?: emptyMap()
         }
-        // `import path` — plain: `path` must name an actual module file, or resolve to
+        // `import path` - plain: `path` must name an actual module file, or resolve to
         // a single `module.item` selection. A bare namespace/folder (e.g. `std`, which
         // has no `std.az`) pulls in nothing; `validateImports` rejects it up front.
         if (index.modules[path] != null && isExternallyImportable(path)) return index.modules[path]!!
@@ -1272,7 +1272,7 @@ class StdlibInjector private constructor(
     /**
      * The member part of a possibly realm-mangled name.
      *
-     * `realm Secret { func _hidden }` mangles to `Secret___hidden` — a `__`
+     * `realm Secret { func _hidden }` mangles to `Secret___hidden` - a `__`
      * separator immediately followed by the member's own underscore. Splitting on
      * the last `__` would swallow that underscore and report the member as
      * public, so the separator is the last `__` that is not itself preceded by
@@ -1288,7 +1288,7 @@ class StdlibInjector private constructor(
     /**
      * Rejects references to another module's private declarations.
      *
-     * The declaration is still *injected* — a public function that calls its own
+     * The declaration is still *injected* - a public function that calls its own
      * module's `_helper` has to keep working for whoever imports it. What is
      * withheld is the right to name it from outside, which is what privacy
      * actually means here.
@@ -1311,7 +1311,7 @@ class StdlibInjector private constructor(
             val owner = index.moduleOfName[name]
             val shown = name.replace("__", "::")
             errors.add(
-                "'$shown' is private to ${owner?.let { "module '$it'" } ?: "the module that declares it"} — " +
+                "'$shown' is private to ${owner?.let { "module '$it'" } ?: "the module that declares it"} - " +
                     "a leading underscore keeps a declaration inside the module that writes it",
             )
         }
@@ -1426,7 +1426,7 @@ class StdlibInjector private constructor(
                 // A `meta` is a compile-time macro definition, not a dependency
                 // root. Registering its name keeps it available to the macro
                 // expander, but its arm templates must NOT be treated as injection
-                // dependencies: an arm like `arr@[…] => std::arrayOf(…)` references
+                // dependencies: an arm like `@arr[…] => std::arrayOf(…)` references
                 // every collection factory the macro *could* expand to, and pulling
                 // those eagerly drags the whole container library into every program
                 // (including un-optimized builds where dead-code elimination cannot
@@ -1444,7 +1444,7 @@ class StdlibInjector private constructor(
             collectNamesFromAnnotations(it.annotations, names)
             collectNamesFromTypeAnnotation(TypeAnnotation.Explicit(it.type), names)
             // A default value is real code that runs at every call site which
-            // omits the argument, so whatever it names has to be injected too —
+            // omits the argument, so whatever it names has to be injected too -
             // otherwise a constant used *only* as a default is never pulled in
             // and the call lowers to a reference this unit never defines.
             it.defaultValue?.let { default -> collectNamesFromExpr(default, names) }
@@ -1591,17 +1591,29 @@ class StdlibInjector private constructor(
                 val item = index.items[expr.name]
                 if (item != null && item !is TopLevel.Func) names.add(expr.name)
                 // `Vec3f::zero` is one identifier (`Vec3f__zero`) by the time it gets
-                // here, and the member lives on whatever `Vec3f` names — so the base
+                // here, and the member lives on whatever `Vec3f` names - so the base
                 // has to be pulled in too, the same as for a `Type::member` call.
-                if ("__" in expr.name) names.add(expr.name.substringBeforeLast("__"))
+                if ("__" in expr.name) {
+                    names.add(expr.name.substringBeforeLast("__"))
+                    // A realm-qualified *type* keeps its bare name, so `std::SerialValue`
+                    // arrives as `std__SerialValue` while the declaration is `SerialValue`.
+                    // Without the tail the type is never injected and the reference
+                    // fails to resolve.
+                    names.add(expr.name.substringAfterLast("__"))
+                }
             }
             is Expr.Call -> {
                 names.add(expr.callee)
                 // A `Type::member` static call (e.g. `Array::fill`) mangles to
                 // `Type__member`. The member is provided by an `impl realm for Type`
                 // block, which is only attached when the base type itself is pulled
-                // in — so also mark the base type as referenced.
-                if ("__" in expr.callee) names.add(expr.callee.substringBeforeLast("__"))
+                // in - so also mark the base type as referenced.
+                if ("__" in expr.callee) {
+                    names.add(expr.callee.substringBeforeLast("__"))
+                    // `std::SerialField(…)` constructs a realm-scoped pack, whose
+                    // declaration is the bare tail; see the identifier case above.
+                    names.add(expr.callee.substringAfterLast("__"))
+                }
                 expr.args.forEach { collectNamesFromExpr(it, names) }
             }
             is Expr.MethodCall -> {

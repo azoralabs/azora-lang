@@ -29,7 +29,7 @@ import kotlin.test.assertTrue
  *
  * `"${value}"` calls `Display` and nothing else, so a type that has not said
  * how it prints does not print. Before this, interpolating a pack emitted the
- * backend's value representation — in the interpreter, the field map itself,
+ * backend's value representation - in the interpreter, the field map itself,
  * so `"${Vec2(1, 2)}"` produced `{__type=Vec2, x=1, y=2}` and a pack's private
  * layout appeared in program output.
  */

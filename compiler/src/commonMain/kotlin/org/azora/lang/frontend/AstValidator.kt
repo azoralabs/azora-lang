@@ -42,7 +42,7 @@ class AstValidator {
         // Custom decorators declared via `deco Name { … }` are valid annotation names.
         customDecos = program.items.filterIsInstance<TopLevel.Deco>().map { it.name }.toSet()
 
-        // Top-level runtime var/let are not thread-safe — only fin allowed
+        // Top-level runtime var/let are not thread-safe - only fin allowed
         for (item in program.items) {
             when (item) {
                 is TopLevel.VarDecl -> {
@@ -130,7 +130,7 @@ class AstValidator {
     /**
      * Validates the stability decorators: `@experimental` and `@stable` may not
      * both appear on the same declaration, and when a `since` version is given
-     * (`@Experimental(since: "0.0.1")`) it must be a string literal.
+     * (`@Experimental(since: "0.1")`) it must be a string literal.
      */
     private fun validateStability(annotations: List<Annotation>, errors: MutableList<String>) {
         for (ann in annotations) {
@@ -146,7 +146,7 @@ class AstValidator {
         }
         // @experimental/@stable already carry `since`; don't also add a standalone @since.
         if (since != null && (experimental != null || stable != null)) {
-            errors.add("line ${since.line}: @since is redundant with @Experimental(since:)/@Stable(since:) — use only one")
+            errors.add("line ${since.line}: @since is redundant with @Experimental(since:)/@Stable(since:) - use only one")
         }
         for (ann in annotations.filter { it.name == "Experimental" || it.name == "Stable" }) {
             val s = ann.namedArgs.firstOrNull { it.first == "since" }?.second
@@ -154,13 +154,13 @@ class AstValidator {
                 errors.add("line ${ann.line}: @${ann.name}(since: ...) requires a string version literal")
             }
         }
-        // `@Since("0.0.1")` — single positional string argument.
+        // `@Since("0.1")` - single positional string argument.
         since?.let {
             if (it.args.size != 1 || it.args[0] !is Expr.StringLiteral) {
                 errors.add("line ${it.line}: @since requires a single string version argument")
             }
         }
-        // `@Deprecated(since: "0.4.0", replacement: "X")` — string named arguments.
+        // `@Deprecated(since: "0.1", replacement: "X")` - string named arguments.
         for (ann in annotations.filter { it.name == "Deprecated" }) {
             for ((key, value) in ann.namedArgs) {
                 if (value !is Expr.StringLiteral) {
@@ -276,7 +276,7 @@ class AstValidator {
         when (stmt) {
             is Stmt.Return -> true
             // `return .Variant` fails the function, which leaves it as surely as a
-            // value return does — a body that can only fail still terminates.
+            // value return does - a body that can only fail still terminates.
             is Stmt.Throw -> true
             // `inline for` bodies are expanded later; a return inside one counts.
             is Stmt.InlineFor -> hasReturnInBody(stmt.body)

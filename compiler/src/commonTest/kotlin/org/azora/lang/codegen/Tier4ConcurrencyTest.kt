@@ -6,10 +6,10 @@ import org.azora.lang.backend.IrInterpreter
 import kotlin.test.*
 
 /**
- * Tier 4 — concurrency. Starting with `flow`/`yield` generators.
+ * Tier 4 - concurrency. Starting with `flow`/`yield` generators.
  *
  * A `flow` generator runs its body when called, collecting `yield`ed values into a
- * list (eager evaluation), and returns that list — so it composes with `for x in …`.
+ * list (eager evaluation), and returns that list - so it composes with `for x in …`.
  */
 class Tier4ConcurrencyTest {
 

@@ -106,7 +106,7 @@ class IrGenerator(private val table: SymbolTable) {
         for (i in nameScopes.indices.reversed()) {
             nameScopes[i][name]?.let { return it }
         }
-        return name // global — no mangling
+        return name // global - no mangling
     }
 
     /** Look up the mangled name skipping [depth] scopes. */
@@ -309,7 +309,7 @@ class IrGenerator(private val table: SymbolTable) {
     }
 
     private fun lowerEffectBody(body: List<Stmt>): IrStmt =
-        IrStmt.Scope(lowerEffectStatements(body), alloc = false)
+        IrStmt.Scope(lowerEffectStatements(body))
 
     /**
      * Generates a typed [IrProgram] from the given AST.
@@ -326,7 +326,7 @@ class IrGenerator(private val table: SymbolTable) {
      * A default argument is lowered in the *caller's* scope, so a default that
      * names a constant declared in another module resolves to nothing there and
      * degrades to an untyped global reference. Substituting the literal keeps a
-     * default what it reads as — a compile-time constant — and avoids emitting a
+     * default what it reads as - a compile-time constant - and avoids emitting a
      * cross-module global that the unit never defines.
      */
     private val constantLiterals = mutableMapOf<String, IrExpr>()
@@ -420,7 +420,7 @@ class IrGenerator(private val table: SymbolTable) {
                 }
                 is TopLevel.Enum -> listOf(IrTopLevel.Enum(item.name, item.variants))
                 is TopLevel.Pack -> {
-                    // `bridge pack X` — a compiler-provided type (primitives, Reflected);
+                    // `bridge pack X` - a compiler-provided type (primitives, Reflected);
                     // no struct is emitted.
                     if (item.isBridge) emptyList()
                     else {
@@ -479,7 +479,7 @@ class IrGenerator(private val table: SymbolTable) {
         // A declared `ctor` builds the value it is a member of, so calling
         // `Model(w, h)` must run it rather than filling fields positionally.
         // Each one gets a factory that allocates with field defaults, runs the
-        // ctor against the fresh value, and hands it back — a plain function, so
+        // ctor against the fresh value, and hands it back - a plain function, so
         // every backend gets the behaviour without knowing about constructors.
         program.items.filterIsInstance<TopLevel.Impl>().flatMap { item ->
             val struct = table.lookupStruct(item.typeName)
@@ -551,7 +551,7 @@ class IrGenerator(private val table: SymbolTable) {
      * Collects a dynamic-dispatch table for every spec that has at least one
      * concrete `pack` implementer whose `impl` methods all resolve to real
      * functions. Backends without native trait objects use this to emit a
-     * type-id switch; the interpreter/JS ignore it. Decorator contracts and
+     * type-id switch; the interpreter ignores it. Decorator contracts and
      * marker specs (no method signatures) are skipped.
      */
     private fun buildSpecTables(): List<IrSpecTable> {
@@ -565,7 +565,7 @@ class IrGenerator(private val table: SymbolTable) {
                 .filterNot { it.value.isProperty }
                 .map { (name, sig) -> IrSpecMethod(name, sig.paramTypes, sig.returnType) }
             // A spec property (`prop size[self: Self&]: Int`) dispatches exactly
-            // like a nullary method — the backend reads `value.size` through the
+            // like a nullary method - the backend reads `value.size` through the
             // same stub. An implementer that satisfies the property with a plain
             // field has no getter to point at; that one type drops out of the
             // property's switch rather than out of the table, so its ordinary
@@ -771,12 +771,7 @@ class IrGenerator(private val table: SymbolTable) {
                 table.exportCurrentScope(friendSymbols)
                 nameScopes.removeLast()
                 table.popScope()
-                if (stmt.alloc) {
-                    // `realm alloc { }` — arena scoping on top of the shared scope.
-                    result.add(IrStmt.Scope(lowered, alloc = true))
-                } else {
-                    result.addAll(lowered)
-                }
+                result.addAll(lowered)
             } else {
                 // A statement's own pending work must not fall into a block
                 // nested inside it, so each body starts from an empty pair.
@@ -802,7 +797,7 @@ class IrGenerator(private val table: SymbolTable) {
     /**
      * Applies the implicit copy a `Copy` value gets when it is used by value.
      *
-     * `var b = a` on a `Copy` pack has to leave `a` and `b` independent — that
+     * `var b = a` on a `Copy` pack has to leave `a` and `b` independent - that
      * is what `Copy` means. A primitive already copies because it is passed by
      * value; an aggregate is a pointer, so it needs one made.
      *
@@ -968,7 +963,7 @@ class IrGenerator(private val table: SymbolTable) {
                 val stmts = lowerBody(stmt.body)
                 popNameScope()
                 table.popScope()
-                IrStmt.Scope(stmts, stmt.alloc)
+                IrStmt.Scope(stmts)
             }
             is Stmt.Assert -> {
                 val cond = lowerExpr(stmt.condition)
@@ -1052,7 +1047,7 @@ class IrGenerator(private val table: SymbolTable) {
                     val iter = lowerExpr(stmt.iterable)
                     val reset = IrStmt.ExprStmt(IrExpr.MethodCall(iter, "reset", emptyList(), IrType.Unit))
                     val cond = IrExpr.MethodCall(iter, "hasNext", emptyList(), IrType.Bool)
-                    IrStmt.Scope(listOf(reset, IrStmt.While(cond, body, stmt.label)), alloc = false)
+                    IrStmt.Scope(listOf(reset, IrStmt.While(cond, body, stmt.label)))
                 } else {
                     IrStmt.Loop(body, stmt.label)
                 }
@@ -1078,7 +1073,7 @@ class IrGenerator(private val table: SymbolTable) {
                         ?.toSet()
                         ?: referencedNames(loweredBody).intersect(reactiveNames)
                     activeEffects.add(ActiveEffect(dependencies, stmt.body))
-                    IrStmt.Scope(loweredBody, alloc = false)
+                    IrStmt.Scope(loweredBody)
                 }
             }
             is Stmt.WithContext -> {
@@ -1089,7 +1084,7 @@ class IrGenerator(private val table: SymbolTable) {
                 } finally {
                     contextualValues.removeLast()
                 }
-                IrStmt.Scope(body, alloc = false)
+                IrStmt.Scope(body)
             }
             is Stmt.Yield -> IrStmt.Yield(lowerExpr(stmt.value))
             is Stmt.When -> {
@@ -1190,7 +1185,7 @@ class IrGenerator(private val table: SymbolTable) {
      * Routes an interpolated pack through its `Display`.
      *
      * `"${v}"` on a pack used to emit whatever the backend's value
-     * representation happened to look like — in the interpreter, the field map
+     * representation happened to look like - in the interpreter, the field map
      * itself. A pack says how it prints by implementing `Display`, and this is
      * where that implementation is reached: `std::format` builds the
      * `Formatter`, hands it to `display`, and returns what was written.
@@ -1409,7 +1404,7 @@ class IrGenerator(private val table: SymbolTable) {
                     return IrExpr.Call(userCast, listOf(inner), result)
                 }
                 when {
-                    // `x as? T` / `std::dyncast<T>(x)` — runtime-checked downcast to `T?`:
+                    // `x as? T` / `std::dyncast<T>(x)` - runtime-checked downcast to `T?`:
                     // the value if it is a `T`, otherwise null.
                     expr.kind == CastKind.DYNAMIC ->
                         IrExpr.Call(
@@ -1427,7 +1422,7 @@ class IrGenerator(private val table: SymbolTable) {
                     expr.kind == CastKind.STATIC && target == IrType.String &&
                         innerType is IrType.Named && table.lookupEnum(innerType.name) != null ->
                         stringifyEnum(inner)
-                    // `x as String` / `std::cast<String>(x)` — converting cast: stringify
+                    // `x as String` / `std::cast<String>(x)` - converting cast: stringify
                     // the value via the single-part string-template machinery (equivalent
                     // to "${x}"), which every backend already supports. `as*` (reinterpret)
                     // never stringifies.
@@ -1436,7 +1431,7 @@ class IrGenerator(private val table: SymbolTable) {
                     target == innerType -> inner
                     // Upcast a concrete `pack` to a spec it implements: mark it as a
                     // representation coercion so native backends can box it into a fat
-                    // pointer for dynamic dispatch. The interpreter/JS treat a NumCast
+                    // pointer for dynamic dispatch. The interpreter treats a NumCast
                     // of a non-numeric as identity (the value keeps its `__type`).
                     expr.kind != CastKind.DYNAMIC && target is IrType.Named && innerType is IrType.Named &&
                         table.lookupSpec(target.name)?.isDecorator == false &&
@@ -1456,7 +1451,7 @@ class IrGenerator(private val table: SymbolTable) {
             is Expr.InlineForArgs ->
                 error("'inline for' argument reached IR generation at line ${expr.line}")
             is Expr.InCheck -> {
-                // `x in xs` — membership, the same shape a `contains` call has.
+                // `x in xs` - membership, the same shape a `contains` call has.
                 val v = lowerExpr(expr.value)
                 val c = lowerExpr(expr.collection)
                 val call = IrExpr.MethodCall(c, "contains", listOf(v), IrType.Bool)
@@ -1537,7 +1532,7 @@ class IrGenerator(private val table: SymbolTable) {
                     return IrExpr.Call("__ptrDiff", listOf(left, right), IrType.Int)
                 }
                 // A primitive left operand may still have a declared operator, but only
-                // one that names its operand — see the resolver for why.
+                // one that names its operand - see the resolver for why.
                 if (left.type !is IrType.Named && left.type in IrType.numericTypes) {
                     operOverloadName(expr.op)?.let { operName ->
                         val key = operandKeyOf(right.type)
@@ -1563,7 +1558,7 @@ class IrGenerator(private val table: SymbolTable) {
                         // `a < b` → `(a <=> b).isLess`. The `<=>` call is the
                         // receiver, so it happens once, and which of `Compare` or
                         // `PartialCompare` answers decides what the predicate
-                        // means — `NaN` makes all four false without the compiler
+                        // means - `NaN` makes all four false without the compiler
                         // knowing anything about NaN.
                         //
                         // The predicate is reached as a direct call rather than a
@@ -1654,7 +1649,7 @@ class IrGenerator(private val table: SymbolTable) {
                         if (left.type == IrType.String || right.type == IrType.String) IrType.String
                         else numericResultType(left.type, right.type)
                     }
-                    else -> left.type // bitwise / shift — keep the left operand type
+                    else -> left.type // bitwise / shift - keep the left operand type
                 }
                 if (type == IrType.String) {
                     left = stringifyEnum(left)
@@ -1665,7 +1660,7 @@ class IrGenerator(private val table: SymbolTable) {
                 IrExpr.Binary(left, op, right, type)
             }
             is Expr.Call -> {
-                // Value call `receiver(args)` — lower the receiver (a function value)
+                // Value call `receiver(args)` - lower the receiver (a function value)
                 // and emit an indirect call carrying it.
                 expr.receiver?.let { recv ->
                     val target = lowerExpr(recv)
@@ -1686,7 +1681,7 @@ class IrGenerator(private val table: SymbolTable) {
                 val actualCallee = table.aliasMap[calleeName] ?: calleeName
                 val struct = table.lookupStruct(actualCallee) ?: table.lookupStruct(calleeName)
                 if (struct != null && struct.isUnion) {
-                    // `Value(f: 1.5)` — exactly one member is named, and it is the
+                    // `Value(f: 1.5)` - exactly one member is named, and it is the
                     // one that initializes the shared slot. The checker has already
                     // rejected anything else.
                     val named = expr.args.filterIsInstance<Expr.NamedArg>().firstOrNull()
@@ -1701,14 +1696,14 @@ class IrGenerator(private val table: SymbolTable) {
                     )
                 }
                 if (struct != null) {
-                    // Handle named arguments — reorder to field order; omitted fields use their defaults.
+                    // Handle named arguments - reorder to field order; omitted fields use their defaults.
                     val args = if (expr.args.any { it is Expr.NamedArg }) {
                         val slots = mapNamedArguments(expr.args, struct.fields.map { it.name })
                         struct.fields.mapIndexed { index, f ->
                             coerceToFloat(lowerExpr(slots[index] ?: f.default ?: Expr.NullLiteral), f.type)
                         }
                     } else {
-                        // Positional — pad omitted trailing fields with their defaults (`Pack<T>()`).
+                        // Positional - pad omitted trailing fields with their defaults (`Pack<T>()`).
                         val padded = expr.args.mapIndexed { i, a ->
                             struct.fields.getOrNull(i)?.let { coerceToFloat(lowerExpr(a), it.type) }
                                 ?: lowerExpr(a)
@@ -1722,7 +1717,7 @@ class IrGenerator(private val table: SymbolTable) {
                         padded
                     }
                     // A declared `ctor` of the same arity takes precedence over
-                    // filling fields positionally — it is the constructor the
+                    // filling fields positionally - it is the constructor the
                     // author wrote, and skipping it would leave its work undone.
                     val declaredCtor = table.lookupFunction(ctorFactoryName(actualCallee, expr.args.size))
                     if (declaredCtor != null && expr.args.none { it is Expr.NamedArg }) {
@@ -1754,7 +1749,7 @@ class IrGenerator(private val table: SymbolTable) {
                         if (arg is Expr.Spread) listOf(IrExpr.Spread(lowerExpr(arg.array)))
                         else listOf(lowerExpr(arg))
                     }
-                    // Handle named arguments — reorder to param order (pre-spread only)
+                    // Handle named arguments - reorder to param order (pre-spread only)
                     val args = if (expr.args.any { it is Expr.NamedArg } && func.paramNames.isNotEmpty()) {
                         val slots = mapNamedArguments(expr.args, func.paramNames)
                         func.paramNames.indices.mapNotNull { slots[it]?.let(::lowerExpr) }
@@ -1939,7 +1934,7 @@ class IrGenerator(private val table: SymbolTable) {
                 IrExpr.Call("__deref", listOf(target), inner)
             }
             is Expr.Isolated -> {
-                // `take opt.require()` — the primitive that moves a value out of
+                // `take opt.require()` - the primitive that moves a value out of
                 // an optional. The optional is emptied; see [emptyAfterTake].
                 val unwrapped = expr.value
                 if (expr.op == OwnershipOp.TAKE && unwrapped is Expr.MethodCall &&
@@ -1947,13 +1942,10 @@ class IrGenerator(private val table: SymbolTable) {
                 ) {
                     emptyAfterTake(unwrapped.target, lowerExpr(unwrapped.target))
                 }
-                val value = lowerExpr(expr.value)
-                // `take` moves the value; there is nothing to copy. `clone` and
-                // `isolated` both produce an independent one.
-                // `lend` moves the value in exactly as `take` does; what differs
-                // is only that the caller keeps the right to it afterwards.
-                if (expr.op == OwnershipOp.TAKE || expr.op == OwnershipOp.LEND || expr.op.isBorrow) value
-                else IrExpr.Call("__isolated", listOf(value), value.type)
+                // Every ownership operation moves or borrows; none duplicates,
+                // so the value passes through unchanged. Duplication is
+                // `v.clone()`, an ordinary method call.
+                lowerExpr(expr.value)
             }
             is Expr.Await -> {
                 val task = lowerExpr(expr.value)
@@ -1995,7 +1987,7 @@ class IrGenerator(private val table: SymbolTable) {
             }
             is Expr.Member -> {
                 // NOTE: `.size`/`.length` are left as runtime intrinsics (handled by
-                // each backend) even for compile-time-sized arrays — existing dynamic
+                // each backend) even for compile-time-sized arrays - existing dynamic
                 // arrays (`var a = [1,2,3]; a.add(4); a.length`) rely on the runtime
                 // length. The const `N` drives type identity (`Array<T,3>` ≠
                 // `Array<T,5>`) and future bound checks, not the live element count.
@@ -2036,12 +2028,12 @@ class IrGenerator(private val table: SymbolTable) {
                     if (mangled != null) {
                         val func = table.lookupFunction(mangled)
                         if (func != null && func.params.size == 1 && func.memberCallStyle != MemberCallStyle.METHOD) {
-                            // It's a prop — lower to a method call Type_name(self).
+                            // It's a prop - lower to a method call Type_name(self).
                             return IrExpr.Call(mangled, listOf(target), func.returnType)
                         }
                     }
                     // A property required by a spec (`list.size` where `list: List<T>`)
-                    // has neither a field nor a single impl to name here — the backend
+                    // has neither a field nor a single impl to name here - the backend
                     // dispatches it. Carry the spec's declared type so arithmetic and
                     // comparisons on the result still lower.
                     val specProp = table.lookupSpecProp(tt2.name, expr.name)
@@ -2060,18 +2052,27 @@ class IrGenerator(private val table: SymbolTable) {
                 IrExpr.Member(target, expr.name, memberType)
             }
             is Expr.MethodCall -> {
-                // `x.clone()` with no written member — the compiler-provided
+                // `x.clone()` with no written member - the compiler-provided
                 // `Clone` default is an independent deep copy.
                 if (expr.name == "clone" && expr.args.isEmpty()) {
                     val target = lowerExpr(expr.target)
-                    // A pack registers its conformance under its name; a primitive
-                    // under the spelling of its own type.
-                    val name = (target.type as? IrType.Named)?.name ?: target.type.toString()
+                    // A pack registers its conformance under its name, a
+                    // primitive under the spelling of its own type, and an
+                    // aggregate builtin under its type constructor - matching
+                    // TypeResolver.cloneConformanceName.
+                    val name = when (val t = target.type) {
+                        is IrType.Named -> t.name
+                        is IrType.Array -> "Array"
+                        is IrType.Map -> "Map"
+                        is IrType.Set -> "Set"
+                        is IrType.Tuple -> "Tuple"
+                        else -> t.toString()
+                    }
                     if (table.lookupMethod(name, "clone") == null && table.conformsTo(name, "Clone")) {
                         return IrExpr.Call("__isolated", listOf(target), target.type)
                     }
                 }
-                // `opt.require()` / `opt.take()` — dropping the optional off a
+                // `opt.require()` / `opt.take()` - dropping the optional off a
                 // value is a change of type, not of representation, so it lowers
                 // to the value itself. What makes the read safe is the guard the
                 // parser puts in front of it.
@@ -2235,7 +2236,7 @@ class IrGenerator(private val table: SymbolTable) {
                     m to t
                 }
                 // A lambda's receivers are contextual values for its body whether it
-                // named them or inherited them, matching how the resolver typed it —
+                // named them or inherited them, matching how the resolver typed it -
                 // otherwise a bare call that type-checked would fail to lower.
                 if (receiverParams.isNotEmpty()) {
                     contextualValues.addLast(receiverParams.map { (name, t) -> IrExpr.Var(name, t) })

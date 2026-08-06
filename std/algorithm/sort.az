@@ -26,7 +26,7 @@ import std.container.array
  * Provides stable insertion sort, descending sort, sorted check,
  * array reversal, and custom comparator sorting.
  *
- * @since 0.0.1
+ * @since 0.1
  */
 
 realm std {
@@ -38,7 +38,7 @@ realm std {
      * @param arr The array to sort.
      * @return A new array with elements in ascending order.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func sort<T>(arr: Array<T>): Array<T> where T: Order
     out {
         assert it.length == arr.length { "sort must preserve length" }
@@ -67,7 +67,7 @@ realm std {
      * @param arr The array to sort.
      * @return A new array with elements in descending order.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func sortDescending<T>(arr: Array<T>): Array<T> where T: Order
     out {
         assert it.length == arr.length { "sortDescending must preserve length" }
@@ -94,7 +94,7 @@ realm std {
      * @param arr The array to check.
      * @return true if the array is sorted, false otherwise.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func isSorted<T>(arr: Array<T>): Bool where T: Order {
         if arr.length <= 1 { return true }
         for i in 1..<arr.length {
@@ -109,7 +109,7 @@ realm std {
      * @param arr The array to check.
      * @return true if the array is sorted descending, false otherwise.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func isSortedDescending<T>(arr: Array<T>): Bool where T: Order {
         if arr.length <= 1 { return true }
         for i in 1..<arr.length {
@@ -124,7 +124,7 @@ realm std {
      * @param arr The array to reverse.
      * @return A new reversed array.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func reverse<T>(arr: Array<T>): Array<T>
     out {
         assert it.length == arr.length { "reverse must preserve length" }
@@ -144,7 +144,7 @@ realm std {
      * @param arr The array to deduplicate.
      * @return A new array with unique consecutive elements.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func unique<T>(arr: Array<T>): Array<T> {
         if arr.length == 0 { return Array::fill<T>(0) }
         var result: Array<T> = Array::fill<T>(arr.length)
@@ -172,7 +172,7 @@ realm std {
      * @param j The second index.
      * @return A new array with elements swapped.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func swap<T>(arr: Array<T>, i: Int, j: Int): Array<T>
     in {
         assert i >= 0 && i < arr.length { "swap index i out of bounds" }
@@ -195,7 +195,7 @@ realm std {
      * @param n The number of positions to rotate left.
      * @return A new rotated array.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func rotateLeft<T>(arr: Array<T>, n: Int): Array<T> {
         if arr.length == 0 { return Array::fill<T>(0) }
         fin len = arr.length

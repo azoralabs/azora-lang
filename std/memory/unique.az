@@ -12,17 +12,17 @@ module std.memory.unique
  *
  * Unique owning pointer. It models a single owner of one heap allocation.
  *
- * @since 0.0.3
+ * @since 0.1
  */
 
 realm std {
-    @Since("0.0.3")
+    @Since("0.1")
     pack Unique<T> {
         var _raw: T*
         var active: Bool = true
     }
 
-    @Experimental(since: "0.0.3")
+    @Experimental(since: "0.1")
     oper.* [self: Unique<T>&]: T {
         assert self.active { "Unique pointer was released" }
         return self._raw.*
@@ -31,11 +31,11 @@ realm std {
     /**
      * A `Unique` is move-only: it owns its pointee, so it is never `Copy`.
      *
-     * Cloning duplicates the *value*, giving the clone its own allocation —
+     * Cloning duplicates the *value*, giving the clone its own allocation -
      * anything else would leave two owners of one buffer, which is exactly what
      * `Unique` exists to prevent.
      */
-    @Since("0.0.5")
+    @Since("0.1")
     impl Clone for Unique<T> {
         func clone[self: Self&]() {
             assert self.active { "Unique pointer was released" }
@@ -45,21 +45,21 @@ realm std {
 
     impl Unique<T> {
         /** Returns the owned value (panics if already released). */
-        @Experimental(since: "0.0.3")
+        @Experimental(since: "0.1")
         prop get[self: Self&]: T {
             assert active { "Unique pointer was released" }
             return self._raw.*
         }
 
         /** Overwrites the owned value (panics if already released). */
-        @Experimental(since: "0.0.3")
+        @Experimental(since: "0.1")
         func set(value: T) {
             assert active { "Unique pointer was released" }
             self._raw[0] = value
         }
 
         /** Returns the raw `T*` without relinquishing ownership. */
-        @Experimental(since: "0.0.3")
+        @Experimental(since: "0.1")
         prop ptr[self: Self&]: T* {
             assert active { "Unique pointer was released" }
             return self._raw
@@ -69,7 +69,7 @@ realm std {
          * Relinquishes ownership and returns the raw `T*`
          * (the value is no longer freed by the Unique).
          */
-        @Experimental(since: "0.0.3")
+        @Experimental(since: "0.1")
         func release(): T* {
             assert active { "Unique pointer was already released" }
             self.active = false
@@ -77,7 +77,7 @@ realm std {
         }
 
         /** Frees the owned value now (a no-op if already released/disposed). */
-        @Experimental(since: "0.0.3")
+        @Experimental(since: "0.1")
         func dispose() {
             if active {
                 purge self._raw
@@ -87,7 +87,7 @@ realm std {
     }
 
     /** Constructs a `Unique<T>` that takes ownership of a copy of [value]. */
-    @Experimental(since: "0.0.3")
+    @Experimental(since: "0.1")
     func uniqueOf<T>(value: T): Unique<T> {
         return Unique(alloc value, true)
     }

@@ -1,4 +1,4 @@
-# Azora Packs, Impls & Specs — DIP Implementation Profile
+# Azora Packs, Impls & Specs - DIP Implementation Profile
 
 `pack` (structs), `impl` (methods & conformances), and `spec` (traits/interfaces),
 plus the Rust-style dynamic dispatch that ties them together.
@@ -128,7 +128,7 @@ impl Serializer<Value> for JsonWriter {
 
 ## 4. Dynamic dispatch (`dyn`, Rust-style)
 
-A `spec`-typed value carries its concrete type and dispatches at runtime — even
+A `spec`-typed value carries its concrete type and dispatches at runtime - even
 in the native LLVM backend (fat-pointer representation):
 
 ```azora
@@ -144,7 +144,7 @@ func totalArea(shapes: Array<Shape>): Double {
     return t
 }
 
-fin shapes: Array<Shape> = arr@[Circle(1.0) as Shape, Square(2.0) as Shape]
+fin shapes: Array<Shape> = @arr[Circle(1.0) as Shape, Square(2.0) as Shape]
 ```
 
 - Store a concrete value as a spec via `value as Spec`.

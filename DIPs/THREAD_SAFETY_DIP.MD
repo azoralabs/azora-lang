@@ -1,9 +1,9 @@
-# Azora Thread Safety and Multithreading — DIP Proposal
+# Azora Thread Safety and Multithreading - DIP Proposal
 
 > Status: **proposed**. Nothing in this document is implemented in `0.0.5`.
 > Target: `0.0.6`.
 
-Azora already decides *who owns a value* and *who may look at it* — that is
+Azora already decides *who owns a value* and *who may look at it* - that is
 `OWNERSHIP_BORROWING_DIP.md`. This proposal answers the question that model
 leaves open: **on which thread**.
 
@@ -22,7 +22,7 @@ Azora has two kinds of concurrency and they are not the same thing.
 | aspect        | tasks (`async func`, `await`, `delay`, `launch`) | threads (this DIP)  |
 |---------------|--------------------------------------------------|---------------------|
 | unit          | coroutine                                        | OS thread           |
-| suspends with | `await`, `delay`                                 | nothing — it blocks |
+| suspends with | `await`, `delay`                                 | nothing - it blocks |
 | parallel?     | not necessarily                                  | yes                 |
 | owned by      | the scheduler                                    | `JoinHandle`        |
 | governed by   | §15 of the ownership DIP                         | `Send` / `Sync`     |
@@ -49,14 +49,14 @@ exist:
 
 - **`std/parallelism/sync.az`** declares `Guard<T>`, `CountDownLatch<T>`,
   `SpinLock<T>` and `withMutex`. Every one of them names `Mutex` or `Atomic`.
-  **Neither type is defined anywhere** — not in `std/`, not as a compiler
+  **Neither type is defined anywhere** - not in `std/`, not as a compiler
   builtin. The module also declares itself `module std.pareallelism.sync`,
   which is a typo, so it cannot be imported under the name its path implies.
 - **`std/parallelism/channel.az`** declares `Channel<T>` over `Queue<T>` and
   `Mutex`. Because `Mutex` is missing, `channel()` is still a compiler builtin
   registered in `SymbolCollector`, whose own comment says relocation into std is
   "blocked until Channel.az's Mutex/Queue dependencies are restored".
-- **`std/parallelism/thread.az`** declares `sleep`, `spawnAsync` and `joinAll` —
+- **`std/parallelism/thread.az`** declares `sleep`, `spawnAsync` and `joinAll`  - 
   but all three are `async func` over `delay`, so they are *task* helpers
   wearing thread names. `joinAll(count)` waits `count` milliseconds and joins
   nothing.
@@ -67,10 +67,10 @@ names honest, and §12 sets out that migration.
 
 What *is* real and can be built on:
 
-- `SyncShared<T>` (`std/memory/syncshared.az`) — a reference-counted pointer
+- `SyncShared<T>` (`std/memory/syncshared.az`) - a reference-counted pointer
   whose count is documented as synchronised, and which is deliberately `Clone`
   but never `Copy`.
-- `Shared<T>`, `Unique<T>`, `Weak<T>` — the single-thread counterparts.
+- `Shared<T>`, `Unique<T>`, `Weak<T>` - the single-thread counterparts.
 - The capability machinery itself: `bridge spec`, `requires`,
   `impl [A, B] for T`, field-wise derivation, and `where T is C` as a generic
   constraint.
@@ -87,20 +87,20 @@ Add to `std/traits/traits.az`, beside `Clone` and `Copy`:
  *
  * Sending is a move across a thread boundary: exactly one thread owns the
  * value at a time, so what `Send` rules out is not sharing but *unsynchronised
- * bookkeeping* — a reference count two threads could bump at once, or a cache
+ * bookkeeping* - a reference count two threads could bump at once, or a cache
  * that assumes a single writer.
  */
-@Since("0.0.5")
+@Since("0.1")
 bridge spec Send
  
 /**
  * A value that may be *borrowed* from more than one thread at a time.
  *
  * `Sync` is the stronger promise: several threads holding `T&` simultaneously
- * must be sound. It is defined by that sentence and nothing else — `T` is
+ * must be sound. It is defined by that sentence and nothing else - `T` is
  * `Sync` exactly when `T&` is `Send`.
  */
-@Since("0.0.5")
+@Since("0.1")
 bridge spec Sync
 ```
 
@@ -111,12 +111,12 @@ Neither has members. They are claims about a type, not operations on it.
 ### Why `Sync` does not `require` `Send`
 
 `Copy requires Clone` because implicit duplication is explicit duplication the
-compiler inserted — one really is the other. `Send` and `Sync` are independent,
+compiler inserted - one really is the other. `Send` and `Sync` are independent,
 and this DIP is explicit about it so nobody adds the `requires` on symmetry
 grounds:
 
-- A **`Mutex<T>`** whose `T` cannot be shared is `Sync` — the lock is what makes
-  concurrent borrows safe — while remaining `Send` only if `T` is.
+- A **`Mutex<T>`** whose `T` cannot be shared is `Sync` - the lock is what makes
+  concurrent borrows safe - while remaining `Send` only if `T` is.
 - A **lock guard** is `Sync` (borrowing it from another thread is harmless) but
   not `Send`: some platforms require the thread that locked to be the thread
   that unlocks.
@@ -148,13 +148,13 @@ Three lines there carry the weight:
 - **`unsafe union` derives nothing**, exactly as it derives no `Clone` today.
   Reading a member no one wrote is already undefined; doing it from two threads
   does not need a separate rule.
-- **`T&` is `Send` when `T` is `Sync`** — this *is* the definition of `Sync`
+- **`T&` is `Send` when `T` is `Sync`** - this *is* the definition of `Sync`
   from §3, written as a derivation rule so the checker has something to apply.
 - **`T!` is never `Sync`.** An exclusive borrow is exclusive; handing it to two
   threads contradicts the word.
 
-A type carrying a field it should not — a raw pointer it manages itself, a
-handle whose thread-affinity the compiler cannot see — simply fails to derive,
+A type carrying a field it should not - a raw pointer it manages itself, a
+handle whose thread-affinity the compiler cannot see - simply fails to derive,
 and the diagnostic names the field (§11).
 
 ### What the existing types get
@@ -193,16 +193,16 @@ realm std {
      * compiler cannot see, so `JoinHandle` is never `Copy` and `join` takes
      * ownership.
      */
-    @Since("0.0.5")
+    @Since("0.1")
     pack JoinHandle<T> { var _id: Int }
 
     impl JoinHandle<T> {
         /** Waits for the thread and returns what its body returned. */
-        @Since("0.0.5")
+        @Since("0.1")
         func join(self: Self): T ?! ThreadPanic
 
         /** Whether the thread has finished, without waiting. */
-        @Since("0.0.5")
+        @Since("0.1")
         prop isFinished[self: Self&]: Bool
     }
 
@@ -212,15 +212,15 @@ realm std {
      * Everything `body` captures leaves this thread with it, so every capture
      * must be `Send`; the result comes back the same way, so `T` must be too.
      */
-    @Since("0.0.5")
+    @Since("0.1")
     func spawn<T>(body: () -> T): JoinHandle<T> where T is Send
 
-    /** Blocks the calling thread. Not `delay` — nothing here suspends. */
-    @Since("0.0.5")
+    /** Blocks the calling thread. Not `delay` - nothing here suspends. */
+    @Since("0.1")
     func sleepMillis(ms: Int)
 
     /** How many threads the platform can genuinely run at once. */
-    @Since("0.0.5")
+    @Since("0.1")
     prop hardwareThreads: Int
 }
 ```
@@ -235,21 +235,21 @@ exists but is not running is a state with no use and two ways to get it wrong.
 ### Scoped threads
 
 `spawn` requires `Send` captures, which rules out lending a thread a borrow of
-something on the stack — correct in general, needlessly strict when the threads
+something on the stack - correct in general, needlessly strict when the threads
 are joined before the borrow ends. A scope makes that provable:
 
 ```azora
-@Since("0.0.5")
+@Since("0.1")
 pack ThreadScope { var _threads: List<Int> }
 
 impl ThreadScope {
     /** Spawns inside the scope. Captures need only outlive the scope. */
-    @Since("0.0.5")
+    @Since("0.1")
     func spawn<T>[self: Self!](body: () -> T): JoinHandle<T> where T is Send
 }
 
 /** Runs `body`, then joins every thread it spawned before returning. */
-@Since("0.0.5")
+@Since("0.1")
 func withThreads<R>(body: (ThreadScope!) -> R): R
 ```
 
@@ -272,7 +272,7 @@ The name is `withThreads` and not `scope` because `scope` is a keyword in Azora.
 
 `withThreads` is where §13's borrow origins pay off: the guarantee is exactly
 "a borrow taken inside the scope does not outlive it", and the origin syntax
-already says that — §7 spells a signature with one.
+already says that - §7 spells a signature with one.
 
 ---
 
@@ -282,7 +282,7 @@ This is §16 of the ownership DIP with a thread boundary in the middle, and it i
 where most real diagnostics will come from.
 
 The ownership DIP already established that a closure captures by borrow, copy,
-clone, or `take`, and that a `take` inside a closure moves the outer binding —
+clone, or `take`, and that a `take` inside a closure moves the outer binding  - 
 that part is implemented. Threading adds one rule:
 
 > A closure passed to `spawn` may capture a value by borrow only inside
@@ -292,7 +292,7 @@ that part is implemented. Threading adds one rule:
 ```azora
 var config = Config.production()
 
-// rejected — `spawn` outlives `config`, and the capture is a borrow
+// rejected - `spawn` outlives `config`, and the capture is a borrow
 fin h = std::spawn { validate(config.&) }
 
 // take: the thread owns it, and `config` is unusable here afterwards
@@ -310,8 +310,8 @@ fin h = std::spawn { retry(attempts) }
 ```
 
 Which mirrors §15's async rules on purpose. A borrow held across an `await` and
-a borrow shipped to another thread fail for the same reason — the owner may be
-gone — so they should be learned once and the diagnostics should rhyme.
+a borrow shipped to another thread fail for the same reason - the owner may be
+gone - so they should be learned once and the diagnostics should rhyme.
 
 ---
 
@@ -330,52 +330,52 @@ realm std {
      * unforgettable: there is no path to the `T` that does not go through
      * `lock`, so "I forgot to take the mutex" stops being a class of bug.
      */
-    @Since("0.0.5")
+    @Since("0.1")
     pack Mutex<T> { var _value: T
         var _handle: Int }
 
     /**
      * Proof that the lock is held, and the only way to reach the value.
      *
-     * The guard borrows from the mutex — `[self]` — so it cannot outlive it,
+     * The guard borrows from the mutex - `[self]` - so it cannot outlive it,
      * and unlocking happens when the guard's scope ends rather than when
      * someone remembers.
      */
-    @Since("0.0.5")
+    @Since("0.1")
     pack Guard<T> { var _owner: Mutex<T>* }
 
     impl Mutex<T> {
         /** Blocks until the lock is held. */
-        @Since("0.0.5")
+        @Since("0.1")
         func lock[self: Self&](): Guard<T>&[self]
 
         /** Takes the lock if it is free, otherwise returns null. */
-        @Since("0.0.5")
+        @Since("0.1")
         func tryLock[self: Self&](): Guard<T>?&[self]
 
-        /** The value, without locking — sound only because `self` is exclusive. */
-        @Since("0.0.5")
+        /** The value, without locking - sound only because `self` is exclusive. */
+        @Since("0.1")
         func get[self: Self!](): T![self]
     }
 
     impl Guard<T> {
-        @Since("0.0.5")
+        @Since("0.1")
         oper.* [self: Self&]: T
 
-        @Since("0.0.5")
+        @Since("0.1")
         func value[self: Self!](): T![self]
     }
 
-    @Since("0.0.5")
+    @Since("0.1")
     func mutexOf<T>(value: T): Mutex<T> where T is Send
 }
 ```
 
 Three things fall out of that shape, each a bug class removed:
 
-1. **The lock cannot be forgotten** — `_value` is private, so `lock()` is the
+1. **The lock cannot be forgotten** - `_value` is private, so `lock()` is the
    only route in.
-2. **The lock cannot be leaked** — `Guard<T>&[self]` borrows from the mutex, so
+2. **The lock cannot be leaked** - `Guard<T>&[self]` borrows from the mutex, so
    §13's origin check rejects returning a guard from the function that locked.
 3. **The lock is released on scope exit**, including on an early `return`.
 
@@ -385,7 +385,7 @@ ceremony. The type says why it is safe.
 
 Compare against `std/parallelism/sync.az` as it stands today, where `Guard<T>`
 holds `_mutex` and `_value` as two independent fields and exposes
-`func get(): T` — a copy taken under lock and then used outside it. The callback
+`func get(): T` - a copy taken under lock and then used outside it. The callback
 forms (`read(action:)`, `write(action:)`) are safe but cannot express "look at
 it, decide, then modify it" without unlocking in between.
 
@@ -393,29 +393,29 @@ it, decide, then modify it" without unlocking in between.
 
 ```azora
 /** Many readers or one writer. */
-@Since("0.0.5")
+@Since("0.1")
 pack RwLock<T> { var _value: T
     var _handle: Int }
 
 impl RwLock<T> {
-    @Since("0.0.5")
+    @Since("0.1")
     func read[self: Self&](): ReadGuard<T>&[self]
 
-    @Since("0.0.5")
+    @Since("0.1")
     func write[self: Self&](): WriteGuard<T>&[self]
 }
 
 /** Runs its initializer exactly once, however many threads arrive. */
-@Since("0.0.5")
+@Since("0.1")
 pack Once { var _state: Atomic<Int> }
 
 impl Once {
-    @Since("0.0.5")
+    @Since("0.1")
     func call[self: Self&](body: () -> Unit)
 }
 
 /** Waits until a count reaches zero. Replaces the `delay`-based CountDownLatch. */
-@Since("0.0.5")
+@Since("0.1")
 pack Latch { var _remaining: Atomic<Int> }
 ```
 
@@ -427,32 +427,32 @@ pack Latch { var _remaining: Atomic<Int> }
 where the compiler must emit real instructions rather than call into a runtime.
 
 ```azora
-@Since("0.0.5")
+@Since("0.1")
 pack Atomic<T> where T is Copy { var _value: T }
 
 impl Atomic<T> {
-    @Since("0.0.5")
+    @Since("0.1")
     func load[self: Self&](order: Ordering = .Acquire): T
 
-    @Since("0.0.5")
+    @Since("0.1")
     func store[self: Self&](value: T, order: Ordering = .Release)
 
-    @Since("0.0.5")
+    @Since("0.1")
     func swap[self: Self&](value: T, order: Ordering = .AcqRel): T
 
     /** Compare-and-swap. Returns whether it happened. */
-    @Since("0.0.5")
+    @Since("0.1")
     func cas[self: Self&](expected: T, desired: T, order: Ordering = .AcqRel): Bool
 
-    @Since("0.0.5")
+    @Since("0.1")
     func add[self: Self&](delta: T, order: Ordering = .AcqRel): T where T is Number
 }
 
-@Since("0.0.5")
+@Since("0.1")
 enum Ordering { Relaxed, Acquire, Release, AcqRel, SeqCst }
 ```
 
-Every method takes `self&`, not `self!` — an atomic is precisely a value several
+Every method takes `self&`, not `self!` - an atomic is precisely a value several
 shared borrows may write, and that is what makes it `Sync`. It is the one type
 in the language where a shared borrow mutates, which is why it is the one type
 the compiler must know by name.
@@ -465,7 +465,7 @@ thought about ordering, and acquire/release is what they almost always meant.
 Backends: `LlvmCodegen` emits `load atomic` / `store atomic` / `cmpxchg` /
 `atomicrmw` directly. `WasmCodegen` emits the threads-proposal instructions and
 traps where the target lacks them. `IrInterpreter` runs one thread, so every
-ordering is a plain read or write — the same kind of caveat already recorded for
+ordering is a plain read or write - the same kind of caveat already recorded for
 byte reinterpretation.
 
 ---
@@ -476,26 +476,26 @@ With `Mutex` real, `Channel<T>` moves out of the compiler and into `std`,
 closing the `SymbolCollector` note that has been waiting on it:
 
 ```azora
-@Since("0.0.5")
+@Since("0.1")
 pack Channel<T> where T is Send { … }
 
 impl Channel<T> {
     /** Hands the value to the channel. The sender no longer owns it. */
-    @Since("0.0.5")
+    @Since("0.1")
     func send[self: Self&](value: T) ?! ChannelClosed
 
     /** Blocks until a value arrives, or the channel closes. */
-    @Since("0.0.5")
+    @Since("0.1")
     func receive[self: Self&](): T ?! ChannelClosed
 
     /** Takes a value if one is waiting. */
-    @Since("0.0.5")
+    @Since("0.1")
     func tryReceive[self: Self&](): T?
 }
 ```
 
 `send(value: T)` takes ownership, so the ownership model reports a use of the
-sent value afterwards without any channel-specific rule — the existing "use of
+sent value afterwards without any channel-specific rule - the existing "use of
 taken value" diagnostic already says the right thing.
 
 The `where T is Send` on the pack is what makes a channel a *thread* channel: it
@@ -505,7 +505,7 @@ is the type-level statement that values leave the sending thread.
 
 ## 10. The escape hatch
 
-Some types are thread-safe for reasons the compiler cannot see — a handle whose
+Some types are thread-safe for reasons the compiler cannot see - a handle whose
 C library serialises internally, a pointer into memory the OS guarantees. For
 those, and only those:
 
@@ -514,12 +514,12 @@ those, and only those:
  * `libfoo` documents every entry point as internally synchronised, and the
  * handle is opaque to us, so the derivation cannot see what makes this sound.
  */
-@Since("0.0.5")
+@Since("0.1")
 unsafe impl [Send, Sync] for FfiHandle
 ```
 
 `unsafe impl` is new syntax and is the *only* way to claim either capability by
-hand — an ordinary `impl Send for X` is rejected with a message pointing here.
+hand - an ordinary `impl Send for X` is rejected with a message pointing here.
 The asymmetry with `Clone` is intended: writing a wrong `clone` produces a wrong
 value, while writing a wrong `Send` produces a race, and races are not local to
 the type that caused them.
@@ -537,7 +537,7 @@ Same shape as the ownership diagnostics: name the value, say what is wrong, name
 every fix.
 
 ```
-line 12: cannot send 'config' to another thread — 'Config' is not Send because
+line 12: cannot send 'config' to another thread - 'Config' is not Send because
          field 'cache' is a Shared<Entry>, whose reference count is not
          synchronised; use SyncShared<Entry>, or send a 'config.clone()'
 ```
@@ -550,13 +550,13 @@ line 8: closure passed to 'spawn' borrows 'data', which may not outlive the
 ```
 
 ```
-line 31: 'guard' borrows from 'counter' and cannot be returned — the lock would
+line 31: 'guard' borrows from 'counter' and cannot be returned - the lock would
          outlive the mutex; return the value instead, or take the lock in the
          caller
 ```
 
 ```
-line 5: 'impl Send for FfiHandle' cannot be written by hand — Send is derived
+line 5: 'impl Send for FfiHandle' cannot be written by hand - Send is derived
         from a type's fields. If the derivation is wrong because the safety
         comes from outside Azora, write 'unsafe impl Send for FfiHandle' and say
         why in the doc comment
@@ -633,6 +633,6 @@ Independent of any new feature, and worth doing whether or not the rest lands:
    checking each capture (§6) enough? Capture checking gives better
    diagnostics; a bound on the closure type composes better through generics.
    Probably both, with the bound as the backstop.
-4. **Should `Atomic<T>` be `Copy`?** Copying an atomic is almost always a bug —
-   the copy is a different location — but field-wise derivation will make it
+4. **Should `Atomic<T>` be `Copy`?** Copying an atomic is almost always a bug  - 
+   the copy is a different location - but field-wise derivation will make it
    `Copy` unless it is special-cased. It should be special-cased.

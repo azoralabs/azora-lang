@@ -1,4 +1,4 @@
-# Azora Types — DIP Implementation Profile
+# Azora Types - DIP Implementation Profile
 
 The type grammar: named types, generics, nullability, borrows, error types,
 collections, functions, pointers, tuples, `typealias`, and casts.
@@ -150,7 +150,11 @@ if x is Int { … }
 fin ok = value is Serializer
 ```
 
-## 11. Type-level macros & functions
+## 11. Type-level functions
 
-Named type sugar (`vec[T]`), type-macro blocks (`meta type { … }`), and
-compile-time `type` functions are covered in the Meta and CTCE DIPs.
+Compile-time `type` functions are covered in the CTCE DIP.
+
+Type macros are gone: a library can no longer invent type syntax, so a type is
+written with generics and always means the same thing regardless of what is
+imported. `List<T>` rather than `[T]`, `Map<K, V>` rather than `[K: V]`,
+`Tuple<A, B>` rather than `(A, B)`. See the Macro DIP for the full mapping.

@@ -27,7 +27,7 @@ use realm std {
          * Every numeric type clones and copies: they are small immutable
          * values, so duplicating one is a register move and cannot alias.
          */
-        @Since("0.0.5")
+        @Since("0.1")
         impl [Clone, Copy] for Ty
     }
 
@@ -37,10 +37,10 @@ use realm std {
          * an owned buffer, so it copies like the rest.
          *
          * `Unit` is left out: it carries nothing, so there is no value to clone
-         * or copy — and a `clone` taking one would have a `void` parameter,
+         * or copy - and a `clone` taking one would have a `void` parameter,
          * which is not a thing.
          */
-        @Since("0.0.5")
+        @Since("0.1")
         impl [Clone, Copy] for Ty
     }
 }

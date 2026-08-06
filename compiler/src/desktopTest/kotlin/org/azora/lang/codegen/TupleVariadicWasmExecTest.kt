@@ -9,7 +9,7 @@ import kotlin.test.assertEquals
  * Skips when the `wat2wasm`/Node toolchain isn't available.
  *
  * (Wasm lays structs out as packed i32 fields tracked by name in a registry,
- * so the monomorphized name does not appear verbatim in the WAT — execution
+ * so the monomorphized name does not appear verbatim in the WAT - execution
  * output is the meaningful check.)
  */
 class TupleVariadicWasmExecTest {

@@ -26,14 +26,14 @@ import std.container.array
  *
  * Uses the glibc LCG parameters: a=1103515245, c=12345, m=2^31.
  *
- * @since 0.0.1
+ * @since 0.1
  */
 
 realm std {
     /**
      * A pseudo-random number generator.
      */
-    @Since("0.0.1")
+    @Since("0.1")
     pack Random {
         var seed: Int = 12345
     }
@@ -42,7 +42,7 @@ realm std {
         /**
          * Returns the next pseudo-random integer (0 to 2^30 - 1).
          */
-        @Experimental(since: "0.0.1")
+        @Experimental(since: "0.1")
         func next(): Int {
             self.seed = (self.seed * 1103515245 + 12345) % 2147483647
             if self.seed < 0 {
@@ -54,7 +54,7 @@ realm std {
         /**
          * Returns a pseudo-random integer in [0, max).
          */
-        @Experimental(since: "0.0.1")
+        @Experimental(since: "0.1")
         func nextInt(max: Int): Int {
             var n: Int = self.next()
             if max <= 0 { return 0 }
@@ -64,7 +64,7 @@ realm std {
         /**
          * Returns a pseudo-random integer in [min, max].
          */
-        @Experimental(since: "0.0.1")
+        @Experimental(since: "0.1")
         func nextRange(min: Int, max: Int): Int {
             var range: Int = max - min + 1
             return min + self.nextInt(range)
@@ -73,7 +73,7 @@ realm std {
         /**
          * Returns a pseudo-random boolean.
          */
-        @Experimental(since: "0.0.1")
+        @Experimental(since: "0.1")
         func nextBool(): Bool {
             return self.next() % 2 == 0
         }
@@ -82,7 +82,7 @@ realm std {
     /**
      * Shuffles an array in-place using Fisher-Yates algorithm.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func shuffle<T>(arr: Array<T>, rng: Random): Array<T> {
         var result: Array<T> = Array::fill<T>(arr.length)
         var i = 0
@@ -104,7 +104,7 @@ realm std {
     /**
      * Returns a random sample of n elements from the array.
      */
-    @Experimental(since: "0.0.1")
+    @Experimental(since: "0.1")
     func sample<T>(arr: Array<T>, count: Int, rng: Random): Array<T> {
         var shuffled: Array<T> = shuffle<T>(arr, rng)
         var limit: Int = count

@@ -27,8 +27,8 @@ import org.azora.lang.frontend.TypeRef
 /**
  * Expands `inline for X in reflect<*>.withDeco<D> { body }` at compile time.
  *
- * The loop is unrolled once per program declaration carrying decorator `D` — a
- * pack, an enum or a free function — with `X` substituted by that declaration's
+ * The loop is unrolled once per program declaration carrying decorator `D` - a
+ * pack, an enum or a free function - with `X` substituted by that declaration's
  * name. The result is ordinary static code (`X::run(w)` → `Movement::run(w);
  * Physics::run(w)`, or `X(world, time)` → `movement(world, time)`), so it lowers
  * to every backend with no function values.
@@ -38,7 +38,7 @@ import org.azora.lang.frontend.TypeRef
  * `field` (or the decorator's default), `.hasDeco<D>` a boolean, and `.declName`
  * the declaration's own name as a string. Those are the only compile-time
  * context a caller gets here, and they are what lets a library read a decorator's
- * arguments back — the decorator stays the single place the information is
+ * arguments back - the decorator stays the single place the information is
  * written.
  *
  * The pass is fully generic: it attaches no meaning to any decorator and knows
@@ -203,7 +203,7 @@ object ReflectDecoExpander {
          * existing "compile-time-only" diagnostic still reports it.
          */
         private fun reflectQuery(e: Expr): Expr? = when {
-            // `std::reflect<X>.declName` — the declaration's own name.
+            // `std::reflect<X>.declName` - the declaration's own name.
             e is Expr.Member && e.name == "declName" && boundReflect(e.target) ->
                 Expr.StringLiteral(to, e.line, e.column)
 

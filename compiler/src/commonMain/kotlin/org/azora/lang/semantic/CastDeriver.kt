@@ -24,7 +24,7 @@ import org.azora.lang.frontend.TypeRef
  * Gives a cast impl's member the name its *target* makes unique.
  *
  * `DIPs/CAST_DIP.MD` §4 puts the target on the impl rather than on the
- * operator, which is what makes each body checkable — the older `oper as<U>`
+ * operator, which is what makes each body checkable - the older `oper as<U>`
  * had to be correct for every `U` while naming exactly one of them. The cost is
  * that every `Cast` impl for a type names its member `cast`:
  *
@@ -34,8 +34,8 @@ import org.azora.lang.frontend.TypeRef
  * ```
  *
  * so without the target in the name the second collides with the first. This
- * renames each to the operator member the cast dispatch looks for —
- * `operas@Fahrenheit` — before anything else sees it, which is why the symbol
+ * renames each to the operator member the cast dispatch looks for -
+ * `operas@Fahrenheit` - before anything else sees it, which is why the symbol
  * collector and the IR generator need no rule of their own. It is also why
  * `_cast` is never callable by that name: a cast is written `value as To`, and
  * the member is gone by the time any call could resolve to it. Two places deciding

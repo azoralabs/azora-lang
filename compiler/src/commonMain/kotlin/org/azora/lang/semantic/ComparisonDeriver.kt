@@ -34,13 +34,13 @@ import org.azora.lang.frontend.TypeRef
  * `DIPs/OPERATOR_OVERLOADING_DIP.MD` §7: a bodyless `impl [Equal, Order] for T`
  * is the derive request, and an `impl` with a body is the author's own. The
  * generated members are ordinary Azora AST, so the resolver, the lowerer and
- * all three backends see nothing new — the same approach `SerializationDeriver`
+ * all three backends see nothing new - the same approach `SerializationDeriver`
  * takes.
  *
  * **Nothing is derived silently.** Unlike `Clone`, which is derived for any
  * pack that did not say, comparison is derived only where it is written.
- * Equality has semantics — a cache field, an interned id, a tolerance all
- * change what "the same" means — and a compiler that guesses will be wrong for
+ * Equality has semantics - a cache field, an interned id, a tolerance all
+ * change what "the same" means - and a compiler that guesses will be wrong for
  * exactly the types where it matters most.
  */
 object ComparisonDeriver {
@@ -78,7 +78,7 @@ object ComparisonDeriver {
         for ((type, caps) in requested) {
             if (EQUAL in caps) caps.add(HASH)
             // A total order and its equality have to agree, so `Order` implies
-            // both — this is the `requires` chain, made real.
+            // both - this is the `requires` chain, made real.
             if (ORDER in caps) { caps.add(EQUAL); caps.add(HASH) }
         }
 
@@ -213,7 +213,7 @@ object ComparisonDeriver {
     }
 
     /**
-     * `prop hash[self: P&]: ULong` — the field-wise hash, mixed so that field
+     * `prop hash[self: P&]: ULong` - the field-wise hash, mixed so that field
      * order matters and two packs holding the same values in different slots do
      * not collide.
      */

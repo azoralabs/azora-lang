@@ -69,7 +69,7 @@ class CastIsLambdaTest {
         """.trimIndent()))
     }
 
-    // implicit it (simple — no type-dependent ops)
+    // implicit it (simple - no type-dependent ops)
     @Test fun implicitIt() {
         assertEquals("3", run("""
             import std.io

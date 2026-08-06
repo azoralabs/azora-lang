@@ -39,7 +39,7 @@ import std.convert
  * construct it; `setOf` and `emptySet` expose the read-only `Set<T>` view,
  * `mutableSetOf` exposes `MutableSet<T>`.
  *
- * @since 0.0.4
+ * @since 0.1
  */
 
 realm std {
@@ -52,7 +52,7 @@ realm std {
      *
      * @generic T The element type.
      */
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     spec Set<T> {
         /** Number of unique elements. */
         prop size[self: Self&]: Int
@@ -95,7 +95,7 @@ realm std {
      * A Set is cloned by duplicating its elements; it is never `Copy`,
      * because duplicating a collection implicitly would hide an allocation.
      */
-    @Since("0.0.5")
+    @Since("0.1")
     impl Clone for Set
 
     /**
@@ -107,7 +107,7 @@ realm std {
      *
      * @generic T The element type.
      */
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     spec MutableSet<T> : Set<T> {
         /** Adds `element`; returns whether membership changed. */
         func add[self: Self&](element: T): Bool
@@ -128,7 +128,7 @@ realm std {
      *
      * @generic T The element type.
      */
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     @Serializable
     pack LinkedHashSet<T> {
         var data: T* = alloc T[8]
@@ -142,7 +142,7 @@ realm std {
 
     impl LinkedHashSet<T> {
         /** Doubles the backing buffer, copying existing elements. */
-        @Experimental(since: "0.0.4")
+        @Experimental(since: "0.1")
         func growSet[self: Self!]() {
             fin newCap = self.capacity * 2
             let newData = alloc T[newCap]
@@ -156,7 +156,7 @@ realm std {
         }
 
         /** Returns whether `element` is already stored. */
-        @Experimental(since: "0.0.4")
+        @Experimental(since: "0.1")
         func has[self: Self&](element: T): Bool {
             for i in 0..<self.size {
                 if self.data[i] == element { return true }
@@ -277,17 +277,17 @@ realm std {
     // Factories
     // ---------------------------------------------------------------------
 
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     func emptySet<T>(): Set<T> {
         return LinkedHashSet<T>()
     }
 
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     func emptyMutableSet<T>(): MutableSet<T> {
         return LinkedHashSet<T>()
     }
 
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     func setOf<T>(...elements: T): Set<T> {
         var result = LinkedHashSet<T>()
         for i in 0..<elements.size {
@@ -296,7 +296,7 @@ realm std {
         return result
     }
 
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     func mutableSetOf<T>(...elements: T): MutableSet<T> {
         var result = LinkedHashSet<T>()
         for i in 0..<elements.size {
@@ -305,7 +305,7 @@ realm std {
         return result
     }
 
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     func linkedHashSetOf<T>(...elements: T): LinkedHashSet<T> {
         var result = LinkedHashSet<T>()
         for i in 0..<elements.size {
@@ -314,14 +314,14 @@ realm std {
         return result
     }
 
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     func emptyLinkedHashSet<T>(): MutableSet<T> {
         return LinkedHashSet<T>()
     }
 
     // --- HashSet (hash-table, unspecified iteration order; T requires Hash) ---
 
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     @Serializable
     pack HashSet<T> {
         var data: T* = alloc T[8]
@@ -329,7 +329,7 @@ realm std {
         var capacity: Int = 8
     }
 
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     func hashSetOf<T>(...elements: T): HashSet<T> {
         var result = HashSet<T>()
         for i in 0..<elements.size {
@@ -338,7 +338,7 @@ realm std {
         return result
     }
 
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     func emptyHashSet<T>(): MutableSet<T> {
         return HashSet<T>()
     }
@@ -348,7 +348,7 @@ realm std {
      * implicitly.
      */
 
-    @Since("0.0.5")
+    @Since("0.1")
     impl Clone for HashSet {
         func clone[self: Self&]() {
             var copy = HashSet<T>()
@@ -360,7 +360,7 @@ realm std {
     }
 
     impl HashSet<T> {
-        @Experimental(since: "0.0.4")
+        @Experimental(since: "0.1")
         func growSet[self: Self!]() {
             fin newCap = self.capacity * 2
             let newData = alloc T[newCap]
@@ -373,7 +373,7 @@ realm std {
             purge oldData
         }
 
-        @Experimental(since: "0.0.4")
+        @Experimental(since: "0.1")
         func has[self: Self&](element: T): Bool {
             for i in 0..<self.size {
                 if self.data[i] == element { return true }
@@ -494,7 +494,7 @@ realm std {
         }
     }
 
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     oper[] [self: HashSet<T>&](index: Int): T {
         assert index >= 0 && index < self.size {
             "Set index out of bounds"
@@ -502,7 +502,7 @@ realm std {
         return self.data[index]
     }
 
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     impl Into<String> for HashSet<T> {
         prop into[self: Self&]: String {
             var s = "{"
@@ -514,7 +514,7 @@ realm std {
         }
     }
 
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     oper== [self: HashSet<T>&](rhs: Set<T>): Bool {
         if self.size != rhs.size { return false }
         for i in 0..<self.size {
@@ -523,12 +523,12 @@ realm std {
         return true
     }
 
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     oper!= [self: HashSet<T>&](rhs: Set<T>): Bool {
         return !(self == rhs)
     }
 
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     impl HashSet<T> {
         prop hash[self: Self&]: ULong {
             var result = 0 as ULong
@@ -541,7 +541,7 @@ realm std {
 
     // --- TreeSet (sorted via oper<; T requires oper<) ---
 
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     @Serializable
     pack TreeSet<T> {
         var data: T* = alloc T[8]
@@ -549,7 +549,7 @@ realm std {
         var capacity: Int = 8
     }
 
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     func treeSetOf<T>(...elements: T): TreeSet<T> {
         var result = TreeSet<T>()
         for i in 0..<elements.size {
@@ -558,13 +558,13 @@ realm std {
         return result
     }
 
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     func emptyTreeSet<T>(): MutableSet<T> {
         return TreeSet<T>()
     }
 
     impl TreeSet<T> {
-        @Experimental(since: "0.0.4")
+        @Experimental(since: "0.1")
         func growSet[self: Self!]() {
             fin newCap = self.capacity * 2
             let newData = alloc T[newCap]
@@ -577,7 +577,7 @@ realm std {
             purge oldData
         }
 
-        @Experimental(since: "0.0.4")
+        @Experimental(since: "0.1")
         func has[self: Self&](element: T): Bool {
             for i in 0..<self.size {
                 if self.data[i] == element { return true }
@@ -698,7 +698,7 @@ realm std {
         }
     }
 
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     oper[] [self: TreeSet<T>&](index: Int): T {
         assert index >= 0 && index < self.size {
             "Set index out of bounds"
@@ -706,7 +706,7 @@ realm std {
         return self.data[index]
     }
 
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     impl Into<String> for TreeSet<T> {
         prop into[self: Self&]: String {
             var s = "{"
@@ -718,7 +718,7 @@ realm std {
         }
     }
 
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     oper== [self: TreeSet<T>&](rhs: Set<T>): Bool {
         if self.size != rhs.size { return false }
         for i in 0..<self.size {
@@ -727,12 +727,12 @@ realm std {
         return true
     }
 
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     oper!= [self: TreeSet<T>&](rhs: Set<T>): Bool {
         return !(self == rhs)
     }
 
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     impl TreeSet<T> {
         prop hash[self: Self&]: ULong {
             var result = 0 as ULong
@@ -747,7 +747,7 @@ realm std {
     // Operators
     // ---------------------------------------------------------------------
 
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     oper[] [self: LinkedHashSet<T>&](index: Int): T {
         assert index >= 0 && index < self.size {
             "Set index out of bounds"
@@ -755,7 +755,7 @@ realm std {
         return self.data[index]
     }
 
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     impl Into<String> for LinkedHashSet<T> {
         prop into[self: Self&]: String {
             var s = "{"
@@ -767,7 +767,7 @@ realm std {
         }
     }
 
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     oper== [self: LinkedHashSet<T>&](rhs: Set<T>): Bool {
         if self.size != rhs.size { return false }
         for i in 0..<self.size {
@@ -776,12 +776,12 @@ realm std {
         return true
     }
 
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     oper!= [self: LinkedHashSet<T>&](rhs: Set<T>): Bool {
         return !(self == rhs)
     }
 
-    @Experimental(since: "0.0.4")
+    @Experimental(since: "0.1")
     impl LinkedHashSet<T> {
         prop hash[self: Self&]: ULong {
             var result = 0 as ULong

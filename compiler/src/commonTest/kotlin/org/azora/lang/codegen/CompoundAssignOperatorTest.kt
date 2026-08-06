@@ -27,7 +27,7 @@ import kotlin.test.assertIs
  * Compound assignment, `DIPs/OPERATOR_OVERLOADING_DIP.MD` §12.4.
  *
  * `a += b` desugars to `a = a + b` in the parser, which has no types to decide
- * with — so a type that declared an in-place `oper+=` never had it called.
+ * with - so a type that declared an in-place `oper+=` never had it called.
  */
 class CompoundAssignOperatorTest {
     private fun run(source: String): String {
@@ -39,7 +39,7 @@ class CompoundAssignOperatorTest {
         return IrInterpreter().interpret(result.ir).trim()
     }
 
-    /** With only `oper+`, `+=` is build-and-assign — which is right for a small value. */
+    /** With only `oper+`, `+=` is build-and-assign - which is right for a small value. */
     @Test fun compoundAssignmentFallsBackToTheBinaryOperator() {
         assertEquals("7", run("""
             import std.io

@@ -1955,7 +1955,23 @@ class TypeResolver(private val table: SymbolTable) {
             is Expr.StringTemplate -> {
                 for (part in expr.parts) {
                     if (part is Expr.StringTemplatePart.Expr) {
-                        resolveExpr(part.expr) // any type is allowed; formatted at runtime
+                        // Primitives, enums and collections format themselves at
+                        // runtime. A pack does not: interpolating one that never
+                        // said how it prints used to emit its internal
+                        // representation — `{__type=Vec2, x=1, y=2}` — which is a
+                        // pack's private layout appearing in program output.
+                        val partType = resolveExpr(part.expr)
+                        val named = partType as? IrType.Named
+                        if (named != null && table.lookupStruct(named.name) != null &&
+                            !table.conformsTo(named.name, "Display")
+                        ) {
+                            errors.add(
+                                "line ${expr.line}: cannot interpolate a '${named.name}' — " +
+                                    "${named.name} does not implement Display; add " +
+                                    "'impl Display for ${named.name} { " +
+                                    "func display[self: Self&](formatter: std::Formatter!) { … } }'",
+                            )
+                        }
                     }
                 }
                 IrType.String
@@ -2296,6 +2312,15 @@ class TypeResolver(private val table: SymbolTable) {
                 "receive" -> IrType.Any
                 else -> { errors.add("line $line: no method '$name' on Channel"); null }
             }
+        }
+        // An erased generic is `Any`, and which concrete type it will be is not
+        // known here — `value.display(formatter)` inside `format<T>` is the case
+        // that matters. Property access on `Any` already defers to runtime and
+        // so does comparison; a method call has to, on the same grounds, and the
+        // interpreter dispatches it from the `__type` the value carries.
+        if (receiverType == IrType.Any) {
+            args.forEach { resolveExpr(it) }
+            return IrType.Any
         }
         errors.add("line $line: no method '$name' on $receiverType")
         return null

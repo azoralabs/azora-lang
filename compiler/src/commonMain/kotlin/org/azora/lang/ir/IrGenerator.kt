@@ -1186,6 +1186,29 @@ class IrGenerator(private val table: SymbolTable) {
         return Expr.Member(Expr.Identifier("LogLevel", line), first, line)
     }
 
+    /**
+     * Routes an interpolated pack through its `Display`.
+     *
+     * `"${v}"` on a pack used to emit whatever the backend's value
+     * representation happened to look like — in the interpreter, the field map
+     * itself. A pack says how it prints by implementing `Display`, and this is
+     * where that implementation is reached: `std::format` builds the
+     * `Formatter`, hands it to `display`, and returns what was written.
+     *
+     * Everything else formats as it always did.
+     */
+    private fun displayed(value: IrExpr): IrExpr {
+        val named = value.type as? IrType.Named ?: return value
+        if (table.lookupStruct(named.name) == null) return value
+        if (!table.conformsTo(named.name, "Display")) return value
+        // An intrinsic rather than a call to `std::format`: the standard library
+        // is injected on demand, so a synthesised call to a function the source
+        // never mentioned would name something the IR does not contain. The
+        // backend builds the `Formatter`, hands it to the type's `display`, and
+        // returns what was written — the same three steps `std::format` takes.
+        return IrExpr.Call("__display", listOf(value), IrType.String)
+    }
+
     /** Converts an enum value to its source-level qualified spelling. */
     private fun stringifyEnum(expr: IrExpr): IrExpr {
         val enumName = (expr.type as? IrType.Named)?.name
@@ -2118,7 +2141,8 @@ class IrGenerator(private val table: SymbolTable) {
                 val parts = expr.parts.map { p ->
                     when (p) {
                         is Expr.StringTemplatePart.Literal -> IrExpr.IrTemplatePart.Literal(p.text)
-                        is Expr.StringTemplatePart.Expr -> IrExpr.IrTemplatePart.Expr(stringifyEnum(lowerExpr(p.expr)))
+                        is Expr.StringTemplatePart.Expr ->
+                            IrExpr.IrTemplatePart.Expr(stringifyEnum(displayed(lowerExpr(p.expr))))
                     }
                 }
                 IrExpr.StringTemplate(parts)

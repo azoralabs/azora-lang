@@ -88,4 +88,42 @@ realm std {
     spec From<T> {
         func from(value: T): Self
     }
+
+    /**
+     * Converts to `To` — what `value as To` calls.
+     *
+     * Total: a `Cast` cannot fail. Representational rather than semantic, so it
+     * never takes ownership and never allocates — that is [Into]'s job, and the
+     * line between them is what `DIPs/CAST_DIP.MD` is built on.
+     *
+     * The target is a parameter of the *impl*, not of the operator, so each one
+     * gets a body the compiler can check and `where T: Cast<String>` is
+     * expressible.
+     */
+    @Since("0.0.5")
+    spec Cast<To> {
+        prop cast<To>[self: Self&]: To
+    }
+
+    /**
+     * Converts to `To` when the value permits it — what `value as? To` calls.
+     *
+     * Does **not** require [Cast]: a conversion that can fail is precisely the
+     * one with no infallible form.
+     */
+    @Since("0.0.5")
+    spec CheckedCast<To> {
+        prop cast<To>[self: Self&]: To?
+    }
+
+    /**
+     * Reinterprets the bits as a `To` — what `value as* To` calls.
+     *
+     * Requires equal sizes, checked at the lowering site. Requires neither of
+     * the others: a reinterpretation is not a conversion.
+     */
+    @Since("0.0.5")
+    spec BitCast<To> {
+        prop cast<To>[self: Self&]: To
+    }
 }

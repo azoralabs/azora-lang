@@ -440,6 +440,11 @@ class SymbolCollector {
                             ))
                         }
                         table.defineMethod(item.typeName, method.name, mangled)
+                        // `impl Cast<Fahrenheit> for Celsius { prop cast … }` —
+                        // the target is a parameter of the impl, so the member is
+                        // registered under it. Without the key a type could only
+                        // ever convert to one thing: two `Cast` impls would both
+                        // be called `cast` and the second would collide.
                         // `func into[…]: T use as "to${T.typeName}"` — the spec
                         // gives its member a second, call-site name expanded
                         // against this impl's type arguments. `Into<String>`

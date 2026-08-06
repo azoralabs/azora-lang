@@ -34,6 +34,7 @@ import org.azora.lang.ir.IrType
 import org.azora.lang.semantic.EffectChecker
 import org.azora.lang.semantic.SemanticPipeline
 import org.azora.lang.semantic.ReflectDecoExpander
+import org.azora.lang.semantic.CastDeriver
 import org.azora.lang.semantic.ComparisonDeriver
 import org.azora.lang.semantic.DisplayDeriver
 import org.azora.lang.semantic.SerializationDeriver
@@ -213,7 +214,10 @@ class Compiler(
         // `"${v}"` needs a String; `Display` writes into a Formatter. The step
         // between is generated per implementing type, so every backend sees an
         // ordinary member rather than an intrinsic each would have to implement.
-        val displayed = DisplayDeriver.derive(comparison.program)
+        // A cast impl's member takes its target's name before anything reads it,
+        // so two `Cast` impls for one type do not collide.
+        val casts = CastDeriver.rewrite(comparison.program)
+        val displayed = DisplayDeriver.derive(casts)
         val injected = CallbackImplNormalizer.normalize(libraries.inject(displayed))
 
         // 2b-bis. Unroll `inline for X in reflect<*>.withDeco<D>` loops now that the

@@ -1392,8 +1392,14 @@ class IrGenerator(private val table: SymbolTable) {
                     CastKind.DYNAMIC -> "operas?"
                     CastKind.REINTERPRET -> "operas*"
                 }
-                val userCast = (innerType as? IrType.Named)
-                    ?.let { table.lookupMethod(it.name, castMember) }
+                // `impl Cast<Fahrenheit> for Celsius` registers its member under
+                // the target, so a type may convert to more than one thing; the
+                // bare name is the older target-agnostic `oper as<U>`.
+                val targetKey = (target as? IrType.Named)?.name ?: target.toString()
+                val userCast = (innerType as? IrType.Named)?.let {
+                    table.lookupMethod(it.name, "$castMember@$targetKey")
+                        ?: table.lookupMethod(it.name, castMember)
+                }
                 if (userCast != null) {
                     val declared = table.lookupFunction(userCast)?.returnType
                     // The operator states what it returns; a checked cast that did not

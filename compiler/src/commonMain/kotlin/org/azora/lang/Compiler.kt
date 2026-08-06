@@ -35,6 +35,7 @@ import org.azora.lang.semantic.EffectChecker
 import org.azora.lang.semantic.SemanticPipeline
 import org.azora.lang.semantic.ReflectDecoExpander
 import org.azora.lang.semantic.ComparisonDeriver
+import org.azora.lang.semantic.DisplayDeriver
 import org.azora.lang.semantic.SerializationDeriver
 import org.azora.lang.semantic.VariadicMonomorphizer
 
@@ -209,7 +210,11 @@ class Compiler(
         if (comparison.errors.isNotEmpty()) {
             return CompilationResult.Failure(comparison.errors)
         }
-        val injected = CallbackImplNormalizer.normalize(libraries.inject(comparison.program))
+        // `"${v}"` needs a String; `Display` writes into a Formatter. The step
+        // between is generated per implementing type, so every backend sees an
+        // ordinary member rather than an intrinsic each would have to implement.
+        val displayed = DisplayDeriver.derive(comparison.program)
+        val injected = CallbackImplNormalizer.normalize(libraries.inject(displayed))
 
         // 2b-bis. Unroll `inline for X in reflect<*>.withDeco<D>` loops now that the
         // whole program (all modules' decorated types) is visible. Generic: the

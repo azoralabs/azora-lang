@@ -1201,12 +1201,12 @@ class IrGenerator(private val table: SymbolTable) {
         val named = value.type as? IrType.Named ?: return value
         if (table.lookupStruct(named.name) == null) return value
         if (!table.conformsTo(named.name, "Display")) return value
-        // An intrinsic rather than a call to `std::format`: the standard library
-        // is injected on demand, so a synthesised call to a function the source
-        // never mentioned would name something the IR does not contain. The
-        // backend builds the `Formatter`, hands it to the type's `display`, and
-        // returns what was written — the same three steps `std::format` takes.
-        return IrExpr.Call("__display", listOf(value), IrType.String)
+        // The generated member (`DisplayDeriver`) that builds the `Formatter`,
+        // hands it to `display` and returns what was written. Generated rather
+        // than made an intrinsic so it is an ordinary call every backend
+        // already knows how to lower.
+        val render = table.lookupMethod(named.name, "__displayString") ?: return value
+        return IrExpr.Call(render, listOf(value), IrType.String)
     }
 
     /** Converts an enum value to its source-level qualified spelling. */

@@ -1221,19 +1221,6 @@ class IrInterpreter {
             }
             return result
         }
-        // `"${value}"` on a type that implements `Display`. The three steps
-        // `std::format` takes, done here because the standard library is
-        // injected on demand and a synthesised call could name a function the
-        // IR does not contain.
-        if (expr.name == "__display") {
-            val value = args[0]
-            val typeName = (value as? Map<*, *>)?.get("__type") as? String
-            val display = typeName?.let { functions["${it}_display"] }
-                ?: return formatValue(value)
-            val formatter = mutableMapOf<String, Any?>("__type" to "Formatter", "buffer" to "")
-            executeFunction(display, listOf(value, formatter))
-            return formatter["buffer"] as? String ?: ""
-        }
         if (expr.name == "__dynCast") {
             // `x as? T` — the value if it is a `T` at runtime, else null.
             val value = args[0]

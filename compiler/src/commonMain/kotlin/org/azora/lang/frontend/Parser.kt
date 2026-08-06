@@ -2746,38 +2746,18 @@ class Parser(
             )
             return TopLevel.Impl(typeName, listOf(method), null, dtorStart.line, dtorStart.column)
         }
+        // `impl as T for Type { self& -> … }` — a bespoke declaration with a
+        // bespoke receiver, and the last surviving use of the in-brace receiver
+        // the bracket redesign replaced everywhere else. `Cast<To>` says the
+        // same thing as an ordinary spec impl, and unlike this form it can be a
+        // bound (`where T: Cast<String>`).
         if (check(TokenType.AS)) {
-            val asStart = advance()
-            val targetType = parseTypeName()
-            consume(TokenType.FOR, "Expected 'for' after 'impl as <Type>'")
-            val typeName = consume(TokenType.IDENTIFIER, "Expected type name after 'for'").lexeme
-            skipGenericTypeArgs()
-            val methodName = castMethodName(targetType)
-            consume(TokenType.L_BRACE, "Expected '{' before cast impl body")
-            skipNewlines()
-            val receiverModifier = parseReceiverBinding("cast receiver").modifier
-            if (receiverModifier != ParamModifier.SHARED) {
-                error("impl cast receivers are always 'self&' at line ${asStart.line}")
-            }
-            consume(TokenType.ARROW, "Expected '->' after cast receiver")
-            skipNewlines()
-            val body = mutableListOf<Stmt>()
-            while (!check(TokenType.R_BRACE) && !isAtEnd()) {
-                body.add(parseStmt())
-                skipNewlines()
-            }
-            consume(TokenType.R_BRACE, "Expected '}' after cast impl body")
-            consumeNewline()
-            val method = FuncDecl(
-                name = methodName,
-                params = emptyList(),
-                returnType = TypeAnnotation.Explicit(targetType),
-                body = body,
-                line = asStart.line,
-                column = asStart.column,
-                receiverModifier = ParamModifier.SHARED,
+            val asStart = peek()
+            error(
+                "'impl as <Type> for <Type>' was removed at line ${asStart.line}; " +
+                    "write 'impl Cast<Type> for <Type> { prop _cast[self: Self&]: Type { … } }' " +
+                    "(or CheckedCast for 'as?', BitCast for 'as*')",
             )
-            return TopLevel.Impl(typeName, listOf(method), null, asStart.line, asStart.column)
         }
         // `impl oper… for Type { … }` was removed: an operator is declared beside
         // its type, as `oper[] [self: Type&](index: Int): T { … }` (see parseFreeOperator).

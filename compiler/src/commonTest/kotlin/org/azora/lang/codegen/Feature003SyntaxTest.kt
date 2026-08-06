@@ -293,11 +293,14 @@ class Feature003SyntaxTest {
     @Test fun implAsStringIsCastOnly() {
         assertEquals("cast:x", run("""
             import std.io
+            import std.convert
             pack Label {
                 var value: String
             }
-            impl as String for Label { self& ->
-                return "cast:" + self.value
+            impl Cast<String> for Label {
+                prop _cast[self: Self&]: String {
+                    return "cast:" + self.value
+                }
             }
             func main() {
                 var label = Label("x")
@@ -309,11 +312,14 @@ class Feature003SyntaxTest {
     @Test fun implAsStringDoesNotCreateToString() {
         val result = compile("""
             import std.io
+            import std.convert
             pack Label {
                 var value: String
             }
-            impl as String for Label { self& ->
-                return "cast:" + self.value
+            impl Cast<String> for Label {
+                prop _cast[self: Self&]: String {
+                    return "cast:" + self.value
+                }
             }
             func main() {
                 var label = Label("x")

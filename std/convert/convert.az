@@ -99,10 +99,14 @@ realm std {
      * The target is a parameter of the *impl*, not of the operator, so each one
      * gets a body the compiler can check and `where T: Cast<String>` is
      * expressible.
+     *
+     * `bridge`, and the member is `_cast`, because neither is API: a cast is
+     * written `value as To` and never by naming the member. The compiler
+     * renames it to the operator it answers before anything can call it.
      */
     @Since("0.0.5")
-    spec Cast<To> {
-        prop cast<To>[self: Self&]: To
+    bridge spec Cast<To> {
+        prop _cast<To>[self: Self&]: To
     }
 
     /**
@@ -112,8 +116,8 @@ realm std {
      * one with no infallible form.
      */
     @Since("0.0.5")
-    spec CheckedCast<To> {
-        prop cast<To>[self: Self&]: To?
+    bridge spec CheckedCast<To> {
+        prop _cast<To>[self: Self&]: To?
     }
 
     /**
@@ -123,7 +127,7 @@ realm std {
      * the others: a reinterpretation is not a conversion.
      */
     @Since("0.0.5")
-    spec BitCast<To> {
-        prop cast<To>[self: Self&]: To
+    bridge spec BitCast<To> {
+        prop _cast<To>[self: Self&]: To
     }
 }

@@ -29,14 +29,16 @@ import org.azora.lang.frontend.TypeRef
  * that every `Cast` impl for a type names its member `cast`:
  *
  * ```azora
- * impl Cast<Fahrenheit> for Celsius { prop cast[self: Self&]: Fahrenheit { … } }
- * impl Cast<Kelvin>     for Celsius { prop cast[self: Self&]: Kelvin     { … } }
+ * impl Cast<Fahrenheit> for Celsius { prop _cast[self: Self&]: Fahrenheit { … } }
+ * impl Cast<Kelvin>     for Celsius { prop _cast[self: Self&]: Kelvin     { … } }
  * ```
  *
  * so without the target in the name the second collides with the first. This
  * renames each to the operator member the cast dispatch looks for —
  * `operas@Fahrenheit` — before anything else sees it, which is why the symbol
- * collector and the IR generator need no rule of their own. Two places deciding
+ * collector and the IR generator need no rule of their own. It is also why
+ * `_cast` is never callable by that name: a cast is written `value as To`, and
+ * the member is gone by the time any call could resolve to it. Two places deciding
  * a member's name independently is how they drift.
  */
 object CastDeriver {

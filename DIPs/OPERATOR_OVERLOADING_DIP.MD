@@ -17,7 +17,8 @@
 > | `==` without a conformance is an error (§8) | **shipped** |
 > | the operator families (§12.1) and partial implementation (§12.2) | **shipped** |
 > | `Display`, and `"${v}"` routed through it (§12.7) | **shipped** |
-> | `Iterator` and the cast specs (§12.8–12.9) | proposed |
+> | the cast specs, and `impl as T for Type` retired (§12.9) | **shipped** |
+> | `Iterator` (§12.8) | proposed |
 > | closing the free-operator form language-wide (§14, phase 11) | proposed |
 >
 > Naming note: the specs shipped as `Order` / `PartialOrder`, not `Ordering` /

@@ -64,7 +64,7 @@ scope, and the program does not exit until it finishes.
   form. It does not parse.** `launch { … }` fails with
   `undefined variable 'launch'`. The `__launch` intrinsic behind it is real -
   registered in `SymbolCollector`, implemented in the interpreter and in LLVM,
-  and callable as `__launch(func { … })` - but no surface syntax produces it.
+  and callable as `__launch({ … })` - but no surface syntax produces it.
   A comment in `Parser.parsePrimary` describes the desugaring, sitting on the
   branch that raises "Unexpected token".
 

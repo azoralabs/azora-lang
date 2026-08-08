@@ -564,4 +564,21 @@ class SymbolTable {
         }
         return null
     }
+
+    /** How many scopes are currently open. Scope 0 holds the program's globals. */
+    fun scopeDepth(): Int = scopes.size
+
+    /**
+     * The index of the scope a variable is declared in, or null when it is not a
+     * scoped variable at all.
+     *
+     * A lambda uses this to tell a binding it owns from one belonging to the
+     * scope around it - the distinction its capture list is about.
+     */
+    fun variableScopeIndex(name: String): Int? {
+        for (i in scopes.indices.reversed()) {
+            if (scopes[i].containsKey(name)) return i
+        }
+        return null
+    }
 }

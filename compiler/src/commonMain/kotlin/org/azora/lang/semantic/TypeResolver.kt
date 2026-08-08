@@ -19,12 +19,16 @@ package org.azora.lang.semantic
 import org.azora.lang.frontend.lambdaReceiverName
 import org.azora.lang.frontend.OPTIONAL_UNWRAP
 import org.azora.lang.frontend.OwnershipOp
+import org.azora.lang.frontend.Param
 import org.azora.lang.frontend.ParamModifier
+import org.azora.lang.frontend.Capture
+import org.azora.lang.frontend.CaptureMode
 import org.azora.lang.frontend.CastKind
 import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.FuncDecl
 import org.azora.lang.frontend.MemberCallStyle
 import org.azora.lang.frontend.NumericSuffix
+import org.azora.lang.frontend.splitBracketList
 import org.azora.lang.frontend.Program
 import org.azora.lang.frontend.Stmt
 import org.azora.lang.frontend.TokenType
@@ -67,6 +71,29 @@ class TypeResolver(private val table: SymbolTable) {
         typePropertyNames = program.typeFunctions.mapTo(mutableSetOf()) { it.name }
         packModules = program.items.filterIsInstance<TopLevel.Pack>()
             .associate { it.name to it.declaringModule }
+        // A top-level `fin f: (Int) -> Int = { … }` declares a lambda too, and its
+        // declared type is what supplies the lambda's parameter and receiver types.
+        // Only the annotation is read when the symbol is collected, so the
+        // initializer is resolved here - otherwise the lambda records no type and
+        // the lowering has nothing to shape it with.
+        for (item in program.items) {
+            val declaration: Triple<TypeRef?, Expr, Int> = when (item) {
+                is TopLevel.FinDecl -> Triple(item.type, item.initializer, item.line)
+                is TopLevel.VarDecl -> Triple(item.type, item.initializer, item.line)
+                is TopLevel.LetDecl -> Triple(item.type, item.initializer, item.line)
+                else -> continue
+            }
+            val (annotation, initializer, line) = declaration
+            if (initializer !is Expr.Lambda) continue
+            val declared = annotation?.let { tryResolveType(it, line) } as? IrType.Function ?: continue
+            val savedParams = expectedLambdaParamTypes
+            val savedReceivers = expectedLambdaReceiverTypes
+            expectedLambdaParamTypes = declared.params
+            expectedLambdaReceiverTypes = declared.receivers
+            resolveExpr(initializer)
+            expectedLambdaParamTypes = savedParams
+            expectedLambdaReceiverTypes = savedReceivers
+        }
         for (func in program.functions) {
             resolveFunction(func)
         }
@@ -539,6 +566,49 @@ class TypeResolver(private val table: SymbolTable) {
      * rather than a naming convention - the fixture is emitted like any other
      * declaration, and cannot be reached by the program it exists to test.
      */
+    /**
+     * One open lambda body, and what it is allowed to see of the scope around it.
+     *
+     * @property floor the scope depth the lambda's own bindings start at; anything
+     *   declared below it (but above the globals in scope 0) belongs to the
+     *   enclosing scope and needs a capture
+     * @property captured names the bracket list named
+     * @property hasDefault whether `[=]` / `[&]` / `[!]` covers whatever the body reads
+     */
+    private data class LambdaFrame(
+        val floor: Int,
+        val captured: Set<String>,
+        val hasDefault: Boolean,
+    )
+
+    private val lambdaFrames = mutableListOf<LambdaFrame>()
+
+    /**
+     * A lambda reaches the scope around it only through its capture list.
+     *
+     * Capture is never implicit: `[=]`, `[&]` and `[!]` are the three ways to ask
+     * for it, and writing no brackets asks for none (LAMBDA_CONTEXT_CAPTURE_DIP.MD
+     * §4.5). Globals are not captured - they belong to the program, not to the
+     * scope the closure was made in - so scope 0 is always visible.
+     */
+    private fun checkCapture(name: String, line: Int) {
+        if (lambdaFrames.isEmpty()) return
+        val index = table.variableScopeIndex(name) ?: return
+        if (index == 0) return
+        for (frame in lambdaFrames.asReversed()) {
+            if (index >= frame.floor) return
+            if (name in frame.captured) return
+            if (frame.hasDefault) return
+            errors.add(
+                "line $line: '$name' is not in scope - a lambda with no capture list cannot " +
+                    "reach the scope around it; write '[$name.&]' to reference it, " +
+                    "'[$name.!]' to write it, '[$name]' to copy it, or '[&]' to capture " +
+                    "what the body reads",
+            )
+            return
+        }
+    }
+
     private fun requireTestCaller(name: String, line: Int): Boolean {
         if (testContext) return true
         val visibility = program?.testRealmMembers?.get(name) ?: return true
@@ -677,6 +747,7 @@ class TypeResolver(private val table: SymbolTable) {
         function: IrType.Function,
         args: List<Expr>,
         line: Int,
+        explicitReceivers: List<IrType> = emptyList(),
     ): IrType? {
         if (function.variadic) {
             args.forEachIndexed { index, argument ->
@@ -685,25 +756,53 @@ class TypeResolver(private val table: SymbolTable) {
             }
             return function.ret
         }
-        if (args.size < function.params.size || args.size > function.params.size + function.receivers.size) {
+        // A contextual receiver is not an argument. A call's arguments are its
+        // parameters; receivers come from a `with` block or from the receiver call
+        // syntax (`2.scale(7)`, `[2, 3].add()`), never from the argument list.
+        if (args.size != function.params.size) {
+            val receiverNote = if (function.receivers.isEmpty()) {
+                ""
+            } else {
+                " - its ${function.receivers.size} contextual receiver(s) are supplied by " +
+                    "'with' or by a receiver call, not as arguments"
+            }
             errors.add(
-                "line $line: '$label' expects ${function.params.size} parameter(s) and " +
-                    "${function.receivers.size} contextual receiver(s), got ${args.size} argument(s)",
+                "line $line: '$label' expects ${function.params.size} argument(s), " +
+                    "got ${args.size}$receiverNote",
             )
             return null
         }
-        val expectedExplicit = function.params + function.receivers.take(args.size - function.params.size)
         for (i in args.indices) {
-            val actual = resolveContextualArgument(args[i], expectedExplicit[i]) ?: return null
-            if (!isCompatible(expectedExplicit[i], actual)) {
-                errors.add("line $line: arg ${i + 1} of '$label': expected ${expectedExplicit[i]}, got $actual")
+            val actual = resolveContextualArgument(args[i], function.params[i]) ?: return null
+            if (!isCompatible(function.params[i], actual)) {
+                errors.add("line $line: arg ${i + 1} of '$label': expected ${function.params[i]}, got $actual")
             }
         }
-        val missing = function.receivers.drop(args.size - function.params.size)
-        if (missing.isNotEmpty() && inferredContexts(missing) == null) {
+        // Receivers written at the call - `2.scale(7)` supplies one, `[2, 3].add()`
+        // supplies as many as the brackets hold.
+        if (explicitReceivers.isNotEmpty()) {
+            if (explicitReceivers.size != function.receivers.size) {
+                errors.add(
+                    "line $line: '$label' takes ${function.receivers.size} contextual receiver(s), " +
+                        "got ${explicitReceivers.size}",
+                )
+                return null
+            }
+            for (i in function.receivers.indices) {
+                if (!isCompatible(function.receivers[i], explicitReceivers[i])) {
+                    errors.add(
+                        "line $line: receiver ${i + 1} of '$label': " +
+                            "expected ${function.receivers[i]}, got ${explicitReceivers[i]}",
+                    )
+                }
+            }
+            return function.ret
+        }
+        if (function.receivers.isNotEmpty() && inferredContexts(function.receivers) == null) {
             errors.add(
                 "line $line: '$label' requires contextual receiver(s) " +
-                    missing.joinToString(", ") + "; provide them explicitly or with 'with'",
+                    function.receivers.joinToString(", ") +
+                    "; supply them with 'with', or write them as a receiver call",
             )
             return null
         }
@@ -712,6 +811,11 @@ class TypeResolver(private val table: SymbolTable) {
 
     /** Resolves one argument with the callable type expected at that position. */
     private fun resolveContextualArgument(argument: Expr, expected: IrType?): IrType? {
+        // `onEvent(handler: escaping (Event) -> Unit)` - the callable is kept for
+        // later, so whatever it captures has to be owned.
+        if (expected is IrType.Function && expected.isEscaping && argument is Expr.Lambda) {
+            checkEscapingCaptures(argument, "is passed to an escaping parameter")
+        }
         val savedParams = expectedLambdaParamTypes
         val savedReceivers = expectedLambdaReceiverTypes
         if (argument is Expr.Lambda && expected is IrType.Function) {
@@ -857,6 +961,11 @@ class TypeResolver(private val table: SymbolTable) {
                     }
                 } else {
                     checkReturnedOrigin(stmt.value!!, stmt.line)
+                    // Returning a closure is one of the four ways it escapes: the
+                    // scope it captured from is gone by the time it is called.
+                    (stmt.value as? Expr.Lambda)?.let {
+                        if (lambdaReturnTypes == null) checkEscapingCaptures(it, "is returned")
+                    }
                     val valueType = resolveExpr(stmt.value) ?: return
                     val capturing = lambdaReturnTypes
                     if (capturing != null) {
@@ -1207,6 +1316,7 @@ class TypeResolver(private val table: SymbolTable) {
                 checkNotMoved(expr.name, expr.line)
                 checkNotMutablyBorrowed(expr.name, expr.line)
                 checkBorrowAcrossSuspension(expr.name, expr.line)
+                checkCapture(expr.name, expr.line)
                 val sym = table.lookupVariable(expr.name)
                     ?: throughTypeAlias(expr.name)?.let { table.lookupVariable(it) }
                 if (sym == null) {
@@ -1367,6 +1477,14 @@ class TypeResolver(private val table: SymbolTable) {
                     for (i in effectiveArgs.indices) {
                         val argument = effectiveArgs[i]
                         val fieldType = struct.fields[i].type
+                        // Storing a closure in a field escapes it - but only where
+                        // the field says it keeps the callable. A callable type is
+                        // non-escaping by default (§4.7), and a field that merely
+                        // holds one for the life of a value it is itself part of
+                        // outlives nothing the closure borrowed.
+                        if (fieldType is IrType.Function && fieldType.isEscaping && argument is Expr.Lambda) {
+                            checkEscapingCaptures(argument, "is stored in an escaping field")
+                        }
                         val argType = resolveContextualArgument(argument, fieldType) ?: return null
                         if (struct.typeParams.isEmpty()) {
                             if (!isCompatible(fieldType, adoptLiteralType(argument, argType, fieldType))) {
@@ -1800,6 +1918,23 @@ class TypeResolver(private val table: SymbolTable) {
                 }
             }
             is Expr.MethodCall -> {
+                // `[2, 3].add()` - a receiver call supplying several contextual
+                // receivers. A bare bracket list is not a value anywhere else, so
+                // the only thing it can be here is the receivers `add` declares.
+                val bracketTarget = expr.target as? Expr.ArrayLiteral
+                if (bracketTarget != null) {
+                    val callable = table.lookupVariable(expr.name)?.type as? IrType.Function
+                    if (callable != null && callable.receivers.isNotEmpty()) {
+                        val given = bracketTarget.elements.map { resolveExpr(it) ?: return null }
+                        return resolveCallableArguments(
+                            expr.name,
+                            callable,
+                            expr.args,
+                            expr.line,
+                            explicitReceivers = given,
+                        )
+                    }
+                }
                 // `#expr` (oper#) - hash; returns ULong regardless of operand type
                 // (the operand may be a generic K erased to Any, whose concrete type
                 // supplies oper# at runtime).
@@ -2159,12 +2294,17 @@ class TypeResolver(private val table: SymbolTable) {
                 // Infer the implicit `it` parameter's type from context when available.
                 val expectedParams = expectedLambdaParamTypes
                 val expectedReceivers = expectedLambdaReceiverTypes
+                // `[value] { factor -> … }` against `[Int](Int) -> Int` - a bare
+                // bracket entry is the receiver the expected type declares. The IR
+                // generator asks the same question of the same helper.
+                val (bracketReceivers, bracketCaptures) =
+                    expr.splitBracketList(expectedReceivers?.size ?: 0)
                 val paramTypes = expr.params.mapIndexed { i, p ->
                     val expected = expectedParams?.getOrNull(i)
                     if (p.type == TypeRef.Named("Any") && expected != null) expected
                     else resolveDeclaredType(p.type)
                 }
-                val declaredReceivers = expr.receivers.mapIndexed { i, p ->
+                val declaredReceivers = bracketReceivers.mapIndexed { i, p ->
                     val expected = expectedReceivers?.getOrNull(i)
                     if (p.type == TypeRef.Named("Any") && expected != null) expected
                     else resolveDeclaredType(p.type)
@@ -2173,7 +2313,7 @@ class TypeResolver(private val table: SymbolTable) {
                 // receivers are expected inherits them even though it names none. The
                 // body cannot refer to them by name, but a call inside it can take them
                 // as its own contextual receivers, which is what the builder APIs rely on.
-                val inheritsReceivers = expr.receivers.isEmpty() && !expectedReceivers.isNullOrEmpty()
+                val inheritsReceivers = bracketReceivers.isEmpty() && !expectedReceivers.isNullOrEmpty()
                 val receiverTypes = if (inheritsReceivers) expectedReceivers!! else declaredReceivers
                 // `{ body }` with no parameter list carries the parser's implicit `it`.
                 // Where the expected callable takes no parameters there is nothing for
@@ -2183,17 +2323,62 @@ class TypeResolver(private val table: SymbolTable) {
                     expr.params[0].name == "it" &&
                     expr.params[0].type == TypeRef.Named("Any")
                 val dropsImplicitIt = implicitItOnly && expectedParams != null && expectedParams.isEmpty()
-                val effectiveParams = if (dropsImplicitIt) emptyList() else expr.params
-                val effectiveParamTypes = if (dropsImplicitIt) emptyList() else paramTypes
+                // A bare `{ body }` that never reads `it` declares no parameters. If
+                // the expected callable takes some, they are its parameters - the
+                // body simply ignores them - so they are supplied here rather than
+                // reported as an arity mismatch against a list the author never
+                // wrote. `it` is the name when there is exactly one, so a body that
+                // does read `it` has already been given it by the parser.
+                val suppliedParams: List<Param> = if (
+                    !expr.paramsWritten && expr.params.isEmpty() && !expectedParams.isNullOrEmpty()
+                ) {
+                    expectedParams.indices.map { i ->
+                        Param(if (expectedParams.size == 1) "it" else "__arg$i", TypeRef.Named("Any"))
+                    }
+                } else emptyList()
+                val effectiveParams = when {
+                    dropsImplicitIt -> emptyList()
+                    suppliedParams.isNotEmpty() -> suppliedParams
+                    else -> expr.params
+                }
+                val effectiveParamTypes = when {
+                    dropsImplicitIt -> emptyList()
+                    suppliedParams.isNotEmpty() -> expectedParams!!
+                    else -> paramTypes
+                }
                 // Only the outer call seeds these; nested lambdas resolve on their own.
                 expectedLambdaParamTypes = null
                 expectedLambdaReceiverTypes = null
+                // Each capture is resolved against the scope around the lambda, then
+                // bound inside it under the name the body uses - the alias where one
+                // was written, the source name otherwise.
+                val captureTypes = bracketCaptures.map { capture ->
+                    val outer = table.lookupVariable(capture.source)
+                    if (outer == null) {
+                        errors.add(
+                            "line ${capture.line}: cannot capture '${capture.source}' - " +
+                                "no such binding in the scope around this lambda",
+                        )
+                    }
+                    if (outer != null) checkCaptureMode(capture, outer.type)
+                    capture to (outer?.type ?: IrType.Any)
+                }
                 table.pushScope()
+                // The index of the scope just pushed - the lambda's own bindings live
+                // here, and anything below it belongs to the scope around the lambda.
+                val captureFloor = table.scopeDepth() - 1
+                for ((capture, type) in captureTypes) {
+                    // A copied, cloned or moved capture is the closure's own value; a
+                    // referenced one still writes through to the original, and only
+                    // `!` may be written.
+                    val mutable = capture.mode != CaptureMode.SHARED
+                    table.defineVariable(VariableSymbol(capture.name, type, mutable = mutable))
+                }
                 for (i in effectiveParams.indices) {
                     table.defineVariable(VariableSymbol(effectiveParams[i].name, effectiveParamTypes[i]))
                 }
-                for (i in expr.receivers.indices) {
-                    table.defineVariable(VariableSymbol(expr.receivers[i].name, receiverTypes[i], mutable = false))
+                for (i in bracketReceivers.indices) {
+                    table.defineVariable(VariableSymbol(bracketReceivers[i].name, receiverTypes[i], mutable = false))
                 }
                 if (inheritsReceivers) {
                     receiverTypes.forEachIndexed { i, t ->
@@ -2213,12 +2398,20 @@ class TypeResolver(private val table: SymbolTable) {
                     val ref = if (inheritsReceivers) {
                         lambdaReceiverRef(expr, i)
                     } else {
-                        Expr.Identifier(expr.receivers[i].name, expr.line, expr.column)
+                        Expr.Identifier(bracketReceivers[i].name, expr.line, expr.column)
                     }
                     ref as Expr to t
                 }
                 if (bodyContexts.isNotEmpty()) contextualValues.addLast(bodyContexts)
+                lambdaFrames.add(
+                    LambdaFrame(
+                        floor = captureFloor,
+                        captured = bracketCaptures.mapTo(mutableSetOf()) { it.name },
+                        hasDefault = expr.captureDefault != null,
+                    ),
+                )
                 resolveBody(expr.body, IrType.Unit)
+                lambdaFrames.removeAt(lambdaFrames.size - 1)
                 if (bodyContexts.isNotEmpty()) contextualValues.removeLast()
                 lambdaReturnTypes = savedReturns
                 table.popScope()
@@ -2366,6 +2559,20 @@ class TypeResolver(private val table: SymbolTable) {
             args.forEach { resolveExpr(it) }
             return IrType.Any
         }
+        // `2.scale(7)` - the receiver call. `scale` is not a method on Int; it is a
+        // callable whose contextual receiver the target supplies. This is the same
+        // spelling an extension method uses, and it reads the same way, which is
+        // why a receiver is written here rather than passed as a leading argument.
+        val callable = table.lookupVariable(name)?.type as? IrType.Function
+        if (callable != null && callable.receivers.size == 1) {
+            return resolveCallableArguments(
+                name,
+                callable,
+                args,
+                line,
+                explicitReceivers = listOf(receiverType),
+            )
+        }
         errors.add("line $line: no method '$name' on $receiverType")
         return null
     }
@@ -2451,6 +2658,18 @@ class TypeResolver(private val table: SymbolTable) {
     /** Checks if an initializer type is compatible with a declared type (nullable widening, Any from null). */
     private fun isCompatible(declared: IrType, actual: IrType): Boolean {
         if (declared == actual) return true
+        // `escaping` describes the *position*, not the value: a lambda has no
+        // opinion about whether it will be kept, and it is the parameter or field
+        // that says so. Comparing the two would reject every closure written for
+        // an escaping position, which is the only way one is ever supplied.
+        if (declared is IrType.Function && actual is IrType.Function &&
+            declared.isEscaping != actual.isEscaping
+        ) {
+            return isCompatible(
+                declared.copy(isEscaping = false),
+                actual.copy(isEscaping = false),
+            )
+        }
         // An unsized array slot (`[T]`) accepts any sized array of the same element
         // (`Array<T, N>`); a sized slot still requires an exact-size match (handled
         // by the `==` check above).
@@ -3135,8 +3354,89 @@ class TypeResolver(private val table: SymbolTable) {
      * again after a move and `let`/`fin` may not - the difference falls out of
      * the binding keyword rather than being a separate rule.
      */
+    /**
+     * Checks one capture against the mode it wrote.
+     *
+     * Each mode asks something different of the value (§4.2): a copy needs
+     * `Copy`, a clone needs `Clone`, and a move needs nothing but takes the
+     * binding with it - so `take` records the move and the existing
+     * use-after-take machinery reports the rest. A borrow asks nothing.
+     */
+    /** True when [name] resolves to a binding the innermost open lambda owns. */
+    private fun isBoundInsideCurrentLambda(name: String): Boolean {
+        val frame = lambdaFrames.lastOrNull() ?: return false
+        val index = table.variableScopeIndex(name) ?: return false
+        return index >= frame.floor
+    }
+
+    /**
+     * A closure that escapes must own everything it captures (§4.6).
+     *
+     * A borrow may not outlive its owner, so a closure that outlives the scope it
+     * was made in cannot hold one - which is the same rule as "a borrow may not
+     * survive a suspension", and offers the same three fixes.
+     */
+    private fun checkEscapingCaptures(lambda: Expr.Lambda, what: String) {
+        val borrowed = lambda.captures.filter {
+            it.mode == CaptureMode.SHARED || it.mode == CaptureMode.MUTABLE
+        }
+        for (capture in borrowed) {
+            errors.add(
+                "line ${capture.line}: this closure $what while borrowing " +
+                    "'${capture.source}', which does not outlive it; write " +
+                    "'[${capture.source}.clone()]' or '[take ${capture.source}]'",
+            )
+        }
+        val default = lambda.captureDefault
+        if (default == CaptureMode.SHARED || default == CaptureMode.MUTABLE) {
+            errors.add(
+                "line ${lambda.line}: this closure $what, so '[${default.spelling}]' cannot be " +
+                    "its default - an escaping closure owns what it captures; " +
+                    "write '[=]', or name each capture with '.clone()' or 'take'",
+            )
+        }
+    }
+
+    private fun checkCaptureMode(capture: Capture, type: IrType) {
+        when (capture.mode) {
+            CaptureMode.SHARED, CaptureMode.MUTABLE -> {}
+            CaptureMode.MOVE -> movedBindings[capture.source] = capture.line
+            CaptureMode.COPY -> {
+                // Only meaningful once the capability lattice is in scope - see
+                // checkByValueTransfer for why.
+                if (!table.conformsTo("Int", "Copy")) return
+                val name = conformanceName(type) ?: return
+                if (currentFuncTypeParams.contains(name)) return
+                if (table.conformsTo(name, "Copy")) return
+                val fixes = buildList {
+                    add("'[${capture.source}.&]'")
+                    if (table.conformsTo(name, "Clone")) add("'[${capture.source}.clone()]'")
+                    add("'[take ${capture.source}]'")
+                }
+                errors.add(
+                    "line ${capture.line}: '${capture.source}' cannot be captured by copy - " +
+                        "'$name' is not Copy; write one of ${fixes.joinToString(", ")}",
+                )
+            }
+            CaptureMode.CLONE -> {
+                if (!table.conformsTo("Int", "Copy")) return
+                val name = cloneConformanceName(type) ?: return
+                if (currentFuncTypeParams.contains(name)) return
+                if (table.conformsTo(name, "Clone")) return
+                errors.add(
+                    "line ${capture.line}: '${capture.source}' cannot be captured by clone - " +
+                        "'$name' is not Clone; write '[${capture.source}.&]' to reference it, " +
+                        "or '[take ${capture.source}]' to move it",
+                )
+            }
+        }
+    }
+
     private fun checkNotMoved(name: String, line: Int) {
         val movedAt = movedBindings[name] ?: return
+        // `[take s] { … s … }` - inside the closure, `s` is the closure's own
+        // binding, not the one the move emptied. Only the outer name is stale.
+        if (isBoundInsideCurrentLambda(name)) return
         errors.add(
             "line $line: use of taken value '$name' - its ownership transferred at line $movedAt; " +
                 "use '$name.clone()' instead when both owners need a value",

@@ -217,6 +217,14 @@ class IrOptimizer {
 
     private fun propagateStmts(stmts: List<IrStmt>, constants: MutableMap<String, IrExpr>): List<IrStmt> {
         return stmts.map { stmt ->
+            // A closure that captures by reference may write the original binding
+            // whenever it is called, which is not a write this pass can see. Its
+            // referenced captures therefore stop being known constants here - a
+            // `[&]` or `[!]` default gives up on all of them.
+            forEachLambda(stmt) { lambda ->
+                if (lambda.allCapturesByRef) constants.clear()
+                else constants.keys.removeAll(lambda.byRefCaptures)
+            }
             when (stmt) {
                 is IrStmt.VarDecl -> {
                     val propagated = propagateExpr(stmt.initializer, constants)
@@ -418,6 +426,25 @@ class IrOptimizer {
         stmts.forEach(::visit)
         return assigned
     }
+
+    /**
+     * Applies [action] to every lambda written anywhere inside [stmt].
+     *
+     * Rides the reference walker rather than repeating it: that traversal already
+     * reaches every expression a statement holds, and a lambda is one of them.
+     */
+    private fun forEachLambda(stmt: IrStmt, action: (IrExpr.Lambda) -> Unit) {
+        val saved = lambdaSink
+        lambdaSink = action
+        try {
+            collectReferencedNamesFromStmt(stmt, mutableSetOf())
+        } finally {
+            lambdaSink = saved
+        }
+    }
+
+    /** Set while [forEachLambda] is walking; notified for each lambda found. */
+    private var lambdaSink: ((IrExpr.Lambda) -> Unit)? = null
 
     private fun propagateExpr(expr: IrExpr, constants: Map<String, IrExpr>): IrExpr = when (expr) {
         is IrExpr.Var -> constants[expr.name] ?: expr
@@ -799,7 +826,10 @@ class IrOptimizer {
             is IrExpr.NumCast -> collectReferencedNamesFromExpr(expr.value, names)
             is IrExpr.Await -> collectReferencedNamesFromExpr(expr.value, names)
             is IrExpr.Spread -> collectReferencedNamesFromExpr(expr.array, names)
-            is IrExpr.Lambda -> expr.body.forEach { collectReferencedNamesFromStmt(it, names) }
+            is IrExpr.Lambda -> {
+                lambdaSink?.invoke(expr)
+                expr.body.forEach { collectReferencedNamesFromStmt(it, names) }
+            }
             else -> {}
         }
     }

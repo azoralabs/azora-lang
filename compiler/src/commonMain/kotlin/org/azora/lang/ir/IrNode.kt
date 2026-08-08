@@ -122,6 +122,8 @@ sealed class IrType {
         val variadic: Boolean = false,
         val receivers: List<IrType> = emptyList(),
         val kind: CallableKind = CallableKind.FUNC,
+        /** `escaping (…) -> R` - the callable may outlive the call it is passed to. */
+        val isEscaping: Boolean = false,
     ) : IrType() {
         override fun toString(): kotlin.String {
             val context = if (receivers.isEmpty()) "" else receivers.joinToString(", ", "[", "]")
@@ -319,6 +321,7 @@ sealed class IrType {
                 ret = resolve(ref.ret, typeParams),
                 receivers = ref.receivers.map { resolve(it, typeParams) },
                 kind = ref.kind,
+                isEscaping = ref.isEscaping,
             )
             is TypeRef.Tuple -> Tuple(ref.elements.map { resolve(it, typeParams) })
             is TypeRef.Nullable -> Nullable(resolve(ref.inner, typeParams))
@@ -618,7 +621,28 @@ sealed class IrExpr {
      * @property body the lambda body statements
      * @property type the resolved function type [IrType.Function]
      */
-    data class Lambda(val params: List<Pair<String, IrType>>, val body: List<IrStmt>, override val type: IrType) : IrExpr()
+    data class Lambda(
+        val params: List<Pair<String, IrType>>,
+        val body: List<IrStmt>,
+        override val type: IrType,
+        /**
+         * Names captured by reference (`[n.&]`, `[n.!]`).
+         *
+         * A referenced capture is the original binding, so the environment holds
+         * its address rather than a copy of its value - which is what makes a
+         * closure's write visible outside it, and an outer write visible inside.
+         */
+        val byRefCaptures: Set<String> = emptySet(),
+        /** `[&]` / `[!]` - every capture is by reference. */
+        val allCapturesByRef: Boolean = false,
+        /**
+         * Names captured by value (`[n]`, `[n.clone()]`, `[take n]`).
+         *
+         * A value capture is the closure's own, taken when the closure is
+         * created, so a later write to the original does not reach it.
+         */
+        val valueCaptures: Set<String> = emptySet(),
+    ) : IrExpr()
 
     /** A slot pattern `SlotName.VariantName(bindings)` in a `when` branch. Never evaluated - consumed by the interpreter. */
     data class SlotPattern(

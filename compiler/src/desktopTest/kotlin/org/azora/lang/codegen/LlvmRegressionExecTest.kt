@@ -80,7 +80,7 @@ class LlvmRegressionExecTest {
         import std.io
         async func main() {
             fin seed = 40
-            fin value = async { seed + 2 }
+            fin value = async [seed.&] { seed + 2 }
             std::println(await value)
         }
         """.trimIndent()

@@ -5,7 +5,9 @@ import org.azora.lang.Compiler
 import org.azora.lang.backend.IrInterpreter
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 class LambdaTest {
     private fun run(source: String): String {
@@ -40,7 +42,8 @@ class LambdaTest {
         assertEquals("15", run("""
             import std.io
             func makeAdder(n: Int): (Int) -> Int {
-                return { x: Int -> x + n }
+                // Returned, so it escapes: it must own `n`, and Int is Copy.
+                return [n] { x: Int -> x + n }
             }
             func main() {
                 var add5 = makeAdder(5)
@@ -54,7 +57,7 @@ class LambdaTest {
             import std.io
             func main() {
                 var offset = 3
-                var add = { x: Int -> x + offset }
+                var add = [offset.&] { x: Int -> x + offset }
                 std::println(add(4))
             }
         """.trimIndent()))
@@ -198,7 +201,7 @@ class LambdaTest {
             import std.io
             func main() {
                 fin invoke: (() -> String) -> String =
-                    func(action: () -> String) { return action() }
+                    { action: () -> String -> return action() }
                 std::println(invoke { "variable" })
             }
         """.trimIndent()))
@@ -209,7 +212,7 @@ class LambdaTest {
             import std.io
             pack Runner {
                 fin invoke: (() -> String) -> String =
-                    func(action: () -> String) { return action() }
+                    { action: () -> String -> return action() }
             }
             func main() {
                 std::println(Runner().invoke { "field" })
@@ -222,7 +225,7 @@ class LambdaTest {
             import std.io
             func main() {
                 fin invoke: (() -> String) -> String =
-                    func(action: () -> String) { return action() }
+                    { action: () -> String -> return action() }
                 std::println((invoke) { "grouped" })
             }
         """.trimIndent()))
@@ -284,15 +287,86 @@ class LambdaTest {
 
             pack Calculator {
                 fin add: [Int, Int] -> Int =
-                    func { x: Int, y: Int -> x + y }
+                    [x: Int, y: Int] { x + y }
                 fin sub: (Int, Int) -> Int =
-                    func(x: Int, y: Int) { return x - y }
+                    { x: Int, y: Int -> return x - y }
             }
 
             func main() {
                 fin calculator = Calculator()
-                std::println(calculator.add(2, 3))
+                with [2, 3] { std::println(calculator.add()) }
                 std::println(calculator.sub(9, 7))
+            }
+        """.trimIndent()))
+    }
+
+    /**
+     * `it` is the name a lambda gives its parameter when it has exactly one and
+     * did not name it - not a property of the braces. A body that reads no `it`
+     * takes no parameters (LAMBDA_CONTEXT_CAPTURE_DIP.MD §5.1).
+     */
+    @Test fun aBareLambdaTakesNoParameterUnlessItsBodyReadsOne() {
+        assertEquals("1", run("""
+            import std.io
+            func main() {
+                var n = 0
+                fin inc = [n.!] { n = n + 1 }
+                inc()
+                std::println(n)
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun aBareLambdaStillTakesItWhenTheBodyReadsIt() {
+        assertEquals("6", run("""
+            import std.io
+            func main() {
+                fin double: (Int) -> Int = { it * 2 }
+                std::println(double(3))
+            }
+        """.trimIndent()))
+    }
+
+    /** A nested lambda owns its own `it`, so it does not give one to the lambda around it. */
+    @Test fun aNestedItBelongsToTheNestedLambda() {
+        assertEquals("2", run("""
+            import std.io
+            func main() {
+                var seen = 0
+                fin outer = {
+                    fin inner: (Int) -> Int = { it * 2 }
+                    seen = inner(1)
+                }
+                outer()
+                std::println(seen)
+            }
+        """.trimIndent()))
+    }
+
+    /** An empty parameter list is written by writing none, so `->` has no job left. */
+    @Test fun aParameterlessLambdaMayNotWriteAnArrow() {
+        val result = Compiler().compile("""
+            func main() {
+                var n = 0
+                fin inc = { -> n = n + 1 }
+                inc()
+            }
+        """.trimIndent())
+        val errors = assertIs<CompilationResult.Failure>(result).errors
+        assertTrue(
+            errors.any { "a lambda with no parameters writes no '->'" in it },
+            errors.toString(),
+        )
+    }
+
+    /** A callable type is spellable as a generic argument (§5.2). */
+    @Test fun aCallableTypeMayBeAGenericArgument() {
+        assertEquals("ok", run("""
+            import std.io
+            func main() {
+                var fs = std::listOf<() -> Int>()
+                var handlers = std::listOf<(Int) -> Int>()
+                std::println("ok")
             }
         """.trimIndent()))
     }
@@ -302,7 +376,7 @@ class LambdaTest {
             import std.io
 
             fin add: [Int, Int] -> Int =
-                func { x: Int, y: Int -> x + y }
+                [x: Int, y: Int] { x + y }
 
             func main() {
                 with [2, 3] {
@@ -375,13 +449,57 @@ class LambdaTest {
             import std.io
 
             fin scale: [Int](Int) -> Int =
-                func(value: Int) { factor: Int -> value * factor }
+                [value: Int] { factor: Int -> value * factor }
 
             func main() {
                 with 5 {
                     std::println(scale(2))
                 }
-                std::println(scale(2, 7))
+                std::println(2.scale(7))
+            }
+        """.trimIndent()))
+    }
+
+    /**
+     * A contextual receiver is not an argument. There are two ways to supply one:
+     * a `with` block, or the receiver call - `2.scale(7)` for one, `[2, 3].add()`
+     * for several (LAMBDA_CONTEXT_CAPTURE_DIP.MD §2).
+     */
+    @Test fun aReceiverIsSuppliedByWithOrByAReceiverCall() {
+        assertEquals("10\n14\n5\n5", run("""
+            import std.io
+            fin scale: [Int](Int) -> Int = [value] { factor -> value * factor }
+            fin add: [Int, Int] -> Int = { x, y -> x + y }
+
+            func main() {
+                with 5 { std::println(scale(2)) }
+                std::println(2.scale(7))
+                with [2, 3] { std::println(add()) }
+                std::println([2, 3].add())
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun aReceiverMayNotBePassedAsAnArgument() {
+        val errors = assertIs<CompilationResult.Failure>(Compiler().compile("""
+            import std.io
+            fin scale: [Int](Int) -> Int = [value] { factor -> value * factor }
+            func main() { std::println(scale(2, 7)) }
+        """.trimIndent())).errors
+        assertTrue(
+            errors.any { "expects 1 argument(s), got 2" in it && "not as arguments" in it },
+            errors.toString(),
+        )
+    }
+
+    /** Types are written only where the declared type does not already supply them. */
+    @Test fun aLambdaMayOmitTypesTheDeclaredTypeSupplies() {
+        assertEquals("6", run("""
+            import std.io
+            fin add: [Int, Int] -> Int = { x, y -> x + y }
+            fin twice: (Int) -> Int = { n -> n * 2 }
+            func main() {
+                with [1, 2] { std::println(add() + twice(1) + 1) }
             }
         """.trimIndent()))
     }

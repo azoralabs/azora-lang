@@ -926,7 +926,7 @@ class OwnershipTest {
         pack User { var name: String }
         func main() {
             var user = User("ana")
-            fin printName = { std::println(user.name) }
+            fin printName = [user.&] { std::println(user.name) }
             std::println(user.name)
         }
     """)
@@ -936,7 +936,7 @@ class OwnershipTest {
         import std.traits
         func main() {
             var message = "Hello"
-            fin callback = {
+            fin callback = [message.&] {
                 fin owned: String = message.clone()
                 std::println(owned)
             }

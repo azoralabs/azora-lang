@@ -164,7 +164,9 @@ realm std {
             self.nextObserverId += 1
             self.observers.add(ReactiveObserver<T>(id, true, observer))
             observer(self.current)
-            return Subscription(true) {
+            // The disposer reaches back into the state it was made from, so it
+            // says so: `self` by mutable reference, `id` copied.
+            return Subscription(true) [self.!, id] {
                 for i in 0..<self.observers.size {
                     let item: ReactiveObserver<T> = self.observers.get(i)
                     if item.id == id {

@@ -326,6 +326,18 @@ sealed class Expr {
         val variadic: Boolean = false,
         val receivers: List<Param> = emptyList(),
         val kind: CallableKind = CallableKind.FUNC,
+        /**
+         * False when the lambda wrote no parameter list at all (`{ body }`).
+         *
+         * A bare lambda takes the parameters of the expected callable type when
+         * there is one, so the resolver has to tell "declared none" apart from
+         * "declared nothing" - only the second may be given parameters.
+         */
+        val paramsWritten: Boolean = true,
+        /** Entries written in the bracket list that are captures, not receivers. */
+        val captures: List<Capture> = emptyList(),
+        /** `[=]` / `[&]` / `[!]` - the mode applied to everything else the body reads. */
+        val captureDefault: CaptureMode? = null,
     ) : Expr()
 
     /**
@@ -1230,6 +1242,15 @@ sealed class TypeRef {
         val ret: TypeRef,
         val receivers: List<TypeRef> = emptyList(),
         val kind: CallableKind = CallableKind.FUNC,
+        /**
+         * `escaping (Event) -> Unit` - the callable may outlive the call it is
+         * passed to, so whatever it captures must be owned.
+         *
+         * It belongs to the type rather than to the parameter, which is what lets
+         * it describe a pack field or a collection element as well as an argument
+         * (LAMBDA_CONTEXT_CAPTURE_DIP.MD §4.7).
+         */
+        val isEscaping: Boolean = false,
     ) : TypeRef() {
         override fun toString(): String {
             val prefix = if (kind == CallableKind.FUNC) "" else "${kind.surfaceName} "
@@ -1601,6 +1622,66 @@ enum class ReactiveKind(val spelling: String) {
 }
 
 /** Surface callable families supported by first-class lambda values. */
+/**
+ * How a lambda captures a binding from the scope around it.
+ *
+ * See LAMBDA_CONTEXT_CAPTURE_DIP.MD §4.2. Each spelling is the one the operation
+ * already has elsewhere: `take` is a prefix keyword, `clone` a method, and `&`
+ * / `!` the call-site borrow sigils.
+ */
+enum class CaptureMode(val spelling: String) {
+    /** `[value]` / `[=]` - an independent copy, taken when the closure is created. */
+    COPY("="),
+
+    /** `[value.&]` / `[&]` - a shared reference to the original binding. */
+    SHARED("&"),
+
+    /** `[value.!]` / `[!]` - a mutable reference to the original binding. */
+    MUTABLE("!"),
+
+    /** `[value.clone()]` - an independent value, cloned when the closure is created. */
+    CLONE("clone()"),
+
+    /** `[take value]` - ownership moves into the closure. */
+    MOVE("take"),
+}
+
+/**
+ * One capture entry in a lambda's bracket list.
+ *
+ * @property name the name the body uses - the alias where one was written
+ *   (`[ownedMessage = message.clone()]`), otherwise [source]
+ * @property source the outer binding being captured
+ */
+data class Capture(
+    val name: String,
+    val source: String,
+    val mode: CaptureMode,
+    val line: Int,
+    val column: Int = 0,
+)
+
+/**
+ * Splits a lambda's bracket list into contextual receivers and captures, given
+ * how many receivers the expected callable type declares.
+ *
+ * A bare name is ambiguous by construction: `[value]` is a copy capture on its
+ * own (§4.2), and a contextual receiver when the expected type declares one and
+ * the lambda named none - which is what makes `[value] { factor -> … }` a
+ * complete spelling of `[Int](Int) -> Int`. An entry that writes its mode
+ * (`[value.&]`, `[take value]`) is never a receiver, and neither is anything in
+ * a list that already names a receiver as `name: Type`.
+ *
+ * The resolver and the IR generator must agree on this split, so both ask here.
+ */
+fun Expr.Lambda.splitBracketList(expectedReceivers: Int): Pair<List<Param>, List<Capture>> {
+    if (receivers.isNotEmpty() || expectedReceivers == 0) return receivers to captures
+    val bare = captures.takeWhile { it.mode == CaptureMode.COPY && it.name == it.source }
+    if (bare.size < expectedReceivers) return receivers to captures
+    val bound = bare.take(expectedReceivers)
+    return bound.map { Param(it.name, TypeRef.Named("Any")) } to captures.drop(expectedReceivers)
+}
+
 enum class CallableKind(val surfaceName: String) {
     FUNC(""),
     TASK("async"),

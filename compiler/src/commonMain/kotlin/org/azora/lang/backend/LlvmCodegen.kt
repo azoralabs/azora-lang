@@ -1761,7 +1761,22 @@ class LlvmCodegen {
         }
     }
 
-    private data class Capture(val name: String, val type: IrType, val llvmType: String)
+    /**
+     * One entry of a closure environment.
+     *
+     * @property byRef the capture is a reference to the original binding, so the
+     *   environment holds its address and the body reads and writes through it -
+     *   which is what makes a closure's write visible outside it
+     */
+    private data class Capture(
+        val name: String,
+        val type: IrType,
+        val llvmType: String,
+        val byRef: Boolean = false,
+    ) {
+        /** The type stored in the environment struct. */
+        val fieldType: String get() = if (byRef) "$llvmType*" else llvmType
+    }
 
     private fun emitClosure(lambda: IrExpr.Lambda): String {
         val callableType = lambda.type as IrType.Function
@@ -1772,7 +1787,7 @@ class LlvmCodegen {
         val ctxType = "%azora.lambda.ctx.$id"
         val captures = collectCaptures(lambda)
         if (captures.isNotEmpty()) {
-            lateTypeDefinitions.add("$ctxType = type { ${captures.joinToString(", ") { it.llvmType }} }")
+            lateTypeDefinitions.add("$ctxType = type { ${captures.joinToString(", ") { it.fieldType }} }")
         }
 
         val environment = if (captures.isEmpty()) {
@@ -1788,10 +1803,16 @@ class LlvmCodegen {
             captures.forEachIndexed { index, capture ->
                 val storage = localVars.getValue(capture.name)
                 val field = nextTmp()
-                val value = nextTmp()
                 emit("  $field = getelementptr $ctxType, $ctxType* $context, i32 0, i32 $index")
-                emit("  $value = load ${capture.llvmType}, ${capture.llvmType}* ${storage.first}")
-                emit("  store ${capture.llvmType} $value, ${capture.llvmType}* $field, align 1")
+                if (capture.byRef) {
+                    // The address of the original binding: reads and writes in the
+                    // body go through it, so both sides see one value.
+                    emit("  store ${capture.fieldType} ${storage.first}, ${capture.fieldType}* $field, align 1")
+                } else {
+                    val value = nextTmp()
+                    emit("  $value = load ${capture.llvmType}, ${capture.llvmType}* ${storage.first}")
+                    emit("  store ${capture.llvmType} $value, ${capture.llvmType}* $field, align 1")
+                }
             }
             raw
         }
@@ -1857,10 +1878,19 @@ class LlvmCodegen {
                 val value = nextTmp()
                 val slot = nextTmp()
                 emit("  $field = getelementptr $contextType, $contextType* %env, i32 0, i32 $index")
-                emit("  $value = load ${capture.llvmType}, ${capture.llvmType}* $field, align 1")
-                emit("  $slot = alloca ${capture.llvmType}")
-                emit("  store ${capture.llvmType} $value, ${capture.llvmType}* $slot")
-                localVars[capture.name] = slot to capture.llvmType
+                if (capture.byRef) {
+                    // The environment holds the original binding's address, so the
+                    // name is bound to it directly - no copy, and therefore no
+                    // second value to fall out of step.
+                    val pointer = nextTmp()
+                    emit("  $pointer = load ${capture.fieldType}, ${capture.fieldType}* $field, align 1")
+                    localVars[capture.name] = pointer to capture.llvmType
+                } else {
+                    emit("  $value = load ${capture.llvmType}, ${capture.llvmType}* $field, align 1")
+                    emit("  $slot = alloca ${capture.llvmType}")
+                    emit("  store ${capture.llvmType} $value, ${capture.llvmType}* $slot")
+                    localVars[capture.name] = slot to capture.llvmType
+                }
             }
         }
         lambda.params.forEach { (paramName, type) ->
@@ -2067,7 +2097,7 @@ class LlvmCodegen {
             .filterKeys { it !in declared && it in localVars }
             .map { (name, type) ->
                 val llvmType = localVars[name]?.second ?: mapType(type)
-                Capture(name, type, llvmType)
+                Capture(name, type, llvmType, byRef = lambda.allCapturesByRef || name in lambda.byRefCaptures)
             }
     }
 

@@ -33,7 +33,7 @@ class LlvmLambdaExecTest {
         """
         import std.io
         func main() {
-            fin double = func(value: Int) { return value * 2 }
+            fin double = { value: Int -> return value * 2 }
             std::println(double(5))
         }
         """.trimIndent(),
@@ -46,7 +46,7 @@ class LlvmLambdaExecTest {
         import std.io
         func main() {
             fin offset = 3
-            fin add = func(value: Int) { return value + offset }
+            fin add = [offset.&] { value: Int -> return value + offset }
             std::println(add(4))
         }
         """.trimIndent(),
@@ -59,7 +59,7 @@ class LlvmLambdaExecTest {
         import std.io
         pack Calculator {
             fin add: [Int, Int] -> Int =
-                func { left: Int, right: Int -> left + right }
+                [left: Int, right: Int] { left + right }
         }
         func main() {
             fin calculator = Calculator()

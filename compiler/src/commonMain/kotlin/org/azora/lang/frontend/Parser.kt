@@ -103,6 +103,12 @@ class Parser(
     /** Declaration name → its innermost realm, for `(reflect X).realm` reflection. */
     private val realmMetaByName = mutableMapOf<String, RealmMeta>()
 
+    /**
+     * One frame per lambda body being parsed; true once that body has mentioned a
+     * free `it`. See the `it` case in [parsePrimary] for why the frames nest.
+     */
+    private val lambdaMentionsIt = mutableListOf<Boolean>()
+
     /** Declarations written inside a `realm test`, and how far each reaches. */
     private val testRealmMembers = mutableMapOf<String, Visibility>()
     /** Type declaration name → named namespace path (`std`, `std::container`, ...). */
@@ -1527,7 +1533,7 @@ class Parser(
         val start = peek()
         consume(TokenType.DEEPINLINE, "Expected 'deepinline'")
         consume(TokenType.IF, "Expected 'if'")
-        val condition = parseExpr()
+        val condition = withoutTrailingLambda { parseExpr() }
         consume(TokenType.L_BRACE, "Expected '{'")
         skipNewlines()
         val thenBranch = parseTopLevelBlock(deepInline = true)
@@ -1547,7 +1553,7 @@ class Parser(
         val start = peek()
         consume(TokenType.INLINE, "Expected 'inline'")
         consume(TokenType.IF, "Expected 'if'")
-        val condition = parseExpr()
+        val condition = withoutTrailingLambda { parseExpr() }
         consume(TokenType.L_BRACE, "Expected '{'")
         skipNewlines()
         val thenBranch = parseTopLevelBlock()
@@ -1624,7 +1630,7 @@ class Parser(
             check(TokenType.LET) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); if (deepInline) TopLevel.InlineLet(name, init, start.line, start.column) else TopLevel.LetDecl(name, type, init, start.line, start.column) }
             check(TokenType.IF) -> {
                 consume(TokenType.IF, "Expected 'if'")
-                val condition = parseExpr()
+                val condition = withoutTrailingLambda { parseExpr() }
                 consume(TokenType.L_BRACE, "Expected '{'")
                 skipNewlines()
                 val thenBranch = parseTopLevelBlock(deepInline)
@@ -1993,7 +1999,7 @@ class Parser(
         val result = mutableListOf<PackField>()
         when (keyword.type) {
             TokenType.IF -> {
-                val condition = parseExpr()
+                val condition = withoutTrailingLambda { parseExpr() }
                 result += guardedFieldBlock(condition, enforceNumFields)
                 skipNewlines()
                 // `else` and `else inline if` chain, each guarded by the negation of
@@ -2005,7 +2011,7 @@ class Parser(
                     if (check(TokenType.INLINE)) advance()
                     if (check(TokenType.IF)) {
                         advance()
-                        val next = parseExpr()
+                        val next = withoutTrailingLambda { parseExpr() }
                         result += guardedFieldBlock(conjoin(next, negated), enforceNumFields)
                         accumulated = Expr.Binary(accumulated, TokenType.OR_OR, next, keyword.line)
                     } else {
@@ -2018,7 +2024,7 @@ class Parser(
             TokenType.WHEN -> {
                 // `inline when <subject> { <pattern> -> { fields } … }`; each arm is
                 // guarded by `subject == pattern`.
-                val subject = parseExpr()
+                val subject = withoutTrailingLambda { parseExpr() }
                 consume(TokenType.L_BRACE, "Expected '{' after 'inline when' subject")
                 skipNewlines()
                 while (!check(TokenType.R_BRACE) && !isAtEnd()) {
@@ -2045,13 +2051,14 @@ class Parser(
                 // `inline for i in <range> { fields }` - the body repeats per value.
                 val loopVar = consumeIdentifierLike("Expected loop variable in 'inline for'")
                 consume(TokenType.IN, "Expected 'in' after 'inline for' variable")
-                val iterable = parseExpr()
+                val iterable = withoutTrailingLambda { parseExpr() }
                 result += repeatedFieldBlock(loopVar, iterable, enforceNumFields)
             }
             TokenType.WHILE, TokenType.LOOP -> {
                 // Bounded by a compile-time condition; the body's fields are recorded
                 // once and repeated during expansion.
-                val condition = if (keyword.type == TokenType.WHILE) parseExpr() else null
+                val condition =
+                    if (keyword.type == TokenType.WHILE) withoutTrailingLambda { parseExpr() } else null
                 result += guardedFieldBlock(condition, enforceNumFields)
             }
             else -> error("Unsupported 'inline' form in a pack body at line ${keyword.line}")
@@ -2258,7 +2265,7 @@ class Parser(
         while (current < meaningful) advance()
         advance() // 'inline'
         advance() // 'if'
-        val condition = parseExpr()
+        val condition = withoutTrailingLambda { parseExpr() }
         consume(TokenType.L_BRACE, "Expected '{' after 'inline if' signature condition")
         skipNewlines()
         consume(TokenType.INLINE, "Expected 'inline \"…\"' inside a signature fragment")
@@ -4237,14 +4244,31 @@ class Parser(
     }
 
     /** `when <scrutinee>` - the shared head of all three `when` forms. */
+    /**
+     * Parses an expression in a control-flow *header* - a condition, a scrutinee,
+     * an iterable, a step - where the `{` that follows opens the construct's body
+     * rather than a trailing lambda on the expression.
+     *
+     * Restoring the previous value rather than forcing `true` is the point: a
+     * header can sit inside a context that already suppressed trailing lambdas
+     * (`when x { … if ready() { … } … }`), and forcing it back on there would let
+     * the outer construct's `{` be eaten instead.
+     */
+    private fun <T> withoutTrailingLambda(parse: () -> T): T {
+        val saved = allowTrailingLambda
+        allowTrailingLambda = false
+        try {
+            return parse()
+        } finally {
+            allowTrailingLambda = saved
+        }
+    }
+
     private fun parseWhenHead(): Expr {
         consume(TokenType.WHEN, "Expected 'when'")
         // A branch's `{` must not be mistaken for a trailing lambda on a
         // scrutinee that ends in a call.
-        allowTrailingLambda = false
-        val scrutinee = parseExpr()
-        allowTrailingLambda = true
-        return scrutinee
+        return withoutTrailingLambda { parseExpr() }
     }
 
     /** A statement-form branch body: `-> { statements }`. */
@@ -5289,6 +5313,11 @@ class Parser(
                 advance() // 'async'
                 parseCallableType(CallableKind.TASK)
             }
+            // `escaping (Event) -> Unit` - contextual, exactly as `async` is above:
+            // it only reads as a prefix when a callable type actually follows.
+            check(TokenType.IDENTIFIER) && peek().lexeme == "escaping" &&
+                (peekNext()?.type == TokenType.L_PAREN || peekNext()?.type == TokenType.L_BRACKET) ->
+                parseCallableType()
             check(TokenType.L_BRACKET) && isCallableTypeAhead() -> parseCallableType()
             check(TokenType.L_BRACKET) -> {
                 // Bracket type sugar is not a valid type spelling. `[…]` in type
@@ -5458,6 +5487,13 @@ class Parser(
      * omitted when contextual receivers are the only inputs.
      */
     private fun parseCallableType(kind: CallableKind = CallableKind.FUNC): TypeRef {
+        // `escaping (Event) -> Unit` - contextual, so it only means anything
+        // directly before a callable type and nothing has to be renamed to adopt
+        // it. A callable is non-escaping by default: most higher-order functions
+        // call their callable and are done with it.
+        val escaping = check(TokenType.IDENTIFIER) && peek().lexeme == "escaping" &&
+            (peekNext()?.type == TokenType.L_PAREN || peekNext()?.type == TokenType.L_BRACKET)
+        if (escaping) advance()
         val receivers = mutableListOf<TypeRef>()
         if (match(TokenType.L_BRACKET)) {
             if (!check(TokenType.R_BRACKET)) {
@@ -5473,7 +5509,7 @@ class Parser(
             consume(TokenType.R_PAREN, "Expected ')' after callable parameters")
         }
         consume(TokenType.ARROW, "Expected '->' after callable parameters")
-        return TypeRef.Function(params, parseTypeName(), receivers, kind)
+        return TypeRef.Function(params, parseTypeName(), receivers, kind, isEscaping = escaping)
     }
 
     /** One entry of a callable type's parameter list, variadic when spelled `...T`. */
@@ -5656,11 +5692,14 @@ class Parser(
         consume(TokenType.FOR, "Expected 'for'")
         val name = consume(TokenType.IDENTIFIER, "Expected loop variable name").lexeme
         consume(TokenType.IN, "Expected 'in' after loop variable")
-        allowTrailingLambda = false
-        val iterable = parseExpr()
-        allowTrailingLambda = true
-        // Optional step, trailing the iterable it applies to: `for x in 0..<6 by 2`.
-        val step = if (match(TokenType.BY)) parseExpr() else null
+        // The step is part of the header too: in `for x in 0..<6 by 2 { … }` the
+        // `{` closes the header, so it must not be read as a trailing lambda on
+        // the step expression either.
+        val (iterable, step) = withoutTrailingLambda {
+            val it = parseExpr()
+            // Optional step, trailing the iterable it applies to: `for x in 0..<6 by 2`.
+            it to (if (match(TokenType.BY)) parseExpr() else null)
+        }
         consume(TokenType.L_BRACE, "Expected '{' after for iterable")
         skipNewlines()
         val body = parseBlock()
@@ -6690,7 +6729,7 @@ class Parser(
         val start = peek()
         consume(TokenType.DEEPINLINE, "Expected 'deepinline'")
         consume(TokenType.IF, "Expected 'if' after 'deepinline'")
-        val condition = parseExpr()
+        val condition = withoutTrailingLambda { parseExpr() }
         consume(TokenType.L_BRACE, "Expected '{' after deepinline if condition")
         skipNewlines()
         val thenBranch = parseBlock()
@@ -6940,7 +6979,7 @@ class Parser(
         val start = peek()
         consume(TokenType.INLINE, "Expected 'inline'")
         consume(TokenType.IF, "Expected 'if' after 'inline'")
-        val condition = parseExpr()
+        val condition = withoutTrailingLambda { parseExpr() }
         consume(TokenType.L_BRACE, "Expected '{' after inline if condition")
         skipNewlines()
         val thenBranch = parseBlock()
@@ -8315,21 +8354,33 @@ class Parser(
     private fun isGenericCallAhead(): Boolean {
         var i = current + 1 // token after '<'
         var depth = 1
+        // A type argument may itself be a callable type - `listOf<() -> Int>()` -
+        // whose parentheses must balance before a `>` can close the argument list.
+        var parens = 0
         var steps = 0
-        while (i < tokens.size && steps < 24) {
+        while (i < tokens.size && steps < 48) {
             when (tokens[i].type) {
                 TokenType.IDENTIFIER, TokenType.COMMA, TokenType.DOT,
                 TokenType.L_BRACKET, TokenType.R_BRACKET, TokenType.QMARK,
                 TokenType.COLON, TokenType.STAR, TokenType.INT_LITERAL,
                 // A type argument may be realm-qualified: `ArrayList<std::SerialField>`.
-                TokenType.DOUBLE_COLON -> {}
+                TokenType.DOUBLE_COLON,
+                // `(A, B) -> R` as a type argument.
+                TokenType.ARROW -> {}
+                TokenType.L_PAREN -> parens++
+                TokenType.R_PAREN -> {
+                    parens--
+                    if (parens < 0) return false
+                }
                 TokenType.LESS -> depth++
                 TokenType.GREATER -> {
+                    if (parens > 0) { i++; steps++; continue }
                     depth--
                     if (depth == 0) return closesGenericApplication(i)
                 }
                 // `>>` closes two nested generic levels at once (e.g. `f<G<T>>(args)`).
                 TokenType.SHIFT_RIGHT -> {
+                    if (parens > 0) { i++; steps++; continue }
                     depth -= 2
                     if (depth == 0) return closesGenericApplication(i)
                     if (depth < 0) return false
@@ -8352,9 +8403,7 @@ class Parser(
         val start = consume(TokenType.IF, "Expected 'if'")
         // The branch's `{` must not be mistaken for a trailing lambda on a
         // condition that ends in a call - `if ready() { a } else { b }`.
-        allowTrailingLambda = false
-        val condition = parseExpr()
-        allowTrailingLambda = true
+        val condition = withoutTrailingLambda { parseExpr() }
         consume(TokenType.L_BRACE, "Expected '{' after if-expression condition")
         skipNewlines()
         val thenExpr = parseExpr()
@@ -8400,7 +8449,6 @@ class Parser(
         return when (tok.type) {
             TokenType.IF -> parseIfExpr()
             TokenType.WHEN -> parseWhenExpr()
-            TokenType.FUNC -> parseCallableLambda(CallableKind.FUNC)
             TokenType.INT_LITERAL -> {
                 advance()
                 val numLit = tok.literal as NumericLiteral
@@ -8435,6 +8483,14 @@ class Parser(
             TokenType.IDENTIFIER,
             TokenType.REVERSE -> {
                 advance()
+                // `it` is the name a lambda gives its parameter when it has exactly
+                // one and did not name it - so whether the innermost lambda body
+                // mentions `it` is what decides whether it has that parameter at
+                // all. Each lambda pushes its own frame, so a nested `{ it * 2 }`
+                // marks the nested lambda and not the one around it.
+                if (tok.lexeme == "it" && lambdaMentionsIt.isNotEmpty()) {
+                    lambdaMentionsIt[lambdaMentionsIt.size - 1] = true
+                }
                 Expr.Identifier(tok.lexeme, tok.line, tok.column, tok.lexeme.length)
             }
             TokenType.DOUBLE_COLON -> {
@@ -8463,6 +8519,18 @@ class Parser(
             }
             // `[self: Vec2&]{ … }` - a lambda binding named receivers.
             TokenType.L_BRACKET if isReceiverLambdaAhead() -> parseReceiverLambda()
+            // `[2, 3].add()` - a receiver call supplying several contextual
+            // receivers. The same list `with [2, 3] { … }` takes, written at the
+            // call rather than around it.
+            TokenType.L_BRACKET if isReceiverListCallAhead() -> {
+                advance()
+                val values = mutableListOf<Expr>()
+                do { values.add(parseExpr()) } while (match(TokenType.COMMA))
+                consume(TokenType.R_BRACKET, "Expected ']' after a receiver list")
+                // Carried as an array literal: bare `[…]` is not a value anywhere
+                // else, so the shape is free, and every pass already handles it.
+                Expr.ArrayLiteral(values, tok.line, tok.column)
+            }
             TokenType.L_BRACKET -> {
                 advance()
                 if (check(TokenType.R_BRACKET)) {
@@ -8486,15 +8554,17 @@ class Parser(
                 }
             }
             TokenType.L_BRACE -> parseLambda(tok.line, tok.column)
-            // `launch { body }` - fire-and-forget task; desugars to a __launch(thunk) call.
             else -> error("Unexpected token '${tok.lexeme}' at line ${tok.line}")
         }
     }
 
     /**
-     * `func(params) { receivers -> body }`, with equivalent `task` and `flow`
-     * spellings. A callable without `(params)` has no ordinary parameters;
-     * names before `->` are contextual receivers.
+     * `async func { … }` - an asynchronous lambda.
+     *
+     * `async` qualifies `func` here exactly as it does on a declaration. This is
+     * the only lambda form that writes `func`: an ordinary lambda declares
+     * nothing, so it writes none - its contextual receivers go in brackets
+     * (`[logger: Logger&] { … }`) and its ordinary parameters after the arrow.
      */
     private fun parseCallableLambda(kind: CallableKind): Expr.Lambda {
         val start = advance()
@@ -8547,9 +8617,15 @@ class Parser(
      * Distinguished from a map literal by the `{` that must follow the matching
      * `]`, and from a type list by the `name:` shape of the first entry.
      */
+    /**
+     * True when a `[` opens a lambda's bracket list rather than an array literal.
+     *
+     * The list holds contextual receivers (`name: Type`) and captures (anything
+     * else), so its entries cannot be told apart by their first token - what
+     * decides it is the `{` after the matching `]`. Nothing valid parses that way
+     * otherwise: a block is not a postfix operator on an array.
+     */
     private fun isReceiverLambdaAhead(startIndex: Int = current): Boolean {
-        if (tokens.getOrNull(startIndex + 1)?.type != TokenType.IDENTIFIER) return false
-        if (tokens.getOrNull(startIndex + 2)?.type != TokenType.COLON) return false
         var depth = 0
         var i = startIndex
         while (i < tokens.size) {
@@ -8575,18 +8651,122 @@ class Parser(
      * value and a declaration name their receiver identically. Ordinary parameters
      * still go inside the braces before `->`.
      */
+    /**
+     * `[ receivers… , captures… ] { … }` - a lambda's bracket list.
+     *
+     * No introducer separates the two kinds because each entry already says
+     * which it is: `name: Type` declares a contextual receiver, and anything
+     * else captures. A `:` is the whole distinction, so the two may interleave.
+     */
     private fun parseReceiverLambda(): Expr.Lambda {
         val start = advance() // '['
         val receivers = mutableListOf<Param>()
-        do {
-            val name = consumeIdentifierLike("Expected receiver name in lambda receiver list")
-            consume(TokenType.COLON, "a lambda receiver must name its type: write '[$name: Type&]'")
-            val (type, modifier) = parseReceiverTypeAndModifier()
-            receivers.add(Param(name, type, modifier = modifier))
-        } while (match(TokenType.COMMA))
-        consume(TokenType.R_BRACKET, "Expected ']' after lambda receiver list")
+        val captures = mutableListOf<Capture>()
+        var default: CaptureMode? = null
+        if (!check(TokenType.R_BRACKET)) {
+            do {
+                if (check(TokenType.R_BRACKET)) break // trailing comma
+                val entry = peek()
+                when {
+                    // `[=]` / `[&]` / `[!]` - the mode for everything else the body
+                    // reads. Written bare because there is no value to their left.
+                    isCaptureDefaultAhead() -> {
+                        val mode = when (advance().type) {
+                            TokenType.EQUAL -> CaptureMode.COPY
+                            TokenType.AMP -> CaptureMode.SHARED
+                            else -> CaptureMode.MUTABLE
+                        }
+                        if (default != null) {
+                            error("line ${entry.line}: a lambda has one capture default; '[${mode.spelling}]' repeats it")
+                        }
+                        default = mode
+                    }
+                    // `name: Type` - a contextual receiver.
+                    check(TokenType.IDENTIFIER) && peekNext()?.type == TokenType.COLON -> {
+                        val name = consumeIdentifierLike("Expected receiver name in lambda bracket list")
+                        consume(TokenType.COLON, "a lambda receiver must name its type: write '[$name: Type&]'")
+                        val (type, modifier) = parseReceiverTypeAndModifier()
+                        receivers.add(Param(name, type, modifier = modifier))
+                    }
+                    else -> captures.add(parseCapture())
+                }
+            } while (match(TokenType.COMMA))
+        }
+        consume(TokenType.R_BRACKET, "Expected ']' after lambda bracket list")
         val lambda = parseLambda(start.line, start.column, implicitIt = false)
-        return lambda.copy(receivers = receivers)
+        return lambda.copy(receivers = receivers, captures = captures, captureDefault = default)
+    }
+
+    /**
+     * True when `[ … ]` here is a receiver list for a call - `[2, 3].add()`.
+     *
+     * The `.` after the matching `]` is what decides it, exactly as the `{` does
+     * for a lambda's bracket list.
+     */
+    private fun isReceiverListCallAhead(startIndex: Int = current): Boolean {
+        var depth = 0
+        var i = startIndex
+        while (i < tokens.size) {
+            when (tokens[i].type) {
+                TokenType.L_BRACKET -> depth++
+                TokenType.R_BRACKET -> {
+                    depth--
+                    if (depth == 0) return tokens.getOrNull(i + 1)?.type == TokenType.DOT
+                }
+                TokenType.EOF -> return false
+                else -> {}
+            }
+            i++
+        }
+        return false
+    }
+
+    /** True when the cursor is on a bare `=` / `&` / `!` capture default. */
+    private fun isCaptureDefaultAhead(): Boolean {
+        val t = peek().type
+        if (t != TokenType.EQUAL && t != TokenType.AMP && t != TokenType.BANG) return false
+        val after = peekNext()?.type
+        return after == TokenType.COMMA || after == TokenType.R_BRACKET
+    }
+
+    /**
+     * One capture entry: `[value]`, `[value.&]`, `[value.!]`, `[value.clone()]`,
+     * `[take value]`, and each with an `alias = ` in front.
+     */
+    private fun parseCapture(): Capture {
+        val start = peek()
+        // `[owned = message.clone()]` - the alias is the name inside the closure.
+        var alias: String? = null
+        if (check(TokenType.IDENTIFIER) && peekNext()?.type == TokenType.EQUAL) {
+            alias = advance().lexeme
+            advance() // '='
+        }
+        // `[take socket]` - ownership moves in. `take` is the prefix keyword it is
+        // everywhere else.
+        if (check(TokenType.TAKE)) {
+            advance()
+            val name = consumeIdentifierLike("Expected a name after 'take' in a capture list")
+            return Capture(alias ?: name, name, CaptureMode.MOVE, start.line, start.column)
+        }
+        val name = consumeIdentifierLike("Expected a capture name in a lambda bracket list")
+        if (!match(TokenType.DOT)) {
+            return Capture(alias ?: name, name, CaptureMode.COPY, start.line, start.column)
+        }
+        return when {
+            match(TokenType.AMP) -> Capture(alias ?: name, name, CaptureMode.SHARED, start.line, start.column)
+            match(TokenType.BANG) -> Capture(alias ?: name, name, CaptureMode.MUTABLE, start.line, start.column)
+            check(TokenType.IDENTIFIER) && peek().lexeme == "clone" -> {
+                advance()
+                consume(TokenType.L_PAREN, "Expected '()' after 'clone' in a capture list")
+                consume(TokenType.R_PAREN, "Expected '()' after 'clone' in a capture list")
+                Capture(alias ?: name, name, CaptureMode.CLONE, start.line, start.column)
+            }
+            else -> error(
+                "line ${start.line}: '$name.${peek().lexeme}' is not a capture - write " +
+                    "'$name' to copy, '$name.&' or '$name.!' to reference, " +
+                    "'$name.clone()' to clone, or 'take $name' to move",
+            )
+        }
     }
 
     private fun parseLambda(line: Int, column: Int, implicitIt: Boolean = true, variadic: Boolean = false): Expr.Lambda {
@@ -8614,20 +8794,37 @@ class Parser(
                 params.add(Param(name, TypeRef.Named("Any")))
             } while (match(TokenType.COMMA))
             consume(TokenType.ARROW, "Expected '->' in lambda")
-        } else if (!check(TokenType.ARROW) && implicitIt) {
-            // No params, no arrow → implicit `it`
-            params.add(Param("it", TypeRef.Named("Any")))
         } else if (check(TokenType.ARROW)) {
-            consume(TokenType.ARROW, "Expected '->' in lambda")
+            // `{ -> body }` - a parameter list that is empty is already written by
+            // not writing one, so the arrow has no job left. Accepting it as a
+            // synonym would be the same thing said two ways.
+            error(
+                "line ${peek().line}: a lambda with no parameters writes no '->' - " +
+                    "write '{ … }' rather than '{ -> … }'",
+            )
         }
+        // Whether a bare `{ body }` takes a parameter is decided by the body, so
+        // the body is parsed before the parameter list is settled.
+        val paramsWritten = params.isNotEmpty() || variadic
         skipNewlines()
+        lambdaMentionsIt.add(false)
         val body = parseBlock().toMutableList()
+        val mentionsIt = lambdaMentionsIt.removeAt(lambdaMentionsIt.size - 1)
         if (body.isNotEmpty() && body.last() is Stmt.ExprStmt) {
             val last = body.removeAt(body.size - 1) as Stmt.ExprStmt
             body.add(Stmt.Return(last.expr, last.line, last.column, last.length))
         }
         consume(TokenType.R_BRACE, "Expected '}' after lambda body")
-        return Expr.Lambda(params, body, line, column, variadic = variadic)
+        // `it` is not a property of the braces: a bare lambda takes the parameter
+        // named `it` only when its body actually reads one. A body that reads
+        // nothing takes no parameters, which is what makes `{ n = n + 1 }` a
+        // zero-parameter lambda rather than a one-parameter one that is called
+        // with none. Where an expected callable type supplies parameters, the
+        // resolver puts them back (see `TypeResolver`).
+        if (!paramsWritten && implicitIt && mentionsIt) {
+            params.add(Param("it", TypeRef.Named("Any")))
+        }
+        return Expr.Lambda(params, body, line, column, variadic = variadic, paramsWritten = paramsWritten)
     }
 
     /**

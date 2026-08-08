@@ -1,8 +1,9 @@
 # Azora Lambdas, Contextual Receivers, and Capture - DIP
 
-> Status: lambdas and contextual receivers are **implemented** in `0.0.5`.
-> Capture is **unspecified**, and the backends disagree about it (§3).
-> The capture-list syntax proposed in §4 targets `0.0.6`.
+> Status: lambdas and contextual receivers are **implemented** in `0.0.5`, and
+> so is §5 - phase 1 of §7 has landed. Capture is still **unspecified**, and the
+> backends disagree about it (§3). The capture-list syntax proposed in §4 targets
+> `0.0.6` and is blocked on §9.
 
 Azora has closures, and they work. What it does not have is an answer to the
 question every closure raises:
@@ -17,14 +18,14 @@ follows from the ownership model rather than being invented beside it.
 
 ## 1. The forms that exist
 
-Four spellings, all implemented:
+Three spellings, all implemented:
 
 | form     | example                             | parameters                                               |
 |----------|-------------------------------------|----------------------------------------------------------|
 | bare     | `{ consume(xs) }`, `{ it * 2 }`     | none, or the single one the expected type gives, as `it` |
 | explicit | `{ x: Int -> x * 2 }`, `{ n -> … }` | as written                                               |
-| callable | `func(value: Int) { f: Int -> … }`  | ordinary **and** contextual                              |
-| receiver | `[self: Vec2&]{ self.x + self.y }`  | contextual, bound by name                                |
+| receiver | `[self: Vec2&] { self.x + self.y }` | contextual, bound by name                                |
+| both     | `[v: Int] { f: Int -> v * f }`      | contextual in brackets, ordinary after the arrow          |
 
 §4 adds one more entry to the receiver form's brackets rather than a fifth
 spelling: `[logger: Logger&, message.&] { … }`.
@@ -36,8 +37,10 @@ absent parameter list is already unambiguous, and a second way to write it would
 be the same thing said twice. §5.1 is what stands between that rule and the
 implementation.
 
-The callable form also takes the `async func { … }` and `flow func { … }`
-qualifiers, which is how a lambda becomes a task or a generator.
+A lambda never writes `func`. `func` introduces a *declaration*, and a lambda
+declares nothing - `[value: Int] { … }` is the whole form. The one qualifier a
+lambda takes is `async`, which is how it becomes an asynchronous lambda or a
+generator.
 
 A trailing lambda is the call's final argument. Parentheses remain around the
 ordinary arguments and are omitted when the lambda is the only argument:
@@ -74,38 +77,72 @@ A contextual receiver is a parameter the *caller's scope* supplies rather than
 the call site. It is written in brackets, before the ordinary parameters:
 
 ```azora
-fin add: [Int, Int] -> Int = func { x: Int, y: Int -> x + y }
+fin add: [Int, Int] -> Int = { x, y -> x + y }
+// or fin add = { x: Int, y: Int -> x + y }
 
 func main() {
     with [2, 3] {
         std::println(add())     // 5 - both receivers come from `with`
     }
+    std::println([2, 3].add())  // 5 - both receivers come from []
 }
 ```
 
 `with value { … }` and `with [a, b] { … }` open the scope that supplies them.
-Ordinary and contextual parameters compose, and the contextual ones can always
-be passed explicitly instead:
+Ordinary and contextual parameters compose, and a receiver can also be written
+at the call rather than around it:
 
 ```azora
-fin scale: [Int](Int) -> Int = func(value: Int) { factor: Int -> value * factor }
+fin scale: [Int](Int) -> Int = [value] { factor -> value * factor }
 
 with 5 {
-    std::println(scale(2))      // 10 - factor comes from `with`
+    std::println(scale(2))      // 10 - `value` comes from `with`, `factor` is 2
 }
-std::println(scale(2, 7))       // 14 - factor passed directly
+std::println(scale(2, 7))       // this is wrong syntax, should not work
+std::println(2.scale(7))        // 14 - `value` is 2, `factor` is 7
 ```
+
+The two halves of the type line up with the two halves of the lambda: the
+bracketed `[Int]` is `value`, written in the lambda's brackets, and the
+parenthesised `(Int)` is `factor`, written after the arrow. Neither needs its
+type repeated - the declared type supplies both, which is why `[value]` and
+`factor` are written bare.
+
+A contextual receiver is **not** an argument. There are exactly two ways to
+supply one - a `with` block, or the receiver call: `2.scale(7)` for a single
+receiver, `[2, 3].add()` for several, the latter being the same list `with`
+takes, written at the call instead of around it. Passing one positionally is
+refused, because a call's arguments are its parameters and a receiver is not
+one:
+
+```
+'scale' expects 1 argument(s), got 2 - its 1 contextual receiver(s) are
+supplied by 'with' or by a receiver call, not as arguments
+```
+
+All of this is implemented. A bare bracket entry is ambiguous by construction -
+`[value]` is a copy capture on its own (§4.2) and a receiver when the expected
+type declares one and the lambda named none - so the resolver and the IR
+generator ask one shared helper which entries are which, rather than deciding
+separately and disagreeing.
+
+- ⬜ **A bare entry cannot be a copy capture when the expected type declares a
+  receiver.** `[retries]` against `[Ctx] -> R` binds `retries` as the receiver.
+  Writing the mode (`[retries.&]`, `[retries.clone()]`) is unambiguous, and so
+  is naming the receiver (`[ctx: Ctx]`); only the two bare forms contend
 
 The receiver form binds the context by name, which is what makes an extension
 written as a value read like one written as a method:
 
 ```azora
-pack Vec2 { fin x = 0
-    fin y = 0 }
+pack Vec2 {
+    fin x = 0
+    fin y = 0
+}
 
 func apply(v: Vec2&, f: [Vec2&] -> Int): Int {
     var acc = 0
-    with v { acc = f() }
+    with v { acc = f() } // or acc = v.f()
     return acc
 }
 
@@ -134,9 +171,10 @@ implementations answered independently, and they answered differently.
 **The interpreter** builds `Closure(params, body, st.scopes.toList())` - it
 keeps the scope chain, so a capture is a *reference* to the original binding.
 
-**LLVM and Wasm** collect the free variables, heap-allocate an environment
-struct at closure creation, and copy each captured value into it - so a capture
-is a *snapshot*.
+**LLVM and Wasm** collected the free variables, heap-allocated an environment
+struct at closure creation, and copied each captured value into it - so a
+capture was a *snapshot*. LLVM no longer does this for a referenced capture; Wasm
+still does (§7 phase 3).
 
 Two programs make the difference visible. Both compile cleanly. Both are
 measured, not predicted:
@@ -145,8 +183,7 @@ measured, not predicted:
 // A - the closure writes to a captured variable
 func main() {
     var n = 1
-    fin bump = { x: Int -> n = n + x
-        n }
+    fin bump = { x: Int -> n = n + x; return n }
     std::println(bump(4))
     std::println(n)
 }
@@ -162,10 +199,27 @@ func main() {
 }
 ```
 
-| program | interpreter | LLVM / Wasm |
-|---------|-------------|-------------|
-| A       | `5`, `5`    | `5`, `1`    |
-| B       | `99`        | `1`         |
+| program | interpreter | LLVM       | Wasm    |
+|---------|-------------|------------|---------|
+| A       | `5`, `5`    | ✅ `5`, `5` | ⬜ `5`, `1` |
+| B       | `99`        | ✅ `99`     | ⬜ `1`   |
+
+**LLVM now agrees**, and `LlvmCaptureParityTest` pins it under both the debug and
+the optimized lowering. Two changes were needed, and only the first is the one
+this section predicted:
+
+1. A referenced capture stores the binding's **address** in the closure
+   environment rather than a copy of its value, and the body binds the name to
+   that address - so there is no second copy to fall out of step.
+2. Constant propagation had to stop treating a referenced capture as a known
+   constant. A closure may write the original whenever it is called, and that is
+   not a write the pass can see; without this the optimized build still printed
+   `5, 1` while the debug build printed `5, 5`.
+
+The interpreter needed a change too, in the opposite direction: it kept the
+whole scope chain, so *every* capture referenced and `[retries]` was not
+independent of `retries`. A value capture is now snapshotted into a scope of its
+own when the closure is created.
 
 Program A is the one that hurts. The closure's own write is visible to the
 closure and invisible to everyone else - the value is updated in a copy that
@@ -314,19 +368,24 @@ existing use-after-take machinery reports it.
 ### 4.3 Defaults
 
 Writing every capture is right for a closure that escapes and tedious for one
-that does not, so two defaults cover the common cases:
+that does not, so three defaults cover the common cases - one per mode:
 
 ```azora
-// shared-borrow everything the body references
+// copy everything the body references - Copy only, never a silent clone
+let callback = [=] {
+    trace retries
+    trace timeout
+}
+
+// shared reference to everything the body references
 let callback = [&] {
     trace message
     trace user.name
 }
 
-// copy everything the body references - Copy only, never a silent clone
-let callback = [=] {
-    trace retries
-    trace timeout
+// shared mutable reference - the closure may write what it reads
+let increment = [!] {
+    count += 1
 }
 ```
 
@@ -370,23 +429,44 @@ let callback = [currentUser = user.&]          { trace currentUser.name }
 The alias is the name inside the closure; the outer binding keeps its own. This
 also gives the one way to capture two things that would otherwise collide.
 
-### 4.5 A lambda with no brackets
+### 4.5 A lambda with no brackets captures nothing
 
 Every closure in the language today is written without a bracket list, so the
-rule for that form decides whether this proposal is a migration or an addition:
+rule for that form decides whether this proposal is a migration or an addition.
+The rule:
 
-> A lambda with no capture list behaves as `[&]` - shared borrow of
-> everything it references - and may not escape.
+> A lambda with no capture list has **no access to the enclosing scope**. It
+> sees its own parameters, its contextual receivers, and globals - nothing else.
 
-Which keeps every existing `map`/`filter`/`forEach` closure compiling unchanged,
-makes the terse form the safe form, and means the only closures that must be
-rewritten are the ones that escape - which are the ones whose captures were
-never specified in the first place (§3).
+So capture is never implicit. `[=]`, `[&]` and `[!]` are the three ways to ask
+for it, and writing none asks for none:
 
-It also settles §3's measured divergence: a shared borrow is a reference to the
-original, so **program A prints `5`, `5`** - the interpreter's answer. The native
-backends must capture the address rather than the value, which is the one real
-implementation cost in this DIP.
+```azora
+var total = 0
+
+fin bad = { total = total + 1 }
+// line 3: 'total' is not in scope - a lambda with no capture list cannot reach
+//         the scope around it; write '[total.!]', or '[!]' to capture what the
+//         body reads
+
+fin good = [total.!] { total = total + 1 }
+```
+
+This is the stricter of the two possible rules and it is deliberate. A closure's
+relationship to the scope around it is the thing §3 shows nobody agreed on, and
+a default - any default - decides it silently for every closure that never
+thought about it. Making the terse form capture *nothing* means the question is
+answered where it is asked, and the answer is visible in the first line.
+
+It settles §3's divergence by removing the programs that exposed it: neither A
+nor B compiles as written, because neither says what `n` is to the closure. With
+`[n.!]` both are references to the original, so **A prints `5`, `5`** and **B
+prints `99`** - the interpreter's answers. The native backends must then capture
+the address rather than the value, which is the one real implementation cost in
+this DIP.
+
+The cost of the rule is migration: every existing closure that reads an outer
+binding needs a bracket. That is the price of the property, and §6 is the count.
 
 ### 4.6 Escape
 
@@ -497,7 +577,7 @@ let worker = async [data.&] {
 ```
 
 This form needs one decision the current grammar does not make. An async lambda
-is written `async func { … }` today, and `async [ … ] { … }` drops the `func`.
+is written `async { … }` today, and `async [ … ] { … }`.
 Since `async` is a contextual keyword, `async [` could also be an index into a
 binding named `async` - decidable by the same lookahead `isReceiverLambdaAhead`
 already uses (scan to the matching `]`, require a `{`), but it must be decided
@@ -530,11 +610,11 @@ fin h = std::spawn([take socket] { serve(socket) })
 
 Found while measuring §3, and worth fixing whether or not §4 lands.
 
-### 5.1 A bare lambda is assumed to take `it`
+### 5.1 A bare lambda is assumed to take `it` - ✅ fixed
 
-The parser gives every `{ body }` an implicit `it` parameter, whether or not the
-body mentions one. So the zero-parameter spelling from §1 - the one the rule
-says to write - does not typecheck:
+The parser gave every `{ body }` an implicit `it` parameter, whether or not the
+body mentioned one. So the zero-parameter spelling from §1 - the one the rule
+says to write - did not typecheck:
 
 ```azora
 var n = 0
@@ -544,24 +624,26 @@ inc()
 //         got 0 argument(s)
 ```
 
-The workarounds today are `func { n = n + 1 }` and annotating
+The workarounds today are `{ n = n + 1 }` and annotating
 `fin inc: () -> Unit`. Neither should be necessary, and the diagnostic reports
 the arity rather than the cause.
 
-**The rule.** `it` is not a property of the braces; it is the name a lambda
-gives its parameter when it has exactly one and did not name it. So a bare
-lambda takes:
+**The rule**, now implemented. `it` is not a property of the braces; it is the
+name a lambda gives its parameter when it has exactly one and did not name it.
+So a bare lambda takes:
 
 - the parameters of the expected callable type, if there is one - `{ it * 2 }`
   against `(Int) -> Int` has one, named `it`;
 - otherwise, the one named `it` if the body mentions `it`;
 - otherwise, none.
 
-The IR generator already reaches this conclusion when a callable type is
-available: it drops the implicit `it` when the type has no ordinary parameters,
-precisely because keeping it would shift every contextual receiver by one
-argument. The fix is to decide the same thing in the resolver, one step earlier,
-including when there is no type to consult.
+Whether the body reads `it` is decided by the parser, which is the only pass
+that knows its own lambda nesting - a nested `{ it * 2 }` marks the nested
+lambda and not the one around it, so `xs.forEach { ys.map { it * 2 } }` still
+gives the outer lambda no parameter. Where an expected callable type supplies
+parameters and the lambda wrote none, the resolver and the IR generator put them
+back, which is what keeps the closure's arity equal to what the call site
+passes.
 
 `{ -> body }` then has no job left, and by the same reasoning that rejects
 `requires [Base]` for a single requirement, it should be rejected rather than
@@ -571,16 +653,20 @@ quietly accepted as a synonym:
 line 2: write '{ n = n + 1 }' - a lambda with no parameters writes no '->'
 ```
 
-### 5.2 A callable type cannot be a generic argument
+### 5.2 A callable type cannot be a generic argument - ✅ fixed
 
 ```azora
 var fs = std::listOf<() -> Int>()
 // Unexpected token ')'
 ```
 
-A list of callables is the natural way to hold subscribers, handlers or a task
-queue, and it cannot currently be spelled. `parseTypeName` needs the callable
-type form where it parses a generic argument.
+A list of callables is the natural way to hold subscribers, handlers or a work
+queue, and it could not be spelled. The type *annotation* position always
+accepted it; what did not was a **call-site** type argument: the lookahead that
+decides whether a `<` opens a type-argument list or is a less-than allowed
+neither parentheses nor `->`, so `listOf<() -> Int>()` fell back to comparison.
+It now tracks parenthesis depth, so a `>` only closes the list once the callable
+type it sits in has closed.
 
 ### 5.3 The closure environment's lifetime is the allocator's problem
 
@@ -618,12 +704,12 @@ Nearly nothing, which is the intent.
 
 | phase | work                                                                                                                                                      | touches                                                    |
 |-------|-----------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------|
-| 1     | fix §5.1 (a bare lambda takes no `it` unless one is called for; reject `{ -> … }`) and §5.2 (callable type as generic argument)                           | `Parser`, `TypeResolver`                                   |
-| 2     | parse the bracket list: `name: Type` as a context parameter and everything else as a capture, the five capture forms, aliases, and the `&` / `=` defaults | `Parser`, `Ast`                                            |
-| 2b    | resolve each capture - check `Copy` for a copy, `Clone` for a clone, record a `take` as a move - and carry the modes into the IR                          | `TypeResolver`, `IrGenerator`                              |
-| 3     | capture borrows by address in the native backends; program A agrees across all three                                                                      | `LlvmCodegen`, `WasmCodegen`                               |
-| 4     | the `escaping` contextual keyword in type position, and the rule that a non-escaping callable may only be called or passed on                             | `Lexer`, `Parser`, `AzoraSyntaxVocabulary`, `TypeResolver` |
-| 5     | reject a borrow capture in an escaping closure, with the three-fix diagnostic                                                                             | `TypeResolver`                                             |
+| 1     | ✅ **done** - §5.1 (a bare lambda takes no `it` unless one is called for; reject `{ -> … }`) and §5.2 (callable type as generic argument)                  | `Parser`, `TypeResolver`, `IrGenerator`                    |
+| 2     | ✅ **done** - the bracket list: `name: Type` as a context parameter and everything else as a capture, the five capture forms, aliases, and the `=` / `&` / `!` defaults | `Parser`, `Ast` |
+| 2b    | ✅ **done** - captures are bound, §4.5's barrier is enforced, and each mode is checked: `Copy` for a copy, `Clone` for a clone, `take` recorded as a move. Modes are not yet carried into the IR | `TypeResolver`, `IrGenerator` |
+| 3     | 🟡 **partial** - LLVM captures borrows by address and program A agrees there, debug and optimized; Wasm still snapshots, because a Wasm local has no address and the binding would have to be promoted to linear memory first | `LlvmCodegen`, `IrOptimizer`, `IrInterpreter` |
+| 4     | ✅ **done** - the `escaping` contextual keyword in type position, on parameters and on fields alike | `Parser`, `AzoraSyntaxVocabulary`, `Ast`, `IrNode`, `TypeResolver` |
+| 5     | ✅ **done** - a borrow capture is refused in a closure that is returned, passed to an `escaping` parameter, or stored in an `escaping` field, with the three-fix diagnostic | `TypeResolver` |
 | 6     | stack-allocate non-escaping environments                                                                                                                  | `LlvmCodegen`, `WasmCodegen`                               |
 
 Phase 2 needs the lookahead §4.1 describes. `isReceiverLambdaAhead` currently
@@ -683,7 +769,7 @@ information than there is today.
    matches what both native backends do today. At call would match what a borrow
    reads. They differ exactly when the outer binding is written in between:
    program B again, with `Copy` instead of a borrow.
-5. **Does `async [ … ] { … }` replace `async func { … }` or join it?** §4.8
+5. **Does `async [ … ] { … }` replace `async { … }` or join it?** §4.8
    shows the bracket form is decidable, but two spellings for one thing is the
    sort of thing this language usually rejects - cf. §5.1 on `{ -> … }`.
 6. **May a capture list appear on the bare and explicit forms?** `[n.!] { n

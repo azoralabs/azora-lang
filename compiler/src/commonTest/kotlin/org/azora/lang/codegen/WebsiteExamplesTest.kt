@@ -522,7 +522,7 @@ func main() { std::println("Hello, Azora!") }"""))
     @Test fun ch31_flow() = assertEquals("0\n1\n4\n9", run("""
         import std.io
         import std.concurrency.generators
-        func squares(n: Int): std::Sequence<Int> = std::sequence<Int> [s: std::SequenceScope<Int>!] {
+        func squares(n: Int): std::Sequence<Int> = std::sequence<Int> [s: std::SequenceScope<Int>!, n.&] {
             for i in 0..<n { std::yield(i * i) }
         }
         func main() {

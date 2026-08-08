@@ -32,7 +32,7 @@ class WasmLambdaExecTest {
         """
         import std.io
         func main() {
-            fin double = func(value: Int) { return value * 2 }
+            fin double = { value: Int -> return value * 2 }
             std::println(double(5))
         }
         """.trimIndent(),
@@ -45,7 +45,7 @@ class WasmLambdaExecTest {
         import std.io
         func main() {
             fin offset = 3
-            fin add = func(value: Int) { return value + offset }
+            fin add = [offset.&] { value: Int -> return value + offset }
             std::println(add(4))
         }
         """.trimIndent(),
@@ -60,7 +60,7 @@ class WasmLambdaExecTest {
             return operation(value)
         }
         func main() {
-            fin square = func(value: Int) { return value * value }
+            fin square = { value: Int -> return value * value }
             std::println(apply(square, 4))
         }
         """.trimIndent(),
@@ -74,7 +74,7 @@ class WasmLambdaExecTest {
         func main() {
             fin whole = 3
             fin fraction = 0.5
-            fin add = func(value: Double) {
+            fin add = [whole.&, fraction.&] { value: Double ->
                 return value + whole + fraction
             }
             std::println(add(4.0))
@@ -88,7 +88,7 @@ class WasmLambdaExecTest {
         """
         import std.io
         fin scale: [Int](Int) -> Int =
-            func(value: Int) { factor: Int -> value * factor }
+            [value: Int] { factor: Int -> value * factor }
 
         func main() {
             with 5 {

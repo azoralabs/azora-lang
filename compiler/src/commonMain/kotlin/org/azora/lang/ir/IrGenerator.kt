@@ -29,6 +29,8 @@ import org.azora.lang.frontend.MemberCallStyle
 import org.azora.lang.frontend.TypeRef
 import org.azora.lang.frontend.TypeFunctionDecl
 import org.azora.lang.frontend.NumericSuffix
+import org.azora.lang.frontend.CaptureMode
+import org.azora.lang.frontend.splitBracketList
 import org.azora.lang.frontend.Program
 import org.azora.lang.frontend.ReactiveKind
 import org.azora.lang.frontend.Stmt
@@ -2089,6 +2091,23 @@ class IrGenerator(private val table: SymbolTable) {
                 IrExpr.Member(target, expr.name, memberType)
             }
             is Expr.MethodCall -> {
+                // `[2, 3].add()` - the receiver call with several receivers. The
+                // closure's convention is parameters first, receivers after, so the
+                // bracket list lowers to the trailing arguments.
+                val bracketTarget = expr.target as? Expr.ArrayLiteral
+                if (bracketTarget != null) {
+                    val callable = table.lookupVariable(expr.name)?.type as? IrType.Function
+                    if (callable != null && callable.receivers.isNotEmpty()) {
+                        val args = expr.args.map { lowerExpr(it) } +
+                            bracketTarget.elements.map { lowerExpr(it) }
+                        return IrExpr.Call(
+                            "",
+                            args,
+                            callable.ret,
+                            receiver = IrExpr.Var(resolveName(expr.name), callable),
+                        )
+                    }
+                }
                 // `x.clone()` with no written member - the compiler-provided
                 // `Clone` default is an independent deep copy.
                 if (expr.name == "clone" && expr.args.isEmpty()) {
@@ -2171,6 +2190,20 @@ class IrGenerator(private val table: SymbolTable) {
                         return IrExpr.MethodCall(target, expr.name, args, sig.returnType)
                     }
                 }
+                // `2.scale(7)` - the receiver call. `scale` is a callable whose one
+                // contextual receiver the target supplies, so it lowers like any
+                // other callable-value call with the receiver appended: the closure's
+                // convention is parameters first, receivers after.
+                val receiverCallable = table.lookupVariable(expr.name)?.type as? IrType.Function
+                if (receiverCallable != null && receiverCallable.receivers.size == 1) {
+                    val args = expr.args.map { lowerExpr(it) } + target
+                    return IrExpr.Call(
+                        "",
+                        args,
+                        receiverCallable.ret,
+                        receiver = IrExpr.Var(resolveName(expr.name), receiverCallable),
+                    )
+                }
                 // Universal infix (`a to b`) → call the generic free function.
                 val infixMangled = table.lookupUniversalInfix(expr.name)
                 if (infixMangled != null) {
@@ -2238,16 +2271,37 @@ class IrGenerator(private val table: SymbolTable) {
                     )
                 table.pushScope()
                 pushNameScope()
+                // `[owned = message.clone()]` - the alias is the name the body uses
+                // for a binding the enclosing scope calls something else. Pointing it
+                // at the source's name here means the body lowers to reads of the
+                // source, and the closure environment captures it like any other.
+                for (capture in expr.splitBracketList(callableType.receivers.size).second) {
+                    if (capture.name != capture.source) {
+                        nameScopes.last()[capture.name] = resolveName(capture.source)
+                    }
+                }
                 // `{ body }` carries the parser's implicit `it`. When the callable
                 // type has no ordinary parameters there is nothing for it to stand
                 // for, and keeping it would shift every contextual receiver by one
                 // argument at the call site. The resolver drops it from the type;
                 // the closure has to drop it from its parameter list to match.
-                val ordinarySources = if (
+                val ordinarySources = when {
                     callableType.params.isEmpty() &&
-                    expr.params.size == 1 &&
-                    expr.params[0].name == "it"
-                ) emptyList() else expr.params
+                        expr.params.size == 1 &&
+                        expr.params[0].name == "it" -> emptyList()
+                    // A bare lambda that reads no `it` declares no parameters; the
+                    // expected callable's are supplied so the closure's arity still
+                    // matches what the call site passes. The resolver decides the
+                    // same thing - this keeps the lowering in step with it.
+                    !expr.paramsWritten && expr.params.isEmpty() && callableType.params.isNotEmpty() ->
+                        callableType.params.indices.map { i ->
+                            Param(
+                                if (callableType.params.size == 1) "it" else "__arg$i",
+                                TypeRef.Named("Any"),
+                            )
+                        }
+                    else -> expr.params
+                }
                 val ordinaryParams = ordinarySources.mapIndexed { index, p ->
                     val t = callableType.params.getOrNull(index) ?: resolveType(p.type)
                     val m = registerName(p.name)
@@ -2258,13 +2312,17 @@ class IrGenerator(private val table: SymbolTable) {
                 // declares none, so the bindings are synthesized here under the name the
                 // resolver already used, and made available to calls in the body exactly
                 // as a `with` block would.
-                val inheritsReceivers = expr.receivers.isEmpty() && callableType.receivers.isNotEmpty()
+                // `[value] { factor -> … }` - a bare bracket entry is the receiver
+                // the expected type declares. The resolver asks the same question of
+                // the same helper, so both agree on which entries are receivers.
+                val (bracketReceivers, _) = expr.splitBracketList(callableType.receivers.size)
+                val inheritsReceivers = bracketReceivers.isEmpty() && callableType.receivers.isNotEmpty()
                 val receiverSources = if (inheritsReceivers) {
                     callableType.receivers.indices.map {
                         Param(lambdaReceiverName(expr.line, expr.column, it), TypeRef.Named("Any"))
                     }
                 } else {
-                    expr.receivers
+                    bracketReceivers
                 }
                 val receiverParams = receiverSources.mapIndexed { index, p ->
                     val t = callableType.receivers.getOrNull(index) ?: resolveType(p.type)
@@ -2284,10 +2342,25 @@ class IrGenerator(private val table: SymbolTable) {
                 table.popScope()
                 val retType = body.mapNotNull { (it as? IrStmt.Return)?.value?.type }.firstOrNull() ?: IrType.Unit
                 val irParams = ordinaryParams + receiverParams
+                // A referenced capture (`[n.&]`, `[n.!]`) is the original binding,
+                // so the backends put its address in the environment rather than a
+                // copy of its value. The names are the ones the body reads, which
+                // for an alias is the source it was pointed at.
+                val byRef = expr.splitBracketList(callableType.receivers.size).second
+                    .filter { it.mode == CaptureMode.SHARED || it.mode == CaptureMode.MUTABLE }
+                    .mapTo(mutableSetOf()) { resolveName(it.source) }
+                val defaultByRef = expr.captureDefault == CaptureMode.SHARED ||
+                    expr.captureDefault == CaptureMode.MUTABLE
+                val byValue = expr.splitBracketList(callableType.receivers.size).second
+                    .filter { it.mode != CaptureMode.SHARED && it.mode != CaptureMode.MUTABLE }
+                    .mapTo(mutableSetOf()) { resolveName(it.source) }
                 IrExpr.Lambda(
                     irParams,
                     body,
                     callableType.copy(ret = retType),
+                    byRefCaptures = byRef,
+                    allCapturesByRef = defaultByRef,
+                    valueCaptures = byValue,
                 )
             }
             // Macros are expanded before IR generation; a MetaInvoke here is a bug.

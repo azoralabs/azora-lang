@@ -39,9 +39,17 @@ implementation.
 The callable form also takes the `async func { … }` and `flow func { … }`
 qualifiers, which is how a lambda becomes a task or a generator.
 
-A trailing lambda after a call is a call argument, and a `{` reopens statement
-context - so newlines inside a lambda written inline still separate statements
-instead of being swallowed by the enclosing parentheses.
+A trailing lambda is the call's final argument. Parentheses remain around the
+ordinary arguments and are omitted when the lambda is the only argument:
+
+```azora
+fin subscription = Subscription(true) { disposeResource() }
+fin greeting = run { "hello" }
+runner.observe { value -> trace { value } }
+```
+
+The `{` reopens statement context, so newlines inside a trailing lambda still
+separate statements instead of being swallowed by an earlier argument list.
 
 The last expression statement of a lambda body becomes its `return`. That is a
 parser rewrite, not an inference: `DO_NOT_INFER_RETURN_TYPE.MD` governs

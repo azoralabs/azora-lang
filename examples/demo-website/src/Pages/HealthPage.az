@@ -3,7 +3,7 @@ package demo_website.pages
 import std.ui
 import std
 
-view HealthEntry(
+react func HealthEntry(
     pet: String,
     date: String,
     kind: String,
@@ -75,7 +75,7 @@ view HealthEntry(
     }
 }
 
-view HealthPage(
+react func HealthPage(
     onBack: () -> Unit
 ) {
     Column(

@@ -65,6 +65,19 @@ class WasmCodegen {
     private var blockCounter = 0
     private val loopStack = ArrayDeque<Pair<String, String>>() // (breakLabel, continueLabel)
     private val labelTargets = HashMap<String, Pair<String, String>>()
+    private val activeReactiveEffects = mutableListOf<IrStmt.Effect>()
+    private var emittingReactiveEffect = false
+    private data class LazyLocal(
+        val type: IrType,
+        val initializer: IrExpr,
+        val dependencies: Set<String>,
+        val flagName: String,
+    )
+    private val lazyLocals = mutableMapOf<String, LazyLocal>()
+    private data class ReactiveStorage(val valueGlobal: String, val initGlobal: String, val type: IrType)
+    private val reactiveStorage = mutableMapOf<Pair<String, String>, ReactiveStorage>()
+    private val reactiveAliases = mutableMapOf<String, ReactiveStorage>()
+    private var currentFunctionName = ""
 
     // Module state.
     private val structs = HashMap<String, List<IrField>>()
@@ -112,6 +125,7 @@ class WasmCodegen {
         structs.clear(); globalTypes.clear(); stringConsts.clear(); constCursor = STRING_BASE
         usesAlloc = false; usesConcat = false; usesStrEq = false; usesRepeat = false; usesIntToStr = false; usesLongToStr = false; usesDoubleToStr = false; usesTrig = false; usesExpLog = false; usesInvTrig = false; usesVhaTrig = false; usesIsCheck = false
         neededIntrinsics.clear(); externs.clear(); neededExterns.clear()
+        reactiveStorage.clear(); reactiveAliases.clear()
         closureTypes.clear(); closureFunctions.clear()
 
         for (item in program.items) if (item is IrTopLevel.Struct) {
@@ -130,6 +144,11 @@ class WasmCodegen {
 
         val funcs = program.items.filterIsInstance<IrTopLevel.Func>().map { it.function }
             .filter { it.name !in org.azora.lang.semantic.CtfeEvaluator.RUNTIME_INTRINSICS }
+        for (func in funcs) collectReactiveStorage(func.name, func.body)
+        for (storage in reactiveStorage.values.distinctBy { it.valueGlobal }) {
+            globalTypes[storage.valueGlobal] = storage.type
+            globalTypes[storage.initGlobal] = IrType.Bool
+        }
 
         // Emit function bodies first (interns strings, sets runtime flags).
         val funcText = StringBuilder()
@@ -254,6 +273,11 @@ class WasmCodegen {
         locals.clear(); localIrTypes.clear(); tempCounter = 0; blockCounter = 0
         loopStack.clear(); labelTargets.clear()
         params = func.params.map { it.first }.toSet()
+        activeReactiveEffects.clear()
+        emittingReactiveEffect = false
+        lazyLocals.clear()
+        reactiveAliases.clear()
+        currentFunctionName = func.name
         localIrTypes.putAll(func.params)
 
         out.clear(); indent = 2
@@ -301,12 +325,25 @@ class WasmCodegen {
 
     private fun emitStmt(stmt: IrStmt) {
         when (stmt) {
-            is IrStmt.VarDecl -> { declareLocal(stmt.name, stmt.type); line("(local.set \$${stmt.name} ${emitExpr(stmt.initializer)})") }
-            is IrStmt.FinDecl -> { declareLocal(stmt.name, stmt.type); line("(local.set \$${stmt.name} ${emitExpr(stmt.initializer)})") }
-            is IrStmt.LetDecl -> { declareLocal(stmt.name, stmt.type); line("(local.set \$${stmt.name} ${emitExpr(stmt.initializer)})") }
+            is IrStmt.VarDecl -> if (stmt.reactiveLifetime != null) emitReactiveDecl(stmt.name, stmt.type, stmt.initializer)
+                else emitLocalDecl(stmt.name, stmt.type, stmt.initializer, stmt.lazy)
+            is IrStmt.FinDecl -> if (stmt.reactiveLifetime != null) emitReactiveDecl(stmt.name, stmt.type, stmt.initializer)
+                else emitLocalDecl(stmt.name, stmt.type, stmt.initializer, stmt.lazy)
+            is IrStmt.LetDecl -> if (stmt.reactiveLifetime != null) emitReactiveDecl(stmt.name, stmt.type, stmt.initializer)
+                else emitLocalDecl(stmt.name, stmt.type, stmt.initializer, stmt.lazy)
             is IrStmt.Assignment -> {
-                val operation = if (stmt.name in globalTypes && stmt.name !in localIrTypes) "global.set" else "local.set"
-                line("($operation \$${stmt.name} ${emitExpr(stmt.value)})")
+                val alias = reactiveAliases[stmt.name]
+                val target = alias?.valueGlobal ?: stmt.name
+                val operation = if (alias != null || (target in globalTypes && target !in localIrTypes)) "global.set" else "local.set"
+                line("($operation \$$target ${emitExpr(stmt.value)})")
+                if (!emittingReactiveEffect) {
+                    val changed = invalidateLazyDependents(stmt.name) + stmt.name
+                    for (effect in activeReactiveEffects.filter { effect ->
+                        effect.dependencies.any { it in changed }
+                    }) {
+                        emitReactiveEffect(effect)
+                    }
+                }
             }
             is IrStmt.IndexAssign -> line("(i32.store ${elemAddr(stmt.target, stmt.index)} ${emitExpr(stmt.value)})")
             is IrStmt.MemberAssign -> line("(i32.store ${fieldAddr(stmt.target, stmt.name)} ${emitExpr(stmt.value)})")
@@ -329,8 +366,112 @@ class WasmCodegen {
             is IrStmt.Throw -> line("unreachable")
             is IrStmt.Try -> for (s in stmt.body) emitStmt(s) // no exception support - run the body
             is IrStmt.Defer -> {}
+            is IrStmt.Effect -> {
+                activeReactiveEffects.add(stmt)
+                emitReactiveEffect(stmt)
+            }
             is IrStmt.Yield -> {}
         }
+    }
+
+    private fun emitReactiveEffect(effect: IrStmt.Effect) {
+        val previous = emittingReactiveEffect
+        emittingReactiveEffect = true
+        try {
+            for (stmt in effect.body) emitStmt(stmt)
+        } finally {
+            emittingReactiveEffect = previous
+        }
+    }
+
+    private fun emitLocalDecl(name: String, type: IrType, initializer: IrExpr, lazy: Boolean) {
+        declareLocal(name, type)
+        if (!lazy) {
+            line("(local.set \$$name ${emitExpr(initializer)})")
+            return
+        }
+        val flagName = "__lazy_init_$name"
+        declareLocal(flagName, IrType.Bool)
+        line("(local.set \$$flagName (i32.const 0))")
+        val refs = linkedMapOf<String, IrType>()
+        collectReferencedVars(initializer, refs)
+        lazyLocals[name] = LazyLocal(type, initializer, refs.keys, flagName)
+    }
+
+    private fun collectReactiveStorage(owner: String, stmts: List<IrStmt>) {
+        for (stmt in stmts) {
+            when (stmt) {
+                is IrStmt.VarDecl -> if (stmt.reactiveLifetime != null) registerReactiveStorage(owner, stmt.name, stmt.type)
+                is IrStmt.FinDecl -> if (stmt.reactiveLifetime != null) registerReactiveStorage(owner, stmt.name, stmt.type)
+                is IrStmt.LetDecl -> if (stmt.reactiveLifetime != null) registerReactiveStorage(owner, stmt.name, stmt.type)
+                is IrStmt.If -> {
+                    collectReactiveStorage(owner, stmt.thenBranch)
+                    stmt.elseBranch?.let { collectReactiveStorage(owner, it) }
+                }
+                is IrStmt.Scope -> collectReactiveStorage(owner, stmt.body)
+                is IrStmt.While -> collectReactiveStorage(owner, stmt.body)
+                is IrStmt.For -> collectReactiveStorage(owner, stmt.body)
+                is IrStmt.ForEach -> collectReactiveStorage(owner, stmt.body)
+                is IrStmt.Loop -> collectReactiveStorage(owner, stmt.body)
+                is IrStmt.When -> {
+                    stmt.branches.forEach { collectReactiveStorage(owner, it.body) }
+                    stmt.elseBranch?.let { collectReactiveStorage(owner, it) }
+                }
+                is IrStmt.Try -> {
+                    collectReactiveStorage(owner, stmt.body)
+                    stmt.catchBody?.let { collectReactiveStorage(owner, it) }
+                }
+                is IrStmt.Defer -> collectReactiveStorage(owner, stmt.body)
+                is IrStmt.Effect -> collectReactiveStorage(owner, stmt.body)
+                else -> Unit
+            }
+        }
+    }
+
+    private fun registerReactiveStorage(owner: String, name: String, type: IrType) {
+        fun safe(value: String) = value.map { if (it.isLetterOrDigit() || it == '_') it else '_' }.joinToString("")
+        val base = "__azora_reactive_${safe(owner)}_${safe(name)}"
+        reactiveStorage[owner to name] = ReactiveStorage(base, "${base}_initialized", type)
+    }
+
+    private fun emitReactiveDecl(name: String, type: IrType, initializer: IrExpr) {
+        val storage = reactiveStorage[currentFunctionName to name]
+            ?: error("missing reactive storage for '$currentFunctionName::$name'")
+        reactiveAliases[name] = storage
+        line("(if (i32.eqz (global.get \$${storage.initGlobal}))")
+        indent++
+        line("(then")
+        indent++
+        line("(global.set \$${storage.valueGlobal} ${emitExpr(initializer)})")
+        line("(global.set \$${storage.initGlobal} (i32.const 1))")
+        indent--
+        line("))")
+        indent--
+    }
+
+    private fun ensureLazyInitialized(name: String) {
+        val lazy = lazyLocals[name] ?: return
+        line("(if (i32.eqz (local.get \$${lazy.flagName}))")
+        indent++
+        line("(then")
+        indent++
+        line("(local.set \$$name ${emitExpr(lazy.initializer)})")
+        line("(local.set \$${lazy.flagName} (i32.const 1))")
+        indent--
+        line("))")
+        indent--
+    }
+
+    private fun invalidateLazyDependents(changed: String, seen: MutableSet<String> = mutableSetOf()): Set<String> {
+        if (!seen.add(changed)) return emptySet()
+        val invalidated = linkedSetOf<String>()
+        for ((name, lazy) in lazyLocals) {
+            if (changed !in lazy.dependencies) continue
+            line("(local.set \$${lazy.flagName} (i32.const 0))")
+            invalidated.add(name)
+            invalidated.addAll(invalidateLazyDependents(name, seen))
+        }
+        return invalidated
     }
 
     private fun emitIf(stmt: IrStmt.If) {
@@ -409,22 +550,37 @@ class WasmCodegen {
 
     private fun emitWhile(label: String?, cond: String, body: List<IrStmt>, isFor: Boolean, forInc: (() -> Unit)?) {
         val n = blockCounter++
-        val brk = "brk_$n"; val cont = "cont_$n"
+        val brk = "brk_$n"
+        val loop = "loop_$n"
+        val cont = if (isFor) "cont_$n" else loop
+        val previousLabelTarget = label?.let { labelTargets[it] }
         if (label != null) labelTargets[label] = brk to cont
         loopStack.addLast(brk to cont)
         line("(block \$$brk")
         indent++
-        line("(loop \$$cont")
+        line("(loop \$$loop")
         indent++
         line("(br_if \$$brk (i32.eqz $cond))")
+        if (isFor) {
+            line("(block \$$cont")
+            indent++
+        }
         for (s in body) emitStmt(s)
+        if (isFor) {
+            indent--
+            line(")")
+        }
         forInc?.invoke()
-        line("(br \$$cont)")
+        line("(br \$$loop)")
         indent--
         line(")")
         indent--
         line(")")
         loopStack.removeLast()
+        if (label != null) {
+            if (previousLabelTarget == null) labelTargets.remove(label)
+            else labelTargets[label] = previousLabelTarget
+        }
     }
 
     private fun emitFor(stmt: IrStmt.For) {
@@ -451,8 +607,11 @@ class WasmCodegen {
         is IrExpr.EnumLiteral -> "(i32.const ${internString(expr.variant)})"
         is IrExpr.EnumToString -> emitExpr(expr.value)
         is IrExpr.Var -> {
-            val operation = if (expr.name in globalTypes && expr.name !in localIrTypes) "global.get" else "local.get"
-            "($operation \$${expr.name})"
+            ensureLazyInitialized(expr.name)
+            val alias = reactiveAliases[expr.name]
+            val target = alias?.valueGlobal ?: expr.name
+            val operation = if (alias != null || (target in globalTypes && target !in localIrTypes)) "global.get" else "local.get"
+            "($operation \$$target)"
         }
         is IrExpr.Unary -> when (expr.op) {
             IrUnaryOp.NEG -> {
@@ -877,6 +1036,7 @@ class WasmCodegen {
                     stmt.catchBody?.let { collectDeclaredNames(it, names) }
                 }
                 is IrStmt.Defer -> collectDeclaredNames(stmt.body, names)
+                is IrStmt.Effect -> collectDeclaredNames(stmt.body, names)
                 else -> Unit
             }
         }
@@ -943,6 +1103,7 @@ class WasmCodegen {
                     stmt.catchBody?.let { collectReferencedVars(it, refs) }
                 }
                 is IrStmt.Defer -> collectReferencedVars(stmt.body, refs)
+                is IrStmt.Effect -> collectReferencedVars(stmt.body, refs)
                 is IrStmt.Yield -> collectReferencedVars(stmt.value, refs)
                 is IrStmt.Break, is IrStmt.Continue -> Unit
             }

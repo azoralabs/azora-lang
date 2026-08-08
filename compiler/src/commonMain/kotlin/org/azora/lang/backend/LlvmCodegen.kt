@@ -145,6 +145,20 @@ class LlvmCodegen {
     /** True when the function currently being emitted declares `T ?! E`. */
     private var currentIsFailable = false
 
+    /** Effects visible at the current point in the function, for static native lowering. */
+    private val activeReactiveEffects = mutableListOf<IrStmt.Effect>()
+    private var emittingReactiveEffect = false
+    private data class LazyLocal(
+        val type: IrType,
+        val initializer: IrExpr,
+        val dependencies: Set<String>,
+        val flagName: String,
+    )
+    private val lazyLocals = mutableMapOf<String, LazyLocal>()
+    private data class ReactiveStorage(val valueGlobal: String, val initGlobal: String, val type: IrType)
+    private val reactiveStorage = mutableMapOf<Pair<String, String>, ReactiveStorage>()
+    private var currentFunctionName = ""
+
     /** Names of functions that can fail; a call to one needs an error check. */
     private val failableFunctions = mutableSetOf<String>()
 
@@ -255,6 +269,7 @@ class LlvmCodegen {
         usesErrorSlot = false
         globalVars.clear()
         dynamicGlobalInitializers.clear()
+        reactiveStorage.clear()
         lateTypeDefinitions.clear()
         deferredFunctions.clear()
         for (item in program.items.filterIsInstance<IrTopLevel.Struct>()) {
@@ -297,6 +312,10 @@ class LlvmCodegen {
 
         val body = StringBuilder()
 
+        for (item in program.items.filterIsInstance<IrTopLevel.Func>()) {
+            collectReactiveStorage(item.function.name, item.function.body)
+        }
+
         // Struct type definitions. Structs are heap-allocated and passed by
         // pointer (`%struct.T*`); construction, member reads and member writes
         // lower to malloc + getelementptr below.
@@ -324,6 +343,15 @@ class LlvmCodegen {
                 out.clear()
                 emitGlobal(global.stmt)
                 body.append(out)
+            }
+            body.appendLine()
+        }
+
+        if (reactiveStorage.isNotEmpty()) {
+            body.appendLine("; Reactive owner storage")
+            for (storage in reactiveStorage.values.distinctBy { it.valueGlobal }) {
+                body.appendLine("@${storage.valueGlobal} = internal global ${mapType(storage.type)} zeroinitializer")
+                body.appendLine("@${storage.initGlobal} = internal global i1 false")
             }
             body.appendLine()
         }
@@ -581,9 +609,18 @@ class LlvmCodegen {
     private fun collectLocalSlots(stmts: List<IrStmt>, slots: MutableSet<Pair<String, String>>) {
         for (stmt in stmts) {
             when (stmt) {
-                is IrStmt.VarDecl -> slots.add(stmt.name to mapType(stmt.type))
-                is IrStmt.FinDecl -> slots.add(stmt.name to mapType(stmt.type))
-                is IrStmt.LetDecl -> slots.add(stmt.name to mapType(stmt.type))
+                is IrStmt.VarDecl -> {
+                    slots.add(stmt.name to mapType(stmt.type))
+                    if (stmt.lazy) slots.add(lazyFlagName(stmt.name) to "i1")
+                }
+                is IrStmt.FinDecl -> {
+                    slots.add(stmt.name to mapType(stmt.type))
+                    if (stmt.lazy) slots.add(lazyFlagName(stmt.name) to "i1")
+                }
+                is IrStmt.LetDecl -> {
+                    slots.add(stmt.name to mapType(stmt.type))
+                    if (stmt.lazy) slots.add(lazyFlagName(stmt.name) to "i1")
+                }
                 is IrStmt.If -> {
                     collectLocalSlots(stmt.thenBranch, slots)
                     stmt.elseBranch?.let { collectLocalSlots(it, slots) }
@@ -622,12 +659,13 @@ class LlvmCodegen {
                     collectLocalSlots(stmt.body, slots)
                     stmt.catchBody?.let { collectLocalSlots(it, slots) }
                 }
+                is IrStmt.Effect -> collectLocalSlots(stmt.body, slots)
                 else -> {}
             }
         }
     }
 
-    private fun emitFunction(func: IrFunction) {
+    private fun emitFunction(func: IrFunction, reactiveOwnerName: String = func.name) {
         localVars.clear()
         loopStack.clear()
         taskScopeStack.clear()
@@ -635,6 +673,10 @@ class LlvmCodegen {
         labelCounter = 0
         terminated = false
         currentBlock = "entry"
+        currentFunctionName = reactiveOwnerName
+        activeReactiveEffects.clear()
+        emittingReactiveEffect = false
+        lazyLocals.clear()
 
         // The program entry point is always emitted as `i32 @main` returning 0,
         // so the produced executable / `lli` run yields a clean exit code.
@@ -698,7 +740,7 @@ class LlvmCodegen {
         usesAllocatorRuntime = true
 
         val bodyName = taskBodyName(func.name)
-        emitFunction(func.copy(name = bodyName, isTask = false))
+        emitFunction(func.copy(name = bodyName, isTask = false), reactiveOwnerName = func.name)
         line("")
         emitTaskEntryWrapper(func, bodyName)
         line("")
@@ -829,9 +871,12 @@ class LlvmCodegen {
 
     private fun emitStmt(stmt: IrStmt) {
         when (stmt) {
-            is IrStmt.VarDecl -> emitLocalDecl(stmt.name, stmt.type, stmt.initializer)
-            is IrStmt.FinDecl -> emitLocalDecl(stmt.name, stmt.type, stmt.initializer)
-            is IrStmt.LetDecl -> emitLocalDecl(stmt.name, stmt.type, stmt.initializer)
+            is IrStmt.VarDecl -> if (stmt.reactiveLifetime != null) emitReactiveDecl(stmt.name, stmt.type, stmt.initializer)
+                else emitLocalDecl(stmt.name, stmt.type, stmt.initializer, stmt.lazy)
+            is IrStmt.FinDecl -> if (stmt.reactiveLifetime != null) emitReactiveDecl(stmt.name, stmt.type, stmt.initializer)
+                else emitLocalDecl(stmt.name, stmt.type, stmt.initializer, stmt.lazy)
+            is IrStmt.LetDecl -> if (stmt.reactiveLifetime != null) emitReactiveDecl(stmt.name, stmt.type, stmt.initializer)
+                else emitLocalDecl(stmt.name, stmt.type, stmt.initializer, stmt.lazy)
             is IrStmt.Assignment -> {
                 val entry = localVars[stmt.name]
                 if (entry != null) {
@@ -843,6 +888,14 @@ class LlvmCodegen {
                         ?: error("Assignment target '${stmt.name}' has no local or global storage")
                     val value = emitExpr(stmt.value)
                     emit("  store $type $value, $type* @${stmt.name}")
+                }
+                if (!emittingReactiveEffect) {
+                    val changed = invalidateLazyDependents(stmt.name) + stmt.name
+                    for (effect in activeReactiveEffects.filter { effect ->
+                        effect.dependencies.any { it in changed }
+                    }) {
+                        emitReactiveEffect(effect)
+                    }
                 }
             }
             is IrStmt.Return -> {
@@ -883,10 +936,24 @@ class LlvmCodegen {
             is IrStmt.IndexAssign -> emitIndexAssign(stmt)
             is IrStmt.MemberAssign -> emitMemberAssign(stmt)
             is IrStmt.Defer -> emit("  ; defer - not lowered")
+            is IrStmt.Effect -> {
+                activeReactiveEffects.add(stmt)
+                emitReactiveEffect(stmt)
+            }
             is IrStmt.Yield -> emit("  ; yield - not lowered (interpreter-only)")
             is IrStmt.ForEach -> emitForEach(stmt)
             is IrStmt.Throw -> emitThrow(stmt)
             is IrStmt.Try -> emitTry(stmt)
+        }
+    }
+
+    private fun emitReactiveEffect(effect: IrStmt.Effect) {
+        val previous = emittingReactiveEffect
+        emittingReactiveEffect = true
+        try {
+            emitStmts(effect.body)
+        } finally {
+            emittingReactiveEffect = previous
         }
     }
 
@@ -1029,7 +1096,7 @@ class LlvmCodegen {
         emitStmts(stmt.body)
     }
 
-    private fun emitLocalDecl(name: String, type: IrType, initializer: IrExpr) {
+    private fun emitLocalDecl(name: String, type: IrType, initializer: IrExpr, lazy: Boolean = false) {
         val t = mapType(type)
         // The slot was hoisted to the entry block (see emitEntryAllocas).
         val alloca = allocaSlots[name to t] ?: run {
@@ -1039,9 +1106,105 @@ class LlvmCodegen {
             allocaSlots[name to t] = reg
             reg
         }
-        val value = emitInitializerForDeclaredType(type, initializer)
-        emit("  store $t $value, $t* $alloca")
         localVars[name] = alloca to t
+        if (lazy) {
+            val flagName = lazyFlagName(name)
+            val flag = allocaSlots[flagName to "i1"]
+                ?: error("lazy initialization flag for '$name' was not allocated")
+            localVars[flagName] = flag to "i1"
+            emit("  store i1 0, i1* $flag")
+            val refs = linkedMapOf<String, IrType>()
+            collectReferencedVars(initializer, refs)
+            lazyLocals[name] = LazyLocal(type, initializer, refs.keys, flagName)
+        } else {
+            val value = emitInitializerForDeclaredType(type, initializer)
+            emit("  store $t $value, $t* $alloca")
+        }
+    }
+
+    private fun collectReactiveStorage(owner: String, stmts: List<IrStmt>) {
+        for (stmt in stmts) {
+            when (stmt) {
+                is IrStmt.VarDecl -> if (stmt.reactiveLifetime != null) registerReactiveStorage(owner, stmt.name, stmt.type)
+                is IrStmt.FinDecl -> if (stmt.reactiveLifetime != null) registerReactiveStorage(owner, stmt.name, stmt.type)
+                is IrStmt.LetDecl -> if (stmt.reactiveLifetime != null) registerReactiveStorage(owner, stmt.name, stmt.type)
+                is IrStmt.If -> {
+                    collectReactiveStorage(owner, stmt.thenBranch)
+                    stmt.elseBranch?.let { collectReactiveStorage(owner, it) }
+                }
+                is IrStmt.Scope -> collectReactiveStorage(owner, stmt.body)
+                is IrStmt.While -> collectReactiveStorage(owner, stmt.body)
+                is IrStmt.For -> collectReactiveStorage(owner, stmt.body)
+                is IrStmt.ForEach -> collectReactiveStorage(owner, stmt.body)
+                is IrStmt.Loop -> collectReactiveStorage(owner, stmt.body)
+                is IrStmt.When -> {
+                    stmt.branches.forEach { collectReactiveStorage(owner, it.body) }
+                    stmt.elseBranch?.let { collectReactiveStorage(owner, it) }
+                }
+                is IrStmt.Try -> {
+                    collectReactiveStorage(owner, stmt.body)
+                    stmt.catchBody?.let { collectReactiveStorage(owner, it) }
+                }
+                is IrStmt.Defer -> collectReactiveStorage(owner, stmt.body)
+                is IrStmt.Effect -> collectReactiveStorage(owner, stmt.body)
+                else -> Unit
+            }
+        }
+    }
+
+    private fun registerReactiveStorage(owner: String, name: String, type: IrType) {
+        val base = "__azora_reactive_${sanitizeName(owner)}_${sanitizeName(name)}"
+        reactiveStorage[owner to name] = ReactiveStorage(base, "${base}_initialized", type)
+    }
+
+    private fun emitReactiveDecl(name: String, type: IrType, initializer: IrExpr) {
+        val storage = reactiveStorage[currentFunctionName to name]
+            ?: error("missing reactive storage for '$currentFunctionName::$name'")
+        val llvmType = mapType(type)
+        localVars[name] = "@${storage.valueGlobal}" to llvmType
+        val initialized = nextTmp()
+        val initialize = nextLabel("reactive_init")
+        val ready = nextLabel("reactive_ready")
+        emit("  $initialized = load i1, i1* @${storage.initGlobal}")
+        emitTerminator("  br i1 $initialized, label %$ready, label %$initialize")
+        startBlock(initialize)
+        val value = emitInitializerForDeclaredType(type, initializer)
+        emit("  store $llvmType $value, $llvmType* @${storage.valueGlobal}")
+        emit("  store i1 1, i1* @${storage.initGlobal}")
+        emitTerminator("  br label %$ready")
+        startBlock(ready)
+    }
+
+    private fun lazyFlagName(name: String): String = "__lazy_init_$name"
+
+    private fun ensureLazyInitialized(name: String) {
+        val lazy = lazyLocals[name] ?: return
+        val flag = localVars.getValue(lazy.flagName).first
+        val loaded = nextTmp()
+        val initialize = nextLabel("lazy_init")
+        val ready = nextLabel("lazy_ready")
+        emit("  $loaded = load i1, i1* $flag")
+        emitTerminator("  br i1 $loaded, label %$ready, label %$initialize")
+        startBlock(initialize)
+        val value = emitInitializerForDeclaredType(lazy.type, lazy.initializer)
+        val (slot, type) = localVars.getValue(name)
+        emit("  store $type $value, $type* $slot")
+        emit("  store i1 1, i1* $flag")
+        emitTerminator("  br label %$ready")
+        startBlock(ready)
+    }
+
+    private fun invalidateLazyDependents(changed: String, seen: MutableSet<String> = mutableSetOf()): Set<String> {
+        if (!seen.add(changed)) return emptySet()
+        val invalidated = linkedSetOf<String>()
+        for ((name, lazy) in lazyLocals) {
+            if (changed !in lazy.dependencies) continue
+            val flag = localVars[lazy.flagName]?.first ?: continue
+            emit("  store i1 0, i1* $flag")
+            invalidated.add(name)
+            invalidated.addAll(invalidateLazyDependents(name, seen))
+        }
+        return invalidated
     }
 
     private fun emitInitializerForDeclaredType(type: IrType, initializer: IrExpr): String {
@@ -1545,6 +1708,7 @@ class LlvmCodegen {
         is IrExpr.Var -> {
             // The null literal is lowered to `Var("__null", Any)`; emit LLVM's null pointer.
             if (expr.name == "__null") return "null"
+            ensureLazyInitialized(expr.name)
             val local = localVars[expr.name]
             val tmp = nextTmp()
             if (local != null) {
@@ -1938,6 +2102,7 @@ class LlvmCodegen {
                     stmt.catchBody?.let { collectDeclaredNames(it, names) }
                 }
                 is IrStmt.Defer -> collectDeclaredNames(stmt.body, names)
+                is IrStmt.Effect -> collectDeclaredNames(stmt.body, names)
                 else -> {}
             }
         }
@@ -2004,6 +2169,7 @@ class LlvmCodegen {
                     stmt.catchBody?.let { collectReferencedVars(it, refs) }
                 }
                 is IrStmt.Defer -> collectReferencedVars(stmt.body, refs)
+                is IrStmt.Effect -> collectReferencedVars(stmt.body, refs)
                 is IrStmt.Yield -> collectReferencedVars(stmt.value, refs)
                 is IrStmt.Break, is IrStmt.Continue -> {}
             }

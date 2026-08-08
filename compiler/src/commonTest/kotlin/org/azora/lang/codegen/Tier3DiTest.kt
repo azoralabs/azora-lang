@@ -117,25 +117,23 @@ class Tier3DiTest {
     }
 
     @Test
-    fun lazyInjectParsesAndResolves() {
-        // `lazy` marks the injection as deferred. Nothing defers yet - both
-        // forms resolve eagerly - so this pins the syntax, not the semantics.
+    fun lazyBindingCanDeferInjection() {
         assertEquals("64", run("""
             import std.io
             solo pack Cache { fin size: Int = 64 }
             func main() {
-                fin c = lazy inject Cache
+                lazy fin c = inject Cache
                 std::println(c.size)
             }
         """.trimIndent()))
     }
 
     @Test
-    fun lazyOnItsOwnIsRejected() {
-        val result = Compiler().compile("func main() { fin x = lazy 5 }")
+    fun oldLazyInjectExpressionIsRejectedWithMigrationHelp() {
+        val result = Compiler().compile("func main() { fin x = lazy inject Cache }")
         assertIs<CompilationResult.Failure>(result)
         assertTrue(
-            result.errors.any { "'lazy' must be followed by 'inject'" in it },
+            result.errors.any { "'lazy' modifies a binding" in it },
             result.errors.toString(),
         )
     }

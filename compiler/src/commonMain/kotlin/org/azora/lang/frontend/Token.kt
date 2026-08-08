@@ -120,7 +120,7 @@ enum class TokenType {
     // `for x by N in ...` (step) and `reverse for` / `for x in reverse ...`
     BY,
     REVERSE,
-    // `@label` for labeled loops and `break @label` / `continue @label`.
+    // Decorators and macro declarations/invocations.
     AT,
     // Contextual callable receivers: `with value { ... }` / `with [a, b] { ... }`.
     WITH,
@@ -142,7 +142,7 @@ enum class TokenType {
     // DI: `solo pack Name { … }` singleton, `inject Type` resolve, `graph Name { … }` container.
     SOLO, INJECT, GRAPH,
 
-    // `lazy inject Type` - resolution deferred to the value's first read.
+    // `lazy fin` / `lazy let` - evaluate a binding on its first read.
     LAZY,
 
     // Provider lifetimes inside a `graph`, and graph composition.

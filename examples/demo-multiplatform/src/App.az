@@ -7,8 +7,8 @@ import std.convert
 // Counter App - A single-file app that compiles to every UI target.
 // Uses Compose-compatible modifier names so output is identical on all targets.
 
-view App() {
-    rem count: Int = 0
+react func App() {
+    remember var count: Int = 0
 
     Column(
         modifier: Modifier()

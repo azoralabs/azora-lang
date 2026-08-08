@@ -6,10 +6,12 @@ and expression foundation shared by every other construct.
 ## Grammar
 
 ```
-BINDING   ::= (var | let | val | fin | mem | rem | ret) NAME [: Type] = EXPRESSION
-CONST     ::= (inline | deepinline) (var | let | val | fin) NAME [: Type] = EXPRESSION   (compile-time)
-ASSIGN    ::= LVALUE (= | += | -= | *= | /= | %= | ~=) EXPRESSION
-LVALUE    ::= NAME | expr.field | expr[index] | *pointer
+BINDING          ::= (var | let | val | fin) NAME [: Type] = EXPRESSION
+LAZY_BINDING     ::= lazy (let | fin) NAME [: Type] = EXPRESSION
+REACTIVE_BINDING ::= (remember | retain | preserve) (var | let | val | fin) NAME [: Type] = EXPRESSION
+CONST            ::= (inline | deepinline) (var | let | val | fin) NAME [: Type] = EXPRESSION   (compile-time)
+ASSIGN           ::= LVALUE (= | += | -= | *= | /= | %= | ~=) EXPRESSION
+LVALUE           ::= NAME | expr.field | expr[index] | *pointer
 ```
 
 Four keywords vary two independent axes - whether the **name** can be rebound,
@@ -24,6 +26,9 @@ and whether the **value** can be mutated through it:
 
 - `remember` / `retain` / `preserve` - a reactive lifetime written in front of
   one of the four bindings (see the Reactive DIP).
+- `lazy fin` / `lazy let` evaluate their initializer on first read. Inside a
+  reactive owner they are cached derived values and are invalidated by reactive
+  inputs. `lazy var` and `lazy val` are rejected.
 - All four work in a runtime scope and in a compile-time one: `inline var`,
   `inline let`, `inline val`, `inline fin` are folded at compile time, and
   `deepinline …` recurses through nested inline constructs (see the CTCE DIP).

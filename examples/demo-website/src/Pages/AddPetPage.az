@@ -3,14 +3,14 @@ package demo_website.pages
 import std.ui
 import std
 
-view AddPetPage(
+react func AddPetPage(
     onBack: () -> Unit
 ) {
-    rem petKind: String = ""
-    rem petName: String = ""
-    rem petBreed: String = ""
-    rem petAge: String = ""
-    rem petWeight: String = ""
+    remember var petKind: String = ""
+    remember var petName: String = ""
+    remember var petBreed: String = ""
+    remember var petAge: String = ""
+    remember var petWeight: String = ""
 
     Column(
         modifier: Modifier()
@@ -190,7 +190,7 @@ view AddPetPage(
     }
 }
 
-view PetTypeOption(
+react func PetTypeOption(
     emoji: String,
     label: String,
     selected: String,

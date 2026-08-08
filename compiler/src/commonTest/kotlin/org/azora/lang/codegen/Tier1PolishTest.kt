@@ -319,17 +319,17 @@ class Tier1PolishTest {
         """.trimIndent()))
     }
 
-    // -- labeled loops: break @label / continue @label ---------------------
+    // -- labeled loops: label: loop / break:label / continue:label ---------
 
     @Test fun labeledBreakExitsOuterLoop() {
         assertEquals("4", run("""
             import std.io
             func main() {
                 var count = 0
-                @outer for x in 0..<3 {
+                outer: for x in 0..<3 {
                     for y in 0..<3 {
                         if x == 1 && y == 1 {
-                            break @outer
+                            break:outer
                         }
                         count++
                     }
@@ -344,10 +344,10 @@ class Tier1PolishTest {
             import std.io
             func main() {
                 var total = 0
-                @outer for x in 0..<4 {
+                outer: for x in 0..<4 {
                     for y in 0..<4 {
                         if y > x {
-                            continue @outer
+                            continue:outer
                         }
                         total = total + 1
                     }
@@ -376,6 +376,43 @@ class Tier1PolishTest {
                 std::println(sum)
             }
         """.trimIndent()))
+    }
+
+    @Test fun labelsWorkOnWhileAndLoop() {
+        assertEquals("3\n2", run("""
+            import std.io
+            func main() {
+                var count = 0
+                outer: while count < 3 {
+                    loop {
+                        count++
+                        continue:outer
+                    }
+                }
+                std::println(count)
+
+                var turns = 0
+                retry: loop {
+                    turns++
+                    if turns == 2 {
+                        break:retry
+                    }
+                }
+                std::println(turns)
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun oldAtLoopLabelSyntaxIsRejected() {
+        val result = Compiler().compile("""
+            func main() {
+                @outer loop {
+                    break @outer
+                }
+            }
+        """.trimIndent())
+        assertIs<CompilationResult.Failure>(result)
+        assertTrue(result.errors.any { it.contains("Loop labels use 'label: loop' syntax") })
     }
 
     // -- infix macros over free functions -----------------------------------

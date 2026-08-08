@@ -22,6 +22,7 @@ import org.azora.lang.frontend.OwnershipOp
 import org.azora.lang.frontend.ParamModifier
 import org.azora.lang.frontend.lambdaReceiverName
 import org.azora.lang.frontend.CastKind
+import org.azora.lang.frontend.BindingKind
 import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.FuncDecl
 import org.azora.lang.frontend.MemberCallStyle
@@ -29,6 +30,7 @@ import org.azora.lang.frontend.TypeRef
 import org.azora.lang.frontend.TypeFunctionDecl
 import org.azora.lang.frontend.NumericSuffix
 import org.azora.lang.frontend.Program
+import org.azora.lang.frontend.ReactiveKind
 import org.azora.lang.frontend.Stmt
 import org.azora.lang.frontend.TestMethod
 import org.azora.lang.frontend.TokenType
@@ -53,8 +55,6 @@ import kotlin.collections.iterator
  * @param table the fully populated symbol table from semantic analysis
  */
 class IrGenerator(private val table: SymbolTable) {
-    private data class ActiveEffect(val dependencies: Set<String>, val body: List<Stmt>)
-
     private var typeFunctions = emptyList<TypeFunctionDecl>()
     private var functionDecls = emptyMap<String, FuncDecl>()
     private val generatedTraceFunctions = mutableListOf<IrFunction>()
@@ -63,8 +63,8 @@ class IrGenerator(private val table: SymbolTable) {
     private var currentTraceOwner: String? = null
     private val contextualValues = ArrayDeque<List<IrExpr>>()
     private val reactiveNames = mutableSetOf<String>()
-    private val activeEffects = mutableListOf<ActiveEffect>()
-    private var loweringEffect = false
+    private val lazyReactiveDependencies = mutableMapOf<String, Set<String>>()
+    private var nextEffectId = 0
     private var currentGenericTypeParams = emptySet<String>()
 
     private fun resolveType(ref: TypeRef, typeParams: Set<String> = emptySet()): IrType =
@@ -80,13 +80,14 @@ class IrGenerator(private val table: SymbolTable) {
     private fun lowerScopedBody(stmts: List<Stmt>): List<IrStmt> {
         table.pushScope()
         pushNameScope()
-        val effectCount = activeEffects.size
         val names = reactiveNames.toSet()
+        val lazyDependencies = lazyReactiveDependencies.toMap()
         return try {
             lowerBody(stmts)
         } finally {
-            while (activeEffects.size > effectCount) activeEffects.removeLast()
             reactiveNames.retainAll(names)
+            lazyReactiveDependencies.clear()
+            lazyReactiveDependencies.putAll(lazyDependencies)
             popNameScope()
             table.popScope()
         }
@@ -175,6 +176,25 @@ class IrGenerator(private val table: SymbolTable) {
         body.forEach { collectReferencedNames(it, this) }
     }
 
+    private fun registerLazyReactiveDependencies(name: String, initializer: IrExpr) {
+        val referenced = linkedSetOf<String>()
+        collectReferencedNames(initializer, referenced)
+        val reactive = reactiveNames.map(::resolveName).toSet()
+        lazyReactiveDependencies[name] = buildSet {
+            addAll(referenced.intersect(reactive))
+            referenced.forEach { addAll(lazyReactiveDependencies[it].orEmpty()) }
+        }
+    }
+
+    private fun automaticEffectDependencies(body: List<IrStmt>): Set<String> {
+        val referenced = referencedNames(body)
+        val reactive = reactiveNames.map(::resolveName).toSet()
+        return buildSet {
+            addAll(referenced.intersect(reactive))
+            referenced.forEach { addAll(lazyReactiveDependencies[it].orEmpty()) }
+        }
+    }
+
     private fun collectReferencedNames(stmt: IrStmt, names: MutableSet<String>) {
         when (stmt) {
             is IrStmt.VarDecl -> collectReferencedNames(stmt.initializer, names)
@@ -235,6 +255,7 @@ class IrGenerator(private val table: SymbolTable) {
                 stmt.catchBody?.forEach { collectReferencedNames(it, names) }
             }
             is IrStmt.Defer -> stmt.body.forEach { collectReferencedNames(it, names) }
+            is IrStmt.Effect -> stmt.body.forEach { collectReferencedNames(it, names) }
             is IrStmt.Yield -> collectReferencedNames(stmt.value, names)
             is IrStmt.Break, is IrStmt.Continue -> Unit
         }
@@ -298,18 +319,7 @@ class IrGenerator(private val table: SymbolTable) {
         }
     }
 
-    private fun lowerEffectStatements(body: List<Stmt>): List<IrStmt> {
-        val saved = loweringEffect
-        loweringEffect = true
-        return try {
-            lowerScopedBody(body)
-        } finally {
-            loweringEffect = saved
-        }
-    }
-
-    private fun lowerEffectBody(body: List<Stmt>): IrStmt =
-        IrStmt.Scope(lowerEffectStatements(body))
+    private fun lowerEffectStatements(body: List<Stmt>): List<IrStmt> = lowerScopedBody(body)
 
     /**
      * Generates a typed [IrProgram] from the given AST.
@@ -621,9 +631,9 @@ class IrGenerator(private val table: SymbolTable) {
         table.pushScope()
         pushNameScope()
         val savedReactiveNames = reactiveNames.toSet()
-        val savedEffects = activeEffects.toList()
+        val savedLazyDependencies = lazyReactiveDependencies.toMap()
         reactiveNames.clear()
-        activeEffects.clear()
+        lazyReactiveDependencies.clear()
 
         // Register parameters
         val mangledParams = symbol.params.map { (name, type) ->
@@ -637,8 +647,8 @@ class IrGenerator(private val table: SymbolTable) {
         } finally {
             reactiveNames.clear()
             reactiveNames.addAll(savedReactiveNames)
-            activeEffects.clear()
-            activeEffects.addAll(savedEffects)
+            lazyReactiveDependencies.clear()
+            lazyReactiveDependencies.putAll(savedLazyDependencies)
             popNameScope()
             table.popScope()
             currentTraceOwner = previousOwner
@@ -654,7 +664,8 @@ class IrGenerator(private val table: SymbolTable) {
             refParams,
             func.isTask,
             func.isUnsafe,
-            isFailable = declaredFailable(func)
+            isFailable = declaredFailable(func),
+            isReactive = func.isReactive,
         )
     }
 
@@ -690,9 +701,9 @@ class IrGenerator(private val table: SymbolTable) {
         table.pushScope()
         pushNameScope()
         val savedReactiveNames = reactiveNames.toSet()
-        val savedEffects = activeEffects.toList()
+        val savedLazyDependencies = lazyReactiveDependencies.toMap()
         reactiveNames.clear()
-        activeEffects.clear()
+        lazyReactiveDependencies.clear()
         val mangledParams = symbol.params.map { (name, type) ->
             val m = registerName(name)
             val mutable = name != method.receiverName || method.receiverModifier != ParamModifier.SHARED
@@ -705,8 +716,8 @@ class IrGenerator(private val table: SymbolTable) {
         } finally {
             reactiveNames.clear()
             reactiveNames.addAll(savedReactiveNames)
-            activeEffects.clear()
-            activeEffects.addAll(savedEffects)
+            lazyReactiveDependencies.clear()
+            lazyReactiveDependencies.putAll(savedLazyDependencies)
             contextualValues.removeLast()
             popNameScope()
             table.popScope()
@@ -869,7 +880,7 @@ class IrGenerator(private val table: SymbolTable) {
                 val mangled = registerName(stmt.name)
                 table.defineVariable(VariableSymbol(stmt.name, type, mutable = true))
                 if (init is IrExpr.EnumLiteral) knownEnumValues[mangled] = init else knownEnumValues.remove(mangled)
-                IrStmt.VarDecl(mangled, type, init)
+                IrStmt.VarDecl(mangled, type, init, valueMutable = stmt.valueMutable, lazy = stmt.lazy)
             }
             is Stmt.FinDecl -> {
                 val init = withImplicitCopy(
@@ -880,7 +891,8 @@ class IrGenerator(private val table: SymbolTable) {
                 val mangled = registerName(stmt.name)
                 table.defineVariable(VariableSymbol(stmt.name, type, mutable = false))
                 if (init is IrExpr.EnumLiteral) knownEnumValues[mangled] = init else knownEnumValues.remove(mangled)
-                IrStmt.FinDecl(mangled, type, init)
+                if (stmt.lazy) registerLazyReactiveDependencies(mangled, init)
+                IrStmt.FinDecl(mangled, type, init, lazy = stmt.lazy)
             }
             is Stmt.LetDecl -> {
                 val init = withImplicitCopy(
@@ -891,7 +903,8 @@ class IrGenerator(private val table: SymbolTable) {
                 val mangled = registerName(stmt.name)
                 table.defineVariable(VariableSymbol(stmt.name, type, mutable = false))
                 if (init is IrExpr.EnumLiteral) knownEnumValues[mangled] = init else knownEnumValues.remove(mangled)
-                IrStmt.LetDecl(mangled, type, init)
+                if (stmt.lazy) registerLazyReactiveDependencies(mangled, init)
+                IrStmt.LetDecl(mangled, type, init, lazy = stmt.lazy)
             }
             is Stmt.DeepInlineBlock -> error("DeepInlineBlock should have been resolved by CTCE before IR generation")
             is Stmt.NoInline -> lowerStmt(stmt.stmt)
@@ -914,14 +927,7 @@ class IrGenerator(private val table: SymbolTable) {
                     table.lookupVariable(stmt.name)?.type ?: IrType.Any,
                 )
                 knownEnumValues.remove(name)
-                val assignment = IrStmt.Assignment(name, value)
-                val triggered = if (!loweringEffect && stmt.name in reactiveNames) {
-                    activeEffects.filter { stmt.name in it.dependencies }
-                } else {
-                    emptyList()
-                }
-                if (triggered.isEmpty()) assignment
-                else IrStmt.Scope(listOf(assignment) + triggered.map { lowerEffectBody(it.body) })
+                IrStmt.Assignment(name, value)
             }
             is Stmt.IndexAssign -> {
                 val target = lowerExpr(stmt.target)
@@ -1067,21 +1073,43 @@ class IrGenerator(private val table: SymbolTable) {
                 val init = lowerExpr(stmt.initializer)
                 val type = resolveTypeAnnotation(stmt.type, init)
                 val mangled = registerName(stmt.name)
-                table.defineVariable(VariableSymbol(stmt.name, type, mutable = true))
+                table.defineVariable(
+                    VariableSymbol(
+                        stmt.name,
+                        type,
+                        mutable = stmt.binding.nameRebindable,
+                        valueMutable = stmt.binding.valueMutable,
+                    ),
+                )
                 reactiveNames.add(stmt.name)
-                IrStmt.VarDecl(mangled, type, init)
+                val lifetime = when (stmt.kind) {
+                    ReactiveKind.REMEMBER -> IrStmt.ReactiveLifetime.REMEMBER
+                    ReactiveKind.RETAIN -> IrStmt.ReactiveLifetime.RETAIN
+                    ReactiveKind.PRESERVE -> IrStmt.ReactiveLifetime.PRESERVE
+                }
+                when (stmt.binding) {
+                    BindingKind.VAR -> IrStmt.VarDecl(mangled, type, init, lifetime, valueMutable = true)
+                    BindingKind.VAL -> IrStmt.VarDecl(mangled, type, init, lifetime, valueMutable = false)
+                    BindingKind.LET -> IrStmt.LetDecl(mangled, type, init, lifetime)
+                    BindingKind.FIN -> IrStmt.FinDecl(mangled, type, init, lifetime)
+                }
             }
             is Stmt.Effect -> {
                 if (stmt.deferred) {
                     IrStmt.Defer(lowerEffectStatements(stmt.body))
                 } else {
                     val loweredBody = lowerEffectStatements(stmt.body)
+                    val automatic = stmt.dependencies == null
                     val dependencies = stmt.dependencies
                         ?.flatMap(::dependencyNames)
                         ?.toSet()
-                        ?: referencedNames(loweredBody).intersect(reactiveNames)
-                    activeEffects.add(ActiveEffect(dependencies, stmt.body))
-                    IrStmt.Scope(loweredBody)
+                        ?: automaticEffectDependencies(loweredBody)
+                    IrStmt.Effect(
+                        id = nextEffectId++,
+                        dependencies = dependencies.map(::resolveName),
+                        body = loweredBody,
+                        automatic = automatic,
+                    )
                 }
             }
             is Stmt.WithContext -> {
@@ -1966,11 +1994,6 @@ class IrGenerator(private val table: SymbolTable) {
                 IrExpr.Await(task, resultType)
             }
             is Expr.Inject -> {
-                // `lazy inject` parses and carries its flag, but nothing defers
-                // yet: both forms lower to the same eager resolution. Deferral
-                // needs the one-shot cell in DEPENDENCY_INJECTION_DIP.MD §5.3,
-                // so until that exists `lazy` is accepted and ignored rather
-                // than silently promising something else.
                 IrExpr.Call("__inject", listOf(IrExpr.StringLiteral(expr.typeName)), IrType.Named(expr.typeName))
             }
             is Expr.Spread -> {

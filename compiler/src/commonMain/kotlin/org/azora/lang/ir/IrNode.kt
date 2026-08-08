@@ -725,6 +725,13 @@ sealed class IrExpr {
  * and all compile-time constructs already eliminated by CTCE.
  */
 sealed class IrStmt {
+    /** Runtime lifetime of a binding owned by a `react` declaration. */
+    enum class ReactiveLifetime(val spelling: String) {
+        REMEMBER("remember"),
+        RETAIN("retain"),
+        PRESERVE("preserve"),
+    }
+
     /**
      * Mutable binding (`var`).
      *
@@ -732,7 +739,15 @@ sealed class IrStmt {
      * @property type the resolved type
      * @property initializer the initial value expression
      */
-    data class VarDecl(val name: String, val type: IrType, val initializer: IrExpr) : IrStmt()
+    data class VarDecl(
+        val name: String,
+        val type: IrType,
+        val initializer: IrExpr,
+        val reactiveLifetime: ReactiveLifetime? = null,
+        /** False for `val`: the name rebinds, but mutation through it is forbidden. */
+        val valueMutable: Boolean = true,
+        val lazy: Boolean = false,
+    ) : IrStmt()
 
     /**
      * Deeply immutable binding (`fin`).
@@ -741,7 +756,13 @@ sealed class IrStmt {
      * @property type the resolved type
      * @property initializer the initial value expression
      */
-    data class FinDecl(val name: String, val type: IrType, val initializer: IrExpr) : IrStmt()
+    data class FinDecl(
+        val name: String,
+        val type: IrType,
+        val initializer: IrExpr,
+        val reactiveLifetime: ReactiveLifetime? = null,
+        val lazy: Boolean = false,
+    ) : IrStmt()
 
     /**
      * Immutable binding (`let`).
@@ -750,7 +771,13 @@ sealed class IrStmt {
      * @property type the resolved type
      * @property initializer the initial value expression
      */
-    data class LetDecl(val name: String, val type: IrType, val initializer: IrExpr) : IrStmt()
+    data class LetDecl(
+        val name: String,
+        val type: IrType,
+        val initializer: IrExpr,
+        val reactiveLifetime: ReactiveLifetime? = null,
+        val lazy: Boolean = false,
+    ) : IrStmt()
 
     /**
      * Variable reassignment.
@@ -865,7 +892,7 @@ sealed class IrStmt {
         val step: IrExpr? = null,
         /** Iterate downwards from [end] to [start]. */
         val reverse: Boolean = false,
-        /** Optional `@label` for labeled `break`/`continue`. */
+        /** Optional source label for a labeled break or continue. */
         val label: String? = null
     ) : IrStmt()
 
@@ -896,6 +923,18 @@ sealed class IrStmt {
     /** `defer { body }` - runs [body] when the enclosing function exits. */
     data class Defer(val body: List<IrStmt>, val onFail: Boolean = false, val suppress: Boolean = false) : IrStmt()
 
+    /**
+     * A reactive effect retained in IR for backend-specific scheduling.
+     * [dependencies] is the statically visible dependency set. When [automatic]
+     * is true, runtimes may refine it from the cells actually read by [body].
+     */
+    data class Effect(
+        val id: Int,
+        val dependencies: List<String>,
+        val body: List<IrStmt>,
+        val automatic: Boolean,
+    ) : IrStmt()
+
     /** `yield value` - emit a value from a `flow` generator. */
     data class Yield(val value: IrExpr) : IrStmt()
 
@@ -909,9 +948,14 @@ sealed class IrStmt {
             sb.appendLine("${pad}$keyword $name: $type = ${initializer.prettyPrint()}")
         }
         when (this) {
-            is VarDecl -> binding("var", name, type, initializer)
-            is FinDecl -> binding("fin", name, type, initializer)
-            is LetDecl -> binding("let", name, type, initializer)
+            is VarDecl -> binding(
+                listOfNotNull(if (lazy) "lazy" else null, reactiveLifetime?.spelling, if (valueMutable) "var" else "val").joinToString(" "),
+                name,
+                type,
+                initializer,
+            )
+            is FinDecl -> binding(listOfNotNull(if (lazy) "lazy" else null, reactiveLifetime?.spelling, "fin").joinToString(" "), name, type, initializer)
+            is LetDecl -> binding(listOfNotNull(if (lazy) "lazy" else null, reactiveLifetime?.spelling, "let").joinToString(" "), name, type, initializer)
             is Assignment -> sb.appendLine("${pad}$name = ${value.prettyPrint()}")
             is IndexAssign -> sb.appendLine("${pad}${target.prettyPrint()}[${index.prettyPrint()}] = ${value.prettyPrint()}")
             is MemberAssign -> sb.appendLine("${pad}${target.prettyPrint()}.$name = ${value.prettyPrint()}")
@@ -986,6 +1030,12 @@ sealed class IrStmt {
                 for (s in body) s.prettyPrint(sb, indent + 1)
                 sb.appendLine("${pad}}")
             }
+            is Effect -> {
+                val deps = if (automatic) "" else dependencies.joinToString(", ", " [", "]")
+                sb.appendLine("${pad}effect$deps {")
+                for (s in body) s.prettyPrint(sb, indent + 1)
+                sb.appendLine("${pad}}")
+            }
             is Yield -> sb.appendLine("${pad}yield ${value.prettyPrint()}")
             is ForEach -> {
                 sb.appendLine("${pad}for $elem in ${iterable.prettyPrint()} {")
@@ -1037,12 +1087,18 @@ data class IrFunction(
      * returns.
      */
     val isFailable: Boolean = false,
+    /** A `react func` owns reactive bindings and effects. */
+    val isReactive: Boolean = false,
 ) {
     /** Pretty-prints this function as Azora IR text. */
     fun prettyPrint(sb: StringBuilder, indent: Int) {
         val pad = "    ".repeat(indent)
         val params = params.joinToString(", ") { (name, type) -> "$name: $type" }
-        val keyword = if (isTask) "async func" else "func"
+        val keyword = buildString {
+            if (isReactive) append("react ")
+            if (isTask) append("async ")
+            append("func")
+        }
         val unsafe = if (isUnsafe) "unsafe " else ""
         sb.appendLine("$pad$unsafe$keyword $name($params): $returnType {")
         for (stmt in body) stmt.prettyPrint(sb, indent + 1)
@@ -1368,6 +1424,10 @@ private fun dumpIrStmtTree(sb: StringBuilder, stmt: IrStmt, indent: String) {
         }
         is IrStmt.Defer -> {
             sb.appendLine("${indent}IrDefer")
+            for (s in stmt.body) dumpIrStmtTree(sb, s, "$indent    ")
+        }
+        is IrStmt.Effect -> {
+            sb.appendLine("${indent}IrEffect(id=${stmt.id}, deps=${stmt.dependencies}, automatic=${stmt.automatic})")
             for (s in stmt.body) dumpIrStmtTree(sb, s, "$indent    ")
         }
         is IrStmt.Yield -> {

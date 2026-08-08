@@ -7,8 +7,8 @@ import std
 // PawTrack - A pet tracker demo app built with Azora.
 // Showcases views, reactive state, SVG icons, navigation, and component reuse.
 
-view App() {
-    rem page: Int = 0
+react func App() {
+    remember var page: Int = 0
 
     NavHost(page, ["/", "/pets", "/add", "/health"]) {
         HomePage(

@@ -81,7 +81,7 @@ src = "tests"
 `NavHost` provides client-side routing with browser URL sync and history support:
 
 ```
-view App() {
+react func App() {
     remember var page: Int = 0
 
     NavHost(page, ["/", "/pets", "/add", "/health"]) {
@@ -107,7 +107,7 @@ func main() {
 `remember` declares reactive state that triggers re-renders when mutated:
 
 ```
-view AddPetPage(onBack: () -> Unit) {
+react func AddPetPage(onBack: () -> Unit) {
     remember var petKind: String = ""
     remember var petName: String = ""
     remember var petAge: String = ""
@@ -264,7 +264,7 @@ Views are composable. Shared components live in `Shared.az` and are used across 
 
 ```
 // Shared.az - reusable back button with arrow icon and hover effect
-view BackButton(onClick: () -> Unit) {
+react func BackButton(onClick: () -> Unit) {
     Button(
         onClick: onClick,
         modifier: Modifier()
@@ -293,7 +293,7 @@ Used in any page with just `BackButton(onClick: onBack)`.
 Modifier values can use inline `if` expressions for dynamic styles:
 
 ```
-view PetTypeOption(emoji: String, label: String, selected: String, onClick: () -> Unit) {
+react func PetTypeOption(emoji: String, label: String, selected: String, onClick: () -> Unit) {
     Button(
         onClick: onClick,
         modifier: Modifier()

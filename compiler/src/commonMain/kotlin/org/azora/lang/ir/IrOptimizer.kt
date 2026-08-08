@@ -97,6 +97,7 @@ class IrOptimizer {
             catchBody = stmt.catchBody?.map { foldStmt(it) }
         )
         is IrStmt.Defer -> stmt.copy(body = stmt.body.map { foldStmt(it) })
+        is IrStmt.Effect -> stmt.copy(body = stmt.body.map { foldStmt(it) })
         is IrStmt.ForEach -> stmt.copy(iterable = foldExpr(stmt.iterable), body = stmt.body.map { foldStmt(it) })
     }
 
@@ -361,6 +362,11 @@ class IrOptimizer {
                     result
                 }
                 is IrStmt.Defer -> {
+                    val result = stmt.copy(body = propagateStmts(stmt.body, constants.toMutableMap()))
+                    invalidate(constants, collectAssigned(stmt.body))
+                    result
+                }
+                is IrStmt.Effect -> {
                     val result = stmt.copy(body = propagateStmts(stmt.body, constants.toMutableMap()))
                     invalidate(constants, collectAssigned(stmt.body))
                     result
@@ -741,6 +747,7 @@ class IrOptimizer {
                 stmt.catchBody?.forEach { collectReferencedNamesFromStmt(it, names) }
             }
             is IrStmt.Defer -> stmt.body.forEach { collectReferencedNamesFromStmt(it, names) }
+            is IrStmt.Effect -> stmt.body.forEach { collectReferencedNamesFromStmt(it, names) }
         }
     }
 
@@ -873,6 +880,7 @@ class IrOptimizer {
                 stmt.catchBody?.forEach { collectReferencedVarNamesFromStmt(it, names) }
             }
             is IrStmt.Defer -> stmt.body.forEach { collectReferencedVarNamesFromStmt(it, names) }
+            is IrStmt.Effect -> stmt.body.forEach { collectReferencedVarNamesFromStmt(it, names) }
         }
     }
 }

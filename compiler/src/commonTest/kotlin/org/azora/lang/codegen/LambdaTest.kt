@@ -79,7 +79,62 @@ class LambdaTest {
                 return g()
             }
             func main() {
-                std::println(run({ -> "hi" }))
+                std::println(run({ "hi" }))
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun noParamLambdaUsesPackFieldContextWithoutAnArrow() {
+        assertEquals("cancelled", run("""
+            import std.io
+            pack Subscription { fin cancel: () -> Unit }
+            func main() {
+                fin subscription = Subscription({ std::println("cancelled") })
+                subscription.cancel()
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun constructorAcceptsTrailingLambdaAfterArguments() {
+        assertEquals("cancelled", run("""
+            import std.io
+            pack Subscription {
+                fin active: Bool
+                fin cancel: () -> Unit
+            }
+            func main() {
+                fin subscription = Subscription(true) {
+                    std::println("cancelled")
+                }
+                subscription.cancel()
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun functionAcceptsTrailingLambdaWithoutParentheses() {
+        assertEquals("hi", run("""
+            import std.io
+            func run(action: () -> String): String {
+                return action()
+            }
+            func main() {
+                std::println(run { "hi" })
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun methodAcceptsContextuallyTypedTrailingLambda() {
+        assertEquals("8", run("""
+            import std.io
+            pack Runner
+            impl Runner {
+                func run[self: Self&](action: (Int) -> Int): Int {
+                    return action(4)
+                }
+            }
+            func main() {
+                fin runner = Runner()
+                std::println(runner.run { value -> value * 2 })
             }
         """.trimIndent()))
     }

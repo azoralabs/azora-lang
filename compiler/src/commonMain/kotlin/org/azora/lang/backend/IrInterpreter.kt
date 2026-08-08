@@ -39,6 +39,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.channels.SendChannel
 import kotlinx.coroutines.channels.produce
 import kotlinx.coroutines.async
+import kotlinx.coroutines.sync.Mutex
 
 /**
  * Backend - interprets [IrProgram] directly instead of generating code.
@@ -142,6 +143,12 @@ class IrInterpreter {
     /** Fire-and-forget tasks created via `launch { … }`; joined before interpret() returns. */
     private val launchedTasks = mutableListOf<kotlinx.coroutines.Deferred<Any?>>()
 
+    /** Reactive storage is owned by the declaration that introduced the `react` scope. */
+    private val rememberedValues = mutableMapOf<ReactiveSlotKey, ReactiveCell>()
+    private val retainedValues = mutableMapOf<ReactiveSlotKey, ReactiveCell>()
+    private val preservedValues = mutableMapOf<ReactiveSlotKey, ReactiveCell>()
+    private val reactiveInitLocks = mutableMapOf<ReactiveSlotKey, Mutex>()
+
     /**
      * Per-coroutine execution state. Each coroutine (main + each `task`/`launch`/`flow`)
      * gets its own [ExecState] in its coroutine context, so concurrent tasks on different
@@ -152,7 +159,11 @@ class IrInterpreter {
         var deferStack: MutableList<DeferredBlock> = mutableListOf(),
         val yieldAccumulators: ArrayDeque<MutableList<Any?>> = ArrayDeque(),
         val flowProduceChannels: ArrayDeque<SendChannel<Any?>> = ArrayDeque(),
-        val threadLocals: MutableMap<String, Any?> = mutableMapOf()
+        val threadLocals: MutableMap<String, Any?> = mutableMapOf(),
+        val reactiveOwners: ArrayDeque<String> = ArrayDeque(),
+        var lazyDependencyCollector: MutableSet<ReactiveCell>? = null,
+        var effectDependencyCollector: MutableSet<ReactiveCell>? = null,
+        val activeReactiveEffects: ArrayDeque<MutableList<RuntimeEffect>> = ArrayDeque(),
     ) : CoroutineContext.Element {
         companion object Key : CoroutineContext.Key<ExecState>
         override val key: CoroutineContext.Key<*> get() = Key
@@ -163,6 +174,35 @@ class IrInterpreter {
 
     /** A deferred block, optionally restricted to run only on error (`fail defer`). */
     private class DeferredBlock(val body: List<IrStmt>, val onFail: Boolean, val suppress: Boolean = false)
+
+    /** A local initializer evaluated exactly once, when the binding is first read. */
+    private data class ReactiveSlotKey(val owner: String, val name: String)
+
+    /** A versioned cell is the shared storage behind one reactive local binding. */
+    private class ReactiveCell(var value: Any?) {
+        var version: Long = 0
+        val effects = linkedSetOf<RuntimeEffect>()
+    }
+
+    /** The local name delegates reads and writes to its owner-backed cell. */
+    private class ReactiveBinding(val cell: ReactiveCell)
+
+    private class LazyBinding(val type: IrType, val initializer: IrExpr) {
+        var initialized = false
+        var evaluating = false
+        var value: Any? = null
+        var dependencies: Map<ReactiveCell, Long> = emptyMap()
+    }
+
+    private class RuntimeEffect(
+        val id: Int,
+        val body: List<IrStmt>,
+        val automatic: Boolean,
+        val explicitDependencies: List<String>,
+    ) {
+        val dependencies = linkedSetOf<ReactiveCell>()
+        var running = false
+    }
 
     /**
      * Runs the program and returns its captured output (synchronous entry point).
@@ -248,6 +288,10 @@ class IrInterpreter {
         functions.clear()
         structs.clear()
         launchedTasks.clear()
+        rememberedValues.clear()
+        retainedValues.clear()
+        preservedValues.clear()
+        reactiveInitLocks.clear()
         val mainState = ExecState()
         // Global scope
         mainState.scopes.addLast(mutableMapOf("__null" to null))
@@ -352,8 +396,18 @@ class IrInterpreter {
             if (name in s[i]) {
                 val existing = s[i][name]
                 // Auto-deref: if the variable holds a RefCell (ref/out param), update the cell.
-                if (existing is RefCell) existing.value = value
-                else s[i][name] = value
+                when (existing) {
+                    is RefCell -> existing.value = value
+                    is ReactiveBinding -> {
+                        val effects = azSync(existing.cell) {
+                            existing.cell.value = value
+                            existing.cell.version++
+                            existing.cell.effects.toList()
+                        }
+                        for (effect in effects) runReactiveEffect(effect)
+                    }
+                    else -> s[i][name] = value
+                }
                 return
             }
         }
@@ -380,7 +434,40 @@ class IrInterpreter {
             if (name in s[i]) {
                 // Auto-deref: if the variable holds a RefCell (ref/out param), return the inner value.
                 val value = s[i][name]
-                return if (value is RefCell) value.value else value
+                return when (value) {
+                    is RefCell -> value.value
+                    is ReactiveBinding -> {
+                        state().lazyDependencyCollector?.add(value.cell)
+                        state().effectDependencyCollector?.add(value.cell)
+                        azSync(value.cell) { value.cell.value }
+                    }
+                    is LazyBinding -> {
+                        val stale = value.dependencies.any { (cell, version) ->
+                            azSync(cell) { cell.version } != version
+                        }
+                        if (!value.initialized || stale) {
+                            if (value.evaluating) error("cyclic lazy initialization of '$name'")
+                            value.evaluating = true
+                            val st = state()
+                            val parentCollector = st.lazyDependencyCollector
+                            val dependencies = linkedSetOf<ReactiveCell>()
+                            st.lazyDependencyCollector = dependencies
+                            try {
+                                value.value = materializeDeclared(value.type, evalExpr(value.initializer))
+                                value.dependencies = dependencies.associateWith { cell ->
+                                    azSync(cell) { cell.version }
+                                }
+                                value.initialized = true
+                            } finally {
+                                st.lazyDependencyCollector = parentCollector
+                                value.evaluating = false
+                            }
+                        }
+                        state().lazyDependencyCollector?.addAll(value.dependencies.keys)
+                        value.value
+                    }
+                    else -> value
+                }
             }
         }
         return null
@@ -390,40 +477,52 @@ class IrInterpreter {
 
     private suspend fun executeFunction(func: IrFunction, args: List<Any?>): Any? {
         pushScope()
-
-        // Bind parameters (ref/out params arrive pre-wrapped in RefCells from evalCall).
-        for (i in func.params.indices) {
-            defineVar(func.params[i].first, args[i])
-        }
-
-        val st = state()
-        val savedDefers = st.deferStack
-        st.deferStack = mutableListOf()
-        var retValue: Any? = null
-        var failed = false
-        var toRethrow: AzoraThrownException? = null
-        var suppressed = false
         try {
-            val result = executeBody(func.body)
-            retValue = (result as? ReturnSignal)?.value
-        } catch (e: AzoraThrownException) {
-            // The function exited via `throw`/`fail` - fail-defers should run.
-            failed = true
-            toRethrow = e
-        } finally {
-            // Run deferred blocks in reverse order (LIFO). Skip `fail defer`
-            // blocks when the function returned normally.
-            for (i in st.deferStack.indices.reversed()) {
-                val d = st.deferStack[i]
-                if (d.onFail && !failed) continue
-                executeBody(d.body)
-                if (d.suppress) suppressed = true
+            // Bind parameters (ref/out params arrive pre-wrapped in RefCells from evalCall).
+            for (i in func.params.indices) {
+                defineVar(func.params[i].first, args[i])
             }
-            st.deferStack = savedDefers
+
+            val st = state()
+            if (func.isReactive) st.reactiveOwners.addLast(func.name)
+            if (func.isReactive) st.activeReactiveEffects.addLast(mutableListOf())
+            val savedDefers = st.deferStack
+            st.deferStack = mutableListOf()
+            var retValue: Any? = null
+            var failed = false
+            var toRethrow: AzoraThrownException? = null
+            var suppressed = false
+            try {
+                val result = executeBody(func.body)
+                retValue = (result as? ReturnSignal)?.value
+            } catch (e: AzoraThrownException) {
+                // The function exited via `throw`/`fail` - fail-defers should run.
+                failed = true
+                toRethrow = e
+            } finally {
+                try {
+                    // Run deferred blocks in reverse order (LIFO). Skip `fail defer`
+                    // blocks when the function returned normally.
+                    for (i in st.deferStack.indices.reversed()) {
+                        val d = st.deferStack[i]
+                        if (d.onFail && !failed) continue
+                        executeBody(d.body)
+                        if (d.suppress) suppressed = true
+                    }
+                } finally {
+                    st.deferStack = savedDefers
+                    if (func.isReactive) {
+                        val effects = st.activeReactiveEffects.removeLast()
+                        for (effect in effects) unsubscribe(effect)
+                        st.reactiveOwners.removeLast()
+                    }
+                }
+            }
+            if (toRethrow != null && !suppressed) throw toRethrow
+            return retValue
+        } finally {
+            popScope()
         }
-        popScope()
-        if (toRethrow != null && !suppressed) throw toRethrow
-        return retValue
     }
 
     private suspend fun executeBody(body: List<IrStmt>): Any? {
@@ -436,9 +535,9 @@ class IrInterpreter {
 
     private suspend fun executeStmt(stmt: IrStmt): Any? {
         when (stmt) {
-            is IrStmt.VarDecl -> defineVar(stmt.name, materializeDeclared(stmt.type, evalExpr(stmt.initializer)))
-            is IrStmt.FinDecl -> defineVar(stmt.name, materializeDeclared(stmt.type, evalExpr(stmt.initializer)))
-            is IrStmt.LetDecl -> defineVar(stmt.name, materializeDeclared(stmt.type, evalExpr(stmt.initializer)))
+            is IrStmt.VarDecl -> executeDeclaration(stmt.name, stmt.type, stmt.initializer, stmt.reactiveLifetime, stmt.lazy)
+            is IrStmt.FinDecl -> executeDeclaration(stmt.name, stmt.type, stmt.initializer, stmt.reactiveLifetime, stmt.lazy)
+            is IrStmt.LetDecl -> executeDeclaration(stmt.name, stmt.type, stmt.initializer, stmt.reactiveLifetime, stmt.lazy)
             is IrStmt.Assignment -> assignVar(stmt.name, evalExpr(stmt.value))
             is IrStmt.Return -> {
                 val value = stmt.value?.let { evalExpr(it) }
@@ -564,6 +663,7 @@ class IrInterpreter {
             is IrStmt.Break -> return BreakSignal(stmt.label)
             is IrStmt.Continue -> return ContinueSignal(stmt.label)
             is IrStmt.Defer -> { state().deferStack.add(DeferredBlock(stmt.body, stmt.onFail, stmt.suppress)) }
+            is IrStmt.Effect -> registerReactiveEffect(stmt)
             is IrStmt.Yield -> {
                 val st = state()
                 val channel = st.flowProduceChannels.lastOrNull()
@@ -678,6 +778,119 @@ class IrInterpreter {
             }
         }
         return null
+    }
+
+    /** Defines an ordinary, lazy, or owner-backed reactive local. */
+    private suspend fun executeDeclaration(
+        name: String,
+        type: IrType,
+        initializer: IrExpr,
+        lifetime: IrStmt.ReactiveLifetime?,
+        lazy: Boolean,
+    ) {
+        if (lifetime == null) {
+            defineVar(
+                name,
+                if (lazy) LazyBinding(type, initializer)
+                else materializeDeclared(type, evalExpr(initializer)),
+            )
+            return
+        }
+
+        val owner = state().reactiveOwners.lastOrNull()
+            ?: error("reactive binding '$name' executed outside a react owner")
+        val key = ReactiveSlotKey(owner, name)
+        val store = when (lifetime) {
+            IrStmt.ReactiveLifetime.REMEMBER -> rememberedValues
+            IrStmt.ReactiveLifetime.RETAIN -> retainedValues
+            IrStmt.ReactiveLifetime.PRESERVE -> preservedValues
+        }
+        var cell = azSync(store) { store[key] }
+        if (cell == null) {
+            val initLock = azSync(reactiveInitLocks) {
+                reactiveInitLocks.getOrPut(key) { Mutex() }
+            }
+            initLock.lock()
+            try {
+                cell = azSync(store) { store[key] }
+                if (cell == null) {
+                    val initial = materializeDeclared(type, evalExpr(initializer))
+                    val created = ReactiveCell(initial)
+                    azSync(store) { store[key] = created }
+                    cell = created
+                }
+            } finally {
+                initLock.unlock()
+            }
+        }
+        defineVar(name, ReactiveBinding(cell))
+    }
+
+    private suspend fun rawBinding(name: String): Any? {
+        val scopes = state().scopes
+        for (i in scopes.indices.reversed()) {
+            if (name in scopes[i]) return scopes[i][name]
+        }
+        return null
+    }
+
+    private suspend fun registerReactiveEffect(stmt: IrStmt.Effect) {
+        val ownerEffects = state().activeReactiveEffects.lastOrNull()
+            ?: error("effect #${stmt.id} executed outside a react owner")
+        val effect = RuntimeEffect(stmt.id, stmt.body, stmt.automatic, stmt.dependencies)
+        ownerEffects.add(effect)
+        runReactiveEffect(effect)
+    }
+
+    private suspend fun runReactiveEffect(effect: RuntimeEffect, collectDependencies: Boolean = effect.automatic) {
+        azSync(effect) {
+            if (effect.running) error("reactive cycle detected in effect #${effect.id}")
+            effect.running = true
+        }
+        val st = state()
+        val previousCollector = st.effectDependencyCollector
+        val observed = linkedSetOf<ReactiveCell>()
+        unsubscribe(effect)
+        st.effectDependencyCollector = if (collectDependencies) observed else null
+        try {
+            if (!collectDependencies) bindExplicitDependencies(effect)
+            pushScope()
+            val signal = try {
+                executeBody(effect.body)
+            } finally {
+                popScope()
+            }
+            if (signal is ControlSignal) error("effect #${effect.id} cannot return, break, or continue")
+        } finally {
+            st.effectDependencyCollector = previousCollector
+            if (collectDependencies) {
+                effect.dependencies.addAll(observed)
+            }
+            subscribe(effect)
+            azSync(effect) { effect.running = false }
+        }
+    }
+
+    /** Resolves explicit names to their current cells, including lazy derived values. */
+    private suspend fun bindExplicitDependencies(effect: RuntimeEffect) {
+        for (name in effect.explicitDependencies) {
+            when (val binding = rawBinding(name)) {
+                is ReactiveBinding -> effect.dependencies.add(binding.cell)
+                is LazyBinding -> {
+                    lookupVar(name) // Initialize or refresh its derived dependency set.
+                    effect.dependencies.addAll(binding.dependencies.keys)
+                }
+            }
+        }
+    }
+
+    private fun subscribe(effect: RuntimeEffect) {
+        for (cell in effect.dependencies) azSync(cell) { cell.effects.add(effect) }
+    }
+
+    private fun unsubscribe(effect: RuntimeEffect) {
+        for (cell in effect.dependencies) azSync(cell) { cell.effects.remove(effect) }
+        effect.dependencies.clear()
     }
 
     /**
@@ -1469,7 +1682,11 @@ class IrInterpreter {
      *  Thread-local variables are re-evaluated from their initializers so each coroutine
      *  gets its own independent copy. */
     private suspend fun childState(): ExecState {
-        val child = ExecState(scopes = ArrayDeque(state().scopes.toList()))
+        val current = state()
+        val child = ExecState(
+            scopes = ArrayDeque(current.scopes.toList()),
+            reactiveOwners = ArrayDeque(current.reactiveOwners.toList()),
+        )
         // Re-evaluate thread-local initializers for the child coroutine (fresh copies).
         for ((name, init) in threadLocalInits) {
             child.threadLocals[name] = evalExpr(init)

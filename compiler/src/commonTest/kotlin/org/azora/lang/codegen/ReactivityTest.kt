@@ -198,6 +198,37 @@ class ReactivityTest {
         """.trimIndent()))
     }
 
+    @Test fun reactiveBindingKindsKeepTheirOrdinaryRebindingRules() {
+        val failures = errors("""
+            react func main() {
+                remember fin fixed = 1
+                retain let stable = 2
+                fixed = 3
+                stable = 4
+            }
+        """.trimIndent())
+        assertTrue(failures.any { "cannot reassign immutable binding 'fixed'" in it }, failures.toString())
+        assertTrue(failures.any { "cannot reassign immutable binding 'stable'" in it }, failures.toString())
+    }
+
+    @Test fun azoraIrPreservesReactiveLifetimeAndBindingKind() {
+        val result = Compiler().compile("""
+            react func main() {
+                remember var a = 1
+                retain val b = 2
+                preserve let c = 3
+                preserve fin d = 4
+            }
+        """.trimIndent())
+        assertIs<CompilationResult.Success>(result)
+        val ir = result.ir.prettyPrint()
+        assertTrue("react func main" in ir, ir)
+        assertTrue("remember var a: Int" in ir, ir)
+        assertTrue("retain val b: Int" in ir, ir)
+        assertTrue("preserve let c: Int" in ir, ir)
+        assertTrue("preserve fin d: Int" in ir, ir)
+    }
+
     @Test fun theLifetimesAreALadder() {
         assertEquals("6", run("""
             import std.io
@@ -236,5 +267,113 @@ class ReactivityTest {
                 result.errors.toString(),
             )
         }
+    }
+
+    @Test fun lazyFinEvaluatesOnlyOnFirstRead() {
+        assertEquals("before\ninit\n42\n42", run("""
+            import std.io
+            func make(): Int {
+                std::println("init")
+                return 42
+            }
+            func main() {
+                lazy fin answer = make()
+                std::println("before")
+                std::println(answer)
+                std::println(answer)
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun lazyRejectsRebindableBindings() {
+        for (binding in listOf("var", "val")) {
+            val failures = errors("func main() { lazy $binding value = 1 }")
+            assertTrue(failures.any { "requires 'fin' or 'let'" in it }, failures.toString())
+        }
+    }
+
+    @Test fun rememberedStateSurvivesRepeatedReactiveCalls() {
+        assertEquals("1\n2\n3", run("""
+            import std.io
+            react func counter(): Int {
+                remember var count = 0
+                count = count + 1
+                return count
+            }
+            react func main() {
+                std::println(counter())
+                std::println(counter())
+                std::println(counter())
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun parallelFirstReadsInitializeRememberedStateExactlyOnce() {
+        assertEquals("init\n14", run("""
+            import std.io
+            async func build(): Int {
+                delay 20
+                std::println("init")
+                return 7
+            }
+            react async func read(): Int {
+                remember fin value = await build()
+                return value
+            }
+            react async func main() {
+                fin first = read()
+                fin second = read()
+                fin a = await first
+                fin b = await second
+                std::println(a + b)
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun lazyFinInsideReactIsInvalidatedByReactiveReads() {
+        assertEquals("2\n6\n6", run("""
+            import std.io
+            react func main() {
+                remember var value = 1
+                lazy fin doubled = value * 2
+                std::println(doubled)
+                value = 3
+                std::println(doubled)
+                std::println(doubled)
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun explicitEffectCanDependOnLazyDerivedBinding() {
+        assertEquals("2\n6", run("""
+            import std.io
+            react func main() {
+                remember var value = 1
+                lazy fin doubled = value * 2
+                effect doubled { std::println(doubled) }
+                value = 3
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun stdStateObservationAndDisposalWork() {
+        assertEquals("7:2\n7:2", run("""
+            import std.io
+            import std.reactive
+            func main() {
+                var source = std::state(1)
+                var latest = 0
+                var calls = 0
+                var subscription = std::observe(source, { value: Int ->
+                    latest = value
+                    calls += 1
+                })
+                source.set(7)
+                std::println("${'$'}{latest}:${'$'}{calls}")
+                subscription.dispose()
+                source.set(9)
+                std::println("${'$'}{latest}:${'$'}{calls}")
+            }
+        """.trimIndent()))
     }
 }

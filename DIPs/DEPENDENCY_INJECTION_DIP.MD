@@ -1,9 +1,9 @@
 # Azora Dependency Injection - DIP
 
-> Status: **partly implemented.** `solo`, `graph` and `inject` exist and work
-> under the interpreter. The rest of the model this document specifies - `bind`,
-> `lazy`, and exactly-once resolution - is **proposed**. Every section marks
-> which it is.
+> Status: **partly implemented.** `solo`, `graph`, and `inject` work under the
+> interpreter. General local `lazy fin` and `lazy let` bindings are implemented
+> and can defer injection. Graph bindings, graph lifetime semantics, and
+> exactly-once DI resolution remain proposed. Every section marks which it is.
 
 A **graph** holds **definitions**; a definition may **bind** to the specs it
 satisfies; a consumer **injects** by naming what it needs rather than how to
@@ -20,7 +20,7 @@ graph AppGraph {
 
 func main() with AppGraph {
     fin api      = inject Api
-    fin cache    = lazy inject Cache
+    lazy fin cache = inject Cache
     fin allViews = inject Many<ViewModel>
 }
 ```
@@ -262,18 +262,21 @@ implementation arrives is the module's decision.
 
 ### 4.3 `lazy` - resolved on first read
 
-⬜ **Proposed.** `lazy` is **not** currently a keyword and would be added.
+✅ **Implemented for local bindings.** `lazy` is the language's ordinary
+first-read binding modifier; DI does not receive a special lazy expression.
 
 ```azora
 pack Service {
     fin api   = inject Api            // resolved when the pack is built
-    fin cache = lazy inject Cache     // resolved on first read
+    // Pack-field lazy storage is still proposed. A local uses:
+    // lazy fin cache = inject Cache
 }
 ```
 
-`lazy` is a prefix on the injection, not a modifier on the binding. Plain
-`inject` resolves where it is written; `lazy inject` defers to the first read,
-so a dependency on a path that is never taken is never built.
+`lazy` modifies the binding, never the injection. Plain `inject` resolves where
+its expression is evaluated; a lazy binding delays evaluating its entire
+initializer until the first read, so a dependency on a path never taken is
+never built.
 
 The distinction matters for a field of a long-lived `pack`: without `lazy`,
 constructing the pack constructs every dependency it declares, used or not.
@@ -321,7 +324,8 @@ order, and holds every binding assignable to `T`. Being a library type rather
 than a language form, it can grow `.size`, filtering, qualifier selection and
 conversion to `Array<T>` or `List<T>` without touching the grammar.
 
-`lazy inject Many<T>` defers constructing the collection to first access.
+`lazy fin values = inject Many<T>` defers constructing the collection to first
+access.
 
 - ⬜ A **qualifier** selects one binding from several. Decide whether Azora
   wants qualifiers or whether graph selection and `Many<T>` cover it
@@ -456,9 +460,9 @@ works, and the pool is never starved by construction.
    `factory` (one per resolution), `scope` (one per active scope).
 4. A definition's arguments may inject other definitions.
 5. `bind Spec` makes the definition answer injections of that spec.
-6. `inject Type` resolves where it is written; `lazy inject Type` defers to the
-   first read; `inject Many<T>` resolves every matching binding in graph
-   declaration order.
+6. `inject Type` resolves where it is evaluated; `lazy fin value = inject Type`
+   defers the whole initializer to the first read; `inject Many<T>` resolves
+   every matching binding in graph declaration order.
 7. `inject T` with several matching bindings is an error; `inject Many<T>` is
    how you ask for all of them.
 8. A graph owns what it constructs, and destroys it in reverse dependency
@@ -477,7 +481,7 @@ works, and the pool is never starved by construction.
 | `factory` | ✅ reserved, parsed       | the per-resolution lifetime         |
 | `scope`   | ✅ reserved, parsed       | the per-scope lifetime              |
 | `include` | ✅ **contextual**, parsed | graph composition                   |
-| `lazy`    | ✅ reserved, parsed       | deferring resolution to first read  |
+| `lazy`    | ✅ reserved, implemented  | first-read `fin` and `let` bindings  |
 | `replace` | ✅ **contextual**, parsed | graph substitution                  |
 | `with`    | ✅ reserved               | `func main() with AppGraph`         |
 
@@ -533,8 +537,8 @@ Ordered by how much they block.
   `inject T` rather than a collision
 - ⬜ **`reflect<Graph>.implementations<T>`** (§4.5) - compile-time discovery,
   separate from runtime resolution
-- ⬜ **`lazy` defers nothing yet.** Both forms lower to the same eager
-  `__inject`; deferral needs §6.3's cell
+- ⬜ **Pack fields do not yet accept `lazy`.** Local `lazy fin` and `lazy let`
+  use the general one-shot lazy cell and can defer an `inject` expression.
 - ⬜ **Cycles are undetected** - mutually injecting definitions recurse until
   the stack ends. Publishing the in-progress handle before running the factory
   makes detecting them free
@@ -552,4 +556,3 @@ Ordered by how much they block.
 - `CONCURRENCY_DIP.MD` §7 - the task model §6.3's design has to work with
 - `ANNOTATIONS_DIP.MD` - `bind`'s existing meaning on a decorator
 - `ROADMAPs/VERSION_0_1_ROADMAP.MD` §3.5, §6.1
-

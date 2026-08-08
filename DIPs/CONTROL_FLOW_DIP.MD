@@ -11,8 +11,8 @@ WHILE  ::= while COND { … }
 FOR    ::= for NAME in ITERABLE { … }
 LOOP   ::= loop { … }                                  // infinite; exit via break
 WHEN   ::= when SCRUTINEE { PATTERN -> { … } … [else -> { … }] }
-JUMP   ::= break [@label] | continue [@label]
-LABEL  ::= @label for … / @label loop …                // labeled loops
+JUMP   ::= break [:label] | continue [:label]
+LABEL  ::= label: (for … | reverse for … | while … | loop …)
 ```
 
 ---
@@ -63,9 +63,9 @@ for n in 0..<10 {
 ### 2.2 Labeled loops
 
 ```azora
-@outer for i in 0..<3 {
+outer: for i in 0..<3 {
     for j in 0..<3 {
-        if i + j == 2 { break @outer }
+        if i + j == 2 { break:outer }
     }
 }
 ```

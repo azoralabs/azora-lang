@@ -5,7 +5,7 @@ import std
 
 // Shared components used across pages.
 
-view BackButton(
+react func BackButton(
     onClick: () -> Unit
 ) {
     Button(
@@ -32,7 +32,7 @@ view BackButton(
     }
 }
 
-view PageTitle(
+react func PageTitle(
     text: String
 ) {
     Text(
@@ -45,7 +45,7 @@ view PageTitle(
     )
 }
 
-view PageLayout(
+react func PageLayout(
     children: () -> Unit
 ) {
     Column(

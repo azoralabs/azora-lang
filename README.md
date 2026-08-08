@@ -164,7 +164,7 @@ impl Point {
 - `for x in a..b`, `for x in a..<b`, `for x in array`
 - `for x in a..b by N` (step), `reverse for`
 - `for` / `while` / `loop` with an `else` that runs unless `break` fired
-- Labeled loops: `@lbl for …`, `break @lbl`, `continue @lbl`
+- Labeled loops: `lbl: for …`, `break:lbl`, `continue:lbl`
 - `when expr { pattern -> { } else -> { } }`, exhaustive over enums and variants,
   with payload destructuring
 
@@ -452,7 +452,8 @@ Constant folding, constant propagation and dead-code elimination run on the IR.
 - `graph Graph { solo|factory|scope Type(args) [bind Spec] }` a dependency graph;
   the first word is the provider's lifetime
 - `graph Graph include [A, B]` composes graphs
-- `inject Type` resolves; `lazy inject Type` defers to first read
+- `inject Type` resolves where evaluated; `lazy fin value = inject Type`
+  defers the entire initializer to first read
 
 ## Decorators
 

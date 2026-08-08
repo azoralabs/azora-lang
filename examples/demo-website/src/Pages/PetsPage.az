@@ -3,7 +3,7 @@ package demo_website.pages
 import std.ui
 import std
 
-view PetCard(
+react func PetCard(
     name: String,
     breed: String,
     age: String,
@@ -101,7 +101,7 @@ view PetCard(
     }
 }
 
-view PetsPage(
+react func PetsPage(
     onBack: () -> Unit
 ) {
     Column(

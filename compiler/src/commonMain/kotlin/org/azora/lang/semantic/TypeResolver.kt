@@ -768,7 +768,14 @@ class TypeResolver(private val table: SymbolTable) {
                 if (!reactiveContext) {
                     errors.add("line ${stmt.line}: '${stmt.kind.spelling}' requires a 'react func' or 'react async func'")
                 }
-                resolveBinding(stmt.name, stmt.type, stmt.initializer, stmt.line, mutable = true)
+                resolveBinding(
+                    stmt.name,
+                    stmt.type,
+                    stmt.initializer,
+                    stmt.line,
+                    mutable = stmt.binding.nameRebindable,
+                    valueMutable = stmt.binding.valueMutable,
+                )
             }
             is Stmt.Effect -> {
                 if (!reactiveContext) {
@@ -1339,10 +1346,22 @@ class TypeResolver(private val table: SymbolTable) {
                         padded
                     }
                     for (i in effectiveArgs.indices) {
-                        val argType = resolveExpr(effectiveArgs[i]) ?: return null
+                        val argument = effectiveArgs[i]
+                        val fieldType = struct.fields[i].type
+                        val savedParams = expectedLambdaParamTypes
+                        val savedReceivers = expectedLambdaReceiverTypes
+                        if (argument is Expr.Lambda && fieldType is IrType.Function) {
+                            expectedLambdaParamTypes = fieldType.params
+                            expectedLambdaReceiverTypes = fieldType.receivers
+                        }
+                        val argType = try {
+                            resolveExpr(argument)
+                        } finally {
+                            expectedLambdaParamTypes = savedParams
+                            expectedLambdaReceiverTypes = savedReceivers
+                        } ?: return null
                         if (struct.typeParams.isEmpty()) {
-                            val fieldType = struct.fields[i].type
-                            if (!isCompatible(fieldType, adoptLiteralType(effectiveArgs[i], argType, fieldType))) {
+                            if (!isCompatible(fieldType, adoptLiteralType(argument, argType, fieldType))) {
                                 errors.add("line ${expr.line}: field '${struct.fields[i].name}' of '${expr.callee}': expected $fieldType, got $argType")
                             }
                         }
@@ -1872,8 +1891,21 @@ class TypeResolver(private val table: SymbolTable) {
                             return null
                         }
                         for (i in expr.args.indices) {
-                            val argType = resolveExpr(expr.args[i]) ?: return null
                             val paramType = func.params[i + 1].second
+                            val argument = expr.args[i]
+                            val savedParams = expectedLambdaParamTypes
+                            val savedReceivers = expectedLambdaReceiverTypes
+                            if (argument is Expr.Lambda && paramType is IrType.Function) {
+                                expectedLambdaParamTypes = paramType.params
+                                expectedLambdaReceiverTypes = paramType.receivers
+                            }
+                            val argType = resolveExpr(argument) ?: run {
+                                expectedLambdaParamTypes = savedParams
+                                expectedLambdaReceiverTypes = savedReceivers
+                                return null
+                            }
+                            expectedLambdaParamTypes = savedParams
+                            expectedLambdaReceiverTypes = savedReceivers
                             if (!isCompatible(paramType, argType)) {
                                 errors.add("line ${expr.line}: arg ${i + 1} of '${expr.name}': expected $paramType, got $argType")
                             }

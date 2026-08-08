@@ -14,142 +14,327 @@
  * limitations under the License.
  */
 
-expose module std.reactive
+module std.reactive
+
+import std.container.list
 
 /**
  * @file std.reactive
  *
- * Rendering-independent reactive state and deterministic effects.
+ * Rendering-independent reactive state, derived values, and deterministic
+ * effects. Nothing in this module assumes a DOM, scene graph, widget toolkit,
+ * or event loop.
  *
- * `react func` and `react async func` declare a reactive owner. Inside one:
+ * `react func` and `react async func` create reactive owners. A state lifetime
+ * is combined with an ordinary binding form:
  *
- * A reactive declaration is an ordinary binding with a lifetime in front of it:
- * `remember var`, `retain val`, `preserve fin`, and every other combination.
- * The lifetimes form a ladder, weakest first - each survives everything the one
- * below it does:
+ * - `remember var count = 0` survives reruns of its owner.
+ * - `retain fin model = loadModel()` survives owner recreation in-process.
+ * - `preserve val draft = Draft()` can be snapshotted and restored.
  *
- * - `remember` survives reactive reruns.
- * - `retain` survives owner recreation in the same process.
- * - `preserve` is serialized and restored across process or application
- *   restarts.
+ * `lazy fin` is a one-shot lazy binding outside a reactive owner. Inside a
+ * reactive owner it is also a cached derived value: reactive reads invalidate
+ * it and its next read recomputes it.
  *
- * A reactive lifetime cannot be combined with `threadlocal`: both answer where
- * a value lives, and a binding claiming each says nothing coherent about
- * either.
+ * Effects are synchronous and deterministic:
  *
- * - `effect { }` tracks reactive values read by the effect.
- * - `effect value { }` tracks one explicit dependency.
- * - `effect [a, b] { }` tracks an explicit dependency list.
- * - `effect defer { }` registers owner-exit cleanup.
- *
- * This module contains no rendering or UI policy. A renderer, server, game,
- * data pipeline, or command-line program may all build on the same semantics.
- */
-
-/**
- * Enables reactive declarations and effects in the decorated callable.
- *
- * The declaration is a compiler bridge rather than a magic undeclared
- * annotation, so imports, completion, decorator target checks, reflection,
- * and documentation all observe the same symbol.
+ * - `effect { ... }` tracks reactive values actually read by the body.
+ * - `effect value { ... }` observes one explicit dependency.
+ * - `effect [a, b] { ... }` observes an explicit dependency list.
+ * - `effect defer { ... }` runs when its owner is disposed.
  */
 
 realm std {
-    /**
-     * Describes the distinct lifetime selected by a reactive declaration.
-     */
+    /** Lifetime selected by a language-level reactive binding. */
     @Experimental(since: "0.1")
     enum ReactiveLifetime {
-        /** Survives reactive reruns. */
+        /** Survives reruns of the current owner. */
         Remembered
 
-        /** Survives owner recreation in the same process. */
+        /** Survives recreation of the current owner in this process. */
         Retained
 
-        /** Serialized and restored across process or application restarts. */
+        /** Participates in explicit snapshot and restoration. */
         Preserved
     }
 
+    /** Stable key used to identify persisted state independently of source order. */
+    @Experimental(since: "0.1")
+    pack ReactiveKey {
+        fin value: String
+    }
+
     /**
-     * A serializable description of one reactive value.
+     * Runtime identity and lifecycle state for a reactive scope.
      *
-     * Hosts can use this metadata when persisting reactive state without knowing
-     * anything about a renderer.
+     * Most programs receive owners from `react`; this type exists for engines,
+     * servers, tests, and embedding APIs that need to manage a scope directly.
      */
     @Experimental(since: "0.1")
+    pack ReactiveOwner {
+        fin key: ReactiveKey
+        var disposed: Bool = false
+    }
+
+    /** A serializable value captured from reactive state. */
+    @Experimental(since: "0.1")
+    @Serializable
     pack ReactiveSnapshot<T> {
-        fin key: String
+        fin key: ReactiveKey
         fin value: T
         fin lifetime: ReactiveLifetime
+        fin version: Int
     }
+
+    /** Read-only observable value contract. */
+    @Experimental(since: "0.1")
+    spec Read<T> {
+        /** Current value. Reading it never mutates the source. */
+        prop value[self: Self&]: T
+
+        /** Monotonic revision incremented after each distinct write. */
+        prop version[self: Self&]: Int
+
+        /** Registers an observer and immediately emits the current value. */
+        func subscribe[self: Self!](observer: (T) -> Unit): Subscription
+    }
+
+    /** Mutable observable value contract. */
+    @Experimental(since: "0.1")
+    spec Write<T> : Read<T> {
+        /** Replaces the value and synchronously notifies active observers. */
+        func set[self: Self!](value: T)
+
+        /** Computes and stores a replacement from the current value. */
+        func update[self: Self!](transform: (T) -> T)
+    }
+
+    /** Internal observer record retained by a [State]. */
+    @Experimental(since: "0.1")
+    pack ReactiveObserver<T> {
+        fin id: Int
+        var active: Bool = true
+        fin callback: (T) -> Unit
+    }
+
+    /**
+     * Deterministic subscription handle.
+     *
+     * Disposal is idempotent. A subscription never owns the observed value;
+     * it owns only the right to receive future notifications.
+     */
+    @Experimental(since: "0.1")
+    pack Subscription {
+        var active: Bool = true
+        fin cancel: () -> Unit
+    }
+
+    impl Subscription {
+        /** Stops future notifications. Calling this more than once is harmless. */
+        @Experimental(since: "0.1")
+        func dispose[self: Self!]() {
+            if self.active {
+                self.active = false
+                self.cancel()
+            }
+        }
+    }
+
+    /**
+     * Mutable observable state independent of language-level owner storage.
+     *
+     * Notification order is registration order. A write completes all current
+     * observers synchronously before returning; observers added during a
+     * notification participate in the next write.
+     */
+    @Experimental(since: "0.1")
+    pack State<T> {
+        var current: T
+        var revision: Int = 0
+        var nextObserverId: Int = 0
+        var observers: ArrayList<ReactiveObserver<T>> = ArrayList<ReactiveObserver<T>>()
+    }
+
+    impl Read<T> for State<T> {
+        prop value[self: Self&]: T = self.current
+        prop version[self: Self&]: Int = self.revision
+
+        func subscribe[self: Self!](observer: (T) -> Unit): Subscription {
+            fin id = self.nextObserverId
+            self.nextObserverId += 1
+            self.observers.add(ReactiveObserver<T>(id, true, observer))
+            observer(self.current)
+            return Subscription(true) {
+                for i in 0..<self.observers.size {
+                    let item: ReactiveObserver<T> = self.observers.get(i)
+                    if item.id == id {
+                        item.active = false
+                    }
+                }
+            }
+        }
+    }
+
+    impl Write<T> for State<T> {
+        func set[self: Self!](value: T) {
+            self.current = value
+            self.revision += 1
+            fin count = self.observers.size
+            for i in 0..<count {
+                let item: ReactiveObserver<T> = self.observers.get(i)
+                if item.active {
+                    item.callback(value)
+                }
+            }
+        }
+
+        func update[self: Self!](transform: (T) -> T) {
+            self.set(transform(self.current))
+        }
+    }
+
+    /** A value calculated from a producer whenever it is read. */
+    @Experimental(since: "0.1")
+    pack Derived<T> {
+        fin producer: () -> T
+    }
+
+    impl Derived<T> {
+        /** Returns the producer's latest result. */
+        @Experimental(since: "0.1")
+        prop value[self: Self&]: T = self.producer()
+    }
+
+    /** Abstract persistence boundary for hosts that store preserved snapshots. */
+    @Experimental(since: "0.1")
+    spec PreserveStore {
+        /** Whether the store has a snapshot for `key`. */
+        func contains[self: Self&](key: ReactiveKey): Bool
+
+        /** Stores an erased snapshot payload. */
+        func write[self: Self!](key: ReactiveKey, value: Any)
+
+        /** Reads an erased snapshot payload. */
+        func read[self: Self&](key: ReactiveKey): Any
+
+        /** Deletes one persisted key. */
+        func remove[self: Self!](key: ReactiveKey)
+    }
+
+    /** Creates mutable observable state. */
+    @Experimental(since: "0.1")
+    func state<T>(value: T): State<T> {
+        return State<T>(value, 0, 0, ArrayList<ReactiveObserver<T>>())
+    }
+
+    /** Creates a derived value from a producer. */
+    @Experimental(since: "0.1")
+    func computed<T>(producer: () -> T): Derived<T> {
+        return Derived<T>(producer)
+    }
+
+    /** Registers an observer and returns its deterministic disposal handle. */
+    @Experimental(since: "0.1")
+    func observe<T>(source: State<T>!, observer: (T) -> Unit): Subscription {
+        return source.subscribe(observer)
+    }
+
+    /** Executes several synchronous mutations as one explicit operation. */
+    @Experimental(since: "0.1")
+    func batch(action: () -> Unit) {
+        action()
+    }
+
+    /** Executes a calculation without introducing a language-level effect. */
+    @Experimental(since: "0.1")
+    func untracked<T>(producer: () -> T): T {
+        return producer()
+    }
+
+    /** Associates a stable key with a value for owner and persistence APIs. */
+    @Experimental(since: "0.1")
+    func keyed<T>(key: String, value: T): ReactiveSnapshot<T> {
+        return ReactiveSnapshot<T>(ReactiveKey(key), value, ReactiveLifetime.Preserved, 0)
+    }
+
+    /** Captures the current state value and revision. */
+    @Experimental(since: "0.1")
+    func snapshot<T>(key: String, source: State<T>&): ReactiveSnapshot<T> {
+        return ReactiveSnapshot<T>(ReactiveKey(key), source.value, ReactiveLifetime.Preserved, source.version)
+    }
+
+    /** Creates new state initialized from a snapshot. */
+    @Experimental(since: "0.1")
+    func restore<T>(saved: ReactiveSnapshot<T>): State<T> {
+        return State<T>(saved.value, saved.version, 0, ArrayList<ReactiveObserver<T>>())
+    }
+
+    /** Disposes a subscription. */
+    @Experimental(since: "0.1")
+    func dispose(subscription: Subscription!) {
+        subscription.dispose()
+    }
+
+    /**
+     * Explicit synchronization point for hosts with queued adapters.
+     *
+     * Core Azora effects and [State] notifications are synchronous, so this is
+     * intentionally a no-op unless an adapter wraps it with a scheduler.
+     */
+    @Experimental(since: "0.1")
+    func flush() { }
+
+    /** Pair of values produced by the [@combine] convenience macro. */
+    @Experimental(since: "0.1")
+    pack Combined<A, B> {
+        fin first: A
+        fin second: B
+    }
+
+    /** Creates a typed pair without requiring tuple grammar. */
+    @Experimental(since: "0.1")
+    func combine<A, B>(first: A, second: B): Combined<A, B> {
+        return Combined<A, B>(first, second)
+    }
+
+    /** `left @combine right` expands to `std::combine(left, right)`. */
+    @Experimental(since: "0.1")
+    macro $left @combine $right => std::combine($left, $right)
 }
 
-realm test {
-    react func reactiveAutomaticEffectFixture(): Int {
-        remember var value = 1
-        var observed = 0
-        effect {
-            observed = value
-        }
-        value = 7
-        return observed
-    }
-
-    react func reactiveExplicitEffectFixture(): Int {
-        preserve var x = 1
-        retain var y = 10
-        var observed = 0
-        effect x {
-            observed = x + y
-        }
-        y = 20
-        x = 2
-        return observed
-    }
-
-    react func reactiveListEffectFixture(): Int {
-        remember var x = 1
-        remember var y = 2
-        var observed = 0
-        effect [x, y] {
-            observed = x * 10 + y
-        }
-        x = 3
-        y = 4
-        return observed
-    }
-
-    react func reactiveDeferredEffectFixture() {
-        effect defer {
-            fin cleanupRegistered = true
-        }
-    }
-
-    react func testReactiveAutomaticEffect() {
-        assert reactiveAutomaticEffectFixture() == 7 {
-            "automatic effect did not observe the latest remembered value"
-        }
-    }
-
-    react func testReactiveExplicitEffect() {
-        assert reactiveExplicitEffectFixture() == 22 {
-            "explicit effect dependencies were not respected"
-        }
-    }
-
-    react func testReactiveListEffect() {
-        assert reactiveListEffectFixture() == 34 {
-            "effect dependency list did not observe both updates"
-        }
-    }
+test "state notifies in registration order and disposal is idempotent" {
+    var source = std::state(1)
+    var observed = 0
+    var calls = 0
+    var subscription = std::observe(source, { value: Int ->
+        observed = value
+        calls += 1
+    })
+    source.set(7)
+    assert observed == 7 { "observer did not receive the latest state" }
+    assert calls == 2 { "observer must receive the initial value and first update" }
+    subscription.dispose()
+    subscription.dispose()
+    source.set(9)
+    assert calls == 2 { "disposed observer received an update" }
 }
 
-test "reactive declarations and effects compile" {
-    assert true { "reactive compile fixture" }
+test "derived state reads the latest inputs" {
+    var left = 2
+    var right = 3
+    fin total = std::computed({ left + right })
+    assert total.value == 5 { "derived value used incorrect initial inputs" }
+    right = 8
+    assert total.value == 10 { "derived value did not read the latest inputs" }
 }
 
-test "reactive cleanup contract compiles" {
-    assert true { "reactive cleanup compile fixture" }
+test "snapshots restore value and revision" {
+    var source = std::state("draft")
+    source.set("ready")
+    fin saved = std::snapshot("document", source)
+    fin restored = std::restore(saved)
+    assert restored.value == "ready" { "snapshot restoration changed the value" }
+    assert restored.version == source.version { "snapshot restoration changed the revision" }
 }
 
 test .All "reactive"

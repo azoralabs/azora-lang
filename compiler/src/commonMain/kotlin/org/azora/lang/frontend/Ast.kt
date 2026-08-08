@@ -421,20 +421,12 @@ sealed class Expr {
     /** `await task` - suspend until the task completes and yield its result. */
     data class Await(val value: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 
-    /** `inject Type` - resolve the singleton instance of [typeName] from the DI container. */
-    /**
-     * `inject Type` - resolve the singleton instance of [typeName].
-     *
-     * [deferred] marks the `lazy inject Type` form: the value is resolved on
-     * its first read rather than where the expression is written, so a
-     * dependency on a path never taken is never built.
-     */
+    /** `inject Type` - resolve an instance of [typeName] from the active DI graph. */
     data class Inject(
         val typeName: String,
         override val line: Int,
         override val column: Int = 0,
         override val length: Int = 0,
-        val deferred: Boolean = false,
     ) : Expr()
 
     /** `arr...` - spread an array's elements as individual call arguments. */
@@ -502,7 +494,9 @@ sealed class Stmt {
         override val line: Int,
         override val column: Int = 0,
         override val length: Int = 0,
-        val valueMutable: Boolean = true
+        val valueMutable: Boolean = true,
+        /** `lazy` delays initialization until the binding's first read. */
+        val lazy: Boolean = false,
     ) : Stmt()
 
     /**
@@ -521,7 +515,9 @@ sealed class Stmt {
         val initializer: Expr,
         override val line: Int,
         override val column: Int = 0,
-        override val length: Int = 0
+        override val length: Int = 0,
+        /** `lazy` delays initialization until the binding's first read. */
+        val lazy: Boolean = false,
     ) : Stmt()
 
     /**
@@ -540,7 +536,9 @@ sealed class Stmt {
         val initializer: Expr,
         override val line: Int,
         override val column: Int = 0,
-        override val length: Int = 0
+        override val length: Int = 0,
+        /** `lazy` delays initialization until the binding's first read. */
+        val lazy: Boolean = false,
     ) : Stmt()
 
     /**
@@ -929,7 +927,7 @@ sealed class Stmt {
         override val line: Int,
         override val column: Int = 0,
         override val length: Int = 0,
-        /** Optional `@label` for labeled `break`/`continue`. */
+        /** Optional source label for `break:label`/`continue:label`. */
         val label: String? = null
     ) : Stmt()
 
@@ -954,7 +952,7 @@ sealed class Stmt {
         val step: Expr? = null,
         /** Iterate the range downwards: `reverse for x in a..b`. */
         val reverse: Boolean = false,
-        /** Optional `@label` for labeled `break`/`continue`. */
+        /** Optional source label for `break:label`/`continue:label`. */
         val label: String? = null
     ) : Stmt()
 
@@ -968,7 +966,7 @@ sealed class Stmt {
         override val line: Int,
         override val column: Int = 0,
         override val length: Int = 0,
-        /** Optional `@label` for labeled `break`/`continue`. */
+        /** Optional source label for `break:label`/`continue:label`. */
         val label: String? = null,
         /** Optional iterable for `loop iterable { }` - when present, desugars to
          *  `iterable.reset(); while iterable.hasNext() { body }`. */
@@ -998,7 +996,7 @@ sealed class Stmt {
     ) : Stmt()
 
     /**
-     * `break` statement. Exits the enclosing loop. With a label (`break @lbl`)
+     * `break` statement. Exits the enclosing loop. With a label (`break:lbl`)
      * it exits the loop tagged with that label, skipping any inner loops.
      *
      * @property label the target label, or `null` for the innermost loop
@@ -1007,7 +1005,7 @@ sealed class Stmt {
 
     /**
      * `continue` statement. Skips to the next iteration of the enclosing loop.
-     * With a label (`continue @lbl`) it targets the loop tagged with that label.
+     * With a label (`continue:lbl`) it targets the loop tagged with that label.
      *
      * @property label the target label, or `null` for the innermost loop
      */

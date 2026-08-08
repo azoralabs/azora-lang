@@ -4326,7 +4326,13 @@ class Parser(
         val start = peek()
         consume(TokenType.INLINE, "Expected 'inline'")
         consume(TokenType.ASSERT, "Expected 'assert'")
-        val condition = parseExpr()
+        val savedTrailing = allowTrailingLambda
+        allowTrailingLambda = false
+        val condition = try {
+            parseExpr()
+        } finally {
+            allowTrailingLambda = savedTrailing
+        }
         consume(TokenType.L_BRACE, "Expected '{' after assert condition")
         skipNewlines()
         val message = parseExpr()
@@ -5484,6 +5490,7 @@ class Parser(
             check(TokenType.VAR) || check(TokenType.VAL) -> parseVarDecl()
             check(TokenType.FIN) -> parseFinDecl()
             check(TokenType.LET) -> parseLetDecl()
+            check(TokenType.LAZY) -> parseLazyDecl()
             check(TokenType.RETURN) -> parseReturn()
             check(TokenType.ASSERT) -> parseAssertStmt()
             check(TokenType.TRACE) -> parseTraceStmt()
@@ -5492,7 +5499,10 @@ class Parser(
             check(TokenType.NOINLINE) -> parseNoInline()
             check(TokenType.SCOPE) -> parseScope()
             check(TokenType.IF) -> parseIf()
-            check(TokenType.AT) && !isMacroInvokeAhead() -> parseLabeledStmt()
+            check(TokenType.IDENTIFIER) && peekNext()?.type == TokenType.COLON -> parseLabeledStmt()
+            check(TokenType.AT) && !isMacroInvokeAhead() -> error(
+                "Loop labels use 'label: loop' syntax; replace '@label loop' with 'label: loop' at line ${peek().line}",
+            )
             check(TokenType.WHILE) -> parseWhile()
             check(TokenType.FOR) -> parseFor()
             check(TokenType.REVERSE) && peekNext()?.type == TokenType.FOR -> parseFor(reverse = true)
@@ -5518,22 +5528,33 @@ class Parser(
         }
     }
 
-    /** `@label while/for/loop …` - a labeled loop for `break @label`/`continue @label`. */
+    /** `label: while/for/loop …` - a loop targeted by `break:label`/`continue:label`. */
     private fun parseLabeledStmt(): Stmt {
-        consume(TokenType.AT, "Expected '@'")
-        val label = consume(TokenType.IDENTIFIER, "Expected label name after '@'").lexeme
+        val label = consume(TokenType.IDENTIFIER, "Expected loop label").lexeme
+        consume(TokenType.COLON, "Expected ':' after loop label '$label'")
         return when {
             check(TokenType.WHILE) -> parseWhile(label)
             check(TokenType.FOR) -> parseFor(label = label)
             check(TokenType.REVERSE) && peekNext()?.type == TokenType.FOR -> parseFor(reverse = true, label = label)
             check(TokenType.LOOP) -> parseLoop(label)
-            else -> error("Expected a loop after '@$label' at line ${peek().line}")
+            else -> error("Expected 'for', 'while', 'reverse for', or 'loop' after label '$label:' at line ${peek().line}")
         }
     }
 
-    /** `@label` suffix on `break`/`continue`; returns the label or null. */
-    private fun parseOptionalLabel(): String? =
-        if (match(TokenType.AT)) consume(TokenType.IDENTIFIER, "Expected label name after '@'").lexeme else null
+    /** `:label` suffix on `break`/`continue`; returns the label or null. */
+    private fun parseOptionalLabel(jump: String): String? {
+        if (check(TokenType.AT)) {
+            error(
+                "Labeled jumps use ':label'; replace '$jump @label' with " +
+                    "'$jump:label' at line ${peek().line}",
+            )
+        }
+        return if (match(TokenType.COLON)) {
+            consume(TokenType.IDENTIFIER, "Expected loop label after ':'").lexeme
+        } else {
+            null
+        }
+    }
 
     private fun parseWhile(label: String? = null): Stmt {
         val start = peek()
@@ -5598,7 +5619,7 @@ class Parser(
 
     private fun rewriteBreakForElse(stmt: Stmt, flag: String): Stmt = when (stmt) {
         // Only an unlabeled `break` exits THIS loop and so should trip the else flag.
-        // A labeled `break @outer` targets an enclosing loop and is left untouched.
+        // A labeled `break:outer` targets an enclosing loop and is left untouched.
         is Stmt.Break -> if (stmt.label != null) stmt else Stmt.Scope(listOf(
             Stmt.Assignment(flag, Expr.BoolLiteral(false, stmt.line, stmt.column, stmt.length), stmt.line, stmt.column),
             Stmt.Break()
@@ -5695,14 +5716,14 @@ class Parser(
 
     private fun parseBreak(): Stmt {
         val start = consume(TokenType.BREAK, "Expected 'break'")
-        val label = parseOptionalLabel()
+        val label = parseOptionalLabel("break")
         consumeNewline()
         return Stmt.Break(label, start.line, start.column, start.lexeme.length)
     }
 
     private fun parseContinue(): Stmt {
         val start = consume(TokenType.CONTINUE, "Expected 'continue'")
-        val label = parseOptionalLabel()
+        val label = parseOptionalLabel("continue")
         consumeNewline()
         return Stmt.Continue(label, start.line, start.column, start.lexeme.length)
     }
@@ -6782,7 +6803,13 @@ class Parser(
         val start = peek()
         consume(TokenType.INLINE, "Expected 'inline'")
         consume(TokenType.ASSERT, "Expected 'assert'")
-        val condition = parseExpr()
+        val savedTrailing = allowTrailingLambda
+        allowTrailingLambda = false
+        val condition = try {
+            parseExpr()
+        } finally {
+            allowTrailingLambda = savedTrailing
+        }
         consume(TokenType.L_BRACE, "Expected '{' after inline assert condition")
         skipNewlines()
         val message = parseExpr()
@@ -6985,6 +7012,20 @@ class Parser(
         val init = parseInitializer(type)
         consumeNewline()
         return Stmt.LetDecl(name, type, init, start.line, start.column)
+    }
+
+    /** `lazy fin` / `lazy let`: evaluate the initializer once, on first read. */
+    private fun parseLazyDecl(): Stmt {
+        val start = advance() // lazy
+        return when {
+            check(TokenType.FIN) -> parseFinDecl().copy(line = start.line, column = start.column, lazy = true)
+            check(TokenType.LET) -> parseLetDecl().copy(line = start.line, column = start.column, lazy = true)
+            check(TokenType.VAR) || check(TokenType.VAL) -> error(
+                "'lazy' requires 'fin' or 'let' at line ${start.line}; " +
+                    "a rebindable lazy name has ambiguous initialization semantics",
+            )
+            else -> error("Expected 'fin' or 'let' after 'lazy' at line ${start.line}")
+        }
     }
 
     private fun parseReturn(): Stmt {
@@ -7854,19 +7895,19 @@ class Parser(
             val at = advance()
             return Expr.Await(parseUnary(), at.line, at.column, at.lexeme.length)
         }
-        // `inject Type` - resolve the singleton instance.
-        // `lazy inject Type` - the same, deferred to the value's first read.
-        if (check(TokenType.INJECT) || (check(TokenType.LAZY) && peekNext()?.type == TokenType.INJECT)) {
-            val deferred = match(TokenType.LAZY)
+        // `inject Type` is an ordinary expression. Deferral belongs to its
+        // binding: `lazy fin service = inject Service`.
+        if (check(TokenType.INJECT)) {
             val at = advance()
             val typeName = consume(TokenType.IDENTIFIER, "Expected type name after 'inject'").lexeme
             // Chain into parsePostfix so `inject Config.get()` works.
-            return parsePostfix(Expr.Inject(typeName, at.line, at.column, at.lexeme.length, deferred))
+            return parsePostfix(Expr.Inject(typeName, at.line, at.column, at.lexeme.length))
         }
-        // `lazy` is only meaningful in front of an injection; on its own it would
-        // read as a value that does not exist.
         if (check(TokenType.LAZY)) {
-            error("'lazy' must be followed by 'inject' at line ${peek().line}")
+            error(
+                "'lazy' modifies a binding at line ${peek().line}; " +
+                    "write 'lazy fin name = expression' or 'lazy let name = expression'",
+            )
         }
         if (check(TokenType.BANG) && peekNext()?.type == TokenType.L_BRACKET) {
             val at = advance()
@@ -8106,15 +8147,33 @@ class Parser(
                         else -> Expr.Call("", args, expr.line, expr.column, expr.length, receiver = expr)
                     }
                 }
-                allowTrailingLambda && check(TokenType.L_BRACE) && expr is Expr.Identifier && expr.name == "async" -> {
+                allowTrailingLambda && check(TokenType.L_BRACE) &&
+                    (expr is Expr.Identifier || expr is Expr.Member) -> {
                     val lb = peek()
-                    expr = Expr.Call(
-                        "async",
-                        listOf(parseLambda(lb.line, lb.column, implicitIt = false)),
-                        expr.line,
-                        expr.column,
-                        expr.length
-                    )
+                    val isAsync = expr is Expr.Identifier && expr.name == "async"
+                    val lambda = parseLambda(lb.line, lb.column, implicitIt = !isAsync)
+                    expr = when (expr) {
+                        is Expr.Identifier -> {
+                            val call = Expr.Call(
+                                expr.name,
+                                listOf(lambda),
+                                expr.line,
+                                expr.column,
+                                expr.length,
+                                pendingCallTypeArgs,
+                            )
+                            pendingCallTypeArgs = emptyList()
+                            call
+                        }
+                        is Expr.Member -> Expr.MethodCall(
+                            expr.target,
+                            expr.name,
+                            listOf(lambda),
+                            expr.line,
+                            expr.column,
+                            expr.length,
+                        )
+                    }
                 }
                 else -> return expr
             }

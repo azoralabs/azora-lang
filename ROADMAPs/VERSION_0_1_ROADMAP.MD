@@ -383,22 +383,20 @@ generation. Every form the parser accepts:
   its call graph
 - ✅ `effect { }`, explicit dependencies, `effect defer`
 - ✅ `REACTIVE_DIP.MD` written
-- ⬜ **Reactivity is entirely compile-time.** `IrGenerator` inlines an effect's
-  body after each assignment it can see, so an effect re-runs only for
-  assignments in the owner's own body - a write through a pointer, from a called
-  function, or from another task is invisible. Decide whether that is the model
-  (and say so) or whether it needs a runtime
-- ⬜ The three lifetimes differ in declared intent only: nothing persists, so
-  `retain` and `preserve` behave exactly as `remember`. Durable storage is the
-  missing half
-- ⬜ An effect's body is duplicated per triggering assignment, with no bound and
-  no diagnostic
-- ⬜ No batching, no cycle detection, and effect ordering is declaration order
-  by accident rather than by decision
-- ⬜ No derived-value form - "this value is a function of those" is written as
-  an effect assigning a `var`
-- ⬜ Reactivity is untested under LLVM and Wasm
-- ⬜ `ReactiveSnapshot<T>` is declared and unused
+- ✅ Effects are first-class Azora IR nodes. The interpreter tracks runtime cell
+  reads and subscriptions; LLVM and Wasm lower compiler-visible dependencies
+- ✅ Owner-backed cells preserve reactive values across repeated calls, with
+  coroutine-safe exactly-once initialization in the interpreter
+- ✅ `lazy fin` and `lazy let` provide first-read initialization; inside a
+  reactive owner they are cached derived values invalidated by reactive inputs
+- ✅ LLVM and Wasm executable tests cover effects, lazy values, and remembered
+  state; LLVM also covers reactive async owner storage
+- ✅ `std.reactive` defines `Read`, `Write`, `State`, `Derived`, subscriptions,
+  snapshots, restoration, and composition without a rendering dependency
+- ⬜ Native effects still observe compiler-visible assignments rather than
+  arbitrary writes hidden behind aliases, pointers, or calls
+- ⬜ Native reactive owner storage is not yet atomic, and durable `preserve`
+  storage still requires a host adapter
 
 ### 3.5 Dependency injection
 
@@ -407,7 +405,8 @@ generation. Every form the parser accepts:
   states its provider lifetime first (`solo` per graph, `factory` per
   resolution, `scope` per active scope); `bind` binds a definition to the specs
   it satisfies; `include` composes graphs
-- ✅ Syntax parses: lifetimes, `bind`, `include`, `lazy inject`
+- ✅ Syntax parses: lifetimes, `bind`, `include`, and lazy bindings around
+  injection (`lazy fin service = inject Service`)
 - ✅ Keywords added: `lazy`, `factory`, `include` (and `derive`, reserved ahead
   of use). `solo` became a modifier on `pack`, so a `solo pack` follows every
   pack rule: fields only, members in an `impl` block, receiver `self`

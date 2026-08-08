@@ -148,6 +148,10 @@ internal object IrSymbolCanonicalizer {
             is IrStmt.Throw -> stmt.copy(value = expr(stmt.value))
             is IrStmt.Try -> stmt.copy(body = stmt.body.map(::stmt), catchBody = stmt.catchBody?.map(::stmt))
             is IrStmt.Defer -> stmt.copy(body = stmt.body.map(::stmt))
+            is IrStmt.Effect -> stmt.copy(
+                dependencies = stmt.dependencies.map(::symbol),
+                body = stmt.body.map(::stmt),
+            )
             is IrStmt.Yield -> stmt.copy(value = expr(stmt.value))
             is IrStmt.ForEach -> stmt.copy(
                 elem = symbol(stmt.elem),

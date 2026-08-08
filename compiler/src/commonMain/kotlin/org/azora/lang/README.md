@@ -117,7 +117,7 @@ not reference kinds in the grammar.
 `if`/`else if`/`else`; `while`; `for x in a..b`, `for x in a..<b`, `for x in array`;
 `for x in a..b by N` (step); `reverse for`; `loop { }`; `loop { } while cond`
 (do-while); `for/while/loop … else { }` (else runs unless `break`); labeled loops
-`@lbl for`, `break @lbl` / `continue @lbl`; `when expr { patterns -> { } else -> { } }`
+`lbl: for`, `break:lbl` / `continue:lbl`; `when expr { patterns -> { } else -> { } }`
 pattern matching (enums, slots with destructuring, literals) with exhaustiveness
 checking; `break`/`continue`.
 
@@ -146,7 +146,7 @@ checking; `break`/`continue`.
 | `solo pack Name { }` | a type there is one of |
 | `graph Graph { solo\|factory\|scope Type(args) [bind Spec] }` | a dependency graph; the first word is the provider's lifetime |
 | `graph Graph include [A, B]` | graph composition |
-| `inject Type` / `lazy inject Type` | resolve now / on first read |
+| `inject Type` / `lazy fin value = inject Type` | resolve now / on first read |
 | `react func name() { }` | reactive owner |
 | `bridge target { func sigs }` | FFI extern declarations |
 | `realm Name { }` | named namespace (`Name::member`); reopenable and merging |

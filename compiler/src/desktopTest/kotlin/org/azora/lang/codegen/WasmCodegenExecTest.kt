@@ -50,6 +50,66 @@ class WasmCodegenExecTest {
         check("Hello, 7!", main("std::print(\"Hello, \" )\nstd::print(7)\nstd::println(\"!\")"))
     @Test fun arithmetic() = check("14", main("""std::println(2 + 3 * 4)"""))
 
+    @Test fun lazyFinInitializesOnFirstReadOnly() = check(
+        "before\ninit\n42\n42",
+        """
+            import std.io
+            func make(): Int {
+                std::println("init")
+                return 42
+            }
+            func main() {
+                lazy fin answer = make()
+                std::println("before")
+                std::println(answer)
+                std::println(answer)
+            }
+        """.trimIndent(),
+    )
+
+    @Test fun reactiveEffectRerunsAfterDependencyAssignment() = check(
+        "1\n7",
+        """
+            import std.io
+            react func main() {
+                remember var value = 1
+                effect { std::println(value) }
+                value = 7
+            }
+        """.trimIndent(),
+    )
+
+    @Test fun rememberedStateSurvivesRepeatedReactiveCalls() = check(
+        "1\n2\n3",
+        """
+            import std.io
+            react func counter(): Int {
+                remember var count = 0
+                count = count + 1
+                return count
+            }
+            react func main() {
+                std::println(counter())
+                std::println(counter())
+                std::println(counter())
+            }
+        """.trimIndent(),
+    )
+
+    @Test fun reactiveEffectsObserveLazyDerivedBindings() = check(
+        "2\n2\n6\n6",
+        """
+            import std.io
+            react func main() {
+                remember var value = 1
+                lazy fin doubled = value * 2
+                effect doubled { std::println(doubled) }
+                effect { std::println(doubled) }
+                value = 3
+            }
+        """.trimIndent(),
+    )
+
     // A `Double` prints as a `Double` on every backend: an integral value keeps its `.0`.
     // WebAssembly has no sin/cos opcode, so the compiler supplies them in software
     // rather than importing them from the host. Cody-Waite reduction plus the odd/even
@@ -159,6 +219,23 @@ class WasmCodegenExecTest {
     @Test fun loopBreakContinue() = check(
         "1\n2\n4",
         main("var i = 0\nloop {\ni = i + 1\nif i == 3 { continue }\nif i > 4 { break }\nstd::println(i)\n}")
+    )
+
+    @Test fun labeledBreakAndContinueUseColonSyntax() = check(
+        "2",
+        main(
+            """
+            var count = 0
+            outer: for i in 0..<4 {
+                for j in 0..<4 {
+                    if i == 2 { break:outer }
+                    count++
+                    continue:outer
+                }
+            }
+            std::println(count)
+            """.trimIndent(),
+        ),
     )
 
     @Test fun whenBranches() = check(

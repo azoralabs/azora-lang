@@ -3,7 +3,7 @@ package demo_website.pages
 import std.ui
 import std
 
-view HomePage(
+react func HomePage(
     onPets: () -> Unit,
     onAdd: () -> Unit,
     onHealth: () -> Unit
@@ -170,7 +170,7 @@ view HomePage(
     }
 }
 
-view FeatureCard(
+react func FeatureCard(
     icon: String,
     icon2: String,
     title: String,

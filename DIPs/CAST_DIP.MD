@@ -232,7 +232,7 @@ unpredictable four.
   could allocate or consume its operand.
 - `value.into<T>` **never** tries `Cast<T>`. A conversion is opted into; a type
   that merely has a compatible representation has not agreed to be convertible.
-- `T::from(v)` and `v.into<T>` are **not** derived from each other. Rust derives
+- `T::from(v)` and `v.into<T>` are **not** derived from each other. Deriving
   a blanket `Into` from `From`; Azora does not, because the two differ in
   ownership - `from` constructs, `into` may consume - and a derived direction
   would silently pick one.

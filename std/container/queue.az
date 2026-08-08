@@ -195,7 +195,7 @@ test "queue clear permits reuse" {
 }
 
 test "queue serialization metadata is declared" {
-    inline assert (std::reflect<Queue>).hasDeco<Serializable> { "Queue must carry Serializable metadata" }
+    inline assert std::reflect<Queue>.hasDeco<Serializable> { "Queue must carry Serializable metadata" }
 }
 
 test .All "queue"

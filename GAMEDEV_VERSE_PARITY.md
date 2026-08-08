@@ -19,8 +19,8 @@ Azora already has several foundations needed for Verse-like gameplay:
 | Data-first gameplay | `pack`, `variant`, `enum`, generics |
 | Error-aware control | `fail ErrSet`, `T!ErrSet`, `try/catch` |
 | Metadata | `annot`, declaration decorators, parameter query decorators |
-| Services | `solo`, `wrap`, `inject` |
-| Reactivity | `@Reactive`, `mem`, `rem`, `ret`, `effect` |
+| Services | `solo`, `graph`, `inject` |
+| Reactivity | `react`, `remember`, `retain`, `preserve`, `effect` |
 | Memory | `alloc`, `purge`, `take`, `clone`, pointers |
 | Tooling | one AST/IR feeding interpreter, LLVM, WASM, and source backends |
 
@@ -79,7 +79,7 @@ Prefer decorators and libraries over adding special-purpose gameplay keywords:
 | Gameplay role | Azora spelling |
 |---|---|
 | Component | `@Component pack Health { ... }` |
-| Resource | `@Resource solo Config { ... }` or resource entity storage |
+| Resource | `@Resource solo pack Config { ... }` or resource entity storage |
 | System | `@System("Update") func movement(...) { ... }` |
 | Query | `q: @Query (mut ref Transform, ref Velocity)` |
 | Event | future `@Event pack PlayerScored { ... }` |

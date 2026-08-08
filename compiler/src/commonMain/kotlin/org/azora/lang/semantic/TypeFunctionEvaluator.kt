@@ -56,10 +56,10 @@ internal object TypeFunctionEvaluator {
      * The declaration name [type] refers to, if it names a `deepinline prop`.
      *
      * A use site spells a type property exactly like a generic type
-     * (`Promote<T, U>`), so the two are told apart here rather than in the
+     * (`promote<T, U>`), so the two are told apart here rather than in the
      * parser: only the declaration set knows which names are type properties,
      * and a declaration can arrive from an injected stdlib module long after the
-     * use site was parsed. A realm-qualified use (`std::Promote<…>`) and a bare
+     * use site was parsed. A realm-qualified use (`std::promote<…>`) and a bare
      * one inside the declaring realm both find the mangled declaration.
      */
     fun declarationNameFor(type: TypeRef.Named, declaredNames: Collection<String>): String? {

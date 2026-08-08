@@ -21,12 +21,22 @@ expose module std.reactive
  *
  * Rendering-independent reactive state and deterministic effects.
  *
- * `@Reactive` establishes a reactive owner for a function, task, or infix.
- * Inside that owner:
+ * `react func` and `react async func` declare a reactive owner. Inside one:
  *
- * - `mem` stores owner-local memoized state.
- * - `rem` stores state eligible for save/restore by a host.
- * - `ret` stores state retained for the owner's full lifetime.
+ * A reactive declaration is an ordinary binding with a lifetime in front of it:
+ * `remember var`, `retain val`, `preserve fin`, and every other combination.
+ * The lifetimes form a ladder, weakest first - each survives everything the one
+ * below it does:
+ *
+ * - `remember` survives reactive reruns.
+ * - `retain` survives owner recreation in the same process.
+ * - `preserve` is serialized and restored across process or application
+ *   restarts.
+ *
+ * A reactive lifetime cannot be combined with `threadlocal`: both answer where
+ * a value lives, and a binding claiming each says nothing coherent about
+ * either.
+ *
  * - `effect { }` tracks reactive values read by the effect.
  * - `effect value { }` tracks one explicit dependency.
  * - `effect [a, b] { }` tracks an explicit dependency list.
@@ -43,8 +53,6 @@ expose module std.reactive
  * annotation, so imports, completion, decorator target checks, reflection,
  * and documentation all observe the same symbol.
  */
-@Experimental(since: "0.1")
-bridge annot Reactive for [.Func, .AsyncFunc, .Prop, .AsyncProp]
 
 realm std {
     /**
@@ -52,20 +60,20 @@ realm std {
      */
     @Experimental(since: "0.1")
     enum ReactiveLifetime {
-        /** Lives in the current reactive owner and may be recomputed with it. */
-        Memory
-
-        /** May be serialized and restored by a host across owner recreation. */
+        /** Survives reactive reruns. */
         Remembered
 
-        /** Remains alive until the reactive owner itself is disposed. */
+        /** Survives owner recreation in the same process. */
         Retained
+
+        /** Serialized and restored across process or application restarts. */
+        Preserved
     }
 
     /**
      * A serializable description of one reactive value.
      *
-     * Hosts can use this metadata when persisting `rem` state without knowing
+     * Hosts can use this metadata when persisting reactive state without knowing
      * anything about a renderer.
      */
     @Experimental(since: "0.1")
@@ -76,68 +84,63 @@ realm std {
     }
 }
 
-@Reactive
-func reactiveAutomaticEffectFixture(): Int {
-    rem value = 1
-    var observed = 0
-    effect {
-        observed = value
+realm test {
+    react func reactiveAutomaticEffectFixture(): Int {
+        remember var value = 1
+        var observed = 0
+        effect {
+            observed = value
+        }
+        value = 7
+        return observed
     }
-    value = 7
-    return observed
-}
 
-@Reactive
-func reactiveExplicitEffectFixture(): Int {
-    mem x = 1
-    ret y = 10
-    var observed = 0
-    effect x {
-        observed = x + y
+    react func reactiveExplicitEffectFixture(): Int {
+        preserve var x = 1
+        retain var y = 10
+        var observed = 0
+        effect x {
+            observed = x + y
+        }
+        y = 20
+        x = 2
+        return observed
     }
-    y = 20
-    x = 2
-    return observed
-}
 
-@Reactive
-func reactiveListEffectFixture(): Int {
-    rem x = 1
-    rem y = 2
-    var observed = 0
-    effect [x, y] {
-        observed = x * 10 + y
+    react func reactiveListEffectFixture(): Int {
+        remember var x = 1
+        remember var y = 2
+        var observed = 0
+        effect [x, y] {
+            observed = x * 10 + y
+        }
+        x = 3
+        y = 4
+        return observed
     }
-    x = 3
-    y = 4
-    return observed
-}
 
-@Reactive
-func reactiveDeferredEffectFixture() {
-    effect defer {
-        fin cleanupRegistered = true
+    react func reactiveDeferredEffectFixture() {
+        effect defer {
+            fin cleanupRegistered = true
+        }
     }
-}
 
-@Reactive
-func testReactiveAutomaticEffect() {
-    assert reactiveAutomaticEffectFixture() == 7 {
-        "automatic effect did not observe the latest rem value"
+    react func testReactiveAutomaticEffect() {
+        assert reactiveAutomaticEffectFixture() == 7 {
+            "automatic effect did not observe the latest remembered value"
+        }
     }
-}
 
-@Reactive
-func testReactiveExplicitEffect() {
-    assert reactiveExplicitEffectFixture() == 22 {
-        "explicit effect dependencies were not respected"
+    react func testReactiveExplicitEffect() {
+        assert reactiveExplicitEffectFixture() == 22 {
+            "explicit effect dependencies were not respected"
+        }
     }
-}
 
-@Reactive
-func testReactiveListEffect() {
-    assert reactiveListEffectFixture() == 34 {
-        "effect dependency list did not observe both updates"
+    react func testReactiveListEffect() {
+        assert reactiveListEffectFixture() == 34 {
+            "effect dependency list did not observe both updates"
+        }
     }
 }
 

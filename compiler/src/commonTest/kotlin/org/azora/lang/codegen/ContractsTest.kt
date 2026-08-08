@@ -21,6 +21,31 @@ class ContractsTest {
         IrInterpreter().interpret(compile(source).ir).trim()
 
     @Test
+    fun aFunctionHasAtMostOneInAndOneOutClause() {
+        // Several conditions go inside the one clause; a second clause would
+        // split one requirement across two places for no gain.
+        val twoIn = Compiler().compile(
+            """
+            func f(a: Int): Int
+            in { assert a > 0 { "a" } } in { assert a < 9 { "b" } } scope { return a }
+            func main() {}
+            """.trimIndent(),
+        )
+        assertIs<CompilationResult.Failure>(twoIn)
+        assertTrue(twoIn.errors.any { "one 'in' contract" in it }, twoIn.errors.toString())
+
+        val twoOut = Compiler().compile(
+            """
+            func f(a: Int): Int
+            out { assert it > 0 { "a" } } out { assert it < 9 { "b" } } scope { return a }
+            func main() {}
+            """.trimIndent(),
+        )
+        assertIs<CompilationResult.Failure>(twoOut)
+        assertTrue(twoOut.errors.any { "one 'out' contract" in it }, twoOut.errors.toString())
+    }
+
+    @Test
     fun inOutRealmContractsRunOnSuccess() {
         assertEquals("0\n5\n10", run("""
             import std.io

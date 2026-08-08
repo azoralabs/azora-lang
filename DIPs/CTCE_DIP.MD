@@ -64,7 +64,7 @@ A declaration that computes **a type from types**, evaluated entirely by CTCE:
 
 ```azora
 @Since("0.1")
-deepinline prop Promote<...T>: Type where T.length >= 2 && T is Number {
+deepinline prop promote<...T>: Type where T.length >= 2 && T is Number {
     var result: Type = T.0
     for candidate: Type in T[1...] {
         if candidate::rank > result::rank {
@@ -74,7 +74,7 @@ deepinline prop Promote<...T>: Type where T.length >= 2 && T is Number {
     return result
 }
 
-func add<A, B>(a: A, b: B): Promote<A, B> { … }   // used as a type
+func add<A, B>(a: A, b: B): promote<A, B> { … }   // used as a type
 ```
 
 - The name is capitalized, because a use site reads it as the type it produces.
@@ -86,7 +86,7 @@ func add<A, B>(a: A, b: B): Promote<A, B> { … }   // used as a type
 - All four binding keywords apply - `var`/`val` rebind, `let`/`fin` do not.
 - The body may branch with a statement `if`, loop with `for`, and call another
   type property by name (`NumericResult<A, B>`).
-- A use site spells it exactly like a generic type: `Promote<Int, Double>`.
+- A use site spells it exactly like a generic type: `promote<Int, Double>`.
   There is no separate call syntax - the older `@promote(…)` form was removed.
 
 ## 6. Source splicing (`inline "…"`)

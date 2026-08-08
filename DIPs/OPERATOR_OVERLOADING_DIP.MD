@@ -1294,9 +1294,10 @@ would open ten `impl` blocks to say it. The families are:
 | `PartialOrder<Rhs = Self>`                      | `<=>` → `PartialCompare`                                       | 6.1  |
 | `Order`                                         | `<=>` → `Compare`, `requires Equal`                            | 6.2  |
 | `Indexable<Idx = Int, Out>`                     | `[]` `[]=` `[:]`                                               | 12.1 |
-| `Deref<To>`                                     | `.*` `.^`                                                      | 12.1 |
+| `Deref<To>`                                     | `.*`                                                           | 12.1 |
+| `DerefMut<To>`                                  | `.^`, `requires Deref`                                         | 12.1 |
 | `Iterator<Rhs = Self, Out>`                     | `..` `reverse..`                                               | 12.8 |
-| `Hash`                                          | `#`, `requires Equal`                                          | 12.6 |
+| `Hash`                                          | `prop hash`, `requires Equal`                                  | 12.6 |
 | `Display`                                       | `$`                                                            | 12.7 |
 | `Cast<To>`                                      | `as`                                                           | 12.9 |
 | `CheckedCast<To>`                               | `as?`                                                          | 12.9 |

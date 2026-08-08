@@ -544,7 +544,7 @@ test "mutable list clear permits reuse" {
 }
 
 test "list serialization metadata is declared" {
-    inline assert (std::reflect<ArrayList>).hasDeco<Serializable> { "ArrayList must carry Serializable metadata" }
+    inline assert std::reflect<ArrayList>.hasDeco<Serializable> { "ArrayList must carry Serializable metadata" }
 }
 
 test .All "list"

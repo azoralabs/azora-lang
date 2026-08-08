@@ -73,7 +73,10 @@ class TypeResolver(private val table: SymbolTable) {
         // Resolve test bodies
         for (test in program.tests) {
             table.pushScope()
+            val savedTestContext = testContext
+            testContext = true
             for (stmt in test.body) resolveStmt(stmt, IrType.Unit)
+            testContext = savedTestContext
             table.popScope()
         }
         // Pack defaults are executable expressions too. Callable fields need
@@ -121,7 +124,7 @@ class TypeResolver(private val table: SymbolTable) {
                     val savedModule = currentModule
                     currentReceiverType = item.typeName
                     currentModule = item.declaringModule
-                    reactiveContext = hasReactiveContract(method.annotations)
+                    reactiveContext = method.isReactive
                     contextualValues.addLast(
                         listOf(Expr.Identifier("self", method.line, method.column) to IrType.Named(item.typeName)),
                     )
@@ -206,7 +209,7 @@ class TypeResolver(private val table: SymbolTable) {
                     val known = org.azora.lang.frontend.TypeFunctionCall.isCall(type) ||
                         type.name == "*" ||
                         type.name in typeParams ||
-                        // `Promote<T, U>` reads as a generic type but names a
+                        // `promote<T, U>` reads as a generic type but names a
                         // `deepinline prop`; only the declaration set can tell.
                         isTypeProperty(type) ||
                         IrType.isPrimitiveName(type.name) ||
@@ -291,7 +294,10 @@ class TypeResolver(private val table: SymbolTable) {
         unsafeContext = func.isUnsafe
         currentReceiverType = null
         currentFuncTypeParams = func.typeParams.toSet()
-        reactiveContext = hasReactiveContract(func.annotations)
+        reactiveContext = func.isReactive
+        val savedTestContext = testContext
+        // A test-realm declaration may use its siblings: it is already test-only.
+        if (program?.testRealmMembers?.containsKey(func.name) == true) testContext = true
         val savedUndeclaredReturn = undeclaredReturnOf
         val savedOrigins = declaredOrigins
         val savedMoves = movedBindings.toMap()
@@ -316,6 +322,7 @@ class TypeResolver(private val table: SymbolTable) {
         currentFuncTypeParams = savedFuncTypeParams
         unsafeContext = savedUnsafe
         reactiveContext = savedReactive
+        testContext = savedTestContext
         declaredFailSets = savedFailSets
 
         table.popScope()
@@ -519,16 +526,39 @@ class TypeResolver(private val table: SymbolTable) {
     /** Type parameters of the function currently being resolved (erased to `Any` in types). */
     private var currentFuncTypeParams: Set<String> = emptySet()
 
-    private fun hasReactiveContract(annotations: List<org.azora.lang.frontend.Annotation>): Boolean =
-        annotations.any { annotation ->
-            annotation.name == "Reactive" && table.lookupSpec(annotation.name)?.isBridge == true
+    /**
+     * True while resolving something a test-realm declaration may be used from:
+     * a `test` block, or another declaration that is itself in a test realm.
+     */
+    private var testContext = false
+
+    /**
+     * A `realm test` member is ordinary code that only tests may refer to.
+     *
+     * Enforcing it at the call site is what makes the realm a visibility rule
+     * rather than a naming convention - the fixture is emitted like any other
+     * declaration, and cannot be reached by the program it exists to test.
+     */
+    private fun requireTestCaller(name: String, line: Int): Boolean {
+        if (testContext) return true
+        val visibility = program?.testRealmMembers?.get(name) ?: return true
+        val reach = when (visibility.reach) {
+            Visibility.Reach.CONFINE -> "this file"
+            Visibility.Reach.PROTECT -> "this folder"
+            Visibility.Reach.PUBLIC -> "any file"
         }
+        errors.add(
+            "line $line: '${name.substringAfterLast("__")}' is declared in a 'realm test' " +
+                "and can only be used from a test in $reach",
+        )
+        return false
+    }
 
     private fun requireReactiveCaller(function: FunctionSymbol, line: Int): Boolean {
         if (!function.isReactive || reactiveContext) return true
         errors.add(
             "line $line: reactive function '${function.name.substringAfterLast("__")}' " +
-                "can only be called from an @Reactive function, task, or infix",
+                "can only be called from a 'react func' or 'react async func'",
         )
         return false
     }
@@ -565,7 +595,7 @@ class TypeResolver(private val table: SymbolTable) {
         // the type. An `impl` written elsewhere - an extension, or another
         // package's addition - sees only the public surface.
         name.startsWith("_") -> currentReceiverType == ownerType && inOwningModule(ownerType)
-        visibility == Visibility.CONFINE -> currentReceiverType == ownerType
+        visibility.reach == Visibility.Reach.CONFINE -> currentReceiverType == ownerType
         else -> true
     }
 
@@ -736,13 +766,13 @@ class TypeResolver(private val table: SymbolTable) {
                 resolveBinding(stmt.name, stmt.type, stmt.initializer, stmt.line, mutable = true, valueMutable = stmt.valueMutable)
             is Stmt.RemDecl -> {
                 if (!reactiveContext) {
-                    errors.add("line ${stmt.line}: '${stmt.kind.name.lowercase()}' requires an @Reactive function, task, or infix")
+                    errors.add("line ${stmt.line}: '${stmt.kind.spelling}' requires a 'react func' or 'react async func'")
                 }
                 resolveBinding(stmt.name, stmt.type, stmt.initializer, stmt.line, mutable = true)
             }
             is Stmt.Effect -> {
                 if (!reactiveContext) {
-                    errors.add("line ${stmt.line}: 'effect' requires an @Reactive function, task, or infix")
+                    errors.add("line ${stmt.line}: 'effect' requires a 'react func' or 'react async func'")
                 }
                 stmt.dependencies?.forEach(::resolveExpr)
                 resolveBody(stmt.body, returnType)
@@ -1234,11 +1264,11 @@ class TypeResolver(private val table: SymbolTable) {
                 }
                 if (expr.callee == "__defaultLogLevel") return IrType.Named("LogLevel")
                 if (expr.callee == "__reflect") {
-                    errors.add("line ${expr.line}: reflect is compile-time-only and must be followed by .hasDeco<D> or .decoMeta<D>")
+                    errors.add("line ${expr.line}: reflect is compile-time-only and must be followed by .hasDeco<D> or .annotMeta<D>")
                     return null
                 }
-                if (expr.callee == "__hasDeco" || expr.callee == "__decoMeta") {
-                    errors.add("line ${expr.line}: '${if (expr.callee == "__hasDeco") "hasDeco" else "decoMeta"}' is a compile-time-only property and must be used inside inline code")
+                if (expr.callee == "__hasDeco" || expr.callee == "__annotMeta") {
+                    errors.add("line ${expr.line}: '${if (expr.callee == "__hasDeco") "hasDeco" else "annotMeta"}' is a compile-time-only property and must be used inside inline code")
                     return null
                 }
                 // Struct construction: `Name(args)` where Name is a pack. Inside an
@@ -1363,6 +1393,7 @@ class TypeResolver(private val table: SymbolTable) {
                     return null
                 }
                 if (!requireReactiveCaller(func, expr.line)) return null
+                if (!requireTestCaller(func.name, expr.line)) return null
                 // Handle named arguments - reorder to param order
                 // Named and positional arguments mix freely at a call, as they do at a
                 // constructor: a named one takes its parameter, a positional one fills
@@ -1826,6 +1857,7 @@ class TypeResolver(private val table: SymbolTable) {
                     if (mangled != null) {
                         val func = table.lookupFunction(mangled)!!
                         if (!requireReactiveCaller(func, expr.line)) return null
+                if (!requireTestCaller(func.name, expr.line)) return null
                         if (func.memberCallStyle == MemberCallStyle.PROPERTY) {
                             errors.add("line ${expr.line}: property '${expr.name}' must be accessed without parentheses")
                             return null
@@ -1902,6 +1934,7 @@ class TypeResolver(private val table: SymbolTable) {
                     if (mangled != null) {
                         val func = table.lookupFunction(mangled)!!
                         if (!requireReactiveCaller(func, expr.line)) return null
+                if (!requireTestCaller(func.name, expr.line)) return null
                         val declared = func.params.size - 1
                         if (expr.args.size != declared) {
                             errors.add("line ${expr.line}: method '${expr.name}' expects $declared args, got ${expr.args.size}")
@@ -1922,6 +1955,7 @@ class TypeResolver(private val table: SymbolTable) {
                 val infixFn = table.lookupUniversalInfix(expr.name)?.let { table.lookupFunction(it) }
                 if (infixFn != null) {
                     if (!requireReactiveCaller(infixFn, expr.line)) return null
+                    if (!requireTestCaller(infixFn.name, expr.line)) return null
                     val declared = infixFn.params.size - 1 // exclude the receiver `self`
                     if (expr.args.size != declared) {
                         errors.add("line ${expr.line}: infix '${expr.name}' expects $declared operand(s), got ${expr.args.size}")

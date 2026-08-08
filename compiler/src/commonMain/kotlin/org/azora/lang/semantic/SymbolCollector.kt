@@ -531,32 +531,33 @@ class SymbolCollector {
                 table.defineDecorator(item.name, item.targets, item.bindings, item.isBridge)
             }
         }
-        // A compiler bridge decorator opts matching callables into the
-        // corresponding runtime contract. The symbol must exist and be a
-        // bridge; an arbitrary annotation named Reactive has no effect.
-        if (table.lookupSpec("Reactive")?.isBridge == true) {
-            program.functions
-                .filter { function -> function.annotations.any { it.name == "Reactive" } }
-                .forEach { table.markFunctionReactive(it.name) }
-            program.items.filterIsInstance<TopLevel.Impl>().forEach { impl ->
-                impl.methods
-                    .filter { method -> method.annotations.any { it.name == "Reactive" } }
-                    .forEach { method -> table.markFunctionReactive("${impl.typeName}_${method.name}") }
-            }
+        // `react func` marks a reactive owner. It is a declaration form rather
+        // than a decorator, so the flag is on the declaration and no library
+        // needs to exist for it to mean something.
+        program.functions
+            .filter { it.isReactive }
+            .forEach { table.markFunctionReactive(it.name) }
+        program.items.filterIsInstance<TopLevel.Impl>().forEach { impl ->
+            impl.methods
+                .filter { it.isReactive }
+                .forEach { method -> table.markFunctionReactive("${impl.typeName}_${method.name}") }
         }
 
         // Validate impl Contract for Type. Specs require their declared methods;
         // decorators are marker contracts and must use the bodyless form.
         for (item in program.items) {
             if (item is TopLevel.Impl && item.traitName != null) {
-                // Oper overloads with a `by <Type>` clause (e.g. `impl oper== by Map for
-                // HashMap`) are NOT spec conformances - the `by` type names the operand,
-                // not the contract. Skip spec validation for oper-style methods entirely.
+                // An oper overload with a `by <Type>` clause (`impl oper== by Map
+                // for HashMap`) is not a spec conformance: the `by` type names the
+                // operand, not the contract. What separates the two is whether the
+                // name is a declared spec - `impl Deref<Int> for Box { oper.* … }`
+                // is a real conformance and has to register one, or a spec that
+                // declares only operators could never be required by another.
                 val isOperOverload = item.methods.any {
                     it.name.startsWith("oper") || it.name in setOf("slice", "index", "indexSet")
                 }
-                if (isOperOverload) continue
                 val contract = table.lookupSpec(item.traitName)
+                if (isOperOverload && contract == null) continue
                 if (contract == null) {
                     // The traitName may be a `by <Type>` annotation on an operator
                     // overload (e.g. `impl oper+ by MapEntry for Type`), not a spec
@@ -610,7 +611,14 @@ class SymbolCollector {
                             errors.add("line ${item.line}: '${item.typeName}' does not implement '${item.traitName}.${req}'")
                         }
                     }
-                    if (complete && !table.defineConformance(
+                    // An operator impl for a spec the type already conforms to
+                    // supplies a member for that conformance rather than opening a
+                    // second one: `impl [Equal] for Loose` then
+                    // `impl Equal for Loose { oper== … }` is a derive plus the one
+                    // operator written by hand, and the written one wins. Two
+                    // bodyless impls of one spec are still a duplicate.
+                    val refinesExisting = isOperOverload && table.conformsTo(item.typeName, item.traitName)
+                    if (complete && !refinesExisting && !table.defineConformance(
                             TraitConformance(item.typeName, item.traitName, item.traitArgs, contract.isDecorator)
                         )
                     ) {

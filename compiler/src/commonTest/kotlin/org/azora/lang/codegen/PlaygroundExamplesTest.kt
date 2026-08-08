@@ -208,9 +208,11 @@ func main() {
 
     @Test fun dependencyInjection() = assertEquals("1\n2", run("""module playground
 import std.io
-solo Counter {
+solo pack Counter {
     var n: Int = 0
-    func inc(): Int {
+}
+impl Counter {
+    func inc[self: Self!](): Int {
         self.n = self.n + 1
         return self.n
     }

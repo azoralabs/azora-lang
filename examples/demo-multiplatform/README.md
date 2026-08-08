@@ -16,7 +16,7 @@ A single-file counter app that compiles to every UI target Azora supports. One `
 
 ## The app
 
-A counter with increment, decrement, and reset buttons. Uses reactive state (`rem`), declarative UI (`view`), animations (`.enterAnimation()`, `.hoverBrightness()`), and modifiers for styling.
+A counter with increment, decrement, and reset buttons. Uses reactive state (`remember`), declarative UI (`view`), animations (`.enterAnimation()`, `.hoverBrightness()`), and modifiers for styling.
 
 ## Build for any target
 

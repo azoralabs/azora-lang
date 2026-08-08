@@ -102,6 +102,9 @@ class Parser(
     private val realmStack = mutableListOf<RealmFrame>()
     /** Declaration name → its innermost realm, for `(reflect X).realm` reflection. */
     private val realmMetaByName = mutableMapOf<String, RealmMeta>()
+
+    /** Declarations written inside a `realm test`, and how far each reaches. */
+    private val testRealmMembers = mutableMapOf<String, Visibility>()
     /** Type declaration name → named namespace path (`std`, `std::container`, ...). */
     private val realmTypeNamespaces = linkedMapOf<String, String>()
 
@@ -271,7 +274,11 @@ class Parser(
         while (!isAtEnd()) {
             skipNewlines()
             if (isAtEnd()) break
-            if (isRealmNamespaceAhead()) {
+            if (isTestRealmAhead()) {
+                // `[expose|protect|confine] realm test { … }` - declarations
+                // that exist only for tests.
+                items.addAll(parseTestRealm())
+            } else if (isRealmNamespaceAhead()) {
                 // `[use] realm Name { … }` - a named realm is a namespace. Plain
                 // declarations use qualified names; `use realm` keeps members bare.
                 items.addAll(parseRealmNamespace())
@@ -315,6 +322,7 @@ class Parser(
                 infixMacros = pendingInfixMacros.toList(),
                 usesMacros = usedMetaInvoke,
                 realmTypeNamespaces = realmTypeNamespaces.toMap(),
+                testRealmMembers = testRealmMembers.toMap(),
             )
         )
         return IntraRealmRewriter.rewrite(normalized)
@@ -796,9 +804,46 @@ class Parser(
         return tokens.getOrNull(i)?.type == TokenType.ARROW
     }
 
+    /**
+     * `[expose|protect|confine] <declaration>` - how far the declaration reaches.
+     *
+     * `expose` is the default and is accepted so a declaration may state it, the
+     * way a module does.
+     */
     private fun parseVisibility(): Visibility = when {
         match(TokenType.CONFINE) -> Visibility.CONFINE
+        match(TokenType.PROTECT) -> Visibility.PROTECT
+        // `expose confine` / `expose protect` - the two axes together. `expose`
+        // publishes the declaration without an explicit import; the reach that
+        // follows bounds how far that publication travels.
+        check(TokenType.EXPOSE) && peekNext()?.type == TokenType.CONFINE -> {
+            advance(); advance()
+            Visibility(Visibility.Reach.CONFINE, isExposed = true)
+        }
+        check(TokenType.EXPOSE) && peekNext()?.type == TokenType.PROTECT -> {
+            advance(); advance()
+            Visibility(Visibility.Reach.PROTECT, isExposed = true)
+        }
+        // `expose` states the default. It is only a visibility modifier when a
+        // declaration follows: `expose import`, `expose if` and `expose module`
+        // are their own forms and are parsed further down.
+        check(TokenType.EXPOSE) && !exposeStartsAnotherForm() -> {
+            advance()
+            Visibility(Visibility.Reach.PUBLIC, isExposed = true)
+        }
         else -> Visibility.PUBLIC
+    }
+
+    /**
+     * True when the `expose` at the cursor begins `expose import`, `expose if`
+     * or `expose module` - forms of their own, parsed elsewhere, rather than a
+     * visibility modifier on a declaration.
+     */
+    private fun exposeStartsAnotherForm(): Boolean {
+        val next = peekNext() ?: return false
+        return next.type == TokenType.IMPORT ||
+            next.type == TokenType.IF ||
+            (next.type == TokenType.IDENTIFIER && next.lexeme == "module")
     }
 
     // -----------------------------------------------------------------------
@@ -825,6 +870,27 @@ class Parser(
             check(TokenType.FUNC) -> funcOrExtension(parseFuncDecl(annotations = annotations, visibility = visibility))
             isAsyncFuncAt(current) ->
                 funcOrExtension(parseFuncDecl(annotations = annotations, isTask = true, visibility = visibility))
+            // `react func` / `react async func` - a reactive owner. `react`
+            // qualifies the declaration rather than replacing `func`, exactly as
+            // `async` does, so both may be written and in that order.
+            check(TokenType.REACT) -> {
+                advance()
+                val asyncProp = isAsyncPropAt(current)
+                if (asyncProp) advance()
+                if (asyncProp || check(TokenType.PROP)) {
+                    parsePropAsFin(annotations, visibility, isReactive = true, isTask = asyncProp)
+                } else {
+                    val task = isAsyncFuncAt(current)
+                    funcOrExtension(
+                        parseFuncDecl(
+                            annotations = annotations,
+                            isTask = task,
+                            isReactive = true,
+                            visibility = visibility,
+                        ),
+                    )
+                }
+            }
             check(TokenType.INLINE) -> parseTopLevelInline()
             check(TokenType.DEEPINLINE) -> parseTopLevelDeepInline()
             check(TokenType.TEST) -> parseTestDecl(annotations)
@@ -866,7 +932,7 @@ class Parser(
             check(TokenType.BRIDGE) && isBridgeFuncAhead() -> parseBridgeFunc(annotations)
             check(TokenType.BRIDGE) -> parseBridge(annotations)
             check(TokenType.SOLO) -> parseSolo(visibility, annotations)
-            check(TokenType.WRAP) -> parseWrap()
+            check(TokenType.GRAPH) -> parseGraph()
             check(TokenType.THREADLOCAL) -> parseThreadLocal(visibility)
             check(TokenType.SPEC) -> parseSpec()
             isUnionDeclAhead() -> parsePack(annotations, visibility, isUnion = true)
@@ -877,6 +943,10 @@ class Parser(
             // for Type` / `impl Type:: { … }` bodies (which reparse members as
             // top-level items); desugars to a `fin` so it mangles to `Type__name`.
             check(TokenType.PROP) -> parsePropAsFin(annotations, visibility)
+            isAsyncPropAt(current) -> {
+                advance()
+                parsePropAsFin(annotations, visibility, isTask = true)
+            }
             // `oper+ [self: Model&](rhs: Model): Model { … }` - an operator declared
             // beside the type rather than inside its impl. The receiver names the
             // type, so no `for` clause is needed.
@@ -1578,6 +1648,81 @@ class Parser(
             }
             else -> error("Unexpected '${peek().lexeme}' inside inline block at line ${peek().line}")
         }
+    }
+
+    /**
+     * True when `[expose|protect|confine] realm test {` begins here.
+     *
+     * The visibility prefix is scanned past because the caller has to decide
+     * which form this is before consuming it.
+     */
+    private fun isTestRealmAhead(): Boolean {
+        var i = indexAfterAnnotations(current)
+        while (tokens.getOrNull(i)?.type in setOf(TokenType.EXPOSE, TokenType.PROTECT, TokenType.CONFINE)) i++
+        if (tokens.getOrNull(i)?.type != TokenType.REALM) return false
+        return tokens.getOrNull(i + 1)?.type == TokenType.TEST
+    }
+
+    /**
+     * `[expose|protect|confine] realm test { … }` - a realm of test-only
+     * declarations.
+     *
+     * Whatever is declared inside is ordinary code, and is emitted as such; what
+     * the realm changes is who may refer to it. Only a `test` block, or another
+     * declaration in a test realm, may - so a fixture cannot leak into the
+     * program it exists to test.
+     *
+     * Reach is the ordinary ladder, and it bounds which tests can see it:
+     *
+     * - `realm test` (the default, [Visibility.Reach.CONFINE]) - tests in this
+     *   file.
+     * - `protect realm test` - tests within the declaring folder.
+     * - `expose realm test` - tests in any file, with no import.
+     *
+     * The members are returned flattened: a test realm is a visibility rule, not
+     * a namespace, so it does not mangle the names it contains.
+     */
+    private fun parseTestRealm(): List<TopLevel> {
+        val annotations = parseAnnotations()
+        // A bare `realm test` is file-local, so the default reach is CONFINE
+        // rather than the PUBLIC that an ordinary declaration defaults to.
+        val visibility = when {
+            match(TokenType.PROTECT) -> Visibility(Visibility.Reach.PROTECT)
+            match(TokenType.CONFINE) -> Visibility(Visibility.Reach.CONFINE)
+            match(TokenType.EXPOSE) -> when {
+                match(TokenType.PROTECT) -> Visibility(Visibility.Reach.PROTECT, isExposed = true)
+                match(TokenType.CONFINE) -> Visibility(Visibility.Reach.CONFINE, isExposed = true)
+                else -> Visibility(Visibility.Reach.PUBLIC, isExposed = true)
+            }
+            else -> Visibility(Visibility.Reach.CONFINE)
+        }
+        consume(TokenType.REALM, "Expected 'realm'")
+        consume(TokenType.TEST, "Expected 'test' after 'realm'")
+        consume(TokenType.L_BRACE, "Expected '{' to open a test realm")
+        skipNewlines()
+        val body = mutableListOf<TopLevel>()
+        while (!check(TokenType.R_BRACE) && !isAtEnd()) {
+            skipNewlines()
+            if (check(TokenType.R_BRACE)) break
+            when {
+                isTestRealmAhead() -> error(
+                    "A 'realm test' cannot nest inside another at line ${peek().line} - " +
+                        "its declarations are already test-only",
+                )
+                isRealmNamespaceAhead() -> body.addAll(parseRealmNamespace())
+                isRealmBlockAhead() -> body.addAll(parseRealmBlock())
+                isTypePropAhead() -> parseTypeProp()
+                else -> body.add(parseTopLevel())
+            }
+            skipNewlines()
+        }
+        consume(TokenType.R_BRACE, "Expected '}' to close a test realm")
+        consumeNewline()
+        for (item in body) {
+            val name = declaredTopLevelName(item) ?: continue
+            testRealmMembers[name] = visibility
+        }
+        return body
     }
 
     private fun parseTestDecl(annotations: List<Annotation> = emptyList()): TopLevel.Test {
@@ -2890,6 +3035,22 @@ class Parser(
             val isInline = match(TokenType.INLINE)
             val isVirt = false
             val visibility = parseVisibility()
+            // `react prop` / `react func` / `react async func` - a reactive
+            // member. `react` qualifies the declaration the way `async` does,
+            // so it precedes the member keyword rather than replacing it, and
+            // the two may be written together in that order.
+            val isReactiveMember = match(TokenType.REACT)
+            // `async prop` - a property whose body suspends. `async` is
+            // contextual, so consuming it here leaves `prop` current and the
+            // property parses by its ordinary rules.
+            val isAsyncProp = isAsyncPropAt(current)
+            if (isAsyncProp) advance()
+            if (isReactiveMember && !check(TokenType.PROP) && !check(TokenType.FUNC) && !isAsyncFuncAt(current)) {
+                error(
+                    "Expected 'prop', 'func', 'async prop', or 'async func' after 'react' " +
+                        "at line ${peek().line}",
+                )
+            }
             when {
                 check(TokenType.PROP) -> {
                     advance()
@@ -2909,7 +3070,7 @@ class Parser(
                         // `prop name: T = expr` - expression-body property (returns the expression).
                         val expr = parseExpr()
                         consumeNewline()
-                        methods.add(FuncDecl(propName, emptyList(), propType, listOf(Stmt.Return(expr, expr.line, expr.column)), false, emptyList(), methodStart.line, methodStart.column, annotations = memberAnnotations, visibility = visibility, receiverModifier = propReceiver.modifier, receiverName = propReceiver.name, memberCallStyle = MemberCallStyle.PROPERTY, returnTypeDeclared = propTypeDeclared))
+                        methods.add(FuncDecl(propName, emptyList(), propType, listOf(Stmt.Return(expr, expr.line, expr.column)), false, emptyList(), methodStart.line, methodStart.column, annotations = memberAnnotations, visibility = visibility, receiverModifier = propReceiver.modifier, receiverName = propReceiver.name, memberCallStyle = MemberCallStyle.PROPERTY, returnTypeDeclared = propTypeDeclared, isReactive = isReactiveMember, isTask = isAsyncProp))
                     } else {
                         val contracts = parseContractClauses()
                         run {
@@ -2927,7 +3088,7 @@ class Parser(
                         val propBody = parseBlock()
                         consume(TokenType.R_BRACE, "Expected '}' after prop body")
                         consumeNewline()
-                        methods.add(FuncDecl(propName, emptyList(), propType, applyContracts(propBody, contracts), false, emptyList(), methodStart.line, methodStart.column, annotations = memberAnnotations, visibility = visibility, receiverModifier = propReceiver.modifier, receiverName = propReceiver.name, memberCallStyle = MemberCallStyle.PROPERTY, returnTypeDeclared = propTypeDeclared))
+                        methods.add(FuncDecl(propName, emptyList(), propType, applyContracts(propBody, contracts), false, emptyList(), methodStart.line, methodStart.column, annotations = memberAnnotations, visibility = visibility, receiverModifier = propReceiver.modifier, receiverName = propReceiver.name, memberCallStyle = MemberCallStyle.PROPERTY, returnTypeDeclared = propTypeDeclared, isReactive = isReactiveMember, isTask = isAsyncProp))
                     }
                     currentFailSets = savedPropFailSets
                 }
@@ -3092,9 +3253,12 @@ class Parser(
                         constParams = operTypeParams.constParams,
                     ))
                 }
-                check(TokenType.FUNC) -> methods.add(parseFuncDecl(isInline, annotations = memberAnnotations, isVirtual = isVirt, visibility = visibility, inImplBlock = true))
-                isAsyncFuncAt(current) -> methods.add(parseFuncDecl(isInline, annotations = memberAnnotations, isVirtual = isVirt, isTask = true, visibility = visibility, inImplBlock = true))
-                else -> error("Expected 'prop', 'func', 'task', or 'flow' in impl block at line ${peek().line}")
+                check(TokenType.FUNC) -> methods.add(parseFuncDecl(isInline, annotations = memberAnnotations, isVirtual = isVirt, visibility = visibility, inImplBlock = true, isReactive = isReactiveMember))
+                isAsyncFuncAt(current) -> methods.add(parseFuncDecl(isInline, annotations = memberAnnotations, isVirtual = isVirt, isTask = true, visibility = visibility, inImplBlock = true, isReactive = isReactiveMember))
+                else -> error(
+                    "Expected 'prop', 'func', 'async prop', 'async func', 'oper', 'ctor', " +
+                        "'dtor', or 'bridge' in impl block at line ${peek().line}",
+                )
             }
             skipNewlines()
         }
@@ -3395,10 +3559,14 @@ class Parser(
         return TopLevel.Bridge(target, funcs, start.line, start.column, annotations)
     }
 
-    /** `solo Name { fields; methods }` - a singleton struct with one shared instance. */
+    /** `solo pack Name { fields; methods }` - a pack with one shared instance. */
     private fun parseSolo(visibility: Visibility = Visibility.PUBLIC, annotations: List<Annotation> = emptyList()): TopLevel.Solo {
         val start = consume(TokenType.SOLO, "Expected 'solo'")
-        val name = consume(TokenType.IDENTIFIER, "Expected solo name").lexeme
+        // `solo` is a modifier on `pack`, not a declaration of its own: a
+        // singleton is a pack there is one of, and saying so keeps one way to
+        // declare a type instead of two.
+        consume(TokenType.PACK, "Expected 'pack' after 'solo' - a singleton is written 'solo pack Name { … }'")
+        val name = consume(TokenType.IDENTIFIER, "Expected the pack's name").lexeme
         consume(TokenType.L_BRACE, "Expected '{' after solo name")
         skipNewlines()
         val fields = mutableListOf<PackField>()
@@ -3408,11 +3576,16 @@ class Parser(
             if (check(TokenType.R_BRACE)) break
             val memberAnnotations = parseAnnotations()
             val memberVisibility = parseVisibility()
+            // `solo pack` is a pack: it holds fields, and its members live in an
+            // `impl` block like any other type's. Accepting a method here was a
+            // leftover from when `solo` was a declaration of its own.
             if (check(TokenType.FUNC)) {
-                methods.add(parseFuncDecl(annotations = memberAnnotations, visibility = memberVisibility))
-            } else {
-                fields.add(parsePackField(memberVisibility, preparsedAnnotations = memberAnnotations))
+                error(
+                    "A 'solo pack' holds fields; put its members in " +
+                        "'impl $name { … }' at line ${peek().line}"
+                )
             }
+            fields.add(parsePackField(memberVisibility, preparsedAnnotations = memberAnnotations))
             skipNewlines()
         }
         consume(TokenType.R_BRACE, "Expected '}' after solo body")
@@ -3425,38 +3598,90 @@ class Parser(
      * - an inheritable type. Ctor params are fields. `repl func` marks overrides.
      */
     /**
-     * `wrap Name { solo Type(args); … }` - a DI container that wires singletons with
-     * construction args. Each `solo Type(args)` generates a `__singleton_Type` factory
-     * that constructs the type with the given arguments.
+     * `graph Name { Type(args); … }` - a module that wires singletons with their
+     * construction arguments. Each `Type(args)` generates a `__singleton_Type`
+     * factory that constructs the type with those arguments.
+     *
+     * The entries carry no `solo`: everything a module registers is a singleton,
+     * so the word said nothing the block had not already said.
      */
-    private fun parseWrap(): TopLevel.Wrap {
-        val start = consume(TokenType.WRAP, "Expected 'wrap'")
-        val name = consume(TokenType.IDENTIFIER, "Expected wrap name").lexeme
-        consume(TokenType.L_BRACE, "Expected '{' after wrap name")
+    private fun parseGraph(): TopLevel.Graph {
+        val start = consume(TokenType.GRAPH, "Expected 'graph'")
+        val name = consume(TokenType.IDENTIFIER, "Expected graph name").lexeme
+        // `graph TestGraph replace AppGraph { … }` - substitution. `replace` is
+        // contextual, not reserved: `std::replace` is the string function, and a
+        // keyword would take that name from every program.
+        val replaces = if (check(TokenType.IDENTIFIER) && peek().lexeme == "replace" &&
+            peekNext()?.type == TokenType.IDENTIFIER
+        ) {
+            advance()
+            advance().lexeme
+        } else null
+        // `graph AppGraph include [NetworkGraph, DataGraph] { … }` - composition.
+        // An included graph's definitions are part of this one. `include` is
+        // contextual for the same reason `replace` is: it is an ordinary word
+        // that programs already use as a name, and reserving it would take that
+        // name from every one of them.
+        val included = mutableListOf<String>()
+        if (check(TokenType.IDENTIFIER) && peek().lexeme == "include") {
+            advance()
+            if (match(TokenType.L_BRACKET)) {
+                do {
+                    included.add(consume(TokenType.IDENTIFIER, "Expected a graph name in the include list").lexeme)
+                } while (match(TokenType.COMMA))
+                consume(TokenType.R_BRACKET, "Expected ']' after the include list")
+            } else {
+                included.add(consume(TokenType.IDENTIFIER, "Expected a graph name after 'include'").lexeme)
+            }
+        }
+        consume(TokenType.L_BRACE, "Expected '{' after graph name")
         skipNewlines()
-        val registrations = mutableListOf<TopLevel.WrapReg>()
+        val registrations = mutableListOf<TopLevel.GraphReg>()
         while (!check(TokenType.R_BRACE) && !isAtEnd()) {
             skipNewlines()
             if (check(TokenType.R_BRACE)) break
-            if (match(TokenType.SOLO)) {
-                val typeName = consume(TokenType.IDENTIFIER, "Expected type name after 'solo'").lexeme
-                val args = if (match(TokenType.L_PAREN)) {
-                    val a = mutableListOf<Expr>()
-                    if (!check(TokenType.R_PAREN)) {
-                        do { a.add(parseExpr()) } while (match(TokenType.COMMA))
-                    }
-                    consume(TokenType.R_PAREN, "Expected ')' after solo args")
-                    a
-                } else emptyList()
-                registrations.add(TopLevel.WrapReg(typeName, args, null, start.line, start.column))
-            } else {
-                error("Expected 'solo' in wrap block at line ${peek().line}")
+            // The lifetime is the entry's first word, and it is the whole
+            // difference between the forms.
+            val entry = peek()
+            val lifetime = when {
+                match(TokenType.SOLO) -> TopLevel.ProviderLifetime.SOLO
+                match(TokenType.FACTORY) -> TopLevel.ProviderLifetime.FACTORY
+                match(TokenType.SCOPE) -> TopLevel.ProviderLifetime.SCOPE
+                else -> error(
+                    "A 'graph' entry starts with its lifetime at line ${entry.line} - " +
+                        "'solo' for one per graph, 'factory' for one per resolution, " +
+                        "'scope' for one per active scope"
+                )
             }
+            val typeName = consume(TokenType.IDENTIFIER, "Expected a type name after '${lifetime.spelling}'").lexeme
+            val args = if (match(TokenType.L_PAREN)) {
+                val a = mutableListOf<Expr>()
+                if (!check(TokenType.R_PAREN)) {
+                    do { a.add(parseExpr()) } while (match(TokenType.COMMA))
+                }
+                consume(TokenType.R_PAREN, "Expected ')' after the registration's arguments")
+                a
+            } else emptyList()
+            // `bind Spec` / `bind [A, B]` - the specs this definition also answers.
+            val bindSpecs = mutableListOf<String>()
+            if (match(TokenType.BIND)) {
+                if (match(TokenType.L_BRACKET)) {
+                    do {
+                        bindSpecs.add(consume(TokenType.IDENTIFIER, "Expected a spec name in the bind list").lexeme)
+                    } while (match(TokenType.COMMA))
+                    consume(TokenType.R_BRACKET, "Expected ']' after the bind list")
+                } else {
+                    bindSpecs.add(consume(TokenType.IDENTIFIER, "Expected a spec name after 'bind'").lexeme)
+                }
+            }
+            registrations.add(
+                TopLevel.GraphReg(typeName, args, bindSpecs, lifetime, entry.line, entry.column),
+            )
             consumeNewline()
         }
-        consume(TokenType.R_BRACE, "Expected '}' after wrap body")
+        consume(TokenType.R_BRACE, "Expected '}' after graph body")
         consumeNewline()
-        return TopLevel.Wrap(name, registrations, start.line, start.column)
+        return TopLevel.Graph(name, registrations, start.line, start.column, included, replaces)
     }
 
     /** `slot Name { Variant(Type); Variant2(Type1, Type2); Variant3 }` - a tagged union. */
@@ -4174,6 +4399,7 @@ class Parser(
         isOverride: Boolean = false,
         isVirtual: Boolean = false,
         isTask: Boolean = false,
+        isReactive: Boolean = false,
         isUnsafe: Boolean = false,
         visibility: Visibility = Visibility.PUBLIC,
         inImplBlock: Boolean = false,
@@ -4312,6 +4538,7 @@ class Parser(
             isOverride = isOverride,
             isVirtual = isVirtual,
             isTask = isTask,
+            isReactive = isReactive,
             isUnsafe = isUnsafe,
             visibility = visibility,
             receiverModifier = receiverModifier,
@@ -4397,6 +4624,12 @@ class Parser(
         val preconditions = mutableListOf<Stmt>()
         val postconditions = mutableListOf<Stmt>()
         var resultName: String? = null
+        // A function states its requirement once and its promise once. Several
+        // `assert`s go inside one clause; several clauses would only split one
+        // idea across two places and raise the question of what order they run
+        // in.
+        var sawIn = false
+        var sawOut = false
         while (true) {
             val i = nextMeaningfulIndex()
             val t = tokens.getOrNull(i) ?: break
@@ -4405,6 +4638,23 @@ class Parser(
             if (!isClause) break
             while (current < i) advance() // skip newlines
             val keyword = advance()
+            if (keyword.type == TokenType.IN) {
+                if (sawIn) {
+                    error(
+                        "A function may have one 'in' contract at line ${keyword.line} - " +
+                            "put every precondition in the same clause"
+                    )
+                }
+                sawIn = true
+            } else {
+                if (sawOut) {
+                    error(
+                        "A function may have one 'out' contract at line ${keyword.line} - " +
+                            "put every postcondition in the same clause"
+                    )
+                }
+                sawOut = true
+            }
             consume(TokenType.L_BRACE, "Expected '{' after '${keyword.lexeme}' contract")
             skipNewlines()
             if (keyword.type == TokenType.OUT) {
@@ -4524,11 +4774,25 @@ class Parser(
         return tokens.getOrNull(index + 1)?.type == TokenType.FUNC
     }
 
+    /**
+     * True when [index] starts `async prop` - an asynchronous property.
+     *
+     * `async` qualifies `prop` exactly as it qualifies `func`: the declaration is
+     * still a property, and it is still read as `value.name`; the body is what
+     * may suspend.
+     */
+    private fun isAsyncPropAt(index: Int): Boolean {
+        val word = tokens.getOrNull(index) ?: return false
+        if (word.type != TokenType.IDENTIFIER || word.lexeme != "async") return false
+        return tokens.getOrNull(index + 1)?.type == TokenType.PROP
+    }
+
     private fun consumeIdentifierLike(message: String): String {
         val t = peek()
         val soft = t.type == TokenType.REVERSE ||
             t.type == TokenType.PROP ||
-            t.type == TokenType.PURGE || t.type == TokenType.MEM || t.type == TokenType.REM || t.type == TokenType.RET ||
+            t.type == TokenType.PURGE || t.type == TokenType.REMEMBER || t.type == TokenType.RETAIN ||
+            t.type == TokenType.PRESERVE ||
             t.type == TokenType.ALLOC || t.type == TokenType.TEST ||
             t.type == TokenType.MACRO ||
             // `func take(…)` / `self.take()` - `take` names a stdlib operation
@@ -5245,9 +5509,9 @@ class Parser(
             check(TokenType.TRY) && peekNext()?.type == TokenType.L_BRACE -> parseTry()
             check(TokenType.DEFER) -> parseDefer()
             check(TokenType.RESCUE) -> parseRescue()
-            check(TokenType.MEM) -> parseReactiveDecl(ReactiveKind.MEM)
-            check(TokenType.REM) -> parseReactiveDecl(ReactiveKind.REM)
-            check(TokenType.RET) -> parseReactiveDecl(ReactiveKind.RET)
+            check(TokenType.REMEMBER) -> parseReactiveDecl(ReactiveKind.REMEMBER)
+            check(TokenType.RETAIN) -> parseReactiveDecl(ReactiveKind.RETAIN)
+            check(TokenType.PRESERVE) -> parseReactiveDecl(ReactiveKind.PRESERVE)
             check(TokenType.EFFECT) -> parseEffect()
             check(TokenType.WITH) -> parseWithContext()
             else -> parseExprStmt()
@@ -5562,21 +5826,54 @@ class Parser(
         return Stmt.Defer(body, start.line, start.column, onFail = true, suppress = true)
     }
 
-    /** `mem`/`rem`/`ret x: T = init` - reactive state declaration. */
+    /** The reactive lifetime keyword at [index], if there is one. */
+    private fun reactiveLifetimeAt(index: Int): ReactiveKind? = when (tokens.getOrNull(index)?.type) {
+        TokenType.REMEMBER -> ReactiveKind.REMEMBER
+        TokenType.RETAIN -> ReactiveKind.RETAIN
+        TokenType.PRESERVE -> ReactiveKind.PRESERVE
+        else -> null
+    }
+
+    /**
+     * `remember|retain|preserve <var|val|let|fin> name: T = init`.
+     *
+     * The lifetime says how long the value outlives its owner; the binding form
+     * that follows says the same things it says anywhere else - whether the name
+     * rebinds and whether the value can be written. Both are needed, so both are
+     * written: a reactive binding is an ordinary binding that survives longer.
+     */
     private fun parseReactiveDecl(kind: ReactiveKind): Stmt.RemDecl {
         val start = peek()
         val expected = when (kind) {
-            ReactiveKind.MEM -> TokenType.MEM
-            ReactiveKind.REM -> TokenType.REM
-            ReactiveKind.RET -> TokenType.RET
+            ReactiveKind.REMEMBER -> TokenType.REMEMBER
+            ReactiveKind.RETAIN -> TokenType.RETAIN
+            ReactiveKind.PRESERVE -> TokenType.PRESERVE
         }
-        consume(expected, "Expected '${expected.name.lowercase()}'")
+        consume(expected, "Expected '${kind.spelling}'")
+        if (check(TokenType.THREADLOCAL)) {
+            error(
+                "'${kind.spelling}' cannot be combined with 'threadlocal' at line ${peek().line} - " +
+                    "a reactive lifetime and thread-local storage are different answers " +
+                    "to where a value lives"
+            )
+        }
+        val binding = when {
+            match(TokenType.VAR) -> BindingKind.VAR
+            match(TokenType.VAL) -> BindingKind.VAL
+            match(TokenType.LET) -> BindingKind.LET
+            match(TokenType.FIN) -> BindingKind.FIN
+            else -> error(
+                "'${kind.spelling}' needs a binding form at line ${peek().line} - " +
+                    "write '${kind.spelling} var', '${kind.spelling} val', " +
+                    "'${kind.spelling} let' or '${kind.spelling} fin'"
+            )
+        }
         val name = consume(TokenType.IDENTIFIER, "Expected reactive variable name").lexeme
         val type: TypeAnnotation = if (match(TokenType.COLON)) TypeAnnotation.Explicit(parseTypeName()) else TypeAnnotation.Inferred
         consume(TokenType.EQUAL, "Expected '=' in reactive declaration")
         val init = parseExpr()
         consumeNewline()
-        return Stmt.RemDecl(name, type, init, start.line, start.column, kind = kind)
+        return Stmt.RemDecl(name, type, init, start.line, start.column, kind = kind, binding = binding)
     }
 
     /** Reactive effect with automatic, explicit, or disposal-only execution. */
@@ -5640,6 +5937,16 @@ class Parser(
      */
     private fun parseThreadLocal(visibility: Visibility = Visibility.PUBLIC): TopLevel {
         val start = consume(TokenType.THREADLOCAL, "Expected 'threadlocal'")
+        // `threadlocal` says the value is per-thread; a reactive lifetime says how
+        // long it outlives its owner. Both answer "where does this live", and a
+        // binding that claims both says nothing coherent about either.
+        reactiveLifetimeAt(current)?.let {
+            error(
+                "'threadlocal' cannot be combined with '${it.spelling}' at line ${start.line} - " +
+                    "a reactive lifetime and thread-local storage are different answers " +
+                    "to where a value lives"
+            )
+        }
         return when {
             check(TokenType.VAR) || check(TokenType.VAL) -> {
                 val valueMutable = advance().type == TokenType.VAR
@@ -5817,7 +6124,12 @@ class Parser(
         }
     }
 
-    private fun parsePropAsFin(annotations: List<Annotation>, visibility: Visibility): TopLevel {
+    private fun parsePropAsFin(
+        annotations: List<Annotation>,
+        visibility: Visibility,
+        isReactive: Boolean = false,
+        isTask: Boolean = false,
+    ): TopLevel {
         val start = peek()
         consume(TokenType.PROP, "Expected 'prop'")
         val name = consume(TokenType.IDENTIFIER, "Expected name after 'prop'").lexeme
@@ -5852,6 +6164,8 @@ class Parser(
             receiverName = receiver.name,
             memberCallStyle = MemberCallStyle.PROPERTY,
             extensionReceiver = Param(receiver.name, receiverType),
+            isReactive = isReactive,
+            isTask = isTask,
         )
         return funcOrExtension(decl)
     }
@@ -5878,7 +6192,7 @@ class Parser(
      */
     private fun isTypePropAhead(): Boolean {
         var i = indexAfterAnnotations(current)
-        while (tokens.getOrNull(i)?.type in setOf(TokenType.EXPOSE, TokenType.CONFINE)) i++
+        while (tokens.getOrNull(i)?.type in setOf(TokenType.EXPOSE, TokenType.PROTECT, TokenType.CONFINE)) i++
         if (tokens.getOrNull(i)?.type != TokenType.DEEPINLINE) return false
         return tokens.getOrNull(i + 1)?.type == TokenType.PROP
     }
@@ -5919,7 +6233,7 @@ class Parser(
      * Parses a compile-time type property:
      *
      * ```azora
-     * deepinline prop Promote<...T>: Type where T.length >= 2 && T is Number {
+     * deepinline prop promote<...T>: Type where T.length >= 2 && T is Number {
      *     var result: Type = T.0
      *     for candidate: Type in T[1...] {
      *         if candidate::rank > result::rank { result = candidate }
@@ -5930,7 +6244,7 @@ class Parser(
      *
      * It is a `deepinline` declaration whose result is a *type*, so it is
      * evaluated entirely at compile time and used in type position as
-     * `Promote<T, U>` - the same spelling as a generic type, because to a caller
+     * `promote<T, U>` - the same spelling as a generic type, because to a caller
      * that is exactly what it is.
      */
     private fun parseTypeProp(realmPrefix: String = "") {
@@ -5940,11 +6254,6 @@ class Parser(
         consume(TokenType.PROP, "Expected 'prop' after 'deepinline'")
         val nameToken = consume(TokenType.IDENTIFIER, "Expected type-property name")
         val localName = nameToken.lexeme
-        // A deepinline declaration names a type, and types are capitalized - so a
-        // use site reads as a type even before you know where it comes from.
-        if (localName.firstOrNull()?.isLowerCase() != false) {
-            error("A 'deepinline prop' names a type, so '$localName' must start with a capital letter, at line ${nameToken.line}")
-        }
         val name = if (realmPrefix.isEmpty()) localName else "${realmPrefix}__$localName"
 
         val params = parseTypePropParams(localName)
@@ -7546,11 +7855,18 @@ class Parser(
             return Expr.Await(parseUnary(), at.line, at.column, at.lexeme.length)
         }
         // `inject Type` - resolve the singleton instance.
-        if (check(TokenType.INJECT)) {
+        // `lazy inject Type` - the same, deferred to the value's first read.
+        if (check(TokenType.INJECT) || (check(TokenType.LAZY) && peekNext()?.type == TokenType.INJECT)) {
+            val deferred = match(TokenType.LAZY)
             val at = advance()
             val typeName = consume(TokenType.IDENTIFIER, "Expected type name after 'inject'").lexeme
             // Chain into parsePostfix so `inject Config.get()` works.
-            return parsePostfix(Expr.Inject(typeName, at.line, at.column, at.lexeme.length))
+            return parsePostfix(Expr.Inject(typeName, at.line, at.column, at.lexeme.length, deferred))
+        }
+        // `lazy` is only meaningful in front of an injection; on its own it would
+        // read as a value that does not exist.
+        if (check(TokenType.LAZY)) {
+            error("'lazy' must be followed by 'inject' at line ${peek().line}")
         }
         if (check(TokenType.BANG) && peekNext()?.type == TokenType.L_BRACKET) {
             val at = advance()
@@ -7662,7 +7978,7 @@ class Parser(
                         }
                     }
                 }
-                check(TokenType.LESS) && expr is Expr.Member && expr.name in setOf("hasDeco", "decoMeta", "withDeco") -> {
+                check(TokenType.LESS) && expr is Expr.Member && expr.name in setOf("hasDeco", "annotMeta", "withDeco") -> {
                     val innerTarget = (expr.target as? Expr.Grouping)?.expr ?: expr.target
                     // `std::reflect<Type>.field` accesses a member of the reflect handle;
                     // reflected declaration members must go inside the angle brackets
@@ -7680,7 +7996,7 @@ class Parser(
                     }
                     val intrinsic = when (expr.name) {
                         "hasDeco" -> "__hasDeco"
-                        "decoMeta" -> "__decoMeta"
+                        "annotMeta" -> "__annotMeta"
                         else -> "__withDeco"
                     }
                     expr = Expr.Call(intrinsic, reflected.args, expr.line, expr.column, expr.length, typeArgs)
@@ -7688,7 +8004,7 @@ class Parser(
                 check(TokenType.LESS) && expr is Expr.Identifier &&
                     isReflectName((expr as Expr.Identifier).name) && isReflectTargetAhead() -> {
                     // `std::reflect<X>` - compile-time reflection prop. Desugars to the
-                    // internal `__reflect(X)` receiver used by `.hasDeco`/`.decoMeta`/`.realm`.
+                    // internal `__reflect(X)` receiver used by `.hasDeco`/`.annotMeta`/`.realm`.
                     val start = expr
                     advance() // '<'
                     val target = parseReflectTarget()

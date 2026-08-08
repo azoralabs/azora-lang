@@ -26,7 +26,7 @@ module std.reflection
  *
  * ```
  * std::reflect<P>.hasDeco<Serializable>       // Bool
- * std::reflect<P>.decoMeta<SerialName>.value  // decorator field
+ * std::reflect<P>.annotMeta<SerialName>.value  // decorator field
  * std::reflect<P>.enclosingRealm?.label        // enclosing realm metadata
  * ```
  *
@@ -39,7 +39,7 @@ module std.reflection
 realm std {
     /**
      * Compile-time reflection handle for the declaration `T`, produced by
-     * `std::reflect<T>`. Its members (`.hasDeco<D>`, `.decoMeta<D>`, `.enclosingRealm`) are
+     * `std::reflect<T>`. Its members (`.hasDeco<D>`, `.annotMeta<D>`, `.enclosingRealm`) are
      * resolved by the compiler; `bridge pack` means no struct is emitted.
      */
     @Experimental(since: "0.1")
@@ -52,7 +52,7 @@ realm std {
 
         /** Immutable compile-time metadata from decorator `D` on `T`. */
         @Experimental(since: "0.1")
-        bridge prop<D> decoMeta[self: Self&]: D
+        bridge prop<D> annotMeta[self: Self&]: D
 
         /** The enclosing lexical realm of `T`, or null at global scope. */
         @Experimental(since: "0.1")

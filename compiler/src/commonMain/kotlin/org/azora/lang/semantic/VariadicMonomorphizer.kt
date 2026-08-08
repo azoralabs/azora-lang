@@ -1609,7 +1609,7 @@ private class MonoContext(
         is TopLevel.Deco -> line
         is TopLevel.Bridge -> line
         is TopLevel.Solo -> line
-        is TopLevel.Wrap -> line
+        is TopLevel.Graph -> line
         is TopLevel.UseImport -> line
         is TopLevel.Enum -> line
         is TopLevel.Fail -> line

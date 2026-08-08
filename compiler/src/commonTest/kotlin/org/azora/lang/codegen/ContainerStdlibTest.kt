@@ -28,15 +28,15 @@ class ContainerStdlibTest {
             import std.*
 
             func verify(): Int {
-                inline assert (std::reflect<List>).hasDeco<Serializable> { "List metadata missing" }
-                inline assert (std::reflect<MutableList>).hasDeco<Serializable> { "MutableList metadata missing" }
-                inline assert (std::reflect<Set>).hasDeco<Serializable> { "Set metadata missing" }
-                inline assert (std::reflect<MutableSet>).hasDeco<Serializable> { "MutableSet metadata missing" }
-                inline assert (std::reflect<Map>).hasDeco<Serializable> { "Map metadata missing" }
-                inline assert (std::reflect<MutableMap>).hasDeco<Serializable> { "MutableMap metadata missing" }
-                inline assert (std::reflect<Deque>).hasDeco<Serializable> { "Deque metadata missing" }
-                inline assert (std::reflect<Queue>).hasDeco<Serializable> { "Queue metadata missing" }
-                inline assert (std::reflect<Stack>).hasDeco<Serializable> { "Stack metadata missing" }
+                inline assert std::reflect<List>.hasDeco<Serializable> { "List metadata missing" }
+                inline assert std::reflect<MutableList>.hasDeco<Serializable> { "MutableList metadata missing" }
+                inline assert std::reflect<Set>.hasDeco<Serializable> { "Set metadata missing" }
+                inline assert std::reflect<MutableSet>.hasDeco<Serializable> { "MutableSet metadata missing" }
+                inline assert std::reflect<Map>.hasDeco<Serializable> { "Map metadata missing" }
+                inline assert std::reflect<MutableMap>.hasDeco<Serializable> { "MutableMap metadata missing" }
+                inline assert std::reflect<Deque>.hasDeco<Serializable> { "Deque metadata missing" }
+                inline assert std::reflect<Queue>.hasDeco<Serializable> { "Queue metadata missing" }
+                inline assert std::reflect<Stack>.hasDeco<Serializable> { "Stack metadata missing" }
                 return 1
             }
 

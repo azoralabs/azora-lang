@@ -185,7 +185,7 @@ private fun dumpTopLevel(sb: StringBuilder, item: TopLevel, indent: String) {
         is TopLevel.Solo -> {
             sb.appendLine("${indent}Solo(name=${item.name}, fields=[${item.fields.joinToString(", ") { it.name }}], methods=[${item.methods.joinToString(", ") { it.name }}])")
         }
-        is TopLevel.Wrap -> {
+        is TopLevel.Graph -> {
             sb.appendLine("${indent}Wrap(name=${item.name}, registrations=[${item.registrations.joinToString(", ") { "${it.typeName}(${it.args.size} args)" }}])")
         }
         is TopLevel.UseImport -> {

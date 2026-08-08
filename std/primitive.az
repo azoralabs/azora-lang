@@ -137,7 +137,7 @@ use realm std {
      * Common contract for every numeric type.
      *
      * @member rank The promotion rank: in a mixed-type expression the operand type with
-     *   the higher `rank` is chosen as the result type (see `Promote<…>`).
+     *   the higher `rank` is chosen as the result type (see `promote<…>`).
      */
     @Since("0.1")
     spec Number {
@@ -482,7 +482,7 @@ use realm std {
         /**
          * Promotion rank of `$Ty`.
          *
-         * In a mixed-type expression `Promote<…>` keeps the operand type with the higher
+         * In a mixed-type expression `promote<…>` keeps the operand type with the higher
          * `rank` (`Candidate.rank > Result.rank`). Ranks grow with width, so a wider type
          * always wins; the floating-point types outrank every integer type (so `Int + Double`
          * yields `Double`). Signed and unsigned types of the same width share a rank.
@@ -539,10 +539,10 @@ use realm std {
                  *
                  * @receiver self& The left operand.
                  * @receiver rhs The right operand (any numeric type).
-                 * @return Promote<LhsTy, RhsTy> - the wider of the two operand types
+                 * @return promote<LhsTy, RhsTy> - the wider of the two operand types
                  */
                 @Experimental(since: "0.1")
-                bridge oper$op [self: LhsTy&](rhs: RhsTy): std::Promote<LhsTy, RhsTy>
+                bridge oper$op [self: LhsTy&](rhs: RhsTy): std::promote<LhsTy, RhsTy>
             }
         }
     }
@@ -555,10 +555,10 @@ use realm std {
                  *
                  * @receiver self& The left operand.
                  * @receiver rhs The right operand (any integer type).
-                 * @return Promote<LhsTy, RhsTy> - the wider of the two operand types
+                 * @return promote<LhsTy, RhsTy> - the wider of the two operand types
                  */
                 @Experimental(since: "0.1")
-                bridge oper$op [self: LhsTy&](rhs: RhsTy): std::Promote<LhsTy, RhsTy>
+                bridge oper$op [self: LhsTy&](rhs: RhsTy): std::promote<LhsTy, RhsTy>
             }
         }
     }

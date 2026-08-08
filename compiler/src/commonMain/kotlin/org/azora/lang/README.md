@@ -143,8 +143,11 @@ checking; `break`/`continue`.
 | `impl Annot for Type::field` / `Type::*` | decorates one field / every field |
 | `impl [A, B] for [Type::x, Type::y]` | the decorator/target cross-product |
 | `annot Name bind Spec { fields }` | binds an annotation to a spec |
-| `solo Name { }` / `wrap Name { }` / `inject Type` | DI singleton / container / resolve |
-| `@Reactive func name() { }` | reactive owner |
+| `solo pack Name { }` | a type there is one of |
+| `graph Graph { solo\|factory\|scope Type(args) [bind Spec] }` | a dependency graph; the first word is the provider's lifetime |
+| `graph Graph include [A, B]` | graph composition |
+| `inject Type` / `lazy inject Type` | resolve now / on first read |
+| `react func name() { }` | reactive owner |
 | `bridge target { func sigs }` | FFI extern declarations |
 | `realm Name { }` | named namespace (`Name::member`); reopenable and merging |
 | `test "name" { }` | one test |
@@ -249,7 +252,8 @@ an error exit); `defer { }` (LIFO cleanup).
 
 ### Reactivity
 
-`@Reactive` enables `mem` (memoized), `rem` (saveable), `ret` (retained), and
+`react` enables `remember` (survives reruns), `retain` (survives owner
+recreation), `preserve` (survives a process restart), and
 `effect`. Effects may track reads automatically, declare one/list dependencies,
 or use `effect defer` for owner-exit cleanup. Reactive callables may only be
 called from another reactive scope.
@@ -265,7 +269,7 @@ Constant folding, propagation, and dead-code elimination run in the IR optimizer
 Decorator metadata is part of CTCE. `(reflect value).hasDeco<D>` tests direct and
 transitively bound decorators on values, types, packs, functions, properties,
 fields, parameters, and the other `DecoTarget` declaration categories.
-`(reflect value).decoMeta<D>.field` reads a decorator's named, positional, or default `fin`
+`(reflect value).annotMeta<D>.field` reads a decorator's named, positional, or default `fin`
 field value. Both properties are compile-time-only and must occur in an
 `inline` expression:
 
@@ -278,7 +282,7 @@ annot Persisted for .Pack {
 pack User
 
 inline if (reflect User).hasDeco<Persisted> {
-    inline assert (reflect User).decoMeta<Persisted>.ignoreUnknownFields
+    inline assert (reflect User).annotMeta<Persisted>.ignoreUnknownFields
 }
 ```
 
@@ -302,7 +306,7 @@ contracts; `@AzonSerializable` binds only the text one. AZON is the sole
 built-in format: any other is written outside the standard library by
 implementing `Serializer<T>` and encoding the resulting tree. Their
 `ignoreUnknownFields` and `encodeDefaults` values are immutable decorator
-metadata and are available to generated inline code through `decoMeta<D>`.
+metadata and are available to generated inline code through `annotMeta<D>`.
 Bodyless decorator implementations may configure those fields directly; omitted
 fields use the defaults declared by the decorator:
 
@@ -377,8 +381,8 @@ Grouped:
 - **Errors**: `throw` `try` `catch` `rescue` `error` `defer` `panic`
 - **Concurrency**: `await` `delay`
 - **Memory and ownership**: `alloc` `purge` `take` `unsafe` `scope`
-- **FFI and DI**: `bridge` `solo` `wrap` `inject`
-- **Reactivity**: `mem` `rem` `ret` `effect`
+- **FFI and DI**: `bridge` `solo` `graph` `inject`
+- **Reactivity**: `remember` `retain` `preserve` `effect`
 - **Metaprogramming**: `inline` `deepinline` `noinline` `macro`
 - **Modules and scoping**: `realm` `import` `use` `expose` `confine`
 - **Annotations**: `annot` `bind`

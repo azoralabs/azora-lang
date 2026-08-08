@@ -59,17 +59,22 @@ object AzoraSyntaxVocabulary {
         "bridge" to TokenType.BRIDGE,
         "solo" to TokenType.SOLO,
         "inject" to TokenType.INJECT,
-        "wrap" to TokenType.WRAP,
+        "lazy" to TokenType.LAZY,
+        "factory" to TokenType.FACTORY,
+        "derive" to TokenType.DERIVE,
+        "graph" to TokenType.GRAPH,
         "rescue" to TokenType.RESCUE,
-        "mem" to TokenType.MEM,
-        "rem" to TokenType.REM,
-        "ret" to TokenType.RET,
+        "preserve" to TokenType.PRESERVE,
+        "react" to TokenType.REACT,
+        "remember" to TokenType.REMEMBER,
+        "retain" to TokenType.RETAIN,
         "effect" to TokenType.EFFECT,
         "prop" to TokenType.PROP,
         "ctor" to TokenType.CTOR,
         "dtor" to TokenType.DTOR,
         "out" to TokenType.OUT,
         "expose" to TokenType.EXPOSE,
+        "protect" to TokenType.PROTECT,
         "confine" to TokenType.CONFINE,
         "threadlocal" to TokenType.THREADLOCAL,
         "pack" to TokenType.PACK,
@@ -92,5 +97,6 @@ object AzoraSyntaxVocabulary {
         "false" to TokenType.FALSE,
     )
 
-    val contextualKeywords: Set<String> = setOf("module", "union", "async", "where", "without")
+    val contextualKeywords: Set<String> =
+        setOf("module", "union", "async", "where", "without", "replace", "include")
 }

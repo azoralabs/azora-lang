@@ -549,9 +549,11 @@ func main() { std::println("Hello, Azora!") }"""))
 
     @Test fun ch32_solo_get() = assertEquals("42", run("""
         import std.io
-        solo Config {
+        solo pack Config {
             var value: Int = 42
-            func get(): Int { return self.value }
+        }
+        impl Config {
+            func get[self: Self!](): Int { return self.value }
         }
         func main() {
             std::println(inject Config.get())
@@ -560,9 +562,11 @@ func main() { std::println("Hello, Azora!") }"""))
 
     @Test fun ch32_solo_shared_instance() = assertEquals("1\n2\n3", run("""
         import std.io
-        solo Counter {
+        solo pack Counter {
             var n: Int = 0
-            func inc(): Int {
+        }
+        impl Counter {
+            func inc[self: Self!](): Int {
                 self.n = self.n + 1
                 return self.n
             }
@@ -600,9 +604,8 @@ func main() { std::println("Hello, Azora!") }"""))
 
     @Test fun ch34_rem() = assertEquals("0\n42", run("""
         import std.io
-        @Reactive
-        func main() {
-            rem count: Int = 0
+                react func main() {
+            remember var count: Int = 0
             std::println(count)
             count = 42
             std::println(count)
@@ -611,9 +614,8 @@ func main() { std::println("Hello, Azora!") }"""))
 
     @Test fun ch34_effect() = assertEquals("hello\ndone", run("""
         import std.io
-        @Reactive
-        func main() {
-            rem msg: String = "hello"
+                react func main() {
+            remember var msg: String = "hello"
             effect {
                 std::println(msg)
             }
@@ -623,12 +625,10 @@ func main() { std::println("Hello, Azora!") }"""))
 
     @Test fun ch34_reactiveFunction() = assertEquals("Hello, World!", run("""
         import std.io
-        @Reactive
-        func greet(name: String) {
+                react func greet(name: String) {
             std::println("Hello, " + name + "!")
         }
-        @Reactive
-        func main() {
+                react func main() {
             greet("World")
         }
     """.trimIndent()))

@@ -132,7 +132,7 @@ class ReflectDecoExpanderTest {
 
             func main() {
                 inline for S in std::reflect<*>.withDeco<Marked> {
-                    std::println("${'$'}{std::reflect<S>.declName} ${'$'}{std::reflect<S>.decoMeta<Marked>.order} ${'$'}{std::reflect<S>.decoMeta<Marked>.tag}")
+                    std::println("${'$'}{std::reflect<S>.declName} ${'$'}{std::reflect<S>.annotMeta<Marked>.order} ${'$'}{std::reflect<S>.annotMeta<Marked>.tag}")
                 }
             }
         """.trimIndent()))
@@ -157,7 +157,7 @@ class ReflectDecoExpanderTest {
 
             func main() {
                 inline for S in std::reflect<*>.withDeco<Staged> {
-                    std::println("${'$'}{std::reflect<S>.declName} ${'$'}{std::reflect<S>.decoMeta<Staged>.phase == Phase.Render}")
+                    std::println("${'$'}{std::reflect<S>.declName} ${'$'}{std::reflect<S>.annotMeta<Staged>.phase == Phase.Render}")
                 }
             }
         """.trimIndent()))
@@ -254,7 +254,7 @@ class ReflectDecoExpanderTest {
         """.trimIndent()))
     }
 
-    @Test fun decoMetaOutsideAnyLoopIsStillCompileTimeOnly() {
+    @Test fun annotMetaOutsideAnyLoopIsStillCompileTimeOnly() {
         // The loop is what supplies the compile-time context. Without one, an
         // ordinary runtime position must still be rejected rather than folded.
         val reported = errors("""
@@ -265,7 +265,7 @@ class ReflectDecoExpanderTest {
             pack Alpha { var v: Int }
 
             func main() {
-                std::println(std::reflect<Alpha>.decoMeta<Marked>.order)
+                std::println(std::reflect<Alpha>.annotMeta<Marked>.order)
             }
         """.trimIndent())
         assertTrue(

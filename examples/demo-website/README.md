@@ -82,7 +82,7 @@ src = "tests"
 
 ```
 view App() {
-    rem page: Int = 0
+    remember var page: Int = 0
 
     NavHost(page, ["/", "/pets", "/add", "/health"]) {
         HomePage(onPets: { page = 1 }, onAdd: { page = 2 }, onHealth: { page = 3 })
@@ -97,20 +97,20 @@ func main() {
 }
 ```
 
-- `rem page` is reactive state - changing it switches the visible page
+- `remember var page` is reactive state - changing it switches the visible page
 - The URL array maps each index to a path (`/`, `/pets`, `/add`, `/health`)
 - Browser back/forward buttons work via `popstate` listener
 - Refreshing a sub-route (e.g. `/pets`) serves `index.html` (SPA fallback)
 
 ### Reactive state and forms
 
-`rem` declares reactive state variables that trigger re-renders when mutated:
+`remember` declares reactive state that triggers re-renders when mutated:
 
 ```
 view AddPetPage(onBack: () -> Unit) {
-    rem petKind: String = ""
-    rem petName: String = ""
-    rem petAge: String = ""
+    remember var petKind: String = ""
+    remember var petName: String = ""
+    remember var petAge: String = ""
 
     // Input binds to state via value + onInput
     Input(

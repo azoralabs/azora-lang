@@ -250,7 +250,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
         is TopLevel.Fail -> Pair(listOf(item), false)
         is TopLevel.Bridge -> Pair(listOf(item), false)
         is TopLevel.Solo -> Pair(listOf(item), false)
-        is TopLevel.Wrap -> Pair(listOf(item), false)
+        is TopLevel.Graph -> Pair(listOf(item), false)
         is TopLevel.UseImport -> Pair(listOf(item), false)
         is TopLevel.Impl -> Pair(listOf(item), false)
         is TopLevel.Spec -> Pair(listOf(item), false)
@@ -370,7 +370,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 is TopLevel.Fail -> result.add(item)
                 is TopLevel.Bridge -> result.add(item)
                 is TopLevel.Solo -> result.add(item)
-                is TopLevel.Wrap -> result.add(item)
+                is TopLevel.Graph -> result.add(item)
                 is TopLevel.UseImport -> result.add(item)
                 is TopLevel.Impl -> result.add(item)
                 is TopLevel.Spec -> result.add(item)
@@ -1367,7 +1367,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 }
                 foldRealmTerminal(expr.target, expr.name, program, expr.line)?.let { return Pair(it, true) }
                 val metadataQuery = expr.target as? Expr.Call
-                if (compileTimeDepth > 0 && metadataQuery?.callee == "__decoMeta") {
+                if (compileTimeDepth > 0 && metadataQuery?.callee == "__annotMeta") {
                     val decoratorName = metadataQuery.typeArgs.singleOrNull()?.displayName()
                     val receiver = metadataQuery.args.singleOrNull()
                     val site = receiver?.let { DecoratorMetadata.findSite(it, reflectionTypes, program) }
@@ -1640,6 +1640,10 @@ class CtfeEvaluator(private val table: SymbolTable) {
         typeArgs: List<TypeRef> = emptyList(),
     ): Expr? {
         val funcDecl = program.functions.find { it.name == name } ?: return null
+        // A `realm test` member may only be used from a test. Folding one into
+        // the program would quietly do what the visibility rule forbids, and
+        // would erase the call before the check that reports it ever sees it.
+        if (name in program.testRealmMembers) return null
         // Tasks/flows are execution boundaries, not pure value expressions. Folding
         // them would erase scheduling, cancellation, and Task<T> from the type graph.
         if (funcDecl.isTask || funcDecl.isFlow || funcDecl.isUnsafe) return null

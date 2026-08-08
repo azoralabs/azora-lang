@@ -34,7 +34,7 @@ import org.azora.lang.frontend.TypeRef
  * to every backend with no function values.
  *
  * Inside the unrolled body, `std::reflect<X>` queries resolve against the bound
- * declaration: `.decoMeta<D>.field` becomes the value that declaration passed for
+ * declaration: `.annotMeta<D>.field` becomes the value that declaration passed for
  * `field` (or the decorator's default), `.hasDeco<D>` a boolean, and `.declName`
  * the declaration's own name as a string. Those are the only compile-time
  * context a caller gets here, and they are what lets a library read a decorator's
@@ -196,7 +196,7 @@ object ReflectDecoExpander {
             DecoratorMetadata.findSite(Expr.Identifier(to, 0, 0, to.length), emptyMap(), program)
 
         /**
-         * Folds `std::reflect<X>.declName`, `.hasDeco<D>` and `.decoMeta<D>.field`
+         * Folds `std::reflect<X>.declName`, `.hasDeco<D>` and `.annotMeta<D>.field`
          * against the bound declaration; null when [e] is not such a query.
          *
          * An unresolvable query is left alone rather than guessed at, so the
@@ -215,8 +215,8 @@ object ReflectDecoExpander {
                 Expr.BoolLiteral(applied != null, e.line, e.column)
             }
 
-            // `std::reflect<X>.decoMeta<D>.field`
-            e is Expr.Member && (e.target as? Expr.Call)?.callee == "__decoMeta" &&
+            // `std::reflect<X>.annotMeta<D>.field`
+            e is Expr.Member && (e.target as? Expr.Call)?.callee == "__annotMeta" &&
                 ((e.target as Expr.Call).args.singleOrNull() as? Expr.Identifier)?.name == from -> {
                 val query = e.target as Expr.Call
                 val deco = query.typeArgs.singleOrNull()?.displayName()

@@ -139,14 +139,29 @@ enum class TokenType {
     DELAY,
     // FFI: `bridge <target> { func sigs }` - extern function declarations.
     BRIDGE,
-    // DI: `solo Name { … }` singleton, `inject Type` resolve, `wrap Name { … }` container.
-    SOLO, INJECT, WRAP,
+    // DI: `solo pack Name { … }` singleton, `inject Type` resolve, `graph Name { … }` container.
+    SOLO, INJECT, GRAPH,
+
+    // `lazy inject Type` - resolution deferred to the value's first read.
+    LAZY,
+
+    // Provider lifetimes inside a `graph`, and graph composition.
+    // `factory Type(args)` - a new owned value per resolution.
+    // `graph G include [A, B]` - compose graphs.
+    FACTORY,
+
+    // Reserved ahead of use: nothing parses it yet, but no program may take
+    // the name, so introducing the form later breaks nothing.
+    DERIVE,
     // Error handling: `rescue { … }` - catch-and-suppress.
     RESCUE,
     // Variadic generics: `...T` type params, `args: ...T` variadic params, `...arr` spread.
     ELLIPSIS,
-    // Reactivity enabled by `@Reactive`: `mem`, `rem`, `ret`, and `effect`.
-    MEM, REM, RET, EFFECT,
+    // Reactivity enabled by `react`: `remember`, `retain`, `preserve`, and `effect`.
+    // `react func f()` - a reactive owner. Reactive state and effects are
+    // legal only inside one, and only another may call it.
+    REACT,
+    REMEMBER, RETAIN, PRESERVE, EFFECT,
     // Object model: `prop name: T { }`, `ctor(params) { }`, `dtor { }`.
     PROP, CTOR, DTOR,
     // `out { … }` postcondition contracts.
@@ -156,7 +171,7 @@ enum class TokenType {
     // Visibility: public by default, `confine` narrows to the package. A
     // leading underscore on the name is what makes a member private.
     // `expose` marks a `module` or an `import` as auto-imported everywhere.
-    EXPOSE, CONFINE,
+    EXPOSE, PROTECT, CONFINE,
     // Thread-local storage: `threadlocal var x = 0` / `threadlocal fin y = 42`.
     THREADLOCAL,
     // `annot Name [bind Spec] { fields }` - decorator/annotation declaration.

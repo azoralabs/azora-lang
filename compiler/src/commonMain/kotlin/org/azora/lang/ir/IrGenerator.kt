@@ -447,8 +447,15 @@ class IrGenerator(private val table: SymbolTable) {
                         IrTopLevel.Struct(item.name, fields, program.realmTypeNamespaces[item.name]),
                     )
                     // Lower methods as free functions Name_method (like impl).
+                    // The receiver type has to be in scope for the same reason it
+                    // does in an impl: a bare field name in the body reads the
+                    // receiver's field.
                     for (method in item.methods) {
-                        if (!method.isInline) result.add(IrTopLevel.Func(lowerMethod(item.name, method)))
+                        if (method.isInline) continue
+                        val saved = currentReceiverType
+                        currentReceiverType = item.name
+                        try { result.add(IrTopLevel.Func(lowerMethod(item.name, method))) }
+                        finally { currentReceiverType = saved }
                     }
                     // Emit a __singleton_Name factory that constructs the struct from field defaults.
                     val defaults = item.fields.map { f ->
@@ -506,9 +513,9 @@ class IrGenerator(private val table: SymbolTable) {
                 ))
             }
         } +
-        // Emit __singleton factories for `wrap` registrations (DI container wiring).
-        program.items.filterIsInstance<TopLevel.Wrap>().flatMap { wrap ->
-            wrap.registrations.mapNotNull { reg ->
+        // Emit __singleton factories for `graph` registrations (DI wiring).
+        program.items.filterIsInstance<TopLevel.Graph>().flatMap { graph ->
+            graph.registrations.mapNotNull { reg ->
                 val struct = table.lookupStruct(reg.typeName) ?: return@mapNotNull null
                 val loweredArgs = reg.args.map { lowerExpr(it) }
                 // Pad with type-based defaults for fields not covered by the construction args.
@@ -661,6 +668,7 @@ class IrGenerator(private val table: SymbolTable) {
     private var currentNodeType: String? = null
     /** The current impl receiver type (for implicit-self field access: bare `size` → `self.size`). */
     private var currentReceiverType: String? = null
+
 
     /** Lowers an impl method into a free function `Type_method(self, ...)`. */
     private fun lowerMethod(typeName: String, method: FuncDecl): IrFunction {
@@ -1478,7 +1486,8 @@ class IrGenerator(private val table: SymbolTable) {
                 } else if (aliasedSym != null) {
                     IrExpr.Var(resolveName(aliased), aliasedSym.type)
                 } else {
-                    // Implicit self: bare field name in an impl method → self.field
+                    // Implicit self: bare field name in a method reads the
+                    // receiver's field.
                     val field = currentReceiverType?.let { table.lookupStruct(it)?.field(expr.name) }
                     if (field != null) {
                         val selfSym = table.lookupVariable("self")
@@ -1957,6 +1966,11 @@ class IrGenerator(private val table: SymbolTable) {
                 IrExpr.Await(task, resultType)
             }
             is Expr.Inject -> {
+                // `lazy inject` parses and carries its flag, but nothing defers
+                // yet: both forms lower to the same eager resolution. Deferral
+                // needs the one-shot cell in DEPENDENCY_INJECTION_DIP.MD §5.3,
+                // so until that exists `lazy` is accepted and ignored rather
+                // than silently promising something else.
                 IrExpr.Call("__inject", listOf(IrExpr.StringLiteral(expr.typeName)), IrType.Named(expr.typeName))
             }
             is Expr.Spread -> {

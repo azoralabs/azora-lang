@@ -1,7 +1,6 @@
 # Azora Control Flow - DIP Implementation Profile
 
-Conditionals, loops, pattern matching, and the alternating `flip`/`flop`
-construct.
+Conditionals, loops, pattern matching.
 
 ## Grammar
 
@@ -12,10 +11,8 @@ WHILE  ::= while COND { … }
 FOR    ::= for NAME in ITERABLE { … }
 LOOP   ::= loop { … }                                  // infinite; exit via break
 WHEN   ::= when SCRUTINEE { PATTERN -> { … } … [else -> { … }] }
-GUARD  ::= guard COND else { … }                       // early-exit
 JUMP   ::= break [@label] | continue [@label]
 LABEL  ::= @label for … / @label loop …                // labeled loops
-FLIP   ::= flip { … } flop { … }                       // alternating execution
 ```
 
 ---
@@ -88,34 +85,10 @@ when value {
 - Multiple patterns per arm are comma-separated.
 - Exhaustive over a slot/enum, or ends with `else`.
 
-## 4. Guard
-
-```azora
-func process(x: Int?): Int {
-    guard x != null else { return 0 }
-    return x + 1
-}
-```
-
-`guard COND else { … }` runs the `else` block (which must exit) when the condition
-is false, and otherwise continues.
-
-## 5. flip / flop
-
-Alternating execution: successive evaluations run the `flip` block, then the
-`flop` block, then `flip` again, and so on.
-
-```azora
-for i in 0..<4 {
-    flip { std::println("A") } flop { std::println("B") }   // A B A B
-}
-```
-
 ## 6. Deferred execution
 
 ```azora
 defer { cleanup() }          // runs at scope exit
 ```
 
-See also the Error Handling DIP (`try`/`catch`/`throw`), the Flows DIP
-(`yield`), and the Concurrency DIP (`await`).
+See also the Error Handling DIP (`try`/`catch`/`throw`) and the Concurrency DIP (`await`).

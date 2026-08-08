@@ -186,7 +186,7 @@ test "deque clear resets both ends" {
 }
 
 test "deque serialization metadata is declared" {
-    inline assert (std::reflect<Deque>).hasDeco<Serializable> { "Deque must carry Serializable metadata" }
+    inline assert std::reflect<Deque>.hasDeco<Serializable> { "Deque must carry Serializable metadata" }
 }
 
 test .All "deque"

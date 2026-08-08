@@ -33,7 +33,7 @@ Hard blockers. `0.1` does not ship with any of these open.
 - ⬜ **No known miscompiles** - §1.1 is empty
 - ⬜ **Backend parity** - every construct behaves identically on every backend,
   or is a compile error on the ones that cannot express it (§6)
-- ⬜ **Every shipped feature has a written DIP** - 11 are empty (§10.1)
+- ✅ **Every shipped feature has a written DIP**
 - ⬜ **A published stability policy** (§11)
 - ⬜ **A package manager**, with `new` → `build` → `test` working (§7.4)
 - ⬜ **Self-hosting decided** - executed or explicitly deferred (§12.1)
@@ -44,7 +44,7 @@ Hard blockers. `0.1` does not ship with any of these open.
 |------------------|-------------------------------------|
 | Tests            | 1519 total, **75 failing**          |
 | Standard library | 48 `.az` modules                    |
-| DIPs             | 34, of which **11 are empty files** |
+| DIPs             | 34, all written                     |
 | Backends         | interpreter ✅, LLVM 🟨, Wasm 🟨    |
 
 ---
@@ -152,8 +152,20 @@ lines).
 - ✅ `spec` (traits) with validated impls
 - ✅ Computed properties (`prop`), secondary constructors (`ctor`), `dtor`
 - ✅ Static members via `impl Type:: { }` and `impl Spec for Type:: { }`
-- ✅ Dynamic dispatch on spec-typed values (fat pointer + dispatch table);
-  no keyword, using a spec as a type is what selects it
+- 🟨 Dynamic dispatch on spec-typed values (fat pointer + type-id switch); no
+  keyword, using a spec as a type is what selects it. Bindings, parameters,
+  returns and fields work; see `DYNAMIC_DISPATCH_DIP.MD`
+- ⬜ **A collection of spec-typed values cannot be built** - `@arr[Square(2),
+  Circle(1)]` is rejected because the elements are not upcast to the annotated
+  element type before the shared-type check. Every "a list of things sharing a
+  capability" program is unwritable, which is most of what dispatch is for
+- ⬜ **WebAssembly has no spec dispatch at all** - zero occurrences in
+  `WasmCodegen`; a spec-typed program compiles and does something else (§6.1)
+- ⬜ The dispatcher's default branch returns a default value: a plausible wrong
+  answer where it should trap
+- ⬜ Boxes are never freed - every upcast leaks
+- ⬜ No object-safety rule: nothing rejects using a spec with a static method,
+  or one returning `Self`, as a type
 - ✅ Infix calls, declared as macros (`macro $a @to $b`)
 - ✅ Named realms and `::` namespacing
 - ✅ Modules, imports, realms, import gating
@@ -183,7 +195,15 @@ lines).
 - ✅ Derivation from a bodyless `impl [Equal, Order, Hash]`
 - ✅ `==` without a conformance is a compile error
 - ✅ Operator families: `Arithmetic` `Neg` `Bitwise` `Logical` `Indexable`
-  `Deref`, each implementable in part
+  `Deref` / `DerefMut`, each implementable in part
+- ✅ A spec declaring only operators registers its conformance, so another spec
+  can `require` it. The guard for `impl oper== by Map for HashMap` - where the
+  name is an operand type, not a spec - was skipping every operator impl,
+  including real conformances. An operator impl for a spec the type already
+  conforms to now refines that conformance rather than duplicating it
+- ✅ `Deref` / `DerefMut` split: `.*` reads through a value, `.^` writes through
+  it, and `DerefMut requires Deref`. The compiler already named the operators
+  separately; only the std declaration lumped them together
 - ✅ Unary dispatch, including `oper!`
 - ✅ In-place compound assignment (`oper+=` and family)
 - ✅ `oper` members on a `spec`; the impl reads its return type from the spec
@@ -243,7 +263,23 @@ generation. Every form the parser accepts:
   are two macros; any word may be a name, including keywords (`@with`, `@to`)
 - ✅ Name splicing (`oper$op`), compile-time type lists (`Numbers`, `Integers`,
   `FloatingPoints`, `SignedIntegers`, …)
-- ✅ Reflection handles and `inline for … in reflect<*>.withDeco<D>`
+- ✅ Reflection handles and `inline for … in reflect<*>.withDeco<D>`, which
+  unrolls to direct calls - no function values, no registry, nothing at runtime
+- ✅ `REFLECTION_DIP.MD` written
+- ⬜ **`reflect<T>.fields` and `ReflectedField` are declared and unreachable.**
+  `inline for f in reflect<P>.fields` is rejected, and nothing can produce a
+  `ReflectedField`. Implement iteration or delete the declarations
+- ⬜ `withDeco` unrolls into statements, not declarations: at top level it fails
+  with `Unknown compile-time list`, so a library cannot generate a function per
+  decorated type
+- ⬜ `withDeco<D>` is the **only** enumeration - no "every pack", no "every
+  implementer of a spec", no filter by realm. Discovery requires a decorator
+- ⬜ No method or signature reflection: a declaration's members, parameter types
+  and return type are not askable
+- ⬜ `reflect<T>(includeInherited: Bool = false)` takes a parameter nothing
+  reads, left from the removed inheritance model
+- ⬜ Enumeration order is declaration order, which the tests rely on and nothing
+  states as a guarantee
 - ⬜ **`deepinline func`, `deepinline for`, `deepinline loop`,
   `deepinline while` and `deepinline when` do not exist.** `inline` and
   `deepinline` are not the same set: `inline` also takes `func`, `for`,
@@ -284,43 +320,125 @@ generation. Every form the parser accepts:
 
 ### 3.2 Contracts
 
-- ✅ `in { }` / `out { }` / `scope { }` clauses with `assert`
+- ✅ `in { }` / `out { }` / `scope { }` clauses with `assert`. At most one `in`
+  and one `out` per function; several conditions go inside the one clause
 - ✅ `it` binding in `out`
-- ⬜ `CONTRACTS_ASSERTION_DIP.MD` is empty
-- ⬜ Contract behaviour in release builds specified (checked / dropped)
+- ✅ `CONTRACTS_ASSERTION_DIP.MD` written
+- ⬜ Contract behaviour in release builds **specified**. They are checked today -
+  `IrOptimizer` never eliminates an assert, and `--release` does not drop one -
+  but that has never been stated as a decision rather than an optimiser detail
+- ⬜ An `inline assert` whose condition does not fold silently becomes a runtime
+  check; decide whether that should be an error
+- ⬜ Contract inheritance: a spec cannot state a contract its implementers honour
+- ⬜ Wasm discards a failed assertion's message (`unreachable`)
 
 ### 3.3 Concurrency
 
-- ✅ Streams as library types: `Sequence<T>` synchronous, `Flow<T>`
-  asynchronous, so a producer is an ordinary `func`
+- 🟨 Streams as library types, so a producer is an ordinary `func`. But
+  `sequence` runs its producer immediately into an `ArrayList`, and `Flow<T>` is
+  that same eager list - not asynchronous, no suspension points. The names
+  promise laziness and asynchrony, and the implementation is a list builder
 - ✅ `async { }` / `await`, real parallelism on a thread pool
-- ✅ `launch { }` fire-and-forget, joined at exit
+- ⬜ **`launch { }` does not parse** - `undefined variable 'launch'`. The
+  `__launch` intrinsic behind it is implemented in the interpreter and LLVM but
+  nothing produces it. Give it syntax or delete it; a discarded `async { }`
+  handle already covers the intent
 - ✅ `channel()` with send/receive/close (a compiler builtin)
 - ✅ `delay`
-- ⬜ **`Mutex` and `Atomic` do not exist** - `std/parallelism/sync.az` and
-  `channel.az` reference them anyway
+- ⬜ **`Mutex` and `Atomic` do not exist**, so `std.parallelism.sync` and
+  `std.parallelism.channel` **do not compile when used**: `std::SpinLock`,
+  `std::Guard`, `std::CountDownLatch` and `std::Channel` all fail with
+  `undefined function 'Mutex'` / `'Atomic'`. Importing the module is fine, which
+  is what hides it
 - ⬜ `Send` / `Sync` capabilities
 - ⬜ Real OS threads, `JoinHandle`, scoped threads
 - ⬜ `Channel<T>` moved out of the compiler into std
-- ⬜ `std/parallelism/thread.az` is task helpers wearing thread names  - 
-  `joinAll(count)` sleeps and joins nothing
+- ⬜ `std/parallelism/thread.az` is three functions and none is about threads:
+  `sleep` is `delay` renamed, `spawnAsync` spawns then sleeps a caller-supplied
+  duration, and `joinAll(count)` **joins nothing** - it sleeps for `count` ms.
+  Delete the module or implement it
+- ⬜ **Two unrelated channels**: the working compiler builtin `channel()` and
+  the library `std::Channel<T>` that does not compile and whose `receive`
+  asserts rather than waiting. Decide which survives
+- ⬜ A memory model - ordering, visibility, and what a data race *is* in Azora
+  terms. Every atomic operation's meaning depends on it
 - ✅ Fix `module std.pareallelism.sync` (typo - unimportable under its own path)
 - ⬜ Cancellation and structured concurrency
 - ⬜ Data-race freedom claim made testable
 - ⬜ Concurrency story for Wasm and LLVM
-- ⬜ `CONCURRENCY_DIP.MD` and `PARALLELISM_DIP.MD` are empty
+- ✅ `CONCURRENCY_DIP.MD` and `PARALLELISM_DIP.MD` written
 
 ### 3.4 Reactivity
 
-- ✅ `@Reactive`, `mem` / `rem` / `ret` bindings
+- ✅ `react func`, and reactive state as **a lifetime plus a binding**:
+  `preserve var settings = …`, `retain val session = …`, `remember fin id = …`.
+  The lifetimes form a ladder - `remember` survives reactive reruns, `retain`
+  survives owner recreation in the same process, `preserve` is serialized and
+  restored across process restarts. Renamed from `mem` / `rem` / `ret`, which
+  said nothing about which outlived which
+- ✅ A reactive lifetime cannot be combined with `threadlocal` - both answer
+  where a value lives, and rejected in both orders
+- ✅ Reactivity is contagious:
+  a reactive function may only be called from another one, as `async` colours
+  its call graph
 - ✅ `effect { }`, explicit dependencies, `effect defer`
-- ⬜ `REACTIVE_DIP.MD` is empty
-- ⬜ Durable storage adapters for `rem` snapshots
+- ✅ `REACTIVE_DIP.MD` written
+- ⬜ **Reactivity is entirely compile-time.** `IrGenerator` inlines an effect's
+  body after each assignment it can see, so an effect re-runs only for
+  assignments in the owner's own body - a write through a pointer, from a called
+  function, or from another task is invisible. Decide whether that is the model
+  (and say so) or whether it needs a runtime
+- ⬜ The three lifetimes differ in declared intent only: nothing persists, so
+  `retain` and `preserve` behave exactly as `remember`. Durable storage is the
+  missing half
+- ⬜ An effect's body is duplicated per triggering assignment, with no bound and
+  no diagnostic
+- ⬜ No batching, no cycle detection, and effect ordering is declaration order
+  by accident rather than by decision
+- ⬜ No derived-value form - "this value is a function of those" is written as
+  an effect assigning a `var`
+- ⬜ Reactivity is untested under LLVM and Wasm
+- ⬜ `ReactiveSnapshot<T>` is declared and unused
 
 ### 3.5 Dependency injection
 
-- ✅ `solo`, `wrap`, `inject`, chained access, thread-safe resolution
-- ⬜ `DEPENDENCY_INJECTION_DIP.MD` is empty
+- 🟨 `solo pack`, `graph`, `inject` - resolution works, **interpreter only**
+- ✅ `DEPENDENCY_INJECTION_DIP.MD` written. A `graph` is a **graph**; every entry
+  states its provider lifetime first (`solo` per graph, `factory` per
+  resolution, `scope` per active scope); `bind` binds a definition to the specs
+  it satisfies; `include` composes graphs
+- ✅ Syntax parses: lifetimes, `bind`, `include`, `lazy inject`
+- ✅ Keywords added: `lazy`, `factory`, `include` (and `derive`, reserved ahead
+  of use). `solo` became a modifier on `pack`, so a `solo pack` follows every
+  pack rule: fields only, members in an `impl` block, receiver `self`
+- ⬜ **`__inject` has no lowering in LLVM or Wasm.** A program using DI compiles
+  for those targets and then does not resolve; nothing warns (§6.1)
+- ⬜ **Lifetimes are parsed and ignored** - `factory` and `scope` behave as
+  `solo`, so a view model is a singleton and a request object outlives its
+  request
+- ⬜ **`bind` is parsed and ignored** - without it `inject` names a concrete
+  type and no test double can replace a real service
+- ⬜ **`include` is parsed and ignored**; `replace` has no keyword; a `graph`'s
+  name is still recorded and never read
+- ⬜ `func main() with AppGraph` - static graph selection, so an unsatisfiable
+  injection is a compile error rather than a runtime surprise
+- ⬜ Replace the string-keyed `typeName → instance` map with compiler-generated
+  `DefinitionId` symbols, so missing and ambiguous definitions are diagnosed at
+  compile time and realm-scoped types stop colliding
+- ⬜ One concurrent construction attempt and one successful instance; today's
+  race duplicates construction
+- ⬜ Graph-owned values destroyed in reverse dependency order; `solo`/`scope`
+  return a shared ref natively, `factory` an owned value
+- ⬜ `Many<T>` in `std.di` for multibinding, and `inject T` erroring on
+  ambiguity instead of colliding
+- ⬜ `reflect<Graph>.implementations<T>` - compile-time discovery, separate
+  from runtime resolution
+- ⬜ `lazy` defers nothing yet; both forms lower to the same eager `__inject`
+- ⬜ Injection cycles undetected
+- ⬜ Graph validation: every injection satisfiable, no cycles, no ambiguity
+- ⬜ **`solo` method bodies are never type-checked.** `TypeResolver` has no
+  `TopLevel.Solo` case at all, so a body referring to an undefined name reaches
+  the interpreter and fails there with a cast error rather than a diagnostic
 
 ### 3.6 Annotations
 
@@ -363,7 +481,7 @@ when result {
 - ✅ Interpreter resolves C-math intrinsics
 - ⬜ **FFI scope decided and specified** - C interop claimed, needs verifying
 - ⬜ Callbacks across the boundary, struct layout guarantees, ownership rules
-- ⬜ `BRIDGE_DIP.MD` and `COMPILER_INTRINSIC_DIP.MD` are empty
+- ✅ `BRIDGE_DIP.MD` and `COMPILER_INTRINSIC_DIP.MD` written
 
 #### Automatic binding generator for C headers
 
@@ -566,6 +684,14 @@ unspellable, so the fixes reach every realm-scoped type in the language.
   observable behaviour
 - ⬜ Any construct a backend cannot express is a **compile error for that
   target**, never silently degraded output
+- ⬜ The known silent divergences, each of which compiles everywhere and means
+  something different per target:
+  - ⬜ `inject` - `__inject` has no lowering in LLVM or Wasm (§3.5)
+  - ⬜ `await` under Wasm lowers to its operand; tasks run inline (§3.3)
+  - ⬜ `delay` under Wasm degrades - no host clock (§6.4)
+  - ⬜ A failed `assert` under Wasm loses its message (§3.2)
+  - ⬜ `hash` for pointer-backed values disagrees between LLVM and the
+    interpreter (§1.1)
 
 ### 6.2 Interpreter
 
@@ -641,10 +767,26 @@ Several constructs degrade silently; each is a potential miscompile.
 
 ### 7.2 Language server
 
-- ✅ Error-tolerant highlighting, diagnostics, completion, hover, document
-  symbols
-- ✅ Reflective JSON loading for Azora Studio, optional prelude
-- ⬜ Go-to-definition
+- 🟨 Error-tolerant highlighting, diagnostics, completion, hover, document
+  symbols - **16 of 42 tests fail**
+- ✅ Reflective loading for Azora Studio, optional prelude
+- ✅ `AZLS_DIP.MD` written
+- ⬜ **The server points at `../Internal/Std`**, a stdlib layout that no longer
+  exists. Five completion tests report an empty list because the index behind
+  them is empty; point it at `std/`
+- ⬜ **Hover reads `///` and `//`, not `/** */`.** `std/math.az` has 65 `/** */`
+  blocks and zero `///` lines, so every doc comment the standard library carries
+  is invisible in the editor
+- ⬜ The server still assumes the `use` import model the language replaced with
+  `import`, which is why five debug-session tests time out
+- ⬜ The wire format is JSON; every other structured format in the project is
+  AZON
+- ⬜ Nothing checks that the highlighter and the compiler's lexer tokenize the
+  same source the same way
+- ⬜ **Not an LSP server** - a reflective jar with a bespoke interface, so every
+  editor that is not Azora Studio needs an adapter. Decide whether to speak LSP
+- ⬜ Go-to-definition across files (it finds declarations in the current file
+  and reports an external one by name only)
 - ⬜ Find references
 - ⬜ Rename
 - ⬜ Signature help
@@ -733,7 +875,8 @@ Architectural rather than an optimisation bolted on late.
 - ⬜ The rules, stated: what may change (a body) and what may not (a type's
   layout, a signature, a spec's members) without a restart
 - ⬜ State preservation across a reload, and how it interacts with the
-  reactivity model (`mem` / `rem` / `ret` already distinguish what survives)
+  reactivity model (`remember` / `retain` / `preserve` already distinguish what
+  survives)
 - ⬜ Which backends support it: the interpreter first, then a decision for
   LLVM and Wasm
 - ⬜ Editor and CLI integration: a watch mode that reloads rather than restarts
@@ -765,12 +908,29 @@ Every one fixed, or deleted with a stated reason.
 
 ### 9.2 Infrastructure
 
-- ✅ 1520 tests covering language, stdlib and codegen
+- ✅ 1527 tests covering language, stdlib and codegen
 - ✅ Execution tests through the interpreter, LLVM (`lli`) and Wasm (`wat2wasm`)
 - ✅ Golden-file codegen tests
 - ✅ `ReadmeSnippetTest` compiles every `azora` block in `README.md`, so the
   documentation cannot drift from the language without failing the build
-- ⬜ CI on every push across all backends and platforms
+- ✅ `TESTING_TRACING_DIP.MD` written: `test` blocks, `.This` / `.All`,
+  `azora test`, `trace` and `panic`
+- ⬜ **`assert` reports its message, never the operand values.** `assert a == b`
+  cannot say what `a` and `b` were, which is the largest gap in using the suite
+- ⬜ `azora test` has no `--wasm`, so the third backend is not covered this way
+  - part of why its degradations went unnoticed
+- ⬜ Tests compile with `release = false`, so a release-only miscompile cannot
+  be caught by the suite at all
+- ⬜ Tests share one interpreter and one global scope in declaration order, so
+  they are not isolated from each other
+- ⬜ No test filtering, setup/teardown, parametrised tests, timing, skip markers
+  or machine-readable output
+- ⬜ A failing `test .All` reports the first assertion message and nothing about
+  which child failed
+- ⬜ **`trace` cannot be disabled** - a release build prints every trace, with
+  no level threshold and no sink
+- ⬜ CI on every push across all backends and platforms, using `--strict` (a
+  compile error only fails the run under that flag)
 - ⬜ Coverage measured against an agreed target
 - ⬜ Parser fuzzing - no input crashes the compiler
 - ⬜ Property-based tests for the ownership checker
@@ -784,10 +944,7 @@ Every one fixed, or deleted with a stated reason.
 
 ### 10.1 Specification
 
-- ✅ 23 written DIPs, several of them thorough
-- ⬜ 11 empty DIPs written: `CONCURRENCY` `PARALLELISM` `REACTIVE` `REFLECTION`
-  `DYNAMIC_DISPATCH` `DEPENDENCY_INJECTION` `CONTRACTS_ASSERTION`
-  `TESTING_TRACING` `COMPILER_INTRINSIC` `BRIDGE` `AZLS`
+- ✅ **All 34 DIPs are written.** Every shipped feature now has one
 - ⬜ Stale DIPs corrected:
   - ⬜ `TYPE_DIP.MD` §9 documents deleted intrinsics and `oper as<U>`
   - ⬜ `FUNCTIONS_DIP.MD` and `PACK_IMPL_DIP.MD` document
@@ -836,8 +993,8 @@ Settle these early; each reshapes the schedule.
 - ⬜ **12.4 ABI stability** - needed to distribute binaries; in or out
 - ⬜ **12.5 Target platforms** - which OS/arch triples are supported and tested
 - ✅ **12.6 Inheritance** - `dyn` spec dispatch is the whole story: composition
-  plus capabilities, dispatched through a spec-typed value, as in Rust. There
-  is no implementation inheritance and none is planned
+  plus capabilities, dispatched through a spec-typed value. There is no
+  implementation inheritance and none is planned
 
 ---
 
@@ -853,8 +1010,7 @@ decisions
 completeness · §6.1 parity suite · §6.4 Wasm silent degradations
 
 **Missing systems**
-§3.3 `Mutex`, `Atomic`, real threads · §7.4 package manager · §10.1 the 11
-empty DIPs
+§3.3 `Mutex`, `Atomic`, real threads · §7.4 package manager
 
 **Surface**
 §4 stdlib completeness and docs · §5 diagnostics · §7.1–7.3 CLI, `azls`,

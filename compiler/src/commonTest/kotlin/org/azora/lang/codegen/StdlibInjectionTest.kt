@@ -223,7 +223,7 @@ class StdlibInjectionTest {
             import std.serializer
 
             func decorated(): Int {
-                inline if (std::reflect<DirectFieldDecoratorFixture::name>).hasDeco<SerialName> {
+                inline if std::reflect<DirectFieldDecoratorFixture::name>.hasDeco<SerialName> {
                     return 1
                 } else {
                     return 0

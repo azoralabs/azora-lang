@@ -101,3 +101,29 @@ deepinline realm "config" {       // labeled realm: reflection metadata + inline
 | `shield` (fields) | externally read-only, internally mutable |
 
 (`intern`/`shared`/`weak` were removed.)
+
+The same three words qualify a declaration, not only a module:
+
+```azora
+expose func api() { … }        // default; importable everywhere
+protect func internal() { … }  // importable within the declaring folder
+confine func helper() { … }    // private to this compilation unit
+```
+
+### 5.1 The two axes combine
+
+`expose` and the reach are independent, which is why they may be written
+together:
+
+```azora
+expose protect func shared() { … }   // auto-imported, bounded to the folder
+expose confine func local() { … }    // auto-available, never leaves this unit
+```
+
+`expose` publishes a declaration into a scope with no explicit `import`; the
+reach beside it bounds how far that publication travels. `expose` written alone
+selects the default reach, which is why it changes nothing on its own.
+
+- ⬜ **Only `confine` is enforced today.** `protect` and the `expose` axis are
+  parsed and recorded on the declaration, and nothing yet compares them against
+  the importing file's folder - the module system is where that check belongs

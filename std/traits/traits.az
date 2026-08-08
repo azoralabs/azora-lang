@@ -35,7 +35,7 @@ realm std {
      * Chooses the type with the highest primitive promotion rank.
      *
      * Promotion is evaluated entirely at compile time. Exact user-defined
-     * `deepinline prop Promote<...>` overloads may specialize pairs, while this
+     * `deepinline prop promote<...>` overloads may specialize pairs, while this
      * variadic overload provides the standard result for two or more primitive
      * types.
      *
@@ -43,7 +43,7 @@ realm std {
      * @return The widest type in T according to Type.rank.
      */
     @Since("0.1")
-    deepinline prop Promote<...T>: Type where T.length >= 2 && T is Number {
+    deepinline prop promote<...T>: Type where T.length >= 2 && T is Number {
         var result: Type = T.0
         for candidate: Type in T[1...] {
             if candidate::rank > result::rank {
@@ -239,14 +239,30 @@ realm std {
     }
 
     /**
-     * Reaching through a value to the one it holds.
+     * Reaching through a value to the one it holds, to read it.
      *
-     * A type that can be written through can be read through, so `.^` implies
-     * `.*` and the two must agree on `To`.
+     * `p.*` borrows the pointee shared, so a type that can only be read through
+     * implements this and stops here.
      */
     @Since("0.1")
     spec Deref<To> {
         oper.* [self: Self&]: To
+    }
+
+    /**
+     * Reaching through a value to the one it holds, to write it.
+     *
+     * `p.^` borrows the pointee exclusively. A type that can be written through
+     * can be read through, which is why this `requires Deref` rather than
+     * redeclaring `.*`: a caller that only reads is not made to ask for write
+     * access, and an implementer states each direction once.
+     *
+     * The split follows the operator names the compiler already uses - `.*` is
+     * `oper Deref` and `.^` is `oper DerefMut` - and the same shape as
+     * `Equal requires PartialEqual`.
+     */
+    @Since("0.1")
+    spec DerefMut<To> requires Deref {
         oper.^ [self: Self!]: To
     }
 }

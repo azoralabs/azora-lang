@@ -422,7 +422,20 @@ sealed class Expr {
     data class Await(val value: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 
     /** `inject Type` - resolve the singleton instance of [typeName] from the DI container. */
-    data class Inject(val typeName: String, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+    /**
+     * `inject Type` - resolve the singleton instance of [typeName].
+     *
+     * [deferred] marks the `lazy inject Type` form: the value is resolved on
+     * its first read rather than where the expression is written, so a
+     * dependency on a path never taken is never built.
+     */
+    data class Inject(
+        val typeName: String,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0,
+        val deferred: Boolean = false,
+    ) : Expr()
 
     /** `arr...` - spread an array's elements as individual call arguments. */
     data class Spread(val array: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
@@ -1094,7 +1107,7 @@ sealed class Stmt {
     /** `defer { body }` - runs [body] when the enclosing function exits. */
     data class Defer(val body: List<Stmt>, override val line: Int, override val column: Int = 0, override val length: Int = 0, val onFail: Boolean = false, val suppress: Boolean = false) : Stmt()
 
-    /** `mem`/`rem`/`ret x: T = init` - reactive state declaration. */
+    /** `remember|retain|preserve <var|val|let|fin> x: T = init` - reactive state. */
     data class RemDecl(
         val name: String,
         val type: TypeAnnotation,
@@ -1102,7 +1115,9 @@ sealed class Stmt {
         override val line: Int,
         override val column: Int = 0,
         override val length: Int = 0,
-        val kind: ReactiveKind = ReactiveKind.REM,
+        val kind: ReactiveKind = ReactiveKind.REMEMBER,
+        /** The binding kind written after the lifetime: `var`, `val`, `let` or `fin`. */
+        val binding: BindingKind = BindingKind.VAR,
     ) : Stmt()
 
     /** `effect { body }` - reactive side-effect; re-runs when tracked `rem` variables change. */
@@ -1341,7 +1356,7 @@ data class TypeFunctionParam(val name: String, val variadic: Boolean = false)
  *
  * A type property receives types and returns a [TypeRef]. It is erased before
  * IR generation and can therefore never be called at runtime; a use site spells
- * it exactly like a generic type (`Promote<T, U>`).
+ * it exactly like a generic type (`promote<T, U>`).
  */
 data class TypeFunctionDecl(
     val name: String,
@@ -1493,7 +1508,36 @@ sealed class TypeAnnotation {
  * the name itself, which keeps the restriction where a reader is already
  * looking.
  */
-enum class Visibility { PUBLIC, CONFINE }
+/**
+ * How far a declaration reaches, and whether it arrives without being asked for.
+ *
+ * These are two independent axes, which is why they combine:
+ *
+ * ```azora
+ * expose func api() { … }           // importable everywhere - the default reach
+ * protect func internal() { … }     // importable within the declaring folder
+ * confine func helper() { … }       // private to this compilation unit
+ * expose protect func shared() { }  // auto-imported, bounded to the folder
+ * expose confine func local() { }   // auto-available, never leaves this unit
+ * ```
+ *
+ * [reach] bounds how far the declaration can be seen at all. [isExposed] says it
+ * is published into that scope with no explicit `import`. `expose` alone selects
+ * the default reach, which is why writing it changes nothing on its own.
+ */
+data class Visibility(
+    val reach: Reach = Reach.PUBLIC,
+    val isExposed: Boolean = false,
+) {
+    /** How far a declaration can be seen. */
+    enum class Reach { PUBLIC, PROTECT, CONFINE }
+
+    companion object {
+        val PUBLIC = Visibility(Reach.PUBLIC)
+        val PROTECT = Visibility(Reach.PROTECT)
+        val CONFINE = Visibility(Reach.CONFINE)
+    }
+}
 
 /**
  * Visibility of a whole module (`[expose] [confine] mod x`).
@@ -1534,7 +1578,29 @@ data class RealmMeta(val label: String?, val isInline: Boolean, val parent: Real
  */
 enum class CastKind { STATIC, DYNAMIC, REINTERPRET }
 
-enum class ReactiveKind { MEM, REM, RET }
+/** Which binding form follows a reactive lifetime: `var`, `val`, `let`, `fin`. */
+enum class BindingKind(val spelling: String, val nameRebindable: Boolean, val valueMutable: Boolean) {
+    VAR("var", nameRebindable = true, valueMutable = true),
+    VAL("val", nameRebindable = true, valueMutable = false),
+    LET("let", nameRebindable = false, valueMutable = true),
+    FIN("fin", nameRebindable = false, valueMutable = false),
+}
+
+/**
+ * How long a reactive binding's value outlives the thing that declared it.
+ *
+ * A ladder, weakest first. Each rung survives everything the one below it does.
+ */
+enum class ReactiveKind(val spelling: String) {
+    /** Survives reactive reruns. */
+    REMEMBER("remember"),
+
+    /** Survives owner recreation in the same process. */
+    RETAIN("retain"),
+
+    /** Serialized and restored across process or application restarts. */
+    PRESERVE("preserve"),
+}
 
 /** Surface callable families supported by first-class lambda values. */
 enum class CallableKind(val surfaceName: String) {
@@ -1693,8 +1759,10 @@ data class FuncDecl(
     val isOverride: Boolean = false,
     /** `virt func` - virtual method (dynamic dispatch). */
     val isVirtual: Boolean = false,
-    /** `task name(...)` - a structured asynchronous function. */
+    /** `async func name(…)` / `async prop name` - a structured asynchronous declaration. */
     val isTask: Boolean = false,
+    /** `react func` - a reactive owner (see REACTIVE_DIP.MD). */
+    val isReactive: Boolean = false,
     /** Declaration requires an explicit unsafe calling context. */
     val isUnsafe: Boolean = false,
     /** Visibility exported to import/member access rules. */
@@ -2138,14 +2206,52 @@ sealed class TopLevel {
     /** `bridge <target> { func sigs }` - declares extern functions for active FFI targets (C/LLVM, Wasm). */
     data class Bridge(val target: String, val funcs: List<BridgeSig>, val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList()) : TopLevel()
 
-    /** `solo Name { fields; methods }` - declares a singleton struct with one lazily-created shared instance. */
+    /** `solo pack Name { fields; methods }` - declares a singleton struct with one lazily-created shared instance. */
     data class Solo(val name: String, val fields: List<PackField>, val methods: List<FuncDecl>, val line: Int, val column: Int = 0, val visibility: Visibility = Visibility.PUBLIC, val annotations: List<Annotation> = emptyList()) : TopLevel()
 
-    /** A singleton registration inside a `wrap` block: `solo Type(args) [bind Spec]`. */
-    data class WrapReg(val typeName: String, val args: List<Expr>, val bindSpec: String? = null, val line: Int = 0, val column: Int = 0)
+    /** A singleton registration inside a `graph` block: `solo Type(args) [bind Spec]`. */
+    /**
+     * How long a provider's value lives.
+     *
+     * The lifetime is the first word of a `graph` entry, and it is the whole
+     * difference between the forms: a graph owns one [SOLO], hands out a fresh
+     * [FACTORY] value each time, and keeps one [SCOPE] value per active scope.
+     */
+    enum class ProviderLifetime(val spelling: String) {
+        SOLO("solo"),
+        FACTORY("factory"),
+        SCOPE("scope"),
+    }
 
-    /** `wrap Name { solo Type(args); Concrete bind Spec }` - a DI container that wires singletons. */
-    data class Wrap(val name: String, val registrations: List<WrapReg>, val line: Int, val column: Int = 0) : TopLevel()
+    /**
+     * One entry in a `graph`: `<lifetime> Type(args) [bind Spec]`.
+     *
+     * @property bindSpecs the specs this definition also answers injections of.
+     */
+    data class GraphReg(
+        val typeName: String,
+        val args: List<Expr>,
+        val bindSpecs: List<String> = emptyList(),
+        val lifetime: ProviderLifetime = ProviderLifetime.SOLO,
+        val line: Int = 0,
+        val column: Int = 0,
+    )
+
+    /**
+     * `graph Name [include [A, B]] { <lifetime> Type(args) [bind Spec] … }` - a
+     * dependency graph.
+     *
+     * @property included graphs whose definitions this one also contains.
+     * @property replaces the graph this one starts from and overrides.
+     */
+    data class Graph(
+        val name: String,
+        val registrations: List<GraphReg>,
+        val line: Int,
+        val column: Int = 0,
+        val included: List<String> = emptyList(),
+        val replaces: String? = null,
+    ) : TopLevel()
 
     /**
      * `import RealmName` or `import RealmName.Item` - imports items from a named realm so they're
@@ -2405,6 +2511,14 @@ data class Program(
      * therefore do not appear here.
      */
     val realmTypeNamespaces: Map<String, String> = emptyMap(),
+    /**
+     * Declarations written inside a `realm test`, mapped to how far each reaches.
+     *
+     * A `realm test` is a visibility rule rather than a namespace, so its members
+     * sit in [items] like any other declaration; this is what records that only
+     * a test may refer to them.
+     */
+    val testRealmMembers: Map<String, Visibility> = emptyMap(),
 ) {
     /** Convenience - returns only the resolved function declarations. */
     val functions: List<FuncDecl> get() = items.filterIsInstance<TopLevel.Func>().map { it.decl }

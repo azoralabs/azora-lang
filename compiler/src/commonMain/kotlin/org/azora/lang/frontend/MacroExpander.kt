@@ -173,7 +173,7 @@ internal object MacroExpander {
                 )
             },
         )
-        is TopLevel.Wrap -> item.copy(
+        is TopLevel.Graph -> item.copy(
             registrations = item.registrations.map { reg ->
                 reg.copy(args = reg.args.map { rewriteExpr(it, macros, depth) })
             },

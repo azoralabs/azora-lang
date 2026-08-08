@@ -88,7 +88,7 @@ class IrSymbolCanonicalizerTest {
         val result = Compiler().compile(
             """
             realm acme::config {
-                solo Settings {
+                solo pack Settings {
                     fin value: Int = 9
                 }
             }

@@ -69,7 +69,7 @@ every active backend in a single pass. Adding a target means one new file under
 
 # Language
 
-Ground truth for this section is the compiler: 71 reserved keywords, listed in
+Ground truth for this section is the compiler: 76 reserved keywords, listed in
 `AzoraSyntaxVocabulary.kt`.
 
 ## Types
@@ -261,7 +261,7 @@ spell, and a type implements the part it wants:
 | `Bitwise` | `& \| ^ << >>` and their `=` forms, `~` |
 | `Neg` / `Logical` | unary `-` / unary `!` |
 | `Indexable` | `[]` `[]=` `[:]` |
-| `Deref` | `.*` `.^` |
+| `Deref` / `DerefMut` | `.*` / `.^` |
 | `PartialEqual` / `Equal` | `==` |
 | `PartialOrder` / `Order` | `<=>` |
 | `Hash` | `hash` |
@@ -428,8 +428,8 @@ Constant folding, constant propagation and dead-code elimination run on the IR.
 
 ## Concurrency
 
-- `async func` and `await`
-- `launch { }` fire-and-forget, joined before exit
+- `async func` and `await`; `async { }` and `async func { }` spawn a task
+- A discarded handle still runs - the program waits for it before exiting
 - `delay <ms>` suspends a task
 - `channel()` with `send` / `receive` / `close`
 - Streams are **library types**, not language constructs: `Sequence<T>` is the
@@ -441,16 +441,18 @@ Constant folding, constant propagation and dead-code elimination run on the IR.
 
 ## Reactivity
 
-- `@Reactive` on a function, task or infix
-- `mem` remembered, `rem` saveable, `ret` retained bindings
+- `react func` and `react async func`
+- `remember` / `retain` / `preserve` lifetimes on a `var`/`val`/`let`/`fin` binding
 - `effect { }` with automatic dependency tracking, `effect x { }` explicit,
   `effect defer { }` cleanup
 
 ## Dependency injection
 
-- `solo Name { }` a lazily created singleton
-- `wrap Name { solo Type(args) }` a container that wires them
-- `inject Type` resolves the instance
+- `solo pack Name { }` a type there is one of
+- `graph Graph { solo|factory|scope Type(args) [bind Spec] }` a dependency graph;
+  the first word is the provider's lifetime
+- `graph Graph include [A, B]` composes graphs
+- `inject Type` resolves; `lazy inject Type` defers to first read
 
 ## Decorators
 

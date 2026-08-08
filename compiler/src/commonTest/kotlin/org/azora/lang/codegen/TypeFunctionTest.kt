@@ -16,7 +16,7 @@ import kotlin.test.assertFailsWith
 /**
  * Compile-time type properties: `deepinline prop Name<...T>: Type { … }`.
  *
- * A use site spells one exactly like a generic type (`Promote<T, U>`), so most
+ * A use site spells one exactly like a generic type (`promote<T, U>`), so most
  * of what is checked here is that the two are told apart correctly.
  */
 class TypeFunctionTest {
@@ -52,11 +52,12 @@ class TypeFunctionTest {
     }
 
     @Test
-    fun aLowercaseTypePropertyNameIsRejected() {
-        val failure = assertFailsWith<IllegalStateException> {
-            Parser(Lexer("deepinline prop wider<A, B>: Type { return A }").tokenize()).parse()
-        }
-        assertTrue("must start with a capital letter" in failure.message.orEmpty(), failure.message.orEmpty())
+    fun aTypePropertyNameMayBeLowercase() {
+        // A type property names a type, but it is not required to look like one:
+        // `std::promote<T, U>` reads better than `std::Promote<T, U>` for
+        // something that computes a type rather than declaring one.
+        val program = Parser(Lexer("deepinline prop wider<A, B>: Type { return A }").tokenize()).parse()
+        assertEquals("wider", program.typeFunctions.single().name)
     }
 
     @Test
@@ -93,7 +94,7 @@ class TypeFunctionTest {
     fun stdlibPromoteSelectsHighestRankedType() {
         assertIs<CompilationResult.Success>(compile("""
             import std.traits
-            func result(): std::Promote<Byte, Int, Long, Double> {
+            func result(): std::promote<Byte, Int, Long, Double> {
                 return 1.0
             }
         """))
@@ -103,7 +104,7 @@ class TypeFunctionTest {
     fun stdlibPromoteRequiresTwoTypes() {
         val failure = assertIs<CompilationResult.Failure>(compile("""
             import std.traits
-            func invalid(): std::Promote<Int> { return 1 }
+            func invalid(): std::promote<Int> { return 1 }
         """))
         assertTrue(failure.errors.any { "'T.length >= 2'" in it }, failure.errors.toString())
     }
@@ -111,7 +112,7 @@ class TypeFunctionTest {
     @Test
     fun fullyQualifiedStdlibPromoteDoesNotRequireImport() {
         assertIs<CompilationResult.Success>(compile("""
-            func result(): std.traits.std::Promote<Int, Double> { return 1.0 }
+            func result(): std.traits.std::promote<Int, Double> { return 1.0 }
         """))
     }
 
@@ -189,7 +190,7 @@ class TypeFunctionTest {
     fun genericFunctionCallUsesTypePropertyForItsResult() {
         assertIs<CompilationResult.Success>(compile("""
             import std.traits
-            func greater<T, U>(a: T, b: U): std::Promote<T, U> {
+            func greater<T, U>(a: T, b: U): std::promote<T, U> {
                 return a + b
             }
             func main() {

@@ -22,7 +22,8 @@ and whether the **value** can be mutated through it:
 | `val`   | yes             | no               | yes                 | no                   |
 | `fin`   | no              | no               | yes                 | no                   |
 
-- `mem` / `rem` / `ret` - reactive bindings (see the Reactive DIP).
+- `remember` / `retain` / `preserve` - a reactive lifetime written in front of
+  one of the four bindings (see the Reactive DIP).
 - All four work in a runtime scope and in a compile-time one: `inline var`,
   `inline let`, `inline val`, `inline fin` are folded at compile time, and
   `deepinline …` recurses through nested inline constructs (see the CTCE DIP).

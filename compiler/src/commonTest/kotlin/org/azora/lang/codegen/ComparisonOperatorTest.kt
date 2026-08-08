@@ -434,4 +434,45 @@ class ComparisonOperatorTest {
             }
         """.trimIndent()))
     }
+
+    /**
+     * A spec that declares only operators still registers a conformance, so
+     * another spec can require it. Before this, `impl Deref<Int> for Box` was
+     * skipped whole - the guard meant for `impl oper== by Map for HashMap`,
+     * where the name is an operand type rather than a spec, caught every
+     * operator impl including the real conformances.
+     */
+    @Test fun anOperatorOnlySpecRegistersItsConformance() {
+        assertEquals("7", run("""
+            import std.io
+            import std.traits
+            pack Box { var v: Int = 0 }
+            impl Deref<Int> for Box {
+                oper.* [self: Self&]: Int { return self.v }
+            }
+            impl DerefMut<Int> for Box {
+                oper.^ [self: Self!]: Int { return self.v }
+            }
+            func main() {
+                var b = Box(7)
+                std::println(b.*)
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun derefMutRequiresDeref() {
+        val result = Compiler().compile("""
+            import std.traits
+            pack Box { var v: Int = 0 }
+            impl DerefMut<Int> for Box {
+                oper.^ [self: Self!]: Int { return self.v }
+            }
+            func main() {}
+        """.trimIndent())
+        assertIs<CompilationResult.Failure>(result)
+        assertTrue(
+            result.errors.any { "cannot implement 'DerefMut' until it also implements 'Deref'" in it },
+            result.errors.toString(),
+        )
+    }
 }

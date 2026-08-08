@@ -102,7 +102,7 @@ Query decorators at compile time:
 
 ```azora
 std::reflect<P>.hasDeco<Serializable>          // Bool
-std::reflect<P>.decoMeta<SerialName>.value      // a decorator field
+std::reflect<P>.annotMeta<SerialName>.value      // a decorator field
 ```
 
 See the Reflection DIP.
@@ -110,5 +110,5 @@ See the Reflection DIP.
 ## 7. `bridge deco`
 
 Compiler-provided decorators (`@Stable`, `@Experimental`, `@Deprecated`,
-`@Derive`, `@Reactive`, `@EnforceNumFields`, `@UncheckedCast`, …) are declared
+`@Derive`, `@EnforceNumFields`, `@UncheckedCast`, …) are declared
 with `bridge deco` - see the Compiler Intrinsic DIP.

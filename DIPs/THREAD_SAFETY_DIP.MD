@@ -141,16 +141,16 @@ ownership DIP:
 | `T*` (raw pointer)                             | never                   | never                   |
 | `T&`                                           | `T` is `Sync`           | `T` is `Sync`           |
 | `T!`                                           | `T` is `Send`           | never                   |
-| `[T]`, `Set<T>`, `Map<K, V>`                   | elements are `Send`     | elements are `Sync`     |
+| `List<T>`, `Set<T>`, `Map<K, V>`               | elements are `Send`     | elements are `Sync`     |
 
 Three lines there carry the weight:
 
 - **`unsafe union` derives nothing**, exactly as it derives no `Clone` today.
   Reading a member no one wrote is already undefined; doing it from two threads
   does not need a separate rule.
-- **`T&` is `Send` when `T` is `Sync`** - this *is* the definition of `Sync`
+- **`T&` : `Send` when `T` is `Sync`** - this *is* the definition of `Sync`
   from §3, written as a derivation rule so the checker has something to apply.
-- **`T!` is never `Sync`.** An exclusive borrow is exclusive; handing it to two
+- **`T!` : never `Sync`.** An exclusive borrow is exclusive; handing it to two
   threads contradicts the word.
 
 A type carrying a field it should not - a raw pointer it manages itself, a
@@ -159,22 +159,22 @@ and the diagnostic names the field (§11).
 
 ### What the existing types get
 
-| type            | `Send`                            | `Sync`             | why                                                                                                    |
-|-----------------|-----------------------------------|--------------------|--------------------------------------------------------------------------------------------------------|
-| `Unique<T>`     | when `T` is `Send`                | when `T` is `Sync` | one owner; moving it moves the only one                                                                |
-| `Shared<T>`     | **no**                            | **no**             | the count is a plain `Int`; two threads retaining at once loses an increment                           |
-| `SyncShared<T>` | when `T` is `Send` **and** `Sync` | same               | many owners across threads means many borrowers across threads, so the pointee needs both              |
-| `Weak<T>`       | **no**                            | **no**             | it upgrades to a `Shared`                                                                              |
-| `Mutex<T>`      | when `T` is `Send`                | when `T` is `Send` | the lock supplies the synchronisation; the contents only ever need to *move* into the critical section |
-| `Guard<T>` (§7) | **no**                            | when `T` is `Sync` | unlock belongs to the locking thread                                                                   |
-| `Channel<T>`    | when `T` is `Send`                | when `T` is `Send` | it exists to move values between threads                                                               |
-| `Atomic<T>`     | always                            | always             | that is the point of it                                                                                |
+| type            | `Send`                           | `Sync`            | why                                                                                                    |
+|-----------------|----------------------------------|-------------------|--------------------------------------------------------------------------------------------------------|
+| `Unique<T>`     | when `T` : `Send`                | when `T` : `Sync` | one owner; moving it moves the only one                                                                |
+| `Shared<T>`     | **no**                           | **no**            | the count is a plain `Int`; two threads retaining at once loses an increment                           |
+| `SyncShared<T>` | when `T` : `Send` **and** `Sync` | same              | many owners across threads means many borrowers across threads, so the pointee needs both              |
+| `Weak<T>`       | **no**                           | **no**            | it upgrades to a `Shared`                                                                              |
+| `Mutex<T>`      | when `T` : `Send`                | when `T` : `Send` | the lock supplies the synchronisation; the contents only ever need to *move* into the critical section |
+| `Guard<T>` (§7) | **no**                           | when `T` : `Sync` | unlock belongs to the locking thread                                                                   |
+| `Channel<T>`    | when `T` : `Send`                | when `T` : `Send` | it exists to move values between threads                                                               |
+| `Atomic<T>`     | always                           | always            | that is the point of it                                                                                |
 
 `Shared` and `SyncShared` being different rows is the whole reason both exist.
 Today the difference is a comment in `std/memory/shared.az`; under this proposal
 it is a compiler error, which is what a reader of that comment already assumes.
 
-`SyncShared<T>` needing `T: Send + Sync` rather than just `Send` is the row
+`SyncShared<T>` needing `T: [Send, Sync]` rather than just `Send` is the row
 people get wrong: several owners on several threads can all borrow the pointee
 at once, so the pointee is genuinely shared, not merely moved.
 
@@ -256,7 +256,7 @@ func withThreads<R>(body: (ThreadScope!) -> R): R
 Used:
 
 ```azora
-var data = [1, 2, 3, 4]
+var data = @arr[1, 2, 3, 4]
 
 std::withThreads { s ->
     fin left  = s.spawn { sum(data.&[0..2]) }
@@ -323,6 +323,8 @@ The single most important decision in this DIP: **a mutex owns its data.**
 module std.parallelism.mutex
 
 realm std {
+    inline prop mutexCond<T>: Bool = T is Send
+    
     /**
      * A value reachable only by locking.
      *
@@ -331,8 +333,10 @@ realm std {
      * `lock`, so "I forgot to take the mutex" stops being a class of bug.
      */
     @Since("0.1")
-    pack Mutex<T> { var _value: T
-        var _handle: Int }
+    pack Mutex<T> where mutexCond<T> {
+        var _value: T
+        var _handle: Int
+    }
 
     /**
      * Proof that the lock is held, and the only way to reach the value.
@@ -342,7 +346,9 @@ realm std {
      * someone remembers.
      */
     @Since("0.1")
-    pack Guard<T> { var _owner: Mutex<T>* }
+    pack Guard<T> derive [Deref, DerefMut] {
+        var _owner: Mutex<T>*
+    }
 
     impl Mutex<T> {
         /** Blocks until the lock is held. */
@@ -351,23 +357,20 @@ realm std {
 
         /** Takes the lock if it is free, otherwise returns null. */
         @Since("0.1")
-        func tryLock[self: Self&](): Guard<T>?&[self]
+        func tryLock[self: Self&](): Guard<T>&?[self]
 
         /** The value, without locking - sound only because `self` is exclusive. */
         @Since("0.1")
         func get[self: Self!](): T![self]
     }
-
+    
     impl Guard<T> {
-        @Since("0.1")
-        oper.* [self: Self&]: T
-
         @Since("0.1")
         func value[self: Self!](): T![self]
     }
 
     @Since("0.1")
-    func mutexOf<T>(value: T): Mutex<T> where T is Send
+    func mutexOf<T>(value: T): Mutex<T> where mutexCond<T>
 }
 ```
 
@@ -428,7 +431,7 @@ where the compiler must emit real instructions rather than call into a runtime.
 
 ```azora
 @Since("0.1")
-pack Atomic<T> where T is Copy { var _value: T }
+pack Atomic<T> where T: Copy { var _value: T }
 
 impl Atomic<T> {
     @Since("0.1")
@@ -445,7 +448,7 @@ impl Atomic<T> {
     func cas[self: Self&](expected: T, desired: T, order: Ordering = .AcqRel): Bool
 
     @Since("0.1")
-    func add[self: Self&](delta: T, order: Ordering = .AcqRel): T where T is Number
+    func add[self: Self&](delta: T, order: Ordering = .AcqRel): T where T: Number
 }
 
 @Since("0.1")
@@ -477,7 +480,7 @@ closing the `SymbolCollector` note that has been waiting on it:
 
 ```azora
 @Since("0.1")
-pack Channel<T> where T is Send { … }
+pack Channel<T> where T: Send { … }
 
 impl Channel<T> {
     /** Hands the value to the channel. The sender no longer owns it. */
@@ -498,7 +501,7 @@ impl Channel<T> {
 sent value afterwards without any channel-specific rule - the existing "use of
 taken value" diagnostic already says the right thing.
 
-The `where T is Send` on the pack is what makes a channel a *thread* channel: it
+The `where T: Send` on the pack is what makes a channel a *thread* channel: it
 is the type-level statement that values leave the sending thread.
 
 ---
@@ -577,7 +580,7 @@ Ordered so that each phase is useful on its own and nothing lands half-checked.
 | 1     | `Atomic<T>` and `Ordering` as compiler-known types; atomic instructions in all three backends | `SymbolCollector`, `LlvmCodegen`, `WasmCodegen`, `IrInterpreter`                            |
 | 2     | `Send` / `Sync` specs and field-wise derivation, no enforcement yet                           | `std/traits/traits.az`, `std/traits/core.az`, `SymbolCollector.deriveOwnershipCapabilities` |
 | 3     | `Mutex<T>`, `Guard<T>`, `RwLock<T>`, `Once`, `Latch` in `std.parallelism.mutex`               | `std/parallelism/`                                                                          |
-| 4     | `spawn` / `JoinHandle` / `withThreads`, with `where T is Send` enforced                       | `std/parallelism/thread.az`, `TypeResolver`                                                 |
+| 4     | `spawn` / `JoinHandle` / `withThreads`, with `where T: Send` enforced                         | `std/parallelism/thread.az`, `TypeResolver`                                                 |
 | 5     | capture checking at `spawn`; borrow captures allowed only under `withThreads`                 | `TypeResolver`                                                                              |
 | 6     | `unsafe impl`, and rejecting a plain `impl Send`                                              | `Parser`, `SymbolCollector`                                                                 |
 | 7     | `Channel<T>` moves into std; drop the `channel()` builtin                                     | `std/parallelism/channel.az`, `SymbolCollector`                                             |
@@ -629,7 +632,7 @@ Independent of any new feature, and worth doing whether or not the rest lands:
    platforms with thread-affine mutexes and costs the ability to hand a locked
    guard to a helper thread. Most programs never notice; the ones that do,
    notice sharply.
-3. **Does `spawn` need `where T is Send` on the closure type itself**, or is
+3. **Does `spawn` need `where T: Send` on the closure type itself**, or is
    checking each capture (§6) enough? Capture checking gives better
    diagnostics; a bound on the closure type composes better through generics.
    Probably both, with the bound as the backstop.

@@ -298,7 +298,7 @@ A compile-time `deepinline prop` accepts both a length constraint and an
 `is Spec` conformance bound, combined with `&&`:
 
 ```azora
-deepinline prop Promote<...T>: Type where T.length >= 2 && T is Number {
+deepinline prop promote<...T>: Type where T.length >= 2 && T is Number {
     // choose the widest numeric type in the pack …
 }
 ```

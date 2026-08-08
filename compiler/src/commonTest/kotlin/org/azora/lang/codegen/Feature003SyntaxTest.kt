@@ -140,13 +140,14 @@ class Feature003SyntaxTest {
         """.trimIndent()))
     }
 
-    @Test fun memRemRetAreReactiveBindings() {
+    @Test fun reactiveLifetimesAreBindingModifiers() {
         assertEquals("15", run("""
             import std.io
-            func main() {
-                mem a: Int = 1
-                rem b: Int = 2
-                ret c: Int = 3
+            import std.reactive
+                        react func main() {
+                remember var a: Int = 1
+                retain var b: Int = 2
+                preserve var c: Int = 3
                 a = 4
                 b = 5
                 c = 6
@@ -394,6 +395,7 @@ class Feature003SyntaxTest {
     @Test fun activeCodegenTargetsAreProducedForNewSyntax() {
         val result = compile("""
             import std.io
+            import std.reactive
             pack Counter {
                 var value: Int
             }
@@ -405,8 +407,8 @@ class Feature003SyntaxTest {
             func peek[self: Counter&](): Int {
                 return self.value
             }
-            func main() {
-                mem label: String = "value="
+                        react func main() {
+                preserve fin label: String = "value="
                 var c = Counter(40)
                 c.bump()
                 std::println(label + c.peek())

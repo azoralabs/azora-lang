@@ -20,9 +20,11 @@ class Tier3DiTest {
         // `inject` returns the SAME singleton instance every time.
         assertEquals("1\n2\n3", run("""
             import std.io
-            solo Counter {
+            solo pack Counter {
                 var count: Int = 0
-                func inc(): Int {
+            }
+            impl Counter {
+                func inc[self: Self!](): Int {
                     self.count = self.count + 1
                     return self.count
                 }
@@ -40,9 +42,11 @@ class Tier3DiTest {
     @Test fun singletonMethodsCallableViaInject() {
         assertEquals("42", run("""
             import std.io
-            solo Config {
+            solo pack Config {
                 var value: Int = 42
-                func get(): Int {
+            }
+            impl Config {
+                func get[self: Self!](): Int {
                     return self.value
                 }
             }
@@ -55,7 +59,7 @@ class Tier3DiTest {
     @Test fun singletonFieldsAccessible() {
         assertEquals("hello", run("""
             import std.io
-            solo Greeting {
+            solo pack Greeting {
                 var msg: String = "hello"
             }
             func main() {
@@ -74,7 +78,7 @@ class Tier3DiTest {
             pack DB {
                 var url: String
             }
-            wrap App {
+            graph App {
                 solo Logger("APP")
                 solo DB("postgres://localhost")
             }
@@ -93,7 +97,7 @@ class Tier3DiTest {
             pack Logger {
                 var prefix: String
             }
-            wrap App {
+            graph App {
                 solo Logger("test")
             }
             func main() {
@@ -108,6 +112,97 @@ class Tier3DiTest {
                 if b.prefix == "written through a" {
                     std::println("same")
                 }
+            }
+        """.trimIndent()))
+    }
+
+    @Test
+    fun lazyInjectParsesAndResolves() {
+        // `lazy` marks the injection as deferred. Nothing defers yet - both
+        // forms resolve eagerly - so this pins the syntax, not the semantics.
+        assertEquals("64", run("""
+            import std.io
+            solo pack Cache { fin size: Int = 64 }
+            func main() {
+                fin c = lazy inject Cache
+                std::println(c.size)
+            }
+        """.trimIndent()))
+    }
+
+    @Test
+    fun lazyOnItsOwnIsRejected() {
+        val result = Compiler().compile("func main() { fin x = lazy 5 }")
+        assertIs<CompilationResult.Failure>(result)
+        assertTrue(
+            result.errors.any { "'lazy' must be followed by 'inject'" in it },
+            result.errors.toString(),
+        )
+    }
+
+    @Test
+    fun aWrapEntryStatesItsLifetime() {
+        // The lifetime is the entry's first word, and it is the whole
+        // difference between the forms.
+        val result = Compiler().compile(
+            """
+            pack Service { fin url: String = "" }
+            graph AppGraph { Service("https://x") }
+            func main() {}
+            """.trimIndent(),
+        )
+        assertIs<CompilationResult.Failure>(result)
+        assertTrue(
+            result.errors.any { "starts with its lifetime" in it },
+            result.errors.toString(),
+        )
+    }
+
+    @Test
+    fun everyProviderLifetimeAndGraphCompositionParse() {
+        assertEquals("https://api", run("""
+            import std.io
+            spec Api { func host[self: Self&](): String }
+            pack Config { fin url: String = "" }
+            pack HttpClient { fin url: String = "" }
+            impl Api for HttpClient { func host[self: Self&](): String { return self.url } }
+            pack LoginViewModel { fin tag: String = "" }
+
+            graph NetworkGraph {
+                solo Config("https://api")
+                solo HttpClient("https://api") bind Api
+            }
+
+            graph AppGraph include [NetworkGraph] {
+                factory LoginViewModel("transient")
+                scope LoginViewModel("per-scope")
+            }
+
+            func main() { std::println(inject Config.url) }
+        """.trimIndent()))
+    }
+
+    /**
+     * `include` composes graphs, and is contextual rather than reserved: it is an
+     * ordinary word that programs already use as a name - `std/serializer.az`
+     * has a local called `include` - and reserving it would take that name from
+     * every one of them.
+     */
+    @Test
+    fun includeComposesGraphsWithoutTakingTheNameFromPrograms() {
+        assertEquals("kept\n42", run("""
+            import std.io
+            pack Config { fin url: String = "" }
+            graph BaseGraph { solo Config("u") }
+            graph AppGraph include BaseGraph { }
+
+            func include(n: Int): Int { return n }
+
+            func main() {
+                var include = true
+                fin used = if include { "kept" } else { "dropped" }
+                std::println(used)
+                std::println(include(42))
             }
         """.trimIndent()))
     }

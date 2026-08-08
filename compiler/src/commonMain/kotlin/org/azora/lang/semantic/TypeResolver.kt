@@ -679,7 +679,10 @@ class TypeResolver(private val table: SymbolTable) {
         line: Int,
     ): IrType? {
         if (function.variadic) {
-            args.forEach { resolveExpr(it) ?: return null }
+            args.forEachIndexed { index, argument ->
+                val expected = function.params.getOrNull(index) ?: function.params.lastOrNull()
+                resolveContextualArgument(argument, expected) ?: return null
+            }
             return function.ret
         }
         if (args.size < function.params.size || args.size > function.params.size + function.receivers.size) {
@@ -691,7 +694,7 @@ class TypeResolver(private val table: SymbolTable) {
         }
         val expectedExplicit = function.params + function.receivers.take(args.size - function.params.size)
         for (i in args.indices) {
-            val actual = resolveExpr(args[i]) ?: return null
+            val actual = resolveContextualArgument(args[i], expectedExplicit[i]) ?: return null
             if (!isCompatible(expectedExplicit[i], actual)) {
                 errors.add("line $line: arg ${i + 1} of '$label': expected ${expectedExplicit[i]}, got $actual")
             }
@@ -705,6 +708,22 @@ class TypeResolver(private val table: SymbolTable) {
             return null
         }
         return function.ret
+    }
+
+    /** Resolves one argument with the callable type expected at that position. */
+    private fun resolveContextualArgument(argument: Expr, expected: IrType?): IrType? {
+        val savedParams = expectedLambdaParamTypes
+        val savedReceivers = expectedLambdaReceiverTypes
+        if (argument is Expr.Lambda && expected is IrType.Function) {
+            expectedLambdaParamTypes = expected.params
+            expectedLambdaReceiverTypes = expected.receivers
+        }
+        return try {
+            resolveExpr(argument)
+        } finally {
+            expectedLambdaParamTypes = savedParams
+            expectedLambdaReceiverTypes = savedReceivers
+        }
     }
 
     /** If [expr] is `ErrSet.Variant`, returns the error-set name; otherwise null. */
@@ -1348,18 +1367,7 @@ class TypeResolver(private val table: SymbolTable) {
                     for (i in effectiveArgs.indices) {
                         val argument = effectiveArgs[i]
                         val fieldType = struct.fields[i].type
-                        val savedParams = expectedLambdaParamTypes
-                        val savedReceivers = expectedLambdaReceiverTypes
-                        if (argument is Expr.Lambda && fieldType is IrType.Function) {
-                            expectedLambdaParamTypes = fieldType.params
-                            expectedLambdaReceiverTypes = fieldType.receivers
-                        }
-                        val argType = try {
-                            resolveExpr(argument)
-                        } finally {
-                            expectedLambdaParamTypes = savedParams
-                            expectedLambdaReceiverTypes = savedReceivers
-                        } ?: return null
+                        val argType = resolveContextualArgument(argument, fieldType) ?: return null
                         if (struct.typeParams.isEmpty()) {
                             if (!isCompatible(fieldType, adoptLiteralType(argument, argType, fieldType))) {
                                 errors.add("line ${expr.line}: field '${struct.fields[i].name}' of '${expr.callee}': expected $fieldType, got $argType")
@@ -1470,30 +1478,16 @@ class TypeResolver(private val table: SymbolTable) {
                 val isGeneric = func.typeParams.isNotEmpty()
                 val argTypes = mutableListOf<IrType>()
                 for (i in effectiveArgs.indices) {
-                    // `it` inference: if this argument is an implicit-`it` lambda, seed `it`'s type
-                    // from the corresponding function-parameter type before resolving it.
                     val arg = effectiveArgs[i]
-                    val prevIt = expectedLambdaParamTypes
-                    val prevReceivers = expectedLambdaReceiverTypes
-                    if (arg is Expr.Lambda && (i < func.params.size || func.isVariadic)) {
-                        val declaredType = func.params.getOrNull(i)?.second ?: func.params.last().second
-                        val ptype = if (func.isVariadic && i >= func.params.lastIndex) {
-                            (declaredType as? IrType.Array)?.element ?: declaredType
-                        } else {
-                            declaredType
-                        }
-                        if (ptype is IrType.Function) {
-                            expectedLambdaParamTypes = ptype.params
-                            expectedLambdaReceiverTypes = ptype.receivers
-                        }
+                    val declaredType = func.params.getOrNull(i)?.second
+                        ?: func.params.lastOrNull()?.second
+                        ?: IrType.Any
+                    val paramType = if (func.isVariadic && i >= func.params.lastIndex) {
+                        (declaredType as? IrType.Array)?.element ?: declaredType
+                    } else {
+                        declaredType
                     }
-                    val argType = resolveExpr(arg) ?: run {
-                        expectedLambdaParamTypes = prevIt
-                        expectedLambdaReceiverTypes = prevReceivers
-                        return null
-                    }
-                    expectedLambdaParamTypes = prevIt
-                    expectedLambdaReceiverTypes = prevReceivers
+                    val argType = resolveContextualArgument(arg, paramType) ?: return null
                     argTypes.add(argType)
                     // `f(x)` where the parameter is `p!` borrows x exclusively, so
                     // the callee may write through it - which a `val`/`fin` binding
@@ -1512,14 +1506,6 @@ class TypeResolver(private val table: SymbolTable) {
                         if (!isLend(arg)) checkByValueTransfer(arg, argType, expr.line)
                     }
                     if (!isGeneric) {
-                        val declaredType = func.params.getOrNull(i)?.second
-                            ?: func.params.lastOrNull()?.second
-                            ?: IrType.Any
-                        val paramType = if (func.isVariadic && i >= func.params.lastIndex) {
-                            (declaredType as? IrType.Array)?.element ?: declaredType
-                        } else {
-                            declaredType
-                        }
                         if (!isCompatible(paramType, adoptLiteralType(effectiveArgs[i], argType, paramType))) {
                             errors.add("line ${expr.line}: arg ${i + 1} of '${expr.callee}': expected $paramType, got $argType")
                         }
@@ -1860,7 +1846,7 @@ class TypeResolver(private val table: SymbolTable) {
                                 return null
                             }
                             for (i in expr.args.indices) {
-                                val at = resolveExpr(expr.args[i]) ?: return null
+                                val at = resolveContextualArgument(expr.args[i], variant.second[i]) ?: return null
                                 if (!isCompatible(variant.second[i], at)) {
                                     errors.add("line ${expr.line}: payload ${i+1} of '${expr.name}': expected ${variant.second[i]}, got $at")
                                 }
@@ -1893,19 +1879,7 @@ class TypeResolver(private val table: SymbolTable) {
                         for (i in expr.args.indices) {
                             val paramType = func.params[i + 1].second
                             val argument = expr.args[i]
-                            val savedParams = expectedLambdaParamTypes
-                            val savedReceivers = expectedLambdaReceiverTypes
-                            if (argument is Expr.Lambda && paramType is IrType.Function) {
-                                expectedLambdaParamTypes = paramType.params
-                                expectedLambdaReceiverTypes = paramType.receivers
-                            }
-                            val argType = resolveExpr(argument) ?: run {
-                                expectedLambdaParamTypes = savedParams
-                                expectedLambdaReceiverTypes = savedReceivers
-                                return null
-                            }
-                            expectedLambdaParamTypes = savedParams
-                            expectedLambdaReceiverTypes = savedReceivers
+                            val argType = resolveContextualArgument(argument, paramType) ?: return null
                             if (!isCompatible(paramType, argType)) {
                                 errors.add("line ${expr.line}: arg ${i + 1} of '${expr.name}': expected $paramType, got $argType")
                             }
@@ -1921,7 +1895,10 @@ class TypeResolver(private val table: SymbolTable) {
                                 errors.add("line ${expr.line}: property '${expr.name}' must be accessed without parentheses")
                                 return null
                             }
-                            for (argument in expr.args) resolveExpr(argument)
+                            for (i in expr.args.indices) {
+                                resolveContextualArgument(expr.args[i], func.params.getOrNull(i + 1)?.second)
+                                    ?: return null
+                            }
                             return func.returnType
                         }
                     }
@@ -1949,9 +1926,10 @@ class TypeResolver(private val table: SymbolTable) {
                             return null
                         }
                         for (i in expr.args.indices) {
-                            val argType = resolveExpr(expr.args[i]) ?: return null
-                            if (!isCompatible(specMethod.paramTypes[i], argType)) {
-                                errors.add("line ${expr.line}: arg ${i + 1} of '${expr.name}': expected ${specMethod.paramTypes[i]}, got $argType")
+                            val paramType = specMethod.paramTypes[i]
+                            val argType = resolveContextualArgument(expr.args[i], paramType) ?: return null
+                            if (!isCompatible(paramType, argType)) {
+                                errors.add("line ${expr.line}: arg ${i + 1} of '${expr.name}': expected $paramType, got $argType")
                             }
                         }
                         return specMethod.returnType
@@ -1973,8 +1951,8 @@ class TypeResolver(private val table: SymbolTable) {
                             return null
                         }
                         for (i in expr.args.indices) {
-                            val argType = resolveExpr(expr.args[i]) ?: return null
                             val paramType = func.params[i + 1].second
+                            val argType = resolveContextualArgument(expr.args[i], paramType) ?: return null
                             if (!isCompatible(paramType, argType)) {
                                 errors.add("line ${expr.line}: arg ${i + 1} of '${expr.name}': expected $paramType, got $argType")
                             }

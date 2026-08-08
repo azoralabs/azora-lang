@@ -364,10 +364,10 @@ class ReactivityTest {
                 var source = std::state(1)
                 var latest = 0
                 var calls = 0
-                var subscription = std::observe(source, { value: Int ->
+                var subscription = std::observe(source) { value: Int ->
                     latest = value
                     calls += 1
-                })
+                }
                 source.set(7)
                 std::println("${'$'}{latest}:${'$'}{calls}")
                 subscription.dispose()

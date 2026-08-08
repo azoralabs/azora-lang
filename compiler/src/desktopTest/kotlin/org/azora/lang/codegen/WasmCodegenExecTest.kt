@@ -50,6 +50,19 @@ class WasmCodegenExecTest {
         check("Hello, 7!", main("std::print(\"Hello, \" )\nstd::print(7)\nstd::println(\"!\")"))
     @Test fun arithmetic() = check("14", main("""std::println(2 + 3 * 4)"""))
 
+    @Test fun trailingLambdaExecutesThroughCallableParameter() = check(
+        "12",
+        """
+            import std.io
+            func apply(value: Int, action: (Int) -> Int): Int {
+                return action(value)
+            }
+            func main() {
+                std::println(apply(4) { value -> value * 3 })
+            }
+        """.trimIndent(),
+    )
+
     @Test fun lazyFinInitializesOnFirstReadOnly() = check(
         "before\ninit\n42\n42",
         """

@@ -306,10 +306,10 @@ test "state notifies in registration order and disposal is idempotent" {
     var source = std::state(1)
     var observed = 0
     var calls = 0
-    var subscription = std::observe(source, { value: Int ->
+    var subscription = std::observe(source) { value: Int ->
         observed = value
         calls += 1
-    })
+    }
     source.set(7)
     assert observed == 7 { "observer did not receive the latest state" }
     assert calls == 2 { "observer must receive the initial value and first update" }
@@ -322,7 +322,7 @@ test "state notifies in registration order and disposal is idempotent" {
 test "derived state reads the latest inputs" {
     var left = 2
     var right = 3
-    fin total = std::computed({ left + right })
+    fin total = std::computed { left + right }
     assert total.value == 5 { "derived value used incorrect initial inputs" }
     right = 8
     assert total.value == 10 { "derived value did not read the latest inputs" }

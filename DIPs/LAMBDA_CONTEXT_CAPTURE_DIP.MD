@@ -46,10 +46,21 @@ ordinary arguments and are omitted when the lambda is the only argument:
 fin subscription = Subscription(true) { disposeResource() }
 fin greeting = run { "hello" }
 runner.observe { value -> trace { value } }
+fin transformed = transform(seed: 4) { value -> value * 2 }
+fin indirect = (callbackHost) { "called through a value" }
+fin sequence = std::sequence<Int> [s: std::SequenceScope<Int>!] { std::yield(1) }
+fin named = build [context: BuildContext&] { context.finish() }
+fin configured = build(mode: .Fast) [context: BuildContext&] { context.finish() }
 ```
 
 The `{` reopens statement context, so newlines inside a trailing lambda still
 separate statements instead of being swallowed by an earlier argument list.
+The rule is uniform for free and generic functions, realm-qualified calls,
+constructors, methods, callable fields and variables, and arbitrary expressions
+whose type is callable. The expected final parameter supplies omitted lambda
+parameter and contextual-receiver types in every one of those forms. A receiver
+lambda may therefore trail a call as `[name: Type&] { ... }`, with or without
+ordinary arguments in parentheses.
 
 The last expression statement of a lambda body becomes its `return`. That is a
 parser rewrite, not an inference: `DO_NOT_INFER_RETURN_TYPE.MD` governs

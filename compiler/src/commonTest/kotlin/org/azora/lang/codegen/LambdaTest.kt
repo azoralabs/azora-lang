@@ -139,6 +139,145 @@ class LambdaTest {
         """.trimIndent()))
     }
 
+    @Test fun trailingLambdaFollowsNamedAndOrdinaryArguments() {
+        assertEquals("[Azora]", run("""
+            import std.io
+            func render(prefix: String, action: () -> String): String {
+                return prefix + action()
+            }
+            func main() {
+                std::println(render(prefix: "[") { "Azora]" })
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun genericAndRealmQualifiedCallsAcceptTrailingLambdas() {
+        assertEquals("qualified", run("""
+            import std.io
+            import std.reactive
+            func main() {
+                std::println(std::untracked<String> { "qualified" })
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun contextualReceiverLambdaCanTrailGenericQualifiedCall() {
+        assertEquals("receiver", run("""
+            import std.io
+            pack Context { fin value: String }
+            func run<T>(fallback: T, action: [Context&] -> T): T {
+                fin context = Context("receiver")
+                var result = fallback
+                with context { result = action() }
+                return result
+            }
+            func main() {
+                std::println(run<String>("") [context: Context&] { context.value })
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun contextualReceiverLambdaCanTrailParenthesizedArguments() {
+        assertEquals("prefixed", run("""
+            import std.io
+            pack Context { fin value: String }
+            func render(prefix: String, action: [Context&] -> String): String {
+                fin context = Context("fixed")
+                var result = prefix
+                with context { result += action() }
+                return result
+            }
+            func main() {
+                std::println(render("pre") [context: Context&] { context.value })
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun callableVariableAcceptsContextuallyTypedTrailingLambda() {
+        assertEquals("variable", run("""
+            import std.io
+            func main() {
+                fin invoke: (() -> String) -> String =
+                    func(action: () -> String) { return action() }
+                std::println(invoke { "variable" })
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun callablePackFieldAcceptsTrailingLambda() {
+        assertEquals("field", run("""
+            import std.io
+            pack Runner {
+                fin invoke: (() -> String) -> String =
+                    func(action: () -> String) { return action() }
+            }
+            func main() {
+                std::println(Runner().invoke { "field" })
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun groupedCallableExpressionAcceptsTrailingLambda() {
+        assertEquals("grouped", run("""
+            import std.io
+            func main() {
+                fin invoke: (() -> String) -> String =
+                    func(action: () -> String) { return action() }
+                std::println((invoke) { "grouped" })
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun primitiveExtensionMethodAcceptsTrailingLambda() {
+        assertEquals("12", run("""
+            import std.io
+            impl Int {
+                func map[self: Self&](action: (Int) -> Int): Int {
+                    return action(self)
+                }
+            }
+            func main() {
+                std::println(4.map { value -> value * 3 })
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun variantPayloadAcceptsContextuallyTypedTrailingLambda() {
+        assertEquals("variant", run("""
+            import std.io
+            variant enum Work {
+                Run(() -> String)
+            }
+            func main() {
+                fin work = Work.Run { "variant" }
+                when work {
+                    Work.Run(action) -> { std::println(action()) }
+                }
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun specMethodAcceptsContextuallyTypedTrailingLambda() {
+        assertEquals("spec", run("""
+            import std.io
+            spec Executor {
+                func execute[self: Self&](action: () -> String): String
+            }
+            pack Direct
+            impl Executor for Direct {
+                func execute[self: Self&](action: () -> String): String {
+                    return action()
+                }
+            }
+            func executeWith(executor: Executor): String {
+                return executor.execute { "spec" }
+            }
+            func main() {
+                std::println(executeWith(Direct()))
+            }
+        """.trimIndent()))
+    }
+
     @Test fun callableKindsAreStorablePackFields() {
         assertEquals("5\n2", run("""
             import std.io

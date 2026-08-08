@@ -5036,7 +5036,13 @@ class Parser(
         if (token.type != TokenType.IDENTIFIER || token.lexeme != "where") return null
         while (current < at) advance()
         advance() // 'where'
-        return parseSpecBounds() ?: parseExpr()
+        val savedTrailing = allowTrailingLambda
+        allowTrailingLambda = false
+        return try {
+            parseSpecBounds() ?: parseExpr()
+        } finally {
+            allowTrailingLambda = savedTrailing
+        }
     }
 
     /**
@@ -6578,7 +6584,13 @@ class Parser(
             }
             return Stmt.Scope(stmts, start.line, start.column)
         }
-        val parsedIterable = parseExpr()
+        val savedTrailing = allowTrailingLambda
+        allowTrailingLambda = false
+        val parsedIterable = try {
+            parseExpr()
+        } finally {
+            allowTrailingLambda = savedTrailing
+        }
         // The general expression parser also supports free-form infix calls, so
         // `items with index` initially has the shape `items.with(index)`. Unwrap
         // that parser-level representation here because `with index` belongs to
@@ -7997,6 +8009,11 @@ class Parser(
                         else -> error("'::' must follow a namespace name at line ${peek().line}")
                     }
                 }
+                allowTrailingLambda && check(TokenType.L_BRACKET) && isReceiverLambdaAhead() -> {
+                    val lambda = parseReceiverLambda()
+                    expr = appendTrailingLambda(expr, lambda, pendingCallTypeArgs)
+                    pendingCallTypeArgs = emptyList()
+                }
                 check(TokenType.L_BRACKET) -> {
                     advance()
                     // `a[start:stop:step]` - a Python-style slice → oper[:]. An absent
@@ -8129,11 +8146,14 @@ class Parser(
                         match(TokenType.COMMA)
                     }
                     consume(TokenType.R_PAREN, "Expected ')' after arguments")
-                    // Trailing lambda: f(args) { x -> ... }
+                    // Trailing lambda: `f(args) { x -> ... }` or
+                    // `f(args) [context: Context&] { ... }`.
                     if (allowTrailingLambda && check(TokenType.L_BRACE)) {
                         val lb = peek()
                         val isAsync = expr is Expr.Identifier && expr.name == "async"
                         args.add(parseLambda(lb.line, lb.column, implicitIt = !isAsync))
+                    } else if (allowTrailingLambda && check(TokenType.L_BRACKET) && isReceiverLambdaAhead()) {
+                        args.add(parseReceiverLambda())
                     }
                     expr = when (expr) {
                         is Expr.Identifier -> {
@@ -8147,8 +8167,7 @@ class Parser(
                         else -> Expr.Call("", args, expr.line, expr.column, expr.length, receiver = expr)
                     }
                 }
-                allowTrailingLambda && check(TokenType.L_BRACE) &&
-                    (expr is Expr.Identifier || expr is Expr.Member) -> {
+                allowTrailingLambda && check(TokenType.L_BRACE) -> {
                     val lb = peek()
                     val isAsync = expr is Expr.Identifier && expr.name == "async"
                     val lambda = parseLambda(lb.line, lb.column, implicitIt = !isAsync)
@@ -8173,11 +8192,51 @@ class Parser(
                             expr.column,
                             expr.length,
                         )
+                        else -> Expr.Call(
+                            "",
+                            listOf(lambda),
+                            expr.line,
+                            expr.column,
+                            expr.length,
+                            receiver = expr,
+                        )
                     }
                 }
                 else -> return expr
             }
         }
+    }
+
+    /** Adds a parenthesis-free trailing lambda to any callable expression. */
+    private fun appendTrailingLambda(
+        target: Expr,
+        lambda: Expr.Lambda,
+        typeArgs: List<TypeRef>,
+    ): Expr = when (target) {
+        is Expr.Identifier -> Expr.Call(
+            target.name,
+            listOf(lambda),
+            target.line,
+            target.column,
+            target.length,
+            typeArgs,
+        )
+        is Expr.Member -> Expr.MethodCall(
+            target.target,
+            target.name,
+            listOf(lambda),
+            target.line,
+            target.column,
+            target.length,
+        )
+        else -> Expr.Call(
+            "",
+            listOf(lambda),
+            target.line,
+            target.column,
+            target.length,
+            receiver = target,
+        )
     }
 
     /**
@@ -8242,13 +8301,14 @@ class Parser(
     /**
      * Whether the token after a closing `>` continues a generic application.
      *
-     * `f<T>(args)` is a call; `reflect<T>.fields` reads a member of one. Both are
-     * applications of type arguments, so both keep `<` from being read as
-     * less-than.
+     * `f<T>(args)` and `f<T> { body }` are calls; `reflect<T>.fields` reads a
+     * member of one. All are applications of type arguments, so all keep `<`
+     * from being read as less-than.
      */
     private fun closesGenericApplication(closingIndex: Int): Boolean =
         when (tokens.getOrNull(closingIndex + 1)?.type) {
-            TokenType.L_PAREN, TokenType.DOT -> true
+            TokenType.L_PAREN, TokenType.L_BRACE, TokenType.DOT -> true
+            TokenType.L_BRACKET -> isReceiverLambdaAhead(closingIndex + 1)
             else -> false
         }
 
@@ -8487,11 +8547,11 @@ class Parser(
      * Distinguished from a map literal by the `{` that must follow the matching
      * `]`, and from a type list by the `name:` shape of the first entry.
      */
-    private fun isReceiverLambdaAhead(): Boolean {
-        if (peekNext()?.type != TokenType.IDENTIFIER) return false
-        if (tokens.getOrNull(current + 2)?.type != TokenType.COLON) return false
+    private fun isReceiverLambdaAhead(startIndex: Int = current): Boolean {
+        if (tokens.getOrNull(startIndex + 1)?.type != TokenType.IDENTIFIER) return false
+        if (tokens.getOrNull(startIndex + 2)?.type != TokenType.COLON) return false
         var depth = 0
-        var i = current
+        var i = startIndex
         while (i < tokens.size) {
             when (tokens[i].type) {
                 TokenType.L_BRACKET -> depth++

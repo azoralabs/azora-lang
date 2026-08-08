@@ -29,16 +29,16 @@ import std.container.list
  * return type says what kind of stream it is:
  *
  * ```azora
- * func values(): std::Sequence<Int> = std::sequence([s: std::SequenceScope<Int>!]{
+ * func values(): std::Sequence<Int> = std::sequence<Int> [s: std::SequenceScope<Int>!] {
  *     std::yield(1)
  *     std::yield(2)
- * })
+ * }
  *
- * func countdown(from: Int): std::Flow<Int> = std::flow([c: std::FlowCollector<Int>!]{
+ * func countdown(from: Int): std::Flow<Int> = std::flow<Int> [c: std::FlowCollector<Int>!] {
  *     reverse for n in from..0 {
  *         std::emit(n)
  *     }
- * })
+ * }
  * ```
  *
  * The builder runs its producer to completion when it is called, collecting
@@ -173,28 +173,28 @@ realm std {
 }
 
 test "sequence collects every yielded value in order" {
-    fin values = std::sequence([s: std::SequenceScope<Int>!]{
+    fin values = std::sequence<Int> [s: std::SequenceScope<Int>!] {
         std::yield(1)
         std::yield(2)
         std::yield(3)
-    })
+    }
     var seen = ""
-    values.collect({ n -> seen += "$n" })
+    values.collect { n -> seen += "$n" }
     assert seen == "123" { "sequence must preserve yield order" }
 }
 
 test "flow collects every emitted value in order" {
-    fin events = std::flow([c: std::FlowCollector<Int>!]{
+    fin events = std::flow<Int> [c: std::FlowCollector<Int>!] {
         std::emit(10)
         std::emit(20)
-    })
+    }
     var total = 0
-    events.collect({ n -> total += n })
+    events.collect { n -> total += n }
     assert total == 30 { "flow must deliver every emitted value" }
 }
 
 test "an empty producer yields an empty stream" {
-    fin values = std::sequence([s: std::SequenceScope<Int>!]{ })
+    fin values = std::sequence<Int> [s: std::SequenceScope<Int>!] { }
     assert values.size == 0 { "a producer that yields nothing must be empty" }
 }
 

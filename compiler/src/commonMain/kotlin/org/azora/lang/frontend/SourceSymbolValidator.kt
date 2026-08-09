@@ -73,7 +73,8 @@ internal object SourceSymbolValidator {
             }
             is TopLevel.Test -> item.body.forEach(::statement)
             is TopLevel.Pack -> {
-                declaration(item.name, "pack", item.line, privateAllowed = true)
+                if (item.nameMacro == null) declaration(item.name, "pack", item.line, privateAllowed = true)
+                else expression(item.nameMacro)
                 item.typeParams.forEach { declaration(it, "type parameter", item.line) }
                 item.variadicParam?.let { declaration(it, "variadic type parameter", item.line) }
                 item.fields.forEach { field(it, item.line, privateAllowed = true) }
@@ -92,8 +93,15 @@ internal object SourceSymbolValidator {
             is TopLevel.Bridge -> {
                 item.funcs.forEach { signature ->
                     realmDeclaration(signature.name, "bridge function", signature.line)
+                    signature.localName?.let { realmDeclaration(it, "bridge function", signature.line) }
+                    signature.nameMacro?.let(::expression)
                     signature.typeParams.forEach { declaration(it, "type parameter", signature.line) }
                     signature.params.forEach { parameter(it, signature.line) }
+                }
+                item.values.forEach { value ->
+                    realmDeclaration(value.name, "bridge value", value.line)
+                    value.nameMacro?.let(::expression)
+                    expression(value.initializer)
                 }
             }
             is TopLevel.Solo -> {
@@ -138,16 +146,19 @@ internal object SourceSymbolValidator {
             }
             is TopLevel.Meta -> {
                 realmDeclaration(item.name, "macro", item.line)
+                item.parameter?.let { declaration(it, "macro parameter", item.line) }
                 item.arms.forEach { arm ->
                     when (val pattern = arm.pattern) {
                         is MacroPattern.Empty -> Unit
                         is MacroPattern.SeqCapture -> declaration(pattern.name, "macro capture", item.line)
+                        is MacroPattern.TypedCapture -> declaration(pattern.name, "macro capture", item.line)
                         is MacroPattern.MapEntryCapture -> {
                             declaration(pattern.keyName, "macro capture", item.line)
                             declaration(pattern.valueName, "macro capture", item.line)
                         }
                     }
                     expression(arm.template)
+                    arm.templateTail.forEach(::expression)
                 }
             }
             is TopLevel.InlineAssert -> {

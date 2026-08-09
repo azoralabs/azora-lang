@@ -29,7 +29,7 @@ that provides them.
 
 ```azora
 bridge .C {
-    func azora_time_unix_nanoseconds(): Long
+    func @foreignName("azora_time_unix_nanoseconds")(): Long
 }
 ```
 
@@ -120,35 +120,68 @@ kept in step by hand; the mirror carries a comment saying so.
 ```azora
 bridge .C {
     func name(params): Ret
-    func declared use as symbol(params): Ret
+    func @foreignName("foreign_symbol")(params): Ret
+    fin @foreignName("API_VERSION"): String = "1.2.3"
 }
 ```
 
-Each entry is bodyless. `: Ret` may be omitted, in which case the return type is
-`Unit`.
+Function entries are bodyless. `: Ret` may be omitted, in which case the return
+type is `Unit`. A bridge may also publish initialized `fin`, `let`, and `var`
+storage under an exact backend symbol.
 
-### 3.1 `use as` - a name on each side of the boundary
+### 3.1 Foreign names are ordinary metaprogramming
 
-C symbol names are C's business, and rarely what an Azora caller should read:
+Backend symbol names are the backend's business and may not be legal Azora
+identifiers. `std.core` therefore provides a normal declaration-position macro:
 
 ```azora
 bridge [.C, .WebAssembly] {
-    func unixNanoseconds use as hostUnixNanoseconds(): Long
+    func @foreignName("clock_gettime")(): Long
+    fin @foreignName("API_VERSION"): String = "1.2.3"
 }
 ```
 
-The extern is registered under the **alias** (`hostUnixNanoseconds`, the
-symbol that actually exists), and the parser additionally synthesises a wrapper
-function under the **declared name** that forwards to it. Azora code calls the
-readable name; the linker sees the real one.
+The macro expands to two adjacent declaration fragments: the exact backend
+name followed by the local Azora name. The compiler supplies the declaration
+target as the macro parameter. The standard macro selects `upperCamel` for
+types and `lowerCamel` for functions and values:
 
-Aliases obey Azora's symbol spelling rules too. A platform adapter must expose
-an Azora-compatible camelCase symbol rather than leaking a snake_case ABI name
-into source.
+```azora
+// generated declaration form
+func "clock_gettime" clockGettime(): Long
+fin "API_VERSION" apiVersion: String = "1.2.3"
+bridge pack "native_HTTP_client" NativeHttpClient
+```
 
-The wrapper is only synthesised for an undotted declared name. A dotted name
-(`func c.free use as free(…)`) names a foreign namespace rather than an Azora
-function, so no wrapper is written.
+For a function, the bridge declares the exact extern and expansion writes an
+ordinary forwarding function named `clockGettime`. For storage, Azora references
+`apiVersion` while LLVM emits `@API_VERSION` and WebAssembly exports
+`API_VERSION`.
+
+The compiler does **not** recognize the name `foreignName`. It accepts any
+visible declaration-position macro whose expansion contains exactly two String
+fragments. The standard macro is defined in `std/core.az` as ordinary Azora
+meta code:
+
+```azora
+macro @foreignName { target ->
+    ($name: String) =>
+        $name
+        inline if target.isType {
+            $name.upperCamel
+        } else {
+            $name.lowerCamel
+        }
+}
+```
+
+`target` is a macro parameter supplied when the macro decorates a declaration;
+`target.isType` is true for packs, specs, enums, errors, and the other type
+declaration categories. Declaration-position macros return the backend name
+first and the local name second. This keeps ABI naming policy in the standard
+library rather than hardcoding a special foreign-name facility into the
+parser. Bridge `use as` syntax does not exist. The unrelated spec-member
+`use as "template"` feature is unchanged.
 
 ### 3.2 The single-function shorthand
 
@@ -287,13 +320,16 @@ without saying what it means.
 1. A bridge target is a `std::Target` member, written `.X`, `Target.X`, or a
    constant bound to one. A bare identifier is not a target.
 2. A bridge signature is bodyless. Its return type defaults to `Unit`.
-3. `use as` registers the extern under the alias and synthesises a forwarding
-   function under the declared name, unless the declared name is dotted.
+3. A declaration-position name macro must expand to one two-string
+   `[backendName: localName]` mapping. No local-name policy is inferred by the
+   bridge parser.
 4. `bridge` on a declaration means the compiler provides it: no body, no struct,
    no required spec members, and no field-wise derivation.
 5. A `bridge pack` cannot be constructed.
 6. An extern is monomorphic. Type parameters parse and are discarded.
-7. Every extern reaches every backend. A backend that cannot provide one is a
+7. Bridge storage keeps its exact symbol in LLVM and is exported under that
+   exact name in WebAssembly.
+8. Every extern reaches every backend. A backend that cannot provide one is a
    failure at that backend, not at the declaration.
 
 ---

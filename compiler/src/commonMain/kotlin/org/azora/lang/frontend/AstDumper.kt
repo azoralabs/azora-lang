@@ -180,7 +180,9 @@ private fun dumpTopLevel(sb: StringBuilder, item: TopLevel, indent: String) {
             sb.appendLine("${indent}Impl(type=$target$trait, methods=[${item.methods.joinToString(", ") { it.name }}])")
         }
         is TopLevel.Bridge -> {
-            sb.appendLine("${indent}Bridge(target=${item.target}, funcs=[${item.funcs.joinToString(", ") { it.name }}])")
+            val funcs = item.funcs.joinToString(", ") { it.localName ?: it.name }
+            val values = item.values.joinToString(", ") { it.name }
+            sb.appendLine("${indent}Bridge(target=${item.target}, funcs=[$funcs], values=[$values])")
         }
         is TopLevel.Solo -> {
             sb.appendLine("${indent}Solo(name=${item.name}, fields=[${item.fields.joinToString(", ") { it.name }}], methods=[${item.methods.joinToString(", ") { it.name }}])")
@@ -207,7 +209,8 @@ private fun dumpTopLevel(sb: StringBuilder, item: TopLevel, indent: String) {
             sb.appendLine("${indent}Slot(name=${item.name}, variants=[${item.variants.joinToString(", ") { v -> v.name + "(" + v.payloadTypes.joinToString(",") + "" + ")" }}])")
         }
         is TopLevel.Meta -> {
-            sb.appendLine("${indent}Meta(name=${item.name}, arms=${item.arms.size})")
+            val parameter = item.parameter?.let { ", parameter=$it" }.orEmpty()
+            sb.appendLine("${indent}Meta(name=${item.name}$parameter, arms=${item.arms.size})")
         }
     }
 }

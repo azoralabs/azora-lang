@@ -41,7 +41,7 @@ class SourceSymbolNameTest {
         assertNameFailure("func helper_value() {}", "'_' is allowed only once")
         assertNameFailure("func main() { fin local_value = 1 }", "'_' is allowed only once")
         assertNameFailure("pack Value_Name", "'_' is allowed only once")
-        assertNameFailure("bridge .C { func clock use as clock_get_time(): std::Long }", "'_' is allowed only once")
+        assertNameFailure("bridge .C { func clock_get_time(): std::Long }", "'_' is allowed only once")
     }
 
     @Test fun leadingUnderscoreIsRejectedWherePrivacyDoesNotApply() {

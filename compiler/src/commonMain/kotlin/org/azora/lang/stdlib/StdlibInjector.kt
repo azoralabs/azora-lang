@@ -254,7 +254,10 @@ class StdlibInjector private constructor(
             is TopLevel.FinDecl -> item.name
             is TopLevel.LetDecl -> item.name
             is TopLevel.VarDecl -> item.name
-            is TopLevel.Bridge -> item.funcs.singleOrNull()?.name
+            is TopLevel.Bridge ->
+                item.funcs.singleOrNull()?.localName
+                    ?: item.funcs.singleOrNull()?.name
+                    ?: item.values.singleOrNull()?.name
             else -> return null
         } ?: return null
         if ("__" !in declaredName) return null
@@ -690,6 +693,7 @@ class StdlibInjector private constructor(
                 is TopLevel.Test -> item.body.forEach { validator.statement(it, emptySet(), currentRealm) }
                 is TopLevel.Pack -> {
                     item.annotations.forEach { validator.appliedAnnotation(it, currentRealm) }
+                    item.nameMacro?.let { validator.expression(it, emptySet(), currentRealm) }
                     val typeParams = item.typeParams.toSet()
                     item.fields.forEach {
                         it.annotations.forEach { annotation -> validator.appliedAnnotation(annotation, currentRealm) }
@@ -731,12 +735,20 @@ class StdlibInjector private constructor(
                 }
                 is TopLevel.TypeAlias ->
                     validator.type(item.type, item.line, item.typeParams.toSet(), currentRealm)
-                is TopLevel.Bridge -> item.funcs.forEach { signature ->
-                    val typeParams = signature.typeParams.toSet()
-                    signature.params.forEach {
-                        validator.type(it.type, signature.line, typeParams, currentRealm)
+                is TopLevel.Bridge -> {
+                    item.funcs.forEach { signature ->
+                        val typeParams = signature.typeParams.toSet()
+                        signature.nameMacro?.let { validator.expression(it, typeParams, currentRealm) }
+                        signature.params.forEach {
+                            validator.type(it.type, signature.line, typeParams, currentRealm)
+                        }
+                        validator.type(signature.returnType, signature.line, typeParams, currentRealm)
                     }
-                    validator.type(signature.returnType, signature.line, typeParams, currentRealm)
+                    item.values.forEach { value ->
+                        value.nameMacro?.let { validator.expression(it, emptySet(), currentRealm) }
+                        validator.type(value.type, value.line, emptySet(), currentRealm)
+                        validator.expression(value.initializer, emptySet(), currentRealm)
+                    }
                 }
                 else -> {}
             }
@@ -848,16 +860,30 @@ class StdlibInjector private constructor(
                             idx.implsByType.getOrPut(key) { mutableListOf() }.add(item)
                         }
                     }
-                    is TopLevel.Bridge -> for (sig in item.funcs) {
-                        val declaration = TopLevel.Bridge(
-                            item.target,
-                            listOf(sig),
-                            item.line,
-                            item.column,
-                            item.annotations,
-                        )
-                        idx.externs.putIfAbsentCompat(sig.name, declaration)
-                        register(sig.name, declaration)
+                    is TopLevel.Bridge -> {
+                        for (sig in item.funcs) {
+                            val declaration = TopLevel.Bridge(
+                                item.target,
+                                listOf(sig),
+                                item.line,
+                                item.column,
+                                item.annotations,
+                            )
+                            val localName = sig.localName ?: sig.name
+                            idx.externs.putIfAbsentCompat(localName, declaration)
+                            register(localName, declaration)
+                        }
+                        for (value in item.values) {
+                            val declaration = TopLevel.Bridge(
+                                item.target,
+                                emptyList(),
+                                item.line,
+                                item.column,
+                                item.annotations,
+                                listOf(value),
+                            )
+                            register(value.name, declaration)
+                        }
                     }
                     // `deepinline realm { … }` and similar compile-time blocks (e.g.
                     // `std.config`) carry their declarations opaquely; inject them
@@ -1084,7 +1110,10 @@ class StdlibInjector private constructor(
                 is TopLevel.Deco -> names.add(item.name)
                 is TopLevel.Spec -> names.add(item.name)
                 is TopLevel.Slot -> names.add(item.name)
-                is TopLevel.Bridge -> item.funcs.forEach { names.add(it.name) }
+                is TopLevel.Bridge -> {
+                    item.funcs.forEach { names.add(it.localName ?: it.name) }
+                    item.values.forEach { names.add(it.name) }
+                }
                 is TopLevel.Meta -> names.add(item.name)
                 else -> {}
             }
@@ -1133,7 +1162,10 @@ class StdlibInjector private constructor(
             // bundled macro templates remain lazy to avoid pulling every
             // possible expansion target into every compilation.
             if (item is TopLevel.Meta) {
-                item.arms.forEach { arm -> collectNamesFromExpr(arm.template, referenced) }
+                item.arms.forEach { arm ->
+                    collectNamesFromExpr(arm.template, referenced)
+                    arm.templateTail.forEach { collectNamesFromExpr(it, referenced) }
+                }
             }
         }
         // Exported/core blocks are always injected; pull in whatever they reference.
@@ -1263,7 +1295,9 @@ class StdlibInjector private constructor(
         is TopLevel.Slot -> "slot:${item.name}"
         is TopLevel.Meta -> "meta:${item.name}"
         is TopLevel.Impl -> "impl:${item.typeName}:${item.traitName.orEmpty()}:${item.line}:${item.column}"
-        is TopLevel.Bridge -> "bridge:${item.target}:${item.funcs.joinToString(",") { it.name }}"
+        is TopLevel.Bridge -> "bridge:${item.target}:" +
+            item.funcs.joinToString(",") { it.localName ?: it.name } + ":" +
+            item.values.joinToString(",") { it.name }
         else -> item.toString()
     }
 
@@ -1438,6 +1472,7 @@ class StdlibInjector private constructor(
             }
             is TopLevel.Pack -> {
                 collectNamesFromAnnotations(item.annotations, names)
+                item.nameMacro?.let { collectNamesFromExpr(it, names) }
                 // `O: MatrixOrder` is part of the pack's signature: a use site writes
                 // `.ColumnMajor` and never the enum's name, so nothing else would
                 // bring it in.
@@ -1503,7 +1538,19 @@ class StdlibInjector private constructor(
                 collectNamesFromAnnotations(item.annotations, names)
                 collectNamesFromTypeRef(item.type, names)
             }
-            is TopLevel.Bridge -> collectNamesFromAnnotations(item.annotations, names)
+            is TopLevel.Bridge -> {
+                collectNamesFromAnnotations(item.annotations, names)
+                item.funcs.forEach { signature ->
+                    signature.nameMacro?.let { collectNamesFromExpr(it, names) }
+                    signature.params.forEach { collectNamesFromTypeRef(it.type, names) }
+                    collectNamesFromTypeRef(signature.returnType, names)
+                }
+                item.values.forEach { value ->
+                    value.nameMacro?.let { collectNamesFromExpr(it, names) }
+                    collectNamesFromTypeRef(value.type, names)
+                    collectNamesFromExpr(value.initializer, names)
+                }
+            }
             is TopLevel.Meta -> {
                 // A `meta` is a compile-time macro definition, not a dependency
                 // root. Registering its name keeps it available to the macro

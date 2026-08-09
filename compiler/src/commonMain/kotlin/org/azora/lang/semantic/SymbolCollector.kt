@@ -175,6 +175,14 @@ class SymbolCollector {
                         }
                     }
                 }
+                is TopLevel.Bridge -> item.values.forEach { value ->
+                    try {
+                        val type = resolveType(value.type)
+                        table.defineVariable(VariableSymbol(value.name, type, mutable = value.mutable))
+                    } catch (e: Exception) {
+                        errors.add("line ${value.line}: ${e.message}")
+                    }
+                }
                 else -> {}
             }
         }

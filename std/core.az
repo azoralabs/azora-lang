@@ -334,3 +334,21 @@ realm std {
     @Experimental(since: "0.1")
     bridge func isAlpha(value: Char): Bool
 }
+
+/**
+ * Preserves a backend symbol exactly while deriving its Azora-facing name.
+ *
+ * Declaration-position bridge macros return the backend and local names. The
+ * compiler supplies `target`, allowing this macro to use UpperCamel for type
+ * declarations and lowerCamel for value declarations while preserving the
+ * exact linked or exported symbol.
+ */
+macro @foreignName { target ->
+    ($name: String) =>
+        $name
+        inline if target.isType {
+            $name.upperCamel
+        } else {
+            $name.lowerCamel
+        }
+}

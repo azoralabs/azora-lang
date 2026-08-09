@@ -361,6 +361,9 @@ class IrGenerator(private val table: SymbolTable) {
                 is TopLevel.FinDecl -> if (item.threadlocal) nameScopes.last()[item.name] = "__tl__${item.name}" else registerName(item.name)
                 is TopLevel.VarDecl -> if (item.threadlocal) nameScopes.last()[item.name] = "__tl__${item.name}" else registerName(item.name)
                 is TopLevel.LetDecl -> registerName(item.name)
+                is TopLevel.Bridge -> item.values.forEach { value ->
+                    nameScopes.last()[value.name] = value.foreignName ?: value.name
+                }
                 else -> {}
             }
             literalConstant(item)?.let { (name, value) -> constantLiterals[name] = value }
@@ -545,6 +548,16 @@ class IrGenerator(private val table: SymbolTable) {
             bridge.funcs.map { sig ->
                 val params = sig.params.map { it.name to resolveType(it.type) }
                 IrTopLevel.Extern(sig.name, params, resolveType(sig.returnType))
+            } + bridge.values.map { value ->
+                val irName = value.foreignName ?: value.name
+                val init = lowerExpr(value.initializer)
+                val type = resolveType(value.type)
+                val declaration = when {
+                    value.mutable -> IrStmt.VarDecl(irName, type, init)
+                    value.isLet -> IrStmt.LetDecl(irName, type, init)
+                    else -> IrStmt.FinDecl(irName, type, init)
+                }
+                IrTopLevel.Global(declaration, exportName = irName)
             }
         }
         val enumItems = items.filterIsInstance<IrTopLevel.Enum>()

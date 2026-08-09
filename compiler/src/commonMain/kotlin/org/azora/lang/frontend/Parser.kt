@@ -214,16 +214,6 @@ class Parser(
         }
     }
 
-    /** `func sin as az_sin(x: Double): Double` → wrapper `func sin(x) { return az_sin(x) }`. */
-    private fun makeBridgeWrapper(name: String, externName: String, params: List<Param>, returnType: TypeRef, line: Int) {
-        val args = params.map { Expr.Identifier(it.name, line) }
-        val call = Expr.Call(externName, args, line)
-        val body: List<Stmt> =
-            if ((returnType as? TypeRef.Named)?.name == "Unit") listOf(Stmt.ExprStmt(call, line))
-            else listOf(Stmt.Return(call, line))
-        pendingTopLevels.add(TopLevel.Func(FuncDecl(name, params, TypeAnnotation.Explicit(returnType), body, line = line)))
-    }
-
     private var current = 0
 
     /** When `>>` (SHIFT_RIGHT) is split for nested generics, this flag signals a pending `>` for the enclosing type. */
@@ -455,9 +445,22 @@ class Parser(
         is TopLevel.InlineVar -> item.copy(name = "${prefix}__${item.name}")
         is TopLevel.Impl -> item.copy(realmPrefix = prefix)
         is TopLevel.Meta -> item.copy(name = "${prefix}__${item.name}")
+        is TopLevel.Pack -> if (item.nameMacro != null) item.copy(localRealm = prefix) else item
         // `bridge func` members of `impl Type:: { … }` are static intrinsics
         // reached as `Type::member`; mangle each to `Type__member` to match.
-        is TopLevel.Bridge -> item.copy(funcs = item.funcs.map { it.copy(name = "${prefix}__${it.name}") })
+        is TopLevel.Bridge -> item.copy(
+            funcs = item.funcs.map { sig ->
+                when {
+                    sig.nameMacro != null -> sig.copy(localRealm = prefix)
+                    sig.localName != null -> sig.copy(localName = "${prefix}__${sig.localName}")
+                    else -> sig.copy(name = "${prefix}__${sig.name}")
+                }
+            },
+            values = item.values.map { value ->
+                if (value.nameMacro != null) value.copy(localRealm = prefix)
+                else value.copy(name = "${prefix}__${value.name}")
+            },
+        )
         else -> item
     }
 
@@ -1837,7 +1840,11 @@ class Parser(
             error("Type parameters go after the $keyword name: write '$keyword Name<…>', not '$keyword<…> Name', at line ${peek().line}")
         }
         // Type parameters follow the name: `pack Box<T>`, `pack Map<K, V>`.
-        val name = consume(TokenType.IDENTIFIER, "Expected $keyword name").lexeme
+        // A bridge pack may derive its exact backend and Azora names through a
+        // declaration-position macro, just like bridge functions and values.
+        val parsedBridgeName = if (isBridge) parseBridgeName() else null
+        val name = parsedBridgeName?.localName ?: parsedBridgeName?.backendName
+            ?: consume(TokenType.IDENTIFIER, "Expected $keyword name").lexeme
         val tp = parseTypeParams()
         constParamEnums = tp.constEnums
         val derives = if (matchContextual("derives")) parseDeriveHeads() else emptyList()
@@ -1865,6 +1872,8 @@ class Parser(
                 fieldTemplate = null,
                 isBridge = isBridge,
                 isUnion = isUnion,
+                foreignName = parsedBridgeName?.backendName?.takeIf { parsedBridgeName.localName != null },
+                nameMacro = parsedBridgeName?.macro,
             )
         }
         consume(TokenType.L_BRACE, "Expected '{' after $keyword name")
@@ -1928,7 +1937,10 @@ class Parser(
             constDefaults = tp.constDefaults,
             constEnums = tp.constEnums,
             fieldTemplate = fieldTemplate,
+            isBridge = isBridge,
             isUnion = isUnion,
+            foreignName = parsedBridgeName?.backendName?.takeIf { parsedBridgeName.localName != null },
+            nameMacro = parsedBridgeName?.macro,
         )
     }
 
@@ -3605,6 +3617,45 @@ class Parser(
      * rest of the file already reads in.
      */
     private val bridgeTargetConstants = mutableMapOf<String, String>()
+    private var bridgeNamePlaceholder = 0
+
+    /** A bridge name written directly, as generated syntax, or through a macro. */
+    private data class ParsedBridgeName(
+        val backendName: String,
+        val localName: String? = null,
+        val macro: Expr.MetaInvoke? = null,
+    )
+
+    /**
+     * Parses one bridge declaration name.
+     *
+     * - `clock` uses the same Azora/backend name.
+     * - `"clock_gettime" clockGettime` is the post-expansion generated form.
+     * - `@foreignName("clock_gettime")` defers naming to a normal prefix macro.
+     */
+    private fun parseBridgeName(): ParsedBridgeName {
+        if (check(TokenType.STRING_LITERAL)) {
+            val backend = advance().literal as String
+            val local = consume(TokenType.IDENTIFIER, "Expected local Azora name after foreign bridge symbol").lexeme
+            return ParsedBridgeName(backend, local)
+        }
+        if (check(TokenType.AT) && isMacroInvokeAhead()) {
+            val at = advance()
+            val macroName = parseQualifiedMacroName()
+            val args = parseMacroInvokeArgs()
+            usedMetaInvoke = true
+            return ParsedBridgeName(
+                backendName = "__bridgeName${bridgeNamePlaceholder++}",
+                macro = Expr.MetaInvoke(macroName, args, at.line, at.column, macroName.length + 1),
+            )
+        }
+        val declared = StringBuilder(consume(TokenType.IDENTIFIER, "Expected bridge declaration name").lexeme)
+        while (check(TokenType.DOT) && peekNext()?.type == TokenType.IDENTIFIER) {
+            advance()
+            declared.append('.').append(advance().lexeme)
+        }
+        return ParsedBridgeName(declared.toString())
+    }
 
     /** Records `fin`/`inline fin X = Target.C` so `bridge X { … }` can resolve. */
     private fun noteBridgeTargetConstant(name: String, initializer: Expr) {
@@ -3630,7 +3681,7 @@ class Parser(
         // `bridge func fill<T>`); capture them so a generic return type like
         // `Array<T>` erases correctly at registration.
         val tpBefore = parseTypeParams()
-        val name = consumeIdentifierLike("Expected bridge function name")
+        val parsedName = parseBridgeName()
         val tpAfter = parseTypeParams()
         consume(TokenType.L_PAREN, "Expected '(' after bridge function name")
         val params = parseParams()
@@ -3639,7 +3690,16 @@ class Parser(
         consumeNewline()
         return TopLevel.Bridge(
             target,
-            listOf(TopLevel.BridgeSig(name, params, returnType, start.line, start.column, tpBefore.names + tpAfter.names)),
+            listOf(TopLevel.BridgeSig(
+                parsedName.backendName,
+                params,
+                returnType,
+                start.line,
+                start.column,
+                tpBefore.names + tpAfter.names,
+                localName = parsedName.localName,
+                nameMacro = parsedName.macro,
+            )),
             start.line, start.column, annotations,
         )
     }
@@ -3665,32 +3725,54 @@ class Parser(
         consume(TokenType.L_BRACE, "Expected '{' after bridge target")
         skipNewlines()
         val funcs = mutableListOf<TopLevel.BridgeSig>()
+        val values = mutableListOf<TopLevel.BridgeValue>()
         while (!check(TokenType.R_BRACE) && !isAtEnd()) {
             skipNewlines()
             if (check(TokenType.R_BRACE)) break
-            consume(TokenType.FUNC, "Expected 'func' in bridge block")
-            val declaredBase = StringBuilder(consume(TokenType.IDENTIFIER, "Expected extern function name").lexeme)
-            while (check(TokenType.DOT) && peekNext()?.type == TokenType.IDENTIFIER) {
-                advance()
-                declaredBase.append('.').append(advance().lexeme)
+            when {
+                match(TokenType.FUNC) -> {
+                    val name = parseBridgeName()
+                    consume(TokenType.L_PAREN, "Expected '('")
+                    val params = parseParams()
+                    consume(TokenType.R_PAREN, "Expected ')'")
+                    val returnType = if (match(TokenType.COLON)) parseTypeName() else TypeRef.Named("Unit")
+                    consumeNewline()
+                    funcs.add(TopLevel.BridgeSig(
+                        name.backendName,
+                        params,
+                        returnType,
+                        start.line,
+                        start.column,
+                        localName = name.localName,
+                        nameMacro = name.macro,
+                    ))
+                }
+                check(TokenType.FIN) || check(TokenType.LET) || check(TokenType.VAR) -> {
+                    val kind = advance()
+                    val name = parseBridgeName()
+                    consume(TokenType.COLON, "Expected ':' after bridge value name")
+                    val type = parseTypeName()
+                    consume(TokenType.EQUAL, "Expected '=' and an initializer for bridge value")
+                    val initializer = parseExpr()
+                    consumeNewline()
+                    values.add(TopLevel.BridgeValue(
+                        name = name.localName ?: name.backendName,
+                        type = type,
+                        initializer = initializer,
+                        mutable = kind.type == TokenType.VAR,
+                        isLet = kind.type == TokenType.LET,
+                        line = kind.line,
+                        column = kind.column,
+                        foreignName = name.backendName.takeIf { name.localName != null },
+                        nameMacro = name.macro,
+                    ))
+                }
+                else -> error("Expected 'func', 'fin', 'let', or 'var' in bridge block at line ${peek().line}")
             }
-            val declaredName = declaredBase.toString()
-            val alias = if (match(TokenType.USE)) {
-                consume(TokenType.AS, "Expected 'as' after 'use'")
-                consume(TokenType.IDENTIFIER, "Expected extern symbol after 'use as'").lexeme
-            } else null
-            consume(TokenType.L_PAREN, "Expected '('")
-            val params = parseParams()
-            consume(TokenType.R_PAREN, "Expected ')'")
-            val returnType = if (match(TokenType.COLON)) parseTypeName() else TypeRef.Named("Unit")
-            consumeNewline()
-            val fname = alias ?: declaredName
-            funcs.add(TopLevel.BridgeSig(fname, params, returnType, start.line, start.column))
-            if (alias != null && '.' !in declaredName) makeBridgeWrapper(declaredName, alias, params, returnType, start.line)
         }
         consume(TokenType.R_BRACE, "Expected '}' after bridge functions")
         consumeNewline()
-        return TopLevel.Bridge(target, funcs, start.line, start.column, annotations)
+        return TopLevel.Bridge(target, funcs, start.line, start.column, annotations, values)
     }
 
     /** `solo pack Name { fields; methods }` - a pack with one shared instance. */
@@ -3912,6 +3994,17 @@ class Parser(
         val name = parseMacroName()
         consume(TokenType.L_BRACE, "Expected '{' after 'macro @$name'")
         skipNewlines()
+        val parameter = if (
+            check(TokenType.IDENTIFIER) &&
+            !peek().lexeme.startsWith("$") &&
+            peekNext()?.type == TokenType.ARROW
+        ) {
+            val value = advance().lexeme
+            advance() // '->'
+            consumeNewline()
+            skipNewlines()
+            value
+        } else null
         val arms = mutableListOf<MacroArm>()
         while (!check(TokenType.R_BRACE) && !isAtEnd()) {
             skipNewlines()
@@ -3920,7 +4013,7 @@ class Parser(
         }
         consume(TokenType.R_BRACE, "Expected '}' after macro arms")
         consumeNewline()
-        return TopLevel.Meta(name, arms, start.line, start.column)
+        return TopLevel.Meta(name, arms, start.line, start.column, parameter)
     }
 
     /**
@@ -4029,9 +4122,10 @@ class Parser(
     /**
      * One macro arm: `delim <pattern> delim => <template>`.
      *
-     * Pattern forms (MVP): `[]`/`()`/`{}` → [MacroPattern.Empty]; `[...$name]`
-     * → [MacroPattern.SeqCapture]. The closing delimiter must match the opening
-     * one. The template is a single expression (the arm's expansion).
+     * Pattern forms include an empty argument list, a sequence capture, and a
+     * typed single capture such as `($name: String)`. A declaration arm may
+     * produce adjacent expression fragments; an `inline if` fragment is stored
+     * as an [Expr.IfExpr] and selected while the macro is expanded.
      */
     private fun parseMacroArm(): MacroArm {
         val (delimiter, open, close) = when (peek().type) {
@@ -4059,13 +4153,41 @@ class Parser(
                     MacroPattern.SeqCapture(cap)
                 }
             }
-            else -> error("Macro arm pattern must be empty or '...\$name' at line ${peek().line}")
+            check(TokenType.IDENTIFIER) && peek().lexeme.startsWith("$") -> {
+                val cap = advance().lexeme
+                consume(TokenType.COLON, "Expected ':' after typed macro capture '$cap'")
+                MacroPattern.TypedCapture(cap, parseTypeName())
+            }
+            else -> error("Macro arm pattern must be empty, '...\$name', or '\$name: Type' at line ${peek().line}")
         }
         consume(close, "Expected matching delimiter after macro arm pattern")
         consume(TokenType.FAT_ARROW, "Expected '=>' after macro arm pattern")
-        val template = parseExpr()
+        val template = parseMacroTemplateExpr()
+        val tail = mutableListOf<Expr>()
+        if (!check(TokenType.NEWLINE) && !check(TokenType.R_BRACE)) {
+            tail += parseMacroTemplateExpr()
+        } else if (check(TokenType.NEWLINE)) {
+            val saved = current
+            skipNewlines()
+            if (check(TokenType.INLINE) && peekNext()?.type == TokenType.IF) {
+                tail += parseMacroTemplateExpr()
+            } else {
+                current = saved
+            }
+        }
         consumeNewline()
-        return MacroArm(delimiter, pattern, template)
+        return MacroArm(delimiter, pattern, template, tail)
+    }
+
+    /** One expression fragment in a macro expansion template. */
+    private fun parseMacroTemplateExpr(): Expr {
+        if (match(TokenType.INLINE)) {
+            if (!check(TokenType.IF)) {
+                error("Only 'inline if' may select a macro template fragment at line ${peek().line}")
+            }
+            return parseIfExpr()
+        }
+        return parseExpr()
     }
 
     /** `spec Name { func method(params): Ret ... }` or compact callback `spec Into<T>: T { ref self } use as "..."`. */

@@ -303,7 +303,10 @@ internal object IrSymbolCanonicalizer {
         }
 
         private fun declarationName(item: IrTopLevel): String? = when (item) {
-            is IrTopLevel.Global -> when (val declaration = item.stmt) {
+            // A bridge global already carries its exact backend ABI spelling.
+            // Leaving it out of the canonical-name map preserves that spelling;
+            // every local reference was lowered to the same name by IrGenerator.
+            is IrTopLevel.Global -> if (item.exportName != null) null else when (val declaration = item.stmt) {
                 is IrStmt.VarDecl -> declaration.name
                 is IrStmt.FinDecl -> declaration.name
                 is IrStmt.LetDecl -> declaration.name

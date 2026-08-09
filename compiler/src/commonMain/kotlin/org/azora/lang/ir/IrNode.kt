@@ -1159,7 +1159,11 @@ data class IrWhenBranch(val patterns: List<IrExpr>, val body: List<IrStmt>)
  * A top-level item in the IR program - either a global statement or a function.
  */
 sealed class IrTopLevel {
-    data class Global(val stmt: IrStmt) : IrTopLevel()
+    data class Global(
+        val stmt: IrStmt,
+        /** Backend-visible export name for bridge storage, if any. */
+        val exportName: String? = null,
+    ) : IrTopLevel()
     data class Func(val function: IrFunction) : IrTopLevel()
 
     /** Nominal enum declaration retained for typed Azora IR and tooling. */

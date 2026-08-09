@@ -55,7 +55,7 @@ class IrOptimizer {
     private fun constantFold(program: IrProgram): IrProgram {
         return program.copy(items = program.items.map { item ->
             when (item) {
-                is IrTopLevel.Global -> IrTopLevel.Global(foldStmt(item.stmt))
+                is IrTopLevel.Global -> item.copy(stmt = foldStmt(item.stmt))
                 is IrTopLevel.Func -> IrTopLevel.Func(item.function.copy(body = item.function.body.map { foldStmt(it) }))
                 is IrTopLevel.Test -> IrTopLevel.Test(item.name, item.body.map { foldStmt(it) })
                 is IrTopLevel.Struct, is IrTopLevel.Enum, is IrTopLevel.Extern -> item
@@ -197,7 +197,7 @@ class IrOptimizer {
             when (item) {
                 is IrTopLevel.Global -> {
                     val optimized = propagateStmts(listOf(item.stmt), globalConstants)
-                    IrTopLevel.Global(optimized.first())
+                    item.copy(stmt = optimized.first())
                 }
                 is IrTopLevel.Func -> IrTopLevel.Func(propagateInFunction(item.function))
                 is IrTopLevel.Test -> IrTopLevel.Test(item.name, propagateStmts(item.body, mutableMapOf()))
@@ -476,7 +476,7 @@ class IrOptimizer {
     private fun deadCodeElimination(program: IrProgram): IrProgram {
         return program.copy(items = program.items.map { item ->
             when (item) {
-                is IrTopLevel.Global -> IrTopLevel.Global(eliminateDeadCode(listOf(item.stmt)).first())
+                is IrTopLevel.Global -> item.copy(stmt = eliminateDeadCode(listOf(item.stmt)).first())
                 is IrTopLevel.Func -> IrTopLevel.Func(item.function.copy(body = eliminateDeadCode(item.function.body)))
                 is IrTopLevel.Test -> IrTopLevel.Test(item.name, eliminateDeadCode(item.body))
                 is IrTopLevel.Struct, is IrTopLevel.Enum, is IrTopLevel.Extern -> item
@@ -613,6 +613,7 @@ class IrOptimizer {
             when (item) {
                 is IrTopLevel.Func -> item.function.name in reachableFuncs
                 is IrTopLevel.Global -> {
+                    if (item.exportName != null) return@filter true
                     val name = when (val s = item.stmt) {
                         is IrStmt.VarDecl -> s.name
                         is IrStmt.FinDecl -> s.name

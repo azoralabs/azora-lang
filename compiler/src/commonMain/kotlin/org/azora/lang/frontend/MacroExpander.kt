@@ -28,11 +28,11 @@ package org.azora.lang.frontend
  * never observe macro nodes.
  *
  * Macro arms match **delimiter-agnostically** (`vec!()`, `vec![…]`, `vec!{}` all
- * feed args to the same arms). The MVP patterns are `Empty` (zero args) and
- * `SeqCapture` (≥1 arg, bound to a name spliceable via `...$name`). Templates
- * are ordinary expressions; `$name` is a normal [Expr.Identifier] and
- * `...$name` a normal [Expr.Spread], so substitution is a structural copy with
- * splice-aware rebuilding of sequence containers.
+ * feed args to the same arms). Patterns support empty arguments, typed single
+ * captures, and sequence captures spliceable via `...$name`. Templates use
+ * ordinary expressions; declaration macros may additionally emit adjacent
+ * fragments and select one with `inline if` using their compiler-supplied
+ * parameter.
  *
  * Errors throw [IllegalStateException], caught by `Compiler.compile()` and
  * surfaced as a [org.azora.lang.CompilationResult.Failure].
@@ -42,8 +42,10 @@ internal object MacroExpander {
     /** Guards against infinite macro recursion (a macro expanding into itself). */
     private const val MAX_DEPTH = 64
 
-    /** Per-name macro arms captured from [TopLevel.Meta] declarations (first decl wins). */
-    private typealias MacroTable = Map<String, List<MacroArm>>
+    private data class MacroDefinition(val parameter: String?, val arms: List<MacroArm>)
+
+    /** Per-name macro definitions captured from [TopLevel.Meta] declarations (first decl wins). */
+    private typealias MacroTable = Map<String, MacroDefinition>
 
     /** Value-infix macros active during the current expansion (op → rule). Reset per call. */
     private var activeInfix: Map<String, InfixMacroRule> = emptyMap()
@@ -75,7 +77,8 @@ internal object MacroExpander {
      * unchanged when it declares no macros.
      */
     fun expand(program: Program): Program {
-        val macros = LinkedHashMap<String, MutableList<MacroArm>>()
+        val macroArms = LinkedHashMap<String, MutableList<MacroArm>>()
+        val macroParameters = LinkedHashMap<String, String?>()
         val nonMacros = mutableListOf<TopLevel>()
         val infixOps = mutableSetOf<String>()
         for (item in program.items) {
@@ -84,7 +87,10 @@ internal object MacroExpander {
                 // carries no invocable arms, only the infix-operator registration.
                 val op = item.name.removePrefix("__infix__")
                 if (op != item.name) infixOps.add(op)
-                else macros.getOrPut(item.name) { mutableListOf() }.addAll(item.arms)
+                else {
+                    macroArms.getOrPut(item.name) { mutableListOf() }.addAll(item.arms)
+                    macroParameters.putIfAbsent(item.name, item.parameter)
+                }
             } else {
                 nonMacros.add(item)
             }
@@ -98,14 +104,167 @@ internal object MacroExpander {
         // clearly with "macro 'name' is not defined" rather than leaking
         // MetaInvoke into semantic analysis.)
         activeInfix = program.infixMacros.associateBy { it.op }
-        if (macros.isEmpty() && activeInfix.isEmpty() && !program.usesMacros) return withInfix(program)
-        val table: MacroTable = macros
-        return withInfix(program.copy(items = nonMacros.map { rewriteItem(it, table, 0) }))
+        if (macroArms.isEmpty() && activeInfix.isEmpty() && !program.usesMacros) return withInfix(program)
+        val table: MacroTable = macroArms.mapValues { (name, arms) ->
+            MacroDefinition(macroParameters[name], arms)
+        }
+        val renamedTypes = mutableMapOf<String, String>()
+        val rewritten = nonMacros.flatMap { rewriteItems(it, table, 0, renamedTypes) }
+        return withInfix(program.copy(
+            items = rewritten,
+            localPackNames = program.localPackNames.mapTo(linkedSetOf()) { renamedTypes[it] ?: it },
+            realmTypeNamespaces = program.realmTypeNamespaces.mapKeys { (name, _) -> renamedTypes[name] ?: name },
+        ))
     }
 
     // ------------------------------------------------------------------
     // Item / function / parameter / annotation rewriting
     // ------------------------------------------------------------------
+
+    /** A bridge name macro may add an ordinary local wrapper beside its extern. */
+    private fun rewriteItems(
+        item: TopLevel,
+        macros: MacroTable,
+        depth: Int,
+        renamedTypes: MutableMap<String, String>,
+    ): List<TopLevel> {
+        if (item is TopLevel.Pack && item.nameMacro != null) {
+            val (foreignName, expandedLocal) = expandDeclarationName(item.nameMacro, macros, item.line, isType = true)
+            val localName = item.localRealm?.let { "${it}__$expandedLocal" } ?: expandedLocal
+            renamedTypes[item.name] = localName
+            return listOf(rewriteItem(item.copy(
+                name = localName,
+                foreignName = foreignName,
+                nameMacro = null,
+                localRealm = null,
+            ), macros, depth))
+        }
+        if (item !is TopLevel.Bridge) return listOf(rewriteItem(item, macros, depth))
+
+        val wrappers = mutableListOf<TopLevel>()
+        val funcs = item.funcs.map { signature ->
+            val (foreignName, expandedLocal) = if (signature.nameMacro == null) {
+                signature.name to signature.localName
+            } else {
+                expandDeclarationName(signature.nameMacro, macros, signature.line, isType = false)
+            }
+            val localName = expandedLocal?.let { local ->
+                signature.localRealm?.let { "${it}__$local" } ?: local
+            }
+            if (localName != null && localName != foreignName) {
+                wrappers += bridgeWrapper(localName, foreignName, signature.params, signature.returnType, signature.typeParams, signature.line)
+            }
+            signature.copy(
+                name = foreignName,
+                localName = null,
+                nameMacro = null,
+                localRealm = null,
+                params = signature.params.map { rewriteParam(it, macros, depth) },
+            )
+        }
+        val values = item.values.map { value ->
+            val (foreignName, expandedLocal) = if (value.nameMacro == null) {
+                (value.foreignName ?: value.name) to value.name
+            } else {
+                expandDeclarationName(value.nameMacro, macros, value.line, isType = false)
+            }
+            val localName = value.localRealm?.let { "${it}__$expandedLocal" } ?: expandedLocal
+            value.copy(
+                name = localName,
+                foreignName = foreignName,
+                nameMacro = null,
+                localRealm = null,
+                initializer = rewriteExpr(value.initializer, macros, depth),
+            )
+        }
+        val bridge = item.copy(
+            funcs = funcs,
+            values = values,
+            annotations = item.annotations.map { rewriteAnnotation(it, macros, depth) },
+        )
+        return listOf(bridge) + wrappers
+    }
+
+    private fun bridgeWrapper(
+        localName: String,
+        foreignName: String,
+        params: List<Param>,
+        returnType: TypeRef,
+        typeParams: List<String>,
+        line: Int,
+    ): TopLevel.Func {
+        val call = Expr.Call(foreignName, params.map { Expr.Identifier(it.name, line) }, line)
+        val body = if ((returnType as? TypeRef.Named)?.name?.substringAfterLast("__") == "Unit") {
+            listOf(Stmt.ExprStmt(call, line))
+        } else {
+            listOf(Stmt.Return(call, line))
+        }
+        return TopLevel.Func(FuncDecl(
+            name = localName,
+            params = params,
+            returnType = TypeAnnotation.Explicit(returnType),
+            body = body,
+            typeParams = typeParams,
+            line = line,
+        ))
+    }
+
+    /** Expands the two adjacent name fragments produced by a declaration macro. */
+    private fun expandDeclarationName(
+        invocation: Expr.MetaInvoke,
+        macros: MacroTable,
+        line: Int,
+        isType: Boolean,
+    ): Pair<String, String> {
+        val definition = macros[invocation.name]
+            ?: fail(line, "macro '${invocation.name}' is not defined")
+        val (arm, captures) = matchArm(definition.arms, invocation.args)
+            ?: fail(line, "no matching arm in macro '${invocation.name}' for ${invocation.args.size} argument(s)")
+        val parts = listOf(arm.template) + arm.templateTail
+        if (parts.size != 2) {
+            fail(line, "a bridge declaration-name macro must expand to exactly two String fragments: backend name then Azora name")
+        }
+        val bindings = captures.toMutableMap()
+        definition.parameter?.let { parameter ->
+            bindings[parameter] = listOf(Expr.BoolLiteral(isType, line))
+        }
+        val expanded = parts.map { part ->
+            rewriteExpr(substitute(part, bindings, line), macros, 1)
+        }
+        val foreignName = (expanded[0] as? Expr.StringLiteral)?.value
+            ?: fail(line, "a bridge declaration-name macro's backend-name fragment must be String")
+        val localName = (expanded[1] as? Expr.StringLiteral)?.value
+            ?: fail(line, "a bridge declaration-name macro's Azora-name fragment must be String")
+        validateMacroLocalName(foreignName, localName, line)
+        return foreignName to localName
+    }
+
+    private fun validateMacroLocalName(foreignName: String, localName: String, line: Int) {
+        if (!Regex("_?[A-Za-z][A-Za-z0-9]*").matches(localName)) {
+            fail(line, "foreign name '$foreignName' produces invalid Azora identifier '$localName'")
+        }
+        if (localName in AzoraSyntaxVocabulary.reservedKeywords) {
+            fail(line, "foreign name '$foreignName' produces reserved Azora keyword '$localName'")
+        }
+    }
+
+    /** General macro-time String projection: `"API_VERSION".lowerCamel`. */
+    private fun lowerCamel(value: String): String {
+        val words = value
+            .replace(Regex("([a-z0-9])([A-Z])"), "${'$'}1 ${'$'}2")
+            .split(Regex("[^A-Za-z0-9]+"))
+            .filter { it.isNotEmpty() }
+        if (words.isEmpty()) return ""
+        val first = words.first().lowercase()
+        val rest = words.drop(1).joinToString("") { word ->
+            word.lowercase().replaceFirstChar { it.uppercase() }
+        }
+        return first + rest
+    }
+
+    /** General macro-time String projection: `"native_HTTP_client".upperCamel`. */
+    private fun upperCamel(value: String): String =
+        lowerCamel(value).replaceFirstChar { it.uppercase() }
 
     private fun rewriteItem(item: TopLevel, macros: MacroTable, depth: Int): TopLevel = when (item) {
         is TopLevel.Func -> item.copy(
@@ -147,10 +306,16 @@ internal object MacroExpander {
             body = rewriteStmts(item.body, macros, depth),
             annotations = item.annotations.map { rewriteAnnotation(it, macros, depth) },
         )
-        is TopLevel.Pack -> item.copy(
-            fields = item.fields.map { rewriteField(it, macros, depth) },
-            annotations = item.annotations.map { rewriteAnnotation(it, macros, depth) },
-        )
+        is TopLevel.Pack -> {
+            val named = item.nameMacro?.let { invocation ->
+                val (foreignName, localName) = expandDeclarationName(invocation, macros, item.line, isType = true)
+                item.copy(name = localName, foreignName = foreignName, nameMacro = null, localRealm = null)
+            } ?: item
+            named.copy(
+                fields = named.fields.map { rewriteField(it, macros, depth) },
+                annotations = named.annotations.map { rewriteAnnotation(it, macros, depth) },
+            )
+        }
         is TopLevel.Deco -> item.copy(
             fields = item.fields.map { rewriteField(it, macros, depth) },
             annotations = item.annotations.map { rewriteAnnotation(it, macros, depth) },
@@ -467,6 +632,12 @@ internal object MacroExpander {
                         return arm to mapOf(arm.pattern.name to args)
                     }
                 }
+                is MacroPattern.TypedCapture -> {
+                    val argument = args.singleOrNull() ?: continue
+                    if (macroArgumentMatches(argument, arm.pattern.type)) {
+                        return arm to mapOf(arm.pattern.name to listOf(argument))
+                    }
+                }
                 is MacroPattern.MapEntryCapture -> {
                     // `[...${key: value}]` - key/value destructuring. Invocation-side
                     // support (parsing `map!["a": 1]` into paired args) is a later
@@ -477,12 +648,31 @@ internal object MacroExpander {
         return null
     }
 
+    /** Type checking available while selecting a typed macro arm. */
+    private fun macroArgumentMatches(argument: Expr, expected: TypeRef): Boolean {
+        val name = (expected as? TypeRef.Named)?.name?.substringAfterLast("__") ?: return false
+        return when (name) {
+            "String" -> argument is Expr.StringLiteral
+            "Bool" -> argument is Expr.BoolLiteral
+            "Int", "Long", "Byte", "Short", "UInt", "ULong", "UByte", "UShort" -> argument is Expr.IntLiteral
+            "Real", "Double", "Float" -> argument is Expr.DoubleLiteral || argument is Expr.IntLiteral
+            "Char" -> argument is Expr.CharLiteral
+            else -> false
+        }
+    }
+
     /** Resolves a [Expr.MetaInvoke] to its expanded template expression. */
     private fun expandOne(node: Expr.MetaInvoke, macros: MacroTable): Expr {
-        val arms = macros[node.name]
+        val definition = macros[node.name]
             ?: fail(node.line, "macro '${node.name}' is not defined")
-        val (arm, bindings) = matchArm(arms, node.args)
+        val (arm, bindings) = matchArm(definition.arms, node.args)
             ?: fail(node.line, "no matching arm in macro '${node.name}' for ${node.args.size} argument(s)")
+        if (definition.parameter != null) {
+            fail(node.line, "macro '${node.name}' has declaration parameter '${definition.parameter}' and can only be applied to a declaration")
+        }
+        if (arm.templateTail.isNotEmpty()) {
+            fail(node.line, "macro '${node.name}' expands to declaration fragments and cannot be used as an expression")
+        }
         return substitute(arm.template, bindings, node.line)
     }
 
@@ -500,9 +690,11 @@ internal object MacroExpander {
      */
     private fun substitute(template: Expr, bindings: Map<String, List<Expr>>, invokeLine: Int): Expr = when (template) {
         is Expr.Identifier -> {
-            if (template.name in bindings) {
+            val captured = bindings[template.name]
+            if (captured != null) {
+                if (captured.size == 1) return captured.single()
                 fail(template.line.takeIf { it != 0 } ?: invokeLine,
-                    "macro capture '\$${template.name}' must appear under '...' in a call/sequence position; a bare reference binds multiple expressions")
+                    "macro capture '\$${template.name}' must appear under '...' when it binds multiple expressions")
             }
             template
         }
@@ -512,7 +704,17 @@ internal object MacroExpander {
         is Expr.UpperScopeAccess, is Expr.Inject -> template
         is Expr.Unary -> template.copy(operand = substitute(template.operand, bindings, invokeLine))
         is Expr.Grouping -> template.copy(expr = substitute(template.expr, bindings, invokeLine))
-        is Expr.Member -> template.copy(target = substitute(template.target, bindings, invokeLine))
+        is Expr.Member -> {
+            val target = substitute(template.target, bindings, invokeLine)
+            when {
+                target is Expr.StringLiteral && template.name == "lowerCamel" ->
+                    Expr.StringLiteral(lowerCamel(target.value), template.line, template.column)
+                target is Expr.StringLiteral && template.name == "upperCamel" ->
+                    Expr.StringLiteral(upperCamel(target.value), template.line, template.column)
+                target is Expr.BoolLiteral && template.name == "isType" -> target
+                else -> template.copy(target = target)
+            }
+        }
         is Expr.SafeMember -> template.copy(target = substitute(template.target, bindings, invokeLine))
         is Expr.TupleAccess -> template.copy(target = substitute(template.target, bindings, invokeLine))
         is Expr.Index -> template.copy(
@@ -535,11 +737,21 @@ internal object MacroExpander {
             expr = substitute(template.expr, bindings, invokeLine),
             fallback = substitute(template.fallback, bindings, invokeLine),
         )
-        is Expr.IfExpr -> template.copy(
-            condition = substitute(template.condition, bindings, invokeLine),
-            thenExpr = substitute(template.thenExpr, bindings, invokeLine),
-            elseExpr = substitute(template.elseExpr, bindings, invokeLine),
-        )
+        is Expr.IfExpr -> {
+            val condition = substitute(template.condition, bindings, invokeLine)
+            when (condition) {
+                is Expr.BoolLiteral -> substitute(
+                    if (condition.value) template.thenExpr else template.elseExpr,
+                    bindings,
+                    invokeLine,
+                )
+                else -> template.copy(
+                    condition = condition,
+                    thenExpr = substitute(template.thenExpr, bindings, invokeLine),
+                    elseExpr = substitute(template.elseExpr, bindings, invokeLine),
+                )
+            }
+        }
         is Expr.Cast -> template.copy(expr = substitute(template.expr, bindings, invokeLine))
         is Expr.InlineForArgs -> template.copy(
             iterable = substitute(template.iterable, bindings, invokeLine),

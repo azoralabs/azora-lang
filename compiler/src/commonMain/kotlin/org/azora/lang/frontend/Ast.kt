@@ -1928,6 +1928,8 @@ sealed class MacroPattern {
     object Empty : MacroPattern()
     /** `(...$name)` / `[...$name]` / `{...$name}` - matches ≥1 arg, binding the full list to [name]. */
     data class SeqCapture(val name: String) : MacroPattern()
+    /** `($name: String)` - matches one argument of [type], binding it to [name]. */
+    data class TypedCapture(val name: String, val type: TypeRef) : MacroPattern()
     /**
      * `[...${key: value}]` - matches ≥1 `k: v` argument pair (each passed as an
      * [Expr.MapEntryArg]), binding the key exprs to [keyName] and the value exprs
@@ -1944,7 +1946,13 @@ sealed class MacroPattern {
  * @property pattern the argument-list pattern to match
  * @property template the expansion expression (ordinary [Expr], may reference captures)
  */
-data class MacroArm(val delimiter: MacroDelimiter, val pattern: MacroPattern, val template: Expr)
+data class MacroArm(
+    val delimiter: MacroDelimiter,
+    val pattern: MacroPattern,
+    val template: Expr,
+    /** Additional adjacent declaration fragments produced by this arm. */
+    val templateTail: List<Expr> = emptyList(),
+)
 
 /**
  * A value-level infix macro arm from `meta .Infix("op") { $a $b => template }`.
@@ -2242,6 +2250,12 @@ sealed class TopLevel {
          * the check needs to know where each side was written.
          */
         val declaringModule: String? = null,
+        /** Exact backend type name when it differs from [name]. */
+        val foreignName: String? = null,
+        /** Deferred declaration-name macro for a bridge pack. */
+        val nameMacro: Expr.MetaInvoke? = null,
+        /** Realm enclosing a deferred local name. */
+        val localRealm: String? = null,
     ) : TopLevel()
 
     /** `annot Name [binds Spec] { fields }` - an annotation type and optional derived spec contract. */
@@ -2259,10 +2273,45 @@ sealed class TopLevel {
     ) : TopLevel()
 
     /** An extern function signature inside a `bridge` block: `func sin(x: Double): Double` (no body). */
-    data class BridgeSig(val name: String, val params: List<Param>, val returnType: TypeRef, val line: Int, val column: Int = 0, val typeParams: List<String> = emptyList())
+    data class BridgeSig(
+        /** Backend symbol until [nameMacro] is expanded. */
+        val name: String,
+        val params: List<Param>,
+        val returnType: TypeRef,
+        val line: Int,
+        val column: Int = 0,
+        val typeParams: List<String> = emptyList(),
+        /** Local Azora wrapper name when the backend symbol differs. */
+        val localName: String? = null,
+        /** Declaration-position macro whose string result supplies [name]. */
+        val nameMacro: Expr.MetaInvoke? = null,
+        /** Realm enclosing a deferred local name. */
+        val localRealm: String? = null,
+    )
+
+    /** An exported bridge global (`fin`, `let`, or `var`). */
+    data class BridgeValue(
+        val name: String,
+        val type: TypeRef,
+        val initializer: Expr,
+        val mutable: Boolean,
+        val isLet: Boolean,
+        val line: Int,
+        val column: Int = 0,
+        val foreignName: String? = null,
+        val nameMacro: Expr.MetaInvoke? = null,
+        val localRealm: String? = null,
+    )
 
     /** `bridge <target> { func sigs }` - declares extern functions for active FFI targets (C/LLVM, Wasm). */
-    data class Bridge(val target: String, val funcs: List<BridgeSig>, val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList()) : TopLevel()
+    data class Bridge(
+        val target: String,
+        val funcs: List<BridgeSig>,
+        val line: Int,
+        val column: Int = 0,
+        val annotations: List<Annotation> = emptyList(),
+        val values: List<BridgeValue> = emptyList(),
+    ) : TopLevel()
 
     /** `solo pack Name { fields; methods }` - declares a singleton struct with one lazily-created shared instance. */
     data class Solo(val name: String, val fields: List<PackField>, val methods: List<FuncDecl>, val line: Int, val column: Int = 0, val visibility: Visibility = Visibility.PUBLIC, val annotations: List<Annotation> = emptyList()) : TopLevel()
@@ -2485,7 +2534,14 @@ sealed class TopLevel {
      * @property name the macro name
      * @property arms the ordered pattern arms (first match wins)
      */
-    data class Meta(val name: String, val arms: List<MacroArm>, val line: Int, val column: Int = 0) : TopLevel()
+    data class Meta(
+        val name: String,
+        val arms: List<MacroArm>,
+        val line: Int,
+        val column: Int = 0,
+        /** Parameter supplied by the compiler when the macro decorates a declaration. */
+        val parameter: String? = null,
+    ) : TopLevel()
 
     /**
      * A top-level compile-time assertion (`inline assert condition { "message" }`).

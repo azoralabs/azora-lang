@@ -228,6 +228,17 @@ class WasmCodegen {
         for ((name, type) in globalTypes) {
             sb.appendLine("  (global \$$name (mut ${wasmType(type)}) (${wasmType(type)}.const 0))")
         }
+        for (global in program.items.filterIsInstance<IrTopLevel.Global>()) {
+            val exportName = global.exportName ?: continue
+            val internalName = when (val declaration = global.stmt) {
+                is IrStmt.VarDecl -> declaration.name
+                is IrStmt.FinDecl -> declaration.name
+                is IrStmt.LetDecl -> declaration.name
+                else -> continue
+            }
+            val escaped = exportName.replace("\\", "\\\\").replace("\"", "\\\"")
+            sb.appendLine("  (export \"$escaped\" (global \$$internalName))")
+        }
         if (usesAlloc) sb.append(RT_ALLOC)
         if (usesConcat) sb.append(RT_CONCAT)
         if (usesIsCheck) usesStrEq = true

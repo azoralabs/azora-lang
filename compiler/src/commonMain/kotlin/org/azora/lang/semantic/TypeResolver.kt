@@ -93,6 +93,17 @@ class TypeResolver(private val table: SymbolTable) {
             expectedLambdaParamTypes = savedParams
             expectedLambdaReceiverTypes = savedReceivers
         }
+        for (bridge in program.items.filterIsInstance<TopLevel.Bridge>()) {
+            for (value in bridge.values) {
+                val declared = tryResolveType(value.type, value.line) ?: continue
+                val actual = resolveExpr(value.initializer) ?: continue
+                if (!isCompatible(declared, actual)) {
+                    errors.add(
+                        "line ${value.line}: bridge value '${value.name}' has type $declared but initializer is $actual",
+                    )
+                }
+            }
+        }
         for (func in program.functions) {
             resolveFunction(func)
         }

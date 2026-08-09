@@ -40,7 +40,8 @@ internal object IntraRealmRewriter {
         val mangled = HashSet<String>()
         for (item in program.items) {
             if (item is TopLevel.Bridge) {
-                item.funcs.mapTo(mangled) { it.name }
+                item.funcs.mapTo(mangled) { it.localName ?: it.name }
+                item.values.mapTo(mangled) { it.name }
                 continue
             }
             val name = nameOf(item) ?: continue
@@ -49,6 +50,14 @@ internal object IntraRealmRewriter {
         if (mangled.isEmpty()) return program
 
         val rewrittenItems = program.items.map { item ->
+            if (item is TopLevel.Bridge) {
+                return@map item.copy(values = item.values.map { value ->
+                    val prefix = value.localRealm ?: value.name.realmPrefix()
+                    if (prefix == null) value else value.copy(
+                        initializer = expr(value.initializer, prefix, mangled, emptySet()),
+                    )
+                })
+            }
             if (item is TopLevel.Impl && item.realmPrefix != null) {
                 return@map item.copy(methods = item.methods.map { method ->
                     val shadowed = collectShadowed(method)

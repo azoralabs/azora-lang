@@ -98,7 +98,6 @@ deepinline realm "config" {       // labeled realm: reflection metadata + inline
 | `expose` (default) | importable everywhere |
 | `protect` | importable within the declaring folder |
 | `confine` | private to the compilation unit |
-| `shield` (fields) | externally read-only, internally mutable |
 
 (`intern`/`shared`/`weak` were removed.)
 

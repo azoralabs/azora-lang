@@ -2195,7 +2195,6 @@ sealed class TopLevel {
         val column: Int = 0,
         val annotations: List<Annotation> = emptyList(),
         val visibility: Visibility = Visibility.PUBLIC,
-        /** `shield pack X {}` prevents external extensions from taking `mut ref self`. */
         /** Name of the variadic type param (`T` in `pack Tuple<...T>`), or null for a fixed pack. */
         val variadicParam: String? = null,
         /** Minimum element count from a `where <var>.length >= N` clause, or null if unconstrained. */

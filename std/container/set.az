@@ -124,7 +124,7 @@ realm std {
      *
      * Stores unique elements in insertion order in a contiguous `T*` buffer
      * that doubles on demand. Uniqueness and equality use `oper==` for `T`.
-     * Fields are `shield` so external zones cannot reach into the buffer.
+     * Internal fields are not exposed outside the pack.
      *
      * @generic T The element type.
      */

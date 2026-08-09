@@ -40,19 +40,17 @@ looking one token ahead - `isAsyncFuncAt`.
 
 ## 2. Spawning
 
-Three spellings, all producing a `Task<T>`:
+Two spellings, both producing a `Task<T>`:
 
 ```azora
 async func compute(n: Int): Int { return n * 2 }   // a declaration
 fin a = compute(21)                                 // calling it spawns
 
-fin b = async func { 21 }                           // a task lambda
-fin c = async { 21 }                                // the block form
+fin b = async { 21 }                                // an async lambda
 ```
 
 An `async func` declaration is an ordinary function whose call yields a task
-rather than a value. The two lambda forms differ only in whether `func` is
-written.
+rather than a value. `func` is never written in a lambda expression.
 
 A task begins running when it is created, not when it is awaited. A task whose
 handle is discarded still runs: it is a structured child of the program's root
@@ -84,6 +82,52 @@ result. It is a prefix operator on a `Task<T>`, giving `T`.
 
 Awaiting anything else is an error. Awaiting the same handle twice is not
 specified (§7).
+
+### 3.1 Target structured combinators
+
+Structured competition is a standard-library API, not language syntax:
+
+```azora
+fin winner = await std::race<Result> {
+    std::branch { return await localResult() }
+    std::branch { return await remoteResult() }
+}
+```
+
+`std::race`, `std::sync`, and `std::rush` are functions. Every child is declared
+with the fully qualified `std::branch`; `race`, `branch`, `sync`, and `rush` are
+not keywords.
+
+The conceptual contracts are:
+
+```azora
+pack RaceBuilder<T>
+
+async func race<T>(
+    configure: [RaceBuilder<T>!]() -> Unit
+): T
+
+func branch<T>[builder: RaceBuilder<T>!](
+    body: async () -> T
+)
+```
+
+The expected async callable type permits the concise `std::branch { ... }`
+trailing lambda. `std::branch` requires the contextual builder supplied by
+`std::race`, `std::sync`, or `std::rush`; calling it elsewhere is a type error,
+not an ambient registration side effect.
+
+`std::race` starts every branch, returns the first completion, cancels losers,
+and joins their cleanup. Source order breaks simultaneous completion ties.
+Parent cancellation cancels and joins every branch.
+
+`std::sync` waits for every branch and returns `std::Tuple<...T>` in source
+order. A failing branch cancels and joins its siblings before propagation.
+`std::rush` returns the first completion but leaves the other branches attached
+to the surrounding async owner.
+
+No `scope` or `std::block` wrapper is needed: each `std::branch` body is already
+the sequential lexical block, and the parent combinator owns its lifetime.
 
 ---
 

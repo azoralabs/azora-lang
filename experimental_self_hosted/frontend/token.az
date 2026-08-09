@@ -125,7 +125,6 @@ realm azora::lang {
             Expose                  /** Keyword expose */
             Confine                 /** Keyword confine */
             Protect                 /** Keyword protect */
-            Shield                  /** Keyword shield */
             Intern                  /** Keyword intern */
             Opaque                  /** Keyword opaque */
             Module                  /** Keyword module */

@@ -953,7 +953,7 @@ Every one fixed, or deleted with a stated reason.
 - ⬜ A single normative language reference assembled from the DIPs
 - ⬜ Grammar published (EBNF) and the parser verified against it
 - ⬜ Memory model written down
-- ⬜ Loose docs folded in or archived: `GAMEDEV_VERSE_PARITY.md`, `LAMBDA.MD`,
+- ⬜ Loose docs folded in or archived: `LAMBDA.MD`,
   `Realm.md`, `RealmEnum.md`, `StdDynamic.MD`, `UNSAFE.MD`
 
 ### 10.2 Learning material

@@ -149,8 +149,8 @@ realm std {
     /**
      * Dynamic-array pack backing both `List<T>` and `MutableList<T>`.
      *
-     * Storage is a contiguous `T*` buffer that doubles on demand. Fields are
-     * `shield` so external zones cannot reach into the buffer directly.
+     * Storage is a contiguous `T*` buffer that doubles on demand. Internal
+     * fields are not exposed outside the pack.
      *
      * @generic T The element type.
      */

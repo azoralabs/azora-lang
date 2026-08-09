@@ -167,7 +167,6 @@ enum class TokenType {
     // `out { … }` postcondition contracts.
     OUT,
     // Visibility: `expose` (public), `confine` (private), `protect` (protected).
-    // `shield` - a pack/field modifier: externally read-only, internally mutable.
     // Visibility: public by default, `confine` narrows to the package. A
     // leading underscore on the name is what makes a member private.
     // `expose` marks a `module` or an `import` as auto-imported everywhere.

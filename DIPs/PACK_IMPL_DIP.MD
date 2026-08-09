@@ -23,8 +23,7 @@ spec NAME <...GENERICS> [: PARENT<ARGS>] {
 ```
 
 - `VISIBILITY` ::= `expose` | `confine` | `protect` (default `expose`).
-- `FIELD_VISIBILITY` per field ::= `expose` | `confine` | `shield` (read-only
-  externally, mutable internally).
+- `FIELD_VISIBILITY` per field ::= `expose` | `confine`.
 - `opaque pack` forces every field to `confine`.
 
 ---
@@ -40,7 +39,6 @@ pack Point {
 pack Config {
     fin name: String            // immutable field
     var retries: Int = 3        // defaulted field
-    shield var version: Int     // externally read-only
     confine var secret: Int     // private to declaring file
 }
 ```
@@ -99,7 +97,7 @@ impl Resource {
 
 ### 2.4 `impl pack` (privileged mutation)
 
-`impl pack Type { … }` may mutate `shield`/`confine` fields of a pack declared in
+`impl pack Type { … }` may mutate `confine` fields of a pack declared in
 the same file.
 
 ## 3. Specs (traits)

@@ -208,6 +208,93 @@ idempotent.
 For a cached language-level derived value, prefer `lazy fin`. `computed` is a
 library value useful when a derived producer must be passed or stored.
 
+### 5.1 One reactive graph beyond UI
+
+`std.reactive` is the shared state graph for applications, games, editors,
+services, and UI. It does not import a renderer and does not assign special
+meaning to frames, widgets, entities, or HTTP requests. Domain packages connect
+their lifecycles through adapters:
+
+- a UI observes `Read<T>` and writes through `Write<T>`
+- an ECS publishes owned snapshots at deterministic phase boundaries
+- an editor records committed attempts for undo and redo
+- a service observes configuration or connection state
+
+An ECS adapter must batch publication after its phase completes. Publishing
+after each component write would expose partially updated worlds and make
+parallel scheduling visible to observers. Reactive consumers never retain ECS
+query borrows; they receive owned snapshots or stable handles.
+
+Reactive owners used by engine entities must have explicit owner keys. Until
+the owner ABI supports entity, scene, and application identities, a `react`
+callable must not pretend to provide per-entity state: process-wide storage by
+callable identity would alias every entity's `remember` values.
+
+### 5.2 Transactional attempts
+
+The proposed transaction surface extends `std.reactive` without adding a
+keyword:
+
+```azora
+spec AttemptSource
+
+func attempt<T, E, S>(
+    source: S!,
+    body: (Attempt<S>!) -> T ?! E
+): T ?! E
+where S: AttemptSource
+```
+
+`std::attempt(source) { attempt -> ... }` opens a journal through the source's
+implementation. A successful body commits. A typed failure rolls back before
+it propagates. `defer` always runs. The transaction view is the only mutable
+view passed to the body, preventing accidental writes around the journal.
+
+```azora
+fin updated = std::attempt(store) { attempt ->
+    fin count = attempt.write(counter)
+    count.set(count.value + 1)
+    return count.value
+}
+```
+
+Reactive writes invalidate derived values and notify observers only after the
+outermost successful commit. Rollback restores values and versions without
+publishing. Nested attempts use savepoints when the source supports them and
+otherwise fail before running the inner body.
+
+`batch` and `attempt` are deliberately different:
+
+| operation | rollback | publication |
+|---|---:|---|
+| `std::batch(source) { ... }` | no | once after the body |
+| `std::attempt(source) { ... }` | on typed failure | once after commit only |
+
+Language `try` remains typed-error propagation. It neither creates a journal
+nor changes reactive publication. This avoids making error handling depend on
+an ambient transaction.
+
+Worlds, reactive stores, editor documents, and future database sessions may
+implement `AttemptSource`. The compiler understands typed failure and callable
+effects, not those concrete source types. Synchronous attempts reject
+`Suspend`, external `Io`, and any effect for which the source has no rollback
+adapter. A future asynchronous database transaction should be a distinct
+overload with an explicit capability, not a silent relaxation of these rules.
+
+Structured concurrency remains in `std.concurrency`:
+
+```azora
+fin winner = await std::race<Value> {
+    std::branch { return await localValue() }
+    std::branch { return await remoteValue() }
+}
+```
+
+Reactive owners dispose subscriptions when cancelled, but `std::race` is not a
+reactive primitive. `std::branch` is the required namespaced branch constructor;
+it is not a keyword. No `scope` or `std::block` wrapper is needed because each
+branch lambda already supplies the sequential task body.
+
 ## 6. Lowering and memory
 
 ### Interpreter
@@ -251,9 +338,9 @@ These are explicit implementation limits, not implied guarantees:
    installed automatically.
 5. `preserve` exposes snapshots and `PreserveStore`; persistence is not silently
    performed by the compiler.
-6. The compiler repository currently has interpreter, LLVM, and Wasm backends.
-   A JavaScript backend must consume the same Azora IR nodes before parity can be
-   claimed for JavaScript.
+6. The supported execution targets are the interpreter, LLVM, and WebAssembly.
+   All three must consume the same resolved reactive Azora IR semantics; a
+   backend-specific source model is not part of this design.
 
 ## 8. Rules
 
@@ -267,6 +354,10 @@ These are explicit implementation limits, not implied guarantees:
 7. `effect defer` runs at owner exit.
 8. `lazy` accepts `fin` and `let`, evaluates on first read, and is cached.
 9. Inside a reactive owner, a lazy binding is invalidated by reactive inputs.
+10. `std::attempt` publishes reactive changes only after commit and publishes
+    nothing after rollback.
+11. ECS and other domain adapters publish owned values at explicit deterministic
+    boundaries; reactive code never retains domain-internal borrows.
 
 ## 9. Related
 

@@ -393,8 +393,8 @@ Grouped:
 
 **Not keywords** (and not in the language): `node` `leaf` `virt` `repl` `base`
 `hook` `flow` `yield` `task` `slot` `fail` `deco` `zone` `mod` `drop` `deref`
-`mut` `ref` `shared` `weak` `shield` `protect` `launch` `async`. `async` is a
-contextual identifier before `func` and `{`; `launch` is a library function.
+`mut` `ref` `shared` `weak` `protect` `launch` `async`. `async` is a contextual
+identifier before `func` and `{`; `launch` is a library function.
 
 ---
 

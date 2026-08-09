@@ -1809,8 +1809,11 @@ class LlvmCodegen {
                     // body go through it, so both sides see one value.
                     emit("  store ${capture.fieldType} ${storage.first}, ${capture.fieldType}* $field, align 1")
                 } else {
-                    val value = nextTmp()
-                    emit("  $value = load ${capture.llvmType}, ${capture.llvmType}* ${storage.first}")
+                    val value = lambda.captureInitializers[capture.name]?.let(::emitExpr) ?: run {
+                        val loaded = nextTmp()
+                        emit("  $loaded = load ${capture.llvmType}, ${capture.llvmType}* ${storage.first}")
+                        loaded
+                    }
                     emit("  store ${capture.llvmType} $value, ${capture.llvmType}* $field, align 1")
                 }
             }
@@ -1970,7 +1973,7 @@ class LlvmCodegen {
         val ctxType = "%azora.ctx.${safePrefix}.$id"
         val captures = collectCaptures(lambda)
         if (captures.isNotEmpty()) {
-            lateTypeDefinitions.add("$ctxType = type { ${captures.joinToString(", ") { it.llvmType }} }")
+            lateTypeDefinitions.add("$ctxType = type { ${captures.joinToString(", ") { it.fieldType }} }")
         }
 
         val ctxRaw = if (captures.isEmpty()) {
@@ -1988,16 +1991,23 @@ class LlvmCodegen {
             for ((i, capture) in captures.withIndex()) {
                 val storage = localVars[capture.name] ?: continue
                 val field = nextTmp()
-                val value = nextTmp()
                 emit("  $field = getelementptr $ctxType, $ctxType* $ctx, i32 0, i32 $i")
-                emit("  $value = load ${storage.second}, ${storage.second}* ${storage.first}")
-                emit("  store ${capture.llvmType} $value, ${capture.llvmType}* $field, align 1")
+                if (capture.byRef) {
+                    emit("  store ${capture.fieldType} ${storage.first}, ${capture.fieldType}* $field, align 1")
+                } else {
+                    val value = lambda.captureInitializers[capture.name]?.let(::emitExpr) ?: run {
+                        val loaded = nextTmp()
+                        emit("  $loaded = load ${storage.second}, ${storage.second}* ${storage.first}")
+                        loaded
+                    }
+                    emit("  store ${capture.fieldType} $value, ${capture.fieldType}* $field, align 1")
+                }
             }
             raw
         }
 
         deferredFunctions += renderDeferredFunction {
-            emitFunction(IrFunction(bodyName, captures.map { it.name to it.type }, resultType, lambda.body))
+            emitLambdaTaskBody(bodyName, captures, resultType, lambda.body)
         }
         deferredFunctions += renderDeferredFunction {
             emitLambdaTaskEntry(entryName, bodyName, ctxType, captures, resultType)
@@ -2028,19 +2038,19 @@ class LlvmCodegen {
         if (dynamicGlobalInitializers.any { it.threadLocal }) {
             emit("  call void @__azora_init_threadlocals()")
         }
-        val captureValues = mutableListOf<Pair<String, IrType>>()
+        val captureValues = mutableListOf<Pair<String, Capture>>()
         if (captures.isNotEmpty()) {
             emit("  %ctx = bitcast i8* %ctx.raw to $ctxType*")
             for ((i, capture) in captures.withIndex()) {
                 val ptr = "%capture.ptr.$i"
                 val value = "%capture.val.$i"
                 emit("  $ptr = getelementptr $ctxType, $ctxType* %ctx, i32 0, i32 $i")
-                emit("  $value = load ${capture.llvmType}, ${capture.llvmType}* $ptr, align 1")
-                captureValues += value to capture.type
+                emit("  $value = load ${capture.fieldType}, ${capture.fieldType}* $ptr, align 1")
+                captureValues += value to capture
             }
             emit("  call void @__azora_free(i8* %ctx.raw)")
         }
-        val args = captureValues.joinToString(", ") { (value, type) -> "${mapType(type)} $value" }
+        val args = captureValues.joinToString(", ") { (value, capture) -> "${capture.fieldType} $value" }
         if (resultType == IrType.Unit) {
             emit("  call void @$bodyName($args)")
             emitTerminator("  ret i8* null")
@@ -2050,6 +2060,45 @@ class LlvmCodegen {
             val boxed = emitResultBox(result, resultType)
             emitTerminator("  ret i8* $boxed")
         }
+        line("}")
+    }
+
+    /** Emits a spawned lambda body while preserving borrowed captures as pointers. */
+    private fun emitLambdaTaskBody(
+        name: String,
+        captures: List<Capture>,
+        resultType: IrType,
+        body: List<IrStmt>,
+    ) {
+        localVars.clear()
+        loopStack.clear()
+        taskScopeStack.clear()
+        tmpCounter = 0
+        labelCounter = 0
+        terminated = false
+        currentBlock = "entry"
+        currentReturnType = resultType
+        currentIsMain = false
+        currentIsFailable = false
+
+        val params = captures.joinToString(", ") { "${it.fieldType} %arg.${it.name}" }
+        line("define ${mapType(resultType)} @$name($params) {")
+        line("entry:")
+        for (capture in captures) {
+            if (capture.byRef) {
+                localVars[capture.name] = "%arg.${capture.name}" to capture.llvmType
+            } else {
+                val slot = nextTmp()
+                emit("  $slot = alloca ${capture.llvmType}")
+                emit("  store ${capture.llvmType} %arg.${capture.name}, ${capture.llvmType}* $slot")
+                localVars[capture.name] = slot to capture.llvmType
+            }
+        }
+        emitEntryAllocas(body)
+        emitStmts(body)
+        emitFunctionExitCleanup()
+        if (resultType == IrType.Unit) emitTerminator("  ret void")
+        else emitTerminator("  ret ${mapType(resultType)} ${defaultValue(resultType)}")
         line("}")
     }
 

@@ -34,7 +34,7 @@ use realm std {
      * - `(A, B) -> R`
      * - `(...A) -> R`
      * - `[Context](A, B) -> R`
-     * - `[Context] -> R`
+     * - `[Context]() -> R`
      */
     @Since("0.1")
     bridge pack Func<PARAMS, RETURN_TYPE, RECEIVERS>

@@ -17,6 +17,7 @@
 package org.azora.lang.semantic
 
 import org.azora.lang.frontend.Visibility
+import org.azora.lang.frontend.CaptureMode
 import org.azora.lang.frontend.MemberCallStyle
 import org.azora.lang.frontend.DecoTarget
 import org.azora.lang.frontend.TypeRef
@@ -184,6 +185,8 @@ class SymbolTable {
     private val specs = mutableMapOf<String, SpecSymbol>() // spec name → method names/callback
     private val conformances = mutableListOf<TraitConformance>()
     private val lambdaTypes = mutableMapOf<Pair<Int, Int>, IrType.Function>()
+    /** Exact source bindings and modes selected after default-capture inference. */
+    private val lambdaCaptures = mutableMapOf<Pair<Int, Int>, Map<String, CaptureMode>>()
     // slot name → list of (variant name → payload types)
     private val slots = mutableMapOf<String, List<Pair<String, List<IrType>>>>()
     /** Import aliases: alias name → real (mangled) name. Populated from `use` declarations. */
@@ -467,6 +470,13 @@ class SymbolTable {
     fun lookupLambdaType(line: Int, column: Int): IrType.Function? =
         lambdaTypes[line to column]
 
+    fun defineLambdaCaptures(line: Int, column: Int, captures: Map<String, CaptureMode>) {
+        lambdaCaptures[line to column] = captures.toMap()
+    }
+
+    fun lookupLambdaCaptures(line: Int, column: Int): Map<String, CaptureMode> =
+        lambdaCaptures[line to column].orEmpty()
+
 
     // -- Type aliases -----------------------------------------------------
     private val aliases = mutableMapOf<String, org.azora.lang.frontend.TypeRef>()
@@ -548,6 +558,16 @@ class SymbolTable {
         if (startIndex < 0) return null
         for (i in startIndex downTo 0) {
             scopes[i][name]?.let { return it }
+        }
+        return null
+    }
+
+    /** Scope index selected by [lookupVariableInUpperScope], for boundary checks. */
+    fun variableScopeIndexInUpperScope(name: String, depth: Int = 1): Int? {
+        val startIndex = scopes.size - 1 - depth
+        if (startIndex < 0) return null
+        for (i in startIndex downTo 0) {
+            if (scopes[i].containsKey(name)) return i
         }
         return null
     }

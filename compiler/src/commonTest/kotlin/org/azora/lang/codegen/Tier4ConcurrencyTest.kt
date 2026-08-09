@@ -32,7 +32,7 @@ class Tier4ConcurrencyTest {
             func main() {
                 var async = 5
                 std::println(async)
-                fin handle = async func { 21 }
+                fin handle = async { 21 }
                 std::println(await handle)
                 std::println(await compute(10))
             }
@@ -43,7 +43,7 @@ class Tier4ConcurrencyTest {
         assertEquals("42", run("""
             import std.io
             func main() {
-                var t = async func {
+                var t = async {
                     42
                 }
                 std::println(await t)
@@ -58,7 +58,7 @@ class Tier4ConcurrencyTest {
                 return a * b
             }
             func main() {
-                var t = async func {
+                var t = async {
                     compute(5, 6)
                 }
                 std::println(await t)
@@ -70,8 +70,8 @@ class Tier4ConcurrencyTest {
         assertEquals("10\n20", run("""
             import std.io
             func main() {
-                var t1 = async func { 10 }
-                var t2 = async func { 20 }
+                var t1 = async { 10 }
+                var t2 = async { 20 }
                 std::println(await t1)
                 std::println(await t2)
             }
@@ -103,7 +103,7 @@ class Tier4ConcurrencyTest {
             }
             func main() {
                 var ch = channel()
-                var p = async func {
+                var p = async {
                     produce(ch)
                 }
                 await p
@@ -119,8 +119,8 @@ class Tier4ConcurrencyTest {
         assertEquals("300", run("""
             import std.io
             func main() {
-                var t1 = async func { 100 }
-                var t2 = async func { 200 }
+                var t1 = async { 100 }
+                var t2 = async { 200 }
                 std::println(await t1 + await t2)
             }
         """.trimIndent()))

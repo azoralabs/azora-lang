@@ -46,7 +46,12 @@ import org.azora.lang.ir.IrUnaryOp
  */
 class WasmCodegen {
 
-    private data class ClosureCapture(val name: String, val type: IrType, val offset: Int)
+    private data class ClosureCapture(
+        val name: String,
+        val type: IrType,
+        val offset: Int,
+        val byRef: Boolean,
+    )
     private data class ClosureFunction(
         val index: Int,
         val lambda: IrExpr.Lambda,
@@ -60,6 +65,8 @@ class WasmCodegen {
     // Per-function state.
     private val locals = LinkedHashMap<String, String>() // name -> wasm type
     private val localIrTypes = LinkedHashMap<String, IrType>()
+    /** Source binding -> local containing its shared closure-cell address. */
+    private val boxedLocals = LinkedHashMap<String, String>()
     private var params = emptySet<String>()
     private var tempCounter = 0
     private var blockCounter = 0
@@ -248,7 +255,7 @@ class WasmCodegen {
 
     private fun emitGlobalInitializer(globals: List<IrStmt>): String {
         if (globals.isEmpty()) return ""
-        locals.clear(); localIrTypes.clear(); tempCounter = 0; blockCounter = 0
+        locals.clear(); localIrTypes.clear(); boxedLocals.clear(); tempCounter = 0; blockCounter = 0
         loopStack.clear(); labelTargets.clear(); params = emptySet()
 
         out.clear(); indent = 2
@@ -270,7 +277,7 @@ class WasmCodegen {
     }
 
     private fun emitFunction(func: IrFunction): String {
-        locals.clear(); localIrTypes.clear(); tempCounter = 0; blockCounter = 0
+        locals.clear(); localIrTypes.clear(); boxedLocals.clear(); tempCounter = 0; blockCounter = 0
         loopStack.clear(); labelTargets.clear()
         params = func.params.map { it.first }.toSet()
         activeReactiveEffects.clear()
@@ -334,8 +341,14 @@ class WasmCodegen {
             is IrStmt.Assignment -> {
                 val alias = reactiveAliases[stmt.name]
                 val target = alias?.valueGlobal ?: stmt.name
-                val operation = if (alias != null || (target in globalTypes && target !in localIrTypes)) "global.set" else "local.set"
-                line("($operation \$$target ${emitExpr(stmt.value)})")
+                val boxed = boxedLocals[target]
+                if (boxed != null) {
+                    val type = localIrTypes[target] ?: stmt.value.type
+                    line("(${wasmStore(type)} (local.get \$$boxed) ${emitExpr(stmt.value)})")
+                } else {
+                    val operation = if (alias != null || (target in globalTypes && target !in localIrTypes)) "global.set" else "local.set"
+                    line("($operation \$$target ${emitExpr(stmt.value)})")
+                }
                 if (!emittingReactiveEffect) {
                     val changed = invalidateLazyDependents(stmt.name) + stmt.name
                     for (effect in activeReactiveEffects.filter { effect ->
@@ -610,8 +623,13 @@ class WasmCodegen {
             ensureLazyInitialized(expr.name)
             val alias = reactiveAliases[expr.name]
             val target = alias?.valueGlobal ?: expr.name
-            val operation = if (alias != null || (target in globalTypes && target !in localIrTypes)) "global.get" else "local.get"
-            "($operation \$$target)"
+            val boxed = boxedLocals[target]
+            if (boxed != null) {
+                "(${wasmLoad(expr.type)} (local.get \$$boxed))"
+            } else {
+                val operation = if (alias != null || (target in globalTypes && target !in localIrTypes)) "global.get" else "local.get"
+                "($operation \$$target)"
+            }
         }
         is IrExpr.Unary -> when (expr.op) {
             IrUnaryOp.NEG -> {
@@ -839,7 +857,7 @@ class WasmCodegen {
 
         val closure = newTemp("i32")
         val environment = newTemp("i32")
-        val environmentSize = captures.lastOrNull()?.let { it.offset + wasmSize(it.type) } ?: 0
+        val environmentSize = captures.lastOrNull()?.let { it.offset + if (it.byRef) 4 else wasmSize(it.type) } ?: 0
         val sb = StringBuilder("(block (result i32)\n")
         val pad = "  ".repeat(indent + 1)
         if (environmentSize == 0) {
@@ -848,7 +866,25 @@ class WasmCodegen {
             sb.append("$pad(local.set $environment (call \$__alloc (i32.const $environmentSize)))\n")
             for (capture in captures) {
                 val address = wasmAddress(environment, capture.offset)
-                sb.append("$pad(${wasmStore(capture.type)} $address (local.get \$${capture.name}))\n")
+                if (capture.byRef) {
+                    val existingBox = boxedLocals[capture.name]
+                    val box = existingBox ?: newTemp("i32").removePrefix("\$")
+                    if (existingBox == null) {
+                        val currentValue = "(local.get \$${capture.name})"
+                        sb.append("$pad(local.set \$$box (call \$__alloc (i32.const ${wasmSize(capture.type)})))\n")
+                        sb.append("$pad(${wasmStore(capture.type)} (local.get \$$box) $currentValue)\n")
+                        boxedLocals[capture.name] = box
+                    }
+                    sb.append("$pad(i32.store $address (local.get \$$box))\n")
+                } else {
+                    val boxed = boxedLocals[capture.name]
+                    val value = lambda.captureInitializers[capture.name]?.let(::emitExpr) ?: if (boxed != null) {
+                        "(${wasmLoad(capture.type)} (local.get \$$boxed))"
+                    } else {
+                        "(local.get \$${capture.name})"
+                    }
+                    sb.append("$pad(${wasmStore(capture.type)} $address $value)\n")
+                }
             }
         }
         sb.append("$pad(local.set $closure (call \$__alloc (i32.const 8)))\n")
@@ -859,7 +895,7 @@ class WasmCodegen {
     }
 
     private fun emitClosureFunction(closure: ClosureFunction): String {
-        locals.clear(); localIrTypes.clear(); tempCounter = 0; blockCounter = 0
+        locals.clear(); localIrTypes.clear(); boxedLocals.clear(); tempCounter = 0; blockCounter = 0
         loopStack.clear(); labelTargets.clear()
         params = closure.lambda.params.map { it.first }.toSet() + "__env"
         localIrTypes.putAll(closure.lambda.params)
@@ -867,11 +903,19 @@ class WasmCodegen {
 
         out.clear(); indent = 2
         for (capture in closure.captures) {
-            declareLocal(capture.name, capture.type)
-            line(
-                "(local.set \$${capture.name} " +
-                    "(${wasmLoad(capture.type)} ${wasmAddress("\$__env", capture.offset)}))",
-            )
+            if (capture.byRef) {
+                val box = "__capture_ref_${capture.name}"
+                declareLocal(box, IrType.Int)
+                localIrTypes[capture.name] = capture.type
+                boxedLocals[capture.name] = box
+                line("(local.set \$$box (i32.load ${wasmAddress("\$__env", capture.offset)}))")
+            } else {
+                declareLocal(capture.name, capture.type)
+                line(
+                    "(local.set \$${capture.name} " +
+                        "(${wasmLoad(capture.type)} ${wasmAddress("\$__env", capture.offset)}))",
+                )
+            }
         }
         for (stmt in closure.lambda.body) emitStmt(stmt)
         val body = out.toString()
@@ -899,9 +943,12 @@ class WasmCodegen {
         return references
             .filterKeys { it !in declared && it in localIrTypes }
             .map { (name, type) ->
-                offset = alignTo(offset, wasmAlignment(type))
-                ClosureCapture(name, localIrTypes.getValue(name), offset).also {
-                    offset += wasmSize(it.type)
+                val byRef = lambda.allCapturesByRef || name in lambda.byRefCaptures
+                val storedType = localIrTypes.getValue(name)
+                val alignment = if (byRef) 4 else wasmAlignment(type)
+                offset = alignTo(offset, alignment)
+                ClosureCapture(name, storedType, offset, byRef).also {
+                    offset += if (it.byRef) 4 else wasmSize(it.type)
                 }
             }
     }

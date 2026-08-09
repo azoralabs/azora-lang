@@ -1119,7 +1119,7 @@ class IrInterpreter {
             is IrExpr.Lambda -> {
                 val st = state()
                 run {
-                    // A value capture (`[n]`, `[n.clone()]`, `[take n]`) is the
+                    // A value capture (`[; n]`, `[; n.clone()]`, `[; take n]`) is the
                     // closure's own, taken now - so it is snapshotted into a scope
                     // of its own rather than read back through the scope chain,
                     // where a later write to the original would reach it.
@@ -1128,7 +1128,15 @@ class IrInterpreter {
                         val snapshot = mutableMapOf<String, Any?>()
                         for (name in expr.valueCaptures) {
                             val holder = st.scopes.lastOrNull { it.containsKey(name) } ?: continue
-                            snapshot[name] = holder[name]
+                            val value = holder[name]
+                            val initializer = expr.captureInitializers[name]
+                            snapshot[name] = if (initializer != null) {
+                                evalExpr(initializer)
+                            } else if (name in expr.cloneCaptures) {
+                                deepCopy(value)
+                            } else {
+                                value
+                            }
                         }
                         if (snapshot.isNotEmpty()) scopes.add(snapshot)
                     }

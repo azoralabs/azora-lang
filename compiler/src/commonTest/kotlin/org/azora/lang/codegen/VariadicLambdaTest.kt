@@ -19,7 +19,7 @@ class VariadicLambdaTest {
         assertEquals("0\n1\n3", run("""
             import std.io
             func main() {
-                fin len = <...T>{ it.length }
+                fin len = <...T> { values: ...T -> values.length }
                 std::println(len())
                 std::println(len(1))
                 std::println(len(1, 2, 3))
@@ -31,7 +31,7 @@ class VariadicLambdaTest {
         assertEquals("42\n10", run("""
             import std.io
             func main() {
-                fin first = <...T>{ it[0] }
+                fin first = <...T> { values: ...T -> values[0] }
                 std::println(first(42))
                 std::println(first(10, 20, 30))
             }
@@ -43,9 +43,9 @@ class VariadicLambdaTest {
         assertEquals("6\n100", run("""
             import std.io
             func main() {
-                fin sum = <...T>{
+                fin sum = <...T> { values: ...T ->
                     var total = 0
-                    for x in it { total = total + x }
+                    for x in values { total = total + x }
                     total
                 }
                 std::println(sum(1, 2, 3))
@@ -58,8 +58,9 @@ class VariadicLambdaTest {
         // Regression: a non-variadic lambda with a for loop + local accumulator.
         assertEquals("6", run("""
             import std.io
+            import std.container.array
             func main() {
-                fin f = { xs: Array<Int> ->
+                fin f = { xs: std::Array<Int> ->
                     var total = 0
                     for x in xs { total = total + x }
                     total

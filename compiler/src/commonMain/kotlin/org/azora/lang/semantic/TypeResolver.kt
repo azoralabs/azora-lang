@@ -28,7 +28,6 @@ import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.FuncDecl
 import org.azora.lang.frontend.MemberCallStyle
 import org.azora.lang.frontend.NumericSuffix
-import org.azora.lang.frontend.splitBracketList
 import org.azora.lang.frontend.Program
 import org.azora.lang.frontend.Stmt
 import org.azora.lang.frontend.TokenType
@@ -572,13 +571,13 @@ class TypeResolver(private val table: SymbolTable) {
      * @property floor the scope depth the lambda's own bindings start at; anything
      *   declared below it (but above the globals in scope 0) belongs to the
      *   enclosing scope and needs a capture
-     * @property captured names the bracket list named
-     * @property hasDefault whether `[=]` / `[&]` / `[!]` covers whatever the body reads
+     * @property defaultMode the mode after `;`, applied lazily to used free variables
+     * @property inferred source names actually selected by that default
      */
     private data class LambdaFrame(
         val floor: Int,
-        val captured: Set<String>,
-        val hasDefault: Boolean,
+        val defaultMode: CaptureMode?,
+        val inferred: MutableMap<String, CaptureMode> = linkedMapOf(),
     )
 
     private val lambdaFrames = mutableListOf<LambdaFrame>()
@@ -586,27 +585,48 @@ class TypeResolver(private val table: SymbolTable) {
     /**
      * A lambda reaches the scope around it only through its capture list.
      *
-     * Capture is never implicit: `[=]`, `[&]` and `[!]` are the three ways to ask
-     * for it, and writing no brackets asks for none (LAMBDA_CONTEXT_CAPTURE_DIP.MD
+     * Capture is never implicit: `[; =]`, `[; &]`, `[; !]`, and `[; take]` ask
+     * for it, and writing no capture section asks for none (LAMBDA_CONTEXT_CAPTURE_DIP.MD
      * §4.5). Globals are not captured - they belong to the program, not to the
      * scope the closure was made in - so scope 0 is always visible.
      */
-    private fun checkCapture(name: String, line: Int) {
-        if (lambdaFrames.isEmpty()) return
-        val index = table.variableScopeIndex(name) ?: return
-        if (index == 0) return
+    private fun checkCapture(name: String, line: Int): CaptureMode? {
+        if (lambdaFrames.isEmpty()) return null
+        val index = table.variableScopeIndex(name) ?: return null
+        if (index == 0) return null
         for (frame in lambdaFrames.asReversed()) {
-            if (index >= frame.floor) return
-            if (name in frame.captured) return
-            if (frame.hasDefault) return
+            if (index >= frame.floor) return null
+            frame.inferred[name]?.let { return it }
+            val mode = frame.defaultMode
+            if (mode != null) {
+                val outer = table.lookupVariable(name) ?: return null
+                val capture = Capture(name, name, mode, line)
+                checkCaptureMode(capture, outer.type)
+                frame.inferred[name] = mode
+                table.defineVariable(capturedSymbol(capture, outer))
+                return mode
+            }
             errors.add(
                 "line $line: '$name' is not in scope - a lambda with no capture list cannot " +
-                    "reach the scope around it; write '[$name.&]' to reference it, " +
-                    "'[$name.!]' to write it, '[$name]' to copy it, or '[&]' to capture " +
+                    "reach the scope around it; write '[; $name.&]' to reference it, " +
+                    "'[; $name.!]' to write it, '[; $name]' to copy it, or '[; &]' to capture " +
                     "what the body reads",
             )
-            return
+            return null
         }
+        return null
+    }
+
+    private fun capturedSymbol(capture: Capture, outer: VariableSymbol): VariableSymbol = when (capture.mode) {
+        CaptureMode.SHARED -> VariableSymbol(capture.name, outer.type, mutable = false, valueMutable = false)
+        CaptureMode.MUTABLE -> VariableSymbol(
+            capture.name,
+            outer.type,
+            mutable = outer.mutable,
+            valueMutable = outer.valueMutable,
+        )
+        CaptureMode.COPY, CaptureMode.CLONE, CaptureMode.MOVE ->
+            VariableSymbol(capture.name, outer.type, mutable = true, valueMutable = true)
     }
 
     private fun requireTestCaller(name: String, line: Int): Boolean {
@@ -811,11 +831,6 @@ class TypeResolver(private val table: SymbolTable) {
 
     /** Resolves one argument with the callable type expected at that position. */
     private fun resolveContextualArgument(argument: Expr, expected: IrType?): IrType? {
-        // `onEvent(handler: escaping (Event) -> Unit)` - the callable is kept for
-        // later, so whatever it captures has to be owned.
-        if (expected is IrType.Function && expected.isEscaping && argument is Expr.Lambda) {
-            checkEscapingCaptures(argument, "is passed to an escaping parameter")
-        }
         val savedParams = expectedLambdaParamTypes
         val savedReceivers = expectedLambdaReceiverTypes
         if (argument is Expr.Lambda && expected is IrType.Function) {
@@ -823,7 +838,14 @@ class TypeResolver(private val table: SymbolTable) {
             expectedLambdaReceiverTypes = expected.receivers
         }
         return try {
-            resolveExpr(argument)
+            val resolved = resolveExpr(argument)
+            // The body has now expanded a capture default to the exact free
+            // bindings it selected, so escaping is checked without treating a
+            // default as though it captured the whole surrounding scope.
+            if (expected is IrType.Function && expected.isEscaping && argument is Expr.Lambda) {
+                checkEscapingCaptures(argument, "is passed to an escaping parameter")
+            }
+            resolved
         } finally {
             expectedLambdaParamTypes = savedParams
             expectedLambdaReceiverTypes = savedReceivers
@@ -920,6 +942,7 @@ class TypeResolver(private val table: SymbolTable) {
             is Stmt.FinDecl ->
                 resolveBinding(stmt.name, stmt.type, stmt.initializer, stmt.line, mutable = false, valueMutable = false)
             is Stmt.Assignment -> {
+                checkCapture(stmt.name, stmt.line)
                 val varSym = table.lookupVariable(stmt.name)
                 if (varSym == null) {
                     errors.add("line ${stmt.line}: undefined variable '${stmt.name}'")
@@ -934,7 +957,7 @@ class TypeResolver(private val table: SymbolTable) {
                 // `var`/`val` may be rebound after a move, which makes the name
                 // usable again - the ownership model's whole distinction between
                 // the rebindable and fixed keywords after a `take`.
-                movedBindings.remove(stmt.name)
+                if (!isBoundInsideCurrentLambda(stmt.name)) movedBindings.remove(stmt.name)
                 // `a += b` on a type that declares an in-place `oper+=` never
                 // becomes `a = a + b`, so checking the desugaring would demand
                 // an `oper+` the type is entitled not to have. The lowerer makes
@@ -963,10 +986,10 @@ class TypeResolver(private val table: SymbolTable) {
                     checkReturnedOrigin(stmt.value!!, stmt.line)
                     // Returning a closure is one of the four ways it escapes: the
                     // scope it captured from is gone by the time it is called.
+                    val valueType = resolveExpr(stmt.value) ?: return
                     (stmt.value as? Expr.Lambda)?.let {
                         if (lambdaReturnTypes == null) checkEscapingCaptures(it, "is returned")
                     }
-                    val valueType = resolveExpr(stmt.value) ?: return
                     val capturing = lambdaReturnTypes
                     if (capturing != null) {
                         // Inferring a lambda's return type - record it, skip declared-type checking.
@@ -1330,6 +1353,16 @@ class TypeResolver(private val table: SymbolTable) {
                 } else sym.type
             }
             is Expr.UpperScopeAccess -> {
+                val selectedScope = table.variableScopeIndexInUpperScope(expr.name, expr.depth)
+                val crossedLambda = selectedScope != null && selectedScope != 0 &&
+                    lambdaFrames.any { selectedScope < it.floor }
+                if (crossedLambda) {
+                    errors.add(
+                        "line ${expr.line}: upper-scope access cannot bypass a lambda capture boundary; " +
+                            "capture '${expr.name}' after ';' and use a capture alias when it is shadowed",
+                    )
+                    return null
+                }
                 val sym = table.lookupVariableInUpperScope(expr.name, expr.depth)
                 if (sym == null) {
                     val colons = "::".repeat(expr.depth)
@@ -1482,9 +1515,6 @@ class TypeResolver(private val table: SymbolTable) {
                         // non-escaping by default (§4.7), and a field that merely
                         // holds one for the life of a value it is itself part of
                         // outlives nothing the closure borrowed.
-                        if (fieldType is IrType.Function && fieldType.isEscaping && argument is Expr.Lambda) {
-                            checkEscapingCaptures(argument, "is stored in an escaping field")
-                        }
                         val argType = resolveContextualArgument(argument, fieldType) ?: return null
                         if (struct.typeParams.isEmpty()) {
                             if (!isCompatible(fieldType, adoptLiteralType(argument, argType, fieldType))) {
@@ -2291,14 +2321,29 @@ class TypeResolver(private val table: SymbolTable) {
                 }
             }
             is Expr.Lambda -> {
+                val savedLambdaTypeParams = currentFuncTypeParams
+                currentFuncTypeParams = currentFuncTypeParams + expr.typeParams
                 // Infer the implicit `it` parameter's type from context when available.
                 val expectedParams = expectedLambdaParamTypes
                 val expectedReceivers = expectedLambdaReceiverTypes
-                // `[value] { factor -> … }` against `[Int](Int) -> Int` - a bare
-                // bracket entry is the receiver the expected type declares. The IR
-                // generator asks the same question of the same helper.
-                val (bracketReceivers, bracketCaptures) =
-                    expr.splitBracketList(expectedReceivers?.size ?: 0)
+                val bracketReceivers = expr.receivers
+                val bracketCaptures = expr.captures
+                val duplicateReceiver = bracketReceivers.groupBy { it.name }.entries.firstOrNull { it.value.size > 1 }
+                if (duplicateReceiver != null) {
+                    errors.add("line ${expr.line}: duplicate lambda receiver '${duplicateReceiver.key}'")
+                }
+                val duplicateCaptureName = bracketCaptures.groupBy { it.name }.entries.firstOrNull { it.value.size > 1 }
+                if (duplicateCaptureName != null) {
+                    errors.add("line ${expr.line}: duplicate lambda capture name '${duplicateCaptureName.key}'")
+                }
+                val duplicateCaptureSource = bracketCaptures.groupBy { it.source }.entries.firstOrNull { it.value.size > 1 }
+                if (duplicateCaptureSource != null) {
+                    errors.add("line ${expr.line}: binding '${duplicateCaptureSource.key}' is captured more than once")
+                }
+                val receiverNames = bracketReceivers.mapTo(mutableSetOf()) { it.name }
+                bracketCaptures.firstOrNull { it.name in receiverNames }?.let {
+                    errors.add("line ${it.line}: '${it.name}' cannot be both a receiver and a capture")
+                }
                 val paramTypes = expr.params.mapIndexed { i, p ->
                     val expected = expectedParams?.getOrNull(i)
                     if (p.type == TypeRef.Named("Any") && expected != null) expected
@@ -2368,11 +2413,11 @@ class TypeResolver(private val table: SymbolTable) {
                 // here, and anything below it belongs to the scope around the lambda.
                 val captureFloor = table.scopeDepth() - 1
                 for ((capture, type) in captureTypes) {
-                    // A copied, cloned or moved capture is the closure's own value; a
-                    // referenced one still writes through to the original, and only
-                    // `!` may be written.
-                    val mutable = capture.mode != CaptureMode.SHARED
-                    table.defineVariable(VariableSymbol(capture.name, type, mutable = mutable))
+                    val outer = table.lookupVariable(capture.source)
+                    table.defineVariable(
+                        if (outer != null) capturedSymbol(capture, outer)
+                        else VariableSymbol(capture.name, type),
+                    )
                 }
                 for (i in effectiveParams.indices) {
                     table.defineVariable(VariableSymbol(effectiveParams[i].name, effectiveParamTypes[i]))
@@ -2406,12 +2451,11 @@ class TypeResolver(private val table: SymbolTable) {
                 lambdaFrames.add(
                     LambdaFrame(
                         floor = captureFloor,
-                        captured = bracketCaptures.mapTo(mutableSetOf()) { it.name },
-                        hasDefault = expr.captureDefault != null,
+                        defaultMode = expr.captureDefault,
                     ),
                 )
                 resolveBody(expr.body, IrType.Unit)
-                lambdaFrames.removeAt(lambdaFrames.size - 1)
+                val frame = lambdaFrames.removeAt(lambdaFrames.size - 1)
                 if (bodyContexts.isNotEmpty()) contextualValues.removeLast()
                 lambdaReturnTypes = savedReturns
                 table.popScope()
@@ -2424,6 +2468,13 @@ class TypeResolver(private val table: SymbolTable) {
                     kind = expr.kind,
                 )
                 table.defineLambdaType(expr.line, expr.column, type)
+                val resolvedCaptures = linkedMapOf<String, CaptureMode>()
+                bracketCaptures.forEach { resolvedCaptures[it.source] = it.mode }
+                frame.inferred.forEach { (name, mode) ->
+                    if (name !in resolvedCaptures) resolvedCaptures[name] = mode
+                }
+                table.defineLambdaCaptures(expr.line, expr.column, resolvedCaptures)
+                currentFuncTypeParams = savedLambdaTypeParams
                 type
             }
             // `a[start:stop:step]` → the target's `slice` method return type (or Any).
@@ -3059,6 +3110,8 @@ class TypeResolver(private val table: SymbolTable) {
      * not - and is checked where the assignment itself is resolved.
      */
     private fun checkValueMutable(target: Expr, line: Int, what: String): Boolean {
+        val rootName = pathRoot(target)?.name
+        if (rootName != null) checkCapture(rootName, line)
         val root = writeRoot(target) ?: return true
         if (root.valueMutable) return true
         errors.add(
@@ -3365,6 +3418,7 @@ class TypeResolver(private val table: SymbolTable) {
     /** True when [name] resolves to a binding the innermost open lambda owns. */
     private fun isBoundInsideCurrentLambda(name: String): Boolean {
         val frame = lambdaFrames.lastOrNull() ?: return false
+        if (name in frame.inferred) return true
         val index = table.variableScopeIndex(name) ?: return false
         return index >= frame.floor
     }
@@ -3377,22 +3431,15 @@ class TypeResolver(private val table: SymbolTable) {
      * survive a suspension", and offers the same three fixes.
      */
     private fun checkEscapingCaptures(lambda: Expr.Lambda, what: String) {
-        val borrowed = lambda.captures.filter {
-            it.mode == CaptureMode.SHARED || it.mode == CaptureMode.MUTABLE
+        val borrowed = table.lookupLambdaCaptures(lambda.line, lambda.column).orEmpty().filterValues {
+            it == CaptureMode.SHARED || it == CaptureMode.MUTABLE
         }
-        for (capture in borrowed) {
+        for ((source, mode) in borrowed) {
+            val captureLine = lambda.captures.firstOrNull { it.source == source }?.line ?: lambda.line
             errors.add(
-                "line ${capture.line}: this closure $what while borrowing " +
-                    "'${capture.source}', which does not outlive it; write " +
-                    "'[${capture.source}.clone()]' or '[take ${capture.source}]'",
-            )
-        }
-        val default = lambda.captureDefault
-        if (default == CaptureMode.SHARED || default == CaptureMode.MUTABLE) {
-            errors.add(
-                "line ${lambda.line}: this closure $what, so '[${default.spelling}]' cannot be " +
-                    "its default - an escaping closure owns what it captures; " +
-                    "write '[=]', or name each capture with '.clone()' or 'take'",
+                "line $captureLine: this closure $what while borrowing " +
+                    "'$source' through '${mode.spelling}', which does not outlive it; write " +
+                    "'[; $source.clone()]' or '[; take $source]'",
             )
         }
     }
@@ -3409,9 +3456,9 @@ class TypeResolver(private val table: SymbolTable) {
                 if (currentFuncTypeParams.contains(name)) return
                 if (table.conformsTo(name, "Copy")) return
                 val fixes = buildList {
-                    add("'[${capture.source}.&]'")
-                    if (table.conformsTo(name, "Clone")) add("'[${capture.source}.clone()]'")
-                    add("'[take ${capture.source}]'")
+                    add("'[; ${capture.source}.&]'")
+                    if (table.conformsTo(name, "Clone")) add("'[; ${capture.source}.clone()]'")
+                    add("'[; take ${capture.source}]'")
                 }
                 errors.add(
                     "line ${capture.line}: '${capture.source}' cannot be captured by copy - " +
@@ -3425,8 +3472,8 @@ class TypeResolver(private val table: SymbolTable) {
                 if (table.conformsTo(name, "Clone")) return
                 errors.add(
                     "line ${capture.line}: '${capture.source}' cannot be captured by clone - " +
-                        "'$name' is not Clone; write '[${capture.source}.&]' to reference it, " +
-                        "or '[take ${capture.source}]' to move it",
+                        "'$name' is not Clone; write '[; ${capture.source}.&]' to reference it, " +
+                        "or '[; take ${capture.source}]' to move it",
                 )
             }
         }
@@ -3434,7 +3481,7 @@ class TypeResolver(private val table: SymbolTable) {
 
     private fun checkNotMoved(name: String, line: Int) {
         val movedAt = movedBindings[name] ?: return
-        // `[take s] { … s … }` - inside the closure, `s` is the closure's own
+        // `[; take s] { … s … }` - inside the closure, `s` is the closure's own
         // binding, not the one the move emptied. Only the outer name is stale.
         if (isBoundInsideCurrentLambda(name)) return
         errors.add(

@@ -45,8 +45,40 @@ class WasmLambdaExecTest {
         import std.io
         func main() {
             fin offset = 3
-            fin add = [offset.&] { value: Int -> return value + offset }
+            fin add = [; offset.&] { value: Int -> return value + offset }
             std::println(add(4))
+        }
+        """.trimIndent(),
+    )
+
+    @Test
+    fun mutableCaptureAndOuterBindingShareOneCell() = check(
+        "5\n9\n9",
+        """
+        import std.io
+        func main() {
+            var n = 1
+            fin add = [; n.!] { value: Int -> n = n + value
+                return n }
+            fin read = [; n.&] { n }
+            std::println(add(4))
+            n = 9
+            std::println(read())
+            std::println(n)
+        }
+        """.trimIndent(),
+    )
+
+    @Test
+    fun copyDefaultSnapshotsOnlyReferencedValues() = check(
+        "3",
+        """
+        import std.io
+        func main() {
+            var n = 3
+            fin read = [; =] { n }
+            n = 8
+            std::println(read())
         }
         """.trimIndent(),
     )
@@ -74,7 +106,7 @@ class WasmLambdaExecTest {
         func main() {
             fin whole = 3
             fin fraction = 0.5
-            fin add = [whole.&, fraction.&] { value: Double ->
+            fin add = [; whole.&, fraction.&] { value: Double ->
                 return value + whole + fraction
             }
             std::println(add(4.0))

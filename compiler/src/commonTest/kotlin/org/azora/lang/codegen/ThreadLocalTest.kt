@@ -51,12 +51,12 @@ class ThreadLocalTest {
             import std.io
             threadlocal var counter = 0
             func main() {
-                var t1 = async func {
+                var t1 = async {
                     std::println(counter)
                     counter = 5
                     std::println(counter)
                 }
-                var t2 = async func {
+                var t2 = async {
                     std::println(counter)
                     counter = 5
                     std::println(counter)

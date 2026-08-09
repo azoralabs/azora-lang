@@ -37,7 +37,7 @@ class LlvmCaptureParityTest {
         import std.io
         func main() {
             var n = 1
-            fin bump = [n.!] { x: Int -> n = n + x
+            fin bump = [; n.!] { x: Int -> n = n + x
                 return n }
             std::println(bump(4))
             std::println(n)
@@ -52,7 +52,7 @@ class LlvmCaptureParityTest {
         import std.io
         func main() {
             var n = 1
-            fin show = [n.&] { x: Int -> n }
+            fin show = [; n.&] { x: Int -> n }
             n = 99
             std::println(show(0))
         }
@@ -66,9 +66,26 @@ class LlvmCaptureParityTest {
         import std.io
         func main() {
             var retries = 3
-            fin show = [retries] { retries }
+            fin show = [; retries] { retries }
             retries = 5
             std::println(show())
+        }
+        """.trimIndent(),
+    )
+
+    /** Spawned task contexts keep references as references too. */
+    @Test fun anAsyncMutableCaptureWritesThroughItsTaskContext() = agrees(
+        "5\n5",
+        """
+        import std.io
+        func main() {
+            var n = 1
+            fin worker = async [; n.!] {
+                n = n + 4
+                n
+            }
+            std::println(await worker)
+            std::println(n)
         }
         """.trimIndent(),
     )

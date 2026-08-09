@@ -5479,12 +5479,12 @@ class Parser(
     }
 
     /**
-     * A callable type: `(A, B) -> R`, `[Ctx](A) -> R`, `[Ctx] -> R`, and each of
-     * those prefixed `async`. Types in brackets are contextual receivers, which a
+     * A callable type: `(A, B) -> R`, `[Ctx](A) -> R`, `[Ctx]() -> R`, and each
+     * prefixed `async`. Types in brackets are contextual receivers, which a
      * call site may pass explicitly or take from an enclosing `with` scope.
      *
-     * A parameter may be variadic (`(...Double) -> Unit`); the whole `(…)` may be
-     * omitted when contextual receivers are the only inputs.
+     * A parameter may be variadic (`(...Double) -> Unit`). Parentheses are always
+     * required, including the empty `()` after a receiver list.
      */
     private fun parseCallableType(kind: CallableKind = CallableKind.FUNC): TypeRef {
         // `escaping (Event) -> Unit` - contextual, so it only means anything
@@ -5501,13 +5501,14 @@ class Parser(
             }
             consume(TokenType.R_BRACKET, "Expected ']' after contextual callable parameters")
         }
-        val params = mutableListOf<TypeRef>()
-        if (match(TokenType.L_PAREN)) {
-            if (!check(TokenType.R_PAREN)) {
-                do { params.add(parseCallableParamType()) } while (match(TokenType.COMMA))
-            }
-            consume(TokenType.R_PAREN, "Expected ')' after callable parameters")
+        if (!match(TokenType.L_PAREN)) {
+            error("Expected '(' after contextual callable receivers; write '()' when there are no ordinary parameters at line ${peek().line}")
         }
+        val params = mutableListOf<TypeRef>()
+        if (!check(TokenType.R_PAREN)) {
+            do { params.add(parseCallableParamType()) } while (match(TokenType.COMMA))
+        }
+        consume(TokenType.R_PAREN, "Expected ')' after callable parameters")
         consume(TokenType.ARROW, "Expected '->' after callable parameters")
         return TypeRef.Function(params, parseTypeName(), receivers, kind, isEscaping = escaping)
     }
@@ -8426,14 +8427,11 @@ class Parser(
 
     private fun parsePrimary(): Expr {
         val tok = peek()
-        // `<...T>{ … }` - variadic lambda (implicit `it` is the packed array of all args).
-        if (tok.type == TokenType.LESS && isVariadicLambdaAhead()) {
-            advance() // '<'
-            consume(TokenType.ELLIPSIS, "Expected '...' in variadic lambda type parameter")
-            consume(TokenType.IDENTIFIER, "Expected variadic type parameter").lexeme // T
-            consume(TokenType.GREATER, "Expected '>' after variadic lambda type parameter")
-            val lb = peek()
-            return parseLambda(lb.line, lb.column, implicitIt = true, variadic = true)
+        // `<T>[receivers; captures] { params -> body }` - a generic lambda.
+        // A leading '<' has no other primary-expression meaning, so parsing it
+        // here also gives a useful diagnostic for an incomplete generic lambda.
+        if (tok.type == TokenType.LESS) {
+            return parseGenericLambda()
         }
         // `@name[…]`, `@name(…)`, `@name{…}` - a macro invocation. The `@` leads,
         // as it does on the declaration (`macro @name { … }`), so a call and the
@@ -8476,10 +8474,21 @@ class Parser(
             TokenType.TRUE -> { advance(); Expr.BoolLiteral(true, tok.line, tok.column, tok.lexeme.length) }
             TokenType.FALSE -> { advance(); Expr.BoolLiteral(false, tok.line, tok.column, tok.lexeme.length) }
             TokenType.NULL -> { advance(); Expr.NullLiteral }
-            // `async func { … }` - an asynchronous lambda. Must be tested before
-            // the general identifier branch, and is distinct from the `async { … }`
-            // builtin, which spawns the lambda it is handed.
-            TokenType.IDENTIFIER if isAsyncFuncAt(current) -> parseCallableLambda(CallableKind.TASK)
+            TokenType.FUNC -> error(
+                "line ${tok.line}: lambdas do not use 'func'; write '{ ... }' or " +
+                    "'{ params -> ... }'",
+            )
+            // A declaration may be `async func name`, but a lambda is simply
+            // `async { ... }` or `async [receivers; captures] { ... }`.
+            TokenType.IDENTIFIER if isAsyncFuncAt(current) -> error(
+                "line ${tok.line}: async lambdas do not use 'func'; write " +
+                    "'async { ... }' or 'async [; take] { ... }'",
+            )
+            TokenType.IDENTIFIER if tok.lexeme == "async" && peekNext()?.type == TokenType.LESS -> {
+                advance()
+                val lambda = parseGenericLambda()
+                Expr.Call("async", listOf(lambda), tok.line, tok.column, tok.lexeme.length)
+            }
             TokenType.IDENTIFIER,
             TokenType.REVERSE -> {
                 advance()
@@ -8558,54 +8567,6 @@ class Parser(
         }
     }
 
-    /**
-     * `async func { … }` - an asynchronous lambda.
-     *
-     * `async` qualifies `func` here exactly as it does on a declaration. This is
-     * the only lambda form that writes `func`: an ordinary lambda declares
-     * nothing, so it writes none - its contextual receivers go in brackets
-     * (`[logger: Logger&] { … }`) and its ordinary parameters after the arrow.
-     */
-    private fun parseCallableLambda(kind: CallableKind): Expr.Lambda {
-        val start = advance()
-        // `async func { … }` - `async` is a qualifier, so the `func` follows it
-        // here exactly as it does on a declaration.
-        if (kind == CallableKind.TASK) consume(TokenType.FUNC, "Expected 'func' after 'async'")
-        val params = if (match(TokenType.L_PAREN)) {
-            val parsed = if (check(TokenType.R_PAREN)) emptyList() else parseParams()
-            consume(TokenType.R_PAREN, "Expected ')' after callable parameters")
-            parsed
-        } else {
-            emptyList()
-        }
-        consume(TokenType.L_BRACE, "Expected '{' after ${kind.surfaceName.lowercase()} lambda")
-        skipNewlines()
-        val receivers = mutableListOf<Param>()
-        if (check(TokenType.IDENTIFIER) && peekNext()?.type == TokenType.COLON) {
-            do {
-                val name = consume(TokenType.IDENTIFIER, "Expected contextual receiver name").lexeme
-                consume(TokenType.COLON, "Expected ':' after contextual receiver name")
-                receivers.add(Param(name, parseTypeName()))
-            } while (match(TokenType.COMMA))
-            consume(TokenType.ARROW, "Expected '->' after contextual receivers")
-        } else if (isUntypedLambdaParamsAhead()) {
-            do {
-                receivers.add(Param(consumeIdentifierLike("Expected contextual receiver name"), TypeRef.Named("Any")))
-            } while (match(TokenType.COMMA))
-            consume(TokenType.ARROW, "Expected '->' after contextual receivers")
-        } else if (match(TokenType.ARROW)) {
-            // Explicitly empty contextual receiver list.
-        }
-        skipNewlines()
-        val body = parseBlock().toMutableList()
-        if (body.isNotEmpty() && body.last() is Stmt.ExprStmt) {
-            val last = body.removeAt(body.size - 1) as Stmt.ExprStmt
-            body.add(Stmt.Return(last.expr, last.line, last.column, last.length))
-        }
-        consume(TokenType.R_BRACE, "Expected '}' after callable body")
-        return Expr.Lambda(params, body, start.line, start.column, receivers = receivers, kind = kind)
-    }
-
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
@@ -8651,49 +8612,71 @@ class Parser(
      * value and a declaration name their receiver identically. Ordinary parameters
      * still go inside the braces before `->`.
      */
-    /**
-     * `[ receivers… , captures… ] { … }` - a lambda's bracket list.
-     *
-     * No introducer separates the two kinds because each entry already says
-     * which it is: `name: Type` declares a contextual receiver, and anything
-     * else captures. A `:` is the whole distinction, so the two may interleave.
-     */
-    private fun parseReceiverLambda(): Expr.Lambda {
+    /** `[receivers; captures] { ... }` - the semicolon is the unambiguous boundary. */
+    private fun parseReceiverLambda(
+        typeParams: List<String> = emptyList(),
+        variadicTypeParam: String? = null,
+    ): Expr.Lambda {
         val start = advance() // '['
         val receivers = mutableListOf<Param>()
         val captures = mutableListOf<Capture>()
         var default: CaptureMode? = null
-        if (!check(TokenType.R_BRACKET)) {
+        // Before `;`, every entry is a receiver. A bare receiver gets its type
+        // from the expected contextual-function type.
+        if (!check(TokenType.SEMICOLON) && !check(TokenType.R_BRACKET)) {
             do {
-                if (check(TokenType.R_BRACKET)) break // trailing comma
                 val entry = peek()
-                when {
-                    // `[=]` / `[&]` / `[!]` - the mode for everything else the body
-                    // reads. Written bare because there is no value to their left.
-                    isCaptureDefaultAhead() -> {
+                if (entry.type in setOf(TokenType.EQUAL, TokenType.AMP, TokenType.BANG, TokenType.TAKE)) {
+                    error("line ${entry.line}: captures must follow ';' in a lambda bracket list; write '[; ${entry.lexeme}]'")
+                }
+                if (entry.type == TokenType.ELLIPSIS) {
+                    error("line ${entry.line}: contextual receivers cannot be variadic")
+                }
+                val name = consumeIdentifierLike("Expected a contextual receiver before ';'")
+                if (match(TokenType.COLON)) {
+                    val (type, modifier) = parseReceiverTypeAndModifier()
+                    receivers.add(Param(name, type, modifier = modifier))
+                } else {
+                    if (check(TokenType.DOT) || check(TokenType.AMP) || check(TokenType.BANG)) {
+                        error(
+                            "line ${entry.line}: capture '$name' must follow ';'; " +
+                                "write '[; $name.&]', '[; $name.!]', or '[; $name.clone()]'",
+                        )
+                    }
+                    receivers.add(Param(name, TypeRef.Named("Any")))
+                }
+            } while (match(TokenType.COMMA) && !check(TokenType.SEMICOLON) && !check(TokenType.R_BRACKET))
+        }
+        if (match(TokenType.SEMICOLON)) {
+            if (!check(TokenType.R_BRACKET)) {
+                do {
+                    if (check(TokenType.R_BRACKET)) break
+                    val entry = peek()
+                    if (isCaptureDefaultAhead()) {
                         val mode = when (advance().type) {
                             TokenType.EQUAL -> CaptureMode.COPY
                             TokenType.AMP -> CaptureMode.SHARED
-                            else -> CaptureMode.MUTABLE
+                            TokenType.BANG -> CaptureMode.MUTABLE
+                            else -> CaptureMode.MOVE
                         }
                         if (default != null) {
-                            error("line ${entry.line}: a lambda has one capture default; '[${mode.spelling}]' repeats it")
+                            error("line ${entry.line}: a lambda has only one capture default")
                         }
                         default = mode
+                    } else {
+                        captures.add(parseCapture())
                     }
-                    // `name: Type` - a contextual receiver.
-                    check(TokenType.IDENTIFIER) && peekNext()?.type == TokenType.COLON -> {
-                        val name = consumeIdentifierLike("Expected receiver name in lambda bracket list")
-                        consume(TokenType.COLON, "a lambda receiver must name its type: write '[$name: Type&]'")
-                        val (type, modifier) = parseReceiverTypeAndModifier()
-                        receivers.add(Param(name, type, modifier = modifier))
-                    }
-                    else -> captures.add(parseCapture())
-                }
-            } while (match(TokenType.COMMA))
+                } while (match(TokenType.COMMA))
+            }
         }
         consume(TokenType.R_BRACKET, "Expected ']' after lambda bracket list")
-        val lambda = parseLambda(start.line, start.column, implicitIt = false)
+        val lambda = parseLambda(
+            start.line,
+            start.column,
+            implicitIt = false,
+            typeParams = typeParams,
+            variadicTypeParam = variadicTypeParam,
+        )
         return lambda.copy(receivers = receivers, captures = captures, captureDefault = default)
     }
 
@@ -8721,17 +8704,17 @@ class Parser(
         return false
     }
 
-    /** True when the cursor is on a bare `=` / `&` / `!` capture default. */
+    /** True when the cursor is on a bare `=` / `&` / `!` / `take` default. */
     private fun isCaptureDefaultAhead(): Boolean {
         val t = peek().type
-        if (t != TokenType.EQUAL && t != TokenType.AMP && t != TokenType.BANG) return false
+        if (t !in setOf(TokenType.EQUAL, TokenType.AMP, TokenType.BANG, TokenType.TAKE)) return false
         val after = peekNext()?.type
         return after == TokenType.COMMA || after == TokenType.R_BRACKET
     }
 
     /**
-     * One capture entry: `[value]`, `[value.&]`, `[value.!]`, `[value.clone()]`,
-     * `[take value]`, and each with an `alias = ` in front.
+     * One entry after `;`: `value`, `value.&`, `value.!`, `value.clone()`,
+     * `take value`, and each with an `alias = ` in front.
      */
     private fun parseCapture(): Capture {
         val start = peek()
@@ -8741,7 +8724,7 @@ class Parser(
             alias = advance().lexeme
             advance() // '='
         }
-        // `[take socket]` - ownership moves in. `take` is the prefix keyword it is
+        // `[; take socket]` - ownership moves in. `take` is the prefix keyword it is
         // everywhere else.
         if (check(TokenType.TAKE)) {
             advance()
@@ -8749,9 +8732,13 @@ class Parser(
             return Capture(alias ?: name, name, CaptureMode.MOVE, start.line, start.column)
         }
         val name = consumeIdentifierLike("Expected a capture name in a lambda bracket list")
-        if (!match(TokenType.DOT)) {
-            return Capture(alias ?: name, name, CaptureMode.COPY, start.line, start.column)
+        if (check(TokenType.AMP) || check(TokenType.BANG)) {
+            error(
+                "line ${start.line}: capture borrows use the dotted ownership spelling; " +
+                    "write '$name.${peek().lexeme}'",
+            )
         }
+        if (!match(TokenType.DOT)) return Capture(alias ?: name, name, CaptureMode.COPY, start.line, start.column)
         return when {
             match(TokenType.AMP) -> Capture(alias ?: name, name, CaptureMode.SHARED, start.line, start.column)
             match(TokenType.BANG) -> Capture(alias ?: name, name, CaptureMode.MUTABLE, start.line, start.column)
@@ -8769,20 +8756,46 @@ class Parser(
         }
     }
 
-    private fun parseLambda(line: Int, column: Int, implicitIt: Boolean = true, variadic: Boolean = false): Expr.Lambda {
+    private fun parseLambda(
+        line: Int,
+        column: Int,
+        implicitIt: Boolean = true,
+        typeParams: List<String> = emptyList(),
+        variadicTypeParam: String? = null,
+    ): Expr.Lambda {
         consume(TokenType.L_BRACE, "Expected '{'")
         skipNewlines()
         val params = mutableListOf<Param>()
-        if (variadic) {
-            // `<...T>{ … }` - `it` is the array of all call arguments.
-            params.add(Param("it", TypeRef.Array(TypeRef.Named("Any"))))
-        } else if (check(TokenType.IDENTIFIER) && peekNext()?.type == TokenType.COLON) {
-            // Detect typed params: IDENT COLON type (, ...)? ->
+        if ((check(TokenType.IDENTIFIER) && peekNext()?.type == TokenType.COLON) || check(TokenType.ELLIPSIS)) {
             do {
-                val name = consume(TokenType.IDENTIFIER, "Expected lambda parameter name").lexeme
+                val nameSpread = match(TokenType.ELLIPSIS)
+                val name = consumeIdentifierLike("Expected lambda parameter name")
                 consume(TokenType.COLON, "Expected ':' after lambda parameter name")
-                val type = parseTypeName()
-                params.add(Param(name, type))
+                val typeSpread = check(TokenType.ELLIPSIS)
+                if (typeSpread) {
+                    val spreadName = peekNext()?.takeIf { it.type == TokenType.IDENTIFIER }?.lexeme
+                    if (variadicTypeParam == null || spreadName != variadicTypeParam) {
+                        error(
+                            "line ${peek().line}: type spread '...${spreadName.orEmpty()}' requires " +
+                                "the matching variadic generic '<...${spreadName.orEmpty()}>'",
+                        )
+                    }
+                }
+                val parsedType = parseTypeName()
+                val reference = parsedType as? TypeRef.Reference
+                val rawType = reference?.inner ?: parsedType
+                val parameterType = if (nameSpread && rawType !is TypeRef.Array) TypeRef.Array(rawType) else rawType
+                params.add(
+                    Param(
+                        name,
+                        parameterType,
+                        modifier = reference?.kind?.paramModifier ?: ParamModifier.NONE,
+                        variadic = nameSpread || typeSpread,
+                    ),
+                )
+                if (params.dropLast(1).any { it.variadic }) {
+                    error("line $line: a variadic lambda parameter must be last")
+                }
             } while (match(TokenType.COMMA))
             consume(TokenType.ARROW, "Expected '->' in lambda")
         } else if (isUntypedLambdaParamsAhead()) {
@@ -8805,7 +8818,7 @@ class Parser(
         }
         // Whether a bare `{ body }` takes a parameter is decided by the body, so
         // the body is parsed before the parameter list is settled.
-        val paramsWritten = params.isNotEmpty() || variadic
+        val paramsWritten = params.isNotEmpty()
         skipNewlines()
         lambdaMentionsIt.add(false)
         val body = parseBlock().toMutableList()
@@ -8824,7 +8837,38 @@ class Parser(
         if (!paramsWritten && implicitIt && mentionsIt) {
             params.add(Param("it", TypeRef.Named("Any")))
         }
-        return Expr.Lambda(params, body, line, column, variadic = variadic, paramsWritten = paramsWritten)
+        return Expr.Lambda(
+            params,
+            body,
+            line,
+            column,
+            variadic = params.lastOrNull()?.variadic == true,
+            paramsWritten = paramsWritten,
+            typeParams = typeParams,
+            variadicTypeParam = variadicTypeParam,
+        )
+    }
+
+    /** Parses `<T, ...U>[receivers; captures] { parameters -> body }`. */
+    private fun parseGenericLambda(): Expr.Lambda {
+        val start = peek()
+        val generic = parseTypeParams()
+        if (generic.constParams.isNotEmpty()) {
+            error("line ${start.line}: lambda generics are types; const generic parameters are not supported here")
+        }
+        return when {
+            check(TokenType.L_BRACKET) && isReceiverLambdaAhead() ->
+                parseReceiverLambda(generic.names, generic.variadic)
+            check(TokenType.L_BRACE) -> parseLambda(
+                start.line,
+                start.column,
+                typeParams = generic.names,
+                variadicTypeParam = generic.variadic,
+            )
+            else -> error(
+                "line ${start.line}: expected a receiver/capture list or lambda body after generic parameters",
+            )
+        }
     }
 
     /**
@@ -8844,14 +8888,6 @@ class Parser(
                 else -> return false
             }
         }
-    }
-
-    /** True when `<...T>{` opens a variadic lambda (vs. a less-than comparison). */
-    private fun isVariadicLambdaAhead(): Boolean {
-        return tokens.getOrNull(current + 1)?.type == TokenType.ELLIPSIS &&
-            tokens.getOrNull(current + 2)?.type == TokenType.IDENTIFIER &&
-            tokens.getOrNull(current + 3)?.type == TokenType.GREATER &&
-            tokens.getOrNull(current + 4)?.type == TokenType.L_BRACE
     }
 
     /**

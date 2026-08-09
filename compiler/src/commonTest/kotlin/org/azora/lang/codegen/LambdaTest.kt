@@ -43,7 +43,7 @@ class LambdaTest {
             import std.io
             func makeAdder(n: Int): (Int) -> Int {
                 // Returned, so it escapes: it must own `n`, and Int is Copy.
-                return [n] { x: Int -> x + n }
+                return [; n] { x: Int -> x + n }
             }
             func main() {
                 var add5 = makeAdder(5)
@@ -57,7 +57,7 @@ class LambdaTest {
             import std.io
             func main() {
                 var offset = 3
-                var add = [offset.&] { x: Int -> x + offset }
+                var add = [; offset.&] { x: Int -> x + offset }
                 std::println(add(4))
             }
         """.trimIndent()))
@@ -168,7 +168,7 @@ class LambdaTest {
         assertEquals("receiver", run("""
             import std.io
             pack Context { fin value: String }
-            func run<T>(fallback: T, action: [Context&] -> T): T {
+            func run<T>(fallback: T, action: [Context&]() -> T): T {
                 fin context = Context("receiver")
                 var result = fallback
                 with context { result = action() }
@@ -184,7 +184,7 @@ class LambdaTest {
         assertEquals("prefixed", run("""
             import std.io
             pack Context { fin value: String }
-            func render(prefix: String, action: [Context&] -> String): String {
+            func render(prefix: String, action: [Context&]() -> String): String {
                 fin context = Context("fixed")
                 var result = prefix
                 with context { result += action() }
@@ -286,7 +286,7 @@ class LambdaTest {
             import std.io
 
             pack Calculator {
-                fin add: [Int, Int] -> Int =
+                fin add: [Int, Int]() -> Int =
                     [x: Int, y: Int] { x + y }
                 fin sub: (Int, Int) -> Int =
                     { x: Int, y: Int -> return x - y }
@@ -310,7 +310,7 @@ class LambdaTest {
             import std.io
             func main() {
                 var n = 0
-                fin inc = [n.!] { n = n + 1 }
+                fin inc = [; n.!] { n = n + 1 }
                 inc()
                 std::println(n)
             }
@@ -333,7 +333,7 @@ class LambdaTest {
             import std.io
             func main() {
                 var seen = 0
-                fin outer = {
+                fin outer = [; seen.!] {
                     fin inner: (Int) -> Int = { it * 2 }
                     seen = inner(1)
                 }
@@ -375,7 +375,7 @@ class LambdaTest {
         assertEquals("5", run("""
             import std.io
 
-            fin add: [Int, Int] -> Int =
+            fin add: [Int, Int]() -> Int =
                 [x: Int, y: Int] { x + y }
 
             func main() {
@@ -412,7 +412,7 @@ class LambdaTest {
 
             pack Vec2 { fin x = 0 fin y = 0 }
 
-            func apply(v: Vec2&, f: [Vec2&] -> Int): Int {
+            func apply(v: Vec2&, f: [Vec2&]() -> Int): Int {
                 var acc = 0
                 with v { acc = f() }
                 return acc
@@ -469,7 +469,7 @@ class LambdaTest {
         assertEquals("10\n14\n5\n5", run("""
             import std.io
             fin scale: [Int](Int) -> Int = [value] { factor -> value * factor }
-            fin add: [Int, Int] -> Int = { x, y -> x + y }
+            fin add: [Int, Int]() -> Int = { x, y -> x + y }
 
             func main() {
                 with 5 { std::println(scale(2)) }
@@ -496,7 +496,7 @@ class LambdaTest {
     @Test fun aLambdaMayOmitTypesTheDeclaredTypeSupplies() {
         assertEquals("6", run("""
             import std.io
-            fin add: [Int, Int] -> Int = { x, y -> x + y }
+            fin add: [Int, Int]() -> Int = { x, y -> x + y }
             fin twice: (Int) -> Int = { n -> n * 2 }
             func main() {
                 with [1, 2] { std::println(add() + twice(1) + 1) }

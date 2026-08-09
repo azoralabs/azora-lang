@@ -119,7 +119,7 @@ realm std {
      * @return The sequence of every yielded value, in order.
      */
     @Experimental(since: "0.1")
-    func sequence<T>(produce: [SequenceScope<T>!] -> Unit): Sequence<T> {
+    func sequence<T>(produce: [SequenceScope<T>!]() -> Unit): Sequence<T> {
         var builder = SequenceScope<T>(arrayListOf<T>())
         with builder { produce() }
         return Sequence<T>(builder.items)
@@ -133,7 +133,7 @@ realm std {
      * @return The flow of every emitted value, in order.
      */
     @Experimental(since: "0.1")
-    func flow<T>(builder: [FlowCollector<T>!] -> Unit): Flow<T> {
+    func flow<T>(builder: [FlowCollector<T>!]() -> Unit): Flow<T> {
         var collector = FlowCollector<T>(arrayListOf<T>())
         with collector { builder() }
         return Flow<T>(collector.items)

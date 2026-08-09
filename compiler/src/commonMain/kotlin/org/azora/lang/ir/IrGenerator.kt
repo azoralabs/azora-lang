@@ -30,7 +30,6 @@ import org.azora.lang.frontend.TypeRef
 import org.azora.lang.frontend.TypeFunctionDecl
 import org.azora.lang.frontend.NumericSuffix
 import org.azora.lang.frontend.CaptureMode
-import org.azora.lang.frontend.splitBracketList
 import org.azora.lang.frontend.Program
 import org.azora.lang.frontend.ReactiveKind
 import org.azora.lang.frontend.Stmt
@@ -2269,16 +2268,49 @@ class IrGenerator(private val table: SymbolTable) {
                         receivers = expr.receivers.map { resolveType(it.type) },
                         kind = expr.kind,
                     )
+                // Clone capture is an operation, not a bitwise environment copy.
+                // Lower it while the source binding still resolves in the creation
+                // scope; every backend evaluates this expression exactly once.
+                val captureInitializers = expr.captures
+                    .filter { it.mode == CaptureMode.CLONE }
+                    .associate { capture ->
+                        resolveName(capture.source) to lowerExpr(
+                            Expr.MethodCall(
+                                Expr.Identifier(capture.source, capture.line, capture.column),
+                                "clone",
+                                emptyList(),
+                                capture.line,
+                                capture.column,
+                            ),
+                        )
+                    }
                 table.pushScope()
                 pushNameScope()
-                // `[owned = message.clone()]` - the alias is the name the body uses
-                // for a binding the enclosing scope calls something else. Pointing it
-                // at the source's name here means the body lowers to reads of the
-                // source, and the closure environment captures it like any other.
-                for (capture in expr.splitBracketList(callableType.receivers.size).second) {
-                    if (capture.name != capture.source) {
-                        nameScopes.last()[capture.name] = resolveName(capture.source)
+                // An alias is a real lambda-local binding backed by the captured
+                // source. Register it in both name and symbol scopes so every use
+                // lowers with the source's IR name and concrete type.
+                for (capture in expr.captures) {
+                    val source = table.lookupVariable(capture.source) ?: continue
+                    val sourceIrName = resolveName(capture.source)
+                    nameScopes.last()[capture.name] = sourceIrName
+                    val valueMutable = when (capture.mode) {
+                        CaptureMode.SHARED -> false
+                        CaptureMode.MUTABLE -> source.valueMutable
+                        CaptureMode.COPY, CaptureMode.CLONE, CaptureMode.MOVE -> true
                     }
+                    val nameMutable = when (capture.mode) {
+                        CaptureMode.SHARED -> false
+                        CaptureMode.MUTABLE -> source.mutable
+                        CaptureMode.COPY, CaptureMode.CLONE, CaptureMode.MOVE -> true
+                    }
+                    table.defineVariable(
+                        VariableSymbol(
+                            capture.name,
+                            source.type,
+                            mutable = nameMutable,
+                            valueMutable = valueMutable,
+                        ),
+                    )
                 }
                 // `{ body }` carries the parser's implicit `it`. When the callable
                 // type has no ordinary parameters there is nothing for it to stand
@@ -2312,10 +2344,7 @@ class IrGenerator(private val table: SymbolTable) {
                 // declares none, so the bindings are synthesized here under the name the
                 // resolver already used, and made available to calls in the body exactly
                 // as a `with` block would.
-                // `[value] { factor -> … }` - a bare bracket entry is the receiver
-                // the expected type declares. The resolver asks the same question of
-                // the same helper, so both agree on which entries are receivers.
-                val (bracketReceivers, _) = expr.splitBracketList(callableType.receivers.size)
+                val bracketReceivers = expr.receivers
                 val inheritsReceivers = bracketReceivers.isEmpty() && callableType.receivers.isNotEmpty()
                 val receiverSources = if (inheritsReceivers) {
                     callableType.receivers.indices.map {
@@ -2342,25 +2371,28 @@ class IrGenerator(private val table: SymbolTable) {
                 table.popScope()
                 val retType = body.mapNotNull { (it as? IrStmt.Return)?.value?.type }.firstOrNull() ?: IrType.Unit
                 val irParams = ordinaryParams + receiverParams
-                // A referenced capture (`[n.&]`, `[n.!]`) is the original binding,
+                // A referenced capture (`[; n.&]`, `[; n.!]`) is the original binding,
                 // so the backends put its address in the environment rather than a
-                // copy of its value. The names are the ones the body reads, which
-                // for an alias is the source it was pointed at.
-                val byRef = expr.splitBracketList(callableType.receivers.size).second
-                    .filter { it.mode == CaptureMode.SHARED || it.mode == CaptureMode.MUTABLE }
-                    .mapTo(mutableSetOf()) { resolveName(it.source) }
-                val defaultByRef = expr.captureDefault == CaptureMode.SHARED ||
-                    expr.captureDefault == CaptureMode.MUTABLE
-                val byValue = expr.splitBracketList(callableType.receivers.size).second
-                    .filter { it.mode != CaptureMode.SHARED && it.mode != CaptureMode.MUTABLE }
-                    .mapTo(mutableSetOf()) { resolveName(it.source) }
+                // copy. Defaults have already been expanded to the exact free
+                // variables they cover by the resolver; lowering never guesses.
+                val resolvedCaptures = table.lookupLambdaCaptures(expr.line, expr.column)
+                val byRef = resolvedCaptures
+                    .filterValues { it == CaptureMode.SHARED || it == CaptureMode.MUTABLE }
+                    .keys.mapTo(mutableSetOf(), ::resolveName)
+                val byValue = resolvedCaptures
+                    .filterValues { it != CaptureMode.SHARED && it != CaptureMode.MUTABLE }
+                    .keys.mapTo(mutableSetOf(), ::resolveName)
+                val cloned = resolvedCaptures
+                    .filterValues { it == CaptureMode.CLONE }
+                    .keys.mapTo(mutableSetOf(), ::resolveName)
                 IrExpr.Lambda(
                     irParams,
                     body,
                     callableType.copy(ret = retType),
                     byRefCaptures = byRef,
-                    allCapturesByRef = defaultByRef,
                     valueCaptures = byValue,
+                    cloneCaptures = cloned,
+                    captureInitializers = captureInitializers,
                 )
             }
             // Macros are expanded before IR generation; a MetaInvoke here is a bug.

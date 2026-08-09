@@ -364,7 +364,7 @@ class ReactivityTest {
                 var source = std::state(1)
                 var latest = 0
                 var calls = 0
-                var subscription = std::observe(source) [latest.!, calls.!] { value: Int ->
+                var subscription = std::observe(source) [; latest.!, calls.!] { value: Int ->
                     latest = value
                     calls += 1
                 }

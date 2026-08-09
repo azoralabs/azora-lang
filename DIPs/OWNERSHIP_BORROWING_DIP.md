@@ -6,7 +6,7 @@
 
 | Section | State |
 |---------|-------|
-| §1 capability specs (`Clone`, `Copy requires Clone`) | **done** - specs in `std/traits/traits.az`, impls generated in `std/traits/core.az`. There is no third capability for moving: every value can be given away, so `take` asks nothing of its operand |
+| §1 capability specs (`Clone`, `Copy requires Clone`) | **done** - specs in `std/traits/traits.az`, with implementations generated in `std/traits/core.az`. There is no third capability for moving: every value can be given away, so `take` asks nothing of its operand |
 | §2–§6, §24 the four binding modes | **done** |
 | §7 binding mutability vs ownership capability | **done** |
 | §8 implicit copying | **done** - a named non-`Copy` value passed by value is rejected |
@@ -103,7 +103,7 @@ Implicit duplication has to be cheap and has to be safe, so `Copy` **requires**
 sibling.
 
 ```azora
-impl [Clone, Copy] for Vec2      // both, in one declaration
+pack Vec2 derives [Clone, Copy]  // both, in one declaration
 ```
 
 ### `Clone`
@@ -389,12 +389,10 @@ small value packs containing only Copy fields
 A user-defined type may implement or derive `Copy`:
 
 ```azora
-pack Vec2 {
+pack Vec2 derives Copy {
     var x: Float
     var y: Float
 }
-
-impl Copy for Vec2
 ```
 
 The compiler should derive `Copy` only when:
@@ -1214,14 +1212,14 @@ func transfer<T>(value: T): T {
 
 ```azora
 func duplicate<T>(value: T&): T
-where T is Clone {
+where T: Clone {
     return value.clone()
 }
 ```
 
 ```azora
 func repeat<T>(value: T, count: Int): List<T>
-where T is Copy {
+where T: Copy {
     var result: std::List<T> = std::listOf()
 
     for _ in 0..<count {
@@ -1236,12 +1234,12 @@ For type varargs:
 
 ```azora
 deepinline prop AllCopy<...T>: Bool
-where T is Copy {
+where T: Copy {
     return true
 }
 ```
 
-Here `T is Copy` means every type in the type varargs satisfies `Copy`.
+Here `T: Copy` means every type in the type varargs satisfies `Copy`.
 
 ---
 

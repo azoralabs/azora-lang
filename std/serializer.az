@@ -81,7 +81,7 @@ realm std {
         conversionModule: "std.convert",
         deferGeneric: true
     )
-    annot Serializable for .Pack bind [Serializer, AzonSerializer] {
+    annot Serializable for .Pack binds [Serializer, AzonSerializer] {
         /** Accepts object members which do not map to an exposed pack field. */
         fin ignoreUnknownFields: Bool = false
 
@@ -100,7 +100,7 @@ realm std {
         conversionModule: "std.convert",
         deferGeneric: true
     )
-    annot AzonSerializable for .Pack bind AzonSerializer {
+    annot AzonSerializable for .Pack binds AzonSerializer {
         /** Accepts AZON object members which do not map to an exposed pack field. */
         fin ignoreUnknownFields: Bool = false
 
@@ -805,54 +805,54 @@ pack _ImplSerializableFixture {
 impl Serializable(
     ignoreUnknownFields: true,
     encodeDefaults: false
-) for _ImplSerializableFixture
+) for _ImplSerializableFixture {}
 
 pack _DefaultSerializableFixture {
     fin value: String
 }
 
-impl Serializable for _DefaultSerializableFixture
+impl Serializable for _DefaultSerializableFixture {}
 
 pack _DirectFieldDecoratorFixture {
     fin name: String = ""
     fin password: String = ""
 }
 
-impl SerialName(value: "display_name") for _DirectFieldDecoratorFixture::name
+impl SerialName(value: "display_name") for _DirectFieldDecoratorFixture::name {}
 
 pack _GroupedDecoratorFixture {
     fin name: String = ""
 }
 
-impl [SerialName, SerialRequired] for _GroupedDecoratorFixture::name
+impl [SerialName, SerialRequired] for _GroupedDecoratorFixture::name {}
 
 pack _GroupedTargetFixture {
     fin name: String = ""
     fin password: String = ""
 }
 
-impl SerialIgnore for [_GroupedTargetFixture::name, _GroupedTargetFixture::password]
+impl SerialIgnore for [_GroupedTargetFixture::name, _GroupedTargetFixture::password] {}
 
 pack _CrossProductDecoratorFixture {
     fin name: String = ""
     fin password: String = ""
 }
 
-impl [SerialName, SerialRequired] for [_CrossProductDecoratorFixture::name, _CrossProductDecoratorFixture::password]
+impl [SerialName, SerialRequired] for [_CrossProductDecoratorFixture::name, _CrossProductDecoratorFixture::password] {}
 
 pack WildcardDecoratorFixture {
     fin name: String = ""
     fin password: String = ""
 }
 
-impl SerialIgnore for WildcardDecoratorFixture::*
+impl SerialIgnore for WildcardDecoratorFixture::* {}
 
 pack _GroupedWildcardDecoratorFixture {
     fin name: String = ""
     fin password: String = ""
 }
 
-impl [SerialName, SerialRequired] for _GroupedWildcardDecoratorFixture::*
+impl [SerialName, SerialRequired] for _GroupedWildcardDecoratorFixture::* {}
 
 // ---------------------------------------------------------------------------
 // Unit tests
@@ -925,7 +925,7 @@ test "manual Serializer impl round trips through AZON" {
 
 test "impl Serializable accepts configured decorator metadata" {
     inline assert std::reflect<_ImplSerializableFixture>.hasDeco<Serializable> {
-        "bodyless decorator implementations must be visible through hasDeco"
+        "empty decorator implementation bodies must be visible through hasDeco"
     }
     inline assert std::reflect<_ImplSerializableFixture>.annotMeta<Serializable>.ignoreUnknownFields {
         "configured decorator implementations must expose named metadata"

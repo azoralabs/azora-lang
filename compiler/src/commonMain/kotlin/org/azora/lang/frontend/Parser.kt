@@ -256,22 +256,22 @@ class Parser(
         var moduleVisibility = ModuleVisibility.PUBLIC
         var exportCondition: Expr? = null
         val moduleName = if (isModuleHeaderAhead()) {
-            // `expose module x` - auto-imported everywhere, rather than only where
+            // `exposed module x` - auto-imported everywhere, rather than only where
             // it is asked for. It says nothing about visibility: a module is
-            // reachable by default, and `confine` is what narrows it.
+            // reachable by default, and `confined` is what narrows it.
             if (match(TokenType.EXPOSE)) isExported = true
             if (check(TokenType.IF)) {
-                // `expose if COND \n module …` - comptime-conditional auto-import.
+                // `exposed if COND \n module …` - comptime-conditional auto-import.
                 advance() // 'if'
                 exportCondition = parseExpr()
-                consume(TokenType.NEWLINE, "Expected a newline after 'expose if <condition>'")
+                consume(TokenType.NEWLINE, "Expected a newline after 'exposed if <condition>'")
             } else {
                 moduleVisibility = when {
                     match(TokenType.CONFINE) -> ModuleVisibility.CONFINE
                     else -> ModuleVisibility.PUBLIC
                 }
                 if (isExported && moduleVisibility == ModuleVisibility.CONFINE) {
-                    error("'expose confine module' is contradictory: a confined module is package-private and cannot be auto-imported everywhere")
+                    error("'exposed confined module' is contradictory: a confined module is package-private and cannot be auto-imported everywhere")
                 }
             }
             parseModule()
@@ -281,7 +281,7 @@ class Parser(
             skipNewlines()
             if (isAtEnd()) break
             if (isTestRealmAhead()) {
-                // `[expose|protect|confine] realm test { … }` - declarations
+                // `[exposed|protected|confined] realm test { … }` - declarations
                 // that exist only for tests.
                 items.addAll(parseTestRealm())
             } else if (isRealmNamespaceAhead()) {
@@ -811,15 +811,15 @@ class Parser(
     }
 
     /**
-     * `[expose|protect|confine] <declaration>` - how far the declaration reaches.
+     * `[exposed|protected|confined] <declaration>` - how far the declaration reaches.
      *
-     * `expose` is the default and is accepted so a declaration may state it, the
+     * `exposed` is the default and is accepted so a declaration may state it, the
      * way a module does.
      */
     private fun parseVisibility(): Visibility = when {
         match(TokenType.CONFINE) -> Visibility.CONFINE
         match(TokenType.PROTECT) -> Visibility.PROTECT
-        // `expose confine` / `expose protect` - the two axes together. `expose`
+        // `exposed confined` / `exposed protected` - the two axes together. `exposed`
         // publishes the declaration without an explicit import; the reach that
         // follows bounds how far that publication travels.
         check(TokenType.EXPOSE) && peekNext()?.type == TokenType.CONFINE -> {
@@ -830,8 +830,8 @@ class Parser(
             advance(); advance()
             Visibility(Visibility.Reach.PROTECT, isExposed = true)
         }
-        // `expose` states the default. It is only a visibility modifier when a
-        // declaration follows: `expose import`, `expose if` and `expose module`
+        // `exposed` states the default. It is only a visibility modifier when a
+        // declaration follows: `exposed import`, `exposed if` and `exposed module`
         // are their own forms and are parsed further down.
         check(TokenType.EXPOSE) && !exposeStartsAnotherForm() -> {
             advance()
@@ -841,8 +841,8 @@ class Parser(
     }
 
     /**
-     * True when the `expose` at the cursor begins `expose import`, `expose if`
-     * or `expose module` - forms of their own, parsed elsewhere, rather than a
+     * True when the `exposed` at the cursor begins `exposed import`, `exposed if`
+     * or `exposed module` - forms of their own, parsed elsewhere, rather than a
      * visibility modifier on a declaration.
      */
     private fun exposeStartsAnotherForm(): Boolean {
@@ -858,7 +858,7 @@ class Parser(
 
     private fun parseTopLevel(): TopLevel {
         val annotations = parseAnnotations()
-        // Optional visibility modifier; public unless `confine` narrows it to the package.
+        // Optional visibility modifier; public unless `confined` narrows it to the package.
         val visibility = parseVisibility()
         val start = peek()
         return when {
@@ -904,6 +904,7 @@ class Parser(
             check(TokenType.PACK) -> parsePack(annotations, visibility)
             check(TokenType.ENUM) -> parseEnumDecl(annotations)
             check(TokenType.ERROR) -> parseFailDecl(annotations)
+            check(TokenType.DERIVE) -> parseDeriveDecl()
             check(TokenType.IMPL) -> parseImpl(annotations = annotations)
             check(TokenType.BRIDGE) && peekNext()?.type == TokenType.IMPL -> {
                 advance(); parseImpl(isBridge = true, annotations = annotations)
@@ -958,20 +959,20 @@ class Parser(
             // type, so no `for` clause is needed.
             check(TokenType.OPER) -> parseFreeOperator(annotations, visibility)
             check(TokenType.IMPORT) -> parseUse()
-            // `expose use …` - the import travels on to whoever imports this
+            // `exposed use …` - the import travels on to whoever imports this
             // module, so a package can offer one entry point instead of making
             // every caller name its internals (e.g. std.macro and std.container).
             check(TokenType.EXPOSE) && peekNext()?.type == TokenType.IMPORT -> {
-                advance() // 'expose'
+                advance() // 'exposed'
                 parseUse(exported = true)
             }
-            // `expose if COND \n use …` - comptime-conditional. The newline
+            // `exposed if COND \n use …` - comptime-conditional. The newline
             // before `use` is mandatory.
             check(TokenType.EXPOSE) && peekNext()?.type == TokenType.IF -> {
-                advance() // 'expose'
+                advance() // 'exposed'
                 advance() // 'if'
                 val cond = parseExpr()
-                consume(TokenType.NEWLINE, "Expected a newline after 'expose if <condition>'")
+                consume(TokenType.NEWLINE, "Expected a newline after 'exposed if <condition>'")
                 parseUse(exported = true, condition = cond)
             }
             check(TokenType.FIN) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); noteBridgeTargetConstant(name, init); TopLevel.FinDecl(name, type, init, start.line, start.column, annotations, visibility = visibility) }
@@ -1068,7 +1069,7 @@ class Parser(
     }
 
     private fun parseDecoratorBinding(): DecoratorBinding {
-        val name = consume(TokenType.IDENTIFIER, "Expected spec or decorator name after 'bind'").lexeme
+        val name = consume(TokenType.IDENTIFIER, "Expected spec or decorator name after 'binds'").lexeme
         val typeArgs = parseGenericTypeArgsIfPresent()
         val targets = if (match(TokenType.FOR)) parseDecoTargets() else emptySet()
         return DecoratorBinding(name, typeArgs, targets)
@@ -1083,7 +1084,7 @@ class Parser(
             error("Decorator names must start with an uppercase letter: use '${name.replaceFirstChar { it.uppercase() }}' at line ${start.line}")
         }
         val targets = if (match(TokenType.FOR)) parseDecoTargets() else emptySet()
-        val bindings = if (match(TokenType.BIND)) {
+        val bindings = if (matchContextual("binds")) {
             if (match(TokenType.L_BRACKET)) {
                 val result = mutableListOf<DecoratorBinding>()
                 if (check(TokenType.R_BRACKET)) error("Expected at least one decorator binding at line ${peek().line}")
@@ -1657,7 +1658,7 @@ class Parser(
     }
 
     /**
-     * True when `[expose|protect|confine] realm test {` begins here.
+     * True when `[exposed|protected|confined] realm test {` begins here.
      *
      * The visibility prefix is scanned past because the caller has to decide
      * which form this is before consuming it.
@@ -1670,7 +1671,7 @@ class Parser(
     }
 
     /**
-     * `[expose|protect|confine] realm test { … }` - a realm of test-only
+     * `[exposed|protected|confined] realm test { … }` - a realm of test-only
      * declarations.
      *
      * Whatever is declared inside is ordinary code, and is emitted as such; what
@@ -1682,8 +1683,8 @@ class Parser(
      *
      * - `realm test` (the default, [Visibility.Reach.CONFINE]) - tests in this
      *   file.
-     * - `protect realm test` - tests within the declaring folder.
-     * - `expose realm test` - tests in any file, with no import.
+     * - `protected realm test` - tests within the declaring folder.
+     * - `exposed realm test` - tests in any file, with no import.
      *
      * The members are returned flattened: a test realm is a visibility rule, not
      * a namespace, so it does not mangle the names it contains.
@@ -1817,9 +1818,14 @@ class Parser(
         val name = consume(TokenType.IDENTIFIER, "Expected $keyword name").lexeme
         val tp = parseTypeParams()
         constParamEnums = tp.constEnums
+        val derives = if (matchContextual("derives")) parseDeriveHeads() else emptyList()
+        if (isUnion && derives.isNotEmpty()) {
+            error("an unsafe union cannot derive field-wise implementations at line ${start.line}")
+        }
         val whereClause = parseWhereClause()
         val minLen = variadicMinLengthOf(whereClause)
         val enforceNumFields = annotations.any { it.name == "EnforceNumFields" }
+        enqueueDerives(name, derives, start, tp.names, tp.variadic)
         if (!check(TokenType.L_BRACE)) {
             consumeNewline()
             return TopLevel.Pack(
@@ -1902,6 +1908,61 @@ class Parser(
             fieldTemplate = fieldTemplate,
             isUnion = isUnion,
         )
+    }
+
+    /** One spec or a bracketed list following `derives` / `derive`. */
+    private fun parseDeriveHeads(): List<Pair<String, List<TypeRef>>> {
+        fun one(): Pair<String, List<TypeRef>> {
+            val name = consume(TokenType.IDENTIFIER, "Expected a spec name to derive").lexeme
+            return name to parseGenericTypeArgsIfPresent()
+        }
+        if (!match(TokenType.L_BRACKET)) return listOf(one())
+        if (check(TokenType.R_BRACKET)) error("Expected at least one spec in a derives list at line ${peek().line}")
+        val result = mutableListOf<Pair<String, List<TypeRef>>>()
+        do { result.add(one()) } while (match(TokenType.COMMA))
+        consume(TokenType.R_BRACKET, "Expected ']' after the derives list")
+        return result
+    }
+
+    private fun derivedImpl(
+        target: String,
+        head: Pair<String, List<TypeRef>>,
+        start: Token,
+        typeParams: List<String> = emptyList(),
+        variadicParam: String? = null,
+    ): TopLevel.Impl = TopLevel.Impl(
+        typeName = target,
+        methods = emptyList(),
+        traitName = head.first,
+        line = start.line,
+        column = start.column,
+        traitArgs = head.second,
+        typeParams = typeParams,
+        variadicParam = variadicParam,
+        isDerived = true,
+        hasBody = false,
+    )
+
+    private fun enqueueDerives(
+        target: String,
+        heads: List<Pair<String, List<TypeRef>>>,
+        start: Token,
+        typeParams: List<String> = emptyList(),
+        variadicParam: String? = null,
+    ) {
+        heads.forEach { pendingTopLevels.add(derivedImpl(target, it, start, typeParams, variadicParam)) }
+    }
+
+    /** `derive Clone for ExistingType` / `derive [Clone, Copy] for [A, B]`. */
+    private fun parseDeriveDecl(): TopLevel.Impl {
+        val start = consume(TokenType.DERIVE, "Expected 'derive'")
+        val heads = parseDeriveHeads()
+        consume(TokenType.FOR, "Expected 'for' after derived specs")
+        val targets = expandTypeListTargets(parseImplTargets())
+        consumeNewline()
+        val implementations = targets.flatMap { target -> heads.map { derivedImpl(target, it, start) } }
+        pendingTopLevels.addAll(implementations.drop(1))
+        return implementations.first()
     }
 
     /** `inline for <loopVar> in <packVar> with index { <fields> }` - a variadic pack's field template. */
@@ -2720,12 +2781,17 @@ class Parser(
         return targets
     }
 
-    private fun queueBodylessImpls(
+    private fun queueExpandedImpls(
         traits: List<Pair<String, List<TypeRef>>>,
         targets: List<String>,
         start: Token,
         args: List<Expr>,
         namedArgs: List<Pair<String, Expr>>,
+        isBridge: Boolean = false,
+        annotations: List<Annotation> = emptyList(),
+        typeParams: List<String> = emptyList(),
+        variadicParam: String? = null,
+        hasBody: Boolean,
     ): TopLevel.Impl {
         val implementations = targets.flatMap { target ->
             traits.map { (trait, traitArgs) ->
@@ -2738,6 +2804,11 @@ class Parser(
                     traitArgs = traitArgs,
                     decoratorArgs = args,
                     decoratorNamedArgs = namedArgs,
+                    annotations = annotations,
+                    isBridge = isBridge,
+                    typeParams = typeParams,
+                    variadicParam = variadicParam,
+                    hasBody = hasBody,
                 )
             }
         }
@@ -2978,30 +3049,52 @@ class Parser(
             error("Decorator implementation arguments require 'for Type' at line ${start.line}")
         }
         if (!check(TokenType.L_BRACE)) {
-            consumeNewline()
-            if (traitName != null && (traitHeads.size > 1 || implementationTargets.size > 1)) {
-                return queueBodylessImpls(
-                    traitHeads,
-                    implementationTargets,
-                    start,
-                    decoratorArgs,
-                    decoratorNamedArgs,
+            if (traitName != null) {
+                error(
+                    "manual implementation 'impl $traitName for $typeName' requires a body; " +
+                        "add '{ ... }' or request compiler generation with " +
+                        "'derive $traitName for $typeName' at line ${start.line}",
                 )
             }
+            consumeNewline()
             return TopLevel.Impl(
                 typeName, emptyList(), traitName, start.line, start.column,
                 isPackImpl = isPackImpl,
                 traitArgs = traitArgs,
                 decoratorArgs = decoratorArgs,
                 decoratorNamedArgs = decoratorNamedArgs,
+                isBridge = isBridge,
                 typeParams = implTypeParams.names,
                 variadicParam = implTypeParams.variadic,
+                hasBody = false,
             )
         }
-        // `impl Spec for realm::Type { … }` - a member target is required to be
-        // bodyless, so a body is proof that the qualifier names a realm rather
-        // than the target naming a field. As in type position, the realm is a
-        // path to the declaration and not part of its name.
+        consume(TokenType.L_BRACE, "Expected '{' after impl type")
+        skipNewlines()
+        // Decorator applications are manual implementations too, so they carry an
+        // explicit body. A marker's body is empty; grouped decorators and grouped
+        // targets expand to the cross-product while preserving that source body.
+        if (traitName != null && check(TokenType.R_BRACE) &&
+            (traitHeads.size > 1 || implementationTargets.size > 1 || typeName.contains('.'))
+        ) {
+            consume(TokenType.R_BRACE, "Expected '}' after implementation body")
+            consumeNewline()
+            return queueExpandedImpls(
+                traitHeads,
+                implementationTargets,
+                start,
+                decoratorArgs,
+                decoratorNamedArgs,
+                isBridge,
+                annotations,
+                implTypeParams.names,
+                implTypeParams.variadic,
+                hasBody = true,
+            )
+        }
+        // `impl Spec for realm::Type { members }` names a realm-qualified type.
+        // An explicitly empty body remains ambiguous until declarations are known,
+        // and RealmQualifiedImplTargets resolves that case after parsing.
         if (traitName != null &&
             implementationTargets.size == 1 &&
             typeName.count { it == '.' } == 1 &&
@@ -3011,10 +3104,8 @@ class Parser(
             implementationTargets = listOf(typeName)
         }
         if (traitHeads.size > 1 || implementationTargets.size > 1 || typeName.contains('.')) {
-            error("Grouped and member-target implementations must be bodyless at line ${start.line}")
+            error("Grouped and member-target implementations must have an empty body at line ${start.line}")
         }
-        consume(TokenType.L_BRACE, "Expected '{' after impl type")
-        skipNewlines()
         // `impl Into<String> for ArrayList<T> { self& -> … }` - the in-brace
         // receiver the bracket redesign replaced. A receiver is declared where
         // every other member declares one, so this form is now an error naming
@@ -3277,6 +3368,8 @@ class Parser(
             traitArgs = traitArgs,
             decoratorArgs = decoratorArgs,
             decoratorNamedArgs = decoratorNamedArgs,
+            annotations = annotations,
+            isBridge = isBridge,
             typeParams = implTypeParams.names,
             variadicParam = implTypeParams.variadic,
         )
@@ -3624,21 +3717,20 @@ class Parser(
             advance()
             advance().lexeme
         } else null
-        // `graph AppGraph include [NetworkGraph, DataGraph] { … }` - composition.
-        // An included graph's definitions are part of this one. `include` is
+        // `graph AppGraph includes [NetworkGraph, DataGraph] { … }` - composition.
+        // An included graph's definitions are part of this one. `includes` is
         // contextual for the same reason `replace` is: it is an ordinary word
         // that programs already use as a name, and reserving it would take that
         // name from every one of them.
         val included = mutableListOf<String>()
-        if (check(TokenType.IDENTIFIER) && peek().lexeme == "include") {
-            advance()
+        if (matchContextual("includes")) {
             if (match(TokenType.L_BRACKET)) {
                 do {
-                    included.add(consume(TokenType.IDENTIFIER, "Expected a graph name in the include list").lexeme)
+                    included.add(consume(TokenType.IDENTIFIER, "Expected a graph name in the includes list").lexeme)
                 } while (match(TokenType.COMMA))
-                consume(TokenType.R_BRACKET, "Expected ']' after the include list")
+                consume(TokenType.R_BRACKET, "Expected ']' after the includes list")
             } else {
-                included.add(consume(TokenType.IDENTIFIER, "Expected a graph name after 'include'").lexeme)
+                included.add(consume(TokenType.IDENTIFIER, "Expected a graph name after 'includes'").lexeme)
             }
         }
         consume(TokenType.L_BRACE, "Expected '{' after graph name")
@@ -3669,16 +3761,16 @@ class Parser(
                 consume(TokenType.R_PAREN, "Expected ')' after the registration's arguments")
                 a
             } else emptyList()
-            // `bind Spec` / `bind [A, B]` - the specs this definition also answers.
+            // `binds Spec` / `binds [A, B]` - the specs this definition also answers.
             val bindSpecs = mutableListOf<String>()
-            if (match(TokenType.BIND)) {
+            if (matchContextual("binds")) {
                 if (match(TokenType.L_BRACKET)) {
                     do {
-                        bindSpecs.add(consume(TokenType.IDENTIFIER, "Expected a spec name in the bind list").lexeme)
+                        bindSpecs.add(consume(TokenType.IDENTIFIER, "Expected a spec name in the binds list").lexeme)
                     } while (match(TokenType.COMMA))
-                    consume(TokenType.R_BRACKET, "Expected ']' after the bind list")
+                    consume(TokenType.R_BRACKET, "Expected ']' after the binds list")
                 } else {
-                    bindSpecs.add(consume(TokenType.IDENTIFIER, "Expected a spec name after 'bind'").lexeme)
+                    bindSpecs.add(consume(TokenType.IDENTIFIER, "Expected a spec name after 'binds'").lexeme)
                 }
             }
             registrations.add(
@@ -4392,14 +4484,14 @@ class Parser(
     }
 
     /**
-     * True when a module header begins here: an optional `expose`, an optional
-     * `confine`, then `module`. Lets those words keep their ordinary meaning as
+     * True when a module header begins here: an optional `exposed`, an optional
+     * `confined`, then `module`. Lets those words keep their ordinary meaning as
      * declaration modifiers everywhere else.
      */
     private fun isModuleHeaderAhead(): Boolean {
         var i = current
         if (tokens.getOrNull(i)?.type == TokenType.EXPOSE) i++
-        // `expose if COND \n module …` - the newline before `module` is mandatory.
+        // `exposed if COND \n module …` - the newline before `module` is mandatory.
         if (tokens.getOrNull(i)?.type == TokenType.IF) {
             var j = i + 1
             while (j < tokens.size && tokens[j].type != TokenType.NEWLINE) j++
@@ -8919,6 +9011,12 @@ class Parser(
 
     private fun match(type: TokenType): Boolean {
         if (!check(type)) return false
+        advance()
+        return true
+    }
+
+    private fun matchContextual(word: String): Boolean {
+        if (!check(TokenType.IDENTIFIER) || peek().lexeme != word) return false
         advance()
         return true
     }

@@ -2878,7 +2878,7 @@ class TypeResolver(private val table: SymbolTable) {
         // for Vec2` with an empty body records the capability while supplying no
         // `==` - and accepting that here would put back the silent fallback this
         // rule exists to remove. Derivation generates a real member, so
-        // `impl [Equal] for Vec2` still passes.
+        // `derive Equal for Vec2` still passes.
         if (table.lookupOperator(typeName, "oper==", null) != null) return true
         // A pack the resolver has never seen declared is not this rule's business.
         return table.lookupStruct(typeName) == null
@@ -2984,7 +2984,7 @@ class TypeResolver(private val table: SymbolTable) {
                     errors.add(
                         "line $line: cannot compare two '${bareNamed.name}' values - " +
                             "${bareNamed.name} does not implement PartialEqual; add " +
-                            "'impl [Equal] for ${bareNamed.name}' to compare it field by field, " +
+                            "'derive Equal for ${bareNamed.name}' to compare it field by field, " +
                             "or declare 'oper== [self: ${bareNamed.name}&](rhs: ${bareNamed.name}&): Bool'",
                     )
                     return null

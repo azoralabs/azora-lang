@@ -96,7 +96,7 @@ realm std {
      * because duplicating a collection implicitly would hide an allocation.
      */
     @Since("0.1")
-    impl Clone for Set
+    derive Clone for Set
 
     /**
      * Mutation behavior implemented by mutable set packs.

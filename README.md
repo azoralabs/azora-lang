@@ -218,7 +218,7 @@ pack Version {
     var minor: Int
 }
 
-impl [Equal] for Version          // Order requires Equal
+derive Equal for Version         // Order requires Equal
 
 impl Order for Version {
     oper<=> [self: Self&](rhs: Self&): Compare {
@@ -243,10 +243,10 @@ The spec you implement decides the result type, so it cannot be got wrong:
 `Order` fixes `Compare`, `PartialOrder` fixes `PartialCompare` - which has a
 fourth case, `Unordered`, so `NaN` makes all four relational operators false.
 
-Derivation is a bodyless impl:
+Derivation is explicit and separate from manual implementation:
 
 ```azora
-impl [Equal, Order] for Point     // == , <=> , < <= > >= , != , hash
+derive [Equal, Order] for Point  // == , <=> , < <= > >= , != , hash
 ```
 
 `==` on a pack that never said what equal means is a **compile error**, not a
@@ -356,7 +356,7 @@ generates a declaration:
 
 ```azora
 inline for Ty in [A, B] {
-    impl [Equal] for Ty
+    derive Equal for Ty
 }
 ```
 
@@ -449,17 +449,17 @@ Constant folding, constant propagation and dead-code elimination run on the IR.
 ## Dependency injection
 
 - `solo pack Name { }` a type there is one of
-- `graph Graph { solo|factory|scope Type(args) [bind Spec] }` a dependency graph;
+- `graph Graph { solo|factory|scope Type(args) [binds Spec] }` a dependency graph;
   the first word is the provider's lifetime
-- `graph Graph include [A, B]` composes graphs
+- `graph Graph includes [A, B]` composes graphs
 - `inject Type` resolves where evaluated; `lazy fin value = inject Type`
   defers the entire initializer to first read
 
 ## Decorators
 
-- `annot Name { fields }` declares an annotation, optionally `bind` to a spec
+- `annot Name { fields }` declares an annotation, optionally `binds` it to a spec
 - `@Name`, `@Name(args)`, `@target:Name`
-- Decorator impls may target fields individually, as a list, or with a wildcard;
+- Decorator applications may target fields individually, as a list, or with a wildcard;
   target lists form a cross-product
 - Serialization decorators generate value-tree and AZON methods at
   compile time
@@ -469,12 +469,12 @@ Constant folding, constant propagation and dead-code elimination run on the IR.
 ```azora
 module std.math
 import std.container.array
-expose import std.traits.core    // re-exported to importers
+exposed import std.traits.core   // re-exported to importers
 ```
 
 - Public by default. A leading underscore makes a member private.
-- `confine` narrows a declaration or module to its package.
-- `expose` marks a module or import as auto-imported.
+- `confined` narrows a declaration or module to its package.
+- `exposed` marks a module or import as auto-imported.
 - `realm` groups members under a `::` namespace.
 - `realm Name { }` groups members under a `::` namespace; the same realm may
   be reopened and the contributions merge.

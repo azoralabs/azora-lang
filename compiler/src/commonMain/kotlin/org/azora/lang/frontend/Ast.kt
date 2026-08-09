@@ -1533,15 +1533,15 @@ sealed class TypeAnnotation {
  * These are two independent axes, which is why they combine:
  *
  * ```azora
- * expose func api() { … }           // importable everywhere - the default reach
- * protect func internal() { … }     // importable within the declaring folder
- * confine func helper() { … }       // private to this compilation unit
- * expose protect func shared() { }  // auto-imported, bounded to the folder
- * expose confine func local() { }   // auto-available, never leaves this unit
+ * exposed func api() { … }           // importable everywhere - the default reach
+ * protected func internal() { … }     // importable within the declaring folder
+ * confined func helper() { … }       // private to this compilation unit
+ * exposed protected func shared() { }  // auto-imported, bounded to the folder
+ * exposed confined func local() { }   // auto-available, never leaves this unit
  * ```
  *
  * [reach] bounds how far the declaration can be seen at all. [isExposed] says it
- * is published into that scope with no explicit `import`. `expose` alone selects
+ * is published into that scope with no explicit `import`. `exposed` alone selects
  * the default reach, which is why writing it changes nothing on its own.
  */
 data class Visibility(
@@ -1559,15 +1559,15 @@ data class Visibility(
 }
 
 /**
- * Visibility of a whole module (`[expose] [confine] mod x`).
+ * Visibility of a whole module (`[exposed] [confined] mod x`).
  *
  * - [EXPOSE] (default): importable everywhere, including downstream libraries.
  * - [PROTECT]: importable only within the declaring folder.
  * - [CONFINE]: private - not importable anywhere (e.g. a test file or an app's
  *   `main` module).
  *
- * Orthogonal to `export` (see [Program.isExported]): `expose` auto-imports the
- * module into every unit within its visibility scope. `expose confine` is
+ * Orthogonal to `export` (see [Program.isExported]): `exposed` auto-imports the
+ * module into every unit within its visibility scope. `exposed confined` is
  * contradictory and rejected at parse time.
  */
 enum class ModuleVisibility { PUBLIC, CONFINE }
@@ -2240,10 +2240,10 @@ sealed class TopLevel {
          * A private member is reachable only from its own declaring module, so
          * the check needs to know where each side was written.
          */
-        val declaringModule: String? = null
+        val declaringModule: String? = null,
     ) : TopLevel()
 
-    /** `deco Name [bind Spec] { fields }` - an annotation type and optional derived spec contract. */
+    /** `annot Name [binds Spec] { fields }` - an annotation type and optional derived spec contract. */
     data class Deco(
         val name: String,
         val fields: List<PackField>,
@@ -2266,7 +2266,7 @@ sealed class TopLevel {
     /** `solo pack Name { fields; methods }` - declares a singleton struct with one lazily-created shared instance. */
     data class Solo(val name: String, val fields: List<PackField>, val methods: List<FuncDecl>, val line: Int, val column: Int = 0, val visibility: Visibility = Visibility.PUBLIC, val annotations: List<Annotation> = emptyList()) : TopLevel()
 
-    /** A singleton registration inside a `graph` block: `solo Type(args) [bind Spec]`. */
+    /** A singleton registration inside a `graph` block: `solo Type(args) [binds Spec]`. */
     /**
      * How long a provider's value lives.
      *
@@ -2281,7 +2281,7 @@ sealed class TopLevel {
     }
 
     /**
-     * One entry in a `graph`: `<lifetime> Type(args) [bind Spec]`.
+     * One entry in a `graph`: `<lifetime> Type(args) [binds Spec]`.
      *
      * @property bindSpecs the specs this definition also answers injections of.
      */
@@ -2295,7 +2295,7 @@ sealed class TopLevel {
     )
 
     /**
-     * `graph Name [include [A, B]] { <lifetime> Type(args) [bind Spec] … }` - a
+     * `graph Name [includes [A, B]] { <lifetime> Type(args) [binds Spec] … }` - a
      * dependency graph.
      *
      * @property included graphs whose definitions this one also contains.
@@ -2315,7 +2315,7 @@ sealed class TopLevel {
      * accessible without the `RealmName::` prefix. [imports] is a list of (realmName, itemName)
      * pairs where itemName is null for "import all".
      *
-     * When [exported] is true (written `expose use …`), the import is re-exported:
+     * When [exported] is true (written `exposed use …`), the import is re-exported:
      * any module that imports this module also transitively imports [imports]. This lets
      * a library forward its dependencies (e.g. `std.char` re-exporting `std.char.core`).
      */
@@ -2403,7 +2403,11 @@ sealed class TopLevel {
          * A private member is reachable only from its own declaring module, so
          * the check needs to know where each side was written.
          */
-        val declaringModule: String? = null
+        val declaringModule: String? = null,
+        /** Generated-conformance request written with `derive` or a declaration's `derives` clause. */
+        val isDerived: Boolean = false,
+        /** Whether the source contained an implementation body, including an explicitly empty `{}`. */
+        val hasBody: Boolean = true,
     ) : TopLevel()
 
     /** `spec Name { func method(params): Ret; ... }` or compact callback `spec Name<T>: T { ref self } use as "to${T.typeName}"`. */
@@ -2419,8 +2423,8 @@ sealed class TopLevel {
         /**
          * `bridge spec` - the compiler provides the members.
          *
-         * An implementor states the capability with a bodyless `impl` and only
-         * writes a member when the default lowering is wrong for its type.
+         * A type requests the compiler-provided capability with `derive` and
+         * writes a manual `impl` body only when the default lowering is wrong.
          */
         val isBridge: Boolean = false,
         /**
@@ -2506,7 +2510,7 @@ sealed class TopLevel {
  *
  * @property moduleName the declared module name, or `null` if no `module` declaration is present
  * @property items the list of top-level items (functions and compile-time constructs)
- * @property isExported whether the module was declared `expose mod …`, making its
+ * @property isExported whether the module was declared `exposed mod …`, making its
  *   declarations auto-imported into every unit (as `std.core` is)
  */
 data class Program(
@@ -2518,19 +2522,19 @@ data class Program(
      */
     val localPackNames: Set<String> = emptySet(),
     /**
-     * `expose mod …` - the module's declarations are published to every
+     * `exposed mod …` - the module's declarations are published to every
      * compilation unit that uses this library, with no explicit `import`.
      */
     val isExported: Boolean = false,
     /**
-     * Module-level visibility from `[confine] mod …`
+     * Module-level visibility from `[confined] mod …`
      * (default [ModuleVisibility.PUBLIC]). Bounds how far the module - and its
-     * `expose` auto-import - reaches.
+     * `exposed` auto-import - reaches.
      */
     val moduleVisibility: ModuleVisibility = ModuleVisibility.PUBLIC,
     /**
      * Comptime condition on `export if COND \n module …` (null = unconditional
-     * `expose mod`). Evaluated against config constants + CLI defines; when it
+     * `exposed mod`). Evaluated against config constants + CLI defines; when it
      * folds to `false`, [isExported] is cleared before stdlib indexing.
      */
     val exportCondition: Expr? = null,

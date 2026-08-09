@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-expose module std.primitive
+exposed module std.primitive
 
 import std.traits
 
@@ -420,38 +420,38 @@ use realm std {
 
     /** Every unsigned integer type conforms to `UnsignedInteger`. */
     @Since("0.1")
-    impl UnsignedInteger for UnsignedIntegers
+    derive UnsignedInteger for UnsignedIntegers
 
     /** Every signed integer type conforms to `SignedInteger`. */
     @Since("0.1")
-    impl SignedInteger for SignedIntegers
+    derive SignedInteger for SignedIntegers
 
     /** Every integer type conforms to `Integer`. */
     @Since("0.1")
-    impl Integer for Integers
+    derive Integer for Integers
 
     /** Every floating-point type conforms to `FloatingPoint`. */
     @Since("0.1")
-    impl FloatingPoint for FloatingPoints
+    derive FloatingPoint for FloatingPoints
 
     @Since("0.1")
-    impl UnsignedNumber for UnsignedIntegers
+    derive UnsignedNumber for UnsignedIntegers
 
     @Since("0.1")
-    impl UnsignedNumber for FloatingPoints
+    derive UnsignedNumber for FloatingPoints
 
     @Since("0.1")
-    impl SignedNumber for SignedIntegers
+    derive SignedNumber for SignedIntegers
 
     @Since("0.1")
-    impl SignedNumber for FloatingPoints
+    derive SignedNumber for FloatingPoints
 
     /**
      * Every integer is totally ordered, and so are the remaining scalars.
      *
      * Bodyless, so the compiler supplies the members - for a primitive that is
      * the backend's native comparison rather than a generated field walk. The
-     * conformance is the whole declaration, exactly as `impl [Clone, Copy]` is.
+     * conformance is the whole declaration, exactly as `derive [Clone, Copy]` is.
      *
      * `Bool` orders `false < true`; `Char` orders by code point; `String`
      * orders lexicographically by code point, which is an order and not a
@@ -459,10 +459,10 @@ use realm std {
      * parameter and never what `<` does.
      */
     @Since("0.1")
-    impl [PartialEqual, Equal, Order, Hash] for Integers
+    derive [PartialEqual, Equal, Order, Hash] for Integers
 
     @Since("0.1")
-    impl [PartialEqual, Equal, Order, Hash] for [Bool, Char, String]
+    derive [PartialEqual, Equal, Order, Hash] for [Bool, Char, String]
 
     /**
      * Floating point is **partially** ordered, and never `Equal`.
@@ -473,7 +473,7 @@ use realm std {
      * for a NaN pair instead of the negation of one another.
      */
     @Since("0.1")
-    impl [PartialEqual, PartialOrder] for FloatingPoints
+    derive [PartialEqual, PartialOrder] for FloatingPoints
 
     inline fin _ranks: Array<Int> = @arr[0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 6, 7]
 

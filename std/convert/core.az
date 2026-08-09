@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-expose module std.convert.core
+exposed module std.convert.core
 
 use realm std {
     @Experimental(since: "0.1")

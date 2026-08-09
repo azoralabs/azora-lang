@@ -189,7 +189,7 @@ class StdlibInjectionTest {
                 fin value: Long
             }
 
-            impl Serializable for UserId
+            impl Serializable for UserId {}
 
             func main() {}
         """.trimIndent())

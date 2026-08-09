@@ -153,7 +153,7 @@ class RealmQualifiedAccessTest {
                 import std.io
                 import std.traits
                 realm shapes { pack Square { fin side: Int = 0 } }
-                impl [Equal] for shapes::Square
+                derive [Equal] for shapes::Square
                 func main() {
                     std::println(if shapes::Square(2) == shapes::Square(2) { "eq" } else { "ne" })
                 }
@@ -172,7 +172,7 @@ class RealmQualifiedAccessTest {
                 import std.serializer
                 @Serializable
                 pack User { fin name: String = "" }
-                impl std::SerialName(value: "display_name") for User::name
+                impl std::SerialName(value: "display_name") for User::name {}
                 func main() {
                     fin user = User("Ada")
                     fin tree = user.toSerialValue(user) catch std::SerialValue.Null
@@ -193,7 +193,7 @@ class RealmQualifiedAccessTest {
                 import std.serializer
                 @Serializable
                 pack User { fin name: String = "" fin token: String = "t" }
-                impl std::SerialIgnore for User::*
+                impl std::SerialIgnore for User::* {}
                 func main() {
                     fin user = User("Ada", "t")
                     fin tree = user.toSerialValue(user) catch std::SerialValue.Null
@@ -219,7 +219,7 @@ class RealmQualifiedAccessTest {
                 pack Square { fin side: Int = 0 }
                 @Serializable
                 pack Holder { fin Square: Int = 0 }
-                impl std::SerialIgnore for Holder::Square
+                impl std::SerialIgnore for Holder::Square {}
                 func main() {
                     fin holder = Holder(2)
                     fin tree = holder.toSerialValue(holder) catch std::SerialValue.Null

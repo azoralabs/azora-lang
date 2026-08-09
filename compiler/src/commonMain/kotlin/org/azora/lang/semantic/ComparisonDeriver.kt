@@ -31,8 +31,9 @@ import org.azora.lang.frontend.TypeRef
 /**
  * Field-wise `Equal`, `Order` and `Hash` for a pack that asked for them.
  *
- * `DIPs/OPERATOR_OVERLOADING_DIP.MD` §7: a bodyless `impl [Equal, Order] for T`
- * is the derive request, and an `impl` with a body is the author's own. The
+ * `DIPs/OPERATOR_OVERLOADING_DIP.MD` §7: `T derives [Equal, Order]` or the
+ * standalone `derive [Equal, Order] for T` is the derive request, and an `impl`
+ * always contains the author's own implementation. The
  * generated members are ordinary Azora AST, so the resolver, the lowerer and
  * all three backends see nothing new - the same approach `SerializationDeriver`
  * takes.
@@ -57,15 +58,15 @@ object ComparisonDeriver {
             .associateBy { it.name }
         if (packs.isEmpty()) return Result(program, emptyList())
 
-        // Only bodyless impls are derive requests; one with members is the
-        // author's own and always wins.
+        // Only nodes explicitly produced by `derive` / `derives` are requests.
+        // An empty manual impl is never interpreted as compiler generation.
         val requested = mutableMapOf<String, MutableSet<String>>()
         val written = mutableMapOf<String, MutableSet<String>>()
         for (item in program.items.filterIsInstance<TopLevel.Impl>()) {
             val capability = item.traitName ?: continue
             if (capability !in setOf(EQUAL, ORDER, HASH)) continue
             if (item.typeName !in packs) continue
-            if (item.methods.isEmpty()) {
+            if (item.isDerived) {
                 requested.getOrPut(item.typeName) { mutableSetOf() }.add(capability)
             } else {
                 written.getOrPut(item.typeName) { mutableSetOf() }.add(capability)
@@ -114,6 +115,8 @@ object ComparisonDeriver {
                     pack.line,
                     0,
                     typeParams = pack.typeParams,
+                    isDerived = true,
+                    hasBody = false,
                 )
             }
             for (implied in listOf(EQUAL, HASH)) {
@@ -125,6 +128,8 @@ object ComparisonDeriver {
                         pack.line,
                         0,
                         typeParams = pack.typeParams,
+                        isDerived = true,
+                        hasBody = false,
                     )
                 }
             }
@@ -263,6 +268,8 @@ object ComparisonDeriver {
             null,
             pack.line,
             0,
-            typeParams = pack.typeParams,
+                        typeParams = pack.typeParams,
+                        isDerived = true,
+                        hasBody = false,
         )
 }

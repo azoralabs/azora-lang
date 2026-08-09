@@ -16,7 +16,7 @@
 
 module std.traits
 
-expose import std.traits.core
+exposed import std.traits.core
 import std.convert
 
 /**

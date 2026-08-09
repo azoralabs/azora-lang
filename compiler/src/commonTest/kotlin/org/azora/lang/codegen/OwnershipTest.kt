@@ -65,7 +65,7 @@ class OwnershipTest {
         spec Base
         spec Derived requires Base
         pack P { var x: Int }
-        impl Derived for P
+        impl Derived for P {}
     """, "'P' cannot implement 'Derived' until it also implements 'Base'")
 
     @Test fun severalRequirementsTakeAList() = accepts("""
@@ -73,8 +73,8 @@ class OwnershipTest {
         spec B
         spec C requires [A, B]
         pack P { var x: Int }
-        impl [A, B] for P
-        impl C for P
+        derive [A, B] for P
+        impl C for P {}
     """)
 
     @Test fun aSingleRequirementIsWrittenWithoutBrackets() = rejects("""
@@ -82,12 +82,24 @@ class OwnershipTest {
         spec Derived requires [Base]
     """, "written 'requires Base', without brackets")
 
+    @Test fun aManualSpecImplementationRequiresABody() = rejects("""
+        spec Marker
+        pack P
+        impl Marker for P
+    """, "manual implementation 'impl Marker for P' requires a body")
+
+    @Test fun aBridgeImplementationStillRequiresABody() = rejects("""
+        bridge spec Marker
+        pack P
+        bridge impl Marker for P
+    """, "manual implementation 'impl Marker for P' requires a body")
+
     @Test fun requirementsSatisfiedExplicitly() = accepts("""
         spec Base
         spec Derived requires Base
         pack P { var x: Int }
-        impl Base for P
-        impl Derived for P
+        impl Base for P {}
+        impl Derived for P {}
     """)
 
     @Test fun requiringDoesNotImply() = rejects("""
@@ -95,16 +107,16 @@ class OwnershipTest {
         spec Derived requires Base
         spec Third requires Derived
         pack P { var x: Int }
-        impl Base for P
-        impl Derived for P
+        impl Base for P {}
+        impl Derived for P {}
         pack Q { var y: Int }
-        impl Third for Q
+        impl Third for Q {}
     """, "'Q' cannot implement 'Third' until it also implements 'Derived'")
 
-    @Test fun aBridgeSpecSuppliesItsOwnMembers() = accepts("""
+    @Test fun aBridgeSpecCanBeDerivedFromItsCompilerLowering() = accepts("""
         bridge spec Clone { func clone[self: Self&](): Self }
         pack P { var x: Int }
-        impl Clone for P
+        derive Clone for P
     """)
 
     @Test fun anImplInheritsItsReturnTypeFromTheSpec() = accepts("""

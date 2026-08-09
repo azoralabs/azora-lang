@@ -68,12 +68,12 @@ globals are rejected (not thread-safe).
 Everything is public by default - there is no keyword for it. A leading
 underscore on the name is what makes a declaration private, and it is private
 to the realm or type that declares it: `pack Body { var _cache: Double }` is
-readable from `Body`'s own `impl` blocks and nowhere else. `confine` narrows a
+readable from `Body`'s own `impl` blocks and nowhere else. `confined` narrows a
 declaration to its package.
 
-`expose` is not a visibility modifier. It marks a `module` or a top-level
-`import` as auto-imported everywhere, so `expose module std.core` and
-`expose import std.container` reach every unit without being asked for.
+`exposed` is not a visibility modifier. It marks a `module` or a top-level
+`import` as auto-imported everywhere, so `exposed module std.core` and
+`exposed import std.container` reach every unit without being asked for.
 
 ### Functions
 
@@ -126,11 +126,13 @@ checking; `break`/`continue`.
 | Construct | Purpose |
 |-----------|---------|
 | `pack Name { fields }` / `pack Empty` | struct; empty packs may omit `{ }` |
+| `pack Name derives [A, B] { fields }` | struct plus generated spec implementations |
+| `derive [A, B] for ExistingType` | request generated implementations outside the type declaration |
 | `pack Tuple<...T> where (...T).length >= 2 { inline for Ty in ...T with index { mixin "$index: $Ty" } }` | variadic tuple template |
 | `enum Color { Red; Green }` | enum |
 | `variant enum Option { Some(Int); None }` | tagged union |
 | `unsafe union Value { i: Int; d: Double }` | untagged, overlapping storage |
-| `impl Name { members }` / `impl Spec for Name { }` | members / spec implementation |
+| `impl Name { members }` / `impl Spec for Name { members }` | members / mandatory manual spec implementation |
 | `impl Name:: { }` / `impl Spec for Name:: { }` | statics, reached as `Name::member` |
 | `func Name.method(args) { }` | extension declared outside the type's file |
 | `spec Name { func f[self: Self&](): T }` | capability: `func`, `prop` and `oper` requirements |
@@ -138,14 +140,14 @@ checking; `break`/`continue`.
 | `typealias T = U` | type alias |
 | `error ErrSet { V1, V2 }` | error-set declaration |
 | `annot Name { fin field: Type }` | annotation type; metadata fields are immutable |
-| `impl Annot for Type` | bodyless marker conformance |
-| `impl Annot(field: value) for Type` | conformance with compile-time metadata |
-| `impl Annot for Type::field` / `Type::*` | decorates one field / every field |
-| `impl [A, B] for [Type::x, Type::y]` | the decorator/target cross-product |
-| `annot Name bind Spec { fields }` | binds an annotation to a spec |
+| `impl Annot for Type {}` | marker conformance with an explicit empty body |
+| `impl Annot(field: value) for Type {}` | conformance with compile-time metadata |
+| `impl Annot for Type::field {}` / `Type::* {}` | decorates one field / every field |
+| `impl [A, B] for [Type::x, Type::y] {}` | the decorator/target cross-product |
+| `annot Name binds Spec { fields }` | binds an annotation to a spec |
 | `solo pack Name { }` | a type there is one of |
-| `graph Graph { solo\|factory\|scope Type(args) [bind Spec] }` | a dependency graph; the first word is the provider's lifetime |
-| `graph Graph include [A, B]` | graph composition |
+| `graph Graph { solo\|factory\|scope Type(args) [binds Spec] }` | a dependency graph; the first word is the provider's lifetime |
+| `graph Graph includes [A, B]` | graph composition |
 | `inject Type` / `lazy fin value = inject Type` | resolve now / on first read |
 | `react func name() { }` | reactive owner |
 | `bridge target { func sigs }` | FFI extern declarations |
@@ -307,14 +309,14 @@ built-in format: any other is written outside the standard library by
 implementing `Serializer<T>` and encoding the resulting tree. Their
 `ignoreUnknownFields` and `encodeDefaults` values are immutable decorator
 metadata and are available to generated inline code through `annotMeta<D>`.
-Bodyless decorator implementations may configure those fields directly; omitted
+Decorator implementations may configure those fields directly; omitted
 fields use the defaults declared by the decorator:
 
 ```azora
 impl Serializable(
     ignoreUnknownFields: true,
     encodeDefaults: false
-) for User
+) for User {}
 ```
 
 The compiler applies the same field-name, duplicate-argument, required-field,
@@ -326,13 +328,14 @@ one application for every decorator/target pair, and `Pack::*` selects only the
 fields declared by that pack:
 
 ```azora
-impl SerialName(value: "login") for User::name
-impl [SerialName, SerialRequired] for User::name
-impl SerialIgnore for [User::name, User::password]
-impl [SerialName, SerialRequired] for User::*
+impl SerialName(value: "login") for User::name {}
+impl [SerialName, SerialRequired] for User::name {}
+impl SerialIgnore for [User::name, User::password] {}
+impl [SerialName, SerialRequired] for User::* {}
 ```
 
-Member selectors and wildcards are decorator-only and bodyless. Unknown fields,
+Member selectors and wildcards are decorator-only and require an explicitly empty
+implementation body. Unknown fields,
 non-pack wildcard owners, invalid decorator targets, and applications repeated
 through overlapping explicit/wildcard selectors are compile errors.
 
@@ -383,17 +386,19 @@ Grouped:
 - **Memory and ownership**: `alloc` `purge` `take` `unsafe` `scope`
 - **FFI and DI**: `bridge` `solo` `graph` `inject`
 - **Reactivity**: `remember` `retain` `preserve` `effect`
-- **Metaprogramming**: `inline` `deepinline` `noinline` `macro`
-- **Modules and scoping**: `realm` `import` `use` `expose` `confine`
-- **Annotations**: `annot` `bind`
+- **Metaprogramming**: `inline` `deepinline` `noinline` `macro` `derive`
+- **Modules and scoping**: `realm` `import` `use` `exposed` `protected` `confined`
+- **Annotations**: `annot` `bind`; contextual declaration clauses use `binds`
 - **Contracts and testing**: `out` `test` `assert` `trace`
 - **Expressions**: `as` `is` `null` `true` `false` `with`
 
 `union` is contextual, so `Set.union(other)` still parses as a call.
+`module`, `async`, `where`, `without`, `replace`, `escaping`, `derives`,
+`includes`, `binds`, `requires`, `lend`, and `reflect` are contextual too.
 
 **Not keywords** (and not in the language): `node` `leaf` `virt` `repl` `base`
 `hook` `flow` `yield` `task` `slot` `fail` `deco` `zone` `mod` `drop` `deref`
-`mut` `ref` `shared` `weak` `protect` `launch` `async`. `async` is a contextual
+`mut` `ref` `shared` `weak` `launch`. `async` is a contextual
 identifier before `func` and `{`; `launch` is a library function.
 
 ---

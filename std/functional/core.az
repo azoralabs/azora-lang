@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-expose module std.functional.core
+exposed module std.functional.core
 
 /**
  * @file std.functional.core

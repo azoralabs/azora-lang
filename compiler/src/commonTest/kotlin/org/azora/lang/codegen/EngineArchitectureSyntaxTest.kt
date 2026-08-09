@@ -35,7 +35,7 @@ class EngineArchitectureSyntaxTest {
         """
         module engine
 
-        expose import engine.ecs
+        exposed import engine.ecs
         """.trimIndent(),
     )
 

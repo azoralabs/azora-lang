@@ -16,7 +16,7 @@
 
 module std.convert
 
-expose import std.convert.core
+exposed import std.convert.core
 
 /**
  * @file std/convert

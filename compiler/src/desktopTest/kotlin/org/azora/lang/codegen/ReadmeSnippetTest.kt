@@ -61,7 +61,7 @@ class ReadmeSnippetTest {
         // The comparison example carries its own pack; the derive and Display
         // examples need one.
         "impl Order for Version" to emptyMain,
-        "impl [Equal, Order] for Point" to Context(
+        "derive [Equal, Order] for Point" to Context(
             prelude = "import std.traits\npack Point {\n    var x: Int\n    var y: Int\n}\n",
         ),
         "impl Arithmetic for Matrix" to Context(

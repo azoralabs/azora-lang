@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-expose module std.core
+exposed module std.core
 
 /**
  * @file std/core.az

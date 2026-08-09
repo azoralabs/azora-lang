@@ -53,7 +53,7 @@ class DecoratorResolver {
             val contract = table.lookupSpec(name) ?: continue
             if (!contract.isDecorator) continue
             if (impl.methods.isNotEmpty()) {
-                errors.add("line ${impl.line}: decorator '$name' is a marker contract; use 'impl $name for ${impl.typeName}' without a body")
+                errors.add("line ${impl.line}: decorator '$name' is a marker contract; its implementation body must be empty")
                 continue
             }
             if (impl.traitArgs.isNotEmpty()) {

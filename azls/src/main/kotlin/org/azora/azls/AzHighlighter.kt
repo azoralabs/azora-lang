@@ -243,7 +243,7 @@ object AzHighlighter {
         val lineStart = source.lastIndexOf('\n', start - 1) + 1
         val prefix = source.substring(lineStart, start).trim()
         return when (word) {
-            "module" -> nextWord() != null && prefix in setOf("", "expose", "confine")
+            "module" -> nextWord() != null && prefix in setOf("", "exposed", "confined")
             "union" -> nextWord()?.firstOrNull()?.isUpperCase() == true
             "async" -> nextWord() == "func"
             "where" -> {
@@ -256,7 +256,8 @@ object AzHighlighter {
                         .containsMatchIn(before)
                 }
             }
-            "without" -> Regex("""\bbind\b""").containsMatchIn(source.substring(lineStart, start))
+            "without" -> Regex("""\bbinds\b""").containsMatchIn(source.substring(lineStart, start))
+            "derives", "includes", "binds", "requires" -> true
             else -> false
         }
     }

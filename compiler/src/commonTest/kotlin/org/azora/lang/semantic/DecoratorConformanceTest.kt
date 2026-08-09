@@ -32,13 +32,13 @@ class DecoratorConformanceTest {
         return SemanticPipeline().analyze(program)
     }
 
-    @Test fun bodylessDecoratorImplRecordsConformance() {
+    @Test fun emptyDecoratorImplBodyRecordsConformance() {
         val result = analyze("""
             annot Serializable {}
             pack UserId {
                 fin value: Long
             }
-            impl Serializable for UserId
+            impl Serializable for UserId {}
             func main() {}
         """.trimIndent())
 
@@ -67,7 +67,7 @@ class DecoratorConformanceTest {
             func main() {}
         """.trimIndent())
 
-        assertTrue(result.errors.any { "marker contract" in it && "without a body" in it }, result.errors.toString())
+        assertTrue(result.errors.any { "marker contract" in it && "must be empty" in it }, result.errors.toString())
         assertFalse(result.symbolTable.implements("UserId", "Serializable"))
     }
 
@@ -77,8 +77,8 @@ class DecoratorConformanceTest {
             pack UserId {
                 fin value: Long
             }
-            impl Serializable for UserId
-            impl Serializable for UserId
+            impl Serializable for UserId {}
+            impl Serializable for UserId {}
             func main() {}
         """.trimIndent())
 
@@ -88,7 +88,7 @@ class DecoratorConformanceTest {
     @Test fun appliedBoundDecoratorDerivesGenericSpecConformance() {
         val result = analyze("""
             @Experimental(since: "0.1")
-            annot Serializable bind Serializer {
+            annot Serializable binds Serializer {
                 fin ignoreUnknownFields: Bool = false
                 fin encodeDefaults: Bool = true
             }
@@ -111,12 +111,12 @@ class DecoratorConformanceTest {
 
     @Test fun decoratorImplAlsoDerivesBoundSpecConformance() {
         val result = analyze("""
-            annot Serializable bind Serializer {}
+            annot Serializable binds Serializer {}
             spec Serializer<T>
             pack UserId {
                 fin value: Long
             }
-            impl Serializable for UserId
+            impl Serializable for UserId {}
             func main() {}
         """.trimIndent())
 
@@ -162,7 +162,7 @@ class DecoratorConformanceTest {
             spec Serializer<T>
             pack User
             pack UserSerializer
-            impl Serializer<User>(enabled: true) for UserSerializer
+            impl Serializer<User>(enabled: true) for UserSerializer {}
             func main() {}
         """.trimIndent())
 
@@ -177,7 +177,7 @@ class DecoratorConformanceTest {
         val result = analyze("""
             spec Readable
             pack User { fin name: String = "" }
-            impl Readable for User::name
+            impl Readable for User::name {}
             func main() {}
         """.trimIndent())
 
@@ -192,12 +192,12 @@ class DecoratorConformanceTest {
         val result = analyze("""
             spec Serializer<T>
             spec AzonSerializer<T>
-            annot Serializable for .Pack bind [Serializer, AzonSerializer] {
+            annot Serializable for .Pack binds [Serializer, AzonSerializer] {
                 fin ignoreUnknownFields: Bool = false
                 fin encodeDefaults: Bool = true
             }
             pack User
-            impl Serializable for User
+            impl Serializable for User {}
             func main() {}
         """.trimIndent())
 
@@ -211,7 +211,7 @@ class DecoratorConformanceTest {
     @Test fun genericTargetAndTrailingBindingArgumentsArePreserved() {
         val result = analyze("""
             spec Codec<T, Format>
-            annot Json bind Codec<String> {}
+            annot Json binds Codec<String> {}
             @Json
             pack Box<T> {
                 fin value: T
@@ -229,7 +229,7 @@ class DecoratorConformanceTest {
     @Test fun boundDecoratorRequiresMatchingGenericArity() {
         val result = analyze("""
             spec Codec<T, Format>
-            annot Serializable bind Codec {}
+            annot Serializable binds Codec {}
             @Serializable
             pack UserId {
                 fin value: Long
@@ -243,7 +243,7 @@ class DecoratorConformanceTest {
 
     @Test fun boundDecoratorRejectsUnknownSpec() {
         val result = analyze("""
-            annot Serializable bind MissingSpec {}
+            annot Serializable binds MissingSpec {}
             @Serializable
             pack UserId {
                 fin value: Long
@@ -256,7 +256,7 @@ class DecoratorConformanceTest {
 
     @Test fun unusedDecoratorBindingIsStillValidated() {
         val result = analyze("""
-            annot Broken bind MissingSpec {}
+            annot Broken binds MissingSpec {}
             func main() {}
         """.trimIndent())
 

@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-expose module std.container.core
+exposed module std.container.core
 
-expose import std.container.{array, list, map, set}
+exposed import std.container.{array, list, map, set}
 
 use realm std {
     /**

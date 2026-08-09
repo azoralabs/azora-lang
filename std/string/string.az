@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-expose module std.string
+exposed module std.string
 
-expose import std.string.core
+exposed import std.string.core
 import std.container.array
 
 /**

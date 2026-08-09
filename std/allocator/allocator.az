@@ -114,7 +114,7 @@ realm std {
         var totalAllocated: Int = 0
     }
 
-    impl Allocator for Arena
+    derive Allocator for Arena
 
     /**
      * Creates an arena with the given byte capacity.
@@ -292,7 +292,7 @@ realm std {
     }
 
     @Since("0.1")
-    impl Allocator for Pool
+    derive Allocator for Pool
 
     /**
      * Creates a pool with the given slot size and count.
@@ -440,7 +440,7 @@ realm std {
     }
 
     @Since("0.1")
-    impl Allocator for StackAllocator
+    derive Allocator for StackAllocator
 
     /**
      * Creates a stack allocator with the given byte capacity.

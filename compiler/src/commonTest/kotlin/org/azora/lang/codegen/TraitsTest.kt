@@ -130,9 +130,19 @@ class TraitsTest {
             pack UserId {
                 fin value: Long
             }
-            impl Serializable for UserId
+            impl Serializable for UserId {}
             func main() {}
         """.trimIndent()))
+    }
+
+    @Test fun decoratorImplementationRequiresAnExplicitBody() {
+        val errors = expectFailure("""
+            annot Serializable {}
+            pack UserId { fin value: Long }
+            impl Serializable for UserId
+            func main() {}
+        """.trimIndent())
+        assertTrue(errors.any { it.contains("manual implementation") && it.contains("requires a body") }, errors.toString())
     }
 
     @Test fun decoratorMarkerImplementationCannotDeclareMethods() {
@@ -148,7 +158,7 @@ class TraitsTest {
             }
             func main() {}
         """.trimIndent())
-        assertTrue(errors.any { it.contains("marker contract") && it.contains("without a body") }, errors.toString())
+        assertTrue(errors.any { it.contains("marker contract") && it.contains("must be empty") }, errors.toString())
     }
 
     @Test fun duplicateDecoratorImplementationFails() {
@@ -157,10 +167,10 @@ class TraitsTest {
             pack UserId {
                 fin value: Long
             }
-            impl Serializable for UserId
-            impl Serializable for UserId
+            impl Serializable for UserId {}
+            impl Serializable for UserId {}
             func main() {}
         """.trimIndent())
-        assertTrue(errors.any { it.contains("duplicate implementation") }, errors.toString())
+        assertTrue(errors.any { it.contains("duplicate decorator") }, errors.toString())
     }
 }

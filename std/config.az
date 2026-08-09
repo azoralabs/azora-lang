@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-expose module std.config
+exposed module std.config
 
 deepinline realm {
     @Since("0.1")

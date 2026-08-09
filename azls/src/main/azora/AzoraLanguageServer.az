@@ -102,7 +102,8 @@ func isKeywordRange(source: String, start: Int, end: Int): Bool {
         rangeIs(source, start, end, "effect") || rangeIs(source, start, end, "with") ||
         rangeIs(source, start, end, "prop") || rangeIs(source, start, end, "ctor") ||
         rangeIs(source, start, end, "dtor") || rangeIs(source, start, end, "out") ||
-        rangeIs(source, start, end, "expose") || rangeIs(source, start, end, "confine") ||
+        rangeIs(source, start, end, "exposed") || rangeIs(source, start, end, "protected") ||
+        rangeIs(source, start, end, "confined") ||
         rangeIs(source, start, end, "threadlocal") ||
         rangeIs(source, start, end, "true") || rangeIs(source, start, end, "false") ||
         rangeIs(source, start, end, "null")
@@ -188,8 +189,8 @@ func contextualModuleIsKeyword(source: String, start: Int, end: Int): Bool {
         if !isIdentifierStart(charAt(source, index)) { return false }
         index += 1
         while index < start && isIdentifierPart(charAt(source, index)) { index += 1 }
-        if !rangeIs(source, wordStart, index, "expose") &&
-            !rangeIs(source, wordStart, index, "confine") { return false }
+        if !rangeIs(source, wordStart, index, "exposed") &&
+            !rangeIs(source, wordStart, index, "confined") { return false }
     }
     return true
 }
@@ -212,7 +213,7 @@ func contextualUnionIsKeyword(source: String, start: Int, end: Int): Bool {
 func contextualWithoutIsKeyword(source: String, start: Int, end: Int): Bool {
     if !rangeIs(source, start, end, "without") { return false }
     fin lineStart = lineStartAt(source, 0, start)
-    return findFrom(source, lineStart, start, "bind") >= 0
+    return findFrom(source, lineStart, start, "binds") >= 0
 }
 
 func isContextualKeywordRange(source: String, start: Int, end: Int): Bool {
@@ -220,7 +221,9 @@ func isContextualKeywordRange(source: String, start: Int, end: Int): Bool {
         contextualModuleIsKeyword(source, start, end) ||
         contextualUnionIsKeyword(source, start, end) ||
         (rangeIs(source, start, end, "async") && nextIdentifierIs(source, end, "func")) ||
-        contextualWithoutIsKeyword(source, start, end)
+        contextualWithoutIsKeyword(source, start, end) ||
+        rangeIs(source, start, end, "derives") || rangeIs(source, start, end, "includes") ||
+        rangeIs(source, start, end, "binds") || rangeIs(source, start, end, "requires")
 }
 
 func lineNumberAt(source: String, documentStart: Int, offset: Int): Int {
@@ -1044,9 +1047,9 @@ func declarationZoneAllows(
 
 func moduleIsExported(source: String, documentStart: Int, moduleNameStart: Int): Bool {
     fin start = lineStartAt(source, documentStart, moduleNameStart)
-    fin found = findFrom(source, start, moduleNameStart, "expose")
+    fin found = findFrom(source, start, moduleNameStart, "exposed")
     if found < 0 { return false }
-    fin end = found + 6
+    fin end = found + 7
     fin beforeOk = found == start || !isIdentifierPart(charAt(source, found - 1))
     fin afterOk = end >= moduleNameStart || !isIdentifierPart(charAt(source, end))
     return beforeOk && afterOk

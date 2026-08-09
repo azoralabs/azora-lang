@@ -7,7 +7,7 @@ import kotlin.test.*
 
 /**
  * `realm test { }` - declarations that exist only for tests, and the
- * `expose` / `protect` / `confine` ladder that bounds how far they reach.
+ * `exposed` / `protected` / `confined` ladder that bounds how far they reach.
  */
 class TestRealmTest {
 
@@ -70,9 +70,9 @@ class TestRealmTest {
     @Test fun eachReachNamesItselfInTheDiagnostic() {
         val cases = mapOf(
             "realm test" to "a test in this file",
-            "confine realm test" to "a test in this file",
-            "protect realm test" to "a test in this folder",
-            "expose realm test" to "a test in any file",
+            "confined realm test" to "a test in this file",
+            "protected realm test" to "a test in this folder",
+            "exposed realm test" to "a test in any file",
         )
         for ((header, expected) in cases) {
             val found = errors("""
@@ -100,18 +100,18 @@ class TestRealmTest {
     }
 
     /**
-     * `expose` and the reach are independent axes, so they combine: `expose`
+     * `exposed` and the reach are independent axes, so they combine: `exposed`
      * publishes without an explicit import, and the reach bounds how far that
      * publication travels.
      */
     @Test fun exposeCombinesWithProtectAndConfine() {
         assertEquals("ok", run("""
             import std.io
-            expose func api(): Int { return 1 }
-            protect func folderWide(): Int { return 2 }
-            confine func unitLocal(): Int { return 3 }
-            expose protect func exposedInFolder(): Int { return 4 }
-            expose confine func exposedInUnit(): Int { return 5 }
+            exposed func api(): Int { return 1 }
+            protected func folderWide(): Int { return 2 }
+            confined func unitLocal(): Int { return 3 }
+            exposed protected func exposedInFolder(): Int { return 4 }
+            exposed confined func exposedInUnit(): Int { return 5 }
 
             func main() {
                 fin sum = api() + folderWide() + unitLocal() + exposedInFolder() + exposedInUnit()

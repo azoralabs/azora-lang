@@ -28,7 +28,7 @@ module std.char
  * @since 0.1
  */
 
-expose import std.char.core
+exposed import std.char.core
 
 realm std {
     /**

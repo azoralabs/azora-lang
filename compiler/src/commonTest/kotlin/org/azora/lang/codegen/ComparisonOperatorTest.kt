@@ -282,16 +282,15 @@ class ComparisonOperatorTest {
 
     // -- Phase 6: derivation -----------------------------------------------
 
-    /** A bodyless `impl [Equal]` asks the compiler to write `==` field-wise. */
+    /** A `derive [Equal]` asks the compiler to write `==` field-wise. */
     @Test fun equalIsDerivedFieldWise() {
         assertEquals("true\nfalse\nfalse\ntrue", run("""
             import std.io
             import std.traits
-            pack Point {
+            pack Point derives Equal {
                 var x: Int
                 var y: Int
             }
-            impl [Equal] for Point
             func main() {
                 std::println(Point(1, 2) == Point(1, 2))
                 std::println(Point(1, 2) == Point(9, 2))
@@ -301,7 +300,7 @@ class ComparisonOperatorTest {
         """.trimIndent()))
     }
 
-    /** `impl [Order]` gives `<=>`, and the four relational operators follow. */
+    /** `derive [Order]` gives `<=>`, and the four relational operators follow. */
     @Test fun orderIsDerivedLexicographically() {
         assertEquals("Compare.Less\ntrue\nfalse\ntrue", run("""
             import std.io
@@ -310,7 +309,7 @@ class ComparisonOperatorTest {
                 var major: Int
                 var minor: Int
             }
-            impl [Order] for Version
+            derive [Order] for Version
             func main() {
                 std::println("${'$'}{Version(1, 2) <=> Version(1, 9)}")
                 std::println(Version(1, 2) < Version(1, 9))
@@ -329,7 +328,7 @@ class ComparisonOperatorTest {
                 var major: Int
                 var minor: Int
             }
-            impl [Order] for Version
+            derive [Order] for Version
             func main() {
                 std::println("${'$'}{Version(2, 0) <=> Version(1, 99)}")
                 std::println("${'$'}{Version(1, 1) <=> Version(1, 2)}")
@@ -346,7 +345,7 @@ class ComparisonOperatorTest {
                 var a: Int
                 var b: Int
             }
-            impl [Equal] for Key
+            derive [Equal] for Key
             func main() {
                 std::println(Key(1, 2).hash == Key(1, 2).hash)
                 std::println(Key(1, 2).hash == Key(2, 1).hash)
@@ -363,7 +362,7 @@ class ComparisonOperatorTest {
                 var a: Int
                 var b: Int
             }
-            impl [Equal] for Loose
+            derive [Equal] for Loose
             impl Equal for Loose {
                 oper== [self: Self&](rhs: Self&): Bool {
                     return self.a == rhs.a
@@ -395,7 +394,7 @@ class ComparisonOperatorTest {
         """.trimIndent(), release = false)
         assertIs<CompilationResult.Failure>(result, "a pack with no equality must not compare")
         assertTrue(
-            result.errors.any { "does not implement PartialEqual" in it && "impl [Equal]" in it },
+            result.errors.any { "does not implement PartialEqual" in it && "derive Equal" in it },
             "the error should name the fix, got: ${result.errors}",
         )
     }
@@ -408,7 +407,7 @@ class ComparisonOperatorTest {
                 var x: Int
                 var y: Int
             }
-            impl [Equal] for Vec2
+            derive [Equal] for Vec2
             func main() {
                 std::println(Vec2(1, 2) == Vec2(1, 2))
             }

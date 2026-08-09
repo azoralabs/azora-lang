@@ -12,7 +12,7 @@ import kotlin.test.*
  *   reached via the qualified `X::name` path; bare access is rejected.
  * - `realm X { ... }` may be declared in multiple blocks (and across
  *   modules); the contributions merge into one logical realm.
- * - Visibility modifiers (`expose`/`confine`/`protect`) still constrain access.
+ * - Visibility modifiers (`exposed`/`confined`/`protected`) still constrain access.
  */
 class ModulesTest {
 
@@ -248,7 +248,7 @@ class ModulesTest {
     @Test fun confineFuncWorksInSameFile() {
         assertEquals("private", run("""
             import std.io
-            confine func secret(): String {
+            confined func secret(): String {
                 return "private"
             }
             func main() {
@@ -261,7 +261,7 @@ class ModulesTest {
         val result = Compiler().compile("""
             import std.io
             pack Secret {
-                confine var value: Int
+                confined var value: Int
             }
             func main() {
                 var s = Secret(7)

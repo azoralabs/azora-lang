@@ -73,9 +73,9 @@ object AzoraSyntaxVocabulary {
         "ctor" to TokenType.CTOR,
         "dtor" to TokenType.DTOR,
         "out" to TokenType.OUT,
-        "expose" to TokenType.EXPOSE,
-        "protect" to TokenType.PROTECT,
-        "confine" to TokenType.CONFINE,
+        "exposed" to TokenType.EXPOSE,
+        "protected" to TokenType.PROTECT,
+        "confined" to TokenType.CONFINE,
         "threadlocal" to TokenType.THREADLOCAL,
         "pack" to TokenType.PACK,
         "enum" to TokenType.ENUM,
@@ -98,5 +98,8 @@ object AzoraSyntaxVocabulary {
     )
 
     val contextualKeywords: Set<String> =
-        setOf("module", "union", "async", "where", "without", "replace", "include", "escaping")
+        setOf(
+            "module", "union", "async", "where", "without", "replace", "escaping",
+            "derives", "includes", "binds", "requires", "lend", "reflect",
+        )
 }

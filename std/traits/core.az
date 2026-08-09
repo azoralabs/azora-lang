@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-expose module std.traits.core
+exposed module std.traits.core
 
 use realm std {
     inline for Ty in Numbers {
@@ -28,7 +28,7 @@ use realm std {
          * values, so duplicating one is a register move and cannot alias.
          */
         @Since("0.1")
-        impl [Clone, Copy] for Ty
+        derive [Clone, Copy] for Ty
     }
 
     inline for Ty in [Bool, Char, String] {
@@ -41,6 +41,6 @@ use realm std {
          * which is not a thing.
          */
         @Since("0.1")
-        impl [Clone, Copy] for Ty
+        derive [Clone, Copy] for Ty
     }
 }

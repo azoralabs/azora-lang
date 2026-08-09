@@ -543,10 +543,20 @@ class SymbolCollector {
                 .forEach { method -> table.markFunctionReactive("${impl.typeName}_${method.name}") }
         }
 
-        // Validate impl Contract for Type. Specs require their declared methods;
-        // decorators are marker contracts and must use the bodyless form.
+        // Validate impl Contract for Type. Every source implementation is manual
+        // and therefore carries a body; only compiler-generated derive nodes are
+        // bodyless. Specs require their declared methods, while decorators use an
+        // explicitly empty body.
         for (item in program.items) {
             if (item is TopLevel.Impl && item.traitName != null) {
+                if (!item.hasBody && !item.isDerived) {
+                    errors.add(
+                        "line ${item.line}: manual implementation 'impl ${item.traitName} for ${item.typeName}' " +
+                            "requires a body; add '{ ... }' or request generation with " +
+                            "'derive ${item.traitName} for ${item.typeName}'",
+                    )
+                    continue
+                }
                 // An oper overload with a `by <Type>` clause (`impl oper== by Map
                 // for HashMap`) is not a spec conformance: the `by` type names the
                 // operand, not the contract. What separates the two is whether the
@@ -613,10 +623,10 @@ class SymbolCollector {
                     }
                     // An operator impl for a spec the type already conforms to
                     // supplies a member for that conformance rather than opening a
-                    // second one: `impl [Equal] for Loose` then
+                    // second one: `derive Equal for Loose` then
                     // `impl Equal for Loose { oper== … }` is a derive plus the one
                     // operator written by hand, and the written one wins. Two
-                    // bodyless impls of one spec are still a duplicate.
+                    // duplicate derive requests for one spec are still an error.
                     val refinesExisting = isOperOverload && table.conformsTo(item.typeName, item.traitName)
                     if (complete && !refinesExisting && !table.defineConformance(
                             TraitConformance(item.typeName, item.traitName, item.traitArgs, contract.isDecorator)

@@ -169,7 +169,7 @@ class StdlibInjector private constructor(
     private val implicitCollectionTypes = setOf("List", "MutableList", "Set", "MutableSet", "Map", "MutableMap")
 
     /**
-     * Evaluates an `expose if COND` condition against the boolean CLI overrides.
+     * Evaluates an `exposed if COND` condition against the boolean CLI overrides.
      * `null` (unconditional) and `true` keep the export; an unresolvable or `false`
      * condition drops it. (config.az defaults like `AUTO_IMPORT_MACROS = false` are
      * captured by the `false` fallback when no override is present.)
@@ -211,7 +211,7 @@ class StdlibInjector private constructor(
         val implicitRootItems = LinkedHashMap<String, TopLevel>()
         /**
          * Top-level items that must be injected into every unit unconditionally,
-         * gathered from `expose mod …` declarations (and the conventional
+         * gathered from `exposed mod …` declarations (and the conventional
          * `<root>.core` module). Kept as raw items - in particular a `deepinline
          * realm { … }` block is injected whole so CTCE flattens it downstream,
          * exactly as it would inside its own module.
@@ -222,13 +222,13 @@ class StdlibInjector private constructor(
         /** struct/pack name → its `impl` blocks (methods/oper overloads), injected alongside the pack. */
         val implsByType = LinkedHashMap<String, MutableList<TopLevel.Impl>>()
         /**
-         * Per-module `expose use …` re-exports. When a program imports [module]
-         * (or [module] is auto-injected via `expose mod`), each (path, selected)
+         * Per-module `exposed use …` re-exports. When a program imports [module]
+         * (or [module] is auto-injected via `exposed mod`), each (path, selected)
          * pair here is also imported transitively - e.g. `std.char` re-exporting
          * `std.char.core` so a bare `import std.char` suffices.
          */
         val exportedImportsByModule = LinkedHashMap<String, MutableList<Pair<String, String?>>>()
-        /** Modules published via `export expose module …` (auto-injected into every unit). */
+        /** Modules published via `export exposed module …` (auto-injected into every unit). */
         val alwaysOnModules = mutableListOf<String>()
     }
 
@@ -747,10 +747,10 @@ class StdlibInjector private constructor(
                 }
             }
             // A module is auto-imported into downstream/user units when it is
-            // declared `export expose module …` (the default visibility). The module
-            // name is irrelevant. `expose confine` auto-imports only
+            // declared `export exposed module …` (the default visibility). The module
+            // name is irrelevant. `exposed confined` auto-imports only
             // within the library/folder, so they are not injected into external units
-            // here; `expose confine` is rejected at parse time.
+            // here; `exposed confined` is rejected at parse time.
             val alwaysOn = program.isExported && evalExportIf(program.exportCondition, boolOverrides) &&
                 program.moduleVisibility == ModuleVisibility.PUBLIC
             for (item in program.items) {
@@ -806,7 +806,7 @@ class StdlibInjector private constructor(
                 idx.realmTypesByQualifiedName.putIfAbsentCompat(export.qualifiedName, export)
                 idx.realmTypesByShortName.getOrPut(shortName) { mutableListOf() }.add(export)
             }
-            // Record this module's `expose use …` re-exports for transitive
+            // Record this module's `exposed use …` re-exports for transitive
             // import propagation, and (if always-on) the module name itself.
             for (item in program.items) {
                 if (item is TopLevel.UseImport && item.exported && evalExportIf(item.condition, boolOverrides)) {
@@ -834,8 +834,8 @@ class StdlibInjector private constructor(
     private fun importedItems(program: Program): Map<String, TopLevel> {
         val visible = LinkedHashMap<String, TopLevel>()
         // Seed with the program's own imports, plus the re-exports of any
-        // `expose mod` library that is auto-injected into every unit - its
-        // `expose use …` declarations apply to importers transitively.
+        // `exposed mod` library that is auto-injected into every unit - its
+        // `exposed use …` declarations apply to importers transitively.
         val seeds = ArrayDeque<Pair<String, String?>>()
         for (item in program.items) {
             if (item is TopLevel.UseImport && !item.exported) seeds.addAll(item.imports)
@@ -950,8 +950,8 @@ class StdlibInjector private constructor(
 
     /**
      * Whether a bundled-library [module] may be imported by an external unit
-     * (user code / a downstream library). Only `expose` modules are; `intern`,
-     * `protect`, and `confine` modules are visible solely within the library or
+     * (user code / a downstream library). Only `exposed` modules are; `intern`,
+     * `protected`, and `confined` modules are visible solely within the library or
      * folder that declares them, so importing them from user code fails as if
      * the module did not exist.
      */

@@ -659,7 +659,7 @@ func main() { std::println("Hello, Azora!") }"""))
     @Test fun ch35_visibility() = assertEquals("ok\nprivate", run("""
         import std.io
         func helper(): String { return "ok" }
-        confine func secret(): String { return "private" }
+        confined func secret(): String { return "private" }
         func main() {
             std::println(helper())
             std::println(secret())

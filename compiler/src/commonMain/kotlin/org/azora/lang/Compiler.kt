@@ -207,8 +207,8 @@ class Compiler(
         if (serialization.errors.isNotEmpty()) {
             return CompilationResult.Failure(serialization.errors)
         }
-        // `impl [Equal, Order] for Point` with no body asks the compiler to
-        // write the members. Generated as ordinary AST, so everything below
+        // `Point derives [Equal, Order]` asks the compiler to write the members.
+        // Generated as ordinary AST, so everything below
         // this point sees code the author could have written.
         val comparison = ComparisonDeriver.derive(serialization.program)
         if (comparison.errors.isNotEmpty()) {

@@ -109,7 +109,7 @@ realm std {
      * because duplicating a collection implicitly would hide an allocation.
      */
     @Since("0.1")
-    impl Clone for Map
+    derive Clone for Map
 
     /**
      * Mutation behavior implemented by mutable map packs.

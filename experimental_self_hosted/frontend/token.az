@@ -122,9 +122,9 @@ realm azora::lang {
             Ref                     /** Keyword ref */
             Out                     /** Keyword out */
             Mut                     /** Keyword mut */
-            Expose                  /** Keyword expose */
-            Confine                 /** Keyword confine */
-            Protect                 /** Keyword protect */
+            Exposed                 /** Keyword exposed */
+            Confined                /** Keyword confined */
+            Protected               /** Keyword protected */
             Intern                  /** Keyword intern */
             Opaque                  /** Keyword opaque */
             Module                  /** Keyword module */

@@ -168,10 +168,10 @@ class Tier3DiTest {
 
             graph NetworkGraph {
                 solo Config("https://api")
-                solo HttpClient("https://api") bind Api
+                solo HttpClient("https://api") binds Api
             }
 
-            graph AppGraph include [NetworkGraph] {
+            graph AppGraph includes [NetworkGraph] {
                 factory LoginViewModel("transient")
                 scope LoginViewModel("per-scope")
             }
@@ -181,9 +181,9 @@ class Tier3DiTest {
     }
 
     /**
-     * `include` composes graphs, and is contextual rather than reserved: it is an
+     * `includes` composes graphs, and is contextual rather than reserved: it is an
      * ordinary word that programs already use as a name - `std/serializer.az`
-     * has a local called `include` - and reserving it would take that name from
+     * has a local called `includes` - and reserving it would take that name from
      * every one of them.
      */
     @Test
@@ -192,15 +192,15 @@ class Tier3DiTest {
             import std.io
             pack Config { fin url: String = "" }
             graph BaseGraph { solo Config("u") }
-            graph AppGraph include BaseGraph { }
+            graph AppGraph includes BaseGraph { }
 
-            func include(n: Int): Int { return n }
+            func includes(n: Int): Int { return n }
 
             func main() {
-                var include = true
-                fin used = if include { "kept" } else { "dropped" }
+                var includes = true
+                fin used = if includes { "kept" } else { "dropped" }
                 std::println(used)
-                std::println(include(42))
+                std::println(includes(42))
             }
         """.trimIndent()))
     }

@@ -25,10 +25,10 @@ import org.azora.lang.frontend.TopLevel
  * Two forms share the spelling. `impl SerialName(…) for User::name` targets a
  * *field*, and `impl Display for shapes::Circle` targets a *type* reached
  * through its realm. The parser cannot tell them apart: it emits `A.B` for
- * both, and for a body-carrying impl the body itself settles it, because a
- * member target is required to be bodyless.
+ * both. A non-empty spec implementation settles it because fields cannot own
+ * implementation members; an explicitly empty implementation remains ambiguous.
  *
- * A bodyless impl has no such proof, so the decision is made here, once every
+ * An empty decorator application or derive request has no such proof, so the decision is made here, once every
  * declaration is present - realms the program declares and realms the standard
  * library declares alike. `A::B` names a type when `B` is a declared type and
  * `A` has no member called `B`; a pack whose field happens to share a type's

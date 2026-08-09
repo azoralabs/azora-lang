@@ -64,7 +64,7 @@ realm std {
      * default, so an element type that writes its own `clone` gets it.
      */
     @Since("0.1")
-    impl Clone for Array
+    derive Clone for Array
 
     /**
      * Creates an array containing `elements` in argument order.

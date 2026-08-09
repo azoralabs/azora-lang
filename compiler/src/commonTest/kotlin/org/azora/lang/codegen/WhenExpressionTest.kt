@@ -53,7 +53,7 @@ class WhenExpressionTest {
         assertEquals("2", run("""
             import std.io
             enum Kind { A, B, C }
-            func pick(k: Kind): Int {
+            func pick(k: Kind): std::Int {
                 fin v = when k {
                     Kind.A -> 1
                     Kind.B -> 2
@@ -71,7 +71,7 @@ class WhenExpressionTest {
         assertEquals("14", run("""
             import std.io
             enum Kind { A, B }
-            func doubled(n: Int): Int { return n * 2 }
+            func doubled(n: std::Int): std::Int { return n * 2 }
             func main() {
                 std::println(doubled(when Kind.A { Kind.A -> 7  else -> 1 }))
             }
@@ -82,7 +82,7 @@ class WhenExpressionTest {
         assertEquals("30", run("""
             import std.io
             enum Kind { A, B, C }
-            func pick(k: Kind): Int {
+            func pick(k: Kind): std::Int {
                 fin v = when k {
                     Kind.A -> 10
                     Kind.B -> 20
@@ -99,7 +99,7 @@ class WhenExpressionTest {
     @Test fun theGuardFormSelectsOnConditions() {
         assertEquals("negative\nzero\npositive", run("""
             import std.io
-            func label(n: Int): String {
+            func label(n: std::Int): std::String {
                 return when true {
                     n < 0 -> "negative"
                     n == 0 -> "zero"
@@ -118,7 +118,7 @@ class WhenExpressionTest {
         assertEquals("10\n10\n20", run("""
             import std.io
             enum Kind { A, B, C }
-            func pick(k: Kind): Int {
+            func pick(k: Kind): std::Int {
                 return when k {
                     Kind.A, Kind.B -> 10
                     else -> 20
@@ -136,7 +136,7 @@ class WhenExpressionTest {
         assertEquals("100\n50\n0", run("""
             import std.io
             enum Kind { A, B }
-            func pick(k: Kind, n: Int): Int {
+            func pick(k: Kind, n: std::Int): std::Int {
                 fin v = when k {
                     Kind.A -> when true {
                         n > 5 -> 100
@@ -158,11 +158,11 @@ class WhenExpressionTest {
         assertEquals("12\n25\n0", run("""
             import std.io
             variant enum Shape {
-                Circle(r: Int)
-                Rect(w: Int, h: Int)
+                Circle(r: std::Int)
+                Rect(w: std::Int, h: std::Int)
                 Empty
             }
-            func area(s: Shape): Int {
+            func area(s: Shape): std::Int {
                 return when s {
                     Shape.Circle(r) -> r * r
                     Shape.Rect(w, h) -> w * h
@@ -181,7 +181,7 @@ class WhenExpressionTest {
         assertEquals("25", run("""
             import std.io
             enum Kind { A, B }
-            func pick(k: Kind): Int {
+            func pick(k: Kind): std::Int {
                 return when k {
                     Kind.A -> {
                         fin base = 5
@@ -212,10 +212,10 @@ class WhenExpressionTest {
     @Test fun destructuringInAnExpressionIsRefusedWithAdvice() {
         val errors = failure("""
             variant enum Shape {
-                Circle(r: Int)
+                Circle(r: std::Int)
                 Empty
             }
-            func area(s: Shape): Int {
+            func area(s: Shape): std::Int {
                 fin v = when s {
                     Shape.Circle(r) -> r * r
                     else -> 0
@@ -237,7 +237,7 @@ class WhenExpressionTest {
     @Test fun anEmptyWhenExpressionIsRefused() {
         val errors = failure("""
             enum Kind { A }
-            func pick(k: Kind): Int {
+            func pick(k: Kind): std::Int {
                 fin v = when k {
                 }
                 return v
@@ -254,7 +254,7 @@ class WhenExpressionTest {
         // The branch's `{` must not be taken for a trailing lambda on the call.
         assertEquals("yes", run("""
             import std.io
-            func ready(): Bool { return true }
+            func ready(): std::Bool { return true }
             func main() {
                 fin answer = if ready() { "yes" } else { "no" }
                 std::println(answer)
@@ -265,7 +265,7 @@ class WhenExpressionTest {
     @Test fun aWhenScrutineeMayEndInACall() {
         assertEquals("two", run("""
             import std.io
-            func value(): Int { return 2 }
+            func value(): std::Int { return 2 }
             func main() {
                 fin name = when value() {
                     1 -> "one"

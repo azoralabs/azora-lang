@@ -37,7 +37,7 @@ class LlvmCaptureParityTest {
         import std.io
         func main() {
             var n = 1
-            fin bump = [; n.!] { x: Int -> n = n + x
+            fin bump = [; n.!] { x: std::Int -> n = n + x
                 return n }
             std::println(bump(4))
             std::println(n)
@@ -52,7 +52,7 @@ class LlvmCaptureParityTest {
         import std.io
         func main() {
             var n = 1
-            fin show = [; n.&] { x: Int -> n }
+            fin show = [; n.&] { x: std::Int -> n }
             n = 99
             std::println(show(0))
         }

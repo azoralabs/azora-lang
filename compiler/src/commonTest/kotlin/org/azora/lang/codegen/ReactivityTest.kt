@@ -23,7 +23,7 @@ class ReactivityTest {
     @Test fun reactiveStateKindsAreAvailableInsideReactiveFunctions() {
         assertEquals("6", run("""
             import std.io
-                        react func calculate(): Int {
+                        react func calculate(): std::Int {
                 preserve var a = 1
                 remember var b = 2
                 retain var c = 3
@@ -38,9 +38,9 @@ class ReactivityTest {
     @Test fun aReactivePropertyOwnsReactiveState() {
         assertEquals("7", run("""
             import std.io
-            pack Counter { var base: Int = 0 }
+            pack Counter { var base: std::Int = 0 }
             impl Counter {
-                react prop total[self: Self&]: Int {
+                react prop total[self: std::Self&]: std::Int {
                     remember var value = 1
                     var observed = 0
                     effect { observed = value }
@@ -57,9 +57,9 @@ class ReactivityTest {
 
     @Test fun anOrdinaryPropertyMayNotOwnReactiveState() {
         val found = errors("""
-            pack Counter { var base: Int = 0 }
+            pack Counter { var base: std::Int = 0 }
             impl Counter {
-                prop total[self: Self&]: Int {
+                prop total[self: std::Self&]: std::Int {
                     remember var value = 1
                     return value
                 }
@@ -74,7 +74,7 @@ class ReactivityTest {
 
     @Test fun reactMayOnlyQualifyAFunctionOrProperty() {
         val found = errors("""
-            pack P { var n: Int = 0 }
+            pack P { var n: std::Int = 0 }
             impl P {
                 react ctor() { }
             }
@@ -176,7 +176,7 @@ class ReactivityTest {
     @Test fun viewIsAnOrdinaryIdentifierNotAKeyword() {
         assertEquals("4", run("""
             import std.io
-            func view(value: Int): Int = value * 2
+            func view(value: std::Int): std::Int = value * 2
             func main() {
                 std::println(view(2))
             }
@@ -187,7 +187,7 @@ class ReactivityTest {
         assertEquals("10", run("""
             import std.io
             import std.reactive
-            pack Settings { var n: Int = 0 }
+            pack Settings { var n: std::Int = 0 }
                         react func main() {
                 preserve var a = Settings(1)
                 preserve val b = Settings(2)
@@ -272,7 +272,7 @@ class ReactivityTest {
     @Test fun lazyFinEvaluatesOnlyOnFirstRead() {
         assertEquals("before\ninit\n42\n42", run("""
             import std.io
-            func make(): Int {
+            func make(): std::Int {
                 std::println("init")
                 return 42
             }
@@ -295,7 +295,7 @@ class ReactivityTest {
     @Test fun rememberedStateSurvivesRepeatedReactiveCalls() {
         assertEquals("1\n2\n3", run("""
             import std.io
-            react func counter(): Int {
+            react func counter(): std::Int {
                 remember var count = 0
                 count = count + 1
                 return count
@@ -311,12 +311,12 @@ class ReactivityTest {
     @Test fun parallelFirstReadsInitializeRememberedStateExactlyOnce() {
         assertEquals("init\n14", run("""
             import std.io
-            async func build(): Int {
+            async func build(): std::Int {
                 delay 20
                 std::println("init")
                 return 7
             }
-            react async func read(): Int {
+            react async func read(): std::Int {
                 remember fin value = await build()
                 return value
             }
@@ -364,7 +364,7 @@ class ReactivityTest {
                 var source = std::state(1)
                 var latest = 0
                 var calls = 0
-                var subscription = std::observe(source) [; latest.!, calls.!] { value: Int ->
+                var subscription = std::observe(source) [; latest.!, calls.!] { value: std::Int ->
                     latest = value
                     calls += 1
                 }

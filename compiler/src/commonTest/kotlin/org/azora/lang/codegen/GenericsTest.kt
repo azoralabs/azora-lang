@@ -100,7 +100,7 @@ class GenericsTest {
             }
 
             pack Player {
-                var health: Int
+                var health: std::Int
             }
 
             func get<T>(store: Store<T>): T {

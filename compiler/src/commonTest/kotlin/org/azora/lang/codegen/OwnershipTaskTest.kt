@@ -30,8 +30,8 @@ class OwnershipTaskTest {
     fun namedTasksStartAndAwaitInTaskMain() {
         val source = """
             import std.io
-            async func loadUser(): Int { return 20 }
-            async func loadPosts(): Int { return 22 }
+            async func loadUser(): std::Int { return 20 }
+            async func loadPosts(): std::Int { return 22 }
             async func main() {
                 fin user = loadUser()
                 fin posts = loadPosts()
@@ -52,7 +52,7 @@ class OwnershipTaskTest {
     fun directAwaitOfTaskCall() {
         assertEquals("42", run("""
             import std.io
-            async func answer(): Int { return 42 }
+            async func answer(): std::Int { return 42 }
             async func main() {
                 fin value = await answer()
                 std::println(value)
@@ -81,7 +81,7 @@ class OwnershipTaskTest {
     fun taskAndUnsafeFlagsSurviveIntoIr() {
         val result = compile("""
             import std.io
-            unsafe async func compute(): Int { return 7 }
+            unsafe async func compute(): std::Int { return 7 }
             async func main() { std::println(7) }
         """.trimIndent())
 
@@ -95,7 +95,7 @@ class OwnershipTaskTest {
     fun unsafeCallsRequireExplicitBoundary() {
         val rejected = Compiler().compile("""
             import std.io
-            unsafe func raw(): Int { return 7 }
+            unsafe func raw(): std::Int { return 7 }
             func main() { std::println(raw()) }
         """.trimIndent())
         assertIs<CompilationResult.Failure>(rejected)
@@ -103,7 +103,7 @@ class OwnershipTaskTest {
 
         assertEquals("7", run("""
             import std.io
-            unsafe func raw(): Int { return 7 }
+            unsafe func raw(): std::Int { return 7 }
             func main() {
                 unsafe { std::println(raw()) }
             }
@@ -114,7 +114,7 @@ class OwnershipTaskTest {
     fun safeTaskRejectsBorrowAcrossSuspensionBoundary() {
         val result = Compiler().compile("""
             import std.io
-            pack Buffer { var value: Int }
+            pack Buffer { var value: std::Int }
             async func inspect(input: Buffer&) {
                 delay 100
                 std::println(input.value)
@@ -134,8 +134,8 @@ class OwnershipTaskTest {
     fun safeTaskAcceptsABorrowThatDoesNotCrossSuspension() {
         val result = Compiler().compile("""
             import std.io
-            pack Buffer { var value: Int }
-            async func inspect(input: Buffer&): Int { return input.value }
+            pack Buffer { var value: std::Int }
+            async func inspect(input: Buffer&): std::Int { return input.value }
             async func main() { std::println(0) }
         """.trimIndent())
 
@@ -146,8 +146,8 @@ class OwnershipTaskTest {
     fun referenceParameterSpellingsAreNormalized() {
         val result = compile("""
             import std.io
-            pack Buffer { var value: Int }
-            func read(a: Buffer&, b: Buffer!): Int {
+            pack Buffer { var value: std::Int }
+            func read(a: Buffer&, b: Buffer!): std::Int {
                 return a.value
             }
             func update(state: Buffer!) {
@@ -171,7 +171,7 @@ class OwnershipTaskTest {
     fun referenceDeclarationAnnotationsRetainOwnershipKind() {
         val result = compile("""
             import std.io
-            pack Buffer { var value: Int }
+            pack Buffer { var value: std::Int }
             func main() {
                 var owned: Buffer = Buffer(1)
                 fin borrowed: Buffer& = owned

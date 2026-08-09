@@ -42,15 +42,15 @@ class BridgeTargetTest {
     @Test fun leadingDotNamesTheTargetMember() {
         assertEquals(listOf("C"), bridgeTargets("""
             bridge .C {
-                func abs(x: Int): Int
+                func abs(x: std::Int): std::Int
             }
         """.trimIndent()))
     }
 
     @Test fun qualifiedFormNamesTheTargetMember() {
         assertEquals(listOf("C"), bridgeTargets("""
-            bridge Target.C {
-                func abs(x: Int): Int
+            bridge std::Target.C {
+                func abs(x: std::Int): std::Int
             }
         """.trimIndent()))
     }
@@ -64,25 +64,25 @@ class BridgeTargetTest {
     @Test fun bareBlockDefaultsToTheCompilerTarget() {
         assertEquals(listOf("Compiler"), bridgeTargets("""
             bridge {
-                func hostTick(): Int
+                func hostTick(): std::Int
             }
         """.trimIndent()))
     }
 
     @Test fun compileTimeConstantBoundToATargetIsATarget() {
         assertEquals(listOf("C"), bridgeTargets("""
-            inline fin Native = Target.C
+            inline fin Native = std::Target.C
             bridge Native {
-                func abs(x: Int): Int
+                func abs(x: std::Int): std::Int
             }
         """.trimIndent()))
     }
 
     @Test fun plainFinBoundToATargetIsAlsoATarget() {
         assertEquals(listOf("WebAssembly"), bridgeTargets("""
-            fin Host = Target.WebAssembly
+            fin Host = std::Target.WebAssembly
             bridge Host {
-                func hostTick(): Int
+                func hostTick(): std::Int
             }
         """.trimIndent()))
     }
@@ -94,7 +94,7 @@ class BridgeTargetTest {
         val failure = assertFailsWith<IllegalStateException> {
             parse("""
                 bridge C {
-                    func abs(x: Int): Int
+                    func abs(x: std::Int): std::Int
                 }
             """.trimIndent())
         }
@@ -112,7 +112,7 @@ class BridgeTargetTest {
         val failure = assertFailsWith<IllegalStateException> {
             parse("""
                 bridge Whatever {
-                    func abs(x: Int): Int
+                    func abs(x: std::Int): std::Int
                 }
             """.trimIndent())
         }
@@ -127,7 +127,7 @@ class BridgeTargetTest {
             parse("""
                 inline fin Native = 7
                 bridge Native {
-                    func abs(x: Int): Int
+                    func abs(x: std::Int): std::Int
                 }
             """.trimIndent())
         }
@@ -141,7 +141,7 @@ class BridgeTargetTest {
         val failure = assertFailsWith<IllegalStateException> {
             parse("""
                 bridge .WebGL {
-                    func webClear(r: Double): Unit
+                    func webClear(r: std::Double): std::Unit
                 }
             """.trimIndent())
         }
@@ -158,8 +158,8 @@ class BridgeTargetTest {
     @Test fun aQualifiedNonMemberIsRejected() {
         val failure = assertFailsWith<IllegalStateException> {
             parse("""
-                bridge Target.Vulkan {
-                    func draw(): Unit
+                bridge std::Target.Vulkan {
+                    func draw(): std::Unit
                 }
             """.trimIndent())
         }
@@ -172,9 +172,9 @@ class BridgeTargetTest {
     @Test fun aConstantBoundToANonMemberIsRejected() {
         val failure = assertFailsWith<IllegalStateException> {
             parse("""
-                inline fin Native = Target.Vulkan
+                inline fin Native = std::Target.Vulkan
                 bridge Native {
-                    func draw(): Unit
+                    func draw(): std::Unit
                 }
             """.trimIndent())
         }
@@ -188,20 +188,20 @@ class BridgeTargetTest {
         assertEquals(
             listOf("Compiler", "C", "ObjectiveC", "WebAssembly"),
             bridgeTargets("""
-                bridge .Compiler { func a(): Unit }
-                bridge .C { func b(): Unit }
-                bridge .ObjectiveC { func c(): Unit }
-                bridge .WebAssembly { func e(): Unit }
+                bridge .Compiler { func a(): std::Unit }
+                bridge .C { func b(): std::Unit }
+                bridge .ObjectiveC { func c(): std::Unit }
+                bridge .WebAssembly { func e(): std::Unit }
             """.trimIndent())
         )
     }
 
     @Test fun theSingleFunctionFormTakesTheSameTargets() {
         assertEquals(listOf("C", "C", "Compiler"), bridgeTargets("""
-            inline fin Native = Target.C
-            bridge .C func abs(x: Int): Int
-            bridge Native func labs(x: Long): Long
-            bridge func fill(count: Int): Int
+            inline fin Native = std::Target.C
+            bridge .C func abs(x: std::Int): std::Int
+            bridge Native func labs(x: std::Long): std::Long
+            bridge func fill(count: std::Int): std::Int
         """.trimIndent()))
     }
 }

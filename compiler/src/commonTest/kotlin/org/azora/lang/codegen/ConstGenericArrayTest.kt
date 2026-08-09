@@ -32,7 +32,7 @@ class ConstGenericArrayTest {
             import std.io
 
             func main() {
-                fin a: Array<Int, 3> = @arr[1, 2, 3]
+                fin a: std::Array<std::Int, 3> = @std::arr[1, 2, 3]
                 std::println(a.size)
                 std::println(a[0])
                 std::println(a[2])
@@ -50,7 +50,7 @@ class ConstGenericArrayTest {
             import std.io
 
             func main() {
-                fin a = @arr[4, 5]
+                fin a = @std::arr[4, 5]
                 std::println(a.size)
             }
             """,
@@ -64,8 +64,8 @@ class ConstGenericArrayTest {
         val result = Compiler().compile(
             """
             func main() {
-                fin a: Array<Int, 2> = @arr[1, 2]
-                fin b: Array<Int, 3> = a
+                fin a: std::Array<std::Int, 2> = @std::arr[1, 2]
+                fin b: std::Array<std::Int, 3> = a
             }
             """.trimIndent(),
         )
@@ -81,7 +81,7 @@ class ConstGenericArrayTest {
             import std.io
 
             func main() {
-                fin a: Array<Int> = @arr[1, 2, 3]
+                fin a: std::Array<std::Int> = @std::arr[1, 2, 3]
                 std::println(a[1])
             }
             """,

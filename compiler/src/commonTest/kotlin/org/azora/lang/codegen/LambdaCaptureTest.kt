@@ -75,7 +75,7 @@ class LambdaCaptureTest {
         assertEquals("6", run("""
             import std.io
             func main() {
-                fin double: (Int) -> Int = { it * 2 }
+                fin double: (std::Int) -> std::Int = { it * 2 }
                 std::println(double(3))
             }
         """.trimIndent()))
@@ -175,7 +175,7 @@ class LambdaCaptureTest {
             import std.io
             import std.traits
             func main() {
-                var xs = std::listOf<Int>()
+                var xs = std::listOf<std::Int>()
                 fin cb = [; xs] { std::println(xs.size) }
                 cb()
             }
@@ -190,7 +190,7 @@ class LambdaCaptureTest {
         assertEquals("0", run("""
             import std.io
             func main() {
-                var xs = std::listOf<Int>()
+                var xs = std::listOf<std::Int>()
                 fin cb = [; xs.&] { std::println(xs.size) }
                 cb()
             }
@@ -202,7 +202,7 @@ class LambdaCaptureTest {
         val found = errors("""
             import std.io
             func main() {
-                var s: String = "hi"
+                var s: std::String = "hi"
                 fin cb = [; take s] { std::println(s) }
                 std::println(s)
             }
@@ -215,7 +215,7 @@ class LambdaCaptureTest {
         assertEquals("hi", run("""
             import std.io
             func main() {
-                var s: String = "hi"
+                var s: std::String = "hi"
                 fin cb = [; take s] { std::println(s) }
                 cb()
             }
@@ -229,7 +229,7 @@ class LambdaCaptureTest {
      */
     @Test fun aReturnedClosureMayNotBorrow() {
         val found = errors("""
-            func make(): () -> Int {
+            func make(): () -> std::Int {
                 var n = 5
                 return [; n.&] { n }
             }
@@ -244,7 +244,7 @@ class LambdaCaptureTest {
     @Test fun aReturnedClosureMayOwnWhatItCaptures() {
         assertEquals("5", run("""
             import std.io
-            func make(): () -> Int {
+            func make(): () -> std::Int {
                 var n = 5
                 return [; n] { n }
             }
@@ -254,7 +254,7 @@ class LambdaCaptureTest {
 
     @Test fun anEscapingDefaultRejectsTheBindingsItActuallyBorrows() {
         val found = errors("""
-            func make(): () -> Int {
+            func make(): () -> std::Int {
                 var n = 5
                 return [; &] { n }
             }
@@ -266,7 +266,7 @@ class LambdaCaptureTest {
     @Test fun anUnusedBorrowDefaultDoesNotCaptureTheSurroundingScope() {
         assertEquals("5", run("""
             import std.io
-            func make(): () -> Int {
+            func make(): () -> std::Int {
                 var untouched = 9
                 return [; &] { 5 }
             }
@@ -277,7 +277,7 @@ class LambdaCaptureTest {
     /** `escaping` marks a parameter that keeps the callable past the call. */
     @Test fun anEscapingParameterRequiresOwnedCaptures() {
         val found = errors("""
-            func onEvent(handler: escaping (Int) -> Unit) { }
+            func onEvent(handler: escaping (std::Int) -> std::Unit) { }
             func main() {
                 var n = 1
                 onEvent([; n.&] { std::println(n) })
@@ -296,9 +296,9 @@ class LambdaCaptureTest {
     @Test fun escapingBelongsToTheTypeNotTheValue() {
         assertEquals("ok", run("""
             import std.io
-            pack Button { var onClick: escaping (Int) -> Unit = { } }
-            func onEvent(handler: escaping (Int) -> Unit) { }
-            func twice(f: (Int) -> Unit) { }
+            pack Button { var onClick: escaping (std::Int) -> std::Unit = { } }
+            func onEvent(handler: escaping (std::Int) -> std::Unit) { }
+            func twice(f: (std::Int) -> std::Unit) { }
             func main() {
                 fin b = Button({ })
                 onEvent({ })
@@ -312,8 +312,8 @@ class LambdaCaptureTest {
     @Test fun receiversAndCapturesShareTheBracketList() {
         assertEquals("4", run("""
             import std.io
-            pack Sink { var total: Int = 0 }
-            impl Sink { func push[self: Self!](n: Int) { self.total = self.total + n } }
+            pack Sink { var total: std::Int = 0 }
+            impl Sink { func push[self: std::Self!](n: std::Int) { self.total = self.total + n } }
             func main() {
                 var step = 4
                 fin fill = [sink: Sink!; step.&] { sink.push(step) }
@@ -440,7 +440,7 @@ class LambdaCaptureTest {
         val found = errors("""
             func main() {
                 var outer = 1
-                fin invalid = [value: Int; value = outer] { value }
+                fin invalid = [value: std::Int; value = outer] { value }
             }
         """.trimIndent())
         assertTrue(found.any { "cannot be both a receiver and a capture" in it }, found.toString())
@@ -465,7 +465,7 @@ class LambdaCaptureTest {
             import std.io
             func main() {
                 var offset = 2
-                fin add = <T>[context: T&; offset.&] { value: Int -> value + offset }
+                fin add = <T>[context: T&; offset.&] { value: std::Int -> value + offset }
                 with 10 { std::println(add(10)) }
             }
         """.trimIndent()))
@@ -525,7 +525,7 @@ class LambdaCaptureTest {
 
     @Test fun contextualCallableTypesAlwaysRequireParentheses() {
         val found = errors("""
-            fin invalid: [Int, Int] -> Int = [left, right] { left + right }
+            fin invalid: [std::Int, std::Int] -> std::Int = [left, right] { left + right }
             func main() { }
         """.trimIndent())
         assertTrue(found.any { "write '()'" in it }, found.toString())
@@ -534,7 +534,7 @@ class LambdaCaptureTest {
     @Test fun contextualCallableTypeWithEmptyParameterListIsAccepted() {
         assertEquals("3", run("""
             import std.io
-            fin add: [Int, Int]() -> Int = [left, right] { left + right }
+            fin add: [std::Int, std::Int]() -> std::Int = [left, right] { left + right }
             func main() {
                 with [1, 2] { std::println(add()) }
             }

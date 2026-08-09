@@ -101,7 +101,7 @@ not reference kinds in the grammar.
   `Mutable…` counterparts, `Tuple<A, B>`, function types `(A) -> B`. Types are
   always written with generics - type macros are gone, so a type's spelling
   does not depend on what a file imports. The value-level macro sugar is
-  `@arr[…]`, `@vec[…]`, `@vec![…]` and `@set[…]`; `@map` is declared but its
+  `@std::arr[…]`, `@std::vec[…]`, `@std::vec![…]` and `@std::set[…]`; `@std::map` is declared but its
   `key: value` call form is not implemented yet.
 - **User-defined**: `pack` (structs), `enum`, `variant enum` (tagged unions),
   `unsafe union` (untagged), `typealias`, `error` (error sets).

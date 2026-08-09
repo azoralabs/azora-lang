@@ -90,11 +90,11 @@ realm std {
     }
 }
 
-use realm std {
+realm std {
     /**
      * Builds a structural [Tuple].
      *
-     * @0 `@tup(1, "two", 3.0)` expands to `std::tupleOf(1, "two", 3.0)`.
+     * @0 `@std::tup(1, "two", 3.0)` expands to `std::tupleOf(1, "two", 3.0)`.
      */
     macro @tup {
         [...$items] => std::tupleOf(...$items)

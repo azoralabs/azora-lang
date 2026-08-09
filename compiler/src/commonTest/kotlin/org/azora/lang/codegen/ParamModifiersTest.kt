@@ -19,7 +19,7 @@ class ParamModifiersTest {
     @Test fun mutParamCanBeReassigned() {
         assertEquals("20", run("""
             import std.io
-            func increment(n: Int!): Int {
+            func increment(n: std::Int!): std::Int {
                 n = n + 10
                 return n
             }
@@ -32,7 +32,7 @@ class ParamModifiersTest {
     @Test fun refParamPropagatesBack() {
         assertEquals("10\n99", run("""
             import std.io
-            func modify(x: Int!) {
+            func modify(x: std::Int!) {
                 x = 99
             }
             func main() {
@@ -50,7 +50,7 @@ class ParamModifiersTest {
         // parameter you may only write to is neither.
         val result = Compiler().compile("""
             import std.io
-            func produce(out result: Int) {
+            func produce(out result: std::Int) {
                 result = 42
             }
             func main() {
@@ -64,7 +64,7 @@ class ParamModifiersTest {
     @Test fun aMutableBorrowReplacesTheOutParameter() {
         assertEquals("hello\n42", run("""
             import std.io
-            func produce(result: Int!) {
+            func produce(result: std::Int!) {
                 result = 42
             }
             func main() {
@@ -80,7 +80,7 @@ class ParamModifiersTest {
         // Swap two variables via ref params.
         assertEquals("70\n30", run("""
             import std.io
-            func swap(a: Int!, b: Int!) {
+            func swap(a: std::Int!, b: std::Int!) {
                 var tmp = a
                 a = b
                 b = tmp

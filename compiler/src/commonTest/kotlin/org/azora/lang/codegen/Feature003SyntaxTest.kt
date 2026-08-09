@@ -23,9 +23,9 @@ class Feature003SyntaxTest {
         assertEquals("7", run("""
             import std.io
             pack Counter {
-                var value: Int
+                var value: std::Int
             }
-            func peek[self: Counter&](): Int {
+            func peek[self: Counter&](): std::Int {
                 return self.value
             }
             func main() {
@@ -39,7 +39,7 @@ class Feature003SyntaxTest {
         val result = compile("""
             import std.io
             pack Counter {
-                var _value: Int
+                var _value: std::Int
             }
             func bump[self: Counter!]() {
                 self._value = self._value + 1
@@ -57,13 +57,13 @@ class Feature003SyntaxTest {
         assertEquals("2", run("""
             import std.io
             pack Counter {
-                var value: Int
+                var value: std::Int
             }
             impl pack Counter {
                 func bump() {
                     self.value = self.value + 1
                 }
-                func peek(): Int {
+                func peek(): std::Int {
                     return self.value
                 }
             }
@@ -96,7 +96,7 @@ class Feature003SyntaxTest {
         val result = compile("""
             import std.io
             pack Counter {
-                var value: Int
+                var value: std::Int
             }
             func bump[self: Counter&]() {
                 self.value = self.value + 1
@@ -114,18 +114,18 @@ class Feature003SyntaxTest {
         assertEquals("2\n0", run("""
             import std.io
             pack Iter {
-                var i: Int
-                var resets: Int
+                var i: std::Int
+                var resets: std::Int
             }
             impl pack Iter {
                 func reset() {
                     self.resets = self.resets + 1
                     self.i = 0
                 }
-                func hasNext(): Bool {
+                func hasNext(): std::Bool {
                     return self.i < 2
                 }
-                func next(): Int {
+                func next(): std::Int {
                     self.i = self.i + 1
                     return self.i
                 }
@@ -145,9 +145,9 @@ class Feature003SyntaxTest {
             import std.io
             import std.reactive
                         react func main() {
-                remember var a: Int = 1
-                retain var b: Int = 2
-                preserve var c: Int = 3
+                remember var a: std::Int = 1
+                retain var b: std::Int = 2
+                preserve var c: std::Int = 3
                 a = 4
                 b = 5
                 c = 6
@@ -160,17 +160,17 @@ class Feature003SyntaxTest {
         assertEquals("Label(ok)\nLabel(ok)", run("""
             import std.io
             pack Label {
-                var value: String
+                var value: std::String
             }
-            spec Into<T>[self: Self&]: T use as "to${'$'}{T.typeName}"
-            spec From<T>[self: Self&]: T use as "from${'$'}{T.typeName}"
-            impl Into<String> for Label {
-                prop into[self: Self&]: String {
+            spec Into<T>[self: std::Self&]: T use as "to${'$'}{T.typeName}"
+            spec From<T>[self: std::Self&]: T use as "from${'$'}{T.typeName}"
+            impl Into<std::String> for Label {
+                prop into[self: std::Self&]: std::String {
                     return "Label(" + self.value + ")"
                 }
             }
-            impl From<String> for Label {
-                prop from[self: Self&]: String {
+            impl From<std::String> for Label {
+                prop from[self: std::Self&]: std::String {
                     return "Label(" + self.value + ")"
                 }
             }
@@ -186,15 +186,15 @@ class Feature003SyntaxTest {
         assertEquals("Label(ok)", run("""
             import std.io
             pack Label {
-                var value: String
+                var value: std::String
             }
-            impl Show<String> for Label {
-                prop show[self: Self&]: String {
+            impl Show<std::String> for Label {
+                prop show[self: std::Self&]: std::String {
                     return "Label(" + self.value + ")"
                 }
             }
             spec Show<T> {
-                prop show<T>[self: Self&]: T
+                prop show<T>[self: std::Self&]: T
                 use show<T> as "show${'$'}{T.typeName}"
             }
             func main() {
@@ -208,14 +208,14 @@ class Feature003SyntaxTest {
         assertEquals("Label(ok)", run("""
             import std.io
             pack Label {
-                var value: String
+                var value: std::String
             }
             spec Render<T> {
-                prop render<T>[self: Self&]: T
+                prop render<T>[self: std::Self&]: T
                 use render<T> as "render"
             }
-            impl Render<String> for Label {
-                prop render[self: Self&]: String {
+            impl Render<std::String> for Label {
+                prop render[self: std::Self&]: std::String {
                     return "Label(" + self.value + ")"
                 }
             }
@@ -230,11 +230,11 @@ class Feature003SyntaxTest {
         val result = Compiler().compile("""
             import std.io
             pack Label {
-                var value: String
+                var value: std::String
             }
-            spec Into<T>[self: Self&]: T use as "to${'$'}{T.typeName}"
-            impl Into<String> for Label {
-                prop into[self: Self&]: String {
+            spec Into<T>[self: std::Self&]: T use as "to${'$'}{T.typeName}"
+            impl Into<std::String> for Label {
+                prop into[self: std::Self&]: std::String {
                     return self.value
                 }
             }
@@ -251,14 +251,14 @@ class Feature003SyntaxTest {
         assertEquals("7", run("""
             import std.io
             pack Box {
-                var value: Int
+                var value: std::Int
             }
             spec Extract<T> {
-                func extract<T>[self: Self&](): T
+                func extract<T>[self: std::Self&](): T
                 use extract<T> as "extract${'$'}{T.typeName}"
             }
-            impl Extract<Int> for Box {
-                func extract[self: Self&](): Int {
+            impl Extract<std::Int> for Box {
+                func extract[self: std::Self&](): std::Int {
                     return self.value
                 }
             }
@@ -271,14 +271,14 @@ class Feature003SyntaxTest {
         val result = Compiler().compile("""
             import std.io
             pack Box {
-                var value: Int
+                var value: std::Int
             }
             spec Extract<T> {
-                func extract<T>[self: Self&](): T
+                func extract<T>[self: std::Self&](): T
                 use extract<T> as "extract${'$'}{T.typeName}"
             }
-            impl Extract<Int> for Box {
-                func extract[self: Self&](): Int {
+            impl Extract<std::Int> for Box {
+                func extract[self: std::Self&](): std::Int {
                     return self.value
                 }
             }
@@ -296,16 +296,16 @@ class Feature003SyntaxTest {
             import std.io
             import std.convert
             pack Label {
-                var value: String
+                var value: std::String
             }
-            impl Cast<String> for Label {
-                prop _cast[self: Self&]: String {
+            impl std::Cast<std::String> for Label {
+                prop _cast[self: std::Self&]: std::String {
                     return "cast:" + self.value
                 }
             }
             func main() {
                 var label = Label("x")
-                std::println(label as String)
+                std::println(label as std::String)
             }
         """.trimIndent()))
     }
@@ -315,10 +315,10 @@ class Feature003SyntaxTest {
             import std.io
             import std.convert
             pack Label {
-                var value: String
+                var value: std::String
             }
-            impl Cast<String> for Label {
-                prop _cast[self: Self&]: String {
+            impl std::Cast<std::String> for Label {
+                prop _cast[self: std::Self&]: std::String {
                     return "cast:" + self.value
                 }
             }
@@ -335,7 +335,7 @@ class Feature003SyntaxTest {
         assertEquals("3", run("""
             import std.io
             realm std {
-                func abs(x: Int): Int {
+                func abs(x: std::Int): std::Int {
                     if x < 0 { return -x }
                     return x
                 }
@@ -361,8 +361,8 @@ class Feature003SyntaxTest {
         assertEquals("7", run("""
             import std.io
             pack Accessors {
-                var get: Int
-                var set: Int
+                var get: std::Int
+                var set: std::Int
             }
             func main() {
                 var accessors = Accessors(3, 4)
@@ -376,10 +376,10 @@ class Feature003SyntaxTest {
             compile("""
             import std.io
             pack Box {
-                var value: Int
+                var value: std::Int
             }
             impl Box {
-                oper[](i: Int): Int {
+                oper[](i: std::Int): std::Int {
                     return self.value
                 }
             }
@@ -397,18 +397,18 @@ class Feature003SyntaxTest {
             import std.io
             import std.reactive
             pack Counter {
-                var value: Int
+                var value: std::Int
             }
             impl pack Counter {
                 func bump() {
                     self.value = self.value + 1
                 }
             }
-            func peek[self: Counter&](): Int {
+            func peek[self: Counter&](): std::Int {
                 return self.value
             }
                         react func main() {
-                preserve fin label: String = "value="
+                preserve fin label: std::String = "value="
                 var c = Counter(40)
                 c.bump()
                 std::println(label + c.peek())

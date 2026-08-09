@@ -58,7 +58,7 @@ class ErrorHandlingTest {
     @Test fun catchExprFallback() {
         assertEquals("-1", run("""
             import std.io
-            func safeDiv(a: Int, b: Int): Int {
+            func safeDiv(a: std::Int, b: std::Int): std::Int {
                 if b == 0 { throw "div0" }
                 return a / b
             }
@@ -71,7 +71,7 @@ class ErrorHandlingTest {
     @Test fun catchExprSuccess() {
         assertEquals("5", run("""
             import std.io
-            func safeDiv(a: Int, b: Int): Int {
+            func safeDiv(a: std::Int, b: std::Int): std::Int {
                 if b == 0 { throw "div0" }
                 return a / b
             }

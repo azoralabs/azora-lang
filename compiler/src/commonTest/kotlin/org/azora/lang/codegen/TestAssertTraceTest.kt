@@ -159,9 +159,9 @@ class TestAssertTraceTest {
         val output = run("""
             func main() {
                 trace .Info { "Any bridge works" }
-                var level = LogLevel.Warn
+                var level = std::LogLevel.Warn
                 trace level { "${'$'}{it}: Hello" }
-                fin finalLevel = LogLevel.Error
+                fin finalLevel = std::LogLevel.Error
                 trace finalLevel { "final" }
                 trace { "${'$'}{it}: default" }
             }
@@ -176,7 +176,7 @@ class TestAssertTraceTest {
             module playground
             func main() {
                 trace .Info { "Any bridge works" }
-                var level = LogLevel.Warn
+                var level = std::LogLevel.Warn
                 trace level { "${'$'}{it}: Hello" }
             }
         """.trimIndent())
@@ -190,20 +190,20 @@ class TestAssertTraceTest {
         assertEquals(IrType.Named("LogLevel"), level.type)
         assertTrue(ir.startsWith("module playground\n\nfunc __main_lmbda0"), ir)
         assertTrue("""
-            func __main_lmbda0(level: LogLevel): String {
+            func __main_lmbda0(level: std::LogLevel): std::String {
                 return "Any bridge works"
             }
         """.trimIndent() in ir, ir)
         assertTrue("""
-            func __main_lmbda1(level: LogLevel): String {
+            func __main_lmbda1(level: std::LogLevel): std::String {
                 return "${'$'}{level}: Hello"
             }
         """.trimIndent() in ir, ir)
         val mainIr = """
-            func main(): Unit {
-                trace LogLevel.Info __main_lmbda0(LogLevel.Info)
-                var level: LogLevel = LogLevel.Warn
-                trace LogLevel.Warn __main_lmbda1(level)
+            func main(): std::Unit {
+                trace std::LogLevel.Info __main_lmbda0(std::LogLevel.Info)
+                var level: std::LogLevel = std::LogLevel.Warn
+                trace std::LogLevel.Warn __main_lmbda1(level)
             }
         """.trimIndent()
         assertTrue(mainIr in ir, ir)
@@ -257,7 +257,7 @@ class TestAssertTraceTest {
     fun directTrace_acceptsQualifiedExplicitLevel() {
         val result = compile("""
             func main() {
-                trace LogLevel.Error "Error"
+                trace std::LogLevel.Error "Error"
             }
         """.trimIndent())
         val ir = result.ir.prettyPrint()
@@ -275,7 +275,7 @@ class TestAssertTraceTest {
                 fin tone = Tone.Warm
                 std::println(tone)
                 std::println("${'$'}{tone}")
-                std::println(tone as String)
+                std::println(tone as std::String)
             }
         """.trimIndent())
 
@@ -364,7 +364,7 @@ class TestAssertTraceTest {
         val result = compile("""
             inline var BUILD = 1
             inline fin ANSWER = 42
-            func main(): Int {
+            func main(): std::Int {
                 return BUILD + ANSWER
             }
         """.trimIndent())
@@ -408,8 +408,8 @@ class TestAssertTraceTest {
     fun inlineTrace_acceptsShorthandAndInlineBindings() {
         val result = compile("""
             func main() {
-                inline fin INFO_LEVEL = LogLevel.Info
-                inline var WARN_LEVEL = LogLevel.Warn
+                inline fin INFO_LEVEL = std::LogLevel.Info
+                inline var WARN_LEVEL = std::LogLevel.Warn
                 inline trace INFO_LEVEL { "${'$'}{it}: compiling" }
                 inline trace WARN_LEVEL { "careful" }
                 inline trace .Critical { "stop" }
@@ -424,9 +424,9 @@ class TestAssertTraceTest {
     @Test
     fun inlineTrace_acceptsTopLevelInlineBindings() {
         val result = compile("""
-            inline fin INFO_LEVEL = LogLevel.Info
+            inline fin INFO_LEVEL = std::LogLevel.Info
             inline trace INFO_LEVEL { "${'$'}{it}: module" }
-            inline var TODO_LEVEL = LogLevel.Todo
+            inline var TODO_LEVEL = std::LogLevel.Todo
             inline trace TODO_LEVEL { "later" }
             func main() {}
         """.trimIndent())

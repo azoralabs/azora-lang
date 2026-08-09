@@ -25,7 +25,7 @@ exposed module std.core
  * provided and never dispatch at runtime.
  */
 
-use realm std {
+realm std {
     @Since("0.1")
     bridge pack Unit
 

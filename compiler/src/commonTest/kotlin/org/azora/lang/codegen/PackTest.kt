@@ -28,8 +28,8 @@ class PackTest {
         assertEquals("3", run("""
             import std.io
             pack Point {
-                var x: Int
-                var y: Int
+                var x: std::Int
+                var y: std::Int
             }
             func main() {
                 var p = Point(3, 4)
@@ -43,8 +43,8 @@ class PackTest {
         assertEquals("7", run("""
             import std.io
             pack Point {
-                var x: Int
-                var y: Int
+                var x: std::Int
+                var y: std::Int
             }
             func main() {
                 var p = Point(3, 4)
@@ -58,8 +58,8 @@ class PackTest {
         assertEquals("10", run("""
             import std.io
             pack Point {
-                var x: Int
-                var y: Int
+                var x: std::Int
+                var y: std::Int
             }
             func main() {
                 var p = Point(3, 4)
@@ -75,8 +75,8 @@ class PackTest {
         val errors = expectFailure("""
             import std.io
             pack Point {
-                fin x: Int
-                var y: Int
+                fin x: std::Int
+                var y: std::Int
             }
             func main() {
                 var p = Point(3, 4)
@@ -91,8 +91,8 @@ class PackTest {
         assertEquals("9", run("""
             import std.io
             pack Point {
-                var x: Int
-                var y: Int
+                var x: std::Int
+                var y: std::Int
             }
             func origin(): Point {
                 return Point(4, 5)
@@ -110,8 +110,8 @@ class PackTest {
         assertEquals("104", run("""
             import std.io
             pack Point {
-                var x: Int
-                var y: Int
+                var x: std::Int
+                var y: std::Int
             }
             func main() {
                 var p = Point(3, 4)
@@ -127,8 +127,8 @@ class PackTest {
         assertEquals("40", run("""
             import std.io
             pack Point {
-                var x: Int
-                var y: Int
+                var x: std::Int
+                var y: std::Int
             }
             func main() {
                 var points = [Point(10, 20), Point(30, 40)]
@@ -142,8 +142,8 @@ class PackTest {
         assertEquals("7", run("""
             import std.io
             pack Point {
-                var x: Int
-                var y: Int
+                var x: std::Int
+                var y: std::Int
             }
             func main() {
                 var p = Point(3, 4)
@@ -157,8 +157,8 @@ class PackTest {
         val result = Compiler().compile("""
             import std.io
             pack Point {
-                var x: Int
-                var y: Int
+                var x: std::Int
+                var y: std::Int
             }
             func main() {
                 var p = Point(1, 2)

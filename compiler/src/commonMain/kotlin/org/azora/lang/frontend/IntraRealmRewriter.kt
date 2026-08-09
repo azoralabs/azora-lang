@@ -55,6 +55,32 @@ internal object IntraRealmRewriter {
                     method.copy(body = method.body.map { stmt(it, item.realmPrefix, mangled, shadowed) })
                 })
             }
+            // Realm-scoped types keep their source-level type name rather than a
+            // mangled declaration name. Their field defaults nevertheless execute
+            // in that realm and may refer to sibling values or type statics.
+            val typeName = when (item) {
+                is TopLevel.Pack -> item.name
+                is TopLevel.Solo -> item.name
+                is TopLevel.Deco -> item.name
+                else -> null
+            }
+            val typePrefix = typeName
+                ?.let { program.realmTypeNamespaces[it] }
+                ?.replace("::", "__")
+            if (typePrefix != null) {
+                return@map when (item) {
+                    is TopLevel.Pack -> item.copy(fields = item.fields.map { field ->
+                        field.copy(default = field.default?.let { expr(it, typePrefix, mangled, emptySet()) })
+                    })
+                    is TopLevel.Solo -> item.copy(fields = item.fields.map { field ->
+                        field.copy(default = field.default?.let { expr(it, typePrefix, mangled, emptySet()) })
+                    })
+                    is TopLevel.Deco -> item.copy(fields = item.fields.map { field ->
+                        field.copy(default = field.default?.let { expr(it, typePrefix, mangled, emptySet()) })
+                    })
+                    else -> item
+                }
+            }
             val name = nameOf(item)
             val prefix = name?.realmPrefix() ?: return@map item
             val shadowed = collectShadowed(item)
@@ -187,8 +213,13 @@ internal object IntraRealmRewriter {
     }
 
     private fun maybe(name: String, prefix: String, mangled: Set<String>, shadowed: Set<String>): String? {
-        if ("__" in name) return null              // already qualified
-        if (name in shadowed) return null          // parameter/local shadows the sibling
+        // A separator does not necessarily mean the name is realm-qualified.
+        // `Array::fill` is parsed as `Array__fill`; inside `realm std` it still
+        // needs the enclosing realm and resolves to `std__Array__fill`. Only a
+        // name that already starts with this member's complete realm prefix is
+        // fully qualified here.
+        if (name.startsWith("${prefix}__")) return null
+        if ("__" !in name && name in shadowed) return null // parameter/local shadows the sibling
         val qualified = "${prefix}__$name"
         return if (qualified in mangled) qualified else null
     }
@@ -266,6 +297,11 @@ internal object IntraRealmRewriter {
         is Expr.Isolated -> e.copy(value = expr(e.value, prefix, mangled, shadowed))
         is Expr.Await -> e.copy(value = expr(e.value, prefix, mangled, shadowed))
         is Expr.Spread -> e.copy(array = expr(e.array, prefix, mangled, shadowed))
+        is Expr.MetaInvoke -> {
+            val args = e.args.map { expr(it, prefix, mangled, shadowed) }
+            val qualified = maybe(e.name, prefix, mangled, shadowed)
+            e.copy(name = qualified ?: e.name, args = args)
+        }
         else -> e
     }
 }

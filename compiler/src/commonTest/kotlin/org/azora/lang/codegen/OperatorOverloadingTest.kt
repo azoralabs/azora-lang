@@ -18,8 +18,8 @@ class OperatorOverloadingTest {
         assertEquals("4\n6", run("""
             import std.io
             pack Vec2 {
-                var x: Int
-                var y: Int
+                var x: std::Int
+                var y: std::Int
             }
             impl Vec2 {
                 func plus(other: Vec2): Vec2 {
@@ -40,8 +40,8 @@ class OperatorOverloadingTest {
         assertEquals("2\n2", run("""
             import std.io
             pack Vec2 {
-                var x: Int
-                var y: Int
+                var x: std::Int
+                var y: std::Int
             }
             impl Vec2 {
                 func minus(other: Vec2): Vec2 {
@@ -62,8 +62,8 @@ class OperatorOverloadingTest {
         assertEquals("3\n6", run("""
             import std.io
             pack Vec2 {
-                var x: Int
-                var y: Int
+                var x: std::Int
+                var y: std::Int
             }
             impl Vec2 {
                 func times(other: Vec2): Vec2 {
@@ -84,11 +84,11 @@ class OperatorOverloadingTest {
         assertEquals("true\nfalse", run("""
             import std.io
             pack Vec2 {
-                var x: Int
-                var y: Int
+                var x: std::Int
+                var y: std::Int
             }
             impl Vec2 {
-                func equals(other: Vec2): Bool {
+                func equals(other: Vec2): std::Bool {
                     return self.x == other.x && self.y == other.y
                 }
             }
@@ -106,11 +106,11 @@ class OperatorOverloadingTest {
         assertEquals("false\ntrue", run("""
             import std.io
             pack Vec2 {
-                var x: Int
-                var y: Int
+                var x: std::Int
+                var y: std::Int
             }
             impl Vec2 {
-                func equals(other: Vec2): Bool {
+                func equals(other: Vec2): std::Bool {
                     return self.x == other.x && self.y == other.y
                 }
             }
@@ -128,8 +128,8 @@ class OperatorOverloadingTest {
         assertEquals("6", run("""
             import std.io
             pack Vec2 {
-                var x: Int
-                var y: Int
+                var x: std::Int
+                var y: std::Int
             }
             impl Vec2 {
                 func plus(other: Vec2): Vec2 {

@@ -36,7 +36,7 @@ class DecoratorConformanceTest {
         val result = analyze("""
             annot Serializable {}
             pack UserId {
-                fin value: Long
+                fin value: std::Long
             }
             impl Serializable for UserId {}
             func main() {}
@@ -57,10 +57,10 @@ class DecoratorConformanceTest {
         val result = analyze("""
             annot Serializable {}
             pack UserId {
-                fin value: Long
+                fin value: std::Long
             }
             impl Serializable for UserId {
-                func generated[self: Self&](): Unit {
+                func generated[self: std::Self&](): std::Unit {
                     return
                 }
             }
@@ -75,7 +75,7 @@ class DecoratorConformanceTest {
         val result = analyze("""
             annot Serializable {}
             pack UserId {
-                fin value: Long
+                fin value: std::Long
             }
             impl Serializable for UserId {}
             impl Serializable for UserId {}
@@ -87,17 +87,17 @@ class DecoratorConformanceTest {
 
     @Test fun appliedBoundDecoratorDerivesGenericSpecConformance() {
         val result = analyze("""
-            @Experimental(since: "0.1")
+            @std::Experimental(since: "0.1")
             annot Serializable binds Serializer {
-                fin ignoreUnknownFields: Bool = false
-                fin encodeDefaults: Bool = true
+                fin ignoreUnknownFields: std::Bool = false
+                fin encodeDefaults: std::Bool = true
             }
             spec Serializer<T> {
-                func encode[self: Self&](value: T&): String
+                func encode[self: std::Self&](value: T&): std::String
             }
             @Serializable
             pack UserId {
-                fin value: Long
+                fin value: std::Long
             }
             func main() {}
         """.trimIndent())
@@ -114,7 +114,7 @@ class DecoratorConformanceTest {
             annot Serializable binds Serializer {}
             spec Serializer<T>
             pack UserId {
-                fin value: Long
+                fin value: std::Long
             }
             impl Serializable for UserId {}
             func main() {}
@@ -129,18 +129,18 @@ class DecoratorConformanceTest {
     @Test fun manualSerializerImplementationRecordsGenericConformance() {
         val result = analyze("""
             spec Serializer<T> {
-                func encode[self: Self&](value: T&): String
-                func decode[self: Self&](value: String): T
+                func encode[self: std::Self&](value: T&): std::String
+                func decode[self: std::Self&](value: std::String): T
             }
             pack User {
-                fin name: String
+                fin name: std::String
             }
             pack UserSerializer
             impl Serializer<User> for UserSerializer {
-                func encode[self: Self&](value: User&): String {
+                func encode[self: std::Self&](value: User&): std::String {
                     return value.name
                 }
-                func decode[self: Self&](value: String): User {
+                func decode[self: std::Self&](value: std::String): User {
                     return User(value)
                 }
             }
@@ -176,7 +176,7 @@ class DecoratorConformanceTest {
     @Test fun ordinarySpecImplRejectsMemberSelectors() {
         val result = analyze("""
             spec Readable
-            pack User { fin name: String = "" }
+            pack User { fin name: std::String = "" }
             impl Readable for User::name {}
             func main() {}
         """.trimIndent())
@@ -193,8 +193,8 @@ class DecoratorConformanceTest {
             spec Serializer<T>
             spec AzonSerializer<T>
             annot Serializable for .Pack binds [Serializer, AzonSerializer] {
-                fin ignoreUnknownFields: Bool = false
-                fin encodeDefaults: Bool = true
+                fin ignoreUnknownFields: std::Bool = false
+                fin encodeDefaults: std::Bool = true
             }
             pack User
             impl Serializable for User {}
@@ -211,7 +211,7 @@ class DecoratorConformanceTest {
     @Test fun genericTargetAndTrailingBindingArgumentsArePreserved() {
         val result = analyze("""
             spec Codec<T, Format>
-            annot Json binds Codec<String> {}
+            annot Json binds Codec<std::String> {}
             @Json
             pack Box<T> {
                 fin value: T
@@ -232,7 +232,7 @@ class DecoratorConformanceTest {
             annot Serializable binds Codec {}
             @Serializable
             pack UserId {
-                fin value: Long
+                fin value: std::Long
             }
             func main() {}
         """.trimIndent())
@@ -246,7 +246,7 @@ class DecoratorConformanceTest {
             annot Serializable binds MissingSpec {}
             @Serializable
             pack UserId {
-                fin value: Long
+                fin value: std::Long
             }
             func main() {}
         """.trimIndent())

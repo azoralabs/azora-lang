@@ -1992,6 +1992,8 @@ data class Annotation(
     val column: Int = 0,
     /** Named arguments `@name(key = value)` / `@name(key: value)`, in source order. */
     val namedArgs: List<Pair<String, Expr>> = emptyList(),
+    /** Source realm path (`std` in `@std::Serializable`), if explicitly qualified. */
+    val qualifier: String? = null,
 )
 
 /**
@@ -2404,6 +2406,8 @@ sealed class TopLevel {
          * the check needs to know where each side was written.
          */
         val declaringModule: String? = null,
+        /** Source realm path of the implemented spec/decorator, when qualified. */
+        val traitQualifier: String? = null,
         /** Generated-conformance request written with `derive` or a declaration's `derives` clause. */
         val isDerived: Boolean = false,
         /** Whether the source contained an implementation body, including an explicitly empty `{}`. */
@@ -2472,9 +2476,9 @@ sealed class TopLevel {
     /**
      * `meta Name { arm; arm; … }` - a pattern-driven macro declaration.
      *
-     * Macros are top-level, bare-name declarations: importing the module that
-     * declares one (e.g. `import std.container.*` for `vec!`) makes it invocable
-     * as `name!(…)`. [MacroExpander] collects every `Meta`
+     * Macros are top-level declarations. A local macro is called as `@name(…)`;
+     * an imported realm macro keeps its realm before the sigil, such as
+     * `@std::vec(…)`. [MacroExpander] collects every `Meta`
      * declaration, rewrites all matching [Expr.MetaInvoke] invocations into
      * their arm templates, and removes the `Meta` node itself - so it never
      * reaches semantic analysis or IR generation.
@@ -2568,8 +2572,8 @@ data class Program(
     val usesMacros: Boolean = false,
     /**
      * Named type declaration → source-level realm path for declarations inside
-     * `realm X`. Declarations in `use realm` remain bare and
-     * therefore do not appear here.
+     * `realm X`. Realm declarations are always qualified outside their realm;
+     * this map preserves the source path while declarations remain flat in the AST.
      */
     val realmTypeNamespaces: Map<String, String> = emptyMap(),
     /**

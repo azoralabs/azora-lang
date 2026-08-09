@@ -139,7 +139,7 @@ class LoopTest {
         // propagates out of the loop and function.
         assertEquals("4", run("""
             import std.io
-            func firstAt(limit: Int): Int {
+            func firstAt(limit: std::Int): std::Int {
                 for i in 0..<limit {
                     if i == 4 {
                         return i
@@ -214,7 +214,7 @@ class LoopTest {
             import std.io
             import std.algorithm.sort
             func main() {
-                fin r = reverse<Int>(@arr[1, 2, 3, 4, 5])
+                fin r = reverse<std::Int>(@std::arr[1, 2, 3, 4, 5])
                 for x in r { std::println(x) }
             }
         """.trimIndent()))

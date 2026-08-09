@@ -38,8 +38,8 @@ func main() {
 
     @Test fun functions() = assertEquals("7" + "\n" + "120", run("""module playground
 import std.io
-func add(a: Int, b: Int): Int { return a + b }
-func factorial(n: Int): Int {
+func add(a: std::Int, b: std::Int): std::Int { return a + b }
+func factorial(n: std::Int): std::Int {
     if n <= 1 { return 1 }
     return n * factorial(n - 1)
 }
@@ -71,7 +71,7 @@ func main() {
     @Test fun arrays() = assertEquals("10" + "\n" + "3" + "\n" + "4" + "\n" + "99" + "\n" + "total = 189", run("""module playground
 import std.io
 func main() {
-    var nums = @arr[10, 20, 30]
+    var nums = @std::arr[10, 20, 30]
     std::println(nums[0])
     std::println(nums.length)
     nums.add(40)
@@ -97,8 +97,8 @@ func main() {
     @Test fun structs() = assertEquals("3, 4" + "\n" + "10, 5" + "\n" + "last = 3, 3", run("""module playground
 import std.io
 pack Point {
-    var x: Int
-    var y: Int
+    var x: std::Int
+    var y: std::Int
 }
 func main() {
     var p = Point(3, 4)
@@ -138,7 +138,7 @@ func main() {
 
     @Test fun ctce() = assertEquals("size: 8" + "\n" + "squared: 25", run("""module playground
 import std.io
-inline func square(x: Int): Int { return x * x }
+inline func square(x: std::Int): std::Int { return x * x }
 func main() {
     inline fin SIZE = 8
     std::println("size: ${'$'}{SIZE}")
@@ -147,7 +147,7 @@ func main() {
 
     @Test fun testing() = assertEquals("running tests...", run("""module playground
 import std.io
-func factorial(n: Int): Int {
+func factorial(n: std::Int): std::Int {
     if n <= 1 { return 1 }
     return n * factorial(n - 1)
 }
@@ -177,11 +177,11 @@ func main() {
     @Test fun taggedUnions() = assertEquals("75\n24\n0", run("""module playground
 import std.io
 variant enum Shape {
-    Circle(Int)
-    Rect(Int, Int)
+    Circle(std::Int)
+    Rect(std::Int, std::Int)
     Empty
 }
-func area(s: Shape): Int {
+func area(s: Shape): std::Int {
     when s {
         Shape.Circle(r) -> { return r * r * 3 }
         Shape.Rect(w, h) -> { return w * h }
@@ -197,8 +197,8 @@ func main() {
     @Test fun generators() = assertEquals("30", run("""module playground
 import std.io
 import std.concurrency.generators
-func squares(n: Int): std::Sequence<Int> = std::sequence<Int> [s: std::SequenceScope<Int>!; n.&] {
-    for i in 0..<n { std::yield(i * i) }
+func squares(n: std::Int): std::Sequence<std::Int> = std::sequence<std::Int> [s: std::SequenceScope<std::Int>!; n.&] {
+    for i in 0..<n { yield(i * i) }
 }
 func main() {
     var sum = 0
@@ -209,10 +209,10 @@ func main() {
     @Test fun dependencyInjection() = assertEquals("1\n2", run("""module playground
 import std.io
 solo pack Counter {
-    var n: Int = 0
+    var n: std::Int = 0
 }
 impl Counter {
-    func inc[self: Self!](): Int {
+    func inc[self: std::Self!](): std::Int {
         self.n = self.n + 1
         return self.n
     }
@@ -225,7 +225,7 @@ func main() {
     @Test fun pointers() = assertEquals("10\n20\n99", run("""module playground
 import std.io
 func main() {
-    var p: Int^ = alloc^ @arr[10, 20, 30]
+    var p: std::Int^ = alloc^ @std::arr[10, 20, 30]
     std::println(*p)
     std::println(*(p + 1))
     *(p + 2) = 99
@@ -234,7 +234,7 @@ func main() {
 
     @Test fun variadic() = assertEquals("6\n100", run("""module playground
 import std.io
-func sumAll<...T>(first: Int, rest: ...T): Int {
+func sumAll<...T>(first: std::Int, rest: ...T): std::Int {
     var total = first
     for x in rest { total = total + x }
     return total

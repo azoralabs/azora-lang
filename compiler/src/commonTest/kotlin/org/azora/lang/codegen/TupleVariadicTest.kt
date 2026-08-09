@@ -25,10 +25,10 @@ class TupleVariadicTest {
 
     @Test fun genericImplReflectedFieldLoopParses() {
         val program = Parser(Lexer("""
-            spec PrettyPrint { prop pretty[self: Self&]: String }
-            impl<...T> PrettyPrint for Tuple {
-                prop pretty[self: Self&]: String {
-                    inline for field in reflect<Self>.fields with index {
+            spec PrettyPrint { prop pretty[self: std::Self&]: std::String }
+            impl<...T> PrettyPrint for std::Tuple {
+                prop pretty[self: std::Self&]: std::String {
+                    inline for field in std::reflect<std::Self>.fields with index {
                         trace { field.value }
                     }
                     return ""
@@ -65,7 +65,7 @@ class TupleVariadicTest {
             import std.io
             import std.container.*
             func main() {
-                fin x: std::Tuple<Int, Double> = std::tupleOf(1, 2.0)
+                fin x: std::Tuple<std::Int, std::Double> = std::tupleOf(1, 2.0)
                 std::println(x.0)
                 std::println(x.1)
             }
@@ -79,7 +79,7 @@ class TupleVariadicTest {
             import std.io
             import std.container.*
             func main() {
-                fin x: std::Tuple<Int, Double> = std::tupleOf<Int, Double>(1, 2.0)
+                fin x: std::Tuple<std::Int, std::Double> = std::tupleOf<std::Int, std::Double>(1, 2.0)
                 std::println(x.0)
                 std::println(x.1)
             }
@@ -88,7 +88,7 @@ class TupleVariadicTest {
             import std.io
             import std.container.*
             func main() {
-                fin x = std::tupleOf<Int, Double>(1, 2.0)
+                fin x = std::tupleOf<std::Int, std::Double>(1, 2.0)
                 std::println(x.0)
                 std::println(x.1)
             }
@@ -121,9 +121,9 @@ class TupleVariadicTest {
             import std.container.*
             func main() {
                 fin tup = std::tupleOf(1, 2.0, "3")
-                if tup.0 is Int && tup.0 == 1 { std::println("ok0") }
-                if tup.1 is Double && tup.1 == 2.0 { std::println("ok1") }
-                if tup.2 is String && tup.2 == "3" { std::println("ok2") }
+                if std::tup.0 is std::Int && std::tup.0 == 1 { std::println("ok0") }
+                if std::tup.1 is std::Double && std::tup.1 == 2.0 { std::println("ok1") }
+                if std::tup.2 is std::String && std::tup.2 == "3" { std::println("ok2") }
             }
         """.trimIndent()
         val out = compile(src)
@@ -149,11 +149,11 @@ class TupleVariadicTest {
             import std.container.tuple
 
             pack App {
-                var name: String
+                var name: std::String
             }
 
             impl App {
-                func greet[self: Self&](): String {
+                func greet[self: std::Self&](): std::String {
                     return "Hello from ${'$'}{self.name}!"
                 }
             }
@@ -218,8 +218,8 @@ class TupleVariadicTest {
         val src = """
             import std.io
             import std.container.tuple
-            func swap(t: std::Tuple<Int, Double>): std::Tuple<Double, Int> {
-                return std::tupleOf<Double, Int>(t.1, t.0)
+            func swap(t: std::Tuple<std::Int, std::Double>): std::Tuple<std::Double, std::Int> {
+                return std::tupleOf<std::Double, std::Int>(t.1, t.0)
             }
             func main() {
                 fin r = swap(std::tupleOf(7, 9.0))
@@ -236,7 +236,7 @@ class TupleVariadicTest {
             import std.io
             import std.container.tuple
 
-            func divmod(a: Int, b: Int): std::Tuple<Int, Int> {
+            func divmod(a: std::Int, b: std::Int): std::Tuple<std::Int, std::Int> {
                 return std::tupleOf(a / b, a % b)
             }
 
@@ -290,7 +290,7 @@ class TupleVariadicTest {
         val result = Compiler().compile("""
             import std.container.tuple
 
-            func divmod(a: Int, b: Int): Tuple<Int, Int> {
+            func divmod(a: std::Int, b: std::Int): std::Tuple<std::Int, std::Int> {
                 return std::tupleOf(a / b, a % b)
             }
         """.trimIndent(), release = false)
@@ -304,7 +304,7 @@ class TupleVariadicTest {
 
     @Test fun tupleRealmQualifierSurvivesParsingWithoutChangingTypeIdentity() {
         val program = Parser(Lexer("""
-            func divmod(a: Int, b: Int): std::Tuple<Int, Int> {
+            func divmod(a: std::Int, b: std::Int): std::Tuple<std::Int, std::Int> {
                 return std::tupleOf(a / b, a % b)
             }
         """.trimIndent()).tokenize()).parse()

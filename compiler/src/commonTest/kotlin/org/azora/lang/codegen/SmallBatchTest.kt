@@ -57,7 +57,7 @@ class SmallBatchTest {
     @Test fun earlyReturnCondition() {
         assertEquals("ok", run("""
             import std.io
-            func check(x: Int): String {
+            func check(x: std::Int): std::String {
                 if !(x > 0) {
                     return "bad"
                 }
@@ -70,7 +70,7 @@ class SmallBatchTest {
     @Test fun earlyReturnConditionTaken() {
         assertEquals("bad", run("""
             import std.io
-            func check(x: Int): String {
+            func check(x: std::Int): std::String {
                 if !(x > 0) {
                     return "bad"
                 }

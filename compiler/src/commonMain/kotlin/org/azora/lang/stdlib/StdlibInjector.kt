@@ -16,6 +16,7 @@
 
 package org.azora.lang.stdlib
 
+import org.azora.lang.frontend.Annotation
 import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.FuncDecl
 import org.azora.lang.frontend.IntraRealmRewriter
@@ -222,7 +223,7 @@ class StdlibInjector private constructor(
         /** struct/pack name → its `impl` blocks (methods/oper overloads), injected alongside the pack. */
         val implsByType = LinkedHashMap<String, MutableList<TopLevel.Impl>>()
         /**
-         * Per-module `exposed use …` re-exports. When a program imports [module]
+         * Per-module `exposed import …` re-exports. When a program imports [module]
          * (or [module] is auto-injected via `exposed mod`), each (path, selected)
          * pair here is also imported transitively - e.g. `std.char` re-exporting
          * `std.char.core` so a bare `import std.char` suffices.
@@ -240,11 +241,7 @@ class StdlibInjector private constructor(
     /** The bundled-library module providing [name] ("std.math"), or null - used for error hints. */
     fun moduleOf(name: String): String? = index.moduleOfName[name]
 
-    /**
-     * Returns the source-level qualified access path for an imported realm member.
-     * Members declared by `use realm` or `use friend realm` keep bare names and
-     * intentionally return null because they require no explicit realm prefix.
-     */
+    /** Returns the source-level qualified access path for an imported realm member. */
     fun qualifiedAccessOf(name: String, program: Program): String? {
         val item = index.items[name] ?: return null
         val visible = LinkedHashMap<String, TopLevel>().apply {
@@ -304,12 +301,74 @@ class StdlibInjector private constructor(
      * a named realm must still be written as `Realm::Type` outside that realm.
      */
     fun validateTypeAccess(program: Program): List<String> {
-        val visibleDeclarations = importedItems(program).values.toSet()
+        val visibleDeclarations = buildSet {
+            addAll(index.implicitRootItems.values)
+            addAll(importedItems(program).values)
+        }
         val localGlobalTypes = program.items.mapNotNull(::typeDeclarationName)
             .filterTo(mutableSetOf()) { it !in program.realmTypeNamespaces }
         val errors = linkedSetOf<String>()
 
         class Validator {
+            fun realmSymbol(
+                name: String,
+                qualifier: String?,
+                line: Int,
+                currentRealm: String?,
+                kind: String,
+                sigil: String = "",
+            ) {
+                fun sourceName(realm: String?, symbol: String): String =
+                    sigil + (realm?.let { "$it::" } ?: "") + symbol
+                val localRealm = program.realmTypeNamespaces[name]
+                val exports = index.realmTypesByShortName[name].orEmpty()
+                val visibleExports = exports.filter { it.declaration in visibleDeclarations }
+                if (localRealm != null) {
+                    when {
+                        qualifier == null && currentRealm != localRealm -> errors.add(
+                            "line $line: undefined $kind '${sourceName(null, name)}'; '$name' is part of realm " +
+                                "'$localRealm', use '${sourceName(localRealm, name)}' instead",
+                        )
+                        qualifier != null && qualifier != localRealm -> errors.add(
+                            "line $line: undefined $kind '${sourceName(qualifier, name)}'; '$name' is part of realm '$localRealm'",
+                        )
+                    }
+                } else if (qualifier == null) {
+                    visibleExports.firstOrNull()?.let { export ->
+                        errors.add(
+                            "line $line: undefined $kind '${sourceName(null, name)}'; '$name' is part of realm " +
+                                "'${export.qualifier}', use '${sourceName(export.qualifier, name)}' instead",
+                        )
+                    }
+                } else {
+                    val qualified = "$qualifier::$name"
+                    val export = index.realmTypesByQualifiedName[qualified]
+                    when {
+                        export != null && export.declaration !in visibleDeclarations -> errors.add(
+                            "line $line: undefined $kind '${sourceName(qualifier, name)}' - '$name' is provided by " +
+                                "'${export.module}': add 'import ${export.module}'",
+                        )
+                        export == null && visibleExports.isNotEmpty() -> errors.add(
+                            "line $line: undefined $kind '${sourceName(qualifier, name)}'; '$name' is part of realm " +
+                                "'${visibleExports.first().qualifier}'",
+                        )
+                    }
+                }
+            }
+
+            fun appliedAnnotation(annotation: Annotation, currentRealm: String?) {
+                realmSymbol(
+                    annotation.name,
+                    annotation.qualifier,
+                    annotation.line,
+                    currentRealm,
+                    "decorator",
+                    "@",
+                )
+                annotation.args.forEach { expression(it, emptySet(), currentRealm) }
+                annotation.namedArgs.forEach { (_, value) -> expression(value, emptySet(), currentRealm) }
+            }
+
             fun type(ref: TypeRef, line: Int, typeParams: Set<String>, currentRealm: String?) {
                 when (ref) {
                     is TypeRef.Named -> {
@@ -347,7 +406,7 @@ class StdlibInjector private constructor(
                                     export != null && export.declaration !in visibleDeclarations ->
                                         errors.add(
                                             "line $line: undefined type '$qualified' - '${ref.name}' is provided by " +
-                                                "'${export.module}': add 'use ${export.module}'",
+                                                "'${export.module}': add 'import ${export.module}'",
                                         )
                                     export == null && visibleExports.isNotEmpty() -> {
                                         val declared = visibleExports.first()
@@ -386,6 +445,7 @@ class StdlibInjector private constructor(
             }
 
             fun function(func: FuncDecl, currentRealm: String?) {
+                func.annotations.forEach { appliedAnnotation(it, currentRealm) }
                 val typeParams = func.typeParams.toSet()
                 func.params.forEach {
                     type(it.type, func.line, typeParams, currentRealm)
@@ -629,8 +689,10 @@ class StdlibInjector private constructor(
                 }
                 is TopLevel.Test -> item.body.forEach { validator.statement(it, emptySet(), currentRealm) }
                 is TopLevel.Pack -> {
+                    item.annotations.forEach { validator.appliedAnnotation(it, currentRealm) }
                     val typeParams = item.typeParams.toSet()
                     item.fields.forEach {
+                        it.annotations.forEach { annotation -> validator.appliedAnnotation(annotation, currentRealm) }
                         validator.type(it.type, item.line, typeParams, currentRealm)
                         it.default?.let { value -> validator.expression(value, typeParams, currentRealm) }
                     }
@@ -643,6 +705,10 @@ class StdlibInjector private constructor(
                     item.methods.forEach { validator.function(it, currentRealm) }
                 }
                 is TopLevel.Impl -> {
+                    item.annotations.forEach { validator.appliedAnnotation(it, currentRealm) }
+                    item.traitName?.let {
+                        validator.realmSymbol(it, item.traitQualifier, item.line, currentRealm, "spec or decorator")
+                    }
                     val typeParams = item.typeParams.toSet()
                     item.traitArgs.forEach { validator.type(it, item.line, typeParams, currentRealm) }
                     item.decoratorArgs.forEach { validator.expression(it, typeParams, currentRealm) }
@@ -651,9 +717,12 @@ class StdlibInjector private constructor(
                     }
                     item.methods.forEach { validator.function(it, currentRealm) }
                 }
-                is TopLevel.Spec -> item.methods.forEach { validator.function(it, currentRealm) }
-                is TopLevel.Deco -> item.fields.forEach {
-                    validator.type(it.type, item.line, emptySet(), currentRealm)
+                is TopLevel.Spec -> {
+                    item.methods.forEach { validator.function(it, currentRealm) }
+                }
+                is TopLevel.Deco -> {
+                    item.annotations.forEach { validator.appliedAnnotation(it, currentRealm) }
+                    item.fields.forEach { validator.type(it.type, item.line, emptySet(), currentRealm) }
                 }
                 is TopLevel.Slot -> item.variants.forEach { variant ->
                     variant.payloadTypes.forEach {
@@ -806,7 +875,7 @@ class StdlibInjector private constructor(
                 idx.realmTypesByQualifiedName.putIfAbsentCompat(export.qualifiedName, export)
                 idx.realmTypesByShortName.getOrPut(shortName) { mutableListOf() }.add(export)
             }
-            // Record this module's `exposed use …` re-exports for transitive
+            // Record this module's `exposed import …` re-exports for transitive
             // import propagation, and (if always-on) the module name itself.
             for (item in program.items) {
                 if (item is TopLevel.UseImport && item.exported && evalExportIf(item.condition, boolOverrides)) {
@@ -834,8 +903,8 @@ class StdlibInjector private constructor(
     private fun importedItems(program: Program): Map<String, TopLevel> {
         val visible = LinkedHashMap<String, TopLevel>()
         // Seed with the program's own imports, plus the re-exports of any
-        // `exposed mod` library that is auto-injected into every unit - its
-        // `exposed use …` declarations apply to importers transitively.
+        // `exposed module` library that is auto-injected into every unit - its
+        // `exposed import …` declarations apply to importers transitively.
         val seeds = ArrayDeque<Pair<String, String?>>()
         for (item in program.items) {
             if (item is TopLevel.UseImport && !item.exported) seeds.addAll(item.imports)
@@ -1057,13 +1126,26 @@ class StdlibInjector private constructor(
         }
 
         val referenced = mutableSetOf<String>()
-        for (item in program.items) collectNamesFromItem(item, referenced)
+        for (item in program.items) {
+            collectNamesFromItem(item, referenced)
+            // A user macro may expand directly to an imported realm macro. Its
+            // template is part of the user's dependency graph even though
+            // bundled macro templates remain lazy to avoid pulling every
+            // possible expansion target into every compilation.
+            if (item is TopLevel.Meta) {
+                item.arms.forEach { arm -> collectNamesFromExpr(arm.template, referenced) }
+            }
+        }
         // Exported/core blocks are always injected; pull in whatever they reference.
         for (item in index.alwaysInjectedItems) collectNamesFromItem(item, referenced)
         val implicitReferenced = referenced.filterTo(mutableSetOf()) { it in implicitCollectionTypes }
         referenced.retainAll(visible.keys)
         referenced += implicitReferenced
-        referenced += index.implicitRootItems.keys
+        // Exposed root declarations are visible without an import, but visibility
+        // is not a request to emit every declaration in those modules. Pull only
+        // names the program actually references; otherwise a single primitive
+        // type drags unrelated runtime helpers and their bridge dependencies into
+        // every backend output.
 
         val injected = LinkedHashMap<String, TopLevel>()
         val injectedExterns = LinkedHashMap<String, TopLevel>()
@@ -1426,7 +1508,7 @@ class StdlibInjector private constructor(
                 // A `meta` is a compile-time macro definition, not a dependency
                 // root. Registering its name keeps it available to the macro
                 // expander, but its arm templates must NOT be treated as injection
-                // dependencies: an arm like `@arr[…] => std::arrayOf(…)` references
+                // dependencies: an arm like `@std::arr[…] => std::arrayOf(…)` references
                 // every collection factory the macro *could* expand to, and pulling
                 // those eagerly drags the whole container library into every program
                 // (including un-optimized builds where dead-code elimination cannot
@@ -1587,6 +1669,32 @@ class StdlibInjector private constructor(
 
     private fun collectNamesFromExpr(expr: Expr, names: MutableSet<String>) {
         when (expr) {
+            is Expr.IntLiteral -> names.add(
+                when (expr.suffix) {
+                    org.azora.lang.frontend.NumericSuffix.NONE -> "Int"
+                    org.azora.lang.frontend.NumericSuffix.BYTE -> "Byte"
+                    org.azora.lang.frontend.NumericSuffix.UBYTE -> "UByte"
+                    org.azora.lang.frontend.NumericSuffix.SHORT -> "Short"
+                    org.azora.lang.frontend.NumericSuffix.USHORT -> "UShort"
+                    org.azora.lang.frontend.NumericSuffix.UINT -> "UInt"
+                    org.azora.lang.frontend.NumericSuffix.LONG -> "Long"
+                    org.azora.lang.frontend.NumericSuffix.ULONG -> "ULong"
+                    org.azora.lang.frontend.NumericSuffix.CENT -> "Cent"
+                    org.azora.lang.frontend.NumericSuffix.UCENT -> "UCent"
+                    org.azora.lang.frontend.NumericSuffix.FLOAT -> "Float"
+                    org.azora.lang.frontend.NumericSuffix.DECIMAL -> "Decimal"
+                },
+            )
+            is Expr.DoubleLiteral -> names.add(
+                when (expr.suffix) {
+                    org.azora.lang.frontend.NumericSuffix.FLOAT -> "Float"
+                    org.azora.lang.frontend.NumericSuffix.DECIMAL -> "Decimal"
+                    else -> "Double"
+                },
+            )
+            is Expr.CharLiteral -> names.add("Char")
+            is Expr.StringLiteral -> names.add("String")
+            is Expr.BoolLiteral -> names.add("Bool")
             is Expr.Identifier -> {
                 val item = index.items[expr.name]
                 if (item != null && item !is TopLevel.Func) names.add(expr.name)
@@ -1647,8 +1755,11 @@ class StdlibInjector private constructor(
             is Expr.TupleLit -> expr.elements.forEach { collectNamesFromExpr(it, names) }
             is Expr.VariantLit -> expr.elements.forEach { collectNamesFromExpr(it, names) }
             is Expr.TupleAccess -> collectNamesFromExpr(expr.target, names)
-            is Expr.StringTemplate -> expr.parts.forEach { part ->
-                if (part is Expr.StringTemplatePart.Expr) collectNamesFromExpr(part.expr, names)
+            is Expr.StringTemplate -> {
+                names.add("String")
+                expr.parts.forEach { part ->
+                    if (part is Expr.StringTemplatePart.Expr) collectNamesFromExpr(part.expr, names)
+                }
             }
             is Expr.Lambda -> {
                 expr.params.forEach { collectNamesFromTypeAnnotation(TypeAnnotation.Explicit(it.type), names) }

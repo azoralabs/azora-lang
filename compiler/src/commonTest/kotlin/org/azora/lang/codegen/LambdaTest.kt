@@ -20,7 +20,7 @@ class LambdaTest {
         assertEquals("10", run("""
             import std.io
             func main() {
-                var double = { x: Int -> x * 2 }
+                var double = { x: std::Int -> x * 2 }
                 std::println(double(5))
             }
         """.trimIndent()))
@@ -29,11 +29,11 @@ class LambdaTest {
     @Test fun higherOrderFunction() {
         assertEquals("16", run("""
             import std.io
-            func apply(f: (Int) -> Int, x: Int): Int {
+            func apply(f: (std::Int) -> std::Int, x: std::Int): std::Int {
                 return f(x)
             }
             func main() {
-                std::println(apply({ x: Int -> x * x }, 4))
+                std::println(apply({ x: std::Int -> x * x }, 4))
             }
         """.trimIndent()))
     }
@@ -41,9 +41,9 @@ class LambdaTest {
     @Test fun closureCapturesParameter() {
         assertEquals("15", run("""
             import std.io
-            func makeAdder(n: Int): (Int) -> Int {
+            func makeAdder(n: std::Int): (std::Int) -> std::Int {
                 // Returned, so it escapes: it must own `n`, and Int is Copy.
-                return [; n] { x: Int -> x + n }
+                return [; n] { x: std::Int -> x + n }
             }
             func main() {
                 var add5 = makeAdder(5)
@@ -57,7 +57,7 @@ class LambdaTest {
             import std.io
             func main() {
                 var offset = 3
-                var add = [; offset.&] { x: Int -> x + offset }
+                var add = [; offset.&] { x: std::Int -> x + offset }
                 std::println(add(4))
             }
         """.trimIndent()))
@@ -66,7 +66,7 @@ class LambdaTest {
     @Test fun lambdaInInterpolation() {
         assertEquals("25", run("""
             import std.io
-            func apply(f: (Int) -> Int, x: Int): Int {
+            func apply(f: (std::Int) -> std::Int, x: std::Int): std::Int {
                 return f(x)
             }
             func main() {
@@ -78,7 +78,7 @@ class LambdaTest {
     @Test fun noParamLambda() {
         assertEquals("hi", run("""
             import std.io
-            func run(g: () -> String): String {
+            func run(g: () -> std::String): std::String {
                 return g()
             }
             func main() {
@@ -90,7 +90,7 @@ class LambdaTest {
     @Test fun noParamLambdaUsesPackFieldContextWithoutAnArrow() {
         assertEquals("cancelled", run("""
             import std.io
-            pack Subscription { fin cancel: () -> Unit }
+            pack Subscription { fin cancel: () -> std::Unit }
             func main() {
                 fin subscription = Subscription({ std::println("cancelled") })
                 subscription.cancel()
@@ -102,8 +102,8 @@ class LambdaTest {
         assertEquals("cancelled", run("""
             import std.io
             pack Subscription {
-                fin active: Bool
-                fin cancel: () -> Unit
+                fin active: std::Bool
+                fin cancel: () -> std::Unit
             }
             func main() {
                 fin subscription = Subscription(true) {
@@ -117,7 +117,7 @@ class LambdaTest {
     @Test fun functionAcceptsTrailingLambdaWithoutParentheses() {
         assertEquals("hi", run("""
             import std.io
-            func run(action: () -> String): String {
+            func run(action: () -> std::String): std::String {
                 return action()
             }
             func main() {
@@ -131,7 +131,7 @@ class LambdaTest {
             import std.io
             pack Runner
             impl Runner {
-                func run[self: Self&](action: (Int) -> Int): Int {
+                func run[self: std::Self&](action: (std::Int) -> std::Int): std::Int {
                     return action(4)
                 }
             }
@@ -145,7 +145,7 @@ class LambdaTest {
     @Test fun trailingLambdaFollowsNamedAndOrdinaryArguments() {
         assertEquals("[Azora]", run("""
             import std.io
-            func render(prefix: String, action: () -> String): String {
+            func render(prefix: std::String, action: () -> std::String): std::String {
                 return prefix + action()
             }
             func main() {
@@ -159,7 +159,7 @@ class LambdaTest {
             import std.io
             import std.reactive
             func main() {
-                std::println(std::untracked<String> { "qualified" })
+                std::println(std::untracked<std::String> { "qualified" })
             }
         """.trimIndent()))
     }
@@ -167,7 +167,7 @@ class LambdaTest {
     @Test fun contextualReceiverLambdaCanTrailGenericQualifiedCall() {
         assertEquals("receiver", run("""
             import std.io
-            pack Context { fin value: String }
+            pack Context { fin value: std::String }
             func run<T>(fallback: T, action: [Context&]() -> T): T {
                 fin context = Context("receiver")
                 var result = fallback
@@ -175,7 +175,7 @@ class LambdaTest {
                 return result
             }
             func main() {
-                std::println(run<String>("") [context: Context&] { context.value })
+                std::println(run<std::String>("") [context: Context&] { context.value })
             }
         """.trimIndent()))
     }
@@ -183,8 +183,8 @@ class LambdaTest {
     @Test fun contextualReceiverLambdaCanTrailParenthesizedArguments() {
         assertEquals("prefixed", run("""
             import std.io
-            pack Context { fin value: String }
-            func render(prefix: String, action: [Context&]() -> String): String {
+            pack Context { fin value: std::String }
+            func render(prefix: std::String, action: [Context&]() -> std::String): std::String {
                 fin context = Context("fixed")
                 var result = prefix
                 with context { result += action() }
@@ -200,8 +200,8 @@ class LambdaTest {
         assertEquals("variable", run("""
             import std.io
             func main() {
-                fin invoke: (() -> String) -> String =
-                    { action: () -> String -> return action() }
+                fin invoke: (() -> std::String) -> std::String =
+                    { action: () -> std::String -> return action() }
                 std::println(invoke { "variable" })
             }
         """.trimIndent()))
@@ -211,8 +211,8 @@ class LambdaTest {
         assertEquals("field", run("""
             import std.io
             pack Runner {
-                fin invoke: (() -> String) -> String =
-                    { action: () -> String -> return action() }
+                fin invoke: (() -> std::String) -> std::String =
+                    { action: () -> std::String -> return action() }
             }
             func main() {
                 std::println(Runner().invoke { "field" })
@@ -224,8 +224,8 @@ class LambdaTest {
         assertEquals("grouped", run("""
             import std.io
             func main() {
-                fin invoke: (() -> String) -> String =
-                    { action: () -> String -> return action() }
+                fin invoke: (() -> std::String) -> std::String =
+                    { action: () -> std::String -> return action() }
                 std::println((invoke) { "grouped" })
             }
         """.trimIndent()))
@@ -234,8 +234,8 @@ class LambdaTest {
     @Test fun primitiveExtensionMethodAcceptsTrailingLambda() {
         assertEquals("12", run("""
             import std.io
-            impl Int {
-                func map[self: Self&](action: (Int) -> Int): Int {
+            impl std::Int {
+                func map[self: std::Self&](action: (std::Int) -> std::Int): std::Int {
                     return action(self)
                 }
             }
@@ -249,7 +249,7 @@ class LambdaTest {
         assertEquals("variant", run("""
             import std.io
             variant enum Work {
-                Run(() -> String)
+                Run(() -> std::String)
             }
             func main() {
                 fin work = Work.Run { "variant" }
@@ -264,15 +264,15 @@ class LambdaTest {
         assertEquals("spec", run("""
             import std.io
             spec Executor {
-                func execute[self: Self&](action: () -> String): String
+                func execute[self: std::Self&](action: () -> std::String): std::String
             }
             pack Direct
             impl Executor for Direct {
-                func execute[self: Self&](action: () -> String): String {
+                func execute[self: std::Self&](action: () -> std::String): std::String {
                     return action()
                 }
             }
-            func executeWith(executor: Executor): String {
+            func executeWith(executor: Executor): std::String {
                 return executor.execute { "spec" }
             }
             func main() {
@@ -286,10 +286,10 @@ class LambdaTest {
             import std.io
 
             pack Calculator {
-                fin add: [Int, Int]() -> Int =
-                    [x: Int, y: Int] { x + y }
-                fin sub: (Int, Int) -> Int =
-                    { x: Int, y: Int -> return x - y }
+                fin add: [std::Int, std::Int]() -> std::Int =
+                    [x: std::Int, y: std::Int] { x + y }
+                fin sub: (std::Int, std::Int) -> std::Int =
+                    { x: std::Int, y: std::Int -> return x - y }
             }
 
             func main() {
@@ -321,7 +321,7 @@ class LambdaTest {
         assertEquals("6", run("""
             import std.io
             func main() {
-                fin double: (Int) -> Int = { it * 2 }
+                fin double: (std::Int) -> std::Int = { it * 2 }
                 std::println(double(3))
             }
         """.trimIndent()))
@@ -334,7 +334,7 @@ class LambdaTest {
             func main() {
                 var seen = 0
                 fin outer = [; seen.!] {
-                    fin inner: (Int) -> Int = { it * 2 }
+                    fin inner: (std::Int) -> std::Int = { it * 2 }
                     seen = inner(1)
                 }
                 outer()
@@ -364,8 +364,8 @@ class LambdaTest {
         assertEquals("ok", run("""
             import std.io
             func main() {
-                var fs = std::listOf<() -> Int>()
-                var handlers = std::listOf<(Int) -> Int>()
+                var fs = std::listOf<() -> std::Int>()
+                var handlers = std::listOf<(std::Int) -> std::Int>()
                 std::println("ok")
             }
         """.trimIndent()))
@@ -375,8 +375,8 @@ class LambdaTest {
         assertEquals("5", run("""
             import std.io
 
-            fin add: [Int, Int]() -> Int =
-                [x: Int, y: Int] { x + y }
+            fin add: [std::Int, std::Int]() -> std::Int =
+                [x: std::Int, y: std::Int] { x + y }
 
             func main() {
                 with [2, 3] {
@@ -393,7 +393,7 @@ class LambdaTest {
         assertEquals("1\n2", run("""
             import std.io
 
-            func twice(action: (Int) -> Unit) {
+            func twice(action: (std::Int) -> std::Unit) {
                 action(1)
                 action(2)
             }
@@ -412,7 +412,7 @@ class LambdaTest {
 
             pack Vec2 { fin x = 0 fin y = 0 }
 
-            func apply(v: Vec2&, f: [Vec2&]() -> Int): Int {
+            func apply(v: Vec2&, f: [Vec2&]() -> std::Int): std::Int {
                 var acc = 0
                 with v { acc = f() }
                 return acc
@@ -431,7 +431,7 @@ class LambdaTest {
 
             pack Vec2 { fin x = 0 fin y = 0 }
 
-            func apply(v: Vec2&, o: Vec2&, f: [Vec2&](Vec2&) -> Int): Int {
+            func apply(v: Vec2&, o: Vec2&, f: [Vec2&](Vec2&) -> std::Int): std::Int {
                 var acc = 0
                 with v { acc = f(o) }
                 return acc
@@ -448,8 +448,8 @@ class LambdaTest {
         assertEquals("10\n14", run("""
             import std.io
 
-            fin scale: [Int](Int) -> Int =
-                [value: Int] { factor: Int -> value * factor }
+            fin scale: [std::Int](std::Int) -> std::Int =
+                [value: std::Int] { factor: std::Int -> value * factor }
 
             func main() {
                 with 5 {
@@ -468,8 +468,8 @@ class LambdaTest {
     @Test fun aReceiverIsSuppliedByWithOrByAReceiverCall() {
         assertEquals("10\n14\n5\n5", run("""
             import std.io
-            fin scale: [Int](Int) -> Int = [value] { factor -> value * factor }
-            fin add: [Int, Int]() -> Int = { x, y -> x + y }
+            fin scale: [std::Int](std::Int) -> std::Int = [value] { factor -> value * factor }
+            fin add: [std::Int, std::Int]() -> std::Int = { x, y -> x + y }
 
             func main() {
                 with 5 { std::println(scale(2)) }
@@ -483,7 +483,7 @@ class LambdaTest {
     @Test fun aReceiverMayNotBePassedAsAnArgument() {
         val errors = assertIs<CompilationResult.Failure>(Compiler().compile("""
             import std.io
-            fin scale: [Int](Int) -> Int = [value] { factor -> value * factor }
+            fin scale: [std::Int](std::Int) -> std::Int = [value] { factor -> value * factor }
             func main() { std::println(scale(2, 7)) }
         """.trimIndent())).errors
         assertTrue(
@@ -496,8 +496,8 @@ class LambdaTest {
     @Test fun aLambdaMayOmitTypesTheDeclaredTypeSupplies() {
         assertEquals("6", run("""
             import std.io
-            fin add: [Int, Int]() -> Int = { x, y -> x + y }
-            fin twice: (Int) -> Int = { n -> n * 2 }
+            fin add: [std::Int, std::Int]() -> std::Int = { x, y -> x + y }
+            fin twice: (std::Int) -> std::Int = { n -> n * 2 }
             func main() {
                 with [1, 2] { std::println(add() + twice(1) + 1) }
             }
@@ -507,7 +507,7 @@ class LambdaTest {
     @Test fun nonGenericVariadicFunctionsValidateEachElement() {
         assertEquals("3", run("""
             import std.io
-            func sum(...values: Int): Int {
+            func sum(...values: std::Int): std::Int {
                 var result = 0
                 for value in values {
                     result += value

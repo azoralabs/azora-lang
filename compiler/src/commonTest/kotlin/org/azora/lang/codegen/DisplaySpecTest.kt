@@ -49,8 +49,8 @@ class DisplaySpecTest {
         val result = compile("""
             import std.io
             pack Vec2 {
-                var x: Int
-                var y: Int
+                var x: std::Int
+                var y: std::Int
             }
             func main() {
                 std::println("${'$'}{Vec2(1, 2)}")
@@ -68,11 +68,11 @@ class DisplaySpecTest {
             import std.io
             import std.format
             pack Vec2 {
-                var x: Int
-                var y: Int
+                var x: std::Int
+                var y: std::Int
             }
-            impl Display for Vec2 {
-                func display[self: Self&](formatter: std::Formatter!) {
+            impl std::Display for Vec2 {
+                func display[self: std::Self&](formatter: std::Formatter!) {
                     formatter.write("Vec2(")
                     formatter.write("${'$'}{self.x}")
                     formatter.write(", ")
@@ -92,14 +92,14 @@ class DisplaySpecTest {
             import std.io
             import std.format
             pack Vec2 {
-                var x: Int
-                var y: Int
+                var x: std::Int
+                var y: std::Int
             }
             pack Wrapper {
                 var inner: Vec2
             }
-            impl Display for Vec2 {
-                func display[self: Self&](formatter: std::Formatter!) {
+            impl std::Display for Vec2 {
+                func display[self: std::Self&](formatter: std::Formatter!) {
                     formatter.write("Vec2(")
                     formatter.write("${'$'}{self.x}")
                     formatter.write(", ")
@@ -107,8 +107,8 @@ class DisplaySpecTest {
                     formatter.write(")")
                 }
             }
-            impl Display for Wrapper {
-                func display[self: Self&](formatter: std::Formatter!) {
+            impl std::Display for Wrapper {
+                func display[self: std::Self&](formatter: std::Formatter!) {
                     formatter.write("[")
                     self.inner.display(formatter)
                     formatter.write("]")
@@ -143,11 +143,11 @@ class DisplaySpecTest {
             import std.io
             import std.format
             pack Vec2 {
-                var x: Int
-                var y: Int
+                var x: std::Int
+                var y: std::Int
             }
-            impl Display for Vec2 {
-                func display[self: Self&](formatter: std::Formatter!) {
+            impl std::Display for Vec2 {
+                func display[self: std::Self&](formatter: std::Formatter!) {
                     formatter.write("Vec2(")
                     formatter.write("${'$'}{self.x}")
                     formatter.write(", ")

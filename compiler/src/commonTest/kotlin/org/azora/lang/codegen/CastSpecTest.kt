@@ -46,13 +46,13 @@ class CastSpecTest {
             import std.io
             import std.convert
             pack Celsius {
-                var degrees: Int
+                var degrees: std::Int
             }
             pack Fahrenheit {
-                var degrees: Int
+                var degrees: std::Int
             }
-            impl Cast<Fahrenheit> for Celsius {
-                prop _cast[self: Self&]: Fahrenheit {
+            impl std::Cast<Fahrenheit> for Celsius {
+                prop _cast[self: std::Self&]: Fahrenheit {
                     return Fahrenheit(self.degrees * 9 / 5 + 32)
                 }
             }
@@ -69,21 +69,21 @@ class CastSpecTest {
             import std.io
             import std.convert
             pack Celsius {
-                var degrees: Int
+                var degrees: std::Int
             }
             pack Fahrenheit {
-                var degrees: Int
+                var degrees: std::Int
             }
             pack Kelvin {
-                var degrees: Int
+                var degrees: std::Int
             }
-            impl Cast<Fahrenheit> for Celsius {
-                prop _cast[self: Self&]: Fahrenheit {
+            impl std::Cast<Fahrenheit> for Celsius {
+                prop _cast[self: std::Self&]: Fahrenheit {
                     return Fahrenheit(self.degrees * 9 / 5 + 32)
                 }
             }
-            impl Cast<Kelvin> for Celsius {
-                prop _cast[self: Self&]: Kelvin {
+            impl std::Cast<Kelvin> for Celsius {
+                prop _cast[self: std::Self&]: Kelvin {
                     return Kelvin(self.degrees + 273)
                 }
             }
@@ -100,18 +100,18 @@ class CastSpecTest {
             import std.io
             import std.convert
             pack Handle {
-                var raw: Int
+                var raw: std::Int
             }
             pack Id {
-                var v: Int
+                var v: std::Int
             }
-            impl Cast<Id> for Handle {
-                prop _cast[self: Self&]: Id {
+            impl std::Cast<Id> for Handle {
+                prop _cast[self: std::Self&]: Id {
                     return Id(1)
                 }
             }
-            impl BitCast<Id> for Handle {
-                prop _cast[self: Self&]: Id {
+            impl std::BitCast<Id> for Handle {
+                prop _cast[self: std::Self&]: Id {
                     return Id(7)
                 }
             }

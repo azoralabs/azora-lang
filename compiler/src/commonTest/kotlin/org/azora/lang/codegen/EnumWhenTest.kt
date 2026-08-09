@@ -32,11 +32,11 @@ class EnumWhenTest {
 
     @Test fun typedDeclarationsAcceptContextualEnumVariants() {
         assertEquals("[WARN] LogLevel.Warn: contextual", run("""
-            fin DEFAULT_LEVEL: LogLevel = .Warn
+            fin DEFAULT_LEVEL: std::LogLevel = .Warn
             func main() {
-                var level3: LogLevel = .Warn
-                fin level4: LogLevel = .Warn
-                let level5: LogLevel = .Warn
+                var level3: std::LogLevel = .Warn
+                fin level4: std::LogLevel = .Warn
+                let level5: std::LogLevel = .Warn
                 trace level3 { "${'$'}{it}: contextual" }
             }
         """.trimIndent()))
@@ -191,7 +191,7 @@ class EnumWhenTest {
                 Yellow
                 Green
             }
-            func action(l: String): String {
+            func action(l: std::String): std::String {
                 when l {
                     Light.Red -> { return "stop" }
                     Light.Green -> { return "go" }

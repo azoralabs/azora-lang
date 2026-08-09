@@ -34,7 +34,7 @@ class CollectionCtorTest {
         import std.io
         import std.*
         func main() {
-            var s = LinkedHashSet<Int>()
+            var s = std::LinkedHashSet<std::Int>()
             s.add(1)
             s.add(2)
             s.add(3)
@@ -58,28 +58,28 @@ class CollectionCtorTest {
     @Test fun var_direct_assign_and_when() = assertEquals("int 42", run("""
         import std.io
         func main() {
-            var v: Var<Int, Double, String> = 42
+            var v: Var<std::Int, std::Double, std::String> = 42
             when v {
-                is Int -> { std::println("int " + v) }
-                is Double -> { std::println("real " + v) }
-                is String -> { std::println("str " + v) }
+                is std::Int -> { std::println("int " + v) }
+                is std::Double -> { std::println("real " + v) }
+                is std::String -> { std::println("str " + v) }
             }
         }
     """.trimIndent()))
 
     @Test fun var_when_matches_held_type() = assertEquals("real\nstr", run("""
         import std.io
-        func describe(v: Var<Int, Double, String>): String {
+        func describe(v: Var<std::Int, std::Double, std::String>): std::String {
             when v {
-                is Int -> { return "int" }
-                is Double -> { return "real" }
-                is String -> { return "str" }
+                is std::Int -> { return "int" }
+                is std::Double -> { return "real" }
+                is std::String -> { return "str" }
             }
             return "?"
         }
         func main() {
-            var a: Var<Int, Double, String> = 2.5
-            var b: Var<Int, Double, String> = "hi"
+            var a: Var<std::Int, std::Double, std::String> = 2.5
+            var b: Var<std::Int, std::Double, std::String> = "hi"
             std::println(describe(a))
             std::println(describe(b))
         }
@@ -90,7 +90,7 @@ class CollectionCtorTest {
         import std.*
 
         func main() {
-            fin s: Set<Int> = std::setOf(10, 20, 30)
+            fin s: std::Set<std::Int> = std::setOf(10, 20, 30)
             std::println(s.contains(20))
         }
     """.trimIndent()))
@@ -99,7 +99,7 @@ class CollectionCtorTest {
         import std.io
         import std.container.*
         func main() {
-            var xs = ArrayList<Int>()
+            var xs = std::ArrayList<std::Int>()
             xs.add(7)
             xs[0] = 8
             std::println(xs[0])
@@ -110,7 +110,7 @@ class CollectionCtorTest {
         import std.io
         import std.container.*
         func main() {
-            var seen = LinkedHashSet<Int>()
+            var seen = std::LinkedHashSet<std::Int>()
             seen.add(1)
             seen.add(1)
             std::println(seen.contains(1))
@@ -122,7 +122,7 @@ class CollectionCtorTest {
         import std.io
         import std.container.*
         func main() {
-            var scores = HashMap<String, Int>()
+            var scores = std::HashMap<std::String, std::Int>()
             scores.put("azora", 3)
             std::println(scores["azora"])
         }
@@ -131,13 +131,13 @@ class CollectionCtorTest {
     @Test fun loop_iterable() = assertEquals("3", run("""
         import std.io
         pack Range {
-            var i: Int
-            var max: Int
+            var i: std::Int
+            var max: std::Int
         }
         impl Range {
             func reset() { self.i = 0 }
-            func hasNext(): Bool { return self.i < self.max }
-            func next(): Int {
+            func hasNext(): std::Bool { return self.i < self.max }
+            func next(): std::Int {
                 fin v = self.i
                 self.i = self.i + 1
                 return v
@@ -154,19 +154,19 @@ class CollectionCtorTest {
     @Test fun query_tup_type_and_loop() = assertEquals("6", run("""
         import std.io
         pack Query {
-            var i: Int
-            var max: Int
+            var i: std::Int
+            var max: std::Int
         }
         impl Query {
             func reset() { self.i = 0 }
-            func hasNext(): Bool { return self.i < self.max }
-            func next(): Int {
+            func hasNext(): std::Bool { return self.i < self.max }
+            func next(): std::Int {
                 fin v = self.i
                 self.i = self.i + 1
                 return v
             }
         }
-        func run(q: Query<Tuple<Int, String>>): Int {
+        func run(q: Query<std::Tuple<std::Int, std::String>>): std::Int {
             var sum = 0
             loop q { sum += q.next() }
             return sum
@@ -180,7 +180,7 @@ class CollectionCtorTest {
     @Test fun alloc_buffer_and_pointer_index() = assertEquals("10\n30\n99", run("""
         import std.io
         func main() {
-            var p: Int* = alloc Int[3]
+            var p: std::Int* = alloc std::Int[3]
             p[0] = 10
             p[1] = 20
             p[2] = 30

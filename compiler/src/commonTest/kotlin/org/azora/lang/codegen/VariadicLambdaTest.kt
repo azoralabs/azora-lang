@@ -60,12 +60,12 @@ class VariadicLambdaTest {
             import std.io
             import std.container.array
             func main() {
-                fin f = { xs: std::Array<Int> ->
+                fin f = { xs: std::Array<std::Int> ->
                     var total = 0
                     for x in xs { total = total + x }
                     total
                 }
-                std::println(f(@arr[1, 2, 3]))
+                std::println(f(@std::arr[1, 2, 3]))
             }
         """.trimIndent()))
     }

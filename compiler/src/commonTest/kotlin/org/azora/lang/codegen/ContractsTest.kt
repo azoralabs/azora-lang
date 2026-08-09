@@ -26,7 +26,7 @@ class ContractsTest {
         // split one requirement across two places for no gain.
         val twoIn = Compiler().compile(
             """
-            func f(a: Int): Int
+            func f(a: std::Int): std::Int
             in { assert a > 0 { "a" } } in { assert a < 9 { "b" } } scope { return a }
             func main() {}
             """.trimIndent(),
@@ -36,7 +36,7 @@ class ContractsTest {
 
         val twoOut = Compiler().compile(
             """
-            func f(a: Int): Int
+            func f(a: std::Int): std::Int
             out { assert it > 0 { "a" } } out { assert it < 9 { "b" } } scope { return a }
             func main() {}
             """.trimIndent(),
@@ -49,7 +49,7 @@ class ContractsTest {
     fun inOutRealmContractsRunOnSuccess() {
         assertEquals("0\n5\n10", run("""
             import std.io
-            func clamp(x: Int, lo: Int, hi: Int): Int
+            func clamp(x: std::Int, lo: std::Int, hi: std::Int): std::Int
             in {
                 assert lo <= hi { "lo must be <= hi" }
             } out { r ->
@@ -74,7 +74,7 @@ class ContractsTest {
         val failure = assertFailsWith<IllegalStateException> {
             run("""
                 import std.io
-                func value(x: Int): Int
+                func value(x: std::Int): std::Int
                 in {
                     assert x > 0 { "x must be positive" }
                 } scope {
@@ -91,7 +91,7 @@ class ContractsTest {
         val failure = assertFailsWith<IllegalStateException> {
             run("""
                 import std.io
-                func value(): Int
+                func value(): std::Int
                 out { r ->
                     assert r > 10 { "result too small" }
                 } scope {
@@ -107,7 +107,7 @@ class ContractsTest {
     fun postconditionRunsForNestedBranchReturns() {
         assertEquals("12\n20", run("""
             import std.io
-            func choose(flag: Bool): Int
+            func choose(flag: std::Bool): std::Int
             out { r ->
                 assert r >= 10 { "branch result too small" }
             } scope {
@@ -128,9 +128,9 @@ class ContractsTest {
     fun computedPropertiesSupportContracts() {
         assertEquals("7", run("""
             import std.io
-            pack Counter { var value: Int }
+            pack Counter { var value: std::Int }
             impl Counter {
-                prop current[self: Self&]: Int
+                prop current[self: std::Self&]: std::Int
                 in {
                     assert self.value >= 0 { "counter must not be negative" }
                 } out { result ->
@@ -149,7 +149,7 @@ class ContractsTest {
     @Test
     fun asyncFuncSupportsContracts() {
         compile("""
-            async func load(value: Int): Int
+            async func load(value: std::Int): std::Int
             in {
                 assert value >= 0 { "task input must be non-negative" }
             } out { result ->

@@ -38,7 +38,7 @@ import std.traits
  * @since 0.1
  */
 
-use realm std {
+realm std {
     /** Boolean truth value: `true` or `false`. */
     @Since("0.1")
     bridge pack Bool
@@ -475,7 +475,7 @@ use realm std {
     @Since("0.1")
     derive [PartialEqual, PartialOrder] for FloatingPoints
 
-    inline fin _ranks: Array<Int> = @arr[0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 6, 7]
+    inline fin _ranks: Array<Int> = @std::arr[0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 6, 7]
 
     // Promotion ranks for every numeric type.
     inline for Ty in Numbers with index {
@@ -495,7 +495,7 @@ use realm std {
         }
     }
 
-    inline for op in @arr["==", "!=", "&", "|", "^"] {
+    inline for op in @std::arr["==", "!=", "&", "|", "^"] {
         /**
          * Boolean operator $op over Bool operands.
          *
@@ -507,7 +507,7 @@ use realm std {
         bridge oper$op [self: Bool&](rhs: Bool): Bool
     }
 
-    inline for op in @arr["+", "-"] {
+    inline for op in @std::arr["+", "-"] {
         inline for Ty in SignedIntegers {
             /**
              * Unary arithmetic operator $op on a signed integer type.
@@ -531,7 +531,7 @@ use realm std {
         bridge oper~ [self: Ty&]: Ty
     }
 
-    inline for op in @arr["+", "-", "*", "/", "%"] {
+    inline for op in @std::arr["+", "-", "*", "/", "%"] {
         inline for LhsTy in Numbers {
             inline for RhsTy in Numbers {
                 /**
@@ -547,7 +547,7 @@ use realm std {
         }
     }
 
-    inline for op in @arr["&", "|", "^"] {
+    inline for op in @std::arr["&", "|", "^"] {
         inline for LhsTy in Integers {
             inline for RhsTy in Integers {
                 /**
@@ -563,7 +563,7 @@ use realm std {
         }
     }
 
-    inline for op in @arr["<<", ">>"] {
+    inline for op in @std::arr["<<", ">>"] {
         inline for Ty in Integers {
             /**
              * Shift operator $op on an integer type; the shift count is a UInt.
@@ -577,7 +577,7 @@ use realm std {
         }
     }
 
-    inline for op in @arr["<", ">", "<=", ">=", "==", "!="] {
+    inline for op in @std::arr["<", ">", "<=", ">=", "==", "!="] {
         inline for LhsTy in Numbers {
             inline for RhsTy in Numbers {
                 /**

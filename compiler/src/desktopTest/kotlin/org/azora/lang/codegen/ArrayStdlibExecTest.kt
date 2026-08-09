@@ -9,7 +9,7 @@ class ArrayStdlibExecTest {
         import std.io
 
         func main() {
-            fin values: Array<Int> = std::arrayOf(5, 8, 13)
+            fin values: std::Array<std::Int> = std::arrayOf(5, 8, 13)
             std::println(values.length)
             std::println(values[1])
             std::println(values.data[1])

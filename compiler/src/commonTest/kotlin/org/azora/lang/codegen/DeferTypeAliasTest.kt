@@ -34,7 +34,7 @@ class DeferTypeAliasTest {
     @Test fun deferRunsAfterReturn() {
         assertEquals("work\ncleanup\n42", run("""
             import std.io
-            func doWork(): Int {
+            func doWork(): std::Int {
                 defer {
                     std::println("cleanup")
                 }
@@ -50,7 +50,7 @@ class DeferTypeAliasTest {
     @Test fun typeAliasInt() {
         assertEquals("42", run("""
             import std.io
-            typealias UserId = Int
+            typealias UserId = std::Int
             func main() {
                 var id: UserId = 42
                 std::println(id)
@@ -61,7 +61,7 @@ class DeferTypeAliasTest {
     @Test fun typeAliasString() {
         assertEquals("hello", run("""
             import std.io
-            typealias Name = String
+            typealias Name = std::String
             func main() {
                 var n: Name = "hello"
                 std::println(n)

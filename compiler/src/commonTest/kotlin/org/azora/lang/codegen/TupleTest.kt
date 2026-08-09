@@ -15,7 +15,7 @@ class TupleTest {
             import std.container.tuple
             import std.*
 
-            func swap(value: std::Tuple<Int, String>): std::Tuple<String, Int> {
+            func swap(value: std::Tuple<std::Int, std::String>): std::Tuple<std::String, std::Int> {
                 return std::tupleOf(value.1, value.0)
             }
 
@@ -49,7 +49,7 @@ class TupleTest {
 
     @Test fun tupleTypeSyntaxIsRejectedWithMigration() {
         val result = Compiler().compile("""
-            func pair(): (Int, String) {
+            func pair(): (std::Int, std::String) {
                 return std::tupleOf(1, "hello")
             }
         """.trimIndent(), release = false)
@@ -62,7 +62,7 @@ class TupleTest {
         val result = Compiler().compile("""
             import std.io
 
-            func apply(value: Int, transform: (Int) -> Int): Int {
+            func apply(value: std::Int, transform: (std::Int) -> std::Int): std::Int {
                 return transform((value))
             }
 

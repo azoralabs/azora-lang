@@ -82,8 +82,8 @@ class StringInterpolationTest {
         assertEquals("point x = 3", run("""
             import std.io
             pack Point {
-                var x: Int
-                var y: Int
+                var x: std::Int
+                var y: std::Int
             }
             func main() {
                 var p = Point(3, 4)
@@ -97,7 +97,7 @@ class StringInterpolationTest {
         assertEquals("first = 10", run("""
             import std.io
             func main() {
-                var a = @arr[10, 20, 30]
+                var a = @std::arr[10, 20, 30]
                 std::println("first = ${'$'}{a[0]}")
             }
         """.trimIndent()))

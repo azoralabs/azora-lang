@@ -48,11 +48,11 @@ class DecoratorReflectionTest {
             @Marker pack Marked
             pack Plain
 
-            func marked(): Int {
+            func marked(): std::Int {
                 inline if std::reflect<Marked>.hasDeco<Marker> { return 1 } else { return 0 }
             }
 
-            func plain(): Int {
+            func plain(): std::Int {
                 inline if std::reflect<Plain>.hasDeco<Marker> { return 1 } else { return 0 }
             }
 
@@ -69,12 +69,12 @@ class DecoratorReflectionTest {
             annot Marker for .Pack
             @Marker pack Marked
 
-            func inferred(): Int {
+            func inferred(): std::Int {
                 fin value = Marked()
                 inline if std::reflect<value>.hasDeco<Marker> { return 1 } else { return 0 }
             }
 
-            func explicit(value: Marked&): Int {
+            func explicit(value: Marked&): std::Int {
                 inline if std::reflect<value>.hasDeco<Marker> { return 2 } else { return 0 }
             }
 
@@ -91,19 +91,19 @@ class DecoratorReflectionTest {
             annot Seen for [.Func, .Prop, .Field, .Param]
 
             pack Box {
-                @Seen fin value: Int
+                @Seen fin value: std::Int
             }
 
             @Seen
-            func read(input: @Seen Int): Int { return input }
+            func read(input: @Seen std::Int): std::Int { return input }
 
             pack Counter {}
             impl Counter {
                 @Seen
-                prop answer[self: Self&]: Int { return 42 }
+                prop answer[self: std::Self&]: std::Int { return 42 }
             }
 
-            func declarations(): Int {
+            func declarations(): std::Int {
                 inline if std::reflect<read>.hasDeco<Seen> &&
                     std::reflect<Box::value>.hasDeco<Seen> &&
                     std::reflect<read::input>.hasDeco<Seen> &&
@@ -127,7 +127,7 @@ class DecoratorReflectionTest {
             annot Wrapped for .Pack binds Marker
             @Wrapped pack Marked
 
-            func transitive(): Int {
+            func transitive(): std::Int {
                 inline if std::reflect<Marked>.hasDeco<Marker> { return 1 } else { return 0 }
             }
 
@@ -144,7 +144,7 @@ class DecoratorReflectionTest {
             @Marker pack Inner
             pack Outer
 
-            func probe(flag: Bool): Int {
+            func probe(flag: std::Bool): std::Int {
                 fin value = Outer()
                 if flag {
                     fin value = Inner()
@@ -162,12 +162,12 @@ class DecoratorReflectionTest {
     @Test fun decoratorMetadataReadsNamedValues() {
         val result = analyze("""
             annot Config for .Pack {
-                fin enabled: Bool = false
-                fin label: String = "default"
+                fin enabled: std::Bool = false
+                fin label: std::String = "default"
             }
             @Config(enabled: true, label: "selected") pack Feature
 
-            func configured(): String {
+            func configured(): std::String {
                 inline if std::reflect<Feature>.annotMeta<Config>.enabled {
                     inline fin label = std::reflect<Feature>.annotMeta<Config>.label
                     return label
@@ -186,16 +186,16 @@ class DecoratorReflectionTest {
     @Test fun decoratorMetadataReadsPositionalAndDefaultValues() {
         val result = analyze("""
             annot Config for .Pack {
-                fin enabled: Bool = false
-                fin label: String = "default"
+                fin enabled: std::Bool = false
+                fin label: std::String = "default"
             }
             @Config(true) pack Feature
 
-            func enabled(): Int {
+            func enabled(): std::Int {
                 inline if std::reflect<Feature>.annotMeta<Config>.enabled { return 1 } else { return 0 }
             }
 
-            func label(): String {
+            func label(): std::String {
                 inline fin value = std::reflect<Feature>.annotMeta<Config>.label
                 return value
             }
@@ -211,12 +211,12 @@ class DecoratorReflectionTest {
     @Test fun transitiveDecoratorMetadataUsesBoundDecoratorDefaults() {
         val result = analyze("""
             annot Config for .Pack {
-                fin enabled: Bool = true
+                fin enabled: std::Bool = true
             }
             annot Wrapped for .Pack binds Config
             @Wrapped pack Feature
 
-            func configured(): Int {
+            func configured(): std::Int {
                 inline if std::reflect<Feature>.annotMeta<Config>.enabled { return 1 } else { return 0 }
             }
 
@@ -230,12 +230,12 @@ class DecoratorReflectionTest {
     @Test fun emptyDecoratorImplBodyParticipatesInReflection() {
         val result = analyze("""
             annot Config for .Pack {
-                fin enabled: Bool = true
+                fin enabled: std::Bool = true
             }
             pack Feature
             impl Config for Feature {}
 
-            func configured(): Int {
+            func configured(): std::Int {
                 inline if std::reflect<Feature>.hasDeco<Config> && std::reflect<Feature>.annotMeta<Config>.enabled {
                     return 1
                 } else {
@@ -253,7 +253,7 @@ class DecoratorReflectionTest {
     @Test fun emptyDecoratorImplBodyRequiresDefaultMetadata() {
         val result = analyze("""
             annot Name for .Pack {
-                fin value: String
+                fin value: std::String
             }
             pack Feature
             impl Name for Feature {}
@@ -269,15 +269,15 @@ class DecoratorReflectionTest {
     @Test fun decoratorImplAcceptsNamedAndPositionalMetadata() {
         val result = analyze("""
             annot Config for .Pack {
-                fin enabled: Bool = true
-                fin label: String = "default"
+                fin enabled: std::Bool = true
+                fin label: std::String = "default"
             }
             pack NamedFeature
             impl Config(enabled: false, label: "named") for NamedFeature {}
             pack PositionalFeature
             impl Config(true, "positional") for PositionalFeature {}
 
-            func named(): String {
+            func named(): std::String {
                 inline if !std::reflect<NamedFeature>.annotMeta<Config>.enabled {
                     inline fin label = std::reflect<NamedFeature>.annotMeta<Config>.label
                     return label
@@ -286,7 +286,7 @@ class DecoratorReflectionTest {
                 }
             }
 
-            func positional(): String {
+            func positional(): std::String {
                 inline if std::reflect<PositionalFeature>.annotMeta<Config>.enabled {
                     inline fin label = std::reflect<PositionalFeature>.annotMeta<Config>.label
                     return label
@@ -306,12 +306,12 @@ class DecoratorReflectionTest {
     @Test fun decoratorImplCanSupplyRequiredMetadata() {
         val result = analyze("""
             annot Name for .Pack {
-                fin value: String
+                fin value: std::String
             }
             pack Feature
             impl Name(value: "configured") for Feature {}
 
-            func name(): String {
+            func name(): std::String {
                 inline fin value = std::reflect<Feature>.annotMeta<Name>.value
                 return value
             }
@@ -325,7 +325,7 @@ class DecoratorReflectionTest {
 
     @Test fun decoratorImplMetadataUsesDecoratorValidation() {
         val unknown = analyze("""
-            annot Config for .Pack { fin enabled: Bool = true }
+            annot Config for .Pack { fin enabled: std::Bool = true }
             pack Feature
             impl Config(missing: true) for Feature {}
             func main() {}
@@ -333,7 +333,7 @@ class DecoratorReflectionTest {
         assertTrue(unknown.errors.any { "has no field 'missing'" in it }, unknown.errors.toString())
 
         val duplicate = analyze("""
-            annot Config for .Pack { fin enabled: Bool = true }
+            annot Config for .Pack { fin enabled: std::Bool = true }
             pack Feature
             impl Config(true, enabled: false) for Feature {}
             func main() {}
@@ -341,7 +341,7 @@ class DecoratorReflectionTest {
         assertTrue(duplicate.errors.any { "'enabled' is assigned more than once" in it }, duplicate.errors.toString())
 
         val wrongType = analyze("""
-            annot Config for .Pack { fin enabled: Bool = true }
+            annot Config for .Pack { fin enabled: std::Bool = true }
             pack Feature
             impl Config(enabled: "yes") for Feature {}
             func main() {}
@@ -354,25 +354,25 @@ class DecoratorReflectionTest {
             annot First for .Field
             annot Second for .Field
 
-            pack Direct { fin name: String = "" }
+            pack Direct { fin name: std::String = "" }
             impl First for Direct::name {}
 
-            pack DecoratorGroup { fin name: String = "" }
+            pack DecoratorGroup { fin name: std::String = "" }
             impl [First, Second] for DecoratorGroup::name {}
 
-            pack TargetGroup { fin name: String = "", fin password: String = "" }
+            pack TargetGroup { fin name: std::String = "", fin password: std::String = "" }
             impl First for [TargetGroup::name, TargetGroup::password] {}
 
-            pack CrossProduct { fin name: String = "", fin password: String = "" }
+            pack CrossProduct { fin name: std::String = "", fin password: std::String = "" }
             impl [First, Second] for [CrossProduct::name, CrossProduct::password] {}
 
-            pack OneWildcard { fin name: String = "", fin password: String = "" }
+            pack OneWildcard { fin name: std::String = "", fin password: std::String = "" }
             impl First for OneWildcard::* {}
 
-            pack GroupWildcard { fin name: String = "", fin password: String = "" }
+            pack GroupWildcard { fin name: std::String = "", fin password: std::String = "" }
             impl [First, Second] for GroupWildcard::* {}
 
-            func covered(): Int {
+            func covered(): std::Int {
                 inline if std::reflect<Direct::name>.hasDeco<First> &&
                     std::reflect<DecoratorGroup::name>.hasDeco<First> && std::reflect<DecoratorGroup::name>.hasDeco<Second> &&
                     std::reflect<TargetGroup::name>.hasDeco<First> && std::reflect<TargetGroup::password>.hasDeco<First> &&
@@ -397,18 +397,18 @@ class DecoratorReflectionTest {
     @Test fun fieldDecoratorImplPreservesConfiguredAndDefaultMetadata() {
         val result = analyze("""
             annot SerialName for .Field {
-                fin value: String = ""
+                fin value: std::String = ""
             }
-            pack User { fin name: String = "", fin password: String = "" }
+            pack User { fin name: std::String = "", fin password: std::String = "" }
             impl SerialName(value: "login") for User::name {}
             impl SerialName for User::password {}
 
-            func configured(): String {
+            func configured(): std::String {
                 inline fin value = std::reflect<User::name>.annotMeta<SerialName>.value
                 return value
             }
 
-            func defaulted(): String {
+            func defaulted(): std::String {
                 inline fin value = std::reflect<User::password>.annotMeta<SerialName>.value
                 return value
             }
@@ -424,7 +424,7 @@ class DecoratorReflectionTest {
     @Test fun fieldDecoratorImplRejectsUnknownInvalidAndDuplicateSelectors() {
         val unknownField = analyze("""
             annot Marker for .Field
-            pack User { fin name: String = "" }
+            pack User { fin name: std::String = "" }
             impl Marker for User::missing {}
             func main() {}
         """.trimIndent())
@@ -442,7 +442,7 @@ class DecoratorReflectionTest {
 
         val wrongTarget = analyze("""
             annot PackOnly for .Pack
-            pack User { fin name: String = "" }
+            pack User { fin name: std::String = "" }
             impl PackOnly for User::name {}
             func main() {}
         """.trimIndent())
@@ -450,7 +450,7 @@ class DecoratorReflectionTest {
 
         val duplicate = analyze("""
             annot Marker for .Field
-            pack User { fin name: String = "", fin password: String = "" }
+            pack User { fin name: std::String = "", fin password: std::String = "" }
             impl Marker for User::* {}
             impl Marker for User::name {}
             func main() {}
@@ -462,15 +462,15 @@ class DecoratorReflectionTest {
         val hasDeco = analyze("""
             annot Marker for .Pack
             @Marker pack Feature
-            func probe(): Bool { return std::reflect<Feature>.hasDeco<Marker> }
+            func probe(): std::Bool { return std::reflect<Feature>.hasDeco<Marker> }
             func main() {}
         """.trimIndent())
         assertTrue(hasDeco.errors.any { "hasDeco" in it && "compile-time-only" in it }, hasDeco.errors.toString())
 
         val metadata = analyze("""
-            annot Config for .Pack { fin enabled: Bool = true }
+            annot Config for .Pack { fin enabled: std::Bool = true }
             @Config pack Feature
-            func probe(): Bool { return std::reflect<Feature>.annotMeta<Config>.enabled }
+            func probe(): std::Bool { return std::reflect<Feature>.annotMeta<Config>.enabled }
             func main() {}
         """.trimIndent())
         assertTrue(metadata.errors.any { "annotMeta" in it && "compile-time-only" in it }, metadata.errors.toString())
@@ -481,7 +481,7 @@ class DecoratorReflectionTest {
             Parser(Lexer("""
                 annot Marker for .Pack
                 @Marker pack Feature
-                func probe(): Int {
+                func probe(): std::Int {
                     inline if Feature.hasDeco<Marker> { return 1 } else { return 0 }
                 }
             """.trimIndent()).tokenize()).parse()
@@ -491,8 +491,8 @@ class DecoratorReflectionTest {
         val dottedField = assertFailsWith<IllegalStateException> {
             Parser(Lexer("""
                 annot Marker for .Field
-                pack Feature { @Marker fin value: Int = 0 }
-                func probe(): Int {
+                pack Feature { @Marker fin value: std::Int = 0 }
+                func probe(): std::Int {
                     inline if (std::reflect<Feature>.value).hasDeco<Marker> { return 1 } else { return 0 }
                 }
             """.trimIndent()).tokenize()).parse()
@@ -501,8 +501,8 @@ class DecoratorReflectionTest {
 
         val reflected = analyze("""
             annot Marker for [.Pack, .Field]
-            @Marker pack Feature { @Marker fin value: Int = 0 }
-            func probe(): Int {
+            @Marker pack Feature { @Marker fin value: std::Int = 0 }
+            func probe(): std::Int {
                 inline if std::reflect<Feature>.hasDeco<Marker> &&
                     std::reflect<Feature::value>.hasDeco<Marker> { return 1 } else { return 0 }
             }
@@ -526,7 +526,7 @@ class DecoratorReflectionTest {
     @Test fun reflectionReportsUnknownAndMissingMetadata() {
         val unknown = analyze("""
             pack Feature
-            func probe(): Int {
+            func probe(): std::Int {
                 inline if std::reflect<Feature>.hasDeco<Missing> { return 1 } else { return 0 }
             }
             func main() {}
@@ -534,9 +534,9 @@ class DecoratorReflectionTest {
         assertTrue(unknown.errors.any { "unknown decorator 'Missing'" in it }, unknown.errors.toString())
 
         val absent = analyze("""
-            annot Config for .Pack { fin enabled: Bool = true }
+            annot Config for .Pack { fin enabled: std::Bool = true }
             pack Feature
-            func probe(): Int {
+            func probe(): std::Int {
                 inline if std::reflect<Feature>.annotMeta<Config>.enabled { return 1 } else { return 0 }
             }
             func main() {}
@@ -544,9 +544,9 @@ class DecoratorReflectionTest {
         assertTrue(absent.errors.any { "decorator 'Config' is not applied" in it }, absent.errors.toString())
 
         val missingField = analyze("""
-            annot Config for .Pack { fin enabled: Bool = true }
+            annot Config for .Pack { fin enabled: std::Bool = true }
             @Config pack Feature
-            func probe(): Int {
+            func probe(): std::Int {
                 inline if std::reflect<Feature>.annotMeta<Config>.missing { return 1 } else { return 0 }
             }
             func main() {}
@@ -574,21 +574,21 @@ class DecoratorReflectionTest {
 
     @Test fun decoratorApplicationsValidateFieldAssignments() {
         val unknown = analyze("""
-            annot Config for .Pack { fin enabled: Bool = true }
+            annot Config for .Pack { fin enabled: std::Bool = true }
             @Config(missing: true) pack Feature
             func main() {}
         """.trimIndent())
         assertTrue(unknown.errors.any { "has no field 'missing'" in it }, unknown.errors.toString())
 
         val duplicate = analyze("""
-            annot Config for .Pack { fin enabled: Bool = true }
+            annot Config for .Pack { fin enabled: std::Bool = true }
             @Config(true, enabled: false) pack Feature
             func main() {}
         """.trimIndent())
         assertTrue(duplicate.errors.any { "'enabled' is assigned more than once" in it }, duplicate.errors.toString())
 
         val tooMany = analyze("""
-            annot Config for .Pack { fin enabled: Bool = true }
+            annot Config for .Pack { fin enabled: std::Bool = true }
             @Config(true, false) pack Feature
             func main() {}
         """.trimIndent())
@@ -597,14 +597,14 @@ class DecoratorReflectionTest {
 
     @Test fun decoratorApplicationsValidateRequiredFieldsAndLiteralTypes() {
         val missing = analyze("""
-            annot Name for .Pack { fin value: String }
+            annot Name for .Pack { fin value: std::String }
             @Name pack Feature
             func main() {}
         """.trimIndent())
         assertTrue(missing.errors.any { "requires field 'value'" in it }, missing.errors.toString())
 
         val wrongType = analyze("""
-            annot Config for .Pack { fin enabled: Bool }
+            annot Config for .Pack { fin enabled: std::Bool }
             @Config("yes") pack Feature
             func main() {}
         """.trimIndent())

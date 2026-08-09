@@ -42,7 +42,7 @@ class SymbolTest {
         val result = compile("""
             import std.io
             func main() {
-                var x: Int = 5
+                var x: std::Int = 5
                 std::println(x)
             }
         """.trimIndent())
@@ -55,7 +55,7 @@ class SymbolTest {
         val errors = expectFailure("""
             import std.io
             func main() {
-                var x: Int = "hello"
+                var x: std::Int = "hello"
             }
         """.trimIndent())
         assertTrue(errors.any { "type mismatch" in it })
@@ -95,7 +95,7 @@ class SymbolTest {
         val result = compile("""
             import std.io
             func main() {
-                fin x: String = "hello"
+                fin x: std::String = "hello"
                 std::println(x)
             }
         """.trimIndent())
@@ -162,7 +162,7 @@ class SymbolTest {
         val result = compile("""
             import std.io
             func main() {
-                let x: Bool = true
+                let x: std::Bool = true
                 std::println(x)
             }
         """.trimIndent())
@@ -202,7 +202,7 @@ class SymbolTest {
     fun func_explicitReturnType() {
         val result = compile("""
             import std.io
-            func add(a: Int, b: Int): Int {
+            func add(a: std::Int, b: std::Int): std::Int {
                 return a + b
             }
             func main() {
@@ -220,7 +220,7 @@ class SymbolTest {
         // names the fix.
         val result = Compiler().compile("""
             import std.io
-            func add(a: Int, b: Int) {
+            func add(a: std::Int, b: std::Int) {
                 return a + b
             }
             func main() {
@@ -238,7 +238,7 @@ class SymbolTest {
     fun func_declaredReturnTypeIsCarriedIntoTheIr() {
         val result = compile("""
             import std.io
-            func add(a: Int, b: Int): Int {
+            func add(a: std::Int, b: std::Int): std::Int {
                 return a + b
             }
             func main() {
@@ -295,7 +295,7 @@ class SymbolTest {
     fun func_argCountMismatch() {
         val errors = expectFailure("""
             import std.io
-            func add(a: Int, b: Int): Int {
+            func add(a: std::Int, b: std::Int): std::Int {
                 return a + b
             }
             func main() {
@@ -309,7 +309,7 @@ class SymbolTest {
     fun func_returnTypeMismatch() {
         val errors = expectFailure("""
             import std.io
-            func foo(): Int {
+            func foo(): std::Int {
                 return "hello"
             }
             func main() {
@@ -332,7 +332,7 @@ class SymbolTest {
     @Test
     fun func_unknownParameterTypeIsRejected() {
         val errors = expectFailure("""
-            func greet(value: MissingType): String {
+            func greet(value: MissingType): std::String {
                 return "hello"
             }
         """.trimIndent())
@@ -448,7 +448,7 @@ class SymbolTest {
         val result = compile("""
             import std.io
             fin x = 99
-            func foo(x: Int): Int {
+            func foo(x: std::Int): std::Int {
                 return x
             }
             func main() {

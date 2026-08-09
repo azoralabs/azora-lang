@@ -54,7 +54,7 @@ class WasmCodegenExecTest {
         "12",
         """
             import std.io
-            func apply(value: Int, action: (Int) -> Int): Int {
+            func apply(value: std::Int, action: (std::Int) -> std::Int): std::Int {
                 return action(value)
             }
             func main() {
@@ -67,7 +67,7 @@ class WasmCodegenExecTest {
         "before\ninit\n42\n42",
         """
             import std.io
-            func make(): Int {
+            func make(): std::Int {
                 std::println("init")
                 return 42
             }
@@ -96,7 +96,7 @@ class WasmCodegenExecTest {
         "1\n2\n3",
         """
             import std.io
-            react func counter(): Int {
+            react func counter(): std::Int {
                 remember var count = 0
                 count = count + 1
                 return count
@@ -217,7 +217,7 @@ class WasmCodegenExecTest {
         "positive",
         """
         import std.io
-        func classify(n: Int): String {
+        func classify(n: std::Int): std::String {
             if n < 0 { return "negative" } else if n == 0 { return "zero" }
             return "positive"
         }
@@ -269,7 +269,7 @@ class WasmCodegenExecTest {
         "120",
         """
         import std.io
-        func fact(n: Int): Int {
+        func fact(n: std::Int): std::Int {
             if n <= 1 { return 1 }
             return n * fact(n - 1)
         }
@@ -281,8 +281,8 @@ class WasmCodegenExecTest {
         "4\n7",
         """
         import std.io
-        pack Point { var x: Int
-            var y: Int }
+        pack Point { var x: std::Int
+            var y: std::Int }
         func main() { let p = Point(3, 4)
             p.x = p.x + 1
             std::println(p.x)
@@ -298,7 +298,7 @@ class WasmCodegenExecTest {
         "25",
         """
         import std.io
-        func square(n: Int): Int { return n * n }
+        func square(n: std::Int): std::Int { return n * n }
         func main() { var n = 5
             std::println(square(n)) }
         """.trimIndent()

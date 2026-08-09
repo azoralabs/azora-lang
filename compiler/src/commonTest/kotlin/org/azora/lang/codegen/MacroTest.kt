@@ -38,7 +38,7 @@ class MacroTest {
             import std.io
 
             func main() {
-                fin x = @vec[1, 2, 3]
+                fin x = @std::vec[1, 2, 3]
                 std::println(x.size)
                 std::println(x[0])
                 std::println(x[2])
@@ -56,7 +56,7 @@ class MacroTest {
             import std.io
 
             func main() {
-                fin empty: List<Int> = @vec[]
+                fin empty: std::List<std::Int> = @std::vec[]
                 std::println(empty.size)
                 std::println(empty.isEmpty)
             }
@@ -72,9 +72,9 @@ class MacroTest {
             import std.io
 
             func main() {
-                fin a = @vec(1, 2)
-                fin b = @vec[1, 2]
-                fin c = @vec{1, 2}
+                fin a = @std::vec(1, 2)
+                fin b = @std::vec[1, 2]
+                fin c = @std::vec{1, 2}
                 std::println(a.size)
                 std::println(b.size)
                 std::println(c.size)
@@ -94,8 +94,8 @@ class MacroTest {
             import std.io
 
             func main() {
-                fin s = @set[1, 2, 3]
-                fin a = @arr[10, 20, 30]
+                fin s = @std::set[1, 2, 3]
+                fin a = @std::arr[10, 20, 30]
                 std::println(s.size)
                 std::println(a.length)
                 std::println(a[2])
@@ -103,6 +103,21 @@ class MacroTest {
             """,
         )
         assertEquals("3\n3\n30", out)
+    }
+
+    @Test
+    fun macroSigilPrecedesRealm() {
+        val result = Compiler().compile(
+            """
+            import std.container.*
+            func main() { fin values = std::@arr[1, 2, 3] }
+            """.trimIndent(),
+        )
+        assertIs<CompilationResult.Failure>(result)
+        assertTrue(
+            result.errors.any { "Expected member name after '::'" in it || "Unexpected token '@'" in it || "macro" in it },
+            "The reversed 'std::@arr' form must be rejected: ${result.errors}",
+        )
     }
 
     @Test
@@ -137,7 +152,7 @@ class MacroTest {
 
             // `box` expands to a `vec!` invocation, which must then itself expand.
             macro @box {
-                [...${'$'}xs] => @vec[...${'$'}xs]
+                [...${'$'}xs] => @std::vec[...${'$'}xs]
             }
 
             func main() {
@@ -196,7 +211,7 @@ class MacroTest {
             import std.container.*
 
             func main() {
-                fin x = @vec[1, 2, 3]
+                fin x = @std::vec[1, 2, 3]
             }
             """,
         )

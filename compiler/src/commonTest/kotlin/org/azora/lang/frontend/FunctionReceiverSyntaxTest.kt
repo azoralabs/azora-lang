@@ -23,11 +23,11 @@ class FunctionReceiverSyntaxTest {
         val program = parse(
             """
             pack Language {
-                fin name: String
+                fin name: std::String
             }
 
             impl Language {
-                func greeting[self: Self&](): String {
+                func greeting[self: std::Self&](): std::String {
                     return self.name
                 }
             }
@@ -48,7 +48,7 @@ class FunctionReceiverSyntaxTest {
                 pack Language
 
                 impl Language {
-                    func greeting(): String { self& ->
+                    func greeting(): std::String { self& ->
                         return "hello"
                     }
                 }

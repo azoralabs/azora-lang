@@ -140,9 +140,9 @@ class DecoratorTargetTest {
             annot OnParam for .Param
             pack P {
                 @OnField
-                fin value: Int
+                fin value: std::Int
             }
-            func read(value: @OnParam Int): Int { return value }
+            func read(value: @OnParam std::Int): std::Int { return value }
             func main() {}
         """.trimIndent())
         assertTrue(result.errors.isEmpty(), result.errors.toString())

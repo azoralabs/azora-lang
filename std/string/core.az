@@ -16,7 +16,7 @@
 
 exposed module std.string.core
 
-use realm std {
+realm std {
     @Since("0.1")
     bridge pack String
 }

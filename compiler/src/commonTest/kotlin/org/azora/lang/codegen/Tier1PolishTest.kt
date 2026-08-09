@@ -31,7 +31,7 @@ class Tier1PolishTest {
             func main() {
                 var x = 5
                 var y = "hello"
-                if (x is Int && y is! Int) {
+                if (x is std::Int && y is! std::Int) {
                     std::println("yes")
                 }
             }
@@ -43,7 +43,7 @@ class Tier1PolishTest {
             import std.io
             func main() {
                 var s = "hello"
-                if (s is! Int) {
+                if (s is! std::Int) {
                     std::println("not int")
                 }
             }
@@ -83,7 +83,7 @@ class Tier1PolishTest {
         assertEquals("10", run("""
             import std.io
             func main() {
-                var x: Int? = null
+                var x: std::Int? = null
                 x ?= 10
                 std::println(x)
             }
@@ -94,7 +94,7 @@ class Tier1PolishTest {
         assertEquals("5", run("""
             import std.io
             func main() {
-                var y: Int? = 5
+                var y: std::Int? = 5
                 y ?= 99
                 std::println(y)
             }
@@ -107,7 +107,7 @@ class Tier1PolishTest {
         assertEquals("15", run("""
             import std.io
             func main() {
-                var x: Int? = 5
+                var x: std::Int? = 5
                 x ?+= 10
                 std::println(x)
             }
@@ -118,7 +118,7 @@ class Tier1PolishTest {
         assertEquals("null", run("""
             import std.io
             func main() {
-                var y: Int? = null
+                var y: std::Int? = null
                 y ?+= 10
                 std::println(y)
             }
@@ -129,16 +129,16 @@ class Tier1PolishTest {
         assertEquals("8\n4\n16\n2", run("""
             import std.io
             func main() {
-                var a: Int? = 4
+                var a: std::Int? = 4
                 a ?+= 4
                 std::println(a)
-                var b: Int? = 8
+                var b: std::Int? = 8
                 b ?-= 4
                 std::println(b)
-                var c: Int? = 4
+                var c: std::Int? = 4
                 c ?*= 4
                 std::println(c)
-                var d: Int? = 8
+                var d: std::Int? = 8
                 d ?/= 4
                 std::println(d)
             }
@@ -151,7 +151,7 @@ class Tier1PolishTest {
         assertEquals("6", run("""
             import std.io
             func main() {
-                var x: Int? = 5
+                var x: std::Int? = 5
                 x ?++
                 std::println(x)
             }
@@ -162,7 +162,7 @@ class Tier1PolishTest {
         assertEquals("null", run("""
             import std.io
             func main() {
-                var y: Int? = null
+                var y: std::Int? = null
                 y ?--
                 std::println(y)
             }
@@ -421,10 +421,10 @@ class Tier1PolishTest {
         assertEquals("15", run("""
             import std.io
             pack Box {
-                var v: Int
+                var v: std::Int
             }
             macro ${'$'}a @combine ${'$'}b
-            func combine(self: Box, other: Box): Int {
+            func combine(self: Box, other: Box): std::Int {
                 return self.v * other.v
             }
             func main() {
@@ -439,8 +439,8 @@ class Tier1PolishTest {
         assertEquals("4\n6", run("""
             import std.io
             pack Vec {
-                var x: Int
-                var y: Int
+                var x: std::Int
+                var y: std::Int
             }
             macro ${'$'}a @add ${'$'}b
             func add(self: Vec, other: Vec): Vec {
@@ -460,11 +460,11 @@ class Tier1PolishTest {
         assertEquals("8", run("""
             import std.io
             pack Pair {
-                var a: Int
-                var b: Int
+                var a: std::Int
+                var b: std::Int
             }
             macro ${'$'}a @merged ${'$'}b
-            func merged(self: Pair, other: Pair): Int {
+            func merged(self: Pair, other: Pair): std::Int {
                 return self.a + other.b
             }
             func main() {
@@ -481,16 +481,16 @@ class Tier1PolishTest {
         assertEquals("20\n99", run("""
             import std.io
             pack IntBag {
-                var data: Array<Int>
+                var data: std::Array<std::Int>
             }
-            impl oper[] for IntBag { self&, i: Int ->
+            impl oper[] for IntBag { self&, i: std::Int ->
                 return self.data[i]
             }
-            impl oper[]= for IntBag { self!, i: Int, v: Int ->
+            impl oper[]= for IntBag { self!, i: std::Int, v: std::Int ->
                 self.data[i] = v
             }
             func main() {
-                var b = IntBag(@arr[10, 20, 30])
+                var b = IntBag(@std::arr[10, 20, 30])
                 std::println(b[1])
                 b[1] = 99
                 std::println(b[1])
@@ -503,7 +503,7 @@ class Tier1PolishTest {
     @Test fun itTypeInferredFromExpectedFunctionType() {
         assertEquals("6", run("""
             import std.io
-            func apply(f: (Int) -> Int, x: Int): Int {
+            func apply(f: (std::Int) -> std::Int, x: std::Int): std::Int {
                 return f(x)
             }
             func main() {
@@ -515,7 +515,7 @@ class Tier1PolishTest {
     @Test fun itInferenceComposes() {
         assertEquals("12", run("""
             import std.io
-            func twice(f: (Int) -> Int, x: Int): Int {
+            func twice(f: (std::Int) -> std::Int, x: std::Int): std::Int {
                 return f(f(x))
             }
             func main() {
@@ -543,7 +543,7 @@ class Tier1PolishTest {
         assertEquals("one\ntwo", run("""
             import std.io
             func main() {
-                var m = @arr[1: "one", 2: "two"]
+                var m = @std::arr[1: "one", 2: "two"]
                 std::println(m[1])
                 std::println(m[2])
             }
@@ -554,7 +554,7 @@ class Tier1PolishTest {
         assertEquals("red", run("""
             import std.io
             func main() {
-                var colors: Map<Int, String> = @arr[1: "red", 2: "green"]
+                var colors: std::Map<std::Int, std::String> = @std::arr[1: "red", 2: "green"]
                 std::println(colors[1])
             }
         """.trimIndent()))

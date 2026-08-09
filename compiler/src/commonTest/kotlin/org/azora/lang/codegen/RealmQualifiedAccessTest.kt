@@ -5,6 +5,8 @@ import org.azora.lang.Compiler
 import org.azora.lang.backend.IrInterpreter
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 /**
  * A type declared inside a realm keeps its bare name and is reached from
@@ -24,6 +26,21 @@ class RealmQualifiedAccessTest {
             throw AssertionError("compilation failed:\n  " + result.errors.joinToString("\n  "))
         }
         return IrInterpreter().interpret((result as CompilationResult.Success).ir).trim()
+    }
+
+    @Test fun reflectionRequiresItsRealmOutsideTheRealm() {
+        val result = Compiler().compile(
+            """
+            import std.reflection
+            inline fin visible = reflect<std::Int>.hasDeco<std::Experimental>
+            func main() {}
+            """.trimIndent(),
+        )
+        assertIs<CompilationResult.Failure>(result)
+        assertTrue(
+            result.errors.any { "std::reflect" in it },
+            "Bare reflect must point to its realm-qualified spelling: ${result.errors}",
+        )
     }
 
     @Test fun enumCaseIsReachableThroughItsRealm() {
@@ -51,7 +68,7 @@ class RealmQualifiedAccessTest {
             run(
                 """
                 import std.io
-                realm shapes { variant enum Kind { Sized(n: Int) Empty } }
+                realm shapes { variant enum Kind { Sized(n: std::Int) Empty } }
                 func main() {
                     fin kind = shapes::Kind.Sized(3)
                     when kind {
@@ -109,7 +126,7 @@ class RealmQualifiedAccessTest {
                 """
                 import std.io
                 import std.serializer
-                func seven(): Int ?! std::SerializationError {
+                func seven(): std::Int ?! std::SerializationError {
                     return 7
                 }
                 func main() { std::println(seven() catch 0) }
@@ -129,10 +146,10 @@ class RealmQualifiedAccessTest {
             run(
                 """
                 import std.io
-                spec Area { func area[self: Self&](): Int }
-                realm shapes { pack Square { fin side: Int = 0 } }
+                spec Area { func area[self: std::Self&](): std::Int }
+                realm shapes { pack Square { fin side: std::Int = 0 } }
                 impl Area for shapes::Square {
-                    func area[self: Self&](): Int { return self.side * self.side }
+                    func area[self: std::Self&](): std::Int { return self.side * self.side }
                 }
                 func main() { std::println(shapes::Square(4).area()) }
                 """.trimIndent(),
@@ -152,8 +169,8 @@ class RealmQualifiedAccessTest {
                 """
                 import std.io
                 import std.traits
-                realm shapes { pack Square { fin side: Int = 0 } }
-                derive [Equal] for shapes::Square
+                realm shapes { pack Square { fin side: std::Int = 0 } }
+                derive [std::Equal] for shapes::Square
                 func main() {
                     std::println(if shapes::Square(2) == shapes::Square(2) { "eq" } else { "ne" })
                 }
@@ -170,8 +187,8 @@ class RealmQualifiedAccessTest {
                 """
                 import std.io
                 import std.serializer
-                @Serializable
-                pack User { fin name: String = "" }
+                @std::Serializable
+                pack User { fin name: std::String = "" }
                 impl std::SerialName(value: "display_name") for User::name {}
                 func main() {
                     fin user = User("Ada")
@@ -191,8 +208,8 @@ class RealmQualifiedAccessTest {
                 """
                 import std.io
                 import std.serializer
-                @Serializable
-                pack User { fin name: String = "" fin token: String = "t" }
+                @std::Serializable
+                pack User { fin name: std::String = "" fin token: std::String = "t" }
                 impl std::SerialIgnore for User::* {}
                 func main() {
                     fin user = User("Ada", "t")
@@ -216,9 +233,9 @@ class RealmQualifiedAccessTest {
                 """
                 import std.io
                 import std.serializer
-                pack Square { fin side: Int = 0 }
-                @Serializable
-                pack Holder { fin Square: Int = 0 }
+                pack Square { fin side: std::Int = 0 }
+                @std::Serializable
+                pack Holder { fin Square: std::Int = 0 }
                 impl std::SerialIgnore for Holder::Square {}
                 func main() {
                     fin holder = Holder(2)
@@ -237,10 +254,10 @@ class RealmQualifiedAccessTest {
             run(
                 """
                 import std.io
-                realm caps { spec Named { func label[self: Self&](): String } }
+                realm caps { spec Named { func label[self: std::Self&](): std::String } }
                 pack Tag
                 impl caps::Named for Tag {
-                    func label[self: Self&](): String { return "ok" }
+                    func label[self: std::Self&](): std::String { return "ok" }
                 }
                 func main() { std::println(Tag().label()) }
                 """.trimIndent(),

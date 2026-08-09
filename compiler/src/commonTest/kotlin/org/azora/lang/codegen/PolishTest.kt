@@ -19,7 +19,7 @@ class PolishTest {
     @Test fun defaultParamValue() {
         assertEquals("Hello, World!\nHi, World!", run("""
             import std.io
-            func greet(name: String, greeting: String = "Hello") {
+            func greet(name: std::String, greeting: std::String = "Hello") {
                 std::println(greeting + ", " + name + "!")
             }
             func main() {
@@ -32,7 +32,7 @@ class PolishTest {
     @Test fun defaultParamInt() {
         assertEquals("1\n42", run("""
             import std.io
-            func power(base: Int, exp: Int = 0): Int {
+            func power(base: std::Int, exp: std::Int = 0): std::Int {
                 if exp == 0 { return 1 }
                 return base
             }
@@ -47,7 +47,7 @@ class PolishTest {
     @Test fun namedFunctionArgs() {
         assertEquals("A:30", run("""
             import std.io
-            func create(label: String, value: Int): String {
+            func create(label: std::String, value: std::Int): std::String {
                 return label + ":" + value
             }
             func main() {
@@ -80,7 +80,7 @@ class PolishTest {
         val result = Compiler().compile("""
             import std.io
             variant enum Opt {
-                Some(Int)
+                Some(std::Int)
                 None
             }
             func main() {

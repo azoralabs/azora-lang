@@ -63,7 +63,7 @@ class GenericRealTest {
             import std.io
             $box
             func main() {
-                fin b = Box<Double>(2.5)
+                fin b = Box<std::Double>(2.5)
                 std::println(b.value)
             }
         """.trimIndent()))
@@ -74,7 +74,7 @@ class GenericRealTest {
             import std.io
             $box
             func main() {
-                var b = Box<Double>(0.0)
+                var b = Box<std::Double>(0.0)
                 b.value = 7.25
                 std::println(b.value)
             }
@@ -86,8 +86,8 @@ class GenericRealTest {
             import std.io
             $box
             func main() {
-                std::println(Box<Int>(42).value)
-                std::println(Box<String>("ok").value)
+                std::println(Box<std::Int>(42).value)
+                std::println(Box<std::String>("ok").value)
             }
         """.trimIndent()))
     }
@@ -102,9 +102,9 @@ class GenericRealTest {
                 var second: B
             }
             func main() {
-                fin p = Pair<Double, Int>(1.5, 3)
+                fin p = Pair<std::Double, std::Int>(1.5, 3)
                 std::println("${'$'}{p.first} ${'$'}{p.second}")
-                fin q = Pair<Int, Double>(3, 1.5)
+                fin q = Pair<std::Int, std::Double>(3, 1.5)
                 std::println("${'$'}{q.first} ${'$'}{q.second}")
             }
         """.trimIndent()))
@@ -117,7 +117,7 @@ class GenericRealTest {
                 return value
             }
             func main() {
-                std::println(identity<Double>(1.5))
+                std::println(identity<std::Double>(1.5))
             }
         """.trimIndent()))
     }
@@ -127,15 +127,15 @@ class GenericRealTest {
             import std.io
             import std.container.array
             pack Keyframe<T> {
-                var time: Double
+                var time: std::Double
                 var value: T
             }
             func main() {
-                var keys: std::Array<Keyframe<Double>> = Array::fill<Keyframe<Double>>(2)
-                keys[0] = Keyframe<Double>(0.0, 10.0)
-                keys[1] = Keyframe<Double>(1.0, 20.0)
-                fin a: Keyframe<Double> = keys[0]
-                fin b: Keyframe<Double> = keys[1]
+                var keys: std::Array<Keyframe<std::Double>> = std::Array::fill<Keyframe<std::Double>>(2)
+                keys[0] = Keyframe<std::Double>(0.0, 10.0)
+                keys[1] = Keyframe<std::Double>(1.0, 20.0)
+                fin a: Keyframe<std::Double> = keys[0]
+                fin b: Keyframe<std::Double> = keys[1]
                 std::println("${'$'}{a.value} ${'$'}{b.value}")
             }
         """.trimIndent()))
@@ -146,7 +146,7 @@ class GenericRealTest {
             $box
             import std.io
             func main() {
-                fin b = Box<Double>(2.5)
+                fin b = Box<std::Double>(2.5)
                 std::println(b.value)
             }
         """.trimIndent())
@@ -162,7 +162,7 @@ class GenericRealTest {
         assertEquals("3.5", run("""
             import std.io
             pack Plain {
-                var value: Double
+                var value: std::Double
             }
             func main() {
                 std::println(Plain(3.5).value)

@@ -16,7 +16,7 @@
 
 exposed module std.convert.core
 
-use realm std {
+realm std {
     @Experimental(since: "0.1")
     bridge annot UncheckedCast for [.Func, .AsyncFunc, .Prop, .AsyncProp, .Var, .Fin, .Oper]
 }

@@ -32,7 +32,7 @@ class WasmLambdaExecTest {
         """
         import std.io
         func main() {
-            fin double = { value: Int -> return value * 2 }
+            fin double = { value: std::Int -> return value * 2 }
             std::println(double(5))
         }
         """.trimIndent(),
@@ -45,7 +45,7 @@ class WasmLambdaExecTest {
         import std.io
         func main() {
             fin offset = 3
-            fin add = [; offset.&] { value: Int -> return value + offset }
+            fin add = [; offset.&] { value: std::Int -> return value + offset }
             std::println(add(4))
         }
         """.trimIndent(),
@@ -58,7 +58,7 @@ class WasmLambdaExecTest {
         import std.io
         func main() {
             var n = 1
-            fin add = [; n.!] { value: Int -> n = n + value
+            fin add = [; n.!] { value: std::Int -> n = n + value
                 return n }
             fin read = [; n.&] { n }
             std::println(add(4))
@@ -88,11 +88,11 @@ class WasmLambdaExecTest {
         "16",
         """
         import std.io
-        func apply(operation: (Int) -> Int, value: Int): Int {
+        func apply(operation: (std::Int) -> std::Int, value: std::Int): std::Int {
             return operation(value)
         }
         func main() {
-            fin square = { value: Int -> return value * value }
+            fin square = { value: std::Int -> return value * value }
             std::println(apply(square, 4))
         }
         """.trimIndent(),
@@ -106,7 +106,7 @@ class WasmLambdaExecTest {
         func main() {
             fin whole = 3
             fin fraction = 0.5
-            fin add = [; whole.&, fraction.&] { value: Double ->
+            fin add = [; whole.&, fraction.&] { value: std::Double ->
                 return value + whole + fraction
             }
             std::println(add(4.0))
@@ -119,8 +119,8 @@ class WasmLambdaExecTest {
         "10",
         """
         import std.io
-        fin scale: [Int](Int) -> Int =
-            [value: Int] { factor: Int -> value * factor }
+        fin scale: [std::Int](std::Int) -> std::Int =
+            [value: std::Int] { factor: std::Int -> value * factor }
 
         func main() {
             with 5 {

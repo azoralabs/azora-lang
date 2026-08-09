@@ -56,9 +56,9 @@ class UnionTest {
 
     private val value = """
         unsafe union Value {
-            i: Int
-            d: Double
-            b: Bool
+            i: std::Int
+            d: std::Double
+            b: std::Bool
         }
     """.trimIndent()
 
@@ -92,7 +92,7 @@ class UnionTest {
     @Test
     fun aUnionMustBeDeclaredUnsafe() = rejects("""
         union Value {
-            i: Int
+            i: std::Int
         }
     """, "declare it 'unsafe union Value'")
 

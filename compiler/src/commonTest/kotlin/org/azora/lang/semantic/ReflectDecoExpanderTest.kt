@@ -25,7 +25,7 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /**
- * `inline for X in reflect<*>.withDeco<D>` over decorated declarations.
+ * `inline for X in std::reflect<*>.withDeco<D>` over decorated declarations.
  *
  * The point of the loop is that a library can find what a program declared
  * without the program registering anything. That only works if the loop can
@@ -54,8 +54,8 @@ class ReflectDecoExpanderTest {
 
     private val marked = """
         annot Marked for [.Pack, .Func] {
-            fin order: Int = 0
-            fin tag: String = "none"
+            fin order: std::Int = 0
+            fin tag: std::String = "none"
         }
     """.trimIndent()
 
@@ -84,10 +84,10 @@ class ReflectDecoExpanderTest {
             $marked
 
             @Marked
-            pack Alpha { var v: Int }
+            pack Alpha { var v: std::Int }
 
             @Marked
-            pack Beta { var v: Int }
+            pack Beta { var v: std::Int }
 
             func main() {
                 inline for T in std::reflect<*>.withDeco<Marked> {
@@ -223,12 +223,12 @@ class ReflectDecoExpanderTest {
             $marked
 
             @Marked
-            func alpha(n: Int) { std::println("alpha ${'$'}n") }
+            func alpha(n: std::Int) { std::println("alpha ${'$'}n") }
 
             @Marked
-            func beta(n: Int) { std::println("beta ${'$'}n") }
+            func beta(n: std::Int) { std::println("beta ${'$'}n") }
 
-            func runAll(n: Int) {
+            func runAll(n: std::Int) {
                 inline for S in std::reflect<*>.withDeco<Marked> {
                     S(n)
                 }
@@ -262,7 +262,7 @@ class ReflectDecoExpanderTest {
             $marked
 
             @Marked(order: 3)
-            pack Alpha { var v: Int }
+            pack Alpha { var v: std::Int }
 
             func main() {
                 std::println(std::reflect<Alpha>.annotMeta<Marked>.order)

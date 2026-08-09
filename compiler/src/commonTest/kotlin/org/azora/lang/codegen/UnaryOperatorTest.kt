@@ -46,8 +46,8 @@ class UnaryOperatorTest {
         assertEquals("-3\n-4", run("""
             import std.io
             pack Vec2 {
-                var x: Int
-                var y: Int
+                var x: std::Int
+                var y: std::Int
             }
             oper- [self: Vec2&]: Vec2 {
                 return Vec2(0 - self.x, 0 - self.y)
@@ -65,7 +65,7 @@ class UnaryOperatorTest {
         assertEquals("true\nfalse", run("""
             import std.io
             pack Flag {
-                var on: Bool
+                var on: std::Bool
             }
             oper! [self: Flag&]: Flag {
                 return Flag(!self.on)
@@ -81,7 +81,7 @@ class UnaryOperatorTest {
         assertEquals("5", run("""
             import std.io
             pack Mask {
-                var bits: Int
+                var bits: std::Int
             }
             oper~ [self: Mask&]: Mask {
                 return Mask(5)
@@ -100,7 +100,7 @@ class UnaryOperatorTest {
         assertEquals("-2\n5", run("""
             import std.io
             pack Num {
-                var v: Int
+                var v: std::Int
             }
             oper- [self: Num&]: Num {
                 return Num(0 - self.v)

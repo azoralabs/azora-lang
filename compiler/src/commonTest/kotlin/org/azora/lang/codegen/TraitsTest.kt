@@ -25,14 +25,14 @@ class TraitsTest {
         assertEquals("Point(3, 4)", run("""
             import std.io
             pack Point {
-                var x: Int
-                var y: Int
+                var x: std::Int
+                var y: std::Int
             }
             spec Describable {
-                func describe[self: Self&](): String
+                func describe[self: std::Self&](): std::String
             }
             impl Describable for Point {
-                func describe(): String {
+                func describe(): std::String {
                     return "Point(" + self.x + ", " + self.y + ")"
                 }
             }
@@ -47,18 +47,18 @@ class TraitsTest {
         assertEquals("green\n0", run("""
             import std.io
             pack Light {
-                var color: String
-                var brightness: Int
+                var color: std::String
+                var brightness: std::Int
             }
             spec Device {
-                func status[self: Self&](): String
-                func level[self: Self&](): Int
+                func status[self: std::Self&](): std::String
+                func level[self: std::Self&](): std::Int
             }
             impl Device for Light {
-                func status(): String {
+                func status(): std::String {
                     return self.color
                 }
-                func level(): Int {
+                func level(): std::Int {
                     return self.brightness
                 }
             }
@@ -74,14 +74,14 @@ class TraitsTest {
         val errors = expectFailure("""
             import std.io
             spec Describable {
-                func describe[self: Self&](): String
-                func detail[self: Self&](): String
+                func describe[self: std::Self&](): std::String
+                func detail[self: std::Self&](): std::String
             }
             pack P {
-                var x: Int
+                var x: std::Int
             }
             impl Describable for P {
-                func describe(): String {
+                func describe(): std::String {
                     return "P"
                 }
             }
@@ -94,10 +94,10 @@ class TraitsTest {
         val errors = expectFailure("""
             import std.io
             pack P {
-                var x: Int
+                var x: std::Int
             }
             impl NonExistent for P {
-                func foo(): Int {
+                func foo(): std::Int {
                     return 42
                 }
             }
@@ -110,10 +110,10 @@ class TraitsTest {
         assertEquals("42", run("""
             import std.io
             pack P {
-                var x: Int
+                var x: std::Int
             }
             impl P {
-                func getX(): Int {
+                func getX(): std::Int {
                     return self.x
                 }
             }
@@ -128,7 +128,7 @@ class TraitsTest {
         assertEquals("", run("""
             annot Serializable {}
             pack UserId {
-                fin value: Long
+                fin value: std::Long
             }
             impl Serializable for UserId {}
             func main() {}
@@ -138,7 +138,7 @@ class TraitsTest {
     @Test fun decoratorImplementationRequiresAnExplicitBody() {
         val errors = expectFailure("""
             annot Serializable {}
-            pack UserId { fin value: Long }
+            pack UserId { fin value: std::Long }
             impl Serializable for UserId
             func main() {}
         """.trimIndent())
@@ -149,10 +149,10 @@ class TraitsTest {
         val errors = expectFailure("""
             annot Serializable {}
             pack UserId {
-                fin value: Long
+                fin value: std::Long
             }
             impl Serializable for UserId {
-                func generated[self: Self&](): Unit {
+                func generated[self: std::Self&](): std::Unit {
                     return
                 }
             }
@@ -165,7 +165,7 @@ class TraitsTest {
         val errors = expectFailure("""
             annot Serializable {}
             pack UserId {
-                fin value: Long
+                fin value: std::Long
             }
             impl Serializable for UserId {}
             impl Serializable for UserId {}

@@ -118,7 +118,7 @@ realm std {
      * never emitted: each backend and the interpreter intercepts the call by
      * its realm-mangled name and lowers it to the native runtime operation.
      * Reach them as `std::concurrency::cancel`, etc., after
-     * `use std.concurrency`.
+     * `import std.concurrency`.
      */
     realm concurrency {
         /**

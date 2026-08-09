@@ -89,7 +89,7 @@ class LlvmOptimizedExecTest {
         "120",
         """
         import std.io
-        func fact(n: Int): Int {
+        func fact(n: std::Int): std::Int {
             if n <= 1 { return 1 }
             return n * fact(n - 1)
         }

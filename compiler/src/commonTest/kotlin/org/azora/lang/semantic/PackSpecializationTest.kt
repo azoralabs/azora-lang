@@ -30,7 +30,7 @@ import kotlin.test.assertTrue
 class PackSpecializationTest {
 
     private val vec = """
-        pack Vec<T, N: Int> {
+        pack Vec<T, N: std::Int> {
             var x: T = 0
             var y: T = 0
             inline if N >= 3 { var z: T = 0 }
@@ -41,8 +41,8 @@ class PackSpecializationTest {
     private fun read(size: String, field: String) = Compiler().compile(
         """
         $vec
-        func read(): Int {
-            fin a: Vec<Int, $size> = Vec<Int, $size>(1, 2)
+        func read(): std::Int {
+            fin a: Vec<std::Int, $size> = Vec<std::Int, $size>(1, 2)
             return a.$field
         }
         """.trimIndent(),
@@ -79,7 +79,7 @@ class PackSpecializationTest {
         assertIs<CompilationResult.Success>(Compiler().compile(
             """
             $vec
-            pack Holder<T, N: Int> {
+            pack Holder<T, N: std::Int> {
                 var inner: Vec<T, N>
             }
             """.trimIndent(),
@@ -92,9 +92,9 @@ class PackSpecializationTest {
         assertIs<CompilationResult.Success>(Compiler().compile(
             """
             $vec
-            func a(): Int { fin v: Vec<Int, 3> = Vec<Int, 3>(1, 2) return v.z }
-            func b(): Int { fin v: Vec<Int, 3> = Vec<Int, 3>(3, 4) return v.z }
-            func c(): Int { fin v: Vec<Int, 3> = Vec<Int, 3>(5, 6) return v.z }
+            func a(): std::Int { fin v: Vec<std::Int, 3> = Vec<std::Int, 3>(1, 2) return v.z }
+            func b(): std::Int { fin v: Vec<std::Int, 3> = Vec<std::Int, 3>(3, 4) return v.z }
+            func c(): std::Int { fin v: Vec<std::Int, 3> = Vec<std::Int, 3>(5, 6) return v.z }
             """.trimIndent(),
             release = false,
         ))
@@ -110,8 +110,8 @@ class PackSpecializationTest {
             """
             $vec
             pack Box<T> { var item: T }
-            func nested(): Int {
-                fin b: Box<Vec<Int, 3>> = Box<Vec<Int, 3>>(Vec<Int, 3>(1, 2))
+            func nested(): std::Int {
+                fin b: Box<Vec<std::Int, 3>> = Box<Vec<std::Int, 3>>(Vec<std::Int, 3>(1, 2))
                 return b.item.z
             }
             """.trimIndent(),
@@ -125,8 +125,8 @@ class PackSpecializationTest {
         assertIs<CompilationResult.Success>(Compiler().compile(
             """
             $vec
-            func build(): Int {
-                fin v = Vec<Int, 4>(1, 2)
+            func build(): std::Int {
+                fin v = Vec<std::Int, 4>(1, 2)
                 return v.w
             }
             """.trimIndent(),
@@ -136,7 +136,7 @@ class PackSpecializationTest {
 
     @Test fun anInvalidCombinationIsRejectedBeforePublication() {
         val constrained = """
-            pack Bounded<T, N: Int> where T is Number && N in 2..4 {
+            pack Bounded<T, N: std::Int> where T is std::Number && N in 2..4 {
                 var x: T = 0
                 inline if N >= 3 { var z: T = 0 }
             }
@@ -144,7 +144,7 @@ class PackSpecializationTest {
         val badConst = assertIs<CompilationResult.Failure>(Compiler().compile(
             """
             $constrained
-            func bad(): Int { fin v: Bounded<Int, 9> = Bounded<Int, 9>(1) return v.x }
+            func bad(): std::Int { fin v: Bounded<std::Int, 9> = Bounded<std::Int, 9>(1) return v.x }
             """.trimIndent(),
             release = false,
         ))

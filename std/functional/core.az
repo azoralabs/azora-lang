@@ -23,7 +23,7 @@ exposed module std.functional.core
  * their representation and invocation ABI; `bridge` makes that contract
  * explicit to source code and tooling.
  */
-use realm std {
+realm std {
     /**
      * A storable synchronous callable.
      *

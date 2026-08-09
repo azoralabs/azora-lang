@@ -48,10 +48,10 @@ class ConvertSpecTest {
             import std.io
             import std.convert
             pack Username {
-                value: String
+                value: std::String
             }
-            impl From<String> for Username:: {
-                func from(value: String): Self {
+            impl std::From<std::String> for Username:: {
+                func from(value: std::String): std::Self {
                     return Username(value: value)
                 }
             }
@@ -68,10 +68,10 @@ class ConvertSpecTest {
             import std.io
             import std.convert
             pack Label {
-                var value: String
+                var value: std::String
             }
-            impl Into<String> for Label {
-                prop into[self: Self&]: String {
+            impl std::Into<std::String> for Label {
+                prop into[self: std::Self&]: std::String {
                     return "Label(" + self.value + ")"
                 }
             }
@@ -91,9 +91,9 @@ class ConvertSpecTest {
             import std.io
             import std.convert
             pack Label {
-                var value: String
+                var value: std::String
             }
-            impl Into<String> for Label { self& ->
+            impl std::Into<std::String> for Label { self& ->
                 return self.value
             }
             func main() {}

@@ -76,7 +76,7 @@ class LlvmCodegenExecTest {
         "12",
         """
             import std.io
-            func apply(value: Int, action: (Int) -> Int): Int {
+            func apply(value: std::Int, action: (std::Int) -> std::Int): std::Int {
                 return action(value)
             }
             func main() {
@@ -89,7 +89,7 @@ class LlvmCodegenExecTest {
         "before\ninit\n42\n42",
         """
             import std.io
-            func make(): Int {
+            func make(): std::Int {
                 std::println("init")
                 return 42
             }
@@ -118,7 +118,7 @@ class LlvmCodegenExecTest {
         "1\n2\n3",
         """
             import std.io
-            react func counter(): Int {
+            react func counter(): std::Int {
                 remember var count = 0
                 count = count + 1
                 return count
@@ -149,7 +149,7 @@ class LlvmCodegenExecTest {
         "1\n2",
         """
         import std.io
-        react async func next(): Int {
+        react async func next(): std::Int {
             remember var value = 0
             value += 1
             return value
@@ -364,7 +364,7 @@ class LlvmCodegenExecTest {
         "7",
         """
         import std.io
-        func add(a: Int, b: Int): Int { return a + b }
+        func add(a: std::Int, b: std::Int): std::Int { return a + b }
         func main() { std::println(add(3, 4)) }
         """.trimIndent()
     )
@@ -373,7 +373,7 @@ class LlvmCodegenExecTest {
         "120",
         """
         import std.io
-        func fact(n: Int): Int {
+        func fact(n: std::Int): std::Int {
             if n <= 1 { return 1 }
             return n * fact(n - 1)
         }
@@ -385,7 +385,7 @@ class LlvmCodegenExecTest {
         "55",
         """
         import std.io
-        func fib(n: Int): Int {
+        func fib(n: std::Int): std::Int {
             if n < 2 { return n }
             return fib(n - 1) + fib(n - 2)
         }
@@ -397,11 +397,11 @@ class LlvmCodegenExecTest {
         "true\ntrue",
         """
         import std.io
-        func isEven(n: Int): Bool {
+        func isEven(n: std::Int): std::Bool {
             if n == 0 { return true }
             return isOdd(n - 1)
         }
-        func isOdd(n: Int): Bool {
+        func isOdd(n: std::Int): std::Bool {
             if n == 0 { return false }
             return isEven(n - 1)
         }
@@ -416,7 +416,7 @@ class LlvmCodegenExecTest {
         "4",
         """
         import std.io
-        func firstAt(limit: Int): Int {
+        func firstAt(limit: std::Int): std::Int {
             for i in 0..<limit {
                 if i == 4 { return i }
             }
@@ -506,7 +506,7 @@ class LlvmCodegenExecTest {
         "mid",
         """
         import std.io
-        func grade(n: Int): String {
+        func grade(n: std::Int): std::String {
             when n {
                 1 -> { return "low" }
                 2 -> { return "mid" }
@@ -522,7 +522,7 @@ class LlvmCodegenExecTest {
         "low\nlow\nhigh",
         """
         import std.io
-        func grade(n: Int): String {
+        func grade(n: std::Int): std::String {
             when n {
                 1, 2, 3 -> { return "low" }
                 else -> { return "high" }
@@ -629,7 +629,7 @@ class LlvmCodegenExecTest {
         "55",
         """
         import std.io
-        func square(x: Int): Int { return x * x }
+        func square(x: std::Int): std::Int { return x * x }
         func main() {
             var total = 0
             for i in 1..5 {
@@ -644,7 +644,7 @@ class LlvmCodegenExecTest {
         "14",
         """
         import std.io
-        func gcd(a: Int, b: Int): Int {
+        func gcd(a: std::Int, b: std::Int): std::Int {
             var x = a
             var y = b
             while y != 0 {

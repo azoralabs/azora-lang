@@ -27,16 +27,16 @@ class ContainerStdlibTest {
             import std.container.*
             import std.*
 
-            func verify(): Int {
-                inline assert std::reflect<List>.hasDeco<Serializable> { "List metadata missing" }
-                inline assert std::reflect<MutableList>.hasDeco<Serializable> { "MutableList metadata missing" }
-                inline assert std::reflect<Set>.hasDeco<Serializable> { "Set metadata missing" }
-                inline assert std::reflect<MutableSet>.hasDeco<Serializable> { "MutableSet metadata missing" }
-                inline assert std::reflect<Map>.hasDeco<Serializable> { "Map metadata missing" }
-                inline assert std::reflect<MutableMap>.hasDeco<Serializable> { "MutableMap metadata missing" }
-                inline assert std::reflect<Deque>.hasDeco<Serializable> { "Deque metadata missing" }
-                inline assert std::reflect<Queue>.hasDeco<Serializable> { "Queue metadata missing" }
-                inline assert std::reflect<Stack>.hasDeco<Serializable> { "Stack metadata missing" }
+            func verify(): std::Int {
+                inline assert std::reflect<std::List>.hasDeco<std::Serializable> { "List metadata missing" }
+                inline assert std::reflect<std::MutableList>.hasDeco<std::Serializable> { "MutableList metadata missing" }
+                inline assert std::reflect<std::Set>.hasDeco<std::Serializable> { "Set metadata missing" }
+                inline assert std::reflect<std::MutableSet>.hasDeco<std::Serializable> { "MutableSet metadata missing" }
+                inline assert std::reflect<std::Map>.hasDeco<std::Serializable> { "Map metadata missing" }
+                inline assert std::reflect<std::MutableMap>.hasDeco<std::Serializable> { "MutableMap metadata missing" }
+                inline assert std::reflect<std::Deque>.hasDeco<std::Serializable> { "Deque metadata missing" }
+                inline assert std::reflect<std::Queue>.hasDeco<std::Serializable> { "Queue metadata missing" }
+                inline assert std::reflect<std::Stack>.hasDeco<std::Serializable> { "Stack metadata missing" }
                 return 1
             }
 
@@ -57,25 +57,25 @@ class ContainerStdlibTest {
                 std::println(list[0] + list[2])
 
                 var set = std::setOf(1, 1, 2)
-                set.add(3)
-                std::println(set.size)
+                std::set.add(3)
+                std::println(std::set.size)
 
-                var map = HashMap<String, Int>()
-                map.put("a", 1)
-                map.put("a", 2)
-                std::println(map["a"])
+                var map = std::HashMap<std::String, std::Int>()
+                std::map.put("a", 1)
+                std::map.put("a", 2)
+                std::println(std::map["a"])
 
-                var queue = Queue<Int>()
+                var queue = std::Queue<std::Int>()
                 queue.enqueue(4)
                 queue.enqueue(5)
                 std::println(queue.dequeue())
 
-                var stack = Stack<Int>()
+                var stack = std::Stack<std::Int>()
                 stack.push(6)
                 stack.push(7)
                 std::println(stack.pop())
 
-                var deque = Deque<Int>()
+                var deque = std::Deque<std::Int>()
                 deque.pushFront(8)
                 deque.pushBack(9)
                 std::println(deque.popFront() + deque.popBack())

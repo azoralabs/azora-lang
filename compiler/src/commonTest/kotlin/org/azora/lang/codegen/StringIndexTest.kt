@@ -32,7 +32,7 @@ class StringIndexTest {
     fun indexScansStringInLoop() {
         assertEquals("digits=3", run("""
             import std.io
-            func isDigit(c: Char): Bool {
+            func isDigit(c: std::Char): std::Bool {
                 return c >= '0' && c <= '9'
             }
             func main() {

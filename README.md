@@ -365,13 +365,13 @@ and **inside an `impl` body**, where each iteration generates a member and
 
 ```azora
 impl Vec3 {
-    inline for axis in @arr["x", "y", "z"] {
+    inline for axis in @std::arr["x", "y", "z"] {
         prop double$axis[self: Self&]: Double = self.$axis * 2.0
     }
 }
 ```
 
-It iterates a compile-time type list (`[A, B]`), a value list (`@arr[…]`), or
+It iterates a compile-time type list (`[A, B]`), a value list (`@std::arr[…]`), or
 several lists in parallel, and `with index` binds the position.
 
 **Diagnostics**: `inline assert`, `inline trace`, `inline panic`.
@@ -389,12 +389,12 @@ macro @arr {
     [...$items]   => std::arrayOf(...$items)
 }
 
-@arr[1, 2, 3]        // std::arrayOf(1, 2, 3)
-@vec[]               // an empty List
-@vec![1, 2]          // a MutableList
+@std::arr[1, 2, 3]        // std::arrayOf(1, 2, 3)
+@std::vec[]               // an empty List
+@std::vec![1, 2]          // a MutableList
 ```
 
-> `@map` and `@map!` are declared in `std`, but the `key: value` argument form
+> `@std::map` and `@std::map!` are declared in `std`, but the `key: value` argument form
 > they need is **not implemented** at the call site, so a map literal does not
 > compile yet. Build one with `std::mapOf(…)`. Two of the failing tests track
 > this.
@@ -411,8 +411,8 @@ macro $a @to $b => std::mapEntry($a, $b)
 Dropping the `=>` registers the name without a rewrite, so `a @op b` calls the
 free function `op(a, b)`.
 
-A name may end in one of `! ? & * ^`, and the sigil is part of it: `@vec` and
-`@vec!` are two macros. Any word works as a name, including keywords - `@with`,
+A name may end in one of `! ? & * ^`, and the sigil is part of it: `@std::vec` and
+`@std::vec!` are two macros. Any word works as a name, including keywords - `@with`,
 `@to`, `@in` - because the leading `@` has already said a name follows. A
 specific container implementation is reached by naming it, `std::hashSetOf(…)`
 or `std::treeMapOf(…)`, and a type is always written with generics rather than
@@ -421,7 +421,7 @@ invented syntax: `List<T>`, `MutableList<T>`, `Array<T, N>`.
 **Compile-time type lists** ship with the standard library: `Numbers`,
 `Integers`, `FloatingPoints`, `SignedIntegers`, `UnsignedIntegers`.
 
-**Reflection**: handles, and `inline for … in reflect<*>.withDeco<D>` to
+**Reflection**: handles, and `inline for … in std::reflect<*>.withDeco<D>` to
 iterate every type carrying a decorator.
 
 Constant folding, constant propagation and dead-code elimination run on the IR.

@@ -41,16 +41,13 @@ object AzHighlighter {
     /** The closed set of sigils a macro name may end in, as part of the name. */
     private val MACRO_NAME_SIGILS = setOf('!', '?', '&', '*', '^')
 
-    /** Built-in type names colored as types even without declarations in scope. */
-    private val BUILTIN_TYPES = setOf(
-        "Int", "UInt", "Double", "String", "Bool", "Unit", "Char", "Any",
-        "Byte", "UByte", "Short", "UShort", "Long", "ULong", "Cent", "UCent",
-        "Float", "Decimal"
-    )
-
-    fun highlight(source: String, visibleFunctions: Set<String> = emptySet()): List<HighlightSpan> {
+    fun highlight(
+        source: String,
+        visibleFunctions: Set<String> = emptySet(),
+        visibleTypes: Set<String> = emptySet(),
+    ): List<HighlightSpan> {
         val spans = mutableListOf<HighlightSpan>()
-        val semantics = semanticNames(source, visibleFunctions)
+        val semantics = semanticNames(source, visibleFunctions, visibleTypes)
         var i = 0
         val n = source.length
 
@@ -80,8 +77,9 @@ object AzHighlighter {
                             word in RESERVED_KEYWORDS || isContextualKeyword(source, tokenStart, cursor) -> "keyword"
                             word == "self" || word == "it" -> "parameter"
                             semantics.isParameter(word, tokenStart) -> "parameter"
-                            next < end && source[next] == '(' && word in semantics.functions -> "function"
-                            word in BUILTIN_TYPES || word in semantics.types -> "type"
+                            next < end && source[next] in setOf('(', '<') &&
+                                semantics.isFunction(source, word, tokenStart) -> "function"
+                            semantics.isType(source, word, tokenStart) -> "type"
                             else -> "variable"
                         }
                         spans.add(HighlightSpan(tokenStart, cursor, type))
@@ -190,13 +188,19 @@ object AzHighlighter {
                     }
                     spans.add(HighlightSpan(start, i, "number"))
                 }
-                // Macro invocation `@name` (lowercase) or decorator `@Name`.
+                // Macro invocation `@name` / `@realm::name` (lowercase final
+                // segment) or decorator `@Name` / `@realm::Name`.
                 c == '@' && peek(1).isIdentStart() -> {
                     val start = i
                     i++
-                    val head = source[i]
-                    while (i < n && source[i].isIdentPart()) i++
-                    val isMacro = head.isLowerCase() || head == '_'
+                    var finalHead = source[i]
+                    while (true) {
+                        while (i < n && source[i].isIdentPart()) i++
+                        if (i + 2 >= n || source[i] != ':' || source[i + 1] != ':' || !source[i + 2].isIdentStart()) break
+                        i += 2
+                        finalHead = source[i]
+                    }
+                    val isMacro = finalHead.isLowerCase() || finalHead == '_'
                     // A macro's name may end in one of `! ? & * ^`, and the
                     // sigil is part of the name.
                     if (isMacro && i < n && source[i] in MACRO_NAME_SIGILS) i++
@@ -215,11 +219,11 @@ object AzHighlighter {
                         start in semantics.functionDeclarations -> "function"
                         word == "self" || word == "it" -> "parameter"
                         semantics.isParameter(word, start) -> "parameter"
-                        j < n && source[j] == '(' && word in semantics.functions -> "function"
-                        word in BUILTIN_TYPES || word in semantics.types -> "type"
+                        j < n && source[j] in setOf('(', '<') && semantics.isFunction(source, word, start) -> "function"
+                        semantics.isType(source, word, start) -> "type"
                         else -> "variable"
                     }
-                    if (type != null) spans.add(HighlightSpan(start, i, type))
+                    spans.add(HighlightSpan(start, i, type))
                 }
                 else -> i++
             }
@@ -276,6 +280,12 @@ object AzHighlighter {
     ) {
         fun isParameter(name: String, offset: Int): Boolean =
             parameterScopes.any { offset in it.start..it.end && name in it.names }
+
+        fun isFunction(source: String, name: String, offset: Int): Boolean =
+            name in functions || qualifiedNameAt(source, name, offset) in functions
+
+        fun isType(source: String, name: String, offset: Int): Boolean =
+            name in types || qualifiedNameAt(source, name, offset) in types
     }
 
     /**
@@ -283,12 +293,16 @@ object AzHighlighter {
      * stable callable header shape and balanced braces; malformed code simply
      * produces a shorter scope instead of losing all highlighting.
      */
-    private fun semanticNames(source: String, visibleFunctions: Set<String>): SemanticNames {
+    private fun semanticNames(
+        source: String,
+        visibleFunctions: Set<String>,
+        visibleTypes: Set<String>,
+    ): SemanticNames {
         val declarationsSource = codeOnly(source)
         val functions = visibleFunctions.toMutableSet()
         val declarations = mutableSetOf<Int>()
         val scopes = mutableListOf<ParameterScope>()
-        val declaredTypes = mutableSetOf<String>()
+        val declaredTypes = visibleTypes.toMutableSet()
         val callable = Regex("""\b(?:async\s+)?func\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:<[^>{}\n]*>)?\s*(?:\[[^\]\n]*])?\s*\(([^)]*)\)""")
         val parameter = Regex("""(?:\.\.\.)?([A-Za-z_][A-Za-z0-9_]*)\s*:""")
         val typeDeclaration = Regex("""\b(?:pack|enum|spec|annot|solo|variant|union)\s+([A-Za-z_][A-Za-z0-9_]*)""")
@@ -312,6 +326,21 @@ object AzHighlighter {
             match.groups[1]?.value?.let(declaredTypes::add)
         }
         return SemanticNames(functions, declarations, scopes, declaredTypes)
+    }
+
+    /** `Int` at the end of `std::Int` becomes the compiler's `std__Int` key. */
+    private fun qualifiedNameAt(source: String, name: String, offset: Int): String {
+        val parts = mutableListOf(name)
+        var cursor = offset
+        while (cursor >= 2 && source[cursor - 1] == ':' && source[cursor - 2] == ':') {
+            var end = cursor - 2
+            var start = end
+            while (start > 0 && source[start - 1].isIdentPart()) start--
+            if (start == end) break
+            parts.add(0, source.substring(start, end))
+            cursor = start
+        }
+        return parts.joinToString("__")
     }
 
     private fun codeOnly(source: String): String {

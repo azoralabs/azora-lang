@@ -31,10 +31,10 @@ class TypeFunctionTest {
     @Test
     fun parserRetainsStructuredTypePropertyDeclaration() {
         val program = Parser(Lexer("""
-            deepinline prop Wider<A, B>: Type {
+            deepinline prop Wider<A, B>: std::Type {
                 return if A.rank >= B.rank { A } else { B }
             }
-            func result(): Wider<Int, Double> { return 1.0 }
+            func result(): Wider<std::Int, std::Double> { return 1.0 }
         """.trimIndent()).tokenize()).parse()
 
         val declaration = program.typeFunctions.single()
@@ -73,7 +73,7 @@ class TypeFunctionTest {
         // Azora never infers a declaration's type - least of all one that binds a type.
         val failure = assertFailsWith<IllegalStateException> {
             Parser(Lexer("""
-                deepinline prop Widest<...T>: Type {
+                deepinline prop Widest<...T>: std::Type {
                     var result = T.0
                     return result
                 }
@@ -94,7 +94,7 @@ class TypeFunctionTest {
     fun stdlibPromoteSelectsHighestRankedType() {
         assertIs<CompilationResult.Success>(compile("""
             import std.traits
-            func result(): std::promote<Byte, Int, Long, Double> {
+            func result(): std::promote<std::Byte, std::Int, std::Long, std::Double> {
                 return 1.0
             }
         """))
@@ -104,7 +104,7 @@ class TypeFunctionTest {
     fun stdlibPromoteRequiresTwoTypes() {
         val failure = assertIs<CompilationResult.Failure>(compile("""
             import std.traits
-            func invalid(): std::promote<Int> { return 1 }
+            func invalid(): std::promote<std::Int> { return 1 }
         """))
         assertTrue(failure.errors.any { "'T.length >= 2'" in it }, failure.errors.toString())
     }
@@ -112,17 +112,17 @@ class TypeFunctionTest {
     @Test
     fun fullyQualifiedStdlibPromoteDoesNotRequireImport() {
         assertIs<CompilationResult.Success>(compile("""
-            func result(): std.traits.std::promote<Int, Double> { return 1.0 }
+            func result(): std.traits.promote<std::Int, std::Double> { return 1.0 }
         """))
     }
 
     @Test
     fun fixedTypePropertyResolvesReturnType() {
         assertIs<CompilationResult.Success>(compile("""
-            deepinline prop Wider<A, B>: Type {
+            deepinline prop Wider<A, B>: std::Type {
                 return if A.rank >= B.rank { A } else { B }
             }
-            func result(): Wider<Int, Double> {
+            func result(): Wider<std::Int, std::Double> {
                 return 2.5
             }
         """))
@@ -131,11 +131,11 @@ class TypeFunctionTest {
     @Test
     fun exactOverloadWinsBeforeVariadicOverload() {
         assertIs<CompilationResult.Success>(compile("""
-            deepinline prop Choose<A, B>: Type { return A }
-            deepinline prop Choose<...Types>: Type where Types.length >= 2 {
+            deepinline prop Choose<A, B>: std::Type { return A }
+            deepinline prop Choose<...Types>: std::Type where Types.length >= 2 {
                 return Types.1
             }
-            func result(): Choose<String, Int> {
+            func result(): Choose<std::String, std::Int> {
                 return "fixed"
             }
         """))
@@ -144,27 +144,27 @@ class TypeFunctionTest {
     @Test
     fun typePropertiesCanCallOtherTypeProperties() {
         assertIs<CompilationResult.Success>(compile("""
-            deepinline prop NumericResult<A, B>: Type {
+            deepinline prop NumericResult<A, B>: std::Type {
                 return if A.rank >= B.rank { A } else { B }
             }
-            deepinline prop Forwarded<A, B>: Type { return NumericResult<A, B> }
-            func result(): Forwarded<Int, Double> { return 4.5 }
+            deepinline prop Forwarded<A, B>: std::Type { return NumericResult<A, B> }
+            func result(): Forwarded<std::Int, std::Double> { return 4.5 }
         """))
     }
 
     @Test
     fun aVariadicTypePropertySupportsBindingsLoopsAndRank() {
         assertIs<CompilationResult.Success>(compile("""
-            deepinline prop Widest<...Types>: Type where Types.length >= 2 {
-                var result: Type = Types.0
-                for candidate: Type in Types[1...] {
+            deepinline prop Widest<...Types>: std::Type where Types.length >= 2 {
+                var result: std::Type = Types.0
+                for candidate: std::Type in Types[1...] {
                     if candidate.rank > result.rank {
                         result = candidate
                     }
                 }
                 return result
             }
-            func result(): Widest<Byte, Long, Double, Int> {
+            func result(): Widest<std::Byte, std::Long, std::Double, std::Int> {
                 return 3.5
             }
         """))
@@ -175,14 +175,14 @@ class TypeFunctionTest {
         // The branch is a statement, not an expression, so an unmatched condition
         // simply leaves the binding as it was.
         assertIs<CompilationResult.Success>(compile("""
-            deepinline prop FirstUnlessWider<A, B>: Type {
-                var result: Type = A
+            deepinline prop FirstUnlessWider<A, B>: std::Type {
+                var result: std::Type = A
                 if B.rank > A.rank {
                     result = B
                 }
                 return result
             }
-            func result(): FirstUnlessWider<Int, Double> { return 1.5 }
+            func result(): FirstUnlessWider<std::Int, std::Double> { return 1.5 }
         """))
     }
 
@@ -194,7 +194,7 @@ class TypeFunctionTest {
                 return a + b
             }
             func main() {
-                fin result: Double = greater(1, 2.5)
+                fin result: std::Double = greater(1, 2.5)
             }
         """))
     }
@@ -202,10 +202,10 @@ class TypeFunctionTest {
     @Test
     fun variadicConstraintProducesDiagnostic() {
         val failure = assertIs<CompilationResult.Failure>(compile("""
-            deepinline prop Widest<...Types>: Type where Types.length >= 2 {
+            deepinline prop Widest<...Types>: std::Type where Types.length >= 2 {
                 return Types.0
             }
-            func invalid(): Widest<Int> { return 1 }
+            func invalid(): Widest<std::Int> { return 1 }
         """))
         assertTrue(failure.errors.any { "'Types.length >= 2'" in it }, failure.errors.toString())
     }
@@ -213,9 +213,9 @@ class TypeFunctionTest {
     @Test
     fun recursiveTypePropertyProducesDiagnostic() {
         val failure = assertIs<CompilationResult.Failure>(compile("""
-            deepinline prop First<Value>: Type { return Second<Value> }
-            deepinline prop Second<Value>: Type { return First<Value> }
-            func invalid(): First<Int> { return 1 }
+            deepinline prop First<Value>: std::Type { return Second<Value> }
+            deepinline prop Second<Value>: std::Type { return First<Value> }
+            func invalid(): First<std::Int> { return 1 }
         """))
         assertTrue(failure.errors.any { "Recursive type-property call" in it }, failure.errors.toString())
     }
@@ -224,8 +224,8 @@ class TypeFunctionTest {
     fun duplicateOverloadIsRejectedByParser() {
         assertFailsWith<IllegalStateException> {
             Parser(Lexer("""
-                deepinline prop Same<Value>: Type { return Value }
-                deepinline prop Same<Other>: Type { return Other }
+                deepinline prop Same<Value>: std::Type { return Value }
+                deepinline prop Same<Other>: std::Type { return Other }
             """.trimIndent()).tokenize()).parse()
         }
     }
@@ -242,14 +242,14 @@ class TypeFunctionTest {
         // One argument cannot satisfy `.length >= 2`, so selection must fall through
         // to the single-argument overload rather than report a constraint error.
         assertIs<CompilationResult.Success>(compile("""
-            deepinline prop Pick<...Types>: Type where Types.length >= 2 {
+            deepinline prop Pick<...Types>: std::Type where Types.length >= 2 {
                 return Types.1
             }
-            deepinline prop Pick<Only>: Type {
+            deepinline prop Pick<Only>: std::Type {
                 return Only
             }
-            func one(): Pick<Int> { return 1 }
-            func two(): Pick<Int, Double> { return 1.0 }
+            func one(): Pick<std::Int> { return 1 }
+            func two(): Pick<std::Int, std::Double> { return 1.0 }
         """))
     }
 
@@ -257,10 +257,10 @@ class TypeFunctionTest {
     fun aConcreteInvalidSpecializationIsAnError() {
         // With no applicable alternative, the same violation is the user's error.
         val failure = assertIs<CompilationResult.Failure>(compile("""
-            deepinline prop OnlyPairs<...Types>: Type where Types.length >= 2 {
+            deepinline prop OnlyPairs<...Types>: std::Type where Types.length >= 2 {
                 return Types.0
             }
-            func invalid(): OnlyPairs<Int> { return 1 }
+            func invalid(): OnlyPairs<std::Int> { return 1 }
         """))
         assertTrue(
             failure.errors.any { "'Types.length >= 2'" in it },
@@ -273,13 +273,13 @@ class TypeFunctionTest {
         // Selection order is unchanged by the split: the candidate with the most
         // fixed parameters before its pack still wins.
         assertIs<CompilationResult.Success>(compile("""
-            deepinline prop Tagged<First, ...Rest>: Type {
+            deepinline prop Tagged<First, ...Rest>: std::Type {
                 return First
             }
-            deepinline prop Tagged<...Rest>: Type {
+            deepinline prop Tagged<...Rest>: std::Type {
                 return Rest.0
             }
-            func chosen(): Tagged<Int, Double> { return 1 }
+            func chosen(): Tagged<std::Int, std::Double> { return 1 }
         """))
     }
 
@@ -291,7 +291,7 @@ class TypeFunctionTest {
     // ------------------------------------------------------------------
 
     private val vecDecl = """
-        pack Vec<T, N: Int> where T is Number && N in 2..4 {
+        pack Vec<T, N: std::Int> where T is std::Number && N in 2..4 {
             var x: T = 0
             var y: T = 0
         }
@@ -301,7 +301,7 @@ class TypeFunctionTest {
     fun genericSatisfyingItsConstraintsIsAccepted() {
         assertIs<CompilationResult.Success>(compile("""
             $vecDecl
-            func makeA(): Int { fin v: Vec<Int, 2> = Vec<Int, 2>(1, 2) return v.x }
+            func makeA(): std::Int { fin v: Vec<std::Int, 2> = Vec<std::Int, 2>(1, 2) return v.x }
         """))
     }
 
@@ -309,7 +309,7 @@ class TypeFunctionTest {
     fun genericWithADifferentSatisfyingCombinationIsAccepted() {
         assertIs<CompilationResult.Success>(compile("""
             $vecDecl
-            func makeB(): Float { fin v: Vec<Float, 4> = Vec<Float, 4>(1.0, 2.0) return v.x }
+            func makeB(): std::Float { fin v: Vec<std::Float, 4> = Vec<std::Float, 4>(1.0, 2.0) return v.x }
         """))
     }
 
@@ -317,7 +317,7 @@ class TypeFunctionTest {
     fun genericViolatingNominalConformanceIsRejected() {
         val failure = assertIs<CompilationResult.Failure>(compile("""
             $vecDecl
-            func makeC(): String { fin v: Vec<String, 2> = Vec<String, 2>("a", "b") return v.x }
+            func makeC(): std::String { fin v: Vec<std::String, 2> = Vec<std::String, 2>("a", "b") return v.x }
         """))
         assertTrue(
             failure.errors.any { "String does not implement Number" in it },
@@ -329,7 +329,7 @@ class TypeFunctionTest {
     fun genericViolatingAConstRangeIsRejected() {
         val failure = assertIs<CompilationResult.Failure>(compile("""
             $vecDecl
-            func makeD(): Int { fin v: Vec<Int, 9> = Vec<Int, 9>(1, 2) return v.x }
+            func makeD(): std::Int { fin v: Vec<std::Int, 9> = Vec<std::Int, 9>(1, 2) return v.x }
         """))
         assertTrue(
             failure.errors.any { "'N in 2..4'" in it },
@@ -342,9 +342,9 @@ class TypeFunctionTest {
         // The violation is cached with the specialization, so many uses give one error.
         val failure = assertIs<CompilationResult.Failure>(compile("""
             $vecDecl
-            func a(): Int { fin v: Vec<Int, 9> = Vec<Int, 9>(1, 2) return v.x }
-            func b(): Int { fin v: Vec<Int, 9> = Vec<Int, 9>(3, 4) return v.x }
-            func c(): Int { fin v: Vec<Int, 9> = Vec<Int, 9>(5, 6) return v.x }
+            func a(): std::Int { fin v: Vec<std::Int, 9> = Vec<std::Int, 9>(1, 2) return v.x }
+            func b(): std::Int { fin v: Vec<std::Int, 9> = Vec<std::Int, 9>(3, 4) return v.x }
+            func c(): std::Int { fin v: Vec<std::Int, 9> = Vec<std::Int, 9>(5, 6) return v.x }
         """))
         assertEquals(
             1,
@@ -359,7 +359,7 @@ class TypeFunctionTest {
         // validating it there would reject every generic mentioning a constrained type.
         assertIs<CompilationResult.Success>(compile("""
             $vecDecl
-            pack Holder<T, N: Int> {
+            pack Holder<T, N: std::Int> {
                 var inner: Vec<T, N>
             }
         """))

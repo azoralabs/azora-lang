@@ -46,7 +46,7 @@ class ErrorTransportExecTest {
     private val failing = """
         error MapError { OutOfBounds, BadSize }
 
-        func at(x: Int): Int ?! MapError {
+        func at(x: std::Int): std::Int ?! MapError {
             if x < 0 {
                 return .OutOfBounds
             }
@@ -123,7 +123,7 @@ class ErrorTransportExecTest {
         val ir = llvm(
             """
             $failing
-            func doubled(x: Int): Int ?! MapError {
+            func doubled(x: std::Int): std::Int ?! MapError {
                 fin inner = at(x)
                 return inner + 1
             }
@@ -157,7 +157,7 @@ class ErrorTransportExecTest {
     @Test fun aNonFailableCallIsNotBurdenedWithAnErrorCheck() {
         val ir = llvm(
             """
-            func plain(x: Int): Int {
+            func plain(x: std::Int): std::Int {
                 return x * 2
             }
             func main() {

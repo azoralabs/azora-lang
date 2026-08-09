@@ -38,8 +38,8 @@ class UnionExecTest {
     @Test fun aMemberSurvivesARoundTrip() = check("42", """
         import std.io
         unsafe union Value {
-            i: Int
-            d: Double
+            i: std::Int
+            d: std::Double
         }
         func main() {
             unsafe {
@@ -52,8 +52,8 @@ class UnionExecTest {
     @Test fun writingThenReadingTheSameMemberIsStable() = check("7\n9", """
         import std.io
         unsafe union Value {
-            i: Int
-            d: Double
+            i: std::Int
+            d: std::Double
         }
         func main() {
             unsafe {
@@ -68,8 +68,8 @@ class UnionExecTest {
     @Test fun theMembersShareOneStorageSlot() = check("1", """
         import std.io
         unsafe union Flag {
-            raw: Int
-            on: Bool
+            raw: std::Int
+            on: std::Bool
         }
         func main() {
             unsafe {
@@ -82,8 +82,8 @@ class UnionExecTest {
     @Test fun aUnionIsAsWideAsItsWidestMember() = check("1.5", """
         import std.io
         unsafe union Scalar {
-            small: Byte
-            wide: Double
+            small: std::Byte
+            wide: std::Double
         }
         func main() {
             unsafe {

@@ -44,7 +44,7 @@ class CompoundAssignOperatorTest {
         assertEquals("7", run("""
             import std.io
             pack Money {
-                var cents: Int
+                var cents: std::Int
             }
             oper+ [self: Money&](rhs: Money&): Money {
                 return Money(self.cents + rhs.cents)
@@ -65,7 +65,7 @@ class CompoundAssignOperatorTest {
         assertEquals("in place\n7", run("""
             import std.io
             pack Acc {
-                var total: Int
+                var total: std::Int
             }
             oper+= [self: Acc!](rhs: Acc&) {
                 std::println("in place")
@@ -84,7 +84,7 @@ class CompoundAssignOperatorTest {
         assertEquals("in place\n7", run("""
             import std.io
             pack Acc {
-                var total: Int
+                var total: std::Int
             }
             oper+ [self: Acc&](rhs: Acc&): Acc {
                 std::println("built a new one")
@@ -107,7 +107,7 @@ class CompoundAssignOperatorTest {
         assertEquals("2", run("""
             import std.io
             pack Acc {
-                var total: Int
+                var total: std::Int
             }
             oper-= [self: Acc!](rhs: Acc&) {
                 self.total = self.total - rhs.total

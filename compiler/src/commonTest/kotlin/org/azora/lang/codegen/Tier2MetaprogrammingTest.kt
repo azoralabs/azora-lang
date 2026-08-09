@@ -98,10 +98,10 @@ class Tier2MetaprogrammingTest {
         assertEquals("hi", run("""
             import std.io
             annot Log {
-                fin msg: String
+                fin msg: std::String
             }
             @Log("entry")
-            func greet(): String {
+            func greet(): std::String {
                 return "hi"
             }
             func main() {
@@ -119,7 +119,7 @@ class Tier2MetaprogrammingTest {
             fin PI = 3
             @Deprecated
             pack P {
-                var x: Int
+                var x: std::Int
             }
             func main() {
                 std::println(PI)
@@ -136,7 +136,7 @@ class Tier2MetaprogrammingTest {
             annot B { }
             @A
             @B
-            func run(): String {
+            func run(): std::String {
                 return "done"
             }
             func main() {
@@ -152,7 +152,7 @@ class Tier2MetaprogrammingTest {
             import std.io
             realm Math {
                 fin PI = 314
-                func double(x: Int): Int {
+                func double(x: std::Int): std::Int {
                     return x * 2
                 }
             }
@@ -182,7 +182,7 @@ class Tier2MetaprogrammingTest {
             import std.io
             realm Geom {
                 fin R = 5
-                func area(): Int {
+                func area(): std::Int {
                     return Geom::R * Geom::R
                 }
             }

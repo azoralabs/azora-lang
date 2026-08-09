@@ -49,7 +49,7 @@ class ProgramTest {
     fun helloWorldWithReturn() {
         val result = compile("""
             import std.io
-            func main(): Int {
+            func main(): std::Int {
                 std::println("Hello")
                 return 0
             }
@@ -90,11 +90,11 @@ class ProgramTest {
     fun functionCalls() {
         val output = run("""
             import std.io
-            func double(n: Int): Int {
+            func double(n: std::Int): std::Int {
                 return n * 2
             }
 
-            func addOne(n: Int): Int {
+            func addOne(n: std::Int): std::Int {
                 return n + 1
             }
 
@@ -115,7 +115,7 @@ class ProgramTest {
     fun ifElse() {
         val output = run("""
             import std.io
-            func abs(n: Int): Int {
+            func abs(n: std::Int): std::Int {
                 if n < 0 {
                     return 0 - n
                 } else {

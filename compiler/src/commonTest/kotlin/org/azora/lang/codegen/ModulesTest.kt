@@ -28,7 +28,7 @@ class ModulesTest {
         assertEquals("7", run("""
             import std.io
             pack Body {
-                var mass: Int
+                var mass: std::Int
             }
             func main() {
                 std::println(Body(7).mass)
@@ -40,7 +40,7 @@ class ModulesTest {
         val result = Compiler().compile("""
             import std.io
             pack Body {
-                var _cache: Int
+                var _cache: std::Int
             }
             func main() {
                 std::println(Body(7)._cache)
@@ -59,10 +59,10 @@ class ModulesTest {
         assertEquals("8", run("""
             import std.io
             pack Body {
-                var _cache: Int
+                var _cache: std::Int
             }
             impl Body {
-                func bumped(): Int {
+                func bumped(): std::Int {
                     return self._cache + 1
                 }
             }
@@ -83,10 +83,10 @@ class ModulesTest {
             import std.io
 
             pack Wheel {
-                var mod: Int
+                var mod: std::Int
             }
 
-            func mod(a: Int, b: Int): Int {
+            func mod(a: std::Int, b: std::Int): std::Int {
                 return a % b
             }
 
@@ -117,7 +117,7 @@ class ModulesTest {
             import std.io
             realm Math {
                 fin PI = 14159
-                func triple(x: Int): Int {
+                func triple(x: std::Int): std::Int {
                     return x * 3
                 }
             }
@@ -132,7 +132,7 @@ class ModulesTest {
         assertEquals("hello\n42", run("""
             import std.io
             realm Utils {
-                func greet(): String {
+                func greet(): std::String {
                     return "hello"
                 }
                 fin answer = 42
@@ -178,7 +178,7 @@ class ModulesTest {
         assertEquals("3\n42", run("""
             import std.io
             realm std {
-                func triple(x: Int): Int {
+                func triple(x: std::Int): std::Int {
                     return x * 3
                 }
             }
@@ -198,10 +198,10 @@ class ModulesTest {
         assertEquals("1\n2", run("""
             import std.io
             realm x {
-                func a(): Int { return 1 }
+                func a(): std::Int { return 1 }
             }
             realm x {
-                func b(): Int { return 2 }
+                func b(): std::Int { return 2 }
             }
             func main() {
                 std::println(x::a())
@@ -223,7 +223,7 @@ class ModulesTest {
             Compiler().compile("""
                 import std.io
                 scope Old {
-                    func nope(): Int {
+                    func nope(): std::Int {
                         return 1
                     }
                 }
@@ -236,7 +236,7 @@ class ModulesTest {
     @Test fun exposeFuncWorks() {
         assertEquals("ok", run("""
             import std.io
-            func helper(): String {
+            func helper(): std::String {
                 return "ok"
             }
             func main() {
@@ -248,7 +248,7 @@ class ModulesTest {
     @Test fun confineFuncWorksInSameFile() {
         assertEquals("private", run("""
             import std.io
-            confined func secret(): String {
+            confined func secret(): std::String {
                 return "private"
             }
             func main() {
@@ -261,7 +261,7 @@ class ModulesTest {
         val result = Compiler().compile("""
             import std.io
             pack Secret {
-                confined var value: Int
+                confined var value: std::Int
             }
             func main() {
                 var s = Secret(7)
@@ -286,7 +286,7 @@ class ModulesTest {
         assertEquals("42", run("""
             import std.io
             pack Container {
-                var v: Int
+                var v: std::Int
             }
             func main() {
                 var c = Container(42)

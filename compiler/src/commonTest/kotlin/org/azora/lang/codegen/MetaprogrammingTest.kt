@@ -37,11 +37,11 @@ class MetaprogrammingTest {
         val expectedIr = """
             module playground
 
-            func b(): Unit {
+            func b(): std::Unit {
                 std__println("Hello from B")
             }
 
-            func main(): Unit {
+            func main(): std::Unit {
                 scope {
                     std__println("Hello from A")
                 }
@@ -52,11 +52,11 @@ class MetaprogrammingTest {
         val expectedOptimizedIr = """
             module playground
 
-            func b(): Unit {
+            func b(): std::Unit {
                 std__println("Hello from B")
             }
 
-            func main(): Unit {
+            func main(): std::Unit {
                 scope {
                     std__println("Hello from A")
                 }
@@ -71,22 +71,22 @@ class MetaprogrammingTest {
 
             define void @b() {
             entry:
-              %0 = getelementptr @arr[13 x i8], @arr[13 x i8]* @.str.0, i64 0, i64 0
+              %0 = getelementptr [13 x i8], [13 x i8]* @.str.0, i64 0, i64 0
               %1 = call i32 @puts(i8* %0)
               ret void
             }
 
             define i32 @main() {
             entry:
-              %0 = getelementptr @arr[13 x i8], @arr[13 x i8]* @.str.1, i64 0, i64 0
+              %0 = getelementptr [13 x i8], [13 x i8]* @.str.1, i64 0, i64 0
               %1 = call i32 @puts(i8* %0)
               call void @b()
               ret i32 0
             }
 
-            ; String constants
-            @.str.0 = private unnamed_addr constant @arr[13 x i8] c"Hello from B\00"
-            @.str.1 = private unnamed_addr constant @arr[13 x i8] c"Hello from A\00"
+            ; std::String constants
+            @.str.0 = private unnamed_addr constant [13 x i8] c"Hello from B\00"
+            @.str.1 = private unnamed_addr constant [13 x i8] c"Hello from A\00"
         """.trimIndent()
 
         assertEquals(expectedIr, result.ir.prettyPrint())
@@ -274,20 +274,20 @@ class MetaprogrammingTest {
         val expectedIr = """
             module playground
 
-            fin aa: Int = 2
-            fin c1: Int = 0
+            fin aa: std::Int = 2
+            fin c1: std::Int = 0
 
-            func c(): Unit {
+            func c(): std::Unit {
                 std__println("Hello from C")
             }
 
-            fin e1: Int = 0
+            fin e1: std::Int = 0
 
-            func e(): Unit {
+            func e(): std::Unit {
                 std__println("Hello from E")
             }
 
-            func main(): Unit {
+            func main(): std::Unit {
                 scope {
                     std__println("Hello from A")
                 }
@@ -309,51 +309,51 @@ class MetaprogrammingTest {
 
             define void @c() {
             entry:
-              %0 = getelementptr @arr[13 x i8], @arr[13 x i8]* @.str.0, i64 0, i64 0
+              %0 = getelementptr [13 x i8], [13 x i8]* @.str.0, i64 0, i64 0
               %1 = call i32 @puts(i8* %0)
               ret void
             }
 
             define void @e() {
             entry:
-              %0 = getelementptr @arr[13 x i8], @arr[13 x i8]* @.str.1, i64 0, i64 0
+              %0 = getelementptr [13 x i8], [13 x i8]* @.str.1, i64 0, i64 0
               %1 = call i32 @puts(i8* %0)
               ret void
             }
 
             define i32 @main() {
             entry:
-              %0 = getelementptr @arr[13 x i8], @arr[13 x i8]* @.str.2, i64 0, i64 0
+              %0 = getelementptr [13 x i8], [13 x i8]* @.str.2, i64 0, i64 0
               %1 = call i32 @puts(i8* %0)
-              %2 = getelementptr @arr[13 x i8], @arr[13 x i8]* @.str.3, i64 0, i64 0
+              %2 = getelementptr [13 x i8], [13 x i8]* @.str.3, i64 0, i64 0
               %3 = call i32 @puts(i8* %2)
               call void @c()
-              %4 = getelementptr @arr[13 x i8], @arr[13 x i8]* @.str.4, i64 0, i64 0
+              %4 = getelementptr [13 x i8], [13 x i8]* @.str.4, i64 0, i64 0
               %5 = call i32 @puts(i8* %4)
               call void @e()
               ret i32 0
             }
 
-            ; String constants
-            @.str.0 = private unnamed_addr constant @arr[13 x i8] c"Hello from C\00"
-            @.str.1 = private unnamed_addr constant @arr[13 x i8] c"Hello from E\00"
-            @.str.2 = private unnamed_addr constant @arr[13 x i8] c"Hello from A\00"
-            @.str.3 = private unnamed_addr constant @arr[13 x i8] c"Hello from B\00"
-            @.str.4 = private unnamed_addr constant @arr[13 x i8] c"Hello from D\00"
+            ; std::String constants
+            @.str.0 = private unnamed_addr constant [13 x i8] c"Hello from C\00"
+            @.str.1 = private unnamed_addr constant [13 x i8] c"Hello from E\00"
+            @.str.2 = private unnamed_addr constant [13 x i8] c"Hello from A\00"
+            @.str.3 = private unnamed_addr constant [13 x i8] c"Hello from B\00"
+            @.str.4 = private unnamed_addr constant [13 x i8] c"Hello from D\00"
         """.trimIndent()
 
         val expectedOptimizedIr = """
             module playground
 
-            func c(): Unit {
+            func c(): std::Unit {
                 std__println("Hello from C")
             }
 
-            func e(): Unit {
+            func e(): std::Unit {
                 std__println("Hello from E")
             }
 
-            func main(): Unit {
+            func main(): std::Unit {
                 scope {
                     std__println("Hello from A")
                 }

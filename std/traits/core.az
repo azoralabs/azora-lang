@@ -16,7 +16,7 @@
 
 exposed module std.traits.core
 
-use realm std {
+realm std {
     inline for Ty in Numbers {
         /** Ascending range over [Ty], stepping by one. */
         bridge oper.. [self: Ty&](rhs: Ty&) by 1

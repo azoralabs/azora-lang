@@ -39,21 +39,21 @@ class ThirdPartyFormatTest {
             import std.serializer
 
             pack Point {
-                fin x: Int = 0
-                fin y: Int = 0
+                fin x: std::Int = 0
+                fin y: std::Int = 0
             }
 
             pack PointSerializer
 
             impl std::Serializer<Point> for PointSerializer {
-                func toSerialValue[self: Self&](value: Point&): std::SerialValue ?! std::SerializationError {
+                func toSerialValue[self: std::Self&](value: Point&): std::SerialValue ?! std::SerializationError {
                     var fields = std::ArrayList<std::SerialField>()
                     fields.add(std::SerialField("x", try std::serialNumber(std::convert::toString(value.x))))
                     fields.add(std::SerialField("y", try std::serialNumber(std::convert::toString(value.y))))
                     return std::SerialValue.Object(fields)
                 }
 
-                func fromSerialValue[self: Self&](value: std::SerialValue&): Point ?! std::SerializationError {
+                func fromSerialValue[self: std::Self&](value: std::SerialValue&): Point ?! std::SerializationError {
                     fin x = try std::serialAsInt(try std::serialField(value, "x"))
                     fin y = try std::serialAsInt(try std::serialField(value, "y"))
                     return Point(x, y)
@@ -84,16 +84,16 @@ class ThirdPartyFormatTest {
             import std.io
             import std.serializer
 
-            @Serializable
+            @std::Serializable
             pack Session {
-                fin user: String = ""
-                fin attempts: Int = 0
+                fin user: std::String = ""
+                fin attempts: std::Int = 0
             }
 
             pack Kv
 
             impl Kv {
-                func encode[self: Self&](value: std::SerialValue&): String ?! std::SerializationError {
+                func encode[self: std::Self&](value: std::SerialValue&): std::String ?! std::SerializationError {
                     when value {
                         std::SerialValue.Object(fields) -> {
                             var text = ""
@@ -107,7 +107,7 @@ class ThirdPartyFormatTest {
                     }
                 }
 
-                func scalar[self: Self&](value: std::SerialValue&): String ?! std::SerializationError {
+                func scalar[self: std::Self&](value: std::SerialValue&): std::String ?! std::SerializationError {
                     when value {
                         std::SerialValue.Text(t) -> { return t }
                         std::SerialValue.Number(n) -> { return n }
@@ -116,7 +116,7 @@ class ThirdPartyFormatTest {
                 }
 
                 /** Reads `key=value` lines back into the format-independent tree. */
-                func decode[self: Self&](input: String): std::SerialValue ?! std::SerializationError {
+                func decode[self: std::Self&](input: std::String): std::SerialValue ?! std::SerializationError {
                     var fields = std::ArrayList<std::SerialField>()
                     var name = ""
                     var raw = ""
@@ -141,7 +141,7 @@ class ThirdPartyFormatTest {
                 }
 
                 /** Digits are a number node; anything else is text. */
-                func node[self: Self&](raw: String): std::SerialValue {
+                func node[self: std::Self&](raw: std::String): std::SerialValue {
                     if stringLength(raw) == 0 { return std::SerialValue.Text(raw) }
                     for i in 0..<stringLength(raw) {
                         if !isDigit(charAt(raw, i)) { return std::SerialValue.Text(raw) }
@@ -180,21 +180,21 @@ class ThirdPartyFormatTest {
             import std.io
             import std.serializer
 
-            @Serializable(ignoreUnknownFields: true)
+            @std::Serializable(ignoreUnknownFields: true)
             pack Account {
-                @SerialName("display_name")
-                fin name: String = ""
+                @std::SerialName("display_name")
+                fin name: std::String = ""
 
-                @SerialIgnore
-                fin token: String = "unset"
+                @std::SerialIgnore
+                fin token: std::String = "unset"
 
-                fin logins: Int = 0
+                fin logins: std::Int = 0
             }
 
             pack Kv
 
             impl Kv {
-                func encode[self: Self&](value: std::SerialValue&): String ?! std::SerializationError {
+                func encode[self: std::Self&](value: std::SerialValue&): std::String ?! std::SerializationError {
                     when value {
                         std::SerialValue.Object(fields) -> {
                             var text = ""

@@ -72,7 +72,7 @@ class ThreadLocalTest {
     @Test fun threadLocalWithTypedAnnotation() {
         assertEquals("hello", run("""
             import std.io
-            threadlocal var msg: String = "hello"
+            threadlocal var msg: std::String = "hello"
             func main() {
                 std::println(msg)
             }

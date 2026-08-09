@@ -34,23 +34,23 @@ class TypeRefTest {
 
     @Test
     fun arrayGenericTypeAnnotation() {
-        val t = firstParamType("func f(x: Array<Int>): Int { return 0 }")
+        val t = firstParamType("func f(x: std::Array<std::Int>): std::Int { return 0 }")
         assertIs<IrType.Array>(t)
         assertEquals(IrType.Int, t.element)
     }
 
     @Test
     fun nestedArrayGenericTypeAnnotation() {
-        val t = firstParamType("func f(x: Array<Array<Int>>): Int { return 0 }")
+        val t = firstParamType("func f(x: std::Array<std::Array<std::Int>>): std::Int { return 0 }")
         assertIs<IrType.Array>(t)
         assertIs<IrType.Array>(t.element)
     }
 
     @Test
     fun immutableCollectionTypeAnnotations() {
-        val vec = firstParamType("func f(x: List<Int>): Int { return 0 }")
-        val set = firstParamType("func f(x: Set<String>): Int { return 0 }")
-        val map = firstParamType("func f(x: Map<String, Int>): Int { return 0 }")
+        val vec = firstParamType("func f(x: std::List<std::Int>): std::Int { return 0 }")
+        val set = firstParamType("func f(x: std::Set<std::String>): std::Int { return 0 }")
+        val map = firstParamType("func f(x: std::Map<std::String, std::Int>): std::Int { return 0 }")
         assertIs<IrType.Named>(vec)
         assertEquals("List", vec.name)
         assertIs<IrType.Named>(set)
@@ -61,9 +61,9 @@ class TypeRefTest {
 
     @Test
     fun mutableCollectionTypeAnnotations() {
-        val vec = firstParamType("func f(x: MutableList<Int>): Int { return 0 }")
-        val set = firstParamType("func f(x: MutableSet<String>): Int { return 0 }")
-        val map = firstParamType("func f(x: MutableMap<String, Int>): Int { return 0 }")
+        val vec = firstParamType("func f(x: std::MutableList<std::Int>): std::Int { return 0 }")
+        val set = firstParamType("func f(x: std::MutableSet<std::String>): std::Int { return 0 }")
+        val map = firstParamType("func f(x: std::MutableMap<std::String, std::Int>): std::Int { return 0 }")
         assertIs<IrType.Named>(vec)
         assertEquals("MutableList", vec.name)
         assertIs<IrType.Named>(set)
@@ -74,7 +74,7 @@ class TypeRefTest {
 
     @Test
     fun functionTypeAnnotation() {
-        val t = firstParamType("func f(x: (Int) -> Bool): Int { return 0 }")
+        val t = firstParamType("func f(x: (std::Int) -> std::Bool): std::Int { return 0 }")
         assertIs<IrType.Function>(t)
         assertEquals(listOf(IrType.Int), t.params)
         assertEquals(IrType.Bool, t.ret)
@@ -82,7 +82,7 @@ class TypeRefTest {
 
     @Test
     fun functionTypeTwoParamsAnnotation() {
-        val t = firstParamType("func f(x: (Int, String) -> Bool): Int { return 0 }")
+        val t = firstParamType("func f(x: (std::Int, std::String) -> std::Bool): std::Int { return 0 }")
         assertIs<IrType.Function>(t)
         assertEquals(listOf(IrType.Int, IrType.String), t.params)
         assertEquals(IrType.Bool, t.ret)
@@ -91,14 +91,14 @@ class TypeRefTest {
     @Test
     fun removedTupleTypeAnnotationIsRejected() {
         assertTrue(
-            expectFailure("func f(x: (Int, String)): Int { return 0 }")
+            expectFailure("func f(x: (std::Int, std::String)): std::Int { return 0 }")
                 .any { "Tuple<A, B>" in it },
         )
     }
 
     @Test
     fun genericNamedTypeAnnotation() {
-        val t = firstParamType("func f(x: List<Int>): Int { return 0 }")
+        val t = firstParamType("func f(x: std::List<std::Int>): std::Int { return 0 }")
         assertIs<IrType.Named>(t)
         assertEquals("List", t.name)
     }
@@ -106,46 +106,46 @@ class TypeRefTest {
     @Test
     fun nestedGenericNamedTypeAnnotation() {
         // Collection surface spellings are contextual; plain user generic names still parse normally.
-        val t = firstParamType("func f(x: Dictionary<String, List<Int>>): Int { return 0 }")
+        val t = firstParamType("func f(x: Dictionary<std::String, std::List<std::Int>>): std::Int { return 0 }")
         assertIs<IrType.Named>(t)
         assertEquals("Dictionary", t.name)
     }
 
     @Test
     fun primitiveTypeStillResolves() {
-        assertEquals(IrType.Int, firstParamType("func f(x: Int): Int { return 0 }"))
-        assertEquals(IrType.String, firstParamType("func f(x: String): Int { return 0 }"))
-        assertEquals(IrType.Bool, firstParamType("func f(x: Bool): Int { return 0 }"))
+        assertEquals(IrType.Int, firstParamType("func f(x: std::Int): std::Int { return 0 }"))
+        assertEquals(IrType.String, firstParamType("func f(x: std::String): std::Int { return 0 }"))
+        assertEquals(IrType.Bool, firstParamType("func f(x: std::Bool): std::Int { return 0 }"))
     }
 
     @Test
     fun arrayGenericTypeLoweredToAllBackends() {
-        val result = compile("func f(x: Array<Int>): Int { return 0 }")
+        val result = compile("func f(x: std::Array<std::Int>): std::Int { return 0 }")
     }
 
     @Test
     fun arrayGenericNameIsCanonical() {
-        val canonical = firstParamType("func f(x: Array<Int>): Int { return 0 }")
+        val canonical = firstParamType("func f(x: std::Array<std::Int>): std::Int { return 0 }")
         assertEquals(IrType.Array(IrType.Int), canonical)
     }
 
     @Test
     fun arrayGenericNameRequiresExactlyOneTypeArgument() {
-        assertTrue(expectFailure("func f(x: Array): Int { return 0 }").any { "exactly one type argument" in it })
-        assertTrue(expectFailure("func f(x: Array<Int, String>): Int { return 0 }").any { "exactly one type argument" in it })
+        assertTrue(expectFailure("func f(x: std::Array): std::Int { return 0 }").any { "exactly one type argument" in it })
+        assertTrue(expectFailure("func f(x: std::Array<std::Int, std::String>): std::Int { return 0 }").any { "exactly one type argument" in it })
     }
 
     @Test
     fun bracketCollectionTypesAreRejected() {
         // Bracket type sugar is not valid: arrays are `Array<T>`, maps are `Map<K, V>`.
-        assertTrue(expectFailure("func f(x: [Int]): Int { return x.length }").any { "Array<Int>" in it })
-        assertTrue(expectFailure("func f(x: [String: Int]): Int { return x.length }").any { "Map<K, V>" in it })
+        assertTrue(expectFailure("func f(x: [std::Int]): std::Int { return x.length }").any { "std::Array<std::Int>" in it })
+        assertTrue(expectFailure("func f(x: [std::String: std::Int]): std::Int { return x.length }").any { "std::Map<K, V>" in it })
     }
 
     @Test
     fun removedCollectionTypeSpellingsAreRejected() {
-        assertTrue(expectFailure("func f(x: ![Int]): Int { return 0 }").any { "Set<T>" in it })
-        assertTrue(expectFailure("func f(x: arr[Int]): Int { return 0 }").any { "Array<T>" in it })
-        assertTrue(expectFailure("func f(x: tup(Int, String)): Int { return 0 }").any { "Expected ')' after parameters" in it || "undefined" in it || "tup" in it })
+        assertTrue(expectFailure("func f(x: ![std::Int]): std::Int { return 0 }").any { "std::Set<T>" in it })
+        assertTrue(expectFailure("func f(x: arr[std::Int]): std::Int { return 0 }").any { "std::Array<T>" in it })
+        assertTrue(expectFailure("func f(x: tup(std::Int, std::String)): std::Int { return 0 }").any { "Expected ')' after parameters" in it || "undefined" in it || "tup" in it })
     }
 }

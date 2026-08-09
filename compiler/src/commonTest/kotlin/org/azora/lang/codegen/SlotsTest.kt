@@ -19,7 +19,7 @@ class SlotsTest {
         run("""
             import std.io
             variant enum Option {
-                Some(Int)
+                Some(std::Int)
                 None
             }
             func main() {
@@ -34,7 +34,7 @@ class SlotsTest {
         assertEquals("nothing", run("""
             import std.io
             variant enum Option {
-                Some(Int)
+                Some(std::Int)
                 None
             }
             func main() {
@@ -51,7 +51,7 @@ class SlotsTest {
         assertEquals("42", run("""
             import std.io
             variant enum Option {
-                Some(Int)
+                Some(std::Int)
                 None
             }
             func main() {
@@ -68,8 +68,8 @@ class SlotsTest {
         assertEquals("7", run("""
             import std.io
             variant enum Shape {
-                Circle(Int)
-                Rect(Int, Int)
+                Circle(std::Int)
+                Rect(std::Int, std::Int)
                 Point
             }
             func main() {
@@ -87,8 +87,8 @@ class SlotsTest {
         assertEquals("0", run("""
             import std.io
             variant enum Shape {
-                Circle(Int)
-                Rect(Int, Int)
+                Circle(std::Int)
+                Rect(std::Int, std::Int)
                 Point
             }
             func main() {

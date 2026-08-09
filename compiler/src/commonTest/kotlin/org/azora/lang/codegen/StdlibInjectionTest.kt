@@ -114,7 +114,7 @@ class StdlibInjectionTest {
 
     @Test fun anyBridgeMapsToErasedCompilerTypeWithoutRuntimeStruct() {
         val result = Compiler().compile("""
-            func identity(value: Any): Any {
+            func identity(value: std::Any): std::Any {
                 return value
             }
 
@@ -186,10 +186,10 @@ class StdlibInjectionTest {
             import std.serializer
 
             pack UserId {
-                fin value: Long
+                fin value: std::Long
             }
 
-            impl Serializable for UserId {}
+            impl std::Serializable for UserId {}
 
             func main() {}
         """.trimIndent())
@@ -203,9 +203,9 @@ class StdlibInjectionTest {
 
             import std.serializer
 
-            @Serializable
+            @std::Serializable
             pack UserId {
-                fin value: Long
+                fin value: std::Long
             }
 
             func main() {}
@@ -222,8 +222,8 @@ class StdlibInjectionTest {
 
             import std.serializer
 
-            func decorated(): Int {
-                inline if std::reflect<DirectFieldDecoratorFixture::name>.hasDeco<SerialName> {
+            func decorated(): std::Int {
+                inline if std::reflect<DirectFieldDecoratorFixture::name>.hasDeco<std::SerialName> {
                     return 1
                 } else {
                     return 0
@@ -244,9 +244,9 @@ class StdlibInjectionTest {
         assertEquals("3\n2\n2", run("""
             import std.io
             func main() {
-                var xs: List<Int> = @arr[1, 2, 3]
-                var entries: Map<String, Int> = ["a": 1, "b": 2]
-                var seen: Set<Int> = ![1, 2, 2]
+                var xs: std::List<std::Int> = @std::arr[1, 2, 3]
+                var entries: std::Map<std::String, std::Int> = ["a": 1, "b": 2]
+                var seen: std::Set<std::Int> = ![1, 2, 2]
                 std::println(xs.size)
                 std::println(entries.size)
                 std::println(seen.size)
@@ -292,21 +292,21 @@ class StdlibInjectionTest {
         )
     }
 
-    @Test fun explicitlyUsedRealmsExposeBareMembers() =
+    @Test fun realmMembersRequireQualifiedAccess() =
         assertEquals("local\nshared", run("""
             import std.io
 
-            use realm local {
-                func first(): String { return "local" }
+            realm local {
+                func first(): std::String { return "local" }
             }
 
-            use realm merged {
-                func second(): String { return "shared" }
+            realm merged {
+                func second(): std::String { return "shared" }
             }
 
             func main() {
-                std::println(first())
-                std::println(second())
+                std::println(local::first())
+                std::println(merged::second())
             }
         """.trimIndent()))
 
@@ -314,7 +314,7 @@ class StdlibInjectionTest {
         for (declaration in listOf("realm local", "realm local")) {
             val result = Compiler().compile("""
                 $declaration {
-                    func hidden(): Int { return 1 }
+                    func hidden(): std::Int { return 1 }
                 }
 
                 func main() {
@@ -372,19 +372,19 @@ class StdlibInjectionTest {
             module lib.lib
 
             pack Body {
-                var mass: Int
-                var _cache: Int
+                var mass: std::Int
+                var _cache: std::Int
             }
 
-            func _helper(): Int { return 41 }
-            func openHelper(): Int { return _helper() }
+            func _helper(): std::Int { return 41 }
+            func openHelper(): std::Int { return _helper() }
 
             realm Secret {
-                func _hidden(): Int { return 7 }
-                func shown(): Int { return _hidden() }
+                func _hidden(): std::Int { return 7 }
+                func shown(): std::Int { return _hidden() }
             }
 
-            pack _Internal { var v: Int }
+            pack _Internal { var v: std::Int }
         """.trimIndent(),
     )
 
@@ -413,7 +413,7 @@ class StdlibInjectionTest {
             }
 
             impl Model {
-                prop secret[self: Self&]: Double = self._secret
+                prop secret[self: std::Self&]: std::Double = self._secret
             }
         """.trimIndent(),
     )
@@ -424,7 +424,7 @@ class StdlibInjectionTest {
         val result = Compiler(listOf(modelLibrary)).compile("""
             import std.io
             import lib.model
-            prop leaked[self: Model&]: Double = self._secret
+            prop leaked[self: Model&]: std::Double = self._secret
             func main() {
                 std::println(Model(3.0, 1.0).leaked)
             }
@@ -440,7 +440,7 @@ class StdlibInjectionTest {
         val result = Compiler(listOf(modelLibrary)).compile("""
             import std.io
             import lib.model
-            prop doubled[self: Model&]: Double = self.width * 2.0
+            prop doubled[self: Model&]: std::Double = self.width * 2.0
             func main() {
                 fin m = Model(3.0, 1.0)
                 std::println(m.doubled)
@@ -497,7 +497,7 @@ class StdlibInjectionTest {
                 module engine.render
 
                 realm engine {
-                    func answer(): Int { return 42 }
+                    func answer(): std::Int { return 42 }
                 }
             """.trimIndent(),
         )
@@ -521,7 +521,7 @@ class StdlibInjectionTest {
 
                 realm engine {
                     pack Handle {
-                        fin id: Int
+                        fin id: std::Int
                     }
                 }
             """.trimIndent(),
@@ -530,7 +530,7 @@ class StdlibInjectionTest {
 
         val bare = compiler.compile("""
             import engine.model
-            func inspect(value: Handle): Int { return value.id }
+            func inspect(value: Handle): std::Int { return value.id }
         """.trimIndent())
         val failure = assertIs<CompilationResult.Failure>(bare)
         assertEquals(
@@ -540,7 +540,7 @@ class StdlibInjectionTest {
 
         val qualified = compiler.compile("""
             import engine.model
-            func inspect(value: engine::Handle): Int { return value.id }
+            func inspect(value: engine::Handle): std::Int { return value.id }
             func main() {}
         """.trimIndent())
         assertIs<CompilationResult.Success>(
@@ -556,7 +556,7 @@ class StdlibInjectionTest {
                 """
                     module engine.shaders
 
-                    func shaderValue(): Int { return 7 }
+                    func shaderValue(): std::Int { return 7 }
                 """.trimIndent(),
             ),
             LibrarySource(
@@ -566,7 +566,7 @@ class StdlibInjectionTest {
 
                     import engine.shaders
                     realm engine {
-                        func shaderCount(): Int { return shaderValue() }
+                        func shaderCount(): std::Int { return shaderValue() }
                     }
                 """.trimIndent(),
             ),

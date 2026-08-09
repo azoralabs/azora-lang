@@ -40,8 +40,8 @@ class CallArgumentTest {
 
     private val decls = """
         import std.io
-        pack Size { var width: Int  var height: Int }
-        func area(width: Int, height: Int): Int { return width * height }
+        pack Size { var width: std::Int  var height: std::Int }
+        func area(width: std::Int, height: std::Int): std::Int { return width * height }
     """.trimIndent()
 
     private fun sized(arguments: String) = run(

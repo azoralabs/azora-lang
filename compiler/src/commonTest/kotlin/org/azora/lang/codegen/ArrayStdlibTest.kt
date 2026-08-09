@@ -26,8 +26,8 @@ class ArrayStdlibTest {
             import std.io
 
             func main() {
-                fin factory: Array<Int> = std::arrayOf(1, 2, 3)
-                fin literal: Array<Int> = @arr[1, 2, 3]
+                fin factory: std::Array<std::Int> = std::arrayOf(1, 2, 3)
+                fin literal: std::Array<std::Int> = @std::arr[1, 2, 3]
                 std::println(factory.length)
                 std::println(factory[1])
                 std::println(factory.data[1])
@@ -47,11 +47,11 @@ class ArrayStdlibTest {
             import std.container.array
             import std.io
 
-            func first(values: Array<String>): String {
+            func first(values: std::Array<std::String>): std::String {
                 return values[0]
             }
 
-            func last(values: Array<String>): String {
+            func last(values: std::Array<std::String>): std::String {
                 return values[values.length - 1]
             }
 
@@ -77,7 +77,7 @@ class ArrayStdlibTest {
             import std.io
 
             func main() {
-                fin rows: Array<Array<Int>> = std::arrayOf(@arr[1, 2], @arr[3, 4])
+                fin rows: std::Array<std::Array<std::Int>> = std::arrayOf(@std::arr[1, 2], @std::arr[3, 4])
                 std::println(rows[1][0])
             }
             """,
@@ -94,7 +94,7 @@ class ArrayStdlibTest {
             import std.io
 
             func main() {
-                fin values: Array<Int> = std::arrayOf<Int>()
+                fin values: std::Array<std::Int> = std::arrayOf<std::Int>()
                 std::println(values.length)
             }
             """,
@@ -124,7 +124,7 @@ class ArrayStdlibTest {
             import std.container.array
 
             func main() {
-                fin values = std::arrayOf<String>(1, 2)
+                fin values = std::arrayOf<std::String>(1, 2)
             }
             """.trimIndent(),
             release = false,
@@ -141,7 +141,7 @@ class ArrayStdlibTest {
     fun homogeneousVarargsUseValueSideEllipsisOnly() {
         val valid = Compiler().compile(
             """
-            func collect<T>(...elements: T): Array<T> {
+            func collect<T>(...elements: T): std::Array<T> {
                 return elements
             }
 
@@ -155,7 +155,7 @@ class ArrayStdlibTest {
 
         val invalid = Compiler().compile(
             """
-            func collect<T>(elements: ...T): Array<T> {
+            func collect<T>(elements: ...T): std::Array<T> {
                 return elements
             }
             """.trimIndent(),

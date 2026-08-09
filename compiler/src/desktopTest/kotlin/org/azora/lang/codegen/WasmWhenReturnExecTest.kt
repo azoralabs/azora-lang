@@ -44,7 +44,7 @@ class WasmWhenReturnExecTest {
             Down
             Level
         }
-        func step(d: Direction): Int {
+        func step(d: Direction): std::Int {
             when d {
                 Direction.Up -> { return 20 }
                 Direction.Down -> { return 10 }
@@ -64,7 +64,7 @@ class WasmWhenReturnExecTest {
         "1\n2",
         """
         import std.io
-        func classify(n: Int): Int {
+        func classify(n: std::Int): std::Int {
             if n < 0 {
                 return 1
             } else {

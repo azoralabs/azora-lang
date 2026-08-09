@@ -25,7 +25,7 @@ class Tier4ConcurrencyTest {
         assertEquals("5\n21\n20", run("""
             import std.io
 
-            async func compute(n: Int): Int {
+            async func compute(n: std::Int): std::Int {
                 return n * 2
             }
 
@@ -54,7 +54,7 @@ class Tier4ConcurrencyTest {
     @Test fun taskAwaitComputedResult() {
         assertEquals("30", run("""
             import std.io
-            func compute(a: Int, b: Int): Int {
+            func compute(a: std::Int, b: std::Int): std::Int {
                 return a * b
             }
             func main() {
@@ -95,7 +95,7 @@ class Tier4ConcurrencyTest {
         // A producer task sends values; the consumer receives them via await ordering.
         assertEquals("10\n20", run("""
             import std.io
-            func produce(ch: Channel): Int {
+            func produce(ch: std::Channel): std::Int {
                 ch.send(10)
                 ch.send(20)
                 ch.close()

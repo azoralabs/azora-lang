@@ -285,8 +285,8 @@ class Parser(
                 // that exist only for tests.
                 items.addAll(parseTestRealm())
             } else if (isRealmNamespaceAhead()) {
-                // `[use] realm Name { … }` - a named realm is a namespace. Plain
-                // declarations use qualified names; `use realm` keeps members bare.
+                // `realm Name { … }` - a named namespace whose members are always
+                // qualified outside that realm.
                 items.addAll(parseRealmNamespace())
             } else if (isRealmBlockAhead()) {
                 // `[inline|deepinline] realm ["label"] { … }` - a labeled/anonymous
@@ -335,10 +335,8 @@ class Parser(
     }
 
     private fun isRealmNamespaceAhead(): Boolean {
-        // Optional `use` prefix (`use realm …`) - members stay bare-accessible.
-        val f0 = if (check(TokenType.USE)) current + 1 else current
-        if (tokens.getOrNull(f0)?.type != TokenType.REALM) return false
-        var i = f0 + 1
+        if (tokens.getOrNull(current)?.type != TokenType.REALM) return false
+        var i = current + 1
         if (tokens.getOrNull(i)?.type != TokenType.IDENTIFIER) return false
         i++
         while (tokens.getOrNull(i)?.type == TokenType.DOUBLE_COLON &&
@@ -358,14 +356,10 @@ class Parser(
      * contributions merge - a realm is a name a package agrees on, not a block
      * one file owns.
      *
-     * The `use` prefix (`use realm std { … }`) keeps members at their bare short
-     * names (no mangling), so importing the module makes them callable without
-     * the `Realm::` qualifier - e.g. `vec![…]` rather than `std::vec![…]`. An
-     * inner realm inherits that choice: a bare-name realm that started mangling
-     * halfway down would be surprising.
+     * Realm members are always qualified outside their realm. Inside the same
+     * realm, [IntraRealmRewriter] preserves ergonomic sibling access.
      */
-    private fun parseRealmNamespace(outerPrefix: String = "", inheritMangle: Boolean = true): List<TopLevel> {
-        val useBare = match(TokenType.USE) // optional 'use' → members stay bare (unmangled)
+    private fun parseRealmNamespace(outerPrefix: String = ""): List<TopLevel> {
         consume(TokenType.REALM, "Expected 'realm'")
         val first = consume(TokenType.IDENTIFIER, "Expected realm name after 'realm'").lexeme
         val realmPath = StringBuilder(first).apply {
@@ -376,13 +370,13 @@ class Parser(
         val prefix = if (outerPrefix.isEmpty()) realmPath else "${outerPrefix}__$realmPath"
         consume(TokenType.L_BRACE, "Expected '{' after realm name")
         skipNewlines()
-        val items = parseRealmBody(prefix, mangle = inheritMangle && !useBare)
+        val items = parseRealmBody(prefix)
         consume(TokenType.R_BRACE, "Expected '}' after realm")
         consumeNewline()
         return items
     }
 
-    private fun parseRealmBody(prefix: String, mangle: Boolean = true): List<TopLevel> {
+    private fun parseRealmBody(prefix: String): List<TopLevel> {
         val result = mutableListOf<TopLevel>()
         val previousTypeNamespace = typeFunctionNamespacePrefix
         typeFunctionNamespacePrefix = prefix
@@ -391,16 +385,14 @@ class Parser(
                 skipNewlines()
                 if (check(TokenType.R_BRACE)) break
                 when {
-                    isRealmNamespaceAhead() -> result.addAll(parseRealmNamespace(prefix, mangle))
+                    isRealmNamespaceAhead() -> result.addAll(parseRealmNamespace(prefix))
                     isTypePropAhead() -> parseTypeProp(prefix)
                     else -> {
                         val parsed = parseTopLevel()
-                        if (mangle) {
-                            declaredTypeName(parsed)?.let { realmTypeNamespaces[it] = prefix.replace("__", "::") }
-                        }
-                        result.add(if (mangle) mangleTopLevel(parsed, prefix) else parsed)
+                        declaredTypeName(parsed)?.let { realmTypeNamespaces[it] = prefix.replace("__", "::") }
+                        result.add(mangleTopLevel(parsed, prefix))
                         if (pendingTopLevels.isNotEmpty()) {
-                            result.addAll(pendingTopLevels)
+                            result.addAll(pendingTopLevels.map { mangleTopLevel(it, prefix) })
                             pendingTopLevels.clear()
                         }
                     }
@@ -454,6 +446,7 @@ class Parser(
         is TopLevel.InlineLet -> item.copy(name = "${prefix}__${item.name}")
         is TopLevel.InlineVar -> item.copy(name = "${prefix}__${item.name}")
         is TopLevel.Impl -> item.copy(realmPrefix = prefix)
+        is TopLevel.Meta -> item.copy(name = "${prefix}__${item.name}")
         // `bridge func` members of `impl Type:: { … }` are static intrinsics
         // reached as `Type::member`; mangle each to `Type__member` to match.
         is TopLevel.Bridge -> item.copy(funcs = item.funcs.map { it.copy(name = "${prefix}__${it.name}") })
@@ -959,7 +952,7 @@ class Parser(
             // type, so no `for` clause is needed.
             check(TokenType.OPER) -> parseFreeOperator(annotations, visibility)
             check(TokenType.IMPORT) -> parseUse()
-            // `exposed use …` - the import travels on to whoever imports this
+            // `exposed import …` - the import travels on to whoever imports this
             // module, so a package can offer one entry point instead of making
             // every caller name its internals (e.g. std.macro and std.container).
             check(TokenType.EXPOSE) && peekNext()?.type == TokenType.IMPORT -> {
@@ -990,7 +983,7 @@ class Parser(
     private fun parseAnnotations(): List<Annotation> {
         val result = mutableListOf<Annotation>()
         while (check(TokenType.AT)) {
-            val at = advance() // '@'
+            val at = advance()
             // Grouped form: `@[A, B(args), C]` applies several decorators in one row,
             // equivalent to stacking `@A` / `@B(args)` / `@C`.
             if (match(TokenType.L_BRACKET)) {
@@ -1014,13 +1007,19 @@ class Parser(
 
     /** One decorator body (name + optional `(args)`), with the leading `@` already consumed. */
     private fun parseOneAnnotation(line: Int, column: Int): Annotation {
-        val name = consume(TokenType.IDENTIFIER, "Expected decorator name").lexeme
+        val parts = mutableListOf(consume(TokenType.IDENTIFIER, "Expected decorator name").lexeme)
+        while (match(TokenType.DOUBLE_COLON)) {
+            parts += consume(TokenType.IDENTIFIER, "Expected decorator name after '::'").lexeme
+        }
+        val name = parts.last()
+        val qualifier = parts.dropLast(1).takeIf { it.isNotEmpty() }?.joinToString("::")
         if (name.firstOrNull()?.isUpperCase() != true) {
-            error("Decorator names must start with an uppercase letter: use '@${name.replaceFirstChar { it.uppercase() }}' at line $line")
+            val prefix = qualifier?.let { "@$it::" } ?: "@"
+            error("Decorator names must start with an uppercase letter: use '$prefix${name.replaceFirstChar { it.uppercase() }}' at line $line")
         }
         val (args, namedArgs) = if (check(TokenType.L_PAREN)) parseDecoratorArguments()
         else emptyList<Expr>() to emptyList<Pair<String, Expr>>()
-        return Annotation(name, args, line, column, namedArgs = namedArgs)
+        return Annotation(name, args, line, column, namedArgs = namedArgs, qualifier = qualifier)
     }
 
     private fun parseDecoratorArguments(): Pair<List<Expr>, List<Pair<String, Expr>>> {
@@ -1359,13 +1358,23 @@ class Parser(
             if (tokens.getOrNull(i)?.type != TokenType.R_BRACKET) return false
             return elem.lexeme == "Type" || hasInline
         }
-        // `Array<Elem>` - an `inline` compile-time value list (`inline fin ranks: Array<Int> = @arr[…]`).
-        if (t?.type == TokenType.IDENTIFIER && t.lexeme == "Array") return hasInline
+        // `Array<Elem>` / `std::Array<Elem>` - an inline compile-time value list.
+        if (hasInline && t?.type == TokenType.IDENTIFIER) {
+            var j = i
+            var last = tokens.getOrNull(j)?.lexeme
+            while (tokens.getOrNull(j + 1)?.type == TokenType.DOUBLE_COLON &&
+                tokens.getOrNull(j + 2)?.type == TokenType.IDENTIFIER
+            ) {
+                j += 2
+                last = tokens.getOrNull(j)?.lexeme
+            }
+            if (last == "Array") return true
+        }
         return false
     }
 
     /**
-     * `[inline] let X: [Elem] = <list>` / `inline fin X: Array<Elem> = @arr[…]` -
+     * `[inline] let X: [Elem] = <list>` / `inline fin X: Array<Elem> = @std::arr[…]` -
      * records a compile-time list; emits no runtime item.
      */
     private fun parseTypeListBinding(): TopLevel {
@@ -1381,8 +1390,10 @@ class Parser(
         } else {
             // `Array<Elem>` - a value list; `[Elem]` value spellings are reserved for
             // grouping types, so a value binding is written `Array<…>`.
-            consume(TokenType.IDENTIFIER, "Expected 'Array<…>' or '[Elem]' compile-time list type")
-            skipGenericTypeArgs()
+            val type = parseTypeName()
+            if (type !is TypeRef.Named || type.name != "Array") {
+                error("Expected 'std::Array<…>' or '[Elem]' compile-time list type at line ${start.line}")
+            }
         }
         consume(TokenType.EQUAL, "Expected '=' in compile-time list binding")
         typeListEnv[name] = parseComptimeListValue()
@@ -1391,19 +1402,22 @@ class Parser(
     }
 
     private fun parseComptimeListTerm(): List<String> {
-        // `@arr[...]` - the array-literal macro used as a compile-time list; accept
-        // the `@name` prefix and parse the bracket body as a list of values.
+        // `@arr[...]` inside its declaring realm, or `@std::arr[...]` outside it:
+        // consume the macro prefix and parse the bracket body as compile-time values.
         val isMacro = isMacroInvokeAhead()
-        if (isMacro) { advance(); parseMacroName() }
+        if (isMacro) {
+            advance()
+            parseQualifiedMacroName()
+        }
         if (match(TokenType.L_BRACKET)) {
             val values = mutableListOf<String>()
             if (!check(TokenType.R_BRACKET)) {
                 do {
                     values.add(when {
                         // Plain `[…]` groups *types* only; string/int value lists must
-                        // be written `@arr[…]`.
+                        // be written `@std::arr[…]`.
                         check(TokenType.STRING_LITERAL) || check(TokenType.INT_LITERAL) -> {
-                            if (!isMacro) error("value lists must use '@arr[…]'; plain '[…]' only groups types at line ${peek().line}")
+                            if (!isMacro) error("value lists must use '@std::arr[…]'; plain '[…]' only groups types at line ${peek().line}")
                             if (check(TokenType.STRING_LITERAL)) advance().literal as String
                             else (advance().literal as NumericLiteral).value.toString()
                         }
@@ -1910,15 +1924,21 @@ class Parser(
         )
     }
 
+    private data class ContractHead(
+        val name: String,
+        val args: List<TypeRef> = emptyList(),
+        val qualifier: String? = null,
+    )
+
     /** One spec or a bracketed list following `derives` / `derive`. */
-    private fun parseDeriveHeads(): List<Pair<String, List<TypeRef>>> {
-        fun one(): Pair<String, List<TypeRef>> {
-            val name = consume(TokenType.IDENTIFIER, "Expected a spec name to derive").lexeme
-            return name to parseGenericTypeArgsIfPresent()
+    private fun parseDeriveHeads(): List<ContractHead> {
+        fun one(): ContractHead {
+            val (name, qualifier) = parseContractName("Expected a spec name to derive")
+            return ContractHead(name, parseGenericTypeArgsIfPresent(), qualifier)
         }
         if (!match(TokenType.L_BRACKET)) return listOf(one())
         if (check(TokenType.R_BRACKET)) error("Expected at least one spec in a derives list at line ${peek().line}")
-        val result = mutableListOf<Pair<String, List<TypeRef>>>()
+        val result = mutableListOf<ContractHead>()
         do { result.add(one()) } while (match(TokenType.COMMA))
         consume(TokenType.R_BRACKET, "Expected ']' after the derives list")
         return result
@@ -1926,17 +1946,18 @@ class Parser(
 
     private fun derivedImpl(
         target: String,
-        head: Pair<String, List<TypeRef>>,
+        head: ContractHead,
         start: Token,
         typeParams: List<String> = emptyList(),
         variadicParam: String? = null,
     ): TopLevel.Impl = TopLevel.Impl(
         typeName = target,
         methods = emptyList(),
-        traitName = head.first,
+        traitName = head.name,
         line = start.line,
         column = start.column,
-        traitArgs = head.second,
+        traitArgs = head.args,
+        traitQualifier = head.qualifier,
         typeParams = typeParams,
         variadicParam = variadicParam,
         isDerived = true,
@@ -1945,7 +1966,7 @@ class Parser(
 
     private fun enqueueDerives(
         target: String,
-        heads: List<Pair<String, List<TypeRef>>>,
+        heads: List<ContractHead>,
         start: Token,
         typeParams: List<String> = emptyList(),
         variadicParam: String? = null,
@@ -2739,13 +2760,13 @@ class Parser(
      * `impl Type:: { … }` is the type-scoped static block and keeps its `::`,
      * which is why a qualifier is only taken when a name follows it.
      */
-    private fun parseImplHeadName(): String {
-        var name = consume(TokenType.IDENTIFIER, "Expected type or trait name after 'impl'").lexeme
+    private fun parseContractName(message: String): Pair<String, String?> {
+        val path = mutableListOf(consume(TokenType.IDENTIFIER, message).lexeme)
         while (check(TokenType.DOUBLE_COLON) && peekNext()?.type == TokenType.IDENTIFIER) {
             advance() // '::'
-            name = advance().lexeme
+            path.add(advance().lexeme)
         }
-        return name
+        return path.last() to path.dropLast(1).takeIf { it.isNotEmpty() }?.joinToString("::")
     }
 
     /** Parses `Type`, `Type::member`, or `Type::*` into the semantic site identity. */
@@ -2782,7 +2803,7 @@ class Parser(
     }
 
     private fun queueExpandedImpls(
-        traits: List<Pair<String, List<TypeRef>>>,
+        traits: List<ContractHead>,
         targets: List<String>,
         start: Token,
         args: List<Expr>,
@@ -2794,14 +2815,15 @@ class Parser(
         hasBody: Boolean,
     ): TopLevel.Impl {
         val implementations = targets.flatMap { target ->
-            traits.map { (trait, traitArgs) ->
+            traits.map { head ->
                 TopLevel.Impl(
                     typeName = target,
                     methods = emptyList(),
-                    traitName = trait,
+                    traitName = head.name,
                     line = start.line,
                     column = start.column,
-                    traitArgs = traitArgs,
+                    traitArgs = head.args,
+                    traitQualifier = head.qualifier,
                     decoratorArgs = args,
                     decoratorNamedArgs = namedArgs,
                     annotations = annotations,
@@ -3013,21 +3035,23 @@ class Parser(
         val isPackImpl = match(TokenType.PACK)
         val traitHeads = if (match(TokenType.L_BRACKET)) {
             if (check(TokenType.R_BRACKET)) error("Expected at least one decorator after 'impl [' at line ${peek().line}")
-            val names = mutableListOf<Pair<String, List<TypeRef>>>()
+            val names = mutableListOf<ContractHead>()
             do {
-                val name = consume(TokenType.IDENTIFIER, "Expected decorator name in implementation list").lexeme
+                val (name, qualifier) = parseContractName("Expected decorator name in implementation list")
                 if (check(TokenType.LESS)) {
                     error("Generic arguments are not supported inside decorator implementation lists at line ${peek().line}")
                 }
-                names.add(name to emptyList())
+                names.add(ContractHead(name, qualifier = qualifier))
             } while (match(TokenType.COMMA))
             consume(TokenType.R_BRACKET, "Expected ']' after decorator implementation list")
             names
         } else {
-            val name = parseImplHeadName()
-            listOf(name to parseGenericTypeArgsIfPresent())
+            val (name, qualifier) = parseContractName("Expected type or trait name after 'impl'")
+            listOf(ContractHead(name, parseGenericTypeArgsIfPresent(), qualifier))
         }
-        val (first, firstArgs) = traitHeads.first()
+        val firstHead = traitHeads.first()
+        val first = firstHead.name
+        val firstArgs = firstHead.args
         val (decoratorArgs, decoratorNamedArgs) = if (check(TokenType.L_PAREN)) parseDecoratorArguments()
         else emptyList<Expr>() to emptyList<Pair<String, Expr>>()
         if (traitHeads.size > 1 && (decoratorArgs.isNotEmpty() || decoratorNamedArgs.isNotEmpty())) {
@@ -3061,6 +3085,7 @@ class Parser(
                 typeName, emptyList(), traitName, start.line, start.column,
                 isPackImpl = isPackImpl,
                 traitArgs = traitArgs,
+                traitQualifier = firstHead.qualifier,
                 decoratorArgs = decoratorArgs,
                 decoratorNamedArgs = decoratorNamedArgs,
                 isBridge = isBridge,
@@ -3123,7 +3148,7 @@ class Parser(
             if (check(TokenType.R_BRACE)) break
             val memberAnnotations = parseAnnotations()
             val methodStart = peek()
-            // `inline for op in @arr["+", "-"] { … }` inside an impl generates MEMBERS,
+            // `inline for op in @std::arr["+", "-"] { … }` inside an impl generates MEMBERS,
             // one copy of the body per value, exactly as the top-level form generates
             // declarations. Checked before `inline` is taken as a member modifier.
             if (check(TokenType.INLINE) && peekNext()?.type == TokenType.FOR) {
@@ -3366,6 +3391,7 @@ class Parser(
             typeName, bindSelf(methods, typeName), traitName, start.line, start.column,
             isPackImpl = isPackImpl,
             traitArgs = traitArgs,
+            traitQualifier = firstHead.qualifier,
             decoratorArgs = decoratorArgs,
             decoratorNamedArgs = decoratorNamedArgs,
             annotations = annotations,
@@ -3900,7 +3926,7 @@ class Parser(
         // Any word may name a macro, including one that is a keyword elsewhere:
         // `@with`, `@to`, `@in`. The leading `@` has already said this is a name,
         // so nothing is ambiguous.
-        val base = if (check(TokenType.IDENTIFIER)) advance().lexeme
+        var base = if (check(TokenType.IDENTIFIER)) advance().lexeme
             else if (peek().lexeme.isNotEmpty() && peek().lexeme.first().isLetter()) advance().lexeme
             else consumeIdentifierLike("Expected a macro name after '@'")
         val sigil = when {
@@ -3912,6 +3938,20 @@ class Parser(
             else -> ""
         }
         return base + sigil
+    }
+
+    /** A macro invocation name after `@`: `name` or realm-qualified `std::name`. */
+    private fun parseQualifiedMacroName(): String {
+        val parts = mutableListOf(parseMacroName())
+        while (match(TokenType.DOUBLE_COLON)) {
+            // A name sigil belongs only to the final segment, so a qualified
+            // prefix such as `std!::name` is rejected naturally here.
+            if (parts.last().lastOrNull() in setOf('!', '?', '&', '*', '^')) {
+                error("A macro-name sigil is only valid on the final qualified segment at line ${peek().line}")
+            }
+            parts += parseMacroName()
+        }
+        return parts.joinToString("__")
     }
 
     private fun requireTypeMacroHole(name: String) {
@@ -6132,19 +6172,14 @@ class Parser(
     /** `guard condition else { body }` - sugar for `if !condition { body }`. */
     /**
      * `import path` - import a module/realm path.
-     * `import realm path` - same import form with an explicit namespace marker.
      * `import path.*` - import all items below a path.
      * `import path.{child, other}` - import grouped child paths.
-     * `use path.item` - import a dotted path; semantic passes decide whether the
+     * `import path.item` - import a dotted path; semantic passes decide whether the
      * path names a module or a selected item. `::` is only for realm access
      * expressions, never import syntax.
      */
     private fun parseUse(exported: Boolean = false, condition: Expr? = null): TopLevel {
         val start = consume(TokenType.IMPORT, "Expected 'import'")
-        // `use realm std` - the optional marker reads naturally and is skipped.
-        if (check(TokenType.REALM) && peekNext()?.type == TokenType.IDENTIFIER) {
-            advance()
-        }
         val imports = mutableListOf<Pair<String, String?>>() // (realmName, itemName or null for all)
         do {
             val base = StringBuilder(consumeIdentifierLike("Expected realm name after 'use'"))
@@ -6152,8 +6187,8 @@ class Parser(
             usePath@ while (match(TokenType.DOT)) {
                 when {
                     match(TokenType.STAR) -> {
-                        // `use path.*` - wildcard. Marked with the "*" selector so
-                        // it stays distinct from a plain `use path` (which must name
+                        // `import path.*` - wildcard. Marked with the "*" selector so
+                        // it stays distinct from a plain `import path` (which must name
                         // an actual module file, not just a namespace/folder).
                         imports.add(base.toString() to "*")
                         completed = true
@@ -6172,7 +6207,7 @@ class Parser(
 
             val realmName = base.toString()
             if (match(TokenType.DOUBLE_COLON)) {
-                error("Use dotted paths such as 'use module.item' or 'use module.{a, b}'; '::' is for realm access expressions")
+                error("Use dotted paths such as 'import module.item' or 'import module.{a, b}'; '::' is for realm access expressions")
             } else {
                 addDottedUsePath(realmName, imports)
             }
@@ -7906,7 +7941,8 @@ class Parser(
         return left
     }
 
-    private fun isReflectName(name: String): Boolean = name == "reflect" || name.endsWith("__reflect")
+    private fun isReflectName(name: String): Boolean =
+        name.endsWith("__reflect") || (typeFunctionNamespacePrefix.isNotEmpty() && name == "reflect")
 
     /** After `<`, whether the tokens spell a reflect target `Ident(::Ident)*>` or the whole-program `*`. */
     private fun isReflectTargetAhead(): Boolean {
@@ -8022,7 +8058,7 @@ class Parser(
         }
         // There is no `#expr` hash operator: hashing is `Hash`'s `prop hash`,
         // reached as `value.hash`. `#` survives only as the container-macro
-        // sigil (`@set[…]`), which `parseMetaPrefix` reads.
+        // sigil (`@std::set[…]`), which `parseMetaPrefix` reads.
         // `lend x` - ownership the callee gives back (§13). Contextual: the word
         // only means this when a name follows it, so `lend` stays usable as one.
         if (check(TokenType.IDENTIFIER) && peek().lexeme == "lend" && peekNext()?.type == TokenType.IDENTIFIER) {
@@ -8389,6 +8425,11 @@ class Parser(
         var i = current + 1
         if (tokens.getOrNull(i)?.type != TokenType.IDENTIFIER) return false
         i++
+        while (tokens.getOrNull(i)?.type == TokenType.DOUBLE_COLON) {
+            i++
+            if (tokens.getOrNull(i)?.type != TokenType.IDENTIFIER) return false
+            i++
+        }
         if (tokens.getOrNull(i)?.type in setOf(
                 TokenType.BANG, TokenType.QMARK, TokenType.AMP, TokenType.STAR, TokenType.CARET,
             )
@@ -8525,13 +8566,14 @@ class Parser(
         if (tok.type == TokenType.LESS) {
             return parseGenericLambda()
         }
-        // `@name[…]`, `@name(…)`, `@name{…}` - a macro invocation. The `@` leads,
+        // `@name[…]`, `@name(…)`, `@name{…}` - a local macro invocation. Realm
+        // qualification follows the sigil: `@std::arr[…]`.
         // as it does on the declaration (`macro @name { … }`), so a call and the
         // thing it calls are spelled the same way round. A decorator is also
         // `@name`, but never followed by a delimiter in expression position.
         if (tok.type == TokenType.AT && isMacroInvokeAhead()) {
             val at = advance() // '@'
-            val name = parseMacroName()
+            val name = parseQualifiedMacroName()
             val args = parseMacroInvokeArgs()
             usedMetaInvoke = true
             return Expr.MetaInvoke(name, args, at.line, at.column, name.length + 1)
@@ -8613,7 +8655,7 @@ class Parser(
                     // Tuple-literal sugar `(a, b, …)` was removed: parentheses only
                     // group a single expression. Build tuples with `std::tupleOf(…)`
                     // or the `tup@` macro.
-                    error("tuple literal '(a, b, …)' is not supported; use 'std::tupleOf(a, b, …)' or '@tup(a, b, …)' at line ${tok.line}")
+                    error("tuple literal '(a, b, …)' is not supported; use 'std::tupleOf(a, b, …)' or '@std::tup(a, b, …)' at line ${tok.line}")
                 }
                 consume(TokenType.R_PAREN, "Expected ')'")
                 Expr.Grouping(first, tok.line, tok.column)
@@ -8635,7 +8677,7 @@ class Parser(
             TokenType.L_BRACKET -> {
                 advance()
                 if (check(TokenType.R_BRACKET)) {
-                    error("array literal '[]' is not valid; use '@arr[]' at line ${tok.line}")
+                    error("array literal '[]' is not valid; use '@std::arr[]' at line ${tok.line}")
                 }
                 val first = parseExpr()
                 if (match(TokenType.COLON)) {
@@ -8650,8 +8692,8 @@ class Parser(
                     Expr.MapLit(entries, tok.line, tok.column)
                 } else {
                     // Value array literals are not a bracket sugar - `[…]` only groups
-                    // types. Values use the `arr@` macro: `[1, 2, 3]`.
-                    error("array literal '[…]' is not valid; use '@arr[…]' at line ${tok.line}")
+                    // types. Values use the `@std::arr` macro: `@std::arr[1, 2, 3]`.
+                    error("array literal '[…]' is not valid; use '@std::arr[…]' at line ${tok.line}")
                 }
             }
             TokenType.L_BRACE -> parseLambda(tok.line, tok.column)

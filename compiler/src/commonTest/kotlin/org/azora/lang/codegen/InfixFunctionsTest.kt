@@ -18,7 +18,7 @@ class InfixFunctionsTest {
         assertEquals("5", run("""
             import std.io
             pack Calc {
-                var v: Int
+                var v: std::Int
             }
             impl Calc {
                 func plus(other: Calc): Calc {
@@ -40,7 +40,7 @@ class InfixFunctionsTest {
 
             macro ${'$'}a @scaledBy ${'$'}b
 
-            func scaledBy(self: Int, factor: Int): Int {
+            func scaledBy(self: std::Int, factor: std::Int): std::Int {
                 return self * factor
             }
 
@@ -54,7 +54,7 @@ class InfixFunctionsTest {
         assertEquals("11", run("""
             import std.io
             pack Calc {
-                var v: Int
+                var v: std::Int
             }
             impl Calc {
                 func plus(other: Calc): Calc {
@@ -79,7 +79,7 @@ class InfixFunctionsTest {
         assertEquals("10", run("""
             import std.io
             pack Calc {
-                var v: Int
+                var v: std::Int
             }
             impl Calc {
                 func plus(other: Calc): Calc {
@@ -102,7 +102,7 @@ class InfixFunctionsTest {
         assertEquals("true", run("""
             import std.io
             pack Box {
-                var v: Int
+                var v: std::Int
             }
             impl Box {
                 func plus(other: Box): Box {

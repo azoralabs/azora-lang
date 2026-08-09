@@ -21,10 +21,10 @@ class Tier3DiTest {
         assertEquals("1\n2\n3", run("""
             import std.io
             solo pack Counter {
-                var count: Int = 0
+                var count: std::Int = 0
             }
             impl Counter {
-                func inc[self: Self!](): Int {
+                func inc[self: std::Self!](): std::Int {
                     self.count = self.count + 1
                     return self.count
                 }
@@ -43,10 +43,10 @@ class Tier3DiTest {
         assertEquals("42", run("""
             import std.io
             solo pack Config {
-                var value: Int = 42
+                var value: std::Int = 42
             }
             impl Config {
-                func get[self: Self!](): Int {
+                func get[self: std::Self!](): std::Int {
                     return self.value
                 }
             }
@@ -60,7 +60,7 @@ class Tier3DiTest {
         assertEquals("hello", run("""
             import std.io
             solo pack Greeting {
-                var msg: String = "hello"
+                var msg: std::String = "hello"
             }
             func main() {
                 var g = inject Greeting
@@ -73,10 +73,10 @@ class Tier3DiTest {
         assertEquals("APP\npostgres://localhost", run("""
             import std.io
             pack Logger {
-                var prefix: String
+                var prefix: std::String
             }
             pack DB {
-                var url: String
+                var url: std::String
             }
             graph App {
                 solo Logger("APP")
@@ -95,7 +95,7 @@ class Tier3DiTest {
         assertEquals("same", run("""
             import std.io
             pack Logger {
-                var prefix: String
+                var prefix: std::String
             }
             graph App {
                 solo Logger("test")
@@ -120,7 +120,7 @@ class Tier3DiTest {
     fun lazyBindingCanDeferInjection() {
         assertEquals("64", run("""
             import std.io
-            solo pack Cache { fin size: Int = 64 }
+            solo pack Cache { fin size: std::Int = 64 }
             func main() {
                 lazy fin c = inject Cache
                 std::println(c.size)
@@ -144,7 +144,7 @@ class Tier3DiTest {
         // difference between the forms.
         val result = Compiler().compile(
             """
-            pack Service { fin url: String = "" }
+            pack Service { fin url: std::String = "" }
             graph AppGraph { Service("https://x") }
             func main() {}
             """.trimIndent(),
@@ -160,11 +160,11 @@ class Tier3DiTest {
     fun everyProviderLifetimeAndGraphCompositionParse() {
         assertEquals("https://api", run("""
             import std.io
-            spec Api { func host[self: Self&](): String }
-            pack Config { fin url: String = "" }
-            pack HttpClient { fin url: String = "" }
-            impl Api for HttpClient { func host[self: Self&](): String { return self.url } }
-            pack LoginViewModel { fin tag: String = "" }
+            spec Api { func host[self: std::Self&](): std::String }
+            pack Config { fin url: std::String = "" }
+            pack HttpClient { fin url: std::String = "" }
+            impl Api for HttpClient { func host[self: std::Self&](): std::String { return self.url } }
+            pack LoginViewModel { fin tag: std::String = "" }
 
             graph NetworkGraph {
                 solo Config("https://api")
@@ -190,11 +190,11 @@ class Tier3DiTest {
     fun includeComposesGraphsWithoutTakingTheNameFromPrograms() {
         assertEquals("kept\n42", run("""
             import std.io
-            pack Config { fin url: String = "" }
+            pack Config { fin url: std::String = "" }
             graph BaseGraph { solo Config("u") }
             graph AppGraph includes BaseGraph { }
 
-            func includes(n: Int): Int { return n }
+            func includes(n: std::Int): std::Int { return n }
 
             func main() {
                 var includes = true

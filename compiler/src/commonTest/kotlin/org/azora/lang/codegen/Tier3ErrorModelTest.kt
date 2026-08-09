@@ -36,7 +36,7 @@ class Tier3ErrorModelTest {
             error E {
                 Bad
             }
-            func f(): Int ?! E {
+            func f(): std::Int ?! E {
                 error E.Bad
                 return 0
             }
@@ -56,7 +56,7 @@ class Tier3ErrorModelTest {
             error E {
                 Bad
             }
-            func g(x: Int): Int ?! E {
+            func g(x: std::Int): std::Int ?! E {
                 if x < 0 {
                     error E.Bad
                 }
@@ -73,11 +73,11 @@ class Tier3ErrorModelTest {
             error E {
                 Bad
             }
-            func inner(): Int ?! E {
+            func inner(): std::Int ?! E {
                 error E.Bad
                 return 0
             }
-            func outer(): Int ?! E {
+            func outer(): std::Int ?! E {
                 return try inner()
             }
             func main() {}
@@ -103,7 +103,7 @@ class Tier3ErrorModelTest {
             error MathError {
                 DivByZero
             }
-            func divide(a: Int, b: Int): Int ?! MathError {
+            func divide(a: std::Int, b: std::Int): std::Int ?! MathError {
                 if b == 0 {
                     error MathError.DivByZero
                 }
@@ -143,7 +143,7 @@ class Tier3ErrorModelTest {
             error E {
                 Bad
             }
-            func risky(): Int ?! E {
+            func risky(): std::Int ?! E {
                 defer { std::println("always") }
                 error defer { std::println("only on fail") }
                 error E.Bad
@@ -165,7 +165,7 @@ class Tier3ErrorModelTest {
             error E {
                 Bad
             }
-            func ok(): Int ?! E {
+            func ok(): std::Int ?! E {
                 defer { std::println("always") }
                 error defer { std::println("only on fail") }
                 return 5
@@ -186,7 +186,7 @@ class Tier3ErrorModelTest {
             error Other {
                 X
             }
-            func bad(): Int ?! E {
+            func bad(): std::Int ?! E {
                 error Other.X
                 return 0
             }
@@ -204,7 +204,7 @@ class Tier3ErrorModelTest {
             error E {
                 Bad
             }
-            func good(): Int ?! E {
+            func good(): std::Int ?! E {
                 error E.Bad
                 return 0
             }
@@ -224,7 +224,7 @@ class Tier3ErrorModelTest {
             error A { Q W E }
             error B { S D F }
 
-            func choose(first: Bool): Unit ?! [A, B] {
+            func choose(first: std::Bool): std::Unit ?! [A, B] {
                 if first { error A.Q }
                 error B.S
             }
@@ -242,7 +242,7 @@ class Tier3ErrorModelTest {
             error B { S }
             error C { Z }
 
-            func invalid(): Unit ?! [A, B] {
+            func invalid(): std::Unit ?! [A, B] {
                 error C.Z
             }
         """.trimIndent())
@@ -254,7 +254,7 @@ class Tier3ErrorModelTest {
     @Test fun duplicateErrorSetInBracketListIsRejected() {
         val result = Compiler().compile("""
             error A { Q }
-            func invalid(): Unit ?! [A, A] {}
+            func invalid(): std::Unit ?! [A, A] {}
         """.trimIndent())
 
         assertIs<CompilationResult.Failure>(result)
@@ -283,11 +283,11 @@ class Tier3ErrorModelTest {
             import std.io
 
             variant error IndexError {
-                OutOfBounds(index: Int, size: Int)
+                OutOfBounds(index: std::Int, size: std::Int)
                 Empty
             }
 
-            func at(i: Int, n: Int): Int ?! IndexError {
+            func at(i: std::Int, n: std::Int): std::Int ?! IndexError {
                 if i >= n { return .OutOfBounds(i, n) }
                 return i
             }
@@ -312,7 +312,7 @@ class Tier3ErrorModelTest {
         assertEquals("made", run("""
             import std.io
 
-            variant error IndexError { OutOfBounds(index: Int, size: Int) }
+            variant error IndexError { OutOfBounds(index: std::Int, size: std::Int) }
 
             func main() {
                 fin e = IndexError.OutOfBounds(9, 3)

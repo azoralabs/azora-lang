@@ -153,7 +153,7 @@ class AzoraLanguageServerTest {
         val all = spans(source)
         fun textOf(span: HighlightSpan) = source.substring(span.start, span.end)
 
-        assertTrue(all.any { it.type == "function" && textOf(it) == "println" })
+        assertTrue(all.any { it.type == "function" && textOf(it) == "println" }, "println spans: ${all.filter { textOf(it) == "println" }}")
         assertTrue(all.none { it.type == "function" && textOf(it) == "notDeclared" })
     }
 
@@ -181,6 +181,35 @@ fin array = @collect_all(tuple)"""
         val macros = spans(source).filter { it.type == "macro" }
 
         assertEquals(listOf("@tup", "@collect_all"), macros.map { source.substring(it.start, it.end) })
+    }
+
+    @Test
+    fun highlightsRealmQualifiedSigilsInCompilerOrder() {
+        val source = """
+            @std::Serializable pack User
+            fin values = @std::arr[1, 2, 3]
+        """.trimIndent()
+        val all = spans(source)
+
+        assertTrue(all.any { it.type == "annotation" && source.substring(it.start, it.end) == "@std::Serializable" })
+        assertTrue(all.any { it.type == "macro" && source.substring(it.start, it.end) == "@std::arr" })
+    }
+
+    @Test
+    fun standardTypesAndReflectRequireRealmQualification() {
+        val source = """
+            import std.primitive
+            import std.reflection
+            fin invalid: Int = 1
+            fin valid: std::Int = 1
+            inline fin metadata = std::reflect<std::Int>
+        """.trimIndent()
+        val all = spans(source)
+        fun kinds(text: String) = all.filter { source.substring(it.start, it.end) == text }.map { it.type }
+
+        assertEquals("variable", kinds("Int").first())
+        assertEquals("type", kinds("Int").drop(1).first())
+        assertTrue(all.any { it.type == "function" && source.substring(it.start, it.end) == "reflect" })
     }
 
     @Test

@@ -113,9 +113,8 @@ enum class TokenType {
     QMARK_PLUS_EQUAL, QMARK_MINUS_EQUAL, QMARK_STAR_EQUAL, QMARK_SLASH_EQUAL, QMARK_PERCENT_EQUAL,
     QMARK_PLUS_PLUS, QMARK_MINUS_MINUS,
     NULL,
-    // `import path` - module imports. `use` is the separate marker that opens a
-    // realm with its members left bare (`use realm std { … }`) and names a foreign
-    // symbol in a bridge or spec (`use as "…"`).
+    // `import path` - module imports. `use` names a foreign symbol in a bridge
+    // or gives a spec member its generated call spelling (`use as "…"`).
     IMPORT, USE,
     // `for x by N in ...` (step) and `reverse for` / `for x in reverse ...`
     BY,

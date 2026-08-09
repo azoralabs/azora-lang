@@ -28,9 +28,9 @@ class CastIsLambdaTest {
         assertEquals("true\nfalse", run("""
             import std.io
             func main() {
-                var x: Any = 42
-                std::println(x is Int)
-                std::println(x is String)
+                var x: std::Any = 42
+                std::println(x is std::Int)
+                std::println(x is std::String)
             }
         """.trimIndent()))
     }
@@ -39,8 +39,8 @@ class CastIsLambdaTest {
         assertEquals("true", run("""
             import std.io
             func main() {
-                var x: Any = "hello"
-                std::println(x is String)
+                var x: std::Any = "hello"
+                std::println(x is std::String)
             }
         """.trimIndent()))
     }
@@ -48,8 +48,8 @@ class CastIsLambdaTest {
     @Test fun isCheckWithIf() {
         assertEquals("number", run("""
             import std.io
-            func describe(x: Any): String {
-                if x is Int { return "number" }
+            func describe(x: std::Any): std::String {
+                if x is std::Int { return "number" }
                 return "other"
             }
             func main() { std::println(describe(42)) }
@@ -60,11 +60,11 @@ class CastIsLambdaTest {
     @Test fun typedLambda() {
         assertEquals("6", run("""
             import std.io
-            func apply(f: (Int) -> Int, x: Int): Int {
+            func apply(f: (std::Int) -> std::Int, x: std::Int): std::Int {
                 return f(x)
             }
             func main() {
-                std::println(apply({ x: Int -> x * 2 }, 3))
+                std::println(apply({ x: std::Int -> x * 2 }, 3))
             }
         """.trimIndent()))
     }
@@ -73,7 +73,7 @@ class CastIsLambdaTest {
     @Test fun implicitIt() {
         assertEquals("3", run("""
             import std.io
-            func apply(f: (Any) -> Any, x: Any): Any {
+            func apply(f: (std::Any) -> std::Any, x: std::Any): std::Any {
                 return f(x)
             }
             func main() {

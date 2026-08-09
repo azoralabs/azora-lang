@@ -49,10 +49,10 @@ class OperatorFamilyTest {
             import std.io
             import std.traits
             pack Acc {
-                var total: Int
+                var total: std::Int
             }
-            impl Arithmetic for Acc {
-                oper+= [self: Self!](rhs: Self&) {
+            impl std::Arithmetic for Acc {
+                oper+= [self: std::Self!](rhs: std::Self&) {
                     self.total = self.total + rhs.total
                 }
             }
@@ -68,14 +68,14 @@ class OperatorFamilyTest {
     @Test fun aNamedMemberIsStillRequired() {
         val result = compile("""
             spec Sized {
-                func size[self: Self&](): Int
-                func capacity[self: Self&](): Int
+                func size[self: std::Self&](): std::Int
+                func capacity[self: std::Self&](): std::Int
             }
             pack Buffer {
-                var n: Int
+                var n: std::Int
             }
             impl Sized for Buffer {
-                func size[self: Self&](): Int { return self.n }
+                func size[self: std::Self&](): std::Int { return self.n }
             }
             func main() {}
         """.trimIndent())
@@ -92,12 +92,12 @@ class OperatorFamilyTest {
             import std.io
             import std.traits
             pack N {
-                var v: Int
+                var v: std::Int
             }
-            impl Arithmetic for N {
-                oper+ [self: Self&](rhs: Self&): N { return N(self.v + rhs.v) }
-                oper- [self: Self&](rhs: Self&): N { return N(self.v - rhs.v) }
-                oper* [self: Self&](rhs: Self&): N { return N(self.v * rhs.v) }
+            impl std::Arithmetic for N {
+                oper+ [self: std::Self&](rhs: std::Self&): N { return N(self.v + rhs.v) }
+                oper- [self: std::Self&](rhs: std::Self&): N { return N(self.v - rhs.v) }
+                oper* [self: std::Self&](rhs: std::Self&): N { return N(self.v * rhs.v) }
             }
             func main() {
                 std::println((N(3) + N(2)).v)
@@ -113,13 +113,13 @@ class OperatorFamilyTest {
             import std.io
             import std.traits
             pack N {
-                var v: Int
+                var v: std::Int
             }
-            impl Neg for N {
-                oper- [self: Self&]: N { return N(0 - self.v) }
+            impl std::Neg for N {
+                oper- [self: std::Self&]: N { return N(0 - self.v) }
             }
-            impl Arithmetic for N {
-                oper- [self: Self&](rhs: Self&): N { return N(self.v - rhs.v) }
+            impl std::Arithmetic for N {
+                oper- [self: std::Self&](rhs: std::Self&): N { return N(self.v - rhs.v) }
             }
             func main() {
                 std::println((-N(3)).v)
@@ -134,12 +134,12 @@ class OperatorFamilyTest {
             import std.io
             import std.traits
             pack N {
-                var v: Int
+                var v: std::Int
             }
-            impl Arithmetic for N {
-                oper+ [self: Self&](rhs: Self&): N { return N(self.v + rhs.v) }
+            impl std::Arithmetic for N {
+                oper+ [self: std::Self&](rhs: std::Self&): N { return N(self.v + rhs.v) }
             }
-            func total<T>(a: T, b: T): T where T: Arithmetic {
+            func total<T>(a: T, b: T): T where T: std::Arithmetic {
                 return a + b
             }
             func main() {

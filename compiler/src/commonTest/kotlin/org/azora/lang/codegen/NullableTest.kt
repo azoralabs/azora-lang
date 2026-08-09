@@ -18,7 +18,7 @@ class NullableTest {
         assertEquals("5", run("""
             import std.io
             func main() {
-                var x: Int? = null
+                var x: std::Int? = null
                 std::println(x ?? 5)
             }
         """.trimIndent()))
@@ -28,7 +28,7 @@ class NullableTest {
         assertEquals("10", run("""
             import std.io
             func main() {
-                var x: Int? = 10
+                var x: std::Int? = 10
                 std::println(x ?? 5)
             }
         """.trimIndent()))
@@ -38,8 +38,8 @@ class NullableTest {
         assertEquals("default", run("""
             import std.io
             func main() {
-                var a: String? = null
-                var b: String? = null
+                var a: std::String? = null
+                var b: std::String? = null
                 std::println(a ?? b ?? "default")
             }
         """.trimIndent()))
@@ -49,8 +49,8 @@ class NullableTest {
         assertEquals("0", run("""
             import std.io
             pack Point {
-                var x: Int
-                var y: Int
+                var x: std::Int
+                var y: std::Int
             }
             func main() {
                 var p: Point? = null
@@ -63,8 +63,8 @@ class NullableTest {
         assertEquals("3", run("""
             import std.io
             pack Point {
-                var x: Int
-                var y: Int
+                var x: std::Int
+                var y: std::Int
             }
             func main() {
                 var p: Point? = Point(3, 4)
@@ -76,7 +76,7 @@ class NullableTest {
     @Test fun nullableInParameter() {
         assertEquals("42", run("""
             import std.io
-            func defaultIfNull(x: Int?, fallback: Int): Int {
+            func defaultIfNull(x: std::Int?, fallback: std::Int): std::Int {
                 return x ?? fallback
             }
             func main() {

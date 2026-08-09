@@ -20,10 +20,10 @@ class ObjectModelTest {
         assertEquals("10", run("""
             import std.io
             pack Box {
-                var v: Int
+                var v: std::Int
             }
             impl Box {
-                prop doubled[self: Self&]: Int {
+                prop doubled[self: std::Self&]: std::Int {
                     return self.v + self.v
                 }
             }

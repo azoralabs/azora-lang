@@ -128,9 +128,12 @@ class AzoraLanguageServer {
         val visibleFunctions = stdlibIndex.functions.keys.filterTo(mutableSetOf()) { name ->
             moduleVisible(stdlibIndex.origins[name], imports)
         }
+        val visibleTypes = stdlibIndex.qualifiedTypes.filterTo(mutableSetOf()) { name ->
+            moduleVisible(stdlibIndex.qualifiedTypeOrigins[name], imports)
+        }
         return json.encodeToString(
             ListSerializer(HighlightSpan.serializer()),
-            AzHighlighter.highlight(source, visibleFunctions),
+            AzHighlighter.highlight(source, visibleFunctions, visibleTypes),
         )
     }
 
@@ -468,7 +471,7 @@ class AzoraLanguageServer {
         "pack ${pack.name}(${pack.fields.joinToString(", ") { "${it.name}: ${it.type.displayName()}" }})"
 
     /**
-     * Module paths imported by the document's `use` lines. The reader is
+     * Module paths imported by the document's `import` lines. The reader is
      * syntax-only: it records paths and lets completion visibility decide what
      * those paths mean for packaged symbols.
      */
@@ -476,9 +479,8 @@ class AzoraLanguageServer {
         val out = mutableSetOf<String>()
         for (line in source.lines()) {
             val trimmed = line.trim()
-            if (!trimmed.startsWith("use ")) continue
-            var rest = trimmed.removePrefix("use ").trim()
-            if (rest.startsWith("realm ")) rest = rest.removePrefix("realm ").trim()
+            if (!trimmed.startsWith("import ")) continue
+            val rest = trimmed.removePrefix("import ").trim()
             for (part in splitUseParts(rest)) addImportPath(part.trim(), out)
         }
         return out
@@ -622,6 +624,10 @@ internal class SymbolIndex {
     val packs = linkedMapOf<String, TopLevel.Pack>()
     val enums = linkedMapOf<String, TopLevel.Enum>()
 
+    /** Canonical realm-qualified type names (`std__Int`, `shapes__Point`). */
+    val qualifiedTypes = linkedSetOf<String>()
+    val qualifiedTypeOrigins = linkedMapOf<String, String?>()
+
     /** symbol name → module it came from ("std.math"), when packaged. */
     val origins = linkedMapOf<String, String>()
 
@@ -639,11 +645,29 @@ internal class SymbolIndex {
         fun origin(name: String) {
             if (module != null) origins.putIfAbsent(name, module)
         }
+        fun typeOrigin(name: String) {
+            val namespace = program.realmTypeNamespaces[name]
+            val qualified = if (namespace == null) name else "${namespace.replace("::", "__")}__$name"
+            qualifiedTypes += qualified
+            qualifiedTypeOrigins.putIfAbsent(qualified, module)
+        }
         for (item in program.items) {
             when (item) {
                 is TopLevel.Func -> { functions[item.decl.name] = item.decl; origin(item.decl.name) }
-                is TopLevel.Pack -> { packs[item.name] = item; origin(item.name) }
-                is TopLevel.Enum -> { enums[item.name] = item; origin(item.name) }
+                is TopLevel.Bridge -> item.funcs.forEach { decl ->
+                    functions[decl.name] = FuncDecl(
+                        name = decl.name,
+                        params = decl.params,
+                        returnType = TypeAnnotation.Explicit(decl.returnType),
+                        body = emptyList(),
+                        typeParams = decl.typeParams,
+                        line = decl.line,
+                        column = decl.column,
+                    )
+                    origin(decl.name)
+                }
+                is TopLevel.Pack -> { packs[item.name] = item; origin(item.name); typeOrigin(item.name) }
+                is TopLevel.Enum -> { enums[item.name] = item; origin(item.name); typeOrigin(item.name) }
                 is TopLevel.Solo -> item.methods.forEach { functions[it.name] = it }
                 is TopLevel.VarDecl -> registerTopVar(item.name, "var", item.type, item.initializer, item.line)
                 is TopLevel.LetDecl -> registerTopVar(item.name, "let", item.type, item.initializer, item.line)

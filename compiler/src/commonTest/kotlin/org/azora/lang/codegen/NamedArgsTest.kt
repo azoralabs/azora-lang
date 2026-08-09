@@ -18,8 +18,8 @@ class NamedArgsTest {
         assertEquals("3\n4", run("""
             import std.io
             pack Point {
-                var x: Int
-                var y: Int
+                var x: std::Int
+                var y: std::Int
             }
             func main() {
                 var p = Point(y: 4, x: 3)
@@ -33,8 +33,8 @@ class NamedArgsTest {
         assertEquals("1\n2", run("""
             import std.io
             pack Point {
-                var x: Int
-                var y: Int
+                var x: std::Int
+                var y: std::Int
             }
             func main() {
                 var p = Point(x: 1, y: 2)

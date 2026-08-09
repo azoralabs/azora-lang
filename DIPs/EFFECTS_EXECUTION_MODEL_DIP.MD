@@ -407,38 +407,55 @@ subscription.
 ### 6.3 Effects are open declarations
 
 Effects are not a closed compiler-owned enum. Libraries declare nominal,
-compile-time-only effect packs:
+compile-time-only effect specs:
 
 ```azora
-effect pack Read<T>
-effect pack Write<T> requires Read<T>
-effect pack Emit<T>
-effect pack Receive<T>
-effect pack Allocate
-effect pack ClockRead
-effect pack RandomRead
-effect pack Io
-effect pack Trace
-effect pack Suspend
-effect pack ReactiveRead<T>
-effect pack ReactiveWrite<T> requires ReactiveRead<T>
+effect spec Read<T>
+effect spec Write<T> require Read<T>
+effect spec Emit<T>
+effect spec Receive<T>
+effect spec Allocate
+effect spec ClockRead
+effect spec RandomRead
+effect spec Io
+effect spec Trace
+effect spec Suspend
+effect spec ReactiveRead<T>
+effect spec ReactiveWrite<T> require ReactiveRead<T>
 ```
 
-`effect pack` is a distinct declaration kind despite reusing `pack` syntax. It
-has no runtime layout, constructor, fields, instances, ownership form, or
-allocation. It must be bodyless and may appear only in effect declarations,
-effect clauses, effect metadata, reflection, and effect-algebra operations.
+`effect spec` is a distinct declaration kind despite reusing `spec` syntax. It
+has no runtime witness, members, instances, conformance table, or implementation
+block. It must be bodyless and may appear only in effect declarations, effect
+clauses, effect metadata, reflection, and effect-algebra operations.
 
-An effect pack is not a behavioral contract and cannot be implemented:
+An effect spec is not an ordinary behavioral spec and cannot be implemented:
 
 ```azora
-impl Read<State> for State // error: an effect pack cannot be implemented
+impl Read<State> for State // error: an effect spec cannot be implemented
 ```
 
-Likewise, an effect pack cannot implement a spec or be used as an ordinary pack
-bound. `requires` expresses effect implication only: a callable carrying
-`Write<T>` satisfies a requirement for `Read<T>`. It does not create
-inheritance or an implementation relationship.
+Likewise, an effect spec cannot implement another spec or be used as an ordinary
+type bound. Contextual `require` expresses a prerequisite: a callable carrying
+`Write<T>` must also carry `Read<T>`. Effect-set normalization adds and checks
+that prerequisite without creating inheritance or an implementation
+relationship.
+
+`require` is the singular replacement for the existing contextual `requires`
+clause throughout Azora:
+
+```azora
+spec Copy require Clone
+effect spec DatabaseWrite<T> require [DatabaseRead<T>, TransactionalWrite]
+```
+
+This keeps declaration words consistently singular and imperative: `derive`,
+`include`, `effect`, and `require`. `include` remains composition and `derive`
+remains generated behavior; neither substitutes for a prerequisite.
+
+Requirements are generic, transitive, and normalized before subset checking.
+Duplicates are ignored after normalization. A requirement cycle is a
+compile-time error naming the complete cycle.
 
 The compiler understands effect identities, generic arguments, implication,
 union, subset checking, and fixed-point inference. It does not contain strings
@@ -1140,7 +1157,7 @@ point from a latent suspension captured by a child task.
 Proposed general language additions:
 
 ```text
-effect pack Name<...>
+effect spec Name<...>
 callable declaration effect [Effect, Effect<Arg>, ...]
 ```
 
@@ -1182,7 +1199,7 @@ declaration's spelling.
 
 ### Phase B: effect declarations
 
-- parse bodyless, non-implementable `effect pack`
+- parse bodyless, non-implementable `effect spec`
 - parse callable `effect [...]`
 - bind the prelude `Suspend` declaration to the intrinsic suspension identity
 - accept macro-generated effect and scheduler metadata

@@ -181,7 +181,7 @@ class StdlibInjectionTest {
 
     @Test fun serializerImportSelectsDecoratorMarker() {
         val result = Compiler().compile("""
-            module serializer_marker_test
+            module serializerMarkerTest
 
             import std.serializer
 
@@ -199,7 +199,7 @@ class StdlibInjectionTest {
 
     @Test fun importedSerializerDecoratorCanBeAppliedToPack() {
         val result = Compiler().compile("""
-            module serializer_decorator_test
+            module serializerDecoratorTest
 
             import std.serializer
 
@@ -218,7 +218,7 @@ class StdlibInjectionTest {
 
     @Test fun importedPackCarriesItsFieldDecoratorImplementations() {
         val result = Compiler().compile("""
-            module serializer_field_impl_test
+            module serializerFieldImplTest
 
             import std.serializer
 

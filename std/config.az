@@ -46,5 +46,5 @@ deepinline realm {
      * Overriden by compiler flag --test
      */
     @Since("0.1")
-    fin TEST_MODE: Bool = false
+    fin testMode: Bool = false
 }

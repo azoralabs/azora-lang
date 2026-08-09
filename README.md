@@ -472,7 +472,10 @@ import std.container.array
 exposed import std.traits.core   // re-exported to importers
 ```
 
-- Public by default. A leading underscore makes a member private.
+- Public by default. A single leading underscore makes a declaration private
+  where that declaration supports privacy.
+- User symbols cannot start with `__`, and `_` is not allowed after the first
+  character.
 - `confined` narrows a declaration or module to its package.
 - `exposed` marks a module or import as auto-imported.
 - `realm` groups members under a `::` namespace.

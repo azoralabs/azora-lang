@@ -32,7 +32,7 @@ class EnumWhenTest {
 
     @Test fun typedDeclarationsAcceptContextualEnumVariants() {
         assertEquals("[WARN] LogLevel.Warn: contextual", run("""
-            fin DEFAULT_LEVEL: std::LogLevel = .Warn
+            fin defaultLevel: std::LogLevel = .Warn
             func main() {
                 var level3: std::LogLevel = .Warn
                 fin level4: std::LogLevel = .Warn

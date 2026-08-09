@@ -483,7 +483,7 @@ private class MonoContext(
     /** Parses a rendered mixin string (e.g. `0: Int`) as a pack [PackField]. */
     private fun parseMixinField(rendered: String): PackField {
         val src = "@EnforceNumFields\npack __mixin { $rendered }"
-        val program = Parser(Lexer(src).tokenize()).parse()
+        val program = Parser(Lexer(src).tokenize(), internalSource = true).parse()
         val pack = program.items.filterIsInstance<TopLevel.Pack>().firstOrNull()
             ?: error("mixin '$rendered' did not produce a field")
         return pack.fields.first()

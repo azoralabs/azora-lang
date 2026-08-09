@@ -52,7 +52,7 @@ class CastSpecTest {
                 var degrees: std::Int
             }
             impl std::Cast<Fahrenheit> for Celsius {
-                prop _cast[self: std::Self&]: Fahrenheit {
+                prop castValue[self: std::Self&]: Fahrenheit {
                     return Fahrenheit(self.degrees * 9 / 5 + 32)
                 }
             }
@@ -78,12 +78,12 @@ class CastSpecTest {
                 var degrees: std::Int
             }
             impl std::Cast<Fahrenheit> for Celsius {
-                prop _cast[self: std::Self&]: Fahrenheit {
+                prop castValue[self: std::Self&]: Fahrenheit {
                     return Fahrenheit(self.degrees * 9 / 5 + 32)
                 }
             }
             impl std::Cast<Kelvin> for Celsius {
-                prop _cast[self: std::Self&]: Kelvin {
+                prop castValue[self: std::Self&]: Kelvin {
                     return Kelvin(self.degrees + 273)
                 }
             }
@@ -106,12 +106,12 @@ class CastSpecTest {
                 var v: std::Int
             }
             impl std::Cast<Id> for Handle {
-                prop _cast[self: std::Self&]: Id {
+                prop castValue[self: std::Self&]: Id {
                     return Id(1)
                 }
             }
             impl std::BitCast<Id> for Handle {
-                prop _cast[self: std::Self&]: Id {
+                prop castValue[self: std::Self&]: Id {
                     return Id(7)
                 }
             }

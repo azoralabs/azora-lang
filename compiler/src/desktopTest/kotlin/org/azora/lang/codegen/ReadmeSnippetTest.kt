@@ -82,7 +82,7 @@ class ReadmeSnippetTest {
         ),
 
         // The module header block is a file preamble, not a body.
-        "module std.math" to Context(epilogue = "\nfunc _unused() {}"),
+        "module std.math" to Context(epilogue = "\nconfined func unused() {}"),
     )
 
     /** Moves the lines from [bodyFrom] onward into a `main` body. */

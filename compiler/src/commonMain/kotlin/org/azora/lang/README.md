@@ -65,11 +65,14 @@ globals are rejected (not thread-safe).
 
 ### Visibility
 
-Everything is public by default - there is no keyword for it. A leading
-underscore on the name is what makes a declaration private, and it is private
-to the realm or type that declares it: `pack Body { var _cache: Double }` is
-readable from `Body`'s own `impl` blocks and nowhere else. `confined` narrows a
-declaration to its package.
+Everything is public by default. A single leading underscore is the private
+declaration marker: `pack Body { var _cache: Double }` is readable from
+`Body`'s own implementation in its declaring module and nowhere else, while
+`func _helper()` and `pack _Internal` are private to their declaring module.
+User symbols may never begin with `__`, which is reserved for compiler-generated
+names, and an underscore is not legal in any other position. Locals, parameters,
+module names, realms, and other declarations without private visibility cannot
+use the marker.
 
 `exposed` is not a visibility modifier. It marks a `module` or a top-level
 `import` as auto-imported everywhere, so `exposed module std.core` and

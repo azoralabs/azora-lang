@@ -52,7 +52,13 @@ class Parser(
      * the file being parsed.
      */
     private val declaredEnums: MutableMap<String, List<String>> = mutableMapOf(),
+    /** Compiler-generated source may use reserved `__` names while being reparsed. */
+    private val internalSource: Boolean = false,
 ) {
+
+    init {
+        if (!internalSource) SourceSymbolValidator.validateTokens(tokens)
+    }
 
     /** Compile-time type functions are declarations, but never runtime top-level items. */
     private val typeFunctions = mutableListOf<TypeFunctionDecl>()
@@ -331,7 +337,9 @@ class Parser(
                 testRealmMembers = testRealmMembers.toMap(),
             )
         )
-        return IntraRealmRewriter.rewrite(normalized)
+        val rewritten = IntraRealmRewriter.rewrite(normalized)
+        if (!internalSource) SourceSymbolValidator.validateProgram(rewritten)
+        return rewritten
     }
 
     private fun isRealmNamespaceAhead(): Boolean {
@@ -3020,7 +3028,7 @@ class Parser(
             val asStart = peek()
             error(
                 "'impl as <Type> for <Type>' was removed at line ${asStart.line}; " +
-                    "write 'impl Cast<Type> for <Type> { prop _cast[self: Self&]: Type { … } }' " +
+                    "write 'impl Cast<Type> for <Type> { prop castValue[self: Self&]: Type { … } }' " +
                     "(or CheckedCast for 'as?', BitCast for 'as*')",
             )
         }
@@ -5490,16 +5498,6 @@ class Parser(
                 if (isNamedTypeMacroInvocationAhead()) {
                     return parseNamedTypeMacroInvocation()
                 }
-                if (peek().lexeme in setOf("Func", "Task", "Flow") &&
-                    peekNext()?.type in setOf(TokenType.L_BRACKET, TokenType.L_PAREN)
-                ) {
-                    val old = peek().lexeme
-                    val now = if (old == "Func") "" else "async "
-                    error(
-                        "'$old[...]' callable type syntax was removed; write " +
-                            "'$now[Ctx](Args) -> Ret' at line ${peek().line}"
-                    )
-                }
                 if (peekNext()?.type == TokenType.L_BRACKET && peek().lexeme in setOf("arr", "vec", "set", "map")) {
                     error("'${peek().lexeme}[...]' type syntax was removed; use Array<T>, List<T>, Set<T>, or Map<K, V> at line ${peek().line}")
                 }
@@ -5960,7 +5958,7 @@ class Parser(
             }
             else -> error("Expected string after 'inline' at line ${start.line}")
         }
-        val wrapper = Parser(Lexer("func __mixin() {\n$rendered\n}").tokenize()).parse()
+        val wrapper = Parser(Lexer("func __mixin() {\n$rendered\n}").tokenize(), internalSource = true).parse()
         val body = (wrapper.items.firstOrNull() as? TopLevel.Func)?.decl?.body
             ?: error("inline splice did not produce any statements at line ${start.line}")
         consumeNewline()

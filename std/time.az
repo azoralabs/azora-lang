@@ -143,11 +143,11 @@ realm std {
     @Experimental(since: "0.1")
     impl Clock for SystemClock {
         func now[self: Self&](): Instant {
-            return instantFromEpochNanoseconds(az_time_unix_nanoseconds())
+            return instantFromEpochNanoseconds(azoraTimeUnixNanoseconds())
         }
 
         func monotonicNow[self: Self&](): MonotonicInstant {
-            return MonotonicInstant(az_time_monotonic_nanoseconds())
+            return MonotonicInstant(azoraTimeMonotonicNanoseconds())
         }
     }
 
@@ -744,10 +744,10 @@ realm std {
 
 bridge [.C, .WebAssembly] {
     /** Host runtime hook returning Unix time as signed nanoseconds. */
-    func azora_time_unix_nanoseconds use as az_time_unix_nanoseconds(): Long
+    func azoraTimeUnixNanoseconds(): Long
 
     /** Host runtime hook returning a process-monotonic signed nanosecond reading. */
-    func azora_time_monotonic_nanoseconds use as az_time_monotonic_nanoseconds(): Long
+    func azoraTimeMonotonicNanoseconds(): Long
 }
 
 // ---------------------------------------------------------------------------

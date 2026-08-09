@@ -675,10 +675,8 @@ class TypeResolver(private val table: SymbolTable) {
     /**
      * Whether [name] on [ownerType] is reachable from where we are.
      *
-     * A leading underscore is what makes a member private, and it is private to
-     * the type that declares it: only that type's own `impl` blocks may touch
-     * it. Putting the restriction in the name means a reader sees it at the use
-     * site, not only at the declaration.
+     * A leading underscore makes a member private to the type and module that
+     * declare it.
      */
     private fun canAccessMember(ownerType: String, name: String, visibility: Visibility): Boolean = when {
         // A leading underscore keeps a member inside the module that declares
@@ -696,7 +694,7 @@ class TypeResolver(private val table: SymbolTable) {
 
     private fun reportInaccessible(line: Int, kind: String, ownerType: String, name: String, visibility: Visibility) {
         val reason =
-            if (name.startsWith("_")) "private $kind '$name' of $ownerType - the leading underscore keeps it inside the module that declares $ownerType"
+            if (name.startsWith("_")) "private $kind '$name' of $ownerType - the leading underscore keeps the member inside the type and module that declare $ownerType"
             else "confined $kind '$name' of $ownerType"
         errors.add("line $line: cannot access $reason")
     }

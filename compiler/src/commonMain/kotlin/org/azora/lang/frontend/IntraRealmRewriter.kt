@@ -107,8 +107,8 @@ internal object IntraRealmRewriter {
     /**
      * `std__math__floor` → `std__math`; a bare name with no `__` → null.
      *
-     * A private member carries its own leading underscore into the mangled name
-     * (`realm std { func _quote }` → `std___quote`), so the separator is the last
+     * A private declaration carries its leading underscore into the mangled
+     * name (`realm std { fin _cache = 1 }` → `std___cache`), so the separator is the last
      * `__` that is not itself preceded by one. Splitting on the plain last `__`
      * would yield `std_`, match no sibling, and silently leave every bare call in
      * that member's body unrewritten.

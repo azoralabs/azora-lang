@@ -134,7 +134,7 @@ object SerializationDeriver {
 
             val source = generateImpl(pack, fields, ignoreUnknown, encodeDefaults, helpers)
             try {
-                generated += Parser(Lexer(source).tokenize()).parse().items
+                generated += Parser(Lexer(source).tokenize(), internalSource = true).parse().items
             } catch (e: IllegalStateException) {
                 errors += "line ${pack.line}: failed to derive serializer for '${pack.name}': ${e.message}"
             }

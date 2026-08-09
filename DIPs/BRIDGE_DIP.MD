@@ -133,14 +133,18 @@ C symbol names are C's business, and rarely what an Azora caller should read:
 
 ```azora
 bridge [.C, .WebAssembly] {
-    func azora_time_unix_nanoseconds use as az_time_unix_nanoseconds(): Long
+    func unixNanoseconds use as hostUnixNanoseconds(): Long
 }
 ```
 
-The extern is registered under the **alias** (`az_time_unix_nanoseconds`, the
+The extern is registered under the **alias** (`hostUnixNanoseconds`, the
 symbol that actually exists), and the parser additionally synthesises a wrapper
 function under the **declared name** that forwards to it. Azora code calls the
 readable name; the linker sees the real one.
+
+Aliases obey Azora's symbol spelling rules too. A platform adapter must expose
+an Azora-compatible camelCase symbol rather than leaking a snake_case ABI name
+into source.
 
 The wrapper is only synthesised for an undotted declared name. A dotted name
 (`func c.free use as free(…)`) names a foreign namespace rather than an Azora

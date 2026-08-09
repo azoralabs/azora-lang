@@ -408,10 +408,10 @@ class TestAssertTraceTest {
     fun inlineTrace_acceptsShorthandAndInlineBindings() {
         val result = compile("""
             func main() {
-                inline fin INFO_LEVEL = std::LogLevel.Info
-                inline var WARN_LEVEL = std::LogLevel.Warn
-                inline trace INFO_LEVEL { "${'$'}{it}: compiling" }
-                inline trace WARN_LEVEL { "careful" }
+                inline fin infoLevel = std::LogLevel.Info
+                inline var warnLevel = std::LogLevel.Warn
+                inline trace infoLevel { "${'$'}{it}: compiling" }
+                inline trace warnLevel { "careful" }
                 inline trace .Critical { "stop" }
             }
         """.trimIndent())
@@ -424,10 +424,10 @@ class TestAssertTraceTest {
     @Test
     fun inlineTrace_acceptsTopLevelInlineBindings() {
         val result = compile("""
-            inline fin INFO_LEVEL = std::LogLevel.Info
-            inline trace INFO_LEVEL { "${'$'}{it}: module" }
-            inline var TODO_LEVEL = std::LogLevel.Todo
-            inline trace TODO_LEVEL { "later" }
+            inline fin infoLevel = std::LogLevel.Info
+            inline trace infoLevel { "${'$'}{it}: module" }
+            inline var todoLevel = std::LogLevel.Todo
+            inline trace todoLevel { "later" }
             func main() {}
         """.trimIndent())
 

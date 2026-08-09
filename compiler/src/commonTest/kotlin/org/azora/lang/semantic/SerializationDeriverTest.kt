@@ -395,7 +395,9 @@ class SerializationDeriverTest {
                 std__println(lenient.name)
             }
         """.trimIndent()
-        val parsed = Parser(Lexer(source).tokenize()).parse()
+        // This fixture deliberately spells the already-lowered realm names that
+        // compiler-generated serializer bodies consume.
+        val parsed = Parser(Lexer(source).tokenize(), internalSource = true).parse()
         val derived = SerializationDeriver.derive(parsed)
         assertTrue(derived.errors.isEmpty(), derived.errors.toString())
 

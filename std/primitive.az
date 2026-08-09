@@ -147,255 +147,255 @@ realm std {
     /**
      * Byte limits.
      *
-     * @member MIN_VALUE The smallest representable value, `-128`.
-     * @member MAX_VALUE The largest representable value, `127`.
+     * @member minValue The smallest representable value, `-128`.
+     * @member maxValue The largest representable value, `127`.
      */
     @Since("0.1")
     impl Byte:: {
-        inline fin MIN_VALUE: Int = -128
-        inline fin MAX_VALUE: Int = 127
+        inline fin minValue: Int = -128
+        inline fin maxValue: Int = 127
     }
 
     /**
      * UByte limits.
      *
-     * @member MIN_VALUE The smallest representable value, `0`.
-     * @member MAX_VALUE The largest representable value, `255`.
+     * @member minValue The smallest representable value, `0`.
+     * @member maxValue The largest representable value, `255`.
      */
     @Since("0.1")
     impl UByte:: {
-        inline fin MIN_VALUE: Int = 0
-        inline fin MAX_VALUE: Int = 255
+        inline fin minValue: Int = 0
+        inline fin maxValue: Int = 255
     }
 
     /**
      * Storage size shared by the 8-bit integer types.
      *
-     * @member SIZE_BYTES Size in bytes, `1`.
-     * @member SIZE_BITS Size in bits, `8`.
+     * @member sizeBytes Size in bytes, `1`.
+     * @member sizeBits Size in bits, `8`.
      */
     @Since("0.1")
     impl [Byte, UByte]:: {
-        inline fin SIZE_BYTES: Int = 1
-        inline fin SIZE_BITS: Int = 8
+        inline fin sizeBytes: Int = 1
+        inline fin sizeBits: Int = 8
     }
 
     /**
      * Short limits.
      *
-     * @member MIN_VALUE The smallest representable value, `-32_768`.
-     * @member MAX_VALUE The largest representable value, `32_767`.
+     * @member minValue The smallest representable value, `-32_768`.
+     * @member maxValue The largest representable value, `32_767`.
      */
     @Since("0.1")
     impl Short:: {
-        inline fin MIN_VALUE: Int = -32_768
-        inline fin MAX_VALUE: Int = 32_767
+        inline fin minValue: Int = -32_768
+        inline fin maxValue: Int = 32_767
     }
 
     /**
      * UShort limits.
      *
-     * @member MIN_VALUE The smallest representable value, `0`.
-     * @member MAX_VALUE The largest representable value, `65_535`.
+     * @member minValue The smallest representable value, `0`.
+     * @member maxValue The largest representable value, `65_535`.
      */
     @Since("0.1")
     impl UShort:: {
-        inline fin MIN_VALUE: Int = 0
-        inline fin MAX_VALUE: Int = 65_535
+        inline fin minValue: Int = 0
+        inline fin maxValue: Int = 65_535
     }
 
     /**
      * Storage size shared by the 16-bit integer types.
      *
-     * @member SIZE_BYTES Size in bytes, `2`.
-     * @member SIZE_BITS Size in bits, `16`.
+     * @member sizeBytes Size in bytes, `2`.
+     * @member sizeBits Size in bits, `16`.
      */
     @Since("0.1")
     impl [Short, UShort]:: {
-        inline fin SIZE_BYTES: Int = 2
-        inline fin SIZE_BITS: Int = 16
+        inline fin sizeBytes: Int = 2
+        inline fin sizeBits: Int = 16
     }
 
     /**
      * Int limits.
      *
-     * @member MIN_VALUE The smallest representable value, `-2_147_483_648`.
-     * @member MAX_VALUE The largest representable value, `2_147_483_647`.
+     * @member minValue The smallest representable value, `-2_147_483_648`.
+     * @member maxValue The largest representable value, `2_147_483_647`.
      */
     @Since("0.1")
     impl Int:: {
-        inline fin MIN_VALUE: Int = -2_147_483_648
-        inline fin MAX_VALUE: Int = 2_147_483_647
+        inline fin minValue: Int = -2_147_483_648
+        inline fin maxValue: Int = 2_147_483_647
     }
 
     /**
      * UInt limits.
      *
-     * @member MIN_VALUE The smallest representable value, `0`.
-     * @member MAX_VALUE The largest representable value, `4_294_967_295`.
+     * @member minValue The smallest representable value, `0`.
+     * @member maxValue The largest representable value, `4_294_967_295`.
      */
     @Since("0.1")
     impl UInt:: {
-        inline fin MIN_VALUE: Int = 0
-        inline fin MAX_VALUE: Int = 4_294_967_295
+        inline fin minValue: Int = 0
+        inline fin maxValue: Int = 4_294_967_295
     }
 
     /**
      * Storage size shared by the 32-bit integer types.
      *
-     * @member SIZE_BYTES Size in bytes, `4`.
-     * @member SIZE_BITS Size in bits, `32`.
+     * @member sizeBytes Size in bytes, `4`.
+     * @member sizeBits Size in bits, `32`.
      */
     @Since("0.1")
     impl [Int, UInt]:: {
-        inline fin SIZE_BYTES: Int = 4
-        inline fin SIZE_BITS: Int = 32
+        inline fin sizeBytes: Int = 4
+        inline fin sizeBits: Int = 32
     }
 
     /**
      * Long limits.
      *
-     * @member MIN_VALUE The smallest representable value, `-2^63`.
-     * @member MAX_VALUE The largest representable value, `2^63 - 1`.
+     * @member minValue The smallest representable value, `-2^63`.
+     * @member maxValue The largest representable value, `2^63 - 1`.
      */
     @Since("0.1")
     impl Long:: {
-        inline fin MIN_VALUE: Long = -9_223_372_036_854_775_807L -1L
-        inline fin MAX_VALUE: Long = 9_223_372_036_854_775_807L
+        inline fin minValue: Long = -9_223_372_036_854_775_807L -1L
+        inline fin maxValue: Long = 9_223_372_036_854_775_807L
     }
 
     /**
      * ULong limits.
      *
-     * @member MIN_VALUE The smallest representable value, `0`.
-     * @member MAX_VALUE The largest representable value, `2^64 - 1`.
+     * @member minValue The smallest representable value, `0`.
+     * @member maxValue The largest representable value, `2^64 - 1`.
      */
     @Since("0.1")
     impl ULong:: {
-        inline fin MIN_VALUE: Long = 0
-        inline fin MAX_VALUE: Long = 18_446_744_073_709_551_615L
+        inline fin minValue: Long = 0
+        inline fin maxValue: Long = 18_446_744_073_709_551_615L
     }
 
     /**
      * Storage size shared by the 64-bit integer types.
      *
-     * @member SIZE_BYTES Size in bytes, `8`.
-     * @member SIZE_BITS Size in bits, `64`.
+     * @member sizeBytes Size in bytes, `8`.
+     * @member sizeBits Size in bits, `64`.
      */
     @Since("0.1")
     impl [Long, ULong]:: {
-        inline fin SIZE_BYTES: Int = 8
-        inline fin SIZE_BITS: Int = 64
+        inline fin sizeBytes: Int = 8
+        inline fin sizeBits: Int = 64
     }
 
     /**
      * Cent limits.
      *
-     * @member MIN_VALUE The smallest representable value, `-2^127`.
-     * @member MAX_VALUE The largest representable value, `2^127 - 1`.
+     * @member minValue The smallest representable value, `-2^127`.
+     * @member maxValue The largest representable value, `2^127 - 1`.
      */
     @Since("0.1")
     impl Cent:: {
         // Pending 128-bit literal support (the literal pipeline is currently Long-wide):
-        // inline fin MIN_VALUE: Cent = -170_141_183_460_469_231_731_687_303_715_884_105_728c
-        // inline fin MAX_VALUE: Cent = 170_141_183_460_469_231_731_687_303_715_884_105_727c
+        // inline fin minValue: Cent = -170_141_183_460_469_231_731_687_303_715_884_105_728c
+        // inline fin maxValue: Cent = 170_141_183_460_469_231_731_687_303_715_884_105_727c
     }
 
     /**
      * UCent limits.
      *
-     * @member MIN_VALUE The smallest representable value, `0`.
-     * @member MAX_VALUE The largest representable value, `2^128 - 1`.
+     * @member minValue The smallest representable value, `0`.
+     * @member maxValue The largest representable value, `2^128 - 1`.
      */
     @Since("0.1")
     impl UCent:: {
-        inline fin MIN_VALUE: UCent = 0uc
+        inline fin minValue: UCent = 0uc
         // Pending 128-bit literal support (the literal pipeline is currently Long-wide):
-        // inline fin MAX_VALUE: UCent = 340_282_366_920_938_463_463_374_607_431_768_211_455uc
+        // inline fin maxValue: UCent = 340_282_366_920_938_463_463_374_607_431_768_211_455uc
     }
 
     /**
      * Storage size shared by the 128-bit integer types.
      *
-     * @member SIZE_BYTES Size in bytes, `16`.
-     * @member SIZE_BITS Size in bits, `128`.
+     * @member sizeBytes Size in bytes, `16`.
+     * @member sizeBits Size in bits, `128`.
      */
     @Since("0.1")
     impl [Cent, UCent]:: {
-        inline fin SIZE_BYTES: Int = 16
-        inline fin SIZE_BITS: Int = 128
+        inline fin sizeBytes: Int = 16
+        inline fin sizeBits: Int = 128
     }
 
     /**
      * Float limits and special values.
      *
-     * @member MIN_VALUE The smallest positive normal value.
-     * @member MAX_VALUE The largest finite value.
-     * @member POSITIVE_INFINITY Positive infinity (`1f/0f`).
-     * @member NEGATIVE_INFINITY Negative infinity (`-1f/0f`).
+     * @member minValue The smallest positive normal value.
+     * @member maxValue The largest finite value.
+     * @member positiveInfinity Positive infinity (`1f/0f`).
+     * @member negativeInfinity Negative infinity (`-1f/0f`).
      * @member NAN Not-a-number.
-     * @member SIZE_BYTES Size in bytes, `4`.
-     * @member SIZE_BITS Size in bits, `32`.
+     * @member sizeBytes Size in bytes, `4`.
+     * @member sizeBits Size in bits, `32`.
      */
     @Since("0.1")
     impl Float:: {
-        inline fin MIN_VALUE: Float = 1.4E-45f
-        inline fin MAX_VALUE: Float = 3.4028235E38f
-        inline fin POSITIVE_INFINITY: Float = 1f/0f
-        inline fin NEGATIVE_INFINITY: Float = -1f/0f
+        inline fin minValue: Float = 1.4E-45f
+        inline fin maxValue: Float = 3.4028235E38f
+        inline fin positiveInfinity: Float = 1f/0f
+        inline fin negativeInfinity: Float = -1f/0f
         inline fin NAN: Float = -(0f/0f)
-        inline fin SIZE_BYTES: Int = 4
-        inline fin SIZE_BITS: Int = 32
+        inline fin sizeBytes: Int = 4
+        inline fin sizeBits: Int = 32
     }
 
     /**
      * Double limits and special values.
      *
-     * @member MIN_VALUE The smallest positive value.
-     * @member MAX_VALUE The largest finite value.
-     * @member POSITIVE_INFINITY Positive infinity (`1./0.`).
-     * @member NEGATIVE_INFINITY Negative infinity (`-1./0.`).
+     * @member minValue The smallest positive value.
+     * @member maxValue The largest finite value.
+     * @member positiveInfinity Positive infinity (`1./0.`).
+     * @member negativeInfinity Negative infinity (`-1./0.`).
      * @member NAN Not-a-number.
-     * @member SIZE_BYTES Size in bytes, `8`.
-     * @member SIZE_BITS Size in bits, `64`.
+     * @member sizeBytes Size in bytes, `8`.
+     * @member sizeBits Size in bits, `64`.
      */
     @Since("0.1")
     impl Double:: {
-        inline fin MIN_VALUE: Double = 4.9E-324
-        inline fin MAX_VALUE: Double = 1.7976931348623157E308
-        inline fin POSITIVE_INFINITY: Double = 1./0.
-        inline fin NEGATIVE_INFINITY: Double = -1./0.
+        inline fin minValue: Double = 4.9E-324
+        inline fin maxValue: Double = 1.7976931348623157E308
+        inline fin positiveInfinity: Double = 1./0.
+        inline fin negativeInfinity: Double = -1./0.
         inline fin NAN: Double = -(0./0.)
-        inline fin SIZE_BYTES: Int = 8
-        inline fin SIZE_BITS: Int = 64
+        inline fin sizeBytes: Int = 8
+        inline fin sizeBits: Int = 64
     }
 
     /**
      * Decimal limits, special values, and precision.
      *
-     * @member MIN_VALUE The smallest (most negative) finite value.
-     * @member MAX_VALUE The largest finite value.
-     * @member POSITIVE_INFINITY Positive infinity (`1D/0D`).
-     * @member NEGATIVE_INFINITY Negative infinity (`-1D/0D`).
+     * @member minValue The smallest (most negative) finite value.
+     * @member maxValue The largest finite value.
+     * @member positiveInfinity Positive infinity (`1D/0D`).
+     * @member negativeInfinity Negative infinity (`-1D/0D`).
      * @member NAN Not-a-number.
-     * @member SIZE_BYTES Size in bytes, `16`.
-     * @member SIZE_BITS Size in bits, `128`.
+     * @member sizeBytes Size in bytes, `16`.
+     * @member sizeBits Size in bits, `128`.
      * @member DIGITS Significant decimal digits, `34`.
-     * @member MIN_EXPONENT The smallest decimal exponent, `-6143`.
-     * @member MAX_EXPONENT The largest decimal exponent, `6144`.
+     * @member minExponent The smallest decimal exponent, `-6143`.
+     * @member maxExponent The largest decimal exponent, `6144`.
      */
     @Since("0.1")
     impl Decimal:: {
-        inline fin MIN_VALUE: Decimal = -9.999999999999999999999999999999999E6144D
-        inline fin MAX_VALUE: Decimal =  9.999999999999999999999999999999999E6144D
-        inline fin POSITIVE_INFINITY: Decimal = 1D / 0D
-        inline fin NEGATIVE_INFINITY: Decimal = -1D / 0D
+        inline fin minValue: Decimal = -9.999999999999999999999999999999999E6144D
+        inline fin maxValue: Decimal =  9.999999999999999999999999999999999E6144D
+        inline fin positiveInfinity: Decimal = 1D / 0D
+        inline fin negativeInfinity: Decimal = -1D / 0D
         inline fin NAN: Decimal = -(0D / 0D)
-        inline fin SIZE_BYTES: Int = 16
-        inline fin SIZE_BITS: Int = 128
+        inline fin sizeBytes: Int = 16
+        inline fin sizeBits: Int = 128
         inline fin DIGITS: Int = 34
-        inline fin MIN_EXPONENT: Int = -6143
-        inline fin MAX_EXPONENT: Int = 6144
+        inline fin minExponent: Int = -6143
+        inline fin maxExponent: Int = 6144
     }
 
     /** The unsigned integer types, in ascending width. A compile-time `[Type]` list. */

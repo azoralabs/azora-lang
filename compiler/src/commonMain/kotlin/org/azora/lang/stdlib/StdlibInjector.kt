@@ -172,7 +172,7 @@ class StdlibInjector private constructor(
     /**
      * Evaluates an `exposed if COND` condition against the boolean CLI overrides.
      * `null` (unconditional) and `true` keep the export; an unresolvable or `false`
-     * condition drops it. (config.az defaults like `AUTO_IMPORT_MACROS = false` are
+     * condition drops it. (config.az defaults like `autoImportMacros = false` are
      * captured by the `false` fallback when no override is present.)
      */
     private fun evalExportIf(cond: Expr?, boolOverrides: Map<String, Boolean>): Boolean = when (cond) {
@@ -829,7 +829,7 @@ class StdlibInjector private constructor(
                     is TopLevel.LetDecl -> register(item.name, item)
                     is TopLevel.VarDecl -> register(item.name, item)
                     // Compile-time constants from `impl realm` / inline blocks (e.g.
-                    // `Int::MAX_VALUE`). Folded away by CTCE once injected.
+                    // `Int::maxValue`). Folded away by CTCE once injected.
                     is TopLevel.InlineFin -> register(item.name, item)
                     is TopLevel.InlineLet -> register(item.name, item)
                     is TopLevel.InlineVar -> register(item.name, item)
@@ -1340,21 +1340,21 @@ class StdlibInjector private constructor(
 
     // -----------------------------------------------------------------
     // -----------------------------------------------------------------
-    // Underscore privacy
+    // Private declarations
     // -----------------------------------------------------------------
 
     /**
-     * True when [name] belongs to the module that declares it and nowhere else.
+     * True when [name] is a private declaration.
      *
-     * A leading underscore is the whole rule, but realm members arrive mangled,
-     * so the underscore to look at is the member's, not the separator's.
+     * Realm bindings arrive mangled, so inspect the member rather than the
+     * separator.
      */
     private fun isPrivateName(name: String): Boolean = memberSegmentOf(name).startsWith("_")
 
     /**
      * The member part of a possibly realm-mangled name.
      *
-     * `realm Secret { func _hidden }` mangles to `Secret___hidden` - a `__`
+     * `realm Secret { fin _hidden = 1 }` mangles to `Secret___hidden` - a `__`
      * separator immediately followed by the member's own underscore. Splitting on
      * the last `__` would swallow that underscore and report the member as
      * public, so the separator is the last `__` that is not itself preceded by
@@ -1370,8 +1370,8 @@ class StdlibInjector private constructor(
     /**
      * Rejects references to another module's private declarations.
      *
-     * The declaration is still *injected* - a public function that calls its own
-     * module's `_helper` has to keep working for whoever imports it. What is
+     * The declaration is still *injected* - a public function that reads its own
+     * module's `_cache` has to keep working for whoever imports it. What is
      * withheld is the right to name it from outside, which is what privacy
      * actually means here.
      */
@@ -1394,7 +1394,7 @@ class StdlibInjector private constructor(
             val shown = name.replace("__", "::")
             errors.add(
                 "'$shown' is private to ${owner?.let { "module '$it'" } ?: "the module that declares it"} - " +
-                    "a leading underscore keeps a declaration inside the module that writes it",
+                    "a leading underscore keeps the declaration inside its owning module",
             )
         }
         return errors.toList()

@@ -100,13 +100,13 @@ realm std {
      * gets a body the compiler can check and `where T: Cast<String>` is
      * expressible.
      *
-     * `bridge`, and the member is `_cast`, because neither is API: a cast is
-     * written `value as To` and never by naming the member. The compiler
-     * renames it to the operator it answers before anything can call it.
+     * The spec is `bridge`, and `castValue` is a compiler protocol member.
+     * Source code writes `value as To`; the compiler resolves that syntax to
+     * this member before ordinary member lookup.
      */
     @Since("0.1")
     bridge spec Cast<To> {
-        prop _cast<To>[self: Self&]: To
+        prop castValue<To>[self: Self&]: To
     }
 
     /**
@@ -117,7 +117,7 @@ realm std {
      */
     @Since("0.1")
     bridge spec CheckedCast<To> {
-        prop _cast<To>[self: Self&]: To?
+        prop castValue<To>[self: Self&]: To?
     }
 
     /**
@@ -128,6 +128,6 @@ realm std {
      */
     @Since("0.1")
     bridge spec BitCast<To> {
-        prop _cast<To>[self: Self&]: To
+        prop castValue<To>[self: Self&]: To
     }
 }

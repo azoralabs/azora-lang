@@ -299,7 +299,7 @@ class Feature003SyntaxTest {
                 var value: std::String
             }
             impl std::Cast<std::String> for Label {
-                prop _cast[self: std::Self&]: std::String {
+                prop castValue[self: std::Self&]: std::String {
                     return "cast:" + self.value
                 }
             }
@@ -318,7 +318,7 @@ class Feature003SyntaxTest {
                 var value: std::String
             }
             impl std::Cast<std::String> for Label {
-                prop _cast[self: std::Self&]: std::String {
+                prop castValue[self: std::Self&]: std::String {
                     return "cast:" + self.value
                 }
             }

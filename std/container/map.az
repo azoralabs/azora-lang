@@ -211,7 +211,7 @@ realm std {
         var values: V* = alloc V[16]
         var hashes: ULong* = alloc ULong[16]
         var occupied: Bool* = alloc Bool[16]
-        var __size: Int = 0
+        var _size: Int = 0
         var capacity: Int = 16
     }
 
@@ -222,7 +222,7 @@ realm std {
         var values: V* = alloc V[16]
         var hashes: ULong* = alloc ULong[16]
         var buckets: Int* = alloc Int[32]
-        var __size: Int = 0
+        var _size: Int = 0
         var capacity: Int = 16
         var bucketCapacity: Int = 32
     }
@@ -240,7 +240,7 @@ realm std {
         var root: Int = -1
         var freeHead: Int = -1
         var elemCount: Int = 0
-        var __size: Int = 0
+        var _size: Int = 0
         var capacity: Int = 16
     }
 
@@ -318,7 +318,7 @@ realm std {
             self.values[index] = value
             self.hashes[index] = hash
             self.occupied[index] = true
-            self.__size += 1
+            self._size += 1
             return null
         }
 
@@ -334,7 +334,7 @@ realm std {
             self.hashes = alloc ULong[newCapacity]
             self.occupied = alloc Bool[newCapacity]
             self.capacity = newCapacity
-            self.__size = 0
+            self._size = 0
 
             var i = 0
             while i < newCapacity {
@@ -355,7 +355,7 @@ realm std {
         }
 
         func _ensureInsertCapacity[self: Self!]() {
-            if (self.__size + 1) * 10 >= self.capacity * 7 {
+            if (self._size + 1) * 10 >= self.capacity * 7 {
                 self._rehash(self.capacity * 2)
             }
         }
@@ -371,7 +371,7 @@ realm std {
             if found < 0 { return null }
             fin previous = self.values[found]
             self.occupied[found] = false
-            self.__size -= 1
+            self._size -= 1
 
             var index = (found + 1) % self.capacity
             while self.occupied[index] {
@@ -379,7 +379,7 @@ realm std {
                 fin movedValue = self.values[index]
                 fin movedHash = self.hashes[index]
                 self.occupied[index] = false
-                self.__size -= 1
+                self._size -= 1
                 self._insertKnownHash(movedKey, movedValue, movedHash)
                 index = (index + 1) % self.capacity
             }
@@ -387,7 +387,7 @@ realm std {
         }
 
         func _entrySnapshot[self: Self&](): Array<MapEntry<K, V>> {
-            var result: Array<MapEntry<K, V>> = Array::fill<MapEntry<K, V>>(self.__size)
+            var result: Array<MapEntry<K, V>> = Array::fill<MapEntry<K, V>>(self._size)
             var source = 0
             var target = 0
             while source < self.capacity {
@@ -402,9 +402,9 @@ realm std {
     }
 
     impl Map<K, V> for HashMap<K, V> {
-        prop size[self: Self&]: Int = self.__size
-        prop isEmpty[self: Self&]: Bool = self.__size == 0
-        prop isNotEmpty[self: Self&]: Bool = self.__size > 0
+        prop size[self: Self&]: Int = self._size
+        prop isEmpty[self: Self&]: Bool = self._size == 0
+        prop isNotEmpty[self: Self&]: Bool = self._size > 0
 
         func containsKey[self: Self&](key: K&): Bool { return self._findIndex(key) >= 0 }
 
@@ -476,7 +476,7 @@ realm std {
             for i in 0..<self.capacity {
                 self.occupied[i] = false
             }
-            self.__size = 0
+            self._size = 0
         }
 
         func getOrPut[self: Self!](key: K, defaultValue: () -> V): V {
@@ -536,7 +536,7 @@ realm std {
                 i += 1
             }
             i = 0
-            while i < self.__size {
+            while i < self._size {
                 self._insertBucket(i)
                 i += 1
             }
@@ -548,7 +548,7 @@ realm std {
             let newKeys = alloc K[newCapacity]
             let newValues = alloc V[newCapacity]
             let newHashes = alloc ULong[newCapacity]
-            for i in 0..<self.__size {
+            for i in 0..<self._size {
                 newKeys[i] = self.keys[i]
                 newValues[i] = self.values[i]
                 newHashes[i] = self.hashes[i]
@@ -572,18 +572,18 @@ realm std {
                 self.values[found] = value
                 return previous
             }
-            if self.__size >= self.capacity {
+            if self._size >= self.capacity {
                 self._growEntries()
             }
-            if (self.__size + 1) * 10 >= self.bucketCapacity * 7 {
+            if (self._size + 1) * 10 >= self.bucketCapacity * 7 {
                 self._rebuildBuckets(self.bucketCapacity * 2)
             }
             fin hash = key.hash
-            self.keys[self.__size] = key
-            self.values[self.__size] = value
-            self.hashes[self.__size] = hash
-            self._insertBucket(self.__size)
-            self.__size += 1
+            self.keys[self._size] = key
+            self.values[self._size] = value
+            self.hashes[self._size] = hash
+            self._insertBucket(self._size)
+            self._size += 1
             return null
         }
 
@@ -591,19 +591,19 @@ realm std {
             fin found = self._findIndex(key)
             if found < 0 { return null }
             fin previous = self.values[found]
-            for i in found..<self.__size - 1 {
+            for i in found..<self._size - 1 {
                 self.keys[i] = self.keys[i + 1]
                 self.values[i] = self.values[i + 1]
                 self.hashes[i] = self.hashes[i + 1]
             }
-            self.__size -= 1
+            self._size -= 1
             self._rebuildBuckets(self.bucketCapacity)
             return previous
         }
 
         func _entrySnapshot[self: Self&](): Array<MapEntry<K, V>> {
-            var result: Array<MapEntry<K, V>> = Array::fill<MapEntry<K, V>>(self.__size)
-            for i in 0..<self.__size {
+            var result: Array<MapEntry<K, V>> = Array::fill<MapEntry<K, V>>(self._size)
+            for i in 0..<self._size {
                 result[i] = MapEntry(self.keys[i], self.values[i])
             }
             return result
@@ -611,16 +611,16 @@ realm std {
     }
 
     impl Map<K, V> for LinkedHashMap<K, V> {
-        prop size[self: Self&]: Int = self.__size
-        prop isEmpty[self: Self&]: Bool = self.__size == 0
-        prop isNotEmpty[self: Self&]: Bool = self.__size > 0
+        prop size[self: Self&]: Int = self._size
+        prop isEmpty[self: Self&]: Bool = self._size == 0
+        prop isNotEmpty[self: Self&]: Bool = self._size > 0
 
         func containsKey[self: Self&](key: K&): Bool {
             return self._findIndex(key) >= 0
         }
 
         func containsValue[self: Self&](value: V&): Bool {
-            for i in 0..<self.__size {
+            for i in 0..<self._size {
                 if self.values[i] == value { return true }
             }
             return false
@@ -643,23 +643,23 @@ realm std {
         }
 
         func keys[self: Self&](): List<K> {
-            var result: Array<K> = Array::fill<K>(self.__size)
-            for i in 0..<self.__size {
+            var result: Array<K> = Array::fill<K>(self._size)
+            for i in 0..<self._size {
                 result[i] = self.keys[i]
             }
             return result
         }
 
         func values[self: Self&](): List<V> {
-            var result: Array<V> = Array::fill<V>(self.__size)
-            for i in 0..<self.__size {
+            var result: Array<V> = Array::fill<V>(self._size)
+            for i in 0..<self._size {
                 result[i] = self.values[i]
             }
             return result
         }
 
         func forEach[self: Self&](action: (K&, V&) -> Unit) {
-            for i in 0..<self.__size {
+            for i in 0..<self._size {
                 action(self.keys[i], self.values[i])
             }
         }
@@ -682,7 +682,7 @@ realm std {
         }
 
         func clear[self: Self!]() {
-            self.__size = 0
+            self._size = 0
             for i in 0..<self.bucketCapacity {
                 self.buckets[i] = -1
             }
@@ -780,14 +780,14 @@ realm std {
             self.right[elem] = -1
             self.parent[elem] = parent
             self.heights[elem] = 1
-            self.__size += 1
+            self._size += 1
             return elem
         }
 
         func _releaseNode[self: Self!](elem: Int) {
             self.freeNext[elem] = self.freeHead
             self.freeHead = elem
-            self.__size -= 1
+            self._size -= 1
         }
 
         func _replaceParentChild[self: Self!](parent: Int, oldChild: Int, newChild: Int) {
@@ -942,8 +942,8 @@ realm std {
         }
 
         func _entrySnapshot[self: Self&](): Array<MapEntry<K, V>> {
-            var result: Array<MapEntry<K, V>> = Array::fill<MapEntry<K, V>>(self.__size)
-            let stack = alloc Int[self.__size]
+            var result: Array<MapEntry<K, V>> = Array::fill<MapEntry<K, V>>(self._size)
+            let stack = alloc Int[self._size]
             var stackSize = 0
             var elem = self.root
             var output = 0
@@ -965,9 +965,9 @@ realm std {
     }
 
     impl Map<K, V> for TreeMap<K, V> {
-        prop size[self: Self&]: Int = self.__size
-        prop isEmpty[self: Self&]: Bool = self.__size == 0
-        prop isNotEmpty[self: Self&]: Bool = self.__size > 0
+        prop size[self: Self&]: Int = self._size
+        prop isEmpty[self: Self&]: Bool = self._size == 0
+        prop isNotEmpty[self: Self&]: Bool = self._size > 0
 
         func containsKey[self: Self&](key: K&): Bool {
             return self._findNode(key) >= 0
@@ -1039,7 +1039,7 @@ realm std {
             self.root = -1
             self.freeHead = -1
             self.elemCount = 0
-            self.__size = 0
+            self._size = 0
         }
 
         func getOrPut[self: Self!](key: K, defaultValue: () -> V): V {
@@ -1328,7 +1328,7 @@ realm std {
         var result = LinkedHashMap<K, V>()
         var i = slice.start
         while (slice.step > 0 && i < slice.end) || (slice.step < 0 && i > slice.end) {
-            if i >= 0 && i < self.__size {
+            if i >= 0 && i < self._size {
                 result.put(self.keys[i], self.values[i])
             }
             i += slice.step
@@ -1431,7 +1431,7 @@ realm std {
     @Experimental(since: "0.1")
     oper== [self: LinkedHashMap<K, V>&](rhs: Map<K, V>): Bool {
         if self.size != rhs.size { return false }
-        for i in 0..<self.__size {
+        for i in 0..<self._size {
             if !rhs.containsKey(self.keys[i]) || rhs.get(self.keys[i]) != self.values[i] {
                 return false
             }
@@ -1448,7 +1448,7 @@ realm std {
     impl LinkedHashMap<K, V> {
         prop hash[self: Self&]: ULong {
             var result = 0 as ULong
-            for i in 0..<self.__size {
+            for i in 0..<self._size {
                 result = result + ((self.keys[i].hash as ULong) ^ (self.values[i].hash as ULong))
             }
             return result

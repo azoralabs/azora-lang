@@ -1051,7 +1051,7 @@ test "serial long extraction accepts the minimum value" {
 test "serial integer extraction rejects narrowing overflow" {
     fin valid = std::serialAsInt(SerialValue.Number("2147483647")) catch -1
     fin overflow = std::serialAsInt(SerialValue.Number("2147483648")) catch -2
-    assert valid == 2147483647 { "serialAsInt must accept Int.MAX_VALUE" }
+    assert valid == 2147483647 { "serialAsInt must accept Int.maxValue" }
     assert overflow == -2 { "serialAsInt must reject values above Int" }
 }
 

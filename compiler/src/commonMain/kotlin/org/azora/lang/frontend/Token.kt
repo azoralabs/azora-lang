@@ -165,9 +165,8 @@ enum class TokenType {
     PROP, CTOR, DTOR,
     // `out { … }` postcondition contracts.
     OUT,
-    // Visibility: `exposed` (public), `confined` (private), `protected` (protected).
     // Visibility: public by default, `confined` narrows to the package. A
-    // leading underscore on the name is what makes a member private.
+    // single leading underscore marks a declaration private where supported.
     // `exposed` marks a `module` or an `import` as auto-imported everywhere.
     EXPOSE, PROTECT, CONFINE,
     // Thread-local storage: `threadlocal var x = 0` / `threadlocal fin y = 42`.

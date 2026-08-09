@@ -27,8 +27,8 @@ import kotlin.system.exitProcess
 /**
  * Parses CLI flags into `config.az` overrides (`-D NAME=VAL`, `--define NAME=VAL`)
  * plus named flags that map to the standard config constants:
- * `--debug`/`--release` (DEBUG/RELEASE), `--test` (TEST_MODE),
- * `--auto-import-macros` (AUTO_IMPORT_MACROS). These drive `export if COND` and
+ * `--debug`/`--release` (DEBUG/RELEASE), `--test` (`testMode`),
+ * `--auto-import-macros` (`autoImportMacros`). These drive `export if COND` and
  * `inline fin` config reads.
  */
 private fun parseDefines(args: List<String>): Map<String, String> {
@@ -49,8 +49,8 @@ private fun parseDefines(args: List<String>): Map<String, String> {
             }
             a == "--debug" -> { defines["DEBUG"] = "true"; defines["RELEASE"] = "false" }
             a == "--release" -> { defines["DEBUG"] = "false"; defines["RELEASE"] = "true" }
-            a == "--test" -> defines["TEST_MODE"] = "true"
-            a == "--auto-import-macros" -> defines["AUTO_IMPORT_MACROS"] = "true"
+            a == "--test" -> defines["testMode"] = "true"
+            a == "--auto-import-macros" -> defines["autoImportMacros"] = "true"
         }
     }
     return defines

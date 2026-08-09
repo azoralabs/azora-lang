@@ -1523,9 +1523,8 @@ sealed class TypeAnnotation {
  *
  * [PUBLIC] is the default and needs no keyword: a declaration is reachable
  * unless something says otherwise. [CONFINE] narrows it to the declaring
- * package. Anything narrower than that is spelled with a leading underscore on
- * the name itself, which keeps the restriction where a reader is already
- * looking.
+ * package. A single leading underscore marks declarations private where that
+ * declaration kind supports private visibility.
  */
 /**
  * How far a declaration reaches, and whether it arrives without being asked for.

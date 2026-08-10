@@ -43,28 +43,23 @@ realm std {
      * this as a bridge pack keeps the API and its fields in the standard
      * library without wrapping the native array allocation in another object.
      *
+     * An array is cloned by duplicating its elements, and is never `Copy`:
+     * duplicating a collection implicitly would hide an allocation. The element
+     * copy is the compiler-supplied default, so an element type that writes its
+     * own `clone` gets it.
+     *
      * @generic T The type shared by every element in the array.
      */
     @Experimental(since: "0.1")
-    bridge pack Array<T, N: Int> {
+    bridge pack Array<T, N: Int> derives Clone {
         /**
          * Pointer to the first contiguous element.
          *
          * The pointer is stable for the lifetime of a fixed array. Bounds are
          * not carried by the pointer itself; use `size` before pointer indexing.
          */
-        fin data: T*
+        unsafe fin data: T*
     }
-
-    /**
-     * An array is cloned by duplicating its elements.
-     *
-     * Like `List`, it is never `Copy`: duplicating a collection implicitly
-     * would hide an allocation. The element copy is the compiler-supplied
-     * default, so an element type that writes its own `clone` gets it.
-     */
-    @Since("0.1")
-    derive Clone for Array
 
     /**
      * Creates an array containing `elements` in argument order.
@@ -81,7 +76,40 @@ realm std {
         return elements
     }
 
+    impl Array<T, N: Int> {
+        /**
+         * True when the array holds no elements.
+         *
+         * A property, so it is read without parentheses: `values.isEmpty`.
+         *
+         * @return `true` when `size` is zero.
+         */
+        @Experimental(since: "0.1")
+        prop isEmpty[self: Self&]: Bool = self.size == 0
+
+        /**
+         * True when the array holds at least one element.
+         *
+         * The negation of [isEmpty], written out so a condition reads forwards
+         * rather than through a `!`.
+         *
+         * @return `true` when `size` is greater than zero.
+         */
+        @Experimental(since: "0.1")
+        prop isNotEmpty[self: Self&]: Bool = self.size > 0
+    }
+
     impl Array:: {
+        /**
+         * The number of elements the array holds.
+         *
+         * Compiler-provided (`bridge`): the count lives in the backend's array
+         * representation, so there is no Azora body to read it from.
+         */
+        @Experimental(since: "0.1")
+        bridge fin size: Int
+
+
         /**
          * Pre-allocates an array of `count` slots.
          *
@@ -89,7 +117,6 @@ realm std {
          * directly, so there is no Azora body. Used as a low-level building block by
          * the functional combinators that grow result arrays.
          *
-         * @generic T The element type.
          * @param count The number of slots to allocate; must be non-negative.
          * @return An `Array<T>` with `count` slots.
          */
@@ -112,7 +139,7 @@ test "arrayOf preserves values and ordefir" {
 
 test "arrayOf produces the canonical Array type" {
     fin values: Array<String> = std::arrayOf("first", "second")
-    assert values.length == 2 { "arrayOf did not create an Array" }
+    assert values.size == 2 { "arrayOf did not create an Array" }
     assert values[0] == "first" && values[1] == "second" {
         "arrayOf changed its elements"
     }
@@ -121,8 +148,10 @@ test "arrayOf produces the canonical Array type" {
 test "array exposes size and contiguous data fields" {
     fin values = std::arrayOf(5, 8, 13)
     assert values.size == 3 { "Array.size must report the element count" }
-    assert values.data[0] == 5 && values.data[2] == 13 {
-        "Array.data must point to the first contiguous element"
+    unsafe {
+        assert values.data[0] == 5 && values.data[2] == 13 {
+            "Array.data must point to the first contiguous element"
+        }
     }
 }
 

@@ -48,7 +48,7 @@ realm std {
      */
     @Experimental(since: "0.1")
     func linearSearch<T>(arr: Array<T>, target: T): Int {
-        for i in 0..<arr.length {
+        for i in 0..<arr.size {
             if arr[i] == target { return i }
         }
         return -1
@@ -66,7 +66,7 @@ realm std {
     @Experimental(since: "0.1")
     func binarySearch<T>(arr: Array<T>, target: T): Int where T: Order {
         var lo = 0
-        var hi = arr.length - 1
+        var hi = arr.size - 1
         while lo <= hi {
             fin mid = (lo + hi) / 2
             if arr[mid] == target { return mid }
@@ -88,10 +88,10 @@ realm std {
     @Experimental(since: "0.1")
     func minOf<T>(arr: Array<T>): T where T: Order
     in {
-        assert arr.length > 0 { "Input must not be empty" }
+        assert arr.size > 0 { "Input must not be empty" }
     } scope {
         var result = arr[0]
-        for i in 1..<arr.length {
+        for i in 1..<arr.size {
             if arr[i] < result { result = arr[i] }
         }
         return result
@@ -106,10 +106,10 @@ realm std {
     @Experimental(since: "0.1")
     func maxOf<T>(arr: Array<T>): T where T: Order
     in {
-        assert arr.length > 0 { "Input must not be empty" }
+        assert arr.size > 0 { "Input must not be empty" }
     } scope {
         var result = arr[0]
-        for i in 1..<arr.length {
+        for i in 1..<arr.size {
             if arr[i] > result { result = arr[i] }
         }
         return result
@@ -128,7 +128,7 @@ realm std {
         assert it >= 0 { "count must return non-negative" }
     } scope {
         var c = 0
-        for i in 0..<arr.length {
+        for i in 0..<arr.size {
             if arr[i] == target { c += 1 }
         }
         return c
@@ -143,7 +143,7 @@ realm std {
      */
     @Experimental(since: "0.1")
     func findIndex<T>(arr: Array<T>, pred: (T) -> Bool): Int {
-        for i in 0..<arr.length {
+        for i in 0..<arr.size {
             if pred(arr[i]) { return i }
         }
         return -1
@@ -159,7 +159,7 @@ realm std {
     @Experimental(since: "0.1")
     func findLastIndex<T>(arr: Array<T>, pred: (T) -> Bool): Int {
         var result = -1
-        for i in 0..<arr.length {
+        for i in 0..<arr.size {
             if pred(arr[i]) { result = i }
         }
         return result

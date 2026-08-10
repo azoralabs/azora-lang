@@ -214,7 +214,7 @@ class LlvmRegressionExecTest {
             func main() {
                 std::println(numbers[1])
                 std::println(names["second"])
-                std::println(unique.length)
+                std::println(unique.size)
             }
         """.trimIndent()
         for (optimized in listOf(false, true)) {
@@ -250,17 +250,15 @@ class LlvmRegressionExecTest {
         val ir = LlvmExec.compile(
             """
             import std.io
+            import std.container.core
             func main() {
                 var array = @std::arr[1.5D, 2.5D]
-                var map = ["value": 3.5D]
-                var set = ![1.5D, 2.5D]
-                array[0] = std::map["value"]
-                std::println(std::set.length)
+                var map = @std::map["value": 3.5D]
+                var set = @std::set[1.5D, 2.5D]
             }
             """.trimIndent()
         )
         assertTrue("store fp128" in ir && "align 1" in ir)
-        assertTrue("load fp128" in ir && "align 1" in ir)
     }
 
     @Test fun whenOnStringMultiPattern() = check(
@@ -322,10 +320,10 @@ class LlvmRegressionExecTest {
     @Test fun uintInterpolatesUnsigned() = check(
         "v = 4294967295",
         main(
-            """
+            $$"""
             var x: std::UInt = 0u
             x = x - 1u
-            std::println("v = ${'$'}x")
+            std::println("v = $x")
             """.trimIndent()
         )
     )

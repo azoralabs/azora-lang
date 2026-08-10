@@ -284,9 +284,15 @@ sealed class IrType {
                     // second arg is a [TypeRef.Const] carrying the element count).
                     if (ref.args.size == 2 && ref.args[1] is TypeRef.Const) {
                         Array(resolve(ref.args[0], typeParams), (ref.args[1] as TypeRef.Const).value)
-                    } else if (ref.args.size == 2 && (ref.args[1] as? TypeRef.Named)?.name == "*") {
+                    } else if (
+                        ref.args.size == 2 &&
+                        (ref.args[1] as? TypeRef.Named)?.name?.let { it == "*" || it in typeParams } == true
+                    ) {
                         // `Array<T, *>` - a wildcard (unsized) array, e.g. from the
-                        // `typealias Array<T> = Array<T, *>` sugar.
+                        // `typealias Array<T> = Array<T, *>` sugar - and `Array<T, N>`
+                        // inside `impl<T, N: Int> Array<T, N>`, where the size is a
+                        // type parameter rather than a known count. Neither fixes a
+                        // length, so both are the unsized array.
                         Array(resolve(ref.args[0], typeParams))
                     } else {
                         if (ref.args.size != 1) {
@@ -1003,7 +1009,7 @@ sealed class IrStmt {
             is Trace -> if (direct) {
                 val selected = if (showLevel) "${displayLevel.prettyPrint()} " else ""
                 sb.appendLine("${pad}trace $selected${message.prettyPrint()}")
-            } else if (message is IrExpr.Call && message.name.startsWith("__") && message.name.contains("_lmbda")) {
+            } else if (message is IrExpr.Call && message.name.startsWith("__") && message.name.contains("_lambda")) {
                 sb.appendLine("${pad}trace ${displayLevel.prettyPrint()} ${message.prettyPrint()}")
             } else {
                 sb.appendLine("${pad}trace ${level.prettyPrint()} { ${message.prettyPrint()} }")

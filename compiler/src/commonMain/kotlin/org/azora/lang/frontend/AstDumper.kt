@@ -445,6 +445,11 @@ private fun dumpStmt(sb: StringBuilder, stmt: Stmt, indent: String) {
 
 private fun dumpExpr(sb: StringBuilder, expr: Expr, indent: String) {
     when (expr) {
+        is Expr.MapEntryArg -> {
+            sb.appendLine("${indent}MapEntryArg")
+            dumpExpr(sb, expr.key, "$indent  ")
+            dumpExpr(sb, expr.value, "$indent  ")
+        }
         is Expr.IntLiteral -> sb.appendLine("${indent}IntLiteral(${expr.value}, suffix=${expr.suffix})")
         is Expr.DoubleLiteral -> sb.appendLine("${indent}DoubleLiteral(${expr.value}, suffix=${expr.suffix})")
         is Expr.StringLiteral -> sb.appendLine("${indent}StringLiteral(\"${expr.value}\")")

@@ -18,7 +18,7 @@ class StdlibMethodsTest {
         assertEquals("apple\nbanana\ncherry", run("""
             import std.io
             func main() {
-                var fruits = ["apple", "banana", "cherry"]
+                var fruits = @std::arr["apple", "banana", "cherry"]
                 for fruit in fruits {
                     std::println(fruit)
                 }
@@ -91,11 +91,11 @@ class StdlibMethodsTest {
         assertEquals("[b, x, c]", run("""
             import std.io
             func main() {
-                var items = ["a", "b", "c"]
+                var items = @std::arr["a", "b", "c"]
                 items.insert(2, "x")
                 items.remove(0)
                 var result = ""
-                for i in 0..<items.length {
+                for i in 0..<items.size {
                     if i > 0 { result = result + ", " }
                     result = result + items[i]
                 }

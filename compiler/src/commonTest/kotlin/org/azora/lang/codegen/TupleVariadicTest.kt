@@ -1,20 +1,10 @@
 package org.azora.lang.codegen
 
-import org.azora.lang.CompilationResult
-import org.azora.lang.Compiler
+import org.azora.lang.*
 import org.azora.lang.backend.IrInterpreter
-import org.azora.lang.frontend.Lexer
-import org.azora.lang.frontend.Parser
-import org.azora.lang.frontend.Expr
-import org.azora.lang.frontend.Stmt
-import org.azora.lang.frontend.TopLevel
+import org.azora.lang.frontend.*
 import java.io.File
-import kotlin.test.Test
-import kotlin.test.assertContains
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertIs
-import kotlin.test.assertTrue
+import kotlin.test.*
 
 class TupleVariadicTest {
     private fun compile(source: String): CompilationResult.Success {
@@ -121,9 +111,9 @@ class TupleVariadicTest {
             import std.container.*
             func main() {
                 fin tup = std::tupleOf(1, 2.0, "3")
-                if std::tup.0 is std::Int && std::tup.0 == 1 { std::println("ok0") }
-                if std::tup.1 is std::Double && std::tup.1 == 2.0 { std::println("ok1") }
-                if std::tup.2 is std::String && std::tup.2 == "3" { std::println("ok2") }
+                if tup.0 is std::Int && tup.0 == 1 { std::println("ok0") }
+                if tup.1 is std::Double && tup.1 == 2.0 { std::println("ok1") }
+                if tup.2 is std::String && tup.2 == "3" { std::println("ok2") }
             }
         """.trimIndent()
         val out = compile(src)
@@ -143,7 +133,7 @@ class TupleVariadicTest {
     }
 
     @Test fun qualifiedTupleModuleImportExposesTupleOf() {
-        val out = compile("""
+        val out = compile($$"""
             module playground
             import std.io
             import std.container.tuple
@@ -154,7 +144,7 @@ class TupleVariadicTest {
 
             impl App {
                 func greet[self: std::Self&](): std::String {
-                    return "Hello from ${'$'}{self.name}!"
+                    return "Hello from ${self.name}!"
                 }
             }
 
@@ -309,14 +299,14 @@ class TupleVariadicTest {
             }
         """.trimIndent()).tokenize()).parse()
 
-        val returnType = assertIs<org.azora.lang.frontend.TypeAnnotation.Explicit>(
+        val returnType = assertIs<TypeAnnotation.Explicit>(
             program.functions.single().returnType,
         ).ref
-        val tuple = assertIs<org.azora.lang.frontend.TypeRef.Named>(returnType)
+        val tuple = assertIs<TypeRef.Named>(returnType)
         assertEquals("Tuple", tuple.name)
         assertEquals("std", tuple.qualifier)
         assertEquals(
-            org.azora.lang.frontend.TypeRef.Named("Tuple", tuple.args),
+            TypeRef.Named("Tuple", tuple.args),
             tuple,
             "source qualification must not create a different semantic type",
         )
@@ -338,7 +328,7 @@ class TupleVariadicTest {
     }
 
     @Test fun tupleLengthConstraintRejectsSingleElement() {
-        // `where (...T).length >= 2` - a 1-element tuple must fail with a clear message.
+        // `where (...T).size >= 2` - a 1-element tuple must fail with a clear message.
         val r = Compiler().compile("""
             import std.io
             import std.container.*

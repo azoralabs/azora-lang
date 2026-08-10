@@ -30,6 +30,19 @@ package org.azora.lang.ir
  * built (symbol registration and IR lowering), keeping definition and call sites
  * in agreement across all backends.
  */
+/**
+ * True when [symbol] denotes the declaration named [local], whatever realm it
+ * was canonicalized into.
+ *
+ * A canonical symbol is `__<realm path>_<local>` (see `IrSymbolCanonicalizer`),
+ * so matching on the tail lets a backend intercept a builtin without naming the
+ * realm the standard library happens to declare it in. An unmangled symbol -
+ * a compiler intrinsic like `__dbg`, or a program's own function - matches only
+ * itself.
+ */
+fun symbolDenotes(symbol: String, local: String): Boolean =
+    symbol == local || (symbol.startsWith("__") && symbol.endsWith("_$local"))
+
 fun mangleMethodSymbol(name: String): String {
     if (name.all { it.isLetterOrDigit() || it == '_' }) return name
     val sb = StringBuilder(name.length + 8)

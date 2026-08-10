@@ -6,7 +6,7 @@ import org.azora.lang.backend.IrInterpreter
 import kotlin.test.*
 
 /**
- * Tests for array literals, indexing, mutation, member access (`.length`),
+ * Tests for array literals, indexing, mutation, member access (`.size`),
  * builtin array methods (`add`, `isEmpty`, `isNotEmpty`), compound assignment
  * to indices, and member access on strings.
  */
@@ -24,7 +24,7 @@ class ArrayTest {
             import std.io
             func main() {
                 var a = @std::arr[10, 20, 30]
-                std::println(a.length)
+                std::println(a.size)
             }
         """.trimIndent()))
     }
@@ -71,7 +71,7 @@ class ArrayTest {
             func main() {
                 var a = @std::arr[10, 20, 30]
                 var sum = 0
-                for i in 0..<a.length {
+                for i in 0..<a.size {
                     sum = sum + a[i]
                 }
                 std::println(sum)
@@ -86,7 +86,7 @@ class ArrayTest {
             func main() {
                 var a = @std::arr[1, 2, 3]
                 a.add(4)
-                std::println(a.length)
+                std::println(a.size)
             }
         """.trimIndent()))
     }
@@ -143,7 +143,7 @@ class ArrayTest {
         assertEquals("2", run("""
             import std.io
             func main() {
-                var m = [@std::arr[1, 2], @std::arr[3, 4]]
+                var m = @std::arr[@std::arr[1, 2], @std::arr[3, 4]]
                 std::println(m[0][1])
             }
         """.trimIndent()))
@@ -154,7 +154,7 @@ class ArrayTest {
         assertEquals("5", run("""
             import std.io
             func main() {
-                std::println("hello".length)
+                std::println("hello".size)
             }
         """.trimIndent()))
     }
@@ -180,7 +180,7 @@ class ArrayTest {
             func main() {
                 var a = @std::arr[10, 20, 30]
                 var sum = 0
-                for i in 0..<a.length {
+                for i in 0..<a.size {
                     sum = sum + a[i]
                 }
                 std::println(sum)

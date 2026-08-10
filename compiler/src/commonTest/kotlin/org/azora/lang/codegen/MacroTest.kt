@@ -97,7 +97,7 @@ class MacroTest {
                 fin s = @std::set[1, 2, 3]
                 fin a = @std::arr[10, 20, 30]
                 std::println(s.size)
-                std::println(a.length)
+                std::println(a.size)
                 std::println(a[2])
             }
             """,

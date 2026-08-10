@@ -197,6 +197,22 @@ sealed class Expr {
     data class Grouping(val expr: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 
     /**
+     * `1: "one"` written as an argument of a macro invocation.
+     *
+     * Only a macro whose arm is a [MacroPattern.MapEntryCapture] can receive one:
+     * `@std::map[1: "one"]` binds the keys and the values as two lists the
+     * template splices together. The expander consumes these before any later
+     * pass runs, so an entry reaching one is a macro that did not match.
+     */
+    data class MapEntryArg(
+        val key: Expr,
+        val value: Expr,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0,
+    ) : Expr()
+
+    /**
      * Upper scope access (`::name`). Resolves the variable in the parent scope,
      * skipping the current scope. Used when a local variable shadows an outer one.
      *
@@ -1200,6 +1216,15 @@ sealed class TypeRef {
         val args: List<TypeRef> = emptyList(),
         val variadic: Boolean = false,
         val qualifier: String? = null,
+        /**
+         * True when the compiler produced this reference rather than an author.
+         *
+         * An untyped lambda parameter (`{ x, y -> … }`) is given `Any` as a
+         * placeholder until the expected callable type supplies its real type.
+         * Nobody wrote it, so source-level rules - realm qualification above all
+         * - must not be applied to it.
+         */
+        val synthesized: Boolean = false,
     ) : TypeRef() {
         override fun toString() = when {
             TypeFunctionCall.isCall(this) -> "${TypeFunctionCall.name(this)}<${args.joinToString(", ")}>"
@@ -1737,6 +1762,14 @@ data class PackField(
     val mutable: Boolean,
     val default: Expr?,
     val visibility: Visibility = Visibility.PUBLIC,
+    /**
+     * `unsafe fin data: T*` - the field is readable only inside an unsafe scope.
+     *
+     * A raw pointer beside a safe API is the case this exists for: `Array` can
+     * expose its storage without every reader inheriting the obligation that
+     * comes with it.
+     */
+    val isUnsafe: Boolean = false,
     val annotations: List<Annotation> = emptyList(),
     /**
      * Compile-time loops this field is declared inside, outermost first.

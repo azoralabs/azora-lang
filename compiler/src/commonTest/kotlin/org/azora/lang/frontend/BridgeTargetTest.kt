@@ -71,8 +71,8 @@ class BridgeTargetTest {
 
     @Test fun compileTimeConstantBoundToATargetIsATarget() {
         assertEquals(listOf("C"), bridgeTargets("""
-            inline fin Native = std::Target.C
-            bridge Native {
+            inline fin native = std::Target.C
+            bridge native {
                 func abs(x: std::Int): std::Int
             }
         """.trimIndent()))
@@ -172,8 +172,8 @@ class BridgeTargetTest {
     @Test fun aConstantBoundToANonMemberIsRejected() {
         val failure = assertFailsWith<IllegalStateException> {
             parse("""
-                inline fin Native = std::Target.Vulkan
-                bridge Native {
+                inline fin native = std::Target.Vulkan
+                bridge native {
                     func draw(): std::Unit
                 }
             """.trimIndent())
@@ -198,9 +198,9 @@ class BridgeTargetTest {
 
     @Test fun theSingleFunctionFormTakesTheSameTargets() {
         assertEquals(listOf("C", "C", "Compiler"), bridgeTargets("""
-            inline fin Native = std::Target.C
+            inline fin native = std::Target.C
             bridge .C func abs(x: std::Int): std::Int
-            bridge Native func labs(x: std::Long): std::Long
+            bridge native func labs(x: std::Long): std::Long
             bridge func fill(count: std::Int): std::Int
         """.trimIndent()))
     }

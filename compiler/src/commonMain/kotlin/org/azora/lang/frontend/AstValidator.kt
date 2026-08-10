@@ -186,7 +186,10 @@ class AstValidator {
         val declaredReturn = (func.returnType as? TypeAnnotation.Explicit)?.ref
         val successReturn = (declaredReturn as? TypeRef.Failable)?.ok ?: declaredReturn
         val returnsUnit = successReturn is TypeRef.Named && successReturn.name == "Unit"
-        if (!func.isFlow && declaredReturn != null && !returnsUnit) {
+        // A bodyless declaration is compiler-provided (`bridge func`, `bridge prop`):
+        // the backend supplies the implementation, so there is no body to return
+        // from and nothing here to check.
+        if (!func.isFlow && declaredReturn != null && !returnsUnit && func.body.isNotEmpty()) {
             if (!hasReturnInBody(func.body)) {
                 errors.add("line ${func.line}: function '${func.name}' declares return type " +
                         "'${func.returnType}' but has no return statement")

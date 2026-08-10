@@ -44,7 +44,7 @@ realm std {
     @Experimental(since: "0.1")
     @EnforceNumFields
     @Serializable
-    pack Tuple<...T> where (...T).length >= 2 {
+    pack Tuple<...T> where (...T).size >= 2 {
         inline for Ty in ...T with index {
             inline "$index: $Ty"
         }
@@ -85,7 +85,7 @@ realm std {
      */
     @Experimental(since: "0.1")
     func tupleOf<...T>(...elements: ...T): Tuple<...T>
-    where (...T).length >= 2 {
+    where (...T).size >= 2 {
         return Tuple(elements)
     }
 }

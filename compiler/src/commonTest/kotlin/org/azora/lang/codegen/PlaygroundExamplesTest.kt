@@ -24,19 +24,22 @@ class PlaygroundExamplesTest {
 import std.io
 func main() { std::println("Hello, world!") }"""))
 
-    @Test fun variables() = assertEquals("Hello, Azora!" + "\n" + "count is 6", run("""module playground
+    @Test fun variables() = assertEquals("Hello, Azora!" + "\n" + "count is 6", run(
+        $$"""module playground
 import std.io
 func main() {
     var count = 0
     count = count + 1
     count += 5
     fin name = "Azora"
-    let greeting = "Hello, ${'$'}{name}!"
+    let greeting = "Hello, ${name}!"
     std::println(greeting)
-    std::println("count is ${'$'}{count}")
-}"""))
+    std::println("count is ${count}")
+}"""
+    ))
 
-    @Test fun functions() = assertEquals("7" + "\n" + "120", run("""module playground
+    @Test fun functions() = assertEquals("7" + "\n" + "120", run(
+        $$"""module playground
 import std.io
 func add(a: std::Int, b: std::Int): std::Int { return a + b }
 func factorial(n: std::Int): std::Int {
@@ -44,57 +47,65 @@ func factorial(n: std::Int): std::Int {
     return n * factorial(n - 1)
 }
 func main() {
-    std::println("${'$'}{add(3, 4)}")
-    std::println("${'$'}{factorial(5)}")
-}"""))
+    std::println("${add(3, 4)}")
+    std::println("${factorial(5)}")
+}"""
+    ))
 
-    @Test fun controlFlow() = assertEquals("sum 1..10 = 55" + "\n" + "stopped at 7" + "\n" + "even count = 5", run("""module playground
+    @Test fun controlFlow() = assertEquals("sum 1..10 = 55" + "\n" + "stopped at 7" + "\n" + "even count = 5", run(
+        $$"""module playground
 import std.io
 func main() {
     var sum = 0
     for i in 1..10 { sum += i }
-    std::println("sum 1..10 = ${'$'}{sum}")
+    std::println("sum 1..10 = ${sum}")
     var i = 0
     loop {
         i += 1
         if i == 7 { break }
     }
-    std::println("stopped at ${'$'}{i}")
+    std::println("stopped at ${i}")
     var evens = 0
     for n in 0..<10 {
         if n % 2 != 0 { continue }
         evens += 1
     }
-    std::println("even count = ${'$'}{evens}")
-}"""))
+    std::println("even count = ${evens}")
+}"""
+    ))
 
-    @Test fun arrays() = assertEquals("10" + "\n" + "3" + "\n" + "4" + "\n" + "99" + "\n" + "total = 189", run("""module playground
+    @Test fun arrays() = assertEquals("10" + "\n" + "3" + "\n" + "4" + "\n" + "99" + "\n" + "total = 189", run(
+        $$"""module playground
 import std.io
 func main() {
     var nums = @std::arr[10, 20, 30]
     std::println(nums[0])
-    std::println(nums.length)
+    std::println(nums.size)
     nums.add(40)
     nums[0] = 99
-    std::println(nums.length)
+    std::println(nums.size)
     std::println(nums[0])
     var total = 0
-    for i in 0..<nums.length { total += nums[i] }
-    std::println("total = ${'$'}{total}")
-}"""))
+    for i in 0..<nums.size { total += nums[i] }
+    std::println("total = ${total}")
+}"""
+    ))
 
-    @Test fun strings() = assertEquals("Hello, Azora!" + "\n" + "3 x 3 = 9" + "\n" + "ababab" + "\n" + "length is 5", run("""module playground
+    @Test fun strings() = assertEquals("Hello, Azora!" + "\n" + "3 x 3 = 9" + "\n" + "ababab" + "\n" + "length is 5", run(
+        $$"""module playground
 import std.io
 func main() {
     var name = "Azora"
     var n = 3
-    std::println("Hello, ${'$'}name!")
-    std::println("${'$'}{n} x ${'$'}{n} = ${'$'}{n * n}")
+    std::println("Hello, $name!")
+    std::println("${n} x ${n} = ${n * n}")
     std::println("ab" * 3)
-    std::println("length is ${'$'}{name.length}")
-}"""))
+    std::println("length is ${name.size}")
+}"""
+    ))
 
-    @Test fun structs() = assertEquals("3, 4" + "\n" + "10, 5" + "\n" + "last = 3, 3", run("""module playground
+    @Test fun structs() = assertEquals("3, 4" + "\n" + "10, 5" + "\n" + "last = 3, 3", run(
+        $$"""module playground
 import std.io
 pack Point {
     var x: std::Int
@@ -102,15 +113,17 @@ pack Point {
 }
 func main() {
     var p = Point(3, 4)
-    std::println("${'$'}{p.x}, ${'$'}{p.y}")
+    std::println("${p.x}, ${p.y}")
     p.x = 10
     p.y += 1
-    std::println("${'$'}{p.x}, ${'$'}{p.y}")
-    var points = [Point(1, 1), Point(2, 2), Point(3, 3)]
-    std::println("last = ${'$'}{points[2].x}, ${'$'}{points[2].y}")
-}"""))
+    std::println("${p.x}, ${p.y}")
+    var points = @std::arr[Point(1, 1), Point(2, 2), Point(3, 3)]
+    std::println("last = ${points[2].x}, ${points[2].y}")
+}"""
+    ))
 
-    @Test fun operators() = assertEquals("30" + "\n" + "3" + "\n" + "2" + "\n" + "sum 1..<5 = 10", run("""module playground
+    @Test fun operators() = assertEquals("30" + "\n" + "3" + "\n" + "2" + "\n" + "sum 1..<5 = 10", run(
+        $$"""module playground
 import std.io
 func main() {
     var n = 10
@@ -121,29 +134,34 @@ func main() {
     std::println(17 % 5)
     var sum = 0
     for i in 1..<5 { sum += i }
-    std::println("sum 1..<5 = ${'$'}{sum}")
-}"""))
+    std::println("sum 1..<5 = ${sum}")
+}"""
+    ))
 
-    @Test fun scopes() = assertEquals("inner 2" + "\n" + "outer 1" + "\n" + "after 1", run("""module playground
+    @Test fun scopes() = assertEquals("inner 2" + "\n" + "outer 1" + "\n" + "after 1", run(
+        $$"""module playground
 import std.io
 func main() {
     var x = 1
     scope {
         var x = 2
-        std::println("inner ${'$'}{x}")
-        std::println("outer ${'$'}{::x}")
+        std::println("inner ${x}")
+        std::println("outer ${::x}")
     }
-    std::println("after ${'$'}{x}")
-}"""))
+    std::println("after ${x}")
+}"""
+    ))
 
-    @Test fun ctce() = assertEquals("size: 8" + "\n" + "squared: 25", run("""module playground
+    @Test fun ctce() = assertEquals("size: 8" + "\n" + "squared: 25", run(
+        $$"""module playground
 import std.io
 inline func square(x: std::Int): std::Int { return x * x }
 func main() {
     inline fin SIZE = 8
-    std::println("size: ${'$'}{SIZE}")
-    std::println("squared: ${'$'}{square(5)}")
-}"""))
+    std::println("size: ${SIZE}")
+    std::println("squared: ${square(5)}")
+}"""
+    ))
 
     @Test fun testing() = assertEquals("running tests...", run("""module playground
 import std.io

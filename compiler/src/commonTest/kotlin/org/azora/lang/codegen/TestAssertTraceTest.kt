@@ -146,7 +146,7 @@ class TestAssertTraceTest {
         val output = run("""
             import std.io
             func main() {
-                trace { "hello from trace" }
+                trace "hello from trace"
                 std::println("done")
             }
         """.trimIndent())
@@ -156,14 +156,14 @@ class TestAssertTraceTest {
 
     @Test
     fun trace_acceptsShorthandAndRuntimeLogLevels() {
-        val output = run("""
+        val output = run($$"""
             func main() {
                 trace .Info { "Any bridge works" }
                 var level = std::LogLevel.Warn
-                trace level { "${'$'}{it}: Hello" }
+                trace level { "${it}: Hello" }
                 fin finalLevel = std::LogLevel.Error
                 trace finalLevel { "final" }
-                trace { "${'$'}{it}: default" }
+                trace { "${it}: default" }
             }
         """.trimIndent())
 
@@ -172,12 +172,12 @@ class TestAssertTraceTest {
 
     @Test
     fun trace_liftsBodiesIntoTypedIrFunctions() {
-        val result = compile("""
+        val result = compile($$"""
             module playground
             func main() {
                 trace .Info { "Any bridge works" }
                 var level = std::LogLevel.Warn
-                trace level { "${'$'}{it}: Hello" }
+                trace level { "${it}: Hello" }
             }
         """.trimIndent())
         val ir = result.ir.prettyPrint()
@@ -188,22 +188,22 @@ class TestAssertTraceTest {
             .first { it.name == "level" }
 
         assertEquals(IrType.Named("LogLevel"), level.type)
-        assertTrue(ir.startsWith("module playground\n\nfunc __main_lmbda0"), ir)
+        assertTrue(ir.startsWith("module playground\n\nfunc __main_lambda0"), ir)
         assertTrue("""
-            func __main_lmbda0(level: std::LogLevel): std::String {
+            func __main_lambda0(level: std::LogLevel): std::String {
                 return "Any bridge works"
             }
         """.trimIndent() in ir, ir)
-        assertTrue("""
-            func __main_lmbda1(level: std::LogLevel): std::String {
-                return "${'$'}{level}: Hello"
+        assertTrue($$"""
+            func __main_lambda1(level: std::LogLevel): std::String {
+                return "${level}: Hello"
             }
         """.trimIndent() in ir, ir)
         val mainIr = """
             func main(): std::Unit {
-                trace std::LogLevel.Info __main_lmbda0(std::LogLevel.Info)
+                trace std::LogLevel.Info __main_lambda0(std::LogLevel.Info)
                 var level: std::LogLevel = std::LogLevel.Warn
-                trace std::LogLevel.Warn __main_lmbda1(level)
+                trace std::LogLevel.Warn __main_lambda1(level)
             }
         """.trimIndent()
         assertTrue(mainIr in ir, ir)
@@ -213,10 +213,10 @@ class TestAssertTraceTest {
 
     @Test
     fun trace_liftedBodyCapturesSurroundingValues() {
-        val output = run("""
+        val output = run($$"""
             func main() {
                 fin subject = "compiler"
-                trace .Info { "${'$'}subject ready" }
+                trace .Info { "$subject ready" }
             }
         """.trimIndent())
 
@@ -233,7 +233,7 @@ class TestAssertTraceTest {
         val ir = result.ir.prettyPrint()
 
         assertTrue("trace \"Meow\"" in ir, ir)
-        assertFalse("__main_lmbda" in ir, ir)
+        assertFalse("__main_lambda" in ir, ir)
         assertEquals("[DEBUG] Meow", IrInterpreter().interpret(result.ir))
     }
 
@@ -268,13 +268,13 @@ class TestAssertTraceTest {
 
     @Test
     fun enumValues_stringifyWithTheirQualifiedPath() {
-        val output = run("""
+        val output = run($$"""
             import std.io
             enum Tone { Warm Cool }
             func main() {
                 fin tone = Tone.Warm
                 std::println(tone)
-                std::println("${'$'}{tone}")
+                std::println("${tone}")
                 std::println(tone as std::String)
             }
         """.trimIndent())
@@ -406,11 +406,11 @@ class TestAssertTraceTest {
 
     @Test
     fun inlineTrace_acceptsShorthandAndInlineBindings() {
-        val result = compile("""
+        val result = compile($$"""
             func main() {
                 inline fin infoLevel = std::LogLevel.Info
                 inline var warnLevel = std::LogLevel.Warn
-                inline trace infoLevel { "${'$'}{it}: compiling" }
+                inline trace infoLevel { "${it}: compiling" }
                 inline trace warnLevel { "careful" }
                 inline trace .Critical { "stop" }
             }
@@ -423,9 +423,9 @@ class TestAssertTraceTest {
 
     @Test
     fun inlineTrace_acceptsTopLevelInlineBindings() {
-        val result = compile("""
+        val result = compile($$"""
             inline fin infoLevel = std::LogLevel.Info
-            inline trace infoLevel { "${'$'}{it}: module" }
+            inline trace infoLevel { "${it}: module" }
             inline var todoLevel = std::LogLevel.Todo
             inline trace todoLevel { "later" }
             func main() {}

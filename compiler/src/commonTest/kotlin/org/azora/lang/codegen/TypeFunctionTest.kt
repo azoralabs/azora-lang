@@ -106,7 +106,7 @@ class TypeFunctionTest {
             import std.traits
             func invalid(): std::promote<std::Int> { return 1 }
         """))
-        assertTrue(failure.errors.any { "'T.length >= 2'" in it }, failure.errors.toString())
+        assertTrue(failure.errors.any { "'T.size >= 2'" in it }, failure.errors.toString())
     }
 
     @Test
@@ -132,7 +132,7 @@ class TypeFunctionTest {
     fun exactOverloadWinsBeforeVariadicOverload() {
         assertIs<CompilationResult.Success>(compile("""
             deepinline prop Choose<A, B>: std::Type { return A }
-            deepinline prop Choose<...Types>: std::Type where Types.length >= 2 {
+            deepinline prop Choose<...Types>: std::Type where Types.size >= 2 {
                 return Types.1
             }
             func result(): Choose<std::String, std::Int> {
@@ -155,7 +155,7 @@ class TypeFunctionTest {
     @Test
     fun aVariadicTypePropertySupportsBindingsLoopsAndRank() {
         assertIs<CompilationResult.Success>(compile("""
-            deepinline prop Widest<...Types>: std::Type where Types.length >= 2 {
+            deepinline prop Widest<...Types>: std::Type where Types.size >= 2 {
                 var result: std::Type = Types.0
                 for candidate: std::Type in Types[1...] {
                     if candidate.rank > result.rank {
@@ -202,12 +202,12 @@ class TypeFunctionTest {
     @Test
     fun variadicConstraintProducesDiagnostic() {
         val failure = assertIs<CompilationResult.Failure>(compile("""
-            deepinline prop Widest<...Types>: std::Type where Types.length >= 2 {
+            deepinline prop Widest<...Types>: std::Type where Types.size >= 2 {
                 return Types.0
             }
             func invalid(): Widest<std::Int> { return 1 }
         """))
-        assertTrue(failure.errors.any { "'Types.length >= 2'" in it }, failure.errors.toString())
+        assertTrue(failure.errors.any { "'Types.size >= 2'" in it }, failure.errors.toString())
     }
 
     @Test
@@ -239,10 +239,10 @@ class TypeFunctionTest {
 
     @Test
     fun aConstraintViolatingCandidateIsSkippedWhenAnotherApplies() {
-        // One argument cannot satisfy `.length >= 2`, so selection must fall through
+        // One argument cannot satisfy `.size >= 2`, so selection must fall through
         // to the single-argument overload rather than report a constraint error.
         assertIs<CompilationResult.Success>(compile("""
-            deepinline prop Pick<...Types>: std::Type where Types.length >= 2 {
+            deepinline prop Pick<...Types>: std::Type where Types.size >= 2 {
                 return Types.1
             }
             deepinline prop Pick<Only>: std::Type {
@@ -257,13 +257,13 @@ class TypeFunctionTest {
     fun aConcreteInvalidSpecializationIsAnError() {
         // With no applicable alternative, the same violation is the user's error.
         val failure = assertIs<CompilationResult.Failure>(compile("""
-            deepinline prop OnlyPairs<...Types>: std::Type where Types.length >= 2 {
+            deepinline prop OnlyPairs<...Types>: std::Type where Types.size >= 2 {
                 return Types.0
             }
             func invalid(): OnlyPairs<std::Int> { return 1 }
         """))
         assertTrue(
-            failure.errors.any { "'Types.length >= 2'" in it },
+            failure.errors.any { "'Types.size >= 2'" in it },
             failure.errors.toString(),
         )
     }

@@ -543,7 +543,7 @@ class Tier1PolishTest {
         assertEquals("one\ntwo", run("""
             import std.io
             func main() {
-                var m = @std::arr[1: "one", 2: "two"]
+                var m = @std::map[1: "one", 2: "two"]
                 std::println(m[1])
                 std::println(m[2])
             }
@@ -554,7 +554,7 @@ class Tier1PolishTest {
         assertEquals("red", run("""
             import std.io
             func main() {
-                var colors: std::Map<std::Int, std::String> = @std::arr[1: "red", 2: "green"]
+                var colors: std::Map<std::Int, std::String> = @std::map[1: "red", 2: "green"]
                 std::println(colors[1])
             }
         """.trimIndent()))

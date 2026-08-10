@@ -291,7 +291,7 @@ class WasmCodegenExecTest {
     )
 
     @Test fun arrayIndexAndLength() = check(
-        "25\n3", main("let nums = @arr[10, 20, 30]\nnums[1] = 25\nstd::println(nums[1])\nstd::println(nums.length)")
+        "25\n3", main("let nums = @arr[10, 20, 30]\nnums[1] = 25\nstd::println(nums[1])\nstd::println(nums.size)")
     )
 
     @Test fun functionCalls() = check(

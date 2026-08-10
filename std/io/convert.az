@@ -123,9 +123,9 @@ realm std {
      */
     @Experimental(since: "0.1")
     func join<T>(arr: Array<T>, sep: T): T {
-        if arr.length == 0 { return "" }
+        if arr.size == 0 { return "" }
         var result = arr[0]
-        for i in 1..<arr.length {
+        for i in 1..<arr.size {
             result = result + sep + arr[i]
         }
         return result

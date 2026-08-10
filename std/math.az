@@ -359,7 +359,7 @@ realm std {
     @Experimental(since: "0.1")
     func sum<T>(arr: Array<T>): T {
         var total = 0
-        for i in 0..<arr.length {
+        for i in 0..<arr.size {
             total += arr[i]
         }
         return total
@@ -374,7 +374,7 @@ realm std {
     @Experimental(since: "0.1")
     func sumReal<T>(arr: Array<T>): T {
         var total = 0.0
-        for i in 0..<arr.length {
+        for i in 0..<arr.size {
             total += arr[i]
         }
         return total
@@ -388,9 +388,9 @@ realm std {
      */
     @Experimental(since: "0.1")
     func product<T>(arr: Array<T>): T {
-        if arr.length == 0 { return 0 }
+        if arr.size == 0 { return 0 }
         var result = 1
-        for i in 0..<arr.length {
+        for i in 0..<arr.size {
             result = result * arr[i]
         }
         return result
@@ -455,13 +455,13 @@ realm std {
     @Experimental(since: "0.1")
     func average(arr: Array<Int>): Double
     in {
-        assert arr.length > 0 { "Input must not be empty" }
+        assert arr.size > 0 { "Input must not be empty" }
     } scope {
         var total = 0
-        for i in 0..<arr.length {
+        for i in 0..<arr.size {
             total += arr[i]
         }
-        return (total as Double) / (arr.length as Double)
+        return (total as Double) / (arr.size as Double)
     }
 
     /**

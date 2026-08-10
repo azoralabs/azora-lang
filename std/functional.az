@@ -48,8 +48,8 @@ realm std {
      */
     @Experimental(since: "0.1")
     func map<T>(arr: Array<T>, f: (T) -> T): Array<T> {
-        var result: Array<T> = Array::fill<T>(arr.length)
-        for i in 0..<arr.length {
+        var result: Array<T> = Array::fill<T>(arr.size)
+        for i in 0..<arr.size {
             result[i] = f(arr[i])
         }
         return result
@@ -64,9 +64,9 @@ realm std {
      */
     @Experimental(since: "0.1")
     func filter<T>(arr: Array<T>, pred: (T) -> Bool): Array<T> {
-        var tmp: Array<T> = Array::fill<T>(arr.length)
+        var tmp: Array<T> = Array::fill<T>(arr.size)
         var count = 0
-        for i in 0..<arr.length {
+        for i in 0..<arr.size {
             if pred(arr[i]) {
                 tmp[count] = arr[i]
                 count += 1
@@ -90,7 +90,7 @@ realm std {
     @Experimental(since: "0.1")
     func reduce<T>(arr: Array<T>, initial: T, f: (T, T) -> T): T {
         var acc = initial
-        for i in 0..<arr.length {
+        for i in 0..<arr.size {
             acc = f(acc, arr[i])
         }
         return acc
@@ -104,7 +104,7 @@ realm std {
      */
     @Experimental(since: "0.1")
     func forEach<T>(arr: Array<T>, action: (T) -> Unit) {
-        for i in 0..<arr.length {
+        for i in 0..<arr.size {
             action(arr[i])
         }
     }
@@ -118,7 +118,7 @@ realm std {
      */
     @Experimental(since: "0.1")
     func any<T>(arr: Array<T>, pred: (T) -> Bool): Bool {
-        for i in 0..<arr.length {
+        for i in 0..<arr.size {
             if pred(arr[i]) { return true }
         }
         return false
@@ -133,7 +133,7 @@ realm std {
      */
     @Experimental(since: "0.1")
     func all<T>(arr: Array<T>, pred: (T) -> Bool): Bool {
-        for i in 0..<arr.length {
+        for i in 0..<arr.size {
             if !pred(arr[i]) { return false }
         }
         return true
@@ -148,7 +148,7 @@ realm std {
      */
     @Experimental(since: "0.1")
     func none<T>(arr: Array<T>, pred: (T) -> Bool): Bool {
-        for i in 0..<arr.length {
+        for i in 0..<arr.size {
             if pred(arr[i]) { return false }
         }
         return true
@@ -166,7 +166,7 @@ realm std {
     in {
         assert n >= 0 { "take count must be non-negative" }
     } scope {
-        fin len = if n < arr.length { n } else { arr.length }
+        fin len = if n < arr.size { n } else { arr.size }
         var result: Array<T> = Array::fill<T>(len)
         for i in 0..<len {
             result[i] = arr[i]
@@ -186,11 +186,11 @@ realm std {
     in {
         assert n >= 0 { "purge count must be non-negative" }
     } scope {
-        fin start = if n < arr.length { n } else { arr.length }
-        var result: Array<T> = Array::fill<T>(arr.length - start)
+        fin start = if n < arr.size { n } else { arr.size }
+        var result: Array<T> = Array::fill<T>(arr.size - start)
         var i = start
         var j = 0
-        while i < arr.length {
+        while i < arr.size {
             result[j] = arr[i]
             i += 1
             j += 1
@@ -207,7 +207,7 @@ realm std {
      */
     @Experimental(since: "0.1")
     func zip<T>(a: Array<T>, b: Array<T>): Array<T> {
-        fin len = if a.length < b.length { a.length } else { b.length }
+        fin len = if a.size < b.size { a.size } else { b.size }
         var result: Array<T> = Array::fill<Array<T>>(len)
         for i in 0..<len {
             result[i] = arrayOf(a[i], b[i])
@@ -260,7 +260,7 @@ realm std {
     @Experimental(since: "0.1")
     func countWhere<T>(arr: Array<T>, pred: (T) -> Bool): Int {
         var c = 0
-        for i in 0..<arr.length {
+        for i in 0..<arr.size {
             if pred(arr[i]) { c += 1 }
         }
         return c
@@ -276,7 +276,7 @@ realm std {
      */
     @Experimental(since: "0.1")
     func findOr<T>(arr: Array<T>, pred: (T) -> Bool, default: T): T {
-        for i in 0..<arr.length {
+        for i in 0..<arr.size {
             if pred(arr[i]) { return arr[i] }
         }
         return default
@@ -290,17 +290,17 @@ realm std {
         // Two-pass: first count total, then fill
         var total = 0
         var i = 0
-        while i < arr.length {
+        while i < arr.size {
             var mapped: Array<T> = f(arr[i])
-            total += mapped.length
+            total += mapped.size
             i += 1
         }
         var result: Array<T> = Array::fill<T>(total)
         var ri = 0
         i = 0
-        while i < arr.length {
+        while i < arr.size {
             var mapped: Array<T> = f(arr[i])
-            for j in 0..<mapped.length {
+            for j in 0..<mapped.size {
                 result[ri] = mapped[j]
                 ri += 1
             }
@@ -316,7 +316,7 @@ realm std {
     @Experimental(since: "0.1")
     func fold<T>(arr: Array<T>, initial: T, f: (T, T) -> T): T {
         var acc: T = initial
-        for i in 0..<arr.length {
+        for i in 0..<arr.size {
             acc = f(acc, arr[i])
         }
         return acc
@@ -327,10 +327,10 @@ realm std {
      */
     @Experimental(since: "0.1")
     func scan<T>(arr: Array<T>, initial: T, f: (T, T) -> T): Array<T> {
-        var result: Array<T> = Array::fill<T>(arr.length + 1)
+        var result: Array<T> = Array::fill<T>(arr.size + 1)
         var acc: T = initial
         result[0] = acc
-        for i in 0..<arr.length {
+        for i in 0..<arr.size {
             acc = f(acc, arr[i])
             result[i + 1] = acc
         }
@@ -343,8 +343,8 @@ realm std {
      */
     @Experimental(since: "0.1")
     func mapIndexed<T>(arr: Array<T>, f: (T, T) -> T): Array<T> {
-        var result: Array<T> = Array::fill<T>(arr.length)
-        for i in 0..<arr.length {
+        var result: Array<T> = Array::fill<T>(arr.size)
+        for i in 0..<arr.size {
             result[i] = f(arr[i], arr[i])
         }
         return result
@@ -367,7 +367,7 @@ realm std {
      */
     @Experimental(since: "0.1")
     func firstWhere<T>(arr: Array<T>, pred: (T) -> Bool, default: T): T {
-        for i in 0..<arr.length {
+        for i in 0..<arr.size {
             if pred(arr[i]) {
                 return arr[i]
             }
@@ -381,7 +381,7 @@ realm std {
     @Experimental(since: "0.1")
     func lastWhere<T>(arr: Array<T>, pred: (T) -> Bool, default: T): T {
         var result: T = default
-        for i in 0..<arr.length {
+        for i in 0..<arr.size {
             if pred(arr[i]) {
                 result = arr[i]
             }
@@ -395,11 +395,11 @@ realm std {
      */
     @Experimental(since: "0.1")
     func partition<T>(arr: Array<T>, pred: (T) -> Bool): Array<T> {
-        var yes: Array<T> = Array::fill<T>(arr.length)
-        var no: Array<T> = Array::fill<T>(arr.length)
+        var yes: Array<T> = Array::fill<T>(arr.size)
+        var no: Array<T> = Array::fill<T>(arr.size)
         var yi = 0
         var ni = 0
-        for i in 0..<arr.length {
+        for i in 0..<arr.size {
             if pred(arr[i]) {
                 yes[yi] = arr[i]
                 yi += 1
@@ -429,12 +429,12 @@ realm std {
      */
     @Experimental(since: "0.1")
     func chunk<T>(arr: Array<T>, size: Int): Array<T> {
-        fin numChunks = (arr.length + size - 1) / size
+        fin numChunks = (arr.size + size - 1) / size
         var result: Array<T> = Array::fill<Array<T>>(numChunks)
         var ri = 0
         var i = 0
-        while i < arr.length {
-            fin remaining = arr.length - i
+        while i < arr.size {
+            fin remaining = arr.size - i
             fin chunkSize = if remaining < size { remaining } else { size }
             var ch: Array<T> = Array::fill<T>(chunkSize)
             for j in 0..<chunkSize {
@@ -455,16 +455,16 @@ realm std {
         // Two-pass: count total, then fill
         var total = 0
         var i = 0
-        while i < arr.length {
-            total += arr[i].length
+        while i < arr.size {
+            total += arr[i].size
             i += 1
         }
         var result: Array<T> = Array::fill<T>(total)
         var ri = 0
         i = 0
-        while i < arr.length {
+        while i < arr.size {
             var inner: Array<T> = arr[i]
-            for j in 0..<inner.length {
+            for j in 0..<inner.size {
                 result[ri] = inner[j]
                 ri += 1
             }
@@ -478,9 +478,9 @@ realm std {
      */
     @Experimental(since: "0.1")
     func distinct<T>(arr: Array<T>): Array<T> {
-        var tmp: Array<T> = Array::fill<T>(arr.length)
+        var tmp: Array<T> = Array::fill<T>(arr.size)
         var ri = 0
-        for i in 0..<arr.length {
+        for i in 0..<arr.size {
             var found = false
             for j in 0..<ri {
                 if tmp[j] == arr[i] {
@@ -504,7 +504,7 @@ realm std {
      */
     @Experimental(since: "0.1")
     func slice<T>(arr: Array<T>, start: Int, end: Int): Array<T> {
-        fin actualEnd = if end < arr.length { end } else { arr.length }
+        fin actualEnd = if end < arr.size { end } else { arr.size }
         fin len = if actualEnd > start { actualEnd - start } else { 0 }
         var result: Array<T> = Array::fill<T>(len)
         var ri = 0

@@ -521,6 +521,10 @@ internal object MacroExpander {
         }
         // All other variants: structural copy recursing into every Expr child.
         return when (expr) {
+            is Expr.MapEntryArg -> expr.copy(
+                key = rewriteExpr(expr.key, macros, depth),
+                value = rewriteExpr(expr.value, macros, depth),
+            )
             is Expr.Identifier -> expr
             is Expr.IntLiteral, is Expr.DoubleLiteral, is Expr.CharLiteral,
             is Expr.StringLiteral, is Expr.BoolLiteral, is Expr.NullLiteral,
@@ -628,7 +632,9 @@ internal object MacroExpander {
                     if (args.isEmpty()) return arm to emptyMap()
                 }
                 is MacroPattern.SeqCapture -> {
-                    if (args.isNotEmpty()) {
+                    // A `k: v` argument belongs to a `[...${key: value}]` arm; letting
+                    // it bind here would splice the key and drop the value silently.
+                    if (args.isNotEmpty() && args.none { it is Expr.MapEntryArg }) {
                         return arm to mapOf(arm.pattern.name to args)
                     }
                 }
@@ -639,9 +645,16 @@ internal object MacroExpander {
                     }
                 }
                 is MacroPattern.MapEntryCapture -> {
-                    // `[...${key: value}]` - key/value destructuring. Invocation-side
-                    // support (parsing `map!["a": 1]` into paired args) is a later
-                    // stage; the arm parses and stores its capture names for now.
+                    // `[...${key: value}]` - every argument must be a `k: v` pair, and
+                    // the keys and the values are bound as two parallel lists that the
+                    // template zips back together.
+                    val entries = args.filterIsInstance<Expr.MapEntryArg>()
+                    if (entries.isNotEmpty() && entries.size == args.size) {
+                        return arm to mapOf(
+                            arm.pattern.keyName to entries.map { it.key },
+                            arm.pattern.valueName to entries.map { it.value },
+                        )
+                    }
                 }
             }
         }
@@ -673,7 +686,18 @@ internal object MacroExpander {
         if (arm.templateTail.isNotEmpty()) {
             fail(node.line, "macro '${node.name}' expands to declaration fragments and cannot be used as an expression")
         }
-        return substitute(arm.template, bindings, node.line)
+        // An arm binding parallel captures makes a spread over them a zip; the
+        // names are carried for the length of this expansion, and a nested macro
+        // restores whatever its own arm needs on the way out.
+        val savedZip = zipCaptures
+        zipCaptures = (arm.pattern as? MacroPattern.MapEntryCapture)
+            ?.let { listOf(it.keyName, it.valueName) }
+            ?: emptyList()
+        try {
+            return substitute(arm.template, bindings, node.line)
+        } finally {
+            zipCaptures = savedZip
+        }
     }
 
     // ------------------------------------------------------------------
@@ -689,6 +713,10 @@ internal object MacroExpander {
  * references outside a spread position are rejected (they bind multiple exprs).
      */
     private fun substitute(template: Expr, bindings: Map<String, List<Expr>>, invokeLine: Int): Expr = when (template) {
+        is Expr.MapEntryArg -> template.copy(
+            key = substitute(template.key, bindings, invokeLine),
+            value = substitute(template.value, bindings, invokeLine),
+        )
         is Expr.Identifier -> {
             val captured = bindings[template.name]
             if (captured != null) {
@@ -924,6 +952,11 @@ internal object MacroExpander {
         if (children.isEmpty()) return children
         val out = ArrayList<Expr>(children.size)
         for (child in children) {
+            val zipped = tryZipSpread(child, bindings, invokeLine)
+            if (zipped != null) {
+                out.addAll(zipped)
+                continue
+            }
             val spliced = trySpread(child, bindings)
             if (spliced != null) {
                 for (element in spliced) out.add(substitute(element, bindings, invokeLine))
@@ -932,6 +965,40 @@ internal object MacroExpander {
             }
         }
         return out
+    }
+
+    /**
+     * Capture names bound to parallel lists by the arm being expanded.
+     *
+     * `[...${key: value}]` binds two, and a template that spreads an expression
+     * over them - `...std::mapEntry($key, $value)` - is expanded once per index
+     * rather than once per capture.
+     */
+    private var zipCaptures: List<String> = emptyList()
+
+    /**
+     * Expands `...<expression>` over the parallel captures in [zipCaptures],
+     * producing one element per index. Returns null when [child] is not that
+     * form, leaving the plain `...$name` splice to [trySpread].
+     */
+    private fun tryZipSpread(
+        child: Expr,
+        bindings: Map<String, List<Expr>>,
+        invokeLine: Int,
+    ): List<Expr>? {
+        if (child !is Expr.Spread || child.array is Expr.Identifier) return null
+        val names = zipCaptures.filter { bindings.containsKey(it) }
+        if (names.size < 2) return null
+        val length = bindings.getValue(names.first()).size
+        if (names.any { bindings.getValue(it).size != length }) {
+            fail(invokeLine, "parallel macro captures must bind the same number of arguments")
+        }
+        return (0 until length).map { index ->
+            val perIndex = bindings.mapValues { (name, values) ->
+                if (name in names) listOf(values[index]) else values
+            }
+            substitute(child.array, perIndex, invokeLine)
+        }
     }
 
     /** Returns the captured list if [child] is `Spread(Identifier(name))` with [name] bound; else null. */

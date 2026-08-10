@@ -138,8 +138,8 @@ class TypeRefTest {
     @Test
     fun bracketCollectionTypesAreRejected() {
         // Bracket type sugar is not valid: arrays are `Array<T>`, maps are `Map<K, V>`.
-        assertTrue(expectFailure("func f(x: [std::Int]): std::Int { return x.length }").any { "std::Array<std::Int>" in it })
-        assertTrue(expectFailure("func f(x: [std::String: std::Int]): std::Int { return x.length }").any { "std::Map<K, V>" in it })
+        assertTrue(expectFailure("func f(x: [std::Int]): std::Int { return x.size }").any { "std::Array<std::Int>" in it })
+        assertTrue(expectFailure("func f(x: [std::String: std::Int]): std::Int { return x.size }").any { "std::Map<K, V>" in it })
     }
 
     @Test

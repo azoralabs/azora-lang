@@ -43,7 +43,7 @@ realm std {
      * @return The widest type in T according to Type.rank.
      */
     @Since("0.1")
-    deepinline prop promote<...T>: Type where T.length >= 2 && T is Number {
+    deepinline prop promote<...T>: Type where T.size >= 2 && T is Number {
         var result: Type = T.0
         for candidate: Type in T[1...] {
             if candidate::rank > result::rank {

@@ -52,7 +52,7 @@ class EngineArchitectureSyntaxTest {
         typealias Vector3 = Vec3
         pack Transform { var translation: Vector3 }
 
-        pack Single<...T> where (...T).length >= 1 {
+        pack Single<...T> where (...T).size >= 1 {
             fin matched: std::Bool = true
             inline for Ty in ...T {
                 value: Ty

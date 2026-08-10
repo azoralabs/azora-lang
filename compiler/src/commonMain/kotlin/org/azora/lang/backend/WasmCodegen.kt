@@ -659,13 +659,9 @@ class WasmCodegen {
         is IrExpr.Member -> when (expr.name) {
             "length", "size" -> "(i32.load ${emitExpr(expr.target)})"
             "data" -> "(i32.add ${emitExpr(expr.target)} (i32.const 4))"
-            "isEmpty" -> "(i32.eqz (i32.load ${emitExpr(expr.target)}))"
-            "isNotEmpty" -> "(i32.ne (i32.load ${emitExpr(expr.target)}) (i32.const 0))"
             else -> "(i32.load ${fieldAddr(expr.target, expr.name)})"
         }
         is IrExpr.MethodCall -> when (expr.name) {
-            "isEmpty" -> "(i32.eqz (i32.load ${emitExpr(expr.target)}))"
-            "isNotEmpty" -> "(i32.ne (i32.load ${emitExpr(expr.target)}) (i32.const 0))"
             else -> emitExpr(expr.target) // unsupported methods degrade to the receiver
         }
         is IrExpr.StructCtor -> emitStructCtor(expr)

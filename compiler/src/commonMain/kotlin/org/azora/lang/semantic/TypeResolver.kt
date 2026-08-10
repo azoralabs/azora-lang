@@ -1338,6 +1338,13 @@ class TypeResolver(private val table: SymbolTable) {
 
     private fun resolveExpr(expr: Expr): IrType? {
         return when (expr) {
+            is Expr.MapEntryArg -> {
+                errors.add(
+                    "line ${expr.line}: 'key: value' is only an argument of a macro that takes " +
+                        "'[...\${key: value}]' - no macro arm matched this invocation",
+                )
+                null
+            }
             is Expr.IntLiteral -> suffixToIntType(expr.suffix)
             is Expr.DoubleLiteral -> suffixToFloatType(expr.suffix)
             is Expr.StringLiteral -> IrType.String
@@ -1857,9 +1864,19 @@ class TypeResolver(private val table: SymbolTable) {
                 // Auto-deref: member access on a pointer reads through it (`p.v` == `(*p).v`).
                 val targetType = if (resolvedTarget is IrType.Pointer) resolvedTarget.inner else resolvedTarget
                 when {
-                    expr.name in setOf("length", "size") && (targetType is IrType.Array || targetType is IrType.Map || targetType is IrType.Set || targetType == IrType.String) -> IrType.Int
-                    expr.name == "data" && targetType is IrType.Array -> IrType.Pointer(targetType.element)
-                    (expr.name == "isEmpty" || expr.name == "isNotEmpty") && (targetType is IrType.Array || targetType is IrType.Map || targetType is IrType.Set) -> IrType.Bool
+                    expr.name in setOf("length", "size") &&
+                        (targetType is IrType.Map || targetType is IrType.Set || targetType == IrType.String) -> IrType.Int
+                    declaredAggregateMember(targetType, expr.name) != null -> {
+                        if (aggregateFieldIsUnsafe(targetType, expr.name) && !unsafeContext) {
+                            errors.add(
+                                "line ${expr.line}: '${expr.name}' is an unsafe member of " +
+                                    "'$targetType' and is only readable inside an 'unsafe' " +
+                                    "block or an 'unsafe func'",
+                            )
+                            return null
+                        }
+                        declaredAggregateMember(targetType, expr.name)
+                    }
                     targetType is IrType.Named -> {
                         // Spec-typed value: a property/requirement declared by the spec
                         // (e.g. `map.size` where `map: Map<K,V>` - a spec) resolves to
@@ -1877,6 +1894,17 @@ class TypeResolver(private val table: SymbolTable) {
                             return null
                         }
                         val field = struct?.field(expr.name)
+                        // `unsafe fin data: T*` - the obligation the field carries
+                        // travels with it, so reading it needs the scope that
+                        // accepts one.
+                        if (field?.isUnsafe == true && !unsafeContext) {
+                            errors.add(
+                                "line ${expr.line}: '${expr.name}' is an unsafe member of " +
+                                    "'${targetType.name}' and is only readable inside an " +
+                                    "'unsafe' block or an 'unsafe func'",
+                            )
+                            return null
+                        }
                         if (field != null) {
                             if (!canAccessMember(targetType.name, expr.name, field.visibility)) {
                                 reportInaccessible(expr.line, "field", targetType.name, expr.name, field.visibility)
@@ -2387,7 +2415,7 @@ class TypeResolver(private val table: SymbolTable) {
                     !expr.paramsWritten && expr.params.isEmpty() && !expectedParams.isNullOrEmpty()
                 ) {
                     expectedParams.indices.map { i ->
-                        Param(if (expectedParams.size == 1) "it" else "__arg$i", TypeRef.Named("Any"))
+                        Param(if (expectedParams.size == 1) "it" else "__arg$i", TypeRef.Named("Any", synthesized = true))
                     }
                 } else emptyList()
                 val effectiveParams = when {
@@ -2589,11 +2617,16 @@ class TypeResolver(private val table: SymbolTable) {
                 resolveExpr(args[0]) ?: return null
                 IrType.Int
             }
-            "isEmpty", "isNotEmpty" -> {
-                if (args.isNotEmpty()) { errors.add("line $line: '$name' expects 0 arguments"); return null }
-                IrType.Bool
+            else -> {
+                // A member declared as a property on the aggregate is read without
+                // parentheses, so say that rather than "no method".
+                if (declaredAggregateProperty(arrType, name)) {
+                    errors.add("line $line: property '$name' must be accessed without parentheses")
+                } else {
+                    errors.add("line $line: no method '$name' on array")
+                }
+                null
             }
-            else -> { errors.add("line $line: no method '$name' on array"); null }
         }
     }
 
@@ -2646,11 +2679,14 @@ class TypeResolver(private val table: SymbolTable) {
             if (args.isNotEmpty()) { errors.add("line $line: 'clear' expects 0 arguments"); null }
             else IrType.Unit
         }
-        "isEmpty", "isNotEmpty" -> {
-            if (args.isNotEmpty()) { errors.add("line $line: '$name' expects 0 arguments"); null }
-            else IrType.Bool
+        else -> {
+            if (declaredAggregateProperty(IrType.Set(IrType.Any), name)) {
+                errors.add("line $line: property '$name' must be accessed without parentheses")
+            } else {
+                errors.add("line $line: no method '$name' on set")
+            }
+            null
         }
-        else -> { errors.add("line $line: no method '$name' on set"); null }
     }
 
     private fun resolveMapMethod(name: String, args: List<Expr>, map: IrType.Map, line: Int): IrType? = when (name) {
@@ -2670,11 +2706,14 @@ class TypeResolver(private val table: SymbolTable) {
             if (args.isNotEmpty()) { errors.add("line $line: 'clear' expects 0 arguments"); null }
             else IrType.Unit
         }
-        "isEmpty", "isNotEmpty" -> {
-            if (args.isNotEmpty()) { errors.add("line $line: '$name' expects 0 arguments"); null }
-            else IrType.Bool
+        else -> {
+            if (declaredAggregateProperty(map, name)) {
+                errors.add("line $line: property '$name' must be accessed without parentheses")
+            } else {
+                errors.add("line $line: no method '$name' on map")
+            }
+            null
         }
-        else -> { errors.add("line $line: no method '$name' on map"); null }
     }
 
     /** Maps an operator token to the impl method name used for operator overloading. */
@@ -2815,7 +2854,7 @@ class TypeResolver(private val table: SymbolTable) {
         IrType.UCent -> TypeRef.Named("UCent")
         IrType.Float -> TypeRef.Named("Float")
         IrType.Decimal -> TypeRef.Named("Decimal")
-        IrType.Any -> TypeRef.Named("Any")
+        IrType.Any -> TypeRef.Named("Any", synthesized = true)
         is IrType.Array -> TypeRef.Array(typeRefOf(type.element))
         is IrType.Map -> TypeRef.Map(typeRefOf(type.key), typeRefOf(type.value))
         is IrType.Set -> TypeRef.Set(typeRefOf(type.element))
@@ -3579,6 +3618,46 @@ class TypeResolver(private val table: SymbolTable) {
      * the `Copy` and ownership checks. Naming the aggregates there would make
      * passing an array by value an error everywhere.
      */
+    /**
+     * The return type of a member declared in an `impl` on an aggregate builtin.
+     *
+     * `impl<T, N: Int> Array<T, N> { prop isEmpty … }` registers under the type
+     * constructor, so a receiver of `IrType.Array` finds it by that name. This is
+     * what lets the aggregates declare their members in the standard library
+     * instead of the compiler hardcoding them.
+     */
+    /** True when the aggregate declares [name] as a property rather than a method. */
+    private fun declaredAggregateProperty(type: IrType, name: String): Boolean {
+        if (type is IrType.Named) return false
+        val owner = cloneConformanceName(type) ?: return false
+        val mangled = table.lookupMethod(owner, name) ?: return false
+        return table.lookupFunction(mangled)?.memberCallStyle == MemberCallStyle.PROPERTY
+    }
+
+    /** True when the aggregate's declaration marks [name] `unsafe`. */
+    private fun aggregateFieldIsUnsafe(type: IrType, name: String): Boolean {
+        val owner = cloneConformanceName(type) ?: return false
+        return table.lookupStruct(owner)?.field(name)?.isUnsafe == true
+    }
+
+    private fun declaredAggregateMember(type: IrType, name: String): IrType? {
+        // A type-scoped constant answers for every value of the type, so it is
+        // reachable from a receiver of any shape - `Array` inside its own `impl`
+        // is a Named receiver, and `self.size` must find it there too.
+        if (type is IrType.Named) return table.lookupTypeStatic(type.name, name)?.returnType
+        val owner = cloneConformanceName(type) ?: return null
+        // A field the declaration carries (`fin size: Int` on the Array pack) is a
+        // member as much as an `impl` prop is; the receiver just happens to lower
+        // to a builtin type rather than a Named one.
+        table.lookupStruct(owner)?.field(name)?.let { return it.type }
+        // A constant declared on the *type* - `impl Array:: { bridge fin size }` -
+        // answers for every value of it, so a value reaches it too. The member is
+        // realm-mangled with the type that owns it, so the realm is asked for.
+        table.lookupTypeStatic(owner, name)?.let { return it.returnType }
+        val mangled = table.lookupMethod(owner, name) ?: return null
+        return table.lookupFunction(mangled)?.returnType
+    }
+
     private fun cloneConformanceName(type: IrType): String? = when (type) {
         is IrType.Array -> "Array"
         is IrType.Map -> "Map"

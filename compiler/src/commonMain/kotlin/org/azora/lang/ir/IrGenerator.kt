@@ -1374,7 +1374,7 @@ class IrGenerator(private val table: SymbolTable) {
         val owner = currentTraceOwner ?: "module"
         val index = traceLambdaIndices.getOrPut(owner) { 0 }
         traceLambdaIndices[owner] = index + 1
-        val functionName = "__${owner}_lmbda$index"
+        val functionName = "__${owner}_lambda$index"
         val levelParam = IrExpr.Var("level", IrType.Named("LogLevel"))
 
         var bodyExpr = replaceExpr(message, level, levelParam)
@@ -1406,8 +1406,37 @@ class IrGenerator(private val table: SymbolTable) {
     /** The factory that runs a declared `ctor` of the given arity. */
     private fun ctorFactoryName(typeName: String, arity: Int): String = "__ctor_${typeName}_$arity"
 
+    /**
+     * The symbol of a member declared in an `impl` on an aggregate builtin, or
+     * null when [type] is not an aggregate or declares no such member.
+     */
+    private fun aggregateMemberSymbol(type: IrType, name: String): String? {
+        val owner = when (type) {
+            is IrType.Array -> "Array"
+            is IrType.Map -> "Map"
+            is IrType.Set -> "Set"
+            is IrType.Tuple -> "Tuple"
+            else -> return null
+        }
+        // A type-level constant (`impl Array:: { bridge fin size }`) is bodyless
+        // too: the backend reads it from the value, so it stays a member access.
+        if (table.lookupTypeStatic(owner, name) != null) return null
+        val mangled = table.lookupMethod(owner, name) ?: return null
+        // A bodyless member (`bridge prop size`) has no function to call - the
+        // backend reads it from the value's own representation - so it stays a
+        // member access and only its *declaration* is what makes it legal.
+        if (table.lookupFunction(mangled)?.isBodyless != false) return null
+        return mangled
+    }
+
     private fun lowerExpr(expr: Expr): IrExpr {
         return when (expr) {
+            // Only a macro arm taking `[...${key: value}]` can consume one, and the
+            // expander does so before lowering. Reaching here means no arm matched.
+            is Expr.MapEntryArg -> error(
+                "line ${expr.line}: 'key: value' is only an argument of a macro that takes " +
+                    "'[...\${key: value}]' - no macro arm matched this invocation",
+            )
             is Expr.IntLiteral -> IrExpr.IntLiteral(expr.value, suffixToIntType(expr.suffix))
             is Expr.DoubleLiteral -> IrExpr.DoubleLiteral(expr.value, suffixToFloatType(expr.suffix))
             is Expr.StringLiteral -> IrExpr.StringLiteral(expr.value)
@@ -1496,7 +1525,11 @@ class IrGenerator(private val table: SymbolTable) {
             }
             is Expr.IsCheck -> {
                 val inner = lowerExpr(expr.expr)
-                IrExpr.Call("__isCheck", listOf(inner, IrExpr.StringLiteral(expr.typeName)), IrType.Bool)
+                // `x is std::Int` carries the realm-qualified name; the runtime
+                // compares against the type's own name, which is what a
+                // declaration is registered under.
+                val typeName = table.canonicalTypeName(expr.typeName)
+                IrExpr.Call("__isCheck", listOf(inner, IrExpr.StringLiteral(typeName)), IrType.Bool)
             }
             is Expr.InlineForArgs ->
                 error("'inline for' argument reached IR generation at line ${expr.line}")
@@ -2090,10 +2123,30 @@ class IrGenerator(private val table: SymbolTable) {
                     val specProp = table.lookupSpecProp(tt2.name, expr.name)
                     if (specProp != null) return IrExpr.Member(target, expr.name, specProp)
                 }
+                // A member declared in an `impl` on an aggregate builtin -
+                // `impl<T, N: Int> Array<T, N> { prop isEmpty … }` - is an ordinary
+                // method registered under the type constructor, so it lowers to a
+                // call rather than to a field read.
+                aggregateMemberSymbol(target.type, expr.name)?.let { mangled ->
+                    val func = table.lookupFunction(mangled)
+                    return IrExpr.Call(mangled, listOf(target), func?.returnType ?: IrType.Any)
+                }
+                // A type-scoped constant (`impl Array:: { bridge fin size }`) is
+                // typed by its declaration wherever the receiver came from.
+                val typeOwner = (target.type as? IrType.Named)?.name
+                    ?: when (target.type) {
+                        is IrType.Array -> "Array"
+                        is IrType.Map -> "Map"
+                        is IrType.Set -> "Set"
+                        is IrType.Tuple -> "Tuple"
+                        else -> null
+                    }
+                val typeStatic = typeOwner?.let { table.lookupTypeStatic(it, expr.name) }
                 val memberType = when {
-                    expr.name in setOf("length", "size") && (target.type is IrType.Array || target.type is IrType.Map || target.type is IrType.Set || target.type == IrType.String) -> IrType.Int
+                    typeStatic != null -> typeStatic.returnType
+                    expr.name in setOf("length", "size") &&
+                        (target.type is IrType.Map || target.type is IrType.Set || target.type == IrType.String) -> IrType.Int
                     expr.name == "data" && tt2 is IrType.Array -> IrType.Pointer(tt2.element)
-                    (expr.name == "isEmpty" || expr.name == "isNotEmpty") && (target.type is IrType.Array || target.type is IrType.Map || target.type is IrType.Set) -> IrType.Bool
                     else -> {
                         val tt = target.type
                         if (tt is IrType.Named) table.lookupStruct(tt.name)?.field(expr.name)?.type ?: IrType.Any
@@ -2342,7 +2395,7 @@ class IrGenerator(private val table: SymbolTable) {
                         callableType.params.indices.map { i ->
                             Param(
                                 if (callableType.params.size == 1) "it" else "__arg$i",
-                                TypeRef.Named("Any"),
+                                TypeRef.Named("Any", synthesized = true),
                             )
                         }
                     else -> expr.params
@@ -2361,7 +2414,7 @@ class IrGenerator(private val table: SymbolTable) {
                 val inheritsReceivers = bracketReceivers.isEmpty() && callableType.receivers.isNotEmpty()
                 val receiverSources = if (inheritsReceivers) {
                     callableType.receivers.indices.map {
-                        Param(lambdaReceiverName(expr.line, expr.column, it), TypeRef.Named("Any"))
+                        Param(lambdaReceiverName(expr.line, expr.column, it), TypeRef.Named("Any", synthesized = true))
                     }
                 } else {
                     bracketReceivers
@@ -2475,20 +2528,20 @@ class IrGenerator(private val table: SymbolTable) {
         return when (receiverType) {
         is IrType.Array -> when (name) {
             "add", "insert", "remove" -> IrType.Unit
-            "contains", "isEmpty", "isNotEmpty" -> IrType.Bool
+            "contains" -> IrType.Bool
             "indexOf" -> IrType.Int
             "fill" -> receiverType
             else -> IrType.Any
         }
         is IrType.Set -> when (name) {
-            "add", "remove", "contains", "isEmpty", "isNotEmpty" -> IrType.Bool
+            "add", "remove", "contains" -> IrType.Bool
             "clear" -> IrType.Unit
             else -> IrType.Any
         }
         is IrType.Map -> when (name) {
             "get" -> receiverType.value
             "put", "clear" -> IrType.Unit
-            "containsKey", "isEmpty", "isNotEmpty" -> IrType.Bool
+            "containsKey" -> IrType.Bool
             else -> IrType.Any
         }
         IrType.String -> when (name) {

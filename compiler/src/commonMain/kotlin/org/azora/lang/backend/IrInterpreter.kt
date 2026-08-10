@@ -19,6 +19,7 @@ package org.azora.lang.backend
 import org.azora.lang.azRunBlocking
 import org.azora.lang.azSync
 import org.azora.lang.putIfAbsentCompat
+import org.azora.lang.ir.symbolDenotes
 import org.azora.lang.ir.IrBinaryOp
 import org.azora.lang.ir.IrExpr
 import org.azora.lang.ir.IrFunction
@@ -213,6 +214,15 @@ class IrInterpreter {
      * `Dispatchers.Default` so `task`/`launch` achieve real parallelism, and each task gets its
      * own [ExecState] (isolated scopes/defers) so concurrent tasks never share mutable state.
      */
+    /**
+     * True when this name denotes the intrinsic [local].
+     *
+     * A builtin reaches the interpreter canonicalized, so the realm it was
+     * declared in is part of the symbol. [symbolDenotes] answers the question
+     * without naming that realm here.
+     */
+    private fun String.isIntrinsic(local: String): Boolean = symbolDenotes(this, local)
+
     fun interpret(program: IrProgram): String {
         val mainState = resetFor()
         registerStructs(program)
@@ -992,7 +1002,7 @@ class IrInterpreter {
                 // `Hash`'s member on a primitive. A pack supplies its own, so
                 // only the built-in value types are answered here - this is the
                 // runtime half of `bridge spec Hash`.
-                if (expr.name == "hash" && receiver !is Map<*, *>) {
+                if (expr.name.isIntrinsic("hash") && receiver !is Map<*, *>) {
                     return@evalExpr primitiveHash(receiver)
                 }
                 when (receiver) {
@@ -1002,14 +1012,10 @@ class IrInterpreter {
                             @Suppress("UNCHECKED_CAST")
                             Pointer(receiver as MutableList<Any?>, 0)
                         }
-                        "isEmpty" -> receiver.isEmpty()
-                        "isNotEmpty" -> receiver.isNotEmpty()
                         else -> error("no member '${expr.name}' on array")
                     }
                     is String -> when (expr.name) {
                         "length", "size" -> receiver.length.toLong()
-                        "isEmpty" -> receiver.isEmpty()
-                        "isNotEmpty" -> receiver.isNotEmpty()
                         else -> error("no member '${expr.name}' on string")
                     }
                     is Map<*, *> -> {
@@ -1185,7 +1191,7 @@ class IrInterpreter {
                 when {
                     // `Hash`'s member reached as a call, for a receiver whose
                     // own type does not supply one.
-                    expr.name == "hash" && args.isEmpty() -> primitiveHash(receiver)
+                    expr.name.isIntrinsic("hash") && args.isEmpty() -> primitiveHash(receiver)
                     receiver is String -> when (expr.name) {
                         "toUpperCase" -> receiver.uppercase()
                         "toLowerCase" -> receiver.lowercase()
@@ -1572,36 +1578,36 @@ class IrInterpreter {
         if (expr.name == "__std_convert_toString") {
             return formatValue(args.firstOrNull())
         }
-        if (expr.name == "stringLength") return (args[0] as String).length.toLong()
-        if (expr.name == "charAt") return (args[0] as String)[(args[1] as Number).toInt()]
-        if (expr.name == "substring") {
+        if (expr.name.isIntrinsic("stringLength")) return (args[0] as String).length.toLong()
+        if (expr.name.isIntrinsic("charAt")) return (args[0] as String)[(args[1] as Number).toInt()]
+        if (expr.name.isIntrinsic("substring")) {
             return (args[0] as String).substring((args[1] as Number).toInt(), (args[2] as Number).toInt())
         }
-        if (expr.name == "ord") return (args[0] as Char).code.toLong()
-        if (expr.name == "chr") return (args[0] as Number).toInt().toChar()
-        if (expr.name == "isDigit") return (args[0] as Char) in '0'..'9'
+        if (expr.name.isIntrinsic("ord")) return (args[0] as Char).code.toLong()
+        if (expr.name.isIntrinsic("chr")) return (args[0] as Number).toInt().toChar()
+        if (expr.name.isIntrinsic("isDigit")) return (args[0] as Char) in '0'..'9'
         // Low-level string intrinsics used by std.string's free-function wrappers.
-        if (expr.name == "startsWith") return (args[0] as String).startsWith(args[1] as String)
-        if (expr.name == "endsWith") return (args[0] as String).endsWith(args[1] as String)
-        if (expr.name == "contains") return (args[0] as String).contains(args[1] as String)
-        if (expr.name == "indexOf") return (args[0] as String).indexOf(args[1] as String).toLong()
-        if (expr.name == "trim") return (args[0] as String).trim()
-        if (expr.name == "toUpper") return (args[0] as String).uppercase()
-        if (expr.name == "toLower") return (args[0] as String).lowercase()
-        if (expr.name == "replace") return (args[0] as String).replace(args[1] as String, args[2] as String)
-        if (expr.name == "split") return (args[0] as String).split(args[1] as String).toMutableList()
-        if (expr.name == "toChars") return (args[0] as String).toMutableList()
-        if (expr.name == "fromChars") {
+        if (expr.name.isIntrinsic("startsWith")) return (args[0] as String).startsWith(args[1] as String)
+        if (expr.name.isIntrinsic("endsWith")) return (args[0] as String).endsWith(args[1] as String)
+        if (expr.name.isIntrinsic("contains")) return (args[0] as String).contains(args[1] as String)
+        if (expr.name.isIntrinsic("indexOf")) return (args[0] as String).indexOf(args[1] as String).toLong()
+        if (expr.name.isIntrinsic("trim")) return (args[0] as String).trim()
+        if (expr.name.isIntrinsic("toUpper")) return (args[0] as String).uppercase()
+        if (expr.name.isIntrinsic("toLower")) return (args[0] as String).lowercase()
+        if (expr.name.isIntrinsic("replace")) return (args[0] as String).replace(args[1] as String, args[2] as String)
+        if (expr.name.isIntrinsic("split")) return (args[0] as String).split(args[1] as String).toMutableList()
+        if (expr.name.isIntrinsic("toChars")) return (args[0] as String).toMutableList()
+        if (expr.name.isIntrinsic("fromChars")) {
             @Suppress("UNCHECKED_CAST")
             return (args[0] as List<Char>).joinToString("")
         }
-        if (expr.name == "isAlpha") return (args[0] as Char).isLetter()
+        if (expr.name.isIntrinsic("isAlpha")) return (args[0] as Char).isLetter()
         // `Array::fill<T>(count)` - allocate `count` default (null) slots.
         if (expr.name == "__std_Array_fill") {
             val count = (args[0] as Number).toInt()
             return MutableList<Any?>(count) { null }
         }
-        if (expr.name == "async") {
+        if (expr.name.isIntrinsic("async")) {
             val thunk = args.firstOrNull() as? Closure ?: error("async expects a task body")
             val scope = coroutineScope ?: error("async used outside of the interpreter's structured scope")
             return TaskHandle(scope.async(context = childState()) { invokeClosure(thunk) })
@@ -1610,7 +1616,7 @@ class IrInterpreter {
             (args.firstOrNull() as? TaskHandle)?.deferred?.cancel()
             return null
         }
-        if (expr.name == "channel") {
+        if (expr.name.isIntrinsic("channel")) {
             // A buffered channel (effectively unbounded) for task-to-task communication.
             return AzoraChannel(Channel<Any?>(Channel.UNLIMITED))
         }

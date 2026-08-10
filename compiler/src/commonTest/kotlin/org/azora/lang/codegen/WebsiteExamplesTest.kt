@@ -127,7 +127,7 @@ func main() { std::println("Hello, Azora!") }"""))
             std::println("${'$'}x + ${'$'}y = ${'$'}{x + y}")
             var items = @std::arr[10, 20, 30]
             std::println("first is ${'$'}{items[0]}")
-            std::println("count is ${'$'}{items.length}")
+            std::println("count is ${'$'}{items.size}")
         }
     """.trimIndent()))
 
@@ -138,7 +138,7 @@ func main() { std::println("Hello, Azora!") }"""))
             var second = "World"
             var combined = first + ", " + second + "!"
             std::println(combined)
-            std::println(combined.length)
+            std::println(combined.size)
         }
     """.trimIndent()))
 
@@ -148,7 +148,7 @@ func main() { std::println("Hello, Azora!") }"""))
             var a = @std::arr[1, 2, 3]
             a.add(4)
             a.add(5)
-            std::println(a.length)
+            std::println(a.size)
             std::println(a[4])
         }
     """.trimIndent()))
@@ -156,9 +156,9 @@ func main() { std::println("Hello, Azora!") }"""))
     @Test fun ch7_iteration() = assertEquals("apple\nbanana\ncherry\nate 3 fruits", run("""
         import std.io
         func main() {
-            var fruits = ["apple", "banana", "cherry"]
+            var fruits = @std::arr["apple", "banana", "cherry"]
             var total = 0
-            for i in 0..<fruits.length {
+            for i in 0..<fruits.size {
                 std::println(fruits[i])
                 total += 1
             }
@@ -247,7 +247,7 @@ func main() { std::println("Hello, Azora!") }"""))
             return Point(0, 0)
         }
         func main() {
-            var points = [Point(1, 2), Point(3, 4), origin()]
+            var points = @std::arr[Point(1, 2), Point(3, 4), origin()]
             std::println(points[1].x)
             std::println(points[2].y)
         }
@@ -431,7 +431,7 @@ func main() { std::println("Hello, Azora!") }"""))
     @Test fun ch26_maps_int_keys() = assertEquals("30\n40", run("""
         import std.io
         func main() {
-            var scores = @std::arr[10: 10, 20: 20, 30: 30]
+            var scores = @std::map[10: 10, 20: 20, 30: 30]
             scores[40] = 40
             std::println(scores[30])
             std::println(scores[40])

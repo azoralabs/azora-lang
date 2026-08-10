@@ -375,7 +375,12 @@ class StdlibInjector private constructor(
             fun type(ref: TypeRef, line: Int, typeParams: Set<String>, currentRealm: String?) {
                 when (ref) {
                     is TypeRef.Named -> {
-                        if (!TypeFunctionCall.isCall(ref) &&
+                        // A synthesized reference was produced by the compiler, not
+                        // written by an author - an untyped lambda parameter's `Any`
+                        // placeholder above all - so source-level rules like realm
+                        // qualification do not apply to it.
+                        if (!ref.synthesized &&
+                            !TypeFunctionCall.isCall(ref) &&
                             ref.name !in typeParams &&
                             ref.name !in localGlobalTypes
                         ) {
@@ -1714,6 +1719,32 @@ class StdlibInjector private constructor(
         }
     }
 
+    /**
+     * Declarations that a compiler-synthesized builtin needs, keyed by the
+     * builtin's callee name.
+     *
+     * These are dependencies no source text states, so the ordinary reference
+     * scan cannot find them.
+     */
+    private val BUILTIN_TYPE_DEPENDENCIES = mapOf(
+        "__defaultLogLevel" to "LogLevel",
+    )
+
+    /**
+     * Declarations a *member access* needs, keyed by the member's name.
+     *
+     * A builtin aggregate declares its members in the standard library, but a
+     * program can hold one without ever naming the type - a variadic parameter
+     * is an `Array`, and nothing in the source says so - so the reference scan
+     * cannot find the declaration on its own.
+     */
+    private val BUILTIN_MEMBER_DEPENDENCIES = mapOf(
+        "size" to "Array",
+        "length" to "Array",
+        "isEmpty" to "Array",
+        "isNotEmpty" to "Array",
+    )
+
     private fun collectNamesFromExpr(expr: Expr, names: MutableSet<String>) {
         when (expr) {
             is Expr.IntLiteral -> names.add(
@@ -1757,8 +1788,19 @@ class StdlibInjector private constructor(
                     names.add(expr.name.substringAfterLast("__"))
                 }
             }
+            is Expr.Member -> {
+                BUILTIN_MEMBER_DEPENDENCIES[expr.name]?.let(names::add)
+                collectNamesFromExpr(expr.target, names)
+                expr.nameExpr?.let { collectNamesFromExpr(it, names) }
+            }
             is Expr.Call -> {
                 names.add(expr.callee)
+                // A builtin the parser synthesizes can depend on a declaration the
+                // source never names: `trace "x"` lowers to `__defaultLogLevel()`,
+                // whose result is a `LogLevel`. Nothing in the program mentions that
+                // enum, so without this the injector leaves it out and the lowering
+                // fails on an enum with no variants.
+                BUILTIN_TYPE_DEPENDENCIES[expr.callee]?.let(names::add)
                 // A `Type::member` static call (e.g. `Array::fill`) mangles to
                 // `Type__member`. The member is provided by an `impl realm for Type`
                 // block, which is only attached when the base type itself is pulled

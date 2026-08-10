@@ -269,6 +269,7 @@ class SymbolCollector {
                             field.mutable,
                             field.visibility,
                             field.default,
+                            isUnsafe = field.isUnsafe,
                         )
                     }
                     table.defineStruct(StructType(item.name, fields, emptyList(), item.visibility))
@@ -312,6 +313,7 @@ class SymbolCollector {
                             field.visibility,
                             field.default,
                             typeParamIndexOf(field.type, item.typeParams),
+                            isUnsafe = field.isUnsafe,
                         )
                     }
                     table.defineStruct(
@@ -400,7 +402,18 @@ class SymbolCollector {
                         // Resolve so primitive impl targets (Int/Double/Char/Bool/…)
                         // lower to their native IR type (e.g. i32), not an erased
                         // Named/pointer type. Struct targets stay Named(<Type>).
-                        val selfType = resolveType(TypeRef.Named(item.typeName))
+                        // `impl<T, N: Int> Array<T, N>` records the type's *name*, not the
+                        // arguments it was applied to, so the receiver is rebuilt by
+                        // applying the declaration to its own parameters. A type whose
+                        // shape depends on them - `Array<T, N>` - is otherwise resolved
+                        // bare and rejected for having no arguments.
+                        val declaredParams = table.lookupStruct(item.typeName)?.typeParams.orEmpty()
+                        val selfRef = if (declaredParams.isEmpty()) {
+                            TypeRef.Named(item.typeName)
+                        } else {
+                            TypeRef.Named(item.typeName, declaredParams.map { TypeRef.Named(it) })
+                        }
+                        val selfType = resolveType(selfRef, declaredParams.toSet())
                         val params = mutableListOf<Pair<String, IrType>>()
                         params.add(method.receiverName to selfType)
                         // An operator's `by <Spec>` clause names the operand type
@@ -445,6 +458,7 @@ class SymbolCollector {
                                 visibility = method.visibility,
                                 memberCallStyle = declaredStyle ?: method.memberCallStyle,
                                 returnTypeRef = (method.returnType as? TypeAnnotation.Explicit)?.ref,
+                                isBodyless = method.body.isEmpty(),
                             ))
                         }
                         table.defineMethod(item.typeName, method.name, mangled)
@@ -889,6 +903,9 @@ class SymbolCollector {
      * Only needs to handle literal types and parameter references.
      */
     private fun inferExprType(expr: Expr, env: Map<String, IrType>): IrType? = when (expr) {
+        // A keyed macro argument is consumed by the expander; it has no type of
+        // its own and never reaches a program.
+        is Expr.MapEntryArg -> null
         is Expr.InlineForArgs -> null
         is Expr.InCheck -> IrType.Bool
         is Expr.IntLiteral -> when (expr.suffix) {

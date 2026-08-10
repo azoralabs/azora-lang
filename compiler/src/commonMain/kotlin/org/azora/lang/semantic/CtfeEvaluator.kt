@@ -1204,6 +1204,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
 
     private fun foldExpr(expr: Expr, program: Program): Pair<Expr, Boolean> {
         return when (expr) {
+            is Expr.MapEntryArg -> expr to false
             is Expr.InlineForArgs -> expr to false
             is Expr.InCheck -> {
                 val (v, vc) = foldExpr(expr.value, program)
@@ -1797,6 +1798,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
 
     private fun evalExpr(expr: Expr, env: Map<String, Expr>, program: Program): Expr? {
         return when (expr) {
+            is Expr.MapEntryArg -> null
             is Expr.IntLiteral, is Expr.DoubleLiteral,
             is Expr.StringLiteral, is Expr.BoolLiteral,
             is Expr.CharLiteral -> expr

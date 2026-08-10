@@ -940,6 +940,25 @@ class Parser(
             check(TokenType.BRIDGE) && peekNext()?.type == TokenType.OPER -> {
                 advance(); parseFreeOperator(annotations, visibility, isBridge = true)
             }
+            // `bridge fin size: Int` - a compiler-provided constant. Inside
+            // `impl Type:: { … }` the body is reparsed as top-level items, so this
+            // is where a type's bridge constant lands.
+            check(TokenType.BRIDGE) && peekNext()?.type == TokenType.FIN -> {
+                val at = advance() // 'bridge'
+                advance() // 'fin'
+                val name = consumeIdentifierLike("Expected name after 'bridge fin'")
+                consume(TokenType.COLON, "A 'bridge fin' must declare its type: write 'bridge fin $name: Type'")
+                val type = parseTypeName()
+                consumeNewline()
+                TopLevel.Func(
+                    FuncDecl(
+                        name, emptyList(), TypeAnnotation.Explicit(type), emptyList(), false, emptyList(),
+                        at.line, at.column,
+                        annotations = annotations, visibility = visibility,
+                        memberCallStyle = MemberCallStyle.PROPERTY,
+                    ),
+                )
+            }
             check(TokenType.BRIDGE) && isBridgeFuncAhead() -> parseBridgeFunc(annotations)
             check(TokenType.BRIDGE) -> parseBridge(annotations)
             check(TokenType.SOLO) -> parseSolo(visibility, annotations)
@@ -2484,6 +2503,10 @@ class Parser(
         if (requireFin && !check(TokenType.FIN)) {
             error("Decorator fields must be declared with 'fin' at line ${peek().line}")
         }
+        // `unsafe fin data: T*` - the field is readable only inside an unsafe
+        // scope, so a pack can carry a raw pointer without handing the obligation
+        // to everyone who reads its safe members.
+        val isUnsafeField = match(TokenType.UNSAFE)
         // A field's mutability is the value axis: `var` fields can be written
         // through the pack, `val`/`fin`/`let` fields cannot.
         val mutable = when {
@@ -2511,7 +2534,7 @@ class Parser(
         // `var w: T = 0 where N == 4` - the same predicate written on one field.
         val condition = parseWhereClause()
         consumeNewline()
-        return PackField(name, type, mutable, default, visibility, annotations, condition = condition)
+        return PackField(name, type, mutable, default, visibility, isUnsafeField, annotations, condition = condition)
     }
 
     /** Combines two field predicates; either may be absent. */
@@ -2692,6 +2715,10 @@ class Parser(
         if (!check(TokenType.GREATER)) {
             do {
                 args.add(parseTypeArg())
+                // `impl Array<T, N: Int>` - an impl target *declares* its parameters,
+                // so an entry may carry a bound. The bound belongs to the type's own
+                // declaration; here it only has to parse.
+                if (match(TokenType.COLON)) parseTypeName()
             } while (match(TokenType.COMMA))
         }
         // `Q<T, N>>` lexes its tail as one `>>`, so closing here leaves a `>` for the
@@ -2762,7 +2789,7 @@ class Parser(
     }
 
     private fun substituteCallbackType(type: TypeRef?, typeParams: List<String>, traitArgs: List<TypeRef>): TypeRef {
-        val ref = type ?: return traitArgs.firstOrNull() ?: TypeRef.Named("Any")
+        val ref = type ?: return traitArgs.firstOrNull() ?: TypeRef.Named("Any", synthesized = true)
         val named = ref as? TypeRef.Named ?: return ref
         val index = typeParams.indexOf(named.name)
         return if (index >= 0) traitArgs.getOrElse(index) { named } else named
@@ -3240,6 +3267,24 @@ class Parser(
                 check(TokenType.BRIDGE) -> {
                     advance()
                     when {
+                        // `bridge fin size: Int` - a compiler-provided constant on the
+                        // type. It takes no receiver, because a constant of the type
+                        // does not vary per value.
+                        check(TokenType.FIN) -> {
+                            advance()
+                            val finName = consumeIdentifierLike("Expected name after 'bridge fin'")
+                            consume(TokenType.COLON, "A 'bridge fin' must declare its type: write 'bridge fin $finName: Type'")
+                            val finType = TypeAnnotation.Explicit(parseTypeName())
+                            consumeNewline()
+                            methods.add(
+                                FuncDecl(
+                                    finName, emptyList(), finType, emptyList(), false, emptyList(),
+                                    methodStart.line, methodStart.column,
+                                    annotations = memberAnnotations, visibility = visibility,
+                                    memberCallStyle = MemberCallStyle.PROPERTY,
+                                ),
+                            )
+                        }
                         check(TokenType.PROP) -> {
                             advance()
                             val tp = parseTypeParams()
@@ -3260,7 +3305,7 @@ class Parser(
                             consumeNewline()
                             methods.add(FuncDecl(fnName, params, ret, emptyList(), false, tp.names, methodStart.line, methodStart.column, annotations = memberAnnotations, visibility = visibility, receiverModifier = ParamModifier.SHARED))
                         }
-                        else -> error("Expected 'prop' or 'func' after 'bridge' in impl block at line ${peek().line}")
+                        else -> error("Expected 'fin', 'prop' or 'func' after 'bridge' in impl block at line ${peek().line}")
                     }
                 }
                 // `ctor [self: Self!](…) { … }` - a constructor is a member of the
@@ -3514,7 +3559,7 @@ class Parser(
             if (match(TokenType.COLON)) {
                 params.add(Param(name, parseTypeName()))
             } else {
-                params.add(Param(name, TypeRef.Named("Any"), modifier = parsePostfixReceiverModifier()))
+                params.add(Param(name, TypeRef.Named("Any", synthesized = true), modifier = parsePostfixReceiverModifier()))
             }
         }
     }
@@ -3566,6 +3611,18 @@ class Parser(
             return checkedBridgeTarget(member, at)
         }
         val first = consume(TokenType.IDENTIFIER, "Expected bridge target ('.C', 'Target.C', or a constant bound to one)").lexeme
+        // `std::Target.C` - the enum may be reached through its realm, exactly as
+        // any other realm-scoped type is. The realm path is consumed and dropped:
+        // what a bridge names is the member, and `Target` is the only enum that
+        // can appear here whatever realm declares it.
+        if (check(TokenType.DOUBLE_COLON)) {
+            while (match(TokenType.DOUBLE_COLON)) {
+                consume(TokenType.IDENTIFIER, "Expected a name after '::' in a bridge target")
+            }
+            consume(TokenType.DOT, "Expected '.' after the Target enum in a bridge target")
+            val member = consume(TokenType.IDENTIFIER, "Expected bridge target variant after '.'").lexeme
+            return checkedBridgeTarget(member, at)
+        }
         // `Target.C` - the leading name is the enum qualifier; keep the member.
         if (match(TokenType.DOT)) {
             val member = consume(TokenType.IDENTIFIER, "Expected bridge target variant after '.'").lexeme
@@ -3633,6 +3690,22 @@ class Parser(
      * - `"clock_gettime" clockGettime` is the post-expansion generated form.
      * - `@foreignName("clock_gettime")` defers naming to a normal prefix macro.
      */
+    /**
+     * A type name that may be reached through its realm - `Int`, `std::Int`,
+     * `a::b::Thing`.
+     *
+     * Returns the mangled form the rest of the frontend uses (`std::Int` becomes
+     * `std__Int`), so a caller that only needs a name can take one without
+     * knowing whether a realm was written.
+     */
+    private fun parseQualifiedTypeName(message: String): String {
+        val name = StringBuilder(consume(TokenType.IDENTIFIER, message).lexeme)
+        while (match(TokenType.DOUBLE_COLON)) {
+            name.append("__").append(consume(TokenType.IDENTIFIER, message).lexeme)
+        }
+        return name.toString()
+    }
+
     private fun parseBridgeName(): ParsedBridgeName {
         if (check(TokenType.STRING_LITERAL)) {
             val backend = advance().literal as String
@@ -3661,7 +3734,10 @@ class Parser(
     private fun noteBridgeTargetConstant(name: String, initializer: Expr) {
         val member = initializer as? Expr.Member ?: return
         val qualifier = member.target as? Expr.Identifier ?: return
-        if (qualifier.name == "Target" && member.name in bridgeTargetMembers) {
+        // `std::Target.C` reaches here realm-mangled, so the enum is matched by its
+        // own name rather than by the path that led to it.
+        val enumName = qualifier.name.substringAfterLast("__")
+        if (enumName == "Target" && member.name in bridgeTargetMembers) {
             bridgeTargetConstants[name] = member.name
         }
     }
@@ -4602,7 +4678,7 @@ class Parser(
     private fun parseWhenPattern(scrutinee: Expr): Expr {
         if (check(TokenType.IS)) {
             val at = advance() // 'is'
-            val name = consume(TokenType.IDENTIFIER, "Expected type name after 'is'").lexeme
+            val name = parseQualifiedTypeName("Expected type name after 'is'")
             return Expr.IsCheck(scrutinee, name, at.line, at.column, at.lexeme.length)
         }
         return parseExpr()
@@ -5364,7 +5440,7 @@ class Parser(
                 } while (match(TokenType.COMMA))
                 consume(TokenType.R_BRACKET, "Expected ']' after the bound list")
             } else {
-                specs.add(consume(TokenType.IDENTIFIER, "Expected a spec name after ':'").lexeme)
+                specs.add(parseQualifiedTypeName("Expected a spec name after ':'"))
                 parseGenericTypeArgsIfPresent()
             }
             for (spec in specs) {
@@ -7865,7 +7941,7 @@ class Parser(
             } else {
                 // `is` - optionally negated with `!`: `expr is! Type`
                 val negated = match(TokenType.BANG)
-                val typeName = consume(TokenType.IDENTIFIER, "Expected type name after 'is'").lexeme
+                val typeName = parseQualifiedTypeName("Expected type name after 'is'")
                 val check = Expr.IsCheck(e, typeName, e.line)
                 e = if (negated) {
                     Expr.Unary(TokenType.BANG, check, op.line, op.column, op.lexeme.length + 1)
@@ -8288,6 +8364,17 @@ class Parser(
                     val name = consumeMemberName("Expected member name after '?.'")
                     expr = Expr.SafeMember(expr, name, expr.line, expr.column)
                 }
+                // `Array<Int, 3>::size` - a static member of an *applied* type. The
+                // arguments are part of which specialization is being asked, so they
+                // are carried on the access rather than dropped.
+                check(TokenType.LESS) && expr is Expr.Identifier && isGenericStaticAccessAhead() -> {
+                    val args = parseGenericTypeArgsIfPresent()
+                    consume(TokenType.DOUBLE_COLON, "Expected '::' after the type arguments")
+                    val member = consumeIdentifierLike("Expected member name after '::'")
+                    val owner = (expr as Expr.Identifier).name
+                    expr = Expr.Identifier("${owner}__$member", expr.line, expr.column, owner.length + 2 + member.length)
+                    pendingCallTypeArgs = args
+                }
                 check(TokenType.DOUBLE_COLON) -> {
                     // Namespace member access `Name::member` → mangled identifier `Name__member`.
                     advance() // '::'
@@ -8576,7 +8663,16 @@ class Parser(
                     val first = parseExpr()
                     Expr.Spread(first, first.line, first.column, first.length)
                 } else {
-                    parseExpr()
+                    val first = parseExpr()
+                    // `@std::map[1: "one"]` - a keyed argument, for an arm written
+                    // `[...${key: value}]`. The key is an expression, not a name, so
+                    // this is not the `name = value` form a decorator takes.
+                    if (match(TokenType.COLON)) {
+                        val value = parseExpr()
+                        Expr.MapEntryArg(first, value, first.line, first.column, first.length)
+                    } else {
+                        first
+                    }
                 }
                 args.add(arg)
                 skipNewlines()
@@ -8604,6 +8700,38 @@ class Parser(
             TokenType.L_BRACKET -> isReceiverLambdaAhead(closingIndex + 1)
             else -> false
         }
+
+    /**
+     * True when `<…>::` follows - a static member reached through an applied type,
+     * as in `Array<Int, 3>::size`.
+     *
+     * Distinguishes the application from a comparison by requiring the `::`, the
+     * same way [isGenericCallAhead] requires a `(`.
+     */
+    private fun isGenericStaticAccessAhead(): Boolean {
+        var i = current + 1
+        var depth = 1
+        var steps = 0
+        while (i < tokens.size && steps < 48) {
+            when (tokens[i].type) {
+                TokenType.LESS -> depth++
+                TokenType.GREATER -> {
+                    depth--
+                    if (depth == 0) return tokens.getOrNull(i + 1)?.type == TokenType.DOUBLE_COLON
+                }
+                TokenType.SHIFT_RIGHT -> {
+                    depth -= 2
+                    if (depth == 0) return tokens.getOrNull(i + 1)?.type == TokenType.DOUBLE_COLON
+                    if (depth < 0) return false
+                }
+                TokenType.EOF -> return false
+                else -> {}
+            }
+            i++
+            steps++
+        }
+        return false
+    }
 
     private fun isGenericCallAhead(): Boolean {
         var i = current + 1 // token after '<'
@@ -8897,7 +9025,7 @@ class Parser(
                                 "write '[; $name.&]', '[; $name.!]', or '[; $name.clone()]'",
                         )
                     }
-                    receivers.add(Param(name, TypeRef.Named("Any")))
+                    receivers.add(Param(name, TypeRef.Named("Any", synthesized = true)))
                 }
             } while (match(TokenType.COMMA) && !check(TokenType.SEMICOLON) && !check(TokenType.R_BRACKET))
         }
@@ -9058,7 +9186,7 @@ class Parser(
             // lambda values name each argument.
             do {
                 val name = consumeIdentifierLike("Expected lambda parameter name")
-                params.add(Param(name, TypeRef.Named("Any")))
+                params.add(Param(name, TypeRef.Named("Any", synthesized = true)))
             } while (match(TokenType.COMMA))
             consume(TokenType.ARROW, "Expected '->' in lambda")
         } else if (check(TokenType.ARROW)) {
@@ -9089,7 +9217,7 @@ class Parser(
         // with none. Where an expected callable type supplies parameters, the
         // resolver puts them back (see `TypeResolver`).
         if (!paramsWritten && implicitIt && mentionsIt) {
-            params.add(Param("it", TypeRef.Named("Any")))
+            params.add(Param("it", TypeRef.Named("Any", synthesized = true)))
         }
         return Expr.Lambda(
             params,

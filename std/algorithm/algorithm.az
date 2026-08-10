@@ -32,19 +32,19 @@ realm std {
      */
     @Experimental(since: "0.1")
     func mergeSort<T>(arr: Array<T>): Array<T> {
-        if arr.length <= 1 {
+        if arr.size <= 1 {
             return arr
         }
-        var mid: Int = arr.length / 2
+        var mid: Int = arr.size / 2
         var left: Array<T> = Array::fill<T>(mid)
-        var right: Array<T> = Array::fill<T>(arr.length - mid)
+        var right: Array<T> = Array::fill<T>(arr.size - mid)
         var i = 0
         while i < mid {
             left[i] = arr[i]
             i += 1
         }
         var j = 0
-        while i < arr.length {
+        while i < arr.size {
             right[j] = arr[i]
             i += 1
             j += 1
@@ -59,11 +59,11 @@ realm std {
      */
     @Experimental(since: "0.1")
     func merge<T>(a: Array<T>, b: Array<T>): Array<T> {
-        var result: Array<T> = Array::fill<T>(a.length + b.length)
+        var result: Array<T> = Array::fill<T>(a.size + b.size)
         var ri = 0
         var ai = 0
         var bi = 0
-        while ai < a.length && bi < b.length {
+        while ai < a.size && bi < b.size {
             if a[ai] <= b[bi] {
                 result[ri] = a[ai]
                 ai += 1
@@ -73,12 +73,12 @@ realm std {
             }
             ri += 1
         }
-        while ai < a.length {
+        while ai < a.size {
             result[ri] = a[ai]
             ai += 1
             ri += 1
         }
-        while bi < b.length {
+        while bi < b.size {
             result[ri] = b[bi]
             bi += 1
             ri += 1
@@ -92,14 +92,14 @@ realm std {
      */
     @Experimental(since: "0.1")
     func sortBy<T>(arr: Array<T>, key: (T) -> T): Array<T> {
-        var result: Array<T> = Array::fill<T>(arr.length)
+        var result: Array<T> = Array::fill<T>(arr.size)
         var i = 0
-        while i < arr.length {
+        while i < arr.size {
             result[i] = arr[i]
             i += 1
         }
         i = 1
-        while i < result.length {
+        while i < result.size {
             var current: T = result[i]
             var currentKey: T = key(current)
             var j: Int = i - 1
@@ -119,10 +119,10 @@ realm std {
      */
     @Experimental(since: "0.1")
     func groupBy<T>(arr: Array<T>, key: (T) -> T): Array<T> {
-        var keys: Array<T> = Array::fill<T>(arr.length)
-        var groups: Array<T> = Array::fill<T>(arr.length)
+        var keys: Array<T> = Array::fill<T>(arr.size)
+        var groups: Array<T> = Array::fill<T>(arr.size)
         var keyCount = 0
-        for i in 0..<arr.length {
+        for i in 0..<arr.size {
             var k: T = key(arr[i])
             var found = -1
             for j in 0..<keyCount {
@@ -136,7 +136,7 @@ realm std {
                 keyCount += 1
             } else {
                 var g: Array<T> = groups[found]
-                g[g.length] = arr[i]
+                g[g.size] = arr[i]
                 groups[found] = g
             }
         }
@@ -153,16 +153,16 @@ realm std {
      */
     @Experimental(since: "0.1")
     func interleave<T>(a: Array<T>, b: Array<T>): Array<T> {
-        var result: Array<T> = Array::fill<T>(a.length + b.length)
+        var result: Array<T> = Array::fill<T>(a.size + b.size)
         var ri = 0
-        var maxLen: Int = a.length
-        if b.length > maxLen { maxLen = b.length }
+        var maxLen: Int = a.size
+        if b.size > maxLen { maxLen = b.size }
         for i in 0..<maxLen {
-            if i < a.length {
+            if i < a.size {
                 result[ri] = a[i]
                 ri += 1
             }
-            if i < b.length {
+            if i < b.size {
                 result[ri] = b[i]
                 ri += 1
             }
@@ -175,11 +175,11 @@ realm std {
      */
     @Experimental(since: "0.1")
     func windows<T>(arr: Array<T>, size: Int): Array<T> {
-        fin count = if arr.length >= size { arr.length - size + 1 } else { 0 }
+        fin count = if arr.size >= size { arr.size - size + 1 } else { 0 }
         var result: Array<T> = Array::fill<Array<T>>(count)
         var ri = 0
         var i = 0
-        while i + size <= arr.length {
+        while i + size <= arr.size {
             var w: Array<T> = Array::fill<T>(size)
             for j in 0..<size {
                 w[j] = arr[i + j]
@@ -196,11 +196,11 @@ realm std {
      */
     @Experimental(since: "0.1")
     func evens<T>(arr: Array<T>): Array<T> {
-        fin count = (arr.length + 1) / 2
+        fin count = (arr.size + 1) / 2
         var result: Array<T> = Array::fill<T>(count)
         var ri = 0
         var i = 0
-        while i < arr.length {
+        while i < arr.size {
             result[ri] = arr[i]
             ri += 1
             i += 2
@@ -213,11 +213,11 @@ realm std {
      */
     @Experimental(since: "0.1")
     func odds<T>(arr: Array<T>): Array<T> {
-        fin count = arr.length / 2
+        fin count = arr.size / 2
         var result: Array<T> = Array::fill<T>(count)
         var ri = 0
         var i = 1
-        while i < arr.length {
+        while i < arr.size {
             result[ri] = arr[i]
             ri += 1
             i += 2

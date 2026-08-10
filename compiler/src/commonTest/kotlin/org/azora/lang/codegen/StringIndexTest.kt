@@ -39,7 +39,7 @@ class StringIndexTest {
                 let s = "a1b2c3"
                 var i = 0
                 var n = 0
-                while i < s.length {
+                while i < s.size {
                     if isDigit(s[i]) { n = n + 1 }
                     i = i + 1
                 }
@@ -58,8 +58,8 @@ class StringIndexTest {
                 let s = "ab"
                 var i = 0
                 var hits = 0
-                while i < s.length {
-                    if i + 1 < s.length && s[i + 1] == 'b' { hits = hits + 1 }
+                while i < s.size {
+                    if i + 1 < s.size && s[i + 1] == 'b' { hits = hits + 1 }
                     i = i + 1
                 }
                 std::println("hits=${'$'}hits")

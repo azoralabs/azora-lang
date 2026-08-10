@@ -44,6 +44,13 @@ data class FunctionSymbol(
     val isUnsafe: Boolean = false,
     val visibility: Visibility = Visibility.PUBLIC,
     val memberCallStyle: MemberCallStyle = MemberCallStyle.NORMAL,
+    /**
+     * True when the declaration has no Azora body - `bridge func`, `bridge prop`.
+     *
+     * The backend supplies the implementation, so a use site must not lower to a
+     * call: there is no function to call.
+     */
+    val isBodyless: Boolean = false,
     /** Source return type retained for generic compile-time type-function evaluation. */
     val returnTypeRef: TypeRef? = null,
     val isReactive: Boolean = false,
@@ -108,6 +115,8 @@ data class StructField(
      * typed as `Double` rather than as an opaque word.
      */
     val typeParamIndex: Int = -1,
+    /** `unsafe fin data: T*` - readable only inside an unsafe scope. */
+    val isUnsafe: Boolean = false
 )
 
 /**
@@ -221,6 +230,20 @@ class SymbolTable {
      * @param name the function name
      * @return the [FunctionSymbol] if found, or `null` if undefined
      */
+    /**
+     * A member declared on [owner] as a type-scoped constant or function -
+     * `impl Array:: { bridge fin size }` - whatever realm declares the type.
+     *
+     * The realm is part of the symbol but not of the question being asked, so it
+     * is matched on the tail rather than reconstructed.
+     */
+    fun lookupTypeStatic(owner: String, name: String): FunctionSymbol? {
+        val local = "${owner}__$name"
+        functions[local]?.let { return it }
+        val suffix = "__$local"
+        return functions.entries.firstOrNull { it.key.endsWith(suffix) }?.value
+    }
+
     fun lookupFunction(name: String): FunctionSymbol? = functions[name]
 
     fun markFunctionReactive(name: String) {

@@ -192,7 +192,7 @@ class ComparisonSpecTest {
     @Test fun whereClauseStillAcceptsAPredicateExpression() {
         val program = parse(
             """
-            pack Pair<...T> where T.length >= 2 {
+            pack Pair<...T> where T.size >= 2 {
                 var first: std::Int
             }
             func main() {}

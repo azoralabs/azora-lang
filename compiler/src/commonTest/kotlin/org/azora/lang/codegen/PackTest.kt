@@ -131,7 +131,7 @@ class PackTest {
                 var y: std::Int
             }
             func main() {
-                var points = [Point(10, 20), Point(30, 40)]
+                var points = @std::arr[Point(10, 20), Point(30, 40)]
                 std::println(points[0].x + points[1].x)
             }
         """.trimIndent()))

@@ -247,6 +247,10 @@ internal object SourceSymbolValidator {
 
     private fun expression(expression: Expr) {
         when (expression) {
+            is Expr.MapEntryArg -> {
+                expression(expression.key)
+                expression(expression.value)
+            }
             is Expr.IntLiteral, is Expr.DoubleLiteral, is Expr.CharLiteral, is Expr.StringLiteral,
             is Expr.BoolLiteral, is Expr.Identifier, is Expr.UpperScopeAccess, is Expr.NullLiteral,
             is Expr.Inject -> Unit

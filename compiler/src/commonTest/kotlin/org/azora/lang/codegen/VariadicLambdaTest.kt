@@ -19,7 +19,7 @@ class VariadicLambdaTest {
         assertEquals("0\n1\n3", run("""
             import std.io
             func main() {
-                fin len = <...T> { values: ...T -> values.length }
+                fin len = <...T> { values: ...T -> values.size }
                 std::println(len())
                 std::println(len(1))
                 std::println(len(1, 2, 3))

@@ -28,10 +28,10 @@ class ArrayStdlibTest {
             func main() {
                 fin factory: std::Array<std::Int> = std::arrayOf(1, 2, 3)
                 fin literal: std::Array<std::Int> = @std::arr[1, 2, 3]
-                std::println(factory.length)
+                std::println(factory.size)
                 std::println(factory[1])
-                std::println(factory.data[1])
-                std::println(literal.length)
+                unsafe { std::println(factory.data[1]) }
+                std::println(literal.size)
                 std::println(literal[1])
             }
             """,
@@ -52,11 +52,11 @@ class ArrayStdlibTest {
             }
 
             func last(values: std::Array<std::String>): std::String {
-                return values[values.length - 1]
+                return values[values.size - 1]
             }
 
             func main() {
-                std::println(first(["a", "b"]))
+                std::println(first(@std::arr["a", "b"]))
                 std::println(last(std::arrayOf("a", "b")))
             }
             """,
@@ -95,7 +95,7 @@ class ArrayStdlibTest {
 
             func main() {
                 fin values: std::Array<std::Int> = std::arrayOf<std::Int>()
-                std::println(values.length)
+                std::println(values.size)
             }
             """,
         )

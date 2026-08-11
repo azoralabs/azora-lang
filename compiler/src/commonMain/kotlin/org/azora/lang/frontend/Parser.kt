@@ -6526,11 +6526,22 @@ class Parser(
             (m.returnType as? TypeAnnotation.Explicit)?.let { mentionsSelf(it.ref) } == true ||
             m.extensionReceiver?.let { mentionsSelf(it.type) } == true
 
+    // `Self` can appear wherever a type can, so both of these walk every composite
+    // variant. Missing one does not fail loudly - it leaves a bare `Self` behind for
+    // name resolution to report as an undefined type, from a line that never wrote it.
     private fun mentionsSelf(t: TypeRef): Boolean = when (t) {
         is TypeRef.Named -> t.name == "Self" || t.args.any { mentionsSelf(it) }
         is TypeRef.Array -> mentionsSelf(t.element)
+        is TypeRef.Map -> mentionsSelf(t.key) || mentionsSelf(t.value)
+        is TypeRef.Set -> mentionsSelf(t.element)
+        is TypeRef.Tuple -> t.elements.any { mentionsSelf(it) }
         is TypeRef.Nullable -> mentionsSelf(t.inner)
+        is TypeRef.Failable -> mentionsSelf(t.ok)
+        is TypeRef.Pointer -> mentionsSelf(t.inner)
         is TypeRef.Reference -> mentionsSelf(t.inner)
+        is TypeRef.Function ->
+            t.params.any { mentionsSelf(it) } || t.receivers.any { mentionsSelf(it) } ||
+                mentionsSelf(t.ret)
         else -> false
     }
 
@@ -6538,8 +6549,18 @@ class Parser(
         is TypeRef.Named -> if (t.name == "Self" && t.args.isEmpty()) target
             else t.copy(args = t.args.map { selfTo(it, target) })
         is TypeRef.Array -> t.copy(element = selfTo(t.element, target))
+        is TypeRef.Map -> t.copy(key = selfTo(t.key, target), value = selfTo(t.value, target))
+        is TypeRef.Set -> t.copy(element = selfTo(t.element, target))
+        is TypeRef.Tuple -> t.copy(elements = t.elements.map { selfTo(it, target) })
         is TypeRef.Nullable -> t.copy(inner = selfTo(t.inner, target))
+        is TypeRef.Failable -> t.copy(ok = selfTo(t.ok, target))
+        is TypeRef.Pointer -> t.copy(inner = selfTo(t.inner, target))
         is TypeRef.Reference -> t.copy(inner = selfTo(t.inner, target))
+        is TypeRef.Function -> t.copy(
+            params = t.params.map { selfTo(it, target) },
+            receivers = t.receivers.map { selfTo(it, target) },
+            ret = selfTo(t.ret, target),
+        )
         else -> t
     }
 

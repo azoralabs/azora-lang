@@ -35,6 +35,7 @@ import org.azora.lang.frontend.TopLevel
 import org.azora.lang.frontend.TypeAnnotation
 import org.azora.lang.frontend.TypeRef
 import org.azora.lang.frontend.Visibility
+import org.azora.lang.ir.sourceSymbol
 import org.azora.lang.ir.IrType
 import kotlin.collections.iterator
 
@@ -954,7 +955,7 @@ class TypeResolver(private val table: SymbolTable) {
                 checkCapture(stmt.name, stmt.line)
                 val varSym = table.lookupVariable(stmt.name)
                 if (varSym == null) {
-                    errors.add("line ${stmt.line}: undefined variable '${stmt.name}'")
+                    errors.add("line ${stmt.line}: undefined variable '${sourceSymbol(stmt.name)}'")
                     return
                 }
                 if (!varSym.mutable) {
@@ -1363,7 +1364,7 @@ class TypeResolver(private val table: SymbolTable) {
                     val receiverField = currentReceiverType?.let { table.lookupStruct(it)?.field(expr.name) }
                     if (receiverField != null) receiverField.type
                     else {
-                        errors.add("line ${expr.line}: undefined variable '${expr.name}'")
+                        errors.add("line ${expr.line}: undefined variable '${sourceSymbol(expr.name)}'")
                         null
                     }
                 } else sym.type
@@ -1576,7 +1577,7 @@ class TypeResolver(private val table: SymbolTable) {
                             return resolveExpr(Expr.MethodCall(ctxExpr, contextualName, expr.args, expr.line, expr.column))
                         }
                     }
-                    errors.add("line ${expr.line}: undefined function '${expr.callee}'")
+                    errors.add("line ${expr.line}: undefined function '${sourceSymbol(expr.callee)}'")
                     return null
                 }
                 if (func.isUnsafe && !unsafeContext) {

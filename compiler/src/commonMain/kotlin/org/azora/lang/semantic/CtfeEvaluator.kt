@@ -1115,6 +1115,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
         return conforms(typeName)
     }
 
+
     /**
      * Replaces each `inline for` argument with the arguments it stands for.
      *

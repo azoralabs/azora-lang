@@ -24,6 +24,7 @@ import org.azora.lang.frontend.Program
 import org.azora.lang.frontend.Stmt
 import org.azora.lang.frontend.TypeAnnotation
 import org.azora.lang.frontend.TypeRef
+import org.azora.lang.ir.sourceSymbol
 
 /**
  * Semantic - Alloc / Drop Analysis.
@@ -110,7 +111,7 @@ class AllocDropAnalyzer {
             }
             is Stmt.Assignment -> {
                 if (stmt.name !in defined) {
-                    errors.add("line ${stmt.line}: assignment to undefined variable '${stmt.name}'")
+                    errors.add("line ${stmt.line}: assignment to undefined variable '${sourceSymbol(stmt.name)}'")
                 }
                 collectUsedVars(stmt.value, used)
             }

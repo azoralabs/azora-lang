@@ -127,16 +127,20 @@ class Compiler(
      */
     /** Points unknown symbols at their imported realm path or providing module. */
     private fun withLibraryHint(message: String, program: Program, libraries: StdlibInjector): String {
-        val match = Regex("(?:undefined function|undefined variable) '([A-Za-z_][A-Za-z0-9_]*)'").find(message)
-            ?: return message
-        val name = match.groupValues[1]
+        // The message already carries the source spelling (`std::println`), while
+        // the tables are keyed by the frontend's internal one - so the name is read
+        // in source form, looked up in internal form, and reported in source form.
+        val match = Regex("(?:undefined function|undefined variable) '([A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z_][A-Za-z0-9_]*)*)'")
+            .find(message) ?: return message
+        val shown = match.groupValues[1]
+        val name = shown.replace("::", "__")
         val qualified = libraries.qualifiedAccessOf(name, program)
         if (qualified != null) {
             val realm = qualified.substringBeforeLast("::")
-            return "$message; '$name' is part of realm '$realm', use '$qualified' instead"
+            return "$message; '$shown' is part of realm '$realm', use '$qualified' instead"
         }
         val module = libraries.moduleOf(name) ?: return message
-        return "$message - '$name' is provided by '$module': add 'import $module'"
+        return "$message - '$shown' is provided by '$module': add 'import $module'"
     }
 
     fun compile(source: String, warningsAsErrors: Boolean = false, release: Boolean = true, debug: Boolean = false, defines: Map<String, String> = emptyMap()): CompilationResult {

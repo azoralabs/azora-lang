@@ -1632,8 +1632,22 @@ private class MonoContext(
     // Name mangling
     // ------------------------------------------------------------------
 
+    /**
+     * The canonical symbol for one specialization: `__` once, then single `_`
+     * between every segment.
+     *
+     * Both halves can already be canonical names - a specialization of a
+     * specialization embeds `__Vec_Double_3` as an argument - so the parts are
+     * joined and then normalized, rather than trusting each to be separator-free.
+     * Without that, nesting accumulates separators (`..._u64__Vec_Double_3`) and
+     * the symbol no longer matches the one ABI every backend reads.
+     */
     private fun mangleTemplate(templateName: String, args: List<TypeRef>): String =
-        "__" + templateName + args.joinToString("") { "_" + mangleType(it) }
+        canonicalSymbol(templateName + args.joinToString("") { "_" + mangleType(it) })
+
+    /** [raw] with one leading `__` and no repeated separators anywhere after it. */
+    private fun canonicalSymbol(raw: String): String =
+        "__" + raw.trimStart('_').replace(Regex("_{2,}"), "_")
 
     private fun mangleType(type: TypeRef): String = when (type) {
         is TypeRef.Named -> sanitize(type.name) + if (type.args.isEmpty()) "" else type.args.joinToString("_", "_") { mangleType(it) }

@@ -17,6 +17,7 @@
 package org.azora.lang.semantic
 
 import org.azora.lang.frontend.Expr
+import org.azora.lang.frontend.NumericSuffix
 import org.azora.lang.frontend.Program
 import org.azora.lang.frontend.Stmt
 import org.azora.lang.frontend.TokenType
@@ -1535,15 +1536,30 @@ class CtfeEvaluator(private val table: SymbolTable) {
         }
     }
 
+    /**
+     * The width a folded pair of numeric literals keeps, or null when the two
+     * disagree and folding them would have to invent one.
+     */
+    private fun foldedSuffix(left: NumericSuffix, right: NumericSuffix): NumericSuffix? = when {
+        left == right -> left
+        left == NumericSuffix.NONE -> right
+        right == NumericSuffix.NONE -> left
+        else -> null
+    }
+
     private fun tryFoldBinary(left: Expr, op: TokenType, right: Expr, line: Int): Expr? {
         // Int op Int
         if (left is Expr.IntLiteral && right is Expr.IntLiteral) {
+            // An unsuffixed operand adopts the other's width, so `0L - 1` folds to a
+            // `Long`. Two different stated widths are not folded at all - that is a
+            // type error for the resolver to report, not something to silently pick.
+            val suffix = foldedSuffix(left.suffix, right.suffix) ?: return null
             return when (op) {
-                TokenType.PLUS -> Expr.IntLiteral(left.value + right.value, line)
-                TokenType.MINUS -> Expr.IntLiteral(left.value - right.value, line)
-                TokenType.STAR -> Expr.IntLiteral(left.value * right.value, line)
-                TokenType.SLASH -> if (right.value != 0L) Expr.IntLiteral(left.value / right.value, line) else null
-                TokenType.PERCENT -> if (right.value != 0L) Expr.IntLiteral(left.value % right.value, line) else null
+                TokenType.PLUS -> Expr.IntLiteral(left.value + right.value, line, suffix = suffix)
+                TokenType.MINUS -> Expr.IntLiteral(left.value - right.value, line, suffix = suffix)
+                TokenType.STAR -> Expr.IntLiteral(left.value * right.value, line, suffix = suffix)
+                TokenType.SLASH -> if (right.value != 0L) Expr.IntLiteral(left.value / right.value, line, suffix = suffix) else null
+                TokenType.PERCENT -> if (right.value != 0L) Expr.IntLiteral(left.value % right.value, line, suffix = suffix) else null
                 TokenType.EQUAL_EQUAL -> Expr.BoolLiteral(left.value == right.value, line)
                 TokenType.BANG_EQUAL -> Expr.BoolLiteral(left.value != right.value, line)
                 TokenType.LESS -> Expr.BoolLiteral(left.value < right.value, line)
@@ -1555,11 +1571,12 @@ class CtfeEvaluator(private val table: SymbolTable) {
         }
         // Double op Double
         if (left is Expr.DoubleLiteral && right is Expr.DoubleLiteral) {
+            val suffix = foldedSuffix(left.suffix, right.suffix) ?: return null
             return when (op) {
-                TokenType.PLUS -> Expr.DoubleLiteral(left.value + right.value, line)
-                TokenType.MINUS -> Expr.DoubleLiteral(left.value - right.value, line)
-                TokenType.STAR -> Expr.DoubleLiteral(left.value * right.value, line)
-                TokenType.SLASH -> Expr.DoubleLiteral(left.value / right.value, line)
+                TokenType.PLUS -> Expr.DoubleLiteral(left.value + right.value, line, suffix = suffix)
+                TokenType.MINUS -> Expr.DoubleLiteral(left.value - right.value, line, suffix = suffix)
+                TokenType.STAR -> Expr.DoubleLiteral(left.value * right.value, line, suffix = suffix)
+                TokenType.SLASH -> Expr.DoubleLiteral(left.value / right.value, line, suffix = suffix)
                 TokenType.EQUAL_EQUAL -> Expr.BoolLiteral(left.value == right.value, line)
                 TokenType.BANG_EQUAL -> Expr.BoolLiteral(left.value != right.value, line)
                 TokenType.LESS -> Expr.BoolLiteral(left.value < right.value, line)
@@ -1600,8 +1617,15 @@ class CtfeEvaluator(private val table: SymbolTable) {
     }
 
     private fun tryFoldUnary(op: TokenType, operand: Expr, line: Int): Expr? {
-        if (op == TokenType.MINUS && operand is Expr.IntLiteral) return Expr.IntLiteral(-operand.value, line)
-        if (op == TokenType.MINUS && operand is Expr.DoubleLiteral) return Expr.DoubleLiteral(-operand.value, line)
+        // The suffix is the literal's declared width, not decoration: folding
+        // `-1L` into a bare `-1` would retype it as `Int` and break the very
+        // assignment it was written for.
+        if (op == TokenType.MINUS && operand is Expr.IntLiteral) {
+            return Expr.IntLiteral(-operand.value, line, suffix = operand.suffix)
+        }
+        if (op == TokenType.MINUS && operand is Expr.DoubleLiteral) {
+            return Expr.DoubleLiteral(-operand.value, line, suffix = operand.suffix)
+        }
         if (op == TokenType.BANG && operand is Expr.BoolLiteral) return Expr.BoolLiteral(!operand.value, line)
         return null
     }

@@ -16,7 +16,6 @@
 
 module std.container.list
 
-import std.serializer
 import std.convert
 
 /**
@@ -155,7 +154,6 @@ realm std {
      * @generic T The element type.
      */
     @Experimental(since: "0.1")
-    @Serializable
     pack ArrayList<T> {
         var data: T* = alloc T[8]
         var size: Int = 0
@@ -541,10 +539,6 @@ test "mutable list clear permits reuse" {
     value.clear()
     value.add(9)
     assert value.size == 1 && value.get(0) == 9 { "cleared lists must remain reusable" }
-}
-
-test "list serialization metadata is declared" {
-    inline assert std::reflect<ArrayList>.hasDeco<Serializable> { "ArrayList must carry Serializable metadata" }
 }
 
 test .All "list"

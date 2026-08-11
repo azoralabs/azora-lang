@@ -125,7 +125,7 @@ private data class SourceCompilation(
 /**
  * The directory a module's own path is relative to.
  *
- * A file declaring `mod engine.ecs` sits at `engine/ecs/…` below its source
+ * A file declaring `module engine.ecs` sits at `engine/ecs/…` below its source
  * root, so climbing out of the directories its module path accounts for lands
  * on the root. Taking the file's own directory instead would work only for an
  * entry point at the top: checking or testing `engine/ecs/ecs.az` on its own
@@ -133,13 +133,13 @@ private data class SourceCompilation(
  * imported type as undefined.
  *
  * The file name may or may not repeat the last module segment (`engine/ecs.az`
- * and `engine/ecs/ecs.az` both declare `mod engine.ecs`), so a segment is
+ * and `engine/ecs/ecs.az` both declare `module engine.ecs`), so a segment is
  * credited to the file name only when the enclosing directory has not already
  * claimed it. A file with no module declaration keeps its own directory.
  */
 private fun sourceRootOf(entryFile: File, source: String): File? {
     val dir = entryFile.absoluteFile.parentFile ?: return null
-    val declared = Regex("""(?m)^\s*mod\s+([A-Za-z_][\w.]*)""").find(source)
+    val declared = Regex("""(?m)^\s*module\s+([A-Za-z_][\w.]*)""").find(source)
         ?.groupValues?.get(1)
         ?: return dir
 

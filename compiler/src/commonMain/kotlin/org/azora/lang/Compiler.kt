@@ -164,7 +164,12 @@ class Compiler(
             // usable from a user module's `inline for`, so the stdlib's bindings
             // seed this parse. Reading the stdlib first is what populates them.
             AzStdlib.loadPrograms()
-            Parser(Lexer(source).tokenize(), AzStdlib.comptimeLists.toMutableMap(), AzStdlib.declaredEnums.toMutableMap()).parse()
+            Parser(
+                Lexer(source).tokenize(),
+                AzStdlib.comptimeLists.toMutableMap(),
+                AzStdlib.declaredEnums.toMutableMap(),
+                typeListRealm = AzStdlib.comptimeListRealms.toMutableMap(),
+            ).parse()
         } catch (error: IllegalStateException) {
             return CompilationResult.Failure(listOf(error.message ?: "frontend parsing failed"))
         } catch (error: IllegalArgumentException) {
@@ -181,6 +186,13 @@ class Compiler(
         if (importErrors.isNotEmpty()) {
             return CompilationResult.Failure(importErrors)
         }
+        // 2a-quater. Modules must form a DAG - reject import cycles before any
+        // pass starts depending on an order that does not exist.
+        val cycleErrors = libraries.validateModuleCycles(parsed)
+        if (cycleErrors.isNotEmpty()) {
+            return CompilationResult.Failure(cycleErrors)
+        }
+
         val typeAccessErrors = libraries.validateTypeAccess(parsed)
         if (typeAccessErrors.isNotEmpty()) {
             return CompilationResult.Failure(typeAccessErrors)

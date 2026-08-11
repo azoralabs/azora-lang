@@ -290,7 +290,13 @@ private class MonoContext(
             return templateName
         }
         val mangled = mangleTemplate(templateName, args)
-        if (mangled !in packs) {
+        // This pass runs twice - once before the re-injection that pulls in whatever
+        // an expansion newly referenced, once after - so a specialization emitted by
+        // the first run is already a declared pack when the second run reaches the
+        // same use. Emitting it again would define the struct, and every impl member
+        // on it, a second time. The name is the specialization, so seeing it declared
+        // is proof the work is done; only the mangled name is still needed.
+        if (mangled !in packs && mangled !in plainPackFields) {
             // One check per unique combination: the mangled name IS the combination,
             // so validating inside this guard runs the clause exactly once per
             // specialization rather than once per use site.

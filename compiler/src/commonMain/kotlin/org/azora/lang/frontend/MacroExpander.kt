@@ -72,6 +72,95 @@ internal object MacroExpander {
     }
 
     /**
+     * Resolves declaration-name macros (`func @foreignName("az_poke8")(…)`) across
+     * a whole set of modules, leaving every other macro untouched.
+     *
+     * A bridge signature named by a macro has no Azora-facing name until the macro
+     * runs, so a library indexed before expansion exports nothing under the name
+     * its own code uses. Importers then cannot see it - the declaring module
+     * compiles, everyone else gets "undefined function". Resolving these names up
+     * front, with the macro table pooled from every module (the macro itself lives
+     * in `std.core`, not in the module that applies it), makes the derived name and
+     * its wrapper part of what a module exports.
+     *
+     * Only name macros are expanded here; bodies and expressions still go through
+     * [expand] later, which is a no-op over the already-resolved names.
+     */
+    fun expandDeclarationNames(programs: List<Program>): List<Program> {
+        val macroArms = LinkedHashMap<String, MutableList<MacroArm>>()
+        val macroParameters = LinkedHashMap<String, String?>()
+        for (program in programs) {
+            for (item in program.items) {
+                if (item !is TopLevel.Meta || item.name.startsWith("__infix__")) continue
+                macroArms.getOrPut(item.name) { mutableListOf() }.addAll(item.arms)
+                macroParameters.putIfAbsent(item.name, item.parameter)
+            }
+        }
+        if (macroArms.isEmpty()) return programs
+        val table: MacroTable = macroArms.mapValues { (name, arms) ->
+            MacroDefinition(macroParameters[name], arms)
+        }
+        return programs.map { program ->
+            val named = program.items.any { it.declaresNameMacro() }
+            if (!named) program else program.copy(items = program.items.flatMap { item ->
+                if (item.declaresNameMacro()) rewriteDeclarationName(item, table) else listOf(item)
+            })
+        }
+    }
+
+    private fun TopLevel.declaresNameMacro(): Boolean = when (this) {
+        is TopLevel.Pack -> nameMacro != null
+        is TopLevel.Bridge -> funcs.any { it.nameMacro != null } || values.any { it.nameMacro != null }
+        else -> false
+    }
+
+    /**
+     * Resolves one declaration's name macro, reusing the same rewriting [expand]
+     * performs so both paths derive identical names and wrappers.
+     */
+    private fun rewriteDeclarationName(item: TopLevel, macros: MacroTable): List<TopLevel> {
+        if (item is TopLevel.Pack && item.nameMacro != null) {
+            val (foreignName, expandedLocal) = expandDeclarationName(item.nameMacro, macros, item.line, isType = true)
+            return listOf(item.copy(
+                name = item.localRealm?.let { "${it}__$expandedLocal" } ?: expandedLocal,
+                foreignName = foreignName,
+                nameMacro = null,
+                localRealm = null,
+            ))
+        }
+        if (item !is TopLevel.Bridge) return listOf(item)
+
+        val wrappers = mutableListOf<TopLevel>()
+        val funcs = item.funcs.map { signature ->
+            if (signature.nameMacro == null) return@map signature
+            val (foreignName, expandedLocal) =
+                expandDeclarationName(signature.nameMacro, macros, signature.line, isType = false)
+            val localName = expandedLocal?.let { local ->
+                signature.localRealm?.let { "${it}__$local" } ?: local
+            }
+            if (localName != null && localName != foreignName) {
+                wrappers += bridgeWrapper(
+                    localName, foreignName, signature.params, signature.returnType,
+                    signature.typeParams, signature.line,
+                )
+            }
+            signature.copy(name = foreignName, localName = null, nameMacro = null, localRealm = null)
+        }
+        val values = item.values.map { value ->
+            if (value.nameMacro == null) return@map value
+            val (foreignName, expandedLocal) =
+                expandDeclarationName(value.nameMacro, macros, value.line, isType = false)
+            value.copy(
+                name = value.localRealm?.let { "${it}__$expandedLocal" } ?: expandedLocal,
+                foreignName = foreignName,
+                nameMacro = null,
+                localRealm = null,
+            )
+        }
+        return listOf(item.copy(funcs = funcs, values = values)) + wrappers
+    }
+
+    /**
      * Rewrites every [Expr.MetaInvoke] in [program] into its matched arm's
      * template and removes all [TopLevel.Meta] declarations. Returns [program]
      * unchanged when it declares no macros.

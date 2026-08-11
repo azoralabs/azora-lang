@@ -54,6 +54,12 @@ class Parser(
     private val declaredEnums: MutableMap<String, List<String>> = mutableMapOf(),
     /** Compiler-generated source may use reserved `__` names while being reparsed. */
     private val internalSource: Boolean = false,
+    /**
+     * Compile-time list name -> the named realm it was declared in ("std",
+     * "std__container"), or "" for one declared outside any realm. Read by
+     * [comptimeList] to qualify elements for a consumer in another realm.
+     */
+    private val typeListRealm: MutableMap<String, String> = mutableMapOf(),
 ) {
 
     init {
@@ -119,6 +125,24 @@ class Parser(
     private val testRealmMembers = mutableMapOf<String, Visibility>()
     /** Type declaration name → named namespace path (`std`, `std::container`, ...). */
     private val realmTypeNamespaces = linkedMapOf<String, String>()
+
+    /**
+     * The compile-time list [name] holds, as its elements must be written here.
+     *
+     * A list declares its elements in whatever realm it is written in - `std`'s
+     * `Numbers` is `[Byte, Short, …]`, bare, because inside `realm std` that is
+     * what those types are called. Read from another realm the same elements have
+     * to carry the qualifier, or splicing one into type position yields a name
+     * that resolves nowhere. Reading a list inside its own realm is left alone, so
+     * the library's own `inline for Ty in Numbers` is unaffected.
+     */
+    private fun comptimeList(name: String): List<String>? {
+        val values = typeListEnv[name] ?: return null
+        val declaring = typeListRealm[name].orEmpty()
+        if (declaring.isEmpty() || declaring == typeFunctionNamespacePrefix) return values
+        val qualifier = declaring.replace("__", "::")
+        return values.map { if ("::" in it) it else "$qualifier::$it" }
+    }
 
     /** Builds the [RealmMeta] chain for the current [realmStack] (innermost outward). */
     private fun currentRealmMeta(): RealmMeta? {
@@ -1001,7 +1025,19 @@ class Parser(
             check(TokenType.FIN) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); noteBridgeTargetConstant(name, init); TopLevel.FinDecl(name, type, init, start.line, start.column, annotations, visibility = visibility) }
             check(TokenType.VAR) || check(TokenType.VAL) -> { val valueMutable = advance().type == TokenType.VAR; val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); TopLevel.VarDecl(name, type, init, start.line, start.column, annotations, visibility = visibility, valueMutable = valueMutable) }
             check(TokenType.LET) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); TopLevel.LetDecl(name, type, init, start.line, start.column, annotations, visibility) }
-            else -> error("Expected 'func', 'fin', 'var', 'let', 'test', 'inline', or 'deepinline' at top level, got '${peek().lexeme}' at line ${peek().line}")
+            // A compile-time loop generates declarations, and a type alias is one
+            // of them: `inline for n in 2..4 { typealias Mat$n = Mat<T, n, n> }`
+            // is how a family of specializations gets its names.
+            check(TokenType.TYPEALIAS) -> parseTypeAlias(annotations)
+            check(TokenType.PACK) -> parsePack(annotations, visibility)
+            check(TokenType.ENUM) -> parseEnumDecl(annotations)
+            check(TokenType.SPEC) -> parseSpec()
+            check(TokenType.IMPL) -> parseImpl(annotations = annotations)
+            else -> error(
+                "Expected 'func', 'fin', 'var', 'let', 'test', 'typealias', 'pack', 'enum', " +
+                    "'spec', 'impl', 'inline', or 'deepinline' at top level, got " +
+                    "'${peek().lexeme}' at line ${peek().line}",
+            )
         }
     }
 
@@ -1224,7 +1260,7 @@ class Parser(
             if (indexVar != null) rendered = substituteLoopVar(rendered, indexVar, i.toString())
             rendered = foldListIndexing(rendered)
             pendingTopLevels.addAll(
-                Parser(rendered + Token(TokenType.EOF, "", start.line, start.column), typeListEnv).parse().items
+                Parser(rendered + Token(TokenType.EOF, "", start.line, start.column), typeListEnv, typeListRealm = typeListRealm).parse().items
             )
         }
         return TopLevel.InlineBlock(emptyList(), start.line, start.column)
@@ -1287,7 +1323,7 @@ class Parser(
         var i = 0
         while (i < tokens.size) {
             val t = tokens[i]
-            val list = if (t.type == TokenType.IDENTIFIER) typeListEnv[t.lexeme] else null
+            val list = if (t.type == TokenType.IDENTIFIER) comptimeList(t.lexeme) else null
             if (list != null &&
                 tokens.getOrNull(i + 1)?.type == TokenType.L_BRACKET &&
                 tokens.getOrNull(i + 2)?.type == TokenType.INT_LITERAL &&
@@ -1315,7 +1351,9 @@ class Parser(
         if (check(TokenType.INT_LITERAL) &&
             tokens.getOrNull(current + 1)?.type in setOf(TokenType.DOT_DOT, TokenType.DOT_DOT_LESS)
         ) {
-            val expr = parseExpr() as Expr.Range
+            // `inline for n in 2..4 { … }` - the `{` opens the loop body, so it must
+            // not be read as a trailing lambda on the range's last operand.
+            val expr = withoutTrailingLambda { parseExpr() } as Expr.Range
             val from = (expr.from as Expr.IntLiteral).value
             val to = (expr.to as Expr.IntLiteral).value
             val last = if (expr.inclusive) to else to - 1
@@ -1364,6 +1402,7 @@ class Parser(
         val name = consume(TokenType.IDENTIFIER, "Expected type-list name").lexeme
         consume(TokenType.EQUAL, "Expected '=' in type-list alias")
         typeListEnv[name] = parseComptimeListValue()
+        typeListRealm[name] = typeFunctionNamespacePrefix
         consumeNewline()
         return TopLevel.InlineBlock(emptyList(), start.line, start.column)
     }
@@ -1427,6 +1466,7 @@ class Parser(
         }
         consume(TokenType.EQUAL, "Expected '=' in compile-time list binding")
         typeListEnv[name] = parseComptimeListValue()
+        typeListRealm[name] = typeFunctionNamespacePrefix
         consumeNewline()
         return TopLevel.InlineBlock(emptyList(), start.line, start.column)
     }
@@ -1451,7 +1491,22 @@ class Parser(
                             if (check(TokenType.STRING_LITERAL)) advance().literal as String
                             else (advance().literal as NumericLiteral).value.toString()
                         }
-                        else -> consumeIdentifierLike("Expected a literal or type name in compile-time list")
+                        // A type in the list may be reached through its realm -
+                        // `[std::Int, std::Double]`. The qualifier is part of how
+                        // the type is named here and is kept: the element is
+                        // spliced back into type position, where a module outside
+                        // `std` must still write `std::Int`. Dropping it would
+                        // leave a bare `Int` that resolves only inside `std`.
+                        else -> {
+                            val path = StringBuilder(
+                                consumeIdentifierLike("Expected a literal or type name in compile-time list")
+                            )
+                            while (match(TokenType.DOUBLE_COLON)) {
+                                path.append("::")
+                                    .append(consumeIdentifierLike("Expected a name after '::' in a compile-time list"))
+                            }
+                            path.toString()
+                        }
                     })
                 } while (match(TokenType.COMMA))
             }
@@ -1460,7 +1515,7 @@ class Parser(
         }
         if (isMacro) error("Expected '[...]' after macro prefix in compile-time list at line ${peek().line}")
         val name = consumeIdentifierLike("Expected a compile-time list literal or variable")
-        return typeListEnv[name] ?: error("Unknown compile-time list '$name' at line ${peek().line}")
+        return comptimeList(name) ?: error("Unknown compile-time list '$name' at line ${peek().line}")
     }
 
     /** Collects the tokens of a brace-delimited body (the opening `{` already consumed). */
@@ -1495,11 +1550,18 @@ class Parser(
         // A bare use is replaced by the value itself when the value is a name or a
         // number - the two things that mean something on their own in code. An
         // operator (`"+"`) does not, so a bare use of it reads as the string it is.
-        val bareOk = valueTokens.size == 1 && valueTokens[0].type in setOf(
+        // A realm-qualified type (`std::Int`, from a list written outside `std`)
+        // is several tokens but still one name, and reads bare exactly as a plain
+        // identifier does.
+        val isQualifiedPath = valueTokens.size >= 3 && valueTokens.size % 2 == 1 &&
+            valueTokens.withIndex().all { (i, t) ->
+                if (i % 2 == 0) t.type == TokenType.IDENTIFIER else t.type == TokenType.DOUBLE_COLON
+            }
+        val bareOk = isQualifiedPath || (valueTokens.size == 1 && valueTokens[0].type in setOf(
             TokenType.IDENTIFIER,
             TokenType.INT_LITERAL,
             TokenType.DOUBLE_LITERAL,
-        )
+        ))
         val result = mutableListOf<Token>()
         for (t in tokens) {
             when {
@@ -1509,8 +1571,16 @@ class Parser(
                 // `inline if op == "/"` decide which element the copy is for.
                 t.type == TokenType.IDENTIFIER && t.lexeme == varName ->
                     result.add(Token(TokenType.STRING_LITERAL, "\"$value\"", t.line, t.column, value))
+                // Spliced *into* a name (`hold$Ty` over `[std::Float, …]`), only the
+                // declaration's own name can appear: a realm is a path to a symbol,
+                // not part of its identifier, and `holdstd_Float` is not a name any
+                // source may write. The qualifier still travels with the bare form
+                // above, which lands in type position where it belongs.
                 t.type == TokenType.IDENTIFIER && t.lexeme.contains(placeholder) ->
-                    result.addAll(Lexer(t.lexeme.replace(placeholder, value)).tokenize().dropLast(1))
+                    result.addAll(
+                        Lexer(t.lexeme.replace(placeholder, value.substringAfterLast("::")))
+                            .tokenize().dropLast(1)
+                    )
                 else -> result.add(t)
             }
         }
@@ -2292,7 +2362,7 @@ class Parser(
                 Token(TokenType.R_BRACE, "}", start.line, start.column),
                 Token(TokenType.EOF, "", start.line, start.column),
             )
-            val parsed = Parser(wrapper, typeListEnv, declaredEnums).parse().items
+            val parsed = Parser(wrapper, typeListEnv, declaredEnums, typeListRealm = typeListRealm).parse().items
             parsed.filterIsInstance<TopLevel.Impl>().forEach { generated.addAll(it.methods) }
         }
         return generated
@@ -2455,7 +2525,7 @@ class Parser(
         val base = (ret as? TypeAnnotation.Explicit)?.ref ?: return ret
         val rendered = Lexer(base.toString()).tokenize().dropLast(1) + fragment +
             Token(TokenType.EOF, "", at.line, at.column)
-        return TypeAnnotation.Explicit(Parser(rendered, typeListEnv, declaredEnums).parseTypeNameForFragment())
+        return TypeAnnotation.Explicit(Parser(rendered, typeListEnv, declaredEnums, typeListRealm = typeListRealm).parseTypeNameForFragment())
     }
 
     /** Entry point for re-parsing a type built from a signature fragment. */
@@ -2838,7 +2908,7 @@ class Parser(
     /** Parses one implementation target or `[Target, Other::member]`. */
     /** Expands any compile-time type-list variable target into its member types. */
     private fun expandTypeListTargets(targets: List<String>): List<String> =
-        targets.flatMap { typeListEnv[it] ?: listOf(it) }
+        targets.flatMap { comptimeList(it) ?: listOf(it) }
 
     private fun parseImplTargets(): List<String> {
         if (!match(TokenType.L_BRACKET)) return listOf(parseImplTarget())
@@ -2964,7 +3034,7 @@ class Parser(
             consumeNewline()
             val implTypeParams = lastImplTypeParams
             for (target in targets) {
-                val members = Parser(bodyTokens + Token(TokenType.EOF, "", start.line, start.column), typeListEnv, declaredEnums).parse().items
+                val members = Parser(bodyTokens + Token(TokenType.EOF, "", start.line, start.column), typeListEnv, declaredEnums, typeListRealm = typeListRealm).parse().items
                 members.forEach {
                     pendingTopLevels.add(mangleTopLevel(withImplTypeParams(it, implTypeParams), target))
                 }
@@ -3301,7 +3371,7 @@ class Parser(
                             consume(TokenType.L_PAREN, "Expected '(' after bridge function name")
                             val params = parseParams()
                             consume(TokenType.R_PAREN, "Expected ')' after bridge parameters")
-                            val ret: TypeAnnotation = if (match(TokenType.COLON)) TypeAnnotation.Explicit(parseTypeName()) else TypeAnnotation.Explicit(TypeRef.Named("Unit"))
+                            val ret: TypeAnnotation = if (match(TokenType.COLON)) TypeAnnotation.Explicit(parseTypeName()) else TypeAnnotation.Explicit(TypeRef.Named("Unit", synthesized = true))
                             consumeNewline()
                             methods.add(FuncDecl(fnName, params, ret, emptyList(), false, tp.names, methodStart.line, methodStart.column, annotations = memberAnnotations, visibility = visibility, receiverModifier = ParamModifier.SHARED))
                         }
@@ -3762,7 +3832,7 @@ class Parser(
         consume(TokenType.L_PAREN, "Expected '(' after bridge function name")
         val params = parseParams()
         consume(TokenType.R_PAREN, "Expected ')' after bridge parameters")
-        val returnType = if (match(TokenType.COLON)) parseTypeName() else TypeRef.Named("Unit")
+        val returnType = if (match(TokenType.COLON)) parseTypeName() else TypeRef.Named("Unit", synthesized = true)
         consumeNewline()
         return TopLevel.Bridge(
             target,
@@ -3811,7 +3881,7 @@ class Parser(
                     consume(TokenType.L_PAREN, "Expected '('")
                     val params = parseParams()
                     consume(TokenType.R_PAREN, "Expected ')'")
-                    val returnType = if (match(TokenType.COLON)) parseTypeName() else TypeRef.Named("Unit")
+                    val returnType = if (match(TokenType.COLON)) parseTypeName() else TypeRef.Named("Unit", synthesized = true)
                     consumeNewline()
                     funcs.add(TopLevel.BridgeSig(
                         name.backendName,
@@ -4816,7 +4886,7 @@ class Parser(
             // `func f() ?! E` - a function that yields nothing but may fail. The ok
             // type is Unit; only the error set is written.
             returnTypeDeclared = false
-            TypeAnnotation.Explicit(parseTypeSuffixes(TypeRef.Named("Unit")))
+            TypeAnnotation.Explicit(parseTypeSuffixes(TypeRef.Named("Unit", synthesized = true)))
         } else {
             returnTypeDeclared = false
             TypeAnnotation.Inferred
@@ -6985,7 +7055,7 @@ class Parser(
         val prefix = Lexer("func __inline_for_body__() {\n").tokenize().dropLast(1) // drop trailing EOF
         val suffix = Lexer("\n}\n").tokenize() // includes EOF
         val tokens = prefix + rendered + suffix
-        val program = Parser(tokens, typeListEnv, declaredEnums).parse()
+        val program = Parser(tokens, typeListEnv, declaredEnums, typeListRealm = typeListRealm).parse()
         val fn = program.items.filterIsInstance<TopLevel.Func>()
             .firstOrNull { it.decl.name == "__inline_for_body__" }
             ?: error("failed to expand 'inline for' body at line ${start.line}")
@@ -8493,7 +8563,9 @@ class Parser(
                             advance() // 'for'
                             val loopName = consumeIdentifierLike("Expected loop variable in argument 'inline for'")
                             consume(TokenType.IN, "Expected 'in' after argument 'inline for' variable")
-                            val iterable = parseExpr()
+                            // The `{` opens the loop body, not a trailing lambda on
+                            // the iterable - `inline for f in reflect<Self>.fields { … }`.
+                            val iterable = withoutTrailingLambda { parseExpr() }
                             consume(TokenType.L_BRACE, "Expected '{' to open argument 'inline for' body")
                             skipNewlines()
                             val bodyExpr = parseExpr()

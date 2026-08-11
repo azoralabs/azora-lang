@@ -56,9 +56,17 @@ import org.azora.lang.putIfAbsentCompat
  * name, and programs that never touch the library compile exactly as before.
  */
 class StdlibInjector private constructor(
-    private val programs: List<Program>,
+    rawPrograms: List<Program>,
     private val configOverrides: Map<String, String>,
 ) {
+    /**
+     * Library modules with their declaration-name macros already resolved, so the
+     * index registers `azPoke8` rather than the unexpanded `@foreignName(…)` that
+     * only the declaring module could ever name.
+     */
+    private val programs: List<Program> =
+        org.azora.lang.frontend.MacroExpander.expandDeclarationNames(rawPrograms)
+
     private data class RealmTypeExport(
         val shortName: String,
         val qualifier: String,
@@ -92,9 +100,10 @@ class StdlibInjector private constructor(
             AzStdlib.loadPrograms()
             val typeListEnv = AzStdlib.comptimeLists.toMutableMap()
             val enumEnv = AzStdlib.declaredEnums.toMutableMap()
+            val listRealms = AzStdlib.comptimeListRealms.toMutableMap()
             val additionalPrograms = additionalSources.map { (path, source) ->
                 val program = try {
-                    Parser(Lexer(source).tokenize(), typeListEnv, enumEnv).parse()
+                    Parser(Lexer(source).tokenize(), typeListEnv, enumEnv, typeListRealm = listRealms).parse()
                 } catch (error: Exception) {
                     throw IllegalArgumentException(
                         "Failed to parse library source '$path': ${error.message ?: error.toString()}",
@@ -296,6 +305,100 @@ class StdlibInjector private constructor(
             }
         }
         return errors
+    }
+
+    /**
+     * The modules a single unit imports, as edges in the dependency graph.
+     *
+     * A wildcard stands for every module below its namespace, and a dotted path
+     * that names an item rather than a module contributes an edge to the module
+     * that declares it - both are real dependencies even though neither spells a
+     * module name outright.
+     */
+    private fun importedModulesOf(program: Program, known: Set<String>): Set<String> {
+        val edges = linkedSetOf<String>()
+        for (item in program.items) {
+            if (item !is TopLevel.UseImport) continue
+            for ((path, selector) in item.imports) {
+                when {
+                    selector == "*" -> known.filterTo(edges) { it.startsWith("$path.") }
+                    path in known -> edges.add(path)
+                    else -> resolveSelectedLibraryPath(path)?.let { (module, _) ->
+                        if (module in known) edges.add(module)
+                    }
+                }
+            }
+        }
+        return edges
+    }
+
+    /**
+     * Rejects import cycles between modules.
+     *
+     * Two modules that import each other have no order in which either can be
+     * compiled first: every declaration one exposes may depend on the other, so
+     * name resolution, type checking and initialization all become order-
+     * dependent. Layering is the fix - move whatever both need into a module
+     * below them, or drop the edge that inverts the layering (a container that
+     * imports a serializer to wear its decorator, say).
+     *
+     * The check spans the whole unit, entry program included, so a cycle is
+     * reported once with the full path that closes it.
+     */
+    fun validateModuleCycles(program: Program): List<String> {
+        // The entry's own module is not in the library index, so it has to join
+        // the known set explicitly - otherwise an edge from a library back to the
+        // entry is silently dropped and the cycle it closes goes unreported.
+        val known = index.modules.keys + setOfNotNull(program.moduleName)
+        val graph = LinkedHashMap<String, Set<String>>()
+        for (library in programs) {
+            val module = library.moduleName ?: continue
+            graph[module] = graph.getOrElse(module) { emptySet() } + importedModulesOf(library, known)
+        }
+        program.moduleName?.let {
+            graph[it] = graph.getOrElse(it) { emptySet() } + importedModulesOf(program, known)
+        }
+
+        // Iterative DFS: an edge back onto the current path closes a cycle. Kotlin
+        // recursion here would be bounded by module count, but the explicit stack
+        // keeps the reported path exact and the traversal allocation-free per node.
+        val errors = linkedSetOf<String>()
+        val visited = mutableSetOf<String>()
+        val onPath = mutableSetOf<String>()
+        val path = mutableListOf<String>()
+        for (start in graph.keys) {
+            if (start in visited) continue
+            val stack = mutableListOf(start to graph.getValue(start).iterator())
+            visited.add(start)
+            onPath.add(start)
+            path.add(start)
+            while (stack.isNotEmpty()) {
+                val (node, pending) = stack.last()
+                if (!pending.hasNext()) {
+                    stack.removeAt(stack.lastIndex)
+                    onPath.remove(node)
+                    path.removeAt(path.lastIndex)
+                    continue
+                }
+                val next = pending.next()
+                if (next !in graph) continue
+                if (next in onPath) {
+                    val cycle = path.subList(path.indexOf(next), path.size) + next
+                    errors.add(
+                        "circular dependency between modules: ${cycle.joinToString(" -> ")} - " +
+                            "modules may not import each other, directly or transitively; move the shared " +
+                            "declarations into a module both can import"
+                    )
+                    continue
+                }
+                if (next in visited) continue
+                visited.add(next)
+                onPath.add(next)
+                path.add(next)
+                stack.add(next to graph.getValue(next).iterator())
+            }
+        }
+        return errors.toList()
     }
 
     /**

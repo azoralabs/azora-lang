@@ -155,6 +155,11 @@ class Compiler(
             )
         } catch (error: IllegalArgumentException) {
             return CompilationResult.Failure(listOf(error.message ?: "library loading failed"))
+        } catch (error: IllegalStateException) {
+            // An unusable standard library - wrong version, or a root with no
+            // version marker - is something the user can fix, so it is reported
+            // like any other compilation failure rather than thrown at them.
+            return CompilationResult.Failure(listOf(error.message ?: "standard library unavailable"))
         }
 
         // ===============================================================

@@ -16,6 +16,8 @@
 
 package org.azora.lang.frontend
 
+import org.azora.lang.putIfAbsentCompat
+
 /**
  * Expands `meta` macros ([TopLevel.Meta] / [Expr.MetaInvoke]) into ordinary
  * expressions, then drops the macro declarations.
@@ -93,7 +95,7 @@ internal object MacroExpander {
             for (item in program.items) {
                 if (item !is TopLevel.Meta || item.name.startsWith("__infix__")) continue
                 macroArms.getOrPut(item.name) { mutableListOf() }.addAll(item.arms)
-                macroParameters.putIfAbsent(item.name, item.parameter)
+                macroParameters.putIfAbsentCompat(item.name, item.parameter)
             }
         }
         if (macroArms.isEmpty()) return programs
@@ -178,7 +180,7 @@ internal object MacroExpander {
                 if (op != item.name) infixOps.add(op)
                 else {
                     macroArms.getOrPut(item.name) { mutableListOf() }.addAll(item.arms)
-                    macroParameters.putIfAbsent(item.name, item.parameter)
+                    macroParameters.putIfAbsentCompat(item.name, item.parameter)
                 }
             } else {
                 nonMacros.add(item)

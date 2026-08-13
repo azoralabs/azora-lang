@@ -1,0 +1,171 @@
+/*
+ * Copyright 2026 AzoraLabs
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+module std.ai
+
+import std.container.list
+
+/**
+ * @file std/ai
+ *
+ * Structured model-facing APIs. Values are ordinary Azora data; calls that
+ * contact a provider or accelerator are explicit bridge operations.
+ *
+ * @since 0.1
+ */
+
+realm std {
+    /** The origin of a message in a structured model conversation. */
+    @Experimental(since: "0.1")
+    enum Role {
+        System
+        User
+        Assistant
+        Tool
+    }
+
+    /** One role-labelled message. */
+    @Experimental(since: "0.1")
+    pack Message {
+        var role: Role
+        var content: String
+        var name: String
+    }
+
+    /** An ordered conversation; the application owns its lifecycle. */
+    @Experimental(since: "0.1")
+    pack Conversation {
+        var messages: ArrayList<Message>
+    }
+
+    /** Provider-neutral generation controls. */
+    @Experimental(since: "0.1")
+    pack GenerationOptions {
+        var maxTokens: Int = 1024
+        var temperature: Double = 0.0
+        var topP: Double = 1.0
+        var seed: Int = -1
+        var allowTools: Bool = false
+    }
+
+    /** A capability an application may explicitly offer to a model. */
+    @Experimental(since: "0.1")
+    pack ToolSpec {
+        var name: String
+        var description: String
+        var schema: String
+    }
+
+    /** Opaque provider/model connection. */
+    @Experimental(since: "0.1")
+    bridge pack AiModel
+
+    /** Creates an empty conversation. */
+    @Experimental(since: "0.1")
+    func conversation(): Conversation {
+        return Conversation(ArrayList<Message>())
+    }
+
+    /** Creates default generation settings. */
+    @Experimental(since: "0.1")
+    func generationOptions(): GenerationOptions {
+        return GenerationOptions()
+    }
+
+    /** Creates a system message. */
+    @Experimental(since: "0.1")
+    func systemMessage(content: String): Message {
+        return Message(Role.System, content, "")
+    }
+
+    /** Creates a user message. */
+    @Experimental(since: "0.1")
+    func userMessage(content: String): Message {
+        return Message(Role.User, content, "")
+    }
+
+    /** Creates an assistant message. */
+    @Experimental(since: "0.1")
+    func assistantMessage(content: String): Message {
+        return Message(Role.Assistant, content, "")
+    }
+
+    /** Creates a tool-result message with an explicit tool name. */
+    @Experimental(since: "0.1")
+    func toolMessage(name: String, content: String): Message {
+        return Message(Role.Tool, content, name)
+    }
+
+    impl Conversation {
+        /** Appends one structured message. */
+        @Experimental(since: "0.1")
+        func add[self: Self!](message: Message): Unit {
+            self.messages.add(message)
+        }
+
+        /** Appends a system message. */
+        @Experimental(since: "0.1")
+        func system[self: Self!](content: String): Unit {
+            self.add(systemMessage(content))
+        }
+
+        /** Appends a user message. */
+        @Experimental(since: "0.1")
+        func user[self: Self!](content: String): Unit {
+            self.add(userMessage(content))
+        }
+
+        /** Appends an assistant message. */
+        @Experimental(since: "0.1")
+        func assistant[self: Self!](content: String): Unit {
+            self.add(assistantMessage(content))
+        }
+
+        /** Returns the number of messages currently stored. */
+        @Experimental(since: "0.1")
+        prop size[self: Self&]: Int = self.messages.size
+    }
+
+    /** Connects to a provider/model pair; the selected backend supplies it. */
+    @Experimental(since: "0.1")
+    bridge func connect(provider: String, model: String): AiModel
+
+    /** Generates one assistant message from structured conversation data. */
+    @Experimental(since: "0.1")
+    bridge func complete(
+        model: AiModel,
+        conversation: Conversation,
+        options: GenerationOptions,
+    ): Message
+
+    /** Produces an embedding vector for one input string. */
+    @Experimental(since: "0.1")
+    bridge func embed(model: AiModel, text: String): Array<Double>
+
+    /** Performs one simple system/user request through the explicit bridge. */
+    @Experimental(since: "0.1")
+    func ask(
+        model: AiModel,
+        system: String,
+        question: String,
+        options: GenerationOptions,
+    ): Message {
+        var chat = conversation()
+        chat.system(system)
+        chat.user(question)
+        return complete(model, chat, options)
+    }
+}

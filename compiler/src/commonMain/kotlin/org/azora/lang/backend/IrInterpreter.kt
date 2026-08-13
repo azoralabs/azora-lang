@@ -1578,6 +1578,79 @@ class IrInterpreter {
         if (expr.name == "__std_convert_toString") {
             return formatValue(args.firstOrNull())
         }
+
+        // std.os - the process and its surroundings. Implemented here rather
+        // than as C declarations because `azora run` goes through this
+        // interpreter, which has no FFI to call them with.
+        if (expr.name.isIntrinsic("envVar")) return osEnvVar(args[0] as String) ?: ""
+        if (expr.name.isIntrinsic("hasEnvVar")) return osEnvVar(args[0] as String) != null
+        if (expr.name.isIntrinsic("setEnvVar")) {
+            return osSetEnvVar(args[0] as String, args[1] as String)
+        }
+        if (expr.name.isIntrinsic("currentDirectory")) return osCurrentDirectory()
+        if (expr.name.isIntrinsic("changeDirectory")) return osChangeDirectory(args[0] as String)
+        if (expr.name.isIntrinsic("processId")) return osProcessId().toLong()
+        // std.filesystem. Each bridge reports failure as the *name* of a
+        // FileError variant in its first slot, so the platform-to-language error
+        // mapping happens once, in FsAccess, and is read back once, in `_raise`.
+        if (expr.name.isIntrinsic("fsRead")) {
+            val result = fsReadText(args[0] as String)
+            return mutableListOf<Any?>(result.error ?: "", result.value ?: "")
+        }
+        if (expr.name.isIntrinsic("fsReadBytes")) {
+            val result = fsReadBytes(args[0] as String)
+            val bytes = result.value
+            if (bytes == null) return mutableListOf<Any?>(1L)
+            val out = ArrayList<Any?>(bytes.size + 1)
+            out.add(0L)
+            for (byte in bytes) out.add(byte.toLong())
+            return out
+        }
+        if (expr.name.isIntrinsic("fsWrite")) {
+            return fsWriteText(args[0] as String, args[1] as String, args[2] as Boolean) ?: ""
+        }
+        if (expr.name.isIntrinsic("fsList")) {
+            val result = fsList(args[0] as String)
+            val out = mutableListOf<Any?>(result.error ?: "")
+            result.value?.forEach { out.add(it) }
+            return out
+        }
+        if (expr.name.isIntrinsic("fsStat")) {
+            val result = fsStat(args[0] as String)
+            val info = result.value
+                ?: return mutableListOf<Any?>(result.error ?: "ReadFailed", "", "", "", "")
+            return mutableListOf<Any?>(
+                "",
+                info.kind,
+                info.size.toString(),
+                info.modifiedSeconds.toString(),
+                info.modifiedNanoseconds.toString(),
+            )
+        }
+        if (expr.name.isIntrinsic("fsExists")) return fsExists(args[0] as String)
+        if (expr.name.isIntrinsic("fsMutate")) {
+            return fsMutate(args[0] as String, args[1] as String, args[2] as String) ?: ""
+        }
+        if (expr.name.isIntrinsic("fsPathQuery")) {
+            val argument = args[1] as String
+            val result = when (args[0] as String) {
+                "canonical" -> fsCanonical(argument)
+                "temporaryDirectory" -> fsTemporaryDirectory()
+                "createTemporaryDirectory" -> fsCreateTemporaryDirectory(argument)
+                else -> FsOutcome.failed("Unsupported")
+            }
+            return mutableListOf<Any?>(result.error ?: "", result.value ?: "")
+        }
+        if (expr.name.isIntrinsic("commandParts")) {
+            val result = osRunCommand(args[0] as String)
+            // Three values through a bridge that returns one; `std::runCommand`
+            // is the wrapper that turns them back into a ProcessResult.
+            return mutableListOf<Any?>(
+                result.exitCode.toString(),
+                result.started.toString(),
+                result.output,
+            )
+        }
         if (expr.name.isIntrinsic("stringLength")) return (args[0] as String).length.toLong()
         if (expr.name.isIntrinsic("charAt")) return (args[0] as String)[(args[1] as Number).toInt()]
         if (expr.name.isIntrinsic("substring")) {

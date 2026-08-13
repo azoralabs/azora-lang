@@ -1,0 +1,221 @@
+/*
+ * Copyright 2026 AzoraLabs
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+module std.ml
+
+import std.container.array
+import std.container.list
+import std.math
+
+/**
+ * @file std/ml
+ *
+ * Small backend-neutral machine-learning primitives. Numerical helpers are
+ * implemented in Azora; model loading, training, and prediction are bridges.
+ *
+ * @since 0.1
+ */
+
+realm std {
+    /** Activation functions understood by portable model descriptions. */
+    @Experimental(since: "0.1")
+    enum Activation {
+        Linear
+        Relu
+        Sigmoid
+        Tanh
+    }
+
+    /** A dense tensor with explicit shape and row-major values. */
+    @Experimental(since: "0.1")
+    pack Tensor {
+        var shape: Array<Int>
+        var values: Array<Double>
+    }
+
+    /** Paired input and target tensors. */
+    @Experimental(since: "0.1")
+    pack Dataset {
+        var inputs: Array<Tensor>
+        var targets: Array<Tensor>
+    }
+
+    /** Bounded training configuration. */
+    @Experimental(since: "0.1")
+    pack TrainingOptions {
+        var epochs: Int = 1
+        var batchSize: Int = 1
+        var learningRate: Double = 0.001
+        var shuffle: Bool = true
+        var checkpointPath: String = ""
+    }
+
+    /** Summary returned by a training backend. */
+    @Experimental(since: "0.1")
+    pack TrainingReport {
+        var epochsCompleted: Int
+        var examplesSeen: Int
+        var finalLoss: Double
+        var stoppedByLimit: Bool
+    }
+
+    /** Opaque model and optimizer handles owned by a backend. */
+    @Experimental(since: "0.1")
+    bridge pack MlModel
+
+    @Experimental(since: "0.1")
+    bridge pack MlOptimizer
+
+    /** Creates a dense tensor after checking its shape and storage sizes. */
+    @Experimental(since: "0.1")
+    func tensor(shape: Array<Int>, values: Array<Double>): Tensor {
+        var expected = 1
+        for i in 0..<shape.size {
+            assert shape[i] > 0 { "tensor dimensions must be positive" }
+            expected = expected * shape[i]
+        }
+        assert expected == values.size { "tensor shape does not match values" }
+        return Tensor(shape, values)
+    }
+
+    /** Creates a one-dimensional tensor from values. */
+    @Experimental(since: "0.1")
+    func vector(values: Array<Double>): Tensor {
+        var shape: Array<Int> = Array::fill<Int>(1)
+        shape[0] = values.size
+        return tensor(shape, values)
+    }
+
+    /** Creates a zero-filled vector. */
+    @Experimental(since: "0.1")
+    func zeros(size: Int): Array<Double> {
+        assert size >= 0 { "zero vector size must be non-negative" }
+        var result: Array<Double> = Array::fill<Double>(size)
+        for i in 0..<size {
+            result[i] = 0.0
+        }
+        return result
+    }
+
+    /** Creates a one-filled vector. */
+    @Experimental(since: "0.1")
+    func ones(size: Int): Array<Double> {
+        assert size >= 0 { "one vector size must be non-negative" }
+        var result: Array<Double> = Array::fill<Double>(size)
+        for i in 0..<size {
+            result[i] = 1.0
+        }
+        return result
+    }
+
+    /** Applies ReLU element by element. */
+    @Experimental(since: "0.1")
+    func relu(values: Array<Double>): Array<Double> {
+        var result: Array<Double> = Array::fill<Double>(values.size)
+        for i in 0..<values.size {
+            result[i] = if values[i] > 0.0 { values[i] } else { 0.0 }
+        }
+        return result
+    }
+
+    /** Computes numerically stable softmax probabilities. */
+    @Experimental(since: "0.1")
+    func softmax(values: Array<Double>): Array<Double> {
+        assert values.size > 0 { "softmax needs at least one value" }
+        var maximum = values[0]
+        for i in 1..<values.size {
+            if values[i] > maximum { maximum = values[i] }
+        }
+        var result: Array<Double> = Array::fill<Double>(values.size)
+        var total = 0.0
+        for i in 0..<values.size {
+            result[i] = std::exp(values[i] - maximum)
+            total = total + result[i]
+        }
+        for i in 0..<values.size {
+            result[i] = result[i] / total
+        }
+        return result
+    }
+
+    /** Returns the index of the largest value. */
+    @Experimental(since: "0.1")
+    func argmax(values: Array<Double>): Int {
+        assert values.size > 0 { "argmax needs at least one value" }
+        var best = 0
+        for i in 1..<values.size {
+            if values[i] > values[best] { best = i }
+        }
+        return best
+    }
+
+    /** Computes mean squared error over two equally sized vectors. */
+    @Experimental(since: "0.1")
+    func meanSquaredError(predicted: Array<Double>, target: Array<Double>): Double {
+        assert predicted.size == target.size { "metric vectors must have equal size" }
+        if predicted.size == 0 { return 0.0 }
+        var total = 0.0
+        for i in 0..<predicted.size {
+            fin delta = predicted[i] - target[i]
+            total = total + delta * delta
+        }
+        return total / (predicted.size as Double)
+    }
+
+    /** Computes classification accuracy over integer labels. */
+    @Experimental(since: "0.1")
+    func accuracy(predicted: Array<Int>, target: Array<Int>): Double {
+        assert predicted.size == target.size { "accuracy vectors must have equal size" }
+        if predicted.size == 0 { return 0.0 }
+        var correct = 0
+        for i in 0..<predicted.size {
+            if predicted[i] == target[i] { correct += 1 }
+        }
+        return correct as Double / (predicted.size as Double)
+    }
+
+    /** Creates a backend dataset from paired tensors. */
+    @Experimental(since: "0.1")
+    func dataset(inputs: Array<Tensor>, targets: Array<Tensor>): Dataset {
+        assert inputs.size == targets.size { "dataset inputs and targets differ" }
+        return Dataset(inputs, targets)
+    }
+
+    /** Connects to a model artifact or provider. */
+    @Experimental(since: "0.1")
+    bridge func loadModel(provider: String, artifact: String): MlModel
+
+    /** Creates a backend optimizer. */
+    @Experimental(since: "0.1")
+    bridge func optimizer(kind: String, learningRate: Double): MlOptimizer
+
+    /** Trains a model under explicit limits. */
+    @Experimental(since: "0.1")
+    bridge func fit(
+        model: MlModel,
+        data: Dataset,
+        optimizer: MlOptimizer,
+        options: TrainingOptions,
+    ): TrainingReport
+
+    /** Runs inference on one tensor. */
+    @Experimental(since: "0.1")
+    bridge func predict(model: MlModel, input: Tensor): Tensor
+
+    /** Persists a model checkpoint through the selected backend. */
+    @Experimental(since: "0.1")
+    bridge func saveModel(model: MlModel, path: String): Unit
+}

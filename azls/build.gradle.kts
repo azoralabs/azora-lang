@@ -36,6 +36,9 @@ val fatJar = tasks.register<Jar>("fatJar") {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     manifest {
         attributes["Implementation-Title"] = "Azora Language Server"
+        // Runnable as a process, so the server is reachable from editors that
+        // cannot load it into their own JVM. Studio still loads it reflectively.
+        attributes["Main-Class"] = "org.azora.azls.AzlsStdio"
     }
     from(sourceSets.main.get().output)
     dependsOn(configurations.runtimeClasspath)

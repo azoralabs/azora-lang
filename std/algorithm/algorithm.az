@@ -87,28 +87,88 @@ realm std {
     }
 
     /**
-     * Sort by a key function - applies key to each element and sorts by key value.
-     * Uses insertion sort on key-value pairs.
+     * Sorts by a key extracted from each element.
+     *
+     * The key is its own type: sorting people by age means a `(Person) -> Int`,
+     * and a key function forced to return the element type could not express
+     * that at all. `K` need only be [Order] - the element type need not be
+     * ordered, which is the point of sorting by a key.
+     *
+     * Stable, and O(n log n) - the same bottom-up merge [sort] uses, carrying
+     * the computed keys alongside the elements so a key is never recomputed
+     * mid-sort.
+     *
+     * @param arr The array to sort.
+     * @param key Extracts the value to order by.
+     * @return A new array ordered by [key]; the original is unchanged.
      */
     @Experimental(since: "0.1")
-    func sortBy<T>(arr: Array<T>, key: (T) -> T): Array<T> {
-        var result: Array<T> = Array::fill<T>(arr.size)
-        var i = 0
-        while i < arr.size {
+    func sortBy<T, K>(arr: Array<T>, key: (T) -> K): Array<T> where K: Order
+    out {
+        assert it.size == arr.size { "sortBy must preserve length" }
+    } scope {
+        fin count = arr.size
+        var result: Array<T> = Array::fill<T>(count)
+        for i in 0..<count {
             result[i] = arr[i]
-            i += 1
         }
-        i = 1
-        while i < result.size {
-            var current: T = result[i]
-            var currentKey: T = key(current)
-            var j: Int = i - 1
-            while j >= 0 && key(result[j]) > currentKey {
-                result[j + 1] = result[j]
-                j -= 1
+        if count <= 1 {
+            return result
+        }
+
+        // Keys are computed once per element rather than once per comparison:
+        // a key function may be arbitrarily expensive, and a comparison sort
+        // asks O(n log n) times.
+        var keys: Array<K> = Array::fill<K>(count)
+        for i in 0..<count {
+            keys[i] = key(result[i])
+        }
+
+        var width = 1
+        var scratch: Array<T> = Array::fill<T>(count)
+        var scratchKeys: Array<K> = Array::fill<K>(count)
+        while width < count {
+            var lo = 0
+            while lo < count {
+                var mid = lo + width
+                if mid > count {
+                    mid = count
+                }
+                var hi = lo + width + width
+                if hi > count {
+                    hi = count
+                }
+                var left = lo
+                var right = mid
+                var at = lo
+                while at < hi {
+                    fin takeLeft = if left >= mid {
+                        false
+                    } else if right >= hi {
+                        true
+                    } else {
+                        // `<=` on the left key: ties keep the earlier element,
+                        // which is what makes this stable.
+                        keys[left] <= keys[right]
+                    }
+                    if takeLeft {
+                        scratch[at] = result[left]
+                        scratchKeys[at] = keys[left]
+                        left += 1
+                    } else {
+                        scratch[at] = result[right]
+                        scratchKeys[at] = keys[right]
+                        right += 1
+                    }
+                    at += 1
+                }
+                lo = lo + width + width
             }
-            result[j + 1] = current
-            i += 1
+            for i in 0..<count {
+                result[i] = scratch[i]
+                keys[i] = scratchKeys[i]
+            }
+            width = width + width
         }
         return result
     }

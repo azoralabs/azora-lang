@@ -1,0 +1,356 @@
+/*
+ * Copyright 2026 AzoraLabs
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+module std.quantum
+
+import std.container.array
+import std.container.list
+import std.math
+
+/**
+ * @file std/quantum
+ *
+ * Backend-neutral quantum circuits and small algorithm builders.
+ *
+ * This module constructs circuits; it does not perform execution by itself.
+ * `connect` and `execute` are bridge declarations implemented by a simulator,
+ * OpenQASM exporter, or a vendor-specific QPU adapter.
+ *
+ * @since 0.1
+ */
+
+realm std {
+    /** The operation vocabulary understood by the portable circuit IR. */
+    @Experimental(since: "0.1")
+    enum GateKind {
+        Identity
+        X
+        Y
+        Z
+        H
+        S
+        T
+        Rx
+        Ry
+        Rz
+        Phase
+        CNot
+        ControlledPhase
+        Swap
+        Measure
+        MultiControlledZ
+        ClassicalX
+        ClassicalZ
+    }
+
+    /** Measurement basis for a backend that supports basis selection. */
+    @Experimental(since: "0.1")
+    enum MeasurementBasis {
+        Z
+        X
+        Y
+    }
+
+    /** One portable gate or measurement operation. */
+    @Experimental(since: "0.1")
+    pack Gate {
+        var kind: GateKind
+        var target: Int
+        var control: Int
+        var parameter: Double
+    }
+
+    /** An owned, ordered sequence of operations over a fixed qubit count. */
+    @Experimental(since: "0.1")
+    pack Circuit {
+        var qubits: Int
+        var gates: ArrayList<Gate>
+    }
+
+    /** One measured bit string and the number of shots that produced it. */
+    @Experimental(since: "0.1")
+    pack Sample {
+        var bits: Array<Int>
+        var count: Int
+    }
+
+    /** Opaque connection to a simulator, exporter, or physical QPU. */
+    @Experimental(since: "0.1")
+    bridge pack QuantumDevice
+
+    /** Creates an empty circuit with [qubits] logical qubits. */
+    @Experimental(since: "0.1")
+    func circuit(qubits: Int): Circuit {
+        assert qubits > 0 { "a quantum circuit needs at least one qubit" }
+        return Circuit(qubits, ArrayList<Gate>())
+    }
+
+    impl Circuit {
+        /** Adds a fully specified operation to the circuit. */
+        @Experimental(since: "0.1")
+        func add[self: Self!](operation: Gate) {
+            assert operation.target >= 0 && operation.target < self.qubits {
+                "gate target is outside the circuit"
+            }
+            if operation.control >= 0 && operation.kind != GateKind.ClassicalX &&
+                operation.kind != GateKind.ClassicalZ {
+                assert operation.control < self.qubits {
+                    "gate control is outside the circuit"
+                }
+            }
+            self.gates.add(operation)
+        }
+
+        /** Appends a Hadamard gate. */
+        @Experimental(since: "0.1")
+        func h[self: Self!](target: Int) {
+            self.add(Gate(GateKind.H, target, -1, 0.0))
+        }
+
+        /** Appends a Pauli-X gate. */
+        @Experimental(since: "0.1")
+        func x[self: Self!](target: Int) {
+            self.add(Gate(GateKind.X, target, -1, 0.0))
+        }
+
+        /** Appends a Pauli-Y gate. */
+        @Experimental(since: "0.1")
+        func y[self: Self!](target: Int) {
+            self.add(Gate(GateKind.Y, target, -1, 0.0))
+        }
+
+        /** Appends a Pauli-Z gate. */
+        @Experimental(since: "0.1")
+        func z[self: Self!](target: Int) {
+            self.add(Gate(GateKind.Z, target, -1, 0.0))
+        }
+
+        /** Appends an arbitrary-angle X rotation, in radians. */
+        @Experimental(since: "0.1")
+        func rotateX[self: Self!](target: Int, angle: Double) {
+            self.add(Gate(GateKind.Rx, target, -1, angle))
+        }
+
+        /** Appends an arbitrary-angle Y rotation, in radians. */
+        @Experimental(since: "0.1")
+        func rotateY[self: Self!](target: Int, angle: Double) {
+            self.add(Gate(GateKind.Ry, target, -1, angle))
+        }
+
+        /** Appends an arbitrary-angle Z rotation, in radians. */
+        @Experimental(since: "0.1")
+        func rotateZ[self: Self!](target: Int, angle: Double) {
+            self.add(Gate(GateKind.Rz, target, -1, angle))
+        }
+
+        /** Appends a controlled-NOT gate. */
+        @Experimental(since: "0.1")
+        func cnot[self: Self!](control: Int, target: Int) {
+            assert control != target { "a controlled gate needs two qubits" }
+            self.add(Gate(GateKind.CNot, target, control, 0.0))
+        }
+
+        /** Appends a controlled phase rotation, in radians. */
+        @Experimental(since: "0.1")
+        func controlledPhase[self: Self!](control: Int, target: Int, angle: Double) {
+            assert control != target { "a controlled gate needs two qubits" }
+            self.add(Gate(GateKind.ControlledPhase, target, control, angle))
+        }
+
+        /** Appends a swap gate. */
+        @Experimental(since: "0.1")
+        func swap[self: Self!](first: Int, second: Int) {
+            assert first != second { "a swap gate needs two qubits" }
+            self.add(Gate(GateKind.Swap, first, second, 0.0))
+        }
+
+        /** Appends a measurement in the requested basis. */
+        @Experimental(since: "0.1")
+        func measure[self: Self!](target: Int, basis: MeasurementBasis): Unit {
+            fin basisCode = if basis == MeasurementBasis.X {
+                1
+            } else if basis == MeasurementBasis.Y {
+                2
+            } else {
+                0
+            }
+            self.add(Gate(GateKind.Measure, target, -1, basisCode as Double))
+        }
+
+        /** Appends the portable marked-state phase oracle used by Grover. */
+        @Experimental(since: "0.1")
+        func markState[self: Self!](state: Int) {
+            self.add(Gate(GateKind.MultiControlledZ, 0, -1, state as Double))
+        }
+
+        /** Appends a classical feed-forward X correction. */
+        @Experimental(since: "0.1")
+        func classicalX[self: Self!](target: Int, bit: Int) {
+            self.add(Gate(GateKind.ClassicalX, target, bit, 0.0))
+        }
+
+        /** Appends a classical feed-forward Z correction. */
+        @Experimental(since: "0.1")
+        func classicalZ[self: Self!](target: Int, bit: Int) {
+            self.add(Gate(GateKind.ClassicalZ, target, bit, 0.0))
+        }
+    }
+
+    /** Connects to a backend by name; the target supplies the implementation. */
+    @Experimental(since: "0.1")
+    bridge func connect(backend: String): QuantumDevice
+
+    /** Executes a circuit and returns counts grouped by measured bit string. */
+    @Experimental(since: "0.1")
+    bridge func execute(device: QuantumDevice, circuit: Circuit, shots: Int): Array<Sample>
+
+    /** Returns the recommended Grover iteration count for one marked state. */
+    @Experimental(since: "0.1")
+    func groverIterations(qubits: Int): Int {
+        assert qubits > 0 { "Grover search needs at least one qubit" }
+        fin states = 1 << qubits
+        fin estimate = (std::PI * std::sqrt(states as Double) / 4.0) as Int
+        return if estimate < 1 { 1 } else { estimate }
+    }
+
+    /** Creates a two-qubit Bell-state preparation and measurement circuit. */
+    @Experimental(since: "0.1")
+    func bellPair(): Circuit {
+        var result = circuit(2)
+        result.h(0)
+        result.cnot(0, 1)
+        result.measure(0, MeasurementBasis.Z)
+        result.measure(1, MeasurementBasis.Z)
+        return result
+    }
+
+    /** Creates the three-qubit teleportation protocol with feed-forward nodes. */
+    @Experimental(since: "0.1")
+    func teleportation(): Circuit {
+        var result = circuit(3)
+        result.h(1)
+        result.cnot(1, 2)
+        result.cnot(0, 1)
+        result.h(0)
+        result.measure(0, MeasurementBasis.Z)
+        result.measure(1, MeasurementBasis.Z)
+        result.classicalX(2, 1)
+        result.classicalZ(2, 0)
+        return result
+    }
+
+    /**
+     * Creates a Deutsch-Jozsa circuit for the parity oracle selected by [mask].
+     * Zero is the constant-zero oracle; any non-zero mask is balanced.
+     */
+    @Experimental(since: "0.1")
+    func deutschJozsa(qubits: Int, mask: Int): Circuit {
+        assert qubits > 0 { "Deutsch-Jozsa needs at least one input qubit" }
+        var result = circuit(qubits + 1)
+        result.x(qubits)
+        for i in 0..<qubits {
+            result.h(i)
+        }
+        result.h(qubits)
+        for i in 0..<qubits {
+            if (mask & (1 << i)) != 0 {
+                result.cnot(i, qubits)
+            }
+        }
+        for i in 0..<qubits {
+            result.h(i)
+            result.measure(i, MeasurementBasis.Z)
+        }
+        return result
+    }
+
+    /** Creates the Bernstein-Vazirani circuit for a hidden classical bit string. */
+    @Experimental(since: "0.1")
+    func bernsteinVazirani(secret: Array<Int>): Circuit {
+        assert secret.size > 0 { "Bernstein-Vazirani needs a non-empty secret" }
+        var result = circuit(secret.size + 1)
+        fin ancilla = secret.size
+        result.x(ancilla)
+        for i in 0..<secret.size {
+            result.h(i)
+        }
+        result.h(ancilla)
+        for i in 0..<secret.size {
+            if secret[i] != 0 {
+                result.cnot(i, ancilla)
+            }
+        }
+        for i in 0..<secret.size {
+            result.h(i)
+            result.measure(i, MeasurementBasis.Z)
+        }
+        return result
+    }
+
+    /** Creates Grover search for one marked computational-basis state. */
+    @Experimental(since: "0.1")
+    func groverSearch(qubits: Int, markedState: Int): Circuit {
+        assert qubits > 0 { "Grover search needs at least one qubit" }
+        assert markedState >= 0 && markedState < (1 << qubits) {
+            "Grover marked state is outside the search space"
+        }
+        var result = circuit(qubits)
+        for i in 0..<qubits {
+            result.h(i)
+        }
+        fin rounds = groverIterations(qubits)
+        for i in 0..<rounds {
+            result.markState(markedState)
+            for j in 0..<qubits {
+                result.h(j)
+                result.x(j)
+            }
+            result.markState(0)
+            for j in 0..<qubits {
+                result.x(j)
+                result.h(j)
+            }
+        }
+        for i in 0..<qubits {
+            result.measure(i, MeasurementBasis.Z)
+        }
+        return result
+    }
+
+    /** Creates the quantum Fourier transform over [qubits] input qubits. */
+    @Experimental(since: "0.1")
+    func quantumFourierTransform(qubits: Int): Circuit {
+        assert qubits > 0 { "the quantum Fourier transform needs qubits" }
+        var result = circuit(qubits)
+        var i = 0
+        while i < qubits {
+            result.h(i)
+            var distance = 1
+            while i + distance < qubits {
+                fin denominator = (1 << distance) as Double
+                result.controlledPhase(i + distance, i, std::PI / denominator)
+                distance += 1
+            }
+            i += 1
+        }
+        var left = 0
+        while left < qubits / 2 {
+            result.swap(left, qubits - left - 1)
+            left += 1
+        }
+        return result
+    }
+}

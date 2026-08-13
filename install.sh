@@ -187,6 +187,33 @@ rm -rf "$INSTALL_DIR/Internal/Std/docs/node_modules" 2>/dev/null || true
 rm -rf "$INSTALL_DIR/Internal/Std/docs/dist" 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
+# Install the standard library where the compiler reads it
+#
+# `std/` sits beside `lib/` in the install prefix; the compiler resolves it from
+# there (see AzStdlib's resolution order). This is the copy that is *compiled
+# against* - `Internal/Std` above exists for IDE indexing. Shipping the sources
+# is what makes the standard library readable and patchable without a compiler
+# rebuild, so a missing tree is a hard failure rather than a warning.
+# ---------------------------------------------------------------------------
+if [ -d "$SCRIPT_DIR/std" ]; then
+    STD_SRC="$SCRIPT_DIR/std"
+elif [ -d "$INSTALL_DIR/Internal/Std" ]; then
+    STD_SRC="$INSTALL_DIR/Internal/Std"
+else
+    echo "  Error: no std/ tree to install; the compiler would fall back to its"
+    echo "         bundled copy and users could not read or patch the library."
+    exit 1
+fi
+echo "  Installing standard library sources..."
+rm -rf "$INSTALL_DIR/std"
+cp -R "$STD_SRC" "$INSTALL_DIR/std"
+if [ ! -f "$INSTALL_DIR/std/STDLIB_VERSION" ]; then
+    echo "  Error: $INSTALL_DIR/std/STDLIB_VERSION is missing; the compiler cannot"
+    echo "         verify the standard library matches it."
+    exit 1
+fi
+
+# ---------------------------------------------------------------------------
 # Write VERSION
 # ---------------------------------------------------------------------------
 VERSION="unknown"

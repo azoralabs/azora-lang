@@ -172,17 +172,12 @@ lines).
 - ⬜ **`use realmName` at a use site**, the equivalent of C++'s
   `using namespace std`: bring a realm's members into scope unqualified for the
   rest of the file or block, so `println(x)` works where `std::println(x)` is
-  written today. is written today. `use realm std { … }` exists,
-  but it is a *declaration* form, we want "use std" -
-  it keeps a realm's own members bare where they are defined - and there is no
-  way for a consumer to open a realm.
+  written today. is written today.
   - ⬜ Scoping: file-level, block-level, or both
   - ⬜ Ambiguity rules when two opened realms export the same name; a
     collision should be an error at the use, naming both candidates, not a
     silent winner
   - ⬜ Precedence against local declarations, imports and the prelude
-  - ⬜ Selective opening (`use std::{println, format}`) and whether that is
-    the same feature or a second one
   - ⬜ Interaction with import gating: opening a realm must not import a module
     that was never asked for
 
@@ -263,16 +258,16 @@ generation. Every form the parser accepts:
   are two macros; any word may be a name, including keywords (`@with`, `@to`)
 - ✅ Name splicing (`oper$op`), compile-time type lists (`Numbers`, `Integers`,
   `FloatingPoints`, `SignedIntegers`, …)
-- ✅ Reflection handles and `inline for … in reflect<*>.withDeco<D>`, which
+- ✅ Reflection handles and `inline for … in reflect<*>.withAnnot<D>`, which
   unrolls to direct calls - no function values, no registry, nothing at runtime
 - ✅ `REFLECTION_DIP.MD` written
 - ⬜ **`reflect<T>.fields` and `ReflectedField` are declared and unreachable.**
   `inline for f in reflect<P>.fields` is rejected, and nothing can produce a
   `ReflectedField`. Implement iteration or delete the declarations
-- ⬜ `withDeco` unrolls into statements, not declarations: at top level it fails
+- ⬜ `withAnnot` unrolls into statements, not declarations: at top level it fails
   with `Unknown compile-time list`, so a library cannot generate a function per
   decorated type
-- ⬜ `withDeco<D>` is the **only** enumeration - no "every pack", no "every
+- ⬜ `withAnnot<D>` is the **only** enumeration - no "every pack", no "every
   implementer of a spec", no filter by realm. Discovery requires a decorator
 - ⬜ No method or signature reflection: a declaration's members, parameter types
   and return type are not askable
@@ -546,17 +541,25 @@ The standard library should be **read from the filesystem where the language is
 installed**, the way every other toolchain does it. In the browser the same
 files ship alongside the compiler and are read from there.
 
-- ⬜ `std/` installed as `.az` source next to the compiler, and found by a
-  documented resolution order (install prefix, environment override, project
-  override)
-- ⬜ The compiler reads it from disk instead of from an embedded blob
-- ⬜ Browser and playground: the same `.az` files shipped with the compiler and
-  read through a virtual filesystem, not a second code path
-- ⬜ A version handshake, so a compiler and a standard library that do not match
-  say so instead of failing strangely
-- ⬜ Users can point at a different standard library (vendored, patched, or a
-  version under test) without rebuilding the compiler
-- ⬜ Parse/inject caching, so reading from disk does not cost a compile
+- ✅ `std/` installed as `.az` source next to the compiler (`install.sh` copies
+  it to `$INSTALL_DIR/std`), found by a documented resolution order:
+  `AzStdlib.overrideRoot` → `AZORA_STDLIB` → project-local `std/` (walking up to
+- 
+  a workspace marker) → `$AZORA_HOME/std` → install prefix → bundled
+- ✅ The compiler reads it from disk instead of from an embedded blob.
+  `AzStdlibBundle` is now generated as *data only*; resolution, the handshake,
+  parsing and caching are hand-written in `AzStdlibLoader.kt`
+- ✅ Browser and playground: the same `.az` files ship inside the artifact and
+  are read through the same reader as a disk tree - the bundle is the virtual
+  filesystem, not a second code path (`stdlibDiskRoots()` is simply empty there)
+- ✅ A version handshake: a root must carry `STDLIB_VERSION`, checked against
+  `BuildConfig.VERSION`. A root the user *named* and that lacks the marker is
+  rejected; a merely *discovered* directory without one is skipped, so a stray
+  `~/std` cannot break a working install
+- ✅ Users can point at a different standard library without rebuilding the
+  compiler - `AZORA_STDLIB=/path/to/std azora run main.az`
+- ✅ Parse/inject caching: the resolved tree and its parsed programs are cached
+  and reused, and invalidated when the root changes
 
 This is what makes the standard library **replaceable and inspectable** rather
 than a compiler implementation detail: a user can read the source of what they
@@ -564,13 +567,31 @@ are calling, and a fix does not need a compiler release.
 
 ### 4.4 Gaps
 
-- ⬜ **`sort` is insertion sort - O(n²).** Needs a real algorithm
-- ⬜ `sortBy`'s key function is typed `(T) -> T` and cannot express a key of
-  another type
+- ✅ **`sort` is insertion sort - O(n²).** Now a stable bottom-up merge sort,
+  O(n log n), with insertion sort for short runs. `sortDescending` shares the
+  engine via a direction flag. Stability is asserted in `SortStdlibTest`
+- ✅ `sortBy`'s key function is typed `(T) -> T` and cannot express a key of
+  another type. Now `sortBy<T, K>(arr, key: (T) -> K) where K: Order` - stable,
+  O(n log n), keys computed once per element rather than once per comparison
 - ⬜ `std.io` - streams, stdin/stdout/stderr, readers and writers (currently
   minimal)
-- ⬜ `std.filesystem` - files, directories, paths, metadata
-- ⬜ `std.os` - process, environment
+- ✅ `std.filesystem` - files, directories, paths, metadata. `Path` as a value
+  with a pure algebra (`join`, `parent`, `fileName`, `stem`, `extension`,
+  `isAbsolute`, `normalized`, `withExtension`); `readText`/`readBytes`,
+  `writeText` (atomic) / `appendText`, `listDirectory` (absolute, sorted),
+  `createDirectory`/`createDirectories`, `remove`/`removeAll`, `copyFile`,
+  `rename`, `fileInfo`, `exists`/`isFile`/`isDirectory`, `canonical`,
+  `temporaryDirectory`/`createTemporaryDirectory`. Every disk operation is
+  failable with `FileError` - a missing file and an empty one are different
+  answers, which is what `engine.io`'s `Blob` could not express. Designed in
+  `DIPs/FILESYSTEM_DIP.MD`; `oper /` awaits that DIP's §10.1, and the LLVM
+  backend is step 8
+- ✅ `std.os` - process, environment. `envVar`/`hasEnvVar`/`setEnvVar`/`envOr`,
+  `currentDirectory`/`changeDirectory`, `processId`, and `runCommand` returning
+  a `ProcessResult`. Compiler bridges rather than C declarations, because
+  `azora run` executes through the interpreter, which has no FFI - a `bridge .C`
+  API would compile and then fail to run. Web and iOS implement the same surface
+  by refusing clearly rather than returning a wrong answer
 - ⬜ `std.http` - decide in or out
 - ⬜ `std.time` - thin; audit
 - ⬜ `std.testing` - assertions, fixtures, parametrised tests
@@ -599,7 +620,7 @@ The surface removed:
   cross-product. `appendFormatMethods` collapses to `appendTextMethods`
 - ✅ `@Serializable`'s `bind [Serializer, JsonSerializer, AzonSerializer]`
   collapses to `bind [Serializer, AzonSerializer]`
-- ✅ Tests: `SerializationDeriverTest`, `DecoratorConformanceTest`,
+- ✅ Tests: `SerializationDeriverTest`, `AnnotratorConformanceTest`,
   `StdlibInjectionTest`
 - ✅ `compiler/…/README.md`, `README.md`, `ANNOTATIONS_DIP.MD`
 
@@ -901,7 +922,7 @@ Every one fixed, or deleted with a stated reason.
   `LlvmRegressionExecTest`, `MacroTest`, `MetaprogrammingTest`,
   `StdlibMethodsTest` (2 each)
 - ⬜ 15 single failures across `CodegenGolden`, `ImplMethod`, `LlvmStdlibExec`,
-  `Loop`, `Modules`, `Pack`, `PlaygroundExamples`, `StabilityDecorator`,
+  `Loop`, `Modules`, `Pack`, `PlaygroundExamples`, `StabilityAnnotrator`,
   `TestAssertTrace`, `Tier4Concurrency`, `TimeStdlib`, `Traits`, `Tuple`,
   `VariadicLambda`, `SerializationDeriver`
 

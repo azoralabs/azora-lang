@@ -1,0 +1,332 @@
+/*
+ * Copyright 2026 AzoraLabs
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+module std.security
+
+import std.char
+import std.container.array
+
+/**
+ * @file std/security
+ *
+ * Defensive security primitives. Cryptography, secret storage, authorization,
+ * and tamper-resistant auditing are bridge operations supplied by audited
+ * platform providers. The Azora layer provides safe data contracts, policy
+ * values, and validation helpers; it does not implement cryptography itself.
+ *
+ * @since 0.1
+ */
+
+realm std {
+    /** Data classification used by policies and audit records. */
+    @Experimental(since: "0.1")
+    enum SecurityLevel {
+        Public
+        Internal
+        Confidential
+        Restricted
+    }
+
+    /** Outcome recorded for an auditable security decision. */
+    @Experimental(since: "0.1")
+    enum AuditOutcome {
+        Allowed
+        Denied
+        Failed
+    }
+
+    /** Approved digest families; the backend owns the implementation. */
+    @Experimental(since: "0.1")
+    enum HashAlgorithm {
+        Sha256
+        Sha384
+        Sha512
+        Sha3256
+        Sha3512
+        Blake3
+    }
+
+    /** Authenticated-encryption algorithms exposed by a provider. */
+    @Experimental(since: "0.1")
+    enum AeadAlgorithm {
+        Aes256Gcm
+        ChaCha20Poly1305
+        XChaCha20Poly1305
+    }
+
+    /** Digital-signature algorithms exposed by a provider. */
+    @Experimental(since: "0.1")
+    enum SignatureAlgorithm {
+        Ed25519
+        EcdsaP256Sha256
+        EcdsaP384Sha384
+    }
+
+    /** Password KDFs; fast general-purpose hashes are deliberately absent. */
+    @Experimental(since: "0.1")
+    enum PasswordAlgorithm {
+        Argon2id
+        Scrypt
+        Pbkdf2Sha256
+    }
+
+    /** Raw digest with its algorithm attached so algorithms are not confused. */
+    @Experimental(since: "0.1")
+    pack Digest {
+        var algorithm: HashAlgorithm
+        var bytes: Array<UByte>
+    }
+
+    /** Authenticated ciphertext; nonce and tag remain part of the value. */
+    @Experimental(since: "0.1")
+    pack Ciphertext {
+        var algorithm: AeadAlgorithm
+        var nonce: Array<UByte>
+        var data: Array<UByte>
+        var tag: Array<UByte>
+    }
+
+    /** A detached digital signature with its algorithm attached. */
+    @Experimental(since: "0.1")
+    pack Signature {
+        var algorithm: SignatureAlgorithm
+        var bytes: Array<UByte>
+    }
+
+    /** Password KDF parameters; safe defaults are deliberately expensive. */
+    @Experimental(since: "0.1")
+    pack PasswordHashOptions {
+        var algorithm: PasswordAlgorithm = PasswordAlgorithm.Argon2id
+        var memoryKiB: Int = 19456
+        var iterations: Int = 2
+        var parallelism: Int = 1
+    }
+
+    /** Password policy evaluated before a password is sent to a provider. */
+    @Experimental(since: "0.1")
+    pack PasswordPolicy {
+        var minLength: Int = 12
+        var requireUpper: Bool = true
+        var requireLower: Bool = true
+        var requireDigit: Bool = true
+        var requireSymbol: Bool = true
+    }
+
+    /** A redaction-aware security event. Secret values never belong in [detail]. */
+    @Experimental(since: "0.1")
+    pack AuditEvent {
+        var action: String
+        var subject: String
+        var level: SecurityLevel
+        var outcome: AuditOutcome
+        var detail: String
+    }
+
+    /** Application-wide secure defaults that a provider must enforce. */
+    @Experimental(since: "0.1")
+    pack SecurityPolicy {
+        var requireSecureRandom: Bool = true
+        var rejectPlaintextSecretPersistence: Bool = true
+        var redactAuditDetails: Bool = true
+        var requireCapabilityForSensitiveActions: Bool = true
+        var failClosedOnAuditError: Bool = true
+    }
+
+    /** Opaque secret value held by a platform secret manager. */
+    @Experimental(since: "0.1")
+    bridge pack Secret<T>
+
+    /** Opaque key handle; raw key bytes are not exposed by the safe API. */
+    @Experimental(since: "0.1")
+    bridge pack KeyHandle
+
+    /** Opaque signing handle backed by a key store or HSM. */
+    @Experimental(since: "0.1")
+    bridge pack Signer
+
+    /** Opaque verification handle backed by a trusted key source. */
+    @Experimental(since: "0.1")
+    bridge pack Verifier
+
+    /** Opaque least-privilege authorization capability. */
+    @Experimental(since: "0.1")
+    bridge pack Capability
+
+    /** Opaque append-only or tamper-evident audit destination. */
+    @Experimental(since: "0.1")
+    bridge pack AuditSink
+
+    /** Returns the secure default policy for a new application. */
+    @Experimental(since: "0.1")
+    func defaultSecurityPolicy(): SecurityPolicy {
+        return SecurityPolicy()
+    }
+
+    /** Returns the baseline password policy. Providers may impose stricter rules. */
+    @Experimental(since: "0.1")
+    func defaultPasswordPolicy(): PasswordPolicy {
+        return PasswordPolicy()
+    }
+
+    /** Builds a redaction marker without copying the sensitive value. */
+    @Experimental(since: "0.1")
+    func redacted(label: String): String {
+        return "[REDACTED:" + label + "]"
+    }
+
+    /** Builds an audit event from already-redacted detail. */
+    @Experimental(since: "0.1")
+    func auditEvent(
+        action: String,
+        subject: String,
+        level: SecurityLevel,
+        outcome: AuditOutcome,
+        detail: String,
+    ): AuditEvent {
+        return AuditEvent(action, subject, level, outcome, detail)
+    }
+
+    /** Validates KDF parameters before invoking a password provider. */
+    @Experimental(since: "0.1")
+    func validPasswordHashOptions(options: PasswordHashOptions): Bool {
+        return options.memoryKiB >= 19456 &&
+            options.iterations >= 2 &&
+            options.parallelism >= 1
+    }
+
+    /** Checks a candidate against a local password policy without storing it. */
+    @Experimental(since: "0.1")
+    func passwordMeetsPolicy(candidate: String, policy: PasswordPolicy): Bool {
+        if candidate.size < policy.minLength { return false }
+        var hasUpper = false
+        var hasLower = false
+        var hasDigit = false
+        var hasSymbol = false
+        for i in 0..<candidate.size {
+            fin value = charAt(candidate, i)
+            fin code = ord(value)
+            if code >= 65 && code <= 90 { hasUpper = true }
+            if code >= 97 && code <= 122 { hasLower = true }
+            if charIsDigit(value) { hasDigit = true }
+            if !charIsAlpha(value) && !charIsDigit(value) { hasSymbol = true }
+        }
+        return (!policy.requireUpper || hasUpper) &&
+            (!policy.requireLower || hasLower) &&
+            (!policy.requireDigit || hasDigit) &&
+            (!policy.requireSymbol || hasSymbol)
+    }
+
+    /** Generates cryptographically secure bytes; never use std.random for secrets. */
+    @Experimental(since: "0.1")
+    bridge func secureRandom(count: Int): Array<UByte>
+
+    /** Computes a provider-backed digest over bytes. */
+    @Experimental(since: "0.1")
+    bridge func hash(algorithm: HashAlgorithm, data: Array<UByte>): Digest
+
+    /** Compares secret material without an input-dependent early exit. */
+    @Experimental(since: "0.1")
+    bridge func constantTimeEqual(left: Array<UByte>, right: Array<UByte>): Bool
+
+    /** Loads a secret from an approved manager by reference, not by plaintext. */
+    @Experimental(since: "0.1")
+    bridge func loadSecret<T>(name: String): Secret<T>
+
+    /** Derives or unwraps an opaque key without exposing raw key material. */
+    @Experimental(since: "0.1")
+    bridge func deriveKey<T>(secret: Secret<T>, purpose: String): KeyHandle
+
+    /** Hashes a password using a memory-hard provider implementation. */
+    @Experimental(since: "0.1")
+    bridge func passwordHash<T>(secret: Secret<T>, options: PasswordHashOptions): Digest
+
+    /** Verifies a password hash using a constant-time provider operation. */
+    @Experimental(since: "0.1")
+    bridge func verifyPassword<T>(secret: Secret<T>, stored: Digest): Bool
+
+    /** Encrypts and authenticates bytes with caller-supplied associated data. */
+    @Experimental(since: "0.1")
+    bridge func encrypt(
+        key: KeyHandle,
+        algorithm: AeadAlgorithm,
+        plaintext: Array<UByte>,
+        associatedData: Array<UByte>,
+    ): Ciphertext
+
+    /** Authenticates before releasing plaintext; failure is provider-defined. */
+    @Experimental(since: "0.1")
+    bridge func decrypt(
+        key: KeyHandle,
+        ciphertext: Ciphertext,
+        associatedData: Array<UByte>,
+    ): Array<UByte>
+
+    /** Creates a signing handle from an approved key reference. */
+    @Experimental(since: "0.1")
+    bridge func signer(key: KeyHandle, algorithm: SignatureAlgorithm): Signer
+
+    /** Creates a verification handle from a trusted public-key reference. */
+    @Experimental(since: "0.1")
+    bridge func verifier(key: KeyHandle, algorithm: SignatureAlgorithm): Verifier
+
+    /** Signs a message; the message itself is not logged by the provider. */
+    @Experimental(since: "0.1")
+    bridge func sign(signer: Signer, message: Array<UByte>): Signature
+
+    /** Verifies a signature against the exact message bytes. */
+    @Experimental(since: "0.1")
+    bridge func verify(
+        verifier: Verifier,
+        message: Array<UByte>,
+        signature: Signature,
+    ): Bool
+
+    /** Opens a provider-backed secret audit sink. */
+    @Experimental(since: "0.1")
+    bridge func auditSink(name: String): AuditSink
+
+    /** Emits one redacted event; failure obeys the active security policy. */
+    @Experimental(since: "0.1")
+    bridge func emit(sink: AuditSink, event: AuditEvent): Unit
+
+    /** Grants a narrowly scoped capability to a principal. */
+    @Experimental(since: "0.1")
+    bridge func grant(principal: String, action: String, resource: String): Capability
+
+    /** Narrows a capability; it can never add authority. */
+    @Experimental(since: "0.1")
+    bridge func attenuate(
+        capability: Capability,
+        action: String,
+        resource: String,
+    ): Capability
+
+    /** Checks a capability without consulting ambient global permissions. */
+    @Experimental(since: "0.1")
+    bridge func authorize(
+        capability: Capability,
+        action: String,
+        resource: String,
+    ): Bool
+
+    /** Revokes a capability or its provider-side lease. */
+    @Experimental(since: "0.1")
+    bridge func revoke(capability: Capability): Unit
+
+    /** Explicitly wipes provider-managed sensitive storage. */
+    @Experimental(since: "0.1")
+    bridge func wipe<T>(secret: Secret<T>): Unit
+}

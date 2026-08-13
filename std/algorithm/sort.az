@@ -23,17 +23,25 @@ import std.container.array
  *
  * Sorting functions for arrays.
  *
- * Provides stable insertion sort, descending sort, sorted check,
- * array reversal, and custom comparator sorting.
+ * [sort] and [sortDescending] are **stable** and run in O(n log n): a bottom-up
+ * merge sort, with short runs pre-sorted by insertion sort because insertion
+ * sort wins below roughly a cache line's worth of elements and merging them
+ * costs a pass either way.
+ *
+ * Stability is part of the contract, not an accident of the algorithm. Sorting
+ * by one key and then another is how multi-key ordering is expressed, and that
+ * only works if the second sort leaves equal elements in the order the first
+ * put them.
  *
  * @since 0.1
  */
 
 realm std {
     /**
-     * Sorts an array in ascending order using insertion sort.
+     * Sorts an array in ascending order.
      *
-     * Returns a new sorted array; the original is not modified.
+     * Stable and O(n log n). Returns a new sorted array; the original is not
+     * modified.
      *
      * @param arr The array to sort.
      * @return A new array with elements in ascending order.
@@ -43,26 +51,14 @@ realm std {
     out {
         assert it.size == arr.size { "sort must preserve length" }
     } scope {
-        var result: Array<T> = Array::fill<T>(arr.size)
-        for i in 0..<arr.size {
-            result[i] = arr[i]
-        }
-        for j in 1..<result.size {
-            fin key = result[j]
-            var k = j - 1
-            while k >= 0 && result[k] > key {
-                result[k + 1] = result[k]
-                k -= 1
-            }
-            result[k + 1] = key
-        }
-        return result
+        return _mergeSorted<T>(arr, true)
     }
 
     /**
      * Sorts an array in descending order.
      *
-     * Returns a new sorted array; the original is not modified.
+     * Stable and O(n log n), like [sort]. Returns a new sorted array; the
+     * original is not modified.
      *
      * @param arr The array to sort.
      * @return A new array with elements in descending order.
@@ -72,20 +68,131 @@ realm std {
     out {
         assert it.size == arr.size { "sortDescending must preserve length" }
     } scope {
-        var result: Array<T> = Array::fill<T>(arr.size)
-        for i in 0..<arr.size {
-            result[i] = arr[i]
+        return _mergeSorted<T>(arr, false)
+    }
+
+    /**
+     * Run length below which insertion sort is used instead of merging.
+     *
+     * Small enough that the quadratic term stays negligible, large enough that
+     * the first few merge passes - the ones with the worst overhead per element
+     * - never happen.
+     */
+    fin _sortRunLength = 16
+
+    /**
+     * The shared engine behind [sort] and [sortDescending].
+     *
+     * One implementation with a direction flag rather than two that must be
+     * kept in step: a stability bug fixed in one of two copies is a stability
+     * bug still.
+     */
+    @Experimental(since: "0.1")
+    func _mergeSorted<T>(arr: Array<T>, ascending: Bool): Array<T> where T: Order {
+        fin count = arr.size
+        var source: Array<T> = Array::fill<T>(count)
+        for i in 0..<count {
+            source[i] = arr[i]
         }
-        for j in 1..<result.size {
-            fin key = result[j]
-            var k = j - 1
-            while k >= 0 && result[k] < key {
-                result[k + 1] = result[k]
-                k -= 1
+        if count <= 1 {
+            return source
+        }
+
+        var start = 0
+        while start < count {
+            var stop = start + _sortRunLength
+            if stop > count {
+                stop = count
             }
-            result[k + 1] = key
+            _insertionSortRange<T>(source, start, stop, ascending)
+            start = start + _sortRunLength
         }
-        return result
+
+        var scratch: Array<T> = Array::fill<T>(count)
+        var width = _sortRunLength
+        while width < count {
+            var lo = 0
+            while lo < count {
+                var mid = lo + width
+                if mid > count {
+                    mid = count
+                }
+                var hi = lo + width + width
+                if hi > count {
+                    hi = count
+                }
+                _mergeRange<T>(source, scratch, lo, mid, hi, ascending)
+                lo = lo + width + width
+            }
+            for i in 0..<count {
+                source[i] = scratch[i]
+            }
+            width = width + width
+        }
+        return source
+    }
+
+    /** Sorts `values[start..<stop]` in place. Stable: equal elements never swap. */
+    @Experimental(since: "0.1")
+    func _insertionSortRange<T>(values: Array<T>, start: Int, stop: Int, ascending: Bool) where T: Order {
+        var i = start + 1
+        while i < stop {
+            fin moving = values[i]
+            var j = i - 1
+            while j >= start && _outOfOrder<T>(values[j], moving, ascending) {
+                values[j + 1] = values[j]
+                j -= 1
+            }
+            values[j + 1] = moving
+            i += 1
+        }
+    }
+
+    /**
+     * Merges the sorted runs `[lo, mid)` and `[mid, hi)` into `into[lo..<hi)`.
+     *
+     * Ties take from the left run, which is what makes the whole sort stable -
+     * the left run holds the elements that came first.
+     */
+    @Experimental(since: "0.1")
+    func _mergeRange<T>(
+        values: Array<T>,
+        into: Array<T>,
+        lo: Int,
+        mid: Int,
+        hi: Int,
+        ascending: Bool,
+    ) where T: Order {
+        var left = lo
+        var right = mid
+        var at = lo
+        while at < hi {
+            if left >= mid {
+                into[at] = values[right]
+                right += 1
+            } else if right >= hi {
+                into[at] = values[left]
+                left += 1
+            } else if _outOfOrder<T>(values[right], values[left], ascending) {
+                // The right element does not belong before the left one, so the
+                // left one goes first - and equal elements keep their order.
+                into[at] = values[left]
+                left += 1
+            } else {
+                into[at] = values[right]
+                right += 1
+            }
+            at += 1
+        }
+    }
+
+    /** True when [first] must come after [second] in the requested direction. */
+    @Experimental(since: "0.1")
+    func _outOfOrder<T>(first: T, second: T, ascending: Bool): Bool where T: Order {
+        if ascending {
+            return first > second
+        }
+        return first < second
     }
 
     /**
@@ -207,3 +314,60 @@ realm std {
         return result
     }
 }
+
+test "sorting orders ascending and preserves length" {
+    var values: std::Array<std::Int> = std::Array::fill<std::Int>(7)
+    fin input = @std::arr[5, 3, 9, 1, 5, 8, 2]
+    for i in 0..<7 {
+        values[i] = input[i]
+    }
+    fin sorted: std::Array<std::Int> = std::sort<std::Int>(values)
+    assert sorted.size == 7 { "sorting must not lose or add elements" }
+    assert std::isSorted<std::Int>(sorted) { "the result must be in ascending order" }
+    assert sorted[0] == 1 && sorted[6] == 9 { "the extremes must land at the ends" }
+}
+
+test "sorting descending is the ascending order reversed" {
+    var values: std::Array<std::Int> = std::Array::fill<std::Int>(5)
+    fin input = @std::arr[4, 1, 7, 1, 9]
+    for i in 0..<5 {
+        values[i] = input[i]
+    }
+    fin down: std::Array<std::Int> = std::sortDescending<std::Int>(values)
+    assert std::isSortedDescending<std::Int>(down) { "the result must be in descending order" }
+    assert down[0] == 9 && down[4] == 1 { "the extremes must land at the ends" }
+}
+
+test "sorting an array longer than one merge run stays sorted" {
+    // Longer than _sortRunLength, so the merge passes actually run.
+    fin count = 40
+    var values: std::Array<std::Int> = std::Array::fill<std::Int>(count)
+    for i in 0..<count {
+        values[i] = (count - i) * 7 % 31
+    }
+    fin sorted: std::Array<std::Int> = std::sort<std::Int>(values)
+    assert std::isSorted<std::Int>(sorted) { "merging must leave the whole array ordered" }
+    assert sorted.size == count { "merging must preserve length" }
+}
+
+test "sorting an empty or single-element array is a no-op" {
+    fin empty: std::Array<std::Int> = std::Array::fill<std::Int>(0)
+    assert std::sort<std::Int>(empty).size == 0 { "an empty array sorts to an empty array" }
+
+    var one: std::Array<std::Int> = std::Array::fill<std::Int>(1)
+    one[0] = 42
+    fin sorted: std::Array<std::Int> = std::sort<std::Int>(one)
+    assert sorted.size == 1 && sorted[0] == 42 { "one element is already sorted" }
+}
+
+test "sorting does not modify the original" {
+    var values: std::Array<std::Int> = std::Array::fill<std::Int>(3)
+    values[0] = 3
+    values[1] = 1
+    values[2] = 2
+    fin sorted: std::Array<std::Int> = std::sort<std::Int>(values)
+    assert values[0] == 3 { "the input array must be left alone" }
+    assert sorted[0] == 1 { "the returned array must be the sorted one" }
+}
+
+test .All "std.algorithm.sort"

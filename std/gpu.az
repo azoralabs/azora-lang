@@ -1,0 +1,598 @@
+/*
+ * Copyright 2026 AzoraLabs
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+module std.gpu
+
+import std.container.array
+
+/**
+ * @file std/gpu
+ *
+ * Backend-neutral GPU resources and shader artifacts. Pure values and geometry
+ * helpers are implemented in Azora; device allocation, compilation, execution,
+ * and readback are explicit bridge operations supplied by a GPU adapter.
+ *
+ * @since 0.1
+ */
+
+realm std {
+    /** A concrete target selected by the host application. */
+    @Experimental(since: "0.1")
+    enum GpuBackend {
+        Default
+        WebGpu
+        Vulkan
+        Metal
+        DirectX12
+        Cuda
+        Hip
+        CpuFallback
+    }
+
+    /** The stage an inspectable shader artifact belongs to. */
+    @Experimental(since: "0.1")
+    enum ShaderStage {
+        Compute
+        Vertex
+        Fragment
+        Mesh
+        Task
+        RayGeneration
+        Miss
+        ClosestHit
+    }
+
+    /** The intended use of a typed device buffer. */
+    @Experimental(since: "0.1")
+    enum BufferUsage {
+        Storage
+        Uniform
+        Vertex
+        Index
+        Readback
+    }
+
+    /** Queue family used for ordered asynchronous work submission. */
+    @Experimental(since: "0.1")
+    enum QueueKind {
+        Compute
+        Graphics
+        Transfer
+    }
+
+    /** Logical layout used by tensor views and tiled kernels. */
+    @Experimental(since: "0.1")
+    enum LayoutKind {
+        RowMajor
+        ColumnMajor
+        Tiled
+    }
+
+    /** Portable operation for a parallel reduction. */
+    @Experimental(since: "0.1")
+    enum ReductionOp {
+        Sum
+        Product
+        Minimum
+        Maximum
+        And
+        Or
+    }
+
+    /** Memory scope for a kernel barrier or fence. */
+    @Experimental(since: "0.1")
+    enum BarrierScope {
+        Workgroup
+        Device
+        System
+    }
+
+    /** Ordering guarantee for atomic operations. */
+    @Experimental(since: "0.1")
+    enum MemoryOrder {
+        Relaxed
+        Acquire
+        Release
+        AcquireRelease
+        SequentiallyConsistent
+    }
+
+    /** Optional capability requested by a shader or a high-level GPU op. */
+    @Experimental(since: "0.1")
+    enum GpuFeature {
+        Subgroups
+        Float16
+        BFloat16
+        Float8
+        Atomics
+        AsyncCopy
+        CooperativeLaunch
+        TensorCores
+        MeshShaders
+        RayTracing
+    }
+
+    /** Local invocation shape for a compute shader. */
+    @Experimental(since: "0.1")
+    pack WorkgroupSize {
+        var x: Int
+        var y: Int
+        var z: Int
+    }
+
+    /** Number of workgroups submitted along each axis. */
+    @Experimental(since: "0.1")
+    pack DispatchSize {
+        var x: Int
+        var y: Int
+        var z: Int
+    }
+
+    /** A source artifact that can be inspected or handed to a compiler bridge. */
+    @Experimental(since: "0.1")
+    pack ShaderSource {
+        var stage: ShaderStage
+        var entry: String
+        var code: String
+        var workgroup: WorkgroupSize
+    }
+
+    /** A validated logical-to-linear mapping for multidimensional data. */
+    @Experimental(since: "0.1")
+    pack GpuLayout {
+        var shape: Array<Int>
+        var strides: Array<Int>
+        var kind: LayoutKind
+        var tileX: Int
+        var tileY: Int
+        var tileZ: Int
+    }
+
+    /** Launch geometry plus shared-memory and cooperative-launch requirements. */
+    @Experimental(since: "0.1")
+    pack LaunchConfig {
+        var groups: DispatchSize
+        var workgroup: WorkgroupSize
+        var sharedBytes: Int
+        var cooperative: Bool
+    }
+
+    /** Compile-time switches that affect generated GPU code. */
+    @Experimental(since: "0.1")
+    pack CompileOptions {
+        var target: GpuBackend = GpuBackend.Default
+        var debugSymbols: Bool = false
+        var fastMath: Bool = false
+        var deterministic: Bool = true
+    }
+
+    /** Runtime limits and optional features reported by an adapter. */
+    @Experimental(since: "0.1")
+    pack GpuCapabilities {
+        var maxWorkgroupSize: Int
+        var maxSharedBytes: Int
+        var subgroupSize: Int
+        var supportsFloat16: Bool
+        var supportsBFloat16: Bool
+        var supportsAtomics: Bool
+        var supportsAsyncCopy: Bool
+        var supportsTensorCores: Bool
+    }
+
+    /** Stable device identity and its negotiated capability set. */
+    @Experimental(since: "0.1")
+    pack GpuDeviceInfo {
+        var name: String
+        var backend: GpuBackend
+        var capabilities: GpuCapabilities
+    }
+
+    /** Opaque handle to an adapter, queue, and device limits. */
+    @Experimental(since: "0.1")
+    bridge pack GpuDevice
+
+    /** Typed device memory owned by a [GpuDevice]. */
+    @Experimental(since: "0.1")
+    bridge pack GpuBuffer<T>
+
+    /** Compiled shader artifact owned by a [GpuDevice]. */
+    @Experimental(since: "0.1")
+    bridge pack GpuShader
+
+    /** Validated shader resource layout ready for submission. */
+    @Experimental(since: "0.1")
+    bridge pack GpuPipeline
+
+    /** Ordered asynchronous queue owned by a [GpuDevice]. */
+    @Experimental(since: "0.1")
+    bridge pack GpuStream
+
+    /** Completion token for queued copies, launches, or draws. */
+    @Experimental(since: "0.1")
+    bridge pack GpuEvent
+
+    /** Mutable command encoder for explicit resource binding and submission. */
+    @Experimental(since: "0.1")
+    bridge pack GpuCommandList
+
+    /** Deferred host readback that becomes available after its event completes. */
+    @Experimental(since: "0.1")
+    bridge pack GpuReadback<T>
+
+    /** A typed tensor view backed by device memory and a validated layout. */
+    @Experimental(since: "0.1")
+    bridge pack GpuTensor<T>
+
+    /** Workgroup-local storage visible only inside a kernel invocation group. */
+    @Experimental(since: "0.1")
+    bridge pack GpuShared<T>
+
+    /** Backend-optimized matrix tile used by portable MMA operations. */
+    @Experimental(since: "0.1")
+    bridge pack GpuMatrixTile<T>
+
+    /** Creates and validates a local invocation shape. */
+    @Experimental(since: "0.1")
+    func workgroup(x: Int, y: Int, z: Int): WorkgroupSize {
+        assert x > 0 && y > 0 && z > 0 {
+            "workgroup dimensions must be positive"
+        }
+        return WorkgroupSize(x, y, z)
+    }
+
+    /** Creates and validates a dispatch shape. Zero work is a valid no-op. */
+    @Experimental(since: "0.1")
+    func dispatch(x: Int, y: Int, z: Int): DispatchSize {
+        assert x >= 0 && y >= 0 && z >= 0 {
+            "dispatch dimensions cannot be negative"
+        }
+        return DispatchSize(x, y, z)
+    }
+
+    /** Converts element count into one-dimensional workgroup count. */
+    @Experimental(since: "0.1")
+    func dispatchFor(elements: Int, workgroupSize: Int): DispatchSize {
+        assert elements >= 0 { "element count cannot be negative" }
+        assert workgroupSize > 0 { "workgroup size must be positive" }
+        fin groups = if elements == 0 {
+            0
+        } else {
+            (elements + workgroupSize - 1) / workgroupSize
+        }
+        return dispatch(groups, 1, 1)
+    }
+
+    /** Converts three-dimensional element extents into workgroup counts. */
+    @Experimental(since: "0.1")
+    func dispatchFor3d(elements: DispatchSize, workgroup: WorkgroupSize): DispatchSize {
+        return dispatch(
+            if elements.x == 0 { 0 } else { (elements.x + workgroup.x - 1) / workgroup.x },
+            if elements.y == 0 { 0 } else { (elements.y + workgroup.y - 1) / workgroup.y },
+            if elements.z == 0 { 0 } else { (elements.z + workgroup.z - 1) / workgroup.z },
+        )
+    }
+
+    /** Creates a launch configuration after checking resource limits locally. */
+    @Experimental(since: "0.1")
+    func launch(
+        groups: DispatchSize,
+        workgroup: WorkgroupSize,
+        sharedBytes: Int,
+        cooperative: Bool,
+    ): LaunchConfig {
+        assert sharedBytes >= 0 { "shared-memory request cannot be negative" }
+        return LaunchConfig(groups, workgroup, sharedBytes, cooperative)
+    }
+
+    /** Creates a row-major layout without copying the underlying values. */
+    @Experimental(since: "0.1")
+    func rowMajor(shape: Array<Int>): GpuLayout {
+        assert shape.size > 0 { "a GPU layout needs at least one dimension" }
+        var total = 1
+        for i in 0..<shape.size {
+            assert shape[i] > 0 { "layout dimensions must be positive" }
+            total = total * shape[i]
+        }
+        var strides: Array<Int> = Array::fill<Int>(shape.size)
+        var remaining = total
+        for i in 0..<shape.size {
+            remaining = remaining / shape[i]
+            strides[i] = remaining
+        }
+        return GpuLayout(shape, strides, LayoutKind.RowMajor, 1, 1, 1)
+    }
+
+    /** Creates a column-major layout without copying the underlying values. */
+    @Experimental(since: "0.1")
+    func columnMajor(shape: Array<Int>): GpuLayout {
+        assert shape.size > 0 { "a GPU layout needs at least one dimension" }
+        var strides: Array<Int> = Array::fill<Int>(shape.size)
+        var stride = 1
+        for i in 0..<shape.size {
+            assert shape[i] > 0 { "layout dimensions must be positive" }
+            strides[i] = stride
+            stride = stride * shape[i]
+        }
+        return GpuLayout(shape, strides, LayoutKind.ColumnMajor, 1, 1, 1)
+    }
+
+    /** Creates a tiled view descriptor over a row-major shape. */
+    @Experimental(since: "0.1")
+    func tiled(shape: Array<Int>, tileX: Int, tileY: Int, tileZ: Int): GpuLayout {
+        assert tileX > 0 && tileY > 0 && tileZ > 0 {
+            "tile dimensions must be positive"
+        }
+        fin base = rowMajor(shape)
+        return GpuLayout(shape, base.strides, LayoutKind.Tiled, tileX, tileY, tileZ)
+    }
+
+    /** Computes a linear offset through a validated layout descriptor. */
+    @Experimental(since: "0.1")
+    func linearIndex(layout: GpuLayout&, coordinates: Array<Int>): Int {
+        assert coordinates.size == layout.shape.size {
+            "coordinate rank does not match layout rank"
+        }
+        var result = 0
+        for i in 0..<coordinates.size {
+            assert coordinates[i] >= 0 && coordinates[i] < layout.shape[i] {
+                "coordinate is outside the layout"
+            }
+            result = result + coordinates[i] * layout.strides[i]
+        }
+        return result
+    }
+
+    /** Creates an inspectable shader artifact for any stage. */
+    @Experimental(since: "0.1")
+    func shader(
+        stage: ShaderStage,
+        entry: String,
+        code: String,
+        workgroup: WorkgroupSize,
+    ): ShaderSource {
+        assert entry.size > 0 { "shader entry point cannot be empty" }
+        assert code.size > 0 { "shader source cannot be empty" }
+        return ShaderSource(stage, entry, code, workgroup)
+    }
+
+    /** Creates the common one-dimensional compute-shader artifact. */
+    @Experimental(since: "0.1")
+    func computeShader(entry: String, code: String, workgroupSize: Int): ShaderSource {
+        return shader(
+            ShaderStage.Compute,
+            entry,
+            code,
+            workgroup(workgroupSize, 1, 1),
+        )
+    }
+
+    /** Opens the requested adapter; no implicit CPU fallback is performed. */
+    @Experimental(since: "0.1")
+    bridge func open(backend: GpuBackend): GpuDevice
+
+    /** Reports adapter limits before a pipeline or launch is submitted. */
+    @Experimental(since: "0.1")
+    bridge func info(device: GpuDevice): GpuDeviceInfo
+
+    /** Opens an ordered queue; queues are independent synchronization domains. */
+    @Experimental(since: "0.1")
+    bridge func stream(device: GpuDevice, kind: QueueKind): GpuStream
+
+    /** Begins explicit command encoding on a queue. */
+    @Experimental(since: "0.1")
+    bridge func commands(stream: GpuStream): GpuCommandList
+
+    /** Allocates typed device memory without uploading host values. */
+    @Experimental(since: "0.1")
+    bridge func buffer<T>(
+        device: GpuDevice,
+        elements: Int,
+        usage: BufferUsage,
+    ): GpuBuffer<T>
+
+    /** Allocates typed device memory and uploads a host array. */
+    @Experimental(since: "0.1")
+    bridge func upload<T>(
+        device: GpuDevice,
+        values: Array<T>,
+        usage: BufferUsage,
+    ): GpuBuffer<T>
+
+    /** Reads a typed buffer back to host memory. */
+    @Experimental(since: "0.1")
+    bridge func download<T>(device: GpuDevice, values: GpuBuffer<T>): Array<T>
+
+    /** Queues a host-to-device upload without synchronizing the CPU. */
+    @Experimental(since: "0.1")
+    bridge func uploadAsync<T>(
+        stream: GpuStream,
+        values: Array<T>,
+        usage: BufferUsage,
+    ): GpuBuffer<T>
+
+    /** Queues a device-to-host readback and returns a deferred result. */
+    @Experimental(since: "0.1")
+    bridge func downloadAsync<T>(stream: GpuStream, values: GpuBuffer<T>): GpuReadback<T>
+
+    /** Resolves a deferred readback, waiting only when the data is consumed. */
+    @Experimental(since: "0.1")
+    bridge func resolve<T>(readback: GpuReadback<T>): Array<T>
+
+    /** Builds a tensor view over an existing buffer without copying it. */
+    @Experimental(since: "0.1")
+    bridge func view<T>(values: GpuBuffer<T>, layout: GpuLayout): GpuTensor<T>
+
+    /** Extracts a tiled tensor view without copying its backing allocation. */
+    @Experimental(since: "0.1")
+    bridge func tile<T>(values: GpuTensor<T>, layout: GpuLayout): GpuTensor<T>
+
+    /** Compiles source or a future compiler-native [kernel] artifact. */
+    @Experimental(since: "0.1")
+    bridge func compile(device: GpuDevice, source: ShaderSource): GpuShader
+
+    /** Compiles with explicit optimization, determinism, and target settings. */
+    @Experimental(since: "0.1")
+    bridge func compile(
+        device: GpuDevice,
+        source: ShaderSource,
+        options: CompileOptions,
+    ): GpuShader
+
+    /** Validates the shader's resource layout for the selected device. */
+    @Experimental(since: "0.1")
+    bridge func pipeline(device: GpuDevice, shader: GpuShader): GpuPipeline
+
+    /** Binds a typed storage resource by reflected symbol slot. */
+    @Experimental(since: "0.1")
+    bridge func bindBuffer<T>(commands: GpuCommandList, slot: Int, values: GpuBuffer<T>): Unit
+
+    /** Binds a small uniform value by reflected symbol slot. */
+    @Experimental(since: "0.1")
+    bridge func bindUniform<T>(commands: GpuCommandList, slot: Int, value: T): Unit
+
+    /** Enqueues a device-to-device copy on the command list. */
+    @Experimental(since: "0.1")
+    bridge func copyBuffer<T>(
+        commands: GpuCommandList,
+        destination: GpuBuffer<T>,
+        source: GpuBuffer<T>,
+    ): Unit
+
+    /** Enqueues a typed buffer fill on the command list. */
+    @Experimental(since: "0.1")
+    bridge func fillBuffer<T>(commands: GpuCommandList, destination: GpuBuffer<T>, value: T): Unit
+
+    /** Enqueues a fully bound compute launch and returns its completion token. */
+    @Experimental(since: "0.1")
+    bridge func launch(
+        commands: GpuCommandList,
+        pipeline: GpuPipeline,
+        config: LaunchConfig,
+    ): GpuEvent
+
+    /** Submits compute workgroups explicitly. */
+    @Experimental(since: "0.1")
+    bridge func dispatch(
+        device: GpuDevice,
+        pipeline: GpuPipeline,
+        groups: DispatchSize,
+    ): Unit
+
+    /** Convenience asynchronous dispatch on the device's default queue. */
+    @Experimental(since: "0.1")
+    bridge func dispatchAsync(
+        device: GpuDevice,
+        pipeline: GpuPipeline,
+        groups: DispatchSize,
+    ): GpuEvent
+
+    /** Submits a render draw through a validated vertex/fragment pipeline. */
+    @Experimental(since: "0.1")
+    bridge func draw(
+        device: GpuDevice,
+        pipeline: GpuPipeline,
+        vertices: Int,
+        instances: Int,
+    ): Unit
+
+    /** Enqueues a render draw on an explicit command list. */
+    @Experimental(since: "0.1")
+    bridge func drawAsync(
+        commands: GpuCommandList,
+        pipeline: GpuPipeline,
+        vertices: Int,
+        instances: Int,
+    ): GpuEvent
+
+    /** Workgroup barrier; valid only in a compiler-checked kernel context. */
+    @Experimental(since: "0.1")
+    bridge func barrier(barrierScope: BarrierScope): Unit
+
+    /** Subgroup-wide reduction with a hardware or portable fallback. */
+    @Experimental(since: "0.1")
+    bridge func subgroupReduce<T>(value: T, operation: ReductionOp): T
+
+    /** Subgroup prefix scan; every invocation receives its partial result. */
+    @Experimental(since: "0.1")
+    bridge func subgroupPrefix<T>(value: T, operation: ReductionOp): T
+
+    /** Workgroup-wide reduction using shared memory and subgroup primitives. */
+    @Experimental(since: "0.1")
+    bridge func workgroupReduce<T>(
+        value: T,
+        operation: ReductionOp,
+        workgroup: WorkgroupSize,
+    ): T
+
+    /** Allocates compiler-managed workgroup-local scratch storage. */
+    @Experimental(since: "0.1")
+    bridge func shared<T>(elements: Int): GpuShared<T>
+
+    /** Hardware-accelerated asynchronous global-to-shared copy. */
+    @Experimental(since: "0.1")
+    bridge func copyAsync<T>(
+        destination: GpuShared<T>,
+        source: GpuBuffer<T>,
+        count: Int,
+    ): GpuEvent
+
+    /** Atomic add with an explicit memory order. */
+    @Experimental(since: "0.1")
+    bridge func atomicAdd<T>(
+        values: GpuBuffer<T>,
+        index: Int,
+        value: T,
+        order: MemoryOrder,
+    ): T
+
+    /** Compare-and-exchange primitive for lock-free GPU algorithms. */
+    @Experimental(since: "0.1")
+    bridge func atomicCompareExchange<T>(
+        values: GpuBuffer<T>,
+        index: Int,
+        expected: T,
+        replacement: T,
+        order: MemoryOrder,
+    ): T
+
+    /** Matrix multiply-accumulate through a negotiated tensor-core path. */
+    @Experimental(since: "0.1")
+    bridge func matrixMultiplyAccumulate<T>(
+        accumulator: GpuMatrixTile<T>,
+        left: GpuMatrixTile<T>,
+        right: GpuMatrixTile<T>,
+    ): GpuMatrixTile<T>
+
+    /** Returns whether a completion token is ready without blocking. */
+    @Experimental(since: "0.1")
+    bridge func ready(event: GpuEvent): Bool
+
+    /** Waits for exactly one event, allowing unrelated queues to continue. */
+    @Experimental(since: "0.1")
+    bridge func wait(event: GpuEvent): Unit
+
+    /** Submits all commands and returns their completion token. */
+    @Experimental(since: "0.1")
+    bridge func submit(commands: GpuCommandList): GpuEvent
+
+    /** Waits for every operation currently queued on one stream. */
+    @Experimental(since: "0.1")
+    bridge func finish(stream: GpuStream): Unit
+
+    /** Waits for submitted work and makes subsequent readback well-defined. */
+    @Experimental(since: "0.1")
+    bridge func finish(device: GpuDevice): Unit
+}

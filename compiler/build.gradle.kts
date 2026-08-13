@@ -44,72 +44,50 @@ val generateStdlib = tasks.register("generateAzStdlib") {
             "\"$relPath\" to ${uniqueName(prefix, relPath)}"
         }
 
+        val versionFile = stdDir.resolve("STDLIB_VERSION")
+        check(versionFile.isFile) {
+            "std/STDLIB_VERSION is missing - the bundled standard library must state the " +
+                "language version it was written for, exactly as an installed one does"
+        }
+        val stdlibVersion = versionFile.readText().trim()
+
+        // The generated file is *data only*: the same `.az` files an installed
+        // compiler reads from disk, carried inside the artifact for targets that
+        // have no filesystem. Everything that interprets them - resolution order,
+        // the version handshake, parsing, caching - is hand-written in
+        // AzStdlibLoader.kt, so there is one implementation of that behaviour
+        // rather than one per distribution channel.
         val kt = buildString {
             appendLine("package org.azora.lang.stdlib")
             appendLine()
-            appendLine("import org.azora.lang.frontend.Lexer")
-            appendLine("import org.azora.lang.frontend.Parser")
-            appendLine("import org.azora.lang.frontend.Program")
+            appendLine("/**")
+            appendLine(" * The standard library that ships inside this compiler artifact.")
+            appendLine(" *")
+            appendLine(" * Generated from the `std/` tree at build time. Read through the same")
+            appendLine(" * reader as an installed tree; see [AzStdlib] for the resolution order")
+            appendLine(" * that decides when this one is used.")
+            appendLine(" */")
+            appendLine("internal object AzStdlibBundle {")
             appendLine()
-            appendLine("object AzStdlib {")
+            appendLine("    /** The language version this tree was generated for. */")
+            appendLine("    const val VERSION = \"$stdlibVersion\"")
             appendLine()
             for (entry in entries) {
                 appendLine(entry)
                 appendLine()
             }
-            appendLine("    val sources = listOf(${sourcesList.joinToString(", ")})")
-            appendLine("    private val namedSources = listOf(${namedSourcesList.joinToString(", ")})")
-            appendLine()
-            appendLine("    private val cachedPrograms: List<Program> by lazy { loadProgramsInternal() }")
-            appendLine()
-            appendLine("    fun loadPrograms(): List<Program> = cachedPrograms")
-            appendLine()
-            appendLine("    /**")
-            appendLine("     * Compile-time lists bound by the standard library, e.g. `Numbers`.")
-            appendLine("     *")
-            appendLine("     * A list is bound while its file is parsed, so it has to outlive that")
-            appendLine("     * parse to be usable from a user module's `inline for`. Populated by")
-            appendLine("     * [loadPrograms]; empty until the stdlib has been read.")
-            appendLine("     */")
-            appendLine("    val comptimeLists: MutableMap<String, List<String>> = mutableMapOf()")
-            appendLine()
-            appendLine("    /**")
-            appendLine("     * Enums declared by the standard library, and their variants.")
-            appendLine("     *")
-            appendLine("     * Shared for the same reason [comptimeLists] is: an enum-typed const")
-            appendLine("     * argument is resolved against every enum the compilation has seen.")
-            appendLine("     */")
-            appendLine("    val declaredEnums: MutableMap<String, List<String>> = mutableMapOf()")
-            appendLine()
-            appendLine("    /**")
-            appendLine("     * Compile-time list name -> the named realm that declared it.")
-            appendLine("     *")
-            appendLine("     * A list declares its elements the way they are written inside its own")
-            appendLine("     * realm (`Numbers` is `[Byte, ...]`, bare). A consumer in another realm")
-            appendLine("     * needs them qualified, so the declaring realm travels with the list.")
-            appendLine("     */")
-            appendLine("    val comptimeListRealms: MutableMap<String, String> = mutableMapOf()")
-            appendLine()
-            appendLine("    private fun loadProgramsInternal(): List<Program> {")
-            appendLine("        // One shared compile-time list env across all stdlib sources so a list")
-            appendLine("        // bound in one file (e.g. `let Numbers: [Type] = ...` in primitive.az) is")
-            appendLine("        // visible to `inline for` loops in later files (e.g. traits/core.az).")
-            appendLine("        val typeListEnv = comptimeLists")
-            appendLine("        return namedSources.map { (name, source) ->")
-            appendLine("            try {")
-            appendLine("                val tokens = Lexer(source).tokenize()")
-            appendLine("                Parser(tokens, typeListEnv, declaredEnums, typeListRealm = comptimeListRealms).parse()")
-            appendLine("            } catch (e: Exception) {")
-            appendLine("                error(\"Failed to parse embedded stdlib source \$name: \${e.message}\")")
-            appendLine("            }")
-            appendLine("        }")
-            appendLine("    }")
+            appendLine("    /** Every bundled module: path relative to `std/`, and its source. */")
+            appendLine("    val files: List<Pair<String, String>> = listOf(")
+            for (named in namedSourcesList) {
+                appendLine("        $named,")
+            }
+            appendLine("    )")
             appendLine("}")
             appendLine()
         }
 
         val outFile = outputDir.get().asFile
-            .resolve("org/azora/lang/stdlib/AzStdlib.kt")
+            .resolve("org/azora/lang/stdlib/AzStdlibBundle.kt")
         outFile.parentFile.mkdirs()
         outFile.writeText(kt)
     }

@@ -19,8 +19,8 @@ exposed module std.config
 deepinline realm {
     @Since("0.1")
     enum CompilerTarget {
-        Interpret,
-        Native,
+        Interpret
+        Native
         WebAssembly
     }
 

@@ -47,11 +47,11 @@ realm std {
      */
     @Since("0.1")
     error AllocError {
-        OutOfMemory,
-        InvalidSize,
-        DoubleFree,
-        UseAfterFree,
-        PoolExhausted,
+        OutOfMemory
+        InvalidSize
+        DoubleFree
+        UseAfterFree
+        PoolExhausted
         InvalidAlignment
     }
 

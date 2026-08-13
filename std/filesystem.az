@@ -56,15 +56,15 @@ realm std {
      */
     @Experimental(since: "0.1")
     error FileError {
-        NotFound,
-        PermissionDenied,
-        AlreadyExists,
-        NotADirectory,
-        IsADirectory,
-        DirectoryNotEmpty,
-        InvalidPath,
-        ReadFailed,
-        WriteFailed,
+        NotFound
+        PermissionDenied
+        AlreadyExists
+        NotADirectory
+        IsADirectory
+        DirectoryNotEmpty
+        InvalidPath
+        ReadFailed
+        WriteFailed
         Unsupported
     }
 

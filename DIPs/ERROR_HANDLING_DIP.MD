@@ -27,9 +27,9 @@ HANDLE   ::= try { … } catch { … }              // block form
 
 ```azora
 error SerializationError {
-    InvalidSyntax,
-    InvalidNumber,
-    UnexpectedEnd,
+    InvalidSyntax
+    InvalidNumber
+    UnexpectedEnd
     DuplicateField
 }
 ```

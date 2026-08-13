@@ -43,12 +43,12 @@ realm std {
     /** Errors raised by validation, parsing, and unsafe temporal arithmetic. */
     @Experimental(since: "0.1")
     error TimeError {
-        InvalidDuration,
-        InvalidDate,
-        InvalidTime,
-        InvalidOffset,
-        InvalidFormat,
-        ArithmeticOverflow,
+        InvalidDuration
+        InvalidDate
+        InvalidTime
+        InvalidOffset
+        InvalidFormat
+        ArithmeticOverflow
         UnsupportedRange
     }
 

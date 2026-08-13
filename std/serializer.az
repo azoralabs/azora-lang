@@ -50,16 +50,16 @@ realm std {
     /** Failures reported by text decoders and typed serializers. */
     @Experimental(since: "0.1")
     error SerializationError {
-        InvalidSyntax,
-        InvalidEscape,
-        InvalidNumber,
-        UnexpectedEnd,
-        TrailingContent,
-        DuplicateField,
-        MissingField,
-        UnknownField,
-        UnexpectedType,
-        MaxDepthExceeded,
+        InvalidSyntax
+        InvalidEscape
+        InvalidNumber
+        UnexpectedEnd
+        TrailingContent
+        DuplicateField
+        MissingField
+        UnknownField
+        UnexpectedType
+        MaxDepthExceeded
         InputTooLarge
     }
 

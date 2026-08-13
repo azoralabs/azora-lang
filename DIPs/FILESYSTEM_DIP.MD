@@ -180,15 +180,15 @@ distinction calls `fileInfo` and reads the error.
 
 ```azora
 error FileError {
-    NotFound,
-    PermissionDenied,
-    AlreadyExists,
-    NotADirectory,
-    IsADirectory,
-    DirectoryNotEmpty,
-    InvalidPath,
-    ReadFailed,
-    WriteFailed,
+    NotFound
+    PermissionDenied
+    AlreadyExists
+    NotADirectory
+    IsADirectory
+    DirectoryNotEmpty
+    InvalidPath
+    ReadFailed
+    WriteFailed
     Unsupported
 }
 ```

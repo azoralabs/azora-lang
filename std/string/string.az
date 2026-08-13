@@ -306,8 +306,8 @@ realm std {
      */
     @Since("0.1")
     error ParseError {
-        InvalidFormat,
-        Overflow,
+        InvalidFormat
+        Overflow
         EmptyInput
     }
 

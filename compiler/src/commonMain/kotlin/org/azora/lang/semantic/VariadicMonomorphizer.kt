@@ -1193,15 +1193,27 @@ private class MonoContext(
         }
         val name = NamedTypeMacroCall.name(call)
         val modifier = NamedTypeMacroCall.modifier(call)
+        // `with,without|L2,S1,S1` - the words the use site wrote, and the shape
+        // of each operand: how many types, and whether they were bracketed.
+        val clauses = modifier.contains('|')
+        val keywords = if (clauses) modifier.substringBefore('|').split(",") else emptyList()
+        val shapes = if (clauses) modifier.substringAfter('|').split(",") else emptyList()
+        val plain = if (clauses) "" else modifier
         val named = typeMacroRules.filter {
-            it.kind == expectedKind && it.name == name && it.prefix == modifier
+            it.name == name && it.prefix == plain && it.keywords == keywords &&
+                (!clauses || it.holeIsList == shapes.map { shape -> shape.startsWith("L") }) &&
+                (clauses || it.kind == expectedKind)
         }
         // A macro may have one arm per shape it accepts - `@with T` and
         // `@with [A, B]` are both infix `with`. The arm that fits the arguments
         // is the one meant: an exact arity wins, and the list arm takes the rest.
-        val matches = named.filter { it.holes.size == call.args.size && !it.listTail }
-            .ifEmpty { named.filter { it.listTail && call.args.size >= it.holes.size - 1 } }
-            .ifEmpty { named }
+        val matches = if (clauses) {
+            named
+        } else {
+            named.filter { it.holes.size == call.args.size && !it.listTail }
+                .ifEmpty { named.filter { it.listTail && call.args.size >= it.holes.size - 1 } }
+                .ifEmpty { named }
+        }
         if (matches.isEmpty()) {
             val spelling = buildString {
                 if (modifier.isNotEmpty()) append(modifier).append(' ')
@@ -1219,6 +1231,17 @@ private class MonoContext(
                 mapOf(rule.holes.single() to rewrittenArgs)
             // `$Q @with [...$ITEMS]` - the leading holes take one argument each
             // and the last one takes everything that is left.
+            // A clause sequence: each hole takes its own operand, sized by the
+            // shape the use site wrote.
+            rule.keywords.isNotEmpty() -> {
+                var at = 0
+                rule.holes.mapIndexed { index, hole ->
+                    val count = shapes[index].drop(1).toIntOrNull() ?: 1
+                    val slice = rewrittenArgs.subList(at, minOf(at + count, rewrittenArgs.size)).toList()
+                    at += count
+                    hole to slice
+                }.toMap()
+            }
             rule.listTail && rewrittenArgs.size >= rule.holes.size - 1 -> {
                 val leading = rule.holes.dropLast(1)
                 leading.mapIndexed { index, hole -> hole to listOf(rewrittenArgs[index]) }.toMap() +

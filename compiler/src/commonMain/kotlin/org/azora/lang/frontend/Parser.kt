@@ -4430,30 +4430,57 @@ class Parser(
      * matched where a type is written rather than where a call is.
      */
     private fun parseTypeMacroArm(macroName: String): TypeTypeArm? {
+        // A bare hole heads a type arm when what follows is the arrow, or a word
+        // the arm's own grammar continues with: `$Q with $T => …`.
         val bare = check(TokenType.IDENTIFIER) && isTypeHole(peek().lexeme) &&
-            peekNext()?.type == TokenType.FAT_ARROW
+            peekNext()?.type.let {
+                it == TokenType.FAT_ARROW || it == TokenType.WITH || it == TokenType.WITHOUT
+            }
         val list = check(TokenType.L_BRACKET) &&
             peekNext()?.type == TokenType.ELLIPSIS &&
             tokens.getOrNull(current + 2)?.lexeme?.let(::isTypeHole) == true &&
             tokens.getOrNull(current + 3)?.type == TokenType.R_BRACKET
         if (!bare && !list) return null
 
-        val hole: String
-        val kind: TypeFormKind
-        if (bare) {
-            hole = advance().lexeme
-            kind = TypeFormKind.PREFIX
-        } else {
-            advance() // '['
-            advance() // '...'
-            hole = advance().lexeme
-            advance() // ']'
-            kind = TypeFormKind.PREFIX_LIST
+        val holes = mutableListOf<String>()
+        val holeIsList = mutableListOf<Boolean>()
+        val keywords = mutableListOf<String>()
+        readTypeMacroOperand(macroName, holes, holeIsList)
+        // `$Q with $T without $S` - the whole clause sequence is one pattern, so
+        // one arm decides the whole expansion rather than each clause rewriting
+        // what the last one built.
+        while (check(TokenType.WITH) || check(TokenType.WITHOUT)) {
+            keywords.add(advance().lexeme)
+            readTypeMacroOperand(macroName, holes, holeIsList)
         }
         consume(TokenType.FAT_ARROW, "Expected '=>' after the pattern of '@$macroName'")
         val template = parseTypeName()
         consumeNewline()
-        return TypeTypeArm(kind, listOf(hole), template, name = macroName)
+        return TypeTypeArm(
+            kind = if (holeIsList.first()) TypeFormKind.PREFIX_LIST else TypeFormKind.PREFIX,
+            holes = holes,
+            template = template,
+            name = macroName,
+            keywords = keywords,
+            holeIsList = holeIsList,
+        )
+    }
+
+    /** One operand of a type-macro arm: `$NAME` or `[...$NAME]`. */
+    private fun readTypeMacroOperand(
+        macroName: String,
+        holes: MutableList<String>,
+        holeIsList: MutableList<Boolean>,
+    ) {
+        if (match(TokenType.L_BRACKET)) {
+            consume(TokenType.ELLIPSIS, "A list operand captures the whole list: write '[...\$NAME]'")
+            holes.add(consume(TokenType.IDENTIFIER, "Expected a '\$NAME' hole in '@$macroName'").lexeme)
+            consume(TokenType.R_BRACKET, "Expected ']' after the list operand of '@$macroName'")
+            holeIsList.add(true)
+        } else {
+            holes.add(consume(TokenType.IDENTIFIER, "Expected a '\$NAME' hole in '@$macroName'").lexeme)
+            holeIsList.add(false)
+        }
     }
 
     /** Whether [lexeme] is a `$NAME` hole standing for a type rather than a value. */
@@ -5890,6 +5917,53 @@ class Parser(
         )
     }
 
+    /**
+     * Reads the rest of a type macro's own grammar - `… with C without D`.
+     *
+     * The whole clause sequence becomes one application, because one arm decides
+     * the whole expansion. What travels with it is the words that were written
+     * and the shape of each operand - how many types, and whether they were
+     * bracketed - since neither can be recovered from a flat argument list.
+     */
+    private fun finishNamedTypeMacro(
+        name: String,
+        first: List<TypeRef>,
+        firstIsList: Boolean,
+        modifier: String,
+        form: NamedTypeMacroCall.Form,
+    ): TypeRef {
+        val keywords = mutableListOf<String>()
+        val shapes = mutableListOf(if (firstIsList) "L${first.size}" else "S1")
+        val args = first.toMutableList()
+        while (check(TokenType.WITH) || check(TokenType.WITHOUT)) {
+            keywords.add(advance().lexeme)
+            if (match(TokenType.L_BRACKET)) {
+                val items = mutableListOf<TypeRef>()
+                skipNewlines()
+                if (!check(TokenType.R_BRACKET)) {
+                    do {
+                        skipNewlines()
+                        items.add(parseTypeName())
+                        skipNewlines()
+                    } while (match(TokenType.COMMA))
+                }
+                consume(TokenType.R_BRACKET, "Expected ']' after the operand of '${keywords.last()}'")
+                shapes.add("L${items.size}")
+                args.addAll(items)
+            } else {
+                shapes.add("S1")
+                args.add(parseTypeSuffixes(parseTypeAtom()))
+            }
+        }
+        if (keywords.isEmpty()) return NamedTypeMacroCall.create(name, first, modifier, form)
+        return NamedTypeMacroCall.create(
+            name,
+            args,
+            keywords.joinToString(",") + "|" + shapes.joinToString(","),
+            form,
+        )
+    }
+
     private fun parseNamedTypeMacroInvocation(modifier: String = ""): TypeRef {
         var name = consume(TokenType.IDENTIFIER, "Expected type-macro name").lexeme
         // Fold the borrow sigil into the name so `res& T` resolves against the
@@ -5909,14 +5983,10 @@ class Parser(
                 } while (match(TokenType.COMMA))
             }
             consume(TokenType.R_BRACKET, "Expected ']' after '$name' type arguments")
-            return NamedTypeMacroCall.create(name, args, modifier, NamedTypeMacroCall.Form.List)
+            return finishNamedTypeMacro(name, args, firstIsList = true, modifier, NamedTypeMacroCall.Form.List)
         }
-        return NamedTypeMacroCall.create(
-            name,
-            listOf(parseTypeName()),
-            modifier,
-            NamedTypeMacroCall.Form.Prefix,
-        )
+        val single = listOf(parseTypeSuffixes(parseTypeAtom()))
+        return finishNamedTypeMacro(name, single, firstIsList = false, modifier, NamedTypeMacroCall.Form.Prefix)
     }
 
     /**

@@ -2119,10 +2119,27 @@ data class TypeTypeArm(
     /**
      * Whether the last hole takes the remaining arguments as a list.
      *
-     * `$Q @with [...$ITEMS]` binds `$Q` to the left operand and `$ITEMS` to
-     * every type in the bracketed operand, however many were written.
+     * `[...$ITEMS] with [...$WITH]` binds `$ITEMS` to the fetch list and
+     * `$WITH` to every type in the second operand, however many were written.
      */
     val listTail: Boolean = false,
+    /**
+     * The words joining the arm's operands - `with`, `without` - in order.
+     *
+     * They belong to the macro's own grammar, not to the language: an arm says
+     * which words it accepts and in what order, so a library defines the syntax
+     * it reads with rather than the parser blessing any of it. Empty for an arm
+     * that takes a single operand.
+     */
+    val keywords: List<String> = emptyList(),
+    /**
+     * Whether each operand is a bracketed list, positionally.
+     *
+     * What separates `with $T` from `with [...$ITEMS]`: the use site says which
+     * by writing brackets or not, and the arm that said the same thing is the
+     * one meant.
+     */
+    val holeIsList: List<Boolean> = emptyList(),
 )
 
 /**

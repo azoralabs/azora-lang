@@ -990,6 +990,7 @@ class Parser(
                     ),
                 )
             }
+            check(TokenType.BRIDGE) && isBridgeReceiverPropAhead() -> parseBridgeReceiverProp(annotations)
             check(TokenType.BRIDGE) && isBridgeFuncAhead() -> parseBridgeFunc(annotations)
             check(TokenType.BRIDGE) -> parseBridge(annotations)
             check(TokenType.SOLO) -> parseSolo(visibility, annotations)
@@ -3927,6 +3928,93 @@ class Parser(
             )),
             start.line, start.column, annotations,
         )
+    }
+
+    /**
+     * True for `bridge prop name[Receiver&]: T` - a member declared on a type
+     * from outside it.
+     *
+     * Told apart from `bridge prop name[self: Self&]` by what the brackets hold:
+     * a receiver *type* rather than a named binding, so there is no `:` inside
+     * them.
+     */
+    private fun isBridgeReceiverPropAhead(): Boolean {
+        var i = current + 1
+        while (tokens.getOrNull(i)?.type in setOf(TokenType.INLINE, TokenType.DEEPINLINE)) i++
+        if (tokens.getOrNull(i)?.type != TokenType.PROP) return false
+        i++
+        if (tokens.getOrNull(i)?.type != TokenType.IDENTIFIER) return false
+        i++
+        if (tokens.getOrNull(i)?.type != TokenType.L_BRACKET) return false
+        var depth = 0
+        while (i < tokens.size) {
+            when (tokens[i].type) {
+                TokenType.L_BRACKET -> depth++
+                TokenType.R_BRACKET -> { depth--; if (depth == 0) return true }
+                TokenType.COLON -> if (depth == 1) return false
+                TokenType.EOF -> return false
+                else -> {}
+            }
+            i++
+        }
+        return false
+    }
+
+    /**
+     * `bridge prop typeName[Type&]: String` - a compiler-provided member of the
+     * type named in the brackets.
+     *
+     * The receiver is written as a type because there is no value to bind: the
+     * member belongs to the type itself. It becomes an ordinary member of that
+     * type, so everything downstream finds it exactly as it finds any other.
+     */
+    private fun parseBridgeReceiverProp(annotations: List<Annotation>): TopLevel {
+        val start = advance() // 'bridge'
+        val isDeep = check(TokenType.DEEPINLINE)
+        val isInline = match(TokenType.INLINE) || match(TokenType.DEEPINLINE)
+        consume(TokenType.PROP, "Expected 'prop' after 'bridge'")
+        val name = consumeIdentifierLike("Expected the property's name")
+        consume(TokenType.L_BRACKET, "Expected '[' before the receiver type")
+        val receiver = parseTypeName()
+        consume(TokenType.R_BRACKET, "Expected ']' after the receiver type")
+        val type: TypeAnnotation = if (match(TokenType.COLON)) {
+            skipNewlines()
+            TypeAnnotation.Explicit(parseTypeName())
+        } else {
+            TypeAnnotation.Inferred
+        }
+        consumeNewline()
+        return TopLevel.Impl(
+            typeName = receiverTypeName(receiver),
+            methods = listOf(
+                FuncDecl(
+                    name, emptyList(), type, emptyList(), isInline, emptyList(),
+                    start.line, start.column,
+                    annotations = annotations,
+                    receiverModifier = receiverModifierOf(receiver),
+                    memberCallStyle = MemberCallStyle.PROPERTY,
+                    isDeepInline = isDeep,
+                ),
+            ),
+            traitName = null,
+            line = start.line,
+            column = start.column,
+            isBridge = true,
+            hasBody = true,
+        )
+    }
+
+    /** The declared name of a receiver type, past any borrow it was written with. */
+    private fun receiverTypeName(ref: TypeRef): String = when (ref) {
+        is TypeRef.Named -> ref.name
+        is TypeRef.Reference -> receiverTypeName(ref.inner)
+        else -> error("A bridge receiver must name a type")
+    }
+
+    /** The borrow a receiver type was written with. */
+    private fun receiverModifierOf(ref: TypeRef): ParamModifier = when (ref) {
+        is TypeRef.Reference -> ref.kind.paramModifier
+        else -> ParamModifier.NONE
     }
 
     private fun parseBridge(annotations: List<Annotation> = emptyList()): TopLevel.Bridge {

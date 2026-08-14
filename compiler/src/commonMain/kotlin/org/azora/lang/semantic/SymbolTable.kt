@@ -339,6 +339,9 @@ class SymbolTable {
     /** Looks up the mangled function name for a method, or `null`. */
     fun lookupMethod(typeName: String, methodName: String): String? = methods[typeName]?.get(methodName)
 
+    /** Every type that has members registered, for lookups that know only a name. */
+    fun methodOwners(): Set<String> = methods.keys
+
     /**
      * Resolves an operator overload on [typeName] for a right-hand operand.
      *

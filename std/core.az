@@ -60,15 +60,24 @@ realm std {
     @Since("0.1")
     bridge pack Type
 
+    /**
+     * The type's own name, as a string: `T.typeName` is `"Position"` where `T`
+     * was bound to `Position`.
+     *
+     * The receiver is written as a type because there is no value to read it
+     * from - the member belongs to the type itself. Folded where `T` stops
+     * being a parameter, which is the only place the answer exists: nothing
+     * afterwards remembers what a caller chose.
+     */
     impl Type {
         /**
          * The type's own name, as a string: `T.typeName` is `"Position"` where
          * `T` was bound to `Position`.
          *
-         * Folded during specialization, which is the only place the answer
-         * exists - a type parameter has no name of its own, only the name of
-         * whatever a caller chose for it, and nothing after specialization
-         * remembers which that was.
+         * Folded where `T` stops being a parameter - an inline call site, or a
+         * specialization - which is the only place the answer exists: a type
+         * parameter has no name of its own, only the name of whatever a caller
+         * chose for it, and nothing afterwards remembers which that was.
          */
         @Since("0.1")
         bridge deepinline prop typeName[self: Self&]: String

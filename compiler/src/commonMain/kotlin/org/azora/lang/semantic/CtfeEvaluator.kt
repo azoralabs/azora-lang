@@ -1172,7 +1172,8 @@ class CtfeEvaluator(private val table: SymbolTable) {
     private fun inlineCallAsExpression(call: Expr.Call, args: List<Expr>, program: Program): Expr? {
         val decl = program.functions.find { it.name == call.callee && it.isInline } ?: return null
         if (decl.params.any { it.variadic }) return null
-        val returned = (decl.body.singleOrNull() as? Stmt.Return)?.value ?: return null
+        val returned = (decl.body.singleOrNull() as? Stmt.Return)?.value
+            ?.let { foldTypeNames(it, decl.typeParams, call.typeArgs) } ?: return null
         val bindings = mutableMapOf<String, Expr>()
         bindings.putAll(constTypeArguments(decl, call.typeArgs))
         for ((index, param) in decl.params.withIndex()) {
@@ -1180,6 +1181,38 @@ class CtfeEvaluator(private val table: SymbolTable) {
             bindings[param.name] = asDeclaredLiteral(argument, param.type)
         }
         return foldExpr(substituteInExpr(returned, bindings), program).first
+    }
+
+    /**
+     * Folds `T.typeName` to the name of the type `T` was called with.
+     *
+     * An inline function's body is copied to the call site, and the call site is
+     * where `T` stops being a parameter. Nothing later knows what it was, so the
+     * name is put in here or not at all.
+     */
+    private fun foldTypeNames(expr: Expr, typeParams: List<String>, typeArgs: List<TypeRef>): Expr {
+        if (typeParams.isEmpty() || typeArgs.isEmpty()) return expr
+        val names = typeParams.withIndex().mapNotNull { (index, param) ->
+            typeArgs.getOrNull(index)?.let { param to it.displayName() }
+        }.toMap()
+        if (names.isEmpty()) return expr
+
+        fun fold(e: Expr): Expr = when {
+            e is Expr.Member && e.name == "typeName" &&
+                (e.target as? Expr.Identifier)?.name?.let { it in names } == true ->
+                Expr.StringLiteral(names.getValue((e.target as Expr.Identifier).name), e.line, e.column)
+            e is Expr.Member -> e.copy(target = fold(e.target))
+            e is Expr.Call -> e.copy(args = e.args.map(::fold), receiver = e.receiver?.let(::fold))
+            e is Expr.MethodCall -> e.copy(target = fold(e.target), args = e.args.map(::fold))
+            e is Expr.Binary -> e.copy(left = fold(e.left), right = fold(e.right))
+            e is Expr.Unary -> e.copy(operand = fold(e.operand))
+            e is Expr.Grouping -> e.copy(expr = fold(e.expr))
+            e is Expr.StringTemplate -> e.copy(parts = e.parts.map { part ->
+                if (part is Expr.StringTemplatePart.Expr) Expr.StringTemplatePart.Expr(fold(part.expr)) else part
+            })
+            else -> e
+        }
+        return fold(expr)
     }
 
     /**

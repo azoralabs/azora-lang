@@ -571,6 +571,43 @@ class TypeResolver(private val table: SymbolTable) {
     private var currentFuncTypeParams: Set<String> = emptySet()
 
     /**
+     * The type of the member [name] declared on the meta-type, or null.
+     *
+     * `Type` is the type of a type, so its members are what a type parameter can
+     * be asked. Read from the declaration rather than from the method table: a
+     * `bridge` member has no body, so it registers a name and no callable, and
+     * the declared result is the only place its type is written down.
+     */
+    private fun typeMetaMember(name: String): IrType? {
+        val declaring = program?.items?.filterIsInstance<TopLevel.Impl>()?.firstOrNull { impl ->
+            (impl.typeName == "Type" || impl.typeName.endsWith("__Type")) &&
+                impl.methods.any { it.name == name }
+        }
+        val member = declaring?.methods?.first { it.name == name }
+            // A realm's members are lifted out of their impl, so the meta-type's
+            // are reached the same way any other realm member is.
+            ?: program?.functions?.firstOrNull {
+                it.memberCallStyle == MemberCallStyle.PROPERTY &&
+                    (it.name == name || it.name.endsWith("__$name"))
+            }
+            ?: return null
+        return (member.returnType as? TypeAnnotation.Explicit)?.let { tryResolveType(it.ref, 0) }
+    }
+
+    /**
+     * The result of a meta-type member when its declaration did not reach here.
+     *
+     * `impl Type` lives in the standard library, and injection is driven by what
+     * a program refers to - nothing refers to the meta-type by name, so the
+     * declaration is not pulled in and [typeMetaMember] finds nothing to read.
+     * The member's own contract is what stands in until it is.
+     */
+    private fun typeMetaMemberFallback(name: String): IrType? = when (name) {
+        "typeName" -> IrType.String
+        else -> null
+    }
+
+    /**
      * True while resolving something a test-realm declaration may be used from:
      * a `test` block, or another declaration that is itself in a test realm.
      */
@@ -2043,6 +2080,14 @@ class TypeResolver(private val table: SymbolTable) {
                 if (targetType is IrType.Array) targetType.element else (targetType as IrType.Set).element
             }
             is Expr.Member -> {
+                // `T.member` where `T` is a type parameter: the member is one of
+                // `Type`'s, declared in the standard library. What is readable and
+                // what it yields come from that declaration, not from a list here.
+                // Checked before anything looks at the target, which is a type
+                // rather than an expression and would not resolve as one.
+                if ((expr.target as? Expr.Identifier)?.name in currentFuncTypeParams) {
+                    (typeMetaMember(expr.name) ?: typeMetaMemberFallback(expr.name))?.let { return it }
+                }
                 movablePath(expr)?.let { checkNotMoved(it, expr.line) }
                 // A union member read reinterprets storage; see requireUnsafeForUnion.
                 unionNameOf(inferredTargetType(expr.target))?.let { requireUnsafeForUnion(it, expr.line) }

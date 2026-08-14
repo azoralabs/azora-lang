@@ -60,6 +60,20 @@ realm std {
     @Since("0.1")
     bridge pack Type
 
+    impl Type {
+        /**
+         * The type's own name, as a string: `T.typeName` is `"Position"` where
+         * `T` was bound to `Position`.
+         *
+         * Folded during specialization, which is the only place the answer
+         * exists - a type parameter has no name of its own, only the name of
+         * whatever a caller chose for it, and nothing after specialization
+         * remembers which that was.
+         */
+        @Since("0.1")
+        bridge deepinline prop typeName[self: Self&]: String
+    }
+
     /*@Since("0.1")
     variant enum Option<T> {
         Some(T)

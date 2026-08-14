@@ -116,7 +116,6 @@ class Parser(
         TokenType.NEWLINE, TokenType.EOF,
     )
 
-
     /** Enclosing labeled/anonymous realms while parsing (outermost first). */
     private data class RealmFrame(val label: String?, val isInline: Boolean)
     private val realmStack = mutableListOf<RealmFrame>()
@@ -4234,7 +4233,11 @@ class Parser(
             val left = advance().lexeme
             consume(TokenType.AT, "Expected '@' before the infix macro's name")
             val op = parseMacroName()
+            // `[...$ITEMS]` - the right operand is a list, however long.
+            val rightIsList = match(TokenType.L_BRACKET)
+            if (rightIsList) consume(TokenType.ELLIPSIS, "A list operand captures the whole list: write '[...\$NAME]'")
             val right = consume(TokenType.IDENTIFIER, "Expected the right hole after an infix macro's name").lexeme
+            if (rightIsList) consume(TokenType.R_BRACKET, "Expected ']' after the list operand of '@$op'")
             requireTypeMacroHole(left)
             requireTypeMacroHole(right)
             // With a `=>` it rewrites; without one it only registers the name, so
@@ -4248,7 +4251,10 @@ class Parser(
                 if (isTypeHole(left) && isTypeHole(right)) {
                     val template = parseTypeName()
                     pendingTypeMacroRules.add(
-                        TypeTypeArm(TypeFormKind.INFIX, listOf(left, right), template, name = op),
+                        TypeTypeArm(
+                            TypeFormKind.INFIX, listOf(left, right), template,
+                            name = op, listTail = rightIsList,
+                        ),
                     )
                 } else {
                     val template = parseExpr()
@@ -5879,10 +5885,27 @@ class Parser(
                 match(TokenType.WITH) -> "with"
                 else -> return base
             }
-            val right = parseTypeName()
+            // The right operand may be a list - `@with [Position, Velocity]` -
+            // in which case every type in it is an argument of the application.
+            val right = if (check(TokenType.L_BRACKET)) {
+                advance()
+                val items = mutableListOf<TypeRef>()
+                skipNewlines()
+                if (!check(TokenType.R_BRACKET)) {
+                    do {
+                        skipNewlines()
+                        items.add(parseTypeName())
+                        skipNewlines()
+                    } while (match(TokenType.COMMA))
+                }
+                consume(TokenType.R_BRACKET, "Expected ']' after the operand of '@$operator'")
+                items
+            } else {
+                listOf(parseTypeName())
+            }
             base = NamedTypeMacroCall.create(
                 operator,
-                listOf(base, right),
+                listOf(base) + right,
                 form = NamedTypeMacroCall.Form.Infix,
             )
         }

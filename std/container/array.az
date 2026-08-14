@@ -76,6 +76,21 @@ realm std {
         return elements
     }
 
+    /**
+     * The empty array - what `@std::arr[]` expands to.
+     *
+     * Written as a call rather than a literal because an empty literal says
+     * nothing about what it holds; the element type comes from the position it
+     * is used in.
+     */
+    @Experimental(since: "0.1")
+    func emptyArray<T>(): Array<T> {
+        // Built at a length rather than by spreading nothing: `arrayOf<T>()`
+        // has no argument to take `T` from, so the element type would arrive
+        // still unresolved at the caller.
+        return Array::fill<T>(0)
+    }
+
     impl Array<T, N: Int> {
         /**
          * True when the array holds no elements.

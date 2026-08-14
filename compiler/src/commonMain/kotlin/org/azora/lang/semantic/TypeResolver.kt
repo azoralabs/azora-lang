@@ -1036,6 +1036,18 @@ class TypeResolver(private val table: SymbolTable) {
         }
     }
 
+    /**
+     * Whether [type] names a type parameter that nothing bound.
+     *
+     * A parameter left over from a declaration is not a type any value has; it
+     * stands for one the caller has yet to choose.
+     */
+    private fun isUnboundTypeParam(type: IrType): Boolean {
+        val named = type as? IrType.Named ?: return false
+        if (named.args.isNotEmpty()) return false
+        return table.lookupStruct(named.name) == null && table.lookupEnum(named.name) == null
+    }
+
     /** If [expr] is `ErrSet.Variant`, returns the error-set name; otherwise null. */
     private fun failSetOf(expr: Expr): String? {
         val m = expr as? Expr.Member ?: return null
@@ -2977,6 +2989,22 @@ class TypeResolver(private val table: SymbolTable) {
     /** Checks if an initializer type is compatible with a declared type (nullable widening, Any from null). */
     private fun isCompatible(declared: IrType, actual: IrType): Boolean {
         if (declared == actual) return true
+        // `Array<T>` against `Array<Int>`, where `T` is a type parameter nothing
+        // bound. A generic function with no arguments has nothing to infer from
+        // - `emptyArray<T>()` is the whole point of being empty - so the
+        // position it is used in is what decides, and an unbound parameter
+        // unifies with whatever is expected there.
+        if (declared is IrType.Array && actual is IrType.Array && isUnboundTypeParam(actual.element)) {
+            return true
+        }
+        if (declared is IrType.Named && actual is IrType.Named &&
+            declared.name == actual.name && declared.args.size == actual.args.size &&
+            actual.args.isNotEmpty() && actual.args.any(::isUnboundTypeParam)
+        ) {
+            return declared.args.indices.all { i ->
+                isUnboundTypeParam(actual.args[i]) || isCompatible(declared.args[i], actual.args[i])
+            }
+        }
         // `escaping` describes the *position*, not the value: a lambda has no
         // opinion about whether it will be kept, and it is the parameter or field
         // that says so. Comparing the two would reject every closure written for

@@ -2116,6 +2116,13 @@ data class TypeTypeArm(
     val prefix: String = "",
     /** Name of a library-defined prefix/list/infix type macro; null for shape sugar. */
     val name: String? = null,
+    /**
+     * Whether the last hole takes the remaining arguments as a list.
+     *
+     * `$Q @with [...$ITEMS]` binds `$Q` to the left operand and `$ITEMS` to
+     * every type in the bracketed operand, however many were written.
+     */
+    val listTail: Boolean = false,
 )
 
 /**

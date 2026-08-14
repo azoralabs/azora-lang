@@ -1193,9 +1193,15 @@ private class MonoContext(
         }
         val name = NamedTypeMacroCall.name(call)
         val modifier = NamedTypeMacroCall.modifier(call)
-        val matches = typeMacroRules.filter {
+        val named = typeMacroRules.filter {
             it.kind == expectedKind && it.name == name && it.prefix == modifier
         }
+        // A macro may have one arm per shape it accepts - `@with T` and
+        // `@with [A, B]` are both infix `with`. The arm that fits the arguments
+        // is the one meant: an exact arity wins, and the list arm takes the rest.
+        val matches = named.filter { it.holes.size == call.args.size && !it.listTail }
+            .ifEmpty { named.filter { it.listTail && call.args.size >= it.holes.size - 1 } }
+            .ifEmpty { named }
         if (matches.isEmpty()) {
             val spelling = buildString {
                 if (modifier.isNotEmpty()) append(modifier).append(' ')
@@ -1211,6 +1217,13 @@ private class MonoContext(
         val bindings: Map<String, List<TypeRef>> = when {
             rule.kind == TypeFormKind.PREFIX_LIST && rule.holes.size == 1 ->
                 mapOf(rule.holes.single() to rewrittenArgs)
+            // `$Q @with [...$ITEMS]` - the leading holes take one argument each
+            // and the last one takes everything that is left.
+            rule.listTail && rewrittenArgs.size >= rule.holes.size - 1 -> {
+                val leading = rule.holes.dropLast(1)
+                leading.mapIndexed { index, hole -> hole to listOf(rewrittenArgs[index]) }.toMap() +
+                    mapOf(rule.holes.last() to rewrittenArgs.drop(leading.size))
+            }
             rule.holes.size == rewrittenArgs.size ->
                 rule.holes.zip(rewrittenArgs.map(::listOf)).toMap()
             else -> error(
@@ -1339,6 +1352,16 @@ private class MonoContext(
     }
 
     fun rewriteExpr(e: Expr): Expr = when (e) {
+        // `T.typeName` - the bound type's own name, as a string. Folded here
+        // because here is where `T` stops being a parameter and becomes a type:
+        // a specialization knows what it was given, and nothing later does.
+        is Expr.Member if e.name == "typeName" &&
+            (e.target as? Expr.Identifier)?.name?.let { it in typeBindings } == true ->
+            Expr.StringLiteral(
+                typeBindings.getValue((e.target as Expr.Identifier).name).displayName(),
+                e.line,
+                e.column,
+            )
         // `N` reads as its value and `T` as its type: `inline if N >= 3` and
         // `T is Integer` are both decidable once a specialization binds them.
         is Expr.Identifier -> constBindings[e.name]?.let { Expr.IntLiteral(it, e.line, e.column) }

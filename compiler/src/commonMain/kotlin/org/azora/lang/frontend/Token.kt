@@ -123,6 +123,7 @@ enum class TokenType {
     AT,
     // Contextual callable receivers: `with value { ... }` / `with [a, b] { ... }`.
     WITH,
+    WITHOUT,
     // `oper[]` / `oper[]=` - index-operator overloading inside impl blocks.
     OPER,
     // `error ErrSet { … }` - error-set declaration; also `error <expr>` throw sugar.

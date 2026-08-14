@@ -5861,51 +5861,15 @@ class Parser(
     private fun parseTypeInfixes(start: TypeRef): TypeRef {
         var base = start
         while (true) {
-            // `@name` between two types is an infix macro application, whatever
-            // the name is: the compiler knows the *shape*, and the library that
-            // declared the macro knows what it means. Nothing here is a list of
-            // blessed names.
-            // An infix macro joins two types on one line. Without that, a type
-            // ending a line would reach past the break for the next line's `@`,
-            // and a following declaration would be read as its right operand.
-            val sameLine = tokens.getOrNull(current - 1)?.line == peek().line
             val operator = when {
-                sameLine && check(TokenType.AT) && peekNext()?.type == TokenType.IDENTIFIER &&
-                    peekNext()?.lexeme?.firstOrNull()?.isLowerCase() == true -> {
-                    advance()
-                    advance().lexeme
-                }
-                // `with` is a keyword, so it cannot arrive as an identifier; the
-                // bare spelling stays for the types already written with it.
-                sameLine && check(TokenType.AT) && peekNext()?.type == TokenType.WITH -> {
-                    advance()
-                    advance()
-                    "with"
-                }
                 match(TokenType.WITH) -> "with"
+                match(TokenType.WITHOUT) -> "without"
                 else -> return base
             }
-            // The right operand may be a list - `@with [Position, Velocity]` -
-            // in which case every type in it is an argument of the application.
-            val right = if (check(TokenType.L_BRACKET)) {
-                advance()
-                val items = mutableListOf<TypeRef>()
-                skipNewlines()
-                if (!check(TokenType.R_BRACKET)) {
-                    do {
-                        skipNewlines()
-                        items.add(parseTypeName())
-                        skipNewlines()
-                    } while (match(TokenType.COMMA))
-                }
-                consume(TokenType.R_BRACKET, "Expected ']' after the operand of '@$operator'")
-                items
-            } else {
-                listOf(parseTypeName())
-            }
+            val right = parseTypeName()
             base = NamedTypeMacroCall.create(
                 operator,
-                listOf(base) + right,
+                listOf(base, right),
                 form = NamedTypeMacroCall.Form.Infix,
             )
         }

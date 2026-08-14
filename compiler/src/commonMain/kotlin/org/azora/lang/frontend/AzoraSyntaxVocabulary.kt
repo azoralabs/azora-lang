@@ -46,6 +46,7 @@ object AzoraSyntaxVocabulary {
         "by" to TokenType.BY,
         "reverse" to TokenType.REVERSE,
         "with" to TokenType.WITH,
+        "without" to TokenType.WITHOUT,
         "oper" to TokenType.OPER,
         "annot" to TokenType.ANNOT,
         "bind" to TokenType.BIND,
@@ -99,7 +100,7 @@ object AzoraSyntaxVocabulary {
 
     val contextualKeywords: Set<String> =
         setOf(
-            "module", "union", "async", "where", "without", "replace", "escaping",
+            "module", "union", "async", "where", "replace", "escaping",
             "derives", "includes", "binds", "requires", "lend", "reflect",
         )
 }

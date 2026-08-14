@@ -30,6 +30,17 @@ realm std {
     bridge pack Unit
 
     /**
+     * The bottom type: no value has it, and nothing can be read at it.
+     *
+     * What a compile-time computation answers when the question it was asked has
+     * none - the type of a default that was never declared, say. `Unit` would be
+     * the wrong answer there: it says there *is* a value and it happens to carry
+     * nothing, where `Nothing` says there is no value at all.
+     */
+    @Since("0.1")
+    bridge pack Nothing
+
+    /**
      * The erased top type accepted by APIs that can receive values of any type.
      *
      * `Any` is compiler-provided: it has no constructible runtime pack and each
@@ -48,6 +59,21 @@ realm std {
      */
     @Since("0.1")
     bridge pack Type
+
+    /*@Since("0.1")
+    variant enum Option<T> {
+        Some(T)
+        None
+    }
+
+    impl Option:: {
+        deepinline prop Nullable<T>(b: Bool): Type {
+            return when b {
+                true => Option<T?>
+                false => Option<T>
+            }
+        }
+    }*/
 
     /** Declaration categories accepted by decorator `for` constraints. */
     @Experimental(since: "0.1")

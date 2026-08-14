@@ -76,6 +76,46 @@ func greet(name: String, punctuation: String = "!"): String {
 - A trailing `= expr` gives a **default value**; defaulted params may be omitted
   or passed by name at the call site (`greet("Ann", punctuation: ".")`).
 
+#### How arguments reach parameters
+
+Three rules, holding identically for free functions and for methods (a method's
+`self` is parameter 0, and its own parameters follow):
+
+1. **A named argument takes its own parameter.** Any parameter it skips takes
+   that parameter's default - the argument does not slide left to fill the gap.
+
+   ```azora
+   func f(a: Int = 1, b: Int = 2): Int { return a * 10 + b }
+
+   f(b: 5)   // 15 - a defaults to 1. NOT 52.
+   ```
+
+2. **A defaulted parameter may be omitted**, positionally or by name.
+
+3. **A block written after the parentheses is the last parameter's argument**,
+   whatever else the call supplied - it is not a positional argument competing
+   for the leftmost free parameter.
+
+   ```azora
+   func k(a: Int = 3, body: () -> Unit): Int { … }
+
+   k { … }              // a = 3,  body = the block
+   k(7) { … }           // a = 7,  body = the block
+   ```
+
+   The rule applies only when the call is short an argument and the last
+   parameter takes a function, so a lambda passed positionally in any other
+   position is untouched. Writing `body:` explicitly disables it.
+
+A method may also declare **its own type parameters**, independent of the
+type's:
+
+```azora
+impl P {
+    func each<R>[self: Self&](label: String = "x", body: () -> R): String { … }
+}
+```
+
 #### Parameter borrows (in/out references)
 
 The borrow lives on the **type**:

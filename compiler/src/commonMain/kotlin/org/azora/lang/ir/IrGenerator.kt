@@ -163,6 +163,107 @@ class IrGenerator(private val table: SymbolTable) {
         return slots.toList()
     }
 
+    /**
+     * Positional arguments for [func], with every gap in [slots] replaced by
+     * that parameter's default.
+     *
+     * [slots] is indexed by parameter, so a `null` means "not supplied here" -
+     * which is only legal when the parameter has a default. Filling stops at
+     * the first gap that has none, leaving the list short so the arity error
+     * the caller already reports still fires.
+     *
+     * [selfOffset] is 1 for a method, whose `self` occupies parameter 0 and is
+     * passed separately from the argument list.
+     */
+    private fun fillArgumentGaps(
+        slots: List<Expr?>,
+        func: org.azora.lang.semantic.FunctionSymbol,
+        callee: String,
+        selfOffset: Int = 0,
+    ): List<IrExpr> {
+        val filled = mutableListOf<IrExpr>()
+        for (index in slots.indices) {
+            val supplied = slots[index]
+            if (supplied != null) {
+                filled.add(lowerExpr(supplied))
+                continue
+            }
+            val parameter = index + selfOffset
+            // The symbol table's copy of a default was captured before
+            // compile-time folding ran, so the declaration in the current AST
+            // is the authority when both exist.
+            val default = functionDecls[func.name]?.params?.getOrNull(parameter)?.defaultValue
+                ?: functionDecls[callee]?.params?.getOrNull(parameter)?.defaultValue
+                ?: func.defaults[parameter]
+                ?: return filled
+            filled.add(lowerDefaultArgument(default, func.params[parameter].second))
+        }
+        return filled
+    }
+
+    /**
+     * A method call's arguments, in parameter order, with defaults supplied.
+     *
+     * `self` is parameter 0 and is passed separately, so the method's own
+     * parameters start at 1 - that offset is the only thing separating this
+     * from the free-function path.
+     */
+    private fun lowerMethodArguments(
+        expr: Expr.MethodCall,
+        func: org.azora.lang.semantic.FunctionSymbol,
+        mangled: String,
+    ): List<IrExpr> = lowerMethodArguments(expr.args, func, mangled)
+
+    private fun lowerMethodArguments(
+        rawArgs: List<Expr>,
+        func: org.azora.lang.semantic.FunctionSymbol,
+        mangled: String,
+    ): List<IrExpr> {
+        val declared = func.params.size - 1
+        val supplied = bindTrailingLambda(rawArgs, func.params, offset = 1)
+        val named = supplied.any { it is Expr.NamedArg }
+        if (!named && (supplied.size == declared || func.defaults.isEmpty() || func.isVariadic)) {
+            return supplied.map { lowerExpr(it) }
+        }
+        val slots = if (named) {
+            mapNamedArguments(supplied, func.params.drop(1).map { it.first })
+        } else {
+            supplied + List((declared - supplied.size).coerceAtLeast(0)) { null }
+        }
+        return fillArgumentGaps(slots, func, mangled, selfOffset = 1)
+    }
+
+    /**
+     * [args] with a trailing lambda moved onto the last parameter.
+     *
+     * The same rule the resolver applies: a block written after the parentheses
+     * is the last parameter's argument, and any earlier parameters it appears
+     * to skip are taking their defaults. Both stages must agree, or lowering
+     * would build a call the checker never approved.
+     */
+    private fun bindTrailingLambda(
+        args: List<Expr>,
+        params: List<Pair<String, IrType>>,
+        offset: Int,
+    ): List<Expr> {
+        val declared = params.size - offset
+        if (args.size >= declared || args.isEmpty()) return args
+        val lambda = args.last()
+        if (lambda !is Expr.Lambda) return args
+        // The name may already be taken by an explicit `body:` argument.
+        if (args.any { it is Expr.NamedArg && it.name == params.last().first }) return args
+        if (params.last().second !is IrType.Function) return args
+        return args.dropLast(1) + Expr.NamedArg(params.last().first, lambda, lambda.line, lambda.column)
+    }
+
+    /** The method-table key a primitive receiver uses (`impl Int { … }`). */
+    private fun primitiveOwnerName(type: IrType): String? = when (type) {
+        IrType.Int, IrType.UInt, IrType.Long, IrType.ULong, IrType.Byte, IrType.UByte,
+        IrType.Short, IrType.UShort, IrType.Float, IrType.Double, IrType.Decimal,
+        IrType.String, IrType.Char, IrType.Bool -> type.toString()
+        else -> null
+    }
+
     private fun dependencyNames(expr: Expr): Set<String> = when (expr) {
         is Expr.Identifier -> setOf(expr.name)
         is Expr.Grouping -> dependencyNames(expr.expr)
@@ -1123,6 +1224,11 @@ class IrGenerator(private val table: SymbolTable) {
                         dependencies = dependencies.map(::resolveName),
                         body = loweredBody,
                         automatic = automatic,
+                        // A condition's dependencies are the names it reads, which
+                        // `dependencies` above already collected from the same
+                        // expression - so a conditional effect subscribes to what
+                        // it asks about, not to what its body happens to touch.
+                        condition = stmt.condition?.let(::lowerExpr),
                     )
                 }
             }
@@ -1431,6 +1537,34 @@ class IrGenerator(private val table: SymbolTable) {
 
     private fun lowerExpr(expr: Expr): IrExpr {
         return when (expr) {
+            // The resolver already decided which type the dot meant; lowering
+            // reads that answer rather than deriving it again from a context it
+            // no longer has.
+            is Expr.InferredMember -> {
+                val owner = table.lookupInferredMember(expr.line, expr.column)
+                    ?: error("line ${expr.line}: '.${expr.name}' was never resolved to a type")
+                expr.ctorArgs?.let { args ->
+                    return if (expr.name.isEmpty()) {
+                        lowerExpr(Expr.Call(owner, args, expr.line, expr.column, owner.length))
+                    } else {
+                        lowerExpr(
+                            Expr.MethodCall(
+                                Expr.Identifier(owner, expr.line, expr.column, owner.length),
+                                expr.name, args, expr.line, expr.column,
+                            ),
+                        )
+                    }
+                }
+                lowerExpr(
+                    Expr.Member(
+                        Expr.Identifier(owner, expr.line, expr.column, owner.length),
+                        expr.name,
+                        expr.line,
+                        expr.column,
+                        expr.length,
+                    ),
+                )
+            }
             // Only a macro arm taking `[...${key: value}]` can consume one, and the
             // expander does so before lowering. Reaching here means no arm matched.
             is Expr.MapEntryArg -> error(
@@ -1834,9 +1968,20 @@ class IrGenerator(private val table: SymbolTable) {
                         else listOf(lowerExpr(arg))
                     }
                     // Handle named arguments - reorder to param order (pre-spread only)
-                    val args = if (expr.args.any { it is Expr.NamedArg } && func.paramNames.isNotEmpty()) {
-                        val slots = mapNamedArguments(expr.args, func.paramNames)
-                        func.paramNames.indices.mapNotNull { slots[it]?.let(::lowerExpr) }
+                    val callArgs = if (func.isVariadic) expr.args
+                        else bindTrailingLambda(expr.args, func.params, offset = 0)
+                    val args = if (callArgs.any { it is Expr.NamedArg } && func.paramNames.isNotEmpty()) {
+                        val slots = mapNamedArguments(callArgs, func.paramNames)
+                        if (func.isVariadic || callArgs.any { it is Expr.Spread }) {
+                            func.paramNames.indices.mapNotNull { slots[it]?.let(::lowerExpr) }
+                        } else {
+                            // A named argument can leave an *earlier* parameter
+                            // unfilled: `f(b: 5)` says nothing about `a`. That gap
+                            // is `a`'s default - dropping it and closing up would
+                            // slide `5` into `a` and silently call a different
+                            // function than the one written.
+                            fillArgumentGaps(slots, func, expr.callee)
+                        }
                     } else {
                         loweredArgs
                     }
@@ -1965,7 +2110,11 @@ class IrGenerator(private val table: SymbolTable) {
                         val mangled = table.lookupMethod(ct.name, contextualName)
                         if (mangled != null) {
                             val func = table.lookupFunction(mangled)!!
-                            val args = expr.args.map { lowerExpr(it) }
+                            // Reached as a member, so its arguments bind as a
+                            // member's do - defaults, named arguments and a
+                            // trailing block all apply, exactly as they would
+                            // had the receiver been written out.
+                            val args = lowerMethodArguments(expr.args, func, mangled)
                             return IrExpr.Call(mangled, listOf(ctx) + args, func.returnType)
                         }
                     }
@@ -2093,6 +2242,20 @@ class IrGenerator(private val table: SymbolTable) {
                 }
                 val target = autoDerefMemberTarget(lowerExpr(expr.target), expr.name, method = false)
                 val tt2 = target.type
+                // `5.seconds` - a member declared on a primitive by an `impl Int`.
+                // The receiver lowers to a builtin rather than a Named pack, so
+                // there is no struct to take a field from: the member is the
+                // function the impl declared, called with the value.
+                if (tt2 !is IrType.Named) {
+                    val owner = primitiveOwnerName(tt2)
+                    if (owner != null) {
+                        val mangled = table.lookupMethod(owner, expr.name)
+                        if (mangled != null) {
+                            val func = table.lookupFunction(mangled)!!
+                            return IrExpr.Call(mangled, listOf(target), func.returnType)
+                        }
+                    }
+                }
                 if (tt2 is IrType.Named) {
                     // Concrete pack fields win over property-style callbacks. This matters
                     // for stdlib containers that expose field-backed storage and also define
@@ -2224,7 +2387,7 @@ class IrGenerator(private val table: SymbolTable) {
                         if (func.memberCallStyle == MemberCallStyle.PROPERTY) {
                             error("property '${expr.name}' must be accessed without parentheses")
                         }
-                        val args = expr.args.map { lowerExpr(it) }
+                        val args = lowerMethodArguments(expr, func, mangled)
                         return IrExpr.Call(mangled, listOf(target) + args, func.returnType)
                     }
                     val callableField = table.lookupStruct(tt.name)?.field(expr.name)?.type as? IrType.Function
@@ -2239,7 +2402,7 @@ class IrGenerator(private val table: SymbolTable) {
                     val mangled = table.lookupMethod(tt.toString(), expr.name)
                     if (mangled != null) {
                         val func = table.lookupFunction(mangled)!!
-                        val args = expr.args.map { lowerExpr(it) }
+                        val args = lowerMethodArguments(expr, func, mangled)
                         return IrExpr.Call(mangled, listOf(target) + args, func.returnType)
                     }
                 }
@@ -2674,8 +2837,30 @@ class IrGenerator(private val table: SymbolTable) {
         else -> error("Unknown binary op: $op")
     }
 
+    private companion object {
+        /** std collection packs a literal may be annotated with. */
+        val COLLECTION_PACK_NAMES = setOf(
+            "List", "MutableList", "Set", "MutableSet", "Map", "MutableMap",
+        )
+    }
+
     private fun resolveTypeAnnotation(ann: TypeAnnotation, init: IrExpr): IrType = when (ann) {
-        is TypeAnnotation.Explicit -> resolveType(ann.ref)
+        is TypeAnnotation.Explicit -> {
+            val declared = resolveType(ann.ref)
+            // `var xs: std::List<Int> = @std::arr[1, 2, 3]` - the checker accepts
+            // a collection literal against the matching std pack name, but the
+            // value is still the literal's own representation. Taking the
+            // declared name here would leave the *type* saying `List` while the
+            // bytes are an array, and a member read would take the pack's field
+            // offsets against them - `.size` came out 0 rather than 3.
+            if (declared is IrType.Named && declared.name in COLLECTION_PACK_NAMES &&
+                (init.type is IrType.Array || init.type is IrType.Set || init.type is IrType.Map)
+            ) {
+                init.type
+            } else {
+                declared
+            }
+        }
         is TypeAnnotation.Inferred -> init.type
     }
 
@@ -2688,6 +2873,28 @@ class IrGenerator(private val table: SymbolTable) {
      * module may not be able to see.
      */
     private fun lowerDefaultArgument(default: Expr, paramType: IrType): IrExpr {
+        // `phase: Phase = .Render` - the parameter's own type is what the dot
+        // meant, and it is right here. Defaults are lowered on this path rather
+        // than resolved with the rest of the body, so the answer is derived
+        // here instead of read back from the resolver.
+        if (default is Expr.InferredMember) {
+            val owner = when (paramType) {
+                is IrType.Named -> paramType.name
+                is IrType.Nullable -> (paramType.inner as? IrType.Named)?.name
+                else -> null
+            }
+            if (owner != null) {
+                return lowerExpr(
+                    Expr.Member(
+                        Expr.Identifier(owner, default.line, default.column, owner.length),
+                        default.name,
+                        default.line,
+                        default.column,
+                        default.length,
+                    ),
+                )
+            }
+        }
         if (default is Expr.Identifier) {
             constantLiterals[default.name]?.let { return it }
         }

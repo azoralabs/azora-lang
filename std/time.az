@@ -973,16 +973,16 @@ test "duration serializer preserves normalized fields" {
 }
 
 test "serializable metadata is present on portable time values" {
-    inline assert std::reflect<Duration>.hasDeco<Serializable> { "Duration must be serializable" }
-    inline assert std::reflect<Instant>.hasDeco<Serializable> { "Instant must be serializable" }
-    inline assert std::reflect<LocalDate>.hasDeco<Serializable> { "LocalDate must be serializable" }
-    inline assert std::reflect<LocalTime>.hasDeco<Serializable> { "LocalTime must be serializable" }
-    inline assert std::reflect<UtcOffset>.hasDeco<Serializable> { "UtcOffset must be serializable" }
-    inline assert std::reflect<DateTime>.hasDeco<Serializable> { "DateTime must be serializable" }
+    inline assert std::reflect<Duration>.hasAnnot<Serializable> { "Duration must be serializable" }
+    inline assert std::reflect<Instant>.hasAnnot<Serializable> { "Instant must be serializable" }
+    inline assert std::reflect<LocalDate>.hasAnnot<Serializable> { "LocalDate must be serializable" }
+    inline assert std::reflect<LocalTime>.hasAnnot<Serializable> { "LocalTime must be serializable" }
+    inline assert std::reflect<UtcOffset>.hasAnnot<Serializable> { "UtcOffset must be serializable" }
+    inline assert std::reflect<DateTime>.hasAnnot<Serializable> { "DateTime must be serializable" }
 }
 
 test "monotonic readings are intentionally not serializable" {
-    inline assert !std::reflect<MonotonicInstant>.hasDeco<Serializable> {
+    inline assert !std::reflect<MonotonicInstant>.hasAnnot<Serializable> {
         "process-local monotonic readings must never become persisted timestamps"
     }
 }

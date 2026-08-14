@@ -486,6 +486,21 @@ class SymbolTable {
     fun allConformances(): List<TraitConformance> = conformances.toList()
 
     /** Retains the fully inferred callable type for IR lowering. */
+    /**
+     * The type a `.Name` resolved to, keyed by where it was written.
+     *
+     * The resolver knows the expected type; lowering does not re-derive it, it
+     * reads what the resolver decided - so the two cannot disagree about which
+     * type a leading dot meant.
+     */
+    private val inferredMembers = mutableMapOf<Pair<Int, Int>, String>()
+
+    fun defineInferredMember(line: Int, column: Int, typeName: String) {
+        inferredMembers[line to column] = typeName
+    }
+
+    fun lookupInferredMember(line: Int, column: Int): String? = inferredMembers[line to column]
+
     fun defineLambdaType(line: Int, column: Int, type: IrType.Function) {
         lambdaTypes[line to column] = type
     }
@@ -505,6 +520,8 @@ class SymbolTable {
     private val aliases = mutableMapOf<String, org.azora.lang.frontend.TypeRef>()
     fun defineAlias(name: String, type: org.azora.lang.frontend.TypeRef) { aliases[name] = type }
     fun lookupAlias(name: String): org.azora.lang.frontend.TypeRef? = aliases[name]
+
+    fun specNames(): Set<String> = specs.keys
 
     fun lookupSpec(name: String): SpecSymbol? = specs[name]
 

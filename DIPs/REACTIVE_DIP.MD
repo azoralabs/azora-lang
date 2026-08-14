@@ -3,7 +3,8 @@
 > Status: **implemented for the interpreter, LLVM, and WebAssembly.** The
 > interpreter tracks runtime reads. Native backends preserve owner state without
 > a garbage collector and lower effects from compiler-visible dependencies.
-> Section 7 records the remaining differences.
+> Conditional effects (§3.3) agree across the interpreter and LLVM. Section 7
+> records the remaining differences.
 
 Azora reactivity is state management, not rendering. The language owns reactive
 lifetimes and effect semantics; `std.reactive` supplies observable values,
@@ -115,6 +116,31 @@ effect [name, locale] { rebuildLabel(name, locale) }
 
 Only the listed values trigger the effect. The body may read other values
 without subscribing to them. Effects run synchronously in declaration order.
+
+### 3.3 Conditions
+
+An unbracketed expression that is **not** a bare name is a condition, and the
+body runs on its rising edge:
+
+```azora
+effect closing == true {
+    shutdown()
+}
+```
+
+1. the condition is evaluated in the owner;
+2. the body runs when it changes from false to true;
+3. it does not repeat while the condition stays true;
+4. if the condition goes false and later true again, the body runs again;
+5. the edge is owner state, so it survives reruns exactly as `remember` does.
+
+A bare name keeps its old meaning. `effect ready { … }` is a dependency - it
+says *when to reconsider* - while `effect ready == true { … }` also says
+*whether to act*. One spelling cannot mean both, so the two are distinguished by
+whether anything is asked of the value.
+
+The condition is not polled. `effect [closing] { if closing { … } }` remains
+available and is clearer when several conditions combine.
 
 ### 3.3 Cleanup
 

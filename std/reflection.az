@@ -25,7 +25,7 @@ module std.reflection
  * compile-time positions:
  *
  * ```
- * std::reflect<P>.hasDeco<Serializable>       // Bool
+ * std::reflect<P>.hasAnnot<Serializable>       // Bool
  * std::reflect<P>.annotMeta<SerialName>.value  // decorator field
  * std::reflect<P>.enclosingRealm?.label        // enclosing realm metadata
  * ```
@@ -39,34 +39,34 @@ module std.reflection
 realm std {
     /**
      * Compile-time reflection handle for the declaration `T`, produced by
-     * `std::reflect<T>`. Its members (`.hasDeco<D>`, `.annotMeta<D>`, `.enclosingRealm`) are
+     * `std::reflect<T>`. Its members (`.hasAnnot<D>`, `.annotMeta<D>`, `.enclosingRealm`) are
      * resolved by the compiler; `bridge pack` means no struct is emitted.
      */
     @Experimental(since: "0.1")
     bridge pack Reflected<T>
 
-    impl<T> Reflected {
+    impl Reflected<T> {
         /** Whether the reflected declaration `T` carries decorator `D`. */
         @Experimental(since: "0.1")
-        bridge prop<D> hasDeco[self: Self&]: Bool
+        bridge deepinline prop hasAnnot<D>[self: Self&]: Bool
 
         /** Immutable compile-time metadata from decorator `D` on `T`. */
         @Experimental(since: "0.1")
-        bridge prop<D> annotMeta[self: Self&]: D
+        bridge deepinline prop annotMeta<D>[self: Self&]: D
 
         /** The enclosing lexical realm of `T`, or null at global scope. */
         @Experimental(since: "0.1")
-        bridge prop enclosingRealm[self: Self&]: Realm?
+        bridge deepinline prop enclosingRealm[self: Self&]: Realm?
 
         /**
          * Every program type carrying decorator `D`. Read from the whole-program
          * handle `std::reflect<*>` and iterated with
-         * `inline for X in std::reflect<*>.withDeco<D> { … }`, which the compiler
+         * `inline for X in std::reflect<*>.withAnnot<D> { … }`, which the compiler
          * unrolls at compile time into static references to each matching type -
          * no runtime cost and no function values, so it lowers to every backend.
          */
         @Experimental(since: "0.1")
-        bridge prop<D> withDeco[self: Self&]: Array<Type>
+        bridge deepinline prop withAnnot<D>[self: Self&]: Array<Type>
 
         /**
          * The declared fields of `T`, in declaration order.
@@ -81,7 +81,32 @@ realm std {
          * reflected, so a conditional field is present only where its condition holds.
          */
         @Experimental(since: "0.1")
-        bridge prop fields[self: Self&]: Array<ReflectedField>
+        bridge deepinline prop fields[self: Self&]: Array<ReflectedField>
+
+        /**
+         * The declared parameters of `T`, in order.
+         *
+         * Read in argument position, where it unrolls into one argument per
+         * parameter and binds the loop variable to that parameter's *type*:
+         *
+         * ```
+         * inline for F in reflect<*>.withAnnot<System> {
+         *     F(inline for P in reflect<F>.params { P::provide(world) })
+         * }
+         * ```
+         *
+         * That is how a caller supplies a declaration whose signature it does
+         * not know. What an argument is built from is the body's business, not
+         * this handle's - `P::provide` is an ordinary static on the parameter's
+         * own type, so the library that owns the parameter types owns the answer.
+         *
+         * A parameter answers as its own type wherever a type is what can be
+         * written - `P::provide`, `provide<P>` - because that is the only thing
+         * either position can take. [ReflectedParam.name] is how the parameter's
+         * own name is read.
+         */
+        @Experimental(since: "0.1")
+        bridge deepinline prop params[self: Self&]: Array<ReflectedParam>
     }
 
     /**
@@ -96,11 +121,142 @@ realm std {
     impl ReflectedField {
         /** The field's declared name, usable as a spliced member name. */
         @Experimental(since: "0.1")
-        bridge prop name[self: Self&]: String
+        bridge deepinline prop name[self: Self&]: String
 
         /** The field's value on the reflected receiver - `self.<name>`. */
         @Experimental(since: "0.1")
-        bridge prop value[self: Self&]: Any
+        bridge deepinline prop value[self: Self&]: Any
+    }
+
+    /**
+     * How a parameter takes its argument.
+     *
+     * The sigil at the parameter is what says which: nothing for a value, `&`
+     * for a shared borrow, `!` for an exclusive one.
+     */
+    @Experimental(since: "0.1")
+    enum ParamMutability {
+        /** `x: T` - the argument is passed by value. */
+        Value
+        /** `x: T&` - borrowed, read-only. */
+        Shared
+        /** `x: T!` - borrowed exclusively; the callee may write through it. */
+        Exclusive
+    }
+
+    /**
+     * One parameter of a reflected declaration.
+     *
+     * Exists only at compile time: every member is folded during expansion, so a
+     * `ReflectedParam` never reaches the generated program.
+     *
+     * The parameter also stands for its own declared type where a type is what
+     * can be written - `P::provide(world)` calls the static on that type, and
+     * `provide<P>(…)` passes it as a type argument. [type] names the same thing
+     * for anyone who would rather say it.
+     */
+    @Experimental(since: "0.1")
+    bridge pack ReflectedParam
+
+    impl ReflectedParam {
+        /** The parameter's declared name. */
+        @Experimental(since: "0.1")
+        bridge deepinline prop name[self: Self&]: String
+
+        /**
+         * The parameter's declared type, written where a type is expected:
+         * `provide<P.ActualType>(world)`, `fin x: P.ActualType = …`. The
+         * parameter itself stands for the same type, so `P` may be written
+         * instead.
+         *
+         * `inline` because it hands back a `Type`, which only a fold can answer.
+         */
+        @Experimental(since: "0.1")
+        bridge deepinline prop ActualType[self: Self&]: Type
+
+        /** How the argument is taken - by value, or borrowed. */
+        @Experimental(since: "0.1")
+        bridge deepinline prop mutability[self: Self&]: ParamMutability
+
+        /** Whether the parameter declares a default. */
+        @Experimental(since: "0.1")
+        bridge deepinline prop hasDefault[self: Self&]: Bool
+
+        /**
+         * Whether the parameter's declared type is nullable (`T?`).
+         *
+         * Read together with [hasDefault] by [DefaultValueType], which is what
+         * decides the type of [defaultValue]: a nullable parameter's default may
+         * itself be null, so the answer has to stay nullable, while a
+         * non-nullable one's default never is and would only be widened by
+         * pretending otherwise.
+         */
+        @Experimental(since: "0.1")
+        bridge deepinline prop isNullable[self: Self&]: Bool
+
+        /**
+         * The parameter's default, or null when it declares none.
+         *
+         * Typed by [DefaultValueType] over [ActualType]: a default is a value of
+         * the parameter's own type, which `Any` would erase and no type parameter
+         * could name - there is no call site to infer one from. `deepinline`
+         * because the type is computed from `self`, so the fold has to reach the
+         * place the type is used. The fold puts the very expression the
+         * declaration wrote in this member's place.
+         */
+        @Experimental(since: "0.1")
+        bridge deepinline prop defaultValue[self: Self&]:
+            DefaultValueType<ActualType>(self.hasDefault, self.isNullable)
+
+        /** Whether the parameter is variadic (`...T`), packing the extra arguments. */
+        @Experimental(since: "0.1")
+        bridge deepinline prop isVararg[self: Self&]: Bool
+
+        /**
+         * Whether the parameter carries decorator `D` - `x: @Query T`.
+         *
+         * Asked through the handle like every other reflection query:
+         * `std::reflect<P>.hasAnnot<Query>`. A bare `P.hasAnnot<D>` is rejected,
+         * so there is one spelling for "this is a question about a declaration"
+         * wherever it is written.
+         */
+        @Experimental(since: "0.1")
+        bridge deepinline prop hasAnnot<D>[self: Self&]: Bool
+
+        /**
+         * Immutable compile-time metadata from decorator `D` on the parameter,
+         * read as `std::reflect<P>.annotMeta<D>.field`. A parameter that does not
+         * carry `D` answers with `D`'s own defaults - the branch guarded by a
+         * false [hasAnnot] is expanded before anything knows it is dead.
+         */
+        @Experimental(since: "0.1")
+        bridge deepinline prop annotMeta<D>[self: Self&]: D
+    }
+
+    impl ReflectedParam:: {
+        /**
+         * The type of a parameter's default, given what is known about the
+         * parameter itself.
+         *
+         * A default is a value of the parameter's own type `T`, so that is what
+         * it answers - except that a nullable parameter's default may itself be
+         * null, which `T?` is what keeps. A parameter with no default has no
+         * default to have a type, and `Nothing` says exactly that: no value
+         * inhabits it, so nothing can be read where there was nothing to read.
+         *
+         * A `func` rather than a `prop` because it takes arguments, and
+         * `deepinline` because it hands back a `Type` - the fold has to carry
+         * through to wherever that type landed.
+         *
+         * @generic T the parameter's declared type.
+         */
+        deepinline func DefaultValueType<T>(hasDefault: Bool, isNullable: Bool): Type {
+            return when {
+                hasDefault && isNullable => T?
+                hasDefault => T
+                else => Nothing
+            }
+        }
     }
 
     /**
@@ -118,14 +274,14 @@ realm std {
     impl Realm {
         /** The realm's label, or null for the global scope / an unlabeled realm. */
         @Experimental(since: "0.1")
-        bridge prop label[self: Self&]: String?
+        bridge deepinline prop label[self: Self&]: String?
 
         /** Whether this is an inline (compile-time) realm. */
         @Experimental(since: "0.1")
-        bridge prop isInline[self: Self&]: Bool
+        bridge deepinline prop isInline[self: Self&]: Bool
 
         /** The enclosing parent realm, or null at the global scope. */
         @Experimental(since: "0.1")
-        bridge prop parent[self: Self&]: Realm?
+        bridge deepinline prop parent[self: Self&]: Realm?
     }
 }

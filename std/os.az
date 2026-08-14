@@ -154,16 +154,33 @@ realm std {
         // Named so it shares no suffix with `runCommand`: symbol lookup matches
         // a realm-qualified name by its tail, so a private twin differing only
         // by a leading underscore resolves back to its own caller.
-        fin parts: Array<String> = _commandParts(command)
-        if parts.size < 3 {
+        fin raw = _commandParts(command)
+        fin codeEnd = indexOf(raw, "\n")
+        if codeEnd < 0 {
             return ProcessResult("std.os could not run the command", -1, false)
         }
-        return ProcessResult(parts[2], _decimalValue(parts[0]), parts[1] == "true")
+        fin rest = substring(raw, codeEnd + 1, stringLength(raw))
+        fin startedEnd = indexOf(rest, "\n")
+        if startedEnd < 0 {
+            return ProcessResult("std.os could not run the command", -1, false)
+        }
+        return ProcessResult(
+            substring(rest, startedEnd + 1, stringLength(rest)),
+            _decimalValue(substring(raw, 0, codeEnd)),
+            substring(rest, 0, startedEnd) == "true",
+        )
     }
 
-    /** Raw command execution; see [runCommand], which is the API. */
+    /**
+     * Raw command execution; see [runCommand], which is the API.
+     *
+     * Returns the exit code, whether it started, and the output - each on its
+     * own line, in that order. One string rather than an array because a bridge
+     * returning an array must build one in every backend, and the native one
+     * would be raw IR; only the output can contain newlines, and it is last.
+     */
     @Experimental(since: "0.1")
-    bridge func _commandParts(command: String): Array<String>
+    bridge func _commandParts(command: String): String
 
     /** A signed decimal integer, or 0 when [text] is not one. */
     @Experimental(since: "0.1")

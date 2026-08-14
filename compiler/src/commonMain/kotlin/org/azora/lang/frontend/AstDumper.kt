@@ -445,6 +445,7 @@ private fun dumpStmt(sb: StringBuilder, stmt: Stmt, indent: String) {
 
 private fun dumpExpr(sb: StringBuilder, expr: Expr, indent: String) {
     when (expr) {
+        is Expr.InferredMember -> sb.appendLine("${indent}InferredMember .${expr.name}")
         is Expr.MapEntryArg -> {
             sb.appendLine("${indent}MapEntryArg")
             dumpExpr(sb, expr.key, "$indent  ")

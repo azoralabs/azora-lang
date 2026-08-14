@@ -266,6 +266,7 @@ class AllocDropAnalyzer {
 
     private fun collectUsedVars(expr: Expr, used: MutableSet<String>) {
         when (expr) {
+            is Expr.InferredMember -> {}
             is Expr.MapEntryArg -> {
                 collectUsedVars(expr.key, used)
                 collectUsedVars(expr.value, used)

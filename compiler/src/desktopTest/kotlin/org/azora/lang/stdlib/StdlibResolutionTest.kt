@@ -34,10 +34,20 @@ import kotlin.test.assertTrue
  */
 class StdlibResolutionTest {
 
+    /**
+     * Puts the shared standard library back, parsed.
+     *
+     * `invalidate()` alone only empties the caches - including `comptimeLists`
+     * and `declaredEnums`, which the rest of the suite reads. Leaving them empty
+     * made whatever ran next compile against a standard library with no
+     * compile-time lists, so these tests failed other tests rather than
+     * themselves. Reloading here restores the state every other test assumes.
+     */
     @AfterTest
     fun restoreDefaultStdlib() {
         AzStdlib.overrideRoot = null
         AzStdlib.invalidate()
+        AzStdlib.loadPrograms()
     }
 
     /** A minimal but real stdlib root: one module and a version marker. */

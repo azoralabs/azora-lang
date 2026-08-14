@@ -193,7 +193,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 TopLevel.Func(item.decl.copy(params = newParams, body = newBody))
             } else if (item is TopLevel.Test) {
                 // Test bodies may contain compile-time constructs (e.g.
-                // `inline assert (reflect<T>).hasDeco<D>`); fold them too so they
+                // `inline assert (reflect<T>).hasAnnot<D>`); fold them too so they
                 // are evaluated rather than left for runtime.
                 inlineEnv.clear()
                 inlineEnv.putAll(seedConstants)
@@ -1206,6 +1206,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
 
     private fun foldExpr(expr: Expr, program: Program): Pair<Expr, Boolean> {
         return when (expr) {
+            is Expr.InferredMember -> expr to false
             is Expr.MapEntryArg -> expr to false
             is Expr.InlineForArgs -> expr to false
             is Expr.InCheck -> {
@@ -1231,21 +1232,21 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 Pair(expr.copy(elements = folded.map { it.first }), folded.any { it.second })
             }
             is Expr.Call -> {
-                if (compileTimeDepth > 0 && expr.callee == "__hasDeco") {
+                if (compileTimeDepth > 0 && expr.callee == "__hasAnnot") {
                     val decoratorName = expr.typeArgs.singleOrNull()?.displayName()
                     val receiver = expr.args.singleOrNull()
                     if (decoratorName == null || receiver == null) {
-                        activeErrors?.add("line ${expr.line}: hasDeco requires exactly one receiver and decorator type")
+                        activeErrors?.add("line ${expr.line}: hasAnnot requires exactly one receiver and decorator type")
                         return Pair(Expr.BoolLiteral(false, expr.line, expr.column), true)
                     }
                     val site = DecoratorMetadata.findSite(receiver, reflectionTypes, program)
                     if (site == null) {
-                        activeErrors?.add("line ${expr.line}: hasDeco receiver is not compile-time declaration metadata")
+                        activeErrors?.add("line ${expr.line}: hasAnnot receiver is not compile-time declaration metadata")
                         return Pair(Expr.BoolLiteral(false, expr.line, expr.column), true)
                     }
                     val knownDecorator = program.items.filterIsInstance<TopLevel.Deco>().any { it.name == decoratorName }
                     if (!knownDecorator) {
-                        activeErrors?.add("line ${expr.line}: unknown decorator '$decoratorName' in hasDeco")
+                        activeErrors?.add("line ${expr.line}: unknown decorator '$decoratorName' in hasAnnot")
                         return Pair(Expr.BoolLiteral(false, expr.line, expr.column), true)
                     }
                     val applied = DecoratorMetadata.findApplied(site, decoratorName, program) != null
@@ -1823,6 +1824,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
 
     private fun evalExpr(expr: Expr, env: Map<String, Expr>, program: Program): Expr? {
         return when (expr) {
+            is Expr.InferredMember -> null
             is Expr.MapEntryArg -> null
             is Expr.IntLiteral, is Expr.DoubleLiteral,
             is Expr.StringLiteral, is Expr.BoolLiteral,

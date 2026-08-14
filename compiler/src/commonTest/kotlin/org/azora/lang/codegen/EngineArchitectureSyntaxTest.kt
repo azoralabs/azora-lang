@@ -58,7 +58,7 @@ class EngineArchitectureSyntaxTest {
                 value: Ty
             }
         }
-        impl<...T> Single {
+        impl Single<...T> {
             oper.* [self: std::Self&] {
                 return self.value
             }

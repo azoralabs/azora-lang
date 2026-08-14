@@ -288,6 +288,11 @@ class SymbolCollector {
                             params,
                             returnType,
                             method.isInline,
+                            paramNames = params.map { it.first },
+                            // Offset by one: `self` is parameter 0.
+                            defaults = method.params
+                                .mapIndexedNotNull { i, p -> p.defaultValue?.let { (i + 1) to it } }
+                                .toMap(),
                             visibility = method.visibility,
                             memberCallStyle = method.memberCallStyle,
                             returnTypeRef = (method.returnType as? TypeAnnotation.Explicit)?.ref,
@@ -391,8 +396,13 @@ class SymbolCollector {
                     errors.add("line ${item.line}: 'impl pack ${item.typeName}' is only allowed in the file that declares pack ${item.typeName}")
                     continue
                 }
-                val tpSet = table.lookupStruct(item.typeName)?.typeParams?.toSet() ?: emptySet()
+                val implTypeParams = table.lookupStruct(item.typeName)?.typeParams?.toSet() ?: emptySet()
                 for (method in item.methods) {
+                    // A method may introduce type parameters of its own -
+                    // `func map<R>[self: Self&](f: (T) -> R)`. Only the *type's*
+                    // parameters were in scope here, so `R` resolved as an
+                    // unknown named type and every use of it failed to match.
+                    val tpSet = implTypeParams + method.typeParams
                     val mangled = mangleMethodSymbol("${item.typeName}_${method.name}")
                     try {
                         if (item.isExtension && struct != null && struct.fields.none { it.visibility == Visibility.PUBLIC && !it.name.startsWith("_") } && method.receiverModifier == ParamModifier.EXCLUSIVE) {
@@ -450,11 +460,21 @@ class SymbolCollector {
                                 ?.memberCallStyle
                         }
                         if (!item.isBridge) {
+                            // `self` is parameter 0, so a method's own defaults and
+                            // names sit one to the right of where they are written.
+                            // Without these a method silently had no defaults at
+                            // all, and every argument had to be positional.
+                            val methodDefaults = method.params
+                                .mapIndexedNotNull { i, p -> p.defaultValue?.let { (i + 1) to it } }
+                                .toMap()
                             table.defineFunction(FunctionSymbol(
                                 mangled,
                                 params,
                                 returnType,
                                 method.isInline,
+                                typeParams = method.typeParams,
+                                paramNames = params.map { it.first },
+                                defaults = methodDefaults,
                                 visibility = method.visibility,
                                 memberCallStyle = declaredStyle ?: method.memberCallStyle,
                                 returnTypeRef = (method.returnType as? TypeAnnotation.Explicit)?.ref,
@@ -903,6 +923,8 @@ class SymbolCollector {
      * Only needs to handle literal types and parameter references.
      */
     private fun inferExprType(expr: Expr, env: Map<String, IrType>): IrType? = when (expr) {
+        // Its type is whatever context expects; nothing here states one.
+        is Expr.InferredMember -> null
         // A keyed macro argument is consumed by the expander; it has no type of
         // its own and never reaches a program.
         is Expr.MapEntryArg -> null

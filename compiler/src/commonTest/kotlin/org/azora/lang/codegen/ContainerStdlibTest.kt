@@ -28,15 +28,15 @@ class ContainerStdlibTest {
             import std.*
 
             func verify(): std::Int {
-                inline assert std::reflect<std::List>.hasDeco<std::Serializable> { "List metadata missing" }
-                inline assert std::reflect<std::MutableList>.hasDeco<std::Serializable> { "MutableList metadata missing" }
-                inline assert std::reflect<std::Set>.hasDeco<std::Serializable> { "Set metadata missing" }
-                inline assert std::reflect<std::MutableSet>.hasDeco<std::Serializable> { "MutableSet metadata missing" }
-                inline assert std::reflect<std::Map>.hasDeco<std::Serializable> { "Map metadata missing" }
-                inline assert std::reflect<std::MutableMap>.hasDeco<std::Serializable> { "MutableMap metadata missing" }
-                inline assert std::reflect<std::Deque>.hasDeco<std::Serializable> { "Deque metadata missing" }
-                inline assert std::reflect<std::Queue>.hasDeco<std::Serializable> { "Queue metadata missing" }
-                inline assert std::reflect<std::Stack>.hasDeco<std::Serializable> { "Stack metadata missing" }
+                inline assert std::reflect<std::List>.hasAnnot<std::Serializable> { "List metadata missing" }
+                inline assert std::reflect<std::MutableList>.hasAnnot<std::Serializable> { "MutableList metadata missing" }
+                inline assert std::reflect<std::Set>.hasAnnot<std::Serializable> { "Set metadata missing" }
+                inline assert std::reflect<std::MutableSet>.hasAnnot<std::Serializable> { "MutableSet metadata missing" }
+                inline assert std::reflect<std::Map>.hasAnnot<std::Serializable> { "Map metadata missing" }
+                inline assert std::reflect<std::MutableMap>.hasAnnot<std::Serializable> { "MutableMap metadata missing" }
+                inline assert std::reflect<std::Deque>.hasAnnot<std::Serializable> { "Deque metadata missing" }
+                inline assert std::reflect<std::Queue>.hasAnnot<std::Serializable> { "Queue metadata missing" }
+                inline assert std::reflect<std::Stack>.hasAnnot<std::Serializable> { "Stack metadata missing" }
                 return 1
             }
 

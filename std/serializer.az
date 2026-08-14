@@ -859,8 +859,8 @@ impl [SerialName, SerialRequired] for _GroupedWildcardDecoratorFixture::* {}
 // ---------------------------------------------------------------------------
 
 test "serializer decorator is visible at compile time" {
-    inline assert std::reflect<SerializerMetadataFixture>.hasDeco<Serializable> {
-        "@Serializable must be visible through hasDeco"
+    inline assert std::reflect<SerializerMetadataFixture>.hasAnnot<Serializable> {
+        "@Serializable must be visible through hasAnnot"
     }
 }
 
@@ -874,7 +874,7 @@ test "serializer decorator exposes named options" {
 }
 
 test "serial ignore is visible on fields" {
-    inline assert std::reflect<SerializerMetadataFixture::secret>.hasDeco<SerialIgnore> {
+    inline assert std::reflect<SerializerMetadataFixture::secret>.hasAnnot<SerialIgnore> {
         "@SerialIgnore must target field metadata"
     }
 }
@@ -885,10 +885,10 @@ test "serial name exposes its immutable value" {
 }
 
 test "azon-only decorator is independent" {
-    inline assert std::reflect<_AzonMetadataFixture>.hasDeco<AzonSerializable> {
+    inline assert std::reflect<_AzonMetadataFixture>.hasAnnot<AzonSerializable> {
         "AZON-only metadata must be present"
     }
-    inline assert !std::reflect<_AzonMetadataFixture>.hasDeco<Serializable> {
+    inline assert !std::reflect<_AzonMetadataFixture>.hasAnnot<Serializable> {
         "AZON-only metadata must not imply the value-tree decorator"
     }
 }
@@ -924,8 +924,8 @@ test "manual Serializer impl round trips through AZON" {
 }
 
 test "impl Serializable accepts configured decorator metadata" {
-    inline assert std::reflect<_ImplSerializableFixture>.hasDeco<Serializable> {
-        "empty decorator implementation bodies must be visible through hasDeco"
+    inline assert std::reflect<_ImplSerializableFixture>.hasAnnot<Serializable> {
+        "empty decorator implementation bodies must be visible through hasAnnot"
     }
     inline assert std::reflect<_ImplSerializableFixture>.annotMeta<Serializable>.ignoreUnknownFields {
         "configured decorator implementations must expose named metadata"
@@ -936,7 +936,7 @@ test "impl Serializable accepts configured decorator metadata" {
 }
 
 test "impl Serializable still uses omitted metadata defaults" {
-    inline assert std::reflect<_DefaultSerializableFixture>.hasDeco<Serializable> {
+    inline assert std::reflect<_DefaultSerializableFixture>.hasAnnot<Serializable> {
         "unconfigured decorator implementations must remain valid"
     }
     inline assert !std::reflect<_DefaultSerializableFixture>.annotMeta<Serializable>.ignoreUnknownFields {
@@ -948,55 +948,55 @@ test "impl Serializable still uses omitted metadata defaults" {
 }
 
 test "decorator impl targets one pack field" {
-    inline assert std::reflect<_DirectFieldDecoratorFixture::name>.hasDeco<SerialName> {
+    inline assert std::reflect<_DirectFieldDecoratorFixture::name>.hasAnnot<SerialName> {
         "field implementation must apply SerialName to the selected field"
     }
     inline fin name = std::reflect<_DirectFieldDecoratorFixture::name>.annotMeta<SerialName>.value
     inline assert name == "display_name" { "field implementation must preserve configured metadata" }
-    inline assert !std::reflect<_DirectFieldDecoratorFixture::password>.hasDeco<SerialName> {
+    inline assert !std::reflect<_DirectFieldDecoratorFixture::password>.hasAnnot<SerialName> {
         "field implementation must not affect sibling fields"
     }
 }
 
 test "decorator impl accepts a decorator list" {
-    inline assert std::reflect<_GroupedDecoratorFixture::name>.hasDeco<SerialName> {
+    inline assert std::reflect<_GroupedDecoratorFixture::name>.hasAnnot<SerialName> {
         "decorator lists must apply every listed decorator"
     }
-    inline assert std::reflect<_GroupedDecoratorFixture::name>.hasDeco<SerialRequired> {
+    inline assert std::reflect<_GroupedDecoratorFixture::name>.hasAnnot<SerialRequired> {
         "decorator lists must preserve all marker contracts"
     }
 }
 
 test "decorator impl accepts a field target list" {
-    inline assert std::reflect<_GroupedTargetFixture::name>.hasDeco<SerialIgnore> {
+    inline assert std::reflect<_GroupedTargetFixture::name>.hasAnnot<SerialIgnore> {
         "target lists must decorate their first field"
     }
-    inline assert std::reflect<_GroupedTargetFixture::password>.hasDeco<SerialIgnore> {
+    inline assert std::reflect<_GroupedTargetFixture::password>.hasAnnot<SerialIgnore> {
         "target lists must decorate every selected field"
     }
 }
 
 test "decorator and target lists form a cross product" {
-    inline assert std::reflect<_CrossProductDecoratorFixture::name>.hasDeco<SerialName> &&
-        std::reflect<_CrossProductDecoratorFixture::name>.hasDeco<SerialRequired> &&
-        std::reflect<_CrossProductDecoratorFixture::password>.hasDeco<SerialName> &&
-        std::reflect<_CrossProductDecoratorFixture::password>.hasDeco<SerialRequired> {
+    inline assert std::reflect<_CrossProductDecoratorFixture::name>.hasAnnot<SerialName> &&
+        std::reflect<_CrossProductDecoratorFixture::name>.hasAnnot<SerialRequired> &&
+        std::reflect<_CrossProductDecoratorFixture::password>.hasAnnot<SerialName> &&
+        std::reflect<_CrossProductDecoratorFixture::password>.hasAnnot<SerialRequired> {
         "each listed decorator must apply to each listed field"
     }
 }
 
 test "field wildcard applies a decorator to every pack field" {
-    inline assert std::reflect<WildcardDecoratorFixture::name>.hasDeco<SerialIgnore> &&
-        std::reflect<WildcardDecoratorFixture::password>.hasDeco<SerialIgnore> {
+    inline assert std::reflect<WildcardDecoratorFixture::name>.hasAnnot<SerialIgnore> &&
+        std::reflect<WildcardDecoratorFixture::password>.hasAnnot<SerialIgnore> {
         "Pack::* must select every declared pack field"
     }
 }
 
 test "field wildcard accepts a decorator list" {
-    inline assert std::reflect<_GroupedWildcardDecoratorFixture::name>.hasDeco<SerialName> &&
-        std::reflect<_GroupedWildcardDecoratorFixture::name>.hasDeco<SerialRequired> &&
-        std::reflect<_GroupedWildcardDecoratorFixture::password>.hasDeco<SerialName> &&
-        std::reflect<_GroupedWildcardDecoratorFixture::password>.hasDeco<SerialRequired> {
+    inline assert std::reflect<_GroupedWildcardDecoratorFixture::name>.hasAnnot<SerialName> &&
+        std::reflect<_GroupedWildcardDecoratorFixture::name>.hasAnnot<SerialRequired> &&
+        std::reflect<_GroupedWildcardDecoratorFixture::password>.hasAnnot<SerialName> &&
+        std::reflect<_GroupedWildcardDecoratorFixture::password>.hasAnnot<SerialRequired> {
         "decorator lists must apply to every field selected by Pack::*"
     }
 }

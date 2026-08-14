@@ -146,6 +146,7 @@ class Compiler(
     fun compile(source: String, warningsAsErrors: Boolean = false, release: Boolean = true, debug: Boolean = false, defines: Map<String, String> = emptyMap()): CompilationResult {
 
         // Clear per-compilation state
+        org.azora.lang.frontend.Parser.resetFragmentMacros()
         IrType.aliases.clear()
 
         val libraries = try {
@@ -243,7 +244,7 @@ class Compiler(
         val displayed = DisplayDeriver.derive(casts)
         val injected = CallbackImplNormalizer.normalize(libraries.inject(displayed))
 
-        // 2b-bis. Unroll `inline for X in reflect<*>.withDeco<D>` loops now that the
+        // 2b-bis. Unroll `inline for X in reflect<*>.withAnnot<D>` loops now that the
         // whole program (all modules' decorated types) is visible. Generic: the
         // compiler attaches no meaning to any decorator.
         val reflected = ReflectDecoExpander.expand(injected)

@@ -275,7 +275,19 @@ internal object IrSymbolCanonicalizer {
                     return "__singleton_${canonicalType.removePrefix("__")}$suffix"
                 }
                 if (name.startsWith("${oldType}_")) {
-                    return canonicalType + collapseSeparators(name.removePrefix(oldType))
+                    val suffix = name.removePrefix(oldType)
+                    // A type-scoped static keeps the `__` it was named with.
+                    // That pair is the only thing separating `Type::member`
+                    // from the method `Type.member`: collapsing it gives both
+                    // the same symbol, which resolves as one and then fails to
+                    // emit as two - infinite recursion in the resolver, and
+                    // `invalid redefinition` at link.
+                    val collapsed = if (suffix.startsWith("__")) {
+                        "__" + collapseSeparators(suffix.removePrefix("__"))
+                    } else {
+                        collapseSeparators(suffix)
+                    }
+                    return canonicalType + collapsed
                 }
             }
             return null

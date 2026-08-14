@@ -247,6 +247,7 @@ internal object SourceSymbolValidator {
 
     private fun expression(expression: Expr) {
         when (expression) {
+            is Expr.InferredMember -> {}
             is Expr.MapEntryArg -> {
                 expression(expression.key)
                 expression(expression.value)

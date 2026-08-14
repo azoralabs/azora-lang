@@ -121,8 +121,8 @@ class ThirdPartyFormatTest {
                     var name = ""
                     var raw = ""
                     var onValue = false
-                    for i in 0..<stringLength(input) {
-                        fin c = charAt(input, i)
+                    for i in 0..<std::stringLength(input) {
+                        fin c = std::charAt(input, i)
                         if c == '\n' {
                             if !onValue { return .InvalidSyntax }
                             fields.add(std::SerialField(name, self.node(raw)))
@@ -142,9 +142,9 @@ class ThirdPartyFormatTest {
 
                 /** Digits are a number node; anything else is text. */
                 func node[self: std::Self&](raw: std::String): std::SerialValue {
-                    if stringLength(raw) == 0 { return std::SerialValue.Text(raw) }
-                    for i in 0..<stringLength(raw) {
-                        if !isDigit(charAt(raw, i)) { return std::SerialValue.Text(raw) }
+                    if std::stringLength(raw) == 0 { return std::SerialValue.Text(raw) }
+                    for i in 0..<std::stringLength(raw) {
+                        if !isDigit(std::charAt(raw, i)) { return std::SerialValue.Text(raw) }
                     }
                     return std::SerialValue.Number(raw)
                 }

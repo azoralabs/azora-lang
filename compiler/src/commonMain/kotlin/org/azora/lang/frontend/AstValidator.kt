@@ -134,6 +134,10 @@ class AstValidator {
      */
     private fun validateStability(annotations: List<Annotation>, errors: MutableList<String>) {
         for (ann in annotations) {
+            // A lowercase name is a macro, not a decorator - `@query` on a
+            // parameter is one - and macros are not declared in the decorator
+            // table, so asking it about them would always fail.
+            if (ann.name.firstOrNull()?.isUpperCase() != true) continue
             if (ann.name !in knownDecorators && ann.name !in customDecos) {
                 errors.add("line ${ann.line}: unknown decorator '@${ann.name}'")
             }
@@ -196,10 +200,49 @@ class AstValidator {
             }
         }
 
+        // A `Type` is a compile-time value: it names something the program is
+        // built from, not something it computes. A member that hands one back has
+        // Returning a `Type` - not a value *of* a type, but the type itself - is
+        // something only a fold can answer, and only `deepinline` folds through
+        // whatever the result is used for. `inline` stops at the call site,
+        // which is not far enough: the type it produced still has to be resolved
+        // wherever it landed. A value whose type is compile-time is not this -
+        // the value outlives the fold, only its annotation did not.
+        if (successReturn is TypeRef.Named && successReturn.name == "Type" && !func.isDeepInline) {
+            errors.add(
+                "line ${func.line}: '${func.name}' returns 'Type', which only a " +
+                    "'deepinline' member may do - a type is not a value at runtime",
+            )
+        }
+
+        // A declared type computed from `self` - `Slot<T>(self.hasDefault)` - is
+        // asking for an answer about *this* value at compile time, and only
+        // `deepinline` folds through to where that answer is needed. `inline`
+        // stops at the member, leaving the type still naming a receiver that no
+        // longer exists.
+        if (declaredReturn is TypeRef.Named && declaredReturn.valueArgs.any(::readsSelf) && !func.isDeepInline) {
+            errors.add(
+                "line ${func.line}: '${func.name}' computes its type from 'self', which only a " +
+                    "'deepinline' member may do - the fold has to reach where the type is used",
+            )
+        }
+
         // Validate statements
         for (stmt in func.body) {
             validateStmt(stmt, func.name, errors)
         }
+    }
+
+    /** Whether [expr] reads the receiver - `self`, or a member of it. */
+    private fun readsSelf(expr: Expr): Boolean = when (expr) {
+        is Expr.Identifier -> expr.name == "self"
+        is Expr.Member -> readsSelf(expr.target)
+        is Expr.MethodCall -> readsSelf(expr.target) || expr.args.any(::readsSelf)
+        is Expr.Call -> expr.args.any(::readsSelf) || expr.receiver?.let(::readsSelf) == true
+        is Expr.Binary -> readsSelf(expr.left) || readsSelf(expr.right)
+        is Expr.Unary -> readsSelf(expr.operand)
+        is Expr.Grouping -> readsSelf(expr.expr)
+        else -> false
     }
 
     private fun validateStmt(stmt: Stmt, funcName: String, errors: MutableList<String>) {

@@ -42,7 +42,7 @@ class LambdaTest {
         assertEquals("15", run("""
             import std.io
             func makeAdder(n: std::Int): (std::Int) -> std::Int {
-                // Returned, so it escapes: it must own `n`, and Int is Copy.
+                // Returned, so it escapes: it must own `n`, and std::Int is Copy.
                 return [; n] { x: std::Int -> x + n }
             }
             func main() {

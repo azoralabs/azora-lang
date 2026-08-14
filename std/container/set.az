@@ -850,7 +850,7 @@ test "set clear permits reuse" {
 }
 
 test "set serialization metadata is declared" {
-    inline assert std::reflect<LinkedHashSet>.hasDeco<Serializable> { "LinkedHashSet must carry Serializable metadata" }
+    inline assert std::reflect<LinkedHashSet>.hasAnnot<Serializable> { "LinkedHashSet must carry Serializable metadata" }
 }
 
 test .All "set"

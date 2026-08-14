@@ -62,6 +62,8 @@ class TypeResolver(private val table: SymbolTable) {
     /** Where each pack was declared, so a private member can tell same-module from not. */
     private var packModules: Map<String, String?> = emptyMap()
     private var reactiveContext = false
+    /** True while resolving an `async func` body; `loop … by …` requires one. */
+    private var asyncContext = false
 
     private val errors = mutableListOf<String>()
     private var program: Program? = null
@@ -163,6 +165,8 @@ class TypeResolver(private val table: SymbolTable) {
                     currentReceiverType = item.typeName
                     currentModule = item.declaringModule
                     reactiveContext = method.isReactive
+                    val savedAsync = asyncContext
+                    asyncContext = method.isTask
                     contextualValues.addLast(
                         listOf(Expr.Identifier("self", method.line, method.column) to IrType.Named(item.typeName)),
                     )
@@ -189,6 +193,7 @@ class TypeResolver(private val table: SymbolTable) {
                     currentReceiverType = savedReceiver
                     currentModule = savedModule
                     reactiveContext = savedReactive
+                    asyncContext = savedAsync
                     table.popScope()
                 }
             }
@@ -333,6 +338,7 @@ class TypeResolver(private val table: SymbolTable) {
         currentReceiverType = null
         currentFuncTypeParams = func.typeParams.toSet()
         reactiveContext = func.isReactive
+        asyncContext = func.isTask
         val savedTestContext = testContext
         // A test-realm declaration may use its siblings: it is already test-only.
         if (program?.testRealmMembers?.containsKey(func.name) == true) testContext = true
@@ -606,27 +612,40 @@ class TypeResolver(private val table: SymbolTable) {
         if (lambdaFrames.isEmpty()) return null
         val index = table.variableScopeIndex(name) ?: return null
         if (index == 0) return null
-        for (frame in lambdaFrames.asReversed()) {
-            if (index >= frame.floor) return null
-            frame.inferred[name]?.let { return it }
-            val mode = frame.defaultMode
-            if (mode != null) {
-                val outer = table.lookupVariable(name) ?: return null
-                val capture = Capture(name, name, mode, line)
-                checkCaptureMode(capture, outer.type)
-                frame.inferred[name] = mode
-                table.defineVariable(capturedSymbol(capture, outer))
-                return mode
+        val outer = table.lookupVariable(name) ?: return null
+        // Outermost first, and *every* frame the binding has to cross - not just
+        // the innermost. A value read two closures deep passes two boundaries,
+        // and each closure can only hand on what it captured itself. Recording
+        // it on the innermost frame alone leaves the outer closure without the
+        // binding, so the inner environment is built where the name does not
+        // exist: the read then falls back to a module global, which either
+        // fails to link or silently yields nothing.
+        var mode: CaptureMode? = null
+        for (frame in lambdaFrames) {
+            if (index >= frame.floor) continue
+            val already = frame.inferred[name]
+            if (already != null) {
+                mode = already
+                continue
             }
-            errors.add(
-                "line $line: '$name' is not in scope - a lambda with no capture list cannot " +
-                    "reach the scope around it; write '[; $name.&]' to reference it, " +
-                    "'[; $name.!]' to write it, '[; $name]' to copy it, or '[; &]' to capture " +
-                    "what the body reads",
-            )
-            return null
+            val default = frame.defaultMode
+            if (default == null) {
+                errors.add(
+                    "line $line: '$name' is not in scope - a lambda with no capture list cannot " +
+                        "reach the scope around it; write '[; $name.&]' to reference it, " +
+                        "'[; $name.!]' to write it, '[; $name]' to copy it, or '[; &]' to capture " +
+                        "what the body reads",
+                )
+                return null
+            }
+            val capture = Capture(name, name, default, line)
+            checkCaptureMode(capture, outer.type)
+            frame.inferred[name] = default
+            mode = default
         }
-        return null
+        val selected = mode ?: return null
+        table.defineVariable(capturedSymbol(Capture(name, name, selected, line), outer))
+        return selected
     }
 
     private fun capturedSymbol(capture: Capture, outer: VariableSymbol): VariableSymbol = when (capture.mode) {
@@ -654,6 +673,151 @@ class TypeResolver(private val table: SymbolTable) {
                 "and can only be used from a test in $reach",
         )
         return false
+    }
+
+    /**
+     * [args] with a trailing lambda moved onto the last parameter.
+     *
+     * `k { … }` where `k(a: Int = 3, body: () -> R)` writes the lambda in the
+     * position of `a`. Read positionally that is what it is - but a block after
+     * the parentheses is the *body* argument by construction, and the earlier
+     * parameters are exactly what defaults are for. Naming it here lets the
+     * ordinary named-argument path fill the gap, so the rule lives in one place
+     * and is the same for free functions and methods.
+     *
+     * Only applies when the call is short an argument and the last parameter
+     * actually takes a function, so a genuinely positional lambda is untouched.
+     */
+    private fun bindTrailingLambda(
+        args: List<Expr>,
+        params: List<Pair<String, IrType>>,
+        offset: Int,
+    ): List<Expr> {
+        val declared = params.size - offset
+        if (args.size >= declared || args.isEmpty()) return args
+        if (args.last() !is Expr.Lambda) return args
+        if (params.last().second !is IrType.Function) return args
+        if (args.any { it is Expr.NamedArg && it.name == params.last().first }) return args
+        val lambda = args.last()
+        return args.dropLast(1) + Expr.NamedArg(params.last().first, lambda, lambda.line, lambda.column)
+    }
+
+    /**
+     * A method call's arguments placed against the method's own parameters.
+     *
+     * The result is indexed by parameter, excluding `self`, and holds `null`
+     * wherever the call supplied nothing - which the caller then accepts or
+     * rejects depending on whether that parameter has a default. Named and
+     * positional arguments mix as they do at a free call: a named one takes its
+     * parameter, a positional one fills the leftmost parameter no name claimed.
+     *
+     * Returns `null` when the call is malformed and an error has been reported.
+     */
+    private fun positionMethodArguments(
+        expr: Expr.MethodCall,
+        func: FunctionSymbol,
+        declared: Int,
+    ): List<Expr?>? {
+        val supplied = bindTrailingLambda(expr.args, func.params, offset = 1)
+        if (supplied.none { it is Expr.NamedArg }) {
+            if (supplied.size > declared) return supplied
+            return supplied + List(declared - supplied.size) { null }
+        }
+        val names = func.params.drop(1).map { it.first }
+        val slots = arrayOfNulls<Expr>(declared)
+        for (argument in supplied) {
+            if (argument !is Expr.NamedArg) continue
+            val index = names.indexOf(argument.name)
+            if (index < 0) {
+                errors.add("line ${expr.line}: method '${expr.name}' has no parameter '${argument.name}'")
+                return null
+            }
+            if (slots[index] != null) {
+                errors.add("line ${expr.line}: parameter '${argument.name}' given twice")
+                return null
+            }
+            slots[index] = argument.value
+        }
+        var next = 0
+        for (argument in supplied) {
+            if (argument is Expr.NamedArg) continue
+            while (next < slots.size && slots[next] != null) next++
+            if (next >= slots.size) {
+                errors.add("line ${expr.line}: too many arguments for method '${expr.name}'")
+                return null
+            }
+            slots[next] = argument
+        }
+        return slots.toList()
+    }
+
+    /**
+     * Records [expected] for a `.`-headed receiver chain, if that is what
+     * [argument] is.
+     */
+    private fun seedInferredReceiver(argument: Expr, expected: IrType?) {
+        val owner = when (expected) {
+            is IrType.Named -> expected.name
+            is IrType.Nullable -> (expected.inner as? IrType.Named)?.name
+            else -> null
+        } ?: return
+        var head: Expr = argument
+        while (true) {
+            head = when (head) {
+                is Expr.MethodCall -> head.target
+                is Expr.Member -> head.target
+                else -> break
+            }
+        }
+        if (head is Expr.InferredMember) {
+            table.defineInferredMember(head.line, head.column, owner)
+        }
+    }
+
+    /**
+     * Resolves `.Name` against the type expected where it was written.
+     *
+     * Records the type it chose so lowering reads the same answer rather than
+     * deriving it a second time from a context it no longer has.
+     */
+    private fun resolveInferredMember(expr: Expr.InferredMember, expected: IrType?): IrType? {
+        val owner = when (expected) {
+            is IrType.Named -> expected.name
+            is IrType.Nullable -> (expected.inner as? IrType.Named)?.name
+            // An annotation argument was matched to its field before this pass,
+            // so the type it chose is already recorded.
+            else -> table.lookupInferredMember(expr.line, expr.column)
+        }
+        if (owner == null) {
+            errors.add(
+                "line ${expr.line}: cannot tell what '.${expr.name}' belongs to here - " +
+                    "nothing states the type at this position, so write it: 'Type.${expr.name}'",
+            )
+            return null
+        }
+        table.defineInferredMember(expr.line, expr.column, owner)
+        expr.ctorArgs?.let { args ->
+            // `.(a, b)` builds the type; `.Variant(a)` builds one of its variants.
+            return if (expr.name.isEmpty()) {
+                resolveExpr(Expr.Call(owner, args, expr.line, expr.column, owner.length))
+            } else {
+                resolveExpr(
+                    Expr.MethodCall(
+                        Expr.Identifier(owner, expr.line, expr.column, owner.length),
+                        expr.name, args, expr.line, expr.column,
+                    ),
+                )
+            }
+        }
+        return resolveExpr(
+            Expr.Member(
+                Expr.Identifier(owner, expr.line, expr.column, owner.length),
+                expr.name,
+                expr.line,
+                expr.column,
+                expr.length,
+            ),
+        )
     }
 
     private fun requireReactiveCaller(function: FunctionSymbol, line: Int): Boolean {
@@ -841,6 +1005,16 @@ class TypeResolver(private val table: SymbolTable) {
 
     /** Resolves one argument with the callable type expected at that position. */
     private fun resolveContextualArgument(argument: Expr, expected: IrType?): IrType? {
+        // `.Name` takes the type it is being passed to.
+        if (argument is Expr.InferredMember) {
+            return resolveInferredMember(argument, expected)
+        }
+        // `.().height(64.0)` - the dot heads a chain, so the expected type has
+        // to reach past the calls to the receiver they are called on. A builder
+        // chain returns its own type, so the head is the type expected at the
+        // end; if a call in between returns something else, the ordinary check
+        // on the result still catches it.
+        seedInferredReceiver(argument, expected)
         val savedParams = expectedLambdaParamTypes
         val savedReceivers = expectedLambdaReceiverTypes
         if (argument is Expr.Lambda && expected is IrType.Function) {
@@ -993,6 +1167,14 @@ class TypeResolver(private val table: SymbolTable) {
                         errors.add("line ${stmt.line}: missing return value, expected $returnType")
                     }
                 } else {
+                    // `return .()` / `return .Name` - the function's declared
+                    // return type is what the dot means, and it is already
+                    // written above the body.
+                    if (stmt.value is Expr.InferredMember) {
+                        resolveInferredMember(stmt.value as Expr.InferredMember, returnType)
+                    } else {
+                        seedInferredReceiver(stmt.value!!, returnType)
+                    }
                     checkReturnedOrigin(stmt.value!!, stmt.line)
                     // Returning a closure is one of the four ways it escapes: the
                     // scope it captured from is gone by the time it is called.
@@ -1113,6 +1295,17 @@ class TypeResolver(private val table: SymbolTable) {
                 }
             }
             is Stmt.Loop -> {
+                // `loop xs by 5.seconds { … }` waits between passes, and waiting
+                // means suspending. In a plain function there is nothing to
+                // suspend - the wait would block whoever called it - so the form
+                // is only meaningful where suspension is.
+                if (stmt.everySeconds != null && !asyncContext) {
+                    errors.add(
+                        "line ${stmt.line}: 'loop … by …' waits between passes, which suspends - " +
+                            "declare the function 'async func' (or 'react async func')",
+                    )
+                }
+                stmt.everySeconds?.let { resolveExpr(it) }
                 table.pushScope()
                 inLoop { resolveBody(stmt.body, returnType) }
                 table.popScope()
@@ -1339,6 +1532,8 @@ class TypeResolver(private val table: SymbolTable) {
 
     private fun resolveExpr(expr: Expr): IrType? {
         return when (expr) {
+            // Reached with no expected type: `.Name` on its own says nothing.
+            is Expr.InferredMember -> resolveInferredMember(expr, null)
             is Expr.MapEntryArg -> {
                 errors.add(
                     "line ${expr.line}: 'key: value' is only an argument of a macro that takes " +
@@ -1450,11 +1645,11 @@ class TypeResolver(private val table: SymbolTable) {
                 }
                 if (expr.callee == "__defaultLogLevel") return IrType.Named("LogLevel")
                 if (expr.callee == "__reflect") {
-                    errors.add("line ${expr.line}: reflect is compile-time-only and must be followed by .hasDeco<D> or .annotMeta<D>")
+                    errors.add("line ${expr.line}: reflect is compile-time-only and must be followed by .hasAnnot<D> or .annotMeta<D>")
                     return null
                 }
-                if (expr.callee == "__hasDeco" || expr.callee == "__annotMeta") {
-                    errors.add("line ${expr.line}: '${if (expr.callee == "__hasDeco") "hasDeco" else "annotMeta"}' is a compile-time-only property and must be used inside inline code")
+                if (expr.callee == "__hasAnnot" || expr.callee == "__annotMeta") {
+                    errors.add("line ${expr.line}: '${if (expr.callee == "__hasAnnot") "hasAnnot" else "annotMeta"}' is a compile-time-only property and must be used inside inline code")
                     return null
                 }
                 // Struct construction: `Name(args)` where Name is a pack. Inside an
@@ -1590,9 +1785,11 @@ class TypeResolver(private val table: SymbolTable) {
                 // Named and positional arguments mix freely at a call, as they do at a
                 // constructor: a named one takes its parameter, a positional one fills
                 // the leftmost parameter no name has claimed.
-                val effectiveArgs = if (expr.args.any { it is Expr.NamedArg } && func.paramNames.isNotEmpty()) {
+                val callArgs = if (func.isVariadic) expr.args
+                    else bindTrailingLambda(expr.args, func.params, offset = 0)
+                val effectiveArgs = if (callArgs.any { it is Expr.NamedArg } && func.paramNames.isNotEmpty()) {
                     val slots = arrayOfNulls<Expr>(func.paramNames.size)
-                    for (argument in expr.args) {
+                    for (argument in callArgs) {
                         if (argument !is Expr.NamedArg) continue
                         val index = func.paramNames.indexOf(argument.name)
                         if (index < 0) {
@@ -1606,7 +1803,7 @@ class TypeResolver(private val table: SymbolTable) {
                         slots[index] = argument.value
                     }
                     var next = 0
-                    for (argument in expr.args) {
+                    for (argument in callArgs) {
                         if (argument is Expr.NamedArg) continue
                         while (next < slots.size && slots[next] != null) next++
                         if (next >= slots.size) {
@@ -1615,9 +1812,14 @@ class TypeResolver(private val table: SymbolTable) {
                         }
                         slots[next] = argument
                     }
-                    slots.filterNotNull()
+                    // A gap is the parameter's default, not a missing argument.
+                    // Substituting the default expression keeps the list
+                    // positional, so every check below still lines argument `i`
+                    // up with parameter `i`. Gaps with no default stay null and
+                    // are caught by the arity check.
+                    slots.indices.mapNotNull { slots[it] ?: func.defaults[it] }
                 } else {
-                    expr.args
+                    callArgs
                 }
                 // Check arg count.
                 val hasSpread = effectiveArgs.any { it is Expr.Spread }
@@ -2075,16 +2277,33 @@ class TypeResolver(private val table: SymbolTable) {
                             return null
                         }
                         val declared = func.params.size - 1 // exclude `self`
-                        if (expr.args.size != declared) {
-                            errors.add("line ${expr.line}: method '${expr.name}' expects $declared args, got ${expr.args.size}")
+                        // Methods take named arguments and defaults on the same
+                        // terms as free functions: `self` is parameter 0, so a
+                        // method's own parameters are offset by one throughout.
+                        val positioned = positionMethodArguments(expr, func, declared) ?: return null
+                        if (positioned.size > declared) {
+                            errors.add("line ${expr.line}: method '${expr.name}' expects $declared args, got ${positioned.size}")
                             return null
                         }
-                        for (i in expr.args.indices) {
+                        // A method's own type parameters are inferred from the
+                        // call, exactly as a generic free function's are, so a
+                        // declared type naming one cannot be compared literally.
+                        val methodIsGeneric = func.typeParams.isNotEmpty()
+                        for (i in positioned.indices) {
+                            val argument = positioned[i] ?: continue
                             val paramType = func.params[i + 1].second
-                            val argument = expr.args[i]
                             val argType = resolveContextualArgument(argument, paramType) ?: return null
-                            if (!isCompatible(paramType, argType)) {
+                            if (!methodIsGeneric && !isCompatible(paramType, argType)) {
                                 errors.add("line ${expr.line}: arg ${i + 1} of '${expr.name}': expected $paramType, got $argType")
+                            }
+                        }
+                        for (i in positioned.indices) {
+                            if (positioned[i] == null && !func.defaults.containsKey(i + 1)) {
+                                errors.add(
+                                    "line ${expr.line}: method '${expr.name}' has no argument for " +
+                                        "'${func.params[i + 1].first}' and it has no default",
+                                )
+                                return null
                             }
                         }
                         return func.returnType
@@ -2770,6 +2989,19 @@ class TypeResolver(private val table: SymbolTable) {
                 actual.copy(isEscaping = false),
             )
         }
+        // `react (…) -> R` says the callable *may* use reactive state, so a plain
+        // callable satisfies it: a block that reads no `remember` is a valid
+        // reactive block. The converse does not hold - a reactive callable cannot
+        // be passed where a plain one is wanted, because the caller would run it
+        // outside any owner.
+        if (declared is IrType.Function && actual is IrType.Function &&
+            declared.kind != actual.kind && declared.kind.accepts(actual.kind)
+        ) {
+            return isCompatible(
+                declared.copy(kind = actual.kind),
+                actual,
+            )
+        }
         // An unsized array slot (`[T]`) accepts any sized array of the same element
         // (`Array<T, N>`); a sized slot still requires an exact-size match (handled
         // by the `==` check above).
@@ -2842,6 +3074,7 @@ class TypeResolver(private val table: SymbolTable) {
         IrType.String -> TypeRef.Named("String")
         IrType.Bool -> TypeRef.Named("Bool")
         IrType.Unit -> TypeRef.Named("Unit")
+        IrType.Nothing -> TypeRef.Named("Nothing")
         IrType.Char -> TypeRef.Named("Char")
         IrType.Byte -> TypeRef.Named("Byte")
         IrType.UByte -> TypeRef.Named("UByte")

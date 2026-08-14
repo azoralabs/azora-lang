@@ -83,7 +83,7 @@ internal object TypeFunctionEvaluator {
             is TypeRef.Named -> when {
                 TypeFunctionCall.isCall(type) -> resolveCall(type)
                 type.name in substitutions && type.args.isEmpty() -> substitutions.getValue(type.name).singleOrNull() ?: type
-                else -> typePropName(type)?.let { resolveCall(TypeFunctionCall.create(it, type.args)) }
+                else -> typePropName(type)?.let { resolveCall(TypeFunctionCall.create(it, type.args, type.valueArgs)) }
                     ?: type.copy(args = type.args.map(::resolve))
             }
             is TypeRef.Array -> type.copy(element = resolve(type.element))
@@ -117,8 +117,8 @@ internal object TypeFunctionEvaluator {
                     listOf(resolve(argument))
                 }
             }
-            if (args.any(::containsUnresolvedParam)) return TypeFunctionCall.create(name, args)
-            return evaluateCall(name, args)
+            if (args.any(::containsUnresolvedParam)) return TypeFunctionCall.create(name, args, call.valueArgs)
+            return evaluateCall(name, args, call.valueArgs)
         }
 
         private fun containsUnresolvedParam(type: TypeRef): Boolean = when (type) {
@@ -193,7 +193,11 @@ internal object TypeFunctionEvaluator {
             }
         }
 
-        private fun evaluateCall(name: String, args: List<TypeRef>): TypeRef {
+        private fun evaluateCall(
+            name: String,
+            args: List<TypeRef>,
+            valueArgs: List<org.azora.lang.frontend.Expr> = emptyList(),
+        ): TypeRef {
             val overloads = declarations[name].orEmpty()
             val fixed = overloads.firstOrNull { it.variadicParam == null && it.params.size == args.size }
             val variadics = overloads.filter { it.variadicParam != null }.sortedByDescending { declaration ->
@@ -226,6 +230,20 @@ internal object TypeFunctionEvaluator {
             declaration.params.forEachIndexed { index, param ->
                 if (param.variadic) packs[param.name] = args.drop(index)
                 else values[param.name] = args[index]
+            }
+            // Value parameters bind positionally, as the literal they were called
+            // with. A `Bool` binds as `true`/`false` so a `when` arm can test it;
+            // anything the caller did not fold to a literal stays unbound, and the
+            // arms that name it simply do not hold.
+            declaration.valueParams.forEachIndexed { index, param ->
+                val literal = valueArgs.getOrNull(index)
+                val bound = when {
+                    literal is org.azora.lang.frontend.Expr.BoolLiteral -> literal.value.toString()
+                    literal is org.azora.lang.frontend.Expr.IntLiteral -> literal.value.toString()
+                    literal is org.azora.lang.frontend.Expr.StringLiteral -> literal.value
+                    else -> null
+                }
+                if (bound != null) values[param.name] = TypeRef.Named(bound)
             }
             stack.add(declaration.name)
             return try {
@@ -282,6 +300,7 @@ internal object TypeFunctionEvaluator {
             is TypeFunctionExpr.Reference -> values[expression.name]
                 ?: packs[expression.name]?.singleOrNull()
                 ?: TypeRef.Named(expression.name)
+            is TypeFunctionExpr.Nullable -> TypeRef.Nullable(evaluate(expression.inner, values, packs))
             is TypeFunctionExpr.PackElement -> packs[expression.packName]?.getOrNull(expression.index)
                 ?: error("Type pack '${expression.packName}' has no element ${expression.index}")
             is TypeFunctionExpr.Call -> {
@@ -306,6 +325,15 @@ internal object TypeFunctionEvaluator {
             values: Map<String, TypeRef>,
             packs: Map<String, List<TypeRef>>,
         ): Boolean {
+            // A conjunction of `Bool` parameters. Each is bound as the literal it
+            // was called with, so an argument that is still unknown makes the arm
+            // fail rather than guess - the next arm, or `else`, then answers.
+            if (condition.valueFlags.isNotEmpty()) {
+                return condition.valueFlags.withIndex().all { (index, flag) ->
+                    val bound = (values[flag] as? TypeRef.Named)?.name
+                    bound == condition.flagsExpected[index].toString()
+                }
+            }
             val left = evaluate(condition.left, values, packs)
             val right = evaluate(condition.right, values, packs)
             if (!condition.compareRank) {

@@ -157,9 +157,9 @@ which the standard library does not yet define.
 | name         | from                     |
 |--------------|--------------------------|
 | `__reflect`  | `std::reflect<T>`        |
-| `__hasDeco`  | `reflect<T>.hasDeco<D>`  |
+| `__hasAnnot`  | `reflect<T>.hasAnnot<D>`  |
 | `__annotMeta` | `reflect<T>.annotMeta<D>` |
-| `__withDeco` | `reflect<*>.withDeco<D>` |
+| `__withAnnot` | `reflect<*>.withAnnot<D>` |
 
 These never reach a backend. They are consumed by CTCE and the reflection
 expander, and a program that still contains one after compile-time evaluation is

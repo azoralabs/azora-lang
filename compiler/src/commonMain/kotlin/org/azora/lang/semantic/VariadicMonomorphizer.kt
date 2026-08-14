@@ -1201,10 +1201,10 @@ private class MonoContext(
                 if (modifier.isNotEmpty()) append(modifier).append(' ')
                 append(name)
             }
-            error("undefined type macro '$spelling'; import the module that declares its 'meta type' rule")
+            error("undefined type macro '$spelling'; import the module that declares it")
         }
         if (matches.size > 1) {
-            error("ambiguous type macro '$name': ${matches.size} matching 'meta type' rules are visible")
+            error("ambiguous type macro '$name': ${matches.size} matching rules are visible")
         }
         val rule = matches.single()
         val rewrittenArgs = call.args.map(::rewriteType)

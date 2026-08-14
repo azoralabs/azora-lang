@@ -11,6 +11,7 @@ package org.azora.lang.frontend
 internal fun Expr.bindTraceReceiver(receiver: Expr): Expr = bindTraceReceiver(receiver, interpolation = false)
 
 private fun Expr.bindTraceReceiver(receiver: Expr, interpolation: Boolean): Expr = when (this) {
+    is Expr.InferredMember -> this
     is Expr.MapEntryArg -> copy(
         key = key.bindTraceReceiver(receiver, interpolation),
         value = value.bindTraceReceiver(receiver, interpolation),

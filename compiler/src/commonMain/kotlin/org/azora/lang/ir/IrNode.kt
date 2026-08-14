@@ -62,6 +62,15 @@ sealed class IrType {
     object Bool : IrType() { override fun toString() = "Bool" }
     /** Unit (void) type -- represents no meaningful value. */
     object Unit : IrType() { override fun toString() = "Unit" }
+    /**
+     * The bottom type -- no value has it, and nothing can be done with one.
+     *
+     * What a compile-time branch answers when the question it was asked has no
+     * answer: a parameter with no default has no type for its default to be, and
+     * `Nothing` says exactly that where [Unit] would claim there is a value and
+     * it happens to be empty.
+     */
+    object Nothing : IrType() { override fun toString() = "Nothing" }
     /** Character type (stored as Long char code). */
     object Char : IrType() { override fun toString() = "Char" }
     /** 8-bit signed integer type. */
@@ -237,6 +246,7 @@ sealed class IrType {
             "String" -> String
             "Bool" -> Bool
             "Unit" -> Unit
+            "Nothing" -> Nothing
             "Char" -> Char
             "Byte" -> Byte
             "UByte" -> UByte
@@ -963,6 +973,12 @@ sealed class IrStmt {
         val dependencies: List<String>,
         val body: List<IrStmt>,
         val automatic: Boolean,
+        /**
+         * `effect done == true { … }` - the body runs on the rising edge of this.
+         *
+         * Null for the dependency forms, which run whenever a dependency moves.
+         */
+        val condition: IrExpr? = null,
     ) : IrStmt()
 
     /** `yield value` - emit a value from a `flow` generator. */

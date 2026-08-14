@@ -215,6 +215,16 @@ class IrOptimizer {
         return func.copy(body = newBody)
     }
 
+    /**
+     * Constant-propagates through a statement list.
+     *
+     * A reactive binding is never a constant here, whatever its initializer says.
+     * `remember var count = 0` is storage that outlives the call - the zero is
+     * what it starts at, not what it is - so folding reads of it produced a
+     * function that returned its first-ever value forever. The declaration also
+     * *clears* any earlier binding of the name, because the reactive one shadows
+     * whatever the pass had been tracking.
+     */
     private fun propagateStmts(stmts: List<IrStmt>, constants: MutableMap<String, IrExpr>): List<IrStmt> {
         return stmts.map { stmt ->
             // A closure that captures by reference may write the original binding
@@ -228,21 +238,24 @@ class IrOptimizer {
                 is IrStmt.VarDecl -> {
                     val propagated = propagateExpr(stmt.initializer, constants)
                     val folded = foldExpr(propagated)
-                    if (isConstant(folded)) constants[stmt.name] = folded
+                    if (isConstant(folded) && stmt.reactiveLifetime == null) constants[stmt.name] = folded
+                    else constants.remove(stmt.name)
                     stmt.copy(initializer = folded)
                 }
                 is IrStmt.FinDecl -> {
                     val propagated = propagateExpr(stmt.initializer, constants)
                     val folded = foldExpr(propagated)
                     // fin is always constant-propagatable (never reassigned)
-                    if (isConstant(folded)) constants[stmt.name] = folded
+                    if (isConstant(folded) && stmt.reactiveLifetime == null) constants[stmt.name] = folded
+                    else constants.remove(stmt.name)
                     stmt.copy(initializer = folded)
                 }
                 is IrStmt.LetDecl -> {
                     val propagated = propagateExpr(stmt.initializer, constants)
                     val folded = foldExpr(propagated)
                     // let is always constant-propagatable (never reassigned)
-                    if (isConstant(folded)) constants[stmt.name] = folded
+                    if (isConstant(folded) && stmt.reactiveLifetime == null) constants[stmt.name] = folded
+                    else constants.remove(stmt.name)
                     stmt.copy(initializer = folded)
                 }
                 is IrStmt.Assignment -> {

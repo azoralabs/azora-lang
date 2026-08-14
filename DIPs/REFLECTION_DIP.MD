@@ -16,7 +16,7 @@ annot System
 @System func physics()  { … }
 
 func main() {
-    inline for S in std::reflect<*>.withDeco<System> {
+    inline for S in std::reflect<*>.withAnnot<System> {
         S()                    // becomes: movement(); physics()
     }
 }
@@ -31,7 +31,7 @@ program registering anything**.
 
 ```azora
 fin r = std::reflect<P>()
-// reflect is compile-time-only and must be followed by .hasDeco<D> or .annotMeta<D>
+// reflect is compile-time-only and must be followed by .hasAnnot<D> or .annotMeta<D>
 ```
 
 There is no `Reflected<T>` value at run time, no type object, and no way to ask
@@ -42,7 +42,7 @@ That is a deliberate limit and the reason the feature costs nothing: every query
 folds during compile-time evaluation, and an intrinsic that survives it is a
 compiler bug rather than a runtime call.
 
-- ⬜ The diagnostic names only `.hasDeco` and `.annotMeta`, but `.withDeco`,
+- ⬜ The diagnostic names only `.hasAnnot` and `.annotMeta`, but `.withAnnot`,
   `.declName` and `.enclosingRealm` are equally valid. The message should list
   what is actually allowed
 
@@ -50,11 +50,11 @@ compiler bug rather than a runtime call.
 
 ## 2. Asking about one type
 
-### 2.1 `hasDeco<D>` - does it carry this decorator?
+### 2.1 `hasAnnot<D>` - does it carry this decorator?
 
 ```azora
-inline assert std::reflect<P>.hasDeco<Marked> { "P is marked" }
-inline assert !std::reflect<Q>.hasDeco<Marked> { "Q is not" }
+inline assert std::reflect<P>.hasAnnot<Marked> { "P is marked" }
+inline assert !std::reflect<Q>.hasAnnot<Marked> { "Q is not" }
 ```
 
 Folds to a boolean.
@@ -88,22 +88,22 @@ The realm a declaration sits in, or null.
 ## 3. Asking about the program
 
 ```azora
-inline for S in std::reflect<*>.withDeco<System> { … }
+inline for S in std::reflect<*>.withAnnot<System> { … }
 ```
 
-`reflect<*>` is a **whole-program** handle, and `withDeco<D>` enumerates every
+`reflect<*>` is a **whole-program** handle, and `withAnnot<D>` enumerates every
 declaration carrying `D` - packs, enums and free functions alike. The loop
 unrolls once per declaration with the loop variable bound to its name.
 
 Inside the body, `std::reflect<S>` resolves against the bound declaration:
 
 ```azora
-inline for S in std::reflect<*>.withDeco<System> {
+inline for S in std::reflect<*>.withAnnot<System> {
     std::println(std::reflect<S>.declName)      // "movement", then "physics"
 }
 ```
 
-`.declName`, `.hasDeco<D>` and `.annotMeta<D>` are what a bound declaration
+`.declName`, `.hasAnnot<D>` and `.annotMeta<D>` are what a bound declaration
 answers. Two separate loops enumerate in the same order, so an index chosen in
 one identifies the same declaration in the other - a property the whole scheme
 rests on, and one the tests pin.
@@ -117,7 +117,7 @@ visible.
 The loop works **inside a function body**. At top level it does not:
 
 ```azora
-inline for S in std::reflect<*>.withDeco<System> {
+inline for S in std::reflect<*>.withAnnot<System> {
     func run$S() { S() }        // Unknown compile-time list 'std'
 }
 ```
@@ -125,7 +125,7 @@ inline for S in std::reflect<*>.withDeco<System> {
 So reflection can generate *calls* but not *declarations*. A library that wants
 a function per decorated type cannot write one.
 
-- ⬜ Decide whether top-level unrolling over `withDeco` should work. `inline for`
+- ⬜ Decide whether top-level unrolling over `withAnnot` should work. `inline for`
   itself does unroll at top level over a type list; it is the `reflect<*>` list
   that is not recognised there
 
@@ -151,9 +151,9 @@ used, and it is the one a reader is most likely to reach for.
 
 | member           | state                              |
 |------------------|------------------------------------|
-| `hasDeco<D>`     | ✅ works                            |
+| `hasAnnot<D>`     | ✅ works                            |
 | `annotMeta<D>`    | ✅ works                            |
-| `withDeco<D>`    | ✅ works on `reflect<*>`, in a body |
+| `withAnnot<D>`    | ✅ works on `reflect<*>`, in a body |
 | `enclosingRealm` | ✅ accepted                         |
 | `fields`         | ⬜ **unreachable**                  |
 
@@ -162,7 +162,7 @@ inline for f in std::reflect<P>.fields { … }
 // inline for requires a literal range, got Member
 
 std::println(std::reflect<p>.fields.length)
-// reflect is compile-time-only and must be followed by .hasDeco<D> or .annotMeta<D>
+// reflect is compile-time-only and must be followed by .hasAnnot<D> or .annotMeta<D>
 ```
 
 `ReflectedField` and its `name` / `value` props are declared alongside it and are
@@ -181,7 +181,7 @@ equally unreachable, since nothing can produce one.
 
 - ⬜ **No declaration generation** (§3.1)
 - ⬜ **No enumeration except by decorator.** There is no "every pack", no "every
-  implementer of this spec", no filter by realm or module. `withDeco<D>` is the
+  implementer of this spec", no filter by realm or module. `withAnnot<D>` is the
   only query, so discovering anything requires it be decorated first
 - ⬜ **No method or signature reflection.** A declaration's members, parameter
   types and return type are not askable
@@ -199,11 +199,11 @@ equally unreachable, since nothing can produce one.
 1. `reflect` is compile-time only. A query that reaches run time is an error.
 2. `std::reflect<T>` asks about one declaration; `std::reflect<*>` about the
    program.
-3. `withDeco<D>` enumerates every declaration carrying `D`, in declaration
+3. `withAnnot<D>` enumerates every declaration carrying `D`, in declaration
    order, and is the only enumeration there is.
-4. `inline for` over `withDeco<D>` unrolls in a function body, binding the loop
+4. `inline for` over `withAnnot<D>` unrolls in a function body, binding the loop
    variable to each declaration's name.
-5. Inside such a loop, `reflect<S>` answers `.declName`, `.hasDeco<D>` and
+5. Inside such a loop, `reflect<S>` answers `.declName`, `.hasAnnot<D>` and
    `.annotMeta<D>` for the bound declaration.
 6. Every query folds away; the emitted code is what the author could have
    written by hand.
@@ -214,6 +214,18 @@ equally unreachable, since nothing can produce one.
 
 - `CTCE_DIP.MD` - the evaluator these queries fold in
 - `ANNOTATIONS_DIP.MD` - `annot`, and the metadata `annotMeta` reads back
-- `COMPILER_INTRINSIC_DIP.MD` §3.4 - `__reflect`, `__hasDeco`, `__annotMeta`,
-  `__withDeco`
+- `COMPILER_INTRINSIC_DIP.MD` §3.4 - `__reflect`, `__hasAnnot`, `__annotMeta`,
+  `__withAnnot`
 - `ROADMAPs/VERSION_0_1_ROADMAP.MD` §2.6
+
+
+// condition effects
+effect mustClose == true { // we have to add effect cond, when this cond first became true, then it executes
+azora::engine::exit()
+}
+
+// keys and multiple keys
+remember var expanded = false by item.id
+remember var scroll = 0 by page.id
+remember var state = State() by user.id
+remember var state = State() by [user.id, page.id]

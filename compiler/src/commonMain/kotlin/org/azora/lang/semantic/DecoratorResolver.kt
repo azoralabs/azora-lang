@@ -41,6 +41,9 @@ class DecoratorResolver {
         val invalidDecorators: Set<String>,
     )
 
+    /** Types chosen for `.Name` arguments, by where each was written. */
+    private val inferredOwners = mutableMapOf<Pair<Int, Int>, String>()
+
     fun resolve(program: Program, table: SymbolTable): List<String> {
         val graph = validateGraphs(program, table)
         val errors = graph.errors.toMutableList()
@@ -98,6 +101,8 @@ class DecoratorResolver {
                 applyDecorator(site, annotation.name, annotation.line, table, graph.invalidDecorators, errors)
             }
         }
+        // Published once every argument has been matched to its field.
+        inferredOwners.forEach { (at, owner) -> table.defineInferredMember(at.first, at.second, owner) }
         return errors
     }
 
@@ -160,6 +165,13 @@ class DecoratorResolver {
     private fun literalMatches(expected: TypeRef, value: Expr): Boolean {
         val name = (expected as? TypeRef.Named)?.name ?: return true
         return when (value) {
+            // `@System(phase: .Update)` - the field's declared type is what the
+            // dot meant. Recorded here because this runs before type resolution,
+            // which would otherwise see a dot with nothing to hang it on.
+            is Expr.InferredMember -> {
+                inferredOwners[value.line to value.column] = name
+                true
+            }
             is Expr.BoolLiteral -> name == "Bool"
             is Expr.StringLiteral, is Expr.StringTemplate -> name == "String"
             is Expr.CharLiteral -> name == "Char"

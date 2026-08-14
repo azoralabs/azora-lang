@@ -230,6 +230,7 @@ class EffectChecker {
 
     private fun collectCallsFromExpr(expr: Expr, calls: MutableSet<String>) {
         when (expr) {
+            is Expr.InferredMember -> {}
             is Expr.MapEntryArg -> {
                 collectCallsFromExpr(expr.key, calls)
                 collectCallsFromExpr(expr.value, calls)

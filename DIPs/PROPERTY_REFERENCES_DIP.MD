@@ -525,7 +525,7 @@ extend it into runtime reflection.
 
 ```azora
 inline fin metadata = std::reflect<User::name>
-inline assert metadata.hasDeco<SerialName> { "name must have SerialName" }
+inline assert metadata.hasAnnot<SerialName> { "name must have SerialName" }
 
 fin property = bind User::name
 std::println(property.read(user))

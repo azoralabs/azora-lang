@@ -17,6 +17,24 @@
 exposed module std.traits.core
 
 realm std {
+
+    /**
+     * A value `loop` can walk.
+     *
+     * `loop xs { … }` resets the iterator and runs the body while it has more,
+     * so those two operations are the whole contract - what a row *is* belongs
+     * to the type, not to the loop. Stating it as a spec makes the requirement
+     * checkable rather than discovered when a method turns out to be missing.
+     */
+    @Experimental(since: "0.1")
+    spec Iterator {
+        /** Positions the cursor before the first row. */
+        func reset[self: Self!]()
+
+        /** Advances to the next row, answering whether there was one. */
+        func hasNext[self: Self!](): Bool
+    }
+
     inline for Ty in Numbers {
         /** Ascending range over [Ty], stepping by one. */
         bridge oper.. [self: Ty&](rhs: Ty&) by 1

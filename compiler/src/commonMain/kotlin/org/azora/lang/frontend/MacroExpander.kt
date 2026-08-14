@@ -612,6 +612,7 @@ internal object MacroExpander {
         }
         // All other variants: structural copy recursing into every Expr child.
         return when (expr) {
+            is Expr.InferredMember -> expr
             is Expr.MapEntryArg -> expr.copy(
                 key = rewriteExpr(expr.key, macros, depth),
                 value = rewriteExpr(expr.value, macros, depth),
@@ -804,6 +805,7 @@ internal object MacroExpander {
  * references outside a spread position are rejected (they bind multiple exprs).
      */
     private fun substitute(template: Expr, bindings: Map<String, List<Expr>>, invokeLine: Int): Expr = when (template) {
+        is Expr.InferredMember -> template
         is Expr.MapEntryArg -> template.copy(
             key = substitute(template.key, bindings, invokeLine),
             value = substitute(template.value, bindings, invokeLine),

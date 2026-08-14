@@ -146,6 +146,16 @@ class IrInterpreter {
 
     /** Reactive storage is owned by the declaration that introduced the `react` scope. */
     private val rememberedValues = mutableMapOf<ReactiveSlotKey, ReactiveCell>()
+
+    /**
+     * Whether each conditional effect's condition held last time it was checked.
+     *
+     * Keyed like a `remember` cell, and for the same reason: the rising edge is
+     * owner state, not invocation state. A fresh `RuntimeEffect` is built on
+     * every invocation, so an edge recorded there would reset each time and the
+     * body would fire whenever the condition merely *was* true.
+     */
+    private val effectConditionEdges = mutableMapOf<ReactiveSlotKey, Boolean>()
     private val retainedValues = mutableMapOf<ReactiveSlotKey, ReactiveCell>()
     private val preservedValues = mutableMapOf<ReactiveSlotKey, ReactiveCell>()
     private val reactiveInitLocks = mutableMapOf<ReactiveSlotKey, Mutex>()
@@ -200,9 +210,19 @@ class IrInterpreter {
         val body: List<IrStmt>,
         val automatic: Boolean,
         val explicitDependencies: List<String>,
+        /** `effect done == true { … }`; null for the dependency forms. */
+        val condition: IrExpr? = null,
     ) {
         val dependencies = linkedSetOf<ReactiveCell>()
         var running = false
+        /**
+         * What the condition said last time, so the body runs on the rising edge.
+         *
+         * Starts false so an effect whose condition is already true when the
+         * owner is entered still fires once - "became true" includes "was true
+         * the first time anyone looked".
+         */
+        var conditionWasTrue = false
     }
 
     /**
@@ -847,7 +867,7 @@ class IrInterpreter {
     private suspend fun registerReactiveEffect(stmt: IrStmt.Effect) {
         val ownerEffects = state().activeReactiveEffects.lastOrNull()
             ?: error("effect #${stmt.id} executed outside a react owner")
-        val effect = RuntimeEffect(stmt.id, stmt.body, stmt.automatic, stmt.dependencies)
+        val effect = RuntimeEffect(stmt.id, stmt.body, stmt.automatic, stmt.dependencies, stmt.condition)
         ownerEffects.add(effect)
         runReactiveEffect(effect)
     }
@@ -864,13 +884,36 @@ class IrInterpreter {
         st.effectDependencyCollector = if (collectDependencies) observed else null
         try {
             if (!collectDependencies) bindExplicitDependencies(effect)
-            pushScope()
-            val signal = try {
-                executeBody(effect.body)
-            } finally {
-                popScope()
+
+            // A conditional effect acts on the transition, not on the value: it
+            // runs when the condition becomes true and stays quiet while it
+            // remains true, re-arming once it goes false again. Without the edge,
+            // `effect closing == true { exit() }` would fire on every evaluation
+            // for as long as `closing` held.
+            val condition = effect.condition
+            val fire = if (condition == null) {
+                true
+            } else {
+                val owner = state().reactiveOwners.lastOrNull()
+                    ?: error("conditional effect #${effect.id} ran outside a react owner")
+                val edgeKey = ReactiveSlotKey(owner, "effect#${effect.id}")
+                val nowTrue = evalExpr(condition) == true
+                val wasTrue = azSync(effectConditionEdges) {
+                    effectConditionEdges[edgeKey] ?: false
+                }
+                azSync(effectConditionEdges) { effectConditionEdges[edgeKey] = nowTrue }
+                nowTrue && !wasTrue
             }
-            if (signal is ControlSignal) error("effect #${effect.id} cannot return, break, or continue")
+
+            if (fire) {
+                pushScope()
+                val signal = try {
+                    executeBody(effect.body)
+                } finally {
+                    popScope()
+                }
+                if (signal is ControlSignal) error("effect #${effect.id} cannot return, break, or continue")
+            }
         } finally {
             st.effectDependencyCollector = previousCollector
             if (collectDependencies) {
@@ -1595,7 +1638,8 @@ class IrInterpreter {
         // mapping happens once, in FsAccess, and is read back once, in `_raise`.
         if (expr.name.isIntrinsic("fsRead")) {
             val result = fsReadText(args[0] as String)
-            return mutableListOf<Any?>(result.error ?: "", result.value ?: "")
+            // Error name, newline, contents - the encoding std.filesystem reads.
+            return (result.error ?: "") + "\n" + (result.value ?: "")
         }
         if (expr.name.isIntrinsic("fsReadBytes")) {
             val result = fsReadBytes(args[0] as String)
@@ -1643,13 +1687,9 @@ class IrInterpreter {
         }
         if (expr.name.isIntrinsic("commandParts")) {
             val result = osRunCommand(args[0] as String)
-            // Three values through a bridge that returns one; `std::runCommand`
-            // is the wrapper that turns them back into a ProcessResult.
-            return mutableListOf<Any?>(
-                result.exitCode.toString(),
-                result.started.toString(),
-                result.output,
-            )
+            // Exit code, started, output - one per line, output last because it
+            // is the only one that can contain a newline.
+            return "${result.exitCode}\n${result.started}\n${result.output}"
         }
         if (expr.name.isIntrinsic("stringLength")) return (args[0] as String).length.toLong()
         if (expr.name.isIntrinsic("charAt")) return (args[0] as String)[(args[1] as Number).toInt()]

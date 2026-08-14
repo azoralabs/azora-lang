@@ -18,6 +18,7 @@ package org.azora.lang.backend
 
 import org.azora.lang.putIfAbsentCompat
 import org.azora.lang.ir.IrBinaryOp
+import org.azora.lang.ir.symbolDenotes
 import org.azora.lang.ir.IrExpr
 import org.azora.lang.ir.IrFunction
 import org.azora.lang.ir.IrProgram
@@ -147,6 +148,9 @@ class LlvmCodegen {
 
     /** Effects visible at the current point in the function, for static native lowering. */
     private val activeReactiveEffects = mutableListOf<IrStmt.Effect>()
+
+    /** Globals holding each conditional effect's last answer; see [emitReactiveEffect]. */
+    private val reactiveEffectEdges = linkedSetOf<String>()
     private var emittingReactiveEffect = false
     private data class LazyLocal(
         val type: IrType,
@@ -188,13 +192,32 @@ class LlvmCodegen {
     private var usesStrstr = false
     private var usesIsCheck = false
     private var usesMemcpy = false
+    // std.os / std.filesystem native support.
+    private var usesGetenv = false
+    private var usesAccess = false
+    private var usesStdio = false
+    private var usesSystem = false
+    private var usesGetpid = false
     /** Referenced compiler string/array bridge intrinsics; defined as runtime helpers. */
-    private val neededIntrinsics = linkedSetOf<String>()
+    /** Bare intrinsic name -> the mangled symbol the program called it by. */
+    private val neededIntrinsics = linkedMapOf<String, String>()
     private val stringIntrinsics = setOf(
         "stringLength", "charAt", "ord", "chr", "isDigit", "isAlpha", "substring",
         "startsWith", "endsWith", "contains", "indexOf", "toUpper", "toLower", "trim",
         "replace", "split", "toChars", "fromChars",
     )
+
+    /**
+     * The string intrinsic [symbol] denotes, or null.
+     *
+     * These are declared in `realm std`, so the symbol reaching IR is
+     * `__std_substring` while the table above - and the bodies emitted by
+     * [buildStringIntrinsics] - are keyed by the bare name. Comparing the two
+     * verbatim silently matched nothing: every call was declared and none was
+     * defined, so any native build touching a string failed at link time.
+     */
+    private fun stringIntrinsicOf(symbol: String): String? =
+        stringIntrinsics.firstOrNull { symbolDenotes(symbol, it) }
     private var usesSnprintf = false
     private var usesStrConcat = false
     private var usesStrRepeat = false
@@ -245,6 +268,11 @@ class LlvmCodegen {
         usesStrcat = false
         usesStrcmp = false
         usesMemcpy = false
+        usesGetenv = false
+        usesAccess = false
+        usesStdio = false
+        usesSystem = false
+        usesGetpid = false
         usesSnprintf = false
         usesStrConcat = false
         usesStrRepeat = false
@@ -270,6 +298,7 @@ class LlvmCodegen {
         globalVars.clear()
         dynamicGlobalInitializers.clear()
         reactiveStorage.clear()
+        reactiveEffectEdges.clear()
         lateTypeDefinitions.clear()
         deferredFunctions.clear()
         for (item in program.items.filterIsInstance<IrTopLevel.Struct>()) {
@@ -356,6 +385,16 @@ class LlvmCodegen {
             body.appendLine()
         }
 
+        if (reactiveEffectEdges.isNotEmpty()) {
+            // False to begin with, so a condition that is already true the first
+            // time anyone looks still counts as having become true.
+            body.appendLine("; Conditional effect edges")
+            for (edge in reactiveEffectEdges) {
+                body.appendLine("${edge} = internal global i1 false")
+            }
+            body.appendLine()
+        }
+
         val normalGlobalInitializers = dynamicGlobalInitializers.filterNot { it.threadLocal }
         val threadLocalInitializers = dynamicGlobalInitializers.filter { it.threadLocal }
         if (normalGlobalInitializers.isNotEmpty()) {
@@ -400,7 +439,7 @@ class LlvmCodegen {
             body.appendLine("declare double @$libm($params)")
         }
         for (item in externs) {
-            if (item.name in stringIntrinsics) continue
+            if (stringIntrinsicOf(item.name) != null) continue
             // `realm std { bridge func sqrt(…) }` mangles to `__std_math_sqrt`,
             // a symbol nothing provides. The compiler supplies these itself rather
             // than linking a hand-written C shim: declare the libm function and
@@ -415,6 +454,13 @@ class LlvmCodegen {
                 body.appendLine("  %r = call $ret @$libm(${args.joinToString(", ")})")
                 body.appendLine("  ret $ret %r")
                 body.appendLine("}")
+                continue
+            }
+            // `std.os` / `std.filesystem` bridges: defined here for the same
+            // reason as the libm and string intrinsics above.
+            val osBody = osIntrinsicBody(item)
+            if (osBody != null) {
+                body.append(osBody)
                 continue
             }
             val params = item.params.joinToString(", ") { (_, t) -> mapType(t) }
@@ -483,6 +529,18 @@ class LlvmCodegen {
         if (usesStrncmp) line("declare i32 @strncmp(i8*, i8*, i64)")
         if (usesStrstr) line("declare i8* @strstr(i8*, i8*)")
         if (usesMemcpy) line("declare i8* @memcpy(i8*, i8*, i64)")
+        if (usesGetenv) line("declare i8* @getenv(i8*)")
+        if (usesAccess) line("declare i32 @access(i8*, i32)")
+        if (usesSystem) line("declare i32 @system(i8*)")
+        if (usesGetpid) line("declare i32 @getpid()")
+        if (usesStdio) {
+            line("declare i8* @fopen(i8*, i8*)")
+            line("declare i32 @fclose(i8*)")
+            line("declare i32 @fseek(i8*, i64, i32)")
+            line("declare i64 @ftell(i8*)")
+            line("declare i64 @fread(i8*, i64, i64, i8*)")
+            line("declare i32 @fputs(i8*, i8*)")
+        }
         if (usesTaskRuntime) {
             line("declare i32 @pthread_create(i8**, i8*, i8* (i8*)*, i8*)")
             line("declare i32 @pthread_join(i8*, i8**)")
@@ -906,6 +964,12 @@ class LlvmCodegen {
                     if (declared != null && declared != IrType.Unit) {
                         val value = coerceNumeric(raw, stmt.value.type, declared)
                         emitTerminator("  ret ${mapType(declared)} $value")
+                    } else if (stmt.value.type == IrType.Unit) {
+                        // `void` carries no value, so naming one produces
+                        // `ret void void` - which LLVM rejects. The expression is
+                        // still emitted above for its effect; only the return of
+                        // it is nothing.
+                        emitTerminator("  ret void")
                     } else {
                         emitTerminator("  ret ${mapType(stmt.value.type)} $raw")
                     }
@@ -951,7 +1015,33 @@ class LlvmCodegen {
         val previous = emittingReactiveEffect
         emittingReactiveEffect = true
         try {
+            val condition = effect.condition
+            if (condition == null) {
+                emitStmts(effect.body)
+                return
+            }
+
+            // A conditional effect runs on the transition to true, so the
+            // previous answer has to outlive the call. It lives in a module
+            // global for the same reason a `remember` cell does - the owner's
+            // state is not the invocation's.
+            val edge = "@__azora_effect_edge_${effect.id}"
+            val now = emitExpr(condition)
+            val was = nextTmp()
+            emit("  $was = load i1, i1* $edge")
+            emit("  store i1 $now, i1* $edge")
+            val notWas = nextTmp()
+            emit("  $notWas = xor i1 $was, true")
+            val rising = nextTmp()
+            emit("  $rising = and i1 $now, $notWas")
+
+            val bodyLabel = nextLabel("effect_fire")
+            val endLabel = nextLabel("effect_done")
+            emitTerminator("  br i1 $rising, label %$bodyLabel, label %$endLabel")
+            startBlock(bodyLabel)
             emitStmts(effect.body)
+            emitTerminator("  br label %$endLabel")
+            startBlock(endLabel)
         } finally {
             emittingReactiveEffect = previous
         }
@@ -1146,9 +1236,68 @@ class LlvmCodegen {
                     stmt.catchBody?.let { collectReactiveStorage(owner, it) }
                 }
                 is IrStmt.Defer -> collectReactiveStorage(owner, stmt.body)
-                is IrStmt.Effect -> collectReactiveStorage(owner, stmt.body)
+                is IrStmt.Effect -> {
+                    // A conditional effect needs a global to remember its last
+                    // answer, and globals are written before any body - so the
+                    // edge has to be discovered here, not while emitting.
+                    if (stmt.condition != null) {
+                        reactiveEffectEdges.add("@__azora_effect_edge_${stmt.id}")
+                    }
+                    collectReactiveStorage(owner, stmt.body)
+                }
                 else -> Unit
             }
+            // A `remember` inside a block belongs to the owner that runs the
+            // block, not to the closure: the closure is rebuilt every call, and
+            // the state has to outlive it. Statements alone never reach one, so
+            // the expressions are walked for the lambdas they carry.
+            forEachStatementExpr(stmt) { collectReactiveStorageInExpr(owner, it) }
+        }
+    }
+
+    /** Walks [expr] for lambda bodies, registering their reactive declarations. */
+    private fun collectReactiveStorageInExpr(owner: String, expr: IrExpr) {
+        when (expr) {
+            is IrExpr.Lambda -> collectReactiveStorage(owner, expr.body)
+            is IrExpr.Call -> {
+                expr.args.forEach { collectReactiveStorageInExpr(owner, it) }
+                expr.receiver?.let { collectReactiveStorageInExpr(owner, it) }
+            }
+            is IrExpr.MethodCall -> {
+                collectReactiveStorageInExpr(owner, expr.target)
+                expr.args.forEach { collectReactiveStorageInExpr(owner, it) }
+            }
+            is IrExpr.Binary -> {
+                collectReactiveStorageInExpr(owner, expr.left)
+                collectReactiveStorageInExpr(owner, expr.right)
+            }
+            is IrExpr.Unary -> collectReactiveStorageInExpr(owner, expr.operand)
+            is IrExpr.Member -> collectReactiveStorageInExpr(owner, expr.target)
+            is IrExpr.Index -> {
+                collectReactiveStorageInExpr(owner, expr.target)
+                collectReactiveStorageInExpr(owner, expr.index)
+            }
+            is IrExpr.ArrayLiteral -> expr.elements.forEach { collectReactiveStorageInExpr(owner, it) }
+            is IrExpr.StructCtor -> expr.args.forEach { collectReactiveStorageInExpr(owner, it) }
+            is IrExpr.IfExpr -> {
+                collectReactiveStorageInExpr(owner, expr.condition)
+                collectReactiveStorageInExpr(owner, expr.thenExpr)
+                collectReactiveStorageInExpr(owner, expr.elseExpr)
+            }
+            else -> Unit
+        }
+    }
+
+    /** Applies [visit] to each expression a statement holds directly. */
+    private fun forEachStatementExpr(stmt: IrStmt, visit: (IrExpr) -> Unit) {
+        when (stmt) {
+            is IrStmt.VarDecl -> visit(stmt.initializer)
+            is IrStmt.FinDecl -> visit(stmt.initializer)
+            is IrStmt.LetDecl -> visit(stmt.initializer)
+            is IrStmt.ExprStmt -> visit(stmt.expr)
+            is IrStmt.Return -> stmt.value?.let(visit)
+            is IrStmt.Assignment -> visit(stmt.value)
+            else -> Unit
         }
     }
 
@@ -1457,8 +1606,10 @@ class LlvmCodegen {
      */
     private fun buildStringIntrinsics(sb: StringBuilder) {
         fun def(name: String, body: String) {
-            if (name !in neededIntrinsics) return
-            sb.appendLine(body.trimIndent())
+            val symbol = neededIntrinsics[name] ?: return
+            // The bodies are written against the bare name; the program calls the
+            // realm-mangled one.
+            sb.appendLine(body.trimIndent().replace("@$name(", "@$symbol("))
             sb.appendLine()
         }
         if ("stringLength" in neededIntrinsics || "startsWith" in neededIntrinsics ||
@@ -1574,7 +1725,24 @@ class LlvmCodegen {
         def("replace", "define i8* @replace(i8* %s, i8* %a, i8* %b) {\n  ret i8* %s\n}")
         def("split", "define i8* @split(i8* %s, i8* %d) {\n  ret i8* null\n}")
         def("toChars", "define i8* @toChars(i8* %s) {\n  ret i8* null\n}")
-        def("fromChars", "define i8* @fromChars(i8* %c) {\n  ret i8* null\n}")
+        // `fromChars` is the one collection op that cannot be a null placeholder:
+        // it returns a *string*, and the very next thing a caller does is
+        // concatenate it - so returning null crashed inside strlen rather than
+        // degrading. An `Array<Char>` is `[ i64 length, i8 × length ]`, which is
+        // a NUL away from being the string already.
+        if ("fromChars" in neededIntrinsics) { usesMalloc = true; usesMemcpy = true }
+        def("fromChars", """
+            define i8* @fromChars(i8* %c) {
+              %lenp = bitcast i8* %c to i64*
+              %len = load i64, i64* %lenp
+              %data = getelementptr i8, i8* %c, i64 8
+              %size = add i64 %len, 1
+              %buf = call i8* @malloc(i64 %size)
+              %cp = call i8* @memcpy(i8* %buf, i8* %data, i64 %len)
+              %end = getelementptr i8, i8* %buf, i64 %len
+              store i8 0, i8* %end
+              ret i8* %buf
+            }""")
     }
 
     /** i1 result of comparing a slot's tag (its first `i8*` cell) to [variantName]. */
@@ -2297,7 +2465,24 @@ class LlvmCodegen {
             }
             is IrExpr.NumCast -> collectReferencedVars(expr.value, refs)
             is IrExpr.EnumToString -> collectReferencedVars(expr.value, refs)
-            is IrExpr.Lambda -> {}
+            is IrExpr.Lambda -> {
+                // A nested closure's free variables are free in this one too: a
+                // closure can only hand on what it captured itself. Skipping
+                // them left the inner environment naming a binding the outer
+                // frame never took, and the read lowered to an undefined module
+                // global - a link failure, or silently nothing.
+                //
+                // Anything the inner lambda binds itself is not free, so its own
+                // parameters and declarations are subtracted first.
+                val bound = linkedSetOf<String>()
+                expr.params.forEach { bound.add(it.first) }
+                collectDeclaredNames(expr.body, bound)
+                val inner = linkedMapOf<String, IrType>()
+                collectReferencedVars(expr.body, inner)
+                inner.forEach { (name, type) ->
+                    if (name !in bound && name !in refs) refs[name] = type
+                }
+            }
             is IrExpr.Await -> collectReferencedVars(expr.value, refs)
             is IrExpr.Spread -> collectReferencedVars(expr.array, refs)
             is IrExpr.IntLiteral, is IrExpr.DoubleLiteral, is IrExpr.StringLiteral, is IrExpr.EnumLiteral,
@@ -2653,6 +2838,176 @@ class LlvmCodegen {
      * signature is all-`Double` - an unrelated user extern that happens to be
      * called `log` keeps its own linkage.
      */
+    /**
+     * A native definition for one of `std.os` / `std.filesystem`'s bridges.
+     *
+     * These have no Azora body and no C shim, so a native build linked against
+     * nothing. They are defined here for the same reason the libm and string
+     * intrinsics are: the standard library should not need a hand-written
+     * runtime shipped and kept in step with it.
+     *
+     * Each is deliberately loop-free. Reading a file uses seek/tell/read rather
+     * than a read loop, and running a command redirects into a temporary file
+     * instead of draining a pipe - so each is a straight line of libc calls
+     * rather than hand-written control flow in IR.
+     */
+    private fun osIntrinsicBody(item: IrTopLevel.Extern): String? {
+        val local = item.name.substringAfterLast('_')
+        val symbol = item.name
+
+        /** A pointer to a constant, using the shared string-constant pool. */
+        fun constant(register: String, value: String): String {
+            val ref = addStringConstant(value)
+            return "$register = getelementptr [${ref.byteLen} x i8], " +
+                "[${ref.byteLen} x i8]* ${ref.name}, i64 0, i64 0"
+        }
+        fun define(signature: String, vararg lines: String): String = buildString {
+            appendLine("define $signature {")
+            appendLine("entry:")
+            lines.forEach { appendLine("  $it") }
+            appendLine("}")
+            appendLine()
+        }
+        /** Reads a whole file into a fresh buffer, or "" when it cannot be opened. */
+        fun readFileBody(name: String): String = define(
+            "i8* @$name(i8* %a0)",
+            constant("%m", "rb"),
+            "%f = call i8* @fopen(i8* %a0, i8* %m)",
+            "%bad = icmp eq i8* %f, null",
+            "br i1 %bad, label %none, label %open",
+            "none:",
+            constant("  %e", ""),
+            "  ret i8* %e",
+            "open:",
+            "  %s1 = call i32 @fseek(i8* %f, i64 0, i32 2)",
+            "  %len = call i64 @ftell(i8* %f)",
+            "  %s2 = call i32 @fseek(i8* %f, i64 0, i32 0)",
+            "  %size = add i64 %len, 1",
+            "  %buf = call i8* @malloc(i64 %size)",
+            "  %got = call i64 @fread(i8* %buf, i64 1, i64 %len, i8* %f)",
+            "  %endp = getelementptr i8, i8* %buf, i64 %got",
+            "  store i8 0, i8* %endp",
+            "  %cl = call i32 @fclose(i8* %f)",
+            "  ret i8* %buf",
+        )
+
+        return when {
+            // getenv, with "" for unset - `std::envVar` documents that shape, and
+            // `hasEnvVar` is what tells unset from empty.
+            local == "envVar" && item.params.size == 1 -> {
+                usesGetenv = true
+                define(
+                    "i8* @$symbol(i8* %a0)",
+                    "%v = call i8* @getenv(i8* %a0)",
+                    "%missing = icmp eq i8* %v, null",
+                    constant("%e", ""),
+                    "%r = select i1 %missing, i8* %e, i8* %v",
+                    "ret i8* %r",
+                )
+            }
+
+            local == "hasEnvVar" && item.params.size == 1 -> {
+                usesGetenv = true
+                define(
+                    "i1 @$symbol(i8* %a0)",
+                    "%v = call i8* @getenv(i8* %a0)",
+                    "%r = icmp ne i8* %v, null",
+                    "ret i1 %r",
+                )
+            }
+
+            local == "fsExists" && item.params.size == 1 -> {
+                usesAccess = true
+                define(
+                    "i1 @$symbol(i8* %a0)",
+                    "%c = call i32 @access(i8* %a0, i32 0)",
+                    "%r = icmp eq i32 %c, 0",
+                    "ret i1 %r",
+                )
+            }
+
+            // Error name, newline, contents - the encoding `std::readText` reads.
+            local == "fsRead" && item.params.size == 1 -> {
+                usesStdio = true
+                usesMalloc = true
+                usesStrConcat = true
+                usesAccess = true
+                define(
+                    "i8* @$symbol(i8* %a0)",
+                    "%c = call i32 @access(i8* %a0, i32 0)",
+                    "%bad = icmp ne i32 %c, 0",
+                    "br i1 %bad, label %missing, label %present",
+                    "missing:",
+                    constant("  %nf", "NotFound\n"),
+                    "  ret i8* %nf",
+                    "present:",
+                    "  %body = call i8* @$symbol.read(i8* %a0)",
+                    constant("  %nl", "\n"),
+                    "  %r = call i8* @__azora_str_concat(i8* %nl, i8* %body)",
+                    "  ret i8* %r",
+                ) + readFileBody("$symbol.read")
+            }
+
+            local == "fsWrite" && item.params.size == 3 -> {
+                usesStdio = true
+                define(
+                    "i8* @$symbol(i8* %a0, i8* %a1, i1 %a2)",
+                    constant("%wm", "wb"),
+                    constant("%am", "ab"),
+                    "%mode = select i1 %a2, i8* %am, i8* %wm",
+                    "%f = call i8* @fopen(i8* %a0, i8* %mode)",
+                    "%bad = icmp eq i8* %f, null",
+                    "br i1 %bad, label %failed, label %write",
+                    "failed:",
+                    constant("  %wf", "WriteFailed"),
+                    "  ret i8* %wf",
+                    "write:",
+                    "  %p = call i32 @fputs(i8* %a1, i8* %f)",
+                    "  %cl = call i32 @fclose(i8* %f)",
+                    constant("  %e", ""),
+                    "  ret i8* %e",
+                )
+            }
+
+            // `system` into a temporary file, then read it back. A pipe would
+            // need a drain loop; this stays straight-line. The file is named
+            // after the process so two programs cannot collide on it.
+            local == "commandParts" && item.params.size == 1 -> {
+                usesStdio = true
+                usesSystem = true
+                usesStrConcat = true
+                usesIntToStr = true
+                usesGetpid = true
+                usesMalloc = true
+                define(
+                    "i8* @$symbol(i8* %a0)",
+                    "%pid = call i32 @getpid()",
+                    "%pid64 = sext i32 %pid to i64",
+                    "%pidtxt = call i8* @__azora_int_to_str(i64 %pid64)",
+                    constant("%tmpbase", "/tmp/azora-command-"),
+                    "%tmp = call i8* @__azora_str_concat(i8* %tmpbase, i8* %pidtxt)",
+                    constant("%redir", " >"),
+                    "%c1 = call i8* @__azora_str_concat(i8* %a0, i8* %redir)",
+                    "%c2 = call i8* @__azora_str_concat(i8* %c1, i8* %tmp)",
+                    constant("%err2out", " 2>&1"),
+                    "%cmd = call i8* @__azora_str_concat(i8* %c2, i8* %err2out)",
+                    "%status = call i32 @system(i8* %cmd)",
+                    "%shifted = ashr i32 %status, 8",
+                    "%code = and i32 %shifted, 255",
+                    "%code64 = sext i32 %code to i64",
+                    "%codetxt = call i8* @__azora_int_to_str(i64 %code64)",
+                    constant("%started", "\ntrue\n"),
+                    "%h1 = call i8* @__azora_str_concat(i8* %codetxt, i8* %started)",
+                    "%body = call i8* @$symbol.read(i8* %tmp)",
+                    "%r = call i8* @__azora_str_concat(i8* %h1, i8* %body)",
+                    "ret i8* %r",
+                ) + readFileBody("$symbol.read")
+            }
+
+            else -> null
+        }
+    }
+
     private fun mathIntrinsicOf(item: IrTopLevel.Extern): String? {
         // `powr` is Azora's real-exponent power; libm spells it `pow`.
         val name = item.name.substringAfterLast('_').let { if (it == "powr") "pow" else it }
@@ -3906,7 +4261,9 @@ class LlvmCodegen {
         // (and strcmp) is emitted. The general call path emits the call itself.
         if (expr.name == "__isCheck") { usesIsCheck = true; usesStrcmp = true }
         // Compiler string/array intrinsics are defined as runtime helpers.
-        if (expr.name in stringIntrinsics) neededIntrinsics.add(expr.name)
+        // Keyed by the bare name, remembering the mangled symbol the call used,
+        // so the definition is emitted under the name the caller asks for.
+        stringIntrinsicOf(expr.name)?.let { neededIntrinsics[it] = expr.name }
         // `Array::fill<T>(count)` allocates `[ i64 length, T×count ]` (the array
         // layout used by `emitArrayLiteral`); handled inline since element size
         // varies per instantiation.
@@ -4714,6 +5071,9 @@ class LlvmCodegen {
         IrType.Bool -> "i1"
         IrType.String -> "i8*"
         IrType.Unit -> "void"
+        // No value has type `Nothing`, so nothing is ever loaded or stored at
+        // it; `void` is the only lowering a value-less type can have.
+        IrType.Nothing -> "void"
         IrType.Char -> "i8"
         IrType.Byte -> "i8"
         IrType.UByte -> "i8"

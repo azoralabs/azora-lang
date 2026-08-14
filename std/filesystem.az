@@ -332,9 +332,16 @@ realm std {
     // mapping from a platform's errors to this error set lives in the backend
     // and is read back in one place - `_raise`.
 
-    /** Reads a whole file; `[error, content]`. */
+    /**
+     * Reads a whole file; the error name, a newline, then the contents.
+     *
+     * One string rather than a pair, because a bridge that returns an array has
+     * to build one in every backend - and the native one would be raw IR. The
+     * error name cannot contain a newline, so the first line is unambiguous
+     * however many the contents have.
+     */
     @Experimental(since: "0.1")
-    bridge func _fsRead(path: String): Array<String>
+    bridge func _fsRead(path: String): String
 
     /** Reads raw bytes; `[status, b0, b1, …]` with status 0 on success. */
     @Experimental(since: "0.1")
@@ -395,14 +402,16 @@ realm std {
     /** The whole of [target] as text. */
     @Experimental(since: "0.1")
     func readText(target: Path): String ?! FileError {
-        fin parts: Array<String> = _fsRead(target.text)
-        if parts.size < 2 {
+        fin raw = _fsRead(target.text)
+        fin cut = indexOf(raw, "\n")
+        if cut < 0 {
             return .ReadFailed
         }
-        if stringLength(parts[0]) > 0 {
-            try _fail(parts[0])
+        fin failure = substring(raw, 0, cut)
+        if stringLength(failure) > 0 {
+            try _fail(failure)
         }
-        return parts[1]
+        return substring(raw, cut + 1, stringLength(raw))
     }
 
     /** The whole of [target] as bytes. */

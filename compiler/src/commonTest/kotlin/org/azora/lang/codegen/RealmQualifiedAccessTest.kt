@@ -32,7 +32,7 @@ class RealmQualifiedAccessTest {
         val result = Compiler().compile(
             """
             import std.reflection
-            inline fin visible = reflect<std::Int>.hasDeco<std::Experimental>
+            inline fin visible = reflect<std::Int>.hasAnnot<std::Experimental>
             func main() {}
             """.trimIndent(),
         )

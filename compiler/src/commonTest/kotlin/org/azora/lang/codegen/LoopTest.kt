@@ -214,7 +214,7 @@ class LoopTest {
             import std.io
             import std.algorithm.sort
             func main() {
-                fin r = reverse<std::Int>(@std::arr[1, 2, 3, 4, 5])
+                fin r = std::reverse<std::Int>(@std::arr[1, 2, 3, 4, 5])
                 for x in r { std::println(x) }
             }
         """.trimIndent()))

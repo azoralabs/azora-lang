@@ -269,6 +269,30 @@ sealed class Expr {
      * Compile-time expansion folds it into [name]; every later stage sees an
      * ordinary member access, so nothing downstream needs to know it was spliced.
      */
+    /**
+     * `.Name` with the type left to context - `@System(phase: .Update)`.
+     *
+     * The type is already written where the value is going: a parameter's type,
+     * a field's type, an annotation's field. Naming it again in the value is
+     * repetition, so the leading dot says "the one that is expected here" and
+     * the resolver supplies it. Unresolvable without an expected type, which is
+     * an error rather than a guess.
+     */
+    data class InferredMember(
+        val name: String,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0,
+        /**
+         * Constructor arguments for `.(…)`, or null for `.Name`.
+         *
+         * `modifier: .().height(64.0)` - the parameter already says `Modifier`,
+         * so the value need not say it again. Same rule as `.Name`, applied to
+         * the type's constructor instead of one of its members.
+         */
+        val ctorArgs: List<Expr>? = null,
+    ) : Expr()
+
     data class Member(
         val target: Expr,
         val name: String,
@@ -1002,7 +1026,16 @@ sealed class Stmt {
         val label: String? = null,
         /** Optional iterable for `loop iterable { }` - when present, desugars to
          *  `iterable.reset(); while iterable.hasNext() { body }`. */
-        val iterable: Expr? = null
+        val iterable: Expr? = null,
+        /**
+         * `loop xs by 5.seconds { … }` - seconds to wait between passes.
+         *
+         * The loop never ends: it walks the iterable, waits, and walks it again,
+         * so what it sees is re-read each pass rather than captured once. Only
+         * an async function may write one, because waiting means suspending -
+         * in a plain function it would block the caller instead.
+         */
+        val everySeconds: Expr? = null
     ) : Stmt()
 
     /**
@@ -1160,6 +1193,16 @@ sealed class Stmt {
         val dependencies: List<Expr>? = null,
         /** `effect defer { ... }` runs at reactive-owner disposal. */
         val deferred: Boolean = false,
+        /**
+         * `effect done == true { … }` - a rising-edge condition.
+         *
+         * Distinct from a dependency: a dependency says *when to reconsider*,
+         * while a condition also says *whether to act*. The body runs on the
+         * transition to true and not again until the condition has gone false,
+         * so `effect closing == true { exit() }` fires once rather than on every
+         * evaluation while closing.
+         */
+        val condition: Expr? = null,
     ) : Stmt()
 
     /** `with value { ... }` / `with [a, b] { ... }` contextual receiver scope. */
@@ -1225,6 +1268,15 @@ sealed class TypeRef {
          * - must not be applied to it.
          */
         val synthesized: Boolean = false,
+        /**
+         * Value arguments of a compile-time type call - `T<U>(flag, other)`.
+         *
+         * A `deepinline prop` may take values as well as types, because what it
+         * computes can depend on an answer that is not itself a type: whether a
+         * parameter has a default is a `Bool`, and the type of that default
+         * depends on it. Empty for every ordinary type reference.
+         */
+        val valueArgs: List<Expr> = emptyList(),
     ) : TypeRef() {
         override fun toString() = when {
             TypeFunctionCall.isCall(this) -> "${TypeFunctionCall.name(this)}<${args.joinToString(", ")}>"
@@ -1405,6 +1457,14 @@ data class TypeFunctionParam(val name: String, val variadic: Boolean = false)
 data class TypeFunctionDecl(
     val name: String,
     val params: List<TypeFunctionParam>,
+    /**
+     * Value parameters - `prop Name<T>(hasDefault: Bool): Type`.
+     *
+     * A type can depend on an answer that is not itself a type: whether a
+     * parameter has a default is a `Bool`, and what type its default has depends
+     * on that. Empty for a type property that takes only types.
+     */
+    val valueParams: List<Param> = emptyList(),
     val body: List<TypeFunctionStmt>,
     val minVariadicLength: Int? = null,
     /** The declaration's `where` clause as an expression; see [TopLevel.Pack.whereClause]. */
@@ -1438,6 +1498,8 @@ sealed class TypeFunctionStmt {
 /** Expressions evaluated by a compile-time type function. */
 sealed class TypeFunctionExpr {
     data class Reference(val name: String) : TypeFunctionExpr()
+    /** `T?` - the nullable form of another type expression. */
+    data class Nullable(val inner: TypeFunctionExpr) : TypeFunctionExpr()
     data class PackElement(val packName: String, val index: Int) : TypeFunctionExpr()
     data class Call(val name: String, val args: List<TypeFunctionExpr>) : TypeFunctionExpr()
     data class Conditional(
@@ -1447,19 +1509,31 @@ sealed class TypeFunctionExpr {
     ) : TypeFunctionExpr()
 }
 
-/** A type comparison used by a [TypeFunctionExpr.Conditional]. */
+/**
+ * A test used by a [TypeFunctionExpr.Conditional].
+ *
+ * Either a comparison between two type expressions, or - when [valueFlags] is
+ * non-empty - a conjunction of the type function's own `Bool` parameters, which
+ * is what lets a computed type depend on an answer that is not a type:
+ * `hasDefault && isNullable => T?`.
+ */
 data class TypeFunctionCondition(
     val left: TypeFunctionExpr,
     val operator: TokenType,
     val right: TypeFunctionExpr,
     val compareRank: Boolean,
+    /** `Bool` value parameters that must all hold; empty for a type comparison. */
+    val valueFlags: List<String> = emptyList(),
+    /** Whether each flag is required true or false (`!flag`), positionally. */
+    val flagsExpected: List<Boolean> = emptyList(),
 )
 
 /** Internal encoding for a deferred `Name<...>` type-property call inside a [TypeRef]. */
 object TypeFunctionCall {
     private const val PREFIX = "__azora_type_function__"
 
-    fun create(name: String, args: List<TypeRef>): TypeRef.Named = TypeRef.Named(PREFIX + name, args)
+    fun create(name: String, args: List<TypeRef>, valueArgs: List<Expr> = emptyList()): TypeRef.Named =
+        TypeRef.Named(PREFIX + name, args, valueArgs = valueArgs)
     fun isCall(ref: TypeRef.Named): Boolean = ref.name.startsWith(PREFIX)
     fun name(ref: TypeRef.Named): String = ref.name.removePrefix(PREFIX)
 }
@@ -1688,6 +1762,28 @@ data class Capture(
 enum class CallableKind(val surfaceName: String) {
     FUNC(""),
     TASK("async"),
+
+    /**
+     * `react (A) -> R` - a callable that may use reactive state.
+     *
+     * A builder that runs a block written by its caller cannot know whether that
+     * block reads `remember` or declares an `effect`, so the *type* says it may.
+     * A plain callable satisfies a reactive one: a block that uses no reactive
+     * feature is a valid reactive block, and requiring `react` at every call
+     * site would make the annotation noise rather than information.
+     */
+    REACT("react"),
+
+    /** `react async (A) -> R` - reactive and suspending at once. */
+    REACT_TASK("react async"),
+    ;
+
+    /** Whether a callable of [other] can be passed where this kind is wanted. */
+    fun accepts(other: CallableKind): Boolean = when (this) {
+        REACT -> other == FUNC || other == REACT
+        REACT_TASK -> other == TASK || other == REACT_TASK || other == FUNC || other == REACT
+        else -> this == other
+    }
 }
 
 /** Test execution mode mirrored by the compiler-predefined `TestMethod` enum. */
@@ -1913,6 +2009,11 @@ data class FuncDecl(
      * The first param is the receiver (`self`).
      */
     val isUniversalInfix: Boolean = false,
+    /**
+     * `deepinline` rather than `inline` - evaluated through, not just at, the
+     * call site. Only a `deepinline` member may hand back a `Type`.
+     */
+    val isDeepInline: Boolean = false
 )
 
 enum class MemberCallStyle {
@@ -1995,12 +2096,12 @@ data class InfixMacroRule(val op: String, val left: String, val right: String, v
 
 /**
  * Which built-in type-sugar form a [TypeTypeArm] pattern matches. Used by the
- * (staged) `meta type` rewriting pass to map a source form to its template.
+ * (staged) type-macro rewriting pass to map a source form to its template.
  */
 enum class TypeFormKind { ARRAY, ARRAY_SIZED, SET, MAP, TUPLE, PREFIX, PREFIX_LIST, INFIX }
 
 /**
- * One arm of a `meta type { pattern => template }` declaration: when a type
+ * One arm of a type-macro declaration: when a type
  * of [kind]'s shape appears, expand it to [template] substituting [holes]
  * positionally with the actual type arguments.
  *
@@ -2639,7 +2740,7 @@ data class Program(
     /** Compile-time `type name(...)` declarations owned by this unit. */
     val typeFunctions: List<TypeFunctionDecl> = emptyList(),
     /**
-     * `meta type { pattern => template }` rules declared in this unit. Parsed
+     * Type-macro rules declared in this unit. Parsed
      * and stored; the rewriting pass is not yet active (see [TypeTypeArm]).
      */
     val typeMacroRules: List<TypeTypeArm> = emptyList(),
@@ -2688,6 +2789,13 @@ data class Program(
  * The frontend and the IR generator both synthesize these bindings and must
  * agree on the name; deriving it from the lambda's own source position keeps
  * them in step without threading a counter between passes.
+ *
+ * The separators are single underscores after the leading `__`. A `__` in the
+ * middle of a name is the frontend's *joining* marker for a qualified symbol,
+ * so a name carrying one is re-mangled on the way to IR - `__ctx0__12_9` became
+ * `__ctx0_12_9`, which no longer matched the parameter that the same name had
+ * declared, and the receiver was read from an undefined global instead of from
+ * the argument.
  */
 fun lambdaReceiverName(line: Int, column: Int, index: Int): String =
-    "__ctx${index}__${line}_$column"
+    "__ctx${index}_${line}_$column"

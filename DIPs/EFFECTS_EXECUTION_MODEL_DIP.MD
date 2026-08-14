@@ -183,7 +183,7 @@ func captureSystem(world: World!) {
 There is no registration call. The engine builds `SystemPlan` once with:
 
 ```azora
-inline for S in std::reflect<*>.withDeco<System> {
+inline for S in std::reflect<*>.withAnnot<System> {
     // Read std::reflect<S>.decoMeta<System> and record S.
 }
 ```
@@ -1194,7 +1194,7 @@ declaration's spelling.
 
 - define mandatory `@Component`, `@Event`, and `@System` annotations
 - define `@query`, `@with`, and `@without` macros over typed query plans
-- preserve reflection-only discovery through `withDeco<System>`
+- preserve reflection-only discovery through `withAnnot<System>`
 - lower reflected system parameters without introducing registration
 
 ### Phase B: effect declarations

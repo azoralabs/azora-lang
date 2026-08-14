@@ -271,7 +271,7 @@ called from another reactive scope.
 `inline func` (call-site substitution), `inline assert` / `inline trace`.
 Constant folding, propagation, and dead-code elimination run in the IR optimizer.
 
-Decorator metadata is part of CTCE. `(reflect value).hasDeco<D>` tests direct and
+Decorator metadata is part of CTCE. `(reflect value).hasAnnot<D>` tests direct and
 transitively bound decorators on values, types, packs, functions, properties,
 fields, parameters, and the other `DecoTarget` declaration categories.
 `(reflect value).annotMeta<D>.field` reads a decorator's named, positional, or default `fin`
@@ -286,7 +286,7 @@ annot Persisted for .Pack {
 @Persisted(ignoreUnknownFields: true)
 pack User
 
-inline if (reflect User).hasDeco<Persisted> {
+inline if (reflect User).hasAnnot<Persisted> {
     inline assert (reflect User).annotMeta<Persisted>.ignoreUnknownFields
 }
 ```

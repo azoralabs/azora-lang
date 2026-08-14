@@ -42,18 +42,18 @@ class DecoratorReflectionTest {
             ?: error("Expected a return value")
     }
 
-    @Test fun hasDecoSelectsTrueAndFalseBranches() {
+    @Test fun hasAnnotSelectsTrueAndFalseBranches() {
         val result = analyze("""
             annot Marker for .Pack
             @Marker pack Marked
             pack Plain
 
             func marked(): std::Int {
-                inline if std::reflect<Marked>.hasDeco<Marker> { return 1 } else { return 0 }
+                inline if std::reflect<Marked>.hasAnnot<Marker> { return 1 } else { return 0 }
             }
 
             func plain(): std::Int {
-                inline if std::reflect<Plain>.hasDeco<Marker> { return 1 } else { return 0 }
+                inline if std::reflect<Plain>.hasAnnot<Marker> { return 1 } else { return 0 }
             }
 
             func main() {}
@@ -64,18 +64,18 @@ class DecoratorReflectionTest {
         assertEquals(0L, (returnedExpression(result, "plain") as Expr.IntLiteral).value)
     }
 
-    @Test fun hasDecoResolvesInferredAndExplicitValueTypes() {
+    @Test fun hasAnnotResolvesInferredAndExplicitValueTypes() {
         val result = analyze("""
             annot Marker for .Pack
             @Marker pack Marked
 
             func inferred(): std::Int {
                 fin value = Marked()
-                inline if std::reflect<value>.hasDeco<Marker> { return 1 } else { return 0 }
+                inline if std::reflect<value>.hasAnnot<Marker> { return 1 } else { return 0 }
             }
 
             func explicit(value: Marked&): std::Int {
-                inline if std::reflect<value>.hasDeco<Marker> { return 2 } else { return 0 }
+                inline if std::reflect<value>.hasAnnot<Marker> { return 2 } else { return 0 }
             }
 
             func main() {}
@@ -86,7 +86,7 @@ class DecoratorReflectionTest {
         assertEquals(2L, (returnedExpression(result, "explicit") as Expr.IntLiteral).value)
     }
 
-    @Test fun hasDecoRecognizesDeclarationTargets() {
+    @Test fun hasAnnotRecognizesDeclarationTargets() {
         val result = analyze("""
             annot Seen for [.Func, .Prop, .Field, .Param]
 
@@ -104,10 +104,10 @@ class DecoratorReflectionTest {
             }
 
             func declarations(): std::Int {
-                inline if std::reflect<read>.hasDeco<Seen> &&
-                    std::reflect<Box::value>.hasDeco<Seen> &&
-                    std::reflect<read::input>.hasDeco<Seen> &&
-                    std::reflect<Counter::answer>.hasDeco<Seen> {
+                inline if std::reflect<read>.hasAnnot<Seen> &&
+                    std::reflect<Box::value>.hasAnnot<Seen> &&
+                    std::reflect<read::input>.hasAnnot<Seen> &&
+                    std::reflect<Counter::answer>.hasAnnot<Seen> {
                     return 1
                 } else {
                     return 0
@@ -121,14 +121,14 @@ class DecoratorReflectionTest {
         assertEquals(1L, (returnedExpression(result, "declarations") as Expr.IntLiteral).value)
     }
 
-    @Test fun hasDecoIncludesTransitiveDecoratorBindings() {
+    @Test fun hasAnnotIncludesTransitiveDecoratorBindings() {
         val result = analyze("""
             annot Marker for .Pack
             annot Wrapped for .Pack binds Marker
             @Wrapped pack Marked
 
             func transitive(): std::Int {
-                inline if std::reflect<Marked>.hasDeco<Marker> { return 1 } else { return 0 }
+                inline if std::reflect<Marked>.hasAnnot<Marker> { return 1 } else { return 0 }
             }
 
             func main() {}
@@ -149,7 +149,7 @@ class DecoratorReflectionTest {
                 if flag {
                     fin value = Inner()
                 }
-                inline if std::reflect<value>.hasDeco<Marker> { return 1 } else { return 0 }
+                inline if std::reflect<value>.hasAnnot<Marker> { return 1 } else { return 0 }
             }
 
             func main() {}
@@ -236,7 +236,7 @@ class DecoratorReflectionTest {
             impl Config for Feature {}
 
             func configured(): std::Int {
-                inline if std::reflect<Feature>.hasDeco<Config> && std::reflect<Feature>.annotMeta<Config>.enabled {
+                inline if std::reflect<Feature>.hasAnnot<Config> && std::reflect<Feature>.annotMeta<Config>.enabled {
                     return 1
                 } else {
                     return 0
@@ -373,14 +373,14 @@ class DecoratorReflectionTest {
             impl [First, Second] for GroupWildcard::* {}
 
             func covered(): std::Int {
-                inline if std::reflect<Direct::name>.hasDeco<First> &&
-                    std::reflect<DecoratorGroup::name>.hasDeco<First> && std::reflect<DecoratorGroup::name>.hasDeco<Second> &&
-                    std::reflect<TargetGroup::name>.hasDeco<First> && std::reflect<TargetGroup::password>.hasDeco<First> &&
-                    std::reflect<CrossProduct::name>.hasDeco<First> && std::reflect<CrossProduct::name>.hasDeco<Second> &&
-                    std::reflect<CrossProduct::password>.hasDeco<First> && std::reflect<CrossProduct::password>.hasDeco<Second> &&
-                    std::reflect<OneWildcard::name>.hasDeco<First> && std::reflect<OneWildcard::password>.hasDeco<First> &&
-                    std::reflect<GroupWildcard::name>.hasDeco<First> && std::reflect<GroupWildcard::name>.hasDeco<Second> &&
-                    std::reflect<GroupWildcard::password>.hasDeco<First> && std::reflect<GroupWildcard::password>.hasDeco<Second> {
+                inline if std::reflect<Direct::name>.hasAnnot<First> &&
+                    std::reflect<DecoratorGroup::name>.hasAnnot<First> && std::reflect<DecoratorGroup::name>.hasAnnot<Second> &&
+                    std::reflect<TargetGroup::name>.hasAnnot<First> && std::reflect<TargetGroup::password>.hasAnnot<First> &&
+                    std::reflect<CrossProduct::name>.hasAnnot<First> && std::reflect<CrossProduct::name>.hasAnnot<Second> &&
+                    std::reflect<CrossProduct::password>.hasAnnot<First> && std::reflect<CrossProduct::password>.hasAnnot<Second> &&
+                    std::reflect<OneWildcard::name>.hasAnnot<First> && std::reflect<OneWildcard::password>.hasAnnot<First> &&
+                    std::reflect<GroupWildcard::name>.hasAnnot<First> && std::reflect<GroupWildcard::name>.hasAnnot<Second> &&
+                    std::reflect<GroupWildcard::password>.hasAnnot<First> && std::reflect<GroupWildcard::password>.hasAnnot<Second> {
                     return 1
                 } else {
                     return 0
@@ -459,13 +459,13 @@ class DecoratorReflectionTest {
     }
 
     @Test fun reflectionPropertiesAreRejectedAtRuntime() {
-        val hasDeco = analyze("""
+        val hasAnnot = analyze("""
             annot Marker for .Pack
             @Marker pack Feature
-            func probe(): std::Bool { return std::reflect<Feature>.hasDeco<Marker> }
+            func probe(): std::Bool { return std::reflect<Feature>.hasAnnot<Marker> }
             func main() {}
         """.trimIndent())
-        assertTrue(hasDeco.errors.any { "hasDeco" in it && "compile-time-only" in it }, hasDeco.errors.toString())
+        assertTrue(hasAnnot.errors.any { "hasAnnot" in it && "compile-time-only" in it }, hasAnnot.errors.toString())
 
         val metadata = analyze("""
             annot Config for .Pack { fin enabled: std::Bool = true }
@@ -482,7 +482,7 @@ class DecoratorReflectionTest {
                 annot Marker for .Pack
                 @Marker pack Feature
                 func probe(): std::Int {
-                    inline if Feature.hasDeco<Marker> { return 1 } else { return 0 }
+                    inline if Feature.hasAnnot<Marker> { return 1 } else { return 0 }
                 }
             """.trimIndent()).tokenize()).parse()
         }
@@ -493,7 +493,7 @@ class DecoratorReflectionTest {
                 annot Marker for .Field
                 pack Feature { @Marker fin value: std::Int = 0 }
                 func probe(): std::Int {
-                    inline if (std::reflect<Feature>.value).hasDeco<Marker> { return 1 } else { return 0 }
+                    inline if (std::reflect<Feature>.value).hasAnnot<Marker> { return 1 } else { return 0 }
                 }
             """.trimIndent()).tokenize()).parse()
         }
@@ -503,8 +503,8 @@ class DecoratorReflectionTest {
             annot Marker for [.Pack, .Field]
             @Marker pack Feature { @Marker fin value: std::Int = 0 }
             func probe(): std::Int {
-                inline if std::reflect<Feature>.hasDeco<Marker> &&
-                    std::reflect<Feature::value>.hasDeco<Marker> { return 1 } else { return 0 }
+                inline if std::reflect<Feature>.hasAnnot<Marker> &&
+                    std::reflect<Feature::value>.hasAnnot<Marker> { return 1 } else { return 0 }
             }
             func main() {}
         """.trimIndent())
@@ -527,7 +527,7 @@ class DecoratorReflectionTest {
         val unknown = analyze("""
             pack Feature
             func probe(): std::Int {
-                inline if std::reflect<Feature>.hasDeco<Missing> { return 1 } else { return 0 }
+                inline if std::reflect<Feature>.hasAnnot<Missing> { return 1 } else { return 0 }
             }
             func main() {}
         """.trimIndent())

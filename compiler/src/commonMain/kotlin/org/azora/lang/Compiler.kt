@@ -292,7 +292,12 @@ class Compiler(
             // any variadic type produced by an expansion (for example a query
             // over a heterogeneous component list).
             val typeExpanded = VariadicMonomorphizer.monomorphize(macroReInjected)
-            val typeReInjected = CallbackImplNormalizer.normalize(libraries.inject(typeExpanded))
+            // What this injection pulls in has never been through macro
+            // expansion: a module reached for the first time here still spells
+            // `@std::arr[…]`, and nothing downstream expands one.
+            val typeReInjected = MacroExpander.expand(
+                CallbackImplNormalizer.normalize(libraries.inject(typeExpanded)),
+            )
             VariadicMonomorphizer.monomorphize(typeReInjected)
         } catch (e: IllegalStateException) {
             return CompilationResult.Failure(listOf(e.message ?: "variadic monomorphization failed"))

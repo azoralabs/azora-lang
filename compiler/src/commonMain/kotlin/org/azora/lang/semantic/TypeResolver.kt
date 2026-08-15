@@ -2800,7 +2800,7 @@ class TypeResolver(private val table: SymbolTable) {
                 IrType.Any
             }
             // Macros are expanded before type resolution; a MetaInvoke here is a bug.
-            is Expr.MetaInvoke -> error("MetaInvoke reached TypeResolver at line ${expr.line}")
+            is Expr.MetaInvoke -> error("MetaInvoke '${expr.name}' reached TypeResolver at line ${expr.line}")
         }
     }
 

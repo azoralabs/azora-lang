@@ -188,6 +188,9 @@ class SymbolTable {
     private val functions = mutableMapOf<String, FunctionSymbol>()
     private val scopes = ArrayDeque<MutableMap<String, VariableSymbol>>()
     private val structs = mutableMapOf<String, StructType>()
+
+    /** Every declared pack, for diagnostics that know only part of a name. */
+    fun structNames(): Set<String> = structs.keys
     private val enums = mutableMapOf<String, List<String>>()
     // type name -> (method name -> mangled function name "Type_method")
     private val methods = mutableMapOf<String, MutableMap<String, String>>()

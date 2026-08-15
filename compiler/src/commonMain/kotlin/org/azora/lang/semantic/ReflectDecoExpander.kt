@@ -18,6 +18,8 @@ package org.azora.lang.semantic
 
 import org.azora.lang.frontend.Annotation
 import org.azora.lang.frontend.Expr
+import org.azora.lang.frontend.NamedTypeMacroCall
+import org.azora.lang.frontend.TypeFormKind
 import org.azora.lang.frontend.FuncDecl
 import org.azora.lang.frontend.Param
 import org.azora.lang.frontend.ParamModifier
@@ -222,11 +224,53 @@ object ReflectDecoExpander {
         private fun boundParams(e: Expr): Boolean =
             e is Expr.Member && e.name == "params" && boundReflect((e.target as? Expr.Grouping)?.expr ?: e.target)
 
+        /**
+         * A parameter's type, with a type macro on it expanded.
+         *
+         * Reflection runs before type macros do, so a parameter written
+         * `@query [A, B]` still names the macro here. What it stands for is what
+         * a caller has to build, so it is expanded now; [VariadicMonomorphizer]
+         * remains the authority on the rules and expands every other position.
+         */
+        private fun expandedType(ref: TypeRef): TypeRef {
+            val named = ref as? TypeRef.Named ?: return ref
+            if (!NamedTypeMacroCall.isCall(named)) return ref
+            val name = NamedTypeMacroCall.name(named)
+            val shape = when (NamedTypeMacroCall.form(named)) {
+                NamedTypeMacroCall.Form.Prefix -> TypeFormKind.PREFIX
+                NamedTypeMacroCall.Form.List -> TypeFormKind.PREFIX_LIST
+                NamedTypeMacroCall.Form.Infix -> TypeFormKind.INFIX
+            }
+            val modifier = NamedTypeMacroCall.modifier(named)
+            val clauses = modifier.contains('|')
+            val keywords = if (clauses) modifier.substringBefore('|').split(",") else emptyList()
+            val shapes = if (clauses) modifier.substringAfter('|').split(",") else emptyList()
+            val rule = program.typeMacroRules.firstOrNull { arm ->
+                arm.name == name && arm.keywords == keywords &&
+                    (if (clauses) arm.holeIsList == shapes.map { it.startsWith("L") } else arm.kind == shape)
+            } ?: return ref
+
+            var at = 0
+            val bindings = rule.holes.mapIndexed { index, hole ->
+                val count = if (clauses) shapes[index].drop(1).toIntOrNull() ?: 1 else named.args.size
+                val slice = named.args.subList(at, minOf(at + count, named.args.size)).toList()
+                at += count
+                hole to slice
+            }.toMap()
+
+            fun fill(template: TypeRef): TypeRef = when (template) {
+                is TypeRef.Named -> bindings[template.name]?.singleOrNull()
+                    ?: template.copy(args = template.args.flatMap { bindings[(it as? TypeRef.Named)?.name] ?: listOf(fill(it)) })
+                else -> template
+            }
+            return fill(rule.template)
+        }
+
         /** The bound declaration's parameters, in order. */
         private fun params(): List<Param> =
             program.items.filterIsInstance<TopLevel.Func>()
                 .firstOrNull { it.decl.name == to }
-                ?.decl?.params
+                ?.decl?.params?.map { it.copy(type = expandedType(it.type)) }
                 .orEmpty()
 
         // -- Compile-time reflection over the bound declaration ---------------

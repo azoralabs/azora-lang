@@ -340,8 +340,11 @@ private class MonoContext(
 
     /** Replaces a declaration's type parameters with the concrete arguments. */
     private fun substituteParams(ref: TypeRef, bindings: Map<String, TypeRef>): TypeRef = when (ref) {
+        // A variadic parameter is replaced by every argument it stands for, so
+        // `QueryOf<...T>` inside a specialization names all of them. One-for-one
+        // would name a specialization of the first argument alone.
         is TypeRef.Named -> bindings[ref.name]
-            ?: ref.copy(args = ref.args.map { substituteParams(it, bindings) })
+            ?: ref.copy(args = spreadPacks(ref.args).map { substituteParams(it, bindings) })
         is TypeRef.Array -> ref.copy(element = substituteParams(ref.element, bindings))
         is TypeRef.Map -> ref.copy(
             key = substituteParams(ref.key, bindings),
@@ -712,6 +715,15 @@ private class MonoContext(
                 .filter { (mangled, _) -> mangled.startsWith("__${owner}_") }
                 .mapNotNull { (mangled, arguments) ->
                     val bindings = declaration.typeParams.zip(arguments).toMap()
+                    // A variadic parameter stands for *all* the remaining
+                    // arguments, so it is bound as the list it is - and bound
+                    // before the member is substituted, which is when its own
+                    // `...T` is read. Zipping alone would give it the first
+                    // argument and drop the rest.
+                    typePackBindings = declaration.typeParams.lastOrNull()
+                        ?.takeIf { arguments.size >= declaration.typeParams.size }
+                        ?.let { mapOf(it to arguments.drop(declaration.typeParams.size - 1)) }
+                        .orEmpty()
                     val bound = renameStaticMember(substituteStaticMember(template, bindings), owner, mangled)
                     // The bodies read `N` as a value, so the const arguments are in
                     // scope for the rewrite that expands their compile-time loops.
@@ -728,6 +740,7 @@ private class MonoContext(
                     } finally {
                         constBindings = emptyMap()
                         typeBindings = emptyMap()
+                        typePackBindings = emptyMap()
                         if (previousAlias == null) staticAliases.remove(owner) else staticAliases[owner] = previousAlias
                     }
                 }
@@ -791,6 +804,13 @@ private class MonoContext(
                     (ref as? TypeRef.Const)?.let { name to it.value }
                 }.toMap()
                 typeBindings = bindings
+                // A variadic parameter stands for every remaining argument, so
+                // the member's own `...T` spreads to all of them rather than to
+                // the first one alone.
+                typePackBindings = packTemplate?.typeParams?.lastOrNull()
+                    ?.takeIf { arguments.size >= packTemplate.typeParams.size }
+                    ?.let { mapOf(it to arguments.drop(packTemplate.typeParams.size - 1)) }
+                    .orEmpty()
                 val specialized = method.copy(
                     params = method.params.map {
                         it.copy(type = substituteParams(substituteSelf(it.type, selfType), bindings))
@@ -1127,8 +1147,35 @@ private class MonoContext(
         decl.copy(
             params = decl.params.map(::rewriteParam),
             returnType = rewriteTypeAnnotation(decl.returnType),
-            body = decl.body.map(::rewriteStmt),
+            body = rewriteBody(decl.body),
         )
+    }
+
+    /**
+     * A body, with any `inline for` over a variadic type pack unrolled.
+     *
+     * `inline for Ty in ...T { … }` is written once and means once per type the
+     * specialization was given. It is unrolled here because here is where the
+     * pack has types at all: afterwards `...T` is gone and only the copies it
+     * stood for remain.
+     */
+    fun rewriteBody(body: List<Stmt>): List<Stmt> = body.flatMap { statement ->
+        val pack = (statement as? Stmt.InlineFor)?.iterable
+            ?.let { (it as? Expr.Identifier)?.name ?: ((it as? Expr.Spread)?.array as? Expr.Identifier)?.name }
+            ?.let { typePackBindings[it] }
+        if (statement is Stmt.InlineFor && pack != null) {
+            val saved = typeBindings
+            try {
+                pack.flatMap { type ->
+                    typeBindings = saved + (statement.name to type)
+                    rewriteBody(statement.body)
+                }
+            } finally {
+                typeBindings = saved
+            }
+        } else {
+            listOf(rewriteStmt(statement))
+        }
     }
 
     private fun rewriteParam(param: Param): Param {
@@ -1156,12 +1203,16 @@ private class MonoContext(
      */
     private var typeBindings: Map<String, TypeRef> = emptyMap()
 
+    /** Variadic type parameters bound to the whole list of arguments they stand for. */
+    private var typePackBindings: Map<String, List<TypeRef>> = emptyMap()
+
     fun rewriteType(ref: TypeRef): TypeRef = when (ref) {
         is TypeRef.Named -> when {
             ref.args.isEmpty() && ref.name in typeBindings -> rewriteType(typeBindings.getValue(ref.name))
             NamedTypeMacroCall.isCall(ref) -> expandNamedTypeMacro(ref)
-            ref.name in packTemplates && ref.args.isNotEmpty() -> TypeRef.Named(instantiatePack(ref.name, ref.args))
-            ref.args.isNotEmpty() -> ref.copy(args = ref.args.map(::rewriteType), variadic = false)
+            ref.name in packTemplates && ref.args.isNotEmpty() ->
+                TypeRef.Named(instantiatePack(ref.name, spreadPacks(ref.args)))
+            ref.args.isNotEmpty() -> ref.copy(args = spreadPacks(ref.args).map(::rewriteType), variadic = false)
             else -> ref
         }
         is TypeRef.Array -> ref.copy(element = rewriteType(ref.element))
@@ -1183,6 +1234,18 @@ private class MonoContext(
         is TypeRef.Pointer -> ref.copy(inner = rewriteType(ref.inner))
         is TypeRef.Reference -> ref.copy(inner = rewriteType(ref.inner))
         is TypeRef.Const -> ref
+    }
+
+    /**
+     * Type arguments with any variadic parameter replaced by what it stands for.
+     *
+     * `QueryOf<...T>` written inside a specialization means every type the pack
+     * was given, so the argument list grows here. Substituting one-for-one would
+     * name a specialization of one argument that nothing declared.
+     */
+    private fun spreadPacks(args: List<TypeRef>): List<TypeRef> = args.flatMap { arg ->
+        val pack = (arg as? TypeRef.Named)?.takeIf { it.args.isEmpty() }?.let { typePackBindings[it.name] }
+        pack ?: listOf(arg)
     }
 
     private fun expandNamedTypeMacro(call: TypeRef.Named): TypeRef {
@@ -1365,6 +1428,41 @@ private class MonoContext(
         }
     }
 
+    /**
+     * `Owner::member<A, B>` - a static reached through a generic owner.
+     *
+     * The arguments belong to the *owner*: they choose which specialization has
+     * the member, so the call is rewritten to that specialization's copy and the
+     * pack is instantiated if this is the first use of it. Written on the member
+     * because that is where a call can carry them - `Owner<A, B>::member` gives
+     * the type arguments nowhere to live once the name is one symbol.
+     */
+    private fun throughGenericOwner(callee: String, typeArgs: List<TypeRef>): String? {
+        if (typeArgs.isEmpty()) return null
+        val separator = callee.indexOf("__")
+        if (separator <= 0) return null
+        val owner = callee.substring(0, separator)
+        if (owner !in packTemplates) return null
+        return instantiatePack(owner, typeArgs.map(::rewriteType)) + callee.substring(separator)
+    }
+
+    /**
+     * `T::member` where `T` is a bound type parameter.
+     *
+     * A specialization knows what `T` is, so a static reached through it is the
+     * static of whatever it was bound to. Written as one name by the parser
+     * (`T__member`), which is why the owner is read back off the front of it.
+     */
+    private fun throughBoundTypeParam(callee: String): String? {
+        val separator = callee.indexOf("__")
+        if (separator <= 0) return null
+        val owner = callee.substring(0, separator)
+        val bound = typeBindings[owner] as? TypeRef.Named ?: return null
+        val name = if (bound.args.isEmpty()) bound.name else instantiatePack(bound.name, bound.args)
+        if (name == owner) return null
+        return name + callee.substring(separator)
+    }
+
     /** `Alias` and `Alias__member` become the specialization they name. */
     private fun throughStaticAlias(name: String): String {
         staticAliases[name]?.let { return it }
@@ -1391,6 +1489,14 @@ private class MonoContext(
             ?: (typeBindings[e.name] as? TypeRef.Named)?.takeIf { it.args.isEmpty() }
                 ?.let { e.copy(name = it.name) }
             ?: e.copy(name = throughStaticAlias(e.name))
+        // `Owner::member<A, B>(…)` - the arguments choose the specialization
+        // the member is on, so the call lands on that copy of it.
+        is Expr.Call if throughGenericOwner(e.callee, e.typeArgs) != null ->
+            e.copy(
+                callee = throughGenericOwner(e.callee, e.typeArgs)!!,
+                args = e.args.map(::rewriteExpr),
+                typeArgs = emptyList(),
+            )
         is Expr.Call -> rewriteCall(e)
         is Expr.Binary -> e.copy(left = rewriteExpr(e.left), right = rewriteExpr(e.right))
         is Expr.InCheck -> e.copy(value = rewriteExpr(e.value), collection = rewriteExpr(e.collection))
@@ -1436,6 +1542,12 @@ private class MonoContext(
         val elementTypes = resolveElementTypes(e)
         val mangled = when {
             e.callee in funcTemplates && elementTypes != null -> instantiateFunc(e.callee, elementTypes)
+            // Inside a specialization of this very pack, building it means
+            // building *this* one. Re-deriving the arguments from the values
+            // passed would answer with whatever those happen to be - `Box(7)`
+            // would say `Box<Int>` - which is a different specialization, and
+            // for a pack whose fields do not come from its type list, a wrong one.
+            e.callee in packTemplates && staticAliases[e.callee] != null -> staticAliases.getValue(e.callee)
             e.callee in packTemplates && elementTypes != null -> instantiatePack(e.callee, elementTypes)
             else -> null
         }
@@ -1445,6 +1557,7 @@ private class MonoContext(
                 // `Self(…)` in a specialized member builds that specialization.
                 callee = (typeBindings[e.callee] as? TypeRef.Named)
                     ?.takeIf { it.args.isEmpty() }?.name
+                    ?: throughBoundTypeParam(e.callee)
                     ?: throughStaticAlias(e.callee),
                 args = rewrittenArgs,
                 typeArgs = e.typeArgs.map(::rewriteType),

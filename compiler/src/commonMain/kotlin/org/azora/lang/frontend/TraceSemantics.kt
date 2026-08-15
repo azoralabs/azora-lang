@@ -49,6 +49,7 @@ private fun Expr.bindTraceReceiver(receiver: Expr, interpolation: Boolean): Expr
         fallback = fallback.bindTraceReceiver(receiver, interpolation),
     )
     is Expr.TryPropagate -> copy(expr = expr.bindTraceReceiver(receiver, interpolation))
+    is Expr.Sealed -> copy(value = value.bindTraceReceiver(receiver, interpolation))
     is Expr.IfExpr -> copy(
         condition = condition.bindTraceReceiver(receiver, interpolation),
         thenExpr = thenExpr.bindTraceReceiver(receiver, interpolation),

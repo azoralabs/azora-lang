@@ -1326,6 +1326,12 @@ class CtfeEvaluator(private val table: SymbolTable) {
             is Expr.StringLiteral, is Expr.BoolLiteral,
             is Expr.CharLiteral,
             is Expr.TupleLit, is Expr.TupleAccess, is Expr.VariantLit -> Pair(expr, false)
+            // Folding must not drop the seal: what a branch is worth and
+            // whether it may be overridden are decided together.
+            is Expr.Sealed -> {
+                val (value, changed) = foldExpr(expr.value, program)
+                Pair(if (changed) expr.copy(value = value) else expr, changed)
+            }
             is Expr.IfExpr -> {
                 val (condition, cc) = foldExpr(expr.condition, program)
                 val (thenExpr, tc) = foldExpr(expr.thenExpr, program)
@@ -1873,6 +1879,8 @@ class CtfeEvaluator(private val table: SymbolTable) {
             is Expr.TupleLit, is Expr.TupleAccess, is Expr.VariantLit -> null // not CTCE-evaluable
             is Expr.CatchExpr -> null // not CTCE-evaluable
             is Expr.TryPropagate -> evalExpr(expr.expr, env, program)
+            // A seal says who may write the field; the value is what it wraps.
+            is Expr.Sealed -> evalExpr(expr.value, env, program)
             is Expr.IfExpr -> {
                 val condition = evalExpr(expr.condition, env, program) ?: return null
                 if (condition !is Expr.BoolLiteral) return null

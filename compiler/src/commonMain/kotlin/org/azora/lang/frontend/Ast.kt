@@ -351,6 +351,27 @@ sealed class Expr {
     data class IfExpr(val condition: Expr, val thenExpr: Expr, val elseExpr: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 
     /**
+     * `sealed value` - a decorator field default that the application may not
+     * override.
+     *
+     * Written on the branch of a `when` that computes the default, so the seal
+     * belongs to the case rather than to the field:
+     *
+     *     annot Log for .Func {
+     *         fin level: std::LogLevel = .Info
+     *         fin prefix: std::String = when level {
+     *             .Error -> sealed "!! "
+     *             else -> ""
+     *         }
+     *     }
+     *
+     * One case fixes the value and the others leave the field free, which a
+     * seal on the field itself could not express. The value is [value] either
+     * way - the seal governs who may write the field, not what it holds.
+     */
+    data class Sealed(val value: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+
+    /**
      * A first-class callable value.
      *
      * [params] are ordinary call parameters. [receivers] are contextual

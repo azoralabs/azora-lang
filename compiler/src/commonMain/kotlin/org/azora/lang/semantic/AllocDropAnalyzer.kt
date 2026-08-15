@@ -293,6 +293,7 @@ class AllocDropAnalyzer {
             is Expr.TupleAccess -> collectUsedVars(expr.target, used)
             is Expr.CatchExpr -> { collectUsedVars(expr.expr, used); collectUsedVars(expr.fallback, used) }
             is Expr.TryPropagate -> collectUsedVars(expr.expr, used)
+            is Expr.Sealed -> collectUsedVars(expr.value, used)
             is Expr.IfExpr -> { collectUsedVars(expr.condition, used); collectUsedVars(expr.thenExpr, used); collectUsedVars(expr.elseExpr, used) }
             is Expr.Lambda -> {
                 // Lambda bodies are analyzed by the enclosing statement analysis;

@@ -22,6 +22,7 @@ import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.FuncDecl
 import org.azora.lang.frontend.MemberCallStyle
 import org.azora.lang.frontend.Program
+import org.azora.lang.frontend.TokenType
 import org.azora.lang.frontend.TopLevel
 
 /** Static decorator metadata used by compile-time reflection intrinsics. */
@@ -103,11 +104,119 @@ object DecoratorMetadata {
     fun fieldValue(applied: Applied, fieldName: String): Expr? {
         val index = applied.declaration.fields.indexOfFirst { it.name == fieldName }
         if (index < 0) return null
-        val field = applied.declaration.fields[index]
         val application = applied.directApplication
         application?.namedArgs?.firstOrNull { it.first == fieldName }?.second?.let { return it }
         application?.args?.getOrNull(index)?.let { return it }
-        return field.default
+        return chosenDefault(applied, index)?.value
+    }
+
+    /**
+     * Whether [fieldName] is sealed at this application.
+     *
+     * Deliberately answered from the *default*, whatever the application
+     * passed: the question is whether it was entitled to pass anything, and a
+     * value already supplied is what makes it worth asking.
+     */
+    fun isFieldSealed(applied: Applied, fieldName: String): Boolean {
+        val index = applied.declaration.fields.indexOfFirst { it.name == fieldName }
+        if (index < 0) return false
+        return chosenDefault(applied, index)?.isSealed == true
+    }
+
+    /** A default once its branch has been picked: the value, and whether that branch sealed it. */
+    private data class Chosen(val value: Expr, val isSealed: Boolean)
+
+    /**
+     * The default of field [index], with the fields before it bound to what
+     * this application chose.
+     *
+     * A default may be written as a `when` over the earlier fields, and until
+     * an application fixes those there is no branch to take - which is why this
+     * is answered here rather than at the declaration.
+     */
+    private fun chosenDefault(applied: Applied, index: Int): Chosen? {
+        val default = applied.declaration.fields[index].default ?: return null
+        val bindings = mutableMapOf<String, Expr>()
+        for (earlier in 0 until index) {
+            val name = applied.declaration.fields[earlier].name
+            fieldValue(applied, name)?.let { bindings[name] = it }
+        }
+        return choose(default, bindings)
+    }
+
+    /** Takes the branch [bindings] select, carrying the seal off the branch that won. */
+    private fun choose(expr: Expr, bindings: Map<String, Expr>): Chosen = when (expr) {
+        is Expr.Sealed -> Chosen(choose(expr.value, bindings).value, true)
+        is Expr.Grouping -> choose(expr.expr, bindings)
+        is Expr.IfExpr -> when (decide(expr.condition, bindings)) {
+            true -> choose(expr.thenExpr, bindings)
+            false -> choose(expr.elseExpr, bindings)
+            // Undecidable - hand back what was written. No branch was taken, so
+            // no branch's seal applies.
+            null -> Chosen(expr, isSealed = false)
+        }
+        else -> Chosen(expr, isSealed = false)
+    }
+
+    /**
+     * Whether [condition] holds, or null when it cannot be decided here.
+     *
+     * Only the shapes a `when` over decorator fields produces are decided:
+     * equalities against constants, and the `||` chain a multi-pattern branch
+     * becomes. Anything else is left undecided rather than guessed at.
+     */
+    private fun decide(condition: Expr, bindings: Map<String, Expr>): Boolean? = when (condition) {
+        is Expr.Grouping -> decide(condition.expr, bindings)
+        is Expr.BoolLiteral -> condition.value
+        is Expr.Binary -> when (condition.op) {
+            TokenType.EQUAL_EQUAL, TokenType.BANG_EQUAL -> {
+                val left = constantKey(condition.left, bindings)
+                val right = constantKey(condition.right, bindings)
+                if (left == null || right == null) null
+                else (left == right) == (condition.op == TokenType.EQUAL_EQUAL)
+            }
+            TokenType.OR_OR -> {
+                val left = decide(condition.left, bindings)
+                val right = decide(condition.right, bindings)
+                if (left == true || right == true) true
+                else if (left == false && right == false) false
+                else null
+            }
+            TokenType.AND_AND -> {
+                val left = decide(condition.left, bindings)
+                val right = decide(condition.right, bindings)
+                if (left == false || right == false) false
+                else if (left == true && right == true) true
+                else null
+            }
+            else -> null
+        }
+        else -> null
+    }
+
+    /**
+     * A constant's identity, for comparing two of them.
+     *
+     * `.Error` and `LogLevel.Error` name the same variant and answer the same,
+     * which is what lets a pattern be written either way: both sides of the
+     * comparison are the field's declared type, so the variant name is the
+     * whole of the identity.
+     */
+    private fun constantKey(expr: Expr, bindings: Map<String, Expr>): String? = when (expr) {
+        is Expr.Grouping -> constantKey(expr.expr, bindings)
+        // A decorator argument written positionally keeps its leading dot in
+        // the name - `@Log(.Error)` - where a named one has already become an
+        // InferredMember. Both name a variant.
+        is Expr.Identifier ->
+            if (expr.name.startsWith(".")) "variant:${expr.name.removePrefix(".")}"
+            else bindings[expr.name]?.let { constantKey(it, bindings) }
+        is Expr.InferredMember -> if (expr.ctorArgs == null) "variant:${expr.name}" else null
+        is Expr.Member -> "variant:${expr.name}"
+        is Expr.IntLiteral -> "int:${expr.value}"
+        is Expr.StringLiteral -> "str:${expr.value}"
+        is Expr.BoolLiteral -> "bool:${expr.value}"
+        is Expr.CharLiteral -> "char:${expr.value}"
+        else -> null
     }
 
     private fun collectSites(program: Program): List<Site> {

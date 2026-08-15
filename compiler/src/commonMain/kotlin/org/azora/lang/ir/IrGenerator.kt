@@ -38,6 +38,7 @@ import org.azora.lang.frontend.TokenType
 import org.azora.lang.frontend.TopLevel
 import org.azora.lang.frontend.TypeAnnotation
 import org.azora.lang.semantic.ComparisonPlan
+import org.azora.lang.semantic.StructType
 import org.azora.lang.semantic.SymbolTable
 import org.azora.lang.semantic.TypeFunctionEvaluator
 import org.azora.lang.semantic.comparisonPlan
@@ -1715,6 +1716,11 @@ class IrGenerator(private val table: SymbolTable) {
             }
             is Expr.CharLiteral -> IrExpr.CharLiteral(expr.value)
             is Expr.Identifier -> {
+                // A field default written in terms of an earlier field. What
+                // that field holds is decided by the construction, not by the
+                // declaration, so the value was bound just before this default
+                // was lowered.
+                constructionBindings?.get(expr.name)?.let { return it }
                 val sym = table.lookupVariable(expr.name)
                 // `Vec3f::zero` names a member of whatever `Vec3f` aliases, as it did
                 // when the resolver typed it.
@@ -1944,26 +1950,15 @@ class IrGenerator(private val table: SymbolTable) {
                     )
                 }
                 if (struct != null) {
-                    // Handle named arguments - reorder to field order; omitted fields use their defaults.
-                    val args = if (expr.args.any { it is Expr.NamedArg }) {
-                        val slots = mapNamedArguments(expr.args, struct.fields.map { it.name })
-                        struct.fields.mapIndexed { index, f ->
-                            coerceToFloat(lowerExpr(slots[index] ?: f.default ?: Expr.NullLiteral), f.type)
-                        }
+                    // Named arguments are reordered to field order first; a
+                    // positional list already is one. Either way every field
+                    // ends up with either what was supplied or its own default.
+                    val supplied = if (expr.args.any { it is Expr.NamedArg }) {
+                        mapNamedArguments(expr.args, struct.fields.map { it.name })
                     } else {
-                        // Positional - pad omitted trailing fields with their defaults (`Pack<T>()`).
-                        val padded = expr.args.mapIndexed { i, a ->
-                            struct.fields.getOrNull(i)?.let { coerceToFloat(lowerExpr(a), it.type) }
-                                ?: lowerExpr(a)
-                        }.toMutableList()
-                        for (i in expr.args.size until struct.fields.size) {
-                            padded.add(coerceToFloat(
-                                lowerExpr(struct.fields[i].default ?: Expr.NullLiteral),
-                                struct.fields[i].type,
-                            ))
-                        }
-                        padded
+                        expr.args
                     }
+                    val args = loweredFieldValues(struct, supplied)
                     // A declared `ctor` of the same arity takes precedence over
                     // filling fields positionally - it is the constructor the
                     // author wrote, and skipping it would leave its work undone.
@@ -2505,6 +2500,9 @@ class IrGenerator(private val table: SymbolTable) {
                     else -> IrExpr.TupleAccess(target, expr.index, IrType.Any)
                 }
             }
+            // A seal is a rule about decorator applications, checked before
+            // lowering; what runs is the value it wraps.
+            is Expr.Sealed -> lowerExpr(expr.value)
             is Expr.IfExpr -> {
                 val condition = lowerExpr(expr.condition)
                 val thenExpr = lowerExpr(expr.thenExpr)
@@ -2892,6 +2890,55 @@ class IrGenerator(private val table: SymbolTable) {
             }
         }
         is TypeAnnotation.Inferred -> init.type
+    }
+
+    /**
+     * The fields of the construction being lowered, bound to their values.
+     *
+     * Non-null only while a field *default* is being lowered, so an ordinary
+     * name is never shadowed by a field of some struct being built nearby.
+     */
+    private var constructionBindings: Map<String, IrExpr>? = null
+
+    /**
+     * The value of every field of [struct], in field order.
+     *
+     * Each field takes what [supplied] gave it, or its own default when that
+     * position is empty. A default is lowered with the fields before it bound
+     * to the values just computed, which is what lets one be written in terms
+     * of another:
+     *
+     *     pack Pen {
+     *         color: Color = .Black
+     *         width: Width = when color { .Black -> .Thin  else -> .Thick }
+     *     }
+     *
+     * `Pen(.Red)` gets `.Thick` - the `color` the construction chose, not the
+     * one the declaration wrote. Only defaults see these bindings; a supplied
+     * argument is lowered in the caller's own scope.
+     *
+     * A supplied value read by a later default is emitted again where the
+     * default reads it, so an argument with side effects would run once per
+     * reader. Defaults referring to earlier fields are declarations of shape
+     * rather than of work, which is what makes that acceptable here.
+     */
+    private fun loweredFieldValues(struct: StructType, supplied: List<Expr?>): List<IrExpr> {
+        val saved = constructionBindings
+        val bindings = mutableMapOf<String, IrExpr>()
+        val values = mutableListOf<IrExpr>()
+        try {
+            for (i in struct.fields.indices) {
+                val field = struct.fields[i]
+                val given = supplied.getOrNull(i)
+                constructionBindings = if (given != null) saved else bindings
+                val value = coerceToFloat(lowerExpr(given ?: field.default ?: Expr.NullLiteral), field.type)
+                values.add(value)
+                bindings[field.name] = value
+            }
+        } finally {
+            constructionBindings = saved
+        }
+        return values
     }
 
     /** Provides a default (zero) value for solo fields without explicit defaults. */

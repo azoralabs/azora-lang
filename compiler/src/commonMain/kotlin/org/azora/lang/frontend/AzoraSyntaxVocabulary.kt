@@ -102,5 +102,6 @@ object AzoraSyntaxVocabulary {
         setOf(
             "module", "union", "async", "where", "replace", "escaping",
             "derives", "includes", "binds", "requires", "assoc", "lend", "reflect",
+            "sealed",
         )
 }

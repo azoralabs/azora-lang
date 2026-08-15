@@ -507,6 +507,10 @@ private fun dumpExpr(sb: StringBuilder, expr: Expr, indent: String) {
             sb.appendLine("${indent}TryPropagate")
             dumpExpr(sb, expr.expr, "$indent    ")
         }
+        is Expr.Sealed -> {
+            sb.appendLine("${indent}Sealed")
+            dumpExpr(sb, expr.value, "$indent    ")
+        }
         is Expr.IfExpr -> {
             sb.appendLine("${indent}IfExpr")
             dumpExpr(sb, expr.condition, "$indent    ")

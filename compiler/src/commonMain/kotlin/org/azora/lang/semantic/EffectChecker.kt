@@ -259,6 +259,7 @@ class EffectChecker {
             is Expr.TupleAccess -> collectCallsFromExpr(expr.target, calls)
             is Expr.CatchExpr -> { collectCallsFromExpr(expr.expr, calls); collectCallsFromExpr(expr.fallback, calls) }
             is Expr.TryPropagate -> collectCallsFromExpr(expr.expr, calls)
+            is Expr.Sealed -> collectCallsFromExpr(expr.value, calls)
             is Expr.IfExpr -> { collectCallsFromExpr(expr.condition, calls); collectCallsFromExpr(expr.thenExpr, calls); collectCallsFromExpr(expr.elseExpr, calls) }
             is Expr.Lambda -> {
                 for (s in expr.body) collectCallsFromStmt(s, calls)

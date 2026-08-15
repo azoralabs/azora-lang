@@ -8481,12 +8481,46 @@ class Parser(
     private fun parseWhenBranchValue(): Expr {
         if (match(TokenType.L_BRACE)) {
             skipNewlines()
-            val value = parseExpr()
+            val value = parseSealableValue()
             skipNewlines()
             consume(TokenType.R_BRACE, "Expected '}' after when branch value")
             return value
         }
+        return parseSealableValue()
+    }
+
+    /**
+     * A branch value, optionally sealed: `sealed "!! "`.
+     *
+     * `sealed` is contextual, so a binding may still be called that: the
+     * keyword reading is taken only when something that can start an
+     * expression follows it, which a bare name being read never has.
+     */
+    private fun parseSealableValue(): Expr {
+        if (check(TokenType.IDENTIFIER) && peek().lexeme == "sealed" && startsExpression(peekNext())) {
+            val start = advance()
+            return Expr.Sealed(parseExpr(), start.line, start.column, start.lexeme.length)
+        }
         return parseExpr()
+    }
+
+    /**
+     * Whether [token] can begin an expression.
+     *
+     * Used to tell a contextual keyword from a name being read: `sealed .Red`
+     * seals a value, while `sealed` alone, or `sealed + 1`, is the binding.
+     */
+    private fun startsExpression(token: Token?): Boolean = when (token?.type) {
+        null, TokenType.NEWLINE, TokenType.EOF, TokenType.R_BRACE, TokenType.R_PAREN,
+        TokenType.R_BRACKET, TokenType.COMMA, TokenType.COLON, TokenType.SEMICOLON,
+        -> false
+        TokenType.DOT, TokenType.IDENTIFIER, TokenType.INT_LITERAL, TokenType.DOUBLE_LITERAL,
+        TokenType.STRING_LITERAL, TokenType.INTERPOLATED_STRING, TokenType.CHAR_LITERAL,
+        TokenType.TRUE, TokenType.FALSE, TokenType.NULL, TokenType.L_PAREN, TokenType.L_BRACKET,
+        TokenType.L_BRACE, TokenType.IF, TokenType.WHEN, TokenType.MINUS, TokenType.BANG,
+        -> true
+        // An infix operator means the name was the left operand, not a keyword.
+        else -> false
     }
 
     /**

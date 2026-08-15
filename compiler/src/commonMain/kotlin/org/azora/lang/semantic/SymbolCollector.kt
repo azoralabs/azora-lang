@@ -1013,6 +1013,8 @@ class SymbolCollector {
         is Expr.TupleLit, is Expr.TupleAccess, is Expr.VariantLit -> null
         is Expr.CatchExpr -> null
         is Expr.TryPropagate -> inferExprType(expr.expr, env)
+        // The seal governs who may write the field, not what type it holds.
+        is Expr.Sealed -> inferExprType(expr.value, env)
         is Expr.IfExpr -> inferExprType(expr.thenExpr, env)
         is Expr.Lambda -> null
         is Expr.NamedArg -> null

@@ -646,6 +646,7 @@ internal object MacroExpander {
                 expr = rewriteExpr(expr.expr, macros, depth),
                 fallback = rewriteExpr(expr.fallback, macros, depth),
             )
+            is Expr.Sealed -> expr.copy(value = rewriteExpr(expr.value, macros, depth))
             is Expr.IfExpr -> expr.copy(
                 condition = rewriteExpr(expr.condition, macros, depth),
                 thenExpr = rewriteExpr(expr.thenExpr, macros, depth),
@@ -858,6 +859,7 @@ internal object MacroExpander {
             expr = substitute(template.expr, bindings, invokeLine),
             fallback = substitute(template.fallback, bindings, invokeLine),
         )
+        is Expr.Sealed -> template.copy(value = substitute(template.value, bindings, invokeLine))
         is Expr.IfExpr -> {
             val condition = substitute(template.condition, bindings, invokeLine)
             when (condition) {

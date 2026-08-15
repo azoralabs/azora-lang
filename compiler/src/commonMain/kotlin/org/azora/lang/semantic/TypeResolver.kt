@@ -65,6 +65,9 @@ class TypeResolver(private val table: SymbolTable) {
     /** True while resolving an `async func` body; `loop … by …` requires one. */
     private var asyncContext = false
 
+    /** True while resolving an `annot` field's default - the one place `sealed` means something. */
+    private var inDecoratorFieldDefault = false
+
     private val errors = mutableListOf<String>()
     private var program: Program? = null
 
@@ -125,7 +128,16 @@ class TypeResolver(private val table: SymbolTable) {
             if (item !is TopLevel.Pack) continue
             val struct = table.lookupStruct(item.name) ?: continue
             table.pushScope()
+            // A default may be written in terms of the fields *before* it -
+            // `width = when color { … }` - so each is in scope only once it has
+            // been declared. What the value is still comes from the
+            // construction; this is what lets the expression be typed at all.
             for (i in item.fields.indices) {
+                if (i > 0) {
+                    table.defineVariable(
+                        VariableSymbol(item.fields[i - 1].name, struct.fields[i - 1].type, mutable = false),
+                    )
+                }
                 val initializer = item.fields[i].default ?: continue
                 val declared = struct.fields[i].type
                 val savedParams = expectedLambdaParamTypes
@@ -134,6 +146,7 @@ class TypeResolver(private val table: SymbolTable) {
                     expectedLambdaParamTypes = declared.params
                     expectedLambdaReceiverTypes = declared.receivers
                 }
+                seedExpectedValue(initializer, declared)
                 val actual = resolveExpr(initializer)
                 expectedLambdaParamTypes = savedParams
                 expectedLambdaReceiverTypes = savedReceivers
@@ -144,6 +157,24 @@ class TypeResolver(private val table: SymbolTable) {
                     )
                 }
             }
+            table.popScope()
+        }
+        for (item in program.items) {
+            if (item !is TopLevel.Deco) continue
+            val struct = table.lookupStruct(item.name) ?: continue
+            table.pushScope()
+            inDecoratorFieldDefault = true
+            for (i in item.fields.indices) {
+                if (i > 0 && i - 1 < struct.fields.size) {
+                    table.defineVariable(
+                        VariableSymbol(item.fields[i - 1].name, struct.fields[i - 1].type, mutable = false),
+                    )
+                }
+                val initializer = item.fields[i].default ?: continue
+                seedExpectedValue(initializer, struct.fields.getOrNull(i)?.type)
+                resolveExpr(initializer)
+            }
+            inDecoratorFieldDefault = false
             table.popScope()
         }
         // Resolve impl method bodies (self + declared params in scope)
@@ -789,6 +820,25 @@ class TypeResolver(private val table: SymbolTable) {
     }
 
     /**
+     * The `.Name` a receiver chain starts from, if it starts from one.
+     *
+     * `.Circle.radius` and `.Circle(1).area()` both hang off a single `.Name`,
+     * and it is that head - not the member read from it - whose type the
+     * position has to state.
+     */
+    private fun inferredHead(expr: Expr): Expr.InferredMember? {
+        var head: Expr = expr
+        while (true) {
+            head = when (head) {
+                is Expr.MethodCall -> head.target
+                is Expr.Member -> head.target
+                else -> break
+            }
+        }
+        return head as? Expr.InferredMember
+    }
+
+    /**
      * Records [expected] for a `.`-headed receiver chain, if that is what
      * [argument] is.
      */
@@ -798,16 +848,40 @@ class TypeResolver(private val table: SymbolTable) {
             is IrType.Nullable -> (expected.inner as? IrType.Named)?.name
             else -> null
         } ?: return
-        var head: Expr = argument
-        while (true) {
-            head = when (head) {
-                is Expr.MethodCall -> head.target
-                is Expr.Member -> head.target
-                else -> break
+        inferredHead(argument)?.let { table.defineInferredMember(it.line, it.column, owner) }
+    }
+
+    /**
+     * Records [expected] for every `.Name` that can *become* the value of [expr].
+     *
+     * A value does not always come from one place. Both arms of an
+     * if-expression produce the whole expression's value, and so do both sides
+     * of a `catch` or a `??` - each written at a position the expected type
+     * governs just as much as a bare value would be. Seeding all of them is
+     * what lets a member be named without repeating its type on every arm:
+     *
+     *     fin c: Color = if warm { .Red } else { .Blue }
+     *
+     * A `when` expression desugars to a chain of if-expressions before this
+     * runs, so it is covered by the same walk.
+     */
+    private fun seedExpectedValue(expr: Expr, expected: IrType?) {
+        if (expected == null) return
+        when (expr) {
+            is Expr.Grouping -> seedExpectedValue(expr.expr, expected)
+            is Expr.IfExpr -> {
+                seedExpectedValue(expr.thenExpr, expected)
+                seedExpectedValue(expr.elseExpr, expected)
             }
-        }
-        if (head is Expr.InferredMember) {
-            table.defineInferredMember(head.line, head.column, owner)
+            is Expr.CatchExpr -> {
+                seedExpectedValue(expr.expr, expected)
+                seedExpectedValue(expr.fallback, expected)
+            }
+            is Expr.NullCoalesce -> {
+                seedExpectedValue(expr.left, expected)
+                seedExpectedValue(expr.right, expected)
+            }
+            else -> seedInferredReceiver(expr, expected)
         }
     }
 
@@ -1059,8 +1133,9 @@ class TypeResolver(private val table: SymbolTable) {
         // to reach past the calls to the receiver they are called on. A builder
         // chain returns its own type, so the head is the type expected at the
         // end; if a call in between returns something else, the ordinary check
-        // on the result still catches it.
-        seedInferredReceiver(argument, expected)
+        // on the result still catches it. An argument that branches carries the
+        // same expectation into each arm.
+        seedExpectedValue(argument, expected)
         val savedParams = expectedLambdaParamTypes
         val savedReceivers = expectedLambdaReceiverTypes
         val savedInline = inlineCallableDefault
@@ -1234,7 +1309,7 @@ class TypeResolver(private val table: SymbolTable) {
                     if (stmt.value is Expr.InferredMember) {
                         resolveInferredMember(stmt.value as Expr.InferredMember, returnType)
                     } else {
-                        seedInferredReceiver(stmt.value!!, returnType)
+                        seedExpectedValue(stmt.value!!, returnType)
                     }
                     checkReturnedOrigin(stmt.value!!, stmt.line)
                     // Returning a closure is one of the four ways it escapes: the
@@ -1488,7 +1563,7 @@ class TypeResolver(private val table: SymbolTable) {
                 }
             }
             is Stmt.When -> {
-                resolveExpr(stmt.scrutinee) ?: return
+                val scrutineeType = resolveExpr(stmt.scrutinee) ?: return
                 for (branch in stmt.branches) {
                     var handledBySlot = false
                     for (pattern in branch.patterns) {
@@ -1514,6 +1589,10 @@ class TypeResolver(private val table: SymbolTable) {
                     }
                     if (handledBySlot) continue
                     for (pattern in branch.patterns) {
+                        // What is being matched is what a pattern's `.Name`
+                        // belongs to - the scrutinee is the type statement, so
+                        // a branch never has to repeat it.
+                        seedExpectedValue(pattern, scrutineeType)
                         resolveExpr(pattern) ?: return
                     }
                     table.pushScope()
@@ -1526,7 +1605,7 @@ class TypeResolver(private val table: SymbolTable) {
                     table.popScope()
                 } else {
                     // Exhaustiveness check for enum/slot
-                    val scrutType = resolveExpr(stmt.scrutinee)
+                    val scrutType: IrType? = scrutineeType
                     if (scrutType != null) {
                         val allVariants = if (scrutType is IrType.Named) {
                             table.lookupSlot(scrutType.name)?.map { it.first }
@@ -1698,8 +1777,26 @@ class TypeResolver(private val table: SymbolTable) {
                 }
             }
             is Expr.Binary -> {
-                val leftType = resolveExpr(expr.left) ?: return null
-                val rightType = resolveExpr(expr.right) ?: return null
+                // `c == .Red` - a comparison states the type of whichever side
+                // is written as a bare `.Name`, because the other side has one.
+                // This is also how a `when` expression's patterns are typed:
+                // each branch condition is an equality on the scrutinee, built
+                // by the parser before this pass runs.
+                val equality = expr.op == TokenType.EQUAL_EQUAL || expr.op == TokenType.BANG_EQUAL
+                // Only the side that needs telling waits for the other, so
+                // neither is resolved twice and no error is reported twice.
+                val fromRight = equality && inferredHead(expr.left) != null && inferredHead(expr.right) == null
+                val leftType: IrType
+                val rightType: IrType
+                if (fromRight) {
+                    rightType = resolveExpr(expr.right) ?: return null
+                    seedExpectedValue(expr.left, rightType)
+                    leftType = resolveExpr(expr.left) ?: return null
+                } else {
+                    leftType = resolveExpr(expr.left) ?: return null
+                    if (equality) seedExpectedValue(expr.right, leftType)
+                    rightType = resolveExpr(expr.right) ?: return null
+                }
                 resolveBinaryType(
                     expr.op,
                     adoptLiteralType(expr.left, leftType, rightType),
@@ -1753,6 +1850,10 @@ class TypeResolver(private val table: SymbolTable) {
                     // to its own field, and a positional one fills the leftmost field
                     // no name has claimed. `Size(width: 2, 3)` and `Size(2, height: 3)`
                     // both mean the same thing.
+                    // Which fields this construction left to their default. A
+                    // default may be written in terms of the fields before it,
+                    // and only here is it known what those hold.
+                    val defaulted = mutableSetOf<Int>()
                     val effectiveArgs = if (expr.args.any { it is Expr.NamedArg }) {
                         val slots = arrayOfNulls<Expr>(struct.fields.size)
                         for (argument in expr.args) {
@@ -1779,14 +1880,16 @@ class TypeResolver(private val table: SymbolTable) {
                             slots[next] = argument
                         }
                         struct.fields.mapIndexed { index, field ->
-                            slots[index] ?: field.default
-                                ?: run {
-                                    errors.add(
-                                        "line ${expr.line}: missing field '${field.name}' in " +
-                                            "'${expr.callee}' (no default)",
-                                    )
-                                    return null
-                                }
+                            slots[index] ?: run {
+                                defaulted.add(index)
+                                field.default
+                            } ?: run {
+                                errors.add(
+                                    "line ${expr.line}: missing field '${field.name}' in " +
+                                        "'${expr.callee}' (no default)",
+                                )
+                                return null
+                            }
                         }
                     } else {
                         // Positional - pad omitted trailing fields with their defaults (`Pack<T>()`).
@@ -1794,6 +1897,7 @@ class TypeResolver(private val table: SymbolTable) {
                         for (i in expr.args.size until struct.fields.size) {
                             val d = struct.fields[i].default
                                 ?: run { errors.add("line ${expr.line}: missing field '${struct.fields[i].name}' in '${expr.callee}' (no default)"); return null }
+                            defaulted.add(i)
                             padded.add(d)
                         }
                         padded
@@ -1806,7 +1910,24 @@ class TypeResolver(private val table: SymbolTable) {
                         // non-escaping by default (§4.7), and a field that merely
                         // holds one for the life of a value it is itself part of
                         // outlives nothing the closure borrowed.
-                        val argType = resolveContextualArgument(argument, fieldType) ?: return null
+                        val argType = if (i in defaulted) {
+                            // The default came from the declaration, so the
+                            // fields it may name are the ones declared before
+                            // it - the same scope it was checked in there.
+                            table.pushScope()
+                            for (j in 0 until i) {
+                                table.defineVariable(
+                                    VariableSymbol(struct.fields[j].name, struct.fields[j].type, mutable = false),
+                                )
+                            }
+                            try {
+                                resolveContextualArgument(argument, fieldType)
+                            } finally {
+                                table.popScope()
+                            }
+                        } else {
+                            resolveContextualArgument(argument, fieldType)
+                        } ?: return null
                         if (struct.typeParams.isEmpty()) {
                             if (!isCompatible(fieldType, adoptLiteralType(argument, argType, fieldType))) {
                                 errors.add("line ${expr.line}: field '${struct.fields[i].name}' of '${expr.callee}': expected $fieldType, got $argType")
@@ -2570,6 +2691,19 @@ class TypeResolver(private val table: SymbolTable) {
                 t1
             }
             is Expr.TryPropagate -> resolveExpr(expr.expr)
+            is Expr.Sealed -> {
+                // A seal is a rule about *applications* of a decorator, so it
+                // has nothing to govern anywhere else - allowing it there would
+                // read as a promise the compiler never checks.
+                if (!inDecoratorFieldDefault) {
+                    errors.add(
+                        "line ${expr.line}: 'sealed' marks a decorator field default that an " +
+                            "application may not override, so it belongs on a branch of an " +
+                            "'annot' field's default and nowhere else",
+                    )
+                }
+                resolveExpr(expr.value)
+            }
             is Expr.IfExpr -> {
                 resolveExpr(expr.condition) ?: return null
                 val t1 = resolveExpr(expr.thenExpr) ?: return null
@@ -3060,6 +3194,10 @@ class TypeResolver(private val table: SymbolTable) {
         return when (pattern) {
             is Expr.Member -> pattern.name
             is Expr.MethodCall -> pattern.name
+            // `.Red` names the same variant `Color.Red` does; leaving it out
+            // here would call an exhaustive `when` non-exhaustive for having
+            // written its patterns the short way.
+            is Expr.InferredMember -> pattern.name
             is Expr.StringLiteral -> pattern.value
             else -> null
         }
@@ -4104,6 +4242,9 @@ class TypeResolver(private val table: SymbolTable) {
             expectedLambdaParamTypes = declaredType.params
             expectedLambdaReceiverTypes = declaredType.receivers
         }
+        // `fin c: Color = .Red` - the annotation states what the dot means, and
+        // it is written right there on the binding.
+        seedExpectedValue(initializer, declaredType)
         val initType = resolveExpr(initializer) ?: return
         expectedLambdaParamTypes = savedParams
         expectedLambdaReceiverTypes = savedReceivers

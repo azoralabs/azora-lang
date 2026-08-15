@@ -158,6 +158,20 @@ class DecoratorResolver {
                 valid = false
             }
         }
+
+        // A field whose default is sealed on the branch this application takes
+        // is not the application's to set. Checked once the arguments are
+        // known, because which branch it is depends on them.
+        val applied = DecoratorMetadata.Applied(declaration, annotation)
+        for (name in assigned) {
+            if (!DecoratorMetadata.isFieldSealed(applied, name)) continue
+            errors.add(
+                "line ${annotation.line}: decorator field '$name' is sealed for this " +
+                    "'@${annotation.name}' and cannot be set here - its value follows from the " +
+                    "other fields",
+            )
+            valid = false
+        }
         return valid
     }
 

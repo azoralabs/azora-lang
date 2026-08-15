@@ -100,6 +100,7 @@ func isKeywordRange(source: String, start: Int, end: Int): Bool {
         rangeIs(source, start, end, "wrap") || rangeIs(source, start, end, "mem") ||
         rangeIs(source, start, end, "rem") || rangeIs(source, start, end, "ret") ||
         rangeIs(source, start, end, "effect") || rangeIs(source, start, end, "with") ||
+        rangeIs(source, start, end, "without") ||
         rangeIs(source, start, end, "prop") || rangeIs(source, start, end, "ctor") ||
         rangeIs(source, start, end, "dtor") || rangeIs(source, start, end, "out") ||
         rangeIs(source, start, end, "exposed") || rangeIs(source, start, end, "protected") ||
@@ -210,10 +211,66 @@ func contextualUnionIsKeyword(source: String, start: Int, end: Int): Bool {
     return c >= 'A' && c <= 'Z'
 }
 
-func contextualWithoutIsKeyword(source: String, start: Int, end: Int): Bool {
-    if !rangeIs(source, start, end, "without") { return false }
+func contextualAssocIsKeyword(source: String, start: Int, end: Int): Bool {
+    if !rangeIs(source, start, end, "assoc") { return false }
     fin lineStart = lineStartAt(source, 0, start)
-    return findFrom(source, lineStart, start, "binds") >= 0
+    var index = start - 1
+    var parenDepth = 0
+    var bracketDepth = 0
+    var angleDepth = 0
+    var sawSubject = false
+
+    while index >= lineStart {
+        fin c = charAt(source, index)
+        if isSpace(c) { index -= 1 }
+        else if c == ')' {
+            parenDepth += 1
+            index -= 1
+        }
+        else if c == ']' {
+            bracketDepth += 1
+            index -= 1
+        }
+        else if c == '>' {
+            angleDepth += 1
+            index -= 1
+        }
+        else if c == '(' {
+            if parenDepth == 0 { return false }
+            parenDepth -= 1
+            index -= 1
+        }
+        else if c == '[' {
+            if bracketDepth == 0 { return false }
+            bracketDepth -= 1
+            if parenDepth == 0 && bracketDepth == 0 && angleDepth == 0 {
+                sawSubject = true
+            }
+            index -= 1
+        }
+        else if c == '<' {
+            if angleDepth == 0 { return false }
+            angleDepth -= 1
+            index -= 1
+        }
+        else if c == '{' || c == '}' || c == ';' || c == '=' {
+            if parenDepth == 0 && bracketDepth == 0 && angleDepth == 0 { return false }
+            index -= 1
+        }
+        else if isIdentifierPart(c) {
+            fin wordEnd = index + 1
+            while index >= lineStart && isIdentifierPart(charAt(source, index)) { index -= 1 }
+            if parenDepth == 0 && bracketDepth == 0 && angleDepth == 0 {
+                fin wordStart = index + 1
+                if rangeIs(source, wordStart, wordEnd, "spec") ||
+                    rangeIs(source, wordStart, wordEnd, "impl") { return sawSubject }
+                if rangeIs(source, wordStart, wordEnd, "for") && !sawSubject { return false }
+                sawSubject = true
+            }
+        }
+        else { index -= 1 }
+    }
+    return false
 }
 
 func isContextualKeywordRange(source: String, start: Int, end: Int): Bool {
@@ -221,7 +278,7 @@ func isContextualKeywordRange(source: String, start: Int, end: Int): Bool {
         contextualModuleIsKeyword(source, start, end) ||
         contextualUnionIsKeyword(source, start, end) ||
         (rangeIs(source, start, end, "async") && nextIdentifierIs(source, end, "func")) ||
-        contextualWithoutIsKeyword(source, start, end) ||
+        contextualAssocIsKeyword(source, start, end) ||
         rangeIs(source, start, end, "derives") || rangeIs(source, start, end, "includes") ||
         rangeIs(source, start, end, "binds") || rangeIs(source, start, end, "requires")
 }

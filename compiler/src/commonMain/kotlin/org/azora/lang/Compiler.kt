@@ -32,8 +32,10 @@ import org.azora.lang.ir.IrOptimizer
 import org.azora.lang.ir.IrProgram
 import org.azora.lang.ir.IrType
 import org.azora.lang.semantic.EffectChecker
+import org.azora.lang.semantic.InlineCallables
 import org.azora.lang.semantic.SemanticPipeline
 import org.azora.lang.semantic.ReflectDecoExpander
+import org.azora.lang.semantic.SpecDefaults
 import org.azora.lang.semantic.CastDeriver
 import org.azora.lang.semantic.ComparisonDeriver
 import org.azora.lang.semantic.DisplayDeriver
@@ -218,7 +220,7 @@ class Compiler(
         // 2b. Standard library: append the stdlib declarations the program
         // actually references (transitively); user definitions shadow stdlib.
         val initiallyInjected = RealmQualifiedImplTargets.resolve(
-            CallbackImplNormalizer.normalize(libraries.inject(parsed)),
+            SpecDefaults.apply(CallbackImplNormalizer.normalize(libraries.inject(parsed))),
         )
 
         // Decorator derives produce ordinary checked AST methods. Run injection
@@ -242,7 +244,9 @@ class Compiler(
         // so two `Cast` impls for one type do not collide.
         val casts = CastDeriver.rewrite(comparison.program)
         val displayed = DisplayDeriver.derive(casts)
-        val injected = CallbackImplNormalizer.normalize(libraries.inject(displayed))
+        // Applied again: this injection may pull in a module whose implementations
+        // have not seen their specs' provided members yet.
+        val injected = SpecDefaults.apply(CallbackImplNormalizer.normalize(libraries.inject(displayed)))
 
         // 2b-bis. Unroll `inline for X in reflect<*>.withAnnot<D>` loops now that the
         // whole program (all modules' decorated types) is visible. Generic: the
@@ -295,8 +299,10 @@ class Compiler(
             // What this injection pulls in has never been through macro
             // expansion: a module reached for the first time here still spells
             // `@std::arr[…]`, and nothing downstream expands one.
-            val typeReInjected = MacroExpander.expand(
-                CallbackImplNormalizer.normalize(libraries.inject(typeExpanded)),
+            val typeReInjected = SpecDefaults.apply(
+                MacroExpander.expand(
+                    CallbackImplNormalizer.normalize(libraries.inject(typeExpanded)),
+                ),
             )
             VariadicMonomorphizer.monomorphize(typeReInjected)
         } catch (e: IllegalStateException) {
@@ -331,7 +337,11 @@ class Compiler(
         // ===============================================================
 
         // 9. AST → typed IR (uses the CTCE-stabilized program)
-        val ir = IrGenerator(semantic.symbolTable).generate(semantic.program)
+        // A block passed to an `inline` callable is substituted where it was
+        // written, which is what the annotation promises. Done after analysis, so
+        // what is spliced has already been checked where it was written.
+        val inlined = InlineCallables.apply(semantic.program)
+        val ir = IrGenerator(semantic.symbolTable).generate(inlined)
 
         // 10. IR optimization passes (release mode only)
         val optimizedIr = if (release) IrOptimizer().optimize(ir) else ir

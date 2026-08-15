@@ -133,6 +133,13 @@ sealed class IrType {
         val kind: CallableKind = CallableKind.FUNC,
         /** `escaping (…) -> R` - the callable may outlive the call it is passed to. */
         val isEscaping: Boolean = false,
+        /**
+         * `inline (…) -> R` - the block is substituted where it is passed.
+         *
+         * An inlined block is not a closure: it runs in the scope it was written
+         * in, so it reaches the bindings around it the way a loop body does.
+         */
+        val isInline: Boolean = false,
     ) : IrType() {
         override fun toString(): kotlin.String {
             val context = if (receivers.isEmpty()) "" else receivers.joinToString(", ", "[", "]")
@@ -334,6 +341,7 @@ sealed class IrType {
                 receivers = ref.receivers.map { resolve(it, typeParams) },
                 kind = ref.kind,
                 isEscaping = ref.isEscaping,
+                isInline = ref.isInline,
             )
             is TypeRef.Tuple -> Tuple(ref.elements.map { resolve(it, typeParams) })
             is TypeRef.Nullable -> Nullable(resolve(ref.inner, typeParams))

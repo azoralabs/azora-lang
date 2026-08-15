@@ -796,7 +796,11 @@ private class MonoContext(
                 // too, and those are exactly what the specialization binds.
                 val ownTypeParams = method.typeParams.toSet() - template.typeParams.toSet() -
                     packTemplate?.typeParams.orEmpty().toSet()
-                val bindings = argumentBindings.filterKeys { it !in ownTypeParams }
+                // The implementation's associated types bind here too: an
+                // inherited member still says `Item`, and this specialization is
+                // where `Item` stops being a name and becomes the type the
+                // implementation said it was.
+                val bindings = argumentBindings.filterKeys { it !in ownTypeParams } + template.assocBindings
                 // Bound before the body is touched: reflection over an explicit
                 // application (`reflect<Vec<U, N>>`) needs `N` to pick a layout, and
                 // that happens while the reflected loops expand, not after.

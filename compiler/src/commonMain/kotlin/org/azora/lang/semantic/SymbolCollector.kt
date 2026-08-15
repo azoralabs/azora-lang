@@ -562,7 +562,10 @@ class SymbolCollector {
                 // separate `impl Parent for Type` block.
                 val parentNames = item.parents.mapNotNull { (it as? TypeRef.Named)?.name }
                 val requiredSpecs = item.requires.mapNotNull { (it as? TypeRef.Named)?.name }
-                val methodNames = item.methods.map { it.name }
+                // A member with a body is *provided*: an implementation that does
+                // not write it inherits the spec's, so requiring it would reject
+                // exactly the implementations the body exists to serve.
+                val methodNames = item.methods.filter { it.body.isEmpty() }.map { it.name }
                 table.defineSpec(item.name, methodNames, item.callback, item.typeParams, ownPropTypes, ownMethodSigs, parentNames, requiredSpecs, item.isBridge)
             }
         }

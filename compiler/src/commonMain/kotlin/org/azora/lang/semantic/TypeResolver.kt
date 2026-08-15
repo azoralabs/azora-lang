@@ -1041,6 +1041,15 @@ class TypeResolver(private val table: SymbolTable) {
     }
 
     /** Resolves one argument with the callable type expected at that position. */
+    /**
+     * The capture default a block gets from the position it is passed to.
+     *
+     * `MUTABLE` while resolving an argument to an `inline` callable: an inlined
+     * body reads and writes what surrounds it, which is what a capture list
+     * would otherwise have to spell out.
+     */
+    private var inlineCallableDefault: CaptureMode? = null
+
     private fun resolveContextualArgument(argument: Expr, expected: IrType?): IrType? {
         // `.Name` takes the type it is being passed to.
         if (argument is Expr.InferredMember) {
@@ -1054,9 +1063,11 @@ class TypeResolver(private val table: SymbolTable) {
         seedInferredReceiver(argument, expected)
         val savedParams = expectedLambdaParamTypes
         val savedReceivers = expectedLambdaReceiverTypes
+        val savedInline = inlineCallableDefault
         if (argument is Expr.Lambda && expected is IrType.Function) {
             expectedLambdaParamTypes = expected.params
             expectedLambdaReceiverTypes = expected.receivers
+            if (expected.isInline) inlineCallableDefault = CaptureMode.MUTABLE
         }
         return try {
             val resolved = resolveExpr(argument)
@@ -1070,6 +1081,7 @@ class TypeResolver(private val table: SymbolTable) {
         } finally {
             expectedLambdaParamTypes = savedParams
             expectedLambdaReceiverTypes = savedReceivers
+            inlineCallableDefault = savedInline
         }
     }
 
@@ -1327,8 +1339,26 @@ class TypeResolver(private val table: SymbolTable) {
                     else -> {
                         val iterType = resolveExpr(iter)
                         if (iterType == null) return
+                    // An iterator walks itself: it says when there is a row and
+                    // what the row is, which is all `for` needs.
+                    val walked = (iterType as? IrType.Named)?.name?.let { owner ->
+                        table.lookupMethod(owner, "next")
+                            ?.let { table.lookupFunction(it) }
+                            ?.takeIf { table.lookupMethod(owner, "hasNext") != null }
+                            ?.returnType
+                    }
+                    if (walked != null) {
+                        table.pushScope()
+                        table.defineVariable(VariableSymbol(stmt.name, walked, mutable = false))
+                        inLoop { resolveBody(stmt.body, returnType) }
+                        table.popScope()
+                        return
+                    }
                     if (iterType !is IrType.Array && iterType !is IrType.Set) {
-                        errors.add("line ${stmt.line}: for loop iterable must be a range or array, got $iterType")
+                        errors.add(
+                            "line ${stmt.line}: for loop iterable must be a range, an array, or an " +
+                                "iterator, got $iterType",
+                        )
                         return
                     }
                     table.pushScope()
@@ -2765,7 +2795,11 @@ class TypeResolver(private val table: SymbolTable) {
                 lambdaFrames.add(
                     LambdaFrame(
                         floor = captureFloor,
-                        defaultMode = expr.captureDefault,
+                        // A block passed to an `inline` callable is not a
+                        // closure: it is substituted where it was written, so it
+                        // reaches the scope around it the way a loop body does
+                        // and needs no capture list to say so.
+                        defaultMode = expr.captureDefault ?: inlineCallableDefault,
                     ),
                 )
                 resolveBody(expr.body, IrType.Unit)
@@ -3054,12 +3088,16 @@ class TypeResolver(private val table: SymbolTable) {
         // opinion about whether it will be kept, and it is the parameter or field
         // that says so. Comparing the two would reject every closure written for
         // an escaping position, which is the only way one is ever supplied.
+        // `escaping` and `inline` describe the *position*, not the value: a block
+        // has no opinion about whether it will be kept or substituted, and it is
+        // the parameter that says so. Comparing them would reject every block
+        // written for such a position, which is the only way one is supplied.
         if (declared is IrType.Function && actual is IrType.Function &&
-            declared.isEscaping != actual.isEscaping
+            (declared.isEscaping != actual.isEscaping || declared.isInline != actual.isInline)
         ) {
             return isCompatible(
-                declared.copy(isEscaping = false),
-                actual.copy(isEscaping = false),
+                declared.copy(isEscaping = false, isInline = false),
+                actual.copy(isEscaping = false, isInline = false),
             )
         }
         // `react (…) -> R` says the callable *may* use reactive state, so a plain

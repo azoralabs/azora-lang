@@ -110,36 +110,6 @@ class Feature003SyntaxTest {
         assertTrue(result.errors.any { "self&" in it }, "errors: ${result.errors}")
     }
 
-    @Test fun loopIteratorContinueSkipsReset() {
-        assertEquals("2\n0", run("""
-            import std.io
-            pack Iter {
-                var i: std::Int
-                var resets: std::Int
-            }
-            impl pack Iter {
-                func reset() {
-                    self.resets = self.resets + 1
-                    self.i = 0
-                }
-                func hasNext(): std::Bool {
-                    return self.i < 2
-                }
-                func next(): std::Int {
-                    self.i = self.i + 1
-                    return self.i
-                }
-            }
-            func main() {
-                var it = Iter(1, 0)
-                loop it continue {
-                    std::println(it.next())
-                }
-                std::println(it.resets)
-            }
-        """.trimIndent()))
-    }
-
     @Test fun reactiveLifetimesAreBindingModifiers() {
         assertEquals("15", run("""
             import std.io

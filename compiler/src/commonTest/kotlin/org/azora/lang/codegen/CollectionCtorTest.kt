@@ -146,7 +146,7 @@ class CollectionCtorTest {
         func main() {
             var r = Range(0, 3)
             var sum = 0
-            loop r { sum += r.next() }
+            for v in r { sum += v }
             std::println(sum)
         }
     """.trimIndent()))
@@ -168,7 +168,7 @@ class CollectionCtorTest {
         }
         func run(q: Query<std::Tuple<std::Int, std::String>>): std::Int {
             var sum = 0
-            loop q { sum += q.next() }
+            for v in q { sum += v }
             return sum
         }
         func main() {

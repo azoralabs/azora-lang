@@ -101,6 +101,31 @@ class AzoraLanguageServerTest {
     }
 
     @Test
+    fun associatedTypeClauseIsContextualAndWithoutIsReserved() {
+        val source = """
+            spec Iterator assoc Item {
+                func next[self: Self!](): Item
+            }
+
+            impl Iterator for Rows assoc Item = Entity {
+                func next[self: Self!](): Entity { return Entity() }
+            }
+
+            func assoc(): Unit {}
+            fin assoc = 1
+            fin filtered = Base without Disabled
+        """.trimIndent()
+        val all = spans(source)
+        fun spansFor(text: String) = all.filter { source.substring(it.start, it.end) == text }
+
+        assertEquals(2, spansFor("assoc").count { it.type == "keyword" })
+        assertEquals(2, spansFor("assoc").count { it.type != "keyword" })
+        assertEquals("keyword", spansFor("without").single().type)
+        assertTrue("assoc" in AzHighlighter.KEYWORDS)
+        assertTrue("without" in AzHighlighter.KEYWORDS)
+    }
+
+    @Test
     fun bracketReceiverFunctionIsRecognized() {
         val source = """
             pack Language { fin name: String }

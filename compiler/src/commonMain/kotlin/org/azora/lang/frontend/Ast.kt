@@ -1332,6 +1332,16 @@ sealed class TypeRef {
          * (LAMBDA_CONTEXT_CAPTURE_DIP.MD §4.7).
          */
         val isEscaping: Boolean = false,
+        /**
+         * `inline (Item) -> Unit` - the callable is substituted at the call it
+         * is passed to rather than called through.
+         *
+         * A block written at the call site costs what writing it there directly
+         * would: `rows.forEach { … }` is the loop it stands for, not a call per
+         * row. It belongs to the type because that is what the caller has to
+         * satisfy - a callable that is not a literal block cannot be inlined.
+         */
+        val isInline: Boolean = false,
     ) : TypeRef() {
         override fun toString(): String {
             val prefix = if (kind == CallableKind.FUNC) "" else "${kind.surfaceName} "
@@ -2618,6 +2628,11 @@ sealed class TopLevel {
         val isDerived: Boolean = false,
         /** Whether the source contained an implementation body, including an explicitly empty `{}`. */
         val hasBody: Boolean = true,
+        /**
+         * What this implementation's associated types are -
+         * `impl Iterator for Rows assoc Item = Entity`.
+         */
+        val assocBindings: Map<String, TypeRef> = emptyMap()
     ) : TopLevel()
 
     /** `spec Name { func method(params): Ret; ... }` or compact callback `spec Name<T>: T { ref self } use as "to${T.typeName}"`. */
@@ -2654,6 +2669,15 @@ sealed class TopLevel {
          * nearly all of them - writes no argument at all.
          */
         val typeDefaults: Map<String, TypeRef> = emptyMap(),
+        /**
+         * Associated type names - `spec Iterator assoc Item`.
+         *
+         * A name the spec's members may use as a type, which each implementation
+         * says the meaning of. Unlike a type parameter it is chosen by the
+         * implementation rather than by whoever names the spec, so `Iterator` is
+         * one spec however many kinds of row exist.
+         */
+        val assocNames: List<String> = emptyList()
     ) : TopLevel()
 
     /** `typealias Name = Type` - a type alias. */

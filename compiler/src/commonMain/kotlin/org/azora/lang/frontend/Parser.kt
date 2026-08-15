@@ -3250,6 +3250,9 @@ class Parser(
                 firstArgs.filterIsInstance<TypeRef.Named>().firstOrNull { it.variadic }?.name,
             )
         }
+        // `impl Iterator for Rows assoc Item = Entity { … }` - what this
+        // implementation's associated types are.
+        val assocBindings = parseAssocBindings()
         if (!check(TokenType.L_BRACE)) {
             if (traitName != null) {
                 error(
@@ -3270,6 +3273,7 @@ class Parser(
                 typeParams = implTypeParams.names,
                 variadicParam = implTypeParams.variadic,
                 hasBody = false,
+                assocBindings = assocBindings,
             )
         }
         consume(TokenType.L_BRACE, "Expected '{' after impl type")
@@ -3613,6 +3617,7 @@ class Parser(
             isBridge = isBridge,
             typeParams = implTypeParams.names,
             variadicParam = implTypeParams.variadic,
+            assocBindings = assocBindings,
         )
     }
     /**
@@ -4771,9 +4776,13 @@ class Parser(
                 requiredSpecs.add(parseTypeName())
             }
         }
+        // `spec Iterator assoc Item` / `spec Matrix assoc [Scalar, Rows]` - names
+        // the spec's members may use as types and each implementation decides.
+        // Read before the body opens, and before a bodyless spec ends.
+        val assocNames = parseAssocNames()
         if (!check(TokenType.L_BRACE)) {
             consumeNewline()
-            return TopLevel.Spec(name, emptyList(), start.line, start.column, typeParams = typeParams.names, parents = parentSpecs, requires = requiredSpecs, isBridge = isBridge, typeDefaults = typeParams.typeDefaults)
+            return TopLevel.Spec(name, emptyList(), start.line, start.column, typeParams = typeParams.names, parents = parentSpecs, requires = requiredSpecs, isBridge = isBridge, typeDefaults = typeParams.typeDefaults, assocNames = assocNames)
         }
         consume(TokenType.L_BRACE, "Expected '{' after spec name")
         skipNewlines()
@@ -4930,9 +4939,20 @@ class Parser(
             } else {
                 null
             }
+            // A body makes the member *provided*: an implementor that writes its
+            // own gets that one, and one that does not gets this. What every
+            // implementation would write identically belongs with the spec, not
+            // copied into each of them.
+            val provided = if (match(TokenType.L_BRACE)) {
+                val statements = parseBlock()
+                consume(TokenType.R_BRACE, "Expected '}' after a provided spec method")
+                statements
+            } else {
+                emptyList()
+            }
             consumeNewline()
             methods.add(FuncDecl(
-                mname, params, returnType, emptyList(), false, mtypeParams.names,
+                mname, params, returnType, provided, false, mtypeParams.names,
                 start.line, start.column,
                 receiverModifier = mreceiver?.modifier ?: ParamModifier.SHARED,
                 receiverName = mreceiver?.name ?: "self",
@@ -4943,7 +4963,47 @@ class Parser(
         }
         consume(TokenType.R_BRACE, "Expected '}' after spec methods")
         consumeNewline()
-        return TopLevel.Spec(name, methods, start.line, start.column, typeParams = typeParams.names, parents = parentSpecs, requires = requiredSpecs, isBridge = isBridge, typeDefaults = typeParams.typeDefaults)
+        return TopLevel.Spec(name, methods, start.line, start.column, typeParams = typeParams.names, parents = parentSpecs, requires = requiredSpecs, isBridge = isBridge, typeDefaults = typeParams.typeDefaults, assocNames = assocNames)
+    }
+
+    /** `assoc Item` / `assoc [Scalar, Rows, Columns]` on a spec. */
+    private fun parseAssocNames(): List<String> {
+        if (!(check(TokenType.IDENTIFIER) && peek().lexeme == "assoc")) return emptyList()
+        advance()
+        if (!match(TokenType.L_BRACKET)) {
+            return listOf(consume(TokenType.IDENTIFIER, "Expected an associated type name after 'assoc'").lexeme)
+        }
+        val names = mutableListOf<String>()
+        do {
+            skipNewlines()
+            names.add(consume(TokenType.IDENTIFIER, "Expected an associated type name").lexeme)
+            skipNewlines()
+        } while (match(TokenType.COMMA))
+        consume(TokenType.R_BRACKET, "Expected ']' after the associated type names")
+        return names
+    }
+
+    /** `assoc Item = String` / `assoc [Scalar = T, Rows = Int]` on an implementation. */
+    private fun parseAssocBindings(): Map<String, TypeRef> {
+        if (!(check(TokenType.IDENTIFIER) && peek().lexeme == "assoc")) return emptyMap()
+        advance()
+        val bindings = mutableMapOf<String, TypeRef>()
+        fun one() {
+            val name = consume(TokenType.IDENTIFIER, "Expected an associated type name").lexeme
+            consume(TokenType.EQUAL, "Expected '=' after the associated type '$name'")
+            bindings[name] = parseTypeName()
+        }
+        if (!match(TokenType.L_BRACKET)) {
+            one()
+            return bindings
+        }
+        do {
+            skipNewlines()
+            one()
+            skipNewlines()
+        } while (match(TokenType.COMMA))
+        consume(TokenType.R_BRACKET, "Expected ']' after the associated types")
+        return bindings
     }
 
     /** `when scrutinee { patterns -> { body } ... else -> { body } }`. */
@@ -6091,6 +6151,16 @@ class Parser(
                 }
                 error("Expected type name at line ${peek().line}, got '${peek().lexeme}'")
             }
+            // `inline (A) -> R` - the block is substituted where it is passed
+            // rather than called through, so writing one costs what writing its
+            // body there would.
+            check(TokenType.INLINE) &&
+                (peekNext()?.type == TokenType.L_PAREN || peekNext()?.type == TokenType.L_BRACKET) -> {
+                advance()
+                val callable = parseTypeAtom()
+                (callable as? TypeRef.Function)?.copy(isInline = true)
+                    ?: error("'inline' must be followed by a callable type at line ${peek().line}")
+            }
             // `async (A) -> R` / `async [Ctx](A) -> R` - the callable an `async
             // func` produces. `async` is contextual, so it only reads as a prefix
             // when a callable type actually follows.
@@ -6572,16 +6642,21 @@ class Parser(
     private fun parseLoop(label: String? = null): Stmt {
         val start = peek()
         consume(TokenType.LOOP, "Expected 'loop'")
-        // `loop iterable { }` iterates anything exposing reset()/hasNext(); bare `loop { }` is infinite.
+        // `loop { }` repeats, and `loop by <seconds> { }` repeats with a wait.
+        // It never walks anything: iterating is `for row in rows`, which says
+        // what it is doing, and leaves `loop` to mean one thing.
         val savedTrailing = allowTrailingLambda
         allowTrailingLambda = false
-        val iterable: Expr? = if (!check(TokenType.L_BRACE)) parseExpr() else null
-        // `loop xs by <seconds> { … }` - repeat the pass, waiting between them.
-        val everySeconds: Expr? = if (iterable != null && check(TokenType.BY)) {
-            advance()
-            parseExpr()
-        } else null
-        val skipIteratorReset = iterable != null && match(TokenType.CONTINUE)
+        if (!check(TokenType.L_BRACE) && !check(TokenType.BY)) {
+            error(
+                "'loop <iterable>' was removed at line ${start.line}: write " +
+                    "'for row in <iterable> { … }' to walk something, or 'loop { … }' to repeat",
+            )
+        }
+        val iterable: Expr? = null
+        // `loop by <seconds> { … }` - repeat, waiting between passes.
+        val everySeconds: Expr? = if (match(TokenType.BY)) parseExpr() else null
+        val skipIteratorReset = false
         allowTrailingLambda = savedTrailing
         consume(TokenType.L_BRACE, "Expected '{' after 'loop'")
         skipNewlines()

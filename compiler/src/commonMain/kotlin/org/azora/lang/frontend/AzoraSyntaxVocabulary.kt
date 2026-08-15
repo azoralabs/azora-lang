@@ -101,6 +101,6 @@ object AzoraSyntaxVocabulary {
     val contextualKeywords: Set<String> =
         setOf(
             "module", "union", "async", "where", "replace", "escaping",
-            "derives", "includes", "binds", "requires", "lend", "reflect",
+            "derives", "includes", "binds", "requires", "assoc", "lend", "reflect",
         )
 }

@@ -1150,6 +1150,35 @@ class IrGenerator(private val table: SymbolTable) {
                 } else {
                     // For-in over a non-range iterable (array, flow, channel): for-each.
                     val iterable = lowerExpr(stmt.iterable)
+                    // An iterator walks itself: `for row in query` positions it,
+                    // asks whether there is a row, and binds the one there is.
+                    // This is how anything implementing `Iterator` is walked -
+                    // `loop` is for repeating, not for iterating.
+                    val iteratorElement = (iterable.type as? IrType.Named)?.name?.let { owner ->
+                        table.lookupMethod(owner, "next")
+                            ?.let { table.lookupFunction(it) }
+                            ?.takeIf { table.lookupMethod(owner, "hasNext") != null }
+                            ?.returnType
+                    }
+                    if (iteratorElement != null) {
+                        // Walked here rather than as a `ForEach`, whose element
+                        // comes from a collection this is not one of.
+                        table.pushScope()
+                        pushNameScope()
+                        val row = registerName(stmt.name)
+                        table.defineVariable(VariableSymbol(stmt.name, iteratorElement, mutable = false))
+                        val bind = IrStmt.VarDecl(
+                            row,
+                            iteratorElement,
+                            IrExpr.MethodCall(iterable, "next", emptyList(), iteratorElement),
+                        )
+                        val body = lowerBody(stmt.body)
+                        popNameScope()
+                        table.popScope()
+                        val reset = IrStmt.ExprStmt(IrExpr.MethodCall(iterable, "reset", emptyList(), IrType.Unit))
+                        val cond = IrExpr.MethodCall(iterable, "hasNext", emptyList(), IrType.Bool)
+                        IrStmt.Scope(listOf(reset, IrStmt.While(cond, listOf(bind) + body, stmt.label)))
+                    } else {
                     val elemType = when (val type = iterable.type) {
                         is IrType.Array -> type.element
                         is IrType.Set -> type.element
@@ -1163,6 +1192,7 @@ class IrGenerator(private val table: SymbolTable) {
                     popNameScope()
                     table.popScope()
                     IrStmt.ForEach(elem, iterable, body)
+                    }
                 }
             }
             is Stmt.Loop -> {

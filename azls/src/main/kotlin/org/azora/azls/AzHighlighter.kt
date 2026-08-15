@@ -260,10 +260,83 @@ object AzHighlighter {
                         .containsMatchIn(before)
                 }
             }
-            "without" -> Regex("""\bbinds\b""").containsMatchIn(source.substring(lineStart, start))
+            "assoc" -> isContextualAssoc(source, start)
             "derives", "includes", "binds", "requires" -> true
             else -> false
         }
+    }
+
+    /**
+     * `assoc` is a keyword only after a complete spec/implementation subject:
+     * `spec Iterator assoc Item` and
+     * `impl Iterator for Rows assoc Item = Entity`.
+     *
+     * The compiler consumes this clause on the same header line. Walking the
+     * line backwards keeps declaration names such as `spec assoc`, function
+     * names, bindings, and member calls ordinary identifiers.
+     */
+    private fun isContextualAssoc(source: String, start: Int): Boolean {
+        val lineStart = source.lastIndexOf('\n', start - 1) + 1
+        var index = start - 1
+        var parenDepth = 0
+        var bracketDepth = 0
+        var angleDepth = 0
+        var sawSubject = false
+
+        while (index >= lineStart) {
+            when (val c = source[index]) {
+                ' ', '\t', '\r' -> index--
+                ')' -> {
+                    parenDepth++
+                    index--
+                }
+                ']' -> {
+                    bracketDepth++
+                    index--
+                }
+                '>' -> {
+                    angleDepth++
+                    index--
+                }
+                '(' -> {
+                    if (parenDepth == 0) return false
+                    parenDepth--
+                    index--
+                }
+                '[' -> {
+                    if (bracketDepth == 0) return false
+                    bracketDepth--
+                    if (parenDepth == 0 && bracketDepth == 0 && angleDepth == 0) sawSubject = true
+                    index--
+                }
+                '<' -> {
+                    if (angleDepth == 0) return false
+                    angleDepth--
+                    index--
+                }
+                '{', '}', ';', '=' -> {
+                    if (parenDepth == 0 && bracketDepth == 0 && angleDepth == 0) return false
+                    index--
+                }
+                else -> {
+                    if (c.isIdentPart()) {
+                        val wordEnd = index + 1
+                        while (index >= lineStart && source[index].isIdentPart()) index--
+                        if (parenDepth == 0 && bracketDepth == 0 && angleDepth == 0) {
+                            val previous = source.substring(index + 1, wordEnd)
+                            when (previous) {
+                                "spec", "impl" -> return sawSubject
+                                "for" -> if (!sawSubject) return false
+                                else -> sawSubject = true
+                            }
+                        }
+                    } else {
+                        index--
+                    }
+                }
+            }
+        }
+        return false
     }
 
     private data class ParameterScope(

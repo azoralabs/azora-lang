@@ -1192,21 +1192,49 @@ class CtfeEvaluator(private val table: SymbolTable) {
      */
     private fun foldTypeNames(expr: Expr, typeParams: List<String>, typeArgs: List<TypeRef>): Expr {
         if (typeParams.isEmpty() || typeArgs.isEmpty()) return expr
-        val names = typeParams.withIndex().mapNotNull { (index, param) ->
-            typeArgs.getOrNull(index)?.let { param to it.displayName() }
+        val bound = typeParams.withIndex().mapNotNull { (index, param) ->
+            typeArgs.getOrNull(index)?.let { param to it }
         }.toMap()
-        if (names.isEmpty()) return expr
+        if (bound.isEmpty()) return expr
+        val names = bound.mapValues { (_, ref) -> ref.displayName() }
+
+        /**
+         * The parameter replaced by the argument, wherever it is named.
+         *
+         * A body may pass its own parameter on - `nameOf<T>()` inside a member
+         * of `Box<T>` - and the inner call is expanded from its own type
+         * arguments. Left alone, `T` arrives there as the name `T`, and the
+         * inner expansion folds it to the string "T": the argument is lost one
+         * call short of where it was needed.
+         */
+        fun substitute(ref: TypeRef): TypeRef = when (ref) {
+            is TypeRef.Named ->
+                if (ref.args.isEmpty()) bound[ref.name] ?: ref
+                else ref.copy(args = ref.args.map(::substitute))
+            is TypeRef.Array -> ref.copy(element = substitute(ref.element))
+            is TypeRef.Set -> ref.copy(element = substitute(ref.element))
+            is TypeRef.Map -> ref.copy(key = substitute(ref.key), value = substitute(ref.value))
+            is TypeRef.Tuple -> ref.copy(elements = ref.elements.map(::substitute))
+            is TypeRef.Nullable -> ref.copy(inner = substitute(ref.inner))
+            is TypeRef.Reference -> ref.copy(inner = substitute(ref.inner))
+            else -> ref
+        }
 
         fun fold(e: Expr): Expr = when {
             e is Expr.Member && e.name == "typeName" &&
                 (e.target as? Expr.Identifier)?.name?.let { it in names } == true ->
                 Expr.StringLiteral(names.getValue((e.target as Expr.Identifier).name), e.line, e.column)
             e is Expr.Member -> e.copy(target = fold(e.target))
-            e is Expr.Call -> e.copy(args = e.args.map(::fold), receiver = e.receiver?.let(::fold))
+            e is Expr.Call -> e.copy(
+                args = e.args.map(::fold),
+                receiver = e.receiver?.let(::fold),
+                typeArgs = e.typeArgs.map(::substitute),
+            )
             e is Expr.MethodCall -> e.copy(target = fold(e.target), args = e.args.map(::fold))
             e is Expr.Binary -> e.copy(left = fold(e.left), right = fold(e.right))
             e is Expr.Unary -> e.copy(operand = fold(e.operand))
             e is Expr.Grouping -> e.copy(expr = fold(e.expr))
+            e is Expr.Cast -> e.copy(expr = fold(e.expr), targetType = substitute(e.targetType))
             e is Expr.StringTemplate -> e.copy(parts = e.parts.map { part ->
                 if (part is Expr.StringTemplatePart.Expr) Expr.StringTemplatePart.Expr(fold(part.expr)) else part
             })
@@ -1328,7 +1356,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
             is Expr.TupleLit, is Expr.TupleAccess, is Expr.VariantLit -> Pair(expr, false)
             // Folding must not drop the seal: what a branch is worth and
             // whether it may be overridden are decided together.
-            is Expr.Sealed -> {
+            is Expr.Seal -> {
                 val (value, changed) = foldExpr(expr.value, program)
                 Pair(if (changed) expr.copy(value = value) else expr, changed)
             }
@@ -1880,7 +1908,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
             is Expr.CatchExpr -> null // not CTCE-evaluable
             is Expr.TryPropagate -> evalExpr(expr.expr, env, program)
             // A seal says who may write the field; the value is what it wraps.
-            is Expr.Sealed -> evalExpr(expr.value, env, program)
+            is Expr.Seal -> evalExpr(expr.value, env, program)
             is Expr.IfExpr -> {
                 val condition = evalExpr(expr.condition, env, program) ?: return null
                 if (condition !is Expr.BoolLiteral) return null

@@ -297,6 +297,30 @@ class LlvmAggregateExecTest {
         """.trimIndent()
     )
 
+    /**
+     * `remove` on an array takes an *index*, not a value - the split the
+     * interpreter makes, which the native lowering has to make too. An index
+     * outside the array removes nothing rather than trapping.
+     */
+    @Test fun arrayRemoveDropsByIndexAndIgnoresOutOfRange() = check(
+        "10\n30\n40\n3\n3",
+        """
+        import std.io
+        func main() {
+            var xs = @std::arr[10, 20, 30, 40]
+            xs.remove(1)
+            var i = 0
+            while i < xs.size {
+                std::println(xs[i])
+                i = i + 1
+            }
+            std::println(xs.size)
+            xs.remove(99)
+            std::println(xs.size)
+        }
+        """.trimIndent()
+    )
+
     @Test fun mapLiteralReadsStringKeys() = check(
         "1\n3",
         """

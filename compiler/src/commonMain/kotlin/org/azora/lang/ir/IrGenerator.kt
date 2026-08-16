@@ -99,7 +99,19 @@ class IrGenerator(private val table: SymbolTable) {
     private fun registerName(name: String): String {
         // Check if name already exists in any outer scope
         val shadows = nameScopes.any { name in it }
-        val mangled = if (shadows) "__${name}${mangledCounter++}" else name
+        // A shadowing binding needs a name of its own. There is one shape for a
+        // generated symbol - `__` once at the front, then single `_` - and a
+        // name that already carries the prefix has to keep it: prefixing again
+        // puts a `__` mid-name, which canonicalization collapses back out
+        // (`____ctx0_1_70` → `___ctx0_1_70`). The declaration keeps the long
+        // spelling, the use site gets the collapsed one, and the receiver is
+        // then read from a global that nothing defines. Same failure the
+        // `lambdaReceiverName` doc records, reached from the other side.
+        val mangled = when {
+            !shadows -> name
+            name.startsWith("__") -> "${name}_${mangledCounter++}"
+            else -> "__${name}${mangledCounter++}"
+        }
         nameScopes.last()[name] = mangled
         return mangled
     }
@@ -694,18 +706,34 @@ class IrGenerator(private val table: SymbolTable) {
         val tables = mutableListOf<IrSpecTable>()
         for ((specName, confs) in bySpec) {
             val spec = table.lookupSpec(specName) ?: continue
-            val callable = spec.methodSigs
-                .filterNot { it.value.isProperty }
-                .map { (name, sig) -> IrSpecMethod(name, sig.paramTypes, sig.returnType) }
+            // A spec dispatches what it inherits as well as what it declares.
+            // `MutableList<T> : List<T>` adds `add` and `removeAt`; `size` and
+            // reading an element are `List`'s. A table built from the spec's own
+            // signatures alone leaves a caller holding a `MutableList` unable to
+            // ask its size - the backend finds no entry and emits nothing for it.
+            // Nearest declaration wins, and `specAndAncestors` puts the spec
+            // itself first, so an override is what an implementer is asked for.
+            val callableByName = LinkedHashMap<String, IrSpecMethod>()
+            val propertyByName = LinkedHashMap<String, IrSpecMethod>()
+            for (ancestorName in table.specAndAncestors(specName)) {
+                val ancestor = table.lookupSpec(ancestorName) ?: continue
+                for ((methodName, sig) in ancestor.methodSigs) {
+                    if (methodName in callableByName || methodName in propertyByName) continue
+                    if (sig.isProperty) {
+                        propertyByName[methodName] = IrSpecMethod(methodName, emptyList(), sig.returnType)
+                    } else {
+                        callableByName[methodName] = IrSpecMethod(methodName, sig.paramTypes, sig.returnType)
+                    }
+                }
+            }
+            val callable = callableByName.values.toList()
             // A spec property (`prop size[self: Self&]: Int`) dispatches exactly
             // like a nullary method - the backend reads `value.size` through the
             // same stub. An implementer that satisfies the property with a plain
             // field has no getter to point at; that one type drops out of the
             // property's switch rather than out of the table, so its ordinary
             // method dispatch is unaffected.
-            val properties = spec.methodSigs
-                .filter { it.value.isProperty }
-                .map { (name, sig) -> IrSpecMethod(name, emptyList(), sig.returnType) }
+            val properties = propertyByName.values.toList()
             val methods = callable + properties
             if (methods.isEmpty()) continue
             val impls = mutableListOf<IrSpecImpl>()
@@ -1171,13 +1199,13 @@ class IrGenerator(private val table: SymbolTable) {
                         val bind = IrStmt.VarDecl(
                             row,
                             iteratorElement,
-                            IrExpr.MethodCall(iterable, "next", emptyList(), iteratorElement),
+                            iteratorCall(iterable, "next", iteratorElement),
                         )
                         val body = lowerBody(stmt.body)
                         popNameScope()
                         table.popScope()
-                        val reset = IrStmt.ExprStmt(IrExpr.MethodCall(iterable, "reset", emptyList(), IrType.Unit))
-                        val cond = IrExpr.MethodCall(iterable, "hasNext", emptyList(), IrType.Bool)
+                        val reset = IrStmt.ExprStmt(iteratorCall(iterable, "reset", IrType.Unit))
+                        val cond = iteratorCall(iterable, "hasNext", IrType.Bool)
                         IrStmt.Scope(listOf(reset, IrStmt.While(cond, listOf(bind) + body, stmt.label)))
                     } else {
                     val elemType = when (val type = iterable.type) {
@@ -1205,8 +1233,8 @@ class IrGenerator(private val table: SymbolTable) {
                 if (stmt.iterable != null) {
                     // `loop iterable { body }` → iterable.reset(); while iterable.hasNext() { body }
                     val iter = lowerExpr(stmt.iterable)
-                    val reset = IrStmt.ExprStmt(IrExpr.MethodCall(iter, "reset", emptyList(), IrType.Unit))
-                    val cond = IrExpr.MethodCall(iter, "hasNext", emptyList(), IrType.Bool)
+                    val reset = IrStmt.ExprStmt(iteratorCall(iter, "reset", IrType.Unit))
+                    val cond = iteratorCall(iter, "hasNext", IrType.Bool)
                     IrStmt.Scope(listOf(reset, IrStmt.While(cond, body, stmt.label)))
                 } else {
                     IrStmt.Loop(body, stmt.label)
@@ -1564,6 +1592,27 @@ class IrGenerator(private val table: SymbolTable) {
         // member access and only its *declaration* is what makes it legal.
         if (table.lookupFunction(mangled)?.isBodyless != false) return null
         return mangled
+    }
+
+    /**
+     * One step of an iterator walk, bound to the function that implements it.
+     *
+     * `for row in query` and `loop query { … }` are lowered here rather than
+     * parsed, so nothing downstream resolves what they produce. An
+     * `IrExpr.MethodCall` left standing is a name looked up at runtime, which
+     * the interpreter can do and a native backend cannot - it reached
+     * LlvmCodegen as `; method .hasNext - not lowered` and a default value, so
+     * the loop never advanced and the query silently yielded nothing.
+     *
+     * Falls back to the unresolved form when the receiver's type has no such
+     * method, which leaves the previous behaviour exactly where it was.
+     */
+    private fun iteratorCall(receiver: IrExpr, method: String, fallbackType: IrType): IrExpr {
+        val owner = (receiver.type as? IrType.Named)?.name
+        val mangled = owner?.let { table.lookupMethod(it, method) }
+            ?: return IrExpr.MethodCall(receiver, method, emptyList(), fallbackType)
+        val returnType = table.lookupFunction(mangled)?.returnType ?: fallbackType
+        return IrExpr.Call(mangled, listOf(receiver), returnType)
     }
 
     private fun lowerExpr(expr: Expr): IrExpr {
@@ -2502,7 +2551,7 @@ class IrGenerator(private val table: SymbolTable) {
             }
             // A seal is a rule about decorator applications, checked before
             // lowering; what runs is the value it wraps.
-            is Expr.Sealed -> lowerExpr(expr.value)
+            is Expr.Seal -> lowerExpr(expr.value)
             is Expr.IfExpr -> {
                 val condition = lowerExpr(expr.condition)
                 val thenExpr = lowerExpr(expr.thenExpr)

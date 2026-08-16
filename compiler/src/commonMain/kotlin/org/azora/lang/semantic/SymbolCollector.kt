@@ -75,6 +75,34 @@ class SymbolCollector {
         return if (traitName.isEmpty()) "callback" else traitName[0].lowercaseChar() + traitName.drop(1)
     }
 
+    /**
+     * Reports a name declared by two fields of the same type.
+     *
+     * Nothing downstream can tell them apart: a field is reached by name, so
+     * the second is unreachable and every read of it silently goes to the
+     * first - with the first's type, and at the first's offset. That is a
+     * miscompile rather than a mistake the author sees, so it is refused here.
+     *
+     * A templated (`inline for`) or conditional field is exempt: its name is
+     * not settled yet, and which of them exist is decided per specialization by
+     * [PackSpecializer].
+     */
+    private fun reportDuplicateFields(
+        owner: String,
+        fields: List<org.azora.lang.frontend.PackField>,
+        line: Int,
+        errors: MutableList<String>,
+    ) {
+        val seen = mutableSetOf<String>()
+        for (field in fields) {
+            if (field.repeats.isNotEmpty() || field.condition != null) continue
+            if (field.name.contains('$')) continue
+            if (!seen.add(field.name)) {
+                errors.add("line $line: '$owner' declares field '${field.name}' more than once")
+            }
+        }
+    }
+
     private fun registerBuiltins(table: SymbolTable) {
         // println accepts String - type checker will allow String args
         // `toString` lives in std as `std::convert::toString` (see
@@ -272,6 +300,7 @@ class SymbolCollector {
                             isUnsafe = field.isUnsafe,
                         )
                     }
+                    reportDuplicateFields(item.name, item.fields, item.line, errors)
                     table.defineStruct(StructType(item.name, fields, emptyList(), item.visibility))
                     // Register methods as Type_method (like impl)
                     for (method in item.methods) {
@@ -321,6 +350,7 @@ class SymbolCollector {
                             isUnsafe = field.isUnsafe,
                         )
                     }
+                    reportDuplicateFields(item.name, item.fields, item.line, errors)
                     table.defineStruct(
                         StructType(item.name, fields, item.typeParams, item.visibility, item.isBridge, item.isUnion),
                     )
@@ -1014,7 +1044,7 @@ class SymbolCollector {
         is Expr.CatchExpr -> null
         is Expr.TryPropagate -> inferExprType(expr.expr, env)
         // The seal governs who may write the field, not what type it holds.
-        is Expr.Sealed -> inferExprType(expr.value, env)
+        is Expr.Seal -> inferExprType(expr.value, env)
         is Expr.IfExpr -> inferExprType(expr.thenExpr, env)
         is Expr.Lambda -> null
         is Expr.NamedArg -> null

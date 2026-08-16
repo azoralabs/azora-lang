@@ -65,7 +65,7 @@ class TypeResolver(private val table: SymbolTable) {
     /** True while resolving an `async func` body; `loop … by …` requires one. */
     private var asyncContext = false
 
-    /** True while resolving an `annot` field's default - the one place `sealed` means something. */
+    /** True while resolving an `annot` field's default - the one place `seal` means something. */
     private var inDecoratorFieldDefault = false
 
     private val errors = mutableListOf<String>()
@@ -2691,13 +2691,13 @@ class TypeResolver(private val table: SymbolTable) {
                 t1
             }
             is Expr.TryPropagate -> resolveExpr(expr.expr)
-            is Expr.Sealed -> {
+            is Expr.Seal -> {
                 // A seal is a rule about *applications* of a decorator, so it
                 // has nothing to govern anywhere else - allowing it there would
                 // read as a promise the compiler never checks.
                 if (!inDecoratorFieldDefault) {
                     errors.add(
-                        "line ${expr.line}: 'sealed' marks a decorator field default that an " +
+                        "line ${expr.line}: 'seal' marks a decorator field default that an " +
                             "application may not override, so it belongs on a branch of an " +
                             "'annot' field's default and nowhere else",
                     )

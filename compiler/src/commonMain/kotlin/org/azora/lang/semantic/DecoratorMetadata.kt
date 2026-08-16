@@ -146,7 +146,7 @@ object DecoratorMetadata {
 
     /** Takes the branch [bindings] select, carrying the seal off the branch that won. */
     private fun choose(expr: Expr, bindings: Map<String, Expr>): Chosen = when (expr) {
-        is Expr.Sealed -> Chosen(choose(expr.value, bindings).value, true)
+        is Expr.Seal -> Chosen(choose(expr.value, bindings).value, true)
         is Expr.Grouping -> choose(expr.expr, bindings)
         is Expr.IfExpr -> when (decide(expr.condition, bindings)) {
             true -> choose(expr.thenExpr, bindings)

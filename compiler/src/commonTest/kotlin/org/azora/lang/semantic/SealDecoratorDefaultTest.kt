@@ -30,12 +30,12 @@ import kotlin.test.assertTrue
  * Decorator field defaults computed from the fields before them, and the
  * branches that seal what they compute.
  *
- * A default like `when level { .Error -> sealed "!! "  else -> "" }`
+ * A default like `when level { .Error -> seal "!! "  else -> "" }`
  * has no single answer at the declaration: which branch it takes is decided by
  * each application. The seal rides on the branch rather than the field, so the
  * same field is fixed for one application and free for the next.
  */
-class SealedDecoratorDefaultTest {
+class SealDecoratorDefaultTest {
     private fun analyze(source: String): SemanticResult {
         val program = Parser(Lexer(source).tokenize()).parse()
         val validationErrors = AstValidator().validate(program)
@@ -56,7 +56,7 @@ class SealedDecoratorDefaultTest {
         annot Log for .Pack {
             fin level: Level = .Info
             fin prefix: std::String = when level {
-                .Error -> sealed "!! "
+                .Error -> seal "!! "
                 else -> ""
             }
         }
@@ -115,7 +115,7 @@ class SealedDecoratorDefaultTest {
         """.trimIndent())
 
         assertTrue(
-            result.errors.any { it.contains("sealed") && it.contains("prefix") },
+            result.errors.any { it.contains("seal") && it.contains("prefix") },
             "expected the seal to be enforced, got ${result.errors}",
         )
     }
@@ -139,13 +139,13 @@ class SealedDecoratorDefaultTest {
         assertEquals("mine", (returnedExpression(result, "plain") as Expr.StringLiteral).value)
     }
 
-    @Test fun sealedOutsideADecoratorDefaultIsRejected() {
+    @Test fun sealOutsideADecoratorDefaultIsRejected() {
         val result = analyze("""
             enum Level { Error, Info }
 
             func label(l: Level): std::String {
                 fin value: std::String = when l {
-                    .Error -> sealed "!! "
+                    .Error -> seal "!! "
                     else -> ""
                 }
                 return value
@@ -155,8 +155,8 @@ class SealedDecoratorDefaultTest {
         """.trimIndent())
 
         assertTrue(
-            result.errors.any { it.contains("sealed") },
-            "expected 'sealed' to be rejected outside a decorator field default, got ${result.errors}",
+            result.errors.any { it.contains("seal") },
+            "expected 'seal' to be rejected outside a decorator field default, got ${result.errors}",
         )
     }
 }

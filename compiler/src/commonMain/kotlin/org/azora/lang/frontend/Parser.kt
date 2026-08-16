@@ -4291,9 +4291,19 @@ class Parser(
          */
         private val fragmentMacros = mutableMapOf<String, String>()
 
+        /**
+         * The hole a parameterized fragment takes, by macro name.
+         *
+         * `macro @compose $w => inline "with composeIn($w)"` is a fragment that
+         * names what it was handed, so `@compose world` can become
+         * `with composeIn(world)` rather than only ever standing for one text.
+         */
+        private val fragmentMacroParams = mutableMapOf<String, String>()
+
         /** Drops fragment macros collected by a previous compilation. */
         fun resetFragmentMacros() {
             fragmentMacros.clear()
+            fragmentMacroParams.clear()
         }
     }
 
@@ -4309,10 +4319,49 @@ class Parser(
         val nameToken = peekNext() ?: return false
         if (nameToken.type != TokenType.IDENTIFIER) return false
         val text = fragmentMacros[nameToken.lexeme] ?: return false
-        val expanded = Lexer(text).tokenize().filter { it.type != TokenType.EOF && it.type != TokenType.NEWLINE }
-        val rest = tokens.drop(current + 2)
+        // A fragment with a hole reads its argument off the token stream:
+        // `@compose world { … }` hands `world` to the fragment and leaves the
+        // block for whatever the fragment expanded into to take.
+        var afterArgument = current + 2
+        val body = fragmentMacroParams[nameToken.lexeme]?.let { hole ->
+            val argument = fragmentArgumentTokens(afterArgument)
+            if (argument.isEmpty()) {
+                error("'@${nameToken.lexeme}' takes an argument at line ${nameToken.line}")
+            }
+            afterArgument += argument.size
+            text.replace(hole, argument.joinToString(" ") { it.lexeme })
+        } ?: text
+        val expanded = Lexer(body).tokenize().filter { it.type != TokenType.EOF && it.type != TokenType.NEWLINE }
+        val rest = tokens.drop(afterArgument)
         tokens = tokens.take(current) + expanded + rest
         return true
+    }
+
+    /**
+     * The tokens of a fragment macro's single argument, starting at [from].
+     *
+     * Runs to the block or the line end that follows it, so `@compose world {`
+     * takes `world` and leaves the `{`. Nesting is tracked, because a `{` inside
+     * parentheses belongs to the argument rather than ending it.
+     */
+    private fun fragmentArgumentTokens(from: Int): List<Token> {
+        val argument = mutableListOf<Token>()
+        var depth = 0
+        var i = from
+        while (i < tokens.size) {
+            val token = tokens[i]
+            when (token.type) {
+                TokenType.L_PAREN, TokenType.L_BRACKET -> depth++
+                TokenType.R_PAREN, TokenType.R_BRACKET -> depth--
+                else -> {}
+            }
+            if (depth <= 0 && (token.type == TokenType.L_BRACE || token.type == TokenType.NEWLINE || token.type == TokenType.EOF)) {
+                break
+            }
+            argument.add(token)
+            i++
+        }
+        return argument
     }
 
     private fun parseMeta(): TopLevel.Meta {
@@ -4367,12 +4416,34 @@ class Parser(
         // name appears. An arm rewrites one *expression* into another; a fragment
         // stands for text that need not be an expression at all - `react [; &]`
         // is two markers a lambda carries, which no template can be.
+        // `macro @name $hole => inline "…"` - a fragment that names what it was
+        // handed, so one declaration serves every argument: `@compose world`
+        // and `@compose other` expand to different text.
+        val fragmentHole = if (
+            check(TokenType.IDENTIFIER) &&
+            peek().lexeme.startsWith("$") &&
+            peekNext()?.type == TokenType.FAT_ARROW
+        ) {
+            advance().lexeme
+        } else null
         if (match(TokenType.FAT_ARROW)) {
             if (!match(TokenType.INLINE)) {
                 error("A macro without arms expands to a source fragment: write 'macro @$name => inline \"…\"' at line ${start.line}")
             }
-            val fragment = consume(TokenType.STRING_LITERAL, "Expected a source fragment after 'inline'")
-            fragmentMacros[name] = fragment.literal as? String ?: fragment.lexeme.trim('"')
+            // A fragment naming its hole (`"with composeIn($w)"`) lexes as an
+            // interpolated string, but `$w` here is the macro's own hole and
+            // not an expression to evaluate - so the *source* is what is kept,
+            // and the substitution happens where the fragment is spliced.
+            if (!check(TokenType.STRING_LITERAL) && !check(TokenType.INTERPOLATED_STRING)) {
+                error("Expected a source fragment after 'inline', got '${peek().lexeme}' at line ${peek().line}")
+            }
+            val fragment = advance()
+            fragmentMacros[name] = if (fragment.type == TokenType.STRING_LITERAL) {
+                fragment.literal as? String ?: fragment.lexeme.trim('"')
+            } else {
+                fragment.lexeme.trim('"')
+            }
+            fragmentHole?.let { fragmentMacroParams[name] = it }
             consumeNewline()
             return TopLevel.Meta("__fragment__$name", emptyList(), start.line, start.column)
         }
@@ -6418,6 +6489,11 @@ class Parser(
     // -----------------------------------------------------------------------
 
     private fun parseStmt(): Stmt {
+        // A fragment macro stands for source, and a statement is one of the
+        // places it can stand for: `@compose world { … }` becomes the `with`
+        // that heads the block. Expanded before anything else reads the stream,
+        // because until it is, `@compose` looks like a loop label.
+        spliceFragmentMacro()
         return when {
             // `var(...)` is the variant constructor (an expression statement); `var name = …` is a declaration.
             check(TokenType.VAR) && peekNext()?.type == TokenType.L_PAREN -> parseExprStmt()
@@ -8490,16 +8566,16 @@ class Parser(
     }
 
     /**
-     * A branch value, optionally sealed: `sealed "!! "`.
+     * A branch value, optionally sealed: `seal "!! "`.
      *
-     * `sealed` is contextual, so a binding may still be called that: the
+     * `seal` is contextual, so a binding may still be called that: the
      * keyword reading is taken only when something that can start an
      * expression follows it, which a bare name being read never has.
      */
     private fun parseSealableValue(): Expr {
-        if (check(TokenType.IDENTIFIER) && peek().lexeme == "sealed" && startsExpression(peekNext())) {
+        if (check(TokenType.IDENTIFIER) && peek().lexeme == "seal" && startsExpression(peekNext())) {
             val start = advance()
-            return Expr.Sealed(parseExpr(), start.line, start.column, start.lexeme.length)
+            return Expr.Seal(parseExpr(), start.line, start.column, start.lexeme.length)
         }
         return parseExpr()
     }
@@ -8507,8 +8583,8 @@ class Parser(
     /**
      * Whether [token] can begin an expression.
      *
-     * Used to tell a contextual keyword from a name being read: `sealed .Red`
-     * seals a value, while `sealed` alone, or `sealed + 1`, is the binding.
+     * Used to tell a contextual keyword from a name being read: `seal .Red`
+     * seals a value, while `seal` alone, or `seal + 1`, is the binding.
      */
     private fun startsExpression(token: Token?): Boolean = when (token?.type) {
         null, TokenType.NEWLINE, TokenType.EOF, TokenType.R_BRACE, TokenType.R_PAREN,

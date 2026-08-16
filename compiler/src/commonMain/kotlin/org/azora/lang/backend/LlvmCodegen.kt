@@ -2124,6 +2124,40 @@ class LlvmCodegen {
         emit("  call void @__azora_scope_attach(%azora.scope* $scope, %azora.task* $handle)")
     }
 
+    /**
+     * `__isolated(v)` - the copy a `Copy` value gets when it is used by value,
+     * and the body of a `clone` no type wrote for itself.
+     *
+     * An aggregate is a pointer here, so without this the two values the
+     * language promises are independent would be one. The copy is one level
+     * deep: the fields are duplicated, and a field that is itself a pointer
+     * goes on referring to what it referred to. That is exactly what a derived
+     * `clone` copies - a type wanting more declares its own `clone`, which is
+     * called instead of this and never reaches here.
+     *
+     * A scalar is already a value and passes through untouched.
+     */
+    private fun emitIsolatedCopy(arg: IrExpr): String {
+        val value = emitExpr(arg)
+        val named = arg.type as? IrType.Named ?: return value
+        if (named.name !in structDefs) return value
+        val st = "%struct.${sanitizeName(named.name)}"
+        // sizeof via the getelementptr-on-null idiom, as struct construction does.
+        val sizeGep = nextTmp()
+        emit("  $sizeGep = getelementptr $st, $st* null, i32 1")
+        val size = nextTmp()
+        emit("  $size = ptrtoint $st* $sizeGep to i64")
+        val raw = emitHeapAlloc(size)
+        val src = nextTmp()
+        emit("  $src = bitcast $st* $value to i8*")
+        usesMemcpy = true
+        val copied = nextTmp()
+        emit("  $copied = call i8* @memcpy(i8* $raw, i8* $src, i64 $size)")
+        val ptr = nextTmp()
+        emit("  $ptr = bitcast i8* $raw to $st*")
+        return ptr
+    }
+
     private fun emitHeapAlloc(size: String): String {
         usesAllocatorRuntime = true
         val raw = nextTmp()
@@ -3206,6 +3240,9 @@ class LlvmCodegen {
                 "contains" -> {
                     if (expr.args.size == 1) return emitArrayContains(expr.target, expr.args[0], arrayType.element)
                 }
+                "remove" -> {
+                    if (expr.args.size == 1) return emitArrayRemoveAt(expr.target, expr.args[0], arrayType.element)
+                }
             }
         }
 
@@ -3371,6 +3408,79 @@ class LlvmCodegen {
         val added = nextTmp()
         emit("  $added = phi i1 [ false, %$foundLabel ], [ true, %$insertLabel ]")
         return updated to added
+    }
+
+    /**
+     * `array.remove(index)` - drops the element at that position, shifting the
+     * rest down.
+     *
+     * By *position*, not by value: on an array `remove` takes an index, while
+     * on a set it takes the element. That is the split the interpreter makes,
+     * and the two backends have to agree on it or the same source means two
+     * things. An index outside the array does nothing, so a caller need not
+     * guard what it is about to drop.
+     */
+    private fun emitArrayRemoveAt(target: IrExpr, indexExpr: IrExpr, elementType: IrType): String {
+        val et = mapType(elementType)
+        val raw = emitExpr(target)
+        val length = emitArrayLengthI64(raw)
+        val index = indexToI64(emitExpr(indexExpr), indexExpr.type)
+        val lenPtr = nextTmp()
+        emit("  $lenPtr = bitcast i8* $raw to i64*")
+        val dataRaw = nextTmp()
+        emit("  $dataRaw = getelementptr i8, i8* $raw, i64 8")
+        val data = nextTmp()
+        emit("  $data = bitcast i8* $dataRaw to $et*")
+
+        val shiftCondLabel = nextLabel("arr_remove_shift_cond")
+        val shiftBodyLabel = nextLabel("arr_remove_shift_body")
+        val shrinkLabel = nextLabel("arr_remove_shrink")
+        val skipLabel = nextLabel("arr_remove_skip")
+        val endLabel = nextLabel("arr_remove_end")
+        val shiftedIndex = "%arr_remove_shift_${labelCounter++}"
+        val preheader = currentBlock
+
+        val nonNegative = nextTmp()
+        emit("  $nonNegative = icmp sge i64 $index, 0")
+        val inRange = nextTmp()
+        emit("  $inRange = icmp slt i64 $index, $length")
+        val valid = nextTmp()
+        emit("  $valid = and i1 $nonNegative, $inRange")
+        emitTerminator("  br i1 $valid, label %$shiftCondLabel, label %$skipLabel")
+
+        startBlock(shiftCondLabel)
+        val shiftIndex = nextTmp()
+        emit("  $shiftIndex = phi i64 [ $index, %$preheader ], [ $shiftedIndex, %$shiftBodyLabel ]")
+        val lastIndex = nextTmp()
+        emit("  $lastIndex = sub i64 $length, 1")
+        val needsShift = nextTmp()
+        emit("  $needsShift = icmp ult i64 $shiftIndex, $lastIndex")
+        emitTerminator("  br i1 $needsShift, label %$shiftBodyLabel, label %$shrinkLabel")
+
+        startBlock(shiftBodyLabel)
+        val sourceIndex = nextTmp()
+        emit("  $sourceIndex = add i64 $shiftIndex, 1")
+        val sourcePtr = nextTmp()
+        emit("  $sourcePtr = getelementptr $et, $et* $data, i64 $sourceIndex")
+        val shiftedValue = nextTmp()
+        emit("  $shiftedValue = load $et, $et* $sourcePtr, align 1")
+        val destinationPtr = nextTmp()
+        emit("  $destinationPtr = getelementptr $et, $et* $data, i64 $shiftIndex")
+        emit("  store $et $shiftedValue, $et* $destinationPtr, align 1")
+        emit("  $shiftedIndex = add i64 $shiftIndex, 1")
+        emitTerminator("  br label %$shiftCondLabel")
+
+        startBlock(shrinkLabel)
+        val newLength = nextTmp()
+        emit("  $newLength = sub i64 $length, 1")
+        emit("  store i64 $newLength, i64* $lenPtr")
+        emitTerminator("  br label %$endLabel")
+
+        startBlock(skipLabel)
+        emitTerminator("  br label %$endLabel")
+
+        startBlock(endLabel)
+        return "void"
     }
 
     private fun emitSetRemove(target: IrExpr, valueExpr: IrExpr, elementType: IrType): String {
@@ -4303,6 +4413,23 @@ class LlvmCodegen {
             val lambda = expr.args.singleOrNull() as? IrExpr.Lambda
                 ?: error("LLVM launch lowering requires a task block")
             emitLambdaTaskSpawn(lambda, IrType.Unit, "launch")
+            return "void"
+        }
+        if (expr.name == "__isolated") {
+            return emitIsolatedCopy(expr.args.single())
+        }
+        if (expr.name == "__panic") {
+            // Unrecoverable: report and stop. The message is printed before the
+            // abort so the process leaves a reason behind rather than only a
+            // signal. `abort` is noreturn, so whatever the block ends with
+            // after this is unreachable - which is what makes it correct for a
+            // `panic` to stand where a value was expected.
+            usesPuts = true
+            usesAbort = true
+            val message = emitExpr(expr.args.single())
+            val printed = nextTmp()
+            emit("  $printed = call i32 @puts(i8* $message)")
+            emit("  call void @abort()")
             return "void"
         }
         if (expr.name == "__alloc") {

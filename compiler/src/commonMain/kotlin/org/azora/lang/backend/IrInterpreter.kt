@@ -1286,7 +1286,16 @@ class IrInterpreter {
                             "last" -> list.last()
                             "size" -> list.size.toLong()
                             "insert" -> { list.add((args[0] as Long).toInt(), args[1]); null }
-                            "remove" -> { list.removeAt((args[0] as Long).toInt()); null }
+                            // An index outside the array removes nothing. The
+                            // native lowering skips it rather than trapping, and
+                            // the two have to mean the same thing - throwing
+                            // here surfaced as a JVM stack trace, which is not a
+                            // result the language defines.
+                            "remove" -> {
+                                val at = (args[0] as Long).toInt()
+                                if (at in list.indices) list.removeAt(at)
+                                null
+                            }
                             "contains" -> list.contains(args[0])
                             "indexOf" -> list.indexOf(args[0]).toLong()
                             "isEmpty" -> list.isEmpty()

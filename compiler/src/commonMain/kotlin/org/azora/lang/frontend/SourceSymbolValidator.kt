@@ -271,7 +271,7 @@ internal object SourceSymbolValidator {
             is Expr.TupleAccess -> expression(expression.target)
             is Expr.CatchExpr -> { expression(expression.expr); expression(expression.fallback) }
             is Expr.TryPropagate -> expression(expression.expr)
-            is Expr.Sealed -> expression(expression.value)
+            is Expr.Seal -> expression(expression.value)
             is Expr.IfExpr -> { expression(expression.condition); expression(expression.thenExpr); expression(expression.elseExpr) }
             is Expr.Lambda -> {
                 expression.typeParams.forEach { declaration(it, "lambda type parameter", expression.line) }

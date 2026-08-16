@@ -931,7 +931,7 @@ class Parser(
                     )
                 }
             }
-            check(TokenType.INLINE) -> parseTopLevelInline()
+            check(TokenType.INLINE) -> parseTopLevelInline(annotations)
             check(TokenType.DEEPINLINE) -> parseTopLevelDeepInline()
             check(TokenType.TEST) -> parseTestDecl(annotations)
             check(TokenType.ANNOT) -> parseDeco(annotations)
@@ -1191,9 +1191,11 @@ class Parser(
         return TopLevel.Deco(name, fields, start.line, start.column, annotations, targets, bindings, isBridge)
     }
 
-    private fun parseTopLevelInline(): TopLevel {
+    private fun parseTopLevelInline(annotations: List<Annotation> = emptyList()): TopLevel {
         return when (peekNext()?.type) {
-            TokenType.FUNC -> { advance(); TopLevel.Func(parseFuncDecl(isInline = true)) }
+            // The decorators written above `inline func` belong to the function,
+            // exactly as they do without the `inline`.
+            TokenType.FUNC -> { advance(); TopLevel.Func(parseFuncDecl(isInline = true, annotations = annotations)) }
             TokenType.FOR -> parseTopLevelInlineFor()
             TokenType.L_BRACE -> parseTopLevelInlineBlock()
             TokenType.REALM -> parseTopLevelInlineRealmBlock()
@@ -1728,7 +1730,7 @@ class Parser(
             check(TokenType.TYPEALIAS) -> parseTypeAlias(annotations)
             check(TokenType.VARIANT) -> parseSlot(annotations)
             check(TokenType.SPEC) -> parseSpec()
-            check(TokenType.INLINE) -> parseTopLevelInline()
+            check(TokenType.INLINE) -> parseTopLevelInline(annotations)
             check(TokenType.DEEPINLINE) -> parseTopLevelDeepInline()
             check(TokenType.ASSERT) -> {
                 // Bare assert inside inline block → InlineAssert at top level
@@ -4340,7 +4342,12 @@ class Parser(
             afterArgument += argument.size
             text.replace(hole, argument.joinToString(" ") { it.lexeme })
         } ?: text
-        val expanded = Lexer(body).tokenize().filter { it.type != TokenType.EOF && it.type != TokenType.NEWLINE }
+        // The fragment is lexed from text, so its tokens start over at line 1.
+        // Stamped with the position of the `@name` they stand for, so anything
+        // reported inside the expansion points at where it was written.
+        val expanded = Lexer(body).tokenize()
+            .filter { it.type != TokenType.EOF && it.type != TokenType.NEWLINE }
+            .map { it.copy(line = nameToken.line, column = nameToken.column) }
         val rest = tokens.drop(afterArgument)
         tokens = tokens.take(current) + expanded + rest
         return true

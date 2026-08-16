@@ -146,6 +146,19 @@ class SemanticPipeline(
         }
 
         // ---------------------------------------------------------------
+        // Pass 2b: Signature-Only Access
+        // A `@std::SignatureOnly` function may not be reached from a body whose
+        // decorator is `@std::DeclaresAccess`. Checked here rather than with the
+        // later passes: such a function is usually `inline`, and once the loop
+        // below has folded its body into the caller there is no call to refuse.
+        // ---------------------------------------------------------------
+        val accessErrors = SignatureAccessChecker.check(currentProgram)
+        allErrors.addAll(accessErrors)
+        if (accessErrors.isNotEmpty()) {
+            return SemanticResult(currentProgram, table, emptyList(), allErrors)
+        }
+
+        // ---------------------------------------------------------------
         // Pass 3: Fixed-Point CTCE Loop
         //
         //   repeat:

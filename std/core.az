@@ -294,6 +294,41 @@ realm std {
     bridge annot EnforceNumFields for .Pack
 
     /**
+     * Marks a function that may only be reached through a signature.
+     *
+     * A function so marked is unreachable from the body of anything whose
+     * decorator is [DeclaresAccess]: what it hands back is asked for as a
+     * parameter instead. Acquiring something mid-body hides it from every
+     * reader of the signature, and from anything that decides - from signatures
+     * alone - which of two callers may run beside the other.
+     */
+    @Experimental(since: "0.1")
+    bridge annot SignatureOnly for [.Func, .AsyncFunc]
+
+    /**
+     * Marks a function that carries out access a parameter already declares.
+     *
+     * The reach of a [DeclaresAccess] body stops here. A system asking for
+     * `shapes: @query […]` has declared what it touches; what the query does to
+     * serve that is the declaration being honoured, not access smuggled past
+     * it. Without this the walk would follow a declared parameter into its own
+     * implementation and refuse it there.
+     */
+    @Experimental(since: "0.1")
+    bridge annot ProvidesAccess for [.Func, .AsyncFunc, .Prop]
+
+    /**
+     * Marks a decorator whose functions declare their access in their signature.
+     *
+     * A function carrying such a decorator states everything it touches in its
+     * parameters, so a [SignatureOnly] call in its body is refused. The two
+     * decorators are halves of one rule: this names the boundary, and
+     * `SignatureOnly` names what may not cross it.
+     */
+    @Experimental(since: "0.1")
+    bridge annot DeclaresAccess for .Annot
+
+    /**
      * Connects a library decorator to a compiler derive generator.
      *
      * `generator` selects an installed generator and `role` describes how that

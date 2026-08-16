@@ -165,7 +165,7 @@ class Feature003SyntaxTest {
             }
             spec Show<T> {
                 prop show<T>[self: std::Self&]: T
-                use show<T> as "show${'$'}{T.typeName}"
+                inline prop show${'$'}{T.typeName}: T = show<T>
             }
             func main() {
                 var label = Label("ok")
@@ -182,7 +182,7 @@ class Feature003SyntaxTest {
             }
             spec Render<T> {
                 prop render<T>[self: std::Self&]: T
-                use render<T> as "render"
+                inline prop render: T = render<T>
             }
             impl Render<std::String> for Label {
                 prop render[self: std::Self&]: std::String {
@@ -225,7 +225,7 @@ class Feature003SyntaxTest {
             }
             spec Extract<T> {
                 func extract<T>[self: std::Self&](): T
-                use extract<T> as "extract${'$'}{T.typeName}"
+                inline prop extract${'$'}{T.typeName}: T = extract<T>
             }
             impl Extract<std::Int> for Box {
                 func extract[self: std::Self&](): std::Int {
@@ -245,7 +245,7 @@ class Feature003SyntaxTest {
             }
             spec Extract<T> {
                 func extract<T>[self: std::Self&](): T
-                use extract<T> as "extract${'$'}{T.typeName}"
+                inline prop extract${'$'}{T.typeName}: T = extract<T>
             }
             impl Extract<std::Int> for Box {
                 func extract[self: std::Self&](): std::Int {

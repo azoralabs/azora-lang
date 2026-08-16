@@ -131,8 +131,14 @@ object InlineCallables {
             if (called != null && called.callee == blockName) {
                 // `body(row)` - the block runs here, with its parameters bound to
                 // what the call passed.
+                //
+                // The arguments are still written in the *callee's* terms, so
+                // they are substituted before being bound: `body(self.step)`
+                // hands the block `r.step`, not `self.step`. Binding them raw
+                // spliced the callee's `self` into the caller, where it names
+                // nothing.
                 val inner = block.params.mapIndexedNotNull { index, param ->
-                    called.args.getOrNull(index)?.let { param.name to it }
+                    called.args.getOrNull(index)?.let { param.name to expr(it) }
                 }.toMap()
                 Body(bindings + inner, "", block).body(block.body)
             } else {

@@ -2853,6 +2853,17 @@ class Parser(
             advance()
             TypeRef.Named("*")
         }
+        // `std::tupleOf<Entity, ...T>(…)` - a type pack spread among the type
+        // arguments. A call whose element types cannot be read back off its
+        // arguments has to be able to state them, and `...T` is already how a
+        // declaration spells "every type this pack stands for".
+        check(TokenType.ELLIPSIS) -> {
+            advance()
+            when (val inner = parseTypeName()) {
+                is TypeRef.Named -> inner.copy(variadic = true)
+                else -> error("only a named type can be spread in type arguments at line ${peek().line}")
+            }
+        }
         else -> parseTypeName()
     }
 
@@ -4744,6 +4755,11 @@ class Parser(
             val recv = parsePropReceiver()
             consume(TokenType.COLON, "Expected ':' and the conversion's result type after a spec receiver")
             val returnType = parseTypeName()
+            // `spec Into<T>[self: Self&]: T use as "to${T.typeName}"` - the
+            // compact one-line spec, whose whole declaration is a receiver, a
+            // result and the name it answers to. This is *not* the member alias
+            // that `inline prop to${T.typeName}: T = into<T>` replaced: there is
+            // no member here to hang the alias off, so the name is written here.
             val useAsTemplate = if (check(TokenType.USE) && peekNext()?.type == TokenType.AS) {
                 advance()
                 advance()
@@ -4788,6 +4804,11 @@ class Parser(
             val receiverBinding = parseReceiverBinding("spec callback receiver")
             val receiverModifier = receiverBinding.modifier
             consume(TokenType.R_PAREN, "Expected ')' after spec callback receiver")
+            // `spec Into<T>[self: Self&]: T use as "to${T.typeName}"` - the
+            // compact one-line spec, whose whole declaration is a receiver, a
+            // result and the name it answers to. This is *not* the member alias
+            // that `inline prop to${T.typeName}: T = into<T>` replaced: there is
+            // no member here to hang the alias off, so the name is written here.
             val useAsTemplate = if (check(TokenType.USE) && peekNext()?.type == TokenType.AS) {
                 advance()
                 advance()
@@ -4884,26 +4905,11 @@ class Parser(
             // without them there is nothing to fold and the member's own name
             // already is the call-site name.
             if (check(TokenType.USE) && peekNext()?.type == TokenType.IDENTIFIER) {
-                val useStart = advance()
-                val aliased = consumeIdentifierLike("Expected the member name after 'use'")
-                val aliasedParams = parseTypeParams()
-                if (aliasedParams.names.isEmpty()) {
-                    error(
-                        "'use $aliased as …' needs the member's type parameters, as in " +
-                            "'use $aliased<T> as \"…\"', at line ${useStart.line}",
-                    )
-                }
-                consume(TokenType.AS, "Expected 'as' after the aliased member")
-                val template = parseUseAsTemplate()
-                consumeNewline()
-                val index = methods.indexOfFirst { it.name == aliased }
-                if (index < 0) {
-                    error(
-                        "'use $aliased as …' names no member of spec '$name' at line ${useStart.line}",
-                    )
-                }
-                methods[index] = methods[index].copy(useAsTemplate = template)
-                continue
+                error(
+                    "'use … as \"…\"' is no longer how a spec aliases a member, at line ${peek().line}; " +
+                        "declare the alias at its own name instead: " +
+                        "'inline prop to\${T.typeName}: T = into<T>'",
+                )
             }
             // `oper<SYM> [self: Self&](operands): Ret` - an operator requirement.
             // A spec is where an operator's contract lives (its receiver, its
@@ -4943,6 +4949,30 @@ class Parser(
                 )
                 continue
             }
+            // `inline prop to${T.typeName}: T = into<T>` - a call-site alias for
+            // another member of this spec, declared at the alias's own name
+            // rather than trailing the member it renames.
+            //
+            // `inline` because nothing is generated: the name is expanded where
+            // the spec is applied, so `Into<String>` makes `into` reachable as
+            // `toString`, and there is no second member to dispatch to.
+            if (check(TokenType.INLINE) && peekNext()?.type == TokenType.PROP) {
+                val aliasStart = advance() // 'inline'
+                advance() // 'prop'
+                val template = parseSplicedMemberName()
+                consume(TokenType.COLON, "Expected ':' and the alias's type")
+                parseTypeName()
+                consume(TokenType.EQUAL, "Expected '=' and the member this aliases")
+                val target = consumeIdentifierLike("Expected the aliased member's name")
+                parseTypeParams()
+                consumeNewline()
+                val aliased = methods.indexOfFirst { it.name == target }
+                if (aliased < 0) {
+                    error("'$target' names no member of spec '$name' at line ${aliasStart.line}")
+                }
+                methods[aliased] = methods[aliased].copy(useAsTemplate = template)
+                continue
+            }
             // `prop name: Type` - a property requirement (a zero-arg getter).
             if (check(TokenType.PROP)) {
                 advance()
@@ -4961,15 +4991,9 @@ class Parser(
                 }
                 consume(TokenType.COLON, "Expected ':' after spec property name")
                 val ptype = parseTypeName()
-                // `prop into[self: Self&]: T use as "to${T.typeName}"` - the
-                // member's call-site alias, on a property exactly as on a func.
-                val propUseAs = if (check(TokenType.USE) && peekNext()?.type == TokenType.AS) {
-                    advance()
-                    advance()
-                    parseUseAsTemplate()
-                } else {
-                    null
-                }
+                // A property's call-site alias is declared at its own name
+                // (`inline prop to${T.typeName}: …`), not trailing the member.
+                val propUseAs: String? = null
                 consumeNewline()
                 methods.add(FuncDecl(
                     pname, emptyList(), TypeAnnotation.Explicit(ptype), emptyList(), false,
@@ -5003,13 +5027,8 @@ class Parser(
             // `func into[self: Self&](): T use as "to${T.typeName}"` - the
             // member's call-site alias. The member keeps its own name; the
             // template only adds a second one.
-            val memberUseAs = if (check(TokenType.USE) && peekNext()?.type == TokenType.AS) {
-                advance()
-                advance()
-                parseUseAsTemplate()
-            } else {
-                null
-            }
+            // As on a property: the alias is declared at its own name.
+            val memberUseAs: String? = null
             // A body makes the member *provided*: an implementor that writes its
             // own gets that one, and one that does not gets this. What every
             // implementation would write identically belongs with the spec, not
@@ -5493,6 +5512,40 @@ class Parser(
         return type(j) == TokenType.ARROW
     }
 
+    /**
+     * A member name written with a splice: `to${T.typeName}`.
+     *
+     * An identifier stops at `{`, so the name arrives in pieces - `to$`, a
+     * brace, the placeholder's own tokens, and a closing brace. They are joined
+     * back into the template text [UseAsTemplate] expands, which is the same
+     * text the older `use … as "to${T.typeName}"` spelling wrote in quotes.
+     */
+    private fun parseSplicedMemberName(): String {
+        val out = StringBuilder(consumeIdentifierLike("Expected the alias's name"))
+        while (check(TokenType.L_BRACE)) {
+            advance()
+            out.append('{')
+            var depth = 1
+            while (depth > 0 && !isAtEnd()) {
+                when (peek().type) {
+                    TokenType.L_BRACE -> depth++
+                    TokenType.R_BRACE -> depth--
+                    else -> {}
+                }
+                out.append(advance().lexeme)
+            }
+            // `to${T}Name` - the name may continue past the placeholder.
+            if (check(TokenType.IDENTIFIER)) out.append(advance().lexeme)
+        }
+        return out.toString()
+    }
+
+    /**
+     * The name template of a compact one-line spec: `use as "to${T.typeName}"`.
+     *
+     * Only that form still writes one. A spec *member*'s alias is declared at
+     * its own name (`inline prop to${T.typeName}: T = into<T>`).
+     */
     private fun parseUseAsTemplate(): String {
         val tok = peek()
         return when (tok.type) {
@@ -9745,7 +9798,12 @@ class Parser(
                 // A type argument may be realm-qualified: `ArrayList<std::SerialField>`.
                 TokenType.DOUBLE_COLON,
                 // `(A, B) -> R` as a type argument.
-                TokenType.ARROW -> {}
+                TokenType.ARROW,
+                // `tupleOf<Entity, ...T>(…)` - a type pack among the arguments.
+                // Borrow sigils are deliberately *not* here: `a < b && c` would
+                // read as a generic call, and a borrow in a type argument
+                // already parses without help.
+                TokenType.ELLIPSIS -> {}
                 TokenType.L_PAREN -> parens++
                 TokenType.R_PAREN -> {
                     parens--

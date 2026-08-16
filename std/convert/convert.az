@@ -59,7 +59,15 @@ realm std {
     @Experimental(since: "0.1")
     spec Into<T> {
         prop into<T>[self: Self&]: T
-        use into<T> as "to${T.typeName}"
+
+        /**
+         * The conversion under a name that says what it converts *to*.
+         *
+         * `inline` because nothing is generated: the name is expanded where the
+         * spec is applied, so `Into<String>` makes `into` reachable as
+         * `toString` and there is no second member to dispatch to.
+         */
+        inline prop to${T.typeName}: T = into<T>
     }
 
     /**

@@ -155,8 +155,13 @@ internal object VariadicMonomorphizer {
         // are held back here and re-emitted once per specialization below.
         val staticTemplates = expanded.filter { ctx.isStaticTemplateMember(it) }
         val rewritten = expanded.filterNot { ctx.isStaticTemplateMember(it) }.mapNotNull { ctx.rewriteTopLevel(it) }
-        val finalItems = rewritten + ctx.packs.values + ctx.funcs.values + ctx.expandImpls() +
-            ctx.expandStaticMembers(staticTemplates)
+        // Expanded before the specialization tables are read, because expanding
+        // is itself what fills them: a member body that calls a variadic
+        // function specializes it here, and reading `funcs` first would emit the
+        // call without the copy it names.
+        val impls = ctx.expandImpls()
+        val statics = ctx.expandStaticMembers(staticTemplates)
+        val finalItems = rewritten + ctx.packs.values + ctx.funcs.values + impls + statics
         return program.copy(
             items = finalItems,
             realmTypeNamespaces = program.realmTypeNamespaces + ctx.generatedPackNamespaces,
@@ -485,7 +490,15 @@ private class MonoContext(
         } else {
             "${renderType(type.ok)}![${type.errSets.joinToString(", ")}]"
         }
-        is TypeRef.Reference -> "${type.kind.spelling} ${renderType(type.inner)}"
+        // What is rendered here is re-parsed, so it has to be written the way
+        // the language spells a borrow *now*: postfix `&` and `!`. `RefKind`
+        // still carries the old prefix words (`ref`, `mut ref`), which no longer
+        // parse - a borrow inside a variadic pack came back as an undefined type
+        // macro named `ref`.
+        is TypeRef.Reference -> when (type.kind) {
+            TypeRef.RefKind.MUTABLE -> "${renderType(type.inner)}!"
+            else -> "${renderType(type.inner)}&"
+        }
         is TypeRef.Const -> type.value.toString()
     }
 
@@ -665,7 +678,7 @@ private class MonoContext(
                 // Operand-keyed, so the copies coexist on the same receiver.
                 name = if (method.name.startsWith("oper")) "${method.name}@$mangled" else method.name,
             )
-            rewriteFuncDecl(bound)
+            rewriteFuncDecl(bound, mangled)
         } finally {
             constBindings = emptyMap()
             typeBindings = emptyMap()
@@ -762,10 +775,30 @@ private class MonoContext(
         else -> item
     }
 
-    fun expandImpls(): List<TopLevel.Impl> = packArguments.entries.flatMap { (mangled, arguments) ->
+    /**
+     * Every specialization's impls, including those discovered while expanding.
+     *
+     * Expanding a member can specialize something new - a body calling
+     * `std::tupleOf` brings a `Tuple` specialization into being - which adds to
+     * the very table being walked. So a snapshot is expanded at a time, and the
+     * ones that appear are expanded on the next round, until nothing new shows
+     * up. Walking the live table instead raised a concurrent modification.
+     */
+    fun expandImpls(): List<TopLevel.Impl> {
+        val expanded = mutableListOf<TopLevel.Impl>()
+        val done = mutableSetOf<String>()
+        while (true) {
+            val pending = packArguments.entries.filterNot { it.key in done }.map { it.key to it.value }
+            if (pending.isEmpty()) return expanded
+            pending.forEach { done.add(it.first) }
+            expanded += pending.flatMap { (mangled, arguments) -> expandImplsOf(mangled, arguments) }
+        }
+    }
+
+    private fun expandImplsOf(mangled: String, arguments: List<TypeRef>): List<TopLevel.Impl> = run {
         val templateName = packTemplates.keys.firstOrNull { mangled.startsWith("__${it}_") }
-            ?: return@flatMap emptyList()
-        val struct = packs[mangled] ?: return@flatMap emptyList()
+            ?: return@run emptyList()
+        val struct = packs[mangled] ?: return@run emptyList()
         // The specialization binds the pack's parameters, and its impl's members are
         // written against those same names - `ctor (all: T)` on `Vec<Int, 3>` takes an
         // Int. Without this the member would keep the template's `T`, which names
@@ -829,7 +862,7 @@ private class MonoContext(
                     },
                 )
                 try {
-                    rewriteFuncDecl(specialized)
+                    rewriteFuncDecl(specialized, mangled)
                 } finally {
                     constBindings = emptyMap()
                     typeBindings = emptyMap()
@@ -1124,7 +1157,7 @@ private class MonoContext(
             traitArgs = item.traitArgs.map(::rewriteType),
             decoratorArgs = item.decoratorArgs.map(::rewriteExpr),
             decoratorNamedArgs = item.decoratorNamedArgs.map { (name, value) -> name to rewriteExpr(value) },
-            methods = item.methods.map(::rewriteFuncDecl),
+            methods = item.methods.map { rewriteFuncDecl(it, item.typeName.substringBefore('<')) },
         )
         // `typealias Vec2i = Vec<Int, 2>` names a specialization; leaving the
         // application unrewritten would make a later pass instantiate it a second
@@ -1145,9 +1178,14 @@ private class MonoContext(
         }
     }
 
-    private fun rewriteFuncDecl(decl: FuncDecl): FuncDecl = withSourceLine(decl.line) {
+    private fun rewriteFuncDecl(decl: FuncDecl, owner: String? = null): FuncDecl = withSourceLine(decl.line) {
         bindings.clear()
         for (p in decl.params) bindings[p.name] = p.type
+        // The receiver, so `self.field` can be typed. A variadic call taking one
+        // - `std::tupleOf(self.n, 2)` - is only specialized when every argument
+        // has a type here; without this it was left naming the template, which
+        // no longer exists by the time anything looks it up.
+        owner?.let { bindings[decl.receiverName] = TypeRef.Named(it) }
         decl.copy(
             params = decl.params.map(::rewriteParam),
             returnType = rewriteTypeAnnotation(decl.returnType),
@@ -1542,7 +1580,38 @@ private class MonoContext(
         else -> e
     }
 
+    /**
+     * One argument, or the several an `inline for` over a bound type pack stands
+     * for.
+     *
+     * Expanded here rather than left to compile-time evaluation because a
+     * variadic callee is specialized from its arguments: while the splice is
+     * still one node, the arguments cannot be counted, let alone typed, and the
+     * call is left naming a template that no longer exists.
+     *
+     * The results are already rewritten, so the caller must not rewrite them a
+     * second time.
+     */
+    private fun expandTypePackArgument(arg: Expr): List<Expr> {
+        val loop = arg as? Expr.InlineForArgs ?: return listOf(rewriteExpr(arg))
+        val packName = (loop.iterable as? Expr.Identifier)?.name
+            ?: ((loop.iterable as? Expr.Spread)?.array as? Expr.Identifier)?.name
+            ?: return listOf(rewriteExpr(arg))
+        val types = typePackBindings[packName] ?: return listOf(rewriteExpr(arg))
+        val saved = typeBindings
+        return try {
+            types.map { type ->
+                typeBindings = saved + (loop.name to type)
+                rewriteExpr(loop.body)
+            }
+        } finally {
+            typeBindings = saved
+        }
+    }
+
     private fun rewriteCall(e: Expr.Call): Expr {
+        val expandedArgs = e.args.flatMap(::expandTypePackArgument)
+        val e = e.copy(args = expandedArgs)
         val elementTypes = resolveElementTypes(e)
         val mangled = when {
             e.callee in funcTemplates && elementTypes != null -> instantiateFunc(e.callee, elementTypes)
@@ -1555,7 +1624,9 @@ private class MonoContext(
             e.callee in packTemplates && elementTypes != null -> instantiatePack(e.callee, elementTypes)
             else -> null
         }
-        val rewrittenArgs = e.args.map(::rewriteExpr)
+        // Already rewritten by the expansion above; rewriting again would apply
+        // every substitution twice.
+        val rewrittenArgs = e.args
         return if (mangled != null) e.copy(callee = mangled, args = rewrittenArgs, typeArgs = emptyList())
             else e.copy(
                 // `Self(…)` in a specialized member builds that specialization.
@@ -1569,10 +1640,41 @@ private class MonoContext(
     }
 
     /** Concrete element types for a variadic call, from explicit type args or inferred args; null if unknown. */
+    /**
+     * The declared type of [field] on [target], when the pack is known here.
+     *
+     * Only what this pass already holds is consulted - a plain pack's fields, or
+     * a template's with its arguments bound. Anything else answers null, which
+     * leaves the call unspecialized exactly as before.
+     */
+    private fun fieldType(target: TypeRef?, field: String): TypeRef? {
+        // A receiver is written `self: Self&`, so the borrow is between the name
+        // and the pack that has the field.
+        var named = target
+        while (named is TypeRef.Reference) named = named.inner
+        val owner = named as? TypeRef.Named ?: return null
+        val template = packTemplates[owner.name]
+        val fields = plainPackFields[owner.name] ?: template?.fields ?: return null
+        val declared = fields.firstOrNull { it.name == field }?.type ?: return null
+        if (template == null) return declared
+        return substituteParams(declared, template.typeParams.zip(owner.args).toMap())
+    }
+
     private fun resolveElementTypes(call: Expr.Call): List<TypeRef>? {
         // Inside a specialized static member, `Vec<T, N>(0)` names that member's own
         // specialization - the parameters have values here.
-        if (call.typeArgs.isNotEmpty()) return call.typeArgs.map { substituteParams(it, typeBindings) }
+        //
+        // `tupleOf<Entity, ...T>(…)` spreads: `...T` stands for every type the
+        // pack holds, not for one of them, so it contributes as many arguments
+        // as the pack has.
+        if (call.typeArgs.isNotEmpty()) return call.typeArgs.flatMap { arg ->
+            val named = arg as? TypeRef.Named
+            if (named != null && named.variadic) {
+                typePackBindings[named.name] ?: listOf(substituteParams(arg, typeBindings))
+            } else {
+                listOf(substituteParams(arg, typeBindings))
+            }
+        }
         val inferred = call.args.map { inferExprType(it) }
         return if (inferred.all { it != null }) inferred.filterNotNull() else null
     }
@@ -1594,7 +1696,12 @@ private class MonoContext(
         is Expr.TupleAccess -> inferExprType(e.target)?.let { tupleElementType(it, e.index) }
         // Positional tuple access parses as a `Member` with a numeric field name
         // (`v.0`, `v.1`); resolve it against the target's tuple element types.
-        is Expr.Member -> e.name.toIntOrNull()?.let { idx -> inferExprType(e.target)?.let { tupleElementType(it, idx) } }
+        // A named one is an ordinary field read, resolved against the pack.
+        is Expr.Member -> {
+            val index = e.name.toIntOrNull()
+            if (index != null) inferExprType(e.target)?.let { tupleElementType(it, index) }
+            else fieldType(inferExprType(e.target), e.name)
+        }
         is Expr.Call -> {
             when {
                 e.callee in funcTemplates -> resolveElementTypes(e)?.let { elementTypes ->

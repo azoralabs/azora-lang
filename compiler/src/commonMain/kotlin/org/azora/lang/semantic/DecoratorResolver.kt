@@ -179,7 +179,7 @@ class DecoratorResolver {
     private fun literalMatches(expected: TypeRef, value: Expr): Boolean {
         val name = (expected as? TypeRef.Named)?.name ?: return true
         return when (value) {
-            // `@System(phase: .Update)` - the field's declared type is what the
+            // `@Log(level: .Warn)` - the field's declared type is what the
             // dot meant. Recorded here because this runs before type resolution,
             // which would otherwise see a dot with nothing to hang it on.
             is Expr.InferredMember -> {

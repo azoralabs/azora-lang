@@ -140,11 +140,23 @@ object InlineCallables {
                 val inner = block.params.mapIndexedNotNull { index, param ->
                     called.args.getOrNull(index)?.let { param.name to expr(it) }
                 }.toMap()
-                Body(bindings + inner, "", block).body(block.body)
+                Body(bindings + inner, "", block).body(block.body.map(::asStatement))
             } else {
                 listOf(stmt(statement))
             }
         }
+
+        /**
+         * One statement of the block, as it reads in the caller.
+         *
+         * A block written as a single expression carries it as a `return`: that
+         * is the *block's* value. Spliced into the caller unchanged it would be
+         * the caller's return instead, ending the enclosing function at the
+         * first row rather than running the block on each one. The callable
+         * yields nothing, so the value is a statement here.
+         */
+        private fun asStatement(s: Stmt): Stmt =
+            if (s is Stmt.Return && s.value != null) Stmt.ExprStmt(s.value!!, s.line, s.column) else s
 
         private fun stmt(s: Stmt): Stmt = when (s) {
             is Stmt.ExprStmt -> s.copy(expr = expr(s.expr))

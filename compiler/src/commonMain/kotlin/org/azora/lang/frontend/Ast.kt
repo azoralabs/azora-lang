@@ -270,7 +270,7 @@ sealed class Expr {
      * ordinary member access, so nothing downstream needs to know it was spliced.
      */
     /**
-     * `.Name` with the type left to context - `@System(phase: .Update)`.
+     * `.Name` with the type left to context - `@Log(level: .Warn)`.
      *
      * The type is already written where the value is going: a parameter's type,
      * a field's type, an annotation's field. Naming it again in the value is
@@ -1459,9 +1459,19 @@ sealed class TypeRef {
         val inner: TypeRef,
         val origins: List<String> = emptyList(),
     ) : TypeRef() {
+        /**
+         * The borrow as the language spells it: postfix `&`, or `!` when
+         * exclusive.
+         *
+         * This is the spelling an author writes, so it is the spelling a
+         * rendered type carries - into diagnostics, and into anything that
+         * reads a type's text back.
+         */
+        private val sigil: String get() = if (kind == RefKind.MUTABLE) "!" else "&"
+
         override fun toString() =
-            if (origins.isEmpty()) "${kind.spelling} $inner"
-            else "${kind.spelling} $inner[${origins.joinToString(", ")}]"
+            if (origins.isEmpty()) "$inner$sigil"
+            else "$inner$sigil[${origins.joinToString(", ")}]"
     }
 
     /** Human-readable name for diagnostics (the simple name for [Named]). */
@@ -2651,7 +2661,7 @@ sealed class TopLevel {
         val hasBody: Boolean = true,
         /**
          * What this implementation's associated types are -
-         * `impl Iterator for Rows assoc Item = Entity`.
+         * `impl Iterator for Rows assoc Item = Int`.
          */
         val assocBindings: Map<String, TypeRef> = emptyMap()
     ) : TopLevel()
@@ -2861,10 +2871,9 @@ data class Program(
  *
  * The separators are single underscores after the leading `__`. A `__` in the
  * middle of a name is the frontend's *joining* marker for a qualified symbol,
- * so a name carrying one is re-mangled on the way to IR - `__ctx0__12_9` became
- * `__ctx0_12_9`, which no longer matched the parameter that the same name had
- * declared, and the receiver was read from an undefined global instead of from
- * the argument.
+ * and canonicalization collapses it on the way to IR - so a name carrying one
+ * arrives spelled differently from the parameter it declared, and the receiver
+ * resolves to a global that nothing defines.
  */
 fun lambdaReceiverName(line: Int, column: Int, index: Int): String =
     "__ctx${index}_${line}_$column"

@@ -4716,6 +4716,17 @@ class LlvmCodegen {
                 emit("  $tmp = call i8* @__azora_double_to_str(double $d)")
                 tmp
             }
+            // An aggregate is a pointer, and a pointer is not a number. A pack
+            // that says how it prints is routed through its `Display` before it
+            // reaches here, so what is left is one that says nothing - and its
+            // type name is the most it can honestly be rendered as.
+            is IrType.Named if structDefs.containsKey((expr.type as IrType.Named).name) -> {
+                emitExpr(expr)
+                val ref = addStringConstant((expr.type as IrType.Named).name)
+                val tmp = nextTmp()
+                emit("  $tmp = getelementptr [${ref.byteLen} x i8], [${ref.byteLen} x i8]* ${ref.name}, i64 0, i64 0")
+                tmp
+            }
             else -> {
                 // Integer types → 64-bit then format (unsigned types use %llu).
                 usesSnprintf = true; usesMalloc = true

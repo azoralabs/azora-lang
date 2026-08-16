@@ -346,7 +346,7 @@ private class MonoContext(
     /** Replaces a declaration's type parameters with the concrete arguments. */
     private fun substituteParams(ref: TypeRef, bindings: Map<String, TypeRef>): TypeRef = when (ref) {
         // A variadic parameter is replaced by every argument it stands for, so
-        // `QueryOf<...T>` inside a specialization names all of them. One-for-one
+        // `Rows<...T>` inside a specialization names all of them. One-for-one
         // would name a specialization of the first argument alone.
         is TypeRef.Named -> bindings[ref.name]
             ?: ref.copy(args = spreadPacks(ref.args).map { substituteParams(it, bindings) })
@@ -360,6 +360,14 @@ private class MonoContext(
         is TypeRef.Failable -> ref.copy(ok = substituteParams(ref.ok, bindings))
         is TypeRef.Pointer -> ref.copy(inner = substituteParams(ref.inner, bindings))
         is TypeRef.Reference -> ref.copy(inner = substituteParams(ref.inner, bindings))
+        // A callable's own types are as much of the signature as the parameters
+        // around it, and a `...T` among them *spreads*: `(Int, ...T) -> Unit`
+        // takes one parameter per type the pack holds, not one for the pack.
+        is TypeRef.Function -> ref.copy(
+            params = spreadPacks(ref.params).map { substituteParams(it, bindings) },
+            ret = substituteParams(ref.ret, bindings),
+            receivers = spreadPacks(ref.receivers).map { substituteParams(it, bindings) },
+        )
         else -> ref
     }
 
@@ -490,11 +498,8 @@ private class MonoContext(
         } else {
             "${renderType(type.ok)}![${type.errSets.joinToString(", ")}]"
         }
-        // What is rendered here is re-parsed, so it has to be written the way
-        // the language spells a borrow *now*: postfix `&` and `!`. `RefKind`
-        // still carries the old prefix words (`ref`, `mut ref`), which no longer
-        // parse - a borrow inside a variadic pack came back as an undefined type
-        // macro named `ref`.
+        // What is rendered here is re-parsed, so a borrow is written the way
+        // the language spells one: postfix `&`, and `!` when exclusive.
         is TypeRef.Reference -> when (type.kind) {
             TypeRef.RefKind.MUTABLE -> "${renderType(type.inner)}!"
             else -> "${renderType(type.inner)}&"
@@ -1261,9 +1266,11 @@ private class MonoContext(
         is TypeRef.Map -> ref.copy(key = rewriteType(ref.key), value = rewriteType(ref.value))
         is TypeRef.Set -> ref.copy(element = rewriteType(ref.element))
         is TypeRef.Function -> ref.copy(
-            params = ref.params.map(::rewriteType),
+            // `...T` among a callable's parameters stands for every type the
+            // pack holds; see substituteParams.
+            params = spreadPacks(ref.params).map(::rewriteType),
             ret = rewriteType(ref.ret),
-            receivers = ref.receivers.map(::rewriteType),
+            receivers = spreadPacks(ref.receivers).map(::rewriteType),
         )
         // `(A, B)` in type position was grammar supplied by a `.Type` macro, and
         // `.Type` is gone. The type itself is not: write `Tuple<A, B>`.
@@ -1281,7 +1288,7 @@ private class MonoContext(
     /**
      * Type arguments with any variadic parameter replaced by what it stands for.
      *
-     * `QueryOf<...T>` written inside a specialization means every type the pack
+     * `Rows<...T>` written inside a specialization means every type the pack
      * was given, so the argument list grows here. Substituting one-for-one would
      * name a specialization of one argument that nothing declared.
      */
@@ -1664,7 +1671,7 @@ private class MonoContext(
         // Inside a specialized static member, `Vec<T, N>(0)` names that member's own
         // specialization - the parameters have values here.
         //
-        // `tupleOf<Entity, ...T>(…)` spreads: `...T` stands for every type the
+        // `tupleOf<Int, ...T>(…)` spreads: `...T` stands for every type the
         // pack holds, not for one of them, so it contributes as many arguments
         // as the pack has.
         if (call.typeArgs.isNotEmpty()) return call.typeArgs.flatMap { arg ->

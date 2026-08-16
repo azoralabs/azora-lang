@@ -2630,10 +2630,10 @@ class TypeResolver(private val table: SymbolTable) {
                 for (part in expr.parts) {
                     if (part is Expr.StringTemplatePart.Expr) {
                         // Primitives, enums and collections format themselves at
-                        // runtime. A pack does not: interpolating one that never
-                        // said how it prints used to emit its internal
-                        // representation - `{__type=Vec2, x=1, y=2}` - which is a
-                        // pack's private layout appearing in program output.
+                        // runtime. A pack does not, so one that never says how it
+                        // prints is refused here - the alternative is its private
+                        // layout (`{__type=Vec2, x=1, y=2}`) reaching program
+                        // output.
                         val partType = resolveExpr(part.expr)
                         val named = partType as? IrType.Named
                         if (named != null && table.lookupStruct(named.name) != null &&

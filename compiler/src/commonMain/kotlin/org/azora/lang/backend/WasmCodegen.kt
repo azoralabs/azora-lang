@@ -329,8 +329,8 @@ class WasmCodegen {
      * Only a literal `return` (or a trap) qualifies. A `when` or `if` whose arms
      * all return is *semantically* terminal but lowers to `(if …)` blocks that
      * type as `[]`, so as far as the validator is concerned control still falls
-     * off the end - which is exactly the "type mismatch in implicit return"
-     * a `when self { … }` used to produce. Those cases want the terminator.
+     * off the end, which is a "type mismatch in implicit return". Those cases
+     * want the terminator.
      */
     private fun endsWithTerminator(body: List<IrStmt>): Boolean =
         when (body.lastOrNull()) {
@@ -980,10 +980,9 @@ class WasmCodegen {
         wasmType(expr.type) == "i64" -> { usesAlloc = true; usesLongToStr = true; "(call \$__long_to_str ${emitExpr(expr)})" }
         wasmType(expr.type) == "f64" -> { usesAlloc = true; usesDoubleToStr = true; "(call \$__double_to_str ${emitExpr(expr)})" }
         wasmType(expr.type) == "f32" -> { usesAlloc = true; usesDoubleToStr = true; "(call \$__double_to_str (f64.promote_f32 ${emitExpr(expr)}))" }
-        // Anything else has no WAT rendering yet. Interpolating it used to yield an
-        // empty string, so a program printing a `Double` silently lost it while the
-        // interpreter and LLVM printed the value; failing here keeps a missing
-        // conversion visible instead of turning it into wrong output.
+        // Anything else has no WAT rendering yet. Failing here keeps a missing
+        // conversion visible, rather than interpolating an empty string and
+        // turning it into wrong output the other backends do not produce.
         else -> error(
             "wasm: cannot interpolate a value of type ${expr.type} - " +
                 "only Int, String and Bool have a WAT string conversion so far",

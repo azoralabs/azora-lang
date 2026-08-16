@@ -321,6 +321,24 @@ class LlvmAggregateExecTest {
         """.trimIndent()
     )
 
+    /**
+     * `for [a, b] in rows` binds each name to the row element at its position,
+     * so the header says what a row is made of and the body never indexes it.
+     */
+    @Test fun forInDestructuresATupleRow() = check(
+        "1 a\n2 b",
+        """
+        import std.io
+        import std.container.tuple
+        func main() {
+            fin rows = @std::arr[std::tupleOf(1, "a"), std::tupleOf(2, "b")]
+            for [n, s] in rows {
+                std::println("${'$'}{n} ${'$'}{s}")
+            }
+        }
+        """.trimIndent()
+    )
+
     @Test fun mapLiteralReadsStringKeys() = check(
         "1\n3",
         """

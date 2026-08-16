@@ -134,7 +134,7 @@ class AstValidator {
      */
     private fun validateStability(annotations: List<Annotation>, errors: MutableList<String>) {
         for (ann in annotations) {
-            // A lowercase name is a macro, not a decorator - `@query` on a
+            // A lowercase name is a macro, not a decorator - `@vec` on a
             // parameter is one - and macros are not declared in the decorator
             // table, so asking it about them would always fail.
             if (ann.name.firstOrNull()?.isUpperCase() != true) continue

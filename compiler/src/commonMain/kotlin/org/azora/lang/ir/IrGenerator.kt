@@ -1399,10 +1399,9 @@ class IrGenerator(private val table: SymbolTable) {
     /**
      * Routes an interpolated pack through its `Display`.
      *
-     * `"${v}"` on a pack used to emit whatever the backend's value
-     * representation happened to look like - in the interpreter, the field map
-     * itself. A pack says how it prints by implementing `Display`, and this is
-     * where that implementation is reached: `std::format` builds the
+     * A pack says how it prints by implementing `Display`, and this is where
+     * that implementation is reached - not the backend's own idea of what the
+     * value looks like: `std::format` builds the
      * `Formatter`, hands it to `display`, and returns what was written.
      *
      * Everything else formats as it always did.
@@ -1720,7 +1719,7 @@ class IrGenerator(private val table: SymbolTable) {
                     // to "${x}"), which every backend already supports. `as*` (reinterpret)
                     // never stringifies.
                     expr.kind == CastKind.STATIC && target == IrType.String ->
-                        IrExpr.StringTemplate(listOf(IrExpr.IrTemplatePart.Expr(inner)))
+                        IrExpr.StringTemplate(listOf(IrExpr.IrTemplatePart.Expr(displayed(inner))))
                     target == innerType -> inner
                     // Upcast a concrete `pack` to a spec it implements: mark it as a
                     // representation coercion so native backends can box it into a fat

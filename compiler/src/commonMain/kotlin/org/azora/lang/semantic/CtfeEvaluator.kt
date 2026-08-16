@@ -1196,7 +1196,14 @@ class CtfeEvaluator(private val table: SymbolTable) {
             typeArgs.getOrNull(index)?.let { param to it }
         }.toMap()
         if (bound.isEmpty()) return expr
-        val names = bound.mapValues { (_, ref) -> ref.displayName() }
+        // `T.typeName` names the *type*, not how it is borrowed: `Box&` and
+        // `Box!` are both `Box`. A borrow is how a value is reached, not what it
+        // is, so anything keyed by the name answers the same for all three.
+        val names = bound.mapValues { (_, ref) ->
+            var bare = ref
+            while (bare is TypeRef.Reference) bare = bare.inner
+            bare.displayName()
+        }
 
         /**
          * The parameter replaced by the argument, wherever it is named.

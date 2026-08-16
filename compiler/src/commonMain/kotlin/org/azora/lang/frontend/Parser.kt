@@ -604,10 +604,9 @@ class Parser(
     /**
      * `oper<OP> [self: Type&](operands): Ret { body }` at top level.
      *
-     * The bracketed receiver names the type the operator belongs to, which is
-     * what an `impl … for Type` clause used to say. Declaring it beside the type
-     * rather than inside it is what lets a file add an operator to a type it
-     * merely uses.
+     * The bracketed receiver names the type the operator belongs to. Declaring
+     * it beside the type rather than inside it is what lets a file add an
+     * operator to a type it merely uses.
      */
     private fun parseFreeOperator(
         annotations: List<Annotation>,
@@ -640,8 +639,8 @@ class Parser(
         }
         // An operator may carry its own constraint.
         parseWhereClause()
-        // The step is declarative metadata: parsed so the source states it, then
-        // discarded, exactly as the old bracket form's `by` was.
+        // The step is declarative metadata: parsed so the source may state it,
+        // then discarded.
         if (match(TokenType.BY)) parseExpr()
         // The same overload suffix an operator inside an `impl` gets: the operand
         // it accepts, and - for operators that do not already imply mutation -
@@ -1088,7 +1087,7 @@ class Parser(
         val name = parts.last()
         val qualifier = parts.dropLast(1).takeIf { it.isNotEmpty() }?.joinToString("::")
         // A decorator is a declaration and names one, so it is capitalised. A
-        // *macro* is lowercase - `@vec`, `@arr`, `@query` - and a parameter may
+        // *macro* is lowercase - `@vec`, `@arr` - and a parameter may
         // carry one, so the case rule applies only where a decorator is what is
         // being written.
         if (name.firstOrNull()?.isUpperCase() != true && !allowLowercaseAnnotation) {
@@ -2853,7 +2852,7 @@ class Parser(
             advance()
             TypeRef.Named("*")
         }
-        // `std::tupleOf<Entity, ...T>(…)` - a type pack spread among the type
+        // `std::tupleOf<Int, ...T>(…)` - a type pack spread among the type
         // arguments. A call whose element types cannot be read back off its
         // arguments has to be able to state them, and `...T` is already how a
         // declaration spells "every type this pack stands for".
@@ -3010,9 +3009,9 @@ class Parser(
         val start = peek()
         consume(TokenType.IMPL, "Expected 'impl'")
         // Type parameters belong after the name they parametrize, here as
-        // everywhere else: `impl Reflected<T>`, `impl Iterator for QueryOf<...T>`.
-        // The prefix form said nothing about *where* the parameter went, so it
-        // could be written on an impl whose target never took one.
+        // everywhere else: `impl Reflected<T>`, `impl Iterator for Buffer<...T>`.
+        // Writing them before the target would say nothing about *where* the
+        // parameter goes, and would fit an impl whose target takes none.
         if (check(TokenType.LESS)) {
             error(
                 "Type parameters come after the type they belong to at line ${start.line}: " +
@@ -3261,7 +3260,7 @@ class Parser(
                 firstArgs.filterIsInstance<TypeRef.Named>().firstOrNull { it.variadic }?.name,
             )
         }
-        // `impl Iterator for Rows assoc Item = Entity { … }` - what this
+        // `impl Iterator for Rows assoc Item = Int { … }` - what this
         // implementation's associated types are.
         val assocBindings = parseAssocBindings()
         if (!check(TokenType.L_BRACE)) {
@@ -3705,9 +3704,8 @@ class Parser(
     private data class ReceiverBinding(val name: String, val modifier: ParamModifier)
 
     /**
-     * Parses the `self` receiver binding in either the new postfix form (`self&` /
-     * `self!` / `self`) or the old prefix form (`[mut] ref self`), consuming through
-     * the receiver name. The receiver is always named `self`.
+     * Parses the `self` receiver binding - `self&`, `self!` or plain `self` -
+     * consuming through the receiver name. The receiver is always named `self`.
      */
     private fun parseReceiverBinding(what: String = "receiver"): ReceiverBinding {
         val name = consumeIdentifierLike("Expected $what name")
@@ -4398,7 +4396,7 @@ class Parser(
             // what a plain infix function wants - there is nothing to rewrite to.
             if (match(TokenType.FAT_ARROW)) {
                 // Type holes on both sides mean the arm joins two *types*, so
-                // its template is one too - `$Q @with $T => QueryWith<$Q, $T>`.
+                // its template is one too - `$L @and $R => Both<$L, $R>`.
                 // Read as an expression it would come apart at the first comma
                 // inside the angle brackets.
                 if (isTypeHole(left) && isTypeHole(right)) {
@@ -4593,9 +4591,9 @@ class Parser(
      * One arm of a type macro, or null when this arm is an ordinary one.
      *
      * ```
-     * macro @query {
-     *     $T          => QueryOf<$T>
-     *     [...$ITEMS] => QueryOf<...$ITEMS>
+     * macro @rows {
+     *     $T          => Rows<$T>
+     *     [...$ITEMS] => Rows<...$ITEMS>
      * }
      * ```
      *
@@ -5774,7 +5772,7 @@ class Parser(
             consume(TokenType.COLON, "Expected ':' after parameter name")
             // `name: return T&` - the borrow this function hands back (§13).
             val returnsOwnership = match(TokenType.RETURN)
-            // A parameter may carry a macro (`@query`), which is lowercase, as
+            // A parameter may carry a macro (`@vec`), which is lowercase, as
             // well as a decorator, which is not. Only the decorators are read
             // here: a macro applies to the type that follows it, so it is left
             // for the type parser rather than taken as an annotation.
@@ -6146,9 +6144,9 @@ class Parser(
                     }
                     TypeRef.Failable(base, errSets)
                 }
-                // Postfix borrows: `T&` (immutable), `T!` (mutable). Replace the old
-                // `ref T` / `mut ref T` prefix forms. Errors are `T ?! E` now, so a
-                // `!` in type position is always a mutable borrow.
+                // Postfix borrows: `T&` (immutable), `T!` (mutable). An error
+                // is written `T ?! E`, so a `!` in type position is always a
+                // mutable borrow.
                 match(TokenType.AMP) -> TypeRef.Reference(TypeRef.RefKind.BORROWED, base, parseBorrowOrigins())
                 match(TokenType.BANG) -> TypeRef.Reference(TypeRef.RefKind.MUTABLE, base, parseBorrowOrigins())
                 else -> return base
@@ -6345,7 +6343,7 @@ class Parser(
                     }
                 }
             }
-            // `@query Comp` - a macro applied to a type. Lowercase says macro:
+            // `@rows Item` - a macro applied to a type. Lowercase says macro:
             // a decorator names a declaration and is capitalised, so an `@` on a
             // lowercase name in type position can only be this.
             check(TokenType.AT) && isNamedTypeMacroInvocationAhead(current + 1) -> {
@@ -6747,7 +6745,15 @@ class Parser(
         val start = peek()
         if (reverse) consume(TokenType.REVERSE, "Expected 'reverse'")
         consume(TokenType.FOR, "Expected 'for'")
-        val name = consume(TokenType.IDENTIFIER, "Expected loop variable name").lexeme
+        // `for [a, b] in rows` - the row taken apart as it is bound. Each name
+        // takes the element at its position, so the header says what a row is
+        // made of and the body never indexes it.
+        val destructured = if (check(TokenType.L_BRACKET)) parseLoopDestructuring() else emptyList()
+        val name = if (destructured.isEmpty()) {
+            consume(TokenType.IDENTIFIER, "Expected loop variable name").lexeme
+        } else {
+            "__row${start.line}_${start.column}"
+        }
         consume(TokenType.IN, "Expected 'in' after loop variable")
         // The step is part of the header too: in `for x in 0..<6 by 2 { … }` the
         // `{` closes the header, so it must not be read as a trailing lambda on
@@ -6764,9 +6770,57 @@ class Parser(
         skipNewlines()
         val elseBranch = parseLoopElse()
         consumeNewline()
-        val loop = Stmt.For(name, iterable, body, start.line, start.column, step = step, reverse = reverse, label = label)
+        val loop = Stmt.For(
+            name,
+            iterable,
+            destructuredPrologue(destructured, name, start) + body,
+            start.line,
+            start.column,
+            step = step,
+            reverse = reverse,
+            label = label,
+        )
         return if (elseBranch != null) withLoopElse(loop, elseBranch, start.line, start.column) else loop
     }
+
+    /** `[a, b, c]` in a loop header - the names a row is taken apart into. */
+    private fun parseLoopDestructuring(): List<String> {
+        consume(TokenType.L_BRACKET, "Expected '[' to open the loop's bindings")
+        val names = mutableListOf<String>()
+        skipNewlines()
+        do {
+            skipNewlines()
+            names.add(consumeIdentifierLike("Expected a binding name in the loop's '[…]'"))
+            skipNewlines()
+        } while (match(TokenType.COMMA))
+        consume(TokenType.R_BRACKET, "Expected ']' after the loop's bindings")
+        if (names.isEmpty()) {
+            error("a loop's '[…]' needs at least one binding at line ${peek().line}")
+        }
+        return names
+    }
+
+    /**
+     * The bindings a destructuring loop header opens its body with.
+     *
+     * Each name takes the row element at its position, so `for [a, b] in rows`
+     * is `for row in rows` with `a` and `b` read off the front of it.
+     */
+    private fun destructuredPrologue(names: List<String>, row: String, start: Token): List<Stmt> =
+        names.mapIndexed { index, binding ->
+            Stmt.FinDecl(
+                binding,
+                TypeAnnotation.Inferred,
+                Expr.Member(
+                    Expr.Identifier(row, start.line, start.column, row.length),
+                    index.toString(),
+                    start.line,
+                    start.column,
+                ),
+                start.line,
+                start.column,
+            )
+        }
 
     private fun parseLoop(label: String? = null): Stmt {
         val start = peek()
@@ -8275,7 +8329,7 @@ class Parser(
         } ?: return parseExpr()
         val dot = advance()
         // `.(args)` - the declared type's constructor, without naming it twice.
-        // `fin invalid: Entity = .(-1, 0)` says the type once, in the place that
+        // `fin origin: Point = .(0, 0)` says the type once, in the place that
         // already had to say it.
         if (check(TokenType.L_PAREN)) {
             advance()
@@ -8379,8 +8433,7 @@ class Parser(
      * The statement a `return` produces once its value has been read.
      *
      * `.Variant` fails the function with an error-set variant - the only way to
-     * return an error (the old `fail return .Variant` form is gone). Anything
-     * else yields the success value. Both spellings are recognized here rather
+     * return an error. Anything else yields the success value. Both spellings are recognized here rather
      * than in [parseReturn] so that every *branch* in return position - a
      * `when` arm, an `if` branch - accepts the shorthand on the same terms.
      */
@@ -9799,7 +9852,7 @@ class Parser(
                 TokenType.DOUBLE_COLON,
                 // `(A, B) -> R` as a type argument.
                 TokenType.ARROW,
-                // `tupleOf<Entity, ...T>(…)` - a type pack among the arguments.
+                // `tupleOf<Int, ...T>(…)` - a type pack among the arguments.
                 // Borrow sigils are deliberately *not* here: `a < b && c` would
                 // read as a generic call, and a borrow in a type argument
                 // already parses without help.

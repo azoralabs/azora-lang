@@ -47,7 +47,7 @@ import org.azora.lang.frontend.TypeRef
  * written.
  *
  * The pass is fully generic: it attaches no meaning to any decorator and knows
- * nothing about ECS or any library. It runs after stdlib/library injection, so
+ * nothing about any library. It runs after stdlib/library injection, so
  * declarations decorated in any module are visible. `reflect<*>.withAnnot<D>`
  * parses to a call `__withAnnot(*)` carrying `D` as its single type argument (see
  * the parser).
@@ -228,7 +228,7 @@ object ReflectDecoExpander {
          * A parameter's type, with a type macro on it expanded.
          *
          * Reflection runs before type macros do, so a parameter written
-         * `@query [A, B]` still names the macro here. What it stands for is what
+         * `@rows [A, B]` still names the macro here. What it stands for is what
          * a caller has to build, so it is expanded now; [VariadicMonomorphizer]
          * remains the authority on the rules and expands every other position.
          */
@@ -324,8 +324,8 @@ object ReflectDecoExpander {
      * Substituted as a type (`provide<P>(world)`) and as the qualifier of a static
      * call (`P::provide(world)` - which the parser has already joined into one
      * name, `P__provide`). A borrowed or applied type answers under its own base
-     * name, because that is where its statics are declared: `QueryOf<Shape>` and
-     * `World&` reach `QueryOf::provide` and `World::provide`.
+     * name, because that is where its statics are declared: `Rows<Shape>` and
+     * `Store&` reach `Rows::provide` and `Store::provide`.
      */
     private class ParamSub(val from: String, val param: Param, val program: Program) {
 
@@ -422,8 +422,8 @@ object ReflectDecoExpander {
                     e.callee
                 }
                 // The applied arguments travel with the call, so
-                // `QueryOf<Shape>::provide` is specialized for `Shape` and not for
-                // whatever `QueryOf`'s parameter would otherwise erase to.
+                // `Rows<Shape>::provide` is specialized for `Shape` and not for
+                // whatever `Rows`' parameter would otherwise erase to.
                 val typeArgs = if (callee != e.callee && e.typeArgs.isEmpty()) named?.args.orEmpty() else e.typeArgs.map { typeRef(it) }
                 e.copy(callee = callee, args = e.args.map { expr(it) }, typeArgs = typeArgs, receiver = e.receiver?.let { expr(it) })
             }

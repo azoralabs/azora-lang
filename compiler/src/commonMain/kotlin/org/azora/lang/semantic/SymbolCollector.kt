@@ -104,11 +104,9 @@ class SymbolCollector {
     }
 
     private fun registerBuiltins(table: SymbolTable) {
-        // println accepts String - type checker will allow String args
-        // `toString` lives in std as `std::convert::toString` (see
-        // Internal/Std/Convert/Convert.az); it is no longer a free builtin.
-        // `println` lives in std as `std::println` (see Internal/Std/IO/IO.az);
-        // it is no longer a free builtin.
+        // `toString` lives in std as `std::convert::toString`, and `println` as
+        // `std::println`; neither is a free builtin, so neither is registered
+        // here.
         if (table.lookupFunction("channel") == null) {
             // `channel()` - creates a buffered channel for task-to-task communication.
             // NOTE: still a builtin - relocation to std::concurrency::channel is blocked
@@ -134,8 +132,8 @@ class SymbolCollector {
         if (table.lookupFunction("async") == null) {
             table.defineFunction(FunctionSymbol("async", listOf("thunk" to IrType.Any), IrType.Task(IrType.Any)))
         }
-        // `cancel` lives in std as `std::concurrency::cancel` (see
-        // Internal/Std/Concurrency/Async.az); it is no longer a free builtin.
+        // `cancel` lives in std as `std::concurrency::cancel`; it is not a free
+        // builtin, so it is not registered here.
     }
 
     /**

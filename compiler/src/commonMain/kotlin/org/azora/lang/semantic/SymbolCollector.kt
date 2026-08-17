@@ -507,6 +507,7 @@ class SymbolCollector {
                                 memberCallStyle = declaredStyle ?: method.memberCallStyle,
                                 returnTypeRef = (method.returnType as? TypeAnnotation.Explicit)?.ref,
                                 isBodyless = method.body.isEmpty(),
+                                contextualParams = method.contextualParams,
                             ))
                         }
                         table.defineMethod(item.typeName, method.name, mangled)
@@ -544,14 +545,37 @@ class SymbolCollector {
                         // can resolve to it instead of filling fields positionally.
                         // The IR generator emits the body; this is what lets the
                         // call site find it.
+                        //
+                        // One factory per arity the ctor can be called at, because
+                        // the call site finds it by the number of arguments
+                        // written. A parameter with a default makes the arity
+                        // below it callable too, and a receiver the ctor reads
+                        // from scope is not written at all - so `ctor[self: Self&,
+                        // scope: Scope&](value: String, key: String = "")` answers
+                        // `Text("hi")` as well as `Text("hi", "k")`.
                         if (method.name == "ctor" && method.params.isNotEmpty() && !item.isBridge) {
-                            table.defineFunction(FunctionSymbol(
-                                "__ctor_${item.typeName}_${method.params.size}",
-                                params.drop(1),
-                                selfType,
-                                false,
-                                visibility = method.visibility,
-                            ))
+                            val written = method.params.drop(method.contextualParams)
+                            // A ctor that declared a return type yields that; one
+                            // that declared none yields the value it filled.
+                            val yields = (method.returnType as? TypeAnnotation.Explicit)
+                                ?.let { IrType.resolve(it.ref, emptySet()) } ?: selfType
+                            run {
+                                val arity = written.size
+                                table.defineFunction(FunctionSymbol(
+                                    "__ctor_${item.typeName}_$arity",
+                                    params.drop(1),
+                                    yields,
+                                    false,
+                                    visibility = method.visibility,
+                                    contextualParams = method.contextualParams,
+                                    // A ctor takes named arguments and fills what
+                                    // was omitted, the same as any other member.
+                                    paramNames = method.params.map { it.name },
+                                    defaults = method.params
+                                        .mapIndexedNotNull { i, p -> p.defaultValue?.let { i to it } }
+                                        .toMap(),
+                                ))
+                            }
                         }
                     } catch (e: Exception) {
                         errors.add("line ${method.line}: ${e.message}")

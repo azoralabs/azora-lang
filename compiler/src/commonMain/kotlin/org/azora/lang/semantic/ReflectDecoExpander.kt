@@ -184,7 +184,15 @@ object ReflectDecoExpander {
             reflectQuery(e)?.let { return it }
             return when (e) {
                 is Expr.Identifier -> if (e.name == from) e.copy(name = to) else e
-                is Expr.Call -> e.copy(callee = subName(e.callee), args = e.args.flatMap { arg(it) }, receiver = e.receiver?.let { expr(it) })
+                // The applied type arguments travel with the call, so
+                // `nameOf<C>()` is bound for what `C` stands for on this
+                // iteration rather than left naming the loop variable.
+                is Expr.Call -> e.copy(
+                    callee = subName(e.callee),
+                    args = e.args.flatMap { arg(it) },
+                    receiver = e.receiver?.let { expr(it) },
+                    typeArgs = e.typeArgs.map { typeRef(it) },
+                )
                 is Expr.MethodCall -> e.copy(target = expr(e.target), args = e.args.map { expr(it) })
                 is Expr.Member -> e.copy(target = expr(e.target))
                 is Expr.SafeMember -> e.copy(target = expr(e.target))

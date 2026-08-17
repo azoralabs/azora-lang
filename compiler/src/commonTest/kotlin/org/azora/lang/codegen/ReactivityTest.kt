@@ -72,17 +72,37 @@ class ReactivityTest {
         )
     }
 
-    @Test fun reactMayOnlyQualifyAFunctionOrProperty() {
+    @Test fun reactMayOnlyQualifyAMember() {
         val found = errors("""
             pack P { var n: std::Int = 0 }
             impl P {
-                react ctor() { }
+                react var n: std::Int = 0
             }
         """.trimIndent())
         assertTrue(
-            found.any { "Expected 'prop', 'func', 'async prop', or 'async func' after 'react'" in it },
+            found.any { "after 'react'" in it },
             found.toString(),
         )
+    }
+
+    /** A ctor builds, and one that builds by composing is reactive for the same
+     * reason a `react func` is - so `react` qualifies it like any other member. */
+    @Test fun reactQualifiesACtor() {
+        assertEquals("3", run("""
+            import std.io
+
+            pack P { var n: std::Int = 0 }
+            impl P {
+                react ctor[self: Self!](n: std::Int) {
+                    self.n = n
+                }
+            }
+
+            func main() {
+                fin p = P(3)
+                std::println(p.n)
+            }
+        """.trimIndent()))
     }
 
     @Test fun automaticEffectRunsInitiallyAndAfterChanges() {

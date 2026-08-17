@@ -107,6 +107,9 @@ class Parser(
     private val pendingTypeMacroRules = mutableListOf<TypeTypeArm>()
     private val pendingInfixMacros = mutableListOf<InfixMacroRule>()
 
+    /** The type an `impl` body is on, or null outside one. What `Self` names. */
+    private var currentImplTypeName: String? = null
+
     /** Set whenever a `name@…` macro invocation is parsed; surfaced on [Program.usesMacros]. */
     private var usedMetaInvoke = false
 
@@ -3337,6 +3340,9 @@ class Parser(
             )
         }
         val methods = mutableListOf<FuncDecl>()
+        // What `Self` names in this body, for a macro fragment that splices it.
+        val savedImplTypeName = currentImplTypeName
+        currentImplTypeName = typeName
         while (!check(TokenType.R_BRACE) && !isAtEnd()) {
             skipNewlines()
             if (check(TokenType.R_BRACE)) break
@@ -3362,9 +3368,16 @@ class Parser(
             // property parses by its ordinary rules.
             val isAsyncProp = isAsyncPropAt(current)
             if (isAsyncProp) advance()
-            if (isReactiveMember && !check(TokenType.PROP) && !check(TokenType.FUNC) && !isAsyncFuncAt(current)) {
+            // A ctor is a member like any other, and one that builds by composing
+            // is reactive for the same reason a `react func` is.
+            if (isReactiveMember &&
+                !check(TokenType.PROP) &&
+                !check(TokenType.FUNC) &&
+                !check(TokenType.CTOR) &&
+                !isAsyncFuncAt(current)
+            ) {
                 error(
-                    "Expected 'prop', 'func', 'async prop', or 'async func' after 'react' " +
+                    "Expected 'prop', 'func', 'ctor', 'async prop', or 'async func' after 'react' " +
                         "at line ${peek().line}",
                 )
             }
@@ -3478,12 +3491,29 @@ class Parser(
                 // type it builds, so it lives in the impl beside everything else.
                 check(TokenType.CTOR) -> {
                     val ctorStart = advance()
-                    val recv = parsePropReceiver()
+                    // A ctor is generic over what it takes, the same as any other
+                    // member: `ctor<R>[self: Self&, site: Site&](children: … -> R)`.
+                    val ctorTypeParams = parseTypeParams()
+                    val (recv, scopeReceivers) = if (check(TokenType.L_BRACKET)) {
+                        advance()
+                        parseReceiverList()
+                    } else {
+                        PropReceiver("self", TypeRef.Named("Self"), ParamModifier.SHARED) to emptyList()
+                    }
                     val ctorParams = if (match(TokenType.L_PAREN)) {
                         val parsed = if (check(TokenType.R_PAREN)) emptyList() else parseParams()
                         consume(TokenType.R_PAREN, "Expected ')' after ctor parameters")
                         parsed
                     } else emptyList()
+                    // A ctor usually yields the value it fills, and says nothing.
+                    // One that reads a scope may yield what that scope produced
+                    // instead - `ctor[self: Self&, site: Site&](…): Entity` - so
+                    // the type is written where any other return type would be.
+                    val ctorReturn = if (match(TokenType.COLON)) {
+                        TypeAnnotation.Explicit(parseTypeName())
+                    } else {
+                        TypeAnnotation.Inferred
+                    }
                     val contracts = parseContractClauses()
                     consume(TokenType.L_BRACE, "Expected '{' after ctor")
                     skipNewlines()
@@ -3491,10 +3521,17 @@ class Parser(
                     consume(TokenType.R_BRACE, "Expected '}' after ctor body")
                     consumeNewline()
                     methods.add(FuncDecl(
-                        "ctor", ctorParams, TypeAnnotation.Inferred, applyContracts(ctorBody, contracts),
-                        false, emptyList(), ctorStart.line, ctorStart.column,
+                        "ctor", scopeReceivers + ctorParams, ctorReturn,
+                        applyContracts(ctorBody, contracts),
+                        false, ctorTypeParams.names, ctorStart.line, ctorStart.column,
                         annotations = memberAnnotations, visibility = visibility,
                         receiverModifier = recv.modifier, receiverName = recv.name,
+                        contextualParams = scopeReceivers.size,
+                        isReactive = isReactiveMember,
+                        variadicParam = ctorTypeParams.variadic,
+                        constParams = ctorTypeParams.constParams,
+                        constDefaults = ctorTypeParams.constDefaults,
+                        constEnums = ctorTypeParams.constEnums,
                     ))
                 }
                 // `dtor [self: Self&] { … }` - teardown, with no parameters to take.
@@ -3616,6 +3653,7 @@ class Parser(
             }
             skipNewlines()
         }
+        currentImplTypeName = savedImplTypeName
         consume(TokenType.R_BRACE, "Expected '}' after impl methods")
         consumeNewline()
         return TopLevel.Impl(
@@ -4311,10 +4349,16 @@ class Parser(
          */
         private val fragmentMacroParams = mutableMapOf<String, String>()
 
+        /** A source fragment written between two operands, with the holes it names. */
+        data class InfixFragment(val text: String, val leftHole: String, val rightHole: String)
+
+        private val infixFragmentMacros = mutableMapOf<String, InfixFragment>()
+
         /** Drops fragment macros collected by a previous compilation. */
         fun resetFragmentMacros() {
             fragmentMacros.clear()
             fragmentMacroParams.clear()
+            infixFragmentMacros.clear()
         }
     }
 
@@ -4342,15 +4386,82 @@ class Parser(
             afterArgument += argument.size
             text.replace(hole, argument.joinToString(" ") { it.lexeme })
         } ?: text
+        val spliced = expandSelfSplices(body, nameToken.line)
         // The fragment is lexed from text, so its tokens start over at line 1.
         // Stamped with the position of the `@name` they stand for, so anything
         // reported inside the expansion points at where it was written.
-        val expanded = Lexer(body).tokenize()
+        val expanded = Lexer(spliced).tokenize()
             .filter { it.type != TokenType.EOF && it.type != TokenType.NEWLINE }
             .map { it.copy(line = nameToken.line, column = nameToken.column) }
         val rest = tokens.drop(afterArgument)
         tokens = tokens.take(current) + expanded + rest
         return true
+    }
+
+    /**
+     * Expands `a @name b` where `@name` is an infix source fragment.
+     *
+     * The left operand is already behind the cursor, so it is taken from the
+     * tokens it was parsed from - [leftStart] is where it began. Both operands
+     * are substituted for the holes the fragment named, and the result replaces
+     * the whole `a @name b` so the caller can parse it as what it expanded to.
+     */
+    private fun spliceInfixFragmentMacro(leftStart: Int, nameToken: Token): Boolean {
+        val fragment = infixFragmentMacros[nameToken.lexeme] ?: return false
+        val leftTokens = tokens.subList(leftStart, current).filter { it.type != TokenType.NEWLINE }
+        if (leftTokens.isEmpty()) return false
+        val rightFrom = current + 2
+        val rightTokens = fragmentArgumentTokens(rightFrom)
+        if (rightTokens.isEmpty()) {
+            error("'@${nameToken.lexeme}' takes an operand on both sides at line ${nameToken.line}")
+        }
+        // Longest hole first, so `$key` is not eaten by a `$k` declared beside it.
+        val holes = listOf(
+            fragment.leftHole to leftTokens.joinToString(" ") { it.lexeme },
+            fragment.rightHole to rightTokens.joinToString(" ") { it.lexeme },
+        ).sortedByDescending { it.first.length }
+        var body = fragment.text
+        for ((hole, value) in holes) body = body.replace(hole, value)
+        body = expandSelfSplices(body, nameToken.line)
+        val expanded = Lexer(body).tokenize()
+            .filter { it.type != TokenType.EOF && it.type != TokenType.NEWLINE }
+            .map { it.copy(line = nameToken.line, column = nameToken.column) }
+        tokens = tokens.take(leftStart) + expanded + tokens.drop(rightFrom + rightTokens.size)
+        return true
+    }
+
+    /**
+     * Replaces `${Self.typename}` in a fragment with the type it expands inside.
+     *
+     * A fragment is text until it is spliced, and only there is it known what
+     * `Self` stands for - which is what lets one declaration serve every type
+     * that uses it. `.lowercase` and `.uppercase` case the name; the result is a
+     * string literal, because that is what the name is at a call.
+     */
+    private fun expandSelfSplices(body: String, line: Int): String {
+        if (!body.contains("\${Self.")) return body
+        var out = body
+        while (true) {
+            val start = out.indexOf("\${Self.")
+            if (start < 0) break
+            val end = out.indexOf('}', start)
+            if (end < 0) error("unterminated '\${Self.…}' in a macro fragment at line $line")
+            val name = currentImplTypeName
+                ?: error("'\${Self.…}' names the type it expands inside, and there is none at line $line")
+            val path = out.substring(start + "\${Self.".length, end).split('.')
+            if (path.firstOrNull()?.lowercase() != "typename") {
+                error("'Self.${path.firstOrNull()}' is not a name a macro fragment can splice at line $line")
+            }
+            val cased = path.drop(1).fold(name) { acc, step ->
+                when (step) {
+                    "lowercase" -> acc.lowercase()
+                    "uppercase" -> acc.uppercase()
+                    else -> error("'$step' is not a case a macro fragment can apply at line $line")
+                }
+            }
+            out = out.substring(0, start) + "\"" + cased + "\"" + out.substring(end + 1)
+        }
+        return out
     }
 
     /**
@@ -4402,6 +4513,27 @@ class Parser(
             // `a @op b` calls the free function `op(a, b)`. The bodyless form is
             // what a plain infix function wants - there is nothing to rewrite to.
             if (match(TokenType.FAT_ARROW)) {
+                // `$a @op $b => inline "…"` - a source fragment, the infix form of
+                // what a prefix macro writes. A template rewrites one expression
+                // into another; a fragment stands for text, which is what lets an
+                // arm expand to a whole `if` rather than a single call.
+                if (match(TokenType.INLINE)) {
+                    if (!check(TokenType.STRING_LITERAL) && !check(TokenType.INTERPOLATED_STRING)) {
+                        error("Expected a source fragment after 'inline', got '${peek().lexeme}' at line ${peek().line}")
+                    }
+                    val fragment = advance()
+                    infixFragmentMacros[op] = InfixFragment(
+                        text = if (fragment.type == TokenType.STRING_LITERAL) {
+                            fragment.literal as? String ?: fragment.lexeme.trim('"')
+                        } else {
+                            fragment.lexeme.trim('"')
+                        },
+                        leftHole = left,
+                        rightHole = right,
+                    )
+                    consumeNewline()
+                    return TopLevel.Meta("__fragment__$op", emptyList(), start.line, start.column)
+                }
                 // Type holes on both sides mean the arm joins two *types*, so
                 // its template is one too - `$L @and $R => Both<$L, $R>`.
                 // Read as an expression it would come apart at the first comma
@@ -5020,9 +5152,19 @@ class Parser(
             // follows: `func from(value: T): Self` asks for `Type::from`, built
             // by an `impl <Spec> for Type:: { … }`. It is the only shape a
             // constructing conversion can have - there is no `self` to convert.
-            val mreceiver = if (check(TokenType.L_BRACKET)) parsePropReceiver() else null
+            // Receivers past the member's own are read from the scope a call sits
+            // in rather than written at it, so they lead the parameters.
+            var mScopeReceivers = emptyList<Param>()
+            val mreceiver = if (check(TokenType.L_BRACKET)) {
+                advance()
+                val (receiver, extra) = parseReceiverList()
+                mScopeReceivers = extra
+                receiver
+            } else {
+                null
+            }
             consume(TokenType.L_PAREN, "Expected '('")
-            val params = parseParams()
+            val params = mScopeReceivers + parseParams()
             consume(TokenType.R_PAREN, "Expected ')'")
             val returnType: TypeAnnotation = if (match(TokenType.COLON)) {
                 TypeAnnotation.Explicit(parseTypeName())
@@ -5054,6 +5196,7 @@ class Parser(
                 memberCallStyle =
                     if (mreceiver == null) MemberCallStyle.STATIC_METHOD else MemberCallStyle.METHOD,
                 useAsTemplate = memberUseAs,
+                contextualParams = mScopeReceivers.size,
             ))
         }
         consume(TokenType.R_BRACE, "Expected '}' after spec methods")
@@ -5342,14 +5485,20 @@ class Parser(
         // function an extension on it, callable as `value.m()`.
         var extensionReceiver: Param? = null
         var bracketReceiver: PropReceiver? = null
+        // Receivers past the member's own are read from the scope the call sits
+        // in rather than written at it, so they lead the parameters.
+        var scopeReceivers = emptyList<Param>()
         if (check(TokenType.L_BRACKET)) {
-            bracketReceiver = parsePropReceiver()
+            advance()
+            val (receiver, extra) = parseReceiverList()
+            bracketReceiver = receiver
+            scopeReceivers = extra
             if (!inImplBlock) {
                 bracketReceiver.type?.let { extensionReceiver = Param(bracketReceiver!!.name, it) }
             }
         }
         consume(TokenType.L_PAREN, "Expected '(' after function name")
-        val params = parseParams(variadicParam).toMutableList()
+        val params = (scopeReceivers + parseParams(variadicParam)).toMutableList()
         consume(TokenType.R_PAREN, "Expected ')' after parameters")
         // Whether the author wrote a return type at all. Both branches below that
         // do not write one still produce a type - the rule is that an omitted
@@ -5462,6 +5611,7 @@ class Parser(
             whereClause = funcWhereClause,
             constParams = constParams,
             returnTypeDeclared = returnTypeDeclared,
+            contextualParams = scopeReceivers.size,
         )
     }
 
@@ -7359,6 +7509,24 @@ class Parser(
             return PropReceiver("self", TypeRef.Named("Self"), ParamModifier.SHARED)
         }
         consume(TokenType.L_BRACKET, "Expected '[' - a member declares its receiver, as in '[self: Self&]'")
+        val (receiver, extra) = parseReceiverList()
+        if (extra.isNotEmpty()) {
+            error("only a 'ctor' takes a receiver beyond its own, at line ${peek().line}")
+        }
+        return receiver
+    }
+
+    /**
+     * The receivers in a `[…]` list: the member's own, then any it reads from scope.
+     *
+     * `[self: Self&]` is the ordinary case and yields no extras. A `ctor` may name
+     * more - `[self: Self&, scope: Scope&]` - and each further receiver is one the
+     * call site does not write: it comes from the `with` block or receiver lambda
+     * the call sits in. That is what lets a pack's constructor and a scope's
+     * builder be the same name, since the constructor only applies where the extra
+     * receiver is actually in scope.
+     */
+    private fun parseReceiverList(): Pair<PropReceiver, List<Param>> {
         val name = consumeIdentifierLike("Expected receiver name in '[…]'")
         if (!check(TokenType.COLON)) {
             error(
@@ -7368,8 +7536,19 @@ class Parser(
         }
         advance() // ':'
         val (type, modifier) = parseReceiverTypeAndModifier()
+        val extra = mutableListOf<Param>()
+        while (match(TokenType.COMMA)) {
+            skipNewlines()
+            val extraName = consumeIdentifierLike("Expected receiver name in '[…]'")
+            if (!check(TokenType.COLON)) {
+                error("a receiver must name its type: write '[$extraName: Type&]', at line ${peek().line}")
+            }
+            advance() // ':'
+            val (extraType, extraModifier) = parseReceiverTypeAndModifier()
+            extra.add(Param(extraName, extraType, modifier = extraModifier))
+        }
         consume(TokenType.R_BRACKET, "Expected ']' after receiver")
-        return PropReceiver(name, type, modifier)
+        return PropReceiver(name, type, modifier) to extra
     }
 
     /**
@@ -9095,11 +9274,27 @@ class Parser(
      * Any IDENTIFIER followed by an expression-start token is treated as an infix method call.
      */
     private fun parseInfix(): Expr {
+        // Where the left operand began, so an infix fragment can take its source
+        // back: by the time `@name` is reached the operand is already parsed.
+        val leftStart = current
         var left = parseShift()
         // `where` introduces a clause wherever it appears - on a pack, an impl, a
         // function or a field - so it is never an infix method name. Without this,
         // `var w: Int = 4 where N == 4` parses its default as `4.where(N == 4)`.
         while (true) {
+            // `a @name b` where `@name` is a source fragment expands to text, so
+            // the whole thing is replaced and parsed again as what it became.
+            if (check(TokenType.AT)) {
+                val fragmentName = peekNext()
+                if (fragmentName != null &&
+                    fragmentName.type == TokenType.IDENTIFIER &&
+                    infixFragmentMacros.containsKey(fragmentName.lexeme) &&
+                    spliceInfixFragmentMacro(leftStart, fragmentName)
+                ) {
+                    current = leftStart
+                    return parseInfix()
+                }
+            }
             val atForm = check(TokenType.AT) && isAtInfixCandidate()
             if (!atForm && !(check(TokenType.IDENTIFIER) && peek().lexeme != "where" && isInfixCandidate())) break
             // `a @to b` - the `@` leads on an infix macro's call just as it leads
@@ -9367,15 +9562,24 @@ class Parser(
             //         .fillMaxHeight()
             //
             // The newline is not the end of the expression when a `.` follows
-            // it, because nothing else can begin with one - a statement opening
-            // with a dot would have no receiver. Looking past the newlines here
-            // keeps the reading unambiguous without a continuation marker.
+            // it, because almost nothing else can begin with one - a statement
+            // opening with a dot would have no receiver. Looking past the
+            // newlines here keeps the reading unambiguous without a
+            // continuation marker.
+            //
+            // A `when` arm is the exception: `.Startup -> 0` names the
+            // scrutinee's variant and does begin a line with a dot. The `->`
+            // after the name is what tells the two apart, so an arm opens
+            // rather than continuing the arm above it.
             if (check(TokenType.NEWLINE)) {
                 var ahead = current
                 while (tokens.getOrNull(ahead)?.type == TokenType.NEWLINE) ahead++
+                val opensWhenArm = tokens.getOrNull(ahead + 2)?.type == TokenType.ARROW &&
+                    tokens.getOrNull(ahead + 1)?.type == TokenType.IDENTIFIER
                 if (tokens.getOrNull(ahead)?.type == TokenType.DOT &&
                     tokens.getOrNull(ahead + 1)?.type != TokenType.AMP &&
-                    tokens.getOrNull(ahead + 1)?.type != TokenType.BANG
+                    tokens.getOrNull(ahead + 1)?.type != TokenType.BANG &&
+                    !opensWhenArm
                 ) {
                     current = ahead
                 }
@@ -9922,6 +10126,10 @@ class Parser(
     }
 
     private fun parsePrimary(): Expr {
+        // A fragment stands where its expansion stands, so one that expands to a
+        // value belongs wherever a value does: `fin id = @applyKey site` reads the
+        // fragment's tokens in and parses them as the expression they are.
+        if (spliceFragmentMacro()) return parseExpr()
         val tok = peek()
         // `.Name` - the expected type's member, named without repeating the
         // type. A primary expression never otherwise begins with a dot, so this

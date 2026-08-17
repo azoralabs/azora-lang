@@ -126,6 +126,75 @@ class AzoraLanguageServerTest {
     }
 
     @Test
+    fun derivesIsAContextualPackKeyword() {
+        val source = """
+            pack Player<T> derives [Copy, Hash] where T: Copy
+            func derives(): Unit {}
+        """.trimIndent()
+        val all = spans(source)
+        val derives = all.filter { source.substring(it.start, it.end) == "derives" }
+
+        assertEquals("keyword", derives.first().type)
+        assertEquals("function", derives.last().type)
+        assertTrue("derives" in AzHighlighter.KEYWORDS)
+    }
+
+    @Test
+    fun genericParametersLoopLabelsAndRealmPathsHaveDistinctSemanticRoles() {
+        val source = """
+            realm ide::editor {
+                func transform<T>[self: Box<T>&](value: T): T {
+                    outer: loop {
+                        continue:outer
+                    }
+                    return value
+                }
+            }
+        """.trimIndent()
+        val all = spans(source)
+        fun roles(text: String) = all
+            .filter { source.substring(it.start, it.end) == text }
+            .map { it.type }
+
+        assertTrue(roles("T").isNotEmpty() && roles("T").all { it == "generic" }, roles("T").toString())
+        assertEquals(listOf("label", "label"), roles("outer"))
+        assertEquals("realm", roles("ide").single())
+        assertEquals("realm", roles("editor").single())
+        assertEquals("parameter", roles("self").first())
+    }
+
+    @Test
+    fun `every clause keyword remains contextual outside its grammar position`() {
+        val source = """
+            graph App replace Base includes Shared {
+                solo Service binds Runnable
+            }
+            annot Routed binds Serializable
+            spec Worker requires Send
+            fin callback: escaping (std::Int) -> std::Int
+            fin borrowed = lend value
+            fin selected = when value { true => seal Result }
+
+            func includes() {}
+            fin binds = 1
+            fin requires = 2
+            fin escaping = 3
+            fin lend = 4
+            fin seal = 5
+        """.trimIndent()
+        val all = spans(source)
+        fun roles(text: String) = all
+            .filter { source.substring(it.start, it.end) == text }
+            .map { it.type }
+
+        assertEquals(1, roles("replace").count { it == "keyword" })
+        for (word in listOf("includes", "binds", "requires", "escaping", "lend", "seal")) {
+            assertTrue(roles(word).any { it == "keyword" }, "$word should have one contextual keyword use: ${roles(word)}")
+            assertTrue(roles(word).any { it != "keyword" }, "$word should remain a legal identifier: ${roles(word)}")
+        }
+    }
+
+    @Test
     fun bracketReceiverFunctionIsRecognized() {
         val source = """
             pack Language { fin name: String }
@@ -250,7 +319,7 @@ fin array = @collect_all(tuple)"""
 
     @Test
     fun cleanProgramHasNoDiagnostics() {
-        val list = diags("func main() {\n    println(\"ok\")\n}")
+        val list = diags("import std.io\nfunc main() {\n    std::println(\"ok\")\n}")
         assertEquals(emptyList(), list)
     }
 
@@ -264,23 +333,23 @@ fin array = @collect_all(tuple)"""
 
     @Test
     fun semanticErrorIsReported() {
-        val list = diags("func main() {\n    println(missingVar)\n}")
+        val list = diags("func main() {\n    fin result = missingVar\n}")
         assertTrue(list.isNotEmpty(), "expected an undefined-variable diagnostic")
         assertTrue(list.any { it.line == 2 }, "diagnostic should be on line 2: $list")
     }
 
     @Test
     fun preludeShiftsLinesBack() {
-        val prelude = "func helper(): Int {\n    return 1\n}"
-        val list = diags("func main() {\n    println(brokenRef)\n}", prelude)
+        val prelude = "func helper(): std::Int {\n    return 1\n}"
+        val list = diags("func main() {\n    fin result = brokenRef\n}", prelude)
         assertTrue(list.isNotEmpty())
         assertEquals(2, list[0].line, "line must be mapped back to the document: $list")
     }
 
     @Test
     fun preludeSymbolsResolve() {
-        val prelude = "func helper(): Int {\n    return 1\n}"
-        val list = diags("func main() {\n    println(helper())\n}", prelude)
+        val prelude = "func helper(): std::Int {\n    return 1\n}"
+        val list = diags("func main(): std::Int {\n    return helper()\n}", prelude)
         assertEquals(emptyList(), list)
     }
 
@@ -326,8 +395,8 @@ fin array = @collect_all(tuple)"""
 
     @Test
     fun completesStdlibFunctions() {
-        val source = "import std.math\nfunc main() {\n    ab\n}"
-        val offset = source.indexOf("    ab") + 6
+        val source = "import std.math\nfunc main() {\n    std::ab\n}"
+        val offset = source.indexOf("std::ab") + "std::ab".length
         val list = completions(source, offset)
         assertTrue(list.any { it.label == "abs" && it.kind == "function" }, "stdlib abs should complete: $list")
         assertTrue(list.any { it.label == "abs" && "func abs" in it.detail && "std.math" in it.detail },
@@ -336,8 +405,8 @@ fin array = @collect_all(tuple)"""
 
     @Test
     fun completesGroupedStdlibImports() {
-        val source = "import std.{math, container}\nfunc main() {\n    ab\n}"
-        val offset = source.indexOf("    ab") + 6
+        val source = "import std.{math, container}\nfunc main() {\n    std::ab\n}"
+        val offset = source.indexOf("std::ab") + "std::ab".length
         val list = completions(source, offset)
         assertTrue(list.any { it.label == "abs" && it.kind == "function" && "std.math" in it.detail },
             "grouped std import should expose std.math completions: $list")
@@ -345,8 +414,8 @@ fin array = @collect_all(tuple)"""
 
     @Test
     fun completesSelectiveStdlibImportFromContainingModule() {
-        val source = "import std.math.abs\nfunc main() {\n    ab\n}"
-        val offset = source.indexOf("    ab") + 6
+        val source = "import std.math.abs\nfunc main() {\n    std::ab\n}"
+        val offset = source.indexOf("std::ab") + "std::ab".length
         val list = completions(source, offset)
         assertTrue(list.any { it.label == "abs" && it.kind == "function" && "std.math" in it.detail },
             "selective std import should expose its containing module for completion: $list")
@@ -354,8 +423,8 @@ fin array = @collect_all(tuple)"""
 
     @Test
     fun stdlibConstantsComplete() {
-        val source = "import std\nfunc main() {\n    P\n}"
-        val offset = source.indexOf("    P") + 5
+        val source = "import std.math\nfunc main() {\n    std::P\n}"
+        val offset = source.indexOf("std::P") + "std::P".length
         val list = completions(source, offset)
         assertTrue(list.any { it.label == "PI" && it.kind == "variable" }, "PI should complete: $list")
     }
@@ -392,10 +461,10 @@ fin array = @collect_all(tuple)"""
 
     @Test
     fun completesBuiltinFunctions() {
-        val source = "func main() {\n    pr\n}"
-        val offset = source.indexOf("    pr") + 6
+        val source = "func main() {\n    ch\n}"
+        val offset = source.indexOf("    ch") + 6
         val list = completions(source, offset)
-        assertTrue(list.any { it.label == "println" && it.kind == "function" }, "builtin println should complete: $list")
+        assertTrue(list.any { it.label == "channel" && it.kind == "function" }, "builtin channel should complete: $list")
     }
 
     @Test
@@ -451,6 +520,18 @@ fin array = @collect_all(tuple)"""
     }
 
     @Test
+    fun hoverIncludesBlockDocumentationFromPreludeAndStdlib() {
+        val prelude = "/** External helper docs. */\nfunc helper(): std::Int { return 1 }"
+        val source = "import std.math\nfunc main() {\n    helper()\n    std::abs(-1)\n}"
+
+        val helper = hover(source, source.indexOf("helper()"), prelude)!!
+        val abs = hover(source, source.indexOf("abs(-1)"))!!
+
+        assertTrue("External helper docs" in helper.doc, helper.doc)
+        assertTrue("absolute value" in abs.doc.lowercase(), abs.doc)
+    }
+
+    @Test
     fun definitionFindsTopLevelFunctionInFile() {
         val source = "func helper(): Int {\n    return 1\n}\nfunc main() {\n    helper()\n}"
         val offset = source.lastIndexOf("helper") + 1
@@ -469,9 +550,65 @@ fin array = @collect_all(tuple)"""
     }
 
     @Test
+    fun definitionUsesLexicalIdentityInsteadOfSameSpelledSiblingBinding() {
+        val source = """
+            func value(): std::Int { return 7 }
+            func main() {
+                if true {
+                    fin value = 1
+                    println(value)
+                }
+                println(value())
+            }
+        """.trimIndent()
+        val inside = definition(source, source.indexOf("println(value)") + "println(".length)!!
+        val outside = definition(source, source.lastIndexOf("value()"))!!
+
+        assertEquals(4, inside.line)
+        assertEquals(1, outside.line)
+    }
+
+    @Test
+    fun definitionSelectsSameSpelledTopLevelSymbolsByUseRole() {
+        val source = """
+            fin state = 1
+            func state(): std::Int { return 2 }
+            func main() {
+                println(state)
+                println(state())
+            }
+        """.trimIndent()
+        val valueUse = source.indexOf("println(state)") + "println(".length
+        val callUse = source.indexOf("state())")
+
+        assertEquals(1, definition(source, valueUse)!!.line)
+        assertEquals(2, definition(source, callUse)!!.line)
+        assertTrue(hover(source, valueUse)!!.signature.startsWith("fin state"))
+        assertTrue(hover(source, callUse)!!.signature.startsWith("func state"))
+    }
+
+    @Test
+    fun definitionAndHoverResolveContextualReceiverParameter() {
+        val source = """
+            impl Text {
+                react ctor[self: Self&, anchor: Anchor&](value: std::String): Entity {
+                    return anchor.pass.text(value)
+                }
+            }
+        """.trimIndent()
+        val use = source.indexOf("anchor.pass")
+        val def = definition(source, use)!!
+        val info = hover(source, use)!!
+
+        assertEquals(2, def.line)
+        assertTrue(def.column > 1)
+        assertEquals("anchor: Anchor&", info.signature)
+    }
+
+    @Test
     fun definitionReportsExternalSymbolByName() {
         // abs lives in the stdlib, not this file → not in current file, named for search.
-        val source = "func main() {\n    abs(3)\n}"
+        val source = "import std.math\nfunc main() {\n    std::abs(3)\n}"
         val offset = source.indexOf("abs") + 1
         val def = definition(source, offset)!!
         assertFalse(def.inCurrentFile)

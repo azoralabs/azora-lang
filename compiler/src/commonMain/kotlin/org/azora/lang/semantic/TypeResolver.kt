@@ -193,13 +193,18 @@ class TypeResolver(private val table: SymbolTable) {
                     val savedReceiver = currentReceiverType
                     val savedReactive = reactiveContext
                     val savedModule = currentModule
+                    val savedMemberName = currentMemberName
                     currentReceiverType = item.typeName
+                    currentMemberName = method.name
                     currentModule = item.declaringModule
                     reactiveContext = method.isReactive
                     val savedAsync = asyncContext
                     asyncContext = method.isTask
                     contextualValues.addLast(
-                        listOf(Expr.Identifier("self", method.line, method.column) to IrType.Named(item.typeName)),
+                        ContextFrame(
+                            listOf(Expr.Identifier("self", method.line, method.column) to IrType.Named(item.typeName)),
+                            prefersMembers = false,
+                        ),
                     )
                     val savedUndeclaredReturn = undeclaredReturnOf
                     val savedOrigins = declaredOrigins
@@ -222,6 +227,7 @@ class TypeResolver(private val table: SymbolTable) {
                     undeclaredReturnOf = savedUndeclaredReturn
                     contextualValues.removeLast()
                     currentReceiverType = savedReceiver
+                    currentMemberName = savedMemberName
                     currentModule = savedModule
                     reactiveContext = savedReactive
                     asyncContext = savedAsync
@@ -908,9 +914,19 @@ class TypeResolver(private val table: SymbolTable) {
         }
         table.defineInferredMember(expr.line, expr.column, owner)
         expr.ctorArgs?.let { args ->
+            // The name a type is registered under, which is not always the one it
+            // is written by: a type declared in a realm is keyed by its qualified
+            // name. Written source resolves through the import that named it, and
+            // `.()` has no written name to resolve - so the type the position
+            // expects is matched to the declaration it stands for here.
+            val declared = if (table.lookupStruct(owner) != null) {
+                owner
+            } else {
+                table.allStructNames().firstOrNull { it.substringAfterLast("__") == owner } ?: owner
+            }
             // `.(a, b)` builds the type; `.Variant(a)` builds one of its variants.
             return if (expr.name.isEmpty()) {
-                resolveExpr(Expr.Call(owner, args, expr.line, expr.column, owner.length))
+                resolveExpr(Expr.Call(declared, args, expr.line, expr.column, declared.length))
             } else {
                 resolveExpr(
                     Expr.MethodCall(
@@ -995,7 +1011,22 @@ class TypeResolver(private val table: SymbolTable) {
      */
     private var expectedLambdaParamTypes: List<IrType>? = null
     private var expectedLambdaReceiverTypes: List<IrType>? = null
-    private val contextualValues = ArrayDeque<List<Pair<Expr, IrType>>>()
+    /**
+     * A value whose members are callable bare, and whether it was opened on purpose.
+     *
+     * [prefersMembers] separates the two ways a receiver becomes contextual. A
+     * `with` block and a receiver lambda name one deliberately, so a member of it
+     * answers a bare call before a pack of the same name would - which is what
+     * lets a pack and a builder share a name. A method's own receiver is implicit,
+     * and must not shadow: the pack's constructor is written inside exactly the
+     * member that would have taken it.
+     */
+    private class ContextFrame(val values: List<Pair<Expr, IrType>>, val prefersMembers: Boolean)
+
+    private val contextualValues = ArrayDeque<ContextFrame>()
+
+    /** The member being resolved, so a bare call to it is not read as itself. */
+    private var currentMemberName: String? = null
 
     /**
      * When non-null, return-value types inside the body being resolved are appended here
@@ -1036,7 +1067,7 @@ class TypeResolver(private val table: SymbolTable) {
 
     private fun inferredContexts(expected: List<IrType>): List<Pair<Expr, IrType>>? {
         if (expected.isEmpty()) return emptyList()
-        val available = contextualValues.asReversed().flatten()
+        val available = contextualValues.asReversed().flatMap { it.values }
         val used = mutableSetOf<Int>()
         return expected.map { wanted ->
             val index = available.indices.firstOrNull {
@@ -1123,6 +1154,79 @@ class TypeResolver(private val table: SymbolTable) {
      * would otherwise have to spell out.
      */
     private var inlineCallableDefault: CaptureMode? = null
+
+    /**
+     * Each written parameter of [factory] paired with the argument filling it.
+     *
+     * Named and positional arguments mix freely, as they do everywhere else: a
+     * named one takes its own parameter, and a positional one fills the leftmost
+     * parameter no name has claimed. A slot left null was not written and takes
+     * the ctor's default. Null is returned when an argument names nothing.
+     */
+    private fun bindCtorArguments(expr: Expr.Call, factory: FunctionSymbol): Array<Expr?>? {
+        val written = factory.paramNames.drop(factory.contextualParams)
+        val slots = arrayOfNulls<Expr>(maxOf(written.size, expr.args.size))
+        // A block written after the arguments fills the trailing callable, which
+        // is what lets `Button(action: 7) { … }` leave `key` to its default.
+        var args = expr.args
+        val trailingSlot = written.size - 1
+        if (args.isNotEmpty() && args.last() is Expr.Lambda && trailingSlot >= 0 &&
+            factory.params.getOrNull(factory.contextualParams + trailingSlot)?.second is IrType.Function
+        ) {
+            slots[trailingSlot] = args.last()
+            args = args.dropLast(1)
+        }
+        for (argument in args) {
+            if (argument !is Expr.NamedArg) continue
+            val index = written.indexOf(argument.name)
+            if (index < 0) {
+                errors.add("line ${expr.line}: '${expr.callee}' has no parameter '${argument.name}'")
+                return null
+            }
+            if (slots[index] != null) {
+                errors.add("line ${expr.line}: parameter '${argument.name}' given twice in '${expr.callee}'")
+                return null
+            }
+            slots[index] = argument.value
+        }
+        var next = 0
+        for (argument in args) {
+            if (argument is Expr.NamedArg) continue
+            while (next < slots.size && slots[next] != null) next++
+            if (next >= slots.size) {
+                errors.add("line ${expr.line}: '${expr.callee}' takes ${written.size} arguments")
+                return null
+            }
+            slots[next] = argument
+        }
+        return slots
+    }
+
+    /**
+     * [type] with the type parameters a call stated replaced by what it stated.
+     *
+     * A signature is written in terms of its parameters; a call that names them
+     * has said what those are. Substituting here is what turns `value: T` into
+     * `value: Rect` at the one call site that wrote `<Rect>`, so an argument can
+     * be seeded with a type the declaration alone could not supply.
+     */
+    private fun withStatedTypeArgs(ref: TypeRef, stated: Map<String, TypeRef>): TypeRef {
+        if (stated.isEmpty()) return ref
+        return when (ref) {
+            is TypeRef.Named ->
+                stated[ref.name] ?: ref.copy(args = ref.args.map { withStatedTypeArgs(it, stated) })
+            is TypeRef.Array -> ref.copy(element = withStatedTypeArgs(ref.element, stated))
+            is TypeRef.Nullable -> ref.copy(inner = withStatedTypeArgs(ref.inner, stated))
+            is TypeRef.Reference -> ref.copy(inner = withStatedTypeArgs(ref.inner, stated))
+            is TypeRef.Pointer -> ref.copy(inner = withStatedTypeArgs(ref.inner, stated))
+            is TypeRef.Function -> ref.copy(
+                params = ref.params.map { withStatedTypeArgs(it, stated) },
+                ret = withStatedTypeArgs(ref.ret, stated),
+                receivers = ref.receivers.map { withStatedTypeArgs(it, stated) },
+            )
+            else -> ref
+        }
+    }
 
     private fun resolveContextualArgument(argument: Expr, expected: IrType?): IrType? {
         // `.Name` takes the type it is being passed to.
@@ -1253,7 +1357,7 @@ class TypeResolver(private val table: SymbolTable) {
                 val values = stmt.values.mapNotNull { value ->
                     resolveExpr(value)?.let { value to it }
                 }
-                contextualValues.addLast(values)
+                contextualValues.addLast(ContextFrame(values, prefersMembers = true))
                 table.pushScope()
                 resolveBody(stmt.body, returnType)
                 table.popScope()
@@ -1832,8 +1936,84 @@ class TypeResolver(private val table: SymbolTable) {
                 // impl, `Self(…)` builds the type the impl is on - the same meaning
                 // `Self` already has in a signature, now in expression position.
                 val calleeName = selfToReceiver(expr.callee)
+                // A member of a receiver in scope answers a bare call before a
+                // free function or a pack of the same name: inside `impl Text` or
+                // `with anchor { … }` the member is what was meant, and reaching
+                // past it to something free would need the free one to be named.
+                //
+                // The exception is the member the call is written inside, which
+                // must not shadow itself - that is what lets `Label(value)` in
+                // `func Label[self: Self!](…)` still build the pack.
+                val contextualCallee = expr.callee.substringAfterLast("__")
+                for (frame in contextualValues.asReversed()) {
+                    for ((ctxExpr, ctxType) in frame.values) {
+                    if (ctxType !is IrType.Named) continue
+                    // A member answers before a free function when it belongs to
+                    // the type the call is written in, or to a receiver a `with`
+                    // opened. Anything else in scope is incidental, and reaching
+                    // into it would change what an ordinary call means.
+                    if (!frame.prefersMembers && ctxType.name != currentReceiverType) continue
+                    if (ctxType.name == currentReceiverType && contextualCallee == currentMemberName) continue
+                    val mangled = table.lookupMethod(ctxType.name, contextualCallee) ?: continue
+                    // Only a member that is really there and really callable: a
+                    // requirement no implementation answered, or a property, is
+                    // not what a call with arguments was reaching for.
+                    val member = table.lookupFunction(mangled) ?: continue
+                    if (member.isBodyless || member.memberCallStyle == MemberCallStyle.PROPERTY) continue
+                    return resolveExpr(
+                        Expr.MethodCall(ctxExpr, contextualCallee, expr.args, expr.line, expr.column),
+                    )
+                    }
+                }
                 val struct = table.lookupStruct(calleeName)
                 if (struct != null) {
+                    // A declared `ctor` answers before the fields do: it takes the
+                    // arguments it declared rather than one per field, and yields
+                    // whatever it says it yields. One that reads a receiver from
+                    // scope only applies where that receiver is in scope, so the
+                    // same name still constructs the pack everywhere else.
+                    // A named argument may name a later parameter, so binding one
+                    // needs every slot - the factory that takes them all.
+                    // A named argument or a trailing block may fill a slot past
+                    // one left to its default, so the count written says nothing
+                    // about which parameters it reaches. Any factory found tells
+                    // how many there are, and that one binds them all.
+                    val probe = (expr.args.size..expr.args.size + 8).firstNotNullOfOrNull {
+                        table.lookupFunction("__ctor_${calleeName}_$it")
+                    }
+                    val factory = probe?.let {
+                        table.lookupFunction(
+                            "__ctor_${calleeName}_${it.paramNames.size - it.contextualParams}",
+                        ) ?: it
+                    }
+                    if (factory != null) {
+                        val scoped = factory.params.take(factory.contextualParams).all { (_, t) ->
+                            contextualValues.any { frame -> frame.values.any { it.second == t } }
+                        }
+                        if (scoped) {
+                            // Each argument is resolved against the parameter it
+                            // fills, so a block passed for `children: [Anchor&]() -> R`
+                            // learns the receiver it is to inherit.
+                            val slots = bindCtorArguments(expr, factory) ?: return null
+                            for ((i, argument) in slots.withIndex()) {
+                                val expected = factory.params.getOrNull(factory.contextualParams + i)?.second
+                                // A parameter nobody wrote still takes its default,
+                                // and that default is an expression the call site
+                                // will lower - so it is typed here like any other.
+                                val value = argument ?: factory.defaults[factory.contextualParams + i]
+                                if (value == null) {
+                                    errors.add(
+                                        "line ${expr.line}: '${expr.callee}' has no argument for " +
+                                            "'${factory.paramNames[factory.contextualParams + i]}' " +
+                                            "and it has no default",
+                                    )
+                                    return null
+                                }
+                                resolveContextualArgument(value, expected) ?: return null
+                            }
+                            return factory.returnType
+                        }
+                    }
                     if (struct.isBridge) {
                         errors.add("line ${expr.line}: compiler bridge pack '${expr.callee}' cannot be constructed directly")
                         return null
@@ -1967,7 +2147,7 @@ class TypeResolver(private val table: SymbolTable) {
                     // `std::yield(1)` names the member `yield`, and the realm only
                     // says where it was declared, not what it is called on.
                     val contextualName = expr.callee.substringAfterLast("__")
-                    for ((ctxExpr, ctxType) in contextualValues.asReversed().flatten()) {
+                    for ((ctxExpr, ctxType) in contextualValues.asReversed().flatMap { it.values }) {
                         if (ctxType is IrType.Named && table.lookupMethod(ctxType.name, contextualName) != null) {
                             return resolveExpr(Expr.MethodCall(ctxExpr, contextualName, expr.args, expr.line, expr.column))
                         }
@@ -2043,17 +2223,30 @@ class TypeResolver(private val table: SymbolTable) {
                     }
                 }
                 val isGeneric = func.typeParams.isNotEmpty()
+                // `put<Rect>(…)` states what `T` is, so every parameter written in
+                // terms of `T` states its type too. Seeding an argument with that
+                // is what lets one be written `.(…)`, and what lets a nested call
+                // whose own parameter is `Store<T>` infer its argument in turn.
+                // Read from the declaration rather than the symbol: a type
+                // parameter erases to `Any` in a resolved signature, and what is
+                // needed here is the shape the author wrote.
+                val statedDecl = if (expr.typeArgs.isEmpty() || func.typeParams.isEmpty()) null
+                else program?.functions?.find { it.name == expr.callee }
+                val stated = statedDecl?.let { func.typeParams.zip(expr.typeArgs).toMap() } ?: emptyMap()
                 val argTypes = mutableListOf<IrType>()
                 for (i in effectiveArgs.indices) {
                     val arg = effectiveArgs[i]
                     val declaredType = func.params.getOrNull(i)?.second
                         ?: func.params.lastOrNull()?.second
                         ?: IrType.Any
-                    val paramType = if (func.isVariadic && i >= func.params.lastIndex) {
+                    val written = if (func.isVariadic && i >= func.params.lastIndex) {
                         (declaredType as? IrType.Array)?.element ?: declaredType
                     } else {
                         declaredType
                     }
+                    val paramType = statedDecl?.params?.getOrNull(i)
+                        ?.let { IrType.resolve(withStatedTypeArgs(it.type, stated)) }
+                        ?: written
                     val argType = resolveContextualArgument(arg, paramType) ?: return null
                     argTypes.add(argType)
                     // `f(x)` where the parameter is `p!` borrows x exclusively, so
@@ -2484,7 +2677,9 @@ class TypeResolver(private val table: SymbolTable) {
                             reportInaccessible(expr.line, "method", targetType.name, expr.name, func.visibility)
                             return null
                         }
-                        val declared = func.params.size - 1 // exclude `self`
+                        // `self`, and anything the member reads from the block the
+                        // call sits in, are not written at the call.
+                        val declared = func.params.size - 1 - func.contextualParams
                         // Methods take named arguments and defaults on the same
                         // terms as free functions: `self` is parameter 0, so a
                         // method's own parameters are offset by one throughout.
@@ -2497,19 +2692,36 @@ class TypeResolver(private val table: SymbolTable) {
                         // call, exactly as a generic free function's are, so a
                         // declared type naming one cannot be compared literally.
                         val methodIsGeneric = func.typeParams.isNotEmpty()
+                        // A written argument sits past `self` and past whatever the
+                        // member reads from the block the call sits in.
+                        val writtenFrom = 1 + func.contextualParams
                         for (i in positioned.indices) {
                             val argument = positioned[i] ?: continue
-                            val paramType = func.params[i + 1].second
+                            val paramType = func.params[i + writtenFrom].second
                             val argType = resolveContextualArgument(argument, paramType) ?: return null
                             if (!methodIsGeneric && !isCompatible(paramType, argType)) {
                                 errors.add("line ${expr.line}: arg ${i + 1} of '${expr.name}': expected $paramType, got $argType")
                             }
                         }
                         for (i in positioned.indices) {
-                            if (positioned[i] == null && !func.defaults.containsKey(i + 1)) {
+                            if (positioned[i] == null && !func.defaults.containsKey(i + writtenFrom)) {
                                 errors.add(
                                     "line ${expr.line}: method '${expr.name}' has no argument for " +
-                                        "'${func.params[i + 1].first}' and it has no default",
+                                        "'${func.params[i + writtenFrom].first}' and it has no default",
+                                )
+                                return null
+                            }
+                        }
+                        // Every receiver the member reads must actually be in scope.
+                        for (i in 0 until func.contextualParams) {
+                            val needed = func.params[i + 1].second
+                            val inScope = contextualValues.any { frame ->
+                                frame.values.any { it.second == needed }
+                            }
+                            if (!inScope) {
+                                errors.add(
+                                    "line ${expr.line}: '${expr.name}' reads a '${needed}' from the block it is " +
+                                        "called in, and there is none - open one with 'with'",
                                 )
                                 return null
                             }
@@ -2925,7 +3137,9 @@ class TypeResolver(private val table: SymbolTable) {
                     }
                     ref as Expr to t
                 }
-                if (bodyContexts.isNotEmpty()) contextualValues.addLast(bodyContexts)
+                if (bodyContexts.isNotEmpty()) {
+                    contextualValues.addLast(ContextFrame(bodyContexts, prefersMembers = true))
+                }
                 lambdaFrames.add(
                     LambdaFrame(
                         floor = captureFloor,

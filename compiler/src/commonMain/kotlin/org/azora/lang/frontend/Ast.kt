@@ -2032,6 +2032,14 @@ data class FuncDecl(
     val constDefaults: Map<String, TypeRef> = emptyMap(),
     /** Const parameter → the enum whose variants it ranges over, when it has one. */
     val constEnums: Map<String, String> = emptyMap(),
+    /**
+     * How many leading [params] the call site does not write.
+     *
+     * A `ctor` may name receivers beyond its own - `ctor[self: Self&, scope: Scope&]`
+     * - and those arrive as leading parameters filled from the `with` block or
+     * receiver lambda the call sits in. Zero for everything else.
+     */
+    val contextualParams: Int = 0,
     /** How this declaration may be invoked when registered as an impl member. */
     val memberCallStyle: MemberCallStyle = MemberCallStyle.NORMAL,
     /**

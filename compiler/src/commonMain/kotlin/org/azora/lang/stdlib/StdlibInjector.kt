@@ -1848,6 +1848,27 @@ class StdlibInjector private constructor(
         "isNotEmpty" to "Array",
     )
 
+    /** Every declaration named by [ref], so a type used only as an argument survives. */
+    private fun collectNamesFromType(ref: TypeRef, names: MutableSet<String>) {
+        when (ref) {
+            is TypeRef.Named -> {
+                names.add(ref.name)
+                if ("__" in ref.name) names.add(ref.name.substringAfterLast("__"))
+                ref.args.forEach { collectNamesFromType(it, names) }
+            }
+            is TypeRef.Array -> collectNamesFromType(ref.element, names)
+            is TypeRef.Nullable -> collectNamesFromType(ref.inner, names)
+            is TypeRef.Reference -> collectNamesFromType(ref.inner, names)
+            is TypeRef.Pointer -> collectNamesFromType(ref.inner, names)
+            is TypeRef.Function -> {
+                ref.params.forEach { collectNamesFromType(it, names) }
+                collectNamesFromType(ref.ret, names)
+                ref.receivers.forEach { collectNamesFromType(it, names) }
+            }
+            else -> {}
+        }
+    }
+
     private fun collectNamesFromExpr(expr: Expr, names: MutableSet<String>) {
         when (expr) {
             is Expr.IntLiteral -> names.add(
@@ -1914,6 +1935,10 @@ class StdlibInjector private constructor(
                     // declaration is the bare tail; see the identifier case above.
                     names.add(expr.callee.substringAfterLast("__"))
                 }
+                // A type argument is a use: `storageInsert<Clickable>(…)` names
+                // `Clickable` as surely as constructing one does, and a type
+                // reached only that way must still be injected.
+                expr.typeArgs.forEach { collectNamesFromType(it, names) }
                 expr.args.forEach { collectNamesFromExpr(it, names) }
             }
             is Expr.MethodCall -> {

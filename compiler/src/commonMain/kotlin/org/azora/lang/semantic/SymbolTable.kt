@@ -66,6 +66,14 @@ data class FunctionSymbol(
      * back when the call ends. Their arguments are written `lend x`.
      */
     val returnedParams: Set<Int> = emptySet(),
+    /**
+     * How many leading [params] the call site does not write.
+     *
+     * A constructor factory built from `ctor[self: Self&, scope: Scope&]` takes
+     * that scope ahead of the arguments anyone writes, and it is filled from the
+     * `with` block or receiver lambda the call sits in. Zero for everything else.
+     */
+    val contextualParams: Int = 0,
 )
 
 /**

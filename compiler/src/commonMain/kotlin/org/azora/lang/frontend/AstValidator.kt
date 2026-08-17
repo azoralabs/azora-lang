@@ -335,6 +335,9 @@ class AstValidator {
             is Stmt.DeepInlineIf -> hasReturnInBody(stmt.thenBranch) ||
                     (stmt.elseBranch != null && hasReturnInBody(stmt.elseBranch))
             is Stmt.Scope -> hasReturnInBody(stmt.body)
+            // `with value { … }` opens a receiver, not a function, so a return
+            // inside it returns from the function the block is written in.
+            is Stmt.WithContext -> hasReturnInBody(stmt.body)
             is Stmt.While -> hasReturnInBody(stmt.body)
             is Stmt.For -> hasReturnInBody(stmt.body)
             is Stmt.Loop -> hasReturnInBody(stmt.body)

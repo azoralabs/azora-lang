@@ -63,14 +63,50 @@ class IrGenerator(private val table: SymbolTable) {
     private val traceLambdaIndices = mutableMapOf<String, Int>()
     private val knownEnumValues = mutableMapOf<String, IrExpr.EnumLiteral>()
     private var currentTraceOwner: String? = null
-    private val contextualValues = ArrayDeque<List<IrExpr>>()
+    /**
+     * A value whose members are callable bare, and whether it was opened on purpose.
+     *
+     * [prefersMembers] mirrors what the resolver typed: a `with` block and a
+     * receiver lambda name a receiver deliberately, so a member of it answers a
+     * bare call before a pack of the same name. A method's own receiver is
+     * implicit and never shadows, which is what leaves the pack's constructor
+     * reachable from inside the member that shares its name.
+     */
+    private class ContextFrame(val values: List<IrExpr>, val prefersMembers: Boolean)
+
+    private val contextualValues = ArrayDeque<ContextFrame>()
     private val reactiveNames = mutableSetOf<String>()
     private val lazyReactiveDependencies = mutableMapOf<String, Set<String>>()
     private var nextEffectId = 0
     private var currentGenericTypeParams = emptySet<String>()
 
     private fun resolveType(ref: TypeRef, typeParams: Set<String> = emptySet()): IrType =
-        IrType.resolve(TypeFunctionEvaluator.resolve(ref, typeFunctions, unresolvedParams = typeParams), typeParams)
+        IrType.resolve(
+            TypeFunctionEvaluator.resolve(selfToImplType(ref), typeFunctions, unresolvedParams = typeParams),
+            typeParams,
+        )
+
+    /**
+     * `Self` written inside an impl, replaced by the type that impl is on.
+     *
+     * A member's own body may name `Self` anywhere a type goes - `store<Self>(…)`
+     * as readily as a return type - and a spec's provided body says `Self`
+     * precisely so every implementation reads it as its own. By the time a type
+     * is resolved the impl is known, so this is where the name is answered.
+     */
+    private fun selfToImplType(ref: TypeRef): TypeRef {
+        val owner = currentReceiverType ?: return ref
+        return when (ref) {
+            is TypeRef.Named ->
+                if (ref.name == "Self" && ref.args.isEmpty()) TypeRef.Named(owner)
+                else ref.copy(args = ref.args.map(::selfToImplType))
+            is TypeRef.Array -> ref.copy(element = selfToImplType(ref.element))
+            is TypeRef.Nullable -> ref.copy(inner = selfToImplType(ref.inner))
+            is TypeRef.Reference -> ref.copy(inner = selfToImplType(ref.inner))
+            is TypeRef.Pointer -> ref.copy(inner = selfToImplType(ref.inner))
+            else -> ref
+        }
+    }
 
     /** Scope stack mapping original variable names to their mangled IR names. */
     private val nameScopes = ArrayDeque<MutableMap<String, String>>()
@@ -138,7 +174,7 @@ class IrGenerator(private val table: SymbolTable) {
         val explicitReceivers = (explicitCount - type.params.size).coerceAtLeast(0)
         val missing = type.receivers.drop(explicitReceivers)
         if (missing.isEmpty()) return emptyList()
-        val available = contextualValues.asReversed().flatten()
+        val available = contextualValues.asReversed().flatMap { it.values }
         val used = mutableSetOf<Int>()
         return missing.map { expected ->
             val index = available.indices.firstOrNull {
@@ -232,6 +268,23 @@ class IrGenerator(private val table: SymbolTable) {
         func: org.azora.lang.semantic.FunctionSymbol,
         mangled: String,
     ): List<IrExpr> {
+        // A member may read receivers from the block the call sits in. They lead
+        // the written arguments, so they are supplied here and the rest binds
+        // against what is left - which is what the call site actually wrote.
+        if (func.contextualParams > 0) {
+            val cp = func.contextualParams
+            val fromScope = func.params.subList(1, 1 + cp).map { (name, t) ->
+                contextualValueOf(t) ?: error("no '$t' in scope for '$mangled' receiver '$name'")
+            }
+            val rest = func.copy(
+                params = listOf(func.params[0]) + func.params.drop(1 + cp),
+                paramNames = if (func.paramNames.isEmpty()) func.paramNames
+                else listOf(func.paramNames[0]) + func.paramNames.drop(1 + cp),
+                defaults = func.defaults.mapNotNull { (i, e) -> if (i > cp) (i - cp) to e else null }.toMap(),
+                contextualParams = 0,
+            )
+            return fromScope + lowerMethodArguments(rawArgs, rest, mangled)
+        }
         val declared = func.params.size - 1
         val supplied = bindTrailingLambda(rawArgs, func.params, offset = 1)
         val named = supplied.any { it is Expr.NamedArg }
@@ -618,27 +671,44 @@ class IrGenerator(private val table: SymbolTable) {
         // every backend gets the behaviour without knowing about constructors.
         program.items.filterIsInstance<TopLevel.Impl>().flatMap { item ->
             val struct = table.lookupStruct(item.typeName)
-            item.methods.filter { it.name == "ctor" && it.params.isNotEmpty() }.mapNotNull { ctor ->
-                if (struct == null) return@mapNotNull null
+            item.methods.filter { it.name == "ctor" && it.params.isNotEmpty() }.flatMap { ctor ->
+                if (struct == null) return@flatMap emptyList()
                 val type = IrType.Named(item.typeName)
                 val params = ctor.params.map { it.name to resolveType(it.type) }
-                val defaults = struct.fields.map { f ->
+                val fieldDefaults = struct.fields.map { f ->
                     f.default?.let { coerceToFloat(lowerExpr(it), f.type) } ?: defaultValueForType(f.type)
                 }
-                IrTopLevel.Func(IrFunction(
-                    ctorFactoryName(item.typeName, params.size),
-                    params,
-                    type,
-                    listOf(
-                        IrStmt.VarDecl("__self", type, IrExpr.StructCtor(item.typeName, struct.fields.map { it.name }, defaults, type)),
-                        IrStmt.ExprStmt(IrExpr.Call(
-                            "${item.typeName}_ctor",
-                            listOf(IrExpr.Var("__self", type)) + params.map { IrExpr.Var(it.first, it.second) },
-                            IrType.Unit,
-                        )),
-                        IrStmt.Return(IrExpr.Var("__self", type)),
-                    ),
-                ))
+                // One factory, taking every parameter. A default is filled at the
+                // call site, where the parameter's type is known and an inferred
+                // constructor - `modifier: Modifier& = .()` - can be read at all.
+                val written = ctor.params.drop(ctor.contextualParams)
+                listOf(written.size).map { arity ->
+                    val taken = params
+                    val filled = params.map { (name, t) -> IrExpr.Var(name, t) }
+                    // A ctor that declared a return type yields that value; one
+                    // that declared none has filled `__self`, which is the value.
+                    val declared = (ctor.returnType as? TypeAnnotation.Explicit)?.let { resolveType(it.ref) }
+                    val call = IrExpr.Call(
+                        "${item.typeName}_ctor",
+                        listOf(IrExpr.Var("__self", type)) + filled,
+                        declared ?: IrType.Unit,
+                    )
+                    val fresh = IrStmt.VarDecl(
+                        "__self",
+                        type,
+                        IrExpr.StructCtor(item.typeName, struct.fields.map { it.name }, fieldDefaults, type),
+                    )
+                    IrTopLevel.Func(IrFunction(
+                        ctorFactoryName(item.typeName, arity),
+                        taken,
+                        declared ?: type,
+                        if (declared != null) {
+                            listOf(fresh, IrStmt.Return(call))
+                        } else {
+                            listOf(fresh, IrStmt.ExprStmt(call), IrStmt.Return(IrExpr.Var("__self", type)))
+                        },
+                    ))
+                }
             }
         } +
         // Emit __singleton factories for `graph` registrations (DI wiring).
@@ -825,14 +895,20 @@ class IrGenerator(private val table: SymbolTable) {
     private var currentReceiverType: String? = null
 
 
+    /** The member being lowered, so a bare call to it is not read as itself. */
+    private var currentMemberName: String? = null
+
     /** Lowers an impl method into a free function `Type_method(self, ...)`. */
     private fun lowerMethod(typeName: String, method: FuncDecl): IrFunction {
         val savedNodeType = currentNodeType
+        val savedMemberName = currentMemberName
         currentNodeType = typeName
+        currentMemberName = method.name
         try {
             return lowerMethodInternal(typeName, method)
         } finally {
             currentNodeType = savedNodeType
+            currentMemberName = savedMemberName
         }
     }
 
@@ -854,7 +930,12 @@ class IrGenerator(private val table: SymbolTable) {
             table.defineVariable(VariableSymbol(name, type, mutable = mutable))
             m to type
         }
-        contextualValues.addLast(listOf(IrExpr.Var(resolveName(method.receiverName), IrType.Named(typeName))))
+        contextualValues.addLast(
+            ContextFrame(
+                listOf(IrExpr.Var(resolveName(method.receiverName), IrType.Named(typeName))),
+                prefersMembers = false,
+            ),
+        )
         val body = try {
             lowerBody(method.body)
         } finally {
@@ -1293,7 +1374,7 @@ class IrGenerator(private val table: SymbolTable) {
             }
             is Stmt.WithContext -> {
                 val values = stmt.values.map(::lowerExpr)
-                contextualValues.addLast(values)
+                contextualValues.addLast(ContextFrame(values, prefersMembers = true))
                 val body = try {
                     lowerScopedBody(stmt.body)
                 } finally {
@@ -1612,6 +1693,45 @@ class IrGenerator(private val table: SymbolTable) {
             ?: return IrExpr.MethodCall(receiver, method, emptyList(), fallbackType)
         val returnType = table.lookupFunction(mangled)?.returnType ?: fallbackType
         return IrExpr.Call(mangled, listOf(receiver), returnType)
+    }
+
+    /**
+     * The call `expr` reads as a member of a value a `with` block opened, or null.
+     *
+     * `with c { bump() }` is `c.bump()`, and a realm-qualified call reaches its
+     * contextual receiver the same way: `std::yield(1)` names the member `yield`,
+     * and the realm only says where it was declared, not what it is called on.
+     *
+     * This is tried before construction, so a member and a pack may share a name:
+     * the `with` block names a receiver on purpose, and inside it that member is
+     * what was meant.
+     */
+    /** The nearest contextual value of [type], or null when none is in scope. */
+    private fun contextualValueOf(type: IrType): IrExpr? =
+        contextualValues.asReversed().flatMap { it.values }.firstOrNull { it.type == type }
+
+    private fun contextualCall(expr: Expr.Call, deliberateOnly: Boolean = false): IrExpr? {
+        val name = expr.callee.substringAfterLast("__")
+        val frames = contextualValues.asReversed().filter { !deliberateOnly || it.prefersMembers }
+        for (frame in frames) {
+        for (ctx in frame.values) {
+            val ct = ctx.type
+            if (ct !is IrType.Named) continue
+            // Mirrors what the resolver typed: a member answers before a free
+            // function only when it is the call's own type or a `with` receiver.
+            if (!frame.prefersMembers && ct.name != currentReceiverType) continue
+            // The member the call is written inside must not shadow itself.
+            if (ct.name == currentReceiverType && name == currentMemberName) continue
+            val mangled = table.lookupMethod(ct.name, name) ?: continue
+            val func = table.lookupFunction(mangled) ?: continue
+            if (func.isBodyless || func.memberCallStyle == MemberCallStyle.PROPERTY) continue
+            // Reached as a member, so its arguments bind as a member's do -
+            // defaults, named arguments and a trailing block all apply, exactly
+            // as they would had the receiver been written out.
+            return IrExpr.Call(mangled, listOf(ctx) + lowerMethodArguments(expr.args, func, mangled), func.returnType)
+        }
+        }
+        return null
     }
 
     private fun lowerExpr(expr: Expr): IrExpr {
@@ -1981,6 +2101,9 @@ class IrGenerator(private val table: SymbolTable) {
                 // `Self(…)` inside an impl builds the type the impl is on.
                 val calleeName = if (expr.callee == "Self") currentReceiverType ?: expr.callee else expr.callee
                 val actualCallee = table.aliasMap[calleeName] ?: calleeName
+                // A pack and a member may share a name, and inside `with` the
+                // member is what was meant - the same order the resolver typed.
+                contextualCall(expr)?.let { return it }
                 val struct = table.lookupStruct(actualCallee) ?: table.lookupStruct(calleeName)
                 if (struct != null && struct.isUnion) {
                     // `Value(f: 1.5)` - exactly one member is named, and it is the
@@ -2010,16 +2133,70 @@ class IrGenerator(private val table: SymbolTable) {
                     // A declared `ctor` of the same arity takes precedence over
                     // filling fields positionally - it is the constructor the
                     // author wrote, and skipping it would leave its work undone.
-                    val declaredCtor = table.lookupFunction(ctorFactoryName(actualCallee, expr.args.size))
-                    if (declaredCtor != null && expr.args.none { it is Expr.NamedArg }) {
-                        return IrExpr.Call(
-                            declaredCtor.name,
-                            expr.args.mapIndexed { i, a ->
-                                declaredCtor.params.getOrNull(i)
-                                    ?.let { coerceToFloat(lowerExpr(a), it.second) } ?: lowerExpr(a)
-                            },
-                            IrType.Named(actualCallee),
-                        )
+                    // A named argument may name a later parameter, so binding one
+                    // needs every slot - the factory that takes them all.
+                    // Mirrors the resolver: any factory found says how many
+                    // parameters there are, and the one taking them all binds a
+                    // call whose named arguments or trailing block reach past a
+                    // parameter left to its default.
+                    val probeCtor = (expr.args.size..expr.args.size + 8).firstNotNullOfOrNull {
+                        table.lookupFunction(ctorFactoryName(actualCallee, it))
+                    }
+                    val declaredCtor = probeCtor?.let {
+                        table.lookupFunction(
+                            ctorFactoryName(actualCallee, it.paramNames.size - it.contextualParams),
+                        ) ?: it
+                    }
+                    if (declaredCtor != null) {
+                        // A ctor that names receivers beyond its own takes them
+                        // ahead of the written arguments, read from the scope the
+                        // call sits in.
+                        // Without one in scope the ctor does not apply, and the
+                        // fields are filled as they would be for any other pack -
+                        // which is what keeps such a ctor from taking over every
+                        // construction of its own type.
+                        val scopeArgs = declaredCtor.params.take(declaredCtor.contextualParams)
+                            .map { (_, t) -> contextualValueOf(t) }
+                        if (scopeArgs.none { it == null }) {
+                            // Named and positional arguments bind as they do at any
+                            // other call, and a parameter nobody wrote takes the
+                            // default the ctor declared for it.
+                            val written = declaredCtor.paramNames.drop(declaredCtor.contextualParams)
+                            val slots = arrayOfNulls<Expr>(maxOf(written.size, expr.args.size))
+                            var ctorArgs = expr.args
+                            val trailing = written.size - 1
+                            if (ctorArgs.isNotEmpty() && ctorArgs.last() is Expr.Lambda && trailing >= 0 &&
+                                declaredCtor.params.getOrNull(
+                                    declaredCtor.contextualParams + trailing,
+                                )?.second is IrType.Function
+                            ) {
+                                slots[trailing] = ctorArgs.last()
+                                ctorArgs = ctorArgs.dropLast(1)
+                            }
+                            for (argument in ctorArgs) {
+                                if (argument !is Expr.NamedArg) continue
+                                slots[written.indexOf(argument.name)] = argument.value
+                            }
+                            var next = 0
+                            for (argument in ctorArgs) {
+                                if (argument is Expr.NamedArg) continue
+                                while (next < slots.size && slots[next] != null) next++
+                                slots[next] = argument
+                            }
+                            val bound = slots.take(written.size).mapIndexed { i, argument ->
+                                val slot = declaredCtor.params.getOrNull(declaredCtor.contextualParams + i)?.second
+                                val value = argument ?: declaredCtor.defaults[declaredCtor.contextualParams + i]
+                                if (value == null) {
+                                    error("'$actualCallee' has no value for '${written[i]}'")
+                                }
+                                slot?.let { coerceToFloat(lowerExpr(value), it) } ?: lowerExpr(value)
+                            }
+                            return IrExpr.Call(
+                                declaredCtor.name,
+                                scopeArgs.filterNotNull() + bound,
+                                declaredCtor.returnType,
+                            )
+                        }
                     }
                     // Keep the explicit type arguments (`Box<Double>(…)`) on the
                     // result type: a generic pack erases its fields to pointer
@@ -2171,26 +2348,6 @@ class IrGenerator(private val table: SymbolTable) {
                 if (expr.callee == "std__convert__toString") {
                     val args = expr.args.map { stringifyEnum(lowerExpr(it)) }
                     return IrExpr.Call("std__convert__toString", args, IrType.String)
-                }
-                // Extension method reached through a `with value { … }` scope:
-                // `with c { bump() }` lowers to `Counter_bump(c)`.
-                // A realm-qualified call reaches its contextual receiver too, matching
-                // how the resolver typed it: `std::yield(1)` names the member `yield`.
-                val contextualName = expr.callee.substringAfterLast("__")
-                for (ctx in contextualValues.asReversed().flatten()) {
-                    val ct = ctx.type
-                    if (ct is IrType.Named) {
-                        val mangled = table.lookupMethod(ct.name, contextualName)
-                        if (mangled != null) {
-                            val func = table.lookupFunction(mangled)!!
-                            // Reached as a member, so its arguments bind as a
-                            // member's do - defaults, named arguments and a
-                            // trailing block all apply, exactly as they would
-                            // had the receiver been written out.
-                            val args = lowerMethodArguments(expr.args, func, mangled)
-                            return IrExpr.Call(mangled, listOf(ctx) + args, func.returnType)
-                        }
-                    }
                 }
                 error("undefined function or variable '${expr.callee}'")
             }
@@ -2383,6 +2540,11 @@ class IrGenerator(private val table: SymbolTable) {
                     expr.name in setOf("length", "size") &&
                         (target.type is IrType.Map || target.type is IrType.Set || target.type == IrType.String) -> IrType.Int
                     expr.name == "data" && tt2 is IrType.Array -> IrType.Pointer(tt2.element)
+                    // `Hash`'s member answers a ULong whatever it is read on. A
+                    // pack with its own `hash` resolves to that member and never
+                    // reaches here, so this is the built-in one - and typing it
+                    // is what lets an expression mixing it with an Int widen.
+                    expr.name == "hash" && target.type !is IrType.Named -> IrType.ULong
                     else -> {
                         val tt = target.type
                         if (tt is IrType.Named) table.lookupStruct(tt.name)?.field(expr.name)?.type ?: IrType.Any
@@ -2668,7 +2830,9 @@ class IrGenerator(private val table: SymbolTable) {
                 // named them or inherited them, matching how the resolver typed it -
                 // otherwise a bare call that type-checked would fail to lower.
                 if (receiverParams.isNotEmpty()) {
-                    contextualValues.addLast(receiverParams.map { (name, t) -> IrExpr.Var(name, t) })
+                    contextualValues.addLast(
+                        ContextFrame(receiverParams.map { (name, t) -> IrExpr.Var(name, t) }, prefersMembers = true),
+                    )
                 }
                 val body = lowerBody(expr.body)
                 if (receiverParams.isNotEmpty()) contextualValues.removeLast()

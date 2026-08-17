@@ -39,27 +39,29 @@ class DebugSessionTest {
     }
 
     private val program = """
+        import std.io
+
         func main() {
             var total = 0
             for i in 1..3 {
                 total = total + i
             }
-            println(total)
+            std::println(total)
         }
     """.trimIndent()
 
     @Test
     fun breakpointPausesWithLocals() {
-        azls.debugStart(program, "", "[4]") // inside the loop body
+        azls.debugStart(program, "", "[6]") // inside the loop body
         val paused = awaitPause(0)
-        assertEquals(4, paused.line)
+        assertEquals(6, paused.line)
         assertTrue(paused.locals.any { it.name == "total" && it.value == "0" }, "${paused.locals}")
         assertTrue(paused.locals.any { it.name == "i" && it.value == "1" }, "${paused.locals}")
 
         // Resume hits the same breakpoint on the next iteration with updated state.
         azls.debugResume()
         val paused2 = awaitPause(paused.pauseId)
-        assertEquals(4, paused2.line)
+        assertEquals(6, paused2.line)
         assertTrue(paused2.locals.any { it.name == "i" && it.value == "2" }, "${paused2.locals}")
 
         azls.debugSetBreakpoints("[]")
@@ -71,13 +73,13 @@ class DebugSessionTest {
 
     @Test
     fun stepAdvancesOneStatement() {
-        azls.debugStart(program, "", "[2]")
+        azls.debugStart(program, "", "[4]")
         val paused = awaitPause(0)
-        assertEquals(2, paused.line)
+        assertEquals(4, paused.line)
 
         azls.debugStep()
         val next = awaitPause(paused.pauseId)
-        assertEquals(3, next.line, "step should stop at the for statement")
+        assertEquals(5, next.line, "step should stop at the for statement")
 
         azls.debugStop()
         awaitStatus("terminated")
@@ -85,7 +87,7 @@ class DebugSessionTest {
 
     @Test
     fun stopTerminatesRun() {
-        azls.debugStart(program, "", "[2]")
+        azls.debugStart(program, "", "[4]")
         awaitStatus("paused")
         azls.debugStop()
         awaitStatus("terminated")
@@ -93,7 +95,7 @@ class DebugSessionTest {
 
     @Test
     fun runWithoutBreakpointsJustFinishes() {
-        azls.debugStart("func main() {\n    println(\"done\")\n}", "", "[]")
+        azls.debugStart("import std.io\nfunc main() {\n    std::println(\"done\")\n}", "", "[]")
         val out = StringBuilder()
         awaitStatus("terminated", out)
         assertEquals("done", out.toString().trim())
@@ -107,8 +109,8 @@ class DebugSessionTest {
 
     @Test
     fun preludeLinesNeverPause() {
-        val prelude = "func helper(): Int {\n    return 41\n}"
-        azls.debugStart("func main() {\n    println(helper() + 1)\n}", prelude, "[2]")
+        val prelude = "import std.io\nfunc helper(): std::Int {\n    return 41\n}"
+        azls.debugStart("func main() {\n    std::println(helper() + 1)\n}", prelude, "[2]")
         val paused = awaitPause(0)
         assertEquals(2, paused.line, "pause maps back to the document line")
         azls.debugResume()

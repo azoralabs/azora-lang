@@ -32,6 +32,7 @@ import org.azora.lang.ir.IrOptimizer
 import org.azora.lang.ir.IrProgram
 import org.azora.lang.ir.IrType
 import org.azora.lang.semantic.EffectChecker
+import org.azora.lang.semantic.InferredTypeArgs
 import org.azora.lang.semantic.InlineCallables
 import org.azora.lang.semantic.SemanticPipeline
 import org.azora.lang.semantic.ReflectDecoExpander
@@ -320,7 +321,10 @@ class Compiler(
         // ===============================================================
 
         // Passes 4-8: symbol collection → imports → type resolution ⇄ CTCE → alloc/drop → effects
-        val semantic = SemanticPipeline().analyze(ast, defines = defines)
+        // A nested call's type argument, where the call it fills already said it.
+        // Before analysis, because a type argument is what an `inline` body
+        // substitutes and what `T.typeName` reads.
+        val semantic = SemanticPipeline().analyze(InferredTypeArgs.apply(ast), defines = defines)
 
         val warnings = semantic.errors.filter { it.startsWith("warning:") }
         val errors = semantic.errors.filter { !it.startsWith("warning:") }

@@ -56,7 +56,13 @@ class AzoraLanguageServer {
 
     /** Standard-library symbols (functions, constants, packs, enums) for completion/hover. */
     private val stdlibIndex: SymbolIndex by lazy {
-        SymbolIndex().apply { AzStdlib.loadPrograms().forEach(::addProgram) }
+        val programs = AzStdlib.loadPrograms()
+        val files = AzStdlib.tree().files
+        SymbolIndex().apply {
+            programs.forEachIndexed { index, program ->
+                addProgram(program, sourceText = files.getOrNull(index)?.source)
+            }
+        }
     }
 
     /** Memoized prelude index - Studio passes the same prelude on every keystroke. */
@@ -199,7 +205,7 @@ class AzoraLanguageServer {
         val out = mutableListOf<Completion>()
 
         if (receiver != null) {
-            completeMembers(receiver, userIndex, preludeIndex, cursorLine, out)
+            completeMembers(receiver, userIndex, preludeIndex, cursorLine, importsOf(source), out)
         } else {
             // Locals and parameters of the enclosing function.
             userIndex.localsAt(cursorLine).forEach { (name, kind, detail) ->
@@ -217,10 +223,26 @@ class AzoraLanguageServer {
                     index === userIndex || moduleVisible(index.origins[name], imports)
                 fun withOrigin(name: String, detail: String): String =
                     index.origins[name]?.let { "$detail - $it" } ?: detail
-                index.functions.values.forEach { if (visible(it.name)) out.add(functionCompletion(it).let { c -> c.copy(detail = withOrigin(c.label, c.detail)) }) }
-                index.packs.values.forEach { if (visible(it.name)) out.add(Completion(it.name, "pack", withOrigin(it.name, packDetail(it)), it.name)) }
-                index.enums.values.forEach { if (visible(it.name)) out.add(Completion(it.name, "enum", withOrigin(it.name, "enum ${it.name}"), it.name)) }
-                index.topLevelVars.forEach { (name, detail) -> if (visible(name)) out.add(Completion(name, "variable", withOrigin(name, detail), name)) }
+                index.functions.values.forEach {
+                    if ("__" !in it.name && visible(it.name)) {
+                        out.add(functionCompletion(it).let { c -> c.copy(detail = withOrigin(c.label, c.detail)) })
+                    }
+                }
+                index.packs.values.forEach {
+                    if (!index.isRealmType(it.name) && visible(it.name)) {
+                        out.add(Completion(it.name, "pack", withOrigin(it.name, packDetail(it)), it.name))
+                    }
+                }
+                index.enums.values.forEach {
+                    if (!index.isRealmType(it.name) && visible(it.name)) {
+                        out.add(Completion(it.name, "enum", withOrigin(it.name, "enum ${it.name}"), it.name))
+                    }
+                }
+                index.topLevelVars.forEach { (name, detail) ->
+                    if ("__" !in name && visible(name)) {
+                        out.add(Completion(name, "variable", withOrigin(name, detail), name))
+                    }
+                }
             }
             AzHighlighter.KEYWORDS.forEach { out.add(Completion(it, "keyword", "", it)) }
         }
@@ -234,24 +256,29 @@ class AzoraLanguageServer {
     }
 
     private fun completeMembers(
-        receiver: String,
+        receiver: MemberReceiver,
         userIndex: SymbolIndex,
         preludeIndex: SymbolIndex,
         cursorLine: Int,
-        out: MutableList<Completion>
+        imports: Set<String>,
+        out: MutableList<Completion>,
     ) {
         val indices = listOf(userIndex, preludeIndex, stdlibIndex)
+        if (receiver.realmQualified) {
+            completeRealmMembers(receiver.text, indices, imports, out)
+            return
+        }
 
         // Enum values: `Color.` → variants.
         for (index in indices) {
-            index.enums[receiver]?.let { enum ->
+            index.enums[receiver.text]?.let { enum ->
                 enum.variants.forEach { out.add(Completion(it, "enumMember", "${enum.name}.$it", it)) }
                 return
             }
         }
         // Pack fields via the receiver variable's declared/constructed type.
-        val packName = userIndex.typeOfVariable(receiver, cursorLine)
-            ?: preludeIndex.typeOfVariable(receiver, Int.MAX_VALUE)
+        val packName = userIndex.typeOfVariable(receiver.text, cursorLine)
+            ?: preludeIndex.typeOfVariable(receiver.text, Int.MAX_VALUE)
         if (packName != null) {
             for (index in indices) {
                 index.packs[packName]?.let { pack ->
@@ -264,6 +291,61 @@ class AzoraLanguageServer {
         }
         // Unknown receiver - offer the built-in container/string methods.
         BUILTIN_METHODS.forEach { (name, detail) -> out.add(Completion(name, "method", detail, name)) }
+    }
+
+    /** Members reached through a realm-qualified path such as `std::ab`. */
+    private fun completeRealmMembers(
+        realm: String,
+        indices: List<SymbolIndex>,
+        imports: Set<String>,
+        out: MutableList<Completion>,
+    ) {
+        val canonicalRealm = realm.replace("::", "__")
+        val prefix = "${canonicalRealm}__"
+        for (index in indices) {
+            fun visible(name: String): Boolean = moduleVisible(index.origins[name], imports)
+            fun directSegment(name: String): String? = name.takeIf { it.startsWith(prefix) }
+                ?.removePrefix(prefix)?.substringBefore("__")?.takeIf { it.isNotEmpty() }
+            fun realmChild(name: String): Boolean = "__" in name.removePrefix(prefix)
+
+            for ((canonical, declaration) in index.functions) {
+                val label = directSegment(canonical) ?: continue
+                if (!visible(canonical)) continue
+                if (realmChild(canonical)) {
+                    out += Completion(label, "realm", "realm $realm::$label", label)
+                } else {
+                    val completion = functionCompletion(declaration.copy(name = label))
+                    val detail = index.origins[canonical]?.let { "${completion.detail} - $it" } ?: completion.detail
+                    out += completion.copy(detail = detail)
+                }
+            }
+            for ((canonical, bindingDetail) in index.topLevelVars) {
+                val label = directSegment(canonical) ?: continue
+                if (!visible(canonical)) continue
+                if (realmChild(canonical)) {
+                    out += Completion(label, "realm", "realm $realm::$label", label)
+                } else {
+                    val plain = bindingDetail.replaceFirst(canonical, label)
+                    val detail = index.origins[canonical]?.let { "$plain - $it" } ?: plain
+                    out += Completion(label, "variable", detail, label)
+                }
+            }
+            for (canonical in index.qualifiedTypes) {
+                val label = directSegment(canonical) ?: continue
+                val origin = index.qualifiedTypeOrigins[canonical]
+                if (!moduleVisible(origin, imports)) continue
+                if (realmChild(canonical)) {
+                    out += Completion(label, "realm", "realm $realm::$label", label)
+                    continue
+                }
+                index.packs[label]?.let { pack ->
+                    out += Completion(label, "pack", packDetail(pack) + (origin?.let { " - $it" } ?: ""), label)
+                }
+                index.enums[label]?.let {
+                    out += Completion(label, "enum", "enum $label" + (origin?.let { " - $it" } ?: ""), label)
+                }
+            }
+        }
     }
 
     private fun functionCompletion(decl: FuncDecl): Completion {
@@ -286,6 +368,11 @@ class AzoraLanguageServer {
 
     fun hover(source: String, offset: Int, prelude: String = ""): String {
         val word = wordAt(source, offset) ?: return "null"
+        localDeclaration(source, word, offset)?.let { local ->
+            return json.encodeToString(Hover.serializer(), Hover(local.detail))
+        }
+        val role = referenceRole(source, offset)
+        val keys = listOf(qualifiedNameAt(source, word, offset), word).distinct()
         val userIndex = SymbolIndex().apply { parseTolerant(source)?.let(::addProgram) }
         // Doc comments are only extracted for the edited document: prelude
         // sections are parsed individually so their declaration lines don't map
@@ -293,17 +380,50 @@ class AzoraLanguageServer {
         val indices = listOf(userIndex, preludeIndex(prelude), stdlibIndex)
         for (index in indices) {
             val fromUser = index === userIndex
-            index.functions[word]?.let {
-                val doc = if (fromUser) docCommentAbove(source, it.line) else ""
-                return json.encodeToString(Hover.serializer(), Hover(signatureOf(it), doc = doc))
+            fun callable(key: String): String? = index.functions[key]?.let {
+                val doc = if (fromUser) docCommentAbove(source, it.line) else index.documentation[key].orEmpty()
+                json.encodeToString(Hover.serializer(), Hover(signatureOf(it.copy(name = word)), doc = doc))
             }
-            index.packs[word]?.let {
-                val doc = if (fromUser) docCommentAbove(source, it.line) else ""
-                return json.encodeToString(Hover.serializer(), Hover(packDetail(it), doc = doc))
+            fun type(key: String): String? {
+                val name = if ("__" in key) {
+                    key.takeIf { it in index.qualifiedTypes }?.substringAfterLast("__") ?: return null
+                } else key
+                index.packs[name]?.let {
+                    val doc = if (fromUser) docCommentAbove(source, it.line)
+                    else index.documentation[key].orEmpty().ifEmpty { index.documentation[name].orEmpty() }
+                    return json.encodeToString(Hover.serializer(), Hover(packDetail(it), doc = doc))
+                }
+                index.enums[name]?.let {
+                    val doc = if (fromUser) docCommentAbove(source, it.line)
+                    else index.documentation[key].orEmpty().ifEmpty { index.documentation[name].orEmpty() }
+                    return json.encodeToString(Hover.serializer(), Hover("enum ${it.name} { ${it.variants.joinToString(", ")} }", doc = doc))
+                }
+                return null
             }
-            index.enums[word]?.let {
-                val doc = if (fromUser) docCommentAbove(source, it.line) else ""
-                return json.encodeToString(Hover.serializer(), Hover("enum ${it.name} { ${it.variants.joinToString(", ")} }", doc = doc))
+            for (key in keys) {
+                val resolved = when (role) {
+                    ReferenceRole.CALLABLE -> callable(key) ?: type(key)
+                    ReferenceRole.TYPE -> type(key)
+                    ReferenceRole.VALUE -> index.topLevelVars[key]?.let {
+                        val doc = if (fromUser) index.declarationLine(key, ReferenceRole.VALUE)
+                            ?.let { line -> docCommentAbove(source, line) }.orEmpty()
+                        else index.documentation[key].orEmpty()
+                        json.encodeToString(
+                            Hover.serializer(),
+                            Hover(it.replaceFirst(key, word), doc = doc),
+                        )
+                    } ?: callable(key) ?: type(key)
+                    ReferenceRole.ANY -> callable(key) ?: type(key) ?: index.topLevelVars[key]?.let {
+                        val doc = if (fromUser) index.declarationLine(key, ReferenceRole.VALUE)
+                            ?.let { line -> docCommentAbove(source, line) }.orEmpty()
+                        else index.documentation[key].orEmpty()
+                        json.encodeToString(
+                            Hover.serializer(),
+                            Hover(it.replaceFirst(key, word), doc = doc),
+                        )
+                    }
+                }
+                if (resolved != null) return resolved
             }
         }
         return "null"
@@ -326,18 +446,27 @@ class AzoraLanguageServer {
         val safeOffset = offset.coerceIn(0, source.length)
         val cursorLine = source.take(safeOffset).count { it == '\n' } + 1
         val userIndex = SymbolIndex().apply { parseTolerant(source)?.let(::addProgram) }
+        val role = referenceRole(source, safeOffset)
+        val keys = listOf(qualifiedNameAt(source, word, safeOffset), word).distinct()
 
-        // A local variable or parameter of the enclosing function wins over a
-        // same-named top-level declaration.
-        userIndex.localDeclarationLine(word, cursorLine)?.let { line ->
-            return json.encodeToString(Definition.serializer(), Definition(line = line, name = word, inCurrentFile = true))
+        // Resolve an actual lexical declaration, not merely the nearest same-
+        // spelled name on an earlier line. This respects nested/sibling blocks,
+        // local shadowing, contextual receiver parameters, and loop bindings.
+        localDeclaration(source, word, safeOffset)?.let { local ->
+            return json.encodeToString(
+                Definition.serializer(),
+                Definition(line = local.line, column = local.column, name = word, inCurrentFile = true),
+            )
         }
-        userIndex.declarationLine(word)?.let { line ->
-            return json.encodeToString(Definition.serializer(), Definition(line = line, name = word, inCurrentFile = true))
+        for (key in keys) {
+            userIndex.declarationLine(key, role)?.let { line ->
+                return json.encodeToString(Definition.serializer(), Definition(line = line, name = word, inCurrentFile = true))
+            }
         }
         // Known elsewhere (prelude/stdlib): report the name so the client can
         // locate the source file.
-        val known = preludeIndex(prelude).hasSymbol(word) || stdlibIndex.hasSymbol(word)
+        val preludeIndex = preludeIndex(prelude)
+        val known = keys.any { key -> preludeIndex.hasSymbol(key, role) || stdlibIndex.hasSymbol(key, role) }
         if (known) {
             return json.encodeToString(Definition.serializer(), Definition(line = 0, name = word, inCurrentFile = false))
         }
@@ -351,22 +480,7 @@ class AzoraLanguageServer {
      * declaration are tolerated.
      */
     private fun docCommentAbove(sourceText: String, declLine: Int): String {
-        val lines = sourceText.lines()
-        if (declLine < 1 || declLine > lines.size) return ""
-        var i = declLine - 2 // 0-based line directly above the declaration
-        // Skip annotation lines sitting between the doc block and the decl.
-        while (i >= 0 && lines[i].trim().startsWith("@")) i--
-        val collected = ArrayDeque<String>()
-        while (i >= 0) {
-            val trimmed = lines[i].trim()
-            when {
-                trimmed.startsWith("///") -> collected.addFirst(trimmed.removePrefix("///").trim())
-                trimmed.startsWith("//") -> collected.addFirst(trimmed.removePrefix("//").trim())
-                else -> break
-            }
-            i--
-        }
-        return collected.joinToString("\n").trim()
+        return extractDocumentationAbove(sourceText, declLine)
     }
 
     // -----------------------------------------------------------------
@@ -440,7 +554,10 @@ class AzoraLanguageServer {
         var module: String? = null
         val section = StringBuilder()
         fun flush() {
-            if (section.isNotBlank()) parseTolerant(section.toString())?.let { index.addProgram(it, module) }
+            if (section.isNotBlank()) {
+                val sourceText = section.toString()
+                parseTolerant(sourceText)?.let { index.addProgram(it, module, sourceText) }
+            }
             section.setLength(0)
         }
         for (line in prelude.lines()) {
@@ -559,16 +676,160 @@ class AzoraLanguageServer {
         return start to source.substring(start, offset)
     }
 
-    /** The receiver identifier when the word at [wordStart] follows `receiver.`. */
-    private fun receiverBefore(source: String, wordStart: Int): String? {
+    private data class MemberReceiver(val text: String, val realmQualified: Boolean)
+
+    /** Receiver before a member (`value.`) or realm path (`std::`) completion. */
+    private fun receiverBefore(source: String, wordStart: Int): MemberReceiver? {
+        if (wordStart >= 2 && source[wordStart - 2] == ':' && source[wordStart - 1] == ':') {
+            val end = wordStart - 2
+            var start = end
+            while (start > 0) {
+                when {
+                    source[start - 1].isIdentPart() -> start--
+                    start >= 2 && source[start - 2] == ':' && source[start - 1] == ':' -> start -= 2
+                    else -> break
+                }
+            }
+            return source.substring(start, end).takeIf { it.isNotEmpty() }
+                ?.let { MemberReceiver(it, realmQualified = true) }
+        }
         if (wordStart == 0 || source[wordStart - 1] != '.') return null
-        var end = wordStart - 1
-        // `..` is a range, not a member access
+        val end = wordStart - 1
+        // `..` is a range, not a member access.
         if (end > 0 && source[end - 1] == '.') return null
         var start = end
         while (start > 0 && source[start - 1].isIdentPart()) start--
         return source.substring(start, end).takeIf { it.isNotEmpty() }
+            ?.let { MemberReceiver(it, realmQualified = false) }
     }
+
+    private data class LocalDeclaration(
+        val line: Int,
+        val column: Int,
+        val offset: Int,
+        val detail: String,
+        val depth: Int,
+    )
+
+    private data class TextBlock(val open: Int, val close: Int, val depth: Int)
+
+    /** Lexically resolves a local/parameter declaration at one concrete use. */
+    private fun localDeclaration(source: String, name: String, useOffset: Int): LocalDeclaration? {
+        val code = codeOnly(source)
+        val blocks = textBlocks(code)
+        val candidates = mutableListOf<LocalDeclaration>()
+
+        fun add(offset: Int, detail: String, scope: TextBlock) {
+            if (offset >= useOffset || useOffset !in (scope.open + 1)..scope.close) return
+            candidates += LocalDeclaration(
+                line = source.take(offset).count { it == '\n' } + 1,
+                column = offset - source.lastIndexOf('\n', offset - 1),
+                offset = offset,
+                detail = detail,
+                depth = scope.depth,
+            )
+        }
+
+        LOCAL_BINDING.findAll(code).forEach { binding ->
+            val declared = binding.groups[2] ?: return@forEach
+            if (declared.value != name) return@forEach
+            val scope = containingTextBlock(blocks, declared.range.first) ?: return@forEach
+            val type = binding.groups[3]?.value?.trim().orEmpty()
+            val detail = "${binding.groupValues[1]} $name" + if (type.isEmpty()) "" else ": $type"
+            add(declared.range.first, detail, scope)
+        }
+
+        FOR_BINDING.findAll(code).forEach { binding ->
+            val declared = binding.groups[1] ?: return@forEach
+            if (declared.value != name) return@forEach
+            val bodyOpen = code.indexOf('{', binding.range.last + 1)
+            val scope = blocks.firstOrNull { it.open == bodyOpen } ?: return@forEach
+            add(declared.range.first, "for $name", scope)
+        }
+
+        CALLABLE_SIGNATURE.findAll(code).forEach { callable ->
+            val bodyOpen = code.indexOf('{', callable.range.last + 1)
+            val scope = blocks.firstOrNull { it.open == bodyOpen } ?: return@forEach
+            if (useOffset !in (scope.open + 1)..scope.close) return@forEach
+            for (groupIndex in listOf(1, 2)) {
+                val parameters = callable.groups[groupIndex] ?: continue
+                PARAMETER_DECLARATION.findAll(parameters.value).forEach { parameter ->
+                    val declared = parameter.groups[1] ?: return@forEach
+                    if (declared.value != name) return@forEach
+                    val absolute = parameters.range.first + declared.range.first
+                    val type = parameter.groups[2]?.value?.trim().orEmpty()
+                    add(absolute, "$name: $type", scope)
+                }
+            }
+        }
+
+        return candidates.maxWithOrNull(compareBy<LocalDeclaration> { it.depth }.thenBy { it.offset })
+    }
+
+    /** Source with comments/literals blanked while every original offset stays stable. */
+    private fun codeOnly(source: String): String {
+        val result = source.toCharArray()
+        var index = 0
+        var blockCommentDepth = 0
+        fun blank(at: Int) {
+            if (result[at] != '\n' && result[at] != '\r') result[at] = ' '
+        }
+        while (index < source.length) {
+            when {
+                blockCommentDepth > 0 -> when {
+                    source.startsWith("/*", index) -> {
+                        blank(index); blank(index + 1); index += 2; blockCommentDepth++
+                    }
+                    source.startsWith("*/", index) -> {
+                        blank(index); blank(index + 1); index += 2; blockCommentDepth--
+                    }
+                    else -> blank(index++)
+                }
+                source.startsWith("//", index) ->
+                    while (index < source.length && source[index] != '\n') blank(index++)
+                source.startsWith("/*", index) -> {
+                    blank(index); blank(index + 1); index += 2; blockCommentDepth = 1
+                }
+                source.startsWith("\"\"\"", index) -> {
+                    repeat(3) { blank(index++) }
+                    while (index < source.length && !source.startsWith("\"\"\"", index)) blank(index++)
+                    repeat(minOf(3, source.length - index)) { blank(index++) }
+                }
+                source[index] == '"' || source[index] == '\'' -> {
+                    val quote = source[index]
+                    blank(index++)
+                    while (index < source.length) {
+                        val character = source[index]
+                        blank(index++)
+                        if (character == '\\' && index < source.length) blank(index++)
+                        else if (character == quote) break
+                    }
+                }
+                else -> index++
+            }
+        }
+        return result.concatToString()
+    }
+
+    private fun textBlocks(code: String): List<TextBlock> {
+        val stack = ArrayDeque<Pair<Int, Int>>()
+        val blocks = mutableListOf<TextBlock>()
+        for (offset in code.indices) {
+            when (code[offset]) {
+                '{' -> stack.addLast(offset to stack.size)
+                '}' -> stack.removeLastOrNull()?.let { (open, depth) -> blocks += TextBlock(open, offset, depth) }
+            }
+        }
+        while (stack.isNotEmpty()) {
+            val (open, depth) = stack.removeLast()
+            blocks += TextBlock(open, code.length, depth)
+        }
+        return blocks
+    }
+
+    private fun containingTextBlock(blocks: List<TextBlock>, offset: Int): TextBlock? =
+        blocks.filter { offset in (it.open + 1)..it.close }
+            .maxWithOrNull(compareBy<TextBlock> { it.depth }.thenBy { it.open })
 
     /** The identifier containing [offset], or null. */
     private fun wordAt(source: String, offset: Int): String? {
@@ -580,6 +841,53 @@ class AzoraLanguageServer {
         return source.substring(start, end).takeIf { it.isNotEmpty() && it[0].isIdentStart() }
     }
 
+    /** Canonical compiler key for `realm::name` at [offset] (`realm__name`). */
+    private fun qualifiedNameAt(source: String, name: String, offset: Int): String {
+        var wordStart = offset.coerceIn(0, source.length)
+        while (wordStart > 0 && source[wordStart - 1].isIdentPart()) wordStart--
+        val parts = mutableListOf(name)
+        var cursor = wordStart
+        while (cursor >= 2 && source[cursor - 2] == ':' && source[cursor - 1] == ':') {
+            val end = cursor - 2
+            var start = end
+            while (start > 0 && source[start - 1].isIdentPart()) start--
+            if (start == end) break
+            parts.add(0, source.substring(start, end))
+            cursor = start
+        }
+        return parts.joinToString("__")
+    }
+
+    private fun referenceRole(source: String, offset: Int): ReferenceRole {
+        if (source.isEmpty()) return ReferenceRole.ANY
+        var start = offset.coerceIn(0, source.length)
+        while (start > 0 && source[start - 1].isIdentPart()) start--
+        var end = offset.coerceIn(0, source.length)
+        while (end < source.length && source[end].isIdentPart()) end++
+
+        var next = end
+        while (next < source.length && source[next].isWhitespace()) next++
+        if (source.getOrNull(next) == '(') return ReferenceRole.CALLABLE
+
+        var previous = start - 1
+        while (previous >= 0 && source[previous].isWhitespace()) previous--
+        if (source.getOrNull(previous) == ':' && source.getOrNull(previous - 1) != ':') return ReferenceRole.TYPE
+
+        val before = source.substring(0, start)
+        val previousWord = Regex("""[A-Za-z_][A-Za-z0-9_]*\s*$""").find(before)?.value?.trim()
+        if (previousWord in TYPE_CONTEXT_WORDS) return ReferenceRole.TYPE
+        if (previousWord == "func") return ReferenceRole.CALLABLE
+        if (previousWord in VALUE_DECLARATION_WORDS) return ReferenceRole.VALUE
+
+        if (source.getOrNull(next) == '<') {
+            return if (previousWord in TYPE_CONTEXT_WORDS) ReferenceRole.TYPE else ReferenceRole.CALLABLE
+        }
+        // A bare identifier is a value use. Functions and constructors still
+        // remain valid first-class values through the value-role fallback, but
+        // a same-spelled binding wins over them at this use site.
+        return ReferenceRole.VALUE
+    }
+
     private companion object {
         val EMPTY_INDEX = SymbolIndex()
 
@@ -588,8 +896,6 @@ class AzoraLanguageServer {
 
         /** Functions the compiler registers as builtins (see SymbolCollector). */
         val BUILTIN_FUNCTIONS = listOf(
-            "println" to "func println(value)",
-            "print" to "func print(value)",
             "channel" to "func channel(): Channel",
         )
 
@@ -604,11 +910,65 @@ class AzoraLanguageServer {
             "indexOf" to "indexOf(value): Int",
             "toString" to "toString(): String",
         )
+
+        val LOCAL_BINDING = Regex(
+            """\b(var|val|fin|let)\s+([A-Za-z_][A-Za-z0-9_]*)(?:[ \t]*:[ \t]*([^=\n]+?))?(?:[ \t]*=|\n|$)""",
+        )
+        val FOR_BINDING = Regex("""\bfor\s+([A-Za-z_][A-Za-z0-9_]*)\s+in\b""")
+        val CALLABLE_SIGNATURE = Regex(
+            """(?m)^\s*(?:(?:exposed|protected|confined|inline|deepinline|noinline|unsafe|react|async|bridge|lazy)\s+)*(?:func\s+[A-Za-z_][A-Za-z0-9_]*(?:\s*<[^>{}\n]*>)?|ctor|dtor|oper[^\s\[(]*)\s*(?:\[([^]\n]*)])?\s*\(([^)]*)\)""",
+        )
+        val PARAMETER_DECLARATION = Regex(
+            """(?:\.\.\.)?([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([^,\n]+)""",
+        )
+        val TYPE_CONTEXT_WORDS = setOf(
+            "as", "is", "for", "impl", "pack", "enum", "error", "spec",
+            "annot", "typealias", "derives", "requires", "assoc",
+        )
+        val VALUE_DECLARATION_WORDS = setOf("var", "val", "fin", "let")
     }
 }
 
+internal enum class ReferenceRole { CALLABLE, TYPE, VALUE, ANY }
+
 private fun Char.isIdentStart(): Boolean = isLetter() || this == '_'
 private fun Char.isIdentPart(): Boolean = isLetterOrDigit() || this == '_'
+
+/** Line or block documentation immediately above a declaration. */
+private fun extractDocumentationAbove(source: String, declarationLine: Int): String {
+    val lines = source.lines()
+    if (declarationLine !in 1..lines.size) return ""
+    var index = declarationLine - 2
+    while (index >= 0 && lines[index].trim().startsWith("@")) index--
+
+    if (index >= 0 && lines[index].trim().endsWith("*/")) {
+        val end = index
+        while (index >= 0 && !lines[index].trim().startsWith("/*")) index--
+        if (index >= 0) {
+            return lines.subList(index, end + 1).joinToString("\n") { line ->
+                line.trim()
+                    .removePrefix("/**")
+                    .removePrefix("/*")
+                    .removeSuffix("*/")
+                    .trim()
+                    .removePrefix("*")
+                    .trimStart()
+            }.trim()
+        }
+    }
+
+    val collected = ArrayDeque<String>()
+    while (index >= 0) {
+        val trimmed = lines[index].trim()
+        when {
+            trimmed.startsWith("///") -> collected.addFirst(trimmed.removePrefix("///").trim())
+            trimmed.startsWith("//") -> collected.addFirst(trimmed.removePrefix("//").trim())
+            else -> break
+        }
+        index--
+    }
+    return collected.joinToString("\n").trim()
+}
 
 // =====================================================================
 
@@ -631,6 +991,9 @@ internal class SymbolIndex {
     /** symbol name → module it came from ("std.math"), when packaged. */
     val origins = linkedMapOf<String, String>()
 
+    /** Canonical symbol key → source documentation immediately above it. */
+    val documentation = linkedMapOf<String, String>()
+
     /** name → display detail for top-level var/let/fin bindings. */
     val topLevelVars = linkedMapOf<String, String>()
 
@@ -640,20 +1003,29 @@ internal class SymbolIndex {
     /** Top-level binding name → its declaration line (for go-to-definition). */
     private val topLevelVarLines = mutableMapOf<String, Int>()
 
-    fun addProgram(program: Program, moduleOverride: String? = null) {
+    fun addProgram(program: Program, moduleOverride: String? = null, sourceText: String? = null) {
         val module = moduleOverride ?: program.moduleName
         fun origin(name: String) {
             if (module != null) origins.putIfAbsent(name, module)
         }
-        fun typeOrigin(name: String) {
+        fun document(name: String, line: Int) {
+            val doc = sourceText?.let { documentationAbove(it, line) }.orEmpty()
+            if (doc.isNotEmpty()) documentation.putIfAbsent(name, doc)
+        }
+        fun typeOrigin(name: String): String {
             val namespace = program.realmTypeNamespaces[name]
             val qualified = if (namespace == null) name else "${namespace.replace("::", "__")}__$name"
             qualifiedTypes += qualified
             qualifiedTypeOrigins.putIfAbsent(qualified, module)
+            return qualified
         }
         for (item in program.items) {
             when (item) {
-                is TopLevel.Func -> { functions[item.decl.name] = item.decl; origin(item.decl.name) }
+                is TopLevel.Func -> {
+                    functions[item.decl.name] = item.decl
+                    origin(item.decl.name)
+                    document(item.decl.name, item.decl.line)
+                }
                 is TopLevel.Bridge -> item.funcs.forEach { decl ->
                     functions[decl.name] = FuncDecl(
                         name = decl.name,
@@ -665,17 +1037,50 @@ internal class SymbolIndex {
                         column = decl.column,
                     )
                     origin(decl.name)
+                    document(decl.name, decl.line)
                 }
-                is TopLevel.Pack -> { packs[item.name] = item; origin(item.name); typeOrigin(item.name) }
-                is TopLevel.Enum -> { enums[item.name] = item; origin(item.name); typeOrigin(item.name) }
-                is TopLevel.Solo -> item.methods.forEach { functions[it.name] = it }
-                is TopLevel.VarDecl -> registerTopVar(item.name, "var", item.type, item.initializer, item.line)
-                is TopLevel.LetDecl -> registerTopVar(item.name, "let", item.type, item.initializer, item.line)
-                is TopLevel.FinDecl -> registerTopVar(item.name, "fin", item.type, item.initializer, item.line)
+                is TopLevel.Pack -> {
+                    packs[item.name] = item
+                    origin(item.name)
+                    val canonical = typeOrigin(item.name)
+                    document(item.name, item.line)
+                    documentation[item.name]?.let { documentation.putIfAbsent(canonical, it) }
+                }
+                is TopLevel.Enum -> {
+                    enums[item.name] = item
+                    origin(item.name)
+                    val canonical = typeOrigin(item.name)
+                    document(item.name, item.line)
+                    documentation[item.name]?.let { documentation.putIfAbsent(canonical, it) }
+                }
+                is TopLevel.Solo -> item.methods.forEach {
+                    functions[it.name] = it
+                    origin(it.name)
+                    document(it.name, it.line)
+                }
+                is TopLevel.VarDecl -> {
+                    registerTopVar(item.name, "var", item.type, item.initializer, item.line)
+                    origin(item.name)
+                    document(item.name, item.line)
+                }
+                is TopLevel.LetDecl -> {
+                    registerTopVar(item.name, "let", item.type, item.initializer, item.line)
+                    origin(item.name)
+                    document(item.name, item.line)
+                }
+                is TopLevel.FinDecl -> {
+                    registerTopVar(item.name, "fin", item.type, item.initializer, item.line)
+                    origin(item.name)
+                    document(item.name, item.line)
+                }
                 else -> {}
             }
         }
         programs.add(program)
+    }
+
+    private fun documentationAbove(source: String, declarationLine: Int): String {
+        return extractDocumentationAbove(source, declarationLine)
     }
 
     private val programs = mutableListOf<Program>()
@@ -686,13 +1091,36 @@ internal class SymbolIndex {
         topLevelVarLines[name] = line
     }
 
-    /** Whether [name] is any top-level function/pack/enum/binding in this index. */
-    fun hasSymbol(name: String): Boolean =
-        name in functions || name in packs || name in enums || name in topLevelVars
+    /** True when [name] is declared inside a named realm and therefore needs `::`. */
+    fun isRealmType(name: String): Boolean = qualifiedTypes.any { it != name && it.endsWith("__$name") }
 
-    /** Declaration line of top-level [name] (func/pack/enum/binding), or null. */
-    fun declarationLine(name: String): Int? =
-        functions[name]?.line ?: packs[name]?.line ?: enums[name]?.line ?: topLevelVarLines[name]
+    private fun typeNameForKey(name: String): String? = when {
+        name in packs || name in enums -> name
+        name in qualifiedTypes -> name.substringAfterLast("__")
+        else -> null
+    }
+
+    private fun hasType(name: String): Boolean = typeNameForKey(name)?.let { it in packs || it in enums } == true
+
+    private fun typeDeclarationLine(name: String): Int? = typeNameForKey(name)?.let { key ->
+        packs[key]?.line ?: enums[key]?.line
+    }
+
+    /** Whether [name] has a declaration matching the use-site [role]. */
+    fun hasSymbol(name: String, role: ReferenceRole = ReferenceRole.ANY): Boolean = when (role) {
+        ReferenceRole.CALLABLE -> name in functions || hasType(name)
+        ReferenceRole.TYPE -> hasType(name)
+        ReferenceRole.VALUE -> name in topLevelVars || name in functions || hasType(name)
+        ReferenceRole.ANY -> name in functions || hasType(name) || name in topLevelVars
+    }
+
+    /** Declaration line selected by symbol role rather than spelling alone. */
+    fun declarationLine(name: String, role: ReferenceRole = ReferenceRole.ANY): Int? = when (role) {
+        ReferenceRole.CALLABLE -> functions[name]?.line ?: typeDeclarationLine(name)
+        ReferenceRole.TYPE -> typeDeclarationLine(name)
+        ReferenceRole.VALUE -> topLevelVarLines[name] ?: functions[name]?.line ?: typeDeclarationLine(name)
+        ReferenceRole.ANY -> functions[name]?.line ?: typeDeclarationLine(name) ?: topLevelVarLines[name]
+    }
 
     /**
      * Declaration line of a local/parameter named [name] visible at [atLine]:

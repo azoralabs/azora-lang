@@ -7,6 +7,11 @@
 
 module azora.language.server
 
+typealias String = std::String
+typealias Int = std::Int
+typealias Bool = std::Bool
+typealias Char = std::Char
+
 /**
  * Browser AZLS implementation compiled from Azora to WebAssembly.
  *
@@ -27,8 +32,8 @@ func isSpace(c: Char): Bool {
     return c == ' ' || c == '\t' || c == '\n' || c == '\r'
 }
 
-func isIdentifierStart(c: Char): Bool { return isAlpha(c) || c == '_' }
-func isIdentifierPart(c: Char): Bool { return isIdentifierStart(c) || isDigit(c) }
+func isIdentifierStart(c: Char): Bool { return std::isAlpha(c) || c == '_' }
+func isIdentifierPart(c: Char): Bool { return isIdentifierStart(c) || std::isDigit(c) }
 
 func rangeEquals(
     left: String,
@@ -42,24 +47,24 @@ func rangeEquals(
     if length != rightEnd - rightStart { return false }
     var index = 0
     while index < length {
-        if charAt(left, leftStart + index) != charAt(right, rightStart + index) { return false }
+        if std::charAt(left, leftStart + index) != std::charAt(right, rightStart + index) { return false }
         index += 1
     }
     return true
 }
 
 func rangeIs(source: String, start: Int, end: Int, literal: String): Bool {
-    return rangeEquals(source, start, end, literal, 0, stringLength(literal))
+    return rangeEquals(source, start, end, literal, 0, std::stringLength(literal))
 }
 
 func rangeStarts(source: String, start: Int, end: Int, literal: String): Bool {
-    fin length = stringLength(literal)
+    fin length = std::stringLength(literal)
     if start + length > end { return false }
     return rangeEquals(source, start, start + length, literal, 0, length)
 }
 
 func findFrom(source: String, start: Int, end: Int, needle: String): Int {
-    fin needleLength = stringLength(needle)
+    fin needleLength = std::stringLength(needle)
     if needleLength == 0 { return start }
     var index = start
     while index + needleLength <= end {
@@ -94,11 +99,14 @@ func isKeywordRange(source: String, start: Int, end: Int): Bool {
         rangeIs(source, start, end, "as") || rangeIs(source, start, end, "is") || rangeIs(source, start, end, "oper") || rangeIs(source, start, end, "annot") ||
         rangeIs(source, start, end, "bind") || rangeIs(source, start, end, "error") ||
         rangeIs(source, start, end, "alloc") || rangeIs(source, start, end, "purge") ||
-        rangeIs(source, start, end, "unsafe") ||
-        rangeIs(source, start, end, "await") || rangeIs(source, start, end, "bridge") ||
+        rangeIs(source, start, end, "unsafe") || rangeIs(source, start, end, "take") ||
+        rangeIs(source, start, end, "await") || rangeIs(source, start, end, "delay") ||
+        rangeIs(source, start, end, "bridge") ||
         rangeIs(source, start, end, "solo") || rangeIs(source, start, end, "inject") ||
-        rangeIs(source, start, end, "wrap") || rangeIs(source, start, end, "mem") ||
-        rangeIs(source, start, end, "rem") || rangeIs(source, start, end, "ret") ||
+        rangeIs(source, start, end, "lazy") || rangeIs(source, start, end, "factory") ||
+        rangeIs(source, start, end, "derive") || rangeIs(source, start, end, "graph") ||
+        rangeIs(source, start, end, "preserve") || rangeIs(source, start, end, "react") ||
+        rangeIs(source, start, end, "remember") || rangeIs(source, start, end, "retain") ||
         rangeIs(source, start, end, "effect") || rangeIs(source, start, end, "with") ||
         rangeIs(source, start, end, "without") ||
         rangeIs(source, start, end, "prop") || rangeIs(source, start, end, "ctor") ||
@@ -142,13 +150,13 @@ func contextualWhereIsKeyword(source: String, start: Int, end: Int): Bool {
     var index = start
     while index > 0 {
         index -= 1
-        while index >= 0 && isSpace(charAt(source, index)) { index -= 1 }
+        while index >= 0 && isSpace(std::charAt(source, index)) { index -= 1 }
         if index < 0 { return false }
-        fin c = charAt(source, index)
+        fin c = std::charAt(source, index)
         if c == '{' || c == '}' || c == ';' { return false }
         if isIdentifierPart(c) {
             fin wordEnd = index + 1
-            while index > 0 && isIdentifierPart(charAt(source, index - 1)) { index -= 1 }
+            while index > 0 && isIdentifierPart(std::charAt(source, index - 1)) { index -= 1 }
             if isFunctionDeclarationRange(source, index, wordEnd) {
                 // A function constraint follows its complete parameter list;
                 // a parameter is allowed to be named `where`.
@@ -172,11 +180,11 @@ func contextualWhereIsKeyword(source: String, start: Int, end: Int): Bool {
 
 func nextIdentifierIs(source: String, end: Int, expected: String): Bool {
     var index = end
-    while index < stringLength(source) && isSpace(charAt(source, index)) { index += 1 }
+    while index < std::stringLength(source) && isSpace(std::charAt(source, index)) { index += 1 }
     fin start = index
-    if start >= stringLength(source) || !isIdentifierStart(charAt(source, start)) { return false }
+    if start >= std::stringLength(source) || !isIdentifierStart(std::charAt(source, start)) { return false }
     index += 1
-    while index < stringLength(source) && isIdentifierPart(charAt(source, index)) { index += 1 }
+    while index < std::stringLength(source) && isIdentifierPart(std::charAt(source, index)) { index += 1 }
     return rangeIs(source, start, index, expected)
 }
 
@@ -184,12 +192,12 @@ func contextualModuleIsKeyword(source: String, start: Int, end: Int): Bool {
     if !rangeIs(source, start, end, "module") || !nextIdentifierStarts(source, end) { return false }
     var index = lineStartAt(source, 0, start)
     while index < start {
-        while index < start && isSpace(charAt(source, index)) { index += 1 }
+        while index < start && isSpace(std::charAt(source, index)) { index += 1 }
         if index >= start { return true }
         fin wordStart = index
-        if !isIdentifierStart(charAt(source, index)) { return false }
+        if !isIdentifierStart(std::charAt(source, index)) { return false }
         index += 1
-        while index < start && isIdentifierPart(charAt(source, index)) { index += 1 }
+        while index < start && isIdentifierPart(std::charAt(source, index)) { index += 1 }
         if !rangeIs(source, wordStart, index, "exposed") &&
             !rangeIs(source, wordStart, index, "confined") { return false }
     }
@@ -198,16 +206,16 @@ func contextualModuleIsKeyword(source: String, start: Int, end: Int): Bool {
 
 func nextIdentifierStarts(source: String, end: Int): Bool {
     var index = end
-    while index < stringLength(source) && isSpace(charAt(source, index)) { index += 1 }
-    return index < stringLength(source) && isIdentifierStart(charAt(source, index))
+    while index < std::stringLength(source) && isSpace(std::charAt(source, index)) { index += 1 }
+    return index < std::stringLength(source) && isIdentifierStart(std::charAt(source, index))
 }
 
 func contextualUnionIsKeyword(source: String, start: Int, end: Int): Bool {
     if !rangeIs(source, start, end, "union") { return false }
     var index = end
-    while index < stringLength(source) && isSpace(charAt(source, index)) { index += 1 }
-    if index >= stringLength(source) { return false }
-    fin c = charAt(source, index)
+    while index < std::stringLength(source) && isSpace(std::charAt(source, index)) { index += 1 }
+    if index >= std::stringLength(source) { return false }
+    fin c = std::charAt(source, index)
     return c >= 'A' && c <= 'Z'
 }
 
@@ -221,7 +229,7 @@ func contextualAssocIsKeyword(source: String, start: Int, end: Int): Bool {
     var sawSubject = false
 
     while index >= lineStart {
-        fin c = charAt(source, index)
+        fin c = std::charAt(source, index)
         if isSpace(c) { index -= 1 }
         else if c == ')' {
             parenDepth += 1
@@ -259,7 +267,7 @@ func contextualAssocIsKeyword(source: String, start: Int, end: Int): Bool {
         }
         else if isIdentifierPart(c) {
             fin wordEnd = index + 1
-            while index >= lineStart && isIdentifierPart(charAt(source, index)) { index -= 1 }
+            while index >= lineStart && isIdentifierPart(std::charAt(source, index)) { index -= 1 }
             if parenDepth == 0 && bracketDepth == 0 && angleDepth == 0 {
                 fin wordStart = index + 1
                 if rangeIs(source, wordStart, wordEnd, "spec") ||
@@ -273,21 +281,159 @@ func contextualAssocIsKeyword(source: String, start: Int, end: Int): Bool {
     return false
 }
 
+func previousLineContainsWord(source: String, start: Int, expected: String): Bool {
+    fin lineStart = lineStartAt(source, 0, start)
+    var index = lineStart
+    while index < start {
+        if isIdentifierStart(std::charAt(source, index)) {
+            fin wordStart = index
+            index += 1
+            while index < start && isIdentifierPart(std::charAt(source, index)) { index += 1 }
+            if rangeIs(source, wordStart, index, expected) { return true }
+        }
+        else { index += 1 }
+    }
+    return false
+}
+
+func nextNonSpace(source: String, end: Int): Int {
+    var index = end
+    while index < std::stringLength(source) &&
+        std::charAt(source, index) != '\n' &&
+        isSpace(std::charAt(source, index)) { index += 1 }
+    return index
+}
+
+func followsMemberSeparator(source: String, start: Int): Bool {
+    var index = start - 1
+    while index >= 0 && isSpace(std::charAt(source, index)) { index -= 1 }
+    return index >= 0 && (std::charAt(source, index) == '.' || std::charAt(source, index) == ':')
+}
+
+func previousWordBefore(source: String, before: Int, expected: String): Bool {
+    var index = before - 1
+    while index >= 0 && isSpace(std::charAt(source, index)) { index -= 1 }
+    if index < 0 || !isIdentifierPart(std::charAt(source, index)) { return false }
+    fin end = index + 1
+    while index >= 0 && isIdentifierPart(std::charAt(source, index)) { index -= 1 }
+    return rangeIs(source, index + 1, end, expected)
+}
+
+func loopLabelIsKnown(source: String, start: Int, end: Int): Bool {
+    fin after = nextNonSpace(source, end)
+    if after < std::stringLength(source) && std::charAt(source, after) == ':' {
+        if nextIdentifierIs(source, after + 1, "for") ||
+            nextIdentifierIs(source, after + 1, "while") ||
+            nextIdentifierIs(source, after + 1, "loop") { return true }
+    }
+    var before = start - 1
+    while before >= 0 && isSpace(std::charAt(source, before)) { before -= 1 }
+    return before >= 0 && std::charAt(source, before) == ':' &&
+        (previousWordBefore(source, before, "break") ||
+            previousWordBefore(source, before, "continue"))
+}
+
+func realmPathSegmentIsKnown(source: String, start: Int, end: Int): Bool {
+    fin next = nextNonSpace(source, end)
+    if next + 1 < std::stringLength(source) && std::charAt(source, next) == ':' &&
+        std::charAt(source, next + 1) == ':' { return true }
+
+    fin lineStart = lineStartAt(source, 0, start)
+    if !previousLineContainsWord(source, start, "realm") ||
+        findFrom(source, lineStart, start, "{") >= 0 { return false }
+    return true
+}
+
+func contextualDerivesIsKeyword(source: String, start: Int, end: Int): Bool {
+    if !rangeIs(source, start, end, "derives") || followsMemberSeparator(source, start) { return false }
+    if !previousLineContainsWord(source, start, "pack") ||
+        previousLineContainsWord(source, start, "union") { return false }
+    fin next = nextNonSpace(source, end)
+    return next < std::stringLength(source) &&
+        (isIdentifierStart(std::charAt(source, next)) || std::charAt(source, next) == '[')
+}
+
+func contextualGraphClauseIsKeyword(source: String, start: Int, end: Int): Bool {
+    if followsMemberSeparator(source, start) ||
+        (!rangeIs(source, start, end, "replace") && !rangeIs(source, start, end, "includes")) ||
+        !previousLineContainsWord(source, start, "graph") { return false }
+    fin next = nextNonSpace(source, end)
+    return next < std::stringLength(source) &&
+        (isIdentifierStart(std::charAt(source, next)) ||
+            (rangeIs(source, start, end, "includes") && std::charAt(source, next) == '['))
+}
+
+func contextualBindsIsKeyword(source: String, start: Int, end: Int): Bool {
+    if !rangeIs(source, start, end, "binds") || followsMemberSeparator(source, start) { return false }
+    fin validHeader = previousLineContainsWord(source, start, "annot") ||
+        previousLineContainsWord(source, start, "solo") ||
+        previousLineContainsWord(source, start, "factory") ||
+        previousLineContainsWord(source, start, "scope")
+    if !validHeader { return false }
+    fin next = nextNonSpace(source, end)
+    return next < std::stringLength(source) &&
+        (isIdentifierStart(std::charAt(source, next)) || std::charAt(source, next) == '[')
+}
+
+func contextualRequiresIsKeyword(source: String, start: Int, end: Int): Bool {
+    if !rangeIs(source, start, end, "requires") || followsMemberSeparator(source, start) ||
+        !previousLineContainsWord(source, start, "spec") { return false }
+    fin next = nextNonSpace(source, end)
+    return next < std::stringLength(source) &&
+        (isIdentifierStart(std::charAt(source, next)) || std::charAt(source, next) == '[')
+}
+
+func contextualEscapingIsKeyword(source: String, start: Int, end: Int): Bool {
+    if !rangeIs(source, start, end, "escaping") || followsMemberSeparator(source, start) { return false }
+    fin next = nextNonSpace(source, end)
+    if next >= std::stringLength(source) ||
+        (std::charAt(source, next) != '(' && std::charAt(source, next) != '[') { return false }
+    fin lineEnd = lineEndAt(source, std::stringLength(source), end)
+    return findFrom(source, next, lineEnd, "->") >= 0
+}
+
+func contextualLendIsKeyword(source: String, start: Int, end: Int): Bool {
+    return rangeIs(source, start, end, "lend") && !followsMemberSeparator(source, start) &&
+        nextIdentifierStarts(source, end)
+}
+
+func contextualSealIsKeyword(source: String, start: Int, end: Int): Bool {
+    if !rangeIs(source, start, end, "seal") || followsMemberSeparator(source, start) { return false }
+    fin next = nextNonSpace(source, end)
+    if next >= std::stringLength(source) || std::charAt(source, next) == '\n' { return false }
+    fin c = std::charAt(source, next)
+    return isIdentifierStart(c) || std::isDigit(c) || c == '"' || c == '\'' ||
+        c == '.' || c == '(' || c == '[' || c == '@' || c == '-' || c == '!'
+}
+
+func contextualAsyncIsKeyword(source: String, start: Int, end: Int): Bool {
+    if !rangeIs(source, start, end, "async") || followsMemberSeparator(source, start) { return false }
+    if nextIdentifierIs(source, end, "func") { return true }
+    fin next = nextNonSpace(source, end)
+    return next < std::stringLength(source) &&
+        (std::charAt(source, next) == '(' || std::charAt(source, next) == '[')
+}
+
 func isContextualKeywordRange(source: String, start: Int, end: Int): Bool {
     return contextualWhereIsKeyword(source, start, end) ||
         contextualModuleIsKeyword(source, start, end) ||
         contextualUnionIsKeyword(source, start, end) ||
-        (rangeIs(source, start, end, "async") && nextIdentifierIs(source, end, "func")) ||
+        contextualAsyncIsKeyword(source, start, end) ||
         contextualAssocIsKeyword(source, start, end) ||
-        rangeIs(source, start, end, "derives") || rangeIs(source, start, end, "includes") ||
-        rangeIs(source, start, end, "binds") || rangeIs(source, start, end, "requires")
+        contextualEscapingIsKeyword(source, start, end) ||
+        contextualGraphClauseIsKeyword(source, start, end) ||
+        contextualDerivesIsKeyword(source, start, end) ||
+        contextualBindsIsKeyword(source, start, end) ||
+        contextualRequiresIsKeyword(source, start, end) ||
+        contextualLendIsKeyword(source, start, end) ||
+        contextualSealIsKeyword(source, start, end)
 }
 
 func lineNumberAt(source: String, documentStart: Int, offset: Int): Int {
     var line = 1
     var index = documentStart
     while index < offset {
-        if charAt(source, index) == '\n' { line += 1 }
+        if std::charAt(source, index) == '\n' { line += 1 }
         index += 1
     }
     return line
@@ -295,57 +441,57 @@ func lineNumberAt(source: String, documentStart: Int, offset: Int): Int {
 
 func lineStartAt(source: String, documentStart: Int, offset: Int): Int {
     var index = offset
-    while index > documentStart && charAt(source, index - 1) != '\n' { index -= 1 }
+    while index > documentStart && std::charAt(source, index - 1) != '\n' { index -= 1 }
     return index
 }
 
 func lineEndAt(source: String, documentEnd: Int, offset: Int): Int {
     var index = offset
-    while index < documentEnd && charAt(source, index) != '\n' { index += 1 }
+    while index < documentEnd && std::charAt(source, index) != '\n' { index += 1 }
     return index
 }
 
 func wordStartAt(source: String, documentStart: Int, documentEnd: Int, offset: Int): Int {
     var index = offset
     if index >= documentEnd { index = documentEnd - 1 }
-    if index >= documentStart && !isIdentifierPart(charAt(source, index)) && index > documentStart { index -= 1 }
-    while index > documentStart && isIdentifierPart(charAt(source, index - 1)) { index -= 1 }
+    if index >= documentStart && !isIdentifierPart(std::charAt(source, index)) && index > documentStart { index -= 1 }
+    while index > documentStart && isIdentifierPart(std::charAt(source, index - 1)) { index -= 1 }
     return index
 }
 
 func wordEndAt(source: String, documentEnd: Int, offset: Int): Int {
     var index = offset
-    while index < documentEnd && isIdentifierPart(charAt(source, index)) { index += 1 }
+    while index < documentEnd && isIdentifierPart(std::charAt(source, index)) { index += 1 }
     return index
 }
 
 func skipString(source: String, documentEnd: Int, start: Int): Int {
-    fin quote = charAt(source, start)
+    fin quote = std::charAt(source, start)
     var index = start + 1
     while index < documentEnd {
-        if charAt(source, index) == '\\' { index += 2 }
-        else if charAt(source, index) == quote { return index + 1 }
+        if std::charAt(source, index) == '\\' { index += 2 }
+        else if std::charAt(source, index) == quote { return index + 1 }
         else { index += 1 }
     }
     return documentEnd
 }
 
 func skipComment(source: String, documentEnd: Int, start: Int): Int {
-    if start + 1 >= documentEnd || charAt(source, start) != '/' { return start }
-    if charAt(source, start + 1) == '/' {
+    if start + 1 >= documentEnd || std::charAt(source, start) != '/' { return start }
+    if std::charAt(source, start + 1) == '/' {
         var index = start + 2
-        while index < documentEnd && charAt(source, index) != '\n' { index += 1 }
+        while index < documentEnd && std::charAt(source, index) != '\n' { index += 1 }
         return index
     }
-    if charAt(source, start + 1) == '*' {
+    if std::charAt(source, start + 1) == '*' {
         var index = start + 2
         var depth = 1
         while index < documentEnd && depth > 0 {
-            if index + 1 < documentEnd && charAt(source, index) == '/' && charAt(source, index + 1) == '*' {
+            if index + 1 < documentEnd && std::charAt(source, index) == '/' && std::charAt(source, index + 1) == '*' {
                 depth += 1
                 index += 2
             }
-            else if index + 1 < documentEnd && charAt(source, index) == '*' && charAt(source, index + 1) == '/' {
+            else if index + 1 < documentEnd && std::charAt(source, index) == '*' && std::charAt(source, index + 1) == '/' {
                 depth -= 1
                 index += 2
             }
@@ -362,11 +508,45 @@ func addHighlight(result: String, start: Int, end: Int, kind: String): String {
         ",\"type\":\"" + kind + "\"}"
 }
 
+/** End of a current `@name` / `@realm::name` macro or annotation path. */
+func atSymbolEnd(source: String, documentEnd: Int, start: Int): Int {
+    var index = start + 1
+    if index >= documentEnd || !isIdentifierStart(std::charAt(source, index)) { return index }
+    while index < documentEnd && isIdentifierPart(std::charAt(source, index)) { index += 1 }
+    while index + 2 < documentEnd && std::charAt(source, index) == ':' &&
+        std::charAt(source, index + 1) == ':' && isIdentifierStart(std::charAt(source, index + 2)) {
+        index += 2
+        while index < documentEnd && isIdentifierPart(std::charAt(source, index)) { index += 1 }
+    }
+    if index < documentEnd {
+        fin suffix = std::charAt(source, index)
+        if suffix == '!' || suffix == '?' || suffix == '&' ||
+            suffix == '*' || suffix == '^' { index += 1 }
+    }
+    return index
+}
+
+/** Lowercase final paths are macros; UpperCamelCase final paths are annotations. */
+func atSymbolIsMacro(source: String, documentEnd: Int, start: Int): Bool {
+    var index = start + 1
+    if index >= documentEnd || !isIdentifierStart(std::charAt(source, index)) { return false }
+    var finalStart = index
+    while index < documentEnd && isIdentifierPart(std::charAt(source, index)) { index += 1 }
+    while index + 2 < documentEnd && std::charAt(source, index) == ':' &&
+        std::charAt(source, index + 1) == ':' && isIdentifierStart(std::charAt(source, index + 2)) {
+        index += 2
+        finalStart = index
+        while index < documentEnd && isIdentifierPart(std::charAt(source, index)) { index += 1 }
+    }
+    fin first = std::charAt(source, finalStart)
+    return (first >= 'a' && first <= 'z') || first == '_'
+}
+
 func matchingParenEnd(source: String, documentEnd: Int, open: Int): Int {
     var depth = 1
     var index = open + 1
     while index < documentEnd && depth > 0 {
-        fin c = charAt(source, index)
+        fin c = std::charAt(source, index)
         if c == '"' || c == '\'' { index = skipString(source, documentEnd, index) }
         else if c == '/' {
             fin end = skipComment(source, documentEnd, index)
@@ -385,7 +565,7 @@ func matchingBracketEnd(source: String, documentEnd: Int, open: Int): Int {
     var depth = 1
     var index = open + 1
     while index < documentEnd && depth > 0 {
-        fin c = charAt(source, index)
+        fin c = std::charAt(source, index)
         if c == '[' { depth += 1 }
         else if c == ']' { depth -= 1 }
         index += 1
@@ -402,7 +582,7 @@ func parameterListContains(
 ): Bool {
     var index = paramsStart
     while index < paramsEnd {
-        fin c = charAt(source, index)
+        fin c = std::charAt(source, index)
         if c == '"' || c == '\'' { index = skipString(source, paramsEnd, index) }
         else if c == '/' {
             fin end = skipComment(source, paramsEnd, index)
@@ -411,10 +591,10 @@ func parameterListContains(
         else if isIdentifierStart(c) {
             fin start = index
             index += 1
-            while index < paramsEnd && isIdentifierPart(charAt(source, index)) { index += 1 }
+            while index < paramsEnd && isIdentifierPart(std::charAt(source, index)) { index += 1 }
             var next = index
-            while next < paramsEnd && isSpace(charAt(source, next)) { next += 1 }
-            if next < paramsEnd && charAt(source, next) == ':' &&
+            while next < paramsEnd && isSpace(std::charAt(source, next)) { next += 1 }
+            if next < paramsEnd && std::charAt(source, next) == ':' &&
                 rangeEquals(source, start, index, source, targetStart, targetEnd) {
                 return true
             }
@@ -438,35 +618,35 @@ func parameterReferenceIsKnown(
     var receiverEnd = -1
     var paramsStart = -1
     var paramsEnd = -1
-    while index <= targetStart && index < stringLength(source) {
-        fin c = charAt(source, index)
-        if c == '"' || c == '\'' { index = skipString(source, stringLength(source), index) }
+    while index <= targetStart && index < std::stringLength(source) {
+        fin c = std::charAt(source, index)
+        if c == '"' || c == '\'' { index = skipString(source, std::stringLength(source), index) }
         else if c == '/' {
-            fin end = skipComment(source, stringLength(source), index)
+            fin end = skipComment(source, std::stringLength(source), index)
             if end > index { index = end } else { index += 1 }
         }
         else if isIdentifierStart(c) {
             fin start = index
             index += 1
-            while index < stringLength(source) && isIdentifierPart(charAt(source, index)) {
+            while index < std::stringLength(source) && isIdentifierPart(std::charAt(source, index)) {
                 index += 1
             }
             if isFunctionDeclarationRange(source, start, index) {
-                while index < stringLength(source) && isSpace(charAt(source, index)) { index += 1 }
-                if index < stringLength(source) && isIdentifierStart(charAt(source, index)) {
-                    while index < stringLength(source) && isIdentifierPart(charAt(source, index)) {
+                while index < std::stringLength(source) && isSpace(std::charAt(source, index)) { index += 1 }
+                if index < std::stringLength(source) && isIdentifierStart(std::charAt(source, index)) {
+                    while index < std::stringLength(source) && isIdentifierPart(std::charAt(source, index)) {
                         index += 1
                     }
-                    index = skipGenericHeader(source, stringLength(source), index)
-                    if index < stringLength(source) && charAt(source, index) == '[' {
+                    index = skipGenericHeader(source, std::stringLength(source), index)
+                    if index < std::stringLength(source) && std::charAt(source, index) == '[' {
                         receiverStart = index + 1
-                        receiverEnd = matchingBracketEnd(source, stringLength(source), index) - 1
+                        receiverEnd = matchingBracketEnd(source, std::stringLength(source), index) - 1
                         index = receiverEnd + 1
-                        while index < stringLength(source) && isSpace(charAt(source, index)) { index += 1 }
+                        while index < std::stringLength(source) && isSpace(std::charAt(source, index)) { index += 1 }
                     }
-                    if index < stringLength(source) && charAt(source, index) == '(' {
+                    if index < std::stringLength(source) && std::charAt(source, index) == '(' {
                         paramsStart = index + 1
-                        paramsEnd = matchingParenEnd(source, stringLength(source), index) - 1
+                        paramsEnd = matchingParenEnd(source, std::stringLength(source), index) - 1
                         index = paramsEnd + 1
                     }
                 }
@@ -489,7 +669,7 @@ func interpolationClose(
     var depth = 1
     var index = open + 1
     while index < documentEnd {
-        fin c = charAt(source, index)
+        fin c = std::charAt(source, index)
         if c == '"' || c == '\'' { index = skipString(source, documentEnd, index) }
         else if c == '/' {
             fin end = skipComment(source, documentEnd, index)
@@ -517,7 +697,7 @@ func addInterpolationHighlights(
     var result = resultInput
     var index = start
     while index < end {
-        fin c = charAt(source, index)
+        fin c = std::charAt(source, index)
         if isSpace(c) { index += 1 }
         else if c == '/' {
             fin commentEnd = skipComment(source, end, index)
@@ -538,44 +718,41 @@ func addInterpolationHighlights(
             index = literalEnd
         }
         else if c == '@' {
-            fin annotationStart = index
-            index += 1
-            while index < end && isIdentifierPart(charAt(source, index)) { index += 1 }
-            result = addHighlight(result, annotationStart, index, "annotation")
+            fin symbolStart = index
+            fin isMacro = atSymbolIsMacro(source, end, symbolStart)
+            index = atSymbolEnd(source, end, symbolStart)
+            result = addHighlight(result, symbolStart, index, if isMacro { "macro" } else { "annotation" })
         }
-        else if isDigit(c) {
+        else if std::isDigit(c) {
             fin numberStart = index
             index += 1
             while index < end {
-                fin n = charAt(source, index)
-                if isDigit(n) || n == '_' || n == '.' { index += 1 } else { break }
+                fin n = std::charAt(source, index)
+                if std::isDigit(n) || n == '_' || n == '.' { index += 1 } else { break }
             }
             result = addHighlight(result, numberStart, index, "number")
         }
         else if isIdentifierStart(c) {
             fin identifierStart = index
             index += 1
-            while index < end && isIdentifierPart(charAt(source, index)) { index += 1 }
+            while index < end && isIdentifierPart(std::charAt(source, index)) { index += 1 }
             var kind = "variable"
-            if index < end && charAt(source, index) == '@' &&
-                ((c >= 'a' && c <= 'z') || c == '_') {
-                index += 1
-                kind = "macro"
-            }
-            else if isKeywordRange(source, identifierStart, index) ||
+            if isKeywordRange(source, identifierStart, index) ||
                 isContextualKeywordRange(source, identifierStart, index) { kind = "keyword" }
+            else if loopLabelIsKnown(source, identifierStart, index) { kind = "label" }
+            else if realmPathSegmentIsKnown(source, identifierStart, index) { kind = "realm" }
             else if rangeIs(source, identifierStart, index, "self") ||
                 rangeIs(source, identifierStart, index, "it") ||
                 parameterReferenceIsKnown(source, identifierStart, index) { kind = "parameter" }
-            else if ord(charAt(source, identifierStart)) >= 65 &&
-                ord(charAt(source, identifierStart)) <= 90 {
+            else if std::ord(std::charAt(source, identifierStart)) >= 65 &&
+                std::ord(std::charAt(source, identifierStart)) <= 90 {
                 fin typeKind = typeReferenceKind(source, identifierStart, index, corpus)
                 if typeKind != "" { kind = typeKind }
             }
             else {
                 var next = index
-                while next < end && isSpace(charAt(source, next)) { next += 1 }
-                if next < end && charAt(source, next) == '(' &&
+                while next < end && isSpace(std::charAt(source, next)) { next += 1 }
+                if next < end && std::charAt(source, next) == '(' &&
                     functionReferenceIsKnown(source, identifierStart, index, corpus) {
                     kind = "function"
                 }
@@ -597,18 +774,18 @@ func addStringHighlights(
     var result = resultInput
     var segmentStart = start
     var index = start + 1
-    fin contentEnd = if end > start && charAt(source, end - 1) == '"' { end - 1 } else { end }
+    fin contentEnd = if end > start && std::charAt(source, end - 1) == '"' { end - 1 } else { end }
     while index < contentEnd {
-        fin c = charAt(source, index)
+        fin c = std::charAt(source, index)
         if c == '\\' { index += 2 }
         else if c == '$' && index + 1 < contentEnd &&
-            (charAt(source, index + 1) == '{' ||
-                isIdentifierStart(charAt(source, index + 1))) {
+            (std::charAt(source, index + 1) == '{' ||
+                isIdentifierStart(std::charAt(source, index + 1))) {
             if segmentStart < index {
                 result = addHighlight(result, segmentStart, index, "string")
             }
             result = addHighlight(result, index, index + 1, "interpolation-punctuation")
-            if charAt(source, index + 1) == '{' {
+            if std::charAt(source, index + 1) == '{' {
                 result = addHighlight(result, index + 1, index + 2, "interpolation-punctuation")
                 fin close = interpolationClose(source, contentEnd, index + 1)
                 result = addInterpolationHighlights(result, source, index + 2, close, corpus)
@@ -621,7 +798,7 @@ func addStringHighlights(
             else {
                 fin identifierStart = index + 1
                 index = identifierStart + 1
-                while index < contentEnd && isIdentifierPart(charAt(source, index)) { index += 1 }
+                while index < contentEnd && isIdentifierPart(std::charAt(source, index)) { index += 1 }
                 result = addInterpolationHighlights(
                     result,
                     source,
@@ -657,15 +834,15 @@ func azlsHighlightRange(
     var rangeStart = rangeStartInput
     var rangeEnd = rangeEndInput
     if rangeStart < 0 { rangeStart = 0 }
-    if rangeStart > stringLength(source) { rangeStart = stringLength(source) }
+    if rangeStart > std::stringLength(source) { rangeStart = std::stringLength(source) }
     if rangeEnd < rangeStart { rangeEnd = rangeStart }
-    if rangeEnd > stringLength(source) { rangeEnd = stringLength(source) }
+    if rangeEnd > std::stringLength(source) { rangeEnd = std::stringLength(source) }
 
     while index < rangeEnd {
-        fin c = charAt(source, index)
+        fin c = std::charAt(source, index)
         if isSpace(c) { index += 1 }
         else if c == '/' {
-            fin end = skipComment(source, stringLength(source), index)
+            fin end = skipComment(source, std::stringLength(source), index)
             if end > index {
                 if index >= rangeStart {
                     result = addHighlight(result, index, end, "comment")
@@ -675,14 +852,14 @@ func azlsHighlightRange(
             else { index += 1 }
         }
         else if c == '"' {
-            fin end = skipString(source, stringLength(source), index)
+            fin end = skipString(source, std::stringLength(source), index)
             if index >= rangeStart {
                 result = addStringHighlights(result, source, index, end, corpus)
             }
             index = end
         }
         else if c == '\'' {
-            fin end = skipString(source, stringLength(source), index)
+            fin end = skipString(source, std::stringLength(source), index)
             if index >= rangeStart {
                 result = addHighlight(result, index, end, "char")
             }
@@ -690,18 +867,18 @@ func azlsHighlightRange(
         }
         else if c == '@' {
             fin start = index
-            index += 1
-            while index < stringLength(source) && isIdentifierPart(charAt(source, index)) { index += 1 }
+            fin isMacro = atSymbolIsMacro(source, std::stringLength(source), start)
+            index = atSymbolEnd(source, std::stringLength(source), start)
             if start >= rangeStart {
-                result = addHighlight(result, start, index, "annotation")
+                result = addHighlight(result, start, index, if isMacro { "macro" } else { "annotation" })
             }
         }
-        else if isDigit(c) {
+        else if std::isDigit(c) {
             fin start = index
             index += 1
-            while index < stringLength(source) {
-                fin n = charAt(source, index)
-                if isDigit(n) || n == '_' || n == '.' { index += 1 } else { break }
+            while index < std::stringLength(source) {
+                fin n = std::charAt(source, index)
+                if std::isDigit(n) || n == '_' || n == '.' { index += 1 } else { break }
             }
             if start >= rangeStart {
                 result = addHighlight(result, start, index, "number")
@@ -710,15 +887,10 @@ func azlsHighlightRange(
         else if isIdentifierStart(c) {
             fin start = index
             index += 1
-            while index < stringLength(source) && isIdentifierPart(charAt(source, index)) { index += 1 }
+            while index < std::stringLength(source) && isIdentifierPart(std::charAt(source, index)) { index += 1 }
             fin emit = start >= rangeStart
             var kind = "identifier"
-            if index < stringLength(source) && charAt(source, index) == '@' &&
-                ((c >= 'a' && c <= 'z') || c == '_') {
-                index += 1
-                kind = "macro"
-            }
-            else if isKeywordRange(source, start, index) ||
+            if isKeywordRange(source, start, index) ||
                 isContextualKeywordRange(source, start, index) { kind = "keyword" }
             else if emit {
                 if expectedDeclarationKind == "function" { kind = "function" }
@@ -727,17 +899,19 @@ func azlsHighlightRange(
                     expectedDeclarationKind == "enum" { kind = "type" }
                 else if expectedDeclarationKind == "annotation" { kind = "annotation" }
                 else if expectedDeclarationKind != "" { kind = "variable" }
+                else if loopLabelIsKnown(source, start, index) { kind = "label" }
+                else if realmPathSegmentIsKnown(source, start, index) { kind = "realm" }
                 else if rangeIs(source, start, index, "self") ||
                     rangeIs(source, start, index, "it") ||
                     parameterReferenceIsKnown(source, start, index) { kind = "parameter" }
-                else if ord(charAt(source, start)) >= 65 && ord(charAt(source, start)) <= 90 {
+                else if std::ord(std::charAt(source, start)) >= 65 && std::ord(std::charAt(source, start)) <= 90 {
                     fin typeKind = typeReferenceKind(source, start, index, corpus)
                     if typeKind != "" { kind = typeKind }
                 }
                 else {
                     var next = index
-                    while next < stringLength(source) && isSpace(charAt(source, next)) { next += 1 }
-                    if next < stringLength(source) && charAt(source, next) == '(' &&
+                    while next < std::stringLength(source) && isSpace(std::charAt(source, next)) { next += 1 }
+                    if next < std::stringLength(source) && std::charAt(source, next) == '(' &&
                         functionReferenceIsKnown(source, start, index, corpus) {
                         kind = "function"
                     }
@@ -757,21 +931,21 @@ func azlsHighlightRange(
 
 /** Semantic highlighting generated entirely by AZLS. */
 func azlsHighlight(source: String, corpus: String): String {
-    return azlsHighlightRange(source, corpus, 0, stringLength(source))
+    return azlsHighlightRange(source, corpus, 0, std::stringLength(source))
 }
 
 func skipGenericHeader(source: String, documentEnd: Int, start: Int): Int {
     var index = start
-    while index < documentEnd && isSpace(charAt(source, index)) { index += 1 }
-    if index >= documentEnd || charAt(source, index) != '<' { return index }
+    while index < documentEnd && isSpace(std::charAt(source, index)) { index += 1 }
+    if index >= documentEnd || std::charAt(source, index) != '<' { return index }
     var depth = 1
     index += 1
     while index < documentEnd && depth > 0 {
-        if charAt(source, index) == '<' { depth += 1 }
-        else if charAt(source, index) == '>' { depth -= 1 }
+        if std::charAt(source, index) == '<' { depth += 1 }
+        else if std::charAt(source, index) == '>' { depth -= 1 }
         index += 1
     }
-    while index < documentEnd && isSpace(charAt(source, index)) { index += 1 }
+    while index < documentEnd && isSpace(std::charAt(source, index)) { index += 1 }
     return index
 }
 
@@ -786,7 +960,7 @@ func declarationOffset(
     var index = documentStart
     var expected = false
     while index < documentEnd {
-        fin c = charAt(source, index)
+        fin c = std::charAt(source, index)
         if c == '"' || c == '\'' { index = skipString(source, documentEnd, index) }
         else if c == '/' {
             fin end = skipComment(source, documentEnd, index)
@@ -796,7 +970,7 @@ func declarationOffset(
         else if isIdentifierStart(c) {
             fin start = index
             index += 1
-            while index < documentEnd && isIdentifierPart(charAt(source, index)) { index += 1 }
+            while index < documentEnd && isIdentifierPart(std::charAt(source, index)) { index += 1 }
             if expected {
                 if rangeEquals(source, start, index, target, targetStart, targetEnd) { return start }
                 expected = false
@@ -819,7 +993,7 @@ func functionDeclarationOffset(
     var index = documentStart
     var expected = false
     while index < documentEnd {
-        fin c = charAt(source, index)
+        fin c = std::charAt(source, index)
         if c == '"' || c == '\'' { index = skipString(source, documentEnd, index) }
         else if c == '/' {
             fin end = skipComment(source, documentEnd, index)
@@ -829,7 +1003,7 @@ func functionDeclarationOffset(
         else if isIdentifierStart(c) {
             fin start = index
             index += 1
-            while index < documentEnd && isIdentifierPart(charAt(source, index)) { index += 1 }
+            while index < documentEnd && isIdentifierPart(std::charAt(source, index)) { index += 1 }
             if expected {
                 if rangeEquals(source, start, index, target, targetStart, targetEnd) { return start }
                 expected = false
@@ -850,7 +1024,7 @@ func declarationIsSpecAt(
     var index = documentStart
     var expectedKind = ""
     while index < documentEnd {
-        fin c = charAt(source, index)
+        fin c = std::charAt(source, index)
         if c == '"' || c == '\'' { index = skipString(source, documentEnd, index) }
         else if c == '/' {
             fin end = skipComment(source, documentEnd, index)
@@ -862,7 +1036,7 @@ func declarationIsSpecAt(
         else if isIdentifierStart(c) {
             fin start = index
             index += 1
-            while index < documentEnd && isIdentifierPart(charAt(source, index)) { index += 1 }
+            while index < documentEnd && isIdentifierPart(std::charAt(source, index)) { index += 1 }
             if expectedKind != "" {
                 if start == declaration { return expectedKind == "interface" }
                 expectedKind = ""
@@ -882,12 +1056,12 @@ func moduleStart(source: String, documentStart: Int, documentEnd: Int): Int {
     while index < documentEnd {
         fin found = findFrom(source, index, documentEnd, marker)
         if found < 0 { return -1 }
-        fin beforeOk = found == documentStart || !isIdentifierPart(charAt(source, found - 1))
-        fin after = found + stringLength(marker)
-        fin afterOk = after >= documentEnd || !isIdentifierPart(charAt(source, after))
+        fin beforeOk = found == documentStart || !isIdentifierPart(std::charAt(source, found - 1))
+        fin after = found + std::stringLength(marker)
+        fin afterOk = after >= documentEnd || !isIdentifierPart(std::charAt(source, after))
         if beforeOk && afterOk {
             index = after
-            while index < documentEnd && isSpace(charAt(source, index)) { index += 1 }
+            while index < documentEnd && isSpace(std::charAt(source, index)) { index += 1 }
             return index
         }
         index = found + 1
@@ -898,7 +1072,7 @@ func moduleStart(source: String, documentStart: Int, documentEnd: Int): Int {
 func moduleEnd(source: String, documentEnd: Int, start: Int): Int {
     var index = start
     while index < documentEnd {
-        fin c = charAt(source, index)
+        fin c = std::charAt(source, index)
         if isIdentifierPart(c) || c == '.' { index += 1 } else { break }
     }
     return index
@@ -906,22 +1080,22 @@ func moduleEnd(source: String, documentEnd: Int, start: Int): Int {
 
 func importStart(source: String, offset: Int): Int {
     var lineStart = offset
-    while lineStart > 0 && charAt(source, lineStart - 1) != '\n' { lineStart -= 1 }
+    while lineStart > 0 && std::charAt(source, lineStart - 1) != '\n' { lineStart -= 1 }
     var lineEnd = offset
-    while lineEnd < stringLength(source) && charAt(source, lineEnd) != '\n' { lineEnd += 1 }
+    while lineEnd < std::stringLength(source) && std::charAt(source, lineEnd) != '\n' { lineEnd += 1 }
     var index = lineStart
-    while index < lineEnd && isSpace(charAt(source, index)) { index += 1 }
+    while index < lineEnd && isSpace(std::charAt(source, index)) { index += 1 }
     if rangeStarts(source, index, lineEnd, "use") { index += 3 }
     else if rangeStarts(source, index, lineEnd, "use") { index += 3 }
     else { return -1 }
-    while index < lineEnd && isSpace(charAt(source, index)) { index += 1 }
+    while index < lineEnd && isSpace(std::charAt(source, index)) { index += 1 }
     return index
 }
 
 func importEnd(source: String, start: Int): Int {
     var index = start
-    while index < stringLength(source) {
-        fin c = charAt(source, index)
+    while index < std::stringLength(source) {
+        fin c = std::charAt(source, index)
         if isIdentifierPart(c) || c == '.' { index += 1 } else { break }
     }
     return index
@@ -931,7 +1105,7 @@ func matchingBraceEnd(source: String, documentEnd: Int, open: Int): Int {
     var depth = 1
     var index = open + 1
     while index < documentEnd && depth > 0 {
-        fin c = charAt(source, index)
+        fin c = std::charAt(source, index)
         if c == '"' || c == '\'' { index = skipString(source, documentEnd, index) }
         else if c == '/' {
             fin end = skipComment(source, documentEnd, index)
@@ -954,15 +1128,15 @@ func qualifierMatches(
     zoneEnd: Int
 ): Bool {
     var separatorEnd = useStart
-    while separatorEnd > 0 && isSpace(charAt(source, separatorEnd - 1)) { separatorEnd -= 1 }
-    if separatorEnd < 2 || charAt(source, separatorEnd - 1) != ':' ||
-        charAt(source, separatorEnd - 2) != ':' { return false }
+    while separatorEnd > 0 && isSpace(std::charAt(source, separatorEnd - 1)) { separatorEnd -= 1 }
+    if separatorEnd < 2 || std::charAt(source, separatorEnd - 1) != ':' ||
+        std::charAt(source, separatorEnd - 2) != ':' { return false }
 
     var qualifierEnd = separatorEnd - 2
-    while qualifierEnd > 0 && isSpace(charAt(source, qualifierEnd - 1)) { qualifierEnd -= 1 }
+    while qualifierEnd > 0 && isSpace(std::charAt(source, qualifierEnd - 1)) { qualifierEnd -= 1 }
     var qualifierStart = qualifierEnd
     while qualifierStart > 0 {
-        fin c = charAt(source, qualifierStart - 1)
+        fin c = std::charAt(source, qualifierStart - 1)
         if isIdentifierPart(c) || c == ':' { qualifierStart -= 1 } else { break }
     }
     return rangeEquals(
@@ -984,33 +1158,33 @@ func useIsInsideZone(
 ): Bool {
     var index = 0
     while index < useStart {
-        fin c = charAt(source, index)
-        if c == '"' || c == '\'' { index = skipString(source, stringLength(source), index) }
+        fin c = std::charAt(source, index)
+        if c == '"' || c == '\'' { index = skipString(source, std::stringLength(source), index) }
         else if c == '/' {
-            fin end = skipComment(source, stringLength(source), index)
+            fin end = skipComment(source, std::stringLength(source), index)
             if end > index { index = end } else { index += 1 }
         }
         else if isIdentifierStart(c) {
             fin start = index
             index += 1
-            while index < stringLength(source) && isIdentifierPart(charAt(source, index)) {
+            while index < std::stringLength(source) && isIdentifierPart(std::charAt(source, index)) {
                 index += 1
             }
             if rangeIs(source, start, index, "zone") {
                 var pathStart = index
-                while pathStart < stringLength(source) && isSpace(charAt(source, pathStart)) {
+                while pathStart < std::stringLength(source) && isSpace(std::charAt(source, pathStart)) {
                     pathStart += 1
                 }
                 var pathEnd = pathStart
-                while pathEnd < stringLength(source) {
-                    fin p = charAt(source, pathEnd)
+                while pathEnd < std::stringLength(source) {
+                    fin p = std::charAt(source, pathEnd)
                     if isIdentifierPart(p) || p == ':' { pathEnd += 1 } else { break }
                 }
                 var open = pathEnd
-                while open < stringLength(source) && isSpace(charAt(source, open)) { open += 1 }
-                if pathEnd > pathStart && open < stringLength(source) &&
-                    charAt(source, open) == '{' {
-                    fin close = matchingBraceEnd(source, stringLength(source), open)
+                while open < std::stringLength(source) && isSpace(std::charAt(source, open)) { open += 1 }
+                if pathEnd > pathStart && open < std::stringLength(source) &&
+                    std::charAt(source, open) == '{' {
+                    fin close = matchingBraceEnd(source, std::stringLength(source), open)
                     if open < useStart && useStart < close &&
                         rangeEquals(source, pathStart, pathEnd, zoneSource, zoneStart, zoneEnd) {
                         return true
@@ -1045,7 +1219,7 @@ func declarationZoneAllows(
     var matches = true
 
     while index < declaration {
-        fin c = charAt(declarationSource, index)
+        fin c = std::charAt(declarationSource, index)
         if c == '"' || c == '\'' { index = skipString(declarationSource, documentEnd, index) }
         else if c == '/' {
             fin end = skipComment(declarationSource, documentEnd, index)
@@ -1054,25 +1228,25 @@ func declarationZoneAllows(
         else if isIdentifierStart(c) {
             fin start = index
             index += 1
-            while index < documentEnd && isIdentifierPart(charAt(declarationSource, index)) {
+            while index < documentEnd && isIdentifierPart(std::charAt(declarationSource, index)) {
                 index += 1
             }
             if rangeIs(declarationSource, start, index, "zone") {
                 fin isUsed = previousStart >= 0 &&
                     rangeIs(declarationSource, previousStart, previousEnd, "use")
                 var pathStart = index
-                while pathStart < documentEnd && isSpace(charAt(declarationSource, pathStart)) {
+                while pathStart < documentEnd && isSpace(std::charAt(declarationSource, pathStart)) {
                     pathStart += 1
                 }
                 var pathEnd = pathStart
                 while pathEnd < documentEnd {
-                    fin p = charAt(declarationSource, pathEnd)
+                    fin p = std::charAt(declarationSource, pathEnd)
                     if isIdentifierPart(p) || p == ':' { pathEnd += 1 } else { break }
                 }
                 var open = pathEnd
-                while open < documentEnd && isSpace(charAt(declarationSource, open)) { open += 1 }
+                while open < documentEnd && isSpace(std::charAt(declarationSource, open)) { open += 1 }
                 if pathEnd > pathStart && open < documentEnd &&
-                    charAt(declarationSource, open) == '{' {
+                    std::charAt(declarationSource, open) == '{' {
                     fin close = matchingBraceEnd(declarationSource, documentEnd, open)
                     if open < declaration && declaration < close && !isUsed {
                         required = true
@@ -1107,8 +1281,8 @@ func moduleIsExported(source: String, documentStart: Int, moduleNameStart: Int):
     fin found = findFrom(source, start, moduleNameStart, "exposed")
     if found < 0 { return false }
     fin end = found + 7
-    fin beforeOk = found == start || !isIdentifierPart(charAt(source, found - 1))
-    fin afterOk = end >= moduleNameStart || !isIdentifierPart(charAt(source, end))
+    fin beforeOk = found == start || !isIdentifierPart(std::charAt(source, found - 1))
+    fin afterOk = end >= moduleNameStart || !isIdentifierPart(std::charAt(source, end))
     return beforeOk && afterOk
 }
 
@@ -1119,24 +1293,24 @@ func sourceImportsModule(
     moduleEndOffset: Int
 ): Bool {
     var index = 0
-    while index < stringLength(source) {
-        fin c = charAt(source, index)
-        if c == '"' || c == '\'' { index = skipString(source, stringLength(source), index) }
+    while index < std::stringLength(source) {
+        fin c = std::charAt(source, index)
+        if c == '"' || c == '\'' { index = skipString(source, std::stringLength(source), index) }
         else if c == '/' {
-            fin end = skipComment(source, stringLength(source), index)
+            fin end = skipComment(source, std::stringLength(source), index)
             if end > index { index = end } else { index += 1 }
         }
         else if isIdentifierStart(c) {
             fin start = index
             index += 1
-            while index < stringLength(source) && isIdentifierPart(charAt(source, index)) {
+            while index < std::stringLength(source) && isIdentifierPart(std::charAt(source, index)) {
                 index += 1
             }
             if rangeIs(source, start, index, "use") {
-                while index < stringLength(source) && isSpace(charAt(source, index)) { index += 1 }
+                while index < std::stringLength(source) && isSpace(std::charAt(source, index)) { index += 1 }
                 fin pathStart = index
-                while index < stringLength(source) {
-                    fin p = charAt(source, index)
+                while index < std::stringLength(source) {
+                    fin p = std::charAt(source, index)
                     if isIdentifierPart(p) || p == '.' || p == '*' { index += 1 } else { break }
                 }
                 fin pathEnd = index
@@ -1148,8 +1322,8 @@ func sourceImportsModule(
                     moduleStartOffset,
                     moduleEndOffset
                 ) { return true }
-                if pathEnd - pathStart >= 2 && charAt(source, pathEnd - 1) == '*' &&
-                    charAt(source, pathEnd - 2) == '.' {
+                if pathEnd - pathStart >= 2 && std::charAt(source, pathEnd - 1) == '*' &&
+                    std::charAt(source, pathEnd - 2) == '.' {
                     fin prefixEnd = pathEnd - 2
                     fin prefixLength = prefixEnd - pathStart
                     if prefixLength < moduleEndOffset - moduleStartOffset &&
@@ -1160,7 +1334,7 @@ func sourceImportsModule(
                             moduleSource,
                             moduleStartOffset,
                             moduleStartOffset + prefixLength
-                        ) && charAt(moduleSource, moduleStartOffset + prefixLength) == '.' {
+                        ) && std::charAt(moduleSource, moduleStartOffset + prefixLength) == '.' {
                         return true
                     }
                 }
@@ -1228,12 +1402,12 @@ func corpusDefinition(
 ): String {
     var cursor = 0
     var document = 0
-    while cursor < stringLength(corpus) {
-        fin field = findFrom(corpus, cursor, stringLength(corpus), fieldMarker())
+    while cursor < std::stringLength(corpus) {
+        fin field = findFrom(corpus, cursor, std::stringLength(corpus), fieldMarker())
         if field < 0 { break }
-        fin sourceStart = field + stringLength(fieldMarker())
-        var sourceEnd = findFrom(corpus, sourceStart, stringLength(corpus), recordMarker())
-        if sourceEnd < 0 { sourceEnd = stringLength(corpus) }
+        fin sourceStart = field + std::stringLength(fieldMarker())
+        var sourceEnd = findFrom(corpus, sourceStart, std::stringLength(corpus), recordMarker())
+        if sourceEnd < 0 { sourceEnd = std::stringLength(corpus) }
         if moduleLookup {
             fin candidate = moduleStart(corpus, sourceStart, sourceEnd)
             if candidate >= 0 {
@@ -1254,7 +1428,7 @@ func corpusDefinition(
                 useStart
             ) { return definitionJson(document, corpus, sourceStart, sourceEnd, found) }
         }
-        cursor = sourceEnd + stringLength(recordMarker())
+        cursor = sourceEnd + std::stringLength(recordMarker())
         document += 1
     }
     return "{\"found\":false}"
@@ -1269,12 +1443,12 @@ func corpusFunctionIsKnown(
     useStart: Int
 ): Bool {
     var cursor = 0
-    while cursor < stringLength(corpus) {
-        fin field = findFrom(corpus, cursor, stringLength(corpus), fieldMarker())
+    while cursor < std::stringLength(corpus) {
+        fin field = findFrom(corpus, cursor, std::stringLength(corpus), fieldMarker())
         if field < 0 { break }
-        fin sourceStart = field + stringLength(fieldMarker())
-        var sourceEnd = findFrom(corpus, sourceStart, stringLength(corpus), recordMarker())
-        if sourceEnd < 0 { sourceEnd = stringLength(corpus) }
+        fin sourceStart = field + std::stringLength(fieldMarker())
+        var sourceEnd = findFrom(corpus, sourceStart, std::stringLength(corpus), recordMarker())
+        if sourceEnd < 0 { sourceEnd = std::stringLength(corpus) }
         fin found = functionDeclarationOffset(
             corpus,
             sourceStart,
@@ -1291,7 +1465,7 @@ func corpusFunctionIsKnown(
             source,
             useStart
         ) { return true }
-        cursor = sourceEnd + stringLength(recordMarker())
+        cursor = sourceEnd + std::stringLength(recordMarker())
     }
     return false
 }
@@ -1302,11 +1476,11 @@ func functionReferenceIsKnown(
     end: Int,
     corpus: String
 ): Bool {
-    fin local = functionDeclarationOffset(source, 0, stringLength(source), source, start, end)
+    fin local = functionDeclarationOffset(source, 0, std::stringLength(source), source, start, end)
     if local >= 0 && declarationZoneAllows(
         source,
         0,
-        stringLength(source),
+        std::stringLength(source),
         local,
         source,
         start
@@ -1315,21 +1489,21 @@ func functionReferenceIsKnown(
 }
 
 func typeReferenceKind(source: String, start: Int, end: Int, corpus: String): String {
-    fin local = declarationOffset(source, 0, stringLength(source), source, start, end)
+    fin local = declarationOffset(source, 0, std::stringLength(source), source, start, end)
     if local >= 0 {
-        if declarationIsSpecAt(source, 0, stringLength(source), local) {
+        if declarationIsSpecAt(source, 0, std::stringLength(source), local) {
             return "spec-type"
         }
         return "type"
     }
 
     var cursor = 0
-    while cursor < stringLength(corpus) {
-        fin field = findFrom(corpus, cursor, stringLength(corpus), fieldMarker())
+    while cursor < std::stringLength(corpus) {
+        fin field = findFrom(corpus, cursor, std::stringLength(corpus), fieldMarker())
         if field < 0 { break }
-        fin sourceStart = field + stringLength(fieldMarker())
-        var sourceEnd = findFrom(corpus, sourceStart, stringLength(corpus), recordMarker())
-        if sourceEnd < 0 { sourceEnd = stringLength(corpus) }
+        fin sourceStart = field + std::stringLength(fieldMarker())
+        var sourceEnd = findFrom(corpus, sourceStart, std::stringLength(corpus), recordMarker())
+        if sourceEnd < 0 { sourceEnd = std::stringLength(corpus) }
         fin found = declarationOffset(corpus, sourceStart, sourceEnd, source, start, end)
         if found >= 0 && declarationIsVisible(
             corpus,
@@ -1344,7 +1518,7 @@ func typeReferenceKind(source: String, start: Int, end: Int, corpus: String): St
             }
             return "type"
         }
-        cursor = sourceEnd + stringLength(recordMarker())
+        cursor = sourceEnd + std::stringLength(recordMarker())
     }
     return ""
 }
@@ -1359,12 +1533,12 @@ func azlsDefinition(source: String, offset: Int, corpus: String): String {
     if imported >= 0 {
         return corpusDefinition(corpus, source, imported, importEnd(source, imported), true, source, imported)
     }
-    if stringLength(source) == 0 { return "{\"found\":false}" }
-    fin start = wordStartAt(source, 0, stringLength(source), offset)
-    fin end = wordEndAt(source, stringLength(source), start)
+    if std::stringLength(source) == 0 { return "{\"found\":false}" }
+    fin start = wordStartAt(source, 0, std::stringLength(source), offset)
+    fin end = wordEndAt(source, std::stringLength(source), start)
     if end <= start { return "{\"found\":false}" }
-    fin local = declarationOffset(source, 0, stringLength(source), source, start, end)
-    if local >= 0 { return definitionJson(-1, source, 0, stringLength(source), local) }
+    fin local = declarationOffset(source, 0, std::stringLength(source), source, start, end)
+    if local >= 0 { return definitionJson(-1, source, 0, std::stringLength(source), local) }
     return corpusDefinition(corpus, source, start, end, false, source, start)
 }
 
@@ -1392,8 +1566,8 @@ func appendCompletion(
 
 func completionStartAt(source: String, offset: Int): Int {
     var index = offset
-    if index > stringLength(source) { index = stringLength(source) }
-    while index > 0 && isIdentifierPart(charAt(source, index - 1)) { index -= 1 }
+    if index > std::stringLength(source) { index = std::stringLength(source) }
+    while index > 0 && isIdentifierPart(std::charAt(source, index - 1)) { index -= 1 }
     return index
 }
 
@@ -1432,8 +1606,8 @@ func collectCompletions(
     var index = documentStart
     var keywordStart = -1
     var keywordEnd = -1
-    while index < documentEnd && stringLength(result) < 6000 {
-        fin c = charAt(source, index)
+    while index < documentEnd && std::stringLength(result) < 6000 {
+        fin c = std::charAt(source, index)
         if c == '"' || c == '\'' { index = skipString(source, documentEnd, index) }
         else if c == '/' {
             fin end = skipComment(source, documentEnd, index)
@@ -1443,7 +1617,7 @@ func collectCompletions(
         else if isIdentifierStart(c) {
             fin start = index
             index += 1
-            while index < documentEnd && isIdentifierPart(charAt(source, index)) { index += 1 }
+            while index < documentEnd && isIdentifierPart(std::charAt(source, index)) { index += 1 }
             if keywordStart >= 0 {
                 if completionMatches(source, start, index, prefixSource, prefixStart, prefixEnd) {
                     result = appendCompletion(
@@ -1473,14 +1647,14 @@ func collectCompletions(
 /** Completion items reference ranges in the active file or stdlib corpus. */
 func azlsComplete(source: String, offset: Int, corpus: String): String {
     var prefixEnd = offset
-    if prefixEnd > stringLength(source) { prefixEnd = stringLength(source) }
+    if prefixEnd > std::stringLength(source) { prefixEnd = std::stringLength(source) }
     if prefixEnd < 0 { prefixEnd = 0 }
     fin prefixStart = completionStartAt(source, prefixEnd)
     var result = collectCompletions(
         source,
         -1,
         0,
-        stringLength(source),
+        std::stringLength(source),
         source,
         prefixStart,
         prefixEnd,
@@ -1489,12 +1663,12 @@ func azlsComplete(source: String, offset: Int, corpus: String): String {
     if prefixEnd == prefixStart { return result + "]" }
     var cursor = 0
     var document = 0
-    while cursor < stringLength(corpus) && stringLength(result) < 6000 {
-        fin field = findFrom(corpus, cursor, stringLength(corpus), fieldMarker())
+    while cursor < std::stringLength(corpus) && std::stringLength(result) < 6000 {
+        fin field = findFrom(corpus, cursor, std::stringLength(corpus), fieldMarker())
         if field < 0 { break }
-        fin sourceStart = field + stringLength(fieldMarker())
-        var sourceEnd = findFrom(corpus, sourceStart, stringLength(corpus), recordMarker())
-        if sourceEnd < 0 { sourceEnd = stringLength(corpus) }
+        fin sourceStart = field + std::stringLength(fieldMarker())
+        var sourceEnd = findFrom(corpus, sourceStart, std::stringLength(corpus), recordMarker())
+        if sourceEnd < 0 { sourceEnd = std::stringLength(corpus) }
         result = collectCompletions(
             corpus,
             document,
@@ -1505,7 +1679,7 @@ func azlsComplete(source: String, offset: Int, corpus: String): String {
             prefixEnd,
             result
         )
-        cursor = sourceEnd + stringLength(recordMarker())
+        cursor = sourceEnd + std::stringLength(recordMarker())
         document += 1
     }
     return result + "]"
@@ -1517,18 +1691,18 @@ func azlsDiagnostics(source: String): String {
     var brackets = 0
     var parens = 0
     var index = 0
-    while index < stringLength(source) {
-        fin c = charAt(source, index)
+    while index < std::stringLength(source) {
+        fin c = std::charAt(source, index)
         if c == '"' || c == '\'' {
-            fin end = skipString(source, stringLength(source), index)
-            if end >= stringLength(source) && charAt(source, stringLength(source) - 1) != c {
+            fin end = skipString(source, std::stringLength(source), index)
+            if end >= std::stringLength(source) && std::charAt(source, std::stringLength(source) - 1) != c {
                 return "[{\"line\":" + "${lineNumberAt(source, 0, index)}" +
                     ",\"message\":\"Unterminated string\",\"severity\":\"error\"}]"
             }
             index = end
         }
         else if c == '/' {
-            fin end = skipComment(source, stringLength(source), index)
+            fin end = skipComment(source, std::stringLength(source), index)
             if end > index { index = end } else { index += 1 }
         }
         else {
@@ -1549,5 +1723,5 @@ func azlsDiagnostics(source: String): String {
 
 /** Document outline; labels and details are source ranges. */
 func azlsSymbols(source: String): String {
-    return collectCompletions(source, -1, 0, stringLength(source), "", 0, 0, "[") + "]"
+    return collectCompletions(source, -1, 0, std::stringLength(source), "", 0, 0, "[") + "]"
 }

@@ -28,7 +28,8 @@ import org.azora.lang.frontend.AzoraSyntaxVocabulary
  *
  * Span types (see [HighlightSpan.type]): `keyword`, `string`,
  * `interpolation-punctuation`, `number`, `comment`, `function`, `variable`,
- * `parameter`, `type`, `annotation`, `macro`, `char`.
+ * `parameter`, `type`, `generic`, `label`, `realm`, `annotation`, `macro`,
+ * `char`.
  */
 object AzHighlighter {
 
@@ -75,8 +76,11 @@ object AzHighlighter {
                         while (next < end && source[next].isWhitespace()) next++
                         val type = when {
                             word in RESERVED_KEYWORDS || isContextualKeyword(source, tokenStart, cursor) -> "keyword"
+                            tokenStart in semantics.labelOffsets -> "label"
+                            tokenStart in semantics.realmOffsets -> "realm"
+                            semantics.isGeneric(word, tokenStart) -> "generic"
                             word == "self" || word == "it" -> "parameter"
-                            semantics.isParameter(word, tokenStart) -> "parameter"
+                            semantics.isParameter(word, tokenStart) && !isQualifiedMemberAt(source, tokenStart) -> "parameter"
                             next < end && source[next] in setOf('(', '<') &&
                                 semantics.isFunction(source, word, tokenStart) -> "function"
                             semantics.isType(source, word, tokenStart) -> "type"
@@ -217,8 +221,11 @@ object AzHighlighter {
                     val type = when {
                         word in RESERVED_KEYWORDS || isContextualKeyword(source, start, i) -> "keyword"
                         start in semantics.functionDeclarations -> "function"
+                        start in semantics.labelOffsets -> "label"
+                        start in semantics.realmOffsets -> "realm"
+                        semantics.isGeneric(word, start) -> "generic"
                         word == "self" || word == "it" -> "parameter"
-                        semantics.isParameter(word, start) -> "parameter"
+                        semantics.isParameter(word, start) && !isQualifiedMemberAt(source, start) -> "parameter"
                         j < n && source[j] in setOf('(', '<') && semantics.isFunction(source, word, start) -> "function"
                         semantics.isType(source, word, start) -> "type"
                         else -> "variable"
@@ -261,10 +268,118 @@ object AzHighlighter {
                 }
             }
             "assoc" -> isContextualAssoc(source, start)
-            "derives", "includes", "binds", "requires" -> true
+            "escaping" -> isContextualEscaping(source, start, end)
+            "replace", "includes" -> isContextualGraphClause(source, start, end)
+            "derives" -> isContextualDerives(source, start, end)
+            "binds" -> isContextualBinds(source, start, end)
+            "requires" -> isContextualRequires(source, start, end)
+            "lend" -> isContextualLend(source, start, end)
+            "seal" -> isContextualSeal(source, start, end)
             else -> false
         }
     }
+
+    /** `derives` is grammar only after a pack name and optional type parameters. */
+    private fun isContextualDerives(source: String, start: Int, end: Int): Boolean {
+        var next = end
+        while (next < source.length && source[next] in setOf(' ', '\t', '\r')) next++
+        if (next >= source.length || (!source[next].isIdentStart() && source[next] != '[')) return false
+        val lineStart = source.lastIndexOf('\n', start - 1) + 1
+        val prefix = source.substring(lineStart, start)
+        return Regex(
+            """^\s*(?:(?:exposed|protected|confined|bridge)\s+)*pack\s+[A-Za-z_][A-Za-z0-9_]*(?:\s*<[^>{}\n]*>)?\s*$""",
+        ).matches(prefix)
+    }
+
+    /** `escaping` is contextual only directly before a callable type. */
+    private fun isContextualEscaping(source: String, start: Int, end: Int): Boolean {
+        if (isAfterMemberSeparator(source, start)) return false
+        val lineEnd = source.indexOf('\n', end).takeIf { it >= 0 } ?: source.length
+        val tail = source.substring(end, lineEnd).trimStart()
+        return Regex("""^(?:\([^)]*\)|\[[^]]*])\s*->""").containsMatchIn(tail)
+    }
+
+    /** `replace` and `includes` are clauses on a graph declaration header. */
+    private fun isContextualGraphClause(source: String, start: Int, end: Int): Boolean {
+        if (isAfterMemberSeparator(source, start)) return false
+        val prefix = linePrefix(source, start)
+        if (!Regex(
+                """^\s*(?:(?:exposed|protected|confined)\s+)*graph\s+[A-Za-z_][A-Za-z0-9_]*(?:\s+replace\s+[A-Za-z_][A-Za-z0-9_]*)?\s*$""",
+            ).matches(prefix)
+        ) return false
+        var next = end
+        while (next < source.length && source[next] in setOf(' ', '\t', '\r')) next++
+        return source.getOrNull(next)?.let { it.isIdentStart() || it == '[' } == true
+    }
+
+    /** `binds` belongs to an annotation header or one graph registration. */
+    private fun isContextualBinds(source: String, start: Int, end: Int): Boolean {
+        if (isAfterMemberSeparator(source, start)) return false
+        val prefix = linePrefix(source, start)
+        val annotation = Regex(
+            """^\s*(?:(?:exposed|protected|confined|bridge)\s+)*annot\s+[A-Za-z_][A-Za-z0-9_]*(?:\s+for\s+.+)?\s*$""",
+        ).matches(prefix)
+        val registration = Regex(
+            """^\s*(?:solo|factory|scope)\s+[A-Za-z_][A-Za-z0-9_]*(?:\s*\([^\n]*\))?\s*$""",
+        ).matches(prefix)
+        if (!annotation && !registration) return false
+        var next = end
+        while (next < source.length && source[next] in setOf(' ', '\t', '\r')) next++
+        return source.getOrNull(next)?.let { it.isIdentStart() || it == '[' } == true
+    }
+
+    /** `requires` is a capability clause on a spec header. */
+    private fun isContextualRequires(source: String, start: Int, end: Int): Boolean {
+        if (isAfterMemberSeparator(source, start)) return false
+        val prefix = linePrefix(source, start)
+        if (!Regex(
+                """^\s*(?:(?:exposed|protected|confined|bridge)\s+)*spec\s+[A-Za-z_][A-Za-z0-9_]*(?:\s*<[^>{}\n]*>)?(?:\s*:\s*.+)?\s*$""",
+            ).matches(prefix)
+        ) return false
+        var next = end
+        while (next < source.length && source[next] in setOf(' ', '\t', '\r')) next++
+        return source.getOrNull(next)?.let { it.isIdentStart() || it == '[' } == true
+    }
+
+    /** `lend name` is an ownership expression; declarations/member names are not keywords. */
+    private fun isContextualLend(source: String, start: Int, end: Int): Boolean {
+        if (isAfterMemberSeparator(source, start)) return false
+        var next = end
+        while (next < source.length && source[next] in setOf(' ', '\t', '\r')) next++
+        return source.getOrNull(next)?.isIdentStart() == true
+    }
+
+    /** `seal` has grammar meaning only as the first expression after a branch arrow. */
+    private fun isContextualSeal(source: String, start: Int, end: Int): Boolean {
+        if (isAfterMemberSeparator(source, start)) return false
+        var previous = start - 1
+        while (previous >= 0 && source[previous].isWhitespace()) previous--
+        if (source.getOrNull(previous) == '{') {
+            previous--
+            while (previous >= 0 && source[previous].isWhitespace()) previous--
+        }
+        val arrow = previous >= 1 && source[previous] == '>' && source[previous - 1] in setOf('-', '=')
+        if (!arrow) return false
+        var next = end
+        while (next < source.length && source[next].isWhitespace()) next++
+        val value = source.getOrNull(next) ?: return false
+        return value.isIdentStart() || value.isDigit() || value in setOf('.', '"', '\'', '(', '[', '{', '-', '!')
+    }
+
+    private fun linePrefix(source: String, start: Int): String {
+        val lineStart = source.lastIndexOf('\n', start - 1) + 1
+        return source.substring(lineStart, start)
+    }
+
+    private fun isAfterMemberSeparator(source: String, start: Int): Boolean {
+        var previous = start - 1
+        while (previous >= 0 && source[previous] in setOf(' ', '\t', '\r')) previous--
+        return source.getOrNull(previous) == '.' ||
+            (source.getOrNull(previous) == ':' && source.getOrNull(previous - 1) == ':')
+    }
+
+    private fun isQualifiedMemberAt(source: String, start: Int): Boolean =
+        isAfterMemberSeparator(source, start)
 
     /**
      * `assoc` is a keyword only after a complete spec/implementation subject:
@@ -345,11 +460,20 @@ object AzHighlighter {
         val end: Int,
     )
 
+    private data class GenericScope(
+        val names: Set<String>,
+        val start: Int,
+        val end: Int,
+    )
+
     private data class SemanticNames(
         val functions: Set<String>,
         val functionDeclarations: Set<Int>,
         val parameterScopes: List<ParameterScope>,
+        val genericScopes: List<GenericScope>,
         val types: Set<String>,
+        val labelOffsets: Set<Int>,
+        val realmOffsets: Set<Int>,
     ) {
         fun isParameter(name: String, offset: Int): Boolean =
             parameterScopes.any { offset in it.start..it.end && name in it.names }
@@ -359,6 +483,9 @@ object AzHighlighter {
 
         fun isType(source: String, name: String, offset: Int): Boolean =
             name in types || qualifiedNameAt(source, name, offset) in types
+
+        fun isGeneric(name: String, offset: Int): Boolean =
+            genericScopes.any { offset in it.start..it.end && name in it.names }
     }
 
     /**
@@ -375,31 +502,77 @@ object AzHighlighter {
         val functions = visibleFunctions.toMutableSet()
         val declarations = mutableSetOf<Int>()
         val scopes = mutableListOf<ParameterScope>()
+        val genericScopes = mutableListOf<GenericScope>()
         val declaredTypes = visibleTypes.toMutableSet()
-        val callable = Regex("""\b(?:async\s+)?func\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:<[^>{}\n]*>)?\s*(?:\[[^\]\n]*])?\s*\(([^)]*)\)""")
+        val callable = Regex(
+            """\bfunc\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:<([^>{}\n]*)>)?\s*(?:\[([^\]\n]*)])?\s*\(([^)]*)\)""",
+        )
         val parameter = Regex("""(?:\.\.\.)?([A-Za-z_][A-Za-z0-9_]*)\s*:""")
-        val typeDeclaration = Regex("""\b(?:pack|enum|spec|annot|solo|variant|union)\s+([A-Za-z_][A-Za-z0-9_]*)""")
+        val typeDeclaration = Regex(
+            """\b(?:pack|enum|error|spec|annot|union|typealias)\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s*<([^>{}\n]*)>)?""",
+        )
 
         for (match in callable.findAll(declarationsSource)) {
             val nameGroup = match.groups[1] ?: continue
-            val paramsGroup = match.groups[2] ?: continue
+            val receiverGroup = match.groups[3]
+            val paramsGroup = match.groups[4] ?: continue
             functions += nameGroup.value
             declarations += nameGroup.range.first
 
-            val names = parameter.findAll(paramsGroup.value)
+            val names = sequenceOf(receiverGroup?.value.orEmpty(), paramsGroup.value)
+                .flatMap { parameter.findAll(it) }
                 .mapNotNull { it.groups[1]?.value }
                 .toSet()
-            if (names.isEmpty()) continue
 
             val bodyOpen = source.indexOf('{', match.range.last + 1)
             val bodyEnd = if (bodyOpen >= 0) matchingBrace(source, bodyOpen) else match.range.last
-            scopes += ParameterScope(names, match.range.first, bodyEnd)
+            if (names.isNotEmpty()) scopes += ParameterScope(names, match.range.first, bodyEnd)
+            match.groups[2]?.value?.let { genericText ->
+                val generics = genericNames(genericText)
+                if (generics.isNotEmpty()) genericScopes += GenericScope(generics, match.range.first, bodyEnd)
+            }
         }
         for (match in typeDeclaration.findAll(declarationsSource)) {
             match.groups[1]?.value?.let(declaredTypes::add)
+            val genericText = match.groups[2]?.value ?: continue
+            val generics = genericNames(genericText)
+            if (generics.isEmpty()) continue
+            val bodyOpen = source.indexOf('{', match.range.last + 1)
+            val lineEnd = source.indexOf('\n', match.range.last + 1).takeIf { it >= 0 } ?: source.length
+            val scopeEnd = if (bodyOpen in (match.range.last + 1)..lineEnd) matchingBrace(source, bodyOpen) else lineEnd
+            genericScopes += GenericScope(generics, match.range.first, scopeEnd)
         }
-        return SemanticNames(functions, declarations, scopes, declaredTypes)
+
+        val labelOffsets = linkedSetOf<Int>()
+        Regex("""\b([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(?:for|while|loop)\b""")
+            .findAll(declarationsSource).mapNotNullTo(labelOffsets) { it.groups[1]?.range?.first }
+        Regex("""\b(?:break|continue)\s*:\s*([A-Za-z_][A-Za-z0-9_]*)\b""")
+            .findAll(declarationsSource).mapNotNullTo(labelOffsets) { it.groups[1]?.range?.first }
+
+        val realmOffsets = linkedSetOf<Int>()
+        Regex("""\b([A-Za-z_][A-Za-z0-9_]*)\s*::""")
+            .findAll(declarationsSource).mapNotNullTo(realmOffsets) { it.groups[1]?.range?.first }
+        Regex("""\brealm\s+((?:[A-Za-z_][A-Za-z0-9_]*\s*::\s*)*[A-Za-z_][A-Za-z0-9_]*)""")
+            .findAll(declarationsSource).forEach { realm ->
+                val path = realm.groups[1] ?: return@forEach
+                Regex("""[A-Za-z_][A-Za-z0-9_]*""").findAll(path.value)
+                    .mapTo(realmOffsets) { path.range.first + it.range.first }
+            }
+
+        return SemanticNames(
+            functions, declarations, scopes, genericScopes, declaredTypes,
+            labelOffsets, realmOffsets,
+        )
     }
+
+    /** Declared names only; bounds/default types in `T: Copy` are not generics. */
+    private fun genericNames(text: String): Set<String> = text
+        .split(',', '\n')
+        .mapNotNull { part ->
+            Regex("""^\s*(?:\.\.\.)?([A-Za-z_][A-Za-z0-9_]*)""")
+                .find(part)?.groupValues?.get(1)
+        }
+        .toSet()
 
     /** `Int` at the end of `std::Int` becomes the compiler's `std__Int` key. */
     private fun qualifiedNameAt(source: String, name: String, offset: Int): String {

@@ -16,8 +16,10 @@
 
 package org.azora.lang.semantic
 
+import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.FuncDecl
 import org.azora.lang.frontend.Program
+import org.azora.lang.frontend.Stmt
 import org.azora.lang.frontend.TypeAnnotation
 import org.azora.lang.frontend.TypeRef
 import org.azora.lang.frontend.TopLevel
@@ -64,9 +66,36 @@ object SpecDefaults {
         }
         fun bindAnnotation(annotation: TypeAnnotation): TypeAnnotation =
             if (annotation is TypeAnnotation.Explicit) TypeAnnotation.Explicit(bind(annotation.ref)) else annotation
+        // A provided body names types too - `store<Self>(…)` is the whole reason
+        // one spec member can serve every implementation - so the body is bound
+        // on the same terms as the signature.
+        fun bindExpr(expr: Expr): Expr = when (expr) {
+            is Expr.Call -> expr.copy(
+                args = expr.args.map(::bindExpr),
+                typeArgs = expr.typeArgs.map(::bind),
+                receiver = expr.receiver?.let(::bindExpr),
+            )
+            is Expr.MethodCall -> expr.copy(target = bindExpr(expr.target), args = expr.args.map(::bindExpr))
+            is Expr.Member -> expr.copy(target = bindExpr(expr.target))
+            is Expr.Binary -> expr.copy(left = bindExpr(expr.left), right = bindExpr(expr.right))
+            is Expr.Unary -> expr.copy(operand = bindExpr(expr.operand))
+            is Expr.Grouping -> expr.copy(expr = bindExpr(expr.expr))
+            is Expr.NamedArg -> expr.copy(value = bindExpr(expr.value))
+            else -> expr
+        }
+
+        fun bindStmt(stmt: Stmt): Stmt = when (stmt) {
+            is Stmt.FinDecl -> stmt.copy(type = bindAnnotation(stmt.type), initializer = bindExpr(stmt.initializer))
+            is Stmt.VarDecl -> stmt.copy(type = bindAnnotation(stmt.type), initializer = bindExpr(stmt.initializer))
+            is Stmt.ExprStmt -> stmt.copy(expr = bindExpr(stmt.expr))
+            is Stmt.Return -> stmt.copy(value = stmt.value?.let(::bindExpr))
+            else -> stmt
+        }
+
         return method.copy(
             params = method.params.map { it.copy(type = bind(it.type)) },
             returnType = bindAnnotation(method.returnType),
+            body = method.body.map(::bindStmt),
         )
     }
 
@@ -92,7 +121,9 @@ object SpecDefaults {
                 val own = impl.methods.mapTo(mutableSetOf()) { it.name }
                 val inherited = spec.methods
                     .filter { it.body.isNotEmpty() && it.name !in own }
-                    .map { bindAssoc(it, impl.assocBindings) }
+                    // `Self` in a provided body is this implementation's type -
+                    // that is what makes one body serve every implementation.
+                    .map { bindAssoc(it, impl.assocBindings + ("Self" to TypeRef.Named(impl.typeName))) }
                 if (inherited.isEmpty()) item else impl.copy(methods = impl.methods + inherited)
             },
         )
